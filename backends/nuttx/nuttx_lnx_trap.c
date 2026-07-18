@@ -166,6 +166,13 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)
 #define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
 #define DYN_POOLS_BYTES ((size_t)LXP_NREG * LXP_DYN_POOL_SIZE)
 static uintptr_t g_region_stack_lo[LXP_NREG];
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* Per-region flag: this region holds a program's OWN copied text (a remote exec off the 9P mount),
+ * so region 2 must be mapped RWX (drop execute-never) instead of the default W^X. Indexed by region
+ * index because set_prog_regions() — the note-driver switch hook — keys off ridx, not the slot. Set
+ * at spawn from prog->region_exec; a normal (XIP-text) program leaves it 0, restoring W^X. */
+static uint8_t g_region_exec[LXP_NREG];
+#endif
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Remote-exec (9P netfs) staging buffer: the coordinator fetches a remote FDPIC ELF into
@@ -387,6 +394,14 @@ static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *
 			     (uintptr_t)prog_regions[ridx] + LXP_PROG_REGION_SIZE);
 	up_invalidate_dcache((uintptr_t)dyn_pools[ridx],
 			     (uintptr_t)dyn_pools[ridx] + LXP_DYN_POOL_SIZE);
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	/* Record whether this program runs its own copied text from region 2 (a 9P-mount exec) so the
+	 * note-driver switch hook maps region 2 RWX. lxp_note_resume reprograms when this changes even
+	 * for a region already mapped (an execve reusing the same ridx flips a normal program to a
+	 * remote-exec one). */
+	if (ridx >= 0 && ridx < LXP_NREG)
+		g_region_exec[ridx] = (uint8_t)prog->region_exec;
+#endif
 	g_region_stack_lo[ridx] = (uintptr_t)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)stack_lo, (uintptr_t)sp) != 0)
 		return -1;
@@ -688,6 +703,7 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
  * lxp_note_resume skip the 6 MPU writes + dsb + isb when the incoming program already owns the
  * mapped region (the common case: a syscall returns to the same program on every trap). */
 static int g_mapped_ridx = -1;
+static int g_mapped_exec = -1; /* exec-ness (g_region_exec) of the region currently mapped into region 2 */
 
 static void set_prog_regions(int ridx)
 {
@@ -702,10 +718,17 @@ static void set_prog_regions(int ridx)
 	 * @0xC0000000, covered by the non-cacheable base region 1 — and the privileged personality reads
 	 * the draw buffer coherently on the same core, then blits to the non-cacheable framebuffer, so no
 	 * SCB cache maintenance is needed. (No code executes from here: FDPIC text XIPs from QSPI/reg 4.) */
+	uint32_t reg2_xn = (1u << 28); /* execute-never (W^X): FDPIC text XIPs from QSPI/region 4 */
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	/* A remote-exec proc runs its OWN text copied into region 2 → map it RWX (drop XN). A
+	 * per-process, MPU-contained W^X relaxation, only for a program launched off the remote mount. */
+	if (ridx >= 0 && ridx < LXP_NREG && g_region_exec[ridx])
+		reg2_xn = 0u;
+#endif
 	*mpu_rnr = 2;
 	*mpu_rbar = (uint32_t)(uintptr_t)prog_regions[ridx];
 	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_PROG_REGION_SIZE) | (0x0Bu << 16) |
-		    (0x3u << 24) | (1u << 28);
+		    (0x3u << 24) | reg2_xn;
 	*mpu_rnr = 3;
 	*mpu_rbar = (uint32_t)(uintptr_t)dyn_pools[ridx];
 	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_DYN_POOL_SIZE) | (0x0Bu << 16) | (0x3u << 24) |
@@ -713,6 +736,7 @@ static void set_prog_regions(int ridx)
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
 	g_mapped_ridx = ridx;
+	g_mapped_exec = (reg2_xn == 0u); /* record region 2's exec-ness so a same-ridx flip reprograms */
 }
 
 /* Note-driver resume hook — fires on EVERY switch TO a task (sched_note_resume, in
@@ -736,7 +760,14 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	for (int i = 0; i < LXP_NSLOT; i++) {
 		if (g_lxp_used[i] && g_pid[i] == pid) {
 			int ridx = g_lxp_proc[i].region;
-			if (ridx != g_mapped_ridx) /* skip the MPU reprogram when unchanged */
+			int want_exec = 0;
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+			if (ridx >= 0 && ridx < LXP_NREG)
+				want_exec = g_region_exec[ridx];
+#endif
+			/* Reprogram when the region changed OR its exec-ness flipped (an execve reused this
+			 * ridx to launch a remote-exec program needing RWX); else skip the 6 MPU writes. */
+			if (ridx != g_mapped_ridx || want_exec != g_mapped_exec)
 				set_prog_regions(ridx);
 			return;
 		}
