@@ -342,8 +342,8 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 
 	/* Bounded connect: go non-blocking, then poll() for writability (or the
 	 * timeout) and read SO_ERROR for the result. */
-	int flags = zsock_fcntl(sock->fd, F_GETFL, 0);
-	zsock_fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK);
+	int flags = zsock_fcntl(sock->fd, ZVFS_F_GETFL, 0);
+	zsock_fcntl(sock->fd, ZVFS_F_SETFL, flags | ZVFS_O_NONBLOCK);
 
 	int result;
 	if (zsock_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) == 0) {
@@ -368,7 +368,7 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 		}
 	}
 
-	zsock_fcntl(sock->fd, F_SETFL, flags); /* restore blocking mode */
+	zsock_fcntl(sock->fd, ZVFS_F_SETFL, flags); /* restore blocking mode */
 	return result;
 }
 
@@ -499,11 +499,11 @@ int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
 {
 	if (!sock)
 		return OVE_ERR_INVALID_PARAM;
-	int flags = zsock_fcntl(sock->fd, F_GETFL, 0);
+	int flags = zsock_fcntl(sock->fd, ZVFS_F_GETFL, 0);
 	if (flags < 0)
 		return zephyr_errno_to_ove(errno);
-	flags = nonblock ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
-	if (zsock_fcntl(sock->fd, F_SETFL, flags) < 0)
+	flags = nonblock ? (flags | ZVFS_O_NONBLOCK) : (flags & ~ZVFS_O_NONBLOCK);
+	if (zsock_fcntl(sock->fd, ZVFS_F_SETFL, flags) < 0)
 		return zephyr_errno_to_ove(errno);
 	return OVE_OK;
 }

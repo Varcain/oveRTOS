@@ -147,6 +147,7 @@ macro(ove_zephyr_add_common_includes)
         ${OVE_GEN_DIR}
         ${APP_INCLUDE_DIRS}
         ${OVE_DIR}/include
+        ${OVE_DIR}/modules/lxp/include
         ${OVE_DIR}/bindings/cpp
         ${OVE_DIR}/backends/zephyr/include
         ${OVE_DIR}/backends/common
