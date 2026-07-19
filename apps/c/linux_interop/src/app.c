@@ -817,6 +817,7 @@ static void audit_thread(const char *name, ove_thread_t h, size_t size)
 /* Report only the high-water free margin for a thread whose total stack this app does not own —
  * the RTOS-provided ove_main thread the coordinator runs inline on under Zephyr/NuttX (there is no
  * app-sized g_demo_stack there). Free is still the number the soak floor cares about. */
+#if !defined(CONFIG_OVE_RTOS_FREERTOS) /* used only in the non-FreeRTOS stack_audit() branch below */
 static void audit_thread_free(const char *name, ove_thread_t h)
 {
 	char line[96];
@@ -830,6 +831,7 @@ static void audit_thread_free(const char *name, ove_thread_t h)
 	*p = 0;
 	sh_write0(line);
 }
+#endif /* !CONFIG_OVE_RTOS_FREERTOS */
 
 static void stack_audit(void)
 {
