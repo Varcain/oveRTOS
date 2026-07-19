@@ -210,9 +210,11 @@ CONFIG_THREAD_CUSTOM_DATA=y
 # Enforce W^X explicitly (Zephyr's own default is OFF) now that no program needs an RWX region.
 CONFIG_EXECUTE_XOR_WRITE=y
 # The USERSPACE thread-id bitmap must cover every k_thread kobject: the NSLOT program slots
-# (NREG+4) + the kernel's own threads + the board's driver threads. On the real STM32F746 the
-# driver threads push the total to 18, needing 3 bytes (24 slots); harmless for the an521 (fewer).
-CONFIG_MAX_THREAD_BYTES=3
+# (NREG+4) + the kernel's own threads + the board's driver threads. On the real STM32F746 with
+# NREG bumped to 10 (LXP_NREG, for SSH-session process depth) that total reaches 25, needing 4
+# bytes (32 slots). gen_kobject_list.py hard-errors ("Too many thread objects") if it's too small;
+# 4 is harmless for the an521 (fewer threads).
+CONFIG_MAX_THREAD_BYTES=4
 # Disable Zephyr's round-robin timeslicer: the personality self-schedules and does not need it, and
 # under the personality's workload it DEADLOCKS the kernel. The coordinator (main, priority 0)
 # preempts guest programs (priority 5) by priority the instant it is readied (event_post), and guests
@@ -270,11 +272,11 @@ CONFIG_HW_STACK_PROTECTION=n
 # keeps its real pools in SDRAM, so a small Zephyr k_heap is ample) rather than growing SRAM use.
 CONFIG_ISR_STACK_SIZE=12288
 # k_heap: the personality keeps its real pools in SDRAM and the net stack's declared heap floor is
-# tiny (HEAP_MEM_POOL_ADD_SIZE_GETADDRINFO=280 B; net_pkt/net_buf use slabs, not the heap), so 24 KB
-# is ample. It was 48 KB, but once CONFIG_OVE_NET lands the net pkt/buf pools + RX thread crowd the
-# 256 KB SRAM — trimming this slack reclaims the room they need. IGNORE_MIN is off, so Zephyr honours
-# this value (it stays above the ~280 B floor).
-CONFIG_HEAP_MEM_POOL_SIZE=24576
+# tiny (HEAP_MEM_POOL_ADD_SIZE_GETADDRINFO=280 B; net_pkt/net_buf use slabs, not the heap; guest
+# mallocs live in the SDRAM dyn pools), and the on-target audit shows peak_used=0 — so 8 KB is
+# ample. It was 24 KB; the reclaimed 16 KB funds LXP_NREG=10 (its extra per-slot g_lxp_proc /
+# tramp-stack / domain state is SRAM-resident), keeping the 256 KB budget net-neutral.
+CONFIG_HEAP_MEM_POOL_SIZE=8192
 {% if get_bool("CONFIG_OVE_FB") %}
 # lvbench on the panel: re-enable the LTDC display + the QSPI-XIP rootfs (overrides the headless
 # CONFIG_DISPLAY=n above; the ove-linux-fb.overlay re-enables the DT nodes). STM32_MEMMAP auto-maps
