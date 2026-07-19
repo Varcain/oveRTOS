@@ -1,0 +1,59 @@
+From: oveRTOS <noreply@overtos>
+Subject: [PATCH] eth_stm32: kick the Linux-personality socket coordinator on RX
+
+The Linux personality's socket coordinator services parked recv/connect/accept
+by probing the zsock non-blocking then parking, retrying on its <=5ms event
+tick. Wake it the instant a batch of RX frames is handed to the net stack, so a
+parked op resumes on frame arrival instead of on the tick (delta F; mirrors the
+FreeRTOS eth_rx_task lxp_sock_kick). The symbol is weak, so a non-personality
+build (no run loop) links a NULL and skips the call. Race-free because the net
+RX threads are cooperative (above the preemptible coordinator).
+---
+--- a/drivers/ethernet/eth_stm32_hal_common.c
++++ b/drivers/ethernet/eth_stm32_hal_common.c
+@@ -56,6 +56,15 @@
+ 
+ const struct device *eth_stm32_phy_dev = DEVICE_DT_GET(DT_INST_PHANDLE(0, phy_handle));
+ 
++/*
++ * oveRTOS: wake the Linux personality's socket coordinator the instant a batch of
++ * RX frames has been handed to the net stack, so a parked recv/connect/accept resumes
++ * now instead of on its <=5 ms retry tick (delta F, mirrors the FreeRTOS eth_rx_task
++ * kick). Weak: a non-personality build (no run loop) links a NULL and skips the call.
++ * Defined strong by modules/lxp/src/lxp_run.c (lxp_sock_kick) when LXP_ENABLE_NET is set.
++ */
++__attribute__((weak)) void lxp_sock_kick(void);
++
+ static void rx_thread(void *arg1, void *unused1, void *unused2)
+ {
+ 	const struct device *dev = (const struct device *)arg1;
+@@ -70,6 +79,7 @@
+ 	while (1) {
+ 		res = k_sem_take(&dev_data->rx_int_sem, K_FOREVER);
+ 		if (res == 0) {
++			int delivered = 0;
+ 			/* semaphore taken and receive packets */
+ 			while ((pkt = eth_stm32_rx(dev)) != NULL) {
+ 				iface = net_pkt_iface(pkt);
+@@ -80,8 +90,21 @@
+ 					LOG_ERR("Failed to enqueue frame "
+ 						"into RX queue: %d", res);
+ 					net_pkt_unref(pkt);
++				} else {
++					delivered++;
+ 				}
+ 			}
++			/*
++			 * oveRTOS: frames delivered to the net stack — wake the Linux
++			 * personality's socket coordinator so a parked socket op resumes
++			 * at once. Race-free: the net RX threads are cooperative (higher
++			 * priority than the preemptible coordinator), so they finish
++			 * delivering to the socket before the coordinator runs and
++			 * re-probes. No frames => no kick (link-quiet coordinator idles).
++			 */
++			if (delivered && lxp_sock_kick) {
++				lxp_sock_kick();
++			}
+ 		}
+ 	}
+ }
