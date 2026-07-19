@@ -327,10 +327,17 @@ add_compile_definitions(LXP_ENABLE_{{ feat }}=1)
 # pools 8x(512K+512K)=8 MiB = the whole SDRAM1, leaving no room for the LTDC framebuffer (link
 # overflow). 8x(256K+512K)=6 MiB leaves 2 MiB for the framebuffer + headroom.
 add_compile_definitions(LXP_PROG_REGION_SIZE=0x40000u LXP_PIPE_BUF=2048 LXP_PTY_BUF=512)
-# The 256 KiB on-chip SRAM is tight once the Zephyr net stack (heap + pkt/buf pools + RX thread)
-# lands beside the personality's .bss. The tmpfs (/tmp) arena defaults to 64 KiB; a point-to-point
-# net + SSH/netfs test writes little to /tmp, so 16 KiB reclaims 48 KiB of SRAM.
+# tmpfs (/tmp) byte pool. On the real STM32F746 it rides in SDRAM via LXP_FAR_BSS (set in the board
+# block below), so it can be LARGE: 128 KiB lets a guest mmap a sizeable /tmp-backed buffer — iperf3
+# builds its per-stream send/recv buffer with mkstemp+ftruncate+mmap, and ftruncate fails EFBIG when
+# the pool is smaller than the block (default 128K / -l 32K). 128K in SDRAM covers -l up to ~120K and
+# still leaves SDRAM1 headroom. Elsewhere (an521 QEMU) the pool stays in .bss where the 256 KiB SRAM
+# is tight beside the net stack, so keep it modest (16 KiB — a point-to-point test writes little /tmp).
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+add_compile_definitions(LXP_WFS_POOL=0x20000u)
+{% else %}
 add_compile_definitions(LXP_WFS_POOL=0x4000u)
+{% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # STM32F746 (Zephyr): 12-slot pipe pool for SSH pipelines. A single dropbear session's
