@@ -332,6 +332,17 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x40000u LXP_PIPE_BUF=2048 LXP_PTY_
 # net + SSH/netfs test writes little to /tmp, so 16 KiB reclaims 48 KiB of SRAM.
 add_compile_definitions(LXP_WFS_POOL=0x4000u)
 {% endif %}
+{% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+# STM32F746 (Zephyr): 12-slot pipe pool for SSH pipelines. A single dropbear session's
+# stdin/stdout/stderr already peak at 4 pipes, so the 4-slot default leaves nothing for the shell's
+# own `ls | wc` (-> EMFILE). At LXP_PIPE_BUF=2048 that pool is 12x2K=24K, which does not fit the
+# nearly-full 256 KiB SRAM once the net stack lands — relocate it to external SDRAM via LXP_FAR_BSS.
+# The Zephyr SDRAM1 memory-region section is "SDRAM1" (LINKER_DT_NODE_REGION_NAME(sdram1)), the same
+# NOLOAD region the guest program pools already live in; the pool is coordinator-owned (the guest
+# reaches pipe bytes only through copy-in/out syscalls) so it needs no per-program MPU partition.
+add_compile_definitions(LXP_NPIPE=12)
+add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section("SDRAM1")))]==])
+{% endif %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # STM32F746: bigger pipe pool for SSH pipelines, relocated to external SDRAM.
 add_compile_definitions(LXP_NPIPE=12)
