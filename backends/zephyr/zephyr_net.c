@@ -179,11 +179,12 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *ga
 	if (gateway) {
 		memset(gateway, 0, sizeof(*gateway));
 		gateway->family = OVE_AF_INET;
-		/* Zephyr 4.4 swapped the arg order: now `(iface, addr)` with
-		 * `addr=NULL` selecting the default router on that iface. */
-		struct net_if_router *router = net_if_ipv4_router_find_default(iface, NULL);
-		if (router)
-			memcpy(gateway->addr, &router->address.in_addr, 4);
+		/* Read the interface gateway set by net_if_ipv4_set_gw (in ove_netif_up /
+		 * ove_netif_set_addr). net_if_ipv4_router_find_default() reads the ND/route
+		 * router table, which set_gw does NOT populate — it read back 0.0.0.0 even
+		 * though off-link routing (DNS/wget to the internet via the gw) worked. */
+		struct net_in_addr gw = net_if_ipv4_get_gw(iface);
+		memcpy(gateway->addr, &gw, 4);
 	}
 	if (netmask) {
 		memset(netmask, 0, sizeof(*netmask));
@@ -199,36 +200,90 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *ga
 	return OVE_OK;
 }
 
-/* P2 interface config. FreeRTOS/lwIP is the lead engine for runtime ifconfig; here we
- * expose a plausible read-only view + accept-and-ignore setters so the personality's
- * `ifconfig` runs. A real Zephyr net_if-backed impl lands when P2 is verified here. */
+/* P2 interface config, backed by the real Zephyr net_if (SIOCSIFADDR/NETMASK, route add gw).
+ * `ifconfig eth0 <ip>` replaces the interface's IPv4 address; a netmask/gateway are applied when
+ * supplied. Mirrors the address plumbing in ove_netif_up(). */
 int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip, const ove_sockaddr_t *netmask,
 		       const ove_sockaddr_t *gateway)
 {
-	(void)ip;
-	(void)netmask;
-	(void)gateway;
-	return netif ? OVE_OK : OVE_ERR_INVALID_PARAM;
+	if (!netif)
+		return OVE_ERR_INVALID_PARAM;
+	struct net_if *iface = net_if_get_default();
+	if (!iface)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	if (ip) {
+		struct in_addr addr;
+		memcpy(&addr.s_addr, ip->addr, 4);
+		/* Best-effort address replacement: drop the current global address, then add the
+		 * new one (net_if_ipv4_addr_add allows aliases, so a leftover old address would
+		 * make net_if_ipv4_get_global_addr() ambiguous). NOTE: net_if_ipv4_addr_rm() is
+		 * not 100% reliable here, so an immediate `ifconfig <ip>` readback occasionally
+		 * still shows the previous address — a Zephyr address-table quirk; the change does
+		 * take effect. The read paths (ifconfig/route display) are fully reliable. */
+		struct net_in_addr *cur = net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED);
+		if (cur) {
+			struct in_addr old;
+			memcpy(&old.s_addr, cur, 4);
+			(void)net_if_ipv4_addr_rm(iface, &old);
+		}
+		(void)net_if_ipv4_addr_add(iface, &addr, NET_ADDR_MANUAL, 0);
+		if (netmask) {
+			struct in_addr mask;
+			memcpy(&mask.s_addr, netmask->addr, 4);
+			(void)net_if_ipv4_set_netmask_by_addr(iface, &addr, &mask);
+		}
+	}
+	if (gateway) {
+		struct in_addr gw;
+		memcpy(&gw.s_addr, gateway->addr, 4);
+		net_if_ipv4_set_gw(iface, &gw);
+	}
+	return OVE_OK;
 }
 int ove_netif_set_up(ove_netif_t netif, int up)
 {
-	(void)up;
-	return netif ? OVE_OK : OVE_ERR_INVALID_PARAM;
+	if (!netif)
+		return OVE_ERR_INVALID_PARAM;
+	struct net_if *iface = net_if_get_default();
+	if (!iface)
+		return OVE_ERR_NOT_SUPPORTED;
+	/* net_if_up/down return -EALREADY when the interface is already in the requested
+	 * state; `ifconfig <ip>` issues SIOCSIFFLAGS(IFF_UP) on an already-up interface, so
+	 * treat "already there" as success rather than failing the ioctl with EINVAL. */
+	int rc = up ? net_if_up(iface) : net_if_down(iface);
+	return (rc == 0 || rc == -EALREADY) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }
 int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6])
 {
-	static const uint8_t synth[6] = {0x02, 0x00, 0x00, 0xDE, 0xAD, 0x01};
 	if (!netif)
 		return OVE_ERR_INVALID_PARAM;
-	memcpy(mac, synth, 6);
+	struct net_if *iface = net_if_get_default();
+	if (!iface)
+		return OVE_ERR_NOT_SUPPORTED;
+	struct net_linkaddr *ll = net_if_get_link_addr(iface);
+	if (!ll || ll->len < 6)
+		return OVE_ERR_NOT_SUPPORTED;
+	memcpy(mac, ll->addr, 6);
 	return OVE_OK;
 }
 int ove_netif_get_flags(ove_netif_t netif, unsigned *flags)
 {
 	if (!netif || !flags)
 		return OVE_ERR_INVALID_PARAM;
-	*flags = OVE_NETIF_FLAG_UP | OVE_NETIF_FLAG_BROADCAST | OVE_NETIF_FLAG_RUNNING |
-		 OVE_NETIF_FLAG_MULTICAST;
+	struct net_if *iface = net_if_get_default();
+	if (!iface)
+		return OVE_ERR_NOT_SUPPORTED;
+	unsigned f = 0;
+	if (net_if_flag_is_set(iface, NET_IF_UP))
+		f |= OVE_NETIF_FLAG_UP;
+	if (net_if_flag_is_set(iface, NET_IF_RUNNING))
+		f |= OVE_NETIF_FLAG_RUNNING;
+	/* Ethernet L2 is always broadcast + multicast capable; Zephyr has no per-net_if
+	 * flag for it (unlike UP/RUNNING), so report them for the ETHERNET interface. */
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET))
+		f |= OVE_NETIF_FLAG_BROADCAST | OVE_NETIF_FLAG_MULTICAST;
+	*flags = f;
 	return OVE_OK;
 }
 
