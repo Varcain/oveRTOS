@@ -328,11 +328,15 @@ int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af
 		return ret;
 	if (!storage)
 		return OVE_ERR_INVALID_PARAM;
-	if (type == OVE_SOCK_RAW)
-		return OVE_ERR_NOT_SUPPORTED; /* raw ICMP (ping) deferred on Zephyr */
-	(void)af;			     /* Zephyr: AF_INET */
+	(void)af; /* Zephyr: AF_INET */
 	struct ove_socket *s = (struct ove_socket *)storage;
-	int stype = (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM;
+	/* SOCK_RAW (CONFIG_NET_SOCKETS_INET_RAW) carries raw-ICMP for ping: the guest supplies
+	 * the ICMP message incl. its checksum. The STM32 ETH HW checksum offload is disabled
+	 * (# CONFIG_ETH_STM32_HW_CHECKSUM), so Zephyr does not overwrite it — no FreeRTOS-style
+	 * "zero the csum for the MAC" quirk is needed here. */
+	int stype = (type == OVE_SOCK_RAW)     ? SOCK_RAW
+		    : (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM
+					       : SOCK_STREAM;
 	int fd = zsock_socket(AF_INET, stype, proto);
 	if (fd < 0)
 		return zephyr_errno_to_ove(errno);
@@ -513,6 +517,57 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_in sin;
 	sockaddr_to_zephyr(dest, &sin);
+
+	/* Zephyr AF_INET SOCK_RAW is IP_HDRINCL-style: its TX path (context_setup_raw_ip_packet)
+	 * reads the IPv4 header straight from the caller's buffer. Linux raw ICMP (busybox ping)
+	 * hands the kernel the ICMP message only and lets it prepend the IP header. Bridge the
+	 * models: for a raw socket, build a minimal IPv4 header in front of the guest's payload
+	 * (leaving the header checksum 0 — Zephyr recomputes it since the STM32 HW checksum
+	 * offload is off) so `ping` produces well-formed datagrams. The RX side already returns
+	 * the full IP datagram (CONFIG_NET_SOCKETS_INET_RAW), which is what ping expects. */
+	int stype = 0;
+	socklen_t olen = sizeof(stype);
+	if (zsock_getsockopt(sock->fd, SOL_SOCKET, ZSOCK_SO_TYPE, &stype, &olen) == 0 &&
+	    stype == SOCK_RAW) {
+		if (len > 512)
+			return OVE_ERR_INVALID_PARAM;
+		int proto = IPPROTO_ICMP;
+		socklen_t plen = sizeof(proto);
+		(void)zsock_getsockopt(sock->fd, SOL_SOCKET, ZSOCK_SO_PROTOCOL, &proto, &plen);
+		struct net_if *iface = net_if_get_default();
+		struct net_in_addr *src =
+			iface ? net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED) : NULL;
+		/* Static (not on the stack): raw sends are serviced one-at-a-time on the single
+		 * coordinator thread, and the coordinator's stack budget is tight. */
+		static uint8_t buf[20 + 512];
+		uint16_t tot = (uint16_t)(20u + len);
+		buf[0] = 0x45;			/* IPv4, IHL 5 */
+		buf[1] = 0;			/* DSCP/ECN */
+		buf[2] = (uint8_t)(tot >> 8);	/* total length */
+		buf[3] = (uint8_t)(tot & 0xff);
+		buf[4] = 0;			/* identification */
+		buf[5] = 0;
+		buf[6] = 0;			/* flags / fragment offset */
+		buf[7] = 0;
+		buf[8] = 64;			/* TTL */
+		buf[9] = (uint8_t)proto;	/* protocol (ICMP for ping) */
+		buf[10] = 0;			/* header checksum — filled by Zephyr */
+		buf[11] = 0;
+		if (src)
+			memcpy(&buf[12], src, 4);
+		else
+			memset(&buf[12], 0, 4);
+		memcpy(&buf[16], dest->addr, 4); /* destination */
+		memcpy(&buf[20], data, len);
+		ssize_t rn = zsock_sendto(sock->fd, buf, 20u + len, 0, (struct sockaddr *)&sin,
+					  sizeof(sin));
+		if (rn < 0)
+			return zephyr_errno_to_ove(errno);
+		if (sent)
+			*sent = (rn >= 20) ? (size_t)(rn - 20) : 0; /* report ICMP bytes sent */
+		return OVE_OK;
+	}
+
 	ssize_t n = zsock_sendto(sock->fd, data, len, 0, (struct sockaddr *)&sin, sizeof(sin));
 	if (n < 0)
 		return zephyr_errno_to_ove(errno);
