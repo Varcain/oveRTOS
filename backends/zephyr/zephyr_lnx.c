@@ -35,8 +35,11 @@
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
-#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
+#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#endif
 
 /* The program-image regions live in a NOLOAD external-RAM linker region: RAM-resident but ZERO
  * flash cost — Zephyr's app_smem is a *loaded* section, so a K_APP_BMEM array this big would store
@@ -71,6 +74,22 @@ static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE] Z_GENERIC_SECTION(
  * lives here so ld.so can mmap libc.so (~500K), far past the in-region arena. */
 static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] Z_GENERIC_SECTION(
 	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_DYN_POOL_ALIGN);
+
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* Staging buffer for a fetched remote ELF image (netfs exec-off-mount): the 9P client fills it from
+ * the mount, then the loader COPIES its text into the program region. Lives in the same external-RAM
+ * NOLOAD region as the program pools (SDRAM1 on the real F746 / PSRAM on the an521) → RAM-resident,
+ * zero flash cost. Sized for a small/medium FDPIC binary: only the exec's OWN text+data is fetched;
+ * its libc.so/ld.so stay XIP from the LOCAL rootfs cpio. Mirrors the FreeRTOS/NuttX g_netfs_exec_stage. */
+static uint8_t g_netfs_exec_stage[256u * 1024u] Z_GENERIC_SECTION(
+	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(32);
+uint8_t *lxp_netfs_exec_stage(size_t *cap)
+{
+	if (cap)
+		*cap = sizeof(g_netfs_exec_stage);
+	return g_netfs_exec_stage;
+}
+#endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch)
@@ -241,6 +260,25 @@ static int setup_domain(int ridx, const lxp_flat_t *prog)
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_text[ridx]);
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_data[ridx]);
 	}
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	if (prog->region_exec) {
+		/* Remote/RAM exec (a program launched off the 9P mount): the loader COPIED the exec's own
+		 * text into the region head (copy_text), so the region must be EXECUTABLE — map it RWX, a
+		 * per-process, MPU-contained W^X relaxation (needs CONFIG_EXECUTE_XOR_WRITE=n, which the
+		 * prj.conf emits for a NETFS_EXEC build). The RW data block + loadmap + descriptor pool +
+		 * stack share the region after the text; the dyn_pool — ld.so's mmaps of the LOCAL libc.so
+		 * (still XIP from the cpio) — stays plain RW. The RWX attr is WBWA-cacheable non-shareable,
+		 * the SAME cache attributes as the coordinator's SDRAM1 view, so the guest stays coherent
+		 * (only the XN bit differs from OVE_MEM_PART_RW_CACHE). Mirrors FreeRTOS g_region_exec /
+		 * NuttX f0d1720. */
+		g_text[ridx].start = (uintptr_t)region;
+		g_text[ridx].size = LXP_PROG_REGION_SIZE;
+		g_text[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
+		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
+		g_data[ridx].size = LXP_DYN_POOL_SIZE;
+		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
+	} else
+#endif
 	if (prog->is_dynamic) {
 		/* Dynamic FDPIC: ALL code (exec + ld.so + libc.so text) is shared IN-PLACE from the
 		 * cpio's executable .text subsection (.text.ove_rootfs — user-RX, already covered by the

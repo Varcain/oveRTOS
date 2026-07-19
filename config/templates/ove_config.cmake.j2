@@ -348,7 +348,15 @@ add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section("SDRAM1")))]==])
 # child either vfork-fails (ENOMEM) or falls back to SHARING the parent region, corrupting it
 # (SIGSEGV). 10 regions clear that. Each region = 256K image + 512K dyn pool = 768K of SDRAM, so
 # 10 fit the 8 MiB SDRAM1 (10 x 768K = 7.5 MiB, leaving room for the framebuffer/bounce).
+{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
+# netfs exec-off-mount adds a 256K g_netfs_exec_stage buffer + the 9P client's ~24K .bss to SDRAM1,
+# which overflows it at 10 regions. Drop to 9 (frees one 768K region) to fund the stage; the netfs
+# milestone exercises browse/read/exec from shallow process trees (shell + one child), so 9 is ample
+# — and inetd+dropbear+shell+a 2-3 stage pipe still fits for SSH-driven netfs.
+add_compile_definitions(LXP_NREG=9)
+{% else %}
 add_compile_definitions(LXP_NREG=10)
+{% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # STM32F746: bigger pipe pool for SSH pipelines, relocated to external SDRAM.
