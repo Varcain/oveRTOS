@@ -78,33 +78,12 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_arena.c
     # Module loader (platform-independent)
     ${OVE_ROOT}/loader/ove_loader.c
-    # The lxp module's own vendored arena + loader (used by the module sources).
-    ${OVE_ROOT}/modules/lxp/src/lxp_arena.c
-    ${OVE_ROOT}/modules/lxp/src/lxp_loader.c
-    # Linux personality syscall dispatch (platform-independent)
-    ${OVE_ROOT}/modules/lxp/src/lxp_syscall.c
-    # Syscall-core subsystems extracted out of lxp_syscall.c (path resolution + rootfs
-    # lookup, the pipe ring, the writable-VFS node store, synthetic /proc generation).
-    ${OVE_ROOT}/modules/lxp/src/fs/lxp_path.c
-    ${OVE_ROOT}/modules/lxp/src/fs/lxp_pipe.c
-    ${OVE_ROOT}/modules/lxp/src/fs/lxp_tmpfs.c
-    ${OVE_ROOT}/modules/lxp/src/proc/lxp_procfs.c
-    # Linux personality /dev character-device core (CONFIG_OVE_LINUX_DEV)
-    ${OVE_ROOT}/modules/lxp/src/dev/lxp_dev.c
-    # Linux personality socket core (CONFIG_OVE_LINUX_NET)
-    ${OVE_ROOT}/modules/lxp/src/net/lxp_net.c
-    # Host adapter for the handle-based net-ops port (owns socket storage, bridges
-    # to ove_net = posix_net.c here; statically sets g_ove_lnx_net_ops).
+    # Host adapter for the handle-based lxp net-ops port (owns socket storage,
+    # bridges to ove_net = posix_net.c here; statically sets g_lxp_net_ops). The
+    # lxp module itself is tested in isolation in the lxp repo (lxp/tests, its own
+    # POSIX port); the oveRTOS host test covers only this consumer-side adapter
+    # (suites/test_lxp_adapter.c), so no lxp module sources are compiled here.
     ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
-    # Linux personality remote-fs core (CONFIG_OVE_LINUX_NETFS)
-    ${OVE_ROOT}/modules/lxp/src/netfs/lxp_netfs.c
-    # Linux personality pseudo-terminal core (CONFIG_OVE_LINUX_PTY)
-    ${OVE_ROOT}/modules/lxp/src/pty/lxp_pty.c
-    # Host stubs for run-loop hooks (ove_lnx_guest_flush) the net/pty layers call
-    # but that live in the un-linked coordinator (modules/lxp/src/lxp_run.c).
-    ${STUB_DIR}/stub_lnx_run.c
-    # CPU/process snapshot for ps/top (read by the /proc generator; no RTOS deps)
-    ${OVE_ROOT}/modules/lxp/src/lxp_stats.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
     # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
     ${OVE_ROOT}/backends/common/ove_heap_lock.c
@@ -196,10 +175,8 @@ function(ove_add_stub_variant name)
     )
     target_include_directories(${name} PRIVATE
         ${OVE_INCLUDE}
+        # lxp public headers — the adapter + test_lxp_adapter.c include lxp/lxp_net_ops.h.
         ${OVE_ROOT}/modules/lxp/include
-        # src on the path so the extracted src/fs + src/proc TUs resolve their
-        # src-relative headers (e.g. #include "fs/lxp_pipe.h"), as the module builds itself.
-        ${OVE_ROOT}/modules/lxp/src
         ${OVE_ROOT}/backends/common
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${POSIX_CORE_DIR}/include
@@ -212,20 +189,10 @@ function(ove_add_stub_variant name)
     # tests/ove_config.h for why this is per-target rather than global.
     target_compile_definitions(${name} PRIVATE
         CONFIG_OVE_NET=1
+        # CONFIG_OVE_LINUX_NET gates the lxp net adapter (backends/common/lxp_ove_adapter.c),
+        # the one lxp-touching TU the host test compiles. The lxp module sources + their
+        # LXP_ENABLE_* gates live in the lxp repo's own test build now, not here.
         CONFIG_OVE_LINUX_NET=1
-        CONFIG_OVE_LINUX_NETFS=1
-        CONFIG_OVE_LINUX_NETFS_EXEC=1
-        CONFIG_OVE_LINUX_PTY=1
-        # lxp module feature gates. These MUST be compile-defs (the module includes
-        # lxp_config.h, not tests/ove_config.h), and the module gates with
-        # #if defined(LXP_ENABLE_X) so their mere presence enables the subsystem.
-        LXP_ENABLE_LINUX=1
-        LXP_ENABLE_LOADER=1
-        LXP_ENABLE_DEV=1
-        LXP_ENABLE_NET=1
-        LXP_ENABLE_NETFS=1
-        LXP_ENABLE_NETFS_EXEC=1
-        LXP_ENABLE_PTY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1
