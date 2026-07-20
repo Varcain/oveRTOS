@@ -86,6 +86,9 @@ static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE] __attribute__((aligned(3
 
 ETH_HandleTypeDef heth;
 
+/* Fixed fallback MAC. With CONFIG_OVE_NET_MAC_FROM_UID (default y) eth_mac_init
+ * overwrites this with a per-chip, locally-administered address derived from the
+ * STM32 UID, so two boards on one LAN cannot collide on this address. */
 static uint8_t MACAddr[6] = {0x02, 0x00, 0x00, 0xDE, 0xAD, 0x01};
 
 /* ── HAL Rx callbacks ────────────────────────────────────────── */
@@ -135,9 +138,34 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t 
 
 /* ── MAC init ────────────────────────────────────────────────── */
 
+#if defined(CONFIG_OVE_NET_MAC_FROM_UID)
+/* Derive a per-chip, locally-administered unicast MAC from the STM32 96-bit
+ * unique device ID (0x1FF0F420) so two boards on one LAN cannot collide on the
+ * fixed fallback address. The UID is globally unique per chip; take the
+ * high-entropy low bytes of word 0 (wafer X/Y + lot) plus a fold of all three
+ * words, and set the locally-administered bit (0x02) with the multicast bit
+ * clear. Mirrors the NuttX STM32 ethmac driver, which derives its MAC the same
+ * way (NuttX/Zephyr already do this natively; only this lwIP driver was fixed). */
+static void eth_derive_mac_from_uid(uint8_t mac[6])
+{
+	const volatile uint32_t *uid = (const volatile uint32_t *)0x1FF0F420u;
+	uint32_t w0 = uid[0], w1 = uid[1], w2 = uid[2];
+	uint32_t h = w0 ^ w1 ^ w2;
+	mac[0] = 0x02; /* locally administered, unicast */
+	mac[1] = (uint8_t)(w0 >> 0);
+	mac[2] = (uint8_t)(w0 >> 8);
+	mac[3] = (uint8_t)(h >> 8);
+	mac[4] = (uint8_t)(h >> 16);
+	mac[5] = (uint8_t)(h >> 24);
+}
+#endif
+
 static int eth_mac_init(void)
 {
 	heth.Instance = ETH;
+#if defined(CONFIG_OVE_NET_MAC_FROM_UID)
+	eth_derive_mac_from_uid(MACAddr);
+#endif
 	heth.Init.MACAddr = MACAddr;
 	heth.Init.MediaInterface = HAL_ETH_RMII_MODE;
 	heth.Init.TxDesc = DMATxDscrTab;
@@ -290,13 +318,18 @@ err_t ethernetif_init(struct netif *netif)
 	netif->output = etharp_output;
 	netif->linkoutput = low_level_output;
 
+	/* eth_mac_init derives MACAddr from the chip UID (CONFIG_OVE_NET_MAC_FROM_UID),
+	 * so it must run BEFORE MACAddr is copied into netif->hwaddr below — otherwise
+	 * lwIP advertises the stale fallback MAC while the HAL RX filter uses the derived
+	 * one, and that mismatch drops all inbound unicast. (Harmless when MACAddr was a
+	 * compile-time constant; the runtime derivation makes the ordering matter.) */
+	if (eth_mac_init() != 0)
+		return ERR_IF;
+
 	netif->hwaddr_len = ETH_HWADDR_LEN;
 	memcpy(netif->hwaddr, MACAddr, ETH_HWADDR_LEN);
 	netif->mtu = 1500;
 	netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
-
-	if (eth_mac_init() != 0)
-		return ERR_IF;
 
 	HAL_ETH_Start(&heth);
 

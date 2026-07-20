@@ -556,6 +556,18 @@ config OVE_NET
       its native TCP/IP stack (POSIX sockets, lwIP, Zephyr net,
       NuttX sockets).
 
+config OVE_NET_MAC_FROM_UID
+    bool "Derive the Ethernet MAC from the STM32 chip UID"
+    default y
+    depends on OVE_NET
+    help
+      Derive a per-chip, locally-administered unicast MAC address from
+      the STM32 96-bit unique device ID instead of a fixed compiled-in
+      address, so two boards on one LAN do not collide. Honoured by the
+      FreeRTOS STM32F7 lwIP driver; NuttX and Zephyr already derive a
+      unique MAC from the UID / DT natively. Disable to keep a
+      predictable fixed MAC (e.g. for a DHCP reservation).
+
 config OVE_ASYNC_NET
     bool "Async networking substrate (embassy-net)"
     default n
