@@ -66,7 +66,7 @@ config OVE_BUILDROOT
 
 choice OVE_LINUX_GUEST_FLOAT_ABI
     prompt "Linux guest floating-point calling convention"
-    depends on OVE_LINUX && (OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX)
+    depends on OVE_LINUX && (OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX || OVE_RTOS_ZEPHYR)
     default OVE_LINUX_GUEST_FLOAT_ABI_SOFT
     help
       Select the ABI used by programs inside the Linux personality. This is
@@ -87,8 +87,9 @@ config OVE_LINUX_GUEST_FLOAT_ABI_HARD
       Use the Cortex-M7 FPv5-SP hard-float FDPIC Buildroot userspace from
       "output-hardfloat" and preserve s0-s31 plus FPSCR across every deferred
       syscall, signal and recreated guest task. Supported by the FreeRTOS seam
-      (STM32F746G-DISCO, MPS2-AN500) and the NuttX seam (STM32F746G-DISCO, via
-      CONFIG_ARCH_FPU + regs[] VFP capture).
+      (STM32F746G-DISCO, MPS2-AN500), the NuttX seam (STM32F746G-DISCO, via
+      CONFIG_ARCH_FPU + regs[] VFP capture) and the Zephyr seam (STM32F746G-DISCO,
+      via CONFIG_FPU_SHARING + extended-ESF VFP capture).
 endchoice
 
 config OVE_LINUX_GUEST_FP_SELFTEST
