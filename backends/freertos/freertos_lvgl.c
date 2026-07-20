@@ -61,7 +61,7 @@ void ove_lvgl_lock(void)
 {
 	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
 		return;
-	ove_mutex_lock(lvgl_mutex, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(lvgl_mutex);
 }
 
 void ove_lvgl_unlock(void)
