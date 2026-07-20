@@ -54,6 +54,25 @@ static void d_fb_present(void)
 }
 #endif /* CONFIG_OVE_LINUX_DEV_FB */
 
+#if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
+#include "ove/hal/hal_dma2d.h"
+/* Bridge the validated lxp DMA2D op to the board HAL (field copy: the lxp op and
+ * ove desc are the same layout, but lxp types must not leak into the ove HAL). */
+static int d_dma2d_submit(const lxp_dma2d_op_t *op)
+{
+	ove_dma2d_desc_t d = {
+		.mode = op->mode, .w = op->w, .h = op->h,
+		.out_addr = op->out_addr, .out_offset = op->out_offset,
+		.out_cf = op->out_cf, .out_color = op->out_color,
+		.fg_addr = op->fg_addr, .fg_offset = op->fg_offset, .fg_cf = op->fg_cf,
+		.fg_color = op->fg_color, .fg_alpha_mode = op->fg_alpha_mode, .fg_alpha = op->fg_alpha,
+		.bg_addr = op->bg_addr, .bg_offset = op->bg_offset, .bg_cf = op->bg_cf,
+		.bg_color = op->bg_color, .bg_alpha_mode = op->bg_alpha_mode, .bg_alpha = op->bg_alpha,
+	};
+	return ove_hal_dma2d_submit(&d);
+}
+#endif /* CONFIG_OVE_LINUX_DEV_DMA2D */
+
 #if defined(CONFIG_OVE_FT5336)
 #include "ove/ft5336.h"
 static int d_touch_init(void)
@@ -73,6 +92,9 @@ static const lxp_display_ops_t g_ove_adapter_disp_ops = {
 	.fb_get_buffer = d_fb_get_buffer,
 	.fb_flush = d_fb_flush,
 	.fb_present = d_fb_present,
+#endif
+#if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
+	.dma2d_submit = d_dma2d_submit,
 #endif
 #if defined(CONFIG_OVE_FT5336)
 	.touch_init = d_touch_init,
