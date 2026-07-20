@@ -17,6 +17,7 @@ defconfig:
   # backend links weak "no display" HAL stubs, so /dev/fb0 is simply absent there.
   - CONFIG_OVE_LINUX_DEV=y
   - CONFIG_OVE_LINUX_DEV_FB=y
+  - CONFIG_OVE_LINUX_DEV_DMA2D=y
   # /dev/input/event0 evdev touch + the QEMU synthetic injector (FT5336 is enabled
   # per-board for real STM32F746 hardware, since it needs an i2c HAL backend).
   - CONFIG_OVE_LINUX_DEV_INPUT=y

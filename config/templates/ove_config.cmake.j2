@@ -443,6 +443,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_disp_adapter
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_fb.c")
 {% endif %}
+{% if config.get("CONFIG_OVE_LINUX_DEV_DMA2D") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_dma2d.c")
+# Weak ove_hal_dma2d fallback (a board with Chrom-ART strong-overrides it).
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_hal_dma2d.c")
+{% endif %}
 {% if config.get("CONFIG_OVE_LINUX_DEV_INPUT") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_input.c")
 {% endif %}
