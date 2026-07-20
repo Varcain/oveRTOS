@@ -248,6 +248,16 @@ config OVE_LINUX_DEV_FB
       Expose the OVE_FB framebuffer as /dev/fb0 (FBIOGET_*SCREENINFO + pwrite
       scanlines), so a stock LVGL fbdev program renders under the personality.
 
+config OVE_LINUX_DEV_DMA2D
+    bool "Linux personality: /dev/dma2d 2D accelerator (Chrom-ART)"
+    default n
+    depends on OVE_LINUX_DEV_FB
+    help
+      Expose the STM32 DMA2D (Chrom-ART) 2D accelerator as /dev/dma2d so a guest
+      LVGL program can offload fill/blit/blend to hardware, bypassing the tiny M7
+      D-cache. The board must provide ove_hal_dma2d_* (drivers/.../dma2d_port);
+      without it the device returns an error and the guest renders in software.
+
 config OVE_LINUX_DEV_INPUT
     bool "Linux personality: /dev/input/event0 evdev touch node"
     default n
