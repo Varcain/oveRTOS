@@ -78,7 +78,8 @@ int ethernetif_input(struct netif *netif)
 #if defined(CONFIG_OVE_LINUX_NET)
 /* Wake the Linux personality's socket coordinator the instant frames land, so a parked
  * recv/connect/accept retries immediately instead of on its ≤5 ms tick. Defined by the run
- * loop; declared locally so this net backend need not pull in a personality header. */
+ * loop; canonical declaration in lxp/lxp_net.h — mirrored locally so this lwIP net backend
+ * need not pull the module's syscall surface (lxp_net.h -> lxp_syscall.h) in for one prototype. */
 void lxp_sock_kick(void);
 #endif
 
