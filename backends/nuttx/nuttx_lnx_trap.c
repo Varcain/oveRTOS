@@ -487,10 +487,12 @@ static void nuttx_sleep_ms(unsigned ms)
 
 /* Guest entropy source (lxp_os_ops_t.random_fill). WITHOUT this op the module's exec setup cannot
  * fill AT_RANDOM (the 16-byte stack-canary seed) and REFUSES to launch the process — so a missing
- * random_fill silently breaks every guest launch. Try the kernel getrandom() first; if no entropy
- * source is configured (CONFIG_DEV_URANDOM / CRYPTO_RANDOM_POOL) it returns short/-1, so fall back
- * to a monotonic-clock-seeded xorshift PRNG. AT_RANDOM tolerates a weak seed (the guest is
- * MPU-isolated regardless), and this keeps launch from failing. Runs on the coordinator thread. */
+ * random_fill silently breaks every guest launch. getrandom() reads /dev/urandom, which the board
+ * config backs with the STM32 hardware TRNG (CONFIG_STM32F7_RNG + CONFIG_DEV_URANDOM_ARCH), so this
+ * normally returns real hardware entropy. The monotonic-clock-seeded xorshift below is a last-resort
+ * fallback for the (now unexpected) case that getrandom() fails — kept so a transient RNG fault
+ * cannot block every guest launch (AT_RANDOM tolerates a weak seed; the guest is MPU-isolated
+ * regardless). Runs on the coordinator thread. */
 static int nuttx_random_fill(void *buf, size_t len)
 {
 	if (getrandom(buf, len, 0) == (ssize_t)len)
