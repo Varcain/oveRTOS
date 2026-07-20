@@ -45,6 +45,11 @@ int ove_hal_dma2d_init(void);
  * own any cache coherency). OVE_OK / OVE_ERR_*. */
 int ove_hal_dma2d_submit(const ove_dma2d_desc_t *d);
 
+/* Coordinator-side proof: HW-fill a scratch rect and read it back (register path
+ * + coherency). OVE_OK on success; OVE_ERR_NOT_SUPPORTED when the board has only
+ * the weak fallback (no DMA2D backend yet). */
+int ove_hal_dma2d_selftest(void);
+
 #ifdef __cplusplus
 }
 #endif

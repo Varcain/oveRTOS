@@ -70,6 +70,8 @@ endif()
 # Linux-personality framebuffer backend (/dev/fb0) over the on-board LTDC panel.
 if(OVE_FB)
     ove_add_board_sources(src/fb_port.c)
+    # DMA2D backend (body gated on CONFIG_OVE_LINUX_DEV_DMA2D; empty TU otherwise).
+    ove_add_board_sources(${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_dma2d.c)
 endif()
 
 if(OVE_NET)
