@@ -266,6 +266,22 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	f.r[14] = regs[REG_R14];
 	f.r[15] = regs[REG_PC];
 	f.xpsr = regs[REG_XPSR];
+#if LXP_ENABLE_FPU_CONTEXT
+	/* Hard-float guest: carry its full VFP state through the dispatch so the shared core can
+	 * preserve it across a parked/recreated syscall. CONFIG_ARCH_FPU makes NuttX save the whole
+	 * s0-s31 + FPSCR into regs[] on exception entry (s0-s15/FPSCR in the HW frame, s16-s31 in the
+	 * SW area), so this is a plain copy — no lazy-stack force like the FreeRTOS seam needs. */
+	struct lxp_fp_context fpctx;
+	f.fp = &fpctx;
+	for (int i = 0; i < 16; i++)
+		fpctx.s[i] = regs[REG_S0 + i];
+	for (int i = 0; i < 16; i++)
+		fpctx.s[16 + i] = regs[REG_S16 + i];
+	fpctx.fpscr = regs[REG_FPSCR];
+	fpctx.active = 1;
+#else
+	f.fp = NULL;
+#endif
 
 	lxp_dispatch(&f, &g_lxp_proc[sidx]);
 
@@ -290,6 +306,14 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	regs[REG_R14] = f.r[14];
 	regs[REG_PC] = f.r[15];
 	regs[REG_XPSR] = f.xpsr;
+#if LXP_ENABLE_FPU_CONTEXT
+	/* Write the (possibly dispatch-modified) VFP state back so the guest resumes with it. */
+	for (int i = 0; i < 16; i++)
+		regs[REG_S0 + i] = fpctx.s[i];
+	for (int i = 0; i < 16; i++)
+		regs[REG_S16 + i] = fpctx.s[16 + i];
+	regs[REG_FPSCR] = fpctx.fpscr;
+#endif
 	return 0;
 }
 
@@ -455,6 +479,16 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 	regs[REG_PC] = ctx->pc & ~1u;
 	regs[REG_XPSR] = ctx->xpsr | (1u << 24); /* flags/IT state + Thumb */
 	regs[REG_R0] = (uint32_t)r0val;
+#if LXP_ENABLE_FPU_CONTEXT
+	/* Restore the parked guest's VFP state into the recreated task's context. */
+	if (ctx->fp.active) {
+		for (int i = 0; i < 16; i++)
+			regs[REG_S0 + i] = ctx->fp.s[i];
+		for (int i = 0; i < 16; i++)
+			regs[REG_S16 + i] = ctx->fp.s[16 + i];
+		regs[REG_FPSCR] = ctx->fp.fpscr;
+	}
+#endif
 	regs[REG_CONTROL] |= CONTROL_NPRIV; /* unprivileged — MPU-restricted (resumed vfork/clone child) */
 	nxtask_activate(&g_tcb[sidx].cmn);
 }
