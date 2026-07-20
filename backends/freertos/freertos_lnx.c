@@ -726,6 +726,17 @@ static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ct
  * background non-cacheable attributes and stay DMA/scanout-safe. */
 static int g_coord_mapped_ridx = -1;
 
+/* The persistent bounded, non-cacheable window over the memory-mapped QUADSPI NOR (0x90000000):
+ * lxp_rootfs_window installs it on the coordinator's one spare configurable region (2 — coord_map
+ * owns 0 and 1). Recorded here so coord_map RE-SPECIFIES region 2 in the TCB on every remap and
+ * never drops it: without this the first coord_map would zero region 2, and the loader's next NOR
+ * read (launch() reading an FDPIC ELF straight from QSPI) would fall through to the oversized
+ * cacheable PRIVDEFENA background — the exact burst/speculation hazard the window prevents. Zero
+ * base = not installed (no QSPI rootfs), so the preserve step below is a no-op. */
+static uint32_t g_qspi_win_base;
+static uint32_t g_qspi_win_len;
+static uint32_t g_qspi_win_par;
+
 static void freertos_coord_map(int ridx)
 {
 	if (ridx < 0 || ridx >= LXP_NREG)
@@ -748,7 +759,10 @@ static void freertos_coord_map(int ridx)
 
 	/* Record in the TCB FIRST so a preemption mid-service restores this same mapping
 	 * (the port reprograms configurable regions from the TCB on switch-in); then write
-	 * the live registers for immediate effect. Region 2 is left unused (zeroed). */
+	 * the live registers for immediate effect. Region 2 carries the persistent QSPI NC
+	 * window (g_qspi_win_*, installed by lxp_rootfs_window) — re-specify it so this remap
+	 * preserves it in the TCB rather than zeroing it (the loader reads the NOR through it).
+	 * Only regions 0 and 1 are written live below, so the live region 2 is untouched. */
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
 	memset(regions, 0, sizeof(regions));
 	regions[0].pvBaseAddress = prog_regions[ridx];
@@ -757,6 +771,11 @@ static void freertos_coord_map(int ridx)
 	regions[1].pvBaseAddress = dyn_pools[ridx];
 	regions[1].ulLengthInBytes = LXP_DYN_POOL_SIZE;
 	regions[1].ulParameters = attr;
+	if (g_qspi_win_base) {
+		regions[2].pvBaseAddress = (void *)(uintptr_t)g_qspi_win_base;
+		regions[2].ulLengthInBytes = g_qspi_win_len;
+		regions[2].ulParameters = g_qspi_win_par;
+	}
 	vTaskAllocateMPURegions(NULL, regions);
 
 	MPU->RBAR = ((uint32_t)(uintptr_t)prog_regions[ridx]) | MPU_RBAR_VALID_Msk |
@@ -942,25 +961,31 @@ const lxp_os_ops_t g_lxp_host_engine = {
  * reprogram so the region is live before the very next QUADSPI read (the cpio parse). */
 void lxp_rootfs_window(const void *base, size_t len)
 {
+	const uint32_t par = portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
+			     (0x08u << portMPU_RASR_TEX_S_C_B_LOCATION); /* TEX=001,S/C/B=0 = Normal NC */
+	/* Configurable region 2 — the coordinator's one spare (coord_map owns 0 and 1). Record the
+	 * window so coord_map re-specifies region 2 on every remap and never drops it. */
+	g_qspi_win_base = (uint32_t)(uintptr_t)base;
+	g_qspi_win_len = (uint32_t)len;
+	g_qspi_win_par = par;
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS] = {0};
-	regions[0].pvBaseAddress = (void *)(uintptr_t)base;
-	regions[0].ulLengthInBytes = (uint32_t)len;
-	regions[0].ulParameters = portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
-				  (0x08u << portMPU_RASR_TEX_S_C_B_LOCATION); /* TEX=001,S/C/B=0 = Normal NC */
-	/* Record it in this task's TCB (configurable region 0) so PendSV re-applies it on every
+	regions[2].pvBaseAddress = (void *)(uintptr_t)base;
+	regions[2].ulLengthInBytes = (uint32_t)len;
+	regions[2].ulParameters = par;
+	/* Record it in this task's TCB (configurable region 2) so PendSV re-applies it on every
 	 * context switch back to the coordinator — persistent for the whole coordinator life. */
 	vTaskAllocateMPURegions(NULL, regions);
 	/* vTaskAllocateMPURegions only updates the TCB; the live MPU is not reprogrammed until the
 	 * next context switch.  The very next thing the coordinator does is read the NOR (the cpio
-	 * parse), which needs the bounded NC view immediately — so program configurable region 0
+	 * parse), which needs the bounded NC view immediately — so program configurable region 2
 	 * into the hardware MPU by hand, with the same encoding the port uses on a switch.  Doing it
 	 * directly (not via taskYIELD) avoids forcing a context switch from here, which for this task
 	 * would be its first switch and trips the FreeRTOS stack-overflow guard. */
 	unsigned l2 = 31u - (unsigned)__builtin_clz((unsigned)len); /* log2(len); len is a power of 2 */
 	volatile uint32_t *const mpu_rbar = (volatile uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (volatile uint32_t *)0xE000EDA0u;
-	*mpu_rbar = (uint32_t)(uintptr_t)base | (1u << 4) /* VALID */ | 0u /* region 0 */;
-	*mpu_rasr = 1u /* ENABLE */ | ((l2 - 1u) << 1) /* SIZE field */ | regions[0].ulParameters;
+	*mpu_rbar = (uint32_t)(uintptr_t)base | (1u << 4) /* VALID */ | 2u /* region 2 */;
+	*mpu_rasr = 1u /* ENABLE */ | ((l2 - 1u) << 1) /* SIZE field */ | par;
 	__asm__ volatile("dsb 0xf\n\tisb 0xf" ::: "memory");
 }
 #endif
