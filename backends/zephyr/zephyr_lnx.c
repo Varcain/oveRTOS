@@ -187,9 +187,31 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 				f.r[10] = callee->v7;
 				f.r[11] = callee->v8;
 				f.r[12] = esf->basic.ip;
-				/* callee->psp points at the HW-stacked frame (8 words); the
-				 * pre-svc SP is +32 (+4 if the stacker 8-byte-aligned). */
-				f.r[13] = callee->psp + 32u +
+				uint32_t fp_bytes = 0;
+#if LXP_ENABLE_FPU_CONTEXT
+				/* Hard-float guest: capture its full VFP state. With CONFIG_FPU_SHARING +
+				 * lazy stacking, an extended exception frame (EXC_RETURN bit 4 == 0) carries
+				 * s0-s15 + FPSCR in esf->fpu; s16-s31 are live in the FPU. Mirror the FreeRTOS
+				 * seam: force the pending lazy store, then read the frame + high registers. */
+				static struct lxp_fp_context fpctx; /* off the deep fault-path stack */
+				memset(&fpctx, 0, sizeof(fpctx));
+				f.fp = &fpctx;
+				if ((exc_return & (1u << 4)) == 0) {
+					__asm__ volatile("vpush {s0}\n vpop {s0}\n" ::: "memory");
+					for (int i = 0; i < 16; i++)
+						fpctx.s[i] = esf->fpu.s[i];
+					__asm__ volatile("vstmia %0, {s16-s31}"
+							 : : "r"(&fpctx.s[16]) : "memory");
+					fpctx.fpscr = esf->fpu.fpscr;
+					fpctx.active = 1;
+					fp_bytes = 18u * sizeof(uint32_t);
+				}
+#else
+				f.fp = NULL;
+#endif
+				/* callee->psp points at the HW-stacked frame (8 words, +18 for an extended
+				 * FP frame); the pre-svc SP is past it (+4 if the stacker 8-byte-aligned). */
+				f.r[13] = callee->psp + 32u + fp_bytes +
 					  ((esf->basic.xpsr & (1u << 9)) ? 4u : 0u);
 				f.r[14] = esf->basic.lr;
 				f.r[15] = esf->basic.pc;
@@ -205,6 +227,15 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 				e->basic.lr = f.r[14];
 				e->basic.pc = f.r[15];
 				e->basic.xpsr = f.xpsr;
+#if LXP_ENABLE_FPU_CONTEXT
+				if ((exc_return & (1u << 4)) == 0) {
+					for (int i = 0; i < 16; i++)
+						e->fpu.s[i] = fpctx.s[i];
+					e->fpu.fpscr = fpctx.fpscr;
+					__asm__ volatile("vldmia %0, {s16-s31}"
+							 : : "r"(&fpctx.s[16]) : "memory");
+				}
+#endif
 				return;
 			}
 		}
@@ -224,13 +255,32 @@ static void arg_tramp(void *sp, void *entry, void *unused)
 	__builtin_unreachable();
 }
 
+#if LXP_ENABLE_FPU_CONTEXT
+/* Restore the guest's VFP state (ctx.fp) before the trampoline hands control back — r1 still holds
+ * ctx here. Offsets pinned so a resume_ctx layout change is a build error, not silent corruption. */
+_Static_assert(offsetof(struct lxp_resume_ctx, fp.s) == 64u, "resume fp.s offset");
+_Static_assert(offsetof(struct lxp_resume_ctx, fp.fpscr) == 192u, "resume fp.fpscr offset");
+_Static_assert(offsetof(struct lxp_resume_ctx, fp.active) == 196u, "resume fp.active offset");
+#define LXP_ZTRAMP_RESTORE_FP                                                       \
+	"ldr r2, [r1, #196]\n" /* ctx.fp.active */                                  \
+	"cmp r2, #0\n"                                                              \
+	"beq 1f\n"                                                                  \
+	"add r2, r1, #64\n" /* &ctx.fp.s[0] */                                      \
+	"vldmia r2, {s0-s31}\n"                                                     \
+	"ldr r2, [r1, #192]\n" /* ctx.fp.fpscr */                                   \
+	"vmsr fpscr, r2\n"                                                          \
+	"1:\n"
+#else
+#define LXP_ZTRAMP_RESTORE_FP ""
+#endif
+
 /* Resume a parked program at a captured context with a chosen r0 (vfork return). */
 static void resume_tramp(void *r0val, void *ctx, void *unused)
 {
 	ARG_UNUSED(unused);
 	register void *rv __asm__("r0") = r0val;
 	register void *c __asm__("r1") = ctx;
-	__asm__ volatile("mov r3, r1\n"
+	__asm__ volatile("mov r3, r1\n" LXP_ZTRAMP_RESTORE_FP
 			 "ldmia r3!, {r4-r11}\n"
 			 "ldr r12, [r3], #4\n"
 			 "ldr lr, [r3], #4\n"
@@ -368,7 +418,8 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 		 * ctx with the FDPIC registers + the entry as the resume PC, stashed below SP in the
 		 * program's own region (where resume_tramp already reads it). r4_11[3..5] = r7/r8/r9
 		 * (all 0 for static FDPIC's r8/r9, which the crt overwrites). r0 = 0 (static fini). */
-		struct lxp_resume_ctx *slot = (struct lxp_resume_ctx *)((uintptr_t)sp - 64u);
+		struct lxp_resume_ctx *slot =
+			(struct lxp_resume_ctx *)((uintptr_t)sp - sizeof(struct lxp_resume_ctx));
 		memset(slot, 0, sizeof(*slot));
 		slot->r4_11[3] = (uint32_t)prog->loadmap;	 /* r7 */
 		slot->r4_11[4] = (uint32_t)prog->interp_loadmap; /* r8 */
@@ -403,7 +454,8 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 	 * once a NON_OVERLAPPING split pushed the count to 7, silently overflowed (CONFIG_
 	 * ASSERT off) and dropped the kernel-text region → IACCVIOL in park_loop after a
 	 * few fork+exec cycles. The slot is dead stack space (below SP) the program reuses. */
-	struct lxp_resume_ctx *slot = (struct lxp_resume_ctx *)((uintptr_t)ctx->sp - 64u);
+	struct lxp_resume_ctx *slot =
+		(struct lxp_resume_ctx *)((uintptr_t)ctx->sp - sizeof(struct lxp_resume_ctx));
 	*slot = *ctx;
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,

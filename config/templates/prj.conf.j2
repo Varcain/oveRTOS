@@ -58,6 +58,13 @@ CONFIG_SYS_HEAP_RUNTIME_STATS=y
 # Hardware FPU (required for hard-float ABI and CMSIS-DSP performance)
 CONFIG_FPU=y
 CONFIG_FP_HARDABI=y
+{% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True %}
+# Hard-float Linux guest: the guest uses the VFP while the coordinator (also hard-float) can
+# preempt it, so give each thread its own FPU context. The Zephyr seam additionally captures the
+# guest's s0-s31 + FPSCR from the extended exception frame at the svc boundary and restores it in
+# the resume trampoline, covering the park/task-recreate case Zephyr's context switch cannot see.
+CONFIG_FPU_SHARING=y
+{% endif %}
 # FPU context adds ~68 bytes per exception frame; size ISR stack accordingly
 CONFIG_ISR_STACK_SIZE=4096
 {% endif %}
