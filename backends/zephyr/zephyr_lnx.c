@@ -100,15 +100,25 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 #define OVE_Z_USART1 0x40011000u
 #define OVE_Z_U1_CR1 (*(volatile uint32_t *)(OVE_Z_USART1 + 0x00u))
 #define OVE_Z_U1_ISR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x1Cu))
+#define OVE_Z_U1_ICR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x20u))
 #define OVE_Z_U1_RDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x24u))
 #define OVE_Z_U1_TDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x28u))
+/* ISR/ICR error bits: FE=b1 NF=b2 ORE=b3. ICR clears them (FECF/NECF/ORECF). */
+#define OVE_Z_U1_RXERR ((1u << 1) | (1u << 2) | (1u << 3))
 void serial_poll_begin(void)
 {
 	OVE_Z_U1_CR1 &= ~(1u << 5); /* clear RXNEIE → polled access owns RX */
 }
 int serial_poll_rx_ready(void)
 {
-	return (OVE_Z_U1_ISR & (1u << 5)) ? 1 : 0; /* RXNE */
+	uint32_t isr = OVE_Z_U1_ISR;
+	/* Clear a latched RX error. An overrun (ORE) — a burst that outpaced the polled
+	 * run loop — blocks RXNE for EVERY subsequent byte on the STM32 USART until cleared,
+	 * so without this the console wedges permanently after one overrun. Clearing ORE/FE/NF
+	 * via ICR lets RX self-heal (dropping only the overrun byte). */
+	if (isr & OVE_Z_U1_RXERR)
+		OVE_Z_U1_ICR = OVE_Z_U1_RXERR;
+	return (isr & (1u << 5)) ? 1 : 0; /* RXNE */
 }
 int serial_poll_getc(void)
 {
