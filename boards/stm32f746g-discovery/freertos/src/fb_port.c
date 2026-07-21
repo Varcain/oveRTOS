@@ -70,9 +70,11 @@ void *ove_hal_fb_buffer(void)
 void ove_hal_fb_present(void)
 {
 	/* No-op: the LTDC continuously scans the SDRAM framebuffer, and the
-	 * personality keeps the D-cache off (stm32f7_init.c gates SCB_EnableDCache on
-	 * !CONFIG_OVE_LINUX), so /dev/fb0 writes land straight in SDRAM and appear on
-	 * the next LTDC refresh with no cache maintenance. */
+	 * framebuffer @0xC0000000 is non-cacheable (bsp MPU region 0 / the Cortex-M7
+	 * background Device map — the guest's cacheable WBWA MPU regions cover only the
+	 * program pool, not the fb), so /dev/fb0 writes land straight in SDRAM and
+	 * appear on the next LTDC refresh with no cache maintenance — even though the
+	 * personality now runs with the D-cache enabled (stm32f7_init.c:72). */
 }
 
 #endif /* CONFIG_OVE_FB */
