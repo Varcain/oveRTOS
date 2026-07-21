@@ -67,6 +67,9 @@ config OVE_BUILDROOT
 choice OVE_LINUX_GUEST_FLOAT_ABI
     prompt "Linux guest floating-point calling convention"
     depends on OVE_LINUX && (OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX || OVE_RTOS_ZEPHYR)
+    # STM32F746G-DISCO defaults to hard-float: the F746 FPv5-SP is present, all 3
+    # seams support it, and it is the validated GUI/personality config there.
+    default OVE_LINUX_GUEST_FLOAT_ABI_HARD if OVE_BOARD_STM32F746G_DISCO
     default OVE_LINUX_GUEST_FLOAT_ABI_SOFT
     help
       Select the ABI used by programs inside the Linux personality. This is
