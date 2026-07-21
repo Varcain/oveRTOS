@@ -173,10 +173,12 @@ static void bsp_qspi_init(void)
  * programs RPIPE=0 (no delay).  With the Linux personality that alone is fine —
  * until the fb backend turns the LTDC on: the LTDC then continuously burst-reads
  * the framebuffer out of the SAME SDRAM, and those bursts shift the bus timing
- * enough that the CPU's read-data capture (the personality runs the program pool
- * UNCACHED — D-cache off — so every heap access is a real SDRAM read) goes
- * marginal at 108 MHz → the guest heap takes bit-flips → a corrupted lv_obj
- * class pointer crashes LVGL's event dispatch.  One read-pipe cycle restores the
+ * enough that the CPU's read-data capture goes marginal at 108 MHz → SDRAM reads
+ * take bit-flips → a corrupted lv_obj class pointer crashes LVGL's event dispatch.
+ * (Originally diagnosed with the guest pool mapped uncached, so every heap access
+ * was a real SDRAM read; the pool is now WBWA-cached — see freertos_lnx.c — but
+ * D-cache line fills are still SDRAM bursts, so the fix stays.)  One read-pipe
+ * cycle restores the
  * capture margin.  Verified on silicon: lvbench renders to completion with the
  * LTDC scanning the panel only with RPIPE>=1 (AC timing + refresh were ruled out
  * — neither relaxing SDTR nor doubling the refresh rate helped).  SDCR is honored
