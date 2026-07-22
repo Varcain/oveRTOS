@@ -39,6 +39,7 @@
 #include <nuttx/irq.h>	     /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
 #include <nuttx/sched.h>     /* nxtask_init, nxtask_activate, struct task_tcb_s */
 #include <nuttx/semaphore.h> /* nxsem_init/post/tickwait — coordinator wakeup */
+#include <nuttx/version.h>
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 #include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
 #endif
@@ -52,6 +53,7 @@
 #include <unistd.h>	 /* usleep, read */
 
 #include "lxp/lxp_seam.h"
+#include "ove/build.h"
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
 #endif
@@ -590,6 +592,15 @@ static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
 	return LXP_OK;
 }
 
+#define LXP_SYSTEM_VERSION                                                    \
+	"NuttX " CONFIG_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" \
+		OVE_BUILD_LXP_REV
+_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
+static const char *lxp_seam_system_version(void)
+{
+	return LXP_SYSTEM_VERSION;
+}
+
 /* Defined at end of file (they reference the MPU / IRQ helpers declared below);
  * the module's lxp_run() invokes them via g_lxp_host_engine.prepare/.teardown. */
 static int nuttx_prepare(void);
@@ -617,6 +628,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
+	.system_version = lxp_seam_system_version,
 	.random_fill = nuttx_random_fill, /* REQUIRED: without it exec() can't seed AT_RANDOM → no launch */
 };
 

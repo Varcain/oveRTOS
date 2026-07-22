@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
+#include "ove/build.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp/lxp_syscall.h" /* lxp_rootfs_window — strong-overridden below for QSPI-XIP */
@@ -888,6 +889,15 @@ static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
 	return LXP_OK;
 }
 
+#define LXP_SYSTEM_VERSION                                                        \
+	"FreeRTOS " tskKERNEL_VERSION_NUMBER " ove-" OVE_BUILD_OVERTOS_REV " lxp-" \
+		OVE_BUILD_LXP_REV
+_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
+static const char *lxp_seam_system_version(void)
+{
+	return LXP_SYSTEM_VERSION;
+}
+
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int freertos_random_fill(void *buf, size_t len)
 {
@@ -943,6 +953,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
+	.system_version = lxp_seam_system_version,
 	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
 	.cache_invalidate = lxp_guest_invalidate,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
