@@ -27,6 +27,12 @@ CONFIG_ARMV7M_DCACHE_WRITETHROUGH=y
 # app's I/O callbacks (including the polled USART1 console); give it headroom over the 2 KB default.
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
+# Physical FT5336 touch controller on I2C3 (PH7=SCL, PH8=SDA). board_init.c
+# registers this controller as /dev/i2c2, matching ove's zero-based instance 2.
+CONFIG_I2C=y
+CONFIG_I2C_DRIVER=y
+CONFIG_STM32F7_I2C3=y
+
 # Fold the 64 KB DTCM into the heap (region 3). NuttX's SRAM-only heap here is tiny (SRAM1 tail +
 # SRAM2 ~= 31 KB) — barely enough for the 16 KB CONFIG_INIT_STACKSIZE init task, so any extra .bss
 # (the personality's socket-storage pool + net-stack buffers) pushes the init-task stack allocation
