@@ -99,3 +99,7 @@ rtos_defconfig:
     # ove-linux-fb.overlay retypes that window RO+X for the guest domain). Programmed separately
     # with OpenOCD stmqspi (flash-qspi.sh). Frees the internal flash for the firmware.
     - CONFIG_OVE_LINUX_ROOTFS_QSPI=y
+    # Zephyr already enables I2C3 + PH7/PH8 in the upstream F746-Disco DTS. Wire
+    # the portable FT5336 client to that controller for /dev/input/event0.
+    - CONFIG_OVE_FT5336=y
+    - CONFIG_OVE_FT5336_I2C_INSTANCE=2

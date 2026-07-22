@@ -24,6 +24,8 @@
 #define FT5336_REG_P1_XL 0x04
 #define FT5336_REG_P1_YH 0x05 /* [3:0] = Y[11:8] */
 #define FT5336_REG_P1_YL 0x06
+#define FT5336_REG_CHIP_ID 0xa8
+#define FT5336_CHIP_ID 0x51
 
 #ifndef CONFIG_OVE_FT5336_I2C_INSTANCE
 #define CONFIG_OVE_FT5336_I2C_INSTANCE 0
@@ -35,13 +37,19 @@ static ove_i2c_t g_ft_i2c;
 
 int ove_ft5336_init(void)
 {
+	uint8_t chip_id;
 	struct ove_i2c_cfg cfg = {
 		.instance = CONFIG_OVE_FT5336_I2C_INSTANCE,
 		.speed = OVE_I2C_SPEED_FAST,
 	};
 	if (ove_i2c_create(&g_ft_i2c, &cfg) != OVE_OK)
 		return OVE_ERR_NOT_FOUND;
-	if (ove_i2c_probe(g_ft_i2c, FT5336_ADDR, I2C_TMO_NS) != OVE_OK)
+	/* An address-only probe is not supported consistently by every RTOS I2C
+	 * backend. Reading and validating the documented ID proves both the bus
+	 * transaction and that the expected controller is present. */
+	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_CHIP_ID, &chip_id,
+			     sizeof(chip_id), I2C_TMO_NS) != OVE_OK ||
+	    chip_id != FT5336_CHIP_ID)
 		return OVE_ERR_NOT_FOUND;
 	return OVE_OK;
 }
@@ -55,10 +63,15 @@ int ove_ft5336_read(int *x, int *y, int *pressed)
 	int touches = buf[0] & 0x0f;
 	if (pressed)
 		*pressed = touches > 0;
+	int raw_x = ((buf[1] & 0x0f) << 8) | buf[2];
+	int raw_y = ((buf[3] & 0x0f) << 8) | buf[4];
+	/* The controller is mounted in portrait orientation on the F746 Discovery.
+	 * Match ST's BSP_TS_Init(TS_SWAP_XY): LCD X comes from raw Y and LCD Y from
+	 * raw X, yielding the panel's native 480x272 landscape coordinates. */
 	if (x)
-		*x = ((buf[1] & 0x0f) << 8) | buf[2];
+		*x = raw_y;
 	if (y)
-		*y = ((buf[3] & 0x0f) << 8) | buf[4];
+		*y = raw_x;
 	return OVE_OK;
 }
 
