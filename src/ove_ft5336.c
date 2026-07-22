@@ -24,8 +24,12 @@
 #define FT5336_REG_P1_XL 0x04
 #define FT5336_REG_P1_YH 0x05 /* [3:0] = Y[11:8] */
 #define FT5336_REG_P1_YL 0x06
+#define FT5336_REG_GMODE 0xa4
 #define FT5336_REG_CHIP_ID 0xa8
 #define FT5336_CHIP_ID 0x51
+#define FT5336_GMODE_POLLING 0x00
+#define FT5336_MAX_TOUCHES 10
+#define FT5336_INVALID_TOUCH_ID 0x0f
 
 #ifndef CONFIG_OVE_FT5336_I2C_INSTANCE
 #define CONFIG_OVE_FT5336_I2C_INSTANCE 0
@@ -34,10 +38,13 @@
 #define I2C_TMO_NS 25000000ull /* 25 ms — touch i2c runs on the coordinator thread */
 
 static ove_i2c_t g_ft_i2c;
+static int g_last_x;
+static int g_last_y;
 
 int ove_ft5336_init(void)
 {
 	uint8_t chip_id;
+	uint8_t mode = FT5336_GMODE_POLLING;
 	struct ove_i2c_cfg cfg = {
 		.instance = CONFIG_OVE_FT5336_I2C_INSTANCE,
 		.speed = OVE_I2C_SPEED_FAST,
@@ -51,27 +58,50 @@ int ove_ft5336_init(void)
 			     sizeof(chip_id), I2C_TMO_NS) != OVE_OK ||
 	    chip_id != FT5336_CHIP_ID)
 		return OVE_ERR_NOT_FOUND;
+	/* Match ST's ft5336_TS_Start(): explicitly disable controller-generated
+	 * interrupts and make fresh coordinates available to our periodic poller. */
+	if (ove_i2c_reg_write(g_ft_i2c, FT5336_ADDR, FT5336_REG_GMODE, &mode, sizeof(mode),
+			      I2C_TMO_NS) != OVE_OK)
+		return OVE_ERR_BUS_ERROR;
 	return OVE_OK;
 }
 
 int ove_ft5336_read(int *x, int *y, int *pressed)
 {
-	uint8_t buf[5]; /* TD_STATUS, P1_XH, P1_XL, P1_YH, P1_YL */
-	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_TD_STATUS, buf, sizeof(buf),
+	uint8_t status;
+	uint8_t buf[4]; /* P1_XH, P1_XL, P1_YH, P1_YL */
+	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_TD_STATUS, &status,
+			     sizeof(status), I2C_TMO_NS) != OVE_OK)
+		return OVE_ERR_BUS_ERROR;
+
+	int touches = status & 0x0f;
+	int is_pressed = 0;
+	/* Match ST's BSP and reject impossible touch counts (including the observed
+	 * all-ones no-data frame) before interpreting the point registers. */
+	if (touches > 0 && touches <= FT5336_MAX_TOUCHES &&
+	    ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_P1_XH, buf, sizeof(buf),
 			     I2C_TMO_NS) != OVE_OK)
 		return OVE_ERR_BUS_ERROR;
-	int touches = buf[0] & 0x0f;
+	if (touches > 0 && touches <= FT5336_MAX_TOUCHES) {
+		int raw_x = ((buf[0] & 0x0f) << 8) | buf[1];
+		int raw_y = ((buf[2] & 0x0f) << 8) | buf[3];
+		int touch_id = buf[2] >> 4;
+		/* The controller is mounted in portrait orientation on the F746
+		 * Discovery. Match ST's BSP_TS_Init(TS_SWAP_XY): LCD X comes from raw
+		 * Y and LCD Y from raw X. Reject invalid IDs/coordinates rather than
+		 * letting the evdev layer clamp a no-data frame to the bottom-right. */
+		if (touch_id != FT5336_INVALID_TOUCH_ID && raw_x < 272 && raw_y < 480) {
+			g_last_x = raw_y;
+			g_last_y = raw_x;
+			is_pressed = 1;
+		}
+	}
 	if (pressed)
-		*pressed = touches > 0;
-	int raw_x = ((buf[1] & 0x0f) << 8) | buf[2];
-	int raw_y = ((buf[3] & 0x0f) << 8) | buf[4];
-	/* The controller is mounted in portrait orientation on the F746 Discovery.
-	 * Match ST's BSP_TS_Init(TS_SWAP_XY): LCD X comes from raw Y and LCD Y from
-	 * raw X, yielding the panel's native 480x272 landscape coordinates. */
+		*pressed = is_pressed;
 	if (x)
-		*x = raw_y;
+		*x = g_last_x;
 	if (y)
-		*y = raw_x;
+		*y = g_last_y;
 	return OVE_OK;
 }
 
