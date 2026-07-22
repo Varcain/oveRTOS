@@ -5,13 +5,13 @@
 # ld.so and shared libraries it runs on) inside the oveRTOS Linux personality.
 #
 # An FDPIC object is loaded at RUNTIME addresses: its loadmap relocates each PT_LOAD segment
-# independently (text is shared in-place from the embedded cpio, in FLASH; RW data lives in the
+# independently (text is shared in place from the board's CPIO backing; RW data lives in the
 # per-process region / PSRAM), so the on-disk ELF's link addresses do not match memory and a plain
 # `file prog.elf` gives wrong line/symbol mappings. Each object therefore needs symbols placed at its
 # own text bias — and a dynamic program has THREE of them (the exec, ld-uClibc.so.0, libc.so.0).
 #
 # The personality publishes the main exec's runtime bases + its _DYNAMIC address in the GDB-readable
-# table `g_ove_lnx_dbg[]` (filled by launch() in backends/common/ove_lnx_run.c). `ove-fdpic-auto`
+# table `g_lxp_dbg[]` (filled by launch() in modules/lxp/src/lxp_run.c). `ove-fdpic-auto`
 # uses that to load the exec, runs to the exec's entry (by when ld.so has linked everything and
 # patched the exec's _DYNAMIC[DT_DEBUG]), then walks the standard SVR4/FDPIC rendezvous
 # (DT_DEBUG -> struct r_debug -> the uClibc `elf_resolve` link-map chain, whose FDPIC `l_addr` is a
@@ -27,8 +27,8 @@
 #     re-mapped there with `-s <sect> <addr>` (see _elf_data_sections) — otherwise a data symbol left
 #     at the text bias (e.g. libc's `_fixed_buffers`) lands in the text address space and shadows
 #     another object's CODE there (it was masking dbgdemo's `main`).
-#   * The text is shared in-place from the cpio in FLASH, where a SOFTWARE breakpoint cannot be
-#     written — use `hbreak` (Cortex-M hardware breakpoint), not `break`.
+#   * Text is shared XIP from the CPIO backing (normally flash/QSPI on hardware), so use `hbreak`
+#     (Cortex-M hardware breakpoint), not a mutating software breakpoint.
 # Requires a Python-enabled, ARM-capable GDB (the distro /usr/bin/gdb 17.x with --enable-targets=all
 # works; the bare arm-none-eabi-gdb toolchain builds ship WITHOUT Python and cannot `source` this).
 #
@@ -36,7 +36,7 @@
 #   (gdb) source config/scripts/ove-fdpic-gdb.py
 #   (gdb) ove-fdpic-auto dbgdemo /path/to/dbgdemo   # wait for the next exec of "dbgdemo", load ALL
 #                                                   # objects (exec + ld.so + libc) with full source
-#   (gdb) hbreak main      # or `hbreak write` to step into libc — HARDWARE bp (text is in flash)
+#   (gdb) hbreak main      # or `hbreak write` to step into libc — safe for shared XIP text
 #   (gdb) continue
 # Add --userspace to drop the firmware/kernel symbols after the walk, so a bare syscall-stub frame
 # resolves as `write ()` (not `?? ()`) — the real-Linux userspace-debugging model (kernel frames then
@@ -138,7 +138,7 @@ def _basename(s):
 
 
 def _nslot():
-    return int(gdb.parse_and_eval("(int)(sizeof(g_ove_lnx_proc)/sizeof(g_ove_lnx_proc[0]))"))
+    return int(gdb.parse_and_eval("(int)(sizeof(g_lxp_proc)/sizeof(g_lxp_proc[0]))"))
 
 
 # ---- FDPIC loadmap → per-object text/data bias ---------------------------------------------------
@@ -258,13 +258,13 @@ _unshadowed = [False]
 
 
 def _unshadow_cpio():
-    """The firmware embeds the rootfs cpio as one big OBJECT symbol (ove_test_rootfs_cpio) in the
-    EXECUTABLE .text — the FDPIC code is shared in-place from it, so it must be executable — and that
-    symbol spans the whole shared-flash region. For a libc/exec address that has no debug-info
+    """When the firmware embeds the rootfs cpio, it is one big OBJECT symbol
+    (ove_test_rootfs_cpio) in executable .text — the FDPIC code is shared in place from it — and that
+    symbol spans the whole shared-XIP region. For a libc/exec address that has no debug-info
     function (a syscall stub like write), GDB's msymbol lookup returns the cpio blob instead of the
     real symbol, so the frame shows `ove_test_rootfs_cpio` not `write`. Strip JUST that one symbol
     from a debug copy of the firmware ELF and reload it — the array data + every other symbol
-    (launch, g_ove_lnx_dbg, ...) stay, so nothing else changes. Afterwards a debug-info function (the
+    (launch, g_lxp_dbg, ...) stay, so nothing else changes. Afterwards a debug-info function (the
     program, libc C functions) resolves fully (name + source); a bare syscall stub, which GDB's
     section-filtered frame lookup can't name once the blob is gone, shows `?? ()` — its real name is
     one `info symbol $pc` away (that global lookup now returns the lib symbol uniquely)."""
@@ -307,12 +307,12 @@ def _unshadow_cpio():
 def _make_firmware_removable():
     """Return the firmware ELF path, re-loaded as a REMOVABLE add-symbol-file objfile.
 
-    `--userspace` mode drops the firmware after the walk so the shared-flash frames resolve like real
+    `--userspace` mode drops the firmware after the walk so the shared-XIP frames resolve like real
     Linux (where the kernel is never a userspace objfile). But GDB's `remove-symbol-file` cannot touch
     the main `file` objfile — only add-symbol-file'd ones. So discard the main file and re-add the SAME
     ELF via add-symbol-file (at its own link addresses — a firmware is fixed-address, so no offset).
     MUST be called BEFORE any FDPIC object is loaded: `symbol-file` with no arg discards ALL symbol
-    tables, so there must be nothing else to lose yet. `launch`/`g_ove_lnx_dbg`/argv/sidx all still
+    tables, so there must be nothing else to lose yet. `launch`/`g_lxp_dbg`/argv/sidx all still
     resolve afterwards (add-symbol-file provides them), so the launch-slot walk is unaffected."""
     objs = gdb.objfiles()
     if not objs or not objs[0].filename:
@@ -330,7 +330,7 @@ def _make_firmware_removable():
 
 def _drop_firmware(fw):
     """Remove the firmware/kernel objfile so only the userspace (exec + ld.so + libs) objects remain —
-    every shared-flash address then belongs to exactly one objfile and frames resolve cleanly, exactly
+    every shared-XIP address then belongs to exactly one objfile and frames resolve cleanly, exactly
     as when debugging userspace on real Linux (gdbserver never loads the kernel). Trade-off: kernel
     symbols are gone, so a backtrace that crosses into the SVC handler shows `?? ()` for the kernel
     frames — re-`add-symbol-file` the firmware to inspect the kernel side again."""
@@ -395,7 +395,7 @@ def _walk_and_load(dyn_addr, exec_comm, exec_elf, sysroot):
             loaded += 1
         lm = l_next
         i += 1
-    print("[ove-fdpic] loaded symbols for %d object(s). Text is flash-resident -> use `hbreak`." % loaded)
+    print("[ove-fdpic] loaded symbols for %d object(s). Text is shared XIP -> use `hbreak`." % loaded)
 
 
 def _arm_dl_debug_state():
@@ -409,12 +409,12 @@ def _arm_dl_debug_state():
 
 # ---- single-object mapping (legacy / no-shared-libs) ---------------------------------------------
 def _map_slot(sidx, elf):
-    d = gdb.parse_and_eval("g_ove_lnx_dbg[%d]" % sidx)
+    d = gdb.parse_and_eval("g_lxp_dbg[%d]" % sidx)
     text = int(d["text_base"]) & 0xFFFFFFFF
     data = int(d["data_base"]) & 0xFFFFFFFF
     _add_symbols(elf, text, data)
     print("[ove-fdpic] slot %d mapped: text bias=0x%08x (RW data base=0x%08x)" % (sidx, text, data))
-    print("[ove-fdpic] text is flash-resident (shared cpio) -> use `hbreak`, not `break`.")
+    print("[ove-fdpic] text is shared XIP -> use `hbreak`, not `break`.")
 
 
 def _find_launch_slot(comm):
@@ -436,7 +436,7 @@ def _find_launch_slot(comm):
                 return int(gdb.parse_and_eval("sidx"))
         return None
     finally:
-        gdb.execute("finish", to_string=True)  # let launch return: g_ove_lnx_dbg[sidx] is filled
+        gdb.execute("finish", to_string=True)  # let launch return: g_lxp_dbg[sidx] is filled
         bp.delete()
 
 
@@ -445,7 +445,7 @@ class OveFdpicAuto(gdb.Command):
     the exec + ld.so + every shared library with full source (walks the FDPIC DT_DEBUG rendezvous).
 
     --userspace (-u): after loading the userspace objects, DROP the firmware/kernel symbols so every
-    shared-flash address belongs to exactly one objfile and frames resolve cleanly (a bare syscall stub
+    shared-XIP address belongs to exactly one objfile and frames resolve cleanly (a bare syscall stub
     shows `write ()`, not `?? ()`) — mirroring how real Linux debugs userspace (the kernel is never a
     userspace objfile). Trade-off: kernel frames become `?? ()`; omit the flag (the default) to keep
     the firmware for cross-boundary/kernel debugging."""
@@ -476,7 +476,7 @@ class OveFdpicAuto(gdb.Command):
         if sidx is None:
             print("[ove-fdpic] never saw %r exec" % comm)
             return
-        d = gdb.parse_and_eval("g_ove_lnx_dbg[%d]" % sidx)
+        d = gdb.parse_and_eval("g_lxp_dbg[%d]" % sidx)
         text = int(d["text_base"]) & 0xFFFFFFFF
         entry = int(d["entry"]) & 0xFFFFFFFF
         dyn = int(d["dynamic"]) & 0xFFFFFFFF
@@ -511,7 +511,7 @@ class OveFdpicMap(gdb.Command):
         comm, elf = arg.split()
         _unshadow_cpio()
         for s in range(_nslot()):
-            p = gdb.parse_and_eval("g_ove_lnx_proc[%d]" % s)
+            p = gdb.parse_and_eval("g_lxp_proc[%d]" % s)
             if not int(p["alive"]):
                 continue
             if _basename(p["comm"].string()) == comm:
