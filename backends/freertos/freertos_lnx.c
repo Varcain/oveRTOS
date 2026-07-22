@@ -10,13 +10,12 @@
  * supplies only the FreeRTOS-specific bits: the svc trap, the program memory,
  * and the task spawn (via the lxp_engine vtable).
  *
- * PHASE 1 (functional parity): the program runs as a normal PRIVILEGED FreeRTOS
- * task on the non-MPU ARM_CM7 port. Its `svc #0` takes the SVCall exception,
- * which this seam OWNS: the board's FreeRTOSConfig.h does NOT alias
+ * On supported personality boards the program runs as a restricted,
+ * UNPRIVILEGED task under the ARM_CM4_MPU port. Its `svc #0` takes the SVCall
+ * exception, which this seam OWNS: the board's FreeRTOSConfig.h does NOT alias
  * vPortSVCHandler->SVC_Handler, so the strong SVC_Handler below is the vector; it
  * dispatches the program's svc (while a run is active) to the personality and
- * forwards FreeRTOS's own start-scheduler svc to vPortSVCHandler. Phase 2 will
- * switch to the ARM_CM4_MPU port for unprivileged + MPU isolation.
+ * forwards FreeRTOS's own start-scheduler svc to vPortSVCHandler.
  */
 
 #include "FreeRTOS.h"
@@ -43,9 +42,8 @@
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
 
 /* Under the ARM_CM4_MPU port the task's privilege rides in the top bit of its priority
- * (portPRIVILEGE_BIT); on the non-MPU port the symbol is undefined → 0 (a no-op, all
- * tasks privileged). PHASE A keeps the Linux program PRIVILEGED so the MPU port is
- * exercised before the isolation change; PHASE B drops the bit + spawns it restricted. */
+ * (portPRIVILEGE_BIT). The restricted-task path below deliberately omits that bit. The
+ * non-MPU fallback defines it as zero only so legacy non-personality builds still compile. */
 #ifndef portPRIVILEGE_BIT
 #define portPRIVILEGE_BIT 0u
 #endif
@@ -57,7 +55,7 @@
  * the linker's .sdram_bss (NOLOAD) section. The board (bsp.c) brings up the FMC controller and
  * makes the SDRAM region executable + Normal non-cacheable (the latter keeps loaded/relocated
  * program code coherent on the M7 with no SCB cache maintenance) before the run loop runs. */
-/* Phase-2 MPU isolation: the program runs UNPRIVILEGED with a per-task MPU region over its
+/* MPU isolation: the program runs UNPRIVILEGED with a per-task MPU region over its
  * program region + dyn_pool, and PMSAv7 requires each region's base aligned to its power-of-2
  * size — so both arrays are size-aligned (not just 32B) within .sdram_bss. */
 static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE]
@@ -65,8 +63,8 @@ static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE]
 static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE]
 	__attribute__((section(".sdram_bss"), aligned(LXP_DYN_POOL_SIZE)));
 #else
-/* Both pools live in PSRAM (0x60000000, 16M; NOLOAD → no flash cost). Phase-2 MPU isolation:
- * the program runs UNPRIVILEGED with a per-task MPU region over its program region + dyn_pool,
+/* Both pools live in PSRAM (0x60000000, 16M; NOLOAD → no flash cost). MPU isolation requires
+ * the program's per-task regions over its program region + dyn_pool,
  * and PMSAv7 requires each region's base to be aligned to its (power-of-2) size — so both arrays
  * are size-aligned. PSRAM also keeps them off the kernel's 4M SRAM (the dynamic FDPIC proc's
  * arena anyway needs room to mmap libc.so ~500K, far past the in-region 96K arena). */

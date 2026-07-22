@@ -102,10 +102,10 @@ tmp      run      opt      linuxrc  init     bin
 
 The RTOS side is built on the **engine-agnostic oveRTOS APIs** (`ove_thread`,
 `ove_time`) and the Linux side on the engine-neutral LXP port; no direct kernel
-calls — which is why the *same*
-`src/app.c` runs on both Zephyr and FreeRTOS (the only engine-specific line is
-the lifecycle: on FreeRTOS the demo runs in a task because the scheduler starts
-inside `ove_run()`, whereas Zephyr's `ove_main()` is already a thread).
+calls — which is why the *same* `src/app.c` runs on Zephyr, FreeRTOS and NuttX
+(the only engine-specific line is the lifecycle: on FreeRTOS the demo creates a
+task because the scheduler starts inside `ove_run()`, whereas Zephyr and NuttX
+already call `ove_main()` with their schedulers running).
 Semihosting is the console transport (an architecture facility, not an RTOS
 primitive).
 
@@ -140,16 +140,16 @@ explicit MPU regions, while the coordinator remains privileged.
 
 **NuttX — `qemu-mps2-an500` (Cortex-M7).** Also reuses the *stock* an500 board.
 NuttX is the hard engine: its own `svc #0` *is* the syscall/context-switch ABI, so
-the seam (`backends/nuttx/nuttx_lnx_trap.c`) `irq_attach`es SVCall and discriminates
-by the program's PC range (in-region → Linux, else chain `arm_svcall`). Each program
-is a real NuttX task created with `nxtask_init` given its own region as the task
-stack, its initial register context set to the uClinux entry state. Two NuttX
-landmines the seam handles: `task_create` makes argv[0] the task *name* (the index
-is argv[1]), and `arm_doirq` treats an SVCall with `r0 == SYS_restore_context (1)`
-as its own command — which a Linux `ioctl(fd=1, …)` collides with — so the handler
-re-asserts `nxsched_self()->xcp.regs`. A `CONFIG_OVE_LINUX` defconfig overlay
-disables the MPU (NuttX's FLAT MPU marks the program's RAM region execute-never).
-Phase 1 is privileged (FLAT); unprivileged + MPU = `CONFIG_BUILD_PROTECTED` follow-up.
+the seam (`backends/nuttx/nuttx_lnx_trap.c`) `irq_attach`es SVCall and identifies a
+Linux syscall by the saved `CONTROL.nPRIV` bit plus the current personality slot;
+only a privileged NuttX SVC may chain to `arm_svcall`. Each program is a real NuttX
+task created with `nxtask_init`, and both launch and resume set `CONTROL.nPRIV` in
+its saved context before activation. The kernel remains `CONFIG_BUILD_FLAT`, but
+that does not make these guest tasks privileged: the seam deliberately keeps
+NuttX's `CONFIG_ARM_MPU` off, programs the hardware MPU itself with `PRIVDEFENA`,
+and uses a scheduler note driver to grant regions 2+3 only to the incoming
+program. MemManage/BusFault/UsageFault handlers contain an illegal guest access as
+SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality.
 
 ## Files
 

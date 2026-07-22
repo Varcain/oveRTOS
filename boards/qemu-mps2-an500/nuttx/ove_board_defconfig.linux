@@ -3,7 +3,7 @@
 # config/ove-cli/ove/rtos_menuconfig.py:_merge_nuttx_layers).
 #
 # The personality loads FDPIC programs and runs them UNPRIVILEGED behind an MPU view the seam
-# programs DIRECTLY via raw registers (backends/nuttx/nuttx_lnx_trap.c: ove_lnx_mpu_init + PRIVDEFENA
+# programs DIRECTLY via raw registers (backends/nuttx/nuttx_lnx_trap.c: lxp_mpu_init + PRIVDEFENA
 # + a MemManage containment handler) — done in plain CONFIG_BUILD_FLAT, no CONFIG_BUILD_PROTECTED. We
 # own the MPU, so NuttX's own arm_mpu.c (whose FLAT setup marks the program RAM execute-never, which
 # would fault the program on its first instruction fetch) must stay OUT of the build.
@@ -14,7 +14,7 @@ CONFIG_ARM_MPU=n
 # default.
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
-# Phase 2 inter-program isolation: a note driver (backends/nuttx/nuttx_lnx_trap.c) hooks EVERY
+# Inter-program isolation: a note driver (backends/nuttx/nuttx_lnx_trap.c) hooks EVERY
 # context switch — including round-robin preemption between same-priority program tasks, which the
 # seam's syscall path cannot see — to reprogram the MPU to the incoming program's OWN region. That
 # hook is the sched_note switch instrumentation, dispatched through the note-driver framework

@@ -22,14 +22,14 @@
 /*
  * NuttX / ARMv7-M (Cortex-M) fault containment — Level 1.
  *
- * oveRTOS drives the NuttX target in the flat build, where every task is
- * privileged and there is no per-task address space. True unprivileged
- * per-task isolation needs an MMU (Cortex-A / NuttX KERNEL build) or another
- * engine's userspace model (Zephyr memory domains, FreeRTOS-MPU restricted
- * tasks); a Cortex-M flat build cannot provide it. What it *can* enforce is
- * fault containment: a no-access MPU region traps a stray load/store into the
- * MemManage exception, which we recover from rather than panicking — the
- * on-target analog of the host backend's PROT_NONE page + SIGSEGV handler.
+ * This generic CONFIG_OVE_PROTECTED backend keeps an ordinary NuttX FLAT task
+ * privileged and provides Level-1 fault recovery around one no-access guard; it
+ * does not implement per-task address spaces. Do not confuse it with the Linux
+ * personality's specialized NuttX seam: that seam sets CONTROL.nPRIV on every
+ * guest and swaps complete per-program MPU views on context switches, still in
+ * BUILD_FLAT. Here, the no-access region traps a stray load/store into MemManage,
+ * which we recover from rather than panicking — the on-target analog of the host
+ * backend's PROT_NONE page + SIGSEGV handler.
  *
  * Mechanism (public NuttX APIs + architectural registers only):
  *  - We program the ARMv7-M MPU and System Control Block directly. NuttX's

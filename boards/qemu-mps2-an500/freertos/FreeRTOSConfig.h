@@ -144,7 +144,7 @@ extern void ove_backend_trace_task_blocking(void);
 #define xPortPendSVHandler PendSV_Handler
 
 #ifdef CONFIG_OVE_LINUX
-/* Phase-2 MPU isolation (ARM_CM4_MPU port): each Linux program runs UNPRIVILEGED in a
+/* Linux guest MPU isolation (ARM_CM4_MPU port): each program runs UNPRIVILEGED in a
  * per-task MPU region set so a stray access faults instead of corrupting the kernel.
  * Values verified against QEMU's an500 Cortex-M7 via the gdbstub: MPU_TYPE.DREGION = 8,
  * CPUID = 0x411fc272 (r1p2 — so the r0p0/r0p1 errata workaround must stay OFF, else
