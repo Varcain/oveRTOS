@@ -281,8 +281,6 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 		fpctx.s[16 + i] = regs[REG_S16 + i];
 	fpctx.fpscr = regs[REG_FPSCR];
 	fpctx.active = 1;
-#else
-	f.fp = NULL;
 #endif
 
 	lxp_dispatch(&f, &g_lxp_proc[sidx]);
