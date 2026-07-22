@@ -16,6 +16,9 @@
 #include <nuttx/config.h>
 #include "ove_config.h" /* CONFIG_OVE_FB (via the app's DEV_FB select) — not in nuttx/config.h */
 #include <stdint.h>
+#if defined(CONFIG_OVE_FT5336)
+#include <nuttx/i2c/i2c_master.h>
+#endif
 #include <nuttx/spi/qspi.h> /* qspi_meminfo_s / qspi_cmdinfo_s + QSPI_* ops + QSPIMEM_/QSPICMD_ */
 
 #include "ove/hal/hal_board.h"
@@ -32,6 +35,19 @@ struct qspi_dev_s;
 extern struct qspi_dev_s *stm32f7_qspi_initialize(int intf);
 extern void stm32f7_qspi_enter_memorymapped(struct qspi_dev_s *dev,
 					    const struct qspi_meminfo_s *meminfo, uint32_t lpto);
+
+#if defined(CONFIG_OVE_FT5336)
+/* NuttX numbers STM32 peripherals from one, while ove's portable I2C instances
+ * are zero-based. Expose physical I2C3 as /dev/i2c2 for nuttx_i2c.c. */
+extern struct i2c_master_s *stm32_i2cbus_initialize(int port);
+
+static void touch_i2c_register(void)
+{
+	struct i2c_master_s *i2c = stm32_i2cbus_initialize(3);
+	if (i2c != NULL)
+		(void)i2c_register(i2c, 2);
+}
+#endif
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 /* Bring the N25Q128A up in memory-mapped QUAD-read mode at 0x90000000, matching the
@@ -154,6 +170,9 @@ void ove_hal_fb_present(void)
 int ove_hal_board_init(void)
 {
 	sdram_rpipe_fix();
+#if defined(CONFIG_OVE_FT5336)
+	touch_i2c_register();
+#endif
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	qspi_rootfs_memmap();
 #endif

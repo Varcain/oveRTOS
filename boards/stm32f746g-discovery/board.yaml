@@ -91,6 +91,10 @@ rtos_defconfig:
     # text.
     - CONFIG_OVE_LINUX_ROOTFS_QSPI=y
     - CONFIG_OVE_BOARD=y
+    # NuttX board_init registers physical I2C3 as the portable instance 2
+    # character device (/dev/i2c2) used by the shared FT5336 client.
+    - CONFIG_OVE_FT5336=y
+    - CONFIG_OVE_FT5336_I2C_INSTANCE=2
   zephyr:
     # Zephyr runs the program UNPRIVILEGED in per-task MPU domains (K_USER). The Zephyr-side knobs
     # (USERSPACE, the FMC SDRAM memc node + the OVE_PROG_RAM NOLOAD region, USART1 console) live in
