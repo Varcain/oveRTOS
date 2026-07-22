@@ -577,6 +577,19 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	return ove_thread_list((struct ove_thread_info *)o, m, n);
 }
 
+static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
+{
+	struct ove_mem_stats m;
+	int rc = ove_sys_get_mem_stats(&m);
+	if (rc != OVE_OK)
+		return rc;
+	out->total = m.total;
+	out->free = m.free;
+	out->used = m.used;
+	out->peak_used = m.peak_used;
+	return LXP_OK;
+}
+
 /* Defined at end of file (they reference the MPU / IRQ helpers declared below);
  * the module's lxp_run() invokes them via g_lxp_host_engine.prepare/.teardown. */
 static int nuttx_prepare(void);
@@ -603,6 +616,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
+	.mem_stats = lxp_seam_mem_stats,
 	.random_fill = nuttx_random_fill, /* REQUIRED: without it exec() can't seed AT_RANDOM → no launch */
 };
 
