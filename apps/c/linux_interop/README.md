@@ -35,6 +35,65 @@ returns real keystrokes (semihosting `SYS_READC`) and the write callback echoes
 to the console, so **you can type commands** — `ls /`, `echo hi`,
 `cat /etc/hostname`, `pwd`, `echo x > /tmp/f`, … — and `exit` to finish.
 
+## Two-channel host real-time proof (STM32F746G-DISCO)
+
+The hardware build enables a scope-friendly experiment by default. It keeps
+running throughout phase 2, so the same capture can compare an idle shell with
+Linux userspace under display, syscall, and CPU load.
+
+| Scope channel | Arduino pin | STM32 signal | Meaning |
+|---------------|-------------|--------------|---------|
+| CH1 | D3 | PB4 / TIM3_CH1 | 1 kHz hardware reference, 50 us high |
+| CH2 | D4 | PG7 / GPIO | highest-priority host thread executing fixed work |
+
+Connect both probe grounds to a board GND pin. Trigger on the CH1 rising edge,
+start around 10 us/div horizontally, and show at least 1 ms of history when
+checking missed periods. TIM3 raises CH1 in hardware and generates its update
+interrupt at the same deadline. The interrupt signals an oveRTOS event; an
+`OVE_PRIO_CRITICAL` host thread raises CH2 as soon as the selected engine
+schedules it.
+
+The capture has three directly readable quantities:
+
+- CH1 period: timer stability (nominally 1.000 ms).
+- CH1 rising edge to CH2 rising edge: interrupt-to-host-thread dispatch latency.
+- CH2 pulse width: execution time of the same fixed host calculation.
+
+Ignore the first cycle while arming the scope. Then save an idle baseline before
+starting the load. At the guest prompt, use a bounded set of background jobs so
+the personality's process slots are stressed without being exhausted:
+
+```sh
+lvmusic &
+gui=$!
+yes >/dev/null &
+cpu=$!
+while :; do cat /proc/stat /proc/lxp_resources >/dev/null; done &
+sys=$!
+```
+
+Interact with `lvmusic` on the touch panel while capturing persistence or a long
+single-shot acquisition. The GUI drives framebuffer/DMA2D and input paths,
+`yes` keeps a guest runnable, and the loop adds repeated procfs reads plus
+process/syscall churn. Stop the load without rebooting, then capture recovery:
+
+```sh
+kill "$sys" "$cpu" "$gui"
+wait
+```
+
+For each FreeRTOS, NuttX, and Zephyr image, record the maximum CH1-to-CH2 delay,
+whether any CH2 response is absent between adjacent CH1 edges, and the widest
+CH2 pulse. A useful acceptance limit must come from the application's timing
+budget; this demo exposes the worst observed value rather than inventing one.
+The experiment demonstrates that this configured, highest-priority host path
+preempts the personality workload. It is not by itself a proof for every ISR,
+priority, critical section, or peripheral path in a product.
+
+The scope output owns TIM3, PB4, and PG7. Disable
+`CONFIG_OVE_LINUX_RT_SCOPE` in menuconfig when the application needs any of
+those resources.
+
 ## Build & run
 
 ```sh
@@ -158,6 +217,7 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 |------|------|
 | `app.yaml`  | framework app manifest — selects the personality and RTOS modules |
 | `src/app.c` | the demo (`ove_main`): worker, fixed I/O staging, interactive console, and two-phase launch |
+| `src/rt_scope.c` | shared physical scope experiment with thin per-engine IRQ attachment |
 
 The personality core (`modules/lxp`) and the selected engine seam
 (`backends/{freertos,zephyr,nuttx}/*_lnx*.c`) are pulled in by the board and the

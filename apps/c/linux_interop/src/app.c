@@ -56,6 +56,7 @@
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
+#include "rt_scope.h"
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 /* The rootfs.cpio is programmed into the on-board QSPI NOR, memory-mapped at
@@ -880,6 +881,15 @@ static void demo_body(void *arg)
 	/* First line out of the box: identifies the running image against the ELF on
 	 * disk, so a stale target cannot be debugged with the wrong symbols. */
 	sh_write0("[build] " OVE_BUILD_ID "\n");
+
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	if (linux_rt_scope_start() != OVE_OK) {
+		sh_write0("[rt-scope] FAIL: timer/event/thread setup\n");
+		sh_exit(1);
+	}
+	sh_write0("[rt-scope] CH1=D3/PB4 TIM3 1kHz reference; "
+		  "CH2=D4/PG7 critical-thread response\n");
+#endif
 
 #if defined(CONFIG_OVE_WATCHDOG)
 	/* Say why we booted (a watchdog recovery must not look like a spontaneous reboot), then start

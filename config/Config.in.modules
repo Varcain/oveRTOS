@@ -120,6 +120,23 @@ config OVE_LINUX_LATENCY
       Costs one timestamp read per event plus a counter update, and compiles to
       nothing when off. Enable for measurement runs, not for production.
 
+config OVE_LINUX_RT_SCOPE
+    bool "Two-channel host real-time oscilloscope demo"
+    depends on OVE_LINUX && OVE_BOARD_STM32F746G_DISCO
+    default y
+    select OVE_SYNC
+    help
+      Drive a two-channel oscilloscope demonstration on STM32F746G-DISCO.
+      TIM3 generates a 1 kHz reference pulse directly on Arduino D3/PB4.
+      The same timer interrupt wakes an OVE_PRIO_CRITICAL host thread, which
+      emits its response pulse on Arduino D4/PG7 while Linux-personality
+      userspace is under load. The horizontal distance between the rising
+      edges is interrupt-to-thread dispatch latency; response width is a
+      small fixed host workload.
+
+      This option is enabled by default for Linux-personality builds on the
+      board. Disable it for applications that need TIM3, PB4, or PG7.
+
 config OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE
     string "Override Buildroot output subdir (normally empty)"
     depends on OVE_LINUX
