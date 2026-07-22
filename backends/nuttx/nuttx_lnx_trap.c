@@ -6,7 +6,7 @@
  * This file is part of oveRTOS.
  *
  * NuttX seam for the Linux personality. The engine-agnostic run loop, svc
- * dispatch, and signal delivery live in backends/common/lxp_run.c; this file
+ * dispatch, and signal delivery live in modules/lxp/src/lxp_run.c; this file
  * supplies only the NuttX-specific bits: the svc trap, the program memory, and
  * the task spawn (via the lxp_engine vtable).
  *

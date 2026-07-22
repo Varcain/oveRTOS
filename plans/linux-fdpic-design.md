@@ -1,5 +1,8 @@
 # Plan: FDPIC ELF loader for the Linux personality
 
+> Historical design record: FDPIC support has since landed. Statements about missing behavior
+> describe the design-time baseline, not the current personality.
+
 Goal: load **static FDPIC** binaries (ET_DYN ARM ELF, `EF_ARM_FDPIC`) alongside the current
 bFLT loader, so multiple processes can later SHARE one read-only text copy (the NOMMU
 footprint win — today each 512K region duplicates BusyBox's ~324K text). This first cut
@@ -24,9 +27,9 @@ readelf -hld -r m.fdpic     # Type DYN, EF_ARM_FDPIC, PT_LOAD x2, PT_DYNAMIC, th
   text_size, data_base, data_size, bss_size, stack_size }`.
 - `loader/ove_loader.c:654` `ove_loader_load_flat(prog, image, len, region, region_size)` —
   bFLT: single base (text_base==load base), big-endian header, base-add reloc walk.
-- `backends/common/ove_lnx_run.c:326` `launch()` calls `ove_loader_load_flat` — **the format
+- `modules/lxp/src/lxp_run.c` `launch()` calls the loader — **the format
   branch goes here** (magic: 'bFLT' vs 0x7f'ELF').
-- `backends/common/ove_lnx_run.c:328-363`: after load, `rw = region + align16(region_used)`,
+- `modules/lxp/src/lxp_run.c`: after load, `rw = region + align16(region_used)`,
   arena (96K) at `rw`, stack above arena, then `spawn_launch(sidx, ridx, &prog, entry, sp,
   stack_lo)`.
 - Per-engine `spawn_launch` (`zephyr_lnx.c:187`, `freertos_lnx.c:163`, `nuttx_lnx_trap.c:153`):
@@ -65,7 +68,7 @@ text/data/bss/entry accounting so `launch()`'s region/arena/stack math is unchan
 - `spawn_launch`: when `prog->is_fdpic`, set **r9 = prog->got** at entry (extend the per-engine
   `arg_tramp` / reg init to take + set r9). bFLT path leaves r9 as-is.
 - Stack/argv/auxv: FDPIC crt1 may want `AT_BASE`/loadmap aux entries — verify against the real
-  crt1 (`ove_lnx_setup_stack` in `linux/ove_linux_syscall.c:399`).
+  crt1 (`lxp_setup_stack` in `modules/lxp/src/lxp_syscall.c`).
 
 ## Open questions — resolve by inspecting the real binary (once the toolchain builds)
 1. **Static FDPIC layout:** does `-static` give a no-PT_INTERP binary that self-contains its
@@ -88,6 +91,6 @@ data+GOT) → the footprint win.
 ## Files
 - `include/ove/loader.h` — `is_fdpic`/`got` in `ove_flat_t`; `ove_loader_load_fdpic` decl.
 - `loader/ove_loader.c` (or new `loader/ove_fdpic.c`) — the FDPIC loader.
-- `backends/common/ove_lnx_run.c` — format branch in `launch()`; pass r9 to spawn_launch.
-- `backends/common/ove_lnx_run.h` + the 3 seams — `spawn_launch` carries r9; set it at entry.
+- `modules/lxp/src/lxp_run.c` — format branch in `launch()`; pass r9 to spawn_launch.
+- `modules/lxp/src/lxp_run_internal.h` + the 3 seams — `spawn_launch` carries r9; set it at entry.
 - Buildroot `output-fdpic` (BR2_BINFMT_FDPIC) — the FDPIC rootfs (separate from the bFLT build).

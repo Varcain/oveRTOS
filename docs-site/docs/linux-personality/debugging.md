@@ -8,9 +8,10 @@ the `ld.so` and shared libraries it runs on — over the firmware's gdbstub.
 An FDPIC object loads at **runtime** addresses: the loadmap relocates each
 `PT_LOAD` segment independently, so an object has **two** biases (text + data),
 and a dynamic program has three objects (the exec, `ld-uClibc.so.0`,
-`libc.so.0`). The text is shared **in place from flash**. So a plain
+`libc.so.0`). Text is shared **in place from the board's rootfs backing store**.
+On hardware that is normally internal flash or external QSPI NOR. So a plain
 `file prog.elf` gives wrong line/symbol mappings, and a software breakpoint
-cannot be written into flash.
+cannot be written there.
 
 ## Use it
 
@@ -21,19 +22,19 @@ via ST-Link), then:
 (gdb) source config/scripts/ove-fdpic-gdb.py
 (gdb) ove-fdpic-auto dbgdemo /path/to/dbgdemo   # wait for the next exec of "dbgdemo",
                                                 # then load exec + ld.so + libc with source
-(gdb) hbreak main        # HARDWARE breakpoint — the text is in flash
+(gdb) hbreak main        # HARDWARE breakpoint — safe for shared XIP text
 (gdb) continue
 ```
 
 `ove-fdpic-auto` runs until `<comm>` execs, reads the runtime bases the
-personality publishes in `g_ove_lnx_dbg[]`, runs to the exec's entry (by when
+personality publishes in `g_lxp_dbg[]`, runs to the exec's entry (by when
 `ld.so` has linked everything), then walks the standard FDPIC `DT_DEBUG →
 r_debug → link-map` rendezvous and `add-symbol-file`s every loaded object at its
 own text bias. From there, breakpoints, `bt`, `next`, and locals all work.
 
 !!! tip "Two rules"
-    - Use **`hbreak`**, not `break` — guest text is flash-resident (XIP), where a
-      software breakpoint can't be written.
+    - Use **`hbreak`**, not `break` — guest text is shared XIP and is normally
+      flash/QSPI-resident on hardware, where a software breakpoint cannot be written.
     - Use a **Python-enabled, ARM-capable GDB**. The distro `/usr/bin/gdb` 17.x
       (`--enable-targets=all` + FDPIC BFD) works directly; the bare
       `arm-none-eabi-gdb` toolchain ships **without** Python and can't `source`
@@ -51,7 +52,7 @@ in the firmware's `.text`. Add `--userspace`:
 
 After the walk it **drops the firmware/kernel symbols**, mirroring how real Linux
 debugs userspace (the kernel is never a userspace objfile). Then every
-shared-flash address belongs to exactly one objfile and frames resolve cleanly:
+shared-XIP address belongs to exactly one objfile and frames resolve cleanly:
 
 ```
 #0  0x00092848 in write ()

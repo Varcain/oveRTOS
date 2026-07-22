@@ -114,8 +114,8 @@ static void qspi_rootfs_memmap(void)
 /* FMC SDRAM read-pipe delay = 1 (SDCR1 @ 0xA0000140, RPIPE bits [14:13]).  Same fix as
  * FreeRTOS bsp_sdram_fixup: NuttX programs RPIPE=0 in stm32_enablefmc, but at the
  * 108 MHz FMC clock that leaves no read-capture margin — once the LTDC continuously
- * burst-reads the framebuffer out of this SDRAM, the CPU's uncached program-heap reads
- * go marginal and the guest heap takes bit-flips (LVGL crashes).  Nothing re-touches
+ * burst-reads the framebuffer out of this SDRAM, CPU cache-line fills and other guest-pool reads
+ * go marginal and the guest heap takes bit-flips (LVGL crashes). Nothing re-touches
  * SDCR after boot, so one OR sticks. */
 static void sdram_rpipe_fix(void)
 {

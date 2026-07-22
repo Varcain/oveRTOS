@@ -203,7 +203,7 @@ CONFIG_LV_USE_PERF_MONITOR_LOG_MODE=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_LINUX") == True %}
-# Linux personality (Cortex-M33): run a loaded program unprivileged and trap its
+# Linux personality (Cortex-M): run a loaded program unprivileged and trap its
 # svc. CONFIG_USERSPACE gives unprivileged user threads + MPU memory domains;
 # CONFIG_EXTRA_EXCEPTION_INFO populates the callee-saved register the seam reads
 # (r7 = the Linux syscall number) on Armv8-M. THREAD_CUSTOM_DATA backs the
@@ -240,7 +240,7 @@ CONFIG_MAX_THREAD_BYTES=4
 # loop never makes progress (announce_remaining stays pinned) and the SysTick handler spins forever —
 # the guest freezes mid-render. Root-caused on the real STM32F746 via GDB: PC wedged in
 # z_thread_timeout, slice_timeouts.dticks==0, announce_remaining stuck at 101. Latent with the
-# D-cache off; the faster guest exposed it. FreeRTOS/NuttX never timesliced the personality — match.
+# D-cache off; the faster guest exposed it. The coordinator/guest priority model needs no timeslice.
 CONFIG_TIMESLICING=n
 # Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the
 # program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC
@@ -262,21 +262,18 @@ CONFIG_DISK_DRIVERS=n
 # address -> a precise BusFault that masks the real dump). No-op where LOG was already off.
 CONFIG_LOG=n
 {% if get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
-# Real STM32F746 (M7, PMSAv7 — only 8 MPU regions): free one region for the program's memory
-# domain. USERSPACE's static regions (flash, SRAM, SDRAM, QSPI window) leave 3 dynamic; the
-# per-thread stack + supervisor stack guard reserve 2 -> only 1 left for domain partitions, but
-# each program domain needs 2 (text + data) -> k_mem_domain_init faults ("num_parts 2 exceeds max
-# 1"). Dropping the supervisor stack guard reclaims that region. MPU_STACK_GUARD is select-ed by
+# Real STM32F746 (M7, PMSAv7 — only 8 MPU regions): the guest needs three domain partitions
+# (libc TLS + image + dynamic arena) in addition to its K_USER stack. The board-specific static
+# regions leave no room for all three while the supervisor stack guard also owns an MPU slot.
+# Dropping that guard reclaims the required region. MPU_STACK_GUARD is selected by
 # ARM_STACK_PROTECTION (default y if HW_STACK_PROTECTION), so a bare CONFIG_MPU_STACK_GUARD=n is
 # overridden — disable the parent HW_STACK_PROTECTION. The program's OWN overflow protection is
 # intact (a user thread faults out of its domain region); this only drops overflow detection for
-# the trusted framework threads, matching how FreeRTOS/NuttX run on this board. Board-gated so the
-# QEMU an521 (with MPU headroom to spare) keeps its guard.
+# trusted framework threads. Board-gated so the QEMU an521 (with MPU headroom to spare) keeps it.
 CONFIG_HW_STACK_PROTECTION=n
 # With that supervisor stack guard off, an ISR/MSP-stack overflow is SILENT. The personality runs
 # each UNPRIVILEGED program's `svc #0` syscall dispatch in Handler mode on the ISR stack
-# (z_interrupt_stacks) — Zephyr is the only engine that does this (FreeRTOS/NuttX run programs
-# privileged on their own stacks). ove_lnx_syscall's path resolution is deep and uses several
+# (z_interrupt_stacks). lxp_dispatch's path resolution is deep and uses several
 # nested 256-byte path buffers, and with CONFIG_FPU every exception frame is extended (~68 B more).
 # The default 4096 overflows on path-heavy syscalls (an `ls -l` loop resets in ~1 command; lvbench's
 # shallow /dev/fb0 writes survive ~2 runs) -> it corrupts kernel SRAM -> a wild return into
@@ -308,9 +305,9 @@ CONFIG_STM32_MEMMAP=y
 {% endif %}
 # Enable the Cortex-M7 I-cache. Zephyr's stm32f7 soc init calls sys_cache_instr_enable() /
 # sys_cache_data_enable(), but both are no-ops unless CONFIG_CACHE_MANAGEMENT is set — so the M7
-# boots with caches OFF and the guest program (text XIP'd from the embedded cpio in flash) runs
-# fully uncached, ~3.5x slower than the I-cached FreeRTOS/NuttX personalities. Turning cache
-# management on lets the I-cache cover the flash-resident program text.
+# boots with caches OFF and the guest program (text XIP'd from an embedded flash CPIO or QSPI NOR)
+# runs fully uncached, ~3.5x slower than the I-cached FreeRTOS/NuttX personalities. Turning cache
+# management on lets the I-cache cover that XIP program text.
 CONFIG_CACHE_MANAGEMENT=y
 # Enable the D-cache for the Linux personality. The program pool + framebuffer live in FMC SDRAM; the
 # guest maps its pool WBWA-cacheable NON-shareable (OVE_MEM_PART_RW_CACHE), the SAME attribute the

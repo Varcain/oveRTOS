@@ -16,9 +16,10 @@
 };
 
 /*
- * Free MPU region(s) for the program's memory domain. This M7 has only 8 PMSAv7 regions; the Linux
- * program's K_USER domain needs 4 partitions (libc + malloc + text + data), which don't fit
- * alongside the full static set. The build never uses the memory-mapped QSPI window at 0x90000000,
+ * Free an MPU region for the program's memory domain. This M7 has only 8 PMSAv7 regions; the Linux
+ * program needs three domain partitions (libc TLS + image + dynamic arena) plus its K_USER stack.
+ * The STM32 seam deliberately omits Zephyr's unused malloc partition. These do not fit alongside
+ * the full static set and stack guard. The headless build never uses the QSPI window at 0x90000000,
  * whose placeholder memory-region ("QSPI_PLACEHOLDER") costs a static MPU region — delete it (and
  * disable the unused controller) to reclaim the room.
  */

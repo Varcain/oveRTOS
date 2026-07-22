@@ -323,7 +323,8 @@ add_compile_definitions(LXP_ENABLE_{{ feat }}=1)
 {% endif %}
 {% endfor %}
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
-# 256K program regions (matching FreeRTOS/NuttX): the guest text XIPs from the embedded cpio, so the
+# 256K program regions (matching FreeRTOS/NuttX): guest text XIPs from the rootfs CPIO backing
+# (embedded flash on an521/headless builds, QSPI NOR on the STM32 display build), so the
 # region holds only the exec's RW data + stack. 512K wasted ~half; at 8 regions the old 512K made the
 # pools 8x(512K+512K)=8 MiB = the whole SDRAM1, leaving no room for the LTDC framebuffer (link
 # overflow). 8x(256K+512K)=6 MiB leaves 2 MiB for the framebuffer + headroom.
@@ -488,7 +489,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/pty/lxp_pty.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_lnx.c")
-# The Zephyr seam (ove_lnx_run) traps svc #0 by interposing the engine's
+# The Zephyr seam traps lxp_run()'s guest svc #0 by interposing the engine's
 # software-fault handler; the app must add the link option:
 #   target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
 {% elif config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}

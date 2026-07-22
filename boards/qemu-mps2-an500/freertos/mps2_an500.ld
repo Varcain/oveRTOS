@@ -195,9 +195,10 @@ SECTIONS
     PROVIDE(__stack = __StackTop);
 
     /* FreeRTOS-MPU (ARM_CM4_MPU) static-region bounds, referenced by prvSetupMPU().
-     * The unprivileged-flash region spans the WHOLE flash RX so an unprivileged Linux
-     * program executes ld.so/libc/busybox in-place from the .rodata cpio. The privileged
-     * sub-regions are DEGENERATE (start==end at the segment end → a harmless 32 B region):
+     * The unprivileged-flash region spans the whole internal flash RX so guest entry/park
+     * trampolines remain executable. ld.so/libc/busybox XIP from the PSRAM cpio through the
+     * per-task RO+X windows described above. The privileged sub-regions are DEGENERATE
+     * (start==end at the segment end → a harmless 32 B region):
      * isolation comes from the MPU background region (unprivileged access to any unmapped
      * address faults) + the per-task regions, not from privilege-gating the kernel here. */
     __FLASH_segment_start__        = ORIGIN(FLASH);

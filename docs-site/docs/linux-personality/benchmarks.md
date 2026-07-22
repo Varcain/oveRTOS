@@ -15,7 +15,7 @@ harness reads `DWT->CYCCNT` directly, the guest reads `clock_gettime`, which the
 personality backs with the same register — so the figures are directly
 comparable. `lbench_compare.py` pairs them per axis. The B1 compute kernel is
 identical in both builds (cross-checked by a checksum), so its ≈1× ratio on the
-privileged engines confirms the comparison is fair.
+cached FreeRTOS/NuttX guests confirms the comparison is fair.
 
 ## Results (baseline)
 

@@ -53,9 +53,9 @@ void stm32f7_mcu_init(void)
 	 *     (lxp_rootfs_window, backends/freertos/freertos_lnx.c), so the cache never issues a
 	 *     line-fill burst to the memory-mapped QUADSPI (the decisive factor: on silicon an NC
 	 *     bounded region reads the NOR reliably where a cacheable/write-through one does not);
-	 *   - the unprivileged guest keeps a cacheable bounded region (freertos_spawn_common) for
-	 *     fast in-place XIP, and creates no dirty write-back lines (its RW data is non-cacheable
-	 *     SDRAM), so it never triggers the burst-collision path either.
+	 *   - the unprivileged guest keeps a cacheable bounded RO+X region (freertos_spawn_common) for
+	 *     fast in-place XIP; because that QSPI window is read-only it creates no dirty lines. Its
+	 *     separate RW SDRAM pool is WBWA-cacheable and uses the seam's explicit handoff policy.
 	 *
 	 * ETH-DMA COHERENCY (P5 HTTPS/curl) is likewise fixed WHERE IT BELONGS, not by detuning the
 	 * cache: with the D-cache ON the Ethernet DMA's TX path was NOT coherent — the lwIP TX pbuf is

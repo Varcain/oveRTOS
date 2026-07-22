@@ -6,26 +6,17 @@
  * This file is part of oveRTOS.
  *
  * Zephyr seam for the Linux personality. The engine-agnostic run loop, svc
- * dispatch, and signal delivery live in backends/common/lxp_run.c; this file
+ * dispatch, and signal delivery live in modules/lxp/src/lxp_run.c; this file
  * supplies only the Zephyr-specific bits: the svc trap, the program memory + MPU
  * domains, and the task spawn (via the lxp_engine vtable).
  *
- * Each program runs as an UNPRIVILEGED K_USER thread in its own k_mem_domain
- * (program text/data partitions, W^X, + libc/heap), so the privileged run loop
- * (default domain) can always (re)load a region. The program's svc #0 is an
- * unprivileged fault that Zephyr routes to z_do_kernel_oops, which we --wrap.
- *
- * MPU REGION BUDGET (the source of a since-fixed hang): the AN521 PMSAv8 MPU has
- * only 8 regions; 2 are static (kernel) leaving 6 dynamic, and a K_USER thread also
- * needs a stack region. So each program domain may use at most FOUR partitions
- * (libc + malloc + text + data) — a fifth (a dedicated shared partition for the
- * vfork resume ctx), once a NON_OVERLAPPING split bumped the live count past 6,
- * silently overflowed (CONFIG_ASSERT is off in this build) and dropped the
- * kernel-text region, so a parked program took an instruction-access MemManage
- * fault in park_loop after a handful of fork+exec cycles → kernel panic → halt-loop
- * (looked like a hang). The resume ctx now rides in the program's own region just
- * below its resume SP (see zephyr_spawn_resume), keeping the domain at 4 partitions.
- * Found via on-target GDB (reason=K_ERR_ARM_MEM_INSTRUCTION_ACCESS at &park_loop).
+ * Each program runs as an UNPRIVILEGED K_USER thread in its own k_mem_domain, while
+ * the privileged coordinator stays in the default domain and can reload any slot.
+ * The domain is board-specific: AN521/PMSAv8 uses libc + Zephyr malloc + image + arena
+ * partitions; STM32F746/PMSAv7 drops the unused Zephyr-malloc partition and uses libc +
+ * image + arena. Both also consume the K_USER stack region. The resume context stays in
+ * the guest's own image region so it costs no additional MPU partition. The program's
+ * svc #0 is an unprivileged fault routed by Zephyr to z_do_kernel_oops, which we --wrap.
  */
 
 #include <zephyr/kernel.h>
@@ -134,7 +125,8 @@ void serial_poll_putc(char c)
 }
 #endif
 
-/* Per-region MPU domain: program text/data + the libc/heap partitions. */
+/* Per-region MPU domain: guest image + dynamic arena, required libc TLS, and (where the MPU
+ * budget permits) Zephyr's malloc partition. The guest itself uses uClibc malloc. */
 extern struct k_mem_partition z_libc_partition;
 extern struct k_mem_partition z_malloc_partition;
 static struct k_mem_domain g_domains[LXP_NREG];
@@ -218,8 +210,6 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 					fpctx.active = 1;
 					fp_bytes = 18u * sizeof(uint32_t);
 				}
-#else
-				f.fp = NULL;
 #endif
 				/* callee->psp points at the HW-stacked frame (8 words, +18 for an extended
 				 * FP frame); the pre-svc SP is past it (+4 if the stacker 8-byte-aligned). */
@@ -346,8 +336,8 @@ static int setup_domain(int ridx, const lxp_flat_t *prog)
 		 * cpio's executable .text subsection (.text.ove_rootfs — user-RX, already covered by the
 		 * kernel's static .text MPU region the K_USER thread runs trampolines from), so the
 		 * per-process region + arena hold ONLY RW data now. Map them RW — W^X is RESTORED (the
-		 * old RWX relaxation, and CONFIG_EXECUTE_XOR_WRITE=n, are gone). region(RW) + arena(RW) +
-		 * libc/malloc + the K_USER stack = 5 dynamic MPU regions, the same budget as static. */
+		 * old RWX relaxation, and CONFIG_EXECUTE_XOR_WRITE=n, are gone). The board-specific domain
+		 * setup below adds required libc TLS and, on PMSAv8, Zephyr's malloc partition. */
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = LXP_PROG_REGION_SIZE;
 		g_text[ridx].attr = OVE_MEM_PART_RW_CACHE;
@@ -364,9 +354,9 @@ static int setup_domain(int ridx, const lxp_flat_t *prog)
 	}
 	if (!g_dom_inited[ridx]) {
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
-		/* Real STM32F746 (M7, PMSAv7): only 8 MPU regions. After the static set (the board frees
-		 * the guard + the QSPI placeholder — see the board prj.conf/overlay) and the K_USER thread's
-		 * own stack region, exactly 3 domain partitions fit. z_libc_partition is REQUIRED (Zephyr's
+		/* Real STM32F746 (M7, PMSAv7): only 8 MPU regions. After the board-specific static set and
+		 * the K_USER thread's own stack region, exactly 3 domain partitions fit. z_libc_partition is
+		 * REQUIRED: Zephyr's
 		 * z_thread_entry reads the per-thread TLS pointer z_arm_tls_ptr there via __aeabi_read_tp,
 		 * for EVERY thread incl. the program — dropping it faults at entry), but z_malloc_partition
 		 * is NOT: the FDPIC program uses its OWN uClibc malloc inside its region and never touches
@@ -459,13 +449,10 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
 				long r0val)
 {
-	/* Stash the resume ctx in the program's OWN region (user-RW data), just below the
-	 * resume SP, so the unprivileged resume_tramp can read it WITHOUT a dedicated
-	 * shared MPU partition. The AN521 MPU has only 6 dynamic region slots and a K_USER
-	 * program already needs 5 (libc+malloc+text+data+stack); a 6th shared partition,
-	 * once a NON_OVERLAPPING split pushed the count to 7, silently overflowed (CONFIG_
-	 * ASSERT off) and dropped the kernel-text region → IACCVIOL in park_loop after a
-	 * few fork+exec cycles. The slot is dead stack space (below SP) the program reuses. */
+	/* Stash the resume ctx in the program's OWN user-RW region, just below its resume SP, so
+	 * resume_tramp can read it without another MPU partition. AN521 already uses stack plus four
+	 * domain partitions; STM32F746 uses stack plus three. A separate shared partition previously
+	 * overflowed the AN521 dynamic-region budget and dropped executable kernel text. */
 	struct lxp_resume_ctx *slot =
 		(struct lxp_resume_ctx *)((uintptr_t)ctx->sp - sizeof(struct lxp_resume_ctx));
 	*slot = *ctx;

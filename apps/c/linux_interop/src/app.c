@@ -446,15 +446,15 @@ static void on_guest_exit(const lxp_guest_exit_info_t *info)
 	sh_write0(b);
 }
 
-/* ---- rootfs (parsed from the embedded Buildroot CPIO) ---------------------- */
+/* ---- rootfs (parsed from the board-selected Buildroot CPIO backing) -------- */
 #define ROOTFS_MAX_FILES 512
 static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
 static char g_rootfs_names[16 * 1024];
 static int g_rootfs_n;
 
 /* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
- * this must run in a task; on Zephyr ove_main() is already a running thread and
- * calls it inline. ove_main() (below) wires the per-engine lifecycle. */
+ * this must run in a task; Zephyr and NuttX call ove_main() from running scheduler
+ * contexts and execute it inline. ove_main() below wires that lifecycle. */
 #ifdef CONFIG_OVE_RTOS_FREERTOS
 static ove_thread_t g_demo;
 static ove_thread_storage_t g_demo_storage;

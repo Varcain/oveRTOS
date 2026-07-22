@@ -216,13 +216,11 @@ static void MPU_Config_SDRAM(void)
 	mpu.BaseAddress = 0xC0000000;
 	mpu.Size = MPU_REGION_SIZE_8MB;
 	mpu.SubRegionDisable = 0x00;
-	/* Normal, non-cacheable, non-shareable, EXECUTABLE.  Non-cacheable keeps the
-	 * LTDC framebuffer — and, importantly, the Linux personality's loaded and
-	 * relocated program code — coherent with CPU writes without any
-	 * SCB_CleanDCache/InvalidateICache maintenance on the M7.  Execution is
-	 * ENABLED because a NOMMU personality process runs its bFLT/FDPIC code
-	 * in-place from a program region that lives in this SDRAM (.sdram_bss);
-	 * leaving the region XN would MemManage-fault on the program's first fetch. */
+	/* Temporary pre-scheduler view: Normal, non-cacheable, non-shareable. It lets board init and
+	 * the SDRAM self-test use ordinary unaligned accesses before FreeRTOS starts. The ARM_CM4_MPU
+	 * port replaces the hardware MPU setup at scheduler start; restricted Linux guests then receive
+	 * cacheable, per-task SDRAM regions from freertos_spawn_common(). Execute permission here does
+	 * not grant guest execution and is retained for non-personality pre-scheduler users. */
 	mpu.TypeExtField = MPU_TEX_LEVEL1;
 	mpu.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
 	mpu.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;

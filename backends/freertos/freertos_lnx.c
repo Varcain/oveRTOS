@@ -6,7 +6,7 @@
  * This file is part of oveRTOS.
  *
  * FreeRTOS seam for the Linux personality. The engine-agnostic run loop, svc
- * dispatch, and signal delivery live in backends/common/lxp_run.c; this file
+ * dispatch, and signal delivery live in modules/lxp/src/lxp_run.c; this file
  * supplies only the FreeRTOS-specific bits: the svc trap, the program memory,
  * and the task spawn (via the lxp_engine vtable).
  *
@@ -53,8 +53,8 @@
 /* Real STM32F746 hardware: the MCU has only 320K of internal SRAM — far too small for the 2M
  * region pool + 1M dyn pools — so both live in the board's 8M external SDRAM (0xC0000000) via
  * the linker's .sdram_bss (NOLOAD) section. The board (bsp.c) brings up the FMC controller and
- * makes the SDRAM region executable + Normal non-cacheable (the latter keeps loaded/relocated
- * program code coherent on the M7 with no SCB cache maintenance) before the run loop runs. */
+ * installs a temporary Normal non-cacheable view for pre-scheduler SDRAM access; the MPU port
+ * replaces it at scheduler start, and the seam gives each guest cacheable per-task overlays. */
 /* MPU isolation: the program runs UNPRIVILEGED with a per-task MPU region over its
  * program region + dyn_pool, and PMSAv7 requires each region's base aligned to its power-of-2
  * size — so both arrays are size-aligned (not just 32B) within .sdram_bss. */
@@ -518,10 +518,10 @@ static struct resume_desc *stash_desc(uint32_t sp, const struct lxp_resume_ctx *
 	return d;
 }
 
-/* Spawn the program task entering prog_tramp. MPU build: a RESTRICTED, UNPRIVILEGED task whose
- * only RW regions are its program region + dyn_pool (both execute-never; code runs from the flash
- * cpio via the static unprivileged-RX flash region — clean W^X). Non-MPU build (e.g. STM32): a
- * plain privileged task. */
+/* Spawn the program task entering prog_tramp. Supported personality boards use the MPU branch: a
+ * RESTRICTED, UNPRIVILEGED task whose only RW regions are its program region + dyn_pool (both XN;
+ * ordinary code XIPs from a separate RO+X rootfs window). The legacy non-MPU compile fallback
+ * creates a plain privileged task and is not used by the STM32F746 or an500 personality targets. */
 static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 {
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
@@ -544,7 +544,7 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 #endif
 	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
 			       (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
-	uint32_t reg0_attr = rw_xn; /* program region: RW + execute-never (W^X; code XIPs from flash) */
+	uint32_t reg0_attr = rw_xn; /* program region: RW + execute-never (code XIPs from rootfs) */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	/* A remote-exec proc runs its own copied text FROM this region → map it RWX (drop XN). A
 	 * per-process, MPU-contained W^X relaxation, only for a program launched off the remote mount. */
@@ -553,7 +553,7 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 #endif
 	/* pxTaskBuffer is `StaticTask_t * const`, so a designated initializer is required (it also
 	 * zeroes the remaining configurable region xRegions[2]). xRegions[0] = the program region,
-	 * xRegions[1] = the dyn_pool — both RW + execute-never (W^X; code runs from the flash cpio). */
+	 * xRegions[1] = the dyn_pool — both RW + execute-never (code runs from the RO+X rootfs). */
 	TaskParameters_t tp = {
 		.pvTaskCode = prog_tramp,
 		.pcName = nm,
@@ -964,7 +964,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
 	(portUSING_MPU_WRAPPERS == 1)
-/* Strong override of the engine-common weak no-op (backends/common/lxp_run.c).
+/* Strong override of the engine-common weak no-op (modules/lxp/src/lxp_run.c).
  *
  * The rootfs.cpio is XIP'd from the memory-mapped QUADSPI NOR at 0x90000000.  The coordinator —
  * THIS task: it runs lxp_cpio_to_rootfs + the FDPIC loader — is a PRIVILEGED, non-restricted
@@ -1014,7 +1014,7 @@ void lxp_rootfs_window(const void *base, size_t len)
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* Strong override of the engine-common weak no-op (backends/common/lxp_run.c).
+/* Strong override of the engine-common weak no-op (modules/lxp/src/lxp_run.c).
  *
  * The M7 D-cache runs enabled (write-back) for the personality (drivers/freertos/stm32f7/
  * stm32f7_init.c).  A guest writes its send buffer in external SDRAM through its own Normal WBWA

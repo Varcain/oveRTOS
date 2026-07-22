@@ -58,8 +58,8 @@
 
 /*
  * FMC read-pipe delay = 1. At the 108 MHz FMC clock RPIPE=0 leaves no read-capture margin; once the
- * LTDC continuously burst-reads the framebuffer out of this SDRAM, the CPU's uncached program-heap
- * reads go marginal. Same fix as the FreeRTOS bsp_sdram_fixup / NuttX raw write — here it is the
+ * LTDC continuously burst-reads the framebuffer out of this SDRAM, CPU cache-line fills and other
+ * program-pool reads go marginal. Same fix as the FreeRTOS bsp_sdram_fixup / NuttX raw write — here it is the
  * st,sdram-control RPIPE field (index 7). The memc driver programs SDCR1[14:13]=01 during init,
  * before the LTDC starts fetching. (The board's SDTR timing + 108 MHz-spec refresh are left stock:
  * they match the ST BSP closely enough and the guest-corruption culprit turned out to be the QSPI
