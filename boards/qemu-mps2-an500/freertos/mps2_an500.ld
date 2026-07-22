@@ -180,6 +180,7 @@ SECTIONS
      * gets an unprivileged-RX MPU window over the bottom 12 MiB in freertos_spawn_common. */
     .psram 0x60C00000 (NOLOAD) :
     {
+        *(.psram.lxp)
         *(.psram*)
     } > PSRAM
 

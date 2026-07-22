@@ -128,7 +128,7 @@ BSP_BOARDINIT_ATTR int bsp_boardInit(void)
 	/* Bring up the FMC controller + the external 8 MB SDRAM at 0xC0000000.  On QEMU/Renode
 	 * the SDRAM is modeled as always-present so this step was never needed; on real silicon
 	 * the controller MUST be initialized or the first access to 0xC0000000 faults.  The Linux
-	 * personality's 2 MB program-region pool + 1 MB dyn pools live here (.sdram_bss), so this
+	 * personality's program/dynamic pools and cold coordinator storage live here, so this
 	 * runs at board init before anything touches them.  Validate the array before trusting it. */
 	(void)BSP_SDRAM_Init();
 	bsp_sdram_fixup();

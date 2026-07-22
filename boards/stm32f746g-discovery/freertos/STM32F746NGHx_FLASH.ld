@@ -358,7 +358,11 @@ SECTIONS
         . = ALIGN(32);
     } > SDRAM
 
-    .sdram_bss (NOLOAD) : ALIGN(32) { *(.sdram_bss) } > SDRAM
+    .sdram_bss (NOLOAD) : ALIGN(32) {
+        /* Alignment-sensitive guest pools first; ordinary far BSS follows. */
+        *(.sdram_bss.lxp)
+        *(.sdram_bss)
+    } > SDRAM
 
     /* ETH TX bounce buffer (non-cacheable via the background Device map — see the ETH_TXBUF
      * MEMORY entry).  NOLOAD, own region above the pools so it is never MPU-covered. */

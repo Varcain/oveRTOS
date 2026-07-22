@@ -24,6 +24,7 @@
 #include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/random/random.h> /* sys_rand_get -> engine random_fill op (AT_RANDOM/getrandom) */
 #include <zephyr/version.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
@@ -55,18 +56,31 @@
  * relays nothing). PMSAv8 (the an521) allows a 32-byte-aligned base, so it needs no size alignment
  * (and avoids the padding). */
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
-#define LXP_PROG_REGION_ALIGN LXP_PROG_REGION_SIZE
-#define LXP_DYN_POOL_ALIGN LXP_DYN_POOL_SIZE
+#define LXP_EXT_STORAGE_ALIGN LXP_DYN_POOL_SIZE
 #else
-#define LXP_PROG_REGION_ALIGN 32
-#define LXP_DYN_POOL_ALIGN 32
+#define LXP_EXT_STORAGE_ALIGN 32
 #endif
-static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_PROG_REGION_ALIGN);
-/* Per-region dynamic-link scratch pool (also external-RAM/NOLOAD): a dynamic FDPIC proc's arena
- * lives here so ld.so can mmap libc.so (~500K), far past the in-region arena. */
-static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_DYN_POOL_ALIGN);
+/* Largest-alignment rows first, then program rows and cold coordinator state.
+ * Keeping them in one object makes odd region counts safe and prevents linker
+ * padding between independently aligned arrays. */
+struct lxp_ext_storage {
+	uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE];
+	uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE];
+	lxp_exec_capture_t exec_captures[LXP_NSLOT];
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	uint8_t netfs_exec_stage[256u * 1024u];
+#endif
+};
+static struct lxp_ext_storage g_lxp_ext_storage Z_GENERIC_SECTION(
+	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_EXT_STORAGE_ALIGN);
+_Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_SIZE == 0,
+	       "program rows must be aligned to their MPU region size");
+#define dyn_pools (g_lxp_ext_storage.dyn_pools)
+#define prog_regions (g_lxp_ext_storage.prog_regions)
+#define g_exec_captures (g_lxp_ext_storage.exec_captures)
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#define g_netfs_exec_stage (g_lxp_ext_storage.netfs_exec_stage)
+#endif
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Staging buffer for a fetched remote ELF image (netfs exec-off-mount): the 9P client fills it from
@@ -74,8 +88,6 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] Z_GENERIC_SECTION(
  * NOLOAD region as the program pools (SDRAM1 on the real F746 / PSRAM on the an521) → RAM-resident,
  * zero flash cost. Sized for a small/medium FDPIC binary: only the exec's OWN text+data is fetched;
  * its libc.so/ld.so stay XIP from the LOCAL rootfs cpio. Mirrors the FreeRTOS/NuttX g_netfs_exec_stage. */
-static uint8_t g_netfs_exec_stage[256u * 1024u] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(32);
 uint8_t *lxp_netfs_exec_stage(size_t *cap)
 {
 	if (cap)
@@ -397,6 +409,11 @@ static uint8_t *zephyr_dyn_pool(int ridx, size_t *size)
 	return dyn_pools[ridx];
 }
 
+static lxp_exec_capture_t *zephyr_exec_capture(int sidx)
+{
+	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
+}
+
 /* Guest entropy (AT_RANDOM stack-canary seed + getrandom()). REQUIRED: lxp_setup_stack() seeds a
  * 16-byte AT_RANDOM word at every launch and, since the lxp src-review remediation, hard-fails the
  * launch (returns NULL -> lxp_run returns -1) when the engine has no random_fill op. Without this
@@ -582,6 +599,7 @@ static const char *lxp_seam_system_version(void)
 const lxp_os_ops_t g_lxp_host_engine = {
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
+	.exec_capture = zephyr_exec_capture,
 	.random_fill = zephyr_random_fill,
 	.spawn_launch = zephyr_spawn_launch,
 	.spawn_resume = zephyr_spawn_resume,
