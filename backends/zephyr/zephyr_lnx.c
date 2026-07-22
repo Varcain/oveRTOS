@@ -32,9 +32,11 @@
 #include <zephyr/app_memory/app_memdomain.h>
 #include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/random/random.h> /* sys_rand_get -> engine random_fill op (AT_RANDOM/getrandom) */
+#include <zephyr/version.h>
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
+#include "ove/build.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
@@ -581,6 +583,15 @@ static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
 	return LXP_OK;
 }
 
+#define LXP_SYSTEM_VERSION                                                     \
+	"Zephyr " KERNEL_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" \
+		OVE_BUILD_LXP_REV
+_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
+static const char *lxp_seam_system_version(void)
+{
+	return LXP_SYSTEM_VERSION;
+}
+
 const lxp_os_ops_t g_lxp_host_engine = {
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
@@ -599,6 +610,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
+	.system_version = lxp_seam_system_version,
 };
 
 /* The public lxp_run() now lives in the module (src/lxp_run.c). This seam supplies

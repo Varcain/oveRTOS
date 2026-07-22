@@ -70,11 +70,19 @@ def _lxp_dir(ove_dir):
     return os.path.join(ove_dir, "modules", "lxp")
 
 
+def source_ids(ws):
+    """Short, dirty-aware source IDs suitable for embedding in firmware text."""
+    return {
+        "overtos": _short(_revision(ws.ove_dir)),
+        "lxp": _short(_revision(_lxp_dir(ws.ove_dir))),
+    }
+
+
 def build_id(ws):
     """Short identifier embedded in the firmware and printed at boot."""
-    ove = _short(_revision(ws.ove_dir))
-    lxp = _short(_revision(_lxp_dir(ws.ove_dir)))
-    parts = [ws.board_name, ws.rtos, ws.app_name, f"ove-{ove}", f"lxp-{lxp}"]
+    sources = source_ids(ws)
+    parts = [ws.board_name, ws.rtos, ws.app_name,
+             f"ove-{sources['overtos']}", f"lxp-{sources['lxp']}"]
     variant = ws.image_variant
     if variant:
         parts.append(variant)

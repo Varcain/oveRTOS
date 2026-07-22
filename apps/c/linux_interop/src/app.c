@@ -55,17 +55,7 @@
 #endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
-
-/* Generated per build by 'ove build'; absent when this app is compiled directly
- * from CMake, which is why the fallback has to say so rather than lie. */
-#if defined(__has_include)
-#if __has_include("ove_build_id.h")
-#include "ove_build_id.h"
-#endif
-#endif
-#ifndef OVE_BUILD_ID
-#define OVE_BUILD_ID "unknown (built outside 'ove build')"
-#endif
+#include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 /* The rootfs.cpio is programmed into the on-board QSPI NOR, memory-mapped at
