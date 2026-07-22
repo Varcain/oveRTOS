@@ -64,8 +64,9 @@ function(ove_linux_generate_fixtures out_var)
             # Zephyr runs the program UNPRIVILEGED: place the cpio in an executable .text
             # subsection so its user threads can execute libc.so's RO text IN-PLACE from the
             # embedded cpio (the kernel's user-RX .text MPU region already covers .text — no
-            # separate partition, so no MPU-budget overflow). FreeRTOS/NuttX run privileged and
-            # reach .rodata directly, so they keep the default section.
+            # separate partition, so no MPU-budget overflow). The FreeRTOS and NuttX seams give
+            # their unprivileged guests an executable MPU view of the default fixture window, so
+            # those engines keep the default section.
             set(_extra_args)
             if(OVE_RTOS STREQUAL "zephyr")
                 set(_extra_args "-DSECTION=.text.ove_rootfs")

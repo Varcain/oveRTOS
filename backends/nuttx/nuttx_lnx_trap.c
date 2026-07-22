@@ -10,13 +10,12 @@
  * supplies only the NuttX-specific bits: the svc trap, the program memory, and
  * the task spawn (via the lxp_engine vtable).
  *
- * PHASE 1 (functional parity): the program runs PRIVILEGED on the default
- * CONFIG_BUILD_FLAT build. Its `svc #0` shares the SVCall exception with NuttX's
- * OWN `svc #0` (its syscall/context-switch ABI), so we discriminate at runtime:
- * irq_attach() re-routes SVCall (exception 11) to our handler; a svc whose return
- * PC is inside the loaded program's region is a Linux syscall, and any other svc
- * (NuttX's scheduling svcs, from kernel .text) is chained to arm_svcall(). NuttX
- * builds unmodified (only the extern to arm_svcall + public scheduler APIs).
+ * A program's `svc #0` shares the SVCall exception with NuttX's own
+ * syscall/context-switch ABI. irq_attach() routes SVCall to our handler, which
+ * accepts an SVC as Linux only when the saved context is unprivileged and its
+ * running task owns a live personality slot. Privileged NuttX SVCs chain to
+ * arm_svcall(); an unprivileged program can never use that chain as an escalation
+ * path.
  *
  * Each program runs as a real NuttX task created with nxtask_init() given its own
  * region as the task stack, with the initial register context set to the uClinux
@@ -103,10 +102,10 @@ extern int arm_hardfault(int irq, void *context, void *arg);
  * pool, so it lives in the board's 8M external SDRAM (0xC0000000). NuttX's CONFIG_STM32F7_FMC brings
  * the FMC + SDRAM up for its LTDC framebuffer (the first 255K at 0xC0000000) and uses none of the
  * rest as heap (MM_REGIONS=2, internal-SRAM-only), so the span past 1M is free. Fixed-address
- * pointers (NuttX owns its linker script — no NOLOAD section to hook). The program runs PRIVILEGED,
- * so no per-task PMSAv7 region/alignment is needed; nuttx_sdram_mpu_init() sets ONE MPU region
- * making the whole SDRAM Normal non-cacheable so the loader's/program's data accesses don't fault
- * the default Device-typed 0xC0000000 (NuttX leaves the MPU disabled). */
+ * pointers (NuttX owns its linker script — no NOLOAD section to hook). lxp_mpu_init() installs a
+ * privileged-only, Normal non-cacheable base region over the whole SDRAM; the context-switch note
+ * hook overlays the running program's exact data and dynamic-pool ranges as unprivileged RW. The
+ * pool layout therefore keeps every per-program range power-of-2 sized and naturally aligned. */
 #define NUTTX_SDRAM_POOL_BASE 0xC0100000u /* 1M past the SDRAM base, well clear of the framebuffer */
 static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
 	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_SDRAM_POOL_BASE;
@@ -670,9 +669,10 @@ static void lxp_mpu_init(void)
 	*mpu_rnr = 0;
 	*mpu_rbar = code_base;
 	*mpu_rasr = (1u << 0) | (code_sz << 1) | (code_texscb << 16) | (0x2u << 24);
-	/* Region 1: the WHOLE program pool, Normal non-cacheable, execute-never. Phase 1 (no per-switch
-	 * hook): unprivileged RW too (AP=0b011), so a program reaches its data — kernel-isolated, but not
-	 * isolated from siblings. Phase 2: PRIVILEGED-ONLY (AP=0b001) — the base that lets the privileged
+	/* Region 1: the WHOLE program pool, Normal non-cacheable, execute-never. In a fallback build with
+	 * no context-switch hook it is unprivileged RW too (AP=0b011), providing kernel isolation but not
+	 * sibling isolation. The normal per-switch configuration makes it PRIVILEGED-ONLY (AP=0b001) —
+	 * the base that lets the privileged
 	 * coordinator/seam touch ANY program's pool region as Normal memory; the per-program regions 2+3
 	 * (set_prog_regions) grant the RUNNING program unprivileged RW to its OWN region, overriding this.
 	 * Without the base, a non-running program's pool region falls to the ARM default map, which types
@@ -683,7 +683,7 @@ static void lxp_mpu_init(void)
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x1u << 24) | (1u << 28); /* priv RW, unpriv NO */
 #else
-	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28); /* RW/RW (Phase 1) */
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28); /* fallback: RW/RW */
 #endif
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* Region 4: the QSPI NOR XIP window. The UNPRIVILEGED guest XIPs its FDPIC text in place
@@ -749,7 +749,7 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 }
 
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-/* ---- inter-program isolation (Phase 2): per-program MPU regions on every context switch ------ */
+/* ---- inter-program isolation: per-program MPU regions on every context switch ---------------- */
 /* Program regions 2+3 for the program that owns region `ridx`: region 2 = its data segment
  * (prog_regions[ridx]), region 3 = its dynamic-link arena (dyn_pools[ridx]) — HIGHER priority than
  * the privileged-only whole-pool base (region 1), so for THIS program those two ranges become
@@ -932,7 +932,7 @@ static int nuttx_prepare(void)
 	irq_attach(LXP_IRQ_BUSFAULT, lxp_memfault_handler, NULL); /* + bus faults */
 	irq_attach(LXP_IRQ_USGFAULT, lxp_memfault_handler, NULL); /* + usage faults (bad instr) */
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-	note_driver_register(&g_lxp_note_driver); /* Phase 2: per-switch per-program MPU region swap */
+	note_driver_register(&g_lxp_note_driver); /* per-switch per-program MPU region swap */
 #endif
 	return 0;
 }

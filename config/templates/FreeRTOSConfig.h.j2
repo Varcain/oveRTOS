@@ -129,7 +129,7 @@ vPortSVCHandler, so vPortSVCHandler must keep its own name (else the seam's
 #define xPortPendSVHandler PendSV_Handler
 
 {% if config.get("CONFIG_OVE_LINUX") == True and (config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True or config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True) %}
-/* Phase-2 MPU isolation (ARM_CM4_MPU port): each Linux program runs as an
+/* Linux guest MPU isolation (ARM_CM4_MPU port): each program runs as an
  * UNPRIVILEGED restricted task so a stray access faults instead of corrupting the
  * kernel. MPU_TYPE.DREGION = 8 on both the QEMU an500 (Cortex-M7 r1p2) and the real
  * STM32F746-Disco (r0p1). The r0p1 silicon needs the errata-837070 BASEPRI workaround;
