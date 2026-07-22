@@ -84,13 +84,13 @@ endif()
 # ── oveRTOS backend sources (from generated config) ─────────────────
 ove_add_backend_sources()
 
-# ── Linux personality (headless): embed the BusyBox rootfs.cpio fixture ──────
+# ── Linux personality rootfs fixture ─────────────────────────────────────────
 # The personality demo (#include "loader_rootfs_image.h") needs the embedded cpio on the
-# include path; the program-region pool lives in external SDRAM (.sdram_bss, bsp.c brings up
-# the FMC + makes it executable). Mirrors the QEMU an500 board's OVE_LINUX block.
+# include path when QSPI XIP is disabled. The program-region pool lives in external SDRAM
+# (.sdram_bss; bsp.c brings up the FMC), with guest permissions supplied by freertos_lnx.c.
 if(OVE_LINUX)
     # With the rootfs in QSPI (OVE_LINUX_ROOTFS_QSPI) it is programmed to the NOR
-    # separately (flash-qspi.sh), NOT embedded in the firmware image — so skip the
+    # separately (flash-qspi.sh), NOT embedded in the firmware image, so skip the
     # cpio-embed fixture generation there.
     if(NOT OVE_LINUX_ROOTFS_QSPI)
         include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)

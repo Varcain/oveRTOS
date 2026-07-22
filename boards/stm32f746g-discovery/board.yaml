@@ -75,9 +75,10 @@ rtos_defconfig:
     # QEMU synthetic testpad (inert for the personality unless OVE_LINUX_DEV_INPUT is on).
     - CONFIG_OVE_FT5336=y
     - CONFIG_OVE_FT5336_I2C_INSTANCE=2
-    # Real hardware needs bsp_boardInit() to run (clock + FMC external SDRAM + the MPU region
-    # that makes that SDRAM executable & non-cacheable for the program pool). That init only
-    # runs when OVE_BOARD is enabled (ove_app_run -> ove_board_init). Required on silicon.
+    # Real hardware needs bsp_boardInit() to run (clock, FMC external SDRAM, and a temporary
+    # pre-scheduler MPU view used during SDRAM bring-up). The FreeRTOS MPU port replaces that view
+    # at scheduler start; freertos_lnx.c supplies the unprivileged guest's per-task regions.
+    # Board init only runs when OVE_BOARD is enabled (ove_app_run -> ove_board_init).
     - CONFIG_OVE_BOARD=y
   nuttx:
     # NuttX brings its OWN STM32F746 clock + FMC external SDRAM + USART1 console. The program runs

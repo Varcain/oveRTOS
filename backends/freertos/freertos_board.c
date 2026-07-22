@@ -18,10 +18,9 @@ int ove_hal_board_init(void)
 {
 	bsp_boardInit();
 #ifndef CONFIG_OVE_LINUX
-	/* The Linux-personality build is headless and minimal: it needs only bsp_boardInit
-	 * (clock + the external SDRAM/FMC its program pool lives in + the MPU region that makes
-	 * that SDRAM executable & non-cacheable). Skip the LVGL display + LED/GPIO bring-up, which
-	 * would otherwise pull in the display stack the personality never uses. */
+	/* The Linux personality needs bsp_boardInit() for clocks, FMC SDRAM and QSPI, but it does not
+	 * use the native LVGL display path below. A display-enabled guest reaches the panel through
+	 * the personality-specific /dev/fb0 backend instead. Skip duplicate display and LED bring-up. */
 	lv_port_disp_hw_init();
 
 	/* Configure LED pin(s) as output */

@@ -1,5 +1,8 @@
 # Plan: dynamic-linking FDPIC (run ld.so + load real .so libraries)
 
+> Historical design record: dynamic FDPIC support has since landed. Milestone and debugging notes
+> below preserve the design-time state rather than documenting current limitations.
+
 Goal: boot a **dynamically-linked** FDPIC busybox (DT_NEEDED=libc.so.0, PT_INTERP=ld.so) with
 feature parity to the static FDPIC build — i.e. actually run uClibc-ng's FDPIC `ld-uClibc.so`
 so it loads `libc.so` from the VFS and relocates across objects. Buildroot config:
@@ -39,7 +42,7 @@ for interp + dynamic exec, reports `got`. `ove_flat_t` has is_dynamic/got. (ld.s
 no DT_NEEDED, 18 .rel.dyn it self-applies → personality must NOT apply, else double-bias.)
 
 ### D2 part 2 — launch() wiring (NEXT, worked out — pure execution)
-In `launch()` (ove_lnx_run.c), after `load_fdpic(&prog, exec, .., is_interp=0)`:
+In `launch()` (`modules/lxp/src/lxp_run.c`), after `load_fdpic(&prog, exec, .., is_interp=0)`:
 - `pc = prog.entry; at_entry = prog.entry; at_base = 0; prog.interp_loadmap = 0;`
 - if `prog.is_dynamic`:
   - **find ld.so**: read the exec's PT_INTERP string (`/usr/lib/ld.so.1`), resolve it through
@@ -103,7 +106,7 @@ arg_tramp`; `set $ldbase=*(unsigned*)($r0+4)-0xab1`; `add-symbol-file ld-uClibc-
 $ldbase`; `break *($ldbase+0x1694)`; read r9/lr/[lr]/[lr+24], `*(sp+28)`=caller. The libc.so
 openat/read/pread64/mmap2 load is still downstream of this.
 
-## Syscalls to add/upgrade (linux/ove_linux_syscall.c)
+## Syscalls to add/upgrade (`modules/lxp/src/lxp_syscall.c`)
 - **`pread64` (180)** NEW: read `count` bytes at `offset` (64-bit, ARM passes hi/lo + a pad)
   from an fd into the user buffer — like read but positioned, no fd offset change.
 - **`mmap2` (192)** UPGRADE: an anonymous `MAP_ANONYMOUS` mapping must return REAL,

@@ -146,9 +146,9 @@ extern void ove_backend_trace_task_blocking(void);
 #ifdef CONFIG_OVE_LINUX
 /* Linux guest MPU isolation (ARM_CM4_MPU port): each program runs UNPRIVILEGED in a
  * per-task MPU region set so a stray access faults instead of corrupting the kernel.
- * Values verified against QEMU's an500 Cortex-M7 via the gdbstub: MPU_TYPE.DREGION = 8,
- * CPUID = 0x411fc272 (r1p2 — so the r0p0/r0p1 errata workaround must stay OFF, else
- * prvSetupMPU's configASSERT hangs at boot). Our SVC vector is the seam's strong
+ * Values verified against the corrected QEMU an500 Cortex-M7 model via the gdbstub:
+ * MPU_TYPE.DREGION = 16 and CPUID = 0x411fc272 (r1p2). The r0p0/r0p1 workaround stays OFF;
+ * enabling it makes prvSetupMPU's configASSERT hang at boot. Our SVC vector is the seam's strong
  * SVC_Handler (not vPortSVCHandler) → configCHECK_HANDLER_INSTALLATION must be 0. */
 #define configUSE_MPU_WRAPPERS_V1                       1
 /* 16, NOT 8: QEMU's mps2-an500 Cortex-M7 reports MPU_TYPE.DREGION=16, and the ARM_CM4_MPU port

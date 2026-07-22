@@ -1,19 +1,22 @@
 # Plan: real pthreads (LinuxThreads) on the NOMMU Linux personality
 
+> Historical design record: real thread/futex support has since landed. Statements about missing
+> behavior describe the design-time baseline, not the current personality.
+
 ## Context
 
 uClibc-ng provides NOMMU pthreads via **LinuxThreads** (the overtos build sets
 `UCLIBC_HAS_THREADS=y` / `UCLIBC_HAS_LINUXTHREADS=y`; NPTL is off — it needs MMU/TLS the
 NOMMU target lacks). But the personality cannot host them today:
 
-- `backends/common/ove_lnx_run.c:276` handles **every** `clone()/fork()/vfork()` as a
+- `modules/lxp/src/lxp_run.c` handles **every** `clone()/fork()/vfork()` as a
   **vfork**: capture the parent ctx, suspend the parent (no live thread), spawn the child
   sharing the parent's region; the parent resumes only when the child **execs** (into its
   own region) or **exits**.
 - A pthread thread is `clone(CLONE_VM)` that **never execs** — it runs a function in the
   shared memory. Under the vfork model the parent would stay suspended until the thread
   exits → no concurrency. And `futex(2)`/`futex_time64` is a benign single-threaded stub
-  (`linux/ove_linux_syscall.c`: WAIT→-EAGAIN, WAKE→0).
+  (`modules/lxp/src/lxp_syscall.c`: WAIT→-EAGAIN, WAKE→0).
 
 So there are no concurrent threads for a futex to coordinate. BusyBox is single-threaded,
 so nothing hits this yet — but any real multi-threaded program needs the work below.
@@ -33,7 +36,7 @@ r1=child_stack, r2=parent_tid, r3=child_tid, r4=tls):
 - **`(flags & CLONE_VM) && !(flags & CLONE_VFORK)` → THREAD.** Everything else keeps the
   current vfork/fork path (incl. `posix_spawn`'s `CLONE_VM|CLONE_VFORK`).
 
-Thread spawn (a new path in `ove_lnx_dispatch` + the coordinator, parallel to fork but
+Thread spawn (a new path in `lxp_dispatch` + the coordinator, parallel to fork but
 **not** suspending the parent):
 - Allocate a new **proc slot** (NOT a new region): `region` / `region_owner` = the
   parent's region; new `is_thread=1`, `tgid` = the parent's tgid (the group leader's pid),
@@ -42,8 +45,8 @@ Thread spawn (a new path in `ove_lnx_dispatch` + the coordinator, parallel to fo
 - Child resumes at the **clone-return PC** with r0=0 on `child_stack`; the **parent
   continues immediately** with r0=tid. Both co-run (reuse the Phase-D resume machinery,
   but resume *both* at once instead of parking the parent).
-- Sizing: N threads share 1 region but consume N slots → `OVE_LNX_NSLOT` must comfortably
-  exceed `OVE_LNX_NREG` (today NREG+4; bump for many-threaded programs). Thread stacks live
+- Sizing: N threads share 1 region but consume N slots → `LXP_NSLOT` must comfortably
+  exceed `LXP_NREG` (today NREG+4; bump for many-threaded programs). Thread stacks live
   in the shared region's arena/heap (caller-malloc'd) → multi-threaded programs may need a
   larger region or arena.
 
@@ -105,13 +108,13 @@ Determine which by reading uClibc-ng's `libpthread/linuxthreads` for ARM + watch
 
 ## Files
 
-- `linux/ove_linux_syscall.c`: clone thread-vs-fork discrimination; real `futex`/
+- `modules/lxp/src/lxp_syscall.c`: clone thread-vs-fork discrimination; real `futex`/
   `futex_time64`; `exit` (thread) vs `exit_group` (group); `gettid`/`getpid` tid/tgid;
   `set_tls` if used.
-- `backends/common/ove_lnx_run.{c,h}`: thread spawn (shared region, co-run, no parent
+- `modules/lxp/src/lxp_run.c` and `lxp_run_internal.h`: thread spawn (shared region, co-run, no parent
   suspend); the futex wait queue + wake; per-region/tgid live-thread refcount for region
   free; new per-proc fields (`is_thread`, `tgid`, `futex_wait`, `futex_uaddr`).
-- `include/ove/linux/syscall.h`: `is_thread`/`tgid`/`futex_*` proc fields; `CLONE_VM` /
+- `modules/lxp/include/lxp/lxp_syscall.h`: `is_thread`/`tgid`/`futex_*` proc fields; `CLONE_VM` /
   `CLONE_VFORK` / `CLONE_THREAD` flags; `FUTEX_*` op constants.
 - `backends/{zephyr,freertos,nuttx}/*`: per-thread TLS (TPIDRURO) on thread resume if
   `set_tls` is used; spawn a co-running thread sharing the parent region.

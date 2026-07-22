@@ -125,16 +125,17 @@ host-defined interval because one coordinator serializes deferred guest work:
 **Zephyr — `qemu-mps2-an521` (Cortex-M33).** Runs the program *unprivileged* with
 its `svc` trapped via `CONFIG_USERSPACE`. A minimal M33 USERSPACE board (no
 LVGL/audio sim); when `CONFIG_OVE_LINUX` is set it adds the one engine-seam link
-option (`-Wl,--wrap=z_do_kernel_oops`) and the rootfs-fixture include path, and
-the `CONFIG_USERSPACE` knobs come from `config/templates/prj.conf.j2`.
+option (`-Wl,--wrap=z_do_kernel_oops`) and the rootfs-fixture include path. The
+`CONFIG_USERSPACE` knobs come from `config/templates/prj.conf.j2`; illegal guest
+accesses terminate only the current Linux process through the fatal-error hook.
 
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
 board (no dedicated board); when `CONFIG_OVE_LINUX` is set it (a) drops the sim
 framework + dashboard/trace/profiler (the personality is headless), (b) drops the
 `vPortSVCHandler → SVC_Handler` alias so the seam (`backends/freertos/freertos_lnx.c`)
 owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to
-`vPortSVCHandler`, and (c) adds the rootfs include + the interactive semihosting
-console in the run script. The `ARM_CM4_MPU` port creates each guest with
+`vPortSVCHandler`, and (c) makes the run script inject the rootfs CPIO into PSRAM
+and attach the interactive console. The `ARM_CM4_MPU` port creates each guest with
 `xTaskCreateRestrictedStatic`; program, dynamic pool, and XIP rootfs windows are
 explicit MPU regions, while the coordinator remains privileged.
 

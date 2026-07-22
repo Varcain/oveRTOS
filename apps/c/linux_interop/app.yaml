@@ -1,12 +1,12 @@
 lang: c
 config_name: linux_interop
-description: "Linux personality interop demo (an521/Zephyr or an500/FreeRTOS)"
+description: "Linux personality interop demo (Zephyr, FreeRTOS, or NuttX)"
 sources:
   - src/app.c
 # Pull in the Linux personality (engine-agnostic core + per-engine seam) plus the
 # bounded arena + bFLT loader it runs on, and the oveRTOS RTOS primitives the demo
 # uses on the RTOS side. The seam wiring (USERSPACE/--wrap on Zephyr, the SVC-owning
-# seam on FreeRTOS) and the rootfs-include come from the selected board.
+# seam on FreeRTOS) and the rootfs placement come from the selected board.
 defconfig:
   - CONFIG_OVE_LINUX=y
   - CONFIG_OVE_ARENA=y

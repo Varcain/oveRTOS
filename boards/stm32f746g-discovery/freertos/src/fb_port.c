@@ -42,7 +42,7 @@ int ove_hal_fb_init(void)
 	/* BSP_LCD_Init re-ran BSP_SDRAM_Init, which reset the FMC SDCR (clearing the
 	 * read-pipe delay). Re-apply it now — the LTDC is about to start DMAing the
 	 * framebuffer out of this SDRAM, and without the read-pipe margin that
-	 * contention corrupts the personality's uncached program heap. */
+	 * contention corrupts cache-line fills and other accesses to the guest pool. */
 	bsp_sdram_fixup();
 	BSP_LCD_LayerRgb565Init(0, LCD_FB_START_ADDRESS);
 	BSP_LCD_SelectLayer(0);

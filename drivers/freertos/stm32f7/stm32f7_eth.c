@@ -15,7 +15,7 @@
  *
  * Cache coherency (D-cache runs ON — the personality needs it): the ETH
  * DMA and the M7 D-cache are kept coherent without detuning the cache or
- * spending a scarce MPU region (the FreeRTOS-MPU port claims all 8):
+ * spending another configurable MPU region (the personality already uses all three):
  *   - DMA descriptor tables live in DTCM (.eth_desc, 0x20000000).  DTCM is
  *     architecturally never cached yet is reachable by the ETH DMA via the
  *     Cortex-M7 AHBS slave port (ST AN4839), so the descriptors — which the
@@ -24,8 +24,8 @@
  *   - RX buffers stay in cacheable SRAM; the CPU invalidates each frame's
  *     range before reading it (HAL_ETH_RxLinkCallback), so pbuf_take copies
  *     the DMA-written data, not a stale cache line.
- *   - TX payloads (lwIP pbufs in cacheable memory) are cleaned to SRAM
- *     before HAL_ETH_Transmit so the DMA reads the CPU-written frame.
+ *   - TX payloads are coalesced into the non-cacheable SDRAM bounce buffer below before
+ *     HAL_ETH_Transmit, so DMA never observes dirty cacheable pbuf lines.
  */
 
 #include "stm32f7xx_hal.h"

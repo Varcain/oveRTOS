@@ -15,7 +15,8 @@ shell` over the serial console; the *same* rootfs runs on all three engines.
 
 The "kernel" is the RTOS plus a thin **Linux syscall personality**. Guest
 programs are **FDPIC** dynamic executables (uClibc-ng) whose read-only text is
-executed in place (XIP) from an embedded rootfs CPIO in flash.
+executed in place (XIP) from a rootfs CPIO backed by internal flash, emulator
+PSRAM, or external QSPI NOR, depending on the board.
 
 ```mermaid
 flowchart LR
@@ -32,17 +33,17 @@ flowchart LR
 
 - **Processes** are RTOS threads placed in fixed, MPU-isolated regions (a small
   pool of `NREG` slots). The single-source run loop + coordinator
-  (`backends/common/ove_lnx_run.c`) schedules them: `vfork`/`exec` co-run,
+  (`modules/lxp/src/lxp_run.c`) schedules them: `vfork`/`exec` co-run,
   `wait4`/pipe reads block via park/wake, signals deliver at syscall boundaries.
 - **Isolation** — programs run unprivileged with a per-program MPU region set
   (Zephyr K_USER domains; FreeRTOS `ARM_CM4_MPU` restricted tasks; NuttX raw MPU
   regions). A fault traps to a containment handler → the process is killed, the
   kernel and other processes are untouched.
 - **Filesystem** — a read-only Buildroot rootfs (BusyBox + coreutils + editors),
-  embedded as a CPIO blob and served by an in-memory VFS. `/proc`, `/dev/null`,
+  supplied as a CPIO blob and served by an in-memory VFS. `/proc`, `/dev/null`,
   `/dev/console` are synthesised.
-- **No MMU** — NOMMU FDPIC only (bFLT retired); `vfork` (no `fork`); shared
-  library text is XIP from flash.
+- **No MMU** — NOMMU FDPIC only (bFLT retired); `vfork` (no copy-on-write `fork`);
+  shared-library text is XIP from the board's rootfs backing store.
 
 ## Use it
 
