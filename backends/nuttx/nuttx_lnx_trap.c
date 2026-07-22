@@ -98,20 +98,25 @@ extern int arm_hardfault(int irq, void *context, void *arg);
 
 /* ---- NuttX-specific state -------------------------------------------------- */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* Real STM32F746: the MCU's 320K internal SRAM (NuttX's heap) is far too small for the 4.5M region
- * pool, so it lives in the board's 8M external SDRAM (0xC0000000). NuttX's CONFIG_STM32F7_FMC brings
+/* Real STM32F746: the MCU's 320K internal SRAM (NuttX's heap) is far too small for the
+ * multi-megabyte region pool, so it lives in the board's 8M external SDRAM (0xC0000000).
+ * NuttX's CONFIG_STM32F7_FMC brings
  * the FMC + SDRAM up for its LTDC framebuffer (the first 255K at 0xC0000000) and uses none of the
- * rest as heap (MM_REGIONS=2, internal-SRAM-only), so the span past 1M is free. Fixed-address
+ * rest as heap (the Linux config's three heap regions are all internal SRAM), so the span past
+ * 1M is free. Fixed-address
  * pointers (NuttX owns its linker script — no NOLOAD section to hook). lxp_mpu_init() installs a
  * privileged-only, Normal non-cacheable base region over the whole SDRAM; the context-switch note
  * hook overlays the running program's exact data and dynamic-pool ranges as unprivileged RW. The
  * pool layout therefore keeps every per-program range power-of-2 sized and naturally aligned. */
 #define NUTTX_SDRAM_POOL_BASE 0xC0100000u /* 1M past the SDRAM base, well clear of the framebuffer */
-static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
-	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_SDRAM_POOL_BASE;
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =
-	(uint8_t(*)[LXP_DYN_POOL_SIZE])(NUTTX_SDRAM_POOL_BASE +
-					    (size_t)LXP_NREG * LXP_PROG_REGION_SIZE);
+	(uint8_t(*)[LXP_DYN_POOL_SIZE])NUTTX_SDRAM_POOL_BASE;
+static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
+	(uint8_t(*)[LXP_PROG_REGION_SIZE])(NUTTX_SDRAM_POOL_BASE +
+					    (size_t)LXP_NREG * LXP_DYN_POOL_SIZE);
+_Static_assert((size_t)LXP_NREG * (LXP_DYN_POOL_SIZE + LXP_PROG_REGION_SIZE) <=
+		       0xC0800000u - NUTTX_SDRAM_POOL_BASE,
+	       "STM32 program pools overflow external SDRAM");
 #elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 /* QEMU mps2-an500: the 16M block at 0x60000000 (QEMU mps.ram, fixed — the machine model rejects
  * any -m but 16). For unprivileged isolation the program pool must be a power-of-2-sized,
@@ -144,24 +149,33 @@ _Static_assert((size_t)LXP_NREG * LXP_PROG_REGION_SIZE +
 			       (size_t)LXP_NREG * LXP_DYN_POOL_SIZE <=
 		       0x61000000u - NUTTX_AN500_POOL_BASE,
 	       "an500 program pool overflows the top of mps.ram");
-/* dyn_pools starts right after the program regions, and each entry gets its own
- * PMSAv7 region — whose base must be aligned to its size. LXP_PROG_REGION_SIZE
- * is half LXP_DYN_POOL_SIZE, so an ODD LXP_NREG lands the array on a half-size
- * boundary and every dyn_pool region is unprogrammable: the guest then faults
- * DACCVIOL on its own pool. LXP_NREG=5 did exactly that. */
-_Static_assert(((size_t)LXP_NREG * LXP_PROG_REGION_SIZE) % LXP_DYN_POOL_SIZE == 0,
-	       "LXP_NREG * LXP_PROG_REGION_SIZE must be a multiple of LXP_DYN_POOL_SIZE, "
-	       "or dyn_pools[] is not aligned to its own MPU region size");
-static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
-	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_AN500_POOL_BASE;
+/* Put the larger-alignment array first. Every dynamic pool begins on its own
+ * boundary, and the following program array is aligned whenever the aggregate
+ * dynamic-pool extent is a multiple of the smaller program-region size. */
+_Static_assert(((size_t)LXP_NREG * LXP_DYN_POOL_SIZE) % LXP_PROG_REGION_SIZE == 0,
+	       "dynamic pool extent must align the following program regions");
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =
-	(uint8_t(*)[LXP_DYN_POOL_SIZE])(NUTTX_AN500_POOL_BASE +
-					    (size_t)LXP_NREG * LXP_PROG_REGION_SIZE);
+	(uint8_t(*)[LXP_DYN_POOL_SIZE])NUTTX_AN500_POOL_BASE;
+static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
+	(uint8_t(*)[LXP_PROG_REGION_SIZE])(NUTTX_AN500_POOL_BASE +
+					    (size_t)LXP_NREG * LXP_DYN_POOL_SIZE);
 #else
 static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE] __attribute__((aligned(32)));
 /* Per-region dynamic-link scratch pool: a dynamic FDPIC proc's arena lives here so ld.so can
  * mmap libc.so (~500K), far past the in-region arena. */
 static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)));
+#endif
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* The framebuffer ends at 0xC003FC00. The next aligned span is privileged-only
+ * cold coordinator storage, safely below the program pool at 0xC0100000. */
+#define NUTTX_SDRAM_COLD_BASE 0xC0040000u
+static lxp_exec_capture_t *const g_exec_captures =
+	(lxp_exec_capture_t *)NUTTX_SDRAM_COLD_BASE;
+_Static_assert(sizeof(lxp_exec_capture_t) * LXP_NSLOT <=
+		       NUTTX_SDRAM_POOL_BASE - NUTTX_SDRAM_COLD_BASE,
+	       "exec capture table overlaps the STM32 program pool");
+#else
+static lxp_exec_capture_t g_exec_captures[LXP_NSLOT];
 #endif
 /* Byte extents of the (contiguous) pools — sizeof() can't see through the STM32 fixed pointers. */
 #define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
@@ -178,14 +192,14 @@ static uint8_t g_region_exec[LXP_NREG];
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Remote-exec (9P netfs) staging buffer: the coordinator fetches a remote FDPIC ELF into
  * this 256K scratch, then launches it (its own text is copied into a program region). On the
- * SDRAM/PSRAM boards it sits in the contiguous pool window right after the dyn_pools — still
+ * SDRAM/PSRAM boards it sits immediately after the contiguous dyn+program pool window — still
  * inside the whole-pool Normal non-cacheable MPU region (region 1), so the privileged
  * coordinator reaches it (STM32: 0xC0700000..0xC0740000, well within the 8M SDRAM region).
  * Mirrors the FreeRTOS seam's g_netfs_exec_stage. */
 #define NUTTX_EXEC_STAGE_BYTES (256u * 1024u)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 static uint8_t *const g_netfs_exec_stage =
-	(uint8_t *)((uintptr_t)prog_regions + PROG_REGIONS_BYTES + DYN_POOLS_BYTES);
+	(uint8_t *)((uintptr_t)prog_regions + PROG_REGIONS_BYTES);
 #else
 static uint8_t g_netfs_exec_stage[NUTTX_EXEC_STAGE_BYTES] __attribute__((aligned(32)));
 #endif
@@ -327,6 +341,11 @@ static uint8_t *nuttx_dyn_pool(int ridx, size_t *size)
 	if (size)
 		*size = LXP_DYN_POOL_SIZE;
 	return dyn_pools[ridx];
+}
+
+static lxp_exec_capture_t *nuttx_exec_capture(int sidx)
+{
+	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
 /* map_device (P3): install the framebuffer as an UNPRIVILEGED MPU region so a guest that
@@ -608,6 +627,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.teardown = nuttx_teardown,
 	.region = nuttx_region,
 	.dyn_pool = nuttx_dyn_pool,
+	.exec_capture = nuttx_exec_capture,
 	.map_device = nuttx_map_device,
 	.spawn_launch = nuttx_spawn_launch,
 	.spawn_resume = nuttx_spawn_resume,

@@ -22,6 +22,7 @@
 #include "semphr.h"
 #include "task.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
@@ -50,28 +51,41 @@
 #define SLOT_PROG_PRIO (SLOT_PRIO | portPRIVILEGE_BIT)
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* Real STM32F746 hardware: the MCU has only 320K of internal SRAM — far too small for the 2M
- * region pool + 1M dyn pools — so both live in the board's 8M external SDRAM (0xC0000000) via
+/* Real STM32F746 hardware: the MCU has only 320K of internal SRAM — far too small for the
+ * program/dynamic pools — so they live in the board's 8M external SDRAM (0xC0000000) via
  * the linker's .sdram_bss (NOLOAD) section. The board (bsp.c) brings up the FMC controller and
  * installs a temporary Normal non-cacheable view for pre-scheduler SDRAM access; the MPU port
  * replaces it at scheduler start, and the seam gives each guest cacheable per-task overlays. */
-/* MPU isolation: the program runs UNPRIVILEGED with a per-task MPU region over its
- * program region + dyn_pool, and PMSAv7 requires each region's base aligned to its power-of-2
- * size — so both arrays are size-aligned (not just 32B) within .sdram_bss. */
-static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE]
-	__attribute__((section(".sdram_bss"), aligned(LXP_PROG_REGION_SIZE)));
-static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE]
-	__attribute__((section(".sdram_bss"), aligned(LXP_DYN_POOL_SIZE)));
+#define LXP_EXT_STORAGE_SECTION ".sdram_bss.lxp"
 #else
 /* Both pools live in PSRAM (0x60000000, 16M; NOLOAD → no flash cost). MPU isolation requires
  * the program's per-task regions over its program region + dyn_pool,
  * and PMSAv7 requires each region's base to be aligned to its (power-of-2) size — so both arrays
  * are size-aligned. PSRAM also keeps them off the kernel's 4M SRAM (the dynamic FDPIC proc's
  * arena anyway needs room to mmap libc.so ~500K, far past the in-region 96K arena). */
-static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE]
-	__attribute__((section(".psram"), aligned(LXP_PROG_REGION_SIZE)));
-static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE]
-	__attribute__((section(".psram"), aligned(LXP_DYN_POOL_SIZE)));
+#define LXP_EXT_STORAGE_SECTION ".psram.lxp"
+#endif
+/* Keep the largest-alignment rows first, then the smaller program rows and cold
+ * exec captures. One explicitly ordered object avoids alignment holes and makes
+ * odd LXP_NREG values safe on PMSAv7. The linker places this object before other
+ * external-BSS consumers. */
+struct lxp_ext_storage {
+	uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE];
+	uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE];
+	lxp_exec_capture_t exec_captures[LXP_NSLOT];
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	uint8_t netfs_exec_stage[256u * 1024u];
+#endif
+};
+static struct lxp_ext_storage g_lxp_ext_storage
+	__attribute__((section(LXP_EXT_STORAGE_SECTION), aligned(LXP_DYN_POOL_SIZE)));
+_Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_SIZE == 0,
+	       "program rows must be aligned to their MPU region size");
+#define dyn_pools (g_lxp_ext_storage.dyn_pools)
+#define prog_regions (g_lxp_ext_storage.prog_regions)
+#define g_exec_captures (g_lxp_ext_storage.exec_captures)
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#define g_netfs_exec_stage (g_lxp_ext_storage.netfs_exec_stage)
 #endif
 static StaticTask_t g_tcb[LXP_NSLOT];
 static TaskHandle_t g_tid[LXP_NSLOT];
@@ -83,11 +97,6 @@ static uint8_t g_region_exec[LXP_NSLOT];
 /* Staging buffer for a fetched remote ELF: the netfs layer fills it, the loader copies its text
  * into the program region. In SDRAM (STM32) / PSRAM (an500), NOLOAD → no flash cost. Sized for a
  * small/medium dynamic FDPIC binary (its own text+data; libc/ld.so stay XIP from the local rootfs). */
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-static uint8_t g_netfs_exec_stage[256u * 1024u] __attribute__((section(".sdram_bss"), aligned(32)));
-#else
-static uint8_t g_netfs_exec_stage[256u * 1024u] __attribute__((section(".psram"), aligned(32)));
-#endif
 uint8_t *lxp_netfs_exec_stage(size_t *cap)
 {
 	if (cap)
@@ -634,6 +643,11 @@ static uint8_t *freertos_dyn_pool(int ridx, size_t *size)
 	return dyn_pools[ridx];
 }
 
+static lxp_exec_capture_t *freertos_exec_capture(int sidx)
+{
+	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
+}
+
 static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
 				 void *stack_lo)
 {
@@ -937,6 +951,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.prepare = freertos_prepare,
 	.region = freertos_region,
 	.dyn_pool = freertos_dyn_pool,
+	.exec_capture = freertos_exec_capture,
 	.spawn_launch = freertos_spawn_launch,
 	.spawn_resume = freertos_spawn_resume,
 	.abort_slot = freertos_abort_slot,

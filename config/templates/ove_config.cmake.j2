@@ -323,12 +323,15 @@ add_compile_definitions(LXP_ENABLE_{{ feat }}=1)
 {% endif %}
 {% endfor %}
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
-# 256K program regions (matching FreeRTOS/NuttX): guest text XIPs from the rootfs CPIO backing
-# (embedded flash on an521/headless builds, QSPI NOR on the STM32 display build), so the
-# region holds only the exec's RW data + stack. 512K wasted ~half; at 8 regions the old 512K made the
-# pools 8x(512K+512K)=8 MiB = the whole SDRAM1, leaving no room for the LTDC framebuffer (link
-# overflow). 8x(256K+512K)=6 MiB leaves 2 MiB for the framebuffer + headroom.
+# Guest text XIPs from the rootfs CPIO backing, so a dynamic program region holds only the exec's
+# small RW data, ld.so RW data, and stack. The real STM32 QSPI image uses 128K regions to increase
+# process capacity; remote exec retains 256K because it copies the fetched executable's own text
+# into this region. Other Zephyr targets keep the conservative default.
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True and config.get("CONFIG_OVE_LINUX_NETFS_EXEC") != True %}
+add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_PIPE_BUF=2048 LXP_PTY_BUF=512)
+{% else %}
 add_compile_definitions(LXP_PROG_REGION_SIZE=0x40000u LXP_PIPE_BUF=2048 LXP_PTY_BUF=512)
+{% endif %}
 # tmpfs (/tmp) byte pool. On the real STM32F746 it rides in SDRAM via LXP_FAR_BSS (set in the board
 # block below), so it can be LARGE: 128 KiB lets a guest mmap a sizeable /tmp-backed buffer — iperf3
 # builds its per-stream send/recv buffer with mkstemp+ftruncate+mmap, and ftruncate fails EFBIG when
@@ -351,12 +354,11 @@ add_compile_definitions(LXP_WFS_POOL=0x4000u)
 # reaches pipe bytes only through copy-in/out syscalls) so it needs no per-program MPU partition.
 add_compile_definitions(LXP_NPIPE=12)
 add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section("SDRAM1")))]==])
-# 10 program regions (default 8). An inbound SSH session's process tree is deep before any
+# An inbound SSH session's process tree is deep before any
 # pipeline runs: inetd (listener) + dropbear (session) + the login shell already hold 3 regions,
 # so a 3-stage `ls | grep | wc` (+ its transient vfork snapshot) exhausts the 8-region pool -> a
-# child either vfork-fails (ENOMEM) or falls back to SHARING the parent region, corrupting it
-# (SIGSEGV). 10 regions clear that. Each region = 256K image + 512K dyn pool = 768K of SDRAM, so
-# 10 fit the 8 MiB SDRAM1 (10 x 768K = 7.5 MiB, leaving room for the framebuffer/bounce).
+# child fails with ENOMEM. More regions leave useful headroom for pipelines and network daemons.
+# With local QSPI XIP, 12 x (128K program + 512K dynamic) retains the old 7.5 MiB pool footprint.
 {% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
 # netfs exec-off-mount adds a 256K g_netfs_exec_stage buffer + the 9P client's ~24K .bss to SDRAM1,
 # which overflows it at 10 regions. Drop to 9 (frees one 768K region) to fund the stage; the netfs
@@ -364,13 +366,18 @@ add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section("SDRAM1")))]==])
 # — and inetd+dropbear+shell+a 2-3 stage pipe still fits for SSH-driven netfs.
 add_compile_definitions(LXP_NREG=9)
 {% else %}
-add_compile_definitions(LXP_NREG=10)
+add_compile_definitions(LXP_NREG=12)
 {% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # STM32F746: bigger pipe pool for SSH pipelines, relocated to external SDRAM.
 add_compile_definitions(LXP_NPIPE=12)
 add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]==])
+{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") != True %}
+# QSPI-backed dynamic executables keep text XIP, so 128K program/stack regions plus the unchanged
+# 512K dynamic arenas allow 11 isolated processes in the 7 MiB pool window.
+add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=11)
+{% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # STM32F746 (NuttX): match FreeRTOS's 12-slot pipe pool. A single non-interactive dropbear session's
@@ -380,24 +387,27 @@ add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]=
 # internal-SRAM .bss; a 2 KiB per-pipe buffer keeps 12 x 2K = 24K within the SRAM budget (vs the
 # 4 x 4K = 16K default) and matches the proven Zephyr LXP_PIPE_BUF.
 add_compile_definitions(LXP_NPIPE=12 LXP_PIPE_BUF=2048)
+{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") != True %}
+# Match the FreeRTOS capacity. The NuttX seam lays the 512K-aligned dynamic pools first, then the
+# 128K program regions, so eleven pairs fit without an MPU-alignment hole.
+add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=11)
+{% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True and config.get("CONFIG_OVE_LINUX") == True %}
 # an500 QEMU Linux: the rootfs cpio XIPs from the bottom of the 16 MiB block at 0x60000000
 # (QEMU -device loader), so the FDPIC program pools share the rest -> fewer program regions.
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
-# NuttX takes 6, and it must be EVEN. Its pools are fixed addresses with one PMSAv7 region per
-# entry (backends/nuttx/nuttx_lnx_trap.c), and dyn_pools[] sits directly after the program
-# regions — a region's base must be aligned to its size, and LXP_PROG_REGION_SIZE (256K) is half
-# LXP_DYN_POOL_SIZE (512K), so an odd count lands the array on a half-size boundary and every
-# guest faults DACCVIOL on its own pool. This was 5 for both RTOSes, which is why the NuttX
-# personality never ran a guest. 6x(256K+512K) = 4.5 MiB fits the 8 MiB pool at 0x60800000;
-# nuttx_lnx_trap.c static-asserts the alignment and the fit.
+# NuttX retains six regions in its fixed 8 MiB pool. The seam lays its 512K dynamic rows first,
+# so every PMSAv7 base remains naturally aligned even when the configured count is odd.
 add_compile_definitions(LXP_NREG=6)
 {% else %}
-# FreeRTOS keeps its pools in a linker-placed .psram section, so the compiler aligns each entry
-# and the count need not be even — but the section must fit PSRAM: 6 overflows it (.psram lands
-# past 0x61000000). 5x(256K+512K) = 3.75 MiB.
+# FreeRTOS keeps its pools in a linker-placed .psram section. The section must fit the top 4 MiB:
+# 5x(256K+512K) = 3.75 MiB. Remote-exec's 256K stage plus cold captures requires one fewer row.
+{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
+add_compile_definitions(LXP_NREG=4)
+{% else %}
 add_compile_definitions(LXP_NREG=5)
+{% endif %}
 {% endif %}
 {% endif %}
 # The embedded BusyBox rootfs.cpio comes from <OVE_BUILDROOT>/<OVE_LINUX_ROOTFS_OUTPUT>/images/.
