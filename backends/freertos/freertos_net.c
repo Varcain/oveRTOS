@@ -75,16 +75,23 @@ int ethernetif_input(struct netif *netif)
 	return 0;
 }
 
-#if defined(CONFIG_OVE_LINUX_NET)
-/* Wake the Linux personality's socket coordinator the instant frames land, so a parked
- * recv/connect/accept retries immediately instead of on its ≤5 ms tick. Defined by the run
- * loop; canonical declaration in lxp/lxp_net.h — mirrored locally so this lwIP net backend
- * need not pull the module's syscall surface (lxp_net.h -> lxp_syscall.h) in for one prototype. */
-void lxp_sock_kick(void);
-#endif
-
 static struct netif s_netif;
 static volatile int s_tcpip_ready;
+
+#if defined(CONFIG_OVE_LINUX_NET)
+/*
+ * Budget bulk traffic to roughly one full-size frame per 8 ms (~1.5 Mbit/s).
+ * That is the throughput class measured with NuttX under the same saturating
+ * userspace load. Zephyr and NuttX naturally provide this fairness through
+ * their event-driven MAC paths; the STM32 FreeRTOS port polls, so it needs an
+ * an explicit backoff after each received frame. An idle interface remains on
+ * the 1 ms poll so the policy does not add latency to sporadic traffic. Socket
+ * waiters retry on the coordinator's <=5 ms tick.
+ */
+#define ETH_RX_BUSY_POLL_MS 8u
+#else
+#define ETH_RX_BUSY_POLL_MS 1u
+#endif
 
 /* Polling task for the Ethernet RX path */
 static void eth_rx_task(void *arg)
@@ -92,16 +99,7 @@ static void eth_rx_task(void *arg)
 	(void)arg;
 	for (;;) {
 		int n = ethernetif_input(&s_netif);
-#if defined(CONFIG_OVE_LINUX_NET)
-		/* Frames arrived (data/ACK) — kick the coordinator so a parked socket op resumes
-		 * now rather than waiting up to one 5 ms retry tick. No frames ⇒ no kick, so the
-		 * coordinator still sleeps its full idle timeout when the link is quiet. */
-		if (n > 0)
-			lxp_sock_kick();
-#else
-		(void)n;
-#endif
-		vTaskDelay(pdMS_TO_TICKS(1));
+		vTaskDelay(pdMS_TO_TICKS(n > 0 ? ETH_RX_BUSY_POLL_MS : 1u));
 	}
 }
 
