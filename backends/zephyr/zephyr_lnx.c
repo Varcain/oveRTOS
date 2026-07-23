@@ -535,10 +535,19 @@ static void *zephyr_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
 {
 	ARG_UNUSED(sidx);
 	ARG_UNUSED(ctx);
-	/* PendSV retains the parked thread's context in struct k_thread.
-	 * zephyr_spawn_resume replaces it with a native exception frame, so no
-	 * guest-readable handoff token is needed. */
+	/* PendSV retains the exact svc exception frame and callee-saved
+	 * registers in the parked k_thread. spawn_resume rewrites that existing
+	 * native frame before returning the thread to the ready queue. */
 	return NULL;
+}
+
+/* SVC #0 returns a parked guest here without changing PSP. The coordinator is
+ * higher priority and suspends it at the pending exception return. Keeping the
+ * trampoline naked guarantees the saved native frame remains at the captured
+ * PSP; spawn_resume replaces that frame before the thread can execute again. */
+__attribute__((naked)) void lxp_park_loop(void *token __attribute__((unused)))
+{
+	__asm__ volatile("1: b 1b\n");
 }
 
 /* (Re)build region ridx's MPU domain (W^X text/data split) for a loaded image. */
@@ -693,24 +702,13 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 				long r0val)
 {
 	if (!g_lxp_used[sidx] && g_tid[sidx]) {
-		/* PendSV restores r4-r11 from callee_saved and un-stacks r0-r3,
-		 * r12/lr/pc/xPSR (plus optional s0-s15/FPSCR) from PSP. Build
-		 * exactly that native representation below the captured Linux SP.
-		 * This keeps the same k_thread while avoiding a C trampoline that
-		 * changes PSP underneath Zephyr's lazy-FPU exception state. */
-		struct k_thread *thread = &g_thread[sidx];
-#if LXP_ENABLE_FPU_CONTEXT
-		int fp_active = ctx->fp.active;
-		size_t fp_bytes = fp_active ? sizeof(thread->arch.preempt_float) + 8u : 0u;
-#else
-		int fp_active = 0;
-		size_t fp_bytes = 0u;
-#endif
-		size_t align_pad = (ctx->xpsr & (1u << 9)) ? sizeof(uint32_t) : 0u;
-		struct arch_esf *esf =
-			(struct arch_esf *)((uintptr_t)ctx->sp - sizeof(esf->basic) -
-					   fp_bytes - align_pad);
-		memset(esf, 0, sizeof(esf->basic) + fp_bytes);
+		/* PendSV saved the svc frame that park_frame redirected to the naked
+		 * lxp_park_loop. Reuse that exact native frame: deriving a new PSP
+		 * from the Linux SP loses Zephyr's exception-alignment/lazy-FP
+		 * invariants, while resuming through another user exception can try
+	 * to preserve stale privileged lazy-FP state under the guest MPU. */
+	struct k_thread *thread = &g_thread[sidx];
+	struct arch_esf *esf = (struct arch_esf *)(uintptr_t)thread->callee_saved.psp;
 		esf->basic.r0 = (uint32_t)r0val;
 		esf->basic.r1 = ctx->r1;
 		esf->basic.r2 = ctx->r2;
@@ -727,20 +725,15 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 		thread->callee_saved.v6 = ctx->r4_11[5];
 		thread->callee_saved.v7 = ctx->r4_11[6];
 		thread->callee_saved.v8 = ctx->r4_11[7];
-		thread->callee_saved.psp = (uint32_t)(uintptr_t)esf;
-		thread->arch.basepri = 0u;
-		if (fp_active) {
 #if LXP_ENABLE_FPU_CONTEXT
+		if ((thread->arch.mode_exc_return & (1u << 4)) == 0) {
 			for (int i = 0; i < 16; i++)
 				esf->fpu.s[i] = ctx->fp.s[i];
 			esf->fpu.fpscr = ctx->fp.fpscr;
 			memcpy(&thread->arch.preempt_float, &ctx->fp.s[16],
 			       sizeof(thread->arch.preempt_float));
-#endif
-			thread->arch.mode_exc_return = 0xedu;
-		} else {
-			thread->arch.mode_exc_return = 0xfdu;
 		}
+#endif
 		g_lxp_used[sidx] = 1;
 		k_thread_resume(g_tid[sidx]);
 		return;
