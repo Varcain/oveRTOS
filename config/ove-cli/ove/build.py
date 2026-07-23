@@ -256,9 +256,15 @@ def build_zephyr(ws):
     if os.path.isdir(zephyr_ws):
         env["ZEPHYR_BASE"] = zephyr_ws
 
-    # Apply board patches, then app patches to Zephyr source tree
+    # Apply engine-wide compatibility patches, then board and app patches to
+    # the Zephyr source tree. Keep the global names distinct: the shared stamp
+    # records patch basenames for all three layers.
     if os.path.isdir(zephyr_ws):
         patches_stamp = os.path.join(zephyr_ws, ".ove_patches_applied")
+        _apply_patches(zephyr_ws,
+                       os.path.join(ws.ove_dir, "config", "patches", "zephyr"),
+                       patches_stamp, label="global patch",
+                       log_file=ws.build_log)
         _apply_patches(zephyr_ws,
                        os.path.join(ws.board_dir, "zephyr", "patches"),
                        patches_stamp, label="board patch",

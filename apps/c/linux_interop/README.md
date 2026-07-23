@@ -84,14 +84,26 @@ scope ISR can therefore post its event ahead of the active display/network
 peripherals without using Zephyr's zero-latency class, whose handlers could not
 call the event API.
 
-On FreeRTOS, `svc-us` measures wall-clock cycles from entry into the C portion
-of the Linux guest's SVC handler through syscall dispatch/parking and register
-write-back. The small assembly entry/exit shim and the statistics update itself
-are outside the interval. `syscall` is the ARM EABI syscall number carried in
-`r7` (all guest calls use the same `svc #0` instruction); the parenthesised name
-is `?` for a number not in the reporter's compact name table. The window row is
-reset every 10 seconds, while `svc-total` retains the lifetime maximum and the
-syscall that produced it.
+On FreeRTOS and Zephyr, `svc-us` measures wall-clock cycles from entry into the
+C portion of the Linux guest's SVC handler through syscall dispatch/parking and
+register write-back. The small assembly entry/exit shim and the statistics
+update itself are outside the interval. `syscall` is the ARM EABI syscall number
+carried in `r7` (all guest calls use the same `svc #0` instruction); the
+parenthesised name is `?` for a number not in the reporter's compact name table.
+The window row is reset every 10 seconds, while `svc-total` retains the lifetime
+maximum and the syscall that produced it.
+
+Zephyr also prints `irq-lock-us`: the count, average, and maximum duration of
+the coordinator's IRQ-masked process-table snapshots for both the current
+window and the whole run. Its measurement update happens after IRQs are
+restored, so the instrumentation does not lengthen the reported interval.
+
+Contained Zephyr guest faults do not write the normal multi-line register dump
+from exception context. The seam preserves CFSR/HFSR, fault-address registers,
+PC, and the number of suppressed dump lines in `g_zephyr_lxp_fault_diag`, then
+the coordinator emits the existing single `[lxp] guest-exit ...` line. A fault
+in privileged Zephyr or oveRTOS code still receives Zephyr's full dump and
+halts; the dump hook does not hide host failures.
 
 Ignore the first cycle while arming the scope. Then save an idle baseline before
 starting the load. At the guest prompt, use a bounded set of background jobs so

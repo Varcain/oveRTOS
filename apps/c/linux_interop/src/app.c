@@ -407,6 +407,8 @@ static const char *exit_reason_name(uint8_t reason)
 		return "exec-resource";
 	case LXP_EXIT_REASON_EXEC_LOAD:
 		return "exec-load";
+	case LXP_EXIT_REASON_STATE_CORRUPTION:
+		return "state-corruption";
 	default:
 		return "unspecified";
 	}

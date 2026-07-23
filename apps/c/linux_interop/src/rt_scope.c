@@ -33,13 +33,16 @@
 #include "ove/thread.h"
 #include "ove/time.h"
 
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
+#include "lxp/lxp_syscall.h"
+#endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 #include "FreeRTOS.h"
-#include "lxp/lxp_syscall.h"
 #include "ove_freertos_lnx_metrics.h"
 #include "stm32f746xx.h"
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 #include <zephyr/irq.h>
+#include "ove_zephyr_lnx_metrics.h"
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
 #include <arch/chip/irq.h>
 #include <nuttx/arch.h>
@@ -412,7 +415,17 @@ static char *append_ticks_us(char *p, uint32_t ticks)
 	return p;
 }
 
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
+typedef struct ove_freertos_lnx_svc_metrics svc_metrics_t;
+#define RT_SCOPE_SVC_METRICS_TAKE ove_freertos_lnx_svc_metrics_take
+#define RT_SCOPE_SVC_COUNTER_HZ ove_freertos_lnx_svc_counter_hz
+#else
+typedef struct ove_zephyr_lnx_svc_metrics svc_metrics_t;
+#define RT_SCOPE_SVC_METRICS_TAKE ove_zephyr_lnx_svc_metrics_take
+#define RT_SCOPE_SVC_COUNTER_HZ ove_zephyr_lnx_metrics_counter_hz
+#endif
+
 static char *append_cycles_us(char *p, uint32_t cycles, uint32_t counter_hz)
 {
 	uint32_t hundredths =
@@ -504,13 +517,13 @@ static char *append_syscall(char *p, uint32_t nr)
 
 static void report_svc_metrics(void)
 {
-	struct ove_freertos_lnx_svc_metrics window;
-	struct ove_freertos_lnx_svc_metrics total;
+	svc_metrics_t window;
+	svc_metrics_t total;
 	char line[192];
 	char *p;
-	uint32_t counter_hz = ove_freertos_lnx_svc_counter_hz();
+	uint32_t counter_hz = RT_SCOPE_SVC_COUNTER_HZ();
 
-	ove_freertos_lnx_svc_metrics_take(&window, &total);
+	RT_SCOPE_SVC_METRICS_TAKE(&window, &total);
 
 	p = append_text(line, "[rt-scope] svc-us window calls=");
 	p = append_u32(p, window.calls);
@@ -544,7 +557,42 @@ static void report_svc_metrics(void)
 	*p = '\0';
 	g_report_write(line);
 }
-#endif /* CONFIG_OVE_RTOS_FREERTOS */
+
+#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+static void report_critical_metrics(void)
+{
+	struct ove_zephyr_lnx_critical_metrics window;
+	struct ove_zephyr_lnx_critical_metrics total;
+	char line[192];
+	char *p;
+	uint32_t counter_hz = ove_zephyr_lnx_metrics_counter_hz();
+
+	ove_zephyr_lnx_critical_metrics_take(&window, &total);
+	p = append_text(line, "[rt-scope] irq-lock-us window sections=");
+	p = append_u32(p, window.sections);
+	if (window.sections != 0u) {
+		p = append_text(p, " avg=");
+		p = append_cycles_us(p, (uint32_t)(window.total_cycles / window.sections),
+				     counter_hz);
+		p = append_text(p, " max=");
+		p = append_cycles_us(p, window.max_cycles, counter_hz);
+	}
+	p = append_text(p, " | total sections=");
+	p = append_u32(p, total.sections);
+	if (total.sections != 0u) {
+		p = append_text(p, " avg=");
+		p = append_cycles_us(p, (uint32_t)(total.total_cycles / total.sections),
+				     counter_hz);
+		p = append_text(p, " max=");
+		p = append_cycles_us(p, total.max_cycles, counter_hz);
+	}
+	*p++ = '\r';
+	*p++ = '\n';
+	*p = '\0';
+	g_report_write(line);
+}
+#endif /* CONFIG_OVE_RTOS_ZEPHYR */
+#endif /* CONFIG_OVE_RTOS_FREERTOS || CONFIG_OVE_RTOS_ZEPHYR */
 
 static uint32_t percentile_upper_us(const struct rt_scope_metrics *metrics, uint32_t per_mille)
 {
@@ -657,8 +705,11 @@ static void report_metrics(void)
 	*p = '\0';
 	g_report_write(line);
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
 	report_svc_metrics();
+#endif
+#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+	report_critical_metrics();
 #endif
 }
 

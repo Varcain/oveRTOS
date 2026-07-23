@@ -21,8 +21,12 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/app_memory/app_memdomain.h>
+#include <zephyr/arch/exception.h>
+#include <zephyr/init.h>
 #include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/random/random.h> /* sys_rand_get -> engine random_fill op (AT_RANDOM/getrandom) */
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/time_units.h>
 #include <zephyr/version.h>
 #include <stddef.h>
 #include <string.h>
@@ -32,6 +36,9 @@
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "ove_zephyr_priority.h"
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+#include "ove_zephyr_lnx_metrics.h"
+#endif
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
 #endif
@@ -43,6 +50,8 @@ BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEU
 BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
 		     OVE_ZEPHYR_PRIO_LXP_COORDINATOR < OVE_ZEPHYR_PRIO_LXP_GUEST,
 	     "critical, coordinator, and guest priorities must remain ordered");
+BUILD_ASSERT(IS_ENABLED(CONFIG_EXCEPTION_DUMP_HOOK_ONLY),
+	     "the Linux personality needs selective exception-dump routing");
 #if defined(CONFIG_NETWORKING)
 BUILD_ASSERT(IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE),
 	     "Linux network traffic classes must be preemptible");
@@ -198,6 +207,155 @@ static int current_slot(void)
 	return -1;
 }
 
+/* Zephyr normally prints a long register/fault decode from fault context before
+ * k_sys_fatal_error_handler() gets the chance to contain an unprivileged guest.
+ * Route exception output through a hook: trusted runtime faults retain Zephyr's
+ * complete synchronous dump, while a fault belonging to a Linux guest is
+ * represented by the bounded coordinator-context guest-exit record instead.
+ * Dropping the va_list avoids both formatting and a millisecond-scale UART
+ * critical path. */
+static volatile uint32_t g_guest_fault_dump_lines;
+
+static void lxp_exception_dump(const char *format, va_list args)
+{
+	if (g_lxp_active && current_slot() >= 0) {
+		g_guest_fault_dump_lines++;
+		return;
+	}
+	vprintk(format, args);
+}
+
+static void lxp_exception_drain(bool flush)
+{
+	ARG_UNUSED(flush);
+	/* vprintk is synchronous; discarded guest output has nothing to drain. */
+}
+
+static int lxp_exception_dump_init(void)
+{
+	arch_exception_set_dump_hook(lxp_exception_dump, lxp_exception_drain);
+	return 0;
+}
+/* Install immediately after Zephyr establishes C runtime state so faults from
+ * later kernel/driver initialization are forwarded too, not silently dropped
+ * by CONFIG_EXCEPTION_DUMP_HOOK_ONLY before main starts. */
+SYS_INIT(lxp_exception_dump_init, PRE_KERNEL_1, 0);
+
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+/* SVC is the sole svc-metric writer. The coordinator is the sole critical-
+ * metric writer. On this single-core target, switching the active window
+ * before copying the old one leaves that old window quiescent. Lifetime
+ * seqlocks protect the 64-bit accumulators from a preempting writer. */
+static volatile uint32_t g_svc_metrics_active;
+static struct ove_zephyr_lnx_svc_metrics g_svc_metrics_window[2] = {
+	{.min_cycles = UINT32_MAX},
+	{.min_cycles = UINT32_MAX},
+};
+static volatile uint32_t g_svc_metrics_total_seq;
+static struct ove_zephyr_lnx_svc_metrics g_svc_metrics_total = {
+	.min_cycles = UINT32_MAX,
+};
+
+static void svc_metrics_add(struct ove_zephyr_lnx_svc_metrics *metrics, uint32_t syscall,
+			    uint32_t cycles)
+{
+	if (metrics->calls == 0u || cycles < metrics->min_cycles)
+		metrics->min_cycles = cycles;
+	if (metrics->calls == 0u || cycles > metrics->max_cycles) {
+		metrics->max_cycles = cycles;
+		metrics->max_syscall = syscall;
+	}
+	metrics->calls++;
+	metrics->total_cycles += cycles;
+}
+
+static void svc_metrics_record(uint32_t syscall, uint32_t cycles)
+{
+	uint32_t active = g_svc_metrics_active;
+	svc_metrics_add(&g_svc_metrics_window[active], syscall, cycles);
+
+	g_svc_metrics_total_seq++;
+	__asm__ volatile("" ::: "memory");
+	svc_metrics_add(&g_svc_metrics_total, syscall, cycles);
+	__asm__ volatile("" ::: "memory");
+	g_svc_metrics_total_seq++;
+}
+
+void ove_zephyr_lnx_svc_metrics_take(struct ove_zephyr_lnx_svc_metrics *window,
+				     struct ove_zephyr_lnx_svc_metrics *total)
+{
+	uint32_t old_active = g_svc_metrics_active;
+	g_svc_metrics_active = old_active ^ 1u;
+	__asm__ volatile("" ::: "memory");
+
+	*window = g_svc_metrics_window[old_active];
+	g_svc_metrics_window[old_active] = (struct ove_zephyr_lnx_svc_metrics){
+		.min_cycles = UINT32_MAX,
+	};
+
+	uint32_t before;
+	uint32_t after;
+	do {
+		before = g_svc_metrics_total_seq;
+		__asm__ volatile("" ::: "memory");
+		*total = g_svc_metrics_total;
+		__asm__ volatile("" ::: "memory");
+		after = g_svc_metrics_total_seq;
+	} while (before != after || (after & 1u) != 0u);
+}
+
+static volatile uint32_t g_critical_metrics_active;
+static struct ove_zephyr_lnx_critical_metrics g_critical_metrics_window[2];
+static volatile uint32_t g_critical_metrics_total_seq;
+static struct ove_zephyr_lnx_critical_metrics g_critical_metrics_total;
+
+static void critical_metrics_add(struct ove_zephyr_lnx_critical_metrics *metrics, uint32_t cycles)
+{
+	if (cycles > metrics->max_cycles)
+		metrics->max_cycles = cycles;
+	metrics->sections++;
+	metrics->total_cycles += cycles;
+}
+
+static void critical_metrics_record(uint32_t cycles)
+{
+	uint32_t active = g_critical_metrics_active;
+	critical_metrics_add(&g_critical_metrics_window[active], cycles);
+
+	g_critical_metrics_total_seq++;
+	__asm__ volatile("" ::: "memory");
+	critical_metrics_add(&g_critical_metrics_total, cycles);
+	__asm__ volatile("" ::: "memory");
+	g_critical_metrics_total_seq++;
+}
+
+void ove_zephyr_lnx_critical_metrics_take(struct ove_zephyr_lnx_critical_metrics *window,
+					  struct ove_zephyr_lnx_critical_metrics *total)
+{
+	uint32_t old_active = g_critical_metrics_active;
+	g_critical_metrics_active = old_active ^ 1u;
+	__asm__ volatile("" ::: "memory");
+
+	*window = g_critical_metrics_window[old_active];
+	g_critical_metrics_window[old_active] = (struct ove_zephyr_lnx_critical_metrics){0};
+
+	uint32_t before;
+	uint32_t after;
+	do {
+		before = g_critical_metrics_total_seq;
+		__asm__ volatile("" ::: "memory");
+		*total = g_critical_metrics_total;
+		__asm__ volatile("" ::: "memory");
+		after = g_critical_metrics_total_seq;
+	} while (before != after || (after & 1u) != 0u);
+}
+
+uint32_t ove_zephyr_lnx_metrics_counter_hz(void)
+{
+	return sys_clock_hw_cycles_per_sec();
+}
+#endif /* CONFIG_OVE_LINUX_RT_SCOPE */
+
 /* ---- the Linux SVC seam ---------------------------------------------------- */
 extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee,
 				    uint32_t exc_return);
@@ -210,6 +368,10 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 		if ((*svc & 0xff00u) == 0xdf00u && (*svc & 0x00ffu) == 0x00u) {
 			int sidx = current_slot();
 			if (sidx >= 0) {
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+				uint32_t syscall = callee->v4;
+				uint32_t svc_start_cycles = k_cycle_get_32();
+#endif
 				struct arch_esf *e = (struct arch_esf *)esf;
 				struct lxp_frame f;
 				f.r[0] = esf->basic.r0;
@@ -271,6 +433,9 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 					__asm__ volatile("vldmia %0, {s16-s31}"
 							 : : "r"(&fpctx.s[16]) : "memory");
 				}
+#endif
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+				svc_metrics_record(syscall, k_cycle_get_32() - svc_start_cycles);
 #endif
 				return;
 			}
@@ -513,13 +678,26 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
  * exception, so k_sched_lock would NOT exclude it). Held only for the brief
  * proc-table flag snapshot — never across abort/spawn (which may yield). */
 static unsigned int g_crit_key;
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+static uint32_t g_crit_start_cycles;
+#endif
 static void zephyr_crit_enter(void)
 {
 	g_crit_key = irq_lock();
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	g_crit_start_cycles = k_cycle_get_32();
+#endif
 }
 static void zephyr_crit_exit(void)
 {
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	uint32_t elapsed = k_cycle_get_32() - g_crit_start_cycles;
+#endif
 	irq_unlock(g_crit_key);
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	/* Keep the measurement update outside the interval being measured. */
+	critical_metrics_record(elapsed);
+#endif
 }
 
 /* SCB->ICSR PENDSVSET — raw (0xE000ED04, bit 28), matching the raw-SCS style used elsewhere
@@ -528,6 +706,10 @@ static void zephyr_crit_exit(void)
  * them is a no-op) — Zephyr's own z_arm_exc_exit does `SCB->ICSR = SCB_ICSR_PENDSVSET_Msk`. */
 #define LXP_ICSR (*(volatile uint32_t *)0xE000ED04u)
 #define LXP_PENDSVSET (1u << 28)
+#define LXP_CFSR (*(volatile uint32_t *)0xE000ED28u)
+#define LXP_HFSR (*(volatile uint32_t *)0xE000ED2Cu)
+#define LXP_MMFAR (*(volatile uint32_t *)0xE000ED34u)
+#define LXP_BFAR (*(volatile uint32_t *)0xE000ED38u)
 
 /* Event wakeup: the dispatch (fault/exception context) gives this when a program parks; the
  * coordinator takes it instead of busy-polling. ISR-safe k_sem_give. */
@@ -561,17 +743,47 @@ static void zephyr_event_wait(unsigned ms)
  * like the FreeRTOS/NuttX MemManage containment handlers). current_slot() reads _current, which the
  * fault has not switched away from, so it still names the faulting program. A fault in privileged
  * runtime code (current_slot() < 0) is a genuine bug → fall through to the halt. */
+struct zephyr_lnx_fault_diag {
+	uint32_t count;
+	uint32_t reason;
+	uint32_t cfsr;
+	uint32_t hfsr;
+	uint32_t mmfar;
+	uint32_t bfar;
+	uint32_t pc;
+	uint32_t suppressed_dump_lines;
+};
+/* Host-SRAM, non-static post-mortem record. Fault context only copies registers;
+ * formatting remains in the coordinator's bounded on_guest_exit callback. */
+volatile struct zephyr_lnx_fault_diag g_zephyr_lxp_fault_diag[LXP_NSLOT];
+static uint32_t g_guest_fault_dump_consumed;
+
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 {
-	ARG_UNUSED(esf);
 	if (g_lxp_active) {
 		int sidx = current_slot();
 		if (sidx >= 0) {
+			volatile struct zephyr_lnx_fault_diag *diag =
+				&g_zephyr_lxp_fault_diag[sidx];
+			diag->count++;
+			diag->reason = reason;
+			diag->cfsr = LXP_CFSR & 0x03ffffffu;
+			diag->hfsr = LXP_HFSR;
+			diag->mmfar = LXP_MMFAR;
+			diag->bfar = LXP_BFAR;
+			diag->pc = esf ? esf->basic.pc : 0u;
+			diag->suppressed_dump_lines =
+				g_guest_fault_dump_lines - g_guest_fault_dump_consumed;
+			g_guest_fault_dump_consumed = g_guest_fault_dump_lines;
+
 			g_lxp_proc[sidx].exited = 1;
 			g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
 			g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
 			g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
-			g_lxp_proc[sidx].exit_detail = reason;
+			g_lxp_proc[sidx].exit_detail = diag->cfsr ? diag->cfsr : reason;
+			g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
+							: (diag->cfsr & (1u << 15)) ? diag->bfar
+										    : 0u;
 			zephyr_event_post();
 			return;
 		}
