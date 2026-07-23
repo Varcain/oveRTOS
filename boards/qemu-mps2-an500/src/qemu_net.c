@@ -217,15 +217,19 @@ err_t ethernetif_init(struct netif *netif)
 
 /* ── Public: poll for received frames (overrides weak in freertos_net.c) */
 
-int ethernetif_input(struct netif *netif)
+int ethernetif_input(struct netif *netif, unsigned budget)
 {
 	int n = 0;
+	unsigned processed = 0;
 
 	if (g_sh_fd_rx < 0)
 		return 0;
 
-	/* Process all available frames in this poll cycle */
+	/* Process all available frames in this poll cycle, or the caller's bounded
+	 * personality budget. A zero budget retains the native full drain. */
 	for (;;) {
+		if (budget && processed >= budget)
+			break;
 		uint32_t avail = ring_avail_rx();
 		if (avail < 2)
 			break; /* Not even a length prefix available */
@@ -248,6 +252,7 @@ int ethernetif_input(struct netif *netif)
 
 		/* Read frame data */
 		ring_read_rx(g_rx_buf, frame_len);
+		processed++;
 
 		/* Allocate pbuf and pass to lwIP */
 		struct pbuf *p = pbuf_alloc(PBUF_RAW, frame_len, PBUF_POOL);
