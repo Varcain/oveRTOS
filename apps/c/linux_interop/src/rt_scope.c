@@ -99,7 +99,9 @@
 #define RT_TIM_CCER_CC1E (1u << 0)
 
 #define RT_SCOPE_IRQ 29
-#define RT_SCOPE_IRQ_PRIORITY 5
+/* Zephyr uses 0 as its highest ordinary, kernel-callable IRQ priority. The
+ * other engines select their syscall-safe priority in irq_prepare(). */
+#define RT_SCOPE_IRQ_PRIORITY 0
 #define RT_SCOPE_STACK_SIZE 1024u
 #define RT_SCOPE_REPORT_STACK_SIZE 1024u
 #define RT_SCOPE_WORK_ITERATIONS 512u
@@ -231,6 +233,9 @@ static void rt_scope_irq_enable(void)
 }
 
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
+
+_Static_assert(RT_SCOPE_IRQ_PRIORITY == 0,
+	       "the Zephyr scope reference must remain the highest ordinary IRQ");
 
 static void timer_isr(const void *arg)
 {

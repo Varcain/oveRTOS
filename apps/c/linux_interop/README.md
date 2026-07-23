@@ -78,6 +78,12 @@ scheduled but not yet started; it is not counted as missed. The software report
 adds a few register accesses to the measured path, so keep the GPIO capture as
 the independent physical cross-check.
 
+On Zephyr, TIM3 runs at ordinary IRQ priority 0 (the highest kernel-callable
+level). Ethernet runs at 2; LTDC, QSPI, USART1, EXTI, and DMA2 run at 3. The
+scope ISR can therefore post its event ahead of the active display/network
+peripherals without using Zephyr's zero-latency class, whose handlers could not
+call the event API.
+
 On FreeRTOS, `svc-us` measures wall-clock cycles from entry into the C portion
 of the Linux guest's SVC handler through syscall dispatch/parking and register
 write-back. The small assembly entry/exit shim and the statistics update itself

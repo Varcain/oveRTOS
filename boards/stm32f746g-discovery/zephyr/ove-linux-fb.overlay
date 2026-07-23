@@ -13,10 +13,12 @@
 
 &ltdc {
 	status = "okay";
+	interrupts = <88 3>, <89 3>;
 };
 
 &quadspi {
 	status = "okay";
+	interrupts = <92 3>;
 	/* Enable the QUADSPI half-cycle Sample Shift (SampleShifting = HALFCYCLE), matching the
 	 * STM32Cube/FreeRTOS BSP + the NuttX board patch.  The stock Zephyr driver leaves it NONE
 	 * unless ssht-enable is set; without it the memory-mapped quad reads capture in the wrong

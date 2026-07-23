@@ -15,6 +15,31 @@
 	status = "disabled";
 };
 
+/* Interrupt-priority contract for the personality workload. Zephyr priority 0
+ * is the highest ordinary (kernel-callable) level and belongs to the TIM3
+ * scope deadline. Network and board peripherals remain kernel-callable but
+ * cannot delay that reference ISR. The display/QSPI priorities are applied in
+ * ove-linux-fb.overlay, where those devices are re-enabled. */
+&timers3 {
+	interrupts = <29 0>;
+};
+
+&mac {
+	interrupts = <61 2>;
+};
+
+&usart1 {
+	interrupts = <37 3>;
+};
+
+&exti {
+	interrupts = <6 3>, <7 3>, <8 3>, <9 3>, <10 3>, <23 3>, <40 3>;
+};
+
+&dma2 {
+	interrupts = <56 3 57 3 58 3 59 3 60 3 68 3 69 3 70 3>;
+};
+
 /*
  * Free an MPU region for the program's memory domain. This M7 has only 8 PMSAv7 regions; the Linux
  * program needs three domain partitions (libc TLS + image + dynamic arena) plus its K_USER stack.
