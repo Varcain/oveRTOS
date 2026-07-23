@@ -11,6 +11,7 @@
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "ove_backend_common.h"
+#include "ove_zephyr_priority.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_heap.h>
 #include <stdbool.h>
@@ -111,31 +112,6 @@ static inline void _unregister_thread(struct ove_thread *t)
 }
 #endif /* CONFIG_OVE_TRACE_STREAM */
 
-static int map_priority(ove_prio_t prio)
-{
-	/* Zephyr: lower number = higher priority (cooperative: negative) */
-	switch (prio) {
-	case OVE_PRIO_IDLE:
-		return 14;
-	case OVE_PRIO_LOW:
-		return 12;
-	case OVE_PRIO_BELOW_NORMAL:
-		return 10;
-	case OVE_PRIO_NORMAL:
-		return 8;
-	case OVE_PRIO_ABOVE_NORMAL:
-		return 6;
-	case OVE_PRIO_HIGH:
-		return 4;
-	case OVE_PRIO_REALTIME:
-		return 2;
-	case OVE_PRIO_CRITICAL:
-		return 1;
-	default:
-		return 8;
-	}
-}
-
 static void thread_wrapper(void *p1, void *p2, void *p3)
 {
 	ove_thread_fn entry = (ove_thread_fn)p1;
@@ -212,7 +188,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	 * region, not beyond it. Callers on such boards must align the buffer to its own size — the
 	 * flexible PMSAv8 layout on the an521 tolerates a plain buffer, which masks this. */
 	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
-			      (void *)entry, arg, (void *)storage, map_priority(priority), 0,
+			      (void *)entry, arg, (void *)storage, ove_zephyr_map_priority(priority), 0,
 			      K_NO_WAIT);
 
 	if (name != NULL) {
@@ -280,7 +256,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	info->stop_requested = 0;
 
 	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry, arg,
-			      (void *)info, map_priority(priority), 0, K_NO_WAIT);
+			      (void *)info, ove_zephyr_map_priority(priority), 0, K_NO_WAIT);
 
 	if (name != NULL) {
 		k_thread_name_set(tid, name);
@@ -320,9 +296,9 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
-		k_thread_priority_set(&info->thread, map_priority(prio));
+		k_thread_priority_set(&info->thread, ove_zephyr_map_priority(prio));
 	} else {
-		k_thread_priority_set(k_current_get(), map_priority(prio));
+		k_thread_priority_set(k_current_get(), ove_zephyr_map_priority(prio));
 	}
 }
 

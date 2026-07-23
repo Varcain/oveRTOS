@@ -9,30 +9,8 @@
 #include "ove/workqueue.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_zephyr_priority.h"
 #include <zephyr/kernel.h>
-static int map_priority(ove_prio_t prio)
-{
-	switch (prio) {
-	case OVE_PRIO_IDLE:
-		return 14;
-	case OVE_PRIO_LOW:
-		return 12;
-	case OVE_PRIO_BELOW_NORMAL:
-		return 10;
-	case OVE_PRIO_NORMAL:
-		return 8;
-	case OVE_PRIO_ABOVE_NORMAL:
-		return 6;
-	case OVE_PRIO_HIGH:
-		return 4;
-	case OVE_PRIO_REALTIME:
-		return 2;
-	case OVE_PRIO_CRITICAL:
-		return 1;
-	default:
-		return 8;
-	}
-}
 
 static void zephyr_work_handler(struct k_work *work)
 {
@@ -73,8 +51,8 @@ int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, co
 	}
 	storage->stack_size = stack_size;
 
-	k_work_queue_start(&storage->work_q, storage->stack, stack_size, map_priority(priority),
-			   NULL);
+	k_work_queue_start(&storage->work_q, storage->stack, stack_size,
+			   ove_zephyr_map_priority(priority), NULL);
 
 	if (name != NULL) {
 		k_thread_name_set(&storage->work_q.thread, name);
