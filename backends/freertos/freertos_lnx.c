@@ -23,6 +23,7 @@
 #include "task.h"
 
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
@@ -38,6 +39,81 @@
 #include "bsp.h" /* bsp_random_fill -> hardware-backed guest entropy */
 #include "stm32f7xx.h" /* SCB_CleanDCache / SCB_InvalidateICache: M7 loaded-code coherency */
 #endif
+
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+#include "ove_freertos_lnx_metrics.h"
+
+/* The SVC handler is the only writer. A task-context reader can be preempted by
+ * it, but cannot run concurrently on this single-core target. Switching the
+ * active window before copying the old one therefore leaves the old window
+ * quiescent. The lifetime seqlock protects its 64-bit total from a torn read. */
+static volatile uint32_t g_svc_metrics_active;
+static struct ove_freertos_lnx_svc_metrics g_svc_metrics_window[2] = {
+	{.min_cycles = UINT32_MAX},
+	{.min_cycles = UINT32_MAX},
+};
+static volatile uint32_t g_svc_metrics_total_seq;
+static struct ove_freertos_lnx_svc_metrics g_svc_metrics_total = {
+	.min_cycles = UINT32_MAX,
+};
+
+static void svc_metrics_add(struct ove_freertos_lnx_svc_metrics *metrics, uint32_t syscall,
+			    uint32_t cycles)
+{
+	if (metrics->calls == 0u || cycles < metrics->min_cycles)
+		metrics->min_cycles = cycles;
+	if (metrics->calls == 0u || cycles > metrics->max_cycles) {
+		metrics->max_cycles = cycles;
+		metrics->max_syscall = syscall;
+	}
+	metrics->calls++;
+	metrics->total_cycles += cycles;
+}
+
+static void svc_metrics_record(uint32_t syscall, uint32_t cycles)
+{
+	uint32_t active = g_svc_metrics_active;
+	svc_metrics_add(&g_svc_metrics_window[active], syscall, cycles);
+
+	g_svc_metrics_total_seq++;
+	__asm__ volatile("" ::: "memory");
+	svc_metrics_add(&g_svc_metrics_total, syscall, cycles);
+	__asm__ volatile("" ::: "memory");
+	g_svc_metrics_total_seq++;
+}
+
+void ove_freertos_lnx_svc_metrics_take(struct ove_freertos_lnx_svc_metrics *window,
+				       struct ove_freertos_lnx_svc_metrics *total)
+{
+	uint32_t old_active = g_svc_metrics_active;
+	g_svc_metrics_active = old_active ^ 1u;
+	__asm__ volatile("" ::: "memory");
+
+	*window = g_svc_metrics_window[old_active];
+	g_svc_metrics_window[old_active] = (struct ove_freertos_lnx_svc_metrics){
+		.min_cycles = UINT32_MAX,
+	};
+
+	uint32_t before;
+	uint32_t after;
+	do {
+		before = g_svc_metrics_total_seq;
+		__asm__ volatile("" ::: "memory");
+		total->calls = g_svc_metrics_total.calls;
+		total->min_cycles = g_svc_metrics_total.min_cycles;
+		total->max_cycles = g_svc_metrics_total.max_cycles;
+		total->total_cycles = g_svc_metrics_total.total_cycles;
+		total->max_syscall = g_svc_metrics_total.max_syscall;
+		__asm__ volatile("" ::: "memory");
+		after = g_svc_metrics_total_seq;
+	} while (before != after || (after & 1u) != 0u);
+}
+
+uint32_t ove_freertos_lnx_svc_counter_hz(void)
+{
+	return SystemCoreClock;
+}
+#endif /* CONFIG_OVE_LINUX_RT_SCOPE */
 
 #define TRAMP_STACK_WORDS 256u		  /* tramp prologue; the program uses its own stack */
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
@@ -163,6 +239,9 @@ static struct lnx_capture g_cap __attribute__((used)); /* referenced from SVC_Ha
  * never reaching the port's raise-privilege path. */
 int freertos_lnx_svc_c(struct lnx_capture *g)
 {
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	uint32_t svc_start_cycles = DWT->CYCCNT;
+#endif
 	int sidx = current_slot();
 	if (sidx < 0)
 		return 0; /* not a program task → forward to FreeRTOS */
@@ -229,6 +308,12 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 		uint32_t *high = &g->fp.s[16];
 		__asm__ volatile("vldmia %0, {s16-s31}" : : "r"(high) : "memory");
 	}
+#endif
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	/* Read the counter before updating the statistics so the observer's own
+	 * bookkeeping is not charged to the syscall it records. Unsigned
+	 * subtraction is safe across CYCCNT's approximately 19.9-second wrap. */
+	svc_metrics_record(f.r[7], DWT->CYCCNT - svc_start_cycles);
 #endif
 	return 1;
 }
