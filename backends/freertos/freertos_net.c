@@ -104,6 +104,7 @@ static void eth_rx_task(void *arg)
 
 #if defined(CONFIG_OVE_LINUX_NET)
 	unsigned tokens = ETH_RX_TOKEN_BURST;
+	int backlog = 0;
 	TickType_t refill_at = xTaskGetTickCount();
 	TickType_t refill_ticks = pdMS_TO_TICKS(ETH_RX_TOKEN_REFILL_MS);
 	if (refill_ticks == 0)
@@ -127,24 +128,36 @@ static void eth_rx_task(void *arg)
 			}
 		}
 
-		if (tokens == 0) {
+		/*
+		 * Once a bounded poll consumes every offered credit, assume the DMA
+		 * ring is backlogged and accumulate a full burst before polling it
+		 * again. This preserves the token rate but coalesces saturated traffic
+		 * into one three-frame wakeup per 24 ms instead of one wakeup per 8 ms.
+		 * A short poll clears backlog as soon as the ring drains.
+		 */
+		unsigned threshold = backlog ? ETH_RX_TOKEN_BURST : 1u;
+		if (tokens < threshold) {
 			TickType_t elapsed = now - refill_at;
-			vTaskDelay(refill_ticks - elapsed);
+			TickType_t wait = (TickType_t)(threshold - tokens) * refill_ticks - elapsed;
+			vTaskDelay(wait);
 			continue;
 		}
 
-		int n = ethernetif_input(&s_netif, tokens);
+		unsigned budget = tokens;
+		int n = ethernetif_input(&s_netif, budget);
 		if (n > 0) {
 			unsigned used = (unsigned)n;
-			if (used > tokens)
-				used = tokens;
+			if (used > budget)
+				used = budget;
 			tokens -= used;
+			backlog = used == budget;
 
 			/* tcpip_input queued these frames before this post. The tcpip
 			 * thread therefore makes socket state visible before the equal-
 			 * priority personality coordinator retries its parked operation. */
 			lxp_sock_kick();
-		}
+		} else
+			backlog = 0;
 
 		if (tokens > 0)
 			vTaskDelay(pdMS_TO_TICKS(1u));
