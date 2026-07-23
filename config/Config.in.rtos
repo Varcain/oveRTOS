@@ -60,6 +60,16 @@ menu "FreeRTOS"
             bool "Preemptive scheduling"
             default y
 
+        config FREERTOS_USE_TIME_SLICING
+            bool "Time slicing between equal-priority tasks"
+            depends on FREERTOS_USE_PREEMPTION
+            default y
+            help
+              Round-robin ready tasks at the same priority on each scheduler
+              tick. Applications that provide their own blocking/yielding
+              policy can disable this to avoid involuntary equal-priority
+              task switches.
+
         config FREERTOS_TICK_RATE_HZ
             int "Tick rate (Hz)"
             default 1000
