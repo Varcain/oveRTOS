@@ -334,13 +334,12 @@ CONFIG_STM32_MEMMAP=y
 CONFIG_CACHE_MANAGEMENT=y
 # Enable the D-cache for the Linux personality. The program pool + framebuffer live in FMC SDRAM; the
 # guest maps its pool WBWA-cacheable NON-shareable (OVE_MEM_PART_RW_CACHE), the SAME attribute the
-# privileged run loop sees the SDRAM through (the static SDRAM1 region, ATTR_MPU_RAM), so
-# coordinator<->guest is coherent through one cache on this single core with no per-handoff
-# maintenance, and /dev/fb0 cleans the framebuffer to SDRAM on present (fb_port.c) for the LTDC DMA.
-# NON-shareable throughout avoids the shareable-Normal FMC precise-BusFault that kept the D-cache off
-# before — the old "keep it off" note predated FreeRTOS commit 8c5f067, which turned the personality
-# D-cache on too. Halves the guest render: the LVGL draw buffer + the fonts/rodata XIP'd from the
-# QSPI NOR are now D-cached. Board-gated; the an521 QEMU has no cache model, so this is a no-op there.
+# privileged run loop sees through the devicetree sdram1 ATTR_MPU_RAM region appended by
+# CONFIG_MEM_ATTR after Zephyr's compiled flash/internal-SRAM regions. Coordinator<->guest is
+# coherent through one cache on this single core; /dev/fb0 separately cleans the framebuffer on
+# present for the LTDC DMA. NON-shareable avoids the shareable-Normal FMC precise-BusFault that kept
+# the D-cache off before. Enabling it halves guest render time: the LVGL draw buffer + fonts/rodata
+# XIP'd from the QSPI NOR are now D-cached. Board-gated; an521/QEMU has no cache model.
 CONFIG_DCACHE=y
 {% endif %}
 {% endif %}
