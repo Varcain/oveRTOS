@@ -31,6 +31,12 @@ defconfig:
   # Pseudo-terminal layer (/dev/ptmx + /dev/pts/N) for an interactive network login
   # shell — an SSH server (dropbear) runs the login shell on a pty slave.
   - CONFIG_OVE_LINUX_PTY=y
+rtos_defconfig:
+  freertos:
+    # The personality schedules guest processes through blocking syscalls and
+    # coordinator wakeups. Do not round-robin equal-priority guest tasks every
+    # 1 ms tick: it lets background userspace inflate foreground render latency.
+    - CONFIG_FREERTOS_USE_TIME_SLICING=n
 # Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
 #   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
 #   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)
