@@ -36,6 +36,7 @@
 #include <nuttx/cache.h>     /* up_invalidate_dcache — reused-region coherency (cacheable prog pool) */
 #include <nuttx/clock.h>     /* MSEC2TICK */
 #include <nuttx/irq.h>	     /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
+#include <nuttx/queue.h>     /* dq_rem — move a parked TCB out of the stopped list */
 #include <nuttx/sched.h>     /* nxtask_init, nxtask_activate, struct task_tcb_s */
 #include <nuttx/semaphore.h> /* nxsem_init/post/tickwait — coordinator wakeup */
 #include <nuttx/version.h>
@@ -65,6 +66,11 @@
 extern int arm_svcall(int irq, void *context, void *arg);
 /* NuttX's HardFault handler (panics) — chained for a genuine kernel fault (same coupling pattern). */
 extern int arm_hardfault(int irq, void *context, void *arg);
+/* Scheduler-internal stopped-list primitive, built by CONFIG_SIG_SIGSTOP_ACTION.
+ * Its declaration lives in sched/sched/sched.h (outside the app include path). */
+extern void nxsched_suspend(struct tcb_s *tcb);
+extern bool nxsched_add_readytorun(struct tcb_s *tcb);
+extern dq_queue_t g_stoppedtasks;
 
 #define LXP_IRQ_SVCALL 11  /* == NuttX's internal NVIC_IRQ_SVCALL */
 #define LXP_IRQ_MEMFAULT 4 /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
@@ -95,6 +101,23 @@ extern int arm_hardfault(int irq, void *context, void *arg);
 #ifndef CONTROL_NPRIV
 #define CONTROL_NPRIV (1u << 0)
 #endif
+
+/* NuttX's armv7-m/exc_return.h is internal to the kernel build. Reproduce the
+ * thread-return value used by up_initial_state(): PSP when an IRQ stack is
+ * configured, plus an extended hardware frame when the FPU is enabled. */
+#define LXP_EXC_RETURN_BASE 0xffffffe1u
+#if CONFIG_ARCH_INTERRUPTSTACK > 7
+#define LXP_EXC_RETURN_STACK (1u << 2)
+#else
+#define LXP_EXC_RETURN_STACK 0u
+#endif
+#ifdef CONFIG_ARCH_FPU
+#define LXP_EXC_RETURN_FPU 0u
+#else
+#define LXP_EXC_RETURN_FPU (1u << 4)
+#endif
+#define LXP_EXC_RETURN_THREAD \
+	(LXP_EXC_RETURN_BASE | LXP_EXC_RETURN_STACK | LXP_EXC_RETURN_FPU | (1u << 3))
 
 /* ---- NuttX-specific state -------------------------------------------------- */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -283,7 +306,7 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	f.xpsr = regs[REG_XPSR];
 #if LXP_ENABLE_FPU_CONTEXT
 	/* Hard-float guest: carry its full VFP state through the dispatch so the shared core can
-	 * preserve it across a parked/recreated syscall. CONFIG_ARCH_FPU makes NuttX save the whole
+	 * preserve it across a parked/resumed syscall. CONFIG_ARCH_FPU makes NuttX save the whole
 	 * s0-s31 + FPSCR into regs[] on exception entry (s0-s15/FPSCR in the HW frame, s16-s31 in the
 	 * SW area), so this is a plain copy — no lazy-stack force like the FreeRTOS seam needs. */
 	struct lxp_fp_context fpctx;
@@ -393,6 +416,16 @@ static int slot_noentry(int argc, char *argv[])
 	return 0;
 }
 
+static void *nuttx_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
+{
+	(void)sidx;
+	(void)ctx;
+	/* NuttX retains the complete interrupted register set in tcb->xcp.regs.
+	 * spawn_resume rewrites that frame before moving the TCB out of the stopped
+	 * list, so this port needs no guest-readable handoff descriptor. */
+	return NULL;
+}
+
 /* nxtask_init()/up_use_stack() colors (memsets STACK_COLOR over) the ENTIRE stack window on every
  * spawn. A program's window is the region tail — up to ~400K of uncached external SDRAM — so
  * coloring it on every resume cost ~2.7 ms/hop, the dominant NuttX multi-process latency (a pipe
@@ -465,6 +498,52 @@ static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *
 
 static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
 {
+	if (!g_lxp_used[sidx] && g_pid[sidx] >= 0) {
+		/* Build a native NuttX exception frame immediately below the captured
+		 * guest SP. Cortex-M exception return consumes the frame and leaves PSP
+		 * exactly at ctx->sp. Reusing the old parked frame is unsafe: it may be
+		 * lower on the guest stack after lxp_park_loop briefly ran, while merely
+		 * changing REG_SP does not move the hardware frame NuttX restores. */
+		irqstate_t flags = enter_critical_section();
+		if (g_tcb[sidx].cmn.task_state == TSTATE_TASK_STOPPED) {
+			uint32_t *regs = (uint32_t *)((uintptr_t)ctx->sp - XCPTCONTEXT_SIZE);
+			memset(regs, 0, XCPTCONTEXT_SIZE);
+			g_tcb[sidx].cmn.xcp.regs = regs;
+			regs[REG_SP] = ctx->sp;
+			regs[REG_BASEPRI] = 0;
+			regs[REG_R4] = ctx->r4_11[0];
+			regs[REG_R5] = ctx->r4_11[1];
+			regs[REG_R6] = ctx->r4_11[2];
+			regs[REG_R7] = ctx->r4_11[3];
+			regs[REG_R8] = ctx->r4_11[4];
+			regs[REG_R9] = ctx->r4_11[5];
+			regs[REG_R10] = ctx->r4_11[6];
+			regs[REG_R11] = ctx->r4_11[7];
+			regs[REG_R12] = ctx->r12;
+			regs[REG_R1] = ctx->r1;
+			regs[REG_R2] = ctx->r2;
+			regs[REG_R3] = ctx->r3;
+			regs[REG_R14] = ctx->lr;
+			regs[REG_SP] = ctx->sp;
+			regs[REG_PC] = ctx->pc & ~1u;
+			regs[REG_XPSR] = ctx->xpsr | (1u << 24);
+			regs[REG_R0] = (uint32_t)r0val;
+#if LXP_ENABLE_FPU_CONTEXT
+			for (int i = 0; i < 16; i++)
+				regs[REG_S0 + i] = ctx->fp.s[i];
+			for (int i = 0; i < 16; i++)
+				regs[REG_S16 + i] = ctx->fp.s[16 + i];
+			regs[REG_FPSCR] = ctx->fp.fpscr;
+#endif
+			regs[REG_CONTROL] |= CONTROL_NPRIV;
+			regs[REG_EXC_RETURN] = LXP_EXC_RETURN_THREAD;
+			g_lxp_used[sidx] = 1;
+			dq_rem((dq_entry_t *)&g_tcb[sidx].cmn, &g_stoppedtasks);
+			(void)nxsched_add_readytorun(&g_tcb[sidx].cmn);
+		}
+		leave_critical_section(flags);
+		return;
+	}
 	uintptr_t klo = g_region_stack_lo[ridx], ktop = (uintptr_t)ctx->sp;
 	if (g_lxp_proc[sidx].is_thread) {
 		/* Thread: run it on its clone child_stack (ctx->sp is the stack TOP, allocated by libpthread
@@ -513,7 +592,7 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 
 static void nuttx_abort_slot(int sidx)
 {
-	if (g_lxp_used[sidx] && g_pid[sidx] >= 0) {
+	if (g_pid[sidx] >= 0) {
 		/* Force SYNCHRONOUS termination. The guest program runs on a stack window that
 		 * OVERLAPS NuttX's per-task tls_info_s (TLS_INFO(sp) = sp masked to the stack base),
 		 * so the program can clobber tl_cpstate. task_delete() -> nxnotify_cancellation()
@@ -530,6 +609,13 @@ static void nuttx_abort_slot(int sidx)
 	}
 	g_lxp_used[sidx] = 0;
 	g_pid[sidx] = -1;
+}
+
+static void nuttx_park_slot(int sidx)
+{
+	if (g_lxp_used[sidx] && g_pid[sidx] >= 0)
+		nxsched_suspend(&g_tcb[sidx].cmn);
+	g_lxp_used[sidx] = 0;
 }
 
 static void nuttx_sleep_ms(unsigned ms)
@@ -632,6 +718,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.spawn_launch = nuttx_spawn_launch,
 	.spawn_resume = nuttx_spawn_resume,
 	.abort_slot = nuttx_abort_slot,
+	.park_prepare = nuttx_park_prepare,
+	.park_slot = nuttx_park_slot,
 	.sleep_ms = nuttx_sleep_ms,
 	.crit_enter = nuttx_crit_enter,
 	.crit_exit = nuttx_crit_exit,

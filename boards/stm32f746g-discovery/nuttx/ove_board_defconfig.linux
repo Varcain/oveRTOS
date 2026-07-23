@@ -27,6 +27,13 @@ CONFIG_ARMV7M_DCACHE_WRITETHROUGH=y
 # app's I/O callbacks (including the polled USART1 console); give it headroom over the 2 KB default.
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
+# Park blocked Linux guests in NuttX's stopped-task list and return the same TCB
+# to the ready list on completion. Without this option the scheduler has no
+# persistent STOPPED state and the personality would have to delete/recreate
+# tasks on every wait.
+CONFIG_SIG_DEFAULT=y
+CONFIG_SIG_SIGSTOP_ACTION=y
+
 # Physical FT5336 touch controller on I2C3 (PH7=SCL, PH8=SDA). board_init.c
 # registers this controller as /dev/i2c2, matching ove's zero-based instance 2.
 CONFIG_I2C=y
