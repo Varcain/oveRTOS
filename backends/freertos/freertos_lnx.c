@@ -460,7 +460,7 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 
 		*(volatile uint32_t *)0xE000ED28u =
 			*(volatile uint32_t *)0xE000ED28u; /* clear configurable status bits (W1C) */
-		freertos_event_post();
+		lxp_event_post_slot(sidx);
 		return (uint32_t *)frame;
 	}
 	/* Not a guest fault: host/privileged context, handler mode, or no active guest. Capture the

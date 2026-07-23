@@ -764,7 +764,7 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 	g_lxp_proc[sidx].exit_address = fault_address;
 	regs[REG_PC] = (uint32_t)(uintptr_t)&lxp_park_loop & ~1u;
 	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
-	nuttx_event_post();	      /* wake the coordinator → its EV_EXIT pass reaps this slot */
+	lxp_event_post_slot(sidx); /* publish + wake coordinator → EV_EXIT reaps this slot */
 	return 0;		      /* exception-return: the program spins in park_loop until reaped */
 }
 

@@ -784,7 +784,7 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 			g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
 							: (diag->cfsr & (1u << 15)) ? diag->bfar
 										    : 0u;
-			zephyr_event_post();
+			lxp_event_post_slot(sidx);
 			return;
 		}
 	}
