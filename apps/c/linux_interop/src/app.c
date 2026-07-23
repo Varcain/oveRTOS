@@ -847,10 +847,11 @@ static void stack_audit(void)
 	audit_thread("lat-monitor", g_mon, sizeof(g_mon_stack));
 #endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
-	/* Guest-slot tramp stack (TRAMP_STACK_WORDS=256 words = 1024 B in the seam): worst across all
-	 * slots this run. Only the entry prologue — the guest runs on its own arena stack. */
+	/* Guest-slot tramp stack (TRAMP_STACK_WORDS=192 words = 768 B in the seam): worst across all
+	 * slots this run. The remaining 256 bytes of each aligned 1K allocation hold the persistent
+	 * resume descriptor and are not part of the task stack. */
 	extern size_t ove_lnx_slot_stack_hwm(void);
-	audit_stack_line("guest-slot(tramp)", ove_lnx_slot_stack_hwm(), 1024u);
+	audit_stack_line("guest-slot(tramp)", ove_lnx_slot_stack_hwm(), 768u);
 #endif
 	/* peak_used is the high-water of heap usage over the whole run, so it captures a cumulative
 	 * leak (it would climb toward total across a soak) — a better single number than a boot-vs-end

@@ -14,6 +14,11 @@ CONFIG_ARM_MPU=n
 # default.
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
+# Persistent Linux guest parking uses NuttX's stopped-task state; the seam moves
+# the existing TCB back to the ready list when the syscall completes.
+CONFIG_SIG_DEFAULT=y
+CONFIG_SIG_SIGSTOP_ACTION=y
+
 # Inter-program isolation: a note driver (backends/nuttx/nuttx_lnx_trap.c) hooks EVERY
 # context switch — including round-robin preemption between same-priority program tasks, which the
 # seam's syscall path cannot see — to reprogram the MPU to the incoming program's OWN region. That

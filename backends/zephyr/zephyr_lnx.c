@@ -531,6 +531,16 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 	__builtin_unreachable();
 }
 
+static void *zephyr_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
+{
+	ARG_UNUSED(sidx);
+	ARG_UNUSED(ctx);
+	/* PendSV retains the parked thread's context in struct k_thread.
+	 * zephyr_spawn_resume replaces it with a native exception frame, so no
+	 * guest-readable handoff token is needed. */
+	return NULL;
+}
+
 /* (Re)build region ridx's MPU domain (W^X text/data split) for a loaded image. */
 static int setup_domain(int ridx, const lxp_flat_t *prog)
 {
@@ -682,6 +692,59 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
 				long r0val)
 {
+	if (!g_lxp_used[sidx] && g_tid[sidx]) {
+		/* PendSV restores r4-r11 from callee_saved and un-stacks r0-r3,
+		 * r12/lr/pc/xPSR (plus optional s0-s15/FPSCR) from PSP. Build
+		 * exactly that native representation below the captured Linux SP.
+		 * This keeps the same k_thread while avoiding a C trampoline that
+		 * changes PSP underneath Zephyr's lazy-FPU exception state. */
+		struct k_thread *thread = &g_thread[sidx];
+#if LXP_ENABLE_FPU_CONTEXT
+		int fp_active = ctx->fp.active;
+		size_t fp_bytes = fp_active ? sizeof(thread->arch.preempt_float) + 8u : 0u;
+#else
+		int fp_active = 0;
+		size_t fp_bytes = 0u;
+#endif
+		size_t align_pad = (ctx->xpsr & (1u << 9)) ? sizeof(uint32_t) : 0u;
+		struct arch_esf *esf =
+			(struct arch_esf *)((uintptr_t)ctx->sp - sizeof(esf->basic) -
+					   fp_bytes - align_pad);
+		memset(esf, 0, sizeof(esf->basic) + fp_bytes);
+		esf->basic.r0 = (uint32_t)r0val;
+		esf->basic.r1 = ctx->r1;
+		esf->basic.r2 = ctx->r2;
+		esf->basic.r3 = ctx->r3;
+		esf->basic.r12 = ctx->r12;
+		esf->basic.r14 = ctx->lr;
+		esf->basic.r15 = ctx->pc & ~1u;
+		esf->basic.xpsr = ctx->xpsr | (1u << 24);
+		thread->callee_saved.v1 = ctx->r4_11[0];
+		thread->callee_saved.v2 = ctx->r4_11[1];
+		thread->callee_saved.v3 = ctx->r4_11[2];
+		thread->callee_saved.v4 = ctx->r4_11[3];
+		thread->callee_saved.v5 = ctx->r4_11[4];
+		thread->callee_saved.v6 = ctx->r4_11[5];
+		thread->callee_saved.v7 = ctx->r4_11[6];
+		thread->callee_saved.v8 = ctx->r4_11[7];
+		thread->callee_saved.psp = (uint32_t)(uintptr_t)esf;
+		thread->arch.basepri = 0u;
+		if (fp_active) {
+#if LXP_ENABLE_FPU_CONTEXT
+			for (int i = 0; i < 16; i++)
+				esf->fpu.s[i] = ctx->fp.s[i];
+			esf->fpu.fpscr = ctx->fp.fpscr;
+			memcpy(&thread->arch.preempt_float, &ctx->fp.s[16],
+			       sizeof(thread->arch.preempt_float));
+#endif
+			thread->arch.mode_exc_return = 0xedu;
+		} else {
+			thread->arch.mode_exc_return = 0xfdu;
+		}
+		g_lxp_used[sidx] = 1;
+		k_thread_resume(g_tid[sidx]);
+		return;
+	}
 	/* Stash the resume ctx in the program's OWN user-RW region, just below its resume SP, so
 	 * resume_tramp can read it without another MPU partition. AN521 already uses stack plus four
 	 * domain partitions; STM32F746 uses stack plus three. A separate shared partition previously
@@ -821,8 +884,16 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 
 static void zephyr_abort_slot(int sidx)
 {
-	if (g_lxp_used[sidx] && g_tid[sidx])
+	if (g_tid[sidx])
 		k_thread_abort(g_tid[sidx]);
+	g_lxp_used[sidx] = 0;
+	g_tid[sidx] = NULL;
+}
+
+static void zephyr_park_slot(int sidx)
+{
+	if (g_lxp_used[sidx] && g_tid[sidx])
+		k_thread_suspend(g_tid[sidx]);
 	g_lxp_used[sidx] = 0;
 }
 
@@ -868,6 +939,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.spawn_launch = zephyr_spawn_launch,
 	.spawn_resume = zephyr_spawn_resume,
 	.abort_slot = zephyr_abort_slot,
+	.park_prepare = zephyr_park_prepare,
+	.park_slot = zephyr_park_slot,
 	.sleep_ms = zephyr_sleep_ms,
 	.crit_enter = zephyr_crit_enter,
 	.crit_exit = zephyr_crit_exit,

@@ -115,7 +115,8 @@ uint32_t ove_freertos_lnx_svc_counter_hz(void)
 }
 #endif /* CONFIG_OVE_LINUX_RT_SCOPE */
 
-#define TRAMP_STACK_WORDS 256u		  /* tramp prologue; the program uses its own stack */
+#define TRAMP_STACK_WORDS 192u		  /* tramp prologue; the program uses its own stack */
+#define TRAMP_STORAGE_WORDS 256u	  /* 768-byte stack + 256-byte resume handoff */
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
 
 /* Under the ARM_CM4_MPU port the task's privilege rides in the top bit of its priority
@@ -180,10 +181,10 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 	return g_netfs_exec_stage;
 }
 #endif
-/* The tramp/program stacks are the restricted task's auto MPU stack region, so each must be
- * aligned to its (power-of-2) size (PMSAv7). 256 words = 1 KB. */
-static StackType_t g_tramp_stacks[LXP_NSLOT][TRAMP_STACK_WORDS]
-	__attribute__((aligned(TRAMP_STACK_WORDS * sizeof(StackType_t))));
+/* Each allocation is a 1K-aligned PMSAv7 stack region. The task uses the
+ * bottom 768 bytes; the top 256 bytes retain its persistent resume handoff. */
+static StackType_t g_tramp_stacks[LXP_NSLOT][TRAMP_STORAGE_WORDS]
+	__attribute__((aligned(TRAMP_STORAGE_WORDS * sizeof(StackType_t))));
 
 /* Exception-containment code must never issue a VFP instruction.  A guest can
  * fault while lazy FP preservation is pending and its PSP is already invalid;
@@ -522,14 +523,16 @@ __attribute__((naked)) void BusFault_Handler(void)
 	__asm__ volatile("b MemManage_Handler");
 }
 
-/* ---- thread entry: in-region descriptor + unified trampoline --------------- */
-/* The program's entry/resume context is stashed in the program's OWN region (just below SP)
- * as a resume_desc, so the program task's (possibly UNPRIVILEGED) trampoline can read it without
- * touching kernel memory, and the privileged coordinator writes it via background access. */
+/* ---- thread entry: task-local descriptor + unified trampoline -------------- */
+/* The program's entry/resume context is stashed in the user-readable tail of
+ * its bootstrap stack, so the unprivileged trampoline can consume it while the
+ * privileged coordinator can update it directly. */
 struct resume_desc {
 	uint32_t r0;
 	struct lxp_resume_ctx ctx;
+	volatile uint32_t ready;
 };
+static struct resume_desc *g_park_desc[LXP_NSLOT];
 
 /* prog_tramp is naked asm that reaches ctx as r0+4 and then loads every core register by hardcoded
  * offset (ldmia for r4-r11, then r12/lr/sp/pc, then r1/r2/r3/xpsr). Pin each so a change to
@@ -588,28 +591,50 @@ __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused))
 			 "pop   {pc}           \n");
 }
 
-/* Bytes the descriptor occupies, rounded up to whole 32-byte D-cache lines. */
+/* Bytes the descriptor occupies, rounded up to the MPU/cache-line granularity. */
 #define RESUME_DESC_CLSPAN (((uint32_t)sizeof(struct resume_desc) + 31u) & ~31u)
+_Static_assert(RESUME_DESC_CLSPAN <=
+		       (TRAMP_STORAGE_WORDS - TRAMP_STACK_WORDS) * sizeof(StackType_t),
+	       "resume descriptor exceeds reserved trampoline-stack tail");
 
-/* Keep the descriptor out of the memory a subsequent exception entry can use.
- * A Cortex-M7 extended frame is 8 core words + 18 FP words + at most one
- * alignment word (108 bytes).  Round that up to whole cache lines so neither
- * hardware stacking nor cache maintenance shares a line with the descriptor. */
-#define EXCEPTION_FRAME_CLSPAN 128u
-
-/* Stash the descriptor below a reserved exception-frame gap, INSIDE the program
- * region (xRegions[0]).  The coordinator writes through its uncached (Device)
- * view while prog_tramp reads cacheably.  Placing the descriptor immediately
- * below sp is unsafe: the next extended exception frame occupies [sp-108, sp)
- * and can overlap cache lines just fetched by prog_tramp.  On STM32F746 this
- * produced stale s7-s14 values during exception return. */
-static struct resume_desc *stash_desc(uint32_t sp, const struct lxp_resume_ctx *ctx, long r0)
+/* Reserve the top 256 bytes of each aligned 1K bootstrap-stack allocation for
+ * the persistent resume descriptor. The FreeRTOS task receives the lower 768
+ * bytes as its logical stack; the ARM MPU port rounds that 768-byte stack region
+ * to the containing aligned 1K region, so the unprivileged park loop can read
+ * the tail without consuming another configurable MPU region. Unlike storage
+ * below ctx->sp, this address is independent of Linux stack depth and cannot be
+ * overwritten by exception or context-switch frames. */
+static struct resume_desc *stash_desc(int sidx, const struct lxp_resume_ctx *ctx, long r0)
 {
-	struct resume_desc *d = (struct resume_desc *)((sp & ~31u) - EXCEPTION_FRAME_CLSPAN -
-						 RESUME_DESC_CLSPAN);
+	struct resume_desc *d =
+		(struct resume_desc *)&g_tramp_stacks[sidx][TRAMP_STACK_WORDS];
 	d->r0 = (uint32_t)r0;
 	d->ctx = *ctx;
+	d->ready = 1u;
 	return d;
+}
+
+/* Exception-side half of the persistent handoff. The descriptor remains in the
+ * task's user-readable bootstrap-stack MPU region while it is suspended. */
+static void *freertos_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
+{
+	struct resume_desc *d = stash_desc(sidx, ctx, 0);
+	__atomic_store_n(&d->ready, 0u, __ATOMIC_RELEASE);
+	g_park_desc[sidx] = d;
+	return d;
+}
+
+/* Runs unprivileged in the existing guest task. Normally the higher-priority
+ * coordinator suspends the task before exception return; the bounded race is a
+ * read-only wait on guest memory. spawn_resume publishes the descriptor and
+ * resumes this same task, which restores the complete Linux register context. */
+void lxp_park_loop(void *token)
+{
+	struct resume_desc *d = token;
+	while (!__atomic_load_n(&d->ready, __ATOMIC_ACQUIRE))
+		__asm__ volatile("nop");
+	prog_tramp(d);
+	__builtin_unreachable();
 }
 
 /* Spawn the program task entering prog_tramp. Supported personality boards use the MPU branch: a
@@ -737,6 +762,7 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 				 void *stack_lo)
 {
 	(void)stack_lo;
+	g_park_desc[sidx] = NULL;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* The loader wrote this program's image (data + relocations) to the SDRAM program region
 	 * through the coordinator's uncached (Device background) view, and materialised new code paths.
@@ -773,7 +799,7 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	g_region_exec[sidx] = (uint8_t)prog->region_exec; /* RWX region for a copied-text (remote) exec */
 #endif
-	struct resume_desc *d = stash_desc((uint32_t)sp, &c, 0);
+	struct resume_desc *d = stash_desc(sidx, &c, 0);
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 	diag->last_spawn_sp = c.sp;
 	diag->last_spawn_pc = c.pc;
@@ -786,28 +812,26 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
 				  long r0val)
 {
-	struct resume_desc *d = stash_desc(ctx->sp, ctx, r0val);
+	struct resume_desc *d = g_park_desc[sidx];
+	int persistent = !g_lxp_used[sidx] && g_tid[sidx] && d;
+	if (persistent) {
+		d->r0 = (uint32_t)r0val;
+		d->ctx = *ctx;
+		__atomic_store_n(&d->ready, 1u, __ATOMIC_RELEASE);
+	} else {
+		d = stash_desc(sidx, ctx, r0val);
+	}
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 	diag->last_spawn_sp = ctx->sp;
 	diag->last_spawn_pc = ctx->pc;
 	diag->last_desc = (uint32_t)(uintptr_t)d;
 	diag->last_ridx = (uint32_t)ridx;
-	diag->last_kind = 2u;
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* Unlike a launch (freertos_spawn_launch invalidates the whole freshly-loaded region), a resume
-	 * keeps the region's LIVE guest data.  Invalidate the descriptor and the reserved hardware-frame
-	 * gap: this both publishes the uncached descriptor write to prog_tramp's cacheable view and makes
-	 * the next exception frame start from cold lines.  The complete span is below sp, so no live
-	 * parent stack is clipped. */
-	if (SCB->CCR & SCB_CCR_DC_Msk)
-		/* CLEAN+invalidate, not just invalidate: freertos_coord_map may have given the
-		 * coordinator a CACHEABLE view of this region, so stash_desc's descriptor write can
-		 * sit in dirty D-cache lines. Write them back to SDRAM (so prog_tramp's read sees the
-		 * real descriptor) then drop them (fresh refill + a cold next exception frame). When
-		 * the view was uncached the clean is a no-op and this reduces to the old invalidate. */
-		SCB_CleanInvalidateDCache_by_Addr((void *)d,
-						  (int32_t)(RESUME_DESC_CLSPAN + EXCEPTION_FRAME_CLSPAN));
-#endif
+	diag->last_kind = persistent ? 3u : 2u;
+	if (persistent) {
+		g_lxp_used[sidx] = 1;
+		vTaskResume(g_tid[sidx]);
+		return;
+	}
 	(void)freertos_spawn_common(sidx, ridx, d);
 }
 
@@ -912,19 +936,27 @@ static void slot_sample_stack(int sidx)
 size_t ove_lnx_slot_stack_hwm(void)
 {
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_lxp_used[i])
+		if (g_tid[i])
 			slot_sample_stack(i);
 	return g_slot_stack_used_max;
 }
 
 static void freertos_abort_slot(int sidx)
 {
-	if (g_lxp_used[sidx] && g_tid[sidx]) {
+	if (g_tid[sidx]) {
 		slot_sample_stack(sidx); /* capture the HWM before the task (and its mark) is gone */
 		vTaskDelete(g_tid[sidx]);
 	}
 	g_lxp_used[sidx] = 0;
 	g_tid[sidx] = NULL;
+	g_park_desc[sidx] = NULL;
+}
+
+static void freertos_park_slot(int sidx)
+{
+	if (g_lxp_used[sidx] && g_tid[sidx])
+		vTaskSuspend(g_tid[sidx]);
+	g_lxp_used[sidx] = 0;
 }
 
 static void freertos_sleep_ms(unsigned ms)
@@ -1040,6 +1072,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.spawn_launch = freertos_spawn_launch,
 	.spawn_resume = freertos_spawn_resume,
 	.abort_slot = freertos_abort_slot,
+	.park_prepare = freertos_park_prepare,
+	.park_slot = freertos_park_slot,
 	.sleep_ms = freertos_sleep_ms,
 	.crit_enter = freertos_crit_enter,
 	.crit_exit = freertos_crit_exit,
