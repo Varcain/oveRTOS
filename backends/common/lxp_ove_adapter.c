@@ -232,6 +232,10 @@ static const struct lxp_net_ops g_ove_adapter_net_ops = {
 	.netif_get_flags = a_netif_get_flags,
 	.netif_set_addr = a_netif_set_addr,
 	.netif_set_up = a_netif_set_up,
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+	/* freertos_net.c posts lxp_sock_kick() after each delivered RX batch. */
+	.capabilities = LXP_NET_CAP_SOCKET_READY_EVENT,
+#endif
 };
 
 /* The module reads the net port via this global; the module's lxp_run() only

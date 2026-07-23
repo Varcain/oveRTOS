@@ -53,18 +53,6 @@
 #define ETH_RX_BUF_SIZE 1536
 #endif
 
-/*
- * Native applications retain the STM32/lwIP throughput-oriented drain.  The
- * Linux personality runs several userspace processes at a lower priority than
- * the network threads, so bound each poll to one frame just as the Zephyr and
- * NuttX interrupt-driven paths bound the work performed per driver wakeup.
- */
-#if defined(CONFIG_OVE_LINUX_NET)
-#define ETH_RX_POLL_BUDGET 1
-#else
-#define ETH_RX_POLL_BUDGET ETH_RX_DESC_CNT
-#endif
-
 /* LAN8742A PHY (datasheet Table 6) */
 #define LAN8742A_ADDR 0
 #ifndef PHY_BSR
@@ -361,13 +349,15 @@ err_t ethernetif_init(struct netif *netif)
 
 /* ── Public: poll for received frames ────────────────────────── */
 
-/* Deliver a bounded number of DMA frames to lwIP this poll cycle. */
-int ethernetif_input(struct netif *netif)
+/* Deliver a bounded number of DMA frames to lwIP this poll cycle. A zero budget
+ * retains the native throughput-oriented descriptor-ring drain. */
+int ethernetif_input(struct netif *netif, unsigned budget)
 {
 	int n = 0;
 	struct pbuf *p;
+	unsigned limit = budget ? budget : ETH_RX_DESC_CNT;
 
-	while (n < ETH_RX_POLL_BUDGET) {
+	while ((unsigned)n < limit) {
 		p = NULL;
 		if (HAL_ETH_ReadData(&heth, (void **)&p) != HAL_OK || p == NULL)
 			break;

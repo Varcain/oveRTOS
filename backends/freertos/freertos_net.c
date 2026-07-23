@@ -30,6 +30,10 @@
 #include "lwip/ip4_addr.h"
 #include "netif/ethernet.h"
 
+#if defined(CONFIG_OVE_LINUX_NET)
+#include "lxp/lxp_net.h"
+#endif
+
 #include <string.h>
 
 /* Under the FreeRTOS MPU port (the Linux personality) the RTOS-infrastructure tasks
@@ -67,11 +71,14 @@ err_t ethernetif_init(struct netif *netif)
 	return ERR_IF;
 }
 
-/* Returns the number of frames delivered to the stack this poll (0 for the no-NIC default). */
-extern int ethernetif_input(struct netif *netif) __attribute__((weak));
-int ethernetif_input(struct netif *netif)
+/* Returns the number of frames delivered to the stack this poll (0 for the no-NIC
+ * default). A zero budget asks a native application to drain the driver's usual
+ * hardware-sized batch. */
+extern int ethernetif_input(struct netif *netif, unsigned budget) __attribute__((weak));
+int ethernetif_input(struct netif *netif, unsigned budget)
 {
 	(void)netif;
+	(void)budget;
 	return 0;
 }
 
@@ -80,27 +87,74 @@ static volatile int s_tcpip_ready;
 
 #if defined(CONFIG_OVE_LINUX_NET)
 /*
- * Budget bulk traffic to roughly one full-size frame per 8 ms (~1.5 Mbit/s).
- * That is the throughput class measured with NuttX under the same saturating
- * userspace load. Zephyr and NuttX naturally provide this fairness through
- * their event-driven MAC paths; the STM32 FreeRTOS port polls, so it needs an
- * an explicit backoff after each received frame. An idle interface remains on
- * the 1 ms poll so the policy does not add latency to sporadic traffic. Socket
- * waiters retry on the coordinator's <=5 ms tick.
+ * Limit bulk traffic to roughly one full-size frame per 8 ms (~1.5 Mbit/s), the
+ * throughput class measured with NuttX under the same saturating userspace load.
+ * Keep three credits so an idle link can pass a short TCP/ARP burst immediately
+ * instead of inserting 8 ms between every frame. One credit is charged per frame
+ * and refilled every 8 ms; the 1 ms empty poll keeps sparse-traffic latency low.
  */
-#define ETH_RX_BUSY_POLL_MS 8u
-#else
-#define ETH_RX_BUSY_POLL_MS 1u
+#define ETH_RX_TOKEN_BURST 3u
+#define ETH_RX_TOKEN_REFILL_MS 8u
 #endif
 
 /* Polling task for the Ethernet RX path */
 static void eth_rx_task(void *arg)
 {
 	(void)arg;
+
+#if defined(CONFIG_OVE_LINUX_NET)
+	unsigned tokens = ETH_RX_TOKEN_BURST;
+	TickType_t refill_at = xTaskGetTickCount();
+	TickType_t refill_ticks = pdMS_TO_TICKS(ETH_RX_TOKEN_REFILL_MS);
+	if (refill_ticks == 0)
+		refill_ticks = 1;
+
 	for (;;) {
-		int n = ethernetif_input(&s_netif);
-		vTaskDelay(pdMS_TO_TICKS(n > 0 ? ETH_RX_BUSY_POLL_MS : 1u));
+		TickType_t now = xTaskGetTickCount();
+
+		if (tokens == ETH_RX_TOKEN_BURST) {
+			/* Discard credit that arrived while the bucket was already full. */
+			refill_at = now;
+		} else {
+			TickType_t elapsed = now - refill_at;
+			unsigned added = (unsigned)(elapsed / refill_ticks);
+			if (added >= ETH_RX_TOKEN_BURST - tokens) {
+				tokens = ETH_RX_TOKEN_BURST;
+				refill_at = now;
+			} else if (added > 0) {
+				tokens += added;
+				refill_at += (TickType_t)added * refill_ticks;
+			}
+		}
+
+		if (tokens == 0) {
+			TickType_t elapsed = now - refill_at;
+			vTaskDelay(refill_ticks - elapsed);
+			continue;
+		}
+
+		int n = ethernetif_input(&s_netif, tokens);
+		if (n > 0) {
+			unsigned used = (unsigned)n;
+			if (used > tokens)
+				used = tokens;
+			tokens -= used;
+
+			/* tcpip_input queued these frames before this post. The tcpip
+			 * thread therefore makes socket state visible before the equal-
+			 * priority personality coordinator retries its parked operation. */
+			lxp_sock_kick();
+		}
+
+		if (tokens > 0)
+			vTaskDelay(pdMS_TO_TICKS(1u));
 	}
+#else
+	for (;;) {
+		(void)ethernetif_input(&s_netif, 0);
+		vTaskDelay(pdMS_TO_TICKS(1u));
+	}
+#endif
 }
 
 /* ---------- helpers ---------- */
