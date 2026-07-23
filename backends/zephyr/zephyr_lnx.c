@@ -31,8 +31,30 @@
 #include "ove/build.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
+#include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#endif
+
+BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_LXP_COORDINATOR,
+	     "LXP coordinator priority must match the Zephyr priority contract");
+BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE,
+	     "system workqueue priority must match the Zephyr priority contract");
+BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
+		     OVE_ZEPHYR_PRIO_LXP_COORDINATOR < OVE_ZEPHYR_PRIO_LXP_GUEST,
+	     "critical, coordinator, and guest priorities must remain ordered");
+#if defined(CONFIG_NETWORKING)
+BUILD_ASSERT(IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE),
+	     "Linux network traffic classes must be preemptible");
+BUILD_ASSERT(CONFIG_NET_TC_RX_THREAD_BASE_PRIO == OVE_ZEPHYR_PRIO_NET_TC &&
+		     CONFIG_NET_TC_TX_THREAD_BASE_PRIO == OVE_ZEPHYR_PRIO_NET_TC,
+	     "network traffic-class priorities must match the Zephyr priority contract");
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+BUILD_ASSERT(IS_ENABLED(CONFIG_ETH_STM32_HAL_RX_THREAD_PREEMPTIVE),
+	     "STM32 Ethernet RX must be preemptible");
+BUILD_ASSERT(CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO == OVE_ZEPHYR_PRIO_ABOVE_NORMAL,
+	     "STM32 Ethernet RX priority must match the Zephyr priority contract");
+#endif
 #endif
 
 /* The program-image regions live in a NOLOAD external-RAM linker region: RAM-resident but ZERO
@@ -447,11 +469,12 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 		slot->pc = (uint32_t)(uintptr_t)entry;
 		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
-					      (void *)0, slot, NULL, 5, K_USER, K_FOREVER);
+					      (void *)0, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
+					      K_FOREVER);
 	} else {
 		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), arg_tramp, sp,
-					      entry, NULL, 5, K_USER, K_FOREVER);
+					      entry, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
 	}
 	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
 		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
@@ -475,7 +498,8 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 	*slot = *ctx;
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
-				      (void *)r0val, slot, NULL, 5, K_USER, K_FOREVER);
+				      (void *)r0val, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
+				      K_FOREVER);
 	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
 		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
 		k_thread_name_set(g_tid[sidx], nm);

@@ -211,6 +211,23 @@ CONFIG_LV_USE_PERF_MONITOR_LOG_MODE=y
 CONFIG_USERSPACE=y
 CONFIG_EXTRA_EXCEPTION_INFO=y
 CONFIG_THREAD_CUSTOM_DATA=y
+# Scheduling contract. All values are PREEMPTIBLE priorities (non-negative):
+# scope critical=0, coordinator/main=3, Ethernet RX=4, network TC=5,
+# Linux guest=6, system workqueue=7. This keeps guest/network saturation below
+# the real-time task and prevents a cooperative infrastructure thread from
+# monopolising the CPU. Keep in sync with ove_zephyr_priority.h.
+CONFIG_MAIN_THREAD_PRIORITY=3
+CONFIG_SYSTEM_WORKQUEUE_PRIORITY=7
+{% if config.get("CONFIG_OVE_NET") == True %}
+CONFIG_NET_TC_THREAD_PREEMPTIVE=y
+CONFIG_NET_TC_THREAD_PRIO_CUSTOM=y
+CONFIG_NET_TC_TX_THREAD_BASE_PRIO=5
+CONFIG_NET_TC_RX_THREAD_BASE_PRIO=5
+{% if get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
+CONFIG_ETH_STM32_HAL_RX_THREAD_PREEMPTIVE=y
+CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO=4
+{% endif %}
+{% endif %}
 # W^X holds for every program: bFLT + static-FDPIC use RX-text / RW-data partitions, and a
 # DYNAMIC FDPIC proc shares ALL its code IN-PLACE from the cpio's user-RX .text subsection, so
 # its per-process region + arena are RW-only (see setup_domain) — no RWX partitions anywhere.
