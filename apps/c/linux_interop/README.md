@@ -59,6 +59,34 @@ The capture has three directly readable quantities:
 - CH1 rising edge to CH2 rising edge: interrupt-to-host-thread dispatch latency.
 - CH2 pulse width: execution time of the same fixed host calculation.
 
+The firmware independently measures the same path at 54 MHz and prints a
+fresh timing window plus lifetime failure counters every 10 seconds:
+
+```text
+[rt-scope] window releases=10082 exec=10082 missed=0 late-finish=0 | total releases=180831 exec=180831 missed=0 late-finish=0 irq-overrun=0 pending=0
+[rt-scope] dispatch-us min=7.30 avg=10.13 p99<=20 p99.9<=250 max=364.80 jitter=357.50
+[rt-scope] work-us min=5.15 max=5.37 late-finish=0
+[rt-scope] svc-us window calls=11430 min=10.87 avg=12.20 max=13.47 syscall=413(pselect6_time64)
+[rt-scope] svc-total calls=102176 avg-us=12.20 max-us=13.69 syscall=403(clock_gettime64)
+```
+
+`missed` counts timer releases for which no distinct response execution began.
+`irq-overrun` is the subset recovered after multiple hardware releases collapsed
+into one pending TIM3 interrupt, and `late-finish` counts responses that crossed
+the following 1 ms release. `pending` is an instantaneous release already
+scheduled but not yet started; it is not counted as missed. The software report
+adds a few register accesses to the measured path, so keep the GPIO capture as
+the independent physical cross-check.
+
+On FreeRTOS, `svc-us` measures wall-clock cycles from entry into the C portion
+of the Linux guest's SVC handler through syscall dispatch/parking and register
+write-back. The small assembly entry/exit shim and the statistics update itself
+are outside the interval. `syscall` is the ARM EABI syscall number carried in
+`r7` (all guest calls use the same `svc #0` instruction); the parenthesised name
+is `?` for a number not in the reporter's compact name table. The window row is
+reset every 10 seconds, while `svc-total` retains the lifetime maximum and the
+syscall that produced it.
+
 Ignore the first cycle while arming the scope. Then save an idle baseline before
 starting the load. At the guest prompt, use a bounded set of background jobs so
 the personality's process slots are stressed without being exhausted:
@@ -90,7 +118,7 @@ The experiment demonstrates that this configured, highest-priority host path
 preempts the personality workload. It is not by itself a proof for every ISR,
 priority, critical section, or peripheral path in a product.
 
-The scope output owns TIM3, PB4, and PG7. Disable
+The scope output owns TIM3, pinless timebase TIM5, PB4, and PG7. Disable
 `CONFIG_OVE_LINUX_RT_SCOPE` in menuconfig when the application needs any of
 those resources.
 

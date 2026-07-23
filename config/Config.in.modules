@@ -132,10 +132,14 @@ config OVE_LINUX_RT_SCOPE
       emits its response pulse on Arduino D4/PG7 while Linux-personality
       userspace is under load. The horizontal distance between the rising
       edges is interrupt-to-thread dispatch latency; response width is a
-      small fixed host workload.
+      small fixed host workload. A pinless TIM5 timebase also counts collapsed
+      releases, and a low-priority reporter prints cumulative dispatch jitter,
+      missed executions and late completions every 10 seconds. On FreeRTOS it
+      also measures the Linux SVC dispatch body and reports the syscall number
+      responsible for each window and lifetime maximum.
 
       This option is enabled by default for Linux-personality builds on the
-      board. Disable it for applications that need TIM3, PB4, or PG7.
+      board. Disable it for applications that need TIM3, TIM5, PB4, or PG7.
 
 config OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE
     string "Override Buildroot output subdir (normally empty)"

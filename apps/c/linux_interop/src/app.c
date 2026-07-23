@@ -883,7 +883,7 @@ static void demo_body(void *arg)
 	sh_write0("[build] " OVE_BUILD_ID "\n");
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-	if (linux_rt_scope_start() != OVE_OK) {
+	if (linux_rt_scope_start(sh_write0) != OVE_OK) {
 		sh_write0("[rt-scope] FAIL: timer/event/thread setup\n");
 		sh_exit(1);
 	}
