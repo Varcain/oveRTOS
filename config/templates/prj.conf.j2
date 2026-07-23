@@ -211,6 +211,12 @@ CONFIG_LV_USE_PERF_MONITOR_LOG_MODE=y
 CONFIG_USERSPACE=y
 CONFIG_EXTRA_EXCEPTION_INFO=y
 CONFIG_THREAD_CUSTOM_DATA=y
+# Zephyr decodes an Arm fault and writes a long register dump before the
+# personality's fatal-error hook can contain an unprivileged guest. Route those
+# prints through the seam: it discards only guest-fault output (the coordinator
+# emits one compact record) and forwards privileged/kernel faults to printk.
+CONFIG_EXCEPTION_DUMP_HOOK=y
+CONFIG_EXCEPTION_DUMP_HOOK_ONLY=y
 # Scheduling contract. All values are PREEMPTIBLE priorities (non-negative):
 # scope critical=0, coordinator/main=3, Ethernet RX=4, network TC=5,
 # Linux guest=6, system workqueue=7. This keeps guest/network saturation below
@@ -249,8 +255,8 @@ CONFIG_EXECUTE_XOR_WRITE=y
 # 4 is harmless for the an521 (fewer threads).
 CONFIG_MAX_THREAD_BYTES=4
 # Disable Zephyr's round-robin timeslicer: the personality self-schedules and does not need it, and
-# under the personality's workload it DEADLOCKS the kernel. The coordinator (main, priority 0)
-# preempts guest programs (priority 5) by priority the instant it is readied (event_post), and guests
+# under the personality's workload it DEADLOCKS the kernel. The coordinator (main, priority 3)
+# preempts guest programs (priority 6) by priority the instant it is readied (event_post), and guests
 # yield by PARKING on every blocking syscall — so nothing relies on round-robin. Worse, the run loop
 # creates+aborts a guest thread on each park/resume (hundreds/sec); under that churn the per-CPU
 # slice_timeout gets re-added to the timeout list with dticks==0, so sys_clock_announce()'s drain

@@ -1,0 +1,32 @@
+Subject: [PATCH] exception: make dump hooks build on Arm
+
+CONFIG_EXCEPTION_DUMP_HOOK exposes C declarations from the generic exception
+header to every Arm assembly file that includes the architecture exception
+header. It also makes arch/common/exception.c include the Arm inline IRQ helpers
+before the Cortex-M exception priorities have been established. Keep the hook
+API out of assembler input and give the hook storage translation unit the same
+kernel-header ordering used by normal application code.
+
+diff --git a/arch/common/exception.c b/arch/common/exception.c
+--- a/arch/common/exception.c
++++ b/arch/common/exception.c
+@@ -4,6 +4,7 @@
+  * SPDX-License-Identifier: Apache-2.0
+  */
+ 
++#include <zephyr/kernel.h>
+ #include <zephyr/arch/exception.h>
+ 
+ arch_exception_dump_hook_t arch_exception_dump_hook;
+diff --git a/include/zephyr/arch/exception.h b/include/zephyr/arch/exception.h
+--- a/include/zephyr/arch/exception.h
++++ b/include/zephyr/arch/exception.h
+@@ -8,7 +8,7 @@
+ #ifndef ZEPHYR_INCLUDE_ARCH_EXCEPTION_H_
+ #define ZEPHYR_INCLUDE_ARCH_EXCEPTION_H_
+ 
+-#if defined(CONFIG_EXCEPTION_DUMP_HOOK)
++#if defined(CONFIG_EXCEPTION_DUMP_HOOK) && !defined(_ASMLANGUAGE)
+ 
+ #include <stdbool.h>
+ #include <stdarg.h>
