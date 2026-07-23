@@ -62,14 +62,10 @@ void *ove_hal_fb_buffer(void)
 void ove_hal_fb_present(void)
 {
 	/* Clean (flush) the framebuffer's dirty D-cache lines to SDRAM. The privileged /dev/fb0
-	 * writer copies scanlines into this SDRAM buffer through the cacheable static SDRAM1 MPU
-	 * region, so with the D-cache on the pixels sit in the cache while the LTDC DMAs the frame
-	 * straight out of SDRAM — without this flush it would scan out the previous frame. Called at
-	 * ~30 Hz from the run-loop tick (fb_tick coalesces a per-scanline write burst into one push).
-	 * The guest program pool needs no such maintenance: coordinator and guest share one coherent
-	 * cacheable view of it (see OVE_MEM_PART_RW_CACHE); only the LTDC-DMA framebuffer, read by a
-	 * bus master outside the cache, does. With the D-cache off this is a no-op (the writes already
-	 * reached SDRAM), so the same path is correct on the an521/QEMU too. */
+	 * writer and the guest both see SDRAM through Normal WBWA mappings, so pixels can remain in
+	 * cache while the LTDC bus master reads physical SDRAM. Called at ~30 Hz from the run-loop
+	 * tick, which coalesces scanline writes into one push. The CPU-only guest program pool needs
+	 * no such maintenance because coordinator and guest share one coherent cacheable view. */
 	void *fb = display_get_framebuffer(g_disp);
 	if (fb)
 		sys_cache_data_flush_range(fb, (size_t)FB_W * FB_H * 2u);

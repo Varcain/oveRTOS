@@ -177,21 +177,14 @@ static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
 static int g_dom_inited[LXP_NREG];
 
 /* Guest program pool: Normal write-back write-allocate, NON-shareable, CACHEABLE — deliberately the
- * SAME memory attribute the privileged run loop sees the FMC SDRAM through (Zephyr's static SDRAM1
- * MPU region, DT ATTR_MPU_RAM = REGION_RAM_ATTR = WBWA non-shareable). Coordinator and guest MUST
- * agree on cacheability: the run loop writes into this pool PRIVILEGED (the loader's ELF/RW load,
- * syscall result buffers, argv/auxv setup, and the resume ctx that zephyr_spawn_resume stashes just
- * below the guest SP), then the UNPRIVILEGED guest reads it back. This region previously mapped the
- * guest NON-cacheable while the coordinator's view stayed cacheable — a mismatched-attribute alias:
- * with the D-cache on, the coordinator's writes sit in the D-cache and the guest reads stale SDRAM
- * around them → a garbage resume ctx → wild jump → "hang". (D-cache OFF hid it: every write reached
- * SDRAM.) With BOTH sides cacheable on this single M7 core there is ONE coherent cache, so no
- * per-handoff maintenance is needed — unlike FreeRTOS, whose coordinator writes through the uncached
- * background map and therefore must SCB_InvalidateDCache_by_Addr the region before each resume.
- * NON-shareable is essential: the single-core M7 has no snoop unit and precise-BusFaults on
- * shareable Normal FMC accesses. XN — the guest's text XIPs from the RO cpio, never this data pool.
- * Cacheable also speeds the render (the LVGL draw buffer lives here). an521/QEMU has no cache model,
- * so this is a functional no-op there. */
+ * SAME memory attribute the privileged run loop sees through Zephyr's static SDRAM region. The two
+ * compiled MPU regions cover flash and internal SRAM; CONFIG_MEM_ATTR appends the devicetree
+ * sdram1 ATTR_MPU_RAM region before dynamic thread partitions are programmed. Coordinator and guest
+ * therefore use one coherent cacheable view on this single M7 core, with no handoff maintenance.
+ * NON-shareable is essential: the core has no snoop unit and precise-BusFaults on shareable Normal
+ * FMC accesses. XN — the guest's text XIPs from the RO cpio, never this data pool. Cacheable also
+ * speeds the render (the LVGL draw buffer lives here). an521/QEMU has no cache model, so this is a
+ * functional no-op there. */
 #define OVE_MEM_PART_RW_CACHE K_MEM_PARTITION_P_RW_U_RW
 
 static struct k_thread g_thread[LXP_NSLOT];
@@ -360,8 +353,9 @@ uint32_t ove_zephyr_lnx_metrics_counter_hz(void)
 extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee,
 				    uint32_t exc_return);
 
-void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee,
-			     uint32_t exc_return)
+static __attribute__((noinline, used)) void
+zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee,
+			 uint32_t exc_return)
 {
 	if (g_lxp_active) {
 		const uint16_t *svc = (const uint16_t *)(esf->basic.pc - 2);
@@ -425,6 +419,19 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 				e->basic.lr = f.r[14];
 				e->basic.pc = f.r[15];
 				e->basic.xpsr = f.xpsr;
+				/* rt_sigreturn restores r9 from the interrupted FDPIC module
+				 * after the handler ran with its own GOT. Write every
+				 * callee-saved register back to Zephyr's software copy; the
+				 * assembly wrapper below reloads that copy into the live
+				 * registers before svc.S performs exception return. */
+				callee->v1 = f.r[4];
+				callee->v2 = f.r[5];
+				callee->v3 = f.r[6];
+				callee->v4 = f.r[7];
+				callee->v5 = f.r[8];
+				callee->v6 = f.r[9];
+				callee->v7 = f.r[10];
+				callee->v8 = f.r[11];
 #if LXP_ENABLE_FPU_CONTEXT
 				if ((exc_return & (1u << 4)) == 0) {
 					for (int i = 0; i < 16; i++)
@@ -442,6 +449,27 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 		}
 	}
 	__real_z_do_kernel_oops(esf, callee, exc_return);
+}
+
+/* Zephyr's Cortex-M svc.S builds a temporary _callee_saved_t for
+ * z_do_kernel_oops(), then drops it by moving MSP instead of popping r4-r11.
+ * That is normally correct because the kernel's oops handler treats the copy as
+ * diagnostic-only, but LXP rt_sigreturn must change r9 (the FDPIC GOT). Preserve
+ * the pointer across the C helper and explicitly reload the possibly modified
+ * copy before returning to svc.S. The two-word push keeps the public C call
+ * 8-byte stack aligned. */
+_Static_assert(offsetof(_callee_saved_t, v1) == 0u, "callee r4 offset");
+_Static_assert(offsetof(_callee_saved_t, v8) == 7u * sizeof(uint32_t), "callee r11 offset");
+
+__attribute__((naked)) void __wrap_z_do_kernel_oops(const struct arch_esf *esf,
+						    _callee_saved_t *callee,
+						    uint32_t exc_return)
+{
+	__asm__ volatile("push {r1, lr}\n"
+			 "bl zephyr_lnx_kernel_oops_c\n"
+			 "pop {r1, lr}\n"
+			 "ldmia r1, {r4-r11}\n"
+			 "bx lr\n");
 }
 
 /* ---- thread entry trampolines ---------------------------------------------- */
@@ -845,8 +873,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.crit_exit = zephyr_crit_exit,
 	.event_post = zephyr_event_post,
 	.event_wait = zephyr_event_wait,
-	/* OS-service ops (host adapter). cache_* left NULL: Zephyr's guest memory is
-	 * coherent here, matching the former weak no-op lxp_guest_flush. */
+	/* OS-service ops (host adapter). */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
