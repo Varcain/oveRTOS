@@ -16,6 +16,20 @@
 #include <zephyr/sys/sys_heap.h>
 #include <stdbool.h>
 #include <string.h>
+
+#if defined(CONFIG_THREAD_RUNTIME_STATS)
+static uint32_t runtime_percent(uint64_t part, uint64_t total)
+{
+	if (total == 0)
+		return 0;
+	while (total > UINT64_MAX / 10000u) {
+		part >>= 1;
+		total >>= 1;
+	}
+	return (uint32_t)(part * 10000u / total);
+}
+#endif
+
 /* Set thread state with tracking + trace emit (mirrors posix/nuttx).
  *
  * Atomic store-release for cross-thread visibility (list_threads /
@@ -188,8 +202,8 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	 * region, not beyond it. Callers on such boards must align the buffer to its own size — the
 	 * flexible PMSAv8 layout on the an521 tolerates a plain buffer, which masks this. */
 	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
-			      (void *)entry, arg, (void *)storage, ove_zephyr_map_priority(priority), 0,
-			      K_NO_WAIT);
+			      (void *)entry, arg, (void *)storage,
+			      ove_zephyr_map_priority(priority), 0, K_NO_WAIT);
 
 	if (name != NULL) {
 		k_thread_name_set(tid, name);
@@ -427,17 +441,11 @@ int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *s
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
-	stats->runtime_us =
-		(uint64_t)(rt.execution_cycles / (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000U));
+	stats->runtime_us = k_cyc_to_us_floor64(rt.execution_cycles);
 
 	k_thread_runtime_stats_t all;
 	k_thread_runtime_stats_all_get(&all);
-	if (all.execution_cycles > 0) {
-		stats->cpu_percent_x100 =
-			(uint32_t)(rt.execution_cycles * 10000ULL / all.execution_cycles);
-	} else {
-		stats->cpu_percent_x100 = 0;
-	}
+	stats->cpu_percent_x100 = runtime_percent(rt.execution_cycles, all.execution_cycles);
 	return OVE_OK;
 #else
 	(void)handle;
@@ -467,6 +475,7 @@ struct _thread_list_ctx {
 	struct ove_thread_info *out;
 	size_t max;
 	size_t count;
+	uint64_t total_cycles;
 };
 
 static ove_thread_state_t _map_zephyr_state(uint8_t state)
@@ -515,18 +524,19 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	{
 		k_thread_runtime_stats_t rt;
 		if (k_thread_runtime_stats_get((k_tid_t)thread, &rt) == 0) {
-			k_thread_runtime_stats_t all;
-			k_thread_runtime_stats_all_get(&all);
-			if (all.execution_cycles > 0) {
-				info->cpu_percent_x100 = (uint32_t)((uint64_t)rt.execution_cycles *
-								    10000U / all.execution_cycles);
-				/* Derive state times from cycles.
-				 * Convert to us assuming 1 cycle ≈ 1 us
-				 * (approximate for Zephyr timing). */
-				info->state_times.running_us = rt.execution_cycles;
+			if (ctx->total_cycles > 0) {
+				info->cpu_percent_x100 =
+					runtime_percent(rt.execution_cycles, ctx->total_cycles);
+				/* Zephyr accounts cumulative execution in hardware cycles.
+				 * Preserve that precision and convert to the microsecond unit
+				 * promised by ove_thread_info/LXP rather than treating one
+				 * core cycle as one microsecond. */
+				info->state_times.running_us =
+					k_cyc_to_us_floor64(rt.execution_cycles);
 				info->state_times.blocked_us =
-					(all.execution_cycles > rt.execution_cycles)
-						? all.execution_cycles - rt.execution_cycles
+					(ctx->total_cycles > rt.execution_cycles)
+						? k_cyc_to_us_floor64(ctx->total_cycles -
+								      rt.execution_cycles)
 						: 0;
 			}
 		}
@@ -548,8 +558,14 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		.out = out,
 		.max = max_count,
 		.count = 0,
+		.total_cycles = 0,
 	};
 
+#if defined(CONFIG_THREAD_RUNTIME_STATS)
+	k_thread_runtime_stats_t all;
+	k_thread_runtime_stats_all_get(&all);
+	ctx.total_cycles = all.execution_cycles;
+#endif
 	k_thread_foreach_unlocked(_thread_list_cb, &ctx);
 
 	if (actual_count)

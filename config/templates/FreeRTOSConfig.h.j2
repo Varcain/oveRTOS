@@ -69,6 +69,10 @@ void ove_backend_freertos_task_deleted(void *task);
 #define configUSE_APPLICATION_TASK_TAG	        1
 #define configUSE_COUNTING_SEMAPHORES	        1
 #define configGENERATE_RUN_TIME_STATS	        {{ 1 if config.get("CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS", True) else 0 }}
+/* Keep cumulative task runtime monotonic for the lifetime of the system.  A
+ * 32-bit microsecond accumulator wraps after about 71 minutes, which makes
+ * /proc task times jump backwards and corrupts top's interval deltas. */
+#define configRUN_TIME_COUNTER_TYPE             uint64_t
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configAPPLICATION_ALLOCATED_HEAP        1
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
@@ -187,15 +191,19 @@ extern volatile uint32_t ove_runtime_counter_ms;
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() (ove_runtime_counter_ms = 0)
 #define portGET_RUN_TIME_COUNTER_VALUE() ove_runtime_counter_ms
 {% else %}
-/* Run-time stats use the ARM DWT cycle counter for microsecond resolution */
-#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() do { \
-	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; \
-	/* Cortex-M7: unlock DWT before writing its registers */ \
-	*((volatile uint32_t *)0xE0001FB0u) = 0xC5ACCE55u; \
-	DWT->CYCCNT = 0; \
-	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk; \
-} while(0)
-#define portGET_RUN_TIME_COUNTER_VALUE() (DWT->CYCCNT / (SystemCoreClock / 1000000U))
+/* Switch-time task accounting uses a 64-bit, wrap-stitched DWT cycle count.
+ * Reading CYCCNT directly would wrap every ~19.9 seconds at 216 MHz and make
+ * a non-yielding task's cumulative runtime jump backwards. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void ove_freertos_runtime_counter_init(void);
+uint64_t ove_freertos_runtime_counter_get(void);
+#ifdef __cplusplus
+}
+#endif
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() ove_freertos_runtime_counter_init()
+#define portGET_RUN_TIME_COUNTER_VALUE() ove_freertos_runtime_counter_get()
 {% endif %}
 
 /* Trace hooks wired to oveRTOS trace backend (backends/freertos/freertos_trace.c).

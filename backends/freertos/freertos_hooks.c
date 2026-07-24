@@ -163,12 +163,11 @@ void vApplicationTickHook(void)
 	/* Sampling CYCCNT every 1 ms catches its ~19.86 s wrap so CLOCK_MONOTONIC stays 64-bit. */
 	ove_freertos_time_tick();
 #if (configGENERATE_RUN_TIME_STATS == 1)
-	/* Statistical CPU accounting: charge the running task one tick. Unlike
-	 * FreeRTOS's switch-time ulRunTimeCounter, this also credits a flat-out
-	 * task that never yields (see ove_backend_thread_cpu_sample). */
-	extern void ove_backend_thread_cpu_sample(void);
+	/* QEMU has no DWT, so its run-time-stat counter advances with SysTick.
+	 * Hardware builds use the wrap-stitched DWT counter instead. */
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	ove_runtime_counter_ms++;
-	ove_backend_thread_cpu_sample();
+#endif
 #endif
 #ifdef CONFIG_OVE_PROFILER
 	ove_backend_profiler_on_tick();
