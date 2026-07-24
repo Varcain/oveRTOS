@@ -28,15 +28,15 @@
 
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
-#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
-#include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
+#include "ove/time.h"	     /* ove_time_get_us/ns -> engine time_us/time_ns ops */
+#include "ove/thread.h"	     /* ove_thread_list -> engine thread_list op */
 #include "lxp/lxp_syscall.h" /* lxp_rootfs_window — strong-overridden below for QSPI-XIP */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#include "bsp.h" /* bsp_random_fill -> hardware-backed guest entropy */
+#include "bsp.h"       /* bsp_random_fill -> hardware-backed guest entropy */
 #include "stm32f7xx.h" /* SCB_CleanDCache / SCB_InvalidateICache: M7 loaded-code coherency */
 #endif
 
@@ -226,8 +226,7 @@ struct lnx_capture {
 _Static_assert(offsetof(struct lnx_capture, hw) == 0u, "SVC capture hw offset");
 _Static_assert(offsetof(struct lnx_capture, psp) == 4u, "SVC capture psp offset");
 _Static_assert(offsetof(struct lnx_capture, r4_11) == 8u, "SVC capture r4-r11 offset");
-_Static_assert(offsetof(struct lnx_capture, exc_return) == 40u,
-	       "SVC capture EXC_RETURN offset");
+_Static_assert(offsetof(struct lnx_capture, exc_return) == 40u, "SVC capture EXC_RETURN offset");
 static struct lnx_capture g_cap __attribute__((used)); /* referenced from SVC_Handler asm */
 
 /* The C body of the svc trap: build the uniform frame, dispatch, write back.
@@ -325,52 +324,53 @@ extern void vPortSVCHandler(void); /* FreeRTOS's own (start-scheduler / yield / 
  * svc; otherwise forward to FreeRTOS (start scheduler). */
 __attribute__((naked)) void SVC_Handler(void)
 {
-	__asm__ volatile("ldr   r1, =g_lxp_active \n"
-			 "ldr   r1, [r1]              \n"
-			 "cmp   r1, #0                \n"
-			 "beq   1f                    \n" /* inactive -> FreeRTOS */
-			 /* EXC_RETURN bit 3 == 0 -> the svc was taken from HANDLER mode.  A Linux program
+	__asm__ volatile(
+		"ldr   r1, =g_lxp_active \n"
+		"ldr   r1, [r1]              \n"
+		"cmp   r1, #0                \n"
+		"beq   1f                    \n" /* inactive -> FreeRTOS */
+		/* EXC_RETURN bit 3 == 0 -> the svc was taken from HANDLER mode.  A Linux program
 			  * always syscalls from THREAD mode (it runs as an unprivileged thread-mode task),
 			  * so a handler-mode svc is never a program syscall — it is FreeRTOS's own (yield /
 			  * raise-privilege / start-scheduler).  Capturing it from PSP (stale program frame)
 			  * + dispatching it as a syscall is what corrupted the post-exit context.  Forward. */
-			 "tst   lr, #8                \n"
-			 "beq   1f                    \n"
-			 "mrs   r0, psp               \n" /* r0 = HW exception frame */
-			 "ldr   r1, =g_cap            \n"
-			 "str   r0, [r1, #0]          \n" /* g_cap.hw  */
-			 "str   r0, [r1, #4]          \n" /* g_cap.psp */
-			 "add   r2, r1, #8            \n"
-			 "stmia r2, {r4-r11}          \n" /* g_cap.r4_11 */
-			 "str   lr, [r1, #40]         \n" /* EXC_RETURN selects basic/extended frame */
-			 "mov   r0, r1                \n"
-			 /* The dispatch runs in HANDLER mode but inherits the program's CONTROL.nPRIV=1.
+		"tst   lr, #8                \n"
+		"beq   1f                    \n"
+		"mrs   r0, psp               \n" /* r0 = HW exception frame */
+		"ldr   r1, =g_cap            \n"
+		"str   r0, [r1, #0]          \n" /* g_cap.hw  */
+		"str   r0, [r1, #4]          \n" /* g_cap.psp */
+		"add   r2, r1, #8            \n"
+		"stmia r2, {r4-r11}          \n" /* g_cap.r4_11 */
+		"str   lr, [r1, #40]         \n" /* EXC_RETURN selects basic/extended frame */
+		"mov   r0, r1                \n"
+		/* The dispatch runs in HANDLER mode but inherits the program's CONTROL.nPRIV=1.
 			  * FreeRTOS MPU_* wrappers (e.g. the event_post semaphore-give on a parking syscall)
 			  * read nPRIV, believe they're unprivileged, and raise-privilege via svc #102 — taken
 			  * inside this active SVCall it escalates to a HardFault. Clear nPRIV across the
 			  * dispatch (handler mode is privileged regardless), then restore so the program
 			  * resumes UNPRIVILEGED. */
-			 "mrs   r2, control           \n"
-			 "push  {r2, lr}              \n"
-			 "bic   r3, r2, #1            \n"
-			 "msr   control, r3           \n"
-			 "isb                         \n"
-			 "bl    freertos_lnx_svc_c    \n"
-			 "pop   {r2, lr}              \n"
-			 "msr   control, r2           \n"
-			 "isb                         \n"
-			 "cmp   r0, #0                \n"
-			 "beq   1f                    \n" /* 0 = not a program svc -> forward */
-			 /* Reload r4-r11 from g_cap (freertos_lnx_svc_c wrote them back post-dispatch): the
+		"mrs   r2, control           \n"
+		"push  {r2, lr}              \n"
+		"bic   r3, r2, #1            \n"
+		"msr   control, r3           \n"
+		"isb                         \n"
+		"bl    freertos_lnx_svc_c    \n"
+		"pop   {r2, lr}              \n"
+		"msr   control, r2           \n"
+		"isb                         \n"
+		"cmp   r0, #0                \n"
+		"beq   1f                    \n" /* 0 = not a program svc -> forward */
+		/* Reload r4-r11 from g_cap (freertos_lnx_svc_c wrote them back post-dispatch): the
 			  * exception return only replays the HW frame (r0-r3,r12,lr,pc,xpsr), so a callee-saved
 			  * register the dispatch rewrote (rt_sigreturn's r9/FDPIC-GOT restore) would otherwise be
 			  * dropped and the interrupted code resumes with the signal handler's GOT. */
-			 "ldr   r1, =g_cap            \n"
-			 "add   r1, r1, #8            \n"
-			 "ldmia r1, {r4-r11}          \n"
-			 "bx    lr                    \n" /* 1 = handled: exception return, replay frame */
-			 "1:                          \n"
-			 "b     vPortSVCHandler       \n");
+		"ldr   r1, =g_cap            \n"
+		"add   r1, r1, #8            \n"
+		"ldmia r1, {r4-r11}          \n"
+		"bx    lr                    \n" /* 1 = handled: exception return, replay frame */
+		"1:                          \n"
+		"b     vPortSVCHandler       \n");
 }
 
 /* ---- MemManage fault containment ------------------------------------------- */
@@ -390,7 +390,7 @@ static void freertos_event_post(void) LXP_FAULT_GPR_ONLY; /* defined with the vt
  * and must not touch VFP (general-regs-only) — an in-flight lazy-FP stack to an invalid frame would
  * nest another fault. */
 __attribute__((weak)) LXP_FAULT_GPR_ONLY void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr,
-								  uint32_t pc)
+								 uint32_t pc)
 {
 	(void)cfsr;
 	(void)hfsr;
@@ -422,8 +422,7 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 	int sidx = current_slot();
 	/* A Linux guest always runs in Thread mode on PSP.  Do not misclassify a
 	 * nested host/ISR fault merely because a guest TCB is current. */
-	if (g_lxp_active && sidx >= 0 && (exc_return & (1u << 3)) &&
-	    (exc_return & (1u << 2))) {
+	if (g_lxp_active && sidx >= 0 && (exc_return & (1u << 3)) && (exc_return & (1u << 2))) {
 		volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 		diag->count++;
 		diag->cfsr = *(volatile uint32_t *)0xE000ED28u;
@@ -459,8 +458,8 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		frame[6] = ((uint32_t)&lxp_park_loop) & ~1u;
 		frame[7] = (1u << 24); /* xPSR.T (Thumb) */
 
-		*(volatile uint32_t *)0xE000ED28u =
-			*(volatile uint32_t *)0xE000ED28u; /* clear configurable status bits (W1C) */
+		*(volatile uint32_t *)0xE000ED28u = *(
+			volatile uint32_t *)0xE000ED28u; /* clear configurable status bits (W1C) */
 		lxp_event_post_slot(sidx);
 		return (uint32_t *)frame;
 	}
@@ -555,13 +554,13 @@ _Static_assert(offsetof(struct resume_desc, ctx.xpsr) == 64u, "resume xpsr offse
 _Static_assert(offsetof(struct resume_desc, ctx.fp.s) == 68u, "resume FP register offset");
 _Static_assert(offsetof(struct resume_desc, ctx.fp.fpscr) == 196u, "resume FPSCR offset");
 _Static_assert(offsetof(struct resume_desc, ctx.fp.active) == 200u, "resume FP-active offset");
-#define LXP_TRAMP_RESTORE_FP                                                        \
-	"ldr   r1, [r0, #200]  \n" /* ctx.fp.active */                              \
-	"cbz   r1, 0f          \n"                                                    \
-	"add   r2, r0, #68     \n" /* ctx.fp.s */                                   \
-	"vldmia r2!, {s0-s31}  \n"                                                    \
-	"ldr   r1, [r0, #196]  \n" /* ctx.fp.fpscr */                               \
-	"vmsr  fpscr, r1       \n"                                                    \
+#define LXP_TRAMP_RESTORE_FP                           \
+	"ldr   r1, [r0, #200]  \n" /* ctx.fp.active */ \
+	"cbz   r1, 0f          \n"                     \
+	"add   r2, r0, #68     \n" /* ctx.fp.s */      \
+	"vldmia r2!, {s0-s31}  \n"                     \
+	"ldr   r1, [r0, #196]  \n" /* ctx.fp.fpscr */  \
+	"vmsr  fpscr, r1       \n"                     \
 	"0:                    \n"
 #else
 #define LXP_TRAMP_RESTORE_FP ""
@@ -606,8 +605,7 @@ _Static_assert(RESUME_DESC_CLSPAN <=
  * overwritten by exception or context-switch frames. */
 static struct resume_desc *stash_desc(int sidx, const struct lxp_resume_ctx *ctx, long r0)
 {
-	struct resume_desc *d =
-		(struct resume_desc *)&g_tramp_stacks[sidx][TRAMP_STACK_WORDS];
+	struct resume_desc *d = (struct resume_desc *)&g_tramp_stacks[sidx][TRAMP_STACK_WORDS];
 	d->r0 = (uint32_t)r0;
 	d->ctx = *ctx;
 	d->ready = 1u;
@@ -637,13 +635,29 @@ void lxp_park_loop(void *token)
 	__builtin_unreachable();
 }
 
+static void slot_task_name(char name[6], int sidx)
+{
+	name[0] = 'l';
+	name[1] = 'n';
+	name[2] = 'x';
+	if (sidx >= 10) {
+		name[3] = (char)('0' + (sidx / 10) % 10);
+		name[4] = (char)('0' + sidx % 10);
+		name[5] = '\0';
+	} else {
+		name[3] = (char)('0' + sidx);
+		name[4] = '\0';
+	}
+}
+
 /* Spawn the program task entering prog_tramp. Supported personality boards use the MPU branch: a
  * RESTRICTED, UNPRIVILEGED task whose only RW regions are its program region + dyn_pool (both XN;
  * ordinary code XIPs from a separate RO+X rootfs window). The legacy non-MPU compile fallback
  * creates a plain privileged task and is not used by the STM32F746 or an500 personality targets. */
 static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 {
-	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
+	char nm[6];
+	slot_task_name(nm, sidx); /* per-slot: ps/top per-proc CPU */
 #if (portUSING_MPU_WRAPPERS == 1)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* The program region + dyn_pool live in external SDRAM.  Make them Normal WBWA CACHEABLE,
@@ -657,7 +671,8 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	 * fills the fresh image from SDRAM); the LTDC framebuffer at 0xC0000000 stays non-cacheable
 	 * (bsp region 0), and the guest blits its cacheable draw buffer to it coherently on the same
 	 * core.  Mirrors the NuttX backend (nuttx_lnx_trap.c set_prog_regions, also 0x0B). */
-	const uint32_t tex_s_c_b = 0x0Bu; /* TEX=001, S=0, C=1, B=1 — Normal WBWA cacheable, non-shareable */
+	const uint32_t tex_s_c_b =
+		0x0Bu; /* TEX=001, S=0, C=1, B=1 — Normal WBWA cacheable, non-shareable */
 #else
 	const uint32_t tex_s_c_b = configTEX_S_C_B_SRAM; /* an500 PSRAM: port default 0x07 */
 #endif
@@ -668,7 +683,8 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	/* A remote-exec proc runs its own copied text FROM this region → map it RWX (drop XN). A
 	 * per-process, MPU-contained W^X relaxation, only for a program launched off the remote mount. */
 	if (g_region_exec[sidx])
-		reg0_attr = portMPU_REGION_READ_WRITE | (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
+		reg0_attr = portMPU_REGION_READ_WRITE |
+			    (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
 #endif
 	/* pxTaskBuffer is `StaticTask_t * const`, so a designated initializer is required (it also
 	 * zeroes the remaining configurable region xRegions[2]). xRegions[0] = the program region,
@@ -681,10 +697,11 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 		.uxPriority = SLOT_PRIO, /* NO portPRIVILEGE_BIT -> UNPRIVILEGED */
 		.puxStackBuffer = g_tramp_stacks[sidx],
 		.pxTaskBuffer = &g_tcb[sidx],
-		.xRegions = {
-			{prog_regions[ridx], LXP_PROG_REGION_SIZE, reg0_attr},
-			{dyn_pools[ridx], LXP_DYN_POOL_SIZE, rw_xn},
-		},
+		.xRegions =
+			{
+				{prog_regions[ridx], LXP_PROG_REGION_SIZE, reg0_attr},
+				{dyn_pools[ridx], LXP_DYN_POOL_SIZE, rw_xn},
+			},
 	};
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in the on-board QSPI NOR
@@ -707,8 +724,8 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	 * I-cache still covers code fetch.  Matches NuttX region 4 (0x02): lvbench render 108 -> 65 ms,
 	 * 12 -> 16 FPS — closes the ~2x gap to NuttX.  (Write-through vs write-back is moot for a RO
 	 * window.) */
-	tp.xRegions[2].ulParameters =
-		portMPU_REGION_READ_ONLY | (0x02u << portMPU_RASR_TEX_S_C_B_LOCATION);
+	tp.xRegions[2].ulParameters = portMPU_REGION_READ_ONLY |
+				      (0x02u << portMPU_RASR_TEX_S_C_B_LOCATION);
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in PSRAM — QEMU loads it at
 	 * 0x60000000 via `-device loader` (see qemu-run.sh; the QEMU analog of the STM32 QSPI XIP).
@@ -721,12 +738,12 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	 * guest never writes the cpio). xRegions[2],[3] — an500 has 11 configurable MPU regions. */
 	tp.xRegions[2].pvBaseAddress = (void *)0x60000000u;
 	tp.xRegions[2].ulLengthInBytes = 8u * 1024u * 1024u;
-	tp.xRegions[2].ulParameters =
-		portMPU_REGION_READ_ONLY | (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
+	tp.xRegions[2].ulParameters = portMPU_REGION_READ_ONLY |
+				      (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
 	tp.xRegions[3].pvBaseAddress = (void *)0x60800000u;
 	tp.xRegions[3].ulLengthInBytes = 4u * 1024u * 1024u;
-	tp.xRegions[3].ulParameters =
-		portMPU_REGION_READ_ONLY | (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
+	tp.xRegions[3].ulParameters = portMPU_REGION_READ_ONLY |
+				      (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
 #endif
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
 	g_lxp_used[sidx] = (ok == pdPASS);
@@ -780,8 +797,10 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 		 * libc text into the latter. If the D-cache view was uncached (initial launch,
 		 * before any coord_map) the clean is a harmless no-op and this reduces to the
 		 * previous invalidate. */
-		SCB_CleanInvalidateDCache_by_Addr((void *)prog_regions[ridx], (int32_t)LXP_PROG_REGION_SIZE);
-		SCB_CleanInvalidateDCache_by_Addr((void *)dyn_pools[ridx], (int32_t)LXP_DYN_POOL_SIZE);
+		SCB_CleanInvalidateDCache_by_Addr((void *)prog_regions[ridx],
+						  (int32_t)LXP_PROG_REGION_SIZE);
+		SCB_CleanInvalidateDCache_by_Addr((void *)dyn_pools[ridx],
+						  (int32_t)LXP_DYN_POOL_SIZE);
 	}
 	SCB_InvalidateICache();
 	__DSB();
@@ -797,7 +816,8 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 	c.sp = (uint32_t)sp;
 	c.pc = (uint32_t)entry;
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	g_region_exec[sidx] = (uint8_t)prog->region_exec; /* RWX region for a copied-text (remote) exec */
+	g_region_exec[sidx] =
+		(uint8_t)prog->region_exec; /* RWX region for a copied-text (remote) exec */
 #endif
 	struct resume_desc *d = stash_desc(sidx, &c, 0);
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
@@ -809,8 +829,7 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 	return freertos_spawn_common(sidx, ridx, d);
 }
 
-static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
-				  long r0val)
+static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
 {
 	struct resume_desc *d = g_park_desc[sidx];
 	int persistent = !g_lxp_used[sidx] && g_tid[sidx] && d;
@@ -875,9 +894,11 @@ static void freertos_coord_map(int ridx)
 	/* PMSAv7 RASR: ENABLE=bit0, SIZE field=log2(bytes)-1 in bits[5:1]. The pool arrays
 	 * are size-aligned (see prog_regions/dyn_pools), so each base is region-aligned. */
 	const uint32_t prog_rasr =
-		1u | (((uint32_t)(31 - __builtin_clz((unsigned)LXP_PROG_REGION_SIZE)) - 1u) << 1) | attr;
+		1u | (((uint32_t)(31 - __builtin_clz((unsigned)LXP_PROG_REGION_SIZE)) - 1u) << 1) |
+		attr;
 	const uint32_t dyn_rasr =
-		1u | (((uint32_t)(31 - __builtin_clz((unsigned)LXP_DYN_POOL_SIZE)) - 1u) << 1) | attr;
+		1u | (((uint32_t)(31 - __builtin_clz((unsigned)LXP_DYN_POOL_SIZE)) - 1u) << 1) |
+		attr;
 
 	/* Record in the TCB FIRST so a preemption mid-service restores this same mapping
 	 * (the port reprograms configurable regions from the TCB on switch-in); then write
@@ -944,7 +965,8 @@ size_t ove_lnx_slot_stack_hwm(void)
 static void freertos_abort_slot(int sidx)
 {
 	if (g_tid[sidx]) {
-		slot_sample_stack(sidx); /* capture the HWM before the task (and its mark) is gone */
+		slot_sample_stack(
+			sidx); /* capture the HWM before the task (and its mark) is gone */
 		vTaskDelete(g_tid[sidx]);
 	}
 	g_lxp_used[sidx] = 0;
@@ -1018,9 +1040,8 @@ static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
 	return LXP_OK;
 }
 
-#define LXP_SYSTEM_VERSION                                                        \
-	"FreeRTOS " tskKERNEL_VERSION_NUMBER " ove-" OVE_BUILD_OVERTOS_REV " lxp-" \
-		OVE_BUILD_LXP_REV
+#define LXP_SYSTEM_VERSION \
+	"FreeRTOS " tskKERNEL_VERSION_NUMBER " ove-" OVE_BUILD_OVERTOS_REV " lxp-" OVE_BUILD_LXP_REV
 _Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
 static const char *lxp_seam_system_version(void)
 {
@@ -1089,7 +1110,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
 	.cache_invalidate = lxp_guest_invalidate,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
-	.coord_map = freertos_coord_map, /* coherent coordinator view of the serviced slot's pools */
+	.coord_map =
+		freertos_coord_map, /* coherent coordinator view of the serviced slot's pools */
 #endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	.random_fill = freertos_random_fill,
@@ -1118,8 +1140,9 @@ const lxp_os_ops_t g_lxp_host_engine = {
  * reprogram so the region is live before the very next QUADSPI read (the cpio parse). */
 void lxp_rootfs_window(const void *base, size_t len)
 {
-	const uint32_t par = portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
-			     (0x08u << portMPU_RASR_TEX_S_C_B_LOCATION); /* TEX=001,S/C/B=0 = Normal NC */
+	const uint32_t par =
+		portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
+		(0x08u << portMPU_RASR_TEX_S_C_B_LOCATION); /* TEX=001,S/C/B=0 = Normal NC */
 	/* Configurable region 2 — the coordinator's one spare (coord_map owns 0 and 1). Record the
 	 * window so coord_map re-specifies region 2 on every remap and never drops it. */
 	g_qspi_win_base = (uint32_t)(uintptr_t)base;
@@ -1138,7 +1161,8 @@ void lxp_rootfs_window(const void *base, size_t len)
 	 * into the hardware MPU by hand, with the same encoding the port uses on a switch.  Doing it
 	 * directly (not via taskYIELD) avoids forcing a context switch from here, which for this task
 	 * would be its first switch and trips the FreeRTOS stack-overflow guard. */
-	unsigned l2 = 31u - (unsigned)__builtin_clz((unsigned)len); /* log2(len); len is a power of 2 */
+	unsigned l2 =
+		31u - (unsigned)__builtin_clz((unsigned)len); /* log2(len); len is a power of 2 */
 	volatile uint32_t *const mpu_rbar = (volatile uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (volatile uint32_t *)0xE000EDA0u;
 	*mpu_rbar = (uint32_t)(uintptr_t)base | (1u << 4) /* VALID */ | 2u /* region 2 */;

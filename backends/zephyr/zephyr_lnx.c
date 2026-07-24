@@ -102,8 +102,9 @@ struct lxp_ext_storage {
 	uint8_t netfs_exec_stage[256u * 1024u];
 #endif
 };
-static struct lxp_ext_storage g_lxp_ext_storage Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_EXT_STORAGE_ALIGN);
+static struct lxp_ext_storage
+	g_lxp_ext_storage Z_GENERIC_SECTION(LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE))
+		__aligned(LXP_EXT_STORAGE_ALIGN);
 _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_SIZE == 0,
 	       "program rows must be aligned to their MPU region size");
 #define dyn_pools (g_lxp_ext_storage.dyn_pools)
@@ -354,8 +355,7 @@ extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t 
 				    uint32_t exc_return);
 
 static __attribute__((noinline, used)) void
-zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee,
-			 uint32_t exc_return)
+zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee, uint32_t exc_return)
 {
 	if (g_lxp_active) {
 		const uint16_t *svc = (const uint16_t *)(esf->basic.pc - 2);
@@ -387,7 +387,8 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee,
 				 * lazy stacking, an extended exception frame (EXC_RETURN bit 4 == 0) carries
 				 * s0-s15 + FPSCR in esf->fpu; s16-s31 are live in the FPU. Mirror the FreeRTOS
 				 * seam: force the pending lazy store, then read the frame + high registers. */
-				static struct lxp_fp_context fpctx; /* off the deep fault-path stack */
+				static struct lxp_fp_context
+					fpctx; /* off the deep fault-path stack */
 				memset(&fpctx, 0, sizeof(fpctx));
 				f.fp = &fpctx;
 				if ((exc_return & (1u << 4)) == 0) {
@@ -395,7 +396,9 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee,
 					for (int i = 0; i < 16; i++)
 						fpctx.s[i] = esf->fpu.s[i];
 					__asm__ volatile("vstmia %0, {s16-s31}"
-							 : : "r"(&fpctx.s[16]) : "memory");
+							 :
+							 : "r"(&fpctx.s[16])
+							 : "memory");
 					fpctx.fpscr = esf->fpu.fpscr;
 					fpctx.active = 1;
 					fp_bytes = 18u * sizeof(uint32_t);
@@ -438,7 +441,9 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee,
 						e->fpu.s[i] = fpctx.s[i];
 					e->fpu.fpscr = fpctx.fpscr;
 					__asm__ volatile("vldmia %0, {s16-s31}"
-							 : : "r"(&fpctx.s[16]) : "memory");
+							 :
+							 : "r"(&fpctx.s[16])
+							 : "memory");
 				}
 #endif
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
@@ -462,8 +467,7 @@ _Static_assert(offsetof(_callee_saved_t, v1) == 0u, "callee r4 offset");
 _Static_assert(offsetof(_callee_saved_t, v8) == 7u * sizeof(uint32_t), "callee r11 offset");
 
 __attribute__((naked)) void __wrap_z_do_kernel_oops(const struct arch_esf *esf,
-						    _callee_saved_t *callee,
-						    uint32_t exc_return)
+						    _callee_saved_t *callee, uint32_t exc_return)
 {
 	__asm__ volatile("push {r1, lr}\n"
 			 "bl zephyr_lnx_kernel_oops_c\n"
@@ -490,14 +494,14 @@ static void arg_tramp(void *sp, void *entry, void *unused)
 _Static_assert(offsetof(struct lxp_resume_ctx, fp.s) == 64u, "resume fp.s offset");
 _Static_assert(offsetof(struct lxp_resume_ctx, fp.fpscr) == 192u, "resume fp.fpscr offset");
 _Static_assert(offsetof(struct lxp_resume_ctx, fp.active) == 196u, "resume fp.active offset");
-#define LXP_ZTRAMP_RESTORE_FP                                                       \
-	"ldr r2, [r1, #196]\n" /* ctx.fp.active */                                  \
-	"cmp r2, #0\n"                                                              \
-	"beq 1f\n"                                                                  \
-	"add r2, r1, #64\n" /* &ctx.fp.s[0] */                                      \
-	"vldmia r2, {s0-s31}\n"                                                     \
-	"ldr r2, [r1, #192]\n" /* ctx.fp.fpscr */                                   \
-	"vmsr fpscr, r2\n"                                                          \
+#define LXP_ZTRAMP_RESTORE_FP                      \
+	"ldr r2, [r1, #196]\n" /* ctx.fp.active */ \
+	"cmp r2, #0\n"                             \
+	"beq 1f\n"                                 \
+	"add r2, r1, #64\n" /* &ctx.fp.s[0] */     \
+	"vldmia r2, {s0-s31}\n"                    \
+	"ldr r2, [r1, #192]\n" /* ctx.fp.fpscr */  \
+	"vmsr fpscr, r2\n"                         \
 	"1:\n"
 #else
 #define LXP_ZTRAMP_RESTORE_FP ""
@@ -509,8 +513,7 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 	ARG_UNUSED(unused);
 	register void *rv __asm__("r0") = r0val;
 	register void *c __asm__("r1") = ctx;
-	__asm__ volatile("mov r3, r1\n" LXP_ZTRAMP_RESTORE_FP
-			 "ldmia r3!, {r4-r11}\n"
+	__asm__ volatile("mov r3, r1\n" LXP_ZTRAMP_RESTORE_FP "ldmia r3!, {r4-r11}\n"
 			 "ldr r12, [r3], #4\n"
 			 "ldr lr, [r3], #4\n"
 			 "ldr r1, [r3], #4\n" /* ctx.sp (temp) */
@@ -526,8 +529,8 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 			 "pop {pc}\n"
 			 :
 			 : "r"(rv), "r"(c)
-			 : "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12", "lr",
-			   "cc", "memory");
+			 : "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12", "lr", "cc",
+			   "memory");
 	__builtin_unreachable();
 }
 
@@ -577,7 +580,7 @@ static int setup_domain(int ridx, const lxp_flat_t *prog)
 		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	} else
 #endif
-	if (prog->is_dynamic) {
+		if (prog->is_dynamic) {
 		/* Dynamic FDPIC: ALL code (exec + ld.so + libc.so text) is shared IN-PLACE from the
 		 * cpio's executable .text subsection (.text.ove_rootfs — user-RX, already covered by the
 		 * kernel's static .text MPU region the K_USER thread runs trampolines from), so the
@@ -659,6 +662,21 @@ static int zephyr_random_fill(void *buf, size_t len)
 	return LXP_OK;
 }
 
+static void slot_task_name(char name[6], int sidx)
+{
+	name[0] = 'l';
+	name[1] = 'n';
+	name[2] = 'x';
+	if (sidx >= 10) {
+		name[3] = (char)('0' + (sidx / 10) % 10);
+		name[4] = (char)('0' + sidx % 10);
+		name[5] = '\0';
+	} else {
+		name[3] = (char)('0' + sidx);
+		name[4] = '\0';
+	}
+}
+
 static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
 			       void *stack_lo)
 {
@@ -680,16 +698,18 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 		slot->sp = (uint32_t)(uintptr_t)sp;
 		slot->pc = (uint32_t)(uintptr_t)entry;
 		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
-					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
-					      (void *)0, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
-					      K_FOREVER);
+					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
+					      resume_tramp, (void *)0, slot, NULL,
+					      OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
 	} else {
 		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
-					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), arg_tramp, sp,
-					      entry, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
+					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
+					      arg_tramp, sp, entry, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST,
+					      K_USER, K_FOREVER);
 	}
 	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
-		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
+		char nm[6];
+		slot_task_name(nm, sidx);
 		k_thread_name_set(g_tid[sidx], nm);
 	}
 	g_lxp_used[sidx] = 1;
@@ -698,8 +718,7 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 	return 0;
 }
 
-static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
-				long r0val)
+static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
 {
 	if (!g_lxp_used[sidx] && g_tid[sidx]) {
 		/* PendSV saved the svc frame that park_frame redirected to the naked
@@ -707,8 +726,8 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 		 * from the Linux SP loses Zephyr's exception-alignment/lazy-FP
 		 * invariants, while resuming through another user exception can try
 	 * to preserve stale privileged lazy-FP state under the guest MPU. */
-	struct k_thread *thread = &g_thread[sidx];
-	struct arch_esf *esf = (struct arch_esf *)(uintptr_t)thread->callee_saved.psp;
+		struct k_thread *thread = &g_thread[sidx];
+		struct arch_esf *esf = (struct arch_esf *)(uintptr_t)thread->callee_saved.psp;
 		esf->basic.r0 = (uint32_t)r0val;
 		esf->basic.r1 = ctx->r1;
 		esf->basic.r2 = ctx->r2;
@@ -750,7 +769,8 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 				      (void *)r0val, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
 				      K_FOREVER);
 	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
-		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
+		char nm[6];
+		slot_task_name(nm, sidx);
 		k_thread_name_set(g_tid[sidx], nm);
 	}
 	g_lxp_used[sidx] = 1;
@@ -915,9 +935,8 @@ static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
 	return LXP_OK;
 }
 
-#define LXP_SYSTEM_VERSION                                                     \
-	"Zephyr " KERNEL_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" \
-		OVE_BUILD_LXP_REV
+#define LXP_SYSTEM_VERSION \
+	"Zephyr " KERNEL_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" OVE_BUILD_LXP_REV
 _Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
 static const char *lxp_seam_system_version(void)
 {

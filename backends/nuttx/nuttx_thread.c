@@ -12,6 +12,9 @@
 #include "ove/trace.h"
 #include "ove_backend_common.h"
 #include "ove_nuttx_priority.h"
+#include "ove_nuttx_runtime.h"
+#include <nuttx/arch.h>
+#include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/tls.h>
 #include <nuttx/mutex.h>
@@ -497,6 +500,149 @@ struct _nuttx_list_snapshot {
 #endif
 };
 
+#if defined(CONFIG_ARCH_PERF_EVENTS)
+
+/* Exact per-task execution time. The context-switch note hook folds the elapsed
+ * DWT cycles into the outgoing task. ove_thread_list() also folds the current
+ * interval, so a CPU-bound task that never switches still advances on every
+ * /proc refresh. Both paths run with interrupts masked while touching 64-bit
+ * counters on this 32-bit core. */
+#define OVE_NX_RUNTIME_MAX 24
+static struct {
+	pid_t pid;
+	uint64_t cycles;
+	bool used;
+} g_nx_runtime[OVE_NX_RUNTIME_MAX];
+static pid_t g_nx_runtime_current = -1;
+static uint32_t g_nx_runtime_last;
+static uint64_t g_nx_runtime_total;
+static bool g_nx_runtime_ready;
+
+static int _runtime_find(pid_t pid, bool create)
+{
+	int freeidx = -1;
+
+	for (int i = 0; i < OVE_NX_RUNTIME_MAX; i++) {
+		if (g_nx_runtime[i].used && g_nx_runtime[i].pid == pid)
+			return i;
+		if (!g_nx_runtime[i].used && freeidx < 0)
+			freeidx = i;
+	}
+	if (!create || freeidx < 0)
+		return -1;
+	g_nx_runtime[freeidx].used = true;
+	g_nx_runtime[freeidx].pid = pid;
+	g_nx_runtime[freeidx].cycles = 0;
+	return freeidx;
+}
+
+static void _runtime_fold(uint32_t now)
+{
+	if (!g_nx_runtime_ready) {
+		g_nx_runtime_last = now;
+		g_nx_runtime_ready = true;
+		return;
+	}
+
+	uint32_t delta = now - g_nx_runtime_last;
+	g_nx_runtime_total += delta;
+	if (g_nx_runtime_current >= 0) {
+		int idx = _runtime_find(g_nx_runtime_current, true);
+		if (idx >= 0)
+			g_nx_runtime[idx].cycles += delta;
+	}
+	g_nx_runtime_last = now;
+}
+
+void ove_nuttx_runtime_reset(pid_t current_pid)
+{
+	irqstate_t flags = enter_critical_section();
+	memset(g_nx_runtime, 0, sizeof(g_nx_runtime));
+	g_nx_runtime_current = current_pid;
+	g_nx_runtime_total = 0;
+	g_nx_runtime_last = (uint32_t)up_perf_gettime();
+	g_nx_runtime_ready = true;
+	if (current_pid >= 0)
+		(void)_runtime_find(current_pid, true);
+	leave_critical_section(flags);
+}
+
+void ove_nuttx_runtime_switch(pid_t next_pid)
+{
+	irqstate_t flags = enter_critical_section();
+	_runtime_fold((uint32_t)up_perf_gettime());
+	g_nx_runtime_current = next_pid;
+	if (next_pid >= 0)
+		(void)_runtime_find(next_pid, true);
+	leave_critical_section(flags);
+}
+
+void ove_nuttx_runtime_snapshot(void)
+{
+	irqstate_t flags = enter_critical_section();
+	_runtime_fold((uint32_t)up_perf_gettime());
+	leave_critical_section(flags);
+}
+
+int ove_nuttx_runtime_get(pid_t pid, uint64_t *task_cycles, uint64_t *total_cycles)
+{
+	int ret = -1;
+	irqstate_t flags = enter_critical_section();
+	int idx = _runtime_find(pid, false);
+	if (idx >= 0) {
+		if (task_cycles)
+			*task_cycles = g_nx_runtime[idx].cycles;
+		ret = 0;
+	}
+	if (total_cycles)
+		*total_cycles = g_nx_runtime_total;
+	leave_critical_section(flags);
+	return ret;
+}
+
+uint64_t ove_nuttx_runtime_cycles_to_us(uint64_t cycles)
+{
+	uint64_t freq = up_perf_getfreq();
+	if (freq == 0)
+		return 0;
+	/* Quotient/remainder avoids overflowing cycles * 1,000,000 on long runs. */
+	return (cycles / freq) * 1000000u + ((cycles % freq) * 1000000u) / freq;
+}
+
+#else
+
+void ove_nuttx_runtime_reset(pid_t current_pid)
+{
+	(void)current_pid;
+}
+
+void ove_nuttx_runtime_switch(pid_t next_pid)
+{
+	(void)next_pid;
+}
+
+void ove_nuttx_runtime_snapshot(void)
+{
+}
+
+int ove_nuttx_runtime_get(pid_t pid, uint64_t *task_cycles, uint64_t *total_cycles)
+{
+	(void)pid;
+	if (task_cycles)
+		*task_cycles = 0;
+	if (total_cycles)
+		*total_cycles = 0;
+	return -1;
+}
+
+uint64_t ove_nuttx_runtime_cycles_to_us(uint64_t cycles)
+{
+	(void)cycles;
+	return 0;
+}
+
+#endif
+
 /* NuttX's per-thread cpuload is an exponentially-DECAYED load average (sched_cpuload.c halves every
  * thread's tick count every ~2s), NOT a cumulative runtime. The personality's ps/top stats layer
  * charges DELTAS of running_us expecting it cumulative, so a decayed value plateaus at steady state
@@ -504,10 +650,16 @@ struct _nuttx_list_snapshot {
  * load fraction (cpu_percent_x100) over the wall-time between ove_thread_list() calls. Keyed by pid;
  * a slot whose thread wasn't seen in a pass is reclaimed, so recreated/exited threads neither leak
  * a slot nor carry a stale total. */
+#if !defined(CONFIG_ARCH_PERF_EVENTS)
 #define OVE_NX_CPUINT_MAX 24
+#else
+#define OVE_NX_CPUINT_MAX OVE_NX_RUNTIME_MAX
+#endif
+
 static struct _nuttx_list_snapshot g_nx_list_snapshot[OVE_NX_CPUINT_MAX];
 static mutex_t g_nx_list_lock = NXMUTEX_INITIALIZER;
 
+#if !defined(CONFIG_ARCH_PERF_EVENTS)
 static struct {
 	pid_t pid;
 	uint64_t cum_us;
@@ -515,6 +667,23 @@ static struct {
 	bool seen;
 } g_nx_cpuint[OVE_NX_CPUINT_MAX];
 static clock_t g_nx_cpuint_last;
+#endif
+
+#if defined(CONFIG_ARCH_PERF_EVENTS)
+static uint32_t _runtime_percent(uint64_t part, uint64_t total)
+{
+	if (total == 0)
+		return 0;
+
+	/* Keep the multiply bounded on multi-month uptimes. Shifting numerator
+	 * and denominator together only discards precision far below 0.01%. */
+	while (total > UINT64_MAX / 10000u) {
+		part >>= 1;
+		total >>= 1;
+	}
+	return (uint32_t)(part * 10000u / total);
+}
+#endif
 
 static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 {
@@ -563,7 +732,15 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 static void _nuttx_list_finish(struct ove_thread_info *info,
 			       const struct _nuttx_list_snapshot *snapshot, uint64_t dt_us)
 {
-#ifndef CONFIG_SCHED_CPULOAD_NONE
+#if defined(CONFIG_ARCH_PERF_EVENTS)
+	(void)dt_us;
+	uint64_t task_cycles;
+	uint64_t total_cycles;
+	if (ove_nuttx_runtime_get(snapshot->pid, &task_cycles, &total_cycles) == 0) {
+		info->state_times.running_us = ove_nuttx_runtime_cycles_to_us(task_cycles);
+		info->cpu_percent_x100 = _runtime_percent(task_cycles, total_cycles);
+	}
+#elif !defined(CONFIG_SCHED_CPULOAD_NONE)
 	{
 		struct cpuload_s cl;
 		if (clock_cpuload(snapshot->pid, &cl) == OK && cl.total > 0) {
@@ -612,22 +789,29 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		.count = 0,
 	};
 
-	/* Advance the load-integration clock and mark every accumulator unseen; the callback re-marks
-	 * the ones it touches and we reclaim the rest below (exited/recreated threads). */
+	/* The decayed-load fallback must integrate its samples into cumulative
+	 * time. Hardware perf-counter builds already have cumulative cycles. */
+#if !defined(CONFIG_ARCH_PERF_EVENTS)
 	clock_t now = clock_systime_ticks();
 	uint64_t dt_us =
 		(g_nx_cpuint_last == 0) ? 0 : (uint64_t)(now - g_nx_cpuint_last) * USEC_PER_TICK;
 	g_nx_cpuint_last = now;
 	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
 		g_nx_cpuint[k].seen = false;
+#else
+	uint64_t dt_us = 0;
+#endif
 
+	ove_nuttx_runtime_snapshot();
 	nxsched_foreach(_nuttx_list_cb, &ctx);
 	for (size_t i = 0; i < ctx.count; i++)
 		_nuttx_list_finish(&out[i], &g_nx_list_snapshot[i], dt_us);
 
+#if !defined(CONFIG_ARCH_PERF_EVENTS)
 	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
 		if (g_nx_cpuint[k].used && !g_nx_cpuint[k].seen)
 			g_nx_cpuint[k].used = false;
+#endif
 
 	if (actual_count)
 		*actual_count = ctx.count;

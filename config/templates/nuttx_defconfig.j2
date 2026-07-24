@@ -95,6 +95,11 @@ CONFIG_STACK_COLORATION=y
 
 # CPU load monitoring (for sim dashboard thread view)
 CONFIG_SCHED_CPULOAD_SYSCLK=y
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+# High-resolution scheduler runtime accounting for the Linux personality's
+# synthetic /proc. The ARMv7-M implementation uses the DWT cycle counter.
+CONFIG_ARCH_PERF_EVENTS=y
+{% endif %}
 # Keep tracing opt-in: these add note-driver callbacks to latency-sensitive paths.
 # CONFIG_SCHED_CRITMONITOR is not set
 # CONFIG_SCHED_INSTRUMENTATION_CSECTION is not set

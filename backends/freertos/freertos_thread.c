@@ -22,6 +22,21 @@
  * doesn't pull CMSIS in, so use the standard C11 atomic_thread_fence
  * (GCC emits `dmb sy` on ARMv7-M) for portability. */
 #define OVE_DMB() atomic_thread_fence(memory_order_seq_cst)
+
+#if (configGENERATE_RUN_TIME_STATS == 1) || (configUSE_TRACE_FACILITY == 1)
+static uint32_t runtime_percent(configRUN_TIME_COUNTER_TYPE part,
+				configRUN_TIME_COUNTER_TYPE total)
+{
+	if (total == 0)
+		return 0;
+	while (total > UINT64_MAX / 10000u) {
+		part >>= 1;
+		total >>= 1;
+	}
+	return (uint32_t)(part * 10000u / total);
+}
+#endif
+
 static void freertos_thread_wrapper(void *param)
 {
 	struct ove_thread *s = (struct ove_thread *)param;
@@ -286,15 +301,14 @@ int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *s
 	TaskStatus_t task_status;
 	vTaskGetInfo(handle->task, &task_status, pdFALSE, eInvalid);
 
-	stats->runtime_us = (uint64_t)task_status.ulRunTimeCounter;
+	configRUN_TIME_COUNTER_TYPE total = portGET_RUN_TIME_COUNTER_VALUE();
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	stats->runtime_us = (uint64_t)task_status.ulRunTimeCounter * 1000u;
+#else
+	stats->runtime_us = (uint64_t)task_status.ulRunTimeCounter / (SystemCoreClock / 1000000u);
+#endif
 
-	uint32_t total = portGET_RUN_TIME_COUNTER_VALUE();
-	if (total > 0) {
-		stats->cpu_percent_x100 =
-			(uint32_t)((uint64_t)task_status.ulRunTimeCounter * 10000ULL / total);
-	} else {
-		stats->cpu_percent_x100 = 0;
-	}
+	stats->cpu_percent_x100 = runtime_percent(task_status.ulRunTimeCounter, total);
 	return OVE_OK;
 #else
 	(void)handle;
@@ -321,28 +335,7 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 	return OVE_OK;
 }
 
-/*
- * Per-task CPU tick sampling.
- *
- * FreeRTOS credits a task's ulRunTimeCounter only at a context SWITCH (the
- * outgoing task is charged `now - switched-in`). A CPU-bound program that runs
- * flat-out and never blocks (e.g. `yes >/dev/null`, which discards every write
- * with no yield) is therefore never charged and reads 0 % in ps/top even while
- * it saturates the core — meanwhile the tick ISR keeps advancing the global
- * run-time counter, so the totals look busy but no task owns the time.
- *
- * Sample the running task once per SysTick (from vApplicationTickHook) into a
- * small per-handle table so a busy task accrues time every tick — the same
- * statistical approach NuttX's clock_cpuload sampling takes. The single writer
- * is the tick ISR; reads run in task context (ove_thread_list), so a plain read
- * is race-safe to within one tick.
- */
 #define OVE_FRT_TASK_REGISTRY_MAX 24
-#define OVE_FRT_CPUINT_MAX OVE_FRT_TASK_REGISTRY_MAX
-static struct {
-	TaskHandle_t h;
-	uint32_t ticks;
-} g_frt_cpuint[OVE_FRT_CPUINT_MAX];
 
 #if configUSE_TRACE_FACILITY
 /*
@@ -400,57 +393,8 @@ void ove_backend_freertos_task_deleted(void *task)
 		g_frt_tasks[g_frt_task_count] = (struct frt_task_registry_entry){0};
 		break;
 	}
-
-	/* A static TCB may be reused by a later guest incarnation. Do not carry
-	 * the old task's accumulated samples into the new task. */
-	for (int i = 0; i < OVE_FRT_CPUINT_MAX; ++i) {
-		if (g_frt_cpuint[i].h == handle) {
-			g_frt_cpuint[i].h = NULL;
-			g_frt_cpuint[i].ticks = 0u;
-			break;
-		}
-	}
 }
 #endif
-
-/* Charge the currently-running task one tick. Called from the SysTick ISR. */
-void ove_backend_thread_cpu_sample(void);
-void ove_backend_thread_cpu_sample(void)
-{
-	/* MUST read the raw pxCurrentTCB, NOT xTaskGetCurrentTaskHandle(): under the
-	 * MPU port that API is wrapped and raises privilege via `svc` when the
-	 * interrupted task is unprivileged (CONTROL.nPRIV=1). An `svc` from handler
-	 * mode HardFaults on a real Cortex-M7 (QEMU tolerates it, so this only bites
-	 * on silicon). pxCurrentTCB is a single word — a plain read is ISR-safe. */
-	extern void *volatile pxCurrentTCB;
-	TaskHandle_t h = (TaskHandle_t)pxCurrentTCB;
-	if (!h)
-		return;
-	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
-		if (g_frt_cpuint[i].h == h) {
-			g_frt_cpuint[i].ticks++;
-			return;
-		}
-	}
-	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
-		if (g_frt_cpuint[i].h == NULL) {
-			g_frt_cpuint[i].h = h;
-			g_frt_cpuint[i].ticks = 1;
-			return;
-		}
-	}
-}
-
-/* Only the trace-facility path in ove_thread_list() below reads this. */
-#if configUSE_TRACE_FACILITY
-static uint32_t frt_cpuint_ticks(TaskHandle_t h)
-{
-	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++)
-		if (g_frt_cpuint[i].h == h)
-			return g_frt_cpuint[i].ticks;
-	return 0;
-}
-#endif /* configUSE_TRACE_FACILITY */
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 static uint32_t g_snapshot_window_calls;
@@ -490,7 +434,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 {
 #if configUSE_TRACE_FACILITY
 	UBaseType_t filled;
-	uint32_t total_ticks;
+	configRUN_TIME_COUNTER_TYPE total_runtime;
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	uint32_t snapshot_start = DWT->CYCCNT;
 #endif
@@ -506,7 +450,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	filled = g_frt_task_count;
 	if (out != NULL && filled > (UBaseType_t)max_count)
 		filled = (UBaseType_t)max_count;
-	total_ticks = (uint32_t)xTaskGetTickCount();
+	total_runtime = portGET_RUN_TIME_COUNTER_VALUE();
 
 	if (out != NULL) {
 		for (UBaseType_t i = 0; i < filled; ++i) {
@@ -540,15 +484,17 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 				break;
 			}
 
-			uint32_t sampled = frt_cpuint_ticks(handle);
 			out[i].cpu_percent_x100 =
-				total_ticks != 0u
-					? (uint32_t)((uint64_t)sampled * 10000u / total_ticks)
-					: 0u;
+				runtime_percent(task.ulRunTimeCounter, total_runtime);
 
-			uint64_t tick_us = 1000000u / configTICK_RATE_HZ;
-			uint64_t run_us = (uint64_t)sampled * tick_us;
-			uint64_t total_us = (uint64_t)total_ticks * tick_us;
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+			uint64_t run_us = (uint64_t)task.ulRunTimeCounter * 1000u;
+			uint64_t total_us = (uint64_t)total_runtime * 1000u;
+#else
+			uint64_t cycles_per_us = SystemCoreClock / 1000000u;
+			uint64_t run_us = (uint64_t)task.ulRunTimeCounter / cycles_per_us;
+			uint64_t total_us = (uint64_t)total_runtime / cycles_per_us;
+#endif
 			out[i].state_times.running_us = run_us;
 			out[i].state_times.ready_us = 0u;
 			out[i].state_times.blocked_us = total_us > run_us ? total_us - run_us : 0u;

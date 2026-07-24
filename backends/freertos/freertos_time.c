@@ -44,12 +44,54 @@ static uint64_t g_ns_per_cyc_q32;  /* (1e9 << 32) / SystemCoreClock, computed on
 static volatile uint32_t g_ts_seq; /* seqlock: odd while the tick hook is updating */
 static volatile uint64_t g_ts_ns;  /* total ns as of g_ts_cyc */
 static volatile uint32_t g_ts_cyc; /* CYCCNT sampled at g_ts_ns */
+/* FreeRTOS runtime statistics need the same wrap stitching, but retain cycles
+ * so the scheduler's context-switch hot path performs no division. */
+static volatile uint32_t g_runtime_seq;
+static volatile uint64_t g_runtime_cycles;
+static volatile uint32_t g_runtime_cyc;
+
+void ove_freertos_runtime_counter_init(void)
+{
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	/* Cortex-M7: unlock DWT before writing its registers. */
+	*((volatile uint32_t *)0xE0001FB0u) = 0xC5ACCE55u;
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+	g_runtime_seq = 0;
+	g_runtime_cycles = 0;
+	g_runtime_cyc = 0;
+}
+
+uint64_t ove_freertos_runtime_counter_get(void)
+{
+	uint64_t base;
+	uint32_t cbase;
+	uint32_t seq;
+
+	do {
+		seq = g_runtime_seq;
+		__asm__ volatile("" ::: "memory");
+		base = g_runtime_cycles;
+		cbase = g_runtime_cyc;
+		__asm__ volatile("" ::: "memory");
+	} while ((seq & 1u) || seq != g_runtime_seq);
+
+	return base + (uint32_t)(DWT->CYCCNT - cbase);
+}
 
 /* Advance the epoch. Called from vApplicationTickHook (SysTick ISR, 1 ms); the first
  * call arms the reciprocal + epoch. */
 void ove_freertos_time_tick(void)
 {
 	uint32_t now = DWT->CYCCNT;
+	uint32_t runtime_delta = now - g_runtime_cyc;
+	g_runtime_seq++;
+	__asm__ volatile("" ::: "memory");
+	g_runtime_cycles += runtime_delta;
+	g_runtime_cyc = now;
+	__asm__ volatile("" ::: "memory");
+	g_runtime_seq++;
+
 	if (g_ns_per_cyc_q32 == 0) {
 		g_ns_per_cyc_q32 = ((uint64_t)1000000000ULL << 32) / (uint64_t)SystemCoreClock;
 		g_ts_cyc = now;
