@@ -132,8 +132,9 @@ static ove_thread_storage_t g_response_thread_storage;
 static ove_thread_t g_report_thread;
 static ove_thread_storage_t g_report_thread_storage;
 #if defined(CONFIG_OVE_RTOS_NUTTX)
-/* The NuttX backend allocates requested task stacks internally and ignores
- * caller buffers. Do not spend scarce STM32 SRAM on unused mirrors. */
+/* Keep the latency-sensitive scope stacks in NuttX's DTCM-backed kernel heap.
+ * The backend can honor caller buffers, but static application buffers live
+ * in the tighter and slower SRAM1 region on this target. */
 #define RT_SCOPE_STACK_BYTES RT_SCOPE_STACK_SIZE
 #define RT_SCOPE_STACK_PTR NULL
 #define RT_SCOPE_REPORT_STACK_BYTES RT_SCOPE_REPORT_STACK_SIZE

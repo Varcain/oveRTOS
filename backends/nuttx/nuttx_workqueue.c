@@ -9,6 +9,7 @@
 #include "ove/workqueue.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_nuttx_priority.h"
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
@@ -16,30 +17,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-static int map_priority(ove_prio_t prio)
-{
-	switch (prio) {
-	case OVE_PRIO_IDLE:
-		return 50;
-	case OVE_PRIO_LOW:
-		return 60;
-	case OVE_PRIO_BELOW_NORMAL:
-		return 80;
-	case OVE_PRIO_NORMAL:
-		return 100;
-	case OVE_PRIO_ABOVE_NORMAL:
-		return 120;
-	case OVE_PRIO_HIGH:
-		return 150;
-	case OVE_PRIO_REALTIME:
-		return 200;
-	case OVE_PRIO_CRITICAL:
-		return 220;
-	default:
-		return 100;
-	}
-}
-
 static int wq_task_fn(int argc, char *argv[])
 {
 	struct ove_workqueue *nwq;
@@ -110,7 +87,7 @@ static void wait_for_completion(struct ove_work *w)
 }
 
 static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t priority,
-		    size_t stack_size)
+		    size_t stack_size, void *stack)
 {
 	char addr_str[20];
 	int pid;
@@ -130,8 +107,9 @@ static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t prio
 	(void)snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)nwq);
 	{
 		char *argv_args[] = {addr_str, NULL};
-		pid = task_create(name ? name : "ove_wq", map_priority(priority), (int)stack_size,
-				  wq_task_fn, argv_args);
+		pid = task_create_with_stack(name ? name : "ove_wq",
+					     ove_nuttx_map_priority(priority), stack,
+					     (int)stack_size, wq_task_fn, argv_args);
 	}
 	if (pid < 0) {
 		nxmutex_destroy(&nwq->lock);
@@ -164,14 +142,15 @@ static void wq_stop(struct ove_workqueue *nwq)
 int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
 		       ove_prio_t priority, size_t stack_size, void *stack)
 {
-	(void)stack; /* NuttX allocates stack internally via task_create */
-
 	if (wq == NULL || storage == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
 	memset(storage, 0, sizeof(*storage));
-	int ret = wq_start(storage, name, priority, stack_size);
+	int ret = wq_start(storage, name, priority, stack_size, stack);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -226,7 +205,7 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t prior
 	}
 	memset(nwq, 0, sizeof(*nwq));
 
-	int ret = wq_start(nwq, name, priority, stack_size);
+	int ret = wq_start(nwq, name, priority, stack_size, NULL);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(nwq);
 		return ret;

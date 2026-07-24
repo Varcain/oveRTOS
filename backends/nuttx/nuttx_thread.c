@@ -11,12 +11,12 @@
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "ove_backend_common.h"
+#include "ove_nuttx_priority.h"
 #include <nuttx/semaphore.h>
 #include <nuttx/tls.h>
 #include <nuttx/mutex.h>
 #include <nuttx/sched.h>
 #include <nuttx/clock.h>
-#include <nuttx/arch.h>
 #include <sched.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -116,31 +116,6 @@ static struct ove_thread *first_thread;
 /* SIGUSR1 handler installed once */
 static volatile int sig_handler_installed;
 
-static int map_priority(ove_prio_t prio)
-{
-	/* NuttX SCHED_FIFO: higher number = higher priority */
-	switch (prio) {
-	case OVE_PRIO_IDLE:
-		return 50;
-	case OVE_PRIO_LOW:
-		return 60;
-	case OVE_PRIO_BELOW_NORMAL:
-		return 80;
-	case OVE_PRIO_NORMAL:
-		return 100;
-	case OVE_PRIO_ABOVE_NORMAL:
-		return 120;
-	case OVE_PRIO_HIGH:
-		return 150;
-	case OVE_PRIO_REALTIME:
-		return 200;
-	case OVE_PRIO_CRITICAL:
-		return 220;
-	default:
-		return 100;
-	}
-}
-
 static void sigusr1_handler(int sig)
 {
 	(void)sig;
@@ -191,7 +166,7 @@ static int task_wrapper(int argc, char *argv[])
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn entry, void *arg,
-			ove_prio_t priority, size_t stack_size)
+			ove_prio_t priority, size_t stack_size, void *stack)
 {
 	char addr_str[20];
 	int pid;
@@ -217,9 +192,9 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 		 * a kmm allocation that we cannot eliminate from
 		 * application code:
 		 *
-		 *   - task_create() (current path) kmm-allocates the TCB
-		 *     and stack. Switching to nxtask_init() with a caller-
-		 *     supplied TCB+stack still hits sched/group/group_create.c:
+		 *   - task_create_with_stack() still kmm-allocates the TCB.
+		 *     Supplying the caller's stack avoids the separate stack
+		 *     allocation, but sched/group/group_create.c:
 		 *     group_allocate() which kmm_zallocs sizeof(task_group_s)
 		 *     for every TCB_FLAG_TTYPE_TASK.
 		 *
@@ -243,8 +218,9 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 		 * tracker for the longer-term fix (nxtask_init with kernel-
 		 * thread launch sequence).
 		 */
-		pid = task_create(name ? name : "ove_thread", map_priority(priority),
-				  (int)stack_size, task_wrapper, argv_args);
+		pid = task_create_with_stack(name ? name : "ove_thread",
+					     ove_nuttx_map_priority(priority), stack,
+					     (int)stack_size, task_wrapper, argv_args);
 		if (pid < 0) {
 			nxsem_destroy(&t->done_sem);
 			return OVE_ERR_NO_MEMORY;
@@ -276,21 +252,12 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	/* Phase 5 / storage hygiene audit: NuttX backend cannot honor the
-	 * caller-supplied stack.  task_create() (current path) and
-	 * nxtask_init() (caller-storage path) both go through
-	 * sched/group/group_create.c:group_allocate() which kmm_zallocs
-	 * sizeof(task_group_s) per task and pulls the stack from kmm too.
-	 * TCB_FLAG_TTYPE_KERNEL would skip group_allocate but diverges
-	 * heavily in CONFIG_BUILD_FLAT — see the long comment in
-	 * thread_start() below.  Net: NuttX zero-heap incurs unavoidable
-	 * kmm allocations that the test_init_no_alloc trap layer (which
-	 * wraps libc malloc only) does NOT catch.  Documented as a known
-	 * gap; for strict zero-heap use FreeRTOS or Zephyr. */
-	(void)stack;
+	/* NuttX can use the caller's stack, but still allocates a TCB and task
+	 * group internally. The latter remains the zero-heap limitation
+	 * documented in thread_start(). */
 
 	memset(storage, 0, sizeof(*storage));
-	int ret = thread_start(storage, name, entry, arg, priority, stack_size);
+	int ret = thread_start(storage, name, entry, arg, priority, stack_size, stack);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -353,7 +320,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	}
 	memset(t, 0, sizeof(*t));
 
-	ret = thread_start(t, name, entry, arg, priority, stack_size);
+	ret = thread_start(t, name, entry, arg, priority, stack_size, NULL);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(t);
 		return ret;
@@ -383,7 +350,7 @@ ove_thread_t ove_thread_get_self(void)
 void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	struct sched_param param;
-	param.sched_priority = map_priority(prio);
+	param.sched_priority = ove_nuttx_map_priority(prio);
 
 	pid_t pid = (handle != NULL) ? handle->pid : getpid();
 	sched_setparam(pid, &param);
@@ -513,9 +480,21 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 
 struct _nuttx_list_ctx {
 	struct ove_thread_info *out;
+	struct _nuttx_list_snapshot *snapshot;
 	size_t max;
 	size_t count;
-	uint64_t dt_us; /* wall-µs elapsed since the previous ove_thread_list() call */
+};
+
+/* nxsched_foreach() invokes its callback while interrupts are disabled. Keep
+ * that callback to a bounded scalar snapshot: stack-color scanning can touch
+ * hundreds of KiB for a personality task and clock_cpuload() takes another
+ * scheduler lock. A TCB cannot be pinned across the traversal, so stack_used
+ * remains zero (unknown) instead of dereferencing a possibly exited task. */
+struct _nuttx_list_snapshot {
+	pid_t pid;
+#if CONFIG_TASK_NAME_SIZE > 0
+	char name[CONFIG_TASK_NAME_SIZE + 1];
+#endif
 };
 
 /* NuttX's per-thread cpuload is an exponentially-DECAYED load average (sched_cpuload.c halves every
@@ -526,6 +505,9 @@ struct _nuttx_list_ctx {
  * a slot whose thread wasn't seen in a pass is reclaimed, so recreated/exited threads neither leak
  * a slot nor carry a stale total. */
 #define OVE_NX_CPUINT_MAX 24
+static struct _nuttx_list_snapshot g_nx_list_snapshot[OVE_NX_CPUINT_MAX];
+static mutex_t g_nx_list_lock = NXMUTEX_INITIALIZER;
+
 static struct {
 	pid_t pid;
 	uint64_t cum_us;
@@ -540,13 +522,18 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	if (ctx->count >= ctx->max)
 		return;
 
-	struct ove_thread_info *info = &ctx->out[ctx->count];
+	size_t index = ctx->count;
+	struct ove_thread_info *info = &ctx->out[index];
+	struct _nuttx_list_snapshot *snapshot = &ctx->snapshot[index];
 
 #if CONFIG_TASK_NAME_SIZE > 0
-	info->name = tcb->name;
+	memcpy(snapshot->name, tcb->name, sizeof(snapshot->name));
+	snapshot->name[sizeof(snapshot->name) - 1u] = '\0';
+	info->name = snapshot->name;
 #else
 	info->name = "?";
 #endif
+	snapshot->pid = tcb->pid;
 
 	switch (tcb->task_state) {
 	case TSTATE_TASK_RUNNING:
@@ -566,25 +553,27 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 
 	info->priority = (int)tcb->sched_priority;
 	info->stack_size = tcb->adj_stack_size;
-#ifdef CONFIG_STACK_COLORATION
-	info->stack_used = up_check_tcbstack(tcb, tcb->adj_stack_size);
-#else
-	info->stack_used = tcb->adj_stack_size;
-#endif
+	info->stack_used = 0;
 	info->cpu_percent_x100 = 0;
-
 	memset(&info->state_times, 0, sizeof(info->state_times));
+
+	ctx->count++;
+}
+
+static void _nuttx_list_finish(struct ove_thread_info *info,
+			       const struct _nuttx_list_snapshot *snapshot, uint64_t dt_us)
+{
 #ifndef CONFIG_SCHED_CPULOAD_NONE
 	{
 		struct cpuload_s cl;
-		if (clock_cpuload(tcb->pid, &cl) == OK && cl.total > 0) {
+		if (clock_cpuload(snapshot->pid, &cl) == OK && cl.total > 0) {
 			uint32_t pct = (uint32_t)((uint64_t)cl.active * 10000U / cl.total);
 			info->cpu_percent_x100 = pct;
 			/* cl.active is a DECAYED average, not cumulative — integrate the load fraction
 			 * into a monotonic cumulative running_us (see the g_nx_cpuint note). */
 			int idx = -1, freeidx = -1;
 			for (int k = 0; k < OVE_NX_CPUINT_MAX; k++) {
-				if (g_nx_cpuint[k].used && g_nx_cpuint[k].pid == tcb->pid) {
+				if (g_nx_cpuint[k].used && g_nx_cpuint[k].pid == snapshot->pid) {
 					idx = k;
 					break;
 				}
@@ -594,19 +583,17 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 			if (idx < 0 && freeidx >= 0) {
 				idx = freeidx;
 				g_nx_cpuint[idx].used = true;
-				g_nx_cpuint[idx].pid = tcb->pid;
+				g_nx_cpuint[idx].pid = snapshot->pid;
 				g_nx_cpuint[idx].cum_us = 0;
 			}
 			if (idx >= 0) {
 				g_nx_cpuint[idx].seen = true;
-				g_nx_cpuint[idx].cum_us += (uint64_t)pct * ctx->dt_us / 10000U;
+				g_nx_cpuint[idx].cum_us += (uint64_t)pct * dt_us / 10000U;
 				info->state_times.running_us = g_nx_cpuint[idx].cum_us;
 			}
 		}
 	}
 #endif
-
-	ctx->count++;
 }
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
@@ -617,21 +604,26 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		return OVE_OK;
 	}
 
+	nxmutex_lock(&g_nx_list_lock);
 	struct _nuttx_list_ctx ctx = {
 		.out = out,
-		.max = max_count,
+		.snapshot = g_nx_list_snapshot,
+		.max = max_count < OVE_NX_CPUINT_MAX ? max_count : OVE_NX_CPUINT_MAX,
 		.count = 0,
 	};
 
 	/* Advance the load-integration clock and mark every accumulator unseen; the callback re-marks
 	 * the ones it touches and we reclaim the rest below (exited/recreated threads). */
 	clock_t now = clock_systime_ticks();
-	ctx.dt_us = (g_nx_cpuint_last == 0) ? 0 : (uint64_t)(now - g_nx_cpuint_last) * USEC_PER_TICK;
+	uint64_t dt_us =
+		(g_nx_cpuint_last == 0) ? 0 : (uint64_t)(now - g_nx_cpuint_last) * USEC_PER_TICK;
 	g_nx_cpuint_last = now;
 	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
 		g_nx_cpuint[k].seen = false;
 
 	nxsched_foreach(_nuttx_list_cb, &ctx);
+	for (size_t i = 0; i < ctx.count; i++)
+		_nuttx_list_finish(&out[i], &g_nx_list_snapshot[i], dt_us);
 
 	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
 		if (g_nx_cpuint[k].used && !g_nx_cpuint[k].seen)
@@ -639,5 +631,6 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 	if (actual_count)
 		*actual_count = ctx.count;
+	nxmutex_unlock(&g_nx_list_lock);
 	return OVE_OK;
 }

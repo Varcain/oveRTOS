@@ -95,6 +95,11 @@ CONFIG_STACK_COLORATION=y
 
 # CPU load monitoring (for sim dashboard thread view)
 CONFIG_SCHED_CPULOAD_SYSCLK=y
+# Keep tracing opt-in: these add note-driver callbacks to latency-sensitive paths.
+# CONFIG_SCHED_CRITMONITOR is not set
+# CONFIG_SCHED_INSTRUMENTATION_CSECTION is not set
+# CONFIG_SCHED_INSTRUMENTATION_IRQHANDLER is not set
+# CONFIG_FS_PROCFS is not set
 
 # Task names — the Linux personality's ps/top attributes each program's CPU by
 # matching its worker thread's name ("lnx<slot>"), so names must be available.
@@ -180,6 +185,15 @@ CONFIG_NETDB_DNSCLIENT_NAMESIZE=64
 CONFIG_NETDB_DNSSERVER_IPv4=y
 CONFIG_NETDB_DNSSERVER_IPv4ADDR=0x08080808
 CONFIG_NETUTILS_NETLIB=y
+# Several NuttX Ethernet drivers, including STM32F7, deliberately submit their
+# extended packet processing to LPWORK. Without a low-priority queue NuttX
+# aliases LPWORK to priority-224 HPWORK, letting the whole network stack
+# preempt real-time application threads. Keep only short driver bottom halves
+# on HPWORK and run network processing at the normal application band.
+CONFIG_SCHED_LPWORK=y
+CONFIG_SCHED_LPWORKPRIORITY=100
+CONFIG_SCHED_LPWORKSTACKSIZE=2048
+CONFIG_NETDEV_LPWORK_THREAD=y
 # Board-specific netdev driver selection (e.g. CONFIG_STM32F7_ETHMAC for
 # stm32f746g-discovery, CONFIG_NETDEV_LATEINIT for boards with no on-chip
 # MAC) must come from boards/<board>/nuttx/ove_board_defconfig.

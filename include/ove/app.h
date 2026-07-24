@@ -88,9 +88,9 @@ int ove_app_run(void);
  * @brief Lock the kernel heap after init (zero-heap mode safety net).
  *
  * On RTOSes whose kernel-side static configuration cannot fully
- * eliminate boot-time mm allocations (notably NuttX, where
- * @c task_create / @c pthread_create allocate TCBs and stacks from
- * kernel mm), call this after every static resource has been declared.
+ * eliminate boot-time mm allocations (notably NuttX, where task creation
+ * allocates TCBs and task groups from kernel mm even when the caller
+ * supplies the stack), call this after every static resource has been declared.
  * Subsequent kernel allocations trip a @c DEBUGASSERT and abort the
  * binary, so a stray malloc / @c kmm_malloc surfaces immediately
  * during testing instead of hiding behind a sized heap.
