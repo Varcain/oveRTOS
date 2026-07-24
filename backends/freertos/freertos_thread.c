@@ -9,6 +9,9 @@
 #include "ove/thread.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_freertos_lnx_metrics.h"
+#include "ove_freertos_priority.h"
+#include "ove_config.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -46,21 +49,6 @@ static void freertos_thread_wrapper(void *param)
 	vTaskSuspend(NULL);
 }
 
-static UBaseType_t map_priority(ove_prio_t prio)
-{
-	/* Direct mapping: ove priority value + tskIDLE_PRIORITY */
-	UBaseType_t p = tskIDLE_PRIORITY + (UBaseType_t)prio;
-#if (portUSING_MPU_WRAPPERS == 1)
-	/* Under the MPU port (Linux personality), the framework threads — the
-	 * run-loop coordinator, the rtos-worker, the console — are TRUSTED runtime
-	 * code that writes the program regions + the personality's kernel .bss and
-	 * calls FreeRTOS APIs, so they must run PRIVILEGED. Only the Linux program
-	 * slots (spawned in freertos_lnx.c) are unprivileged. */
-	p |= portPRIVILEGE_BIT;
-#endif
-	return p;
-}
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
@@ -93,7 +81,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		stack_depth = configMINIMAL_STACK_SIZE;
 
 	storage->task = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth, storage,
-					  map_priority(priority), (StackType_t *)stack,
+					  ove_freertos_map_priority(priority), (StackType_t *)stack,
 					  &storage->static_task);
 
 	vTaskSetApplicationTaskTag(storage->task, (TaskHookFunction_t)storage);
@@ -183,7 +171,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 
 	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth, wrapper,
-					  map_priority(priority), wrapper->stack,
+					  ove_freertos_map_priority(priority), wrapper->stack,
 					  &wrapper->static_task);
 	if (wrapper->task == NULL) {
 #if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
@@ -222,7 +210,7 @@ ove_thread_t ove_thread_get_self(void)
 void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	TaskHandle_t task = (handle != NULL) ? handle->task : NULL;
-	vTaskPrioritySet(task, map_priority(prio));
+	vTaskPrioritySet(task, ove_freertos_priority_value(prio));
 }
 
 void ove_thread_sleep_ms(uint32_t ms)
@@ -349,11 +337,81 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
  * is the tick ISR; reads run in task context (ove_thread_list), so a plain read
  * is race-safe to within one tick.
  */
-#define OVE_FRT_CPUINT_MAX 16
+#define OVE_FRT_TASK_REGISTRY_MAX 24
+#define OVE_FRT_CPUINT_MAX OVE_FRT_TASK_REGISTRY_MAX
 static struct {
 	TaskHandle_t h;
 	uint32_t ticks;
 } g_frt_cpuint[OVE_FRT_CPUINT_MAX];
+
+#if configUSE_TRACE_FACILITY
+/*
+ * uxTaskGetSystemState() suspends scheduling while it traverses every kernel
+ * list and scans every task's untouched stack fill. On the STM32 personality
+ * that took 368-532 us every 200 ms, directly creating the dispatch tail.
+ *
+ * FreeRTOS invokes traceTASK_CREATE/DELETE while its task-list critical section
+ * is held. Maintain the handles and immutable names there, then take a bounded
+ * no-stack-scan snapshot below. The registry has headroom above LXP's sixteen
+ * visible kernel-thread entries so temporary service tasks do not overflow it.
+ */
+struct frt_task_registry_entry {
+	TaskHandle_t handle;
+	char name[configMAX_TASK_NAME_LEN];
+};
+
+static struct frt_task_registry_entry g_frt_tasks[OVE_FRT_TASK_REGISTRY_MAX];
+static UBaseType_t g_frt_task_count;
+
+void ove_backend_freertos_task_created(void *task, const char *name)
+{
+	TaskHandle_t handle = (TaskHandle_t)task;
+
+	if (handle == NULL)
+		return;
+	for (UBaseType_t i = 0; i < g_frt_task_count; ++i)
+		if (g_frt_tasks[i].handle == handle)
+			return;
+	if (g_frt_task_count >= OVE_FRT_TASK_REGISTRY_MAX)
+		return;
+
+	struct frt_task_registry_entry *entry = &g_frt_tasks[g_frt_task_count++];
+	entry->handle = handle;
+	size_t i = 0;
+	if (name != NULL) {
+		while (i + 1u < sizeof(entry->name) && name[i] != '\0') {
+			entry->name[i] = name[i];
+			++i;
+		}
+	}
+	entry->name[i] = '\0';
+}
+
+void ove_backend_freertos_task_deleted(void *task)
+{
+	TaskHandle_t handle = (TaskHandle_t)task;
+
+	for (UBaseType_t i = 0; i < g_frt_task_count; ++i) {
+		if (g_frt_tasks[i].handle != handle)
+			continue;
+		--g_frt_task_count;
+		if (i != g_frt_task_count)
+			g_frt_tasks[i] = g_frt_tasks[g_frt_task_count];
+		g_frt_tasks[g_frt_task_count] = (struct frt_task_registry_entry){0};
+		break;
+	}
+
+	/* A static TCB may be reused by a later guest incarnation. Do not carry
+	 * the old task's accumulated samples into the new task. */
+	for (int i = 0; i < OVE_FRT_CPUINT_MAX; ++i) {
+		if (g_frt_cpuint[i].h == handle) {
+			g_frt_cpuint[i].h = NULL;
+			g_frt_cpuint[i].ticks = 0u;
+			break;
+		}
+	}
+}
+#endif
 
 /* Charge the currently-running task one tick. Called from the SysTick ISR. */
 void ove_backend_thread_cpu_sample(void);
@@ -383,9 +441,7 @@ void ove_backend_thread_cpu_sample(void)
 	}
 }
 
-/* Only the trace-facility path in ove_thread_list() below reads these, so they are
- * defined exactly when used — else a build with configUSE_TRACE_FACILITY==0 (e.g. the
- * qemu-freertos test firmware) trips -Werror=unused-function. */
+/* Only the trace-facility path in ove_thread_list() below reads this. */
 #if configUSE_TRACE_FACILITY
 static uint32_t frt_cpuint_ticks(TaskHandle_t h)
 {
@@ -394,105 +450,118 @@ static uint32_t frt_cpuint_ticks(TaskHandle_t h)
 			return g_frt_cpuint[i].ticks;
 	return 0;
 }
+#endif /* configUSE_TRACE_FACILITY */
 
-/* Drop table entries whose task no longer exists so a recycled TCB handle
- * (static allocation reuses TCB buffers across program launches) starts fresh. */
-static void frt_cpuint_reclaim(const TaskStatus_t *tasks, UBaseType_t n)
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+static uint32_t g_snapshot_window_calls;
+static uint32_t g_snapshot_window_max_cycles;
+static uint32_t g_snapshot_total_calls;
+static uint32_t g_snapshot_total_max_cycles;
+
+static void snapshot_metrics_record(uint32_t cycles)
 {
-	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
-		if (!g_frt_cpuint[i].h)
-			continue;
-		int live = 0;
-		for (UBaseType_t j = 0; j < n; j++) {
-			if (tasks[j].xHandle == g_frt_cpuint[i].h) {
-				live = 1;
-				break;
-			}
-		}
-		if (!live) {
-			g_frt_cpuint[i].h = NULL;
-			g_frt_cpuint[i].ticks = 0;
-		}
+	__atomic_add_fetch(&g_snapshot_window_calls, 1u, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&g_snapshot_total_calls, 1u, __ATOMIC_RELAXED);
+
+	uint32_t observed = __atomic_load_n(&g_snapshot_window_max_cycles, __ATOMIC_RELAXED);
+	while (cycles > observed &&
+	       !__atomic_compare_exchange_n(&g_snapshot_window_max_cycles, &observed, cycles, 1,
+					    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+	}
+	observed = __atomic_load_n(&g_snapshot_total_max_cycles, __ATOMIC_RELAXED);
+	while (cycles > observed &&
+	       !__atomic_compare_exchange_n(&g_snapshot_total_max_cycles, &observed, cycles, 1,
+					    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
 	}
 }
-#endif /* configUSE_TRACE_FACILITY */
+
+void ove_freertos_thread_snapshot_metrics_take(struct ove_freertos_thread_snapshot_metrics *window,
+					       struct ove_freertos_thread_snapshot_metrics *total)
+{
+	window->calls = __atomic_exchange_n(&g_snapshot_window_calls, 0u, __ATOMIC_ACQ_REL);
+	window->max_cycles =
+		__atomic_exchange_n(&g_snapshot_window_max_cycles, 0u, __ATOMIC_ACQ_REL);
+	total->calls = __atomic_load_n(&g_snapshot_total_calls, __ATOMIC_ACQUIRE);
+	total->max_cycles = __atomic_load_n(&g_snapshot_total_max_cycles, __ATOMIC_ACQUIRE);
+}
+#endif
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 #if configUSE_TRACE_FACILITY
-	if (!out) {
-		if (actual_count)
-			*actual_count = (size_t)uxTaskGetNumberOfTasks();
-		return OVE_OK;
-	}
-
-	UBaseType_t count = uxTaskGetNumberOfTasks();
-	if (count > (UBaseType_t)max_count)
-		count = (UBaseType_t)max_count;
-
-	TaskStatus_t *tasks = pvPortMalloc(count * sizeof(TaskStatus_t));
-	if (!tasks)
-		return OVE_ERR_NO_MEMORY;
-
-	uint32_t total_runtime = 0;
-	UBaseType_t filled = uxTaskGetSystemState(tasks, count, &total_runtime);
-	frt_cpuint_reclaim(tasks, filled);
-	for (UBaseType_t i = 0; i < filled; i++) {
-		out[i].name = tasks[i].pcTaskName;
-		out[i].priority = (int)tasks[i].uxCurrentPriority;
-		{
-			size_t min_free =
-				(size_t)tasks[i].usStackHighWaterMark * sizeof(StackType_t);
-#if (configRECORD_STACK_HIGH_ADDRESS == 1)
-			size_t total = (size_t)((uintptr_t)tasks[i].pxEndOfStack -
-						(uintptr_t)tasks[i].pxStackBase) +
-				       sizeof(StackType_t);
-			out[i].stack_size = total;
-			out[i].stack_used = total - min_free;
-#else
-			out[i].stack_size = 0;
-			out[i].stack_used = min_free; /* min-free only */
+	UBaseType_t filled;
+	uint32_t total_ticks;
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	uint32_t snapshot_start = DWT->CYCCNT;
 #endif
-		}
-		switch (tasks[i].eCurrentState) {
-		case eRunning:
-			out[i].state = OVE_THREAD_STATE_RUNNING;
-			break;
-		case eReady:
-			out[i].state = OVE_THREAD_STATE_READY;
-			break;
-		case eBlocked:
-			out[i].state = OVE_THREAD_STATE_BLOCKED;
-			break;
-		case eSuspended:
-			out[i].state = OVE_THREAD_STATE_SUSPENDED;
-			break;
-		default:
-			out[i].state = OVE_THREAD_STATE_UNKNOWN;
-			break;
-		}
-		/* CPU utilisation from the tick-sampled per-task counter (NOT
-		 * ulRunTimeCounter, which misses flat-out never-yielding tasks). */
-		uint32_t sampled = frt_cpuint_ticks(tasks[i].xHandle);
-		if (total_runtime > 0)
-			out[i].cpu_percent_x100 =
-				(uint32_t)((uint64_t)sampled * 10000U / total_runtime);
-		else
-			out[i].cpu_percent_x100 = 0;
 
-		/* State times: one sample tick == one ms at configTICK_RATE_HZ=1000.
-		 * running = sampled ticks, blocked ≈ total - running. */
-		uint64_t run_us = (uint64_t)sampled * 1000U;
-		uint64_t tot_us = (uint64_t)total_runtime * 1000U;
-		out[i].state_times.running_us = run_us;
-		out[i].state_times.ready_us = 0;
-		out[i].state_times.blocked_us = (tot_us > run_us) ? tot_us - run_us : 0;
-		out[i].state_times.suspended_us = 0;
+	/*
+	 * Task creation/deletion occurs only in task context, so suspending the
+	 * scheduler makes registry handles safe without masking interrupts. Keep
+	 * this interval bounded: copy scalar TCB data only and explicitly skip the
+	 * linear stack-fill scan. A timer ISR can still release the scope task; it
+	 * is dispatched as soon as xTaskResumeAll() runs.
+	 */
+	vTaskSuspendAll();
+	filled = g_frt_task_count;
+	if (out != NULL && filled > (UBaseType_t)max_count)
+		filled = (UBaseType_t)max_count;
+	total_ticks = (uint32_t)xTaskGetTickCount();
+
+	if (out != NULL) {
+		for (UBaseType_t i = 0; i < filled; ++i) {
+			TaskStatus_t task;
+			TaskHandle_t handle = g_frt_tasks[i].handle;
+
+			vTaskGetInfo(handle, &task, pdFALSE, eInvalid);
+			out[i].name = g_frt_tasks[i].name;
+			out[i].priority = (int)task.uxCurrentPriority;
+			out[i].stack_size = 0u;
+			out[i].stack_used = 0u;
+
+			switch (task.eCurrentState) {
+			case eRunning:
+				out[i].state = OVE_THREAD_STATE_RUNNING;
+				break;
+			case eReady:
+				out[i].state = OVE_THREAD_STATE_READY;
+				break;
+			case eBlocked:
+				out[i].state = OVE_THREAD_STATE_BLOCKED;
+				break;
+			case eSuspended:
+				out[i].state = OVE_THREAD_STATE_SUSPENDED;
+				break;
+			case eDeleted:
+				out[i].state = OVE_THREAD_STATE_TERMINATED;
+				break;
+			default:
+				out[i].state = OVE_THREAD_STATE_UNKNOWN;
+				break;
+			}
+
+			uint32_t sampled = frt_cpuint_ticks(handle);
+			out[i].cpu_percent_x100 =
+				total_ticks != 0u
+					? (uint32_t)((uint64_t)sampled * 10000u / total_ticks)
+					: 0u;
+
+			uint64_t tick_us = 1000000u / configTICK_RATE_HZ;
+			uint64_t run_us = (uint64_t)sampled * tick_us;
+			uint64_t total_us = (uint64_t)total_ticks * tick_us;
+			out[i].state_times.running_us = run_us;
+			out[i].state_times.ready_us = 0u;
+			out[i].state_times.blocked_us = total_us > run_us ? total_us - run_us : 0u;
+			out[i].state_times.suspended_us = 0u;
+		}
 	}
+	(void)xTaskResumeAll();
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	snapshot_metrics_record(DWT->CYCCNT - snapshot_start);
+#endif
 	if (actual_count)
 		*actual_count = (size_t)filled;
 
-	vPortFree(tasks);
 	return OVE_OK;
 #else
 	(void)out;

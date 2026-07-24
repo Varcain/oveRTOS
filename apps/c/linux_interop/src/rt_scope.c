@@ -559,6 +559,35 @@ static void report_svc_metrics(void)
 	g_report_write(line);
 }
 
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+static void report_thread_snapshot_metrics(void)
+{
+	struct ove_freertos_thread_snapshot_metrics window;
+	struct ove_freertos_thread_snapshot_metrics total;
+	char line[160];
+	char *p;
+	uint32_t counter_hz = ove_freertos_lnx_svc_counter_hz();
+
+	ove_freertos_thread_snapshot_metrics_take(&window, &total);
+	p = append_text(line, "[rt-scope] thread-snapshot-us window calls=");
+	p = append_u32(p, window.calls);
+	if (window.calls != 0u) {
+		p = append_text(p, " max=");
+		p = append_cycles_us(p, window.max_cycles, counter_hz);
+	}
+	p = append_text(p, " | total calls=");
+	p = append_u32(p, total.calls);
+	if (total.calls != 0u) {
+		p = append_text(p, " max=");
+		p = append_cycles_us(p, total.max_cycles, counter_hz);
+	}
+	*p++ = '\r';
+	*p++ = '\n';
+	*p = '\0';
+	g_report_write(line);
+}
+#endif
+
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 static void report_critical_metrics(void)
 {
@@ -708,6 +737,9 @@ static void report_metrics(void)
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
 	report_svc_metrics();
+#endif
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+	report_thread_snapshot_metrics();
 #endif
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 	report_critical_metrics();

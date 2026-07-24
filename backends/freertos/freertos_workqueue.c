@@ -9,6 +9,7 @@
 #include "ove/workqueue.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_freertos_priority.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -16,10 +17,6 @@
 #include "timers.h"
 
 #include <string.h>
-static UBaseType_t map_priority(ove_prio_t prio)
-{
-	return tskIDLE_PRIORITY + (UBaseType_t)prio;
-}
 
 static void wq_thread(void *arg)
 {
@@ -83,7 +80,7 @@ int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, co
 		stack_depth = configMINIMAL_STACK_SIZE;
 
 	storage->task = xTaskCreateStatic(wq_thread, name ? name : "ove_wq", stack_depth, storage,
-					  map_priority(priority), (StackType_t *)stack,
+					  ove_freertos_map_priority(priority), (StackType_t *)stack,
 					  &storage->static_task);
 
 	*wq = storage;
@@ -145,7 +142,7 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t prior
 		stack_depth = configMINIMAL_STACK_SIZE;
 
 	ret = xTaskCreate(wq_thread, name ? name : "ove_wq", stack_depth, fwq,
-			  map_priority(priority), &fwq->task);
+			  ove_freertos_map_priority(priority), &fwq->task);
 	if (ret != pdPASS) {
 		OVE_BACKEND_FREE(fwq);
 		return OVE_ERR_NO_MEMORY;
