@@ -58,9 +58,9 @@ static inline int ove_heap_lock_test_end(void)
 }
 #endif
 
-/* NuttX's task_create path always goes through kmm_zalloc for the TCB +
- * task_group_s (group_allocate); even nxtask_init with caller-provided
- * TCB+stack and TCB_FLAG_TTYPE_KERNEL still touches the kernel mm region
+/* NuttX's task-create path always goes through kmm_zalloc for the TCB +
+ * task_group_s (group_allocate); task_create_with_stack honors the caller
+ * stack but still touches the kernel mm region
  * for setup that the backend can't bypass without a deeper rewrite.
  * Backend comment in backends/nuttx/nuttx_thread.c documents this as a
  * known gap; "use FreeRTOS or Zephyr for strict zero-heap thread/
@@ -257,11 +257,14 @@ static void test_work_init_static_no_alloc(void **state)
 OVE_TEST_STACK(s_th_stack, 2048);
 
 static volatile int s_th_ran;
+static volatile uintptr_t s_th_local_addr;
 
 static void quick_thread_entry(void *arg)
 {
 	(void)arg;
-	s_th_ran = 1;
+	uintptr_t local_marker = 0;
+	__atomic_store_n(&s_th_local_addr, (uintptr_t)&local_marker, __ATOMIC_RELEASE);
+	TEST_FLAG_SET(s_th_ran, 1);
 }
 
 static void test_thread_init_no_alloc(void **state)
@@ -271,10 +274,22 @@ static void test_thread_init_no_alloc(void **state)
 	ove_thread_t h = NULL;
 	int rc;
 	s_th_ran = 0;
+	s_th_local_addr = 0;
 	TRACE_INIT_KNOWN_GAP(rc,
 			     ove_thread_init(&h, &storage, "th_noalloc", quick_thread_entry, NULL,
 					     OVE_PRIO_NORMAL, sizeof(s_th_stack), s_th_stack));
 	assert_non_null(h);
+#if defined(CONFIG_OVE_RTOS_NUTTX) && !defined(CONFIG_ARCH_SIM)
+	/* NuttX used to silently ignore this buffer and allocate another stack.
+	 * Prove the worker's actual stack frame lives in the supplied storage.
+	 * NuttX sim intentionally substitutes an enlarged host stack when
+	 * CONFIG_SIM_STACKSIZE_ADJUSTMENT is non-zero. */
+	assert_true(wait_for_flag(&s_th_ran, 1, 1000));
+	uintptr_t local_addr = __atomic_load_n(&s_th_local_addr, __ATOMIC_ACQUIRE);
+	uintptr_t stack_begin = (uintptr_t)s_th_stack;
+	assert_true(local_addr >= stack_begin);
+	assert_true(local_addr < stack_begin + sizeof(s_th_stack));
+#endif
 	/* Cleanly join the worker before exiting. */
 	ove_thread_request_stop(h);
 	(void)ove_thread_deinit(h);

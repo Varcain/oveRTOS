@@ -59,15 +59,14 @@
  * |----------|--------------------|-------|
  * | FreeRTOS | ✅                 | `xTaskCreateStatic` consumes it directly. |
  * | Zephyr   | ✅                 | `k_thread_create` over the caller's K_THREAD_STACK_DEFINE buffer. |
- * | NuttX    | ⚠ Ignored          | `task_create()` and `group_allocate()` kmm-alloc internally; documented in `nuttx_thread.c`.  The trap test does not catch this because kmm is not a libc malloc. |
+ * | NuttX    | ✅ on target ports | `task_create_with_stack()` forwards it to the architecture; NuttX sim may substitute a larger host stack. NuttX still allocates the TCB and task group internally. |
  * | POSIX    | ⚠ Ignored          | Host-mode backend; `pthread_create` manages its own stack. |
  * | WASM     | ⚠ Ignored          | Host-mode backend; host pthreads manage stack. |
  *
  * **For strict zero-heap deployments**: FreeRTOS and Zephyr honor the
- * full storage-hygiene contract including the stack.  NuttX's
- * limitation is upstream (kernel `group_allocate`) and not fixable
- * without forking; POSIX and WASM are host/sim backends with no
- * zero-heap obligation.
+ * full storage-hygiene contract. NuttX honors caller stack storage but
+ * still allocates its TCB and task group internally; POSIX and WASM are
+ * host/sim backends with no zero-heap obligation.
  *
  * @par Storage struct size stability
  *
