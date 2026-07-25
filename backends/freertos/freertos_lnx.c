@@ -118,6 +118,9 @@ uint32_t ove_freertos_lnx_svc_counter_hz(void)
 #define TRAMP_STACK_WORDS 192u		  /* tramp prologue; the program uses its own stack */
 #define TRAMP_STORAGE_WORDS 256u	  /* 768-byte stack + 256-byte resume handoff */
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
+#ifndef CONFIG_OVE_LINUX_GUEST_QUANTUM_MS
+#define CONFIG_OVE_LINUX_GUEST_QUANTUM_MS 10
+#endif
 
 /* Under the ARM_CM4_MPU port the task's privilege rides in the top bit of its priority
  * (portPRIVILEGE_BIT). The restricted-task path below deliberately omits that bit. The
@@ -207,6 +210,45 @@ static int current_slot(void)
 		if (g_lxp_used[i] && g_tid[i] == t)
 			return i;
 	return -1;
+}
+
+/* Guest-only round robin for builds which deliberately leave FreeRTOS's global
+ * 1 ms equal-priority slicing disabled. SysTick calls this after the scheduler
+ * tick. Once one guest consumes its configured budget while a peer is ready,
+ * PendSV rotates the ready list at SLOT_PRIO. Higher-priority host work is
+ * unaffected and may preempt at any point in the budget. */
+void ove_freertos_lxp_tick(void)
+{
+#if (configUSE_TIME_SLICING == 0)
+	static uint32_t budget_ticks;
+	static TaskHandle_t budget_owner;
+	int current = current_slot();
+	if (!g_lxp_active || current < 0) {
+		budget_ticks = 0;
+		budget_owner = NULL;
+		return;
+	}
+	if (budget_owner != g_tid[current]) {
+		budget_owner = g_tid[current];
+		budget_ticks = 0;
+	}
+	uint32_t quantum_ticks =
+		((uint32_t)CONFIG_OVE_LINUX_GUEST_QUANTUM_MS *
+			 (uint32_t)configTICK_RATE_HZ +
+		 999u) /
+		1000u;
+	if (quantum_ticks == 0)
+		quantum_ticks = 1;
+	if (++budget_ticks < quantum_ticks)
+		return;
+	budget_ticks = 0;
+	for (int s = 0; s < LXP_NSLOT; s++) {
+		if (s != current && g_lxp_used[s] && g_tid[s]) {
+			portYIELD_FROM_ISR(pdTRUE);
+			return;
+		}
+	}
+#endif
 }
 
 /* ---- the SVC trap ---------------------------------------------------------- */

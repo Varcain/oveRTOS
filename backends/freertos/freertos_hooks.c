@@ -157,11 +157,20 @@ __attribute__((weak)) void ove_freertos_time_tick(void)
 {
 }
 
+/* The Linux-personality seam overrides this to rotate only equal-priority
+ * guest tasks at its configured quantum. Keeping this separate from
+ * configUSE_TIME_SLICING avoids imposing the 1 ms scheduler tick on unrelated
+ * equal-priority host tasks. */
+__attribute__((weak)) void ove_freertos_lxp_tick(void)
+{
+}
+
 OVE_WEAK
 void vApplicationTickHook(void)
 {
 	/* Sampling CYCCNT every 1 ms catches its ~19.86 s wrap so CLOCK_MONOTONIC stays 64-bit. */
 	ove_freertos_time_tick();
+	ove_freertos_lxp_tick();
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	/* QEMU has no DWT, so its run-time-stat counter advances with SysTick.
 	 * Hardware builds use the wrap-stitched DWT counter instead. */
