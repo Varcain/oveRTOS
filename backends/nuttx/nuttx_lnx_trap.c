@@ -17,9 +17,11 @@
  * arm_svcall(); an unprivileged program can never use that chain as an escalation
  * path.
  *
- * Each program runs as a real NuttX task created with nxtask_init() given its own
- * region as the task stack, with the initial register context set to the uClinux
- * entry state (resume replays the captured vfork context).
+ * Each program runs as a real NuttX task created with nxtask_init(). NuttX's
+ * registered stack and TLS live in privileged seam-owned memory; only the ARM
+ * exception frame and live PSP are placed on the guest stack. The initial
+ * register context is set to the uClinux entry state (resume replays the
+ * captured vfork context).
  *
  * Programs run UNPRIVILEGED behind an MPU view this seam programs itself, in plain
  * CONFIG_BUILD_FLAT: CONTROL.nPRIV is OR'd into each program task's saved CONTROL,
@@ -192,16 +194,33 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)
  * cold coordinator storage, safely below the program pool at 0xC0100000. */
 #define NUTTX_SDRAM_COLD_BASE 0xC0040000u
 static lxp_exec_capture_t *const g_exec_captures = (lxp_exec_capture_t *)NUTTX_SDRAM_COLD_BASE;
-_Static_assert(sizeof(lxp_exec_capture_t) * LXP_NSLOT <=
-		       NUTTX_SDRAM_POOL_BASE - NUTTX_SDRAM_COLD_BASE,
-	       "exec capture table overlaps the STM32 program pool");
 #else
 static lxp_exec_capture_t g_exec_captures[LXP_NSLOT];
 #endif
+
+/* nxtask_init stores struct tls_info_s at stack_alloc_ptr and NuttX later
+ * trusts its cancellation, cleanup, errno, and task-info fields. Keep that
+ * allocation outside every unprivileged guest MPU range. The task never
+ * executes ordinary code on this substrate stack: spawn_task() relocates the
+ * initial ARM exception frame to the guest PSP before activation. 1 KiB is
+ * already the proven minimum used by the former clone-thread path and leaves
+ * ample room for TLS, argv metadata, and the full FPU exception frame. */
+#define LXP_NUTTX_STACK_SIZE 1024u
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#define LXP_ALIGN_UP(value, align) (((value) + (align) - 1u) & ~((align) - 1u))
+#define NUTTX_SDRAM_STACK_BASE \
+	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
+static uint8_t (*const g_nuttx_stacks)[LXP_NUTTX_STACK_SIZE] = (uint8_t (*)[LXP_NUTTX_STACK_SIZE])
+	NUTTX_SDRAM_STACK_BASE;
+_Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <= NUTTX_SDRAM_POOL_BASE,
+	       "trusted NuttX slot stacks overlap the STM32 program pool");
+#else
+static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((aligned(8)));
+#endif
+
 /* Byte extents of the (contiguous) pools — sizeof() can't see through the STM32 fixed pointers. */
 #define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
 #define DYN_POOLS_BYTES ((size_t)LXP_NREG * LXP_DYN_POOL_SIZE)
-static uintptr_t g_region_stack_lo[LXP_NREG];
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Per-region flag: this region holds a program's OWN copied text (a remote exec off the 9P mount),
  * so region 2 must be mapped RWX (drop execute-never) instead of the default W^X. Indexed by region
@@ -476,16 +495,6 @@ static void *nuttx_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
 	return NULL;
 }
 
-/* nxtask_init()/up_use_stack() colors (memsets STACK_COLOR over) the ENTIRE stack window on every
- * spawn. A program's window is the region tail — up to ~400K of uncached external SDRAM — so
- * coloring it on every resume cost ~2.7 ms/hop, the dominant NuttX multi-process latency (a pipe
- * round-trip = 2 hops ≈ 5.4 ms; a spawn = several). The color is purely a high-water-mark debug aid:
- * we override REG_SP with the real (captured/setup) SP right after, and the program's true stack
- * bound is its MPU region, so the colored span need not match the usable stack. Bound the coloring
- * to a small window just below the initial SP. Safe on our targets: CONFIG_ARMV7M_STACKCHECK is off
- * (nothing reads adj_stack_size at runtime) and ARMv7-M (Cortex-M7) has no PSPLIM. */
-#define LXP_COLOR_WINDOW 0x2000u /* 8K — ample for nxtask_init's own frame setup */
-
 static void slot_task_name(char name[6], int sidx)
 {
 	name[0] = 'l';
@@ -501,21 +510,26 @@ static void slot_task_name(char name[6], int sidx)
 	}
 }
 
-/* Create slot `sidx` as a NuttX task. The usable stack is set by our REG_SP override; the window
- * passed here only governs the (bounded) coloring + the TCB stack top (= sp_top). */
-static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
+/* Create slot `sidx` with trusted NuttX TLS/stack metadata, then move the
+ * architecture context to the guest stack. On Cortex-M exception return the
+ * hardware PSP is the end of the exception frame, not REG_SP in the software
+ * save area, so relocating this frame is what actually selects guest_sp. */
+static int spawn_task(int sidx, uintptr_t guest_sp)
 {
-	uintptr_t color_lo = stack_lo;
-	if (sp_top - stack_lo > LXP_COLOR_WINDOW)
-		color_lo = sp_top -
-			   LXP_COLOR_WINDOW; /* color only the top window, not the whole region */
+	if (sidx < 0 || sidx >= LXP_NSLOT || guest_sp < XCPTCONTEXT_SIZE)
+		return -1;
+
 	memset(&g_tcb[sidx], 0, sizeof(g_tcb[sidx]));
 	g_tcb[sidx].cmn.flags = TCB_FLAG_TTYPE_TASK; /* static TCB: no FREE_TCB/FREE_STACK */
 	char nm[6];
 	slot_task_name(nm, sidx); /* per-slot: ps/top per-proc CPU */
-	if (nxtask_init(&g_tcb[sidx], nm, SLOT_PRIO, (void *)color_lo,
-			(uint32_t)(sp_top - color_lo), slot_noentry, NULL, NULL, NULL) < 0)
+	if (nxtask_init(&g_tcb[sidx], nm, SLOT_PRIO, g_nuttx_stacks[sidx], LXP_NUTTX_STACK_SIZE,
+			slot_noentry, NULL, NULL, NULL) < 0)
 		return -1;
+
+	uint32_t *guest_regs = (uint32_t *)(guest_sp - XCPTCONTEXT_SIZE);
+	memcpy(guest_regs, g_tcb[sidx].cmn.xcp.regs, XCPTCONTEXT_SIZE);
+	g_tcb[sidx].cmn.xcp.regs = guest_regs;
 	g_pid[sidx] = g_tcb[sidx].cmn.pid;
 	g_lxp_used[sidx] = 1;
 	return 0;
@@ -544,8 +558,8 @@ static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *
 	if (ridx >= 0 && ridx < LXP_NREG)
 		g_region_exec[ridx] = (uint8_t)prog->region_exec;
 #endif
-	g_region_stack_lo[ridx] = (uintptr_t)stack_lo;
-	if (spawn_task(sidx, (uintptr_t)stack_lo, (uintptr_t)sp) != 0)
+	(void)stack_lo;
+	if (spawn_task(sidx, (uintptr_t)sp) != 0)
 		return -1;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_PC] = (uint32_t)(uintptr_t)entry & ~1u;
@@ -566,6 +580,7 @@ static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *
 
 static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
 {
+	(void)ridx;
 	if (!g_lxp_used[sidx] && g_pid[sidx] >= 0) {
 		/* Build a native NuttX exception frame immediately below the captured
 		 * guest SP. Cortex-M exception return consumes the frame and leaves PSP
@@ -612,19 +627,7 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 		leave_critical_section(flags);
 		return;
 	}
-	uintptr_t klo = g_region_stack_lo[ridx], ktop = (uintptr_t)ctx->sp;
-	if (g_lxp_proc[sidx].is_thread) {
-		/* Thread: run it on its clone child_stack (ctx->sp is the stack TOP, allocated by libpthread
-		 * down in the region heap). nxtask_init([g_region_stack_lo, ctx->sp)) would INVERT (child_stack
-		 * is below the main stack). A separate bookkeeping kstack fails too: NuttX sets PSP from the
-		 * TCB stack top, ignoring our REG_SP override, so the thread would run on that tiny stack. Hand
-		 * nxtask_init a small valid window at the TOP of the child stack instead → the TCB stack top IS
-		 * child_stack, PSP lands there, and the thread runs on its full libpthread-allocated stack (no
-		 * runtime stack-check; only the top 1 KB is colored). */
-		klo = (uintptr_t)ctx->sp - 1024;
-		ktop = (uintptr_t)ctx->sp;
-	}
-	if (spawn_task(sidx, klo, ktop) != 0)
+	if (spawn_task(sidx, (uintptr_t)ctx->sp) != 0)
 		return;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_R4] = ctx->r4_11[0];
@@ -662,17 +665,10 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 static void nuttx_abort_slot(int sidx)
 {
 	if (g_pid[sidx] >= 0) {
-		/* Force SYNCHRONOUS termination. The guest program runs on a stack window that
-		 * OVERLAPS NuttX's per-task tls_info_s (TLS_INFO(sp) = sp masked to the stack base),
-		 * so the program can clobber tl_cpstate. task_delete() -> nxnotify_cancellation()
-		 * reads NONCANCELABLE from that field and, if the garbage happens to set it, DEFERS
-		 * the delete (returns OK without terminating). But the parked guest spins in
-		 * lxp_park_loop() — a tight for(;;) with no cancellation point — so it never reaches
-		 * one and never dies; the very next spawn_task() then memset()s + nxtask_init()s this
-		 * STILL-LIVE static g_tcb[] while it is on the ready-to-run list, corrupting the
-		 * scheduler (garbage tcb -> BusFault under net load). TCB_FLAG_FORCED_CANCEL makes
-		 * nxnotify_cancellation short-circuit before it dereferences the clobbered TLS, so the
-		 * task is always terminated synchronously before its TCB is reused. */
+		/* Slot teardown is synchronous: a parked task has no later
+		 * cancellation point at which a deferred delete could complete.
+		 * Its cancellation metadata is now trusted, but forced cancellation
+		 * still expresses the required host-side transition semantics. */
 		g_tcb[sidx].cmn.flags |= TCB_FLAG_FORCED_CANCEL;
 		(void)task_delete(g_pid[sidx]);
 	}
