@@ -53,6 +53,21 @@ config OVE_LINUX
       syscall dispatch; a per-engine SVC trap feeds it. Requires the module
       loader and the bounded process arena.
 
+config OVE_LINUX_GUEST_QUANTUM_MS
+    int "Linux guest scheduling quantum (ms)"
+    depends on OVE_LINUX
+    default 10
+    range 1 100
+    help
+      Maximum continuous CPU budget for one Linux guest while another
+      equal-priority guest is runnable. Host real-time and coordinator threads
+      remain at higher priorities and can preempt guests immediately.
+
+      FreeRTOS applies this as a guest-only tick budget, Zephyr enables native
+      time slicing starting at the guest priority, and NuttX sets its
+      round-robin interval. This bound is required even for a guest that makes
+      no syscalls and never blocks.
+
 config OVE_BUILDROOT
     string "Buildroot tree path (Linux-personality rootfs.cpio source)"
     depends on OVE_LINUX

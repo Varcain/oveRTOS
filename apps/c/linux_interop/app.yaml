@@ -33,9 +33,10 @@ defconfig:
   - CONFIG_OVE_LINUX_PTY=y
 rtos_defconfig:
   freertos:
-    # The personality schedules guest processes through blocking syscalls and
-    # coordinator wakeups. Do not round-robin equal-priority guest tasks every
-    # 1 ms tick: it lets background userspace inflate foreground render latency.
+    # Keep global 1 ms round-robin off. The FreeRTOS LXP seam enforces the
+    # cross-engine CONFIG_OVE_LINUX_GUEST_QUANTUM_MS budget only between guest
+    # tasks, avoiding involuntary switches among unrelated equal-priority host
+    # work while preventing a no-syscall guest from starving its peers.
     - CONFIG_FREERTOS_USE_TIME_SLICING=n
 # Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
 #   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
