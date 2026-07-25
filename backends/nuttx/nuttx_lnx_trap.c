@@ -234,6 +234,24 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 static struct task_tcb_s g_tcb[LXP_NSLOT];
 static int g_pid[LXP_NSLOT];
 
+/* Device mappings are part of a Linux slot's unprivileged MPU view, not global
+ * process state. Regions 5 and 6 cover the two ranges recorded by
+ * lxp_proc_t::dev_map_{lo,hi}; regions 0,1,4 are static and 2,3 select the
+ * incoming program's ordinary memory. Store the already encoded RBAR/RASR so
+ * the context-switch hook performs fixed work without recomputing a region. */
+#define LXP_DEVICE_MPU_FIRST 5u
+#define LXP_DEVICE_MPU_COUNT 2u
+struct nuttx_device_map {
+	uintptr_t addr;
+	uint32_t rbar;
+	uint32_t rasr;
+	uint8_t used;
+};
+static struct nuttx_device_map g_device_maps[LXP_NSLOT][LXP_DEVICE_MPU_COUNT];
+static uint32_t g_device_map_generation[LXP_NSLOT];
+static int g_mapped_device_slot = -1;
+static uint32_t g_mapped_device_generation;
+
 /* The RUNNING task. Our SVCall interposer and fault handlers ALWAYS run in exception context
  * (IPSR != 0). There, NuttX's nxsched_self()/this_task() == g_readytorun.head is the wrong
  * accessor: a nested IRQ (Ethernet RX making the HP work queue ready under net load) can splice
@@ -369,38 +387,72 @@ static lxp_exec_capture_t *nuttx_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
-/* map_device (P3): install the framebuffer as an UNPRIVILEGED MPU region so a guest that
- * mmap'd /dev/fb0 (LV_LINUX_FBDEV_MMAP=1) writes pixels straight into it — no per-scanline
- * pwrite. NuttX uses only 5 of the M7's 8 regions (0,1 static + 2,3 per-program + 4 QSPI), so
- * this takes region 5: HIGHER than the priv-only whole-pool base (region 1), so it wins the
- * overlap and grants the guest unpriv RW to the fb while the rest of the pool stays priv-only.
- * set_prog_regions only ever rewrites regions 2+3, so region 5 survives every context switch.
- * size 0 tears it down (exec/relaunch). One display, shared by every program — not a memory-
- * safety concern (the segv/xregion isolation tests target kernel SRAM + sibling pools, not the
- * fb). Runs on the coordinator thread (raw MPU writes; NuttX FLAT leaves the MPU to us). */
-#define LXP_FB_MPU_REGION 5u
+/* map_device (P3): prepare one of this slot's two UNPRIVILEGED device MPU
+ * ranges. Programming the hardware here would make the mapping global until
+ * another caller changed it; instead the context-switch hook installs the
+ * incoming slot's descriptors in regions 5 and 6. size 0 clears every mapping
+ * owned by the slot (fresh exec, abort, and run teardown).
+ *
+ * ARMv7-M MPU regions are power-of-two sized and naturally aligned. Expand the
+ * encoded region until the rounded-down base covers the complete requested
+ * interval; never silently map a truncated tail. */
 static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attrs)
 {
-	(void)sidx;
-	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
-	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
-	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	*mpu_rnr = LXP_FB_MPU_REGION;
+	if (sidx < 0 || sidx >= LXP_NSLOT || attrs > LXP_MAP_DEV)
+		return -1;
+
+	irqstate_t flags = enter_critical_section();
 	if (size == 0) {
-		*mpu_rasr = 0; /* disable */
-	} else {
-		size_t rsz = 32u;
-		while (rsz < size)
-			rsz <<= 1; /* a PMSAv7 region size is a power of 2 */
-		/* TEX/S/C/B from the LXP_MAP_* hint (ove/linux/dev.h): NC=0 -> 0x08 (the fb: the
-		 * guest's stores reach SDRAM for the LTDC scanout), WT=1 -> 0x02, DEV=2 -> 0x01. */
-		uint32_t texscb = (attrs == 1u) ? 0x02u : (attrs == 2u) ? 0x01u : 0x08u;
-		*mpu_rbar = (uint32_t)(addr & ~(rsz - 1u));
-		*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(rsz) | (texscb << 16) | (0x3u << 24) |
-			    (1u << 28); /* enable | size | attr | unpriv-RW | execute-never */
+		memset(g_device_maps[sidx], 0, sizeof(g_device_maps[sidx]));
+		g_device_map_generation[sidx]++;
+		leave_critical_section(flags);
+		return 0;
 	}
-	__asm__ volatile("dsb 0xf" ::: "memory");
-	__asm__ volatile("isb 0xf" ::: "memory");
+
+	if (addr > UINTPTR_MAX - size) {
+		leave_critical_section(flags);
+		return -1;
+	}
+	uintptr_t end = addr + size;
+	size_t rsz = 32u;
+	while (rsz < size || (addr & ~(uintptr_t)(rsz - 1u)) > UINTPTR_MAX - rsz ||
+	       (addr & ~(uintptr_t)(rsz - 1u)) + rsz < end) {
+		if (rsz > SIZE_MAX / 2u) {
+			leave_critical_section(flags);
+			return -1;
+		}
+		rsz <<= 1;
+	}
+
+	int free_map = -1;
+	int map = -1;
+	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
+		if (g_device_maps[sidx][i].used && g_device_maps[sidx][i].addr == addr) {
+			map = (int)i;
+			break;
+		}
+		if (!g_device_maps[sidx][i].used && free_map < 0)
+			free_map = (int)i;
+	}
+	if (map < 0)
+		map = free_map;
+	if (map < 0) {
+		leave_critical_section(flags);
+		return -1;
+	}
+
+	/* TEX/S/C/B from the LXP_MAP_* hint: NC=0 -> Normal non-cacheable,
+	 * WT=1 -> Normal write-through, DEV=2 -> Device. */
+	uint32_t texscb = (attrs == LXP_MAP_WT) ? 0x02u : (attrs == LXP_MAP_DEV) ? 0x01u : 0x08u;
+	g_device_maps[sidx][map] = (struct nuttx_device_map){
+		.addr = addr,
+		.rbar = (uint32_t)(addr & ~(uintptr_t)(rsz - 1u)),
+		.rasr = (1u << 0) | OVE_MPU_RASR_SIZE(rsz) | (texscb << 16) | (0x3u << 24) |
+			(1u << 28),
+		.used = 1,
+	};
+	g_device_map_generation[sidx]++;
+	leave_critical_section(flags);
 	return 0;
 }
 
@@ -624,6 +676,7 @@ static void nuttx_abort_slot(int sidx)
 		g_tcb[sidx].cmn.flags |= TCB_FLAG_FORCED_CANCEL;
 		(void)task_delete(g_pid[sidx]);
 	}
+	(void)nuttx_map_device(sidx, 0, 0, 0);
 	g_lxp_used[sidx] = 0;
 	g_pid[sidx] = -1;
 }
@@ -842,6 +895,13 @@ static void lxp_mpu_init(void)
 		    (OVE_MPU_RASR_SIZE_FIELD(NUTTX_AN500_POOL_BASE - 0x60000000u) << 1) |
 		    (0x08u << 16) | (0x2u << 24);
 #endif
+	/* Device regions are per-slot and installed by lxp_note_resume(). Disable
+	 * both before the first guest so a repeated run cannot inherit the previous
+	 * run's framebuffer or peripheral view. */
+	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
+		*mpu_rnr = LXP_DEVICE_MPU_FIRST + i;
+		*mpu_rasr = 0;
+	}
 	OVE_SCS_SHCSR |=
 		OVE_SHCSR_MEMFAULTENA | OVE_SHCSR_BUSFAULTENA |
 		OVE_SHCSR_USGFAULTENA;	   /* MPU faults → MemManage (contained), not HardFault */
@@ -932,13 +992,35 @@ static void set_prog_regions(int ridx)
 		(reg2_xn == 0u); /* record region 2's exec-ness so a same-ridx flip reprograms */
 }
 
+static void set_device_regions(int sidx)
+{
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+
+	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
+		const struct nuttx_device_map *map = &g_device_maps[sidx][i];
+		*mpu_rnr = LXP_DEVICE_MPU_FIRST + i;
+		if (map->used) {
+			*mpu_rbar = map->rbar;
+			*mpu_rasr = map->rasr;
+		} else {
+			*mpu_rasr = 0;
+		}
+	}
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	__asm__ volatile("isb 0xf" ::: "memory");
+	g_mapped_device_slot = sidx;
+	g_mapped_device_generation = g_device_map_generation[sidx];
+}
+
 /* Note-driver resume hook — fires on EVERY switch TO a task (sched_note_resume, in
  * sched_switchcontext), INCLUDING round-robin preemption between two runnable program tasks that
- * never enters the seam's svc handler. If the incoming task is a program slot, swap the MPU to ITS
- * region so it cannot reach a sibling's. Kernel/coordinator tasks are privileged (PRIVDEFENA), so
- * their region set is irrelevant → skip (leaving the last program's regions is harmless; privileged
- * access uses the default map). Runs in the switch context: a few register writes + a barrier, no
- * allocation, no blocking. */
+ * never enters the seam's svc handler. If the incoming task is a program slot, swap the MPU to its
+ * program, dynamic-pool, and device regions so it cannot reach a sibling's. Kernel/coordinator
+ * tasks are privileged (PRIVDEFENA), so their region set is irrelevant → skip (leaving the last
+ * program's regions is harmless; privileged access uses the default map). Runs in the switch
+ * context: bounded register writes + barriers, no allocation, no blocking. */
 static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 {
 	(void)drv;
@@ -963,6 +1045,9 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 			 * ridx to launch a remote-exec program needing RWX); else skip the 6 MPU writes. */
 			if (ridx != g_mapped_ridx || want_exec != g_mapped_exec)
 				set_prog_regions(ridx);
+			if (i != g_mapped_device_slot ||
+			    g_device_map_generation[i] != g_mapped_device_generation)
+				set_device_regions(i);
 			return;
 		}
 	}
@@ -1058,6 +1143,10 @@ void serial_poll_putc(char c)
  * g_lxp_host_engine.prepare()/.teardown() around lxp_run_common(). */
 static int nuttx_prepare(void)
 {
+	memset(g_device_maps, 0, sizeof(g_device_maps));
+	memset(g_device_map_generation, 0, sizeof(g_device_map_generation));
+	g_mapped_device_slot = -1;
+	g_mapped_device_generation = 0;
 	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
 	for (int i = 0; i < LXP_NSLOT; i++)
 		g_pid[i] = -1;
@@ -1081,6 +1170,18 @@ static int nuttx_prepare(void)
 
 static void nuttx_teardown(void)
 {
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
+		*mpu_rnr = LXP_DEVICE_MPU_FIRST + i;
+		*mpu_rasr = 0;
+	}
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	__asm__ volatile("isb 0xf" ::: "memory");
+	memset(g_device_maps, 0, sizeof(g_device_maps));
+	memset(g_device_map_generation, 0, sizeof(g_device_map_generation));
+	g_mapped_device_slot = -1;
+	g_mapped_device_generation = 0;
 	irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL); /* restore NuttX's handlers */
 	irq_attach(LXP_IRQ_MEMFAULT, arm_hardfault, NULL);
 	irq_attach(LXP_IRQ_BUSFAULT, arm_hardfault, NULL);
