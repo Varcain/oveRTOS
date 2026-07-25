@@ -1031,7 +1031,7 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < LXP_NSLOT; i++) {
 		if (g_lxp_used[i] && g_pid[i] == pid) {
-			int ridx = g_lxp_proc[i].region;
+			int ridx = g_lxp_proc[i].mm ? g_lxp_proc[i].mm->region : -1;
 			int want_exec = 0;
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 			if (ridx >= 0 && ridx < LXP_NREG)
