@@ -190,6 +190,7 @@ static int g_dom_inited[LXP_NREG];
 
 static struct k_thread g_thread[LXP_NSLOT];
 static k_tid_t g_tid[LXP_NSLOT];
+static uint32_t g_task_generation[LXP_NSLOT];
 K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, LXP_NSLOT, 1024);
 
 static int current_slot(void)
@@ -534,10 +535,13 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 	__builtin_unreachable();
 }
 
-static void *zephyr_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
+static void *zephyr_park_prepare(int sidx, uint32_t generation,
+				const struct lxp_resume_ctx *ctx)
 {
-	ARG_UNUSED(sidx);
 	ARG_UNUSED(ctx);
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_tid[sidx] ||
+	    g_task_generation[sidx] != generation)
+		return NULL;
 	/* PendSV retains the exact svc exception frame and callee-saved
 	 * registers in the parked k_thread. spawn_resume rewrites that existing
 	 * native frame before returning the thread to the ready queue. */
@@ -677,9 +681,12 @@ static void slot_task_name(char name[6], int sidx)
 	}
 }
 
-static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
+static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
+			       const lxp_flat_t *prog, void *entry, void *sp,
 			       void *stack_lo)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_tid[sidx])
+		return -1;
 	ARG_UNUSED(stack_lo);
 	if (setup_domain(ridx, prog) != 0)
 		return -1;
@@ -712,15 +719,24 @@ static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void 
 		slot_task_name(nm, sidx);
 		k_thread_name_set(g_tid[sidx], nm);
 	}
-	g_lxp_used[sidx] = 1;
-	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
+	if (k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]) != 0) {
+		k_thread_abort(g_tid[sidx]);
+		g_tid[sidx] = NULL;
+		return -1;
+	}
+	g_task_generation[sidx] = generation;
 	k_thread_start(g_tid[sidx]);
 	return 0;
 }
 
-static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
+static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
+			       const struct lxp_resume_ctx *ctx, long r0val)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
+		return -1;
 	if (!g_lxp_used[sidx] && g_tid[sidx]) {
+		if (g_task_generation[sidx] != generation)
+			return -1;
 		/* PendSV saved the svc frame that park_frame redirected to the naked
 		 * lxp_park_loop. Reuse that exact native frame: deriving a new PSP
 		 * from the Linux SP loses Zephyr's exception-alignment/lazy-FP
@@ -753,10 +769,11 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 			       sizeof(thread->arch.preempt_float));
 		}
 #endif
-		g_lxp_used[sidx] = 1;
 		k_thread_resume(g_tid[sidx]);
-		return;
+		return 0;
 	}
+	if (g_tid[sidx])
+		return -1;
 	/* Stash the resume ctx in the program's OWN user-RW region, just below its resume SP, so
 	 * resume_tramp can read it without another MPU partition. AN521 already uses stack plus four
 	 * domain partitions; STM32F746 uses stack plus three. A separate shared partition previously
@@ -773,9 +790,14 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx 
 		slot_task_name(nm, sidx);
 		k_thread_name_set(g_tid[sidx], nm);
 	}
-	g_lxp_used[sidx] = 1;
-	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
+	if (k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]) != 0) {
+		k_thread_abort(g_tid[sidx]);
+		g_tid[sidx] = NULL;
+		return -1;
+	}
+	g_task_generation[sidx] = generation;
 	k_thread_start(g_tid[sidx]);
+	return 0;
 }
 
 /* Coordinator critical section: irq_lock masks SVCall (the program svc is an
@@ -895,19 +917,26 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 	k_fatal_halt(reason);
 }
 
-static void zephyr_abort_slot(int sidx)
+static int zephyr_abort_slot(int sidx, uint32_t generation)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT)
+		return -1;
+	if (g_tid[sidx] && g_task_generation[sidx] != generation)
+		return -1;
 	if (g_tid[sidx])
 		k_thread_abort(g_tid[sidx]);
-	g_lxp_used[sidx] = 0;
 	g_tid[sidx] = NULL;
+	g_task_generation[sidx] = 0;
+	return 0;
 }
 
-static void zephyr_park_slot(int sidx)
+static int zephyr_park_slot(int sidx, uint32_t generation)
 {
-	if (g_lxp_used[sidx] && g_tid[sidx])
-		k_thread_suspend(g_tid[sidx]);
-	g_lxp_used[sidx] = 0;
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_lxp_used[sidx] ||
+	    !g_tid[sidx] || g_task_generation[sidx] != generation)
+		return -1;
+	k_thread_suspend(g_tid[sidx]);
+	return 0;
 }
 
 static void zephyr_sleep_ms(unsigned ms)

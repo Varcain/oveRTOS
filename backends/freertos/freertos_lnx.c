@@ -166,6 +166,7 @@ _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_
 #endif
 static StaticTask_t g_tcb[LXP_NSLOT];
 static TaskHandle_t g_tid[LXP_NSLOT];
+static uint32_t g_task_generation[LXP_NSLOT];
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* A remote-exec proc runs its OWN text from RAM in its program region, so that region is mapped
  * RWX (a per-process, MPU-contained W^X relaxation). Set at launch; kept across resumes because
@@ -614,8 +615,12 @@ static struct resume_desc *stash_desc(int sidx, const struct lxp_resume_ctx *ctx
 
 /* Exception-side half of the persistent handoff. The descriptor remains in the
  * task's user-readable bootstrap-stack MPU region while it is suspended. */
-static void *freertos_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
+static void *freertos_park_prepare(int sidx, uint32_t generation,
+				   const struct lxp_resume_ctx *ctx)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_tid[sidx] ||
+	    g_task_generation[sidx] != generation)
+		return NULL;
 	struct resume_desc *d = stash_desc(sidx, ctx, 0);
 	__atomic_store_n(&d->ready, 0u, __ATOMIC_RELEASE);
 	g_park_desc[sidx] = d;
@@ -746,13 +751,11 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 				      (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
 #endif
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
-	g_lxp_used[sidx] = (ok == pdPASS);
 	return (ok == pdPASS) ? 0 : -1;
 #else
 	(void)ridx;
 	g_tid[sidx] = xTaskCreateStatic(prog_tramp, nm, TRAMP_STACK_WORDS, desc, SLOT_PROG_PRIO,
 					g_tramp_stacks[sidx], &g_tcb[sidx]);
-	g_lxp_used[sidx] = (g_tid[sidx] != NULL);
 	return g_tid[sidx] ? 0 : -1;
 #endif
 }
@@ -775,9 +778,12 @@ static lxp_exec_capture_t *freertos_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
-static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
+static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
+				 const lxp_flat_t *prog, void *entry, void *sp,
 				 void *stack_lo)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_tid[sidx])
+		return -1;
 	(void)stack_lo;
 	g_park_desc[sidx] = NULL;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -826,14 +832,22 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 	diag->last_desc = (uint32_t)(uintptr_t)d;
 	diag->last_ridx = (uint32_t)ridx;
 	diag->last_kind = 1u;
-	return freertos_spawn_common(sidx, ridx, d);
+	int rc = freertos_spawn_common(sidx, ridx, d);
+	if (rc == 0)
+		g_task_generation[sidx] = generation;
+	return rc;
 }
 
-static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
+static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
+				  const struct lxp_resume_ctx *ctx, long r0val)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
+		return -1;
 	struct resume_desc *d = g_park_desc[sidx];
 	int persistent = !g_lxp_used[sidx] && g_tid[sidx] && d;
 	if (persistent) {
+		if (g_task_generation[sidx] != generation)
+			return -1;
 		d->r0 = (uint32_t)r0val;
 		d->ctx = *ctx;
 		__atomic_store_n(&d->ready, 1u, __ATOMIC_RELEASE);
@@ -847,11 +861,15 @@ static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ct
 	diag->last_ridx = (uint32_t)ridx;
 	diag->last_kind = persistent ? 3u : 2u;
 	if (persistent) {
-		g_lxp_used[sidx] = 1;
 		vTaskResume(g_tid[sidx]);
-		return;
+		return 0;
 	}
-	(void)freertos_spawn_common(sidx, ridx, d);
+	if (g_tid[sidx])
+		return -1;
+	int rc = freertos_spawn_common(sidx, ridx, d);
+	if (rc == 0)
+		g_task_generation[sidx] = generation;
+	return rc;
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
@@ -962,23 +980,30 @@ size_t ove_lnx_slot_stack_hwm(void)
 	return g_slot_stack_used_max;
 }
 
-static void freertos_abort_slot(int sidx)
+static int freertos_abort_slot(int sidx, uint32_t generation)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT)
+		return -1;
+	if (g_tid[sidx] && g_task_generation[sidx] != generation)
+		return -1;
 	if (g_tid[sidx]) {
 		slot_sample_stack(
 			sidx); /* capture the HWM before the task (and its mark) is gone */
 		vTaskDelete(g_tid[sidx]);
 	}
-	g_lxp_used[sidx] = 0;
 	g_tid[sidx] = NULL;
 	g_park_desc[sidx] = NULL;
+	g_task_generation[sidx] = 0;
+	return 0;
 }
 
-static void freertos_park_slot(int sidx)
+static int freertos_park_slot(int sidx, uint32_t generation)
 {
-	if (g_lxp_used[sidx] && g_tid[sidx])
-		vTaskSuspend(g_tid[sidx]);
-	g_lxp_used[sidx] = 0;
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_lxp_used[sidx] ||
+	    !g_tid[sidx] || g_task_generation[sidx] != generation)
+		return -1;
+	vTaskSuspend(g_tid[sidx]);
+	return 0;
 }
 
 static void freertos_sleep_ms(unsigned ms)

@@ -252,6 +252,7 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 #endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
 static struct task_tcb_s g_tcb[LXP_NSLOT];
 static int g_pid[LXP_NSLOT];
+static uint32_t g_task_generation[LXP_NSLOT];
 
 /* Device mappings are part of a Linux slot's unprivileged MPU view, not global
  * process state. Regions 5 and 6 cover the two ranges recorded by
@@ -485,10 +486,13 @@ static int slot_noentry(int argc, char *argv[])
 	return 0;
 }
 
-static void *nuttx_park_prepare(int sidx, const struct lxp_resume_ctx *ctx)
+static void *nuttx_park_prepare(int sidx, uint32_t generation,
+			       const struct lxp_resume_ctx *ctx)
 {
-	(void)sidx;
 	(void)ctx;
+	if (sidx < 0 || sidx >= LXP_NSLOT || g_pid[sidx] < 0 ||
+	    g_task_generation[sidx] != generation)
+		return NULL;
 	/* NuttX retains the complete interrupted register set in tcb->xcp.regs.
 	 * spawn_resume rewrites that frame before moving the TCB out of the stopped
 	 * list, so this port needs no guest-readable handoff descriptor. */
@@ -531,13 +535,15 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	memcpy(guest_regs, g_tcb[sidx].cmn.xcp.regs, XCPTCONTEXT_SIZE);
 	g_tcb[sidx].cmn.xcp.regs = guest_regs;
 	g_pid[sidx] = g_tcb[sidx].cmn.pid;
-	g_lxp_used[sidx] = 1;
 	return 0;
 }
 
-static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
+static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
+			      const lxp_flat_t *prog, void *entry, void *sp,
 			      void *stack_lo)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_pid[sidx] >= 0)
+		return -1;
 	/* The prog/dyn regions are Normal WB-WA CACHEABLE (set_prog_regions), and regions are reused
 	 * across execs. The loader just wrote THIS program's image to SDRAM non-cacheable (the region
 	 * being loaded is never the currently-mapped one, so the coordinator's write falls through the
@@ -561,6 +567,7 @@ static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *
 	(void)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)sp) != 0)
 		return -1;
+	g_task_generation[sidx] = generation;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_PC] = (uint32_t)(uintptr_t)entry & ~1u;
 	regs[REG_SP] = (uint32_t)(uintptr_t)sp;
@@ -578,10 +585,15 @@ static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *
 	return 0;
 }
 
-static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
+static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
+			      const struct lxp_resume_ctx *ctx, long r0val)
 {
 	(void)ridx;
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
+		return -1;
 	if (!g_lxp_used[sidx] && g_pid[sidx] >= 0) {
+		if (g_task_generation[sidx] != generation)
+			return -1;
 		/* Build a native NuttX exception frame immediately below the captured
 		 * guest SP. Cortex-M exception return consumes the frame and leaves PSP
 		 * exactly at ctx->sp. Reusing the old parked frame is unsafe: it may be
@@ -620,15 +632,19 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 #endif
 			regs[REG_CONTROL] |= CONTROL_NPRIV;
 			regs[REG_EXC_RETURN] = LXP_EXC_RETURN_THREAD;
-			g_lxp_used[sidx] = 1;
 			dq_rem((dq_entry_t *)&g_tcb[sidx].cmn, &g_stoppedtasks);
 			(void)nxsched_add_readytorun(&g_tcb[sidx].cmn);
+			leave_critical_section(flags);
+			return 0;
 		}
 		leave_critical_section(flags);
-		return;
+		return -1;
 	}
+	if (g_pid[sidx] >= 0)
+		return -1;
 	if (spawn_task(sidx, (uintptr_t)ctx->sp) != 0)
-		return;
+		return -1;
+	g_task_generation[sidx] = generation;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_R4] = ctx->r4_11[0];
 	regs[REG_R5] = ctx->r4_11[1];
@@ -660,28 +676,37 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 	regs[REG_CONTROL] |=
 		CONTROL_NPRIV; /* unprivileged — MPU-restricted (resumed vfork/clone child) */
 	nxtask_activate(&g_tcb[sidx].cmn);
+	return 0;
 }
 
-static void nuttx_abort_slot(int sidx)
+static int nuttx_abort_slot(int sidx, uint32_t generation)
 {
+	if (sidx < 0 || sidx >= LXP_NSLOT)
+		return -1;
+	if (g_pid[sidx] >= 0 && g_task_generation[sidx] != generation)
+		return -1;
 	if (g_pid[sidx] >= 0) {
 		/* Slot teardown is synchronous: a parked task has no later
 		 * cancellation point at which a deferred delete could complete.
 		 * Its cancellation metadata is now trusted, but forced cancellation
 		 * still expresses the required host-side transition semantics. */
 		g_tcb[sidx].cmn.flags |= TCB_FLAG_FORCED_CANCEL;
-		(void)task_delete(g_pid[sidx]);
+		if (task_delete(g_pid[sidx]) < 0)
+			return -1;
 	}
 	(void)nuttx_map_device(sidx, 0, 0, 0);
-	g_lxp_used[sidx] = 0;
 	g_pid[sidx] = -1;
+	g_task_generation[sidx] = 0;
+	return 0;
 }
 
-static void nuttx_park_slot(int sidx)
+static int nuttx_park_slot(int sidx, uint32_t generation)
 {
-	if (g_lxp_used[sidx] && g_pid[sidx] >= 0)
-		nxsched_suspend(&g_tcb[sidx].cmn);
-	g_lxp_used[sidx] = 0;
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_lxp_used[sidx] ||
+	    g_pid[sidx] < 0 || g_task_generation[sidx] != generation)
+		return -1;
+	nxsched_suspend(&g_tcb[sidx].cmn);
+	return g_tcb[sidx].cmn.task_state == TSTATE_TASK_STOPPED ? 0 : -1;
 }
 
 static void nuttx_sleep_ms(unsigned ms)
@@ -1144,8 +1169,10 @@ static int nuttx_prepare(void)
 	g_mapped_device_slot = -1;
 	g_mapped_device_generation = 0;
 	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
-	for (int i = 0; i < LXP_NSLOT; i++)
+	for (int i = 0; i < LXP_NSLOT; i++) {
 		g_pid[i] = -1;
+		g_task_generation[i] = 0;
+	}
 	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
 	irq_attach(LXP_IRQ_SVCALL, lxp_svc_handler, NULL);
 	irq_attach(LXP_IRQ_MEMFAULT, lxp_memfault_handler, NULL); /* contain program MPU faults */
