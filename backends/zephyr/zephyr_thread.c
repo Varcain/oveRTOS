@@ -476,6 +476,7 @@ struct _thread_list_ctx {
 	size_t max;
 	size_t count;
 	uint64_t total_cycles;
+	bool overflow;
 };
 
 static ove_thread_state_t _map_zephyr_state(uint8_t state)
@@ -494,28 +495,28 @@ static ove_thread_state_t _map_zephyr_state(uint8_t state)
 static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 {
 	struct _thread_list_ctx *ctx = (struct _thread_list_ctx *)user_data;
-	if (ctx->count >= ctx->max)
+	if (ctx->count >= ctx->max) {
+		ctx->overflow = true;
 		return;
+	}
 
 	struct ove_thread_info *info = &ctx->out[ctx->count];
 	info->name = k_thread_name_get((k_tid_t)thread);
 	if (!info->name)
 		info->name = "?";
+	info->identity = (uintptr_t)thread;
+	info->lxp_slot = -1;
 	info->state = _map_zephyr_state(thread->base.thread_state);
 	info->priority = (int)k_thread_priority_get((k_tid_t)thread);
 
 	info->cpu_percent_x100 = 0;
 
-	/* Stack high-water mark + total */
+	/* Keep the monitor-locked callback bounded. A full stack-fill scan can
+	 * touch hundreds of KiB and is not safe inside this snapshot. */
 	info->stack_used = 0;
 	info->stack_size = 0;
 #if defined(CONFIG_THREAD_STACK_INFO)
 	info->stack_size = thread->stack_info.size;
-	{
-		size_t unused = 0;
-		if (k_thread_stack_space_get((k_tid_t)thread, &unused) == 0)
-			info->stack_used = thread->stack_info.size - unused;
-	}
 #endif
 
 	/* CPU utilisation + state times */
@@ -566,9 +567,11 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	k_thread_runtime_stats_all_get(&all);
 	ctx.total_cycles = all.execution_cycles;
 #endif
-	k_thread_foreach_unlocked(_thread_list_cb, &ctx);
+	/* The locked form prevents a thread object from being aborted and reused
+	 * while its identity and counters are copied. */
+	k_thread_foreach(_thread_list_cb, &ctx);
 
 	if (actual_count)
 		*actual_count = ctx.count;
-	return OVE_OK;
+	return ctx.overflow ? OVE_ERR_QUEUE_FULL : OVE_OK;
 }

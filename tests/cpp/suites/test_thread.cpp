@@ -211,9 +211,9 @@ static void test_cpp_thread_not_copyable(void **state)
  *   2. Pass-through semantics: count returned equals what the
  *      substrate filled, without further narrowing in the binding.
  *
- * The substrate itself may still cap (currently 16; tracked as
- * substrate P2-2); these tests assert the binding does not ADD a
- * narrower cap on top.
+ * A substrate may still return QueueFull when its snapshot or the caller's
+ * array is too small; these tests assert the binding does not add a narrower
+ * cap of its own.
  */
 static void test_cpp_thread_list_layout_compat(void **state)
 {
@@ -228,18 +228,14 @@ static void test_cpp_thread_list_layout_compat(void **state)
 static void test_cpp_thread_list_no_binding_cap(void **state)
 {
 	(void)state;
-	/* Caller buffer larger than the substrate's current 16-entry cap.
-	 * Substrate fills as many as it has; binding must not narrow
-	 * further.  Whatever count the substrate returns, that's what
-	 * the test sees through the binding. */
+	/* Caller buffer is deliberately generous. The binding must pass it
+	 * through without imposing a smaller temporary-buffer cap. */
 	constexpr size_t kBuf = 64;
 	ove::ThreadInfo info[kBuf]{};
 	auto r = ove::thread_list(info, kBuf);
 	if (r) {
 		assert_true(*r <= kBuf);
-		/* Substrate cap is 16 today; assert binding lets `*r` reach
-		 * the substrate's actual count, not a binding-narrower
-		 * value. */
+		/* A successful snapshot must fit in the caller-provided array. */
 	} else {
 		assert_true(r.error() == ove::Error::NotSupported);
 	}

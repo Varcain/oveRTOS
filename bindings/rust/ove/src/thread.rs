@@ -1013,12 +1013,28 @@ pub fn get_mem_stats() -> Result<MemStats> {
 pub struct ThreadInfo {
     /// Thread name (static string from RTOS).
     pub name: &'static [u8],
+    /// Opaque native identity, suitable only for equality comparisons.
+    pub identity: usize,
+    /// Linux-personality slot assigned by a seam, or -1 for a host thread.
+    pub lxp_slot: i32,
     /// Execution state.
     pub state: bindings::ove_thread_state_t,
     /// Priority level.
     pub priority: i32,
     /// Stack high-water mark in bytes.
     pub stack_used: usize,
+    /// Total stack allocation in bytes, or zero if unavailable.
+    pub stack_size: usize,
+    /// CPU usage in 0.01% units.
+    pub cpu_percent_x100: u32,
+    /// Cumulative time spent running, in microseconds.
+    pub running_us: u64,
+    /// Cumulative time spent ready, in microseconds.
+    pub ready_us: u64,
+    /// Cumulative time spent blocked, in microseconds.
+    pub blocked_us: u64,
+    /// Cumulative time spent suspended, in microseconds.
+    pub suspended_us: u64,
 }
 
 /// List all threads in the system.
@@ -1055,9 +1071,17 @@ pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
         };
         buf[i] = ThreadInfo {
             name,
+            identity: raw[i].identity,
+            lxp_slot: raw[i].lxp_slot,
             state: raw[i].state,
             priority: raw[i].priority,
             stack_used: raw[i].stack_used,
+            stack_size: raw[i].stack_size,
+            cpu_percent_x100: raw[i].cpu_percent_x100,
+            running_us: raw[i].state_times.running_us,
+            ready_us: raw[i].state_times.ready_us,
+            blocked_us: raw[i].state_times.blocked_us,
+            suspended_us: raw[i].state_times.suspended_us,
         };
     }
     Ok(&buf[..actual])

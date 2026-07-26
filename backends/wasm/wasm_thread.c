@@ -532,6 +532,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		if (!t)
 			continue;
 		out[count].name = t->name ? t->name : "?";
+		out[count].identity = (uintptr_t)t;
+		out[count].lxp_slot = -1;
 		out[count].state = (ove_thread_state_t)t->state;
 		out[count].priority = t->priority;
 		out[count].stack_used = t->stack_painted ? ove_thread_get_stack_usage(t) : 0;
@@ -571,7 +573,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 	if (actual_count)
 		*actual_count = count;
-	return OVE_OK;
+	return (size_t)tracked_count > max_count ? OVE_ERR_QUEUE_FULL : OVE_OK;
 }
 
 #ifdef CONFIG_OVE_TRACE_STREAM

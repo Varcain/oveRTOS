@@ -486,6 +486,7 @@ struct _nuttx_list_ctx {
 	struct _nuttx_list_snapshot *snapshot;
 	size_t max;
 	size_t count;
+	bool overflow;
 };
 
 /* nxsched_foreach() invokes its callback while interrupts are disabled. Keep
@@ -507,7 +508,7 @@ struct _nuttx_list_snapshot {
  * interval, so a CPU-bound task that never switches still advances on every
  * /proc refresh. Both paths run with interrupts masked while touching 64-bit
  * counters on this 32-bit core. */
-#define OVE_NX_RUNTIME_MAX 24
+#define OVE_NX_RUNTIME_MAX 32
 static struct {
 	pid_t pid;
 	uint64_t cycles;
@@ -517,6 +518,7 @@ static pid_t g_nx_runtime_current = -1;
 static uint32_t g_nx_runtime_last;
 static uint64_t g_nx_runtime_total;
 static bool g_nx_runtime_ready;
+static bool g_nx_runtime_overflow;
 
 static int _runtime_find(pid_t pid, bool create)
 {
@@ -528,8 +530,11 @@ static int _runtime_find(pid_t pid, bool create)
 		if (!g_nx_runtime[i].used && freeidx < 0)
 			freeidx = i;
 	}
-	if (!create || freeidx < 0)
+	if (!create || freeidx < 0) {
+		if (create)
+			g_nx_runtime_overflow = true;
 		return -1;
+	}
 	g_nx_runtime[freeidx].used = true;
 	g_nx_runtime[freeidx].pid = pid;
 	g_nx_runtime[freeidx].cycles = 0;
@@ -651,7 +656,7 @@ uint64_t ove_nuttx_runtime_cycles_to_us(uint64_t cycles)
  * a slot whose thread wasn't seen in a pass is reclaimed, so recreated/exited threads neither leak
  * a slot nor carry a stale total. */
 #if !defined(CONFIG_ARCH_PERF_EVENTS)
-#define OVE_NX_CPUINT_MAX 24
+#define OVE_NX_CPUINT_MAX 32
 #else
 #define OVE_NX_CPUINT_MAX OVE_NX_RUNTIME_MAX
 #endif
@@ -667,6 +672,7 @@ static struct {
 	bool seen;
 } g_nx_cpuint[OVE_NX_CPUINT_MAX];
 static clock_t g_nx_cpuint_last;
+static bool g_nx_cpuint_overflow;
 #endif
 
 #if defined(CONFIG_ARCH_PERF_EVENTS)
@@ -688,8 +694,10 @@ static uint32_t _runtime_percent(uint64_t part, uint64_t total)
 static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 {
 	struct _nuttx_list_ctx *ctx = (struct _nuttx_list_ctx *)arg;
-	if (ctx->count >= ctx->max)
+	if (ctx->count >= ctx->max) {
+		ctx->overflow = true;
 		return;
+	}
 
 	size_t index = ctx->count;
 	struct ove_thread_info *info = &ctx->out[index];
@@ -703,6 +711,8 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	info->name = "?";
 #endif
 	snapshot->pid = tcb->pid;
+	info->identity = (uintptr_t)(uint32_t)tcb->pid;
+	info->lxp_slot = -1;
 
 	switch (tcb->task_state) {
 	case TSTATE_TASK_RUNNING:
@@ -763,6 +773,8 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 				g_nx_cpuint[idx].pid = snapshot->pid;
 				g_nx_cpuint[idx].cum_us = 0;
 			}
+			if (idx < 0)
+				g_nx_cpuint_overflow = true;
 			if (idx >= 0) {
 				g_nx_cpuint[idx].seen = true;
 				g_nx_cpuint[idx].cum_us += (uint64_t)pct * dt_us / 10000U;
@@ -816,5 +828,13 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	if (actual_count)
 		*actual_count = ctx.count;
 	nxmutex_unlock(&g_nx_list_lock);
-	return OVE_OK;
+	return (ctx.overflow
+#if defined(CONFIG_ARCH_PERF_EVENTS)
+		|| g_nx_runtime_overflow
+#else
+		|| g_nx_cpuint_overflow
+#endif
+		)
+		       ? OVE_ERR_QUEUE_FULL
+		       : OVE_OK;
 }

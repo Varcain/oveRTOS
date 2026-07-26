@@ -35,6 +35,8 @@
 
 #if defined(CONFIG_OVE_LINUX)
 
+#include <stddef.h>
+
 #include <nuttx/cache.h> /* up_invalidate_dcache — reused-region coherency (cacheable prog pool) */
 #include <nuttx/clock.h> /* MSEC2TICK */
 #include <nuttx/irq.h>	 /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
@@ -769,7 +771,28 @@ static void nuttx_event_wait(unsigned ms)
  * the seam can fill the engine's lxp_thread_info-typed thread_list op. */
 static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 {
-	return ove_thread_list((struct ove_thread_info *)o, m, n);
+	_Static_assert(sizeof(struct lxp_thread_info) == sizeof(struct ove_thread_info),
+		       "LXP/ove thread snapshot ABI mismatch");
+	_Static_assert(offsetof(struct lxp_thread_info, identity) ==
+			       offsetof(struct ove_thread_info, identity),
+		       "LXP/ove thread identity offset mismatch");
+	_Static_assert(offsetof(struct lxp_thread_info, lxp_slot) ==
+			       offsetof(struct ove_thread_info, lxp_slot),
+		       "LXP/ove thread slot offset mismatch");
+	size_t local_n = 0;
+	size_t *written = n ? n : &local_n;
+	int rc = ove_thread_list((struct ove_thread_info *)o, m, written);
+	size_t count = *written < m ? *written : m;
+	for (size_t i = 0; i < count; i++) {
+		o[i].lxp_slot = LXP_THREAD_SLOT_NONE;
+		for (int s = 0; s < LXP_NSLOT; s++)
+			if (g_pid[s] >= 0 &&
+			    o[i].identity == (uintptr_t)(uint32_t)g_pid[s]) {
+				o[i].lxp_slot = s;
+				break;
+			}
+	}
+	return rc;
 }
 
 static int lxp_seam_mem_stats(struct lxp_mem_stats *out)

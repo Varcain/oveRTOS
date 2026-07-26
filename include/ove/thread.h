@@ -339,6 +339,8 @@ struct ove_thread_state_times {
  */
 struct ove_thread_info {
 	const char *name;	   /**< Thread name (static, do not free). */
+	uintptr_t identity;	   /**< Opaque native identity; equality only. */
+	int32_t lxp_slot;	   /**< LXP slot assigned by a personality seam, else -1. */
 	ove_thread_state_t state;  /**< Execution state. */
 	int priority;		   /**< Priority level. */
 	size_t stack_used;	   /**< Stack high-water mark (bytes), or 0 if unavailable. */
@@ -352,8 +354,9 @@ struct ove_thread_info {
  *
  * @param[out] out          Array to fill with thread info.
  * @param[in]  max_count    Maximum entries in @p out.
- * @param[out] actual_count Actual number of threads written (may be NULL).
- * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable.
+ * @param[out] actual_count Number of entries written (may be NULL).
+ * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
+ *         or OVE_ERR_NOT_SUPPORTED if unavailable.
  */
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
 
