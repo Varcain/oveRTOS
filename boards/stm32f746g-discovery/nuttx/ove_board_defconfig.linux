@@ -86,12 +86,11 @@ CONFIG_STM32F7_QSPI_FLASH_SIZE=16777216
 # CS-toggle sensitivity is exactly why single (uncached) reads corrupt worse than cached bursts.
 CONFIG_STM32F7_QSPI_CSHT=6
 
-# Guest entropy: back /dev/urandom with the STM32 hardware TRNG so the personality's
-# getrandom() (the AT_RANDOM stack-canary seed + guest getrandom(2)) draws real entropy
-# instead of the backend's clock-seeded xorshift fallback (nuttx_random_fill). STM32F7_RNG
-# registers both /dev/random and /dev/urandom on the HW RNG (g_rngops); DEV_URANDOM_ARCH
-# routes /dev/urandom to it and drivers_initialize auto-registers both. The RNG clock is
-# PLL_VCO/PLLQ, well above HCLK/16, so there is no clock-error condition.
+# Guest entropy: back /dev/urandom with the STM32 hardware TRNG so the
+# personality's AT_RANDOM seed and guest getrandom(2) draw real entropy.
+# nuttx_random_fill uses non-blocking reads and fails closed on any unavailable
+# or unhealthy source. STM32F7_RNG registers both random devices; the RNG clock
+# is PLL_VCO/PLLQ, well above HCLK/16, so there is no clock-error condition.
 CONFIG_STM32F7_RNG=y
 CONFIG_DEV_RANDOM=y
 CONFIG_DEV_URANDOM=y
