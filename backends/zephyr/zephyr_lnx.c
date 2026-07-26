@@ -24,7 +24,7 @@
 #include <zephyr/arch/exception.h>
 #include <zephyr/init.h>
 #include <zephyr/linker/devicetree_regions.h>
-#include <zephyr/random/random.h> /* sys_rand_get -> engine random_fill op (AT_RANDOM/getrandom) */
+#include <zephyr/random/random.h> /* sys_csrand_get -> engine random_fill op */
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/time_units.h>
 #include <zephyr/version.h>
@@ -50,6 +50,11 @@ BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEU
 BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
 		     OVE_ZEPHYR_PRIO_LXP_COORDINATOR < OVE_ZEPHYR_PRIO_LXP_GUEST,
 	     "critical, coordinator, and guest priorities must remain ordered");
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+BUILD_ASSERT(IS_ENABLED(CONFIG_CSPRNG_ENABLED) &&
+		     IS_ENABLED(CONFIG_HARDWARE_DEVICE_CS_GENERATOR),
+	     "STM32 Linux guests require a hardware-backed CSPRNG");
+#endif
 BUILD_ASSERT(IS_ENABLED(CONFIG_EXCEPTION_DUMP_HOOK_ONLY),
 	     "the Linux personality needs selective exception-dump routing");
 #if defined(CONFIG_NETWORKING)
@@ -655,15 +660,13 @@ static lxp_exec_capture_t *zephyr_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
-/* Guest entropy (AT_RANDOM stack-canary seed + getrandom()). REQUIRED: lxp_setup_stack() seeds a
- * 16-byte AT_RANDOM word at every launch and, since the lxp src-review remediation, hard-fails the
- * launch (returns NULL -> lxp_run returns -1) when the engine has no random_fill op. Without this
- * the very first guest exec fails on Zephyr with no diagnostic. sys_rand_get() is backed by
- * CONFIG_ENTROPY_GENERATOR on this board; it always fills the buffer, so report success. */
+/* Guest entropy (AT_RANDOM stack-canary seed + getrandom()). sys_csrand_get()
+ * propagates entropy-driver failure instead of substituting timer data. */
 static int zephyr_random_fill(void *buf, size_t len)
 {
-	sys_rand_get(buf, len);
-	return LXP_OK;
+	if (!buf && len != 0u)
+		return LXP_ERR_INVALID_PARAM;
+	return sys_csrand_get(buf, len) == 0 ? LXP_OK : LXP_ERR_BUS_ERROR;
 }
 
 static void slot_task_name(char name[6], int sidx)

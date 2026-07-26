@@ -45,13 +45,13 @@
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 #include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
 #endif
+#include <errno.h>
 #include <fcntl.h> /* open — non-blocking console RX via NuttX's serial buffer */
 #include <sched.h> /* task_delete */
 #include <stdint.h>
 #include <string.h>
 #include <sys/random.h> /* getrandom — guest entropy (AT_RANDOM seed + getrandom(2)) */
 #include <termios.h> /* tcgetattr/tcsetattr — put the console in raw mode (no NuttX echo/canon) */
-#include <time.h>    /* clock_gettime — PRNG fallback seed when no entropy source is configured */
 #include <unistd.h>  /* usleep, read */
 
 #include "lxp/lxp_seam.h"
@@ -714,32 +714,32 @@ static void nuttx_sleep_ms(unsigned ms)
 	usleep(ms * 1000u);
 }
 
-/* Guest entropy source (lxp_os_ops_t.random_fill). WITHOUT this op the module's exec setup cannot
- * fill AT_RANDOM (the 16-byte stack-canary seed) and REFUSES to launch the process — so a missing
- * random_fill silently breaks every guest launch. getrandom() reads /dev/urandom, which the board
- * config backs with the STM32 hardware TRNG (CONFIG_STM32F7_RNG + CONFIG_DEV_URANDOM_ARCH), so this
- * normally returns real hardware entropy. The monotonic-clock-seeded xorshift below is a last-resort
- * fallback for the (now unexpected) case that getrandom() fails — kept so a transient RNG fault
- * cannot block every guest launch (AT_RANDOM tolerates a weak seed; the guest is MPU-isolated
- * regardless). Runs on the coordinator thread. */
+/* Guest entropy source (AT_RANDOM and getrandom). GRND_NONBLOCK makes every
+ * host call finite; partial reads are completed under a fixed call budget.
+ * Any unavailable, unhealthy, or short source fails closed. */
 static int nuttx_random_fill(void *buf, size_t len)
 {
-	if (getrandom(buf, len, 0) == (ssize_t)len)
-		return 0;
-	static uint32_t s;
-	if (s == 0) {
-		struct timespec ts = {0, 0};
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		s = ((uint32_t)ts.tv_nsec ^ ((uint32_t)ts.tv_sec << 16)) | 1u;
+	if (!buf && len != 0u)
+		return LXP_ERR_INVALID_PARAM;
+	uint8_t *out = buf;
+	size_t done = 0;
+	for (unsigned calls = 0; done < len && calls < 16u; calls++) {
+		ssize_t got = getrandom(out + done, len - done, GRND_NONBLOCK);
+		if (got > 0) {
+			done += (size_t)got;
+			continue;
+		}
+		if (got < 0 && errno == EINTR)
+			continue;
+		int rc = (got < 0 && errno == EAGAIN) ? LXP_ERR_WOULD_BLOCK :
+							       LXP_ERR_BUS_ERROR;
+		memset(buf, 0, len);
+		return rc;
 	}
-	uint8_t *p = (uint8_t *)buf;
-	for (size_t i = 0; i < len; i++) {
-		s ^= s << 13;
-		s ^= s >> 17;
-		s ^= s << 5;
-		p[i] = (uint8_t)(s >> 24);
-	}
-	return 0;
+	if (done == len)
+		return LXP_OK;
+	memset(buf, 0, len);
+	return LXP_ERR_BUS_ERROR;
 }
 
 /* Coordinator critical section: disable IRQs around the brief proc-table snapshot. */

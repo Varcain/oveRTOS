@@ -36,6 +36,13 @@
 	interrupts = <6 3>, <7 3>, <8 3>, <9 3>, <10 3>, <23 3>, <40 3>;
 };
 
+/* AT_RANDOM/getrandom use Zephyr's fail-closed CSPRNG path backed by the
+ * STM32F7 hardware entropy peripheral. Keep it below the scope deadline IRQ. */
+&rng {
+	interrupts = <80 3>;
+	status = "okay";
+};
+
 &dma2 {
 	interrupts = <56 3 57 3 58 3 59 3 60 3 68 3 69 3 70 3>;
 };
