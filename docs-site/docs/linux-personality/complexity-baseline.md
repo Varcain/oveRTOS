@@ -371,3 +371,21 @@ warning-clean, the Cortex-M4 QEMU suite reports `PASS: lxp-m4-ok`, and the
 decoupling check passes. The syscall documentation gate still reports the
 pre-existing unclassified `link`/`linkat` matrix entries; the coordinator
 change does not alter syscall classification.
+
+FreeRTOS, NuttX, and Zephyr images built from oveRTOS `a92b03b` and LXP
+`5adf7fc` were each flashed to the STM32F746G-DISCO. Every engine reported the
+expected clean build identity, completed all three RTOS/Linux round trips,
+reached BusyBox `rcS`, getty, and inetd, and produced consecutive RT-scope
+windows with zero misses, late finishes, IRQ overruns, or pending executions.
+
+| Engine | Startup releases | Startup p99 / p99.9 / max | Next-window releases | Next-window p99 / p99.9 / max |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 10,030 | <=10 / <=12 / 23.24 us | 10,045 | <=8 / <=8 / 8.28 us |
+| NuttX | 10,120 | <=12 / <=16 / 24.13 us | 10,030 | <=10 / <=10 / 9.87 us |
+| Zephyr | 10,016 | <=10 / <=12 / 49.13 us | 10,049 | <=10 / <=12 / 36.56 us |
+
+FreeRTOS and Zephyr also completed the early host socket smoke. NuttX brought
+up Ethernet and later started the Linux network services, but retained its
+known early-boot socket-smoke `connect failed rc=-9` result. The coordinator
+decomposition therefore introduces no observed readiness, scheduling, or
+real-time regression.
