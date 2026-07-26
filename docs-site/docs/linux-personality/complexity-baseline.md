@@ -189,3 +189,64 @@ completed the RTOS/Linux round trip and the BusyBox init sequence through
 the current serial `root/root` rejection against byte-identical QSPI
 `/etc/shadow` data, so that credential-path issue is not an Iteration 1
 regression.
+
+## Iteration 2 typed coordinator state
+
+Iteration 2 replaces the independent lifecycle request flags and wait flags in
+`lxp_proc_t` with one tagged intent record and one tagged wait record. The
+intent kinds are `NONE`, `FORK`, `EXEC`, and `EXIT`; the wait kinds are
+`NONE`, `SLEEP`, `WAITPID`, `READ`, `WRITE`, `POLL`, `SELECT`, `SOCKET`, and
+`DEVICE`. Each record owns the payload associated with its current kind, so a
+slot can no longer simultaneously represent two incompatible requests or
+retain stale payload from an earlier request.
+
+All state transitions go through `lxp_intent_*()` and `lxp_wait_*()` helpers.
+They reject conflicting starts, require completion to name the expected kind,
+clear the complete tagged record, and diagnose invalid transitions. Exit is
+the deliberate exception to normal exclusivity: it supersedes lower-priority
+deferred work so fatal signals and RTOS memory-fault seams cannot strand a
+process behind a pending syscall. Generic signal interruption now handles
+every wait kind, including device waits. The primary-event bitmap remains a
+scheduling hint; event claiming validates the tagged kind before dispatch.
+
+The target-ABI reduction is:
+
+| Object | Iteration 1 | Iteration 2 | Delta |
+|---|---:|---:|---:|
+| `lxp_proc_t` | 416 B | 232 B | -184 B (-44.2%) |
+| Per-slot coordinator core | 1,324 B | 1,140 B | -184 B (-13.9%) |
+| FreeRTOS/NuttX process slot table | 6,240 B | 3,480 B | -2,760 B (-44.2%) |
+| Zephyr process slot table | 6,656 B | 3,712 B | -2,944 B (-44.2%) |
+| FreeRTOS/NuttX coordinator static set | 23,232 B | 20,472 B | -2,760 B (-11.9%) |
+| Zephyr coordinator static set | 24,852 B | 21,908 B | -2,944 B (-11.8%) |
+
+Clean production images built from oveRTOS `8dcc757` and LXP `015529b`
+compare with Iteration 1 as follows:
+
+| Engine | Iteration 1 flash | Iteration 2 flash | Flash delta | Internal static RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 229,004 B | 229,812 B | +808 B (+0.353%) | 249,160 B | -3,072 B (-1.22%) |
+| NuttX | 232,404 B | 233,156 B | +752 B (+0.324%) | 237,204 B | -2,784 B (-1.16%) |
+| Zephyr | 277,820 B | 276,920 B | -900 B (-0.324%) | 254,208 B | -4,096 B (-1.59%) |
+
+The engine configurations, root filesystem, slot and region counts, and
+external-memory allocations are unchanged. Their generated `.config` hashes
+remain the values recorded at the top of this document. The engine-dependent
+linker deltas differ slightly from the slot-table reductions because of
+section placement and alignment.
+
+All 44 host CTest targets pass. The coordinator suite now runs 64 tests,
+including exclusive intent transitions, exit supersession, every tagged wait
+transition, and the complete wait-to-event mapping. The unit and coordinator
+suites also pass under AddressSanitizer and UndefinedBehaviorSanitizer. The
+ordinary FreeRTOS QEMU suite passes; the separate `linux-segv` QEMU target
+could not start because its configured rootfs load range overlaps a firmware
+ELF segment, before any guest code executes.
+
+FreeRTOS, NuttX, and Zephyr images were each exercised on the
+STM32F746G-DISCO. All three completed the RTOS/Linux round trips and reached
+BusyBox `rcS`, getty, and inetd with zero RT-scope misses. A clean Iteration 1
+FreeRTOS A/B image reproduced the occasional cold-boot `vfork`/exec startup
+errors seen during validation, while a subsequent Iteration 2 boot completed
+cleanly. The behavior is therefore retained as a pre-existing startup issue,
+not attributed to the typed-state change.
