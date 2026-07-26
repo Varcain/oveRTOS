@@ -704,7 +704,7 @@ static void slot_task_name(char name[6], int sidx)
 static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 {
 	char nm[6];
-	slot_task_name(nm, sidx); /* per-slot: ps/top per-proc CPU */
+	slot_task_name(nm, sidx); /* diagnostic only; attribution uses the task handle */
 #if (portUSING_MPU_WRAPPERS == 1)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* The program region + dyn_pool live in external SDRAM.  Make them Normal WBWA CACHEABLE,
