@@ -151,3 +151,41 @@ slot/region snapshots, and read-only `lxp_validate_world()`. The
 number of automatic validator checks/failures. The validator checkpoints after
 launch, after each existing coordinator-statistics refresh, and after teardown.
 It neither repairs state nor allocates memory.
+
+## Iteration 1 explicit child construction
+
+Iteration 1 removes the whole-`lxp_proc_t` assignment from fork and clone.
+Process-child and thread-child constructors now acquire only the address-space,
+file-table, filesystem-context, signal-handler, and thread-group objects
+selected by the clone flags. Task-local coordinator, wait, signal-delivery,
+timer, and request state starts empty instead of being inherited and repaired
+afterward.
+
+Child preparation is a transaction: it acquires the region reference, process
+resources, native mapping, and optional vfork snapshot before publishing the
+slot. Every failed stage unwinds through the same reverse-order cleanup path.
+The table-driven host test covers all 16 valid combinations of `CLONE_VM`,
+`CLONE_FILES`, `CLONE_FS`, `CLONE_SIGHAND`, and `CLONE_THREAD`. Separate fault
+tests exhaust the reference count at each resource acquisition and force
+region, native-map, and snapshot failures; each verifies restored references
+and a clean world invariant.
+
+The target ABI, generated configurations, root filesystem, slot and region
+counts, coordinator static tables, and internal/external static RAM are
+unchanged. The production `linux_interop` images compare with the Iteration 0
+guardrail as follows:
+
+| Engine | Iteration 0 flash | Iteration 1 flash | Flash delta | Relative delta | Internal static RAM |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 228,620 B | 229,004 B | +384 B | +0.168% | 252,232 B |
+| NuttX | 231,996 B | 232,404 B | +408 B | +0.176% | 239,988 B |
+| Zephyr | 277,044 B | 277,820 B | +776 B | +0.280% | 258,304 B |
+
+All 44 host CTest targets pass. The coordinator suite now runs 61 tests, up
+from 58, and the unit and coordinator suites also pass under AddressSanitizer
+and UndefinedBehaviorSanitizer. On the STM32F746G-DISCO, the NuttX image
+completed the RTOS/Linux round trip and the BusyBox init sequence through
+`rcS`, getty, and inetd (PID 9). A same-board Iteration 0 A/B image reproduced
+the current serial `root/root` rejection against byte-identical QSPI
+`/etc/shadow` data, so that credential-path issue is not an Iteration 1
+regression.
