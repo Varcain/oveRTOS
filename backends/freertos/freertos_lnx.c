@@ -170,6 +170,15 @@ _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_
 static StaticTask_t g_tcb[LXP_NSLOT];
 static TaskHandle_t g_tid[LXP_NSLOT];
 static uint32_t g_task_generation[LXP_NSLOT];
+
+static lxp_slot_ref_t task_slot_ref(int slot)
+{
+	return (lxp_slot_ref_t){
+		.index = (int16_t)slot,
+		.generation = slot >= 0 && slot < LXP_NSLOT ? g_task_generation[slot] : 0,
+	};
+}
+
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* A remote-exec proc runs its OWN text from RAM in its program region, so that region is mapped
  * RWX (a per-process, MPU-contained W^X relaxation). Set at launch; kept across resumes because
@@ -207,7 +216,7 @@ static int current_slot(void)
 	extern void *volatile pxCurrentTCB;
 	TaskHandle_t t = (TaskHandle_t)pxCurrentTCB;
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_lxp_used[i] && g_tid[i] == t)
+		if (g_tid[i] == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
 }
@@ -243,7 +252,7 @@ void ove_freertos_lxp_tick(void)
 		return;
 	budget_ticks = 0;
 	for (int s = 0; s < LXP_NSLOT; s++) {
-		if (s != current && g_lxp_used[s] && g_tid[s]) {
+		if (s != current && g_tid[s] && lxp_slot_ref_is_runnable(task_slot_ref(s))) {
 			portYIELD_FROM_ISR(pdTRUE);
 			return;
 		}
@@ -326,7 +335,7 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	f.r[15] = g->hw[6];
 	f.xpsr = g->hw[7];
 
-	lxp_dispatch(&f, &g_lxp_proc[sidx]);
+	(void)lxp_dispatch_slot(task_slot_ref(sidx), &f);
 
 	g->hw[0] = f.r[0];
 	g->hw[1] = f.r[1];
@@ -475,14 +484,13 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		diag->psp = psp;
 		diag->exc_return = exc_return;
 
-		g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
-		g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
-		g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
-		g_lxp_proc[sidx].exit_detail = diag->cfsr;
-		g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
-						: (diag->cfsr & (1u << 15)) ? diag->bfar
-									    : 0u;
-		(void)lxp_intent_exit(&g_lxp_proc[sidx], 0);
+		lxp_guest_fault_t fault = {
+			.detail = diag->cfsr,
+			.address = (diag->cfsr & (1u << 7))    ? diag->mmfar
+				   : (diag->cfsr & (1u << 15)) ? diag->bfar
+							       : 0u,
+		};
+		(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
 
 		/* Never trust the faulting PSP frame: MSTKERR/MLSPERR means it may not
 		 * exist at all, and an arbitrary guest PSP may point at read-only QSPI or
@@ -503,7 +511,6 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 
 		*(volatile uint32_t *)0xE000ED28u = *(
 			volatile uint32_t *)0xE000ED28u; /* clear configurable status bits (W1C) */
-		lxp_event_post_slot(sidx);
 		return (uint32_t *)frame;
 	}
 	/* Not a guest fault: host/privileged context, handler mode, or no active guest. Capture the
@@ -886,7 +893,7 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
 	struct resume_desc *d = g_park_desc[sidx];
-	int persistent = !g_lxp_used[sidx] && g_tid[sidx] && d;
+	int persistent = !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_tid[sidx] && d;
 	if (persistent) {
 		if (g_task_generation[sidx] != generation)
 			return -1;
@@ -1041,7 +1048,8 @@ static int freertos_abort_slot(int sidx, uint32_t generation)
 
 static int freertos_park_slot(int sidx, uint32_t generation)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || !g_lxp_used[sidx] ||
+	if (sidx < 0 || sidx >= LXP_NSLOT ||
+	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
 	    !g_tid[sidx] || g_task_generation[sidx] != generation)
 		return -1;
 	vTaskSuspend(g_tid[sidx]);

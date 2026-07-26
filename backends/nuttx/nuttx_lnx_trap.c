@@ -257,6 +257,14 @@ static struct task_tcb_s g_tcb[LXP_NSLOT];
 static int g_pid[LXP_NSLOT];
 static uint32_t g_task_generation[LXP_NSLOT];
 
+static lxp_slot_ref_t task_slot_ref(int slot)
+{
+	return (lxp_slot_ref_t){
+		.index = (int16_t)slot,
+		.generation = slot >= 0 && slot < LXP_NSLOT ? g_task_generation[slot] : 0,
+	};
+}
+
 #if defined(CONFIG_ARCH_PERF_EVENTS) && defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 /* The generic NuttX thread-runtime registry is deliberately bounded. A busy
  * Linux-personality image has more native tasks than that registry can hold,
@@ -367,7 +375,7 @@ static int current_slot(void)
 {
 	pid_t self = lxp_running_tcb()->pid;
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_lxp_used[i] && g_pid[i] == self)
+		if (g_pid[i] == self && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
 }
@@ -431,7 +439,7 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	fpctx.active = 1;
 #endif
 
-	lxp_dispatch(&f, &g_lxp_proc[sidx]);
+	(void)lxp_dispatch_slot(task_slot_ref(sidx), &f);
 
 	regs[REG_R0] = f.r[0];
 	regs[REG_R1] = f.r[1];
@@ -672,7 +680,7 @@ static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
 	(void)ridx;
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
-	if (!g_lxp_used[sidx] && g_pid[sidx] >= 0) {
+	if (!lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_pid[sidx] >= 0) {
 		if (g_task_generation[sidx] != generation)
 			return -1;
 		/* Build a native NuttX exception frame immediately below the captured
@@ -783,7 +791,8 @@ static int nuttx_abort_slot(int sidx, uint32_t generation)
 
 static int nuttx_park_slot(int sidx, uint32_t generation)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || !g_lxp_used[sidx] ||
+	if (sidx < 0 || sidx >= LXP_NSLOT ||
+	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
 	    g_pid[sidx] < 0 || g_task_generation[sidx] != generation)
 		return -1;
 	nxsched_suspend(&g_tcb[sidx].cmn);
@@ -1114,15 +1123,13 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 				  : (cfsr & (1u << 15)) ? *(volatile uint32_t *)0xE000ED38u
 							: 0u;
 	OVE_SCS_CFSR = cfsr; /* write-1-clear the set fault status (MM/Bus/Usage) */
-	g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
-	g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
-	g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
-	g_lxp_proc[sidx].exit_detail = cfsr;
-	g_lxp_proc[sidx].exit_address = fault_address;
-	(void)lxp_intent_exit(&g_lxp_proc[sidx], 0);
+	lxp_guest_fault_t fault = {
+		.detail = cfsr,
+		.address = fault_address,
+	};
+	(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
 	regs[REG_PC] = (uint32_t)(uintptr_t)&lxp_park_loop & ~1u;
 	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
-	lxp_event_post_slot(sidx);    /* publish + wake coordinator → EV_EXIT reaps this slot */
 	return 0; /* exception-return: the program spins in park_loop until reaped */
 }
 
@@ -1222,8 +1229,11 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 		return;
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < LXP_NSLOT; i++) {
-		if (g_lxp_used[i] && g_pid[i] == pid) {
-			int ridx = g_lxp_proc[i].mm ? g_lxp_proc[i].mm->region : -1;
+		if (g_pid[i] == pid && lxp_slot_ref_is_runnable(task_slot_ref(i))) {
+			lxp_region_ref_t region;
+			int ridx = lxp_slot_region_ref(task_slot_ref(i), &region) == LXP_OK
+					   ? region.index
+					   : -1;
 			int want_exec = 0;
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 			if (ridx >= 0 && ridx < LXP_NREG)

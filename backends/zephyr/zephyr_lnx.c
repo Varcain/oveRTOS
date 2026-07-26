@@ -198,11 +198,19 @@ static k_tid_t g_tid[LXP_NSLOT];
 static uint32_t g_task_generation[LXP_NSLOT];
 K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, LXP_NSLOT, 1024);
 
+static lxp_slot_ref_t task_slot_ref(int slot)
+{
+	return (lxp_slot_ref_t){
+		.index = (int16_t)slot,
+		.generation = slot >= 0 && slot < LXP_NSLOT ? g_task_generation[slot] : 0,
+	};
+}
+
 static int current_slot(void)
 {
 	k_tid_t t = k_current_get();
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_lxp_used[i] && g_tid[i] == t)
+		if (g_tid[i] == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
 }
@@ -418,7 +426,7 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee, ui
 				f.r[15] = esf->basic.pc;
 				f.xpsr = esf->basic.xpsr;
 
-				lxp_dispatch(&f, &g_lxp_proc[sidx]);
+				(void)lxp_dispatch_slot(task_slot_ref(sidx), &f);
 
 				e->basic.r0 = f.r[0];
 				e->basic.r1 = f.r[1];
@@ -737,7 +745,7 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
-	if (!g_lxp_used[sidx] && g_tid[sidx]) {
+	if (!lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_tid[sidx]) {
 		if (g_task_generation[sidx] != generation)
 			return -1;
 		/* PendSV saved the svc frame that park_frame redirected to the naked
@@ -905,15 +913,13 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 				g_guest_fault_dump_lines - g_guest_fault_dump_consumed;
 			g_guest_fault_dump_consumed = g_guest_fault_dump_lines;
 
-			g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
-			g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
-			g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
-			g_lxp_proc[sidx].exit_detail = diag->cfsr ? diag->cfsr : reason;
-			g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
-							: (diag->cfsr & (1u << 15)) ? diag->bfar
-										    : 0u;
-			(void)lxp_intent_exit(&g_lxp_proc[sidx], 0);
-			lxp_event_post_slot(sidx);
+			lxp_guest_fault_t fault = {
+				.detail = diag->cfsr ? diag->cfsr : reason,
+				.address = (diag->cfsr & (1u << 7))    ? diag->mmfar
+					   : (diag->cfsr & (1u << 15)) ? diag->bfar
+								       : 0u,
+			};
+			(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
 			return;
 		}
 	}
@@ -935,7 +941,8 @@ static int zephyr_abort_slot(int sidx, uint32_t generation)
 
 static int zephyr_park_slot(int sidx, uint32_t generation)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || !g_lxp_used[sidx] ||
+	if (sidx < 0 || sidx >= LXP_NSLOT ||
+	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
 	    !g_tid[sidx] || g_task_generation[sidx] != generation)
 		return -1;
 	k_thread_suspend(g_tid[sidx]);
