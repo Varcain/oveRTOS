@@ -30,9 +30,9 @@
 #include "ove/build.h"
 #include "ove/time.h"	     /* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h"	     /* ove_thread_list -> engine thread_list op */
-#include "lxp/lxp_syscall.h" /* lxp_rootfs_window — strong-overridden below for QSPI-XIP */
+#include "lxp/lxp_syscall.h"
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#include "lxp/lxp_netfs.h"
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -178,7 +178,7 @@ static uint8_t g_region_exec[LXP_NSLOT];
 /* Staging buffer for a fetched remote ELF: the netfs layer fills it, the loader copies its text
  * into the program region. In SDRAM (STM32) / PSRAM (an500), NOLOAD → no flash cost. Sized for a
  * small/medium dynamic FDPIC binary (its own text+data; libc/ld.so stay XIP from the local rootfs). */
-uint8_t *lxp_netfs_exec_stage(size_t *cap)
+static uint8_t *freertos_exec_stage(size_t *cap)
 {
 	if (cap)
 		*cap = sizeof(g_netfs_exec_stage);
@@ -928,7 +928,7 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 static int g_coord_mapped_ridx = -1;
 
 /* The persistent bounded, non-cacheable window over the memory-mapped QUADSPI NOR (0x90000000):
- * lxp_rootfs_window installs it on the coordinator's one spare configurable region (2 — coord_map
+ * rootfs_window installs it on the coordinator's one spare configurable region (2 — coord_map
  * owns 0 and 1). Recorded here so coord_map RE-SPECIFIES region 2 in the TCB on every remap and
  * never drops it: without this the first coord_map would zero region 2, and the loader's next NOR
  * read (launch() reading an FDPIC ELF straight from QSPI) would fall through to the oversized
@@ -963,7 +963,7 @@ static void freertos_coord_map(int ridx)
 	/* Record in the TCB FIRST so a preemption mid-service restores this same mapping
 	 * (the port reprograms configurable regions from the TCB on switch-in); then write
 	 * the live registers for immediate effect. Region 2 carries the persistent QSPI NC
-	 * window (g_qspi_win_*, installed by lxp_rootfs_window) — re-specify it so this remap
+	 * window (g_qspi_win_*, installed by rootfs_window) — re-specify it so this remap
 	 * preserves it in the TCB rather than zeroing it (the loader reads the NOR through it).
 	 * Only regions 0 and 1 are written live below, so the live region 2 is untouched. */
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
@@ -1152,7 +1152,18 @@ static int freertos_prepare(void)
 	return 0;
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static void freertos_cache_clean(const void *base, size_t len);
+static void freertos_cache_invalidate(const void *base, size_t len);
+#endif
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
+	(portUSING_MPU_WRAPPERS == 1)
+static void freertos_rootfs_window(const void *base, size_t len);
+#endif
+
 const lxp_os_ops_t g_lxp_host_engine = {
+	.abi_version = LXP_OS_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_os_ops_t),
 	.prepare = freertos_prepare,
 	.region = freertos_region,
 	.dyn_pool = freertos_dyn_pool,
@@ -1174,11 +1185,20 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
-	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
-	.cache_invalidate = lxp_guest_invalidate,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	.cache_clean = freertos_cache_clean,
+	.cache_invalidate = freertos_cache_invalidate,
+#endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
 	.coord_map =
 		freertos_coord_map, /* coherent coordinator view of the serviced slot's pools */
+#endif
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
+	(portUSING_MPU_WRAPPERS == 1)
+	.rootfs_window = freertos_rootfs_window,
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	.exec_stage = freertos_exec_stage,
 #endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	.random_fill = freertos_random_fill,
@@ -1187,9 +1207,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
 	(portUSING_MPU_WRAPPERS == 1)
-/* Strong override of the engine-common weak no-op (modules/lxp/src/lxp_run.c).
- *
- * The rootfs.cpio is XIP'd from the memory-mapped QUADSPI NOR at 0x90000000.  The coordinator —
+/* The rootfs.cpio is XIP'd from the memory-mapped QUADSPI NOR at 0x90000000.  The coordinator —
  * THIS task: it runs lxp_cpio_to_rootfs + the FDPIC loader — is a PRIVILEGED, non-restricted
  * FreeRTOS-MPU task, so absent an explicit region it reads the NOR through the PRIVDEFENA
  * background map: the 512 MB Normal-cacheable 0x80000000..0x9FFFFFFF block.  With the M7 D-cache
@@ -1205,7 +1223,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
  * (freertos_spawn_common — fast in-place XIP) untouched.  vPortStoreTaskMPUSettings with
  * uxStackDepth==0 preserves this task's stack/all-SRAM region; taskYIELD forces the pended MPU
  * reprogram so the region is live before the very next QUADSPI read (the cpio parse). */
-void lxp_rootfs_window(const void *base, size_t len)
+static void freertos_rootfs_window(const void *base, size_t len)
 {
 	const uint32_t par =
 		portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
@@ -1253,7 +1271,7 @@ void lxp_rootfs_window(const void *base, size_t len)
  * The STM32Cube CMSIS helper requires a 32-byte-aligned address and does not extend an unaligned
  * final line, so normalize both ends here.  Clean is non-destructive; touching the adjacent bytes
  * in the first/last cache line is safe. */
-void lxp_guest_flush(const void *base, size_t len)
+static void freertos_cache_clean(const void *base, size_t len)
 {
 	if (!len)
 		return;
@@ -1265,7 +1283,7 @@ void lxp_guest_flush(const void *base, size_t len)
 	SCB_CleanDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
 }
 
-void lxp_guest_invalidate(const void *base, size_t len)
+static void freertos_cache_invalidate(const void *base, size_t len)
 {
 	if (!len)
 		return;

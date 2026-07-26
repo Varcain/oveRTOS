@@ -50,7 +50,7 @@ void stm32f7_mcu_init(void)
 	 *   - every context reads the QUADSPI through a region sized to exactly the 16 MB N25Q128A,
 	 *     so the M7 cannot speculatively prefetch past the chip into unmapped QUADSPI space;
 	 *   - the privileged coordinator/loader reads it through a NON-cacheable per-task region
-	 *     (lxp_rootfs_window, backends/freertos/freertos_lnx.c), so the cache never issues a
+	 *     (rootfs_window callback, backends/freertos/freertos_lnx.c), so the cache never issues a
 	 *     line-fill burst to the memory-mapped QUADSPI (the decisive factor: on silicon an NC
 	 *     bounded region reads the NOR reliably where a cacheable/write-through one does not);
 	 *   - the unprivileged guest keeps a cacheable bounded RO+X region (freertos_spawn_common) for

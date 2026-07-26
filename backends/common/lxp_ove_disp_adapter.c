@@ -85,7 +85,9 @@ static int d_touch_read(int *x, int *y, int *pressed)
 }
 #endif /* CONFIG_OVE_FT5336 */
 
-static const lxp_display_ops_t g_ove_adapter_disp_ops = {
+const lxp_display_ops_t g_lxp_host_display_ops = {
+	.abi_version = LXP_DISPLAY_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_display_ops_t),
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 	.fb_init = d_fb_init,
 	.fb_get_info = d_fb_get_info,
@@ -102,9 +104,7 @@ static const lxp_display_ops_t g_ove_adapter_disp_ops = {
 #endif
 };
 
-/* The module reads the display port via this global; the module's lxp_run() only
- * OVERWRITES it when passed a non-NULL disp_ops, so this static wiring stands for
- * both the firmware (app passes NULL) and the hermetic host tests (no lxp_run). */
-const lxp_display_ops_t *g_lxp_disp_ops = &g_ove_adapter_disp_ops;
+/* Active only while lxp_run() publishes a provider. */
+const lxp_display_ops_t *g_lxp_disp_ops;
 
 #endif /* CONFIG_OVE_LINUX_DEV */
