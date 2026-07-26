@@ -1114,12 +1114,12 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 				  : (cfsr & (1u << 15)) ? *(volatile uint32_t *)0xE000ED38u
 							: 0u;
 	OVE_SCS_CFSR = cfsr; /* write-1-clear the set fault status (MM/Bus/Usage) */
-	g_lxp_proc[sidx].exited = 1;
 	g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
 	g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
 	g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
 	g_lxp_proc[sidx].exit_detail = cfsr;
 	g_lxp_proc[sidx].exit_address = fault_address;
+	(void)lxp_intent_exit(&g_lxp_proc[sidx], 0);
 	regs[REG_PC] = (uint32_t)(uintptr_t)&lxp_park_loop & ~1u;
 	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
 	lxp_event_post_slot(sidx);    /* publish + wake coordinator → EV_EXIT reaps this slot */
