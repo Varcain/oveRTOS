@@ -389,3 +389,73 @@ up Ethernet and later started the Linux network services, but retained its
 known early-boot socket-smoke `connect failed rc=-9` result. The coordinator
 decomposition therefore introduces no observed readiness, scheduling, or
 real-time regression.
+
+## Iteration 5 transactional lifecycle
+
+Iteration 5 gives fork/vfork and exec explicit transaction records instead of
+spreading ownership transfer across success and error branches. A `fork_txn`
+owns the destination generation, parent-region reference, child process
+objects, native mappings, child accounting, and optional vfork snapshot until
+publication commits them. An `image_txn` constructs an FDPIC image off-slot,
+then moves the completed process record into the slot before starting its
+native task and transferring the region lease to the address space. An
+`exec_txn` reserves and validates the replacement first, preserves the old
+image and process objects until the commit boundary, and detaches them only
+after the old native task has stopped.
+
+Every transaction has one phase-aware, idempotent abort path. Before exec
+commit, abort releases only the new reservation and resumes the unchanged old
+image. After commit, failure contains the transitioning guest, stops any
+published native task before releasing its resources, resumes a restored
+vfork parent exactly once, and leaves unrelated slots untouched. If the RTOS
+cannot confirm that a task stopped, its Linux resources remain attached rather
+than becoming dangling references. A stale vfork snapshot capability is
+treated as ownership corruption: the snapshot is never copied, and the
+affected parent/child pair is contained instead of leaving the parent parked.
+
+Thirteen single-shot, test-only failpoints cover every fork and exec
+acquisition, validation, publication, native-start, and region-commit
+boundary. Production builds compile the injection control surface out. Each
+injected failure runs the world validator after abort, including a second
+abort call, and checks resource identity before commit or isolated guest
+containment after commit.
+
+Clean production images built from oveRTOS `f03a724` and LXP `116660e`
+compare with Iteration 4 as follows:
+
+| Engine | Iteration 4 flash | Iteration 5 flash | Flash delta | Internal static RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 233,052 B | 235,116 B | +2,064 B (+0.886%) | 249,672 B | 0 B |
+| NuttX | 239,012 B | 241,252 B | +2,240 B (+0.937%) | 237,524 B | 0 B |
+| Zephyr | 279,808 B | 281,480 B | +1,672 B (+0.598%) | 258,304 B | 0 B |
+
+The added flash is transaction and containment policy; transactions are
+coordinator-stack objects and add no static tables. Target ABI sizes, slot and
+region counts, external-memory reservations, root filesystem, and generated
+configurations are unchanged. The FreeRTOS, NuttX, and Zephyr `.config`
+SHA-256 values still match those recorded at the top of this document.
+
+All 44 host CTest targets pass in both normal and AddressSanitizer plus
+UndefinedBehaviorSanitizer builds. The coordinator suite now runs 78 tests,
+up from 73, with real coverage of all 13 failpoints plus stale-snapshot
+containment. Seven ARM feature-gate combinations build warning-clean, the
+decoupling guard passes, and the Cortex-M4 QEMU suite reports
+`PASS: lxp-m4-ok`.
+
+FreeRTOS, NuttX, and Zephyr were each flashed to the STM32F746G-DISCO with the
+clean `ove-f03a724 lxp-116660e` identity. Every engine completed the three
+RTOS/Linux phase-one round trips, reached BusyBox `rcS`, getty, and inetd, and
+then completed an SSH `uname`, external `/bin/echo`, and three shell-loop
+fork/exec iterations. Every observed RT-scope window had zero misses, late
+finishes, IRQ overruns, and pending executions.
+
+| Engine | Startup releases | Startup p99 / p99.9 / max | Next-window releases | Next-window p99 / p99.9 / max |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 10,030 | <=10 / <=12 / 22.76 us | 10,046 | <=8 / <=8 / 7.85 us |
+| NuttX | 10,120 | <=12 / <=16 / 23.52 us | 10,030 | <=10 / <=10 / 9.83 us |
+| Zephyr | 10,016 | <=10 / <=20 / 66.54 us | 10,049 | <=10 / <=12 / 13.28 us |
+
+FreeRTOS and Zephyr again completed the early host socket smoke. NuttX
+retained its known early `connect failed rc=-9` result but subsequently brought
+up inetd and completed the SSH lifecycle test. The board was left running the
+clean NuttX image.
