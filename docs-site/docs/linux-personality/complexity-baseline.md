@@ -250,3 +250,75 @@ FreeRTOS A/B image reproduced the occasional cold-boot `vfork`/exec startup
 errors seen during validation, while a subsequent Iteration 2 boot completed
 cleanly. The behavior is therefore retained as a pre-existing startup issue,
 not attributed to the typed-state change.
+
+## Iteration 3 consolidated slot lifetime
+
+Iteration 3 makes one private `lxp_slot_runtime` the core authority for a slot
+incarnation. It contains the process record (and therefore the typed intent and
+wait state from Iteration 2), resume context, deferred mailbox, generation,
+host lifecycle, and runnable publication. This replaces the independently
+indexed process, resume, mailbox, generation, lifecycle, and used/runnable
+arrays. Public process-table access is now a bounded read operation rather than
+a writable global.
+
+`lxp_slot_ref_t` carries a slot index and generation across dispatch, fault,
+transaction, and delayed-completion boundaries. `lxp_region_ref_t` does the
+same for an address-space region. A prepared or snapshot region starts with a
+temporary slot-generation lease; successful construction transfers ownership
+to the `lxp_mm_t` address-space capability and clears that lease. Consequently,
+`CLONE_VM` tasks can outlive the slot that first acquired the region, and the
+region is released only after the final shared address-space reference.
+
+The three RTOS seams retain their native task handles and generation mirrors,
+but can no longer modify LXP process or runnable state. They use narrow
+generation-checked operations for runnable queries, syscall dispatch, region
+lookup, and memory-fault publication. The old writable process/used globals
+and public bare-slot dispatch/event entry points are gone.
+
+The target-ABI structural change relative to Iteration 2 is:
+
+| Object | Iteration 2 | Iteration 3 | Delta |
+|---|---:|---:|---:|
+| `lxp_proc_t` | 232 B | 240 B | +8 B |
+| `lxp_mm_t` | 68 B | 72 B | +4 B |
+| Aggregated slot runtime | parallel arrays | 464 B | single authority |
+| Deferred request | parallel 16 B entry | 16 B embedded | 0 B payload |
+| Per-slot coordinator core | 1,140 B | 1,160 B | +20 B |
+| Per-region coordinator core | 286 B | 292 B | +6 B |
+| FreeRTOS/NuttX coordinator static set | 20,472 B | 20,703 B | +231 B (+1.13%) |
+| Zephyr coordinator static set | 21,908 B | 22,156 B | +248 B (+1.13%) |
+
+The small increase buys generation-bearing capabilities in every stored slot
+and address-space reference. The 6,960-byte FreeRTOS/NuttX slot-runtime table
+is not directly comparable with Iteration 2's 3,480-byte process-only table:
+it now also contains the former resume, deferred, generation, lifecycle, and
+runnable arrays. The complete coordinator-static totals above are the
+like-for-like comparison.
+
+Clean production images built from oveRTOS `348a54d` and LXP `a7f3c4a`
+compare with Iteration 2 as follows:
+
+| Engine | Iteration 2 flash | Iteration 3 flash | Flash delta | Internal static RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 229,812 B | 232,204 B | +2,392 B (+1.04%) | 249,672 B | +512 B |
+| NuttX | 233,156 B | 236,916 B | +3,760 B (+1.61%) | 237,524 B | +320 B |
+| Zephyr | 276,920 B | 279,352 B | +2,432 B (+0.88%) | 258,304 B | +4,096 B |
+
+The generated configurations, root filesystem, slot and region counts, and
+external-memory reservations remain unchanged; the three `.config` hashes
+still match the values at the top of this document. Zephyr's 4 KiB RAM delta
+is a linker/MPU-region allocation step, not 4 KiB of new coordinator objects;
+the measured Zephyr coordinator-static increase is 248 bytes.
+
+All 44 host CTest targets pass in normal and AddressSanitizer plus
+UndefinedBehaviorSanitizer builds. The coordinator suite now runs 69 tests,
+including stale slot and region capabilities, generation wrap that skips zero,
+stale memory-fault publication, lease transfer, and shared-address-space
+release after the final task reference. The Cortex-M4 QEMU suite reports
+`PASS: lxp-m4-ok`.
+
+FreeRTOS, NuttX, and Zephyr images were each flashed to the
+STM32F746G-DISCO. Every engine completed the three RTOS/Linux phase-one
+round trips, reached BusyBox `rcS`, getty, and inetd, and reported zero
+RT-scope misses. The first complete RT-scope windows observed maximum dispatch
+latencies of 25.11 us on FreeRTOS, 24.33 us on NuttX, and 55.09 us on Zephyr.
