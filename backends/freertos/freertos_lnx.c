@@ -418,11 +418,11 @@ __attribute__((naked)) void SVC_Handler(void)
 
 /* ---- MemManage fault containment ------------------------------------------- */
 /* An UNPRIVILEGED program making an illegal access raises MemManage (enabled by the MPU port's
- * prvSetupMPU). Contain it like a default-action SIGSEGV: mark the proc exited (139), synthesize a
- * trusted return frame on its internal trampoline stack, wake the coordinator (which reaps the slot
- * + frees the region via EV_EXIT), and exception-return to the park loop. A fault from any
- * NON-program (privileged kernel) context is a real bug -> fatal. Strong symbol overriding the weak
- * MemManage_Handler in the CMSIS startup. */
+ * prvSetupMPU). Contain it like a default-action SIGSEGV: publish a typed exit intent (139),
+ * synthesize a trusted return frame on its internal trampoline stack, wake the coordinator (which
+ * reaps the slot + frees the region via EV_EXIT), and exception-return to the park loop. A fault
+ * from any NON-program (privileged kernel) context is a real bug -> fatal. Strong symbol overriding
+ * the weak MemManage_Handler in the CMSIS startup. */
 static void freertos_event_post(void) LXP_FAULT_GPR_ONLY; /* defined with the vtable below */
 
 /* Terminal handler for a fault that cannot be attributed to a guest — i.e. a fault in host /
@@ -475,7 +475,6 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		diag->psp = psp;
 		diag->exc_return = exc_return;
 
-		g_lxp_proc[sidx].exited = 1;
 		g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
 		g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
 		g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
@@ -483,6 +482,7 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
 						: (diag->cfsr & (1u << 15)) ? diag->bfar
 									    : 0u;
+		(void)lxp_intent_exit(&g_lxp_proc[sidx], 0);
 
 		/* Never trust the faulting PSP frame: MSTKERR/MLSPERR means it may not
 		 * exist at all, and an arbitrary guest PSP may point at read-only QSPI or

@@ -905,7 +905,6 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 				g_guest_fault_dump_lines - g_guest_fault_dump_consumed;
 			g_guest_fault_dump_consumed = g_guest_fault_dump_lines;
 
-			g_lxp_proc[sidx].exited = 1;
 			g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
 			g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
 			g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
@@ -913,6 +912,7 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 			g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
 							: (diag->cfsr & (1u << 15)) ? diag->bfar
 										    : 0u;
+			(void)lxp_intent_exit(&g_lxp_proc[sidx], 0);
 			lxp_event_post_slot(sidx);
 			return;
 		}
