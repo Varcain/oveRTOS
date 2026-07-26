@@ -459,7 +459,17 @@ static void on_guest_exit(const lxp_guest_exit_info_t *info)
 /* ---- rootfs (parsed from the board-selected Buildroot CPIO backing) -------- */
 #define ROOTFS_MAX_FILES 512
 static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
-static char g_rootfs_names[16 * 1024];
+/* NuttX must finish early driver registration from the SRAM1 tail before it can
+ * add SRAM2 and DTCM to the heap. Keep the STM32 pathname copy within the
+ * current image's measured 11,101 bytes plus useful growth margin; reserving
+ * 16 KiB here leaves g_idle_topstack beyond SRAM1 after the personality's
+ * per-process state is linked, corrupting the initial allocator before boot. */
+#if defined(CONFIG_OVE_RTOS_NUTTX) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#define ROOTFS_NAME_BYTES (12 * 1024)
+#else
+#define ROOTFS_NAME_BYTES (16 * 1024)
+#endif
+static char g_rootfs_names[ROOTFS_NAME_BYTES];
 static int g_rootfs_n;
 static const uint8_t *g_rootfs_image;
 static size_t g_rootfs_image_size;
