@@ -271,13 +271,15 @@ CONFIG_EXECUTE_XOR_WRITE=y
 # bytes (32 slots). gen_kobject_list.py hard-errors ("Too many thread objects") if it's too small;
 # 4 is harmless for the an521 (fewer threads).
 CONFIG_MAX_THREAD_BYTES=4
-# Persistent guest tasks removed the former create/abort-on-every-park churn
-# which made Zephyr's slice timeout unsafe. Apply native round-robin only from
-# the guest priority downward: coordinator and host RT priorities 0..5 remain
-# outside the policy and preempt guests immediately.
-CONFIG_TIMESLICING=y
-CONFIG_TIMESLICE_SIZE={{ config.get("CONFIG_OVE_LINUX_GUEST_QUANTUM_MS", 10) }}
-CONFIG_TIMESLICE_PRIORITY=6
+# Keep native round-robin disabled for the personality. Persistent guest tasks
+# removed task deletion/recreation, but every blocking syscall still suspends
+# and resumes a guest. On Zephyr 4.4 that rate of per-CPU slice-timeout resets
+# can reinsert a zero-delta timeout while tickless sys_clock_announce() is
+# draining elapsed ticks; the timer ISR then loops forever and the STM32 locks
+# during lvmusic plus TCP traffic. Coordinator and host RT priorities 0..5
+# already preempt guests immediately, and blocking syscalls rotate guests.
+# A no-syscall guest still needs a seam-specific quantum implementation.
+CONFIG_TIMESLICING=n
 # Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the
 # program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC
 # display, which the headless personality disables — so enable it explicitly. No-op on the an521.

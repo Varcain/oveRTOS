@@ -63,10 +63,12 @@ config OVE_LINUX_GUEST_QUANTUM_MS
       equal-priority guest is runnable. Host real-time and coordinator threads
       remain at higher priorities and can preempt guests immediately.
 
-      FreeRTOS applies this as a guest-only tick budget, Zephyr enables native
-      time slicing starting at the guest priority, and NuttX sets its
-      round-robin interval. This bound is required even for a guest that makes
-      no syscalls and never blocks.
+      FreeRTOS applies this as a guest-only tick budget and NuttX sets its
+      round-robin interval. Zephyr 4.4's native time slicing is disabled for
+      the personality because its per-CPU slice timeout can deadlock the
+      tickless timeout drain under the guest park/resume rate. Zephyr guests
+      therefore rotate at blocking syscalls today; a compute-only guest still
+      needs a seam-specific handoff mechanism.
 
 config OVE_BUILDROOT
     string "Buildroot tree path (Linux-personality rootfs.cpio source)"
