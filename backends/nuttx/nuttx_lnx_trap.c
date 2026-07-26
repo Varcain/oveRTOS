@@ -37,6 +37,7 @@
 
 #include <stddef.h>
 
+#include <nuttx/arch.h> /* up_perf_gettime — exact guest runtime accounting */
 #include <nuttx/cache.h> /* up_invalidate_dcache — reused-region coherency (cacheable prog pool) */
 #include <nuttx/clock.h> /* MSEC2TICK */
 #include <nuttx/irq.h>	 /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
@@ -255,6 +256,79 @@ static uint8_t *nuttx_exec_stage(size_t *cap)
 static struct task_tcb_s g_tcb[LXP_NSLOT];
 static int g_pid[LXP_NSLOT];
 static uint32_t g_task_generation[LXP_NSLOT];
+
+#if defined(CONFIG_ARCH_PERF_EVENTS) && defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+/* The generic NuttX thread-runtime registry is deliberately bounded. A busy
+ * Linux-personality image has more native tasks than that registry can hold,
+ * and NuttX enumerates the guest TCBs late enough that they can be omitted.
+ * Keep the guest-facing accounting exact and bounded by the already configured
+ * personality slot count instead. The switch hook folds DWT cycles into the
+ * outgoing guest slot; lxp_seam_thread_list() then guarantees one snapshot
+ * entry for every live guest even when host enumeration overflows. */
+static uint64_t g_guest_runtime_cycles[LXP_NSLOT];
+static pid_t g_guest_runtime_current = -1;
+static uint32_t g_guest_runtime_last;
+static bool g_guest_runtime_ready;
+
+static void guest_runtime_fold(uint32_t now)
+{
+	if (!g_guest_runtime_ready) {
+		g_guest_runtime_last = now;
+		g_guest_runtime_ready = true;
+		return;
+	}
+
+	uint32_t delta = now - g_guest_runtime_last;
+	for (int s = 0; s < LXP_NSLOT; s++) {
+		if (g_pid[s] >= 0 && g_pid[s] == g_guest_runtime_current) {
+			g_guest_runtime_cycles[s] += delta;
+			break;
+		}
+	}
+	g_guest_runtime_last = now;
+}
+
+static void guest_runtime_switch(pid_t next_pid)
+{
+	guest_runtime_fold((uint32_t)up_perf_gettime());
+	g_guest_runtime_current = next_pid;
+}
+
+static void guest_runtime_reset(pid_t current_pid)
+{
+	irqstate_t flags = enter_critical_section();
+	memset(g_guest_runtime_cycles, 0, sizeof(g_guest_runtime_cycles));
+	g_guest_runtime_current = current_pid;
+	g_guest_runtime_last = (uint32_t)up_perf_gettime();
+	g_guest_runtime_ready = true;
+	leave_critical_section(flags);
+}
+
+static uint64_t guest_runtime_us(int sidx)
+{
+	irqstate_t flags = enter_critical_section();
+	guest_runtime_fold((uint32_t)up_perf_gettime());
+	uint64_t cycles = g_guest_runtime_cycles[sidx];
+	leave_critical_section(flags);
+	return ove_nuttx_runtime_cycles_to_us(cycles);
+}
+#else
+static void guest_runtime_switch(pid_t next_pid)
+{
+	(void)next_pid;
+}
+
+static void guest_runtime_reset(pid_t current_pid)
+{
+	(void)current_pid;
+}
+
+static uint64_t guest_runtime_us(int sidx)
+{
+	(void)sidx;
+	return 0;
+}
+#endif
 
 /* Device mappings are part of a Linux slot's unprivileged MPU view, not global
  * process state. Regions 5 and 6 cover the two ranges recorded by
@@ -537,6 +611,11 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	memcpy(guest_regs, g_tcb[sidx].cmn.xcp.regs, XCPTCONTEXT_SIZE);
 	g_tcb[sidx].cmn.xcp.regs = guest_regs;
 	g_pid[sidx] = g_tcb[sidx].cmn.pid;
+#if defined(CONFIG_ARCH_PERF_EVENTS) && defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+	irqstate_t flags = enter_critical_section();
+	g_guest_runtime_cycles[sidx] = 0;
+	leave_critical_section(flags);
+#endif
 	return 0;
 }
 
@@ -767,8 +846,37 @@ static void nuttx_event_wait(unsigned ms)
 	(void)nxsem_tickwait(&g_ev, MSEC2TICK(ms));
 }
 
-/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout) so
- * the seam can fill the engine's lxp_thread_info-typed thread_list op. */
+static lxp_thread_state_t guest_thread_state(const struct tcb_s *tcb)
+{
+	switch (tcb->task_state) {
+	case TSTATE_TASK_RUNNING:
+		return LXP_THREAD_STATE_RUNNING;
+	case TSTATE_TASK_READYTORUN:
+		return LXP_THREAD_STATE_READY;
+	case TSTATE_TASK_STOPPED:
+		return LXP_THREAD_STATE_SUSPENDED;
+	case TSTATE_TASK_INACTIVE:
+		return LXP_THREAD_STATE_TERMINATED;
+	default:
+		return LXP_THREAD_STATE_BLOCKED;
+	}
+}
+
+static int slot_for_pid(uintptr_t identity)
+{
+	for (int s = 0; s < LXP_NSLOT; s++)
+		if (g_pid[s] >= 0 && identity == (uintptr_t)(uint32_t)g_pid[s])
+			return s;
+	return LXP_THREAD_SLOT_NONE;
+}
+
+/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout).
+ *
+ * Host enumeration may overflow before NuttX reaches its lnx TCBs. Compact any
+ * guest entries out of that bounded result and append every live guest from the
+ * seam-owned TCB table with the exact per-slot DWT runtime. This both prevents a
+ * display-name dependency and guarantees that LXP can charge guest CPU even
+ * when some low-activity host threads remain represented by threads-overflow. */
 static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 {
 	_Static_assert(sizeof(struct lxp_thread_info) == sizeof(struct ove_thread_info),
@@ -779,19 +887,49 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	_Static_assert(offsetof(struct lxp_thread_info, lxp_slot) ==
 			       offsetof(struct ove_thread_info, lxp_slot),
 		       "LXP/ove thread slot offset mismatch");
+	size_t guest_count = 0;
+	for (int s = 0; s < LXP_NSLOT; s++)
+		if (g_pid[s] >= 0)
+			guest_count++;
+	size_t host_limit = guest_count < m ? m - guest_count : 0;
 	size_t local_n = 0;
 	size_t *written = n ? n : &local_n;
-	int rc = ove_thread_list((struct ove_thread_info *)o, m, written);
-	size_t count = *written < m ? *written : m;
-	for (size_t i = 0; i < count; i++) {
-		o[i].lxp_slot = LXP_THREAD_SLOT_NONE;
-		for (int s = 0; s < LXP_NSLOT; s++)
-			if (g_pid[s] >= 0 &&
-			    o[i].identity == (uintptr_t)(uint32_t)g_pid[s]) {
-				o[i].lxp_slot = s;
-				break;
-			}
+	int rc = ove_thread_list((struct ove_thread_info *)o, host_limit, written);
+	size_t raw_count = *written < host_limit ? *written : host_limit;
+	size_t count = 0;
+
+	for (size_t i = 0; i < raw_count; i++) {
+		if (slot_for_pid(o[i].identity) != LXP_THREAD_SLOT_NONE)
+			continue;
+		if (count != i)
+			o[count] = o[i];
+		o[count].lxp_slot = LXP_THREAD_SLOT_NONE;
+		count++;
 	}
+
+	for (int s = 0; s < LXP_NSLOT; s++) {
+		if (g_pid[s] < 0)
+			continue;
+		if (count >= m) {
+			rc = OVE_ERR_QUEUE_FULL;
+			break;
+		}
+
+		struct lxp_thread_info *info = &o[count++];
+		memset(info, 0, sizeof(*info));
+#if CONFIG_TASK_NAME_SIZE > 0
+		info->name = g_tcb[s].cmn.name;
+#else
+		info->name = "lnx";
+#endif
+		info->identity = (uintptr_t)(uint32_t)g_pid[s];
+		info->lxp_slot = s;
+		info->state = guest_thread_state(&g_tcb[s].cmn);
+		info->priority = (int)g_tcb[s].cmn.sched_priority;
+		info->stack_size = g_tcb[s].cmn.adj_stack_size;
+		info->state_times.running_us = guest_runtime_us(s);
+	}
+	*written = count;
 	return rc;
 }
 
@@ -1075,6 +1213,7 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	(void)drv;
 	if (!g_lxp_active || !tcb)
 		return;
+	guest_runtime_switch(tcb->pid);
 	ove_nuttx_runtime_switch(tcb->pid);
 	/* Defensive: this hook fires on EVERY switch, including kernel/coordinator tasks. A valid
 	 * tcb lives in on-chip SRAM/DTCM (0x2000_0000..0x2008_0000); anything else would BusFault on
@@ -1215,6 +1354,7 @@ static int nuttx_prepare(void)
 		g_lxp_note_registered = true;
 	}
 	ove_nuttx_runtime_reset(getpid());
+	guest_runtime_reset(getpid());
 #endif
 	return 0;
 }
