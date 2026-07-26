@@ -72,3 +72,5 @@ own guest programs as FDPIC binaries under `board/overtos/progs/` (see
 - [Capabilities & limitations](capabilities.md) — what runs, and the current simplifications.
 - [Debugging](debugging.md) — turnkey source-level GDB of FDPIC guest programs.
 - [Benchmarks](benchmarks.md) — the personality tax (process vs native thread) on silicon.
+- [Complexity remediation baseline](complexity-baseline.md) — frozen runtime,
+  firmware-size, and invariant guardrails for the structural cleanup.

@@ -224,6 +224,15 @@ static char *put_dec(char *p, uint32_t v)
 	return p;
 }
 
+static char *put_sdec(char *p, int32_t v)
+{
+	if (v < 0) {
+		*p++ = '-';
+		return put_dec(p, (uint32_t)(-(int64_t)v));
+	}
+	return put_dec(p, (uint32_t)v);
+}
+
 static char *put_hex32(char *p, uint32_t v)
 {
 	static const char hex[] = "0123456789abcdef";
@@ -848,8 +857,84 @@ static void audit_thread_free(const char *name, ove_thread_t h)
 }
 #endif /* !CONFIG_OVE_RTOS_FREERTOS */
 
+static void lxp_diag_audit(void)
+{
+	lxp_diag_size_report_t sizes;
+	lxp_diag_size_report(&sizes);
+	{
+		char line[224];
+		char *p = put_str(line, "[lxp-size] slots=");
+		p = put_dec(p, sizes.slots);
+		p = put_str(p, " regions=");
+		p = put_dec(p, sizes.regions);
+		p = put_str(p, " proc=");
+		p = put_dec(p, (uint32_t)sizes.proc);
+		p = put_str(p, " slot-core=");
+		p = put_dec(p, (uint32_t)sizes.per_slot_core);
+		p = put_str(p, " region-core=");
+		p = put_dec(p, (uint32_t)sizes.per_region_core);
+		p = put_str(p, " slot-table=");
+		p = put_dec(p, (uint32_t)sizes.slot_table);
+		p = put_str(p, " coord-static=");
+		p = put_dec(p, (uint32_t)sizes.coordinator_static);
+		p = put_str(p, " exec-capture=");
+		p = put_dec(p, (uint32_t)sizes.exec_capture);
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(line);
+	}
+	{
+		char line[224];
+		char *p = put_str(line, "[lxp-size] mm=");
+		p = put_dec(p, (uint32_t)sizes.mm);
+		p = put_str(p, " files=");
+		p = put_dec(p, (uint32_t)sizes.files);
+		p = put_str(p, " fs=");
+		p = put_dec(p, (uint32_t)sizes.fs);
+		p = put_str(p, " sighand=");
+		p = put_dec(p, (uint32_t)sizes.sighand);
+		p = put_str(p, " group=");
+		p = put_dec(p, (uint32_t)sizes.thread_group);
+		p = put_str(p, " arena=");
+		p = put_dec(p, (uint32_t)sizes.arena);
+		p = put_str(p, " resume=");
+		p = put_dec(p, (uint32_t)sizes.resume_context);
+		p = put_str(p, " mailbox=");
+		p = put_dec(p, (uint32_t)sizes.deferred_request);
+		p = put_str(p, " signal=");
+		p = put_dec(p, (uint32_t)sizes.signal_save_stack);
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(line);
+	}
+
+	lxp_diag_health_t health;
+	lxp_diag_health(&health);
+	{
+		char line[224];
+		char *p = put_str(line, "[lxp-world] checks=");
+		p = put_dec(p, health.checks);
+		p = put_str(p, " failures=");
+		p = put_dec(p, health.failures);
+		if (health.failures) {
+			p = put_str(p, " first=");
+			p = put_str(p, lxp_diag_issue_name(health.first_error.issue));
+			p = put_str(p, " slot=");
+			p = put_sdec(p, health.first_error.slot);
+			p = put_str(p, " region=");
+			p = put_sdec(p, health.first_error.region);
+			p = put_str(p, " last=");
+			p = put_str(p, lxp_diag_issue_name(health.last_error.issue));
+		}
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(line);
+	}
+}
+
 static void stack_audit(void)
 {
+	lxp_diag_audit();
 	sh_write0("\n=== stack high-water audit (deepest usage this run) ===\n");
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 	/* FreeRTOS runs the coordinator in an app-owned task (g_demo/g_demo_stack). */
