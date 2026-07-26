@@ -322,3 +322,52 @@ STM32F746G-DISCO. Every engine completed the three RTOS/Linux phase-one
 round trips, reached BusyBox `rcS`, getty, and inetd, and reported zero
 RT-scope misses. The first complete RT-scope windows observed maximum dispatch
 latencies of 25.11 us on FreeRTOS, 24.33 us on NuttX, and 55.09 us on Zephyr.
+
+## Iteration 4 decomposed coordinator
+
+Iteration 4 separates coordinator policy into private lifecycle, guest-event,
+primary-event, blocked-operation, fork/vfork, exec, and exit/reap modules.
+`lxp_run.c` remains the single translation unit: it unity-includes those
+implementation parts so the coordinator state stays private while each policy
+area becomes independently reviewable and directly reachable by the
+coordinator unit suite. Standalone, test, fuzz, feature-gate, and Cortex-M4
+build source discovery explicitly excludes the included implementation parts.
+
+The main coordinator loop now performs only event claim, typed primary
+dispatch, typed blocked-state scan, liveness/maintenance, and event wait. Its
+fair rotating cursor, one-event claim limit, bounded critical section,
+readiness wakeups, nearest-deadline calculation, and existing polling fallback
+are unchanged. Moving policy out of the loop reduces `lxp_run.c` from 3,704 to
+2,771 lines.
+
+Handlers express lifecycle changes as typed outcome requests through one
+applicator. Only the lifecycle module invokes `spawn_launch`, `spawn_resume`,
+`park_prepare`, `park_slot`, or `abort_slot`; it also owns the corresponding
+host-state and runnable publication. A failed native transition therefore
+follows the same containment path regardless of whether it originated in fork,
+exec, exit, signal, timeout, or an I/O retry.
+
+Clean production images built from oveRTOS `75113a4` and LXP `5adf7fc`
+compare with Iteration 3 as follows:
+
+| Engine | Iteration 3 flash | Iteration 4 flash | Flash delta | Internal static RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 232,204 B | 233,052 B | +848 B (+0.365%) | 249,672 B | 0 B |
+| NuttX | 236,916 B | 239,012 B | +2,096 B (+0.885%) | 237,524 B | 0 B |
+| Zephyr | 279,352 B | 279,808 B | +456 B (+0.163%) | 258,304 B | 0 B |
+
+The additional flash is executable transition policy exposed as function
+boundaries rather than new runtime state. Target ABI sizes, coordinator static
+tables, external-memory reservations, root filesystem, slot and region counts,
+and generated configurations are unchanged. All three `.config` hashes still
+match the values recorded at the top of this document.
+
+All 44 normal host test targets pass. The coordinator suite now runs 73 tests,
+including fair cursor rotation, stale-hint consumption, primary park outcome,
+expired-timer resume, and fail-closed rejection of an out-of-range claimed
+slot. All 73 coordinator tests also pass under AddressSanitizer and
+UndefinedBehaviorSanitizer. Seven ARM feature-gate combinations build
+warning-clean, the Cortex-M4 QEMU suite reports `PASS: lxp-m4-ok`, and the
+decoupling check passes. The syscall documentation gate still reports the
+pre-existing unclassified `link`/`linkat` matrix entries; the coordinator
+change does not alter syscall classification.
