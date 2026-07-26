@@ -10,8 +10,8 @@
  * handle-based lxp_net_ops to the ove_net HAL (posix_net here) and owns the
  * socket-storage pool. The module's own logic is tested in isolation in the lxp
  * repo (lxp/tests, its own POSIX port); this checks only the contract that lives
- * on the CONSUMER side: that the adapter statically wires a complete
- * g_lxp_net_ops and that its open/close bridge reaches the ove_net backend.
+ * on the CONSUMER side: that the adapter exports a complete, versioned provider
+ * and that its open/close bridge reaches the ove_net backend.
  */
 
 #include "../framework/ove_test.h"
@@ -19,14 +19,16 @@
 #include "lxp/lxp_net_ops.h"
 #include "ove/types.h" /* OVE_OK — the ove_net return the adapter forwards */
 
-/* The adapter statically points g_lxp_net_ops at its own ops table (no init
- * call), so merely linking the adapter TU must yield a fully-populated port —
- * a NULL entry would be a null-deref at the first socket syscall. */
+extern const struct lxp_net_ops g_lxp_host_net_ops;
+
+/* The exported adapter table passed to lxp_run must be complete and versioned. */
 static void test_adapter_ops_wired(void **state)
 {
 	(void)state;
-	const struct lxp_net_ops *ops = g_lxp_net_ops;
+	const struct lxp_net_ops *ops = &g_lxp_host_net_ops;
 	assert_non_null(ops);
+	assert_int_equal(ops->abi_version, LXP_NET_OPS_ABI_VERSION);
+	assert_int_equal(ops->struct_size, sizeof(*ops));
 	assert_non_null(ops->sock_open);
 	assert_non_null(ops->sock_accept);
 	assert_non_null(ops->sock_close);
@@ -57,7 +59,7 @@ static void test_adapter_ops_wired(void **state)
 static void test_adapter_open_close(void **state)
 {
 	(void)state;
-	const struct lxp_net_ops *ops = g_lxp_net_ops;
+	const struct lxp_net_ops *ops = &g_lxp_host_net_ops;
 
 	lxp_socket_t s = NULL;
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_OK);

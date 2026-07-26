@@ -80,19 +80,26 @@
 #define UNUSED(x) ((void)(x))
 #endif
 
-/* ---- the Linux-personality port binding -----------------------------------
- * The module's lxp_run() is the port entry: it takes the engine vtable plus the
- * net/display ports. oveRTOS supplies the engine (g_lxp_host_engine, from the
- * compiled freertos/zephyr/nuttx seam) and pre-wires the net/display ports via
- * the backends/common adapter globals (g_lxp_net_ops / g_lxp_disp_ops), so we pass
- * NULL for those (lxp_run keeps a pre-set global) and NULL config (geometry stays
- * at the board default). */
+/* ---- the Linux-personality port binding ----------------------------------- */
 extern const lxp_os_ops_t g_lxp_host_engine;
+#if defined(CONFIG_OVE_LINUX_NET)
+extern const lxp_net_ops_t g_lxp_host_net_ops;
+#define APP_LXP_NET_OPS (&g_lxp_host_net_ops)
+#else
+#define APP_LXP_NET_OPS NULL
+#endif
+#if defined(CONFIG_OVE_LINUX_DEV)
+extern const lxp_display_ops_t g_lxp_host_display_ops;
+#define APP_LXP_DISPLAY_OPS (&g_lxp_host_display_ops)
+#else
+#define APP_LXP_DISPLAY_OPS NULL
+#endif
 
 static int app_lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 		       const char *const argv[])
 {
-	return lxp_run(&g_lxp_host_engine, NULL, NULL, NULL, cfg, path, argc, argv);
+	return lxp_run(&g_lxp_host_engine, APP_LXP_NET_OPS,
+		       APP_LXP_DISPLAY_OPS, NULL, cfg, path, argc, argv);
 }
 
 /* ---- the personality console (program stdin/stdout + program exit) --------- */
@@ -454,6 +461,8 @@ static void on_guest_exit(const lxp_guest_exit_info_t *info)
 static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
 static char g_rootfs_names[16 * 1024];
 static int g_rootfs_n;
+static const uint8_t *g_rootfs_image;
+static size_t g_rootfs_image_size;
 
 /* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
  * this must run in a task; Zephyr and NuttX call ove_main() from running scheduler
@@ -911,15 +920,22 @@ static void demo_body(void *arg)
 	 * personality BEFORE the first read of it (the CPIO parse just below): on the STM32F746 this
 	 * installs a bounded, non-cacheable MPU region for this coordinator task so the M7 D-cache
 	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
-	lxp_rootfs_window(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX);
+	if (g_lxp_host_engine.rootfs_window)
+		g_lxp_host_engine.rootfs_window(LXP_QSPI_ROOTFS,
+					      LXP_QSPI_ROOTFS_MAX);
+	g_rootfs_image = LXP_QSPI_ROOTFS;
+	g_rootfs_image_size = LXP_QSPI_ROOTFS_MAX;
 	g_rootfs_n = lxp_cpio_to_rootfs(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX, g_rootfs,
 					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-	/* PSRAM is ordinary RAM in QEMU (no D-cache / external-NOR hazard), so — unlike the STM32
-	 * QSPI case — no lxp_rootfs_window MPU shim is needed; the engine-common weak no-op stands. */
+	/* PSRAM is ordinary RAM in QEMU (no D-cache / external-NOR hazard). */
+	g_rootfs_image = LXP_PSRAM_ROOTFS;
+	g_rootfs_image_size = LXP_PSRAM_ROOTFS_MAX;
 	g_rootfs_n = lxp_cpio_to_rootfs(LXP_PSRAM_ROOTFS, LXP_PSRAM_ROOTFS_MAX, g_rootfs,
 					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
 #else
+	g_rootfs_image = ove_test_rootfs_cpio;
+	g_rootfs_image_size = ove_test_rootfs_cpio_len;
 	g_rootfs_n = lxp_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
 					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
 					    sizeof(g_rootfs_names));
@@ -1074,7 +1090,7 @@ static void demo_body(void *arg)
 	 * coordinator's event_wait — so both directions co-run without the worker preempting the
 	 * coordinator. (The loader's QUADSPI-NOR reads are preemption-safe in their own right — the
 	 * coordinator reads the NOR through a non-cacheable bounded MPU region, see
-	 * lxp_rootfs_window — so this priority is about I/O ordering, not protecting the load.) */
+	 * rootfs_window callback — so this priority is about I/O ordering, not protecting the load.) */
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
 			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
 		sh_write0("[demo] FAIL: ove_thread_init\n");
@@ -1089,6 +1105,8 @@ static void demo_body(void *arg)
 	const lxp_run_config_t cfg1 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,
+		.rootfs_image = g_rootfs_image,
+		.rootfs_image_size = g_rootfs_image_size,
 		.write_fn = consume_write,
 		.read_fn = feed_read,
 		.io_ctx = NULL,
@@ -1136,6 +1154,8 @@ static void demo_body(void *arg)
 	const lxp_run_config_t cfg2 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,
+		.rootfs_image = g_rootfs_image,
+		.rootfs_image_size = g_rootfs_image_size,
 		.write_fn = console_write,
 		.read_fn = console_read,
 		.console_poll = console_poll,

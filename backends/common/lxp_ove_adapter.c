@@ -14,8 +14,9 @@
  * enum, so a field copy, not a cast). Engine-agnostic: same adapter for all three
  * RTOS engines and the host test.
  *
- * g_lxp_net_ops is statically pointed here, so linking this TU wires the module to
- * the ove_net stack (no init call). A non-oveRTOS host links its own adapter.
+ * The exported provider table is passed explicitly to lxp_run(), which publishes
+ * it only for the duration of the personality run. A non-oveRTOS host supplies
+ * its own table.
  */
 
 #include "ove_config.h"
@@ -210,7 +211,9 @@ static int a_netif_set_up(lxp_netif_t nif, int up)
 	return ove_netif_set_up((ove_netif_t)nif, up);
 }
 
-static const struct lxp_net_ops g_ove_adapter_net_ops = {
+const struct lxp_net_ops g_lxp_host_net_ops = {
+	.abi_version = LXP_NET_OPS_ABI_VERSION,
+	.struct_size = sizeof(struct lxp_net_ops),
 	.sock_open = a_open,
 	.sock_accept = a_accept,
 	.sock_close = a_close,
@@ -238,9 +241,7 @@ static const struct lxp_net_ops g_ove_adapter_net_ops = {
 #endif
 };
 
-/* The module reads the net port via this global; the module's lxp_run() only
- * OVERWRITES it when passed a non-NULL net_ops, so this static wiring stands for
- * both the firmware (app passes NULL) and the hermetic host tests (no lxp_run). */
-const struct lxp_net_ops *g_lxp_net_ops = &g_ove_adapter_net_ops;
+/* Active only while lxp_run() publishes a provider. */
+const struct lxp_net_ops *g_lxp_net_ops;
 
 #endif /* CONFIG_OVE_LINUX_NET */

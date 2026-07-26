@@ -57,7 +57,7 @@
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#include "lxp/lxp_netfs.h"
 #endif
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
@@ -243,7 +243,7 @@ static uint8_t *const g_netfs_exec_stage =
 #else
 static uint8_t g_netfs_exec_stage[NUTTX_EXEC_STAGE_BYTES] __attribute__((aligned(32)));
 #endif
-uint8_t *lxp_netfs_exec_stage(size_t *cap)
+static uint8_t *nuttx_exec_stage(size_t *cap)
 {
 	if (cap)
 		*cap = NUTTX_EXEC_STAGE_BYTES;
@@ -799,6 +799,8 @@ static int nuttx_prepare(void);
 static void nuttx_teardown(void);
 
 const lxp_os_ops_t g_lxp_host_engine = {
+	.abi_version = LXP_OS_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_os_ops_t),
 	.prepare = nuttx_prepare,
 	.teardown = nuttx_teardown,
 	.region = nuttx_region,
@@ -816,7 +818,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.event_post = nuttx_event_post,
 	.event_wait = nuttx_event_wait,
 	/* OS-service ops (host adapter). cache_* left NULL: NuttX's guest memory is
-	 * coherent here (D-cache off), matching the former weak no-op lxp_guest_flush.
+	 * coherent here (D-cache off).
 	 * coord_map left NULL too: the coordinator is privileged (PRIVDEFENA) with full
 	 * access to the guest pools, so no per-slot cacheable MPU remap is needed. */
 	.time_us = ove_time_get_us,
@@ -826,6 +828,9 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.system_version = lxp_seam_system_version,
 	.random_fill =
 		nuttx_random_fill, /* REQUIRED: without it exec() can't seed AT_RANDOM → no launch */
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	.exec_stage = nuttx_exec_stage,
+#endif
 };
 
 /* ---- unprivileged isolation: MPU region setup ------------------------------ */

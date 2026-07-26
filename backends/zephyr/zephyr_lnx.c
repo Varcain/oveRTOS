@@ -40,7 +40,7 @@
 #include "ove_zephyr_lnx_metrics.h"
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#include "lxp/lxp_netfs.h"
 #endif
 
 BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_LXP_COORDINATOR,
@@ -125,7 +125,7 @@ _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_
  * NOLOAD region as the program pools (SDRAM1 on the real F746 / PSRAM on the an521) → RAM-resident,
  * zero flash cost. Sized for a small/medium FDPIC binary: only the exec's OWN text+data is fetched;
  * its libc.so/ld.so stay XIP from the LOCAL rootfs cpio. Mirrors the FreeRTOS/NuttX g_netfs_exec_stage. */
-uint8_t *lxp_netfs_exec_stage(size_t *cap)
+static uint8_t *zephyr_exec_stage(size_t *cap)
 {
 	if (cap)
 		*cap = sizeof(g_netfs_exec_stage);
@@ -976,6 +976,8 @@ static const char *lxp_seam_system_version(void)
 }
 
 const lxp_os_ops_t g_lxp_host_engine = {
+	.abi_version = LXP_OS_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_os_ops_t),
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
 	.exec_capture = zephyr_exec_capture,
@@ -996,6 +998,9 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	.exec_stage = zephyr_exec_stage,
+#endif
 };
 
 /* The public lxp_run() now lives in the module (src/lxp_run.c). This seam supplies
