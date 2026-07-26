@@ -592,7 +592,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 	size_t count = 0;
 	struct ove_thread *t = thread_list_head;
-	while (t && count < max_count && count < 16) {
+	while (t && count < max_count) {
 		uint64_t cpu_ns = _thread_cpu_ns(t->tid);
 		if (refresh) {
 			uint64_t dcpu = (t->cpu_prev_ns && cpu_ns > t->cpu_prev_ns)
@@ -607,6 +607,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		}
 
 		out[count].name = t->name ? t->name : "?";
+		out[count].identity = (uintptr_t)t;
+		out[count].lxp_slot = -1;
 		out[count].state = (ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		out[count].priority = t->priority;
 		out[count].stack_used =
@@ -631,5 +633,5 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 	if (actual_count)
 		*actual_count = count;
-	return OVE_OK;
+	return t ? OVE_ERR_QUEUE_FULL : OVE_OK;
 }

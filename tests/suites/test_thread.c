@@ -7,7 +7,9 @@
  */
 
 #include "../framework/ove_test.h"
+#include <stdbool.h>
 #include <stdatomic.h>
+#include <string.h>
 
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STACK(s_th_stack, 4096);
@@ -286,6 +288,40 @@ static void test_runtime_stats(void **state)
 	ove_test_thread_destroy(h);
 }
 
+/* 17. enumeration exposes a stable native identity and leaves personality
+ * ownership unset in the generic backend. */
+static void test_thread_list_identity(void **state)
+{
+	(void)state;
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "tenum", entry_spin, NULL,
+					       s_th_stack, 4096));
+	test_msleep(20);
+
+	struct ove_thread_info info[32];
+	size_t count = 0;
+	int rc = ove_thread_list(info, 32, &count);
+	assert_true(rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL ||
+		    rc == OVE_ERR_NOT_SUPPORTED);
+	if (rc != OVE_ERR_NOT_SUPPORTED) {
+		bool found = false;
+		for (size_t i = 0; i < count; i++) {
+			if (strcmp(info[i].name, "tenum") == 0) {
+				assert_true(info[i].identity != 0);
+				assert_int_equal(info[i].lxp_slot, -1);
+				found = true;
+				break;
+			}
+		}
+		assert_true(found);
+	}
+
+	atomic_store(&g_keep_running, 0);
+	test_msleep(20);
+	ove_test_thread_destroy(h);
+}
+
 #ifdef CONFIG_OVE_ZERO_HEAP
 /* Hand-rolled misaligned stack: aligned(8) on the full array, but we
  * pass in a +1 offset so the backend sees a misaligned pointer.
@@ -329,6 +365,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_destroy_null),
 #endif
 		cmocka_unit_test_teardown(test_runtime_stats, teardown_stop_spin),
+		cmocka_unit_test_teardown(test_thread_list_identity, teardown_stop_spin),
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),
 #endif

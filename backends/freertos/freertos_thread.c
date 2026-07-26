@@ -335,7 +335,7 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 	return OVE_OK;
 }
 
-#define OVE_FRT_TASK_REGISTRY_MAX 24
+#define OVE_FRT_TASK_REGISTRY_MAX 32
 
 #if configUSE_TRACE_FACILITY
 /*
@@ -355,6 +355,7 @@ struct frt_task_registry_entry {
 
 static struct frt_task_registry_entry g_frt_tasks[OVE_FRT_TASK_REGISTRY_MAX];
 static UBaseType_t g_frt_task_count;
+static bool g_frt_task_overflow;
 
 void ove_backend_freertos_task_created(void *task, const char *name)
 {
@@ -365,8 +366,10 @@ void ove_backend_freertos_task_created(void *task, const char *name)
 	for (UBaseType_t i = 0; i < g_frt_task_count; ++i)
 		if (g_frt_tasks[i].handle == handle)
 			return;
-	if (g_frt_task_count >= OVE_FRT_TASK_REGISTRY_MAX)
+	if (g_frt_task_count >= OVE_FRT_TASK_REGISTRY_MAX) {
+		g_frt_task_overflow = true;
 		return;
+	}
 
 	struct frt_task_registry_entry *entry = &g_frt_tasks[g_frt_task_count++];
 	entry->handle = handle;
@@ -459,6 +462,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 			vTaskGetInfo(handle, &task, pdFALSE, eInvalid);
 			out[i].name = g_frt_tasks[i].name;
+			out[i].identity = (uintptr_t)handle;
+			out[i].lxp_slot = -1;
 			out[i].priority = (int)task.uxCurrentPriority;
 			out[i].stack_size = 0u;
 			out[i].stack_used = 0u;
@@ -508,7 +513,10 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	if (actual_count)
 		*actual_count = (size_t)filled;
 
-	return OVE_OK;
+	return (g_frt_task_overflow ||
+		g_frt_task_count > (UBaseType_t)max_count)
+		       ? OVE_ERR_QUEUE_FULL
+		       : OVE_OK;
 #else
 	(void)out;
 	(void)max_count;

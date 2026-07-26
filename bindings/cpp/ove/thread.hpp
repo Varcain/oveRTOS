@@ -808,8 +808,8 @@ struct MemStats {
  * @brief Snapshot of a single thread.
  *
  * Alias of the C @ref ove_thread_info struct.  Exposes the full set of
- * fields the substrate provides (name, state, priority, stack_used,
- * stack_size, cpu_percent_x100, state_times), unchanged from the C
+ * fields the substrate provides (name, identity, lxp_slot, state, priority,
+ * stack_used, stack_size, cpu_percent_x100, state_times), unchanged from the C
  * layer.  Default-initialise with `ThreadInfo info{};` for zero-init.
  *
  * Previous versions of the binding defined a C++-only subset struct
@@ -826,11 +826,9 @@ using ThreadInfo = struct ove_thread_info;
  *
  * Fills @p out with up to @p max @ref ThreadInfo entries.
  *
- * @note The substrate caps the result at @c OVE_THREAD_LIST_MAX (16 in
- * the current implementation; tracked in `c-substrate-findings.md`
- * P2-2 for promotion to a public constant).  If @p max exceeds the
- * substrate's cap, the cap wins and the returned count reflects the
- * substrate limit, not @p max.
+ * If the caller's array or an internal backend snapshot cannot hold every
+ * thread, the function returns @ref Error::QueueFull after writing the partial
+ * snapshot and setting its count in the C API.
  *
  * @param[out] out Array to fill with thread info.
  * @param[in]  max Maximum entries the @p out buffer can hold.

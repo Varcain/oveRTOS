@@ -112,6 +112,18 @@ pub const OVE_FS_SEEK_END: u32 = 2;
 pub const OVE_EG_WAIT_ALL: u32 = 1;
 pub const OVE_EG_CLEAR_ON_EXIT: u32 = 2;
 pub const OVE_SHELL_MAX_ARGS: u32 = 8;
+pub const OVE_SOCK_POLLIN: u32 = 1;
+pub const OVE_SOCK_POLLOUT: u32 = 4;
+pub const OVE_SOCK_POLLERR: u32 = 8;
+pub const OVE_SOCK_POLLHUP: u32 = 16;
+pub const OVE_SHUT_RD: u32 = 0;
+pub const OVE_SHUT_WR: u32 = 1;
+pub const OVE_SHUT_RDWR: u32 = 2;
+pub const OVE_NETIF_FLAG_UP: u32 = 1;
+pub const OVE_NETIF_FLAG_BROADCAST: u32 = 2;
+pub const OVE_NETIF_FLAG_LOOPBACK: u32 = 4;
+pub const OVE_NETIF_FLAG_RUNNING: u32 = 8;
+pub const OVE_NETIF_FLAG_MULTICAST: u32 = 16;
 pub const OVE_HTTPD_MAX_ROUTES: u32 = 16;
 pub const OVE_HTTPD_MAX_SEGMENTS: u32 = 8;
 pub const OVE_I2C_REG_WRITE_MAX: u32 = 32;
@@ -803,7 +815,7 @@ unsafe extern "C" {
     pub fn ove_thread_should_stop(handle: ove_thread_t) -> bool;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query how many bytes of stack the thread has used at its high-water mark.\n\n @param[in] handle  Thread to inspect.\n @return Number of bytes consumed at the historical peak, or 0 if the\n         backend does not support stack profiling."]
+    #[doc = " @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).\n\n Despite the name, this returns the stack still UNUSED at the deepest point reached — the\n remaining headroom — computed from the untouched fill pattern (FreeRTOS\n uxTaskGetStackHighWaterMark; Zephyr/WASM sentinel scan). For bytes USED, subtract this from the\n stack size. All backends agree on this free-not-used meaning; only the historical name says\n \"usage\".\n\n @param[in] handle  Thread to inspect.\n @return Bytes of stack still free at the historical peak usage, or 0 if the\n         backend does not support stack profiling."]
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
 }
 unsafe extern "C" {
@@ -877,13 +889,17 @@ const _: () = {
 pub struct ove_thread_info {
     #[doc = "< Thread name (static, do not free)."]
     pub name: *const core::ffi::c_char,
+    #[doc = "< Opaque native identity; equality only."]
+    pub identity: usize,
+    #[doc = "< LXP slot assigned by a personality seam, else -1."]
+    pub lxp_slot: i32,
     #[doc = "< Execution state."]
     pub state: ove_thread_state_t,
     #[doc = "< Priority level."]
     pub priority: core::ffi::c_int,
-    #[doc = "< Stack high-water mark (bytes)."]
+    #[doc = "< Stack high-water mark (bytes), or 0 if unavailable."]
     pub stack_used: usize,
-    #[doc = "< Total stack allocation (bytes)."]
+    #[doc = "< Total stack allocation (bytes), or 0 if unavailable."]
     pub stack_size: usize,
     #[doc = "< CPU usage in 0.01% units (e.g. 1250 = 12.50%)."]
     pub cpu_percent_x100: u32,
@@ -892,25 +908,29 @@ pub struct ove_thread_info {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 72usize];
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 88usize];
     ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
     ["Offset of field: ove_thread_info::name"]
         [core::mem::offset_of!(ove_thread_info, name) - 0usize];
+    ["Offset of field: ove_thread_info::identity"]
+        [core::mem::offset_of!(ove_thread_info, identity) - 8usize];
+    ["Offset of field: ove_thread_info::lxp_slot"]
+        [core::mem::offset_of!(ove_thread_info, lxp_slot) - 16usize];
     ["Offset of field: ove_thread_info::state"]
-        [core::mem::offset_of!(ove_thread_info, state) - 8usize];
+        [core::mem::offset_of!(ove_thread_info, state) - 20usize];
     ["Offset of field: ove_thread_info::priority"]
-        [core::mem::offset_of!(ove_thread_info, priority) - 12usize];
+        [core::mem::offset_of!(ove_thread_info, priority) - 24usize];
     ["Offset of field: ove_thread_info::stack_used"]
-        [core::mem::offset_of!(ove_thread_info, stack_used) - 16usize];
+        [core::mem::offset_of!(ove_thread_info, stack_used) - 32usize];
     ["Offset of field: ove_thread_info::stack_size"]
-        [core::mem::offset_of!(ove_thread_info, stack_size) - 24usize];
+        [core::mem::offset_of!(ove_thread_info, stack_size) - 40usize];
     ["Offset of field: ove_thread_info::cpu_percent_x100"]
-        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 32usize];
+        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 48usize];
     ["Offset of field: ove_thread_info::state_times"]
-        [core::mem::offset_of!(ove_thread_info, state_times) - 40usize];
+        [core::mem::offset_of!(ove_thread_info, state_times) - 56usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Actual number of threads written (may be NULL).\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable."]
+    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if unavailable."]
     pub fn ove_thread_list(
         out: *mut ove_thread_info,
         max_count: usize,
@@ -2358,7 +2378,7 @@ unsafe extern "C" {
     pub fn ove_app_run() -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Lock the kernel heap after init (zero-heap mode safety net).\n\n On RTOSes whose kernel-side static configuration cannot fully\n eliminate boot-time mm allocations (notably NuttX, where\n @c task_create / @c pthread_create allocate TCBs and stacks from\n kernel mm), call this after every static resource has been declared.\n Subsequent kernel allocations trip a @c DEBUGASSERT and abort the\n binary, so a stray malloc / @c kmm_malloc surfaces immediately\n during testing instead of hiding behind a sized heap.\n\n The function is a no-op on RTOSes whose zero-heap configuration is\n already provably static (FreeRTOS with\n @c configSUPPORT_DYNAMIC_ALLOCATION=0, Zephyr with no kernel heap\n pool).  NuttX implements the lock by setting a flag tested by a\n @c --wrap=malloc trampoline in @c backends/nuttx/nuttx_heap_lock.c.\n\n @c ove_run automatically invokes this when @c CONFIG_OVE_ZERO_HEAP\n is enabled; applications usually don't need to call it directly."]
+    #[doc = " @brief Lock the kernel heap after init (zero-heap mode safety net).\n\n On RTOSes whose kernel-side static configuration cannot fully\n eliminate boot-time mm allocations (notably NuttX, where task creation\n allocates TCBs and task groups from kernel mm even when the caller\n supplies the stack), call this after every static resource has been declared.\n Subsequent kernel allocations trip a @c DEBUGASSERT and abort the\n binary, so a stray malloc / @c kmm_malloc surfaces immediately\n during testing instead of hiding behind a sized heap.\n\n The function is a no-op on RTOSes whose zero-heap configuration is\n already provably static (FreeRTOS with\n @c configSUPPORT_DYNAMIC_ALLOCATION=0, Zephyr with no kernel heap\n pool).  NuttX implements the lock by setting a flag tested by a\n @c --wrap=malloc trampoline in @c backends/nuttx/nuttx_heap_lock.c.\n\n @c ove_run automatically invokes this when @c CONFIG_OVE_ZERO_HEAP\n is enabled; applications usually don't need to call it directly."]
     pub fn ove_heap_lock();
 }
 pub const OVE_TENSOR_FLOAT32: ove_tensor_type = 0;
@@ -2472,6 +2492,8 @@ unsafe extern "C" {
 pub const OVE_SOCK_STREAM: ove_sock_type_t = 1;
 #[doc = "< Connectionless datagrams (UDP)."]
 pub const OVE_SOCK_DGRAM: ove_sock_type_t = 2;
+#[doc = "< Raw IP protocol access (e.g. ICMP for ping)."]
+pub const OVE_SOCK_RAW: ove_sock_type_t = 3;
 pub type ove_sock_type_t = core::ffi::c_uint;
 #[doc = "< IPv4."]
 pub const OVE_AF_INET: ove_af_t = 2;
@@ -2558,6 +2580,30 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " @brief Reconfigure the interface's address(es). A NULL field is left unchanged.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_netif_set_addr(
+        netif: ove_netif_t,
+        ip: *const ove_sockaddr_t,
+        netmask: *const ove_sockaddr_t,
+        gateway: *const ove_sockaddr_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Bring the interface administratively up (up != 0) or down (up == 0)."]
+    pub fn ove_netif_set_up(netif: ove_netif_t, up: core::ffi::c_int) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Copy the interface's 6-byte hardware (MAC) address into @p mac."]
+    pub fn ove_netif_get_hwaddr(netif: ove_netif_t, mac: *mut u8) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read the interface's OVE_NETIF_FLAG_* bitmask into @p flags."]
+    pub fn ove_netif_get_flags(
+        netif: ove_netif_t,
+        flags: *mut core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Heap-allocate and initialise a network interface.\n\n @param[out] netif Handle written on success.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_netif_create(netif: *mut ove_netif_t) -> core::ffi::c_int;
 }
@@ -2572,6 +2618,16 @@ unsafe extern "C" {
         storage: *mut ove_socket_storage_t,
         af: ove_af_t,
         type_: ove_sock_type_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Open a socket with an explicit IP protocol number.\n\n Needed for SOCK_RAW (e.g. proto == 1 / IPPROTO_ICMP for ping). @p proto == 0\n selects the type's default protocol, so this is equivalent to ove_socket_open\n for SOCK_STREAM / SOCK_DGRAM.\n\n @param[out] sock    Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @param[in]  af      Address family.\n @param[in]  type    Socket type (stream/datagram/raw).\n @param[in]  proto   IP protocol number (0 = default for @p type).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_open_ex(
+        sock: *mut ove_socket_t,
+        storage: *mut ove_socket_storage_t,
+        af: ove_af_t,
+        type_: ove_sock_type_t,
+        proto: core::ffi::c_int,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -2642,6 +2698,44 @@ unsafe extern "C" {
         src: *mut ove_sockaddr_t,
         timeout_ns: u64,
     ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Enable or disable non-blocking mode on a socket.\n\n With non-blocking mode on, the blocking socket calls return\n @c OVE_ERR_TIMEOUT immediately instead of waiting when they would block.\n This is the safe primitive for a caller that drives its own readiness loop\n (the Linux personality's park/retry coordinator): unlike a zero\n @c timeout_ns — which some backends map to @c SO_RCVTIMEO and interpret as\n \"block forever\" — this reliably makes every operation return at once.\n\n @param[in] sock     Socket handle.\n @param[in] nonblock Non-zero to enable non-blocking mode, zero to clear it.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_set_nonblock(
+        sock: ove_socket_t,
+        nonblock: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Wait for readiness on a socket (select/poll with a timeout).\n\n The only readiness wait that behaves uniformly across backends: pass\n @c timeout_ns == 0 for an immediate, truly non-blocking poll.\n\n @param[in]  sock       Socket handle.\n @param[in]  events     Requested @c OVE_SOCK_POLL* bits.\n @param[out] revents    Ready @c OVE_SOCK_POLL* bits (may be NULL).\n @param[in]  timeout_ns Timeout in nanoseconds (0 = poll, OVE_WAIT_FOREVER = block).\n @return OVE_OK on success (inspect @p revents), negative error code on failure."]
+    pub fn ove_socket_poll(
+        sock: ove_socket_t,
+        events: core::ffi::c_uint,
+        revents: *mut core::ffi::c_uint,
+        timeout_ns: u64,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Shut down part or all of a full-duplex connection.\n\n @param[in] sock Socket handle.\n @param[in] how  @c OVE_SHUT_RD, @c OVE_SHUT_WR, or @c OVE_SHUT_RDWR.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_shutdown(sock: ove_socket_t, how: core::ffi::c_int) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the local address a socket is bound to.\n\n @param[in]  sock Socket handle.\n @param[out] addr Filled with the local address.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_getsockname(
+        sock: ove_socket_t,
+        addr: *mut ove_sockaddr_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the remote address a socket is connected to.\n\n @param[in]  sock Socket handle.\n @param[out] addr Filled with the peer address.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_getpeername(
+        sock: ove_socket_t,
+        addr: *mut ove_sockaddr_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read and clear a socket's pending error (@c SO_ERROR).\n\n Used to obtain the result of a non-blocking connect once the socket\n reports writable via @ref ove_socket_poll.\n\n @param[in] sock Socket handle.\n @return OVE_OK if no error is pending, otherwise a negative @c OVE_ERR_NET_*."]
+    pub fn ove_socket_get_error(sock: ove_socket_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Heap-allocate and open a socket.\n\n @param[out] sock Handle written on success.\n @param[in]  af   Address family.\n @param[in]  type Socket type.\n @return OVE_OK on success, negative error code on failure."]
@@ -4267,10 +4361,12 @@ pub struct ove_flat {
     pub dynamic: usize,
     #[doc = "< FDPIC dynamic: the interpreter (ld.so) loadmap → r8 at\n   entry; 0 for static. Filled by the launcher, not the\n   loader (which loads one object at a time)."]
     pub interp_loadmap: usize,
+    #[doc = "< A @c copy_text load put the program's own text INTO @c region\n   (a remote/RAM exec), so the engine must map the region EXECUTABLE\n   (RWX — W^X-relaxed for this process). 0 for the normal XIP-text load."]
+    pub region_exec: core::ffi::c_int,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_flat"][core::mem::size_of::<ove_flat>() - 136usize];
+    ["Size of ove_flat"][core::mem::size_of::<ove_flat>() - 144usize];
     ["Alignment of ove_flat"][core::mem::align_of::<ove_flat>() - 8usize];
     ["Offset of field: ove_flat::region"][core::mem::offset_of!(ove_flat, region) - 0usize];
     ["Offset of field: ove_flat::region_size"]
@@ -4295,6 +4391,8 @@ const _: () = {
     ["Offset of field: ove_flat::dynamic"][core::mem::offset_of!(ove_flat, dynamic) - 120usize];
     ["Offset of field: ove_flat::interp_loadmap"]
         [core::mem::offset_of!(ove_flat, interp_loadmap) - 128usize];
+    ["Offset of field: ove_flat::region_exec"]
+        [core::mem::offset_of!(ove_flat, region_exec) - 136usize];
 };
 #[doc = " @brief A loaded FDPIC program — the loaded-program control block.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding FDPIC program can also be loaded\n and called directly (no syscall environment required).\n\n The @c ove_flat_t / \"flat\" name is historical: this struct was once shared\n with the now-removed bFLT loader, but only FDPIC ELF programs are loaded now."]
 pub type ove_flat_t = ove_flat;
@@ -4307,6 +4405,7 @@ unsafe extern "C" {
         region: *mut core::ffi::c_void,
         region_size: usize,
         is_interp: core::ffi::c_int,
+        copy_text: core::ffi::c_int,
     ) -> core::ffi::c_int;
 }
 #[doc = " Entry function for a protected task."]

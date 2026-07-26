@@ -232,9 +232,17 @@ fn test_get_mem_stats() {
 fn test_thread_list_smoke() {
     let mut buf = [ThreadInfo {
         name: &[],
+        identity: 0,
+        lxp_slot: -1,
         state: 0 as ffi::ove_thread_state_t,
         priority: 0,
         stack_used: 0,
+        stack_size: 0,
+        cpu_percent_x100: 0,
+        running_us: 0,
+        ready_us: 0,
+        blocked_us: 0,
+        suspended_us: 0,
     }; 16];
     let cap = buf.len();
     match ove::thread::thread_list(&mut buf) {
@@ -269,9 +277,17 @@ fn test_thread_list_with_spawned() {
 
     let mut buf = [ThreadInfo {
         name: &[],
+        identity: 0,
+        lxp_slot: -1,
         state: 0 as ffi::ove_thread_state_t,
         priority: 0,
         stack_used: 0,
+        stack_size: 0,
+        cpu_percent_x100: 0,
+        running_us: 0,
+        ready_us: 0,
+        blocked_us: 0,
+        suspended_us: 0,
     }; 16];
     match ove::thread::thread_list(&mut buf) {
         Ok(slice) => {
@@ -282,6 +298,14 @@ fn test_thread_list_with_spawned() {
                 let _ = info.state;
                 let _ = info.priority;
                 let _ = info.stack_used;
+                let _ = info.identity;
+                let _ = info.lxp_slot;
+                let _ = info.stack_size;
+                let _ = info.cpu_percent_x100;
+                let _ = info.running_us;
+                let _ = info.ready_us;
+                let _ = info.blocked_us;
+                let _ = info.suspended_us;
             }
         }
         Err(Error::NotSupported) => {}
