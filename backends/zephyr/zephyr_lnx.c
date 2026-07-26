@@ -717,7 +717,7 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 					      arg_tramp, sp, entry, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST,
 					      K_USER, K_FOREVER);
 	}
-	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
+	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
 		k_thread_name_set(g_tid[sidx], nm);
@@ -788,7 +788,7 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
 				      (void *)r0val, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
 				      K_FOREVER);
-	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
+	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
 		k_thread_name_set(g_tid[sidx], nm);

@@ -528,7 +528,7 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	memset(&g_tcb[sidx], 0, sizeof(g_tcb[sidx]));
 	g_tcb[sidx].cmn.flags = TCB_FLAG_TTYPE_TASK; /* static TCB: no FREE_TCB/FREE_STACK */
 	char nm[6];
-	slot_task_name(nm, sidx); /* per-slot: ps/top per-proc CPU */
+	slot_task_name(nm, sidx); /* diagnostic only; attribution uses the task PID */
 	if (nxtask_init(&g_tcb[sidx], nm, SLOT_PRIO, g_nuttx_stacks[sidx], LXP_NUTTX_STACK_SIZE,
 			slot_noentry, NULL, NULL, NULL) < 0)
 		return -1;
