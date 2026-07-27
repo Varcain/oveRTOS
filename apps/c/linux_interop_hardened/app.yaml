@@ -1,0 +1,32 @@
+lang: c
+config_name: linux_interop_hardened
+description: "Linux personality interop demo — Hardened profile"
+sources:
+  - ../linux_interop/src/app.c
+  - ../linux_interop/src/rt_scope.c
+defconfig:
+  - CONFIG_OVE_LINUX=y
+  - CONFIG_OVE_ARENA=y
+  - CONFIG_OVE_LOADER=y
+  - CONFIG_OVE_QUEUE=y
+  - CONFIG_OVE_LINUX_DEV=y
+  - CONFIG_OVE_LINUX_DEV_FB=y
+  - CONFIG_OVE_LINUX_DEV_DMA2D=y
+  - CONFIG_OVE_LINUX_DEV_INPUT=y
+  - CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD=y
+  - CONFIG_OVE_LINUX_NET=y
+  - CONFIG_OVE_LINUX_NETFS=y
+  # Executing a fetched image requires an RWX staging policy. Keep the hardened
+  # production preset strict W^X while retaining read-only remote files.
+  - CONFIG_OVE_LINUX_NETFS_EXEC=n
+  - CONFIG_OVE_LINUX_PTY=y
+  - CONFIG_OVE_LINUX_LATENCY=n
+  - CONFIG_OVE_LINUX_RT_SCOPE=n
+  - CONFIG_OVE_STACK_CANARIES=y
+  - CONFIG_OVE_LOG_LEVEL_WRN=y
+rtos_defconfig:
+  freertos:
+    - CONFIG_FREERTOS_USE_TIME_SLICING=n
+incompatible_boards:
+  - host
+  - wasm

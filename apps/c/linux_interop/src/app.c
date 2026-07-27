@@ -72,6 +72,12 @@
  * CPIO parse stops at the TRAILER!!! record. */
 #define LXP_PSRAM_ROOTFS ((const uint8_t *)0x60000000u)
 #define LXP_PSRAM_ROOTFS_MAX (12u * 1024u * 1024u)
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+/* an521 (QEMU): keep the production Buildroot image out of the 4 MiB internal
+ * flash as well. QEMU loads it into the lower PSRAM window; the final 1088 KiB
+ * remains a linker-owned NOLOAD pool for the Zephyr seam. */
+#define LXP_PSRAM_ROOTFS ((const uint8_t *)0x80000000u)
+#define LXP_PSRAM_ROOTFS_MAX 0x00ef0000u
 #else
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
 #endif
@@ -1022,7 +1028,8 @@ static void demo_body(void *arg)
 	g_rootfs_image_size = LXP_QSPI_ROOTFS_MAX;
 	g_rootfs_n = lxp_cpio_to_rootfs(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX, g_rootfs,
 					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 	/* PSRAM is ordinary RAM in QEMU (no D-cache / external-NOR hazard). */
 	g_rootfs_image = LXP_PSRAM_ROOTFS;
 	g_rootfs_image_size = LXP_PSRAM_ROOTFS_MAX;
@@ -1226,7 +1233,14 @@ static void demo_body(void *arg)
 		ok = (strcmp(g_round_trip[i], want) == 0);
 	}
 	if (!ok) {
-		sh_write0("[demo] FAIL: phase-1 round trip mismatch\n");
+		char b[112];
+		char *p = put_str(b, "[demo] FAIL: phase-1 round trip mismatch rc=");
+		p = put_sdec(p, rc1);
+		p = put_str(p, " received=");
+		p = put_dec(p, (uint32_t)g_round_trip_n);
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(b);
 		sh_exit(1);
 	}
 	sh_write0(
