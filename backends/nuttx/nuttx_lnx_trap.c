@@ -100,6 +100,13 @@ extern dq_queue_t g_stoppedtasks;
 
 #define SLOT_PRIO 60 /* below the run-loop/main task (100) */
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* Coordinator base and guest overlays use this identical Normal-memory type. */
+#define NUTTX_POOL_TEXSCB 0x0Bu /* WBWA, non-shareable */
+#else
+#define NUTTX_POOL_TEXSCB 0x08u /* Normal non-cacheable */
+#endif
+
 /* CONTROL.nPRIV — the unprivileged-thread-mode bit we OR into a program task's saved CONTROL so it
  * runs UNPRIVILEGED (restricted to the MPU regions). arch/arm/include/armv7-m/irq.h defines this and
  * REG_CONTROL (reached via <nuttx/irq.h>); restated as a fallback since it is otherwise off the app
@@ -134,9 +141,10 @@ extern dq_queue_t g_stoppedtasks;
  * rest as heap (the Linux config's three heap regions are all internal SRAM), so the span past
  * 1M is free. Fixed-address
  * pointers (NuttX owns its linker script — no NOLOAD section to hook). lxp_mpu_init() installs a
- * privileged-only, Normal non-cacheable base region over the whole SDRAM; the context-switch note
- * hook overlays the running program's exact data and dynamic-pool ranges as unprivileged RW. The
- * pool layout therefore keeps every per-program range power-of-2 sized and naturally aligned. */
+ * privileged-only cacheable Normal-memory base over the program pool, matching
+ * the guest overlays; its first 1M subregion stays disabled for the LTDC
+ * framebuffer. The context-switch note hook overlays the running program's
+ * exact data and dynamic-pool ranges as unprivileged RW. */
 #define NUTTX_SDRAM_POOL_BASE \
 	0xC0100000u /* 1M past the SDRAM base, well clear of the framebuffer */
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] = (uint8_t (*)[LXP_DYN_POOL_SIZE])
@@ -224,14 +232,6 @@ static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((al
 /* Byte extents of the (contiguous) pools — sizeof() can't see through the STM32 fixed pointers. */
 #define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
 #define DYN_POOLS_BYTES ((size_t)LXP_NREG * LXP_DYN_POOL_SIZE)
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-/* Per-region flag: this region holds a program's OWN copied text (a remote exec off the 9P mount),
- * so region 2 must be mapped RWX (drop execute-never) instead of the default W^X. Indexed by region
- * index because set_prog_regions() — the note-driver switch hook — keys off ridx, not the slot. Set
- * at spawn from prog->region_exec; a normal (XIP-text) program leaves it 0, restoring W^X. */
-static uint8_t g_region_exec[LXP_NREG];
-#endif
-
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Remote-exec (9P netfs) staging buffer: the coordinator fetches a remote FDPIC ELF into
  * this 256K scratch, then launches it (its own text is copied into a program region). On the
@@ -347,14 +347,24 @@ static uint64_t guest_runtime_us(int sidx)
 #define LXP_DEVICE_MPU_COUNT 2u
 struct nuttx_device_map {
 	uintptr_t addr;
+	size_t size;
 	uint32_t rbar;
 	uint32_t rasr;
+	uint8_t attrs;
 	uint8_t used;
 };
 static struct nuttx_device_map g_device_maps[LXP_NSLOT][LXP_DEVICE_MPU_COUNT];
-static uint32_t g_device_map_generation[LXP_NSLOT];
-static int g_mapped_device_slot = -1;
-static uint32_t g_mapped_device_generation;
+
+#define LXP_NATIVE_POLICY_REGIONS (2u + LXP_DEVICE_MPU_COUNT)
+struct nuttx_prepared_profile {
+	lxp_memory_policy_key_t key;
+	uint32_t rbar[LXP_NATIVE_POLICY_REGIONS];
+	uint32_t rasr[LXP_NATIVE_POLICY_REGIONS];
+	uint8_t valid;
+};
+static struct nuttx_prepared_profile g_prepared_profile[LXP_NSLOT];
+static lxp_memory_policy_key_t g_installed_policy;
+static uint8_t g_installed_policy_valid;
 
 /* The RUNNING task. Our SVCall interposer and fault handlers ALWAYS run in exception context
  * (IPSR != 0). There, NuttX's nxsched_self()/this_task() == g_readytorun.head is the wrong
@@ -508,7 +518,6 @@ static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attr
 	irqstate_t flags = enter_critical_section();
 	if (size == 0) {
 		memset(g_device_maps[sidx], 0, sizeof(g_device_maps[sidx]));
-		g_device_map_generation[sidx]++;
 		leave_critical_section(flags);
 		return 0;
 	}
@@ -550,12 +559,18 @@ static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attr
 	uint32_t texscb = (attrs == LXP_MAP_WT) ? 0x02u : (attrs == LXP_MAP_DEV) ? 0x01u : 0x08u;
 	g_device_maps[sidx][map] = (struct nuttx_device_map){
 		.addr = addr,
+		.size = size,
 		.rbar = (uint32_t)(addr & ~(uintptr_t)(rsz - 1u)),
 		.rasr = (1u << 0) | OVE_MPU_RASR_SIZE(rsz) | (texscb << 16) | (0x3u << 24) |
 			(1u << 28),
+		.attrs = (uint8_t)attrs,
 		.used = 1,
 	};
-	g_device_map_generation[sidx]++;
+	/* Keep the currently prepared profile valid until the core commits the
+	 * shared mm's device_generation. A CLONE_VM sibling cannot then observe
+	 * backend-local descriptors paired with the old logical policy between
+	 * this staging call and that commit. The changed generation makes the
+	 * next switch compile and install the staged descriptors. */
 	leave_critical_section(flags);
 	return 0;
 }
@@ -633,26 +648,14 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_pid[sidx] >= 0)
 		return -1;
-	/* The prog/dyn regions are Normal WB-WA CACHEABLE (set_prog_regions), and regions are reused
-	 * across execs. The loader just wrote THIS program's image to SDRAM non-cacheable (the region
-	 * being loaded is never the currently-mapped one, so the coordinator's write falls through the
-	 * non-cacheable base region 1), but stale cacheable lines from the PREVIOUS tenant of this ridx
-	 * may still sit in the D-cache. Discard them so the program reads its freshly-loaded image, not
-	 * the last tenant's cached data. A plain invalidate (no writeback) is correct: the discarded
-	 * lines belong to an exited program, .bss/data were written straight to SDRAM by the loader, and
-	 * the regions are 32-byte (cache-line) aligned. */
-	up_invalidate_dcache((uintptr_t)prog_regions[ridx],
-			     (uintptr_t)prog_regions[ridx] + LXP_PROG_REGION_SIZE);
-	up_invalidate_dcache((uintptr_t)dyn_pools[ridx],
-			     (uintptr_t)dyn_pools[ridx] + LXP_DYN_POOL_SIZE);
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	/* Record whether this program runs its own copied text from region 2 (a 9P-mount exec) so the
-	 * note-driver switch hook maps region 2 RWX. lxp_note_resume reprograms when this changes even
-	 * for a region already mapped (an execve reusing the same ridx flips a normal program to a
-	 * remote-exec one). */
-	if (ridx >= 0 && ridx < LXP_NREG)
-		g_region_exec[ridx] = (uint8_t)prog->region_exec;
-#endif
+	/* The coordinator and guest now use the same pool attributes. Publish the
+	 * loader's dirty data/instruction bytes, then discard any previous tenant's
+	 * lines before the newly prepared profile can run. With D-cache disabled the
+	 * NuttX cache primitive is a no-op. */
+	up_flush_dcache((uintptr_t)prog_regions[ridx],
+			(uintptr_t)prog_regions[ridx] + LXP_PROG_REGION_SIZE);
+	up_flush_dcache((uintptr_t)dyn_pools[ridx],
+			(uintptr_t)dyn_pools[ridx] + LXP_DYN_POOL_SIZE);
 	(void)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)sp) != 0)
 		return -1;
@@ -967,6 +970,7 @@ static const char *lxp_seam_system_version(void)
  * the module's lxp_run() invokes them via g_lxp_host_engine.prepare/.teardown. */
 static int nuttx_prepare(void);
 static void nuttx_teardown(void);
+static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared);
 
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
@@ -987,15 +991,19 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.crit_exit = nuttx_crit_exit,
 	.event_post = nuttx_event_post,
 	.event_wait = nuttx_event_wait,
-	/* OS-service ops (host adapter). cache_* left NULL: NuttX's guest memory is
-	 * coherent here (D-cache off).
-	 * coord_map left NULL too: the coordinator is privileged (PRIVDEFENA) with full
-	 * access to the guest pools, so no per-slot cacheable MPU remap is needed. */
+	/* Ordinary CPU accesses are coherent because region 1 and the per-guest
+	 * overlays use matching attributes. Device/DMA transfers remain explicit. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
+#else
+	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
+#endif
+	.validate_memory_model = nuttx_validate_memory_model,
 	.random_fill =
 		nuttx_random_fill, /* REQUIRED: without it exec() can't seed AT_RANDOM → no launch */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
@@ -1010,7 +1018,10 @@ const lxp_os_ops_t g_lxp_host_engine = {
  * unprivileged program sees ONLY these regions:
  *   region 0 = code (flash/ROM): unprivileged RO + executable (XN=0) — the shared FDPIC text runs
  *              in-place from the embedded cpio here, and the contained-fault park loop lives here;
- *   region 1 = the program pool (PSRAM/SDRAM): unprivileged RW, execute-never (W^X).
+ *   region 1 = privileged-only Normal-memory base for coordinator access to the complete pool;
+ *   regions 2/3 = the running address space's program and dynamic pools;
+ *   region 4 = optional shared QSPI rootfs, user RO + executable;
+ *   regions 5/6 = driver-originated device capabilities for the running slot.
  * Everything else — kernel .data/.bss/heap, peripherals — is ungranted, so an unprivileged access
  * to it faults. NuttX leaves the MPU disabled in FLAT, so we own it (raw registers; arm_mpu.c is
  * not compiled). */
@@ -1038,28 +1049,35 @@ static void lxp_mpu_init(void)
 #endif
 	/* Region 0: code (shared by every program) — priv RW / unpriv RO (AP=0b010), executable
 	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park loop. The
-	 * per-PROGRAM data regions (region 1 = prog_regions[ridx], region 2 = dyn_pools[ridx]) are
-	 * (re)programmed on EVERY context switch by the note driver (set_prog_regions / lxp_note_
-	 * resume), so a running program sees only ITS OWN region — not a sibling's. */
+	 * per-program data regions are reprogrammed on every context switch from
+	 * the slot's prepared policy, so a running program sees only its own region. */
 	*mpu_rnr = 0;
 	*mpu_rbar = code_base;
 	*mpu_rasr = (1u << 0) | (code_sz << 1) | (code_texscb << 16) | (0x2u << 24);
-	/* Region 1: the WHOLE program pool, Normal non-cacheable, execute-never. In a fallback build with
+	/* Region 1: the WHOLE program pool, with the same Normal-memory attributes
+	 * as the per-guest overlays. In a fallback build with
 	 * no context-switch hook it is unprivileged RW too (AP=0b011), providing kernel isolation but not
 	 * sibling isolation. The normal per-switch configuration makes it PRIVILEGED-ONLY (AP=0b001) —
 	 * the base that lets the privileged
-	 * coordinator/seam touch ANY program's pool region as Normal memory; the per-program regions 2+3
-	 * (set_prog_regions) grant the RUNNING program unprivileged RW to its OWN region, overriding this.
-	 * Without the base, a non-running program's pool region falls to the ARM default map, which types
-	 * the external SDRAM (0xC0000000) as DEVICE — and the coordinator's unaligned access to it
-	 * Usage-Faults on the real M7 (QEMU's PSRAM default is Normal, so the an500 never hit it). */
+	 * coordinator/seam touch ANY program's pool region as Normal memory; the
+	 * prepared regions 2+3 grant the running program access to only its own region.
+	 * On STM32 the 8M region's first 1M subregion is disabled: it contains the
+	 * LTDC framebuffer, which must fall through to the default Device mapping
+	 * (or a driver-granted device region) rather than becoming cacheable. */
 	*mpu_rnr = 1;
 	*mpu_rbar = pool_base;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	const uint32_t pool_srd = 1u << 8; /* disable [0xC0000000,0xC0100000) */
+#else
+	const uint32_t pool_srd = 0u;
+#endif
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x1u << 24) |
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | pool_srd |
+		    (NUTTX_POOL_TEXSCB << 16) | (0x1u << 24) |
 		    (1u << 28); /* priv RW, unpriv NO */
 #else
-	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) |
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | pool_srd |
+		    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) |
 		    (1u << 28); /* fallback: RW/RW */
 #endif
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
@@ -1067,8 +1085,8 @@ static void lxp_mpu_init(void)
 	 * from 0x90000000 → unpriv RO + executable (XN=0), like the internal-flash code region 0.
 	 * 16 MB (SIZE=23), 16 MB-aligned = one PMSAv7 region; Normal write-through so the I-cache
 	 * absorbs the slow external-flash fetches (RO, so no coherence issue). STATIC and shared by
-	 * every program — set_prog_regions only ever rewrites regions 2+3, so region 4 survives every
-	 * context switch. Regions 0,1,4 static + 2,3 per-program = 5 of the M7's 8, no overlap. */
+	 * every program — the switch hook rewrites only regions 2,3,5,6, so region
+	 * 4 survives every context switch. */
 	*mpu_rnr = 4;
 	*mpu_rbar = 0x90000000u;
 	*mpu_rasr = (1u << 0) | (23u << 1) | (0x02u << 16) | (0x2u << 24);
@@ -1142,70 +1160,91 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
  * Both are power-of-2 sized and naturally aligned (the pool base is aligned to the region size and
  * the array stride equals the size), so each maps as one exact MPU region. Execute-never (W^X —
  * code lives in the shared region 0). */
-/* Which region index is currently programmed into MPU regions 2+3. set_prog_regions is the ONLY
- * writer of those regions (lxp_mpu_init sets only 0+1), so this stays accurate — even across
- * lxp_run() calls, since a region index maps to a fixed memory range. -1 = none (boot). Lets
- * lxp_note_resume skip the 6 MPU writes + dsb + isb when the incoming program already owns the
- * mapped region (the common case: a syscall returns to the same program on every trap). */
-static int g_mapped_ridx = -1;
-static int g_mapped_exec =
-	-1; /* exec-ness (g_region_exec) of the region currently mapped into region 2 */
-
-static void set_prog_regions(int ridx)
+/* Compile one complete logical policy into the four native MPU descriptors
+ * used by the switch hook: program, dynamic pool, and two driver capabilities.
+ * The registered driver's map_device transition produced g_device_maps; the
+ * core snapshot is cross-checked so an arbitrary or stale physical range can
+ * never be promoted merely by changing backend-local state. */
+static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 {
-	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
-	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
-	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	/* TEX=001,C=1,B=1 = Normal Write-Back Write-Allocate CACHEABLE (was 0x08 = non-cacheable). The
-	 * program's data/bss/heap/stack live in region 2 and ld.so's arena in region 3; LVGL's malloc'd
-	 * draw buffer lands here, so caching the per-pixel compositing writes is a large win on the
-	 * memory-bound heavy scenes (text/containers/layers), which were writing every pixel straight to
-	 * uncached FMC SDRAM. Safe: no DMA reads these regions — the LTDC scans only the framebuffer
-	 * @0xC0000000, covered by the non-cacheable base region 1 — and the privileged personality reads
-	 * the draw buffer coherently on the same core, then blits to the non-cacheable framebuffer, so no
-	 * SCB cache maintenance is needed. (No code executes from here: FDPIC text XIPs from QSPI/reg 4.) */
-	uint32_t reg2_xn = (1u << 28); /* execute-never (W^X): FDPIC text XIPs from QSPI/region 4 */
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	/* A remote-exec proc runs its OWN text copied into region 2 → map it RWX (drop XN). A
-	 * per-process, MPU-contained W^X relaxation, only for a program launched off the remote mount. */
-	if (ridx >= 0 && ridx < LXP_NREG && g_region_exec[ridx])
-		reg2_xn = 0u;
-#endif
-	*mpu_rnr = 2;
-	*mpu_rbar = (uint32_t)(uintptr_t)prog_regions[ridx];
-	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_PROG_REGION_SIZE) | (0x0Bu << 16) |
-		    (0x3u << 24) | reg2_xn;
-	*mpu_rnr = 3;
-	*mpu_rbar = (uint32_t)(uintptr_t)dyn_pools[ridx];
-	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_DYN_POOL_SIZE) | (0x0Bu << 16) |
-		    (0x3u << 24) | (1u << 28);
-	__asm__ volatile("dsb 0xf" ::: "memory");
-	__asm__ volatile("isb 0xf" ::: "memory");
-	g_mapped_ridx = ridx;
-	g_mapped_exec =
-		(reg2_xn == 0u); /* record region 2's exec-ness so a same-ridx flip reprograms */
-}
+	if (!policy || sidx < 0 || sidx >= LXP_NSLOT ||
+	    policy->address_space.index < 0 || policy->address_space.index >= LXP_NREG ||
+	    policy->device_count > LXP_DEVICE_MPU_COUNT)
+		return -1;
+	struct nuttx_prepared_profile *prepared = &g_prepared_profile[sidx];
+	if (prepared->valid && lxp_memory_policy_matches_key(policy, &prepared->key))
+		return 0;
 
-static void set_device_regions(int sidx)
-{
-	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
-	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
-	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	int ridx = policy->address_space.index;
+	memset(prepared, 0, sizeof(*prepared));
+	prepared->rbar[0] = (uint32_t)(uintptr_t)prog_regions[ridx];
+	prepared->rasr[0] = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_PROG_REGION_SIZE) |
+			    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) |
+			    (policy->copied_text_executable ? 0u : (1u << 28));
+	prepared->rbar[1] = (uint32_t)(uintptr_t)dyn_pools[ridx];
+	prepared->rasr[1] = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_DYN_POOL_SIZE) |
+			    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) | (1u << 28);
 
+	unsigned caps = 0;
 	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
 		const struct nuttx_device_map *map = &g_device_maps[sidx][i];
-		*mpu_rnr = LXP_DEVICE_MPU_FIRST + i;
-		if (map->used) {
-			*mpu_rbar = map->rbar;
-			*mpu_rasr = map->rasr;
+		if (!map->used)
+			continue;
+		if (caps >= policy->device_count ||
+		    policy->devices[caps].base != map->addr ||
+		    policy->devices[caps].size != map->size ||
+		    policy->devices[caps].attrs != map->attrs)
+			return -1;
+		prepared->rbar[2u + i] = map->rbar;
+		prepared->rasr[2u + i] = map->rasr;
+		caps++;
+	}
+	if (caps != policy->device_count)
+		return -1;
+	prepared->key = lxp_memory_policy_make_key(policy);
+	prepared->valid = 1u;
+	return 0;
+}
+
+static void nuttx_install_profile(const struct nuttx_prepared_profile *prepared)
+{
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
+
+	for (unsigned i = 0; i < LXP_NATIVE_POLICY_REGIONS; i++) {
+		*mpu_rnr = region[i];
+		if (prepared->rasr[i]) {
+			*mpu_rbar = prepared->rbar[i];
+			*mpu_rasr = prepared->rasr[i];
 		} else {
 			*mpu_rasr = 0;
 		}
 	}
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
-	g_mapped_device_slot = sidx;
-	g_mapped_device_generation = g_device_map_generation[sidx];
+	g_installed_policy = prepared->key;
+	g_installed_policy_valid = 1u;
+}
+
+/* A policy snapshot/compile failure must not leave the previous guest's
+ * unprivileged regions active. Disable every dynamic region before returning
+ * to the incoming task so the fault is contained instead of inheriting stale
+ * program or device access. */
+static void nuttx_disable_dynamic_regions(void)
+{
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
+
+	for (unsigned i = 0; i < LXP_NATIVE_POLICY_REGIONS; i++) {
+		*mpu_rnr = region[i];
+		*mpu_rasr = 0;
+	}
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	__asm__ volatile("isb 0xf" ::: "memory");
+	g_installed_policy_valid = 0u;
 }
 
 /* Note-driver resume hook — fires on EVERY switch TO a task (sched_note_resume, in
@@ -1230,22 +1269,15 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < LXP_NSLOT; i++) {
 		if (g_pid[i] == pid && lxp_slot_ref_is_runnable(task_slot_ref(i))) {
-			lxp_region_ref_t region;
-			int ridx = lxp_slot_region_ref(task_slot_ref(i), &region) == LXP_OK
-					   ? region.index
-					   : -1;
-			int want_exec = 0;
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-			if (ridx >= 0 && ridx < LXP_NREG)
-				want_exec = g_region_exec[ridx];
-#endif
-			/* Reprogram when the region changed OR its exec-ness flipped (an execve reused this
-			 * ridx to launch a remote-exec program needing RWX); else skip the 6 MPU writes. */
-			if (ridx != g_mapped_ridx || want_exec != g_mapped_exec)
-				set_prog_regions(ridx);
-			if (i != g_mapped_device_slot ||
-			    g_device_map_generation[i] != g_mapped_device_generation)
-				set_device_regions(i);
+			lxp_memory_policy_t policy;
+			if (lxp_slot_memory_policy(task_slot_ref(i), &policy) != LXP_OK ||
+			    nuttx_prepare_profile(i, &policy) != 0) {
+				nuttx_disable_dynamic_regions();
+				return;
+			}
+			if (!g_installed_policy_valid ||
+			    !lxp_memory_policy_matches_key(&policy, &g_installed_policy))
+				nuttx_install_profile(&g_prepared_profile[i]);
 			return;
 		}
 	}
@@ -1342,9 +1374,8 @@ void serial_poll_putc(char c)
 static int nuttx_prepare(void)
 {
 	memset(g_device_maps, 0, sizeof(g_device_maps));
-	memset(g_device_map_generation, 0, sizeof(g_device_map_generation));
-	g_mapped_device_slot = -1;
-	g_mapped_device_generation = 0;
+	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
+	g_installed_policy_valid = 0;
 	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
 	for (int i = 0; i < LXP_NSLOT; i++) {
 		g_pid[i] = -1;
@@ -1369,8 +1400,24 @@ static int nuttx_prepare(void)
 	return 0;
 }
 
+static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared)
+{
+	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
+		       ? LXP_OK
+		       : LXP_ERR_INVALID_PARAM;
+#else
+	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK
+								 : LXP_ERR_INVALID_PARAM;
+#endif
+}
+
 static void nuttx_teardown(void)
 {
+#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+	nuttx_disable_dynamic_regions();
+#else
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
 	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
@@ -1379,10 +1426,10 @@ static void nuttx_teardown(void)
 	}
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
+#endif
 	memset(g_device_maps, 0, sizeof(g_device_maps));
-	memset(g_device_map_generation, 0, sizeof(g_device_map_generation));
-	g_mapped_device_slot = -1;
-	g_mapped_device_generation = 0;
+	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
+	g_installed_policy_valid = 0;
 	irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL); /* restore NuttX's handlers */
 	irq_attach(LXP_IRQ_MEMFAULT, arm_hardfault, NULL);
 	irq_attach(LXP_IRQ_BUSFAULT, arm_hardfault, NULL);

@@ -9,19 +9,14 @@
 # this board; pin it off so a base-config change can't silently re-enable it and fight the seam.
 CONFIG_ARM_MPU=n
 
-# Pin the D-cache WRITE-THROUGH (CACR.FORCEWT). It is the upstream board default, but pin it here
-# for the same reason as CONFIG_ARM_MPU above: this personality REQUIRES it, so a base-config change
-# must not silently flip it. Why it is required: the privileged coordinator sees the guest program
-# pool through a Normal NON-cacheable MPU region (nuttx_lnx_trap.c region 1), while the running guest
-# sees its own region Normal write-back — and the coordinator reads a just-set-up / parked guest's
-# stack + FDPIC loadmap through that uncached view. FORCEWT forces the guest's (write-back) stores
-# straight to SDRAM, so the uncached coordinator read is coherent for free. Write-back breaks it: a
-# write-back build faults `init` immediately at launch (DACCVIOL on a stale/garbage pointer) because
-# the launch-time cache invalidate drops not-yet-written-back lines. This is NOT an Ethernet-DMA
-# workaround — stm32_ethernet.c already cleans/invalidates around every (cache-line-aligned) DMA
-# descriptor + buffer, so ETH is D-cache-coherent in either mode. A proper write-back conversion
-# would need per-handoff clean/invalidate throughout the coordinator seam, for no ETH benefit.
-CONFIG_ARMV7M_DCACHE_WRITETHROUGH=y
+# Use the M7 D-cache in its normal write-back mode. The seam now gives the
+# privileged coordinator base and each guest overlay identical WBWA,
+# non-shareable Normal-memory attributes; it no longer depends on FORCEWT to
+# mask a mixed cacheable/uncached CPU alias. Region reuse and copied executable
+# publication are explicit cache-maintenance boundaries. Ethernet already owns
+# its DMA clean/invalidate transitions, while the LTDC framebuffer is excluded
+# from the cacheable base region by an MPU subregion-disable bit.
+CONFIG_ARMV7M_DCACHE_WRITETHROUGH=n
 
 # The personality's svc handler runs on NuttX's interrupt stack and calls into the syscall core + the
 # app's I/O callbacks (including the polled USART1 console); give it headroom over the 2 KB default.

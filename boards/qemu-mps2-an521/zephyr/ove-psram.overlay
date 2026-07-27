@@ -11,6 +11,14 @@
  * overlap the kernel's region (the reason app_smem was used originally).
  */
 
+/ {
+	chosen {
+		/* NET_QEMU_SLIP selects UART_PIPE; keep its transport off the
+		 * console and bind the board's already-enabled second UART. */
+		zephyr,uart-pipe = &uart1;
+	};
+};
+
 &psram {
 	compatible = "zephyr,memory-region", "mmio-sram";
 	zephyr,memory-region = "OVE_PROG_RAM";

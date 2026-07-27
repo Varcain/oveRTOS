@@ -181,6 +181,10 @@ extern struct k_mem_partition z_malloc_partition;
 static struct k_mem_domain g_domains[LXP_NREG];
 static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
 static int g_dom_inited[LXP_NREG];
+static lxp_memory_policy_key_t g_domain_policy[LXP_NREG];
+static lxp_memory_policy_key_t g_slot_policy[LXP_NSLOT];
+static uint8_t g_domain_policy_valid[LXP_NREG];
+static uint8_t g_slot_policy_valid[LXP_NSLOT];
 
 /* Guest program pool: Normal write-back write-allocate, NON-shareable, CACHEABLE — deliberately the
  * SAME memory attribute the privileged run loop sees through Zephyr's static SDRAM region. The two
@@ -570,9 +574,26 @@ __attribute__((naked)) void lxp_park_loop(void *token __attribute__((unused)))
 	__asm__ volatile("1: b 1b\n");
 }
 
-/* (Re)build region ridx's MPU domain (W^X text/data split) for a loaded image. */
-static int setup_domain(int ridx, const lxp_flat_t *prog)
+/* (Re)build region ridx's MPU domain (W^X text/data split) only when the
+ * address-space/device/execute policy changed. Per-slot keys are retained
+ * separately because several CLONE_VM threads may bind the same native domain. */
+static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_t *prog)
 {
+	lxp_memory_policy_t policy;
+	lxp_slot_ref_t slot = {
+		.index = (int16_t)sidx,
+		.generation = generation,
+	};
+	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    policy.address_space.index != ridx || policy.device_count != 0 ||
+	    policy.copied_text_executable != (uint8_t)(prog->region_exec != 0))
+		return -1;
+	if (g_domain_policy_valid[ridx] &&
+	    lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx])) {
+		g_slot_policy[sidx] = lxp_memory_policy_make_key(&policy);
+		g_slot_policy_valid[sidx] = 1u;
+		return 0;
+	}
 	uint8_t *region = prog_regions[ridx];
 	if (g_dom_inited[ridx]) {
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_text[ridx]);
@@ -587,8 +608,7 @@ static int setup_domain(int ridx, const lxp_flat_t *prog)
 		 * stack share the region after the text; the dyn_pool — ld.so's mmaps of the LOCAL libc.so
 		 * (still XIP from the cpio) — stays plain RW. The RWX attr is WBWA-cacheable non-shareable,
 		 * the SAME cache attributes as the coordinator's SDRAM1 view, so the guest stays coherent
-		 * (only the XN bit differs from OVE_MEM_PART_RW_CACHE). Mirrors FreeRTOS g_region_exec /
-		 * NuttX f0d1720. */
+		 * (only the XN bit differs from OVE_MEM_PART_RW_CACHE). */
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = LXP_PROG_REGION_SIZE;
 		g_text[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
@@ -647,6 +667,27 @@ static int setup_domain(int ridx, const lxp_flat_t *prog)
 	if (k_mem_domain_add_partition(&g_domains[ridx], &g_text[ridx]) != 0 ||
 	    k_mem_domain_add_partition(&g_domains[ridx], &g_data[ridx]) != 0)
 		return -1;
+	g_domain_policy[ridx] = lxp_memory_policy_make_key(&policy);
+	g_domain_policy_valid[ridx] = 1u;
+	g_slot_policy[sidx] = lxp_memory_policy_make_key(&policy);
+	g_slot_policy_valid[sidx] = 1u;
+	return 0;
+}
+
+static int zephyr_bind_prepared_domain(int sidx, uint32_t generation, int ridx)
+{
+	lxp_memory_policy_t policy;
+	lxp_slot_ref_t slot = {
+		.index = (int16_t)sidx,
+		.generation = generation,
+	};
+	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    policy.address_space.index != ridx || policy.device_count != 0 ||
+	    !g_domain_policy_valid[ridx] ||
+	    !lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx]))
+		return -1;
+	g_slot_policy[sidx] = lxp_memory_policy_make_key(&policy);
+	g_slot_policy_valid[sidx] = 1u;
 	return 0;
 }
 
@@ -699,7 +740,7 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_tid[sidx])
 		return -1;
 	ARG_UNUSED(stack_lo);
-	if (setup_domain(ridx, prog) != 0)
+	if (setup_domain(sidx, generation, ridx, prog) != 0)
 		return -1;
 	if (prog->is_fdpic) {
 		/* FDPIC needs r7=exec loadmap, r8=ld.so loadmap, r9=GOT at entry. Rather than a
@@ -748,6 +789,11 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 	if (!lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_tid[sidx]) {
 		if (g_task_generation[sidx] != generation)
 			return -1;
+		lxp_memory_policy_t policy;
+		if (!g_slot_policy_valid[sidx] ||
+		    lxp_slot_memory_policy(task_slot_ref(sidx), &policy) != LXP_OK ||
+		    !lxp_memory_policy_matches_key(&policy, &g_slot_policy[sidx]))
+			return -1;
 		/* PendSV saved the svc frame that park_frame redirected to the naked
 		 * lxp_park_loop. Reuse that exact native frame: deriving a new PSP
 		 * from the Linux SP loses Zephyr's exception-alignment/lazy-FP
@@ -784,6 +830,8 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 		return 0;
 	}
 	if (g_tid[sidx])
+		return -1;
+	if (zephyr_bind_prepared_domain(sidx, generation, ridx) != 0)
 		return -1;
 	/* Stash the resume ctx in the program's OWN user-RW region, just below its resume SP, so
 	 * resume_tramp can read it without another MPU partition. AN521 already uses stack plus four
@@ -936,6 +984,7 @@ static int zephyr_abort_slot(int sidx, uint32_t generation)
 		k_thread_abort(g_tid[sidx]);
 	g_tid[sidx] = NULL;
 	g_task_generation[sidx] = 0;
+	g_slot_policy_valid[sidx] = 0;
 	return 0;
 }
 
@@ -1002,9 +1051,30 @@ static const char *lxp_seam_system_version(void)
 	return LXP_SYSTEM_VERSION;
 }
 
+static int zephyr_prepare(void)
+{
+	memset(g_domain_policy_valid, 0, sizeof(g_domain_policy_valid));
+	memset(g_slot_policy_valid, 0, sizeof(g_slot_policy_valid));
+	return LXP_OK;
+}
+
+static int zephyr_validate_memory_model(lxp_cpu_memory_model_t declared)
+{
+	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
+		       ? LXP_OK
+		       : LXP_ERR_INVALID_PARAM;
+#else
+	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK
+								 : LXP_ERR_INVALID_PARAM;
+#endif
+}
+
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
 	.struct_size = sizeof(lxp_os_ops_t),
+	.prepare = zephyr_prepare,
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
 	.exec_capture = zephyr_exec_capture,
@@ -1025,10 +1095,15 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
+#else
+	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
+#endif
+	.validate_memory_model = zephyr_validate_memory_model,
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	.exec_stage = zephyr_exec_stage,
 #endif
 };
 
-/* The public lxp_run() now lives in the module (src/lxp_run.c). This seam supplies
- * only the engine vtable (g_lxp_host_engine); Zephyr needs no prepare/teardown. */
+/* The public lxp_run() now lives in the module (src/lxp_run.c). */
