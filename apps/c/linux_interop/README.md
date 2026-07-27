@@ -140,6 +140,70 @@ The scope output owns TIM3, pinless timebase TIM5, PB4, and PG7. Disable
 `CONFIG_OVE_LINUX_RT_SCOPE` in menuconfig when the application needs any of
 those resources.
 
+## Supported profiles
+
+The app has four supported profiles. They all compile the same
+`linux_interop/src/app.c`, engine seam, coordinator, slot state machine, and
+world validator. A profile selects optional personality subsystems and
+instrumentation; it does not select an alternative lifecycle implementation.
+
+| Profile | App config name | Devices, FB, DMA2D, input | Network | Read-only 9P | Remote exec | PTY | Coordinator latency | Stack canaries | RT scope |
+|---------|-----------------|----------------------------|---------|--------------|-------------|-----|---------------------|----------------|----------|
+| Minimal | `linux_interop_minimal` | no | no | no | no | no | no | default (off) | off |
+| Full compatibility | `linux_interop` | yes | yes | yes | yes | yes | no | default (off) | board default |
+| Diagnostic | `linux_interop_diagnostic` | yes | yes | yes | yes | yes | yes + debug log | default (off) | board default |
+| Hardened | `linux_interop_hardened` | yes | yes | yes | no | yes | no + warning log | on | off |
+
+Remote exec stages a fetched image in an MPU-contained RWX program region.
+Full and Diagnostic enable that compatibility path. Hardened keeps strict W^X
+while retaining read-only remote files, networking, display/input, and PTYs.
+Minimal pins all optional personality subsystems off, including RT scope, so a
+new Kconfig default cannot silently grow the baseline.
+
+`CONFIG_OVE_LINUX_RT_SCOPE` is a hardware-board default: it resolves off on
+QEMU because it depends on STM32F746G-DISCO, and on for Full and Diagnostic on
+that board. Minimal and Hardened explicitly keep it off. All profiles preserve
+the generated world checks and lifecycle command protocol; Diagnostic adds
+timing detail around the same transitions.
+
+The supported CI matrix is FreeRTOS, NuttX, and Zephyr crossed with all four
+profiles (12 builds). The all-defconfig workflow compiles that matrix on QEMU
+and STM32F746G-DISCO whenever the corresponding engine supports the board.
+
+### Resource cost
+
+The following reproducible QEMU build is the profile budget gate. Sizes are
+bytes. Flash image is the generated binary; the value in parentheses is
+Zephyr's linker-reported FLASH span. Internal BSS is the literal `.bss`
+section, excluding separately reserved general RTOS heaps and main stacks.
+External pools include all program regions, dynamic-link pools, any externally
+resident per-slot cold captures, and the optional 256 KiB remote-exec staging
+area.
+
+| Engine | Profile | `NSLOT` / `NREG` | Flash image | Internal BSS | External pools | Cold / slot | Native stack / slot |
+|--------|---------|------------------|-------------|--------------|----------------|-------------|---------------------|
+| FreeRTOS | Minimal | 9 / 5 | 601,524 | 451,904 | 3,944,760 | 1,400 | 1,024 |
+| FreeRTOS | Full | 8 / 4 | 1,079,236 | 776,540 | 3,419,072 | 1,400 | 1,024 |
+| FreeRTOS | Diagnostic | 8 / 4 | 1,086,008 | 781,084 | 3,419,072 | 1,400 | 1,024 |
+| FreeRTOS | Hardened | 9 / 5 | 1,099,224 | 782,820 | 3,944,760 | 1,400 | 1,024 |
+| NuttX | Minimal | 10 / 6 | 225,228 | 204,148 | 4,718,592 | 1,400 | 1,024 |
+| NuttX | Full | 10 / 6 | 296,120 | 232,832 | 4,980,736 | 1,400 | 1,024 |
+| NuttX | Diagnostic | 10 / 6 | 297,516 | 235,960 | 4,980,736 | 1,400 | 1,024 |
+| NuttX | Hardened | 10 / 6 | 295,376 | 232,824 | 4,718,592 | 1,400 | 1,024 |
+| Zephyr | Minimal | 5 / 1 | 107,848 (113,992) | 92,845 | 793,432 | 1,400 | 1,024 |
+| Zephyr | Full | 5 / 1 | 218,408 (225,576) | 115,047 | 1,055,576 | 1,400 | 1,024 |
+| Zephyr | Diagnostic | 5 / 1 | 220,240 (227,408) | 117,227 | 1,055,576 | 1,400 | 1,024 |
+| Zephyr | Hardened | 5 / 1 | 217,880 (225,048) | 115,035 | 793,432 | 1,400 | 1,024 |
+
+These are board-layout costs, not portable claims about the engines. On the
+STM32 board, NuttX places its cold captures and native slot stacks in SDRAM
+rather than internal BSS. Zephyr/AN521 reserves the lower 15,296 KiB of PSRAM
+for the runner-loaded rootfs and gives the remaining 1,088 KiB to
+`OVE_PROG_RAM`; Full and Diagnostic currently use 94.75% of that window.
+FreeRTOS' QEMU linker emits `.bss` as loadable `PROGBITS`, so its generated
+flash image includes those zero-filled bytes; the table intentionally reports
+the actual artifact rather than only `.text`.
+
 ## Build & run
 
 ```sh
@@ -153,6 +217,16 @@ ove defconfig-fragments qemu-mps2-an500.nuttx.linux_interop
 ove download        # first time only — fetches the engine workspace
 ove build
 ove run
+```
+
+Replace the final component with `linux_interop_minimal`,
+`linux_interop_diagnostic`, or `linux_interop_hardened` to select another
+profile. For example:
+
+```sh
+ove defconfig-fragments stm32f746g-discovery.nuttx.linux_interop_hardened
+ove configure
+ove build
 ```
 
 FreeRTOS has an independent Linux guest ABI choice under `ove menuconfig`:

@@ -3,13 +3,13 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Linux personality: turn the AN521 PSRAM (16 MB @ 0x80000000) into a NOLOAD
- * linker region ("OVE_PROG_RAM") for the program-image regions. Placed here they
- * cost RAM (inherent) but NOT flash — unlike Zephyr's app_smem, a *loaded* section
- * that stored the 2 MB of zero-init regions as 2 MB of flash zeros. PSRAM is also
- * a separate region from the kernel SRAM, so the per-program MPU partitions don't
- * overlap the kernel's region (the reason app_smem was used originally).
+ * Linux personality: split the AN521 PSRAM (16 MB @ 0x80000000) between a raw
+ * rootfs loaded by QEMU and a NOLOAD linker region ("OVE_PROG_RAM") for the
+ * program pools. Keeping both out of the ELF lets the normal 15 MB Buildroot
+ * image coexist with Zephyr's 4 MB internal flash limit.
  */
+
+/delete-node/ &psram;
 
 / {
 	chosen {
@@ -17,9 +17,19 @@
 		 * console and bind the board's already-enabled second UART. */
 		zephyr,uart-pipe = &uart1;
 	};
-};
 
-&psram {
-	compatible = "zephyr,memory-region", "mmio-sram";
-	zephyr,memory-region = "OVE_PROG_RAM";
+	/* qemu-run.sh rejects a rootfs larger than this reserved window. */
+	lxp_rootfs_ram: memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x00ef0000>;
+	};
+
+	/* One QEMU validation region plus its cold captures and optional
+	 * 256 KiB netfs-exec stage fits in the remaining 1088 KiB. */
+	lxp_pool_ram: memory@80ef0000 {
+		device_type = "memory";
+		reg = <0x80ef0000 0x00110000>;
+		compatible = "zephyr,memory-region", "mmio-sram";
+		zephyr,memory-region = "OVE_PROG_RAM";
+	};
 };

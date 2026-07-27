@@ -1,0 +1,30 @@
+lang: c
+config_name: linux_interop_minimal
+description: "Linux personality interop demo — Minimal profile"
+sources:
+  - ../linux_interop/src/app.c
+  - ../linux_interop/src/rt_scope.c
+defconfig:
+  - CONFIG_OVE_LINUX=y
+  - CONFIG_OVE_ARENA=y
+  - CONFIG_OVE_LOADER=y
+  - CONFIG_OVE_QUEUE=y
+  # Pin every optional personality subsystem off so a new default cannot
+  # silently grow this supported baseline.
+  - CONFIG_OVE_LINUX_DEV=n
+  - CONFIG_OVE_LINUX_DEV_FB=n
+  - CONFIG_OVE_LINUX_DEV_DMA2D=n
+  - CONFIG_OVE_LINUX_DEV_INPUT=n
+  - CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD=n
+  - CONFIG_OVE_LINUX_NET=n
+  - CONFIG_OVE_LINUX_NETFS=n
+  - CONFIG_OVE_LINUX_NETFS_EXEC=n
+  - CONFIG_OVE_LINUX_PTY=n
+  - CONFIG_OVE_LINUX_LATENCY=n
+  - CONFIG_OVE_LINUX_RT_SCOPE=n
+rtos_defconfig:
+  freertos:
+    - CONFIG_FREERTOS_USE_TIME_SLICING=n
+incompatible_boards:
+  - host
+  - wasm

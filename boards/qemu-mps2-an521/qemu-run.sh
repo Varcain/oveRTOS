@@ -13,6 +13,8 @@
 #
 # Usage: qemu-run.sh <elf-file> [--headless] [--timeout <s>] [extra-qemu-args...]
 set -u
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OVE_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ELF="${1:?Usage: $0 <elf-file> [--headless] [--timeout <s>] [extra-qemu-args...]}"
 shift
 
@@ -29,6 +31,43 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+ove_ws_dir() {
+    local d
+    d="$(dirname "$(realpath "$1")")"
+    while [ "${d}" != "/" ]; do
+        if [ -f "${d}/.config" ]; then
+            printf '%s\n' "${d}"
+            return 0
+        fi
+        d="$(dirname "${d}")"
+    done
+    return 1
+}
+
+OVE_WS_DIR="$(ove_ws_dir "${ELF}" || true)"
+PERSONALITY_CFG="${OVE_WS_DIR:-$(dirname "$(realpath "${ELF}")")}/.config"
+PERS_ARGS=()
+if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_CFG}"; then
+    _br="$(sed -n 's/^CONFIG_OVE_BUILDROOT="\(.*\)"$/\1/p' "${PERSONALITY_CFG}")"
+    _br="${_br:-../buildroot}"
+    _ro="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_OUTPUT="\(.*\)"$/\1/p' "${PERSONALITY_CFG}")"
+    _ro="${_ro:-output}"
+    case "${_br}" in
+        /*) ROOTFS_CPIO="${_br}/${_ro}/images/rootfs.cpio" ;;
+        *)  ROOTFS_CPIO="${OVE_DIR}/${_br}/${_ro}/images/rootfs.cpio" ;;
+    esac
+    if [ ! -f "${ROOTFS_CPIO}" ]; then
+        echo "[qemu-run] ERROR: rootfs.cpio not found at ${ROOTFS_CPIO} (build Buildroot first)" >&2
+        exit 1
+    fi
+    ROOTFS_SIZE="$(stat -c %s "${ROOTFS_CPIO}")"
+    if [ "${ROOTFS_SIZE}" -gt $((0x00ef0000)) ]; then
+        echo "[qemu-run] ERROR: rootfs.cpio is ${ROOTFS_SIZE} bytes; AN521 PSRAM window is $((0x00ef0000))" >&2
+        exit 1
+    fi
+    PERS_ARGS=(-device "loader,file=${ROOTFS_CPIO},addr=0x80000000,force-raw=on")
+fi
+
 QEMU_ARGS=(
     -cpu cortex-m33 -machine mps2-an521 -m 16
     # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive top's
@@ -37,6 +76,7 @@ QEMU_ARGS=(
     -semihosting-config enable=on,chardev=c0 -chardev null,id=c0
     -serial none -serial stdio -monitor none -display none
     -kernel "${ELF}"
+    "${PERS_ARGS[@]}"
 )
 
 # Interactive personality shell: deliver each keystroke and let the guest echo.

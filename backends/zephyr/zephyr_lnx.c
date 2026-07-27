@@ -12,11 +12,13 @@
  *
  * Each program runs as an UNPRIVILEGED K_USER thread in its own k_mem_domain, while
  * the privileged coordinator stays in the default domain and can reload any slot.
- * The domain is board-specific: AN521/PMSAv8 uses libc + Zephyr malloc + image + arena
- * partitions; STM32F746/PMSAv7 drops the unused Zephyr-malloc partition and uses libc +
- * image + arena. Both also consume the K_USER stack region. The resume context stays in
- * the guest's own image region so it costs no additional MPU partition. The program's
- * svc #0 is an unprivileged fault routed by Zephyr to z_do_kernel_oops, which we --wrap.
+ * The domain is board-specific: AN521/PMSAv8 uses libc + Zephyr malloc + rootfs +
+ * image + arena partitions; STM32F746/PMSAv7 XIPs the rootfs through a static
+ * QSPI mapping, drops the unused Zephyr-malloc partition, and uses libc + image +
+ * arena. Both also consume the K_USER stack region. The resume context stays in
+ * the guest's own image region so it costs no additional MPU partition. The
+ * program's svc #0 is an unprivileged fault routed by Zephyr to
+ * z_do_kernel_oops, which we --wrap.
  */
 
 #include <zephyr/kernel.h>
@@ -75,14 +77,14 @@ BUILD_ASSERT(CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO == OVE_ZEPHYR_PRIO_ABOVE_NORMAL
  * flash cost — Zephyr's app_smem is a *loaded* section, so a K_APP_BMEM array this big would store
  * the zero-init regions as that many MB of flash. External RAM is also a region separate from the
  * kernel SRAM, so the per-program MPU partitions built in setup_domain() don't overlap the kernel's
- * region (the reason app_smem was used). The node differs per board: an521 uses the 16 MB PSRAM
- * (ove-psram.overlay → "OVE_PROG_RAM"); the real STM32F746 uses the 8 MB FMC SDRAM @0xC0000000
+ * region (the reason app_smem was used). The node differs per board: an521 uses the final 1088 KiB
+ * of PSRAM (ove-psram.overlay → "OVE_PROG_RAM"); the real STM32F746 uses the 8 MB FMC SDRAM @0xC0000000
  * (upstream `sdram1` node → "SDRAM1"; the LTDC display that would share it is disabled in the
  * linux_interop overlay). */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #define OVE_PROG_RAM_NODE DT_NODELABEL(sdram1)
 #else
-#define OVE_PROG_RAM_NODE DT_NODELABEL(psram)
+#define OVE_PROG_RAM_NODE DT_NODELABEL(lxp_pool_ram)
 #endif
 /* Per-program partition base alignment. On a power-of-2 MPU (PMSAv7, e.g. the STM32F746, where
  * CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT=y) an MPU region's base must be aligned to its SIZE, so
@@ -178,6 +180,15 @@ void serial_poll_putc(char c)
  * budget permits) Zephyr's malloc partition. The guest itself uses uClibc malloc. */
 extern struct k_mem_partition z_libc_partition;
 extern struct k_mem_partition z_malloc_partition;
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+/* QEMU injects the CPIO into PSRAM instead of embedding it in Zephyr's static
+ * user-RX text. Give every guest the reserved, read/execute-only rootfs window. */
+static struct k_mem_partition g_rootfs_partition = {
+	.start = 0x80000000u,
+	.size = 0x00ef0000u,
+	.attr = K_MEM_PARTITION_P_RX_U_RX,
+};
+#endif
 static struct k_mem_domain g_domains[LXP_NREG];
 static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
 static int g_dom_inited[LXP_NREG];
@@ -651,15 +662,24 @@ static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_
 		struct k_mem_partition *base[] = {&z_libc_partition};
 		if (k_mem_domain_init(&g_domains[ridx], 1, base) != 0)
 			return -1;
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+		/* The resume ctx rides in the program's own region. AN521 adds the
+		 * QEMU-loaded rootfs explicitly: libc + malloc + rootfs + text + data
+		 * are five domain partitions; with the K_USER stack that exactly uses
+		 * the six dynamic PMSAv8 regions left by the two static regions. */
+		struct k_mem_partition *base[] = {
+			&z_libc_partition,
+			&z_malloc_partition,
+			&g_rootfs_partition,
+		};
+		if (k_mem_domain_init(&g_domains[ridx], ARRAY_SIZE(base), base) != 0)
+			return -1;
 #else
-		/* libc + malloc only (the resume ctx now rides in the program's own region —
-		 * see zephyr_spawn_resume — so there is no separate shared partition); text +
-		 * data are added below → 4 partitions. The AN521 MPU has 8 regions (2 static →
-		 * 6 dynamic) and a K_USER thread also needs a stack region, so staying at 4
-		 * partitions (= 5 dynamic) leaves the headroom that a 5th + a NON_OVERLAPPING
-		 * split previously overran. */
+		/* Other PMSAv8 boards retain the ordinary libc + malloc base. The
+		 * rootfs partition is an AN521 runner contract, not a generic Zephyr
+		 * memory-domain requirement. */
 		struct k_mem_partition *base[] = {&z_libc_partition, &z_malloc_partition};
-		if (k_mem_domain_init(&g_domains[ridx], 2, base) != 0)
+		if (k_mem_domain_init(&g_domains[ridx], ARRAY_SIZE(base), base) != 0)
 			return -1;
 #endif
 		g_dom_inited[ridx] = 1;
@@ -740,8 +760,10 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_tid[sidx])
 		return -1;
 	ARG_UNUSED(stack_lo);
-	if (setup_domain(sidx, generation, ridx, prog) != 0)
+	if (setup_domain(sidx, generation, ridx, prog) != 0) {
+		printk("[lxp] zephyr domain setup failed slot=%d region=%d\n", sidx, ridx);
 		return -1;
+	}
 	if (prog->is_fdpic) {
 		/* FDPIC needs r7=exec loadmap, r8=ld.so loadmap, r9=GOT at entry. Rather than a
 		 * bespoke unprivileged trampoline, REUSE the proven resume_tramp: synthesize a resume
@@ -772,6 +794,7 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 		k_thread_name_set(g_tid[sidx], nm);
 	}
 	if (k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]) != 0) {
+		printk("[lxp] zephyr domain bind failed slot=%d region=%d\n", sidx, ridx);
 		k_thread_abort(g_tid[sidx]);
 		g_tid[sidx] = NULL;
 		return -1;

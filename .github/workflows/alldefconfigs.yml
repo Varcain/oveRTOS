@@ -11,8 +11,13 @@ permissions:
   contents: read
 
 # Builds every app/*.yaml config for each <board>.<rtos> pair using
-# `make allconfigs-<board>.<rtos>`. Splitting per board/rtos keeps disk
-# usage bounded on GitHub-hosted runners.
+# `make allconfigs-<board>.<rtos>`. This includes the supported Linux
+# personality matrix on FreeRTOS, NuttX, and Zephyr:
+#   Minimal            linux_interop_minimal
+#   Full compatibility linux_interop
+#   Diagnostic         linux_interop_diagnostic
+#   Hardened           linux_interop_hardened
+# Splitting per board/rtos keeps disk usage bounded on GitHub-hosted runners.
 
 jobs:
   host:
