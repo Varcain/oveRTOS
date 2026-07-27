@@ -631,3 +631,72 @@ memory-fault containment, and RT-scope hardware checks. The clean final NuttX
 image was rebuilt, ST-Link programmed and verified it, and a post-flash loaded
 smoke recorded 80,310/80,310 executions with zero misses or late finishes.
 `uname -a` reports `NuttX 12.12.0 ove-bdd37f4 lxp-6cfad27`.
+
+## Iteration 8 protocol and profile gates
+
+Iteration 8 converts the stabilized lifecycle rules into a bounded protocol
+test. The coordinator suite enumerates all 7,776 five-command words over park,
+timeout, signal, exit, slot reuse, and stale completion. It stops a word at an
+illegal model transition and invokes `lxp_validate_world()` after every legal
+transition. Focused cases additionally cross signal delivery with a blocked
+netfs request, exec commit with an older deferred request, group exit with a
+shared address space, and slot reuse with a late completion from the dead
+generation. The coordinator test target now enables the full optional
+DEV/NET/NETFS/NETFS_EXEC/PTY surface instead of testing lifecycle only in a
+reduced build.
+
+Four named profiles compose existing features without selecting alternative
+lifecycle code:
+
+| Profile | Devices and input | Network / read-only 9P | Remote exec | PTY | Diagnostics | Hardening |
+|---|---|---|---|---|---|---|
+| Minimal | off | off / off | off | off | off | defaults |
+| Full compatibility | on | on / on | on | on | board RT-scope default | defaults |
+| Diagnostic | on | on / on | on | on | latency + debug + board RT-scope | defaults |
+| Hardened | on | on / on | off | on | warning log, RT-scope off | stack canaries |
+
+Every profile compiles the same app, seam, coordinator, state machine, and
+world validator. The existing all-defconfig jobs therefore build a supported
+three-engine by four-profile matrix on both QEMU and supported STM32 targets.
+
+The QEMU resource gate records actual generated binaries and literal internal
+`.bss` sections. Zephyr's value in parentheses is its linker-reported FLASH
+span. External pool sizes include program and dynamic-link regions, externally
+resident cold storage, and remote-exec staging where enabled.
+
+| Engine | Profile | `NSLOT` / `NREG` | Flash image | Internal BSS | External pools |
+|---|---|---:|---:|---:|---:|
+| FreeRTOS | Minimal | 9 / 5 | 601,524 B | 451,904 B | 3,944,760 B |
+| FreeRTOS | Full | 8 / 4 | 1,079,236 B | 776,540 B | 3,419,072 B |
+| FreeRTOS | Diagnostic | 8 / 4 | 1,086,008 B | 781,084 B | 3,419,072 B |
+| FreeRTOS | Hardened | 9 / 5 | 1,099,224 B | 782,820 B | 3,944,760 B |
+| NuttX | Minimal | 10 / 6 | 225,228 B | 204,148 B | 4,718,592 B |
+| NuttX | Full | 10 / 6 | 296,120 B | 232,832 B | 4,980,736 B |
+| NuttX | Diagnostic | 10 / 6 | 297,516 B | 235,960 B | 4,980,736 B |
+| NuttX | Hardened | 10 / 6 | 295,376 B | 232,824 B | 4,718,592 B |
+| Zephyr | Minimal | 5 / 1 | 107,848 B (113,992 B) | 92,845 B | 793,432 B |
+| Zephyr | Full | 5 / 1 | 218,408 B (225,576 B) | 115,047 B | 1,055,576 B |
+| Zephyr | Diagnostic | 5 / 1 | 220,240 B (227,408 B) | 117,227 B | 1,055,576 B |
+| Zephyr | Hardened | 5 / 1 | 217,880 B (225,048 B) | 115,035 B | 793,432 B |
+
+Cold capture storage is 1,400 B per slot and the native slot stack is 1,024 B
+per slot on all three QEMU seams. On STM32, NuttX moves both objects into
+external SDRAM. The production Buildroot CPIO no longer fits beside the Zephyr
+application in AN521's 4 MiB internal flash, so its runner now loads the rootfs
+into the lower 15,296 KiB of PSRAM and reserves the remaining 1,088 KiB for one
+guest region. Full and Diagnostic occupy 94.75% of that bounded window.
+
+The implementation culminates at oveRTOS `707c0ed` and LXP `cb48ef2`. All 45
+normal host CTest targets pass, including 84 coordinator tests. The LXP unit
+and coordinator targets pass under AddressSanitizer and UndefinedBehavior
+Sanitizer, and all six existing fuzz corpora pass under the sanitizer replay
+engine. All 12 QEMU engine/profile builds pass. The current Buildroot image is
+hard-float while the AN521 validation target is intentionally soft-float
+and has no FPU, so QEMU correctly rejects that image at the loader ABI gate
+rather than executing an incompatible guest.
+
+No new STM32 runtime result is claimed for this iteration: the ST-Link and
+`/dev/ttyACM0` were absent during the final gate. Iteration 8 changes test,
+configuration, and QEMU rootfs packaging rather than the shared target
+lifecycle, but a fresh hardware smoke remains required before calling the
+profile set hardware-qualified.
