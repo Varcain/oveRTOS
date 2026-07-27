@@ -534,3 +534,100 @@ average/maximum was 15.19/17.22 us across 1,029 calls; Zephyr's was
 those averages increased by 8.7% and maxima by 9.3%/9.2%, while the serial and
 SSH syscall workloads completed without capacity, timeout, or real-time
 failures. The board was left running the clean FreeRTOS image.
+
+## Iteration 7 explicit cache and MPU contracts
+
+Iteration 7 makes the CPU-memory model an engine declaration rather than an
+assumption hidden in cache hooks and MPU constants. `lxp_run()` validates the
+live cache state after engine preparation and before loading a guest. FreeRTOS,
+NuttX, and Zephyr declare a coherent single-CPU model in which the privileged
+coordinator and guest use matching cacheable Normal-memory attributes for
+ordinary program and dynamic-pool memory. A mismatch fails launch closed.
+
+The coordinator now produces one immutable `lxp_memory_policy_t`. Its reusable
+key contains the slot generation, address-space region and generation,
+device-map generation, and copied-text execute-policy generation. Each engine
+compiles that policy into its native representation: restricted task regions
+on FreeRTOS, RBAR/RASR profiles on NuttX, and memory-domain partitions on
+Zephyr. Native state is reused only when the complete key matches. Device
+mappings still originate in registered driver capabilities; the policy does
+not accept a userspace-selected physical range.
+
+Framebuffer and DMA2D mappings remain outside the ordinary CPU-memory model.
+They are device capabilities with their own attributes and explicit ownership
+boundaries. The STM32 framebuffer paths retain their clean/invalidate
+operations around DMA ownership transfer. The general guest-memory path does
+not acquire a mixed cached/uncached alias.
+
+The target-ABI changes relative to Iteration 6 are:
+
+| Object | Iteration 6 | Iteration 7 | Delta |
+|---|---:|---:|---:|
+| `lxp_proc_t` | 240 B | 240 B | 0 B |
+| `lxp_mm_t` | 72 B | 84 B | +12 B |
+| `lxp_memory_policy_t` | absent | 60 B | dispatch-local |
+| `lxp_memory_policy_key_t` | absent | 28 B | native prepared-state key |
+| `lxp_os_ops_t` | 116 B | 124 B | +8 B |
+
+Clean production images culminate at oveRTOS `bdd37f4` and LXP `6cfad27`.
+They compare with Iteration 6 as follows:
+
+| Engine | Iteration 6 flash | Iteration 7 flash | Flash delta | Iteration 6 RAM | Iteration 7 RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|---:|
+| FreeRTOS | 236,300 B | 237,028 B | +728 B (+0.308%) | 249,672 B | 250,376 B | +704 B |
+| NuttX | 241,540 B | 242,632 B | +1,092 B (+0.452%) | 237,524 B | 238,740 B | +1,216 B |
+| Zephyr | 282,560 B | 283,496 B | +936 B (+0.331%) | 258,304 B | 258,304 B | 0 B |
+
+The generated configurations, root filesystem, slot and region counts, and
+external-memory reservations are unchanged. Their three `.config` hashes still
+match the values at the top of this document. The relevant target declarations
+are FreeRTOS `TEX_S_C_B_SRAM=0x0b`, NuttX D-cache enabled with write-back,
+write-allocate Normal memory, and Zephyr `CONFIG_CACHE_MANAGEMENT=y` plus
+`CONFIG_DCACHE=y`.
+
+NuttX hardware stress exposed one latency problem in the original launch
+publication path. It flushed the complete 128 KiB program region and 256 KiB
+dynamic pool before every launch. NuttX converts a clean range at least as
+large as the Cortex-M7's 16 KiB D-cache into a whole-cache set/way clean plus a
+barrier. Draining dirty SDRAM lines at that barrier could postpone exception
+entry across multiple 1 ms releases. Matching WBWA CPU mappings require no
+launch-time maintenance for ordinary data. The final port therefore cleans
+only copied executable text, in bounded 1 KiB chunks, and invalidates the
+matching I-cache range before publishing the task.
+
+Instrumentation that changes latency-sensitive NuttX scheduler paths is also
+explicitly disabled. The final generated kernel configuration retains
+`CONFIG_SCHED_INSTRUMENTATION_SWITCH=y` for CPU attribution, while
+preemption, critical-section, and IRQ-handler tracing are all off.
+
+The final NuttX production image completed a 600-second regular `lvmusic`
+heavy-render scene plus repeated network downloads with 1,814 active render
+samples. Median/mean FPS was 6/5.94; median/mean/maximum render time was
+138/137.85/160 ms and flush maximum was 12 ms. During the exact measured
+interval RT-scope recorded 603,070 releases and executions, zero misses, zero
+late finishes, p99 and p99.9 dispatch in the `<=32 us` bucket, and a 115.15 us
+maximum. Including workload startup and process teardown gives the more
+conservative 643,250/643,250 executions and a 240.19 us maximum, still with
+zero misses or late finishes.
+
+For comparison, the same Iteration 7 workload on FreeRTOS recorded 1,778 active
+render samples, 6/6.05 median/mean FPS, 141/141.14/293 ms
+median/mean/maximum render time, zero misses, and a 77.63 us maximum dispatch.
+Zephyr recorded 1,799 active samples, 6/6.06 FPS,
+130/129.52/144 ms render time, zero misses, and a 63.02 us maximum dispatch.
+NuttX remains slower in average dispatch because its scheduler wake path is
+longer, but the multi-release cache-drain failure is removed and all three
+engines remain within the product timing budget.
+
+All 45 LXP host CTest targets pass in normal and AddressSanitizer plus
+UndefinedBehaviorSanitizer builds. The coordinator suite runs 79 tests; the
+feature-gate, fuzz-replay, decoupling, guest-memory repository, and Cortex-M4
+QEMU gates pass. The oveRTOS C, C++, Rust, Zig, and NuttX host groups pass.
+After regenerating a pre-existing incomplete Zephyr native-simulation build,
+its 276 tests also pass.
+
+FreeRTOS, NuttX, and Zephyr each passed STM32F746G-DISCO boot, guest launch,
+memory-fault containment, and RT-scope hardware checks. The clean final NuttX
+image was rebuilt, ST-Link programmed and verified it, and a post-flash loaded
+smoke recorded 80,310/80,310 executions with zero misses or late finishes.
+`uname -a` reports `NuttX 12.12.0 ove-bdd37f4 lxp-6cfad27`.
