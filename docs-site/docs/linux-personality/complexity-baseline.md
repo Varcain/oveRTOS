@@ -459,3 +459,78 @@ FreeRTOS and Zephyr again completed the early host socket smoke. NuttX
 retained its known early `connect failed rc=-9` result but subsequently brought
 up inetd and completed the SSH lifecycle test. The board was left running the
 clean NuttX image.
+
+## Iteration 6 dispatch-scoped guest memory
+
+Iteration 6 replaces distributed privileged guest-pointer handling with one
+common boundary. `lxp_guest_range_ok()` is the pure range and permission
+primitive. Dispatch-scoped views bind a process, address space, slot
+generation, and region generation for the duration of one SVC or coordinator
+dispatch. Copy, scalar, and bounded-string helpers revalidate that identity
+before access; stale, nested, or permission-incompatible views fail closed.
+View teardown is idempotent, and a diagnostic records any view which survives
+its dispatch.
+
+Syscall metadata, strings, vectors, signal frames, and blocked-operation
+payloads now pass through that boundary, as do the network, PTY, netfs, and
+device bridges. Blocked state retains guest addresses rather than privileged
+CPU pointers. Netfs completion is marshalled only while the owning guest's
+coordinator view is active. A repository check rejects new direct guest
+validation or copies outside the common implementation.
+
+Hardware measurement exposed full 32-byte clears at both ends of every view
+lifecycle. The final hot-path commit makes `active` the revocation point,
+clears only authority-bearing pointers at teardown, and initializes every
+field directly. ARM disassembly confirms that neither begin nor end calls
+`memset()`. In the same boot-plus-fork workload, this reduced the FreeRTOS SVC
+lifetime average/maximum from 17.00/19.04 us to 15.28/17.22 us. Zephyr's final
+figures are 13.86/16.23 us, down from 16.15/18.29 us before the cleanup.
+
+Clean production images built from oveRTOS `0418a4a` and LXP `bedb54b`
+compare with Iteration 5 as follows:
+
+| Engine | Iteration 5 flash | Iteration 6 flash | Flash delta | Internal static RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 235,116 B | 236,300 B | +1,184 B (+0.504%) | 249,672 B | 0 B |
+| NuttX | 241,252 B | 241,540 B | +288 B (+0.119%) | 237,524 B | 0 B |
+| Zephyr | 281,480 B | 282,560 B | +1,080 B (+0.384%) | 258,304 B | 0 B |
+
+The added flash is the common access and generation-validation policy.
+`lxp_guest_view_t` is a 32-byte dispatch-local object and adds no static
+table. Target ABI sizes remain 240 bytes for `lxp_proc_t` and 72 bytes for
+`lxp_mm_t`; existing alignment absorbed the process view pointer. Slot and
+region counts, internal and external static RAM, root filesystem, and
+generated configurations are unchanged. The three `.config` SHA-256 values
+still match those recorded at the top of this document.
+
+All 45 host CTest targets pass in both normal and AddressSanitizer plus
+UndefinedBehaviorSanitizer builds. The coordinator suite still runs 78 tests.
+All six fuzz replay corpora pass under the sanitizers, seven ARM feature-gate
+combinations build warning-clean, and both the decoupling and guest-memory
+repository guards pass. The Cortex-M4 QEMU suite reports
+`PASS: lxp-m4-ok`.
+
+FreeRTOS, NuttX, and Zephyr were each flashed with the clean
+`ove-0418a4a lxp-bedb54b` identity. Every engine completed the three
+RTOS/Linux phase-one round trips, BusyBox `rcS`, getty, inetd, serial login,
+`uname`, and three external `/bin/true` executions. An independent SSH session
+through the Pi gateway repeated `uname` and the three external executions on
+each engine. FreeRTOS and Zephyr completed the early socket smoke; NuttX
+retained its known early `connect failed rc=-9` result and then completed the
+same serial and SSH lifecycle checks.
+
+Every captured RT-scope window had zero misses, late finishes, IRQ overruns,
+and pending executions:
+
+| Engine | Startup releases | Startup p99 / p99.9 / max | Next-window releases | Next-window p99 / p99.9 / max |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 10,030 | <=10 / <=16 / 24.52 us | 10,047 | <=10 / <=10 / 23.59 us |
+| NuttX | 10,120 | <=12 / <=20 / 28.20 us | 10,030 | <=10 / <=16 / 17.91 us |
+| Zephyr | 10,016 | <=10 / <=32 / 68.22 us | 10,048 | <=10 / <=12 / 35.15 us |
+
+NuttX does not expose the SVC timer. FreeRTOS's first-window SVC
+average/maximum was 15.19/17.22 us across 1,029 calls; Zephyr's was
+13.68/16.23 us across 970 calls. Against the frozen loaded-workload baseline,
+those averages increased by 8.7% and maxima by 9.3%/9.2%, while the serial and
+SSH syscall workloads completed without capacity, timeout, or real-time
+failures. The board was left running the clean FreeRTOS image.
