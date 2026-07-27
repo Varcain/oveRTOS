@@ -642,20 +642,56 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	return 0;
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/*
+ * Publish RAM-backed executable text without issuing one whole-cache clean.
+ * NuttX turns a range at least as large as the 16 KiB M7 D-cache into a
+ * set/way clean followed by one DSB. Draining all dirty SDRAM lines behind
+ * that barrier can postpone exception entry for multiple 1 ms releases.
+ *
+ * Ordinary program/dynamic-pool data needs no launch-time maintenance:
+ * coordinator and guest use the same WBWA mapping on the same CPU. Copied
+ * text is the one CPU-to-I-cache ownership boundary. Cleaning it in bounded
+ * chunks leaves an interruptible point between barriers, then the matching
+ * I-cache range is invalidated before the task becomes runnable.
+ */
+#define NUTTX_EXEC_PUBLISH_CHUNK 1024u
+static int nuttx_publish_copied_text(const lxp_flat_t *prog, int ridx)
+{
+	if (!prog->region_exec)
+		return 0;
+
+	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
+	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
+	uintptr_t text_lo = prog->text_base;
+	if (prog->text_size == 0 || text_lo < region_lo || text_lo >= region_hi ||
+	    prog->text_size > region_hi - text_lo)
+		return -1;
+
+	uintptr_t text_hi = text_lo + prog->text_size;
+	for (uintptr_t start = text_lo; start < text_hi;) {
+		uintptr_t end = text_hi - start > NUTTX_EXEC_PUBLISH_CHUNK
+					? start + NUTTX_EXEC_PUBLISH_CHUNK
+					: text_hi;
+		up_clean_dcache(start, end);
+		start = end;
+	}
+	up_invalidate_icache(text_lo, text_hi);
+	return 0;
+}
+#endif
+
 static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 			      const lxp_flat_t *prog, void *entry, void *sp,
 			      void *stack_lo)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_pid[sidx] >= 0)
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || ridx < 0 ||
+	    ridx >= LXP_NREG || !prog || g_pid[sidx] >= 0)
 		return -1;
-	/* The coordinator and guest now use the same pool attributes. Publish the
-	 * loader's dirty data/instruction bytes, then discard any previous tenant's
-	 * lines before the newly prepared profile can run. With D-cache disabled the
-	 * NuttX cache primitive is a no-op. */
-	up_flush_dcache((uintptr_t)prog_regions[ridx],
-			(uintptr_t)prog_regions[ridx] + LXP_PROG_REGION_SIZE);
-	up_flush_dcache((uintptr_t)dyn_pools[ridx],
-			(uintptr_t)dyn_pools[ridx] + LXP_DYN_POOL_SIZE);
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	if (nuttx_publish_copied_text(prog, ridx) != 0)
+		return -1;
+#endif
 	(void)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)sp) != 0)
 		return -1;
