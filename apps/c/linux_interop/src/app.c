@@ -256,6 +256,54 @@ static uint32_t uptime_ms(void)
 	return (uint32_t)(us / 1000u);
 }
 
+#if defined(CONFIG_OVE_LINUX_NET)
+/* Run after phase 1 rather than immediately after assigning the static address.
+ * NuttX and Zephyr publish the address before the Ethernet carrier/ARP path is
+ * connect-ready, so the old boot-time probe could report UNREACHABLE/TIMEOUT
+ * even though the same interface passed ICMP and SSH moments later. */
+static void network_transport_smoke(void)
+{
+	static ove_socket_storage_t s_sk;
+	ove_socket_t sk = NULL;
+	if (ove_socket_open(&sk, &s_sk, OVE_AF_INET, OVE_SOCK_STREAM) != OVE_OK) {
+		sh_write0("[demo] socket smoke (post-phase1): open failed\n");
+		return;
+	}
+
+	ove_sockaddr_t peer;
+	ove_sockaddr_ipv4(&peer, 172, 1, 1, 1, 22);
+	int cr = ove_socket_connect(sk, &peer, OVE_SEC(5));
+	if (cr == OVE_OK) {
+		char rb[80];
+		size_t got = 0;
+		if (ove_socket_recv(sk, rb, sizeof(rb) - 1, &got, OVE_SEC(5)) == OVE_OK &&
+		    got > 0) {
+			for (size_t i = 0; i < got; i++)
+				if (rb[i] == '\r' || rb[i] == '\n')
+					rb[i] = 0;
+			rb[got < sizeof(rb) ? got : sizeof(rb) - 1] = 0;
+			char b[144];
+			char *p = put_str(b,
+					  "[demo] socket smoke (post-phase1) OK <- 172.1.1.1:22: ");
+			p = put_str(p, rb);
+			*p++ = '\n';
+			*p = 0;
+			sh_write0(b);
+		} else {
+			sh_write0("[demo] socket smoke (post-phase1): connected, no banner\n");
+		}
+	} else {
+		char b[80];
+		char *p = put_str(b, "[demo] socket smoke (post-phase1): connect failed rc=-");
+		p = put_dec(p, (uint32_t)(-cr));
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(b);
+	}
+	ove_socket_close(sk);
+}
+#endif
+
 /* ---- the RTOS <-> Linux bridges: two oveRTOS message queues ---------------- */
 struct lnx_line {
 	char text[56];
@@ -1116,45 +1164,6 @@ static void demo_body(void *arg)
 			}
 #endif
 
-			/* On-silicon transport smoke: connect to the test host's sshd and read
-			 * its banner — a real TCP round-trip over the STM32 Ethernet (ove_net ->
-			 * lwIP -> LAN8742). The personality's FD_SOCKET bridge over this same
-			 * transport is covered by the host loopback cmocka test. */
-			static ove_socket_storage_t s_sk;
-			ove_socket_t sk = NULL;
-			if (ove_socket_open(&sk, &s_sk, OVE_AF_INET, OVE_SOCK_STREAM) == OVE_OK) {
-				ove_sockaddr_t peer;
-				ove_sockaddr_ipv4(&peer, 172, 1, 1, 1, 22);
-				int cr = ove_socket_connect(sk, &peer, OVE_SEC(5));
-				if (cr == OVE_OK) {
-					char rb[80];
-					size_t got = 0;
-					if (ove_socket_recv(sk, rb, sizeof(rb) - 1, &got, OVE_SEC(5)) ==
-						    OVE_OK &&
-					    got > 0) {
-						for (size_t i = 0; i < got; i++)
-							if (rb[i] == '\r' || rb[i] == '\n')
-								rb[i] = 0;
-						rb[got < sizeof(rb) ? got : sizeof(rb) - 1] = 0;
-						char b2[128];
-						char *q = put_str(b2, "[demo] socket smoke OK <- 172.1.1.1:22: ");
-						q = put_str(q, rb);
-						*q++ = '\n';
-						*q = 0;
-						sh_write0(b2);
-					} else {
-						sh_write0("[demo] socket smoke: connected, no banner\n");
-					}
-				} else {
-					char b2[64];
-					char *q = put_str(b2, "[demo] socket smoke: connect failed rc=-");
-					q = put_dec(q, (uint32_t)(-cr));
-					*q++ = '\n';
-					*q = 0;
-					sh_write0(b2);
-				}
-				ove_socket_close(sk);
-			}
 		} else {
 			sh_write0("[demo] eth0 bring-up FAILED\n");
 		}
@@ -1245,6 +1254,12 @@ static void demo_body(void *arg)
 	}
 	sh_write0(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
+
+#if defined(CONFIG_OVE_LINUX_NET)
+	/* A real post-readiness TCP round trip over the same host transport used by
+	 * personality sockets and netfs. */
+	network_transport_smoke();
+#endif
 
 #if defined(CONFIG_OVE_LINUX_FAULTTEST)
 	faulttest_maybe_arm(); /* C6: a host task will fault ~4s into phase 2, while the guest runs */
