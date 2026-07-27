@@ -416,6 +416,8 @@ add_compile_definitions(LXP_NREG=5)
 set(OVE_BUILDROOT "{{ config.get('CONFIG_OVE_BUILDROOT', '../buildroot') }}")
 set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output') }}")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
+# Generation-scoped privileged guest-memory validation and copy boundary.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_guest.c")
 # Syscall-core subsystems the dispatcher delegates to (extracted out of lxp_syscall.c):
 # path resolution + rootfs lookup, the pipe ring, the writable-VFS (tmpfs) node store,
 # and synthetic /proc content generation.
