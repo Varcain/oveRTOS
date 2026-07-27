@@ -667,17 +667,17 @@ resident cold storage, and remote-exec staging where enabled.
 | Engine | Profile | `NSLOT` / `NREG` | Flash image | Internal BSS | External pools |
 |---|---|---:|---:|---:|---:|
 | FreeRTOS | Minimal | 9 / 5 | 601,524 B | 451,904 B | 3,944,760 B |
-| FreeRTOS | Full | 8 / 4 | 1,079,236 B | 776,540 B | 3,419,072 B |
-| FreeRTOS | Diagnostic | 8 / 4 | 1,086,008 B | 781,084 B | 3,419,072 B |
-| FreeRTOS | Hardened | 9 / 5 | 1,099,224 B | 782,820 B | 3,944,760 B |
+| FreeRTOS | Full | 8 / 4 | 1,079,700 B | 776,540 B | 3,419,072 B |
+| FreeRTOS | Diagnostic | 8 / 4 | 1,086,472 B | 781,084 B | 3,419,072 B |
+| FreeRTOS | Hardened | 9 / 5 | 1,099,720 B | 782,820 B | 3,944,760 B |
 | NuttX | Minimal | 10 / 6 | 225,228 B | 204,148 B | 4,718,592 B |
-| NuttX | Full | 10 / 6 | 296,120 B | 232,832 B | 4,980,736 B |
-| NuttX | Diagnostic | 10 / 6 | 297,516 B | 235,960 B | 4,980,736 B |
-| NuttX | Hardened | 10 / 6 | 295,376 B | 232,824 B | 4,718,592 B |
+| NuttX | Full | 10 / 6 | 296,384 B | 232,840 B | 4,980,736 B |
+| NuttX | Diagnostic | 10 / 6 | 297,780 B | 235,968 B | 4,980,736 B |
+| NuttX | Hardened | 10 / 6 | 295,640 B | 232,832 B | 4,718,592 B |
 | Zephyr | Minimal | 5 / 1 | 107,848 B (113,992 B) | 92,845 B | 793,432 B |
-| Zephyr | Full | 5 / 1 | 218,408 B (225,576 B) | 115,047 B | 1,055,576 B |
-| Zephyr | Diagnostic | 5 / 1 | 220,240 B (227,408 B) | 117,227 B | 1,055,576 B |
-| Zephyr | Hardened | 5 / 1 | 217,880 B (225,048 B) | 115,035 B | 793,432 B |
+| Zephyr | Full | 5 / 1 | 218,656 B (225,824 B) | 115,055 B | 1,055,576 B |
+| Zephyr | Diagnostic | 5 / 1 | 220,432 B (227,600 B) | 117,235 B | 1,055,576 B |
+| Zephyr | Hardened | 5 / 1 | 217,944 B (225,112 B) | 115,043 B | 793,432 B |
 
 Cold capture storage is 1,400 B per slot and the native slot stack is 1,024 B
 per slot on all three QEMU seams. On STM32, NuttX moves both objects into
@@ -686,17 +686,43 @@ application in AN521's 4 MiB internal flash, so its runner now loads the rootfs
 into the lower 15,296 KiB of PSRAM and reserves the remaining 1,088 KiB for one
 guest region. Full and Diagnostic occupy 94.75% of that bounded window.
 
-The implementation culminates at oveRTOS `707c0ed` and LXP `cb48ef2`. All 45
-normal host CTest targets pass, including 84 coordinator tests. The LXP unit
-and coordinator targets pass under AddressSanitizer and UndefinedBehavior
-Sanitizer, and all six existing fuzz corpora pass under the sanitizer replay
-engine. All 12 QEMU engine/profile builds pass. The current Buildroot image is
-hard-float while the AN521 validation target is intentionally soft-float
-and has no FPU, so QEMU correctly rejects that image at the loader ABI gate
-rather than executing an incompatible guest.
+The profile and protocol implementation culminates at oveRTOS `707c0ed` and
+LXP `cb48ef2`. Hardware qualification exposed one integration defect in the
+newly enabled Full-profile 9P client: initialization synchronously waited up
+to five seconds for connect and three seconds for each handshake reply. An
+unavailable optional server could therefore starve the host coordinator past
+FreeRTOS's two-second watchdog. LXP `53673b3` replaces that path with a
+bounded, non-blocking connect/version/attach state machine and adds a test
+which requires the initial connect timeout to be zero. oveRTOS `b130a96` pins
+the fix.
 
-No new STM32 runtime result is claimed for this iteration: the ST-Link and
-`/dev/ttyACM0` were absent during the final gate. Iteration 8 changes test,
-configuration, and QEMU rootfs packaging rather than the shared target
-lifecycle, but a fresh hardware smoke remains required before calling the
-profile set hardware-qualified.
+All 45 normal host CTest targets pass, including 84 coordinator tests. The LXP
+unit and coordinator targets pass under AddressSanitizer and UndefinedBehavior
+Sanitizer, and all six existing fuzz corpora pass under the sanitizer replay
+engine. All 12 QEMU engine/profile builds pass after relinking the final LXP.
+The table above includes the resulting code and eight-byte connection-deadline
+cost; Minimal remains byte-for-byte unchanged. The current Buildroot image is
+hard-float while the AN521 validation target is intentionally soft-float and
+has no FPU, so QEMU correctly rejects that image at the loader ABI gate rather
+than executing an incompatible guest.
+
+The STM32F746G-DISCO Full profile is hardware-qualified on all three engines.
+Each image completed the native RTOS/Linux round trip, BusyBox init through
+`rcS`, getty and inetd, and at least two RT-scope windows without a missed
+release, late finish, IRQ overrun, or pending execution:
+
+| Engine | Startup releases | Startup p99 / p99.9 / max | Next-window releases | Next-window p99 / p99.9 / max |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 10,030 | <=10 / <=16 / 33.28 us | 10,047 | <=8 / <=8 / 8.78 us |
+| NuttX | 10,120 | <=12 / <=20 / 25.33 us | 10,030 | <=10 / <=12 / 15.19 us |
+| Zephyr | 10,016 | <=10 / <=16 / 53.63 us | 10,049 | <=10 / <=12 / 22.41 us |
+
+The clean FreeRTOS and NuttX images reported
+`ove-b130a96 lxp-53673b3`. Zephyr ran the byte-identical pre-commit source
+state before the gitlink was recorded. The Pi gateway observed 0% packet loss
+to each post-boot image; root SSH executed `uname -a` successfully on all
+three. The immediate application-level socket probes on NuttX and Zephyr ran
+before their network stacks became connect-ready, but the post-boot ICMP and
+TCP/SSH checks confirm the steady-state network path. The board was left
+running the clean FreeRTOS image after 170,767 releases and executions with
+zero misses, late finishes, IRQ overruns, or pending releases.
