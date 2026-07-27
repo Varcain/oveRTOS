@@ -8,9 +8,9 @@
  * STM32F746G-Discovery Zephyr framebuffer backend for the Linux personality (/dev/fb0).
  * Zephyr's own stm32_ltdc display driver frames a linear 480x272 RGB565 buffer in the SDRAM1
  * region and scans it out continuously, so this backend hands the personality that buffer via
- * display_get_framebuffer(); present is a no-op (continuous scanout, D-cache off). The personality's
- * /dev/fb0 copies guest pwrite scanlines into it (privileged 16-bit stores). Mirrors fb_port.c on
- * FreeRTOS / board_init.c on NuttX.
+ * display_get_framebuffer(). The personality's /dev/fb0 copies guest pwrite scanlines into the
+ * cacheable CPU view; present explicitly flushes those writes for LTDC scanout. Mirrors fb_port.c
+ * on FreeRTOS / board_init.c on NuttX.
  */
 
 #include "ove_config.h"
@@ -36,11 +36,12 @@ int ove_hal_fb_init(void)
 {
 	if (!device_is_ready(g_disp))
 		return OVE_ERR_NOT_SUPPORTED;
-	display_blanking_off(g_disp); /* panel on (disp-on / backlight GPIOs) */
 	void *fb = display_get_framebuffer(g_disp);
 	if (!fb)
 		return OVE_ERR_NOT_SUPPORTED;
-	memset(fb, 0, (size_t)FB_W * FB_H * 2u); /* D-cache off → reaches SDRAM */
+	memset(fb, 0, (size_t)FB_W * FB_H * 2u);
+	sys_cache_data_flush_range(fb, (size_t)FB_W * FB_H * 2u);
+	display_blanking_off(g_disp); /* panel on after the cleared buffer is visible to LTDC */
 	return OVE_OK;
 }
 

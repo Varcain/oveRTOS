@@ -127,8 +127,9 @@ static void sdram_rpipe_fix(void)
 /* Framebuffer backend for the personality's /dev/fb0.  NuttX's own LTDC driver (fb_register at
  * board_late_initialize, CONFIG_STM32F7_LTDC) already frames a 480x272 RGB565 buffer at
  * LCD_FB_START (0xC0000000, == CONFIG_STM32F7_LTDC_FB_BASE) in SDRAM and scans it out
- * continuously, so this just hands the personality that buffer; present is a no-op (D-cache off,
- * writes reach SDRAM).  These live in board_init.c — not a separate fb_port.c — so they LINK:
+ * continuously, so this just hands the personality that buffer. The seam excludes its first 1 MB
+ * SDRAM subregion from the WBWA pool mapping, leaving the framebuffer Device/non-cacheable, so
+ * present needs no cache maintenance. These live in board_init.c — not a separate fb_port.c — so they LINK:
  * NuttX puts the app sources in an archive, and a strong override is only pulled if the object is
  * referenced; ove_board_init references ove_hal_board_init (below), pulling this whole object, so
  * these strong ove_hal_fb_* win over the weak ove_fb.c stubs.  A standalone fb_port.c would not be
@@ -157,8 +158,9 @@ int ove_hal_fb_get_info(struct ove_fb_info *info)
 
 void ove_hal_fb_present(void)
 {
-	/* No-op: the LTDC scans the SDRAM framebuffer continuously; the personality keeps the
-	 * D-cache off, so /dev/fb0 writes land straight in SDRAM and appear on the next refresh. */
+	/* No-op: LTDC scans continuously and lxp_mpu_init() deliberately excludes
+	 * [0xC0000000, 0xC0100000) from its cacheable pool region. The framebuffer
+	 * therefore retains Device/non-cacheable attributes with D-cache enabled. */
 }
 #endif /* CONFIG_OVE_FB */
 

@@ -170,6 +170,14 @@ _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_
 static StaticTask_t g_tcb[LXP_NSLOT];
 static TaskHandle_t g_tid[LXP_NSLOT];
 static uint32_t g_task_generation[LXP_NSLOT];
+#if (portUSING_MPU_WRAPPERS == 1)
+struct freertos_prepared_profile {
+	lxp_memory_policy_key_t key;
+	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
+	uint8_t valid;
+};
+static struct freertos_prepared_profile g_prepared_profile[LXP_NSLOT];
+#endif
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
@@ -180,10 +188,6 @@ static lxp_slot_ref_t task_slot_ref(int slot)
 }
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-/* A remote-exec proc runs its OWN text from RAM in its program region, so that region is mapped
- * RWX (a per-process, MPU-contained W^X relaxation). Set at launch; kept across resumes because
- * freertos_spawn_common re-applies the MPU on every resume. */
-static uint8_t g_region_exec[LXP_NSLOT];
 /* Staging buffer for a fetched remote ELF: the netfs layer fills it, the loader copies its text
  * into the program region. In SDRAM (STM32) / PSRAM (an500), NOLOAD → no flash cost. Sized for a
  * small/medium dynamic FDPIC binary (its own text+data; libc/ld.so stay XIP from the local rootfs). */
@@ -704,45 +708,86 @@ static void slot_task_name(char name[6], int sidx)
 	}
 }
 
+#if (portUSING_MPU_WRAPPERS == 1)
+/* Compile the core's versioned policy once into the exact native descriptors
+ * consumed by xTaskCreateRestrictedStatic(). A fresh slot/address-space/device/
+ * execute tuple invalidates the cache; a persistent parked-task resume does not
+ * rebuild or reprogram its TCB MPU settings. */
+static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
+{
+	lxp_memory_policy_t policy;
+	lxp_slot_ref_t slot = {
+		.index = (int16_t)sidx,
+		.generation = generation,
+	};
+	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    policy.address_space.index != ridx || policy.device_count != 0)
+		return -1;
+	struct freertos_prepared_profile *prepared = &g_prepared_profile[sidx];
+	if (prepared->valid && lxp_memory_policy_matches_key(&policy, &prepared->key))
+		return 0;
+
+	memset(prepared, 0, sizeof(*prepared));
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	const uint32_t tex_s_c_b = 0x0Bu; /* Normal WBWA, non-shareable. */
+#else
+	const uint32_t tex_s_c_b = configTEX_S_C_B_SRAM;
+#endif
+	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
+			       (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
+	uint32_t prog_attr = rw_xn;
+	if (policy.copied_text_executable)
+		prog_attr = portMPU_REGION_READ_WRITE |
+			    (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
+	prepared->regions[0] = (MemoryRegion_t){
+		.pvBaseAddress = prog_regions[ridx],
+		.ulLengthInBytes = LXP_PROG_REGION_SIZE,
+		.ulParameters = prog_attr,
+	};
+	prepared->regions[1] = (MemoryRegion_t){
+		.pvBaseAddress = dyn_pools[ridx],
+		.ulLengthInBytes = LXP_DYN_POOL_SIZE,
+		.ulParameters = rw_xn,
+	};
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
+	prepared->regions[2] = (MemoryRegion_t){
+		.pvBaseAddress = (void *)0x90000000u,
+		.ulLengthInBytes = 16u * 1024u * 1024u,
+		.ulParameters = portMPU_REGION_READ_ONLY |
+				(0x02u << portMPU_RASR_TEX_S_C_B_LOCATION),
+	};
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	prepared->regions[2] = (MemoryRegion_t){
+		.pvBaseAddress = (void *)0x60000000u,
+		.ulLengthInBytes = 8u * 1024u * 1024u,
+		.ulParameters = portMPU_REGION_READ_ONLY |
+				(configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION),
+	};
+	prepared->regions[3] = (MemoryRegion_t){
+		.pvBaseAddress = (void *)0x60800000u,
+		.ulLengthInBytes = 4u * 1024u * 1024u,
+		.ulParameters = portMPU_REGION_READ_ONLY |
+				(configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION),
+	};
+#endif
+	prepared->key = lxp_memory_policy_make_key(&policy);
+	prepared->valid = 1u;
+	return 0;
+}
+#endif
+
 /* Spawn the program task entering prog_tramp. Supported personality boards use the MPU branch: a
  * RESTRICTED, UNPRIVILEGED task whose only RW regions are its program region + dyn_pool (both XN;
  * ordinary code XIPs from a separate RO+X rootfs window). The legacy non-MPU compile fallback
  * creates a plain privileged task and is not used by the STM32F746 or an500 personality targets. */
-static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
+static int freertos_spawn_common(int sidx, uint32_t generation, int ridx,
+				 struct resume_desc *desc)
 {
 	char nm[6];
 	slot_task_name(nm, sidx); /* diagnostic only; attribution uses the task handle */
 #if (portUSING_MPU_WRAPPERS == 1)
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* The program region + dyn_pool live in external SDRAM.  Make them Normal WBWA CACHEABLE,
-	 * non-shareable (0x0B): LVGL's malloc'd draw buffer lands in the program region's heap, so
-	 * caching the per-pixel compositing writes is the large lvbench win on the memory-bound scenes
-	 * (they were writing every pixel straight to uncached FMC SDRAM).  NON-shareable is required —
-	 * the port default 0x07 is *shareable*, which precise-BusFaults the M7's FMC accesses on real
-	 * silicon.  Coherency: the loader writes each program's image to SDRAM through the coordinator's
-	 * uncached (Device background) view, so freertos_spawn_launch INVALIDATES this region's D-cache
-	 * before the guest runs (drop stale lines from the previous tenant of this ridx → the guest
-	 * fills the fresh image from SDRAM); the LTDC framebuffer at 0xC0000000 stays non-cacheable
-	 * (bsp region 0), and the guest blits its cacheable draw buffer to it coherently on the same
-	 * core.  Mirrors the NuttX backend (nuttx_lnx_trap.c set_prog_regions, also 0x0B). */
-	const uint32_t tex_s_c_b =
-		0x0Bu; /* TEX=001, S=0, C=1, B=1 — Normal WBWA cacheable, non-shareable */
-#else
-	const uint32_t tex_s_c_b = configTEX_S_C_B_SRAM; /* an500 PSRAM: port default 0x07 */
-#endif
-	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
-			       (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
-	uint32_t reg0_attr = rw_xn; /* program region: RW + execute-never (code XIPs from rootfs) */
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	/* A remote-exec proc runs its own copied text FROM this region → map it RWX (drop XN). A
-	 * per-process, MPU-contained W^X relaxation, only for a program launched off the remote mount. */
-	if (g_region_exec[sidx])
-		reg0_attr = portMPU_REGION_READ_WRITE |
-			    (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
-#endif
-	/* pxTaskBuffer is `StaticTask_t * const`, so a designated initializer is required (it also
-	 * zeroes the remaining configurable region xRegions[2]). xRegions[0] = the program region,
-	 * xRegions[1] = the dyn_pool — both RW + execute-never (code runs from the RO+X rootfs). */
+	if (freertos_prepare_profile(sidx, generation, ridx) != 0)
+		return -1;
 	TaskParameters_t tp = {
 		.pvTaskCode = prog_tramp,
 		.pcName = nm,
@@ -751,54 +796,9 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 		.uxPriority = SLOT_PRIO, /* NO portPRIVILEGE_BIT -> UNPRIVILEGED */
 		.puxStackBuffer = g_tramp_stacks[sidx],
 		.pxTaskBuffer = &g_tcb[sidx],
-		.xRegions =
-			{
-				{prog_regions[ridx], LXP_PROG_REGION_SIZE, reg0_attr},
-				{dyn_pools[ridx], LXP_DYN_POOL_SIZE, rw_xn},
-			},
 	};
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
-	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in the on-board QSPI NOR
-	 * (memory-mapped at 0x90000000). The static unprivileged-flash MPU region stays on internal
-	 * flash — that is where prog_tramp / lxp_park_loop / the resume stubs live, which this
-	 * unprivileged task must execute before and between running its own code — so the QSPI XIP
-	 * window needs its own per-task region. Unprivileged RO + executable (W^X: the guest never
-	 * writes QSPI; its RW data/stack are the SDRAM regions above). Normal-cacheable so the M7's
-	 * I-cache absorbs the slow external-flash fetches. 16 MB is the whole NOR window (16 MB-aligned
-	 * base → a single valid PMSAv7 region). Uses xRegions[2] = MPU region 2, the last free
-	 * configurable slot (portNUM_CONFIGURABLE_REGIONS == 3 at configTOTAL_MPU_REGIONS == 8). */
-	tp.xRegions[2].pvBaseAddress = (void *)0x90000000u;
-	tp.xRegions[2].ulLengthInBytes = 16u * 1024u * 1024u;
-	/* 0x02 = Normal WRITE-THROUGH, NON-shareable → D-CACHEABLE.  NOT the port default
-	 * configTEX_S_C_B_FLASH (0x07), which is SHAREABLE: the single-core M7 has no coherency unit, so
-	 * it treats shareable Normal memory as NON-cacheable for the D-cache — meaning the guest reads its
-	 * fonts / images / rodata straight from the slow QSPI NOR on every pixel, the dominant render cost
-	 * (the D-cache is "on" but the biggest read source bypasses it → render no better than uncached).
-	 * Non-shareable lets the D-cache absorb those reads (RO XIP window → no coherency concern), and the
-	 * I-cache still covers code fetch.  Matches NuttX region 4 (0x02): lvbench render 108 -> 65 ms,
-	 * 12 -> 16 FPS — closes the ~2x gap to NuttX.  (Write-through vs write-back is moot for a RO
-	 * window.) */
-	tp.xRegions[2].ulParameters = portMPU_REGION_READ_ONLY |
-				      (0x02u << portMPU_RASR_TEX_S_C_B_LOCATION);
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in PSRAM — QEMU loads it at
-	 * 0x60000000 via `-device loader` (see qemu-run.sh; the QEMU analog of the STM32 QSPI XIP).
-	 * prog_tramp / lxp_park_loop still execute from internal flash (the static unprivileged-RX
-	 * flash region), so the PSRAM cpio needs its own per-task RX window. The cpio occupies the
-	 * bottom 12 MiB of PSRAM (linker .psram_rootfs), the program pools the top 4 MiB. Cover
-	 * exactly that 12 MiB cpio window with two power-of-2 regions (8 MiB + 4 MiB) so it does NOT
-	 * overlap the pools' RW regions — a single 16 MiB region would, and being higher-priority
-	 * would force the guest's own dyn_pool read-only. Unprivileged RO + executable (W^X: the
-	 * guest never writes the cpio). xRegions[2],[3] — an500 has 11 configurable MPU regions. */
-	tp.xRegions[2].pvBaseAddress = (void *)0x60000000u;
-	tp.xRegions[2].ulLengthInBytes = 8u * 1024u * 1024u;
-	tp.xRegions[2].ulParameters = portMPU_REGION_READ_ONLY |
-				      (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
-	tp.xRegions[3].pvBaseAddress = (void *)0x60800000u;
-	tp.xRegions[3].ulLengthInBytes = 4u * 1024u * 1024u;
-	tp.xRegions[3].ulParameters = portMPU_REGION_READ_ONLY |
-				      (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
-#endif
+	for (unsigned i = 0; i < portNUM_CONFIGURABLE_REGIONS; i++)
+		tp.xRegions[i] = g_prepared_profile[sidx].regions[i];
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
 	return (ok == pdPASS) ? 0 : -1;
 #else
@@ -870,10 +870,6 @@ static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 	c.r4_11[5] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
 	c.sp = (uint32_t)sp;
 	c.pc = (uint32_t)entry;
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	g_region_exec[sidx] =
-		(uint8_t)prog->region_exec; /* RWX region for a copied-text (remote) exec */
-#endif
 	struct resume_desc *d = stash_desc(sidx, &c, 0);
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 	diag->last_spawn_sp = c.sp;
@@ -881,7 +877,7 @@ static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 	diag->last_desc = (uint32_t)(uintptr_t)d;
 	diag->last_ridx = (uint32_t)ridx;
 	diag->last_kind = 1u;
-	int rc = freertos_spawn_common(sidx, ridx, d);
+	int rc = freertos_spawn_common(sidx, generation, ridx, d);
 	if (rc == 0)
 		g_task_generation[sidx] = generation;
 	return rc;
@@ -915,7 +911,7 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 	}
 	if (g_tid[sidx])
 		return -1;
-	int rc = freertos_spawn_common(sidx, ridx, d);
+	int rc = freertos_spawn_common(sidx, generation, ridx, d);
 	if (rc == 0)
 		g_task_generation[sidx] = generation;
 	return rc;
@@ -1043,6 +1039,9 @@ static int freertos_abort_slot(int sidx, uint32_t generation)
 	g_tid[sidx] = NULL;
 	g_park_desc[sidx] = NULL;
 	g_task_generation[sidx] = 0;
+#if (portUSING_MPU_WRAPPERS == 1)
+	g_prepared_profile[sidx].valid = 0;
+#endif
 	return 0;
 }
 
@@ -1175,9 +1174,25 @@ static int freertos_prepare(void)
 {
 	if (!g_ev)
 		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
+#if (portUSING_MPU_WRAPPERS == 1)
+	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
+#endif
 	/* SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
 	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
 	return 0;
+}
+
+static int freertos_validate_memory_model(lxp_cpu_memory_model_t declared)
+{
+	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
+		       ? LXP_OK
+		       : LXP_ERR_INVALID_PARAM;
+#else
+	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK
+								 : LXP_ERR_INVALID_PARAM;
+#endif
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -1213,6 +1228,12 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
+#else
+	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
+#endif
+	.validate_memory_model = freertos_validate_memory_model,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.cache_clean = freertos_cache_clean,
 	.cache_invalidate = freertos_cache_invalidate,
