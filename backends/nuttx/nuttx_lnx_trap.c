@@ -73,6 +73,7 @@
 #endif
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
+#include "lxp_ove_thread_adapter.h"
 #include "ove_nuttx_runtime.h"
 
 /* NuttX's own SVCall handler — chained (not patched) for non-Linux svcs.
@@ -212,8 +213,13 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)
  * cold coordinator storage, safely below the program pool at 0xC0100000. */
 #define NUTTX_SDRAM_COLD_BASE 0xC0040000u
 static lxp_exec_capture_t *const g_exec_captures = (lxp_exec_capture_t *)NUTTX_SDRAM_COLD_BASE;
+#define NUTTX_SDRAM_THREAD_SNAPSHOT_BASE \
+	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
+#define g_thread_snapshot \
+	(*(struct lxp_ove_thread_snapshot *)NUTTX_SDRAM_THREAD_SNAPSHOT_BASE)
 #else
 static lxp_exec_capture_t g_exec_captures[LXP_NSLOT];
+static struct lxp_ove_thread_snapshot g_thread_snapshot;
 #endif
 
 /* nxtask_init stores struct tls_info_s at stack_alloc_ptr and NuttX later
@@ -227,7 +233,7 @@ static lxp_exec_capture_t g_exec_captures[LXP_NSLOT];
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #define LXP_ALIGN_UP(value, align) (((value) + (align) - 1u) & ~((align) - 1u))
 #define NUTTX_SDRAM_STACK_BASE \
-	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
+	LXP_ALIGN_UP(NUTTX_SDRAM_THREAD_SNAPSHOT_BASE + sizeof(g_thread_snapshot), 8u)
 static uint8_t (*const g_nuttx_stacks)[LXP_NUTTX_STACK_SIZE] = (uint8_t (*)[LXP_NUTTX_STACK_SIZE])
 	NUTTX_SDRAM_STACK_BASE;
 _Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <=
@@ -867,7 +873,7 @@ static lxp_thread_state_t guest_thread_state(const struct tcb_s *tcb)
 	}
 }
 
-static int slot_for_pid(uintptr_t identity)
+static int32_t slot_for_pid(uintptr_t identity)
 {
 	for (int s = 0; s < LXP_NSLOT; s++)
 		if (g_pid[s] >= 0 && identity == (uintptr_t)(uint32_t)g_pid[s])
@@ -875,8 +881,7 @@ static int slot_for_pid(uintptr_t identity)
 	return LXP_THREAD_SLOT_NONE;
 }
 
-/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout).
- *
+/*
  * Host enumeration may overflow before NuttX reaches its lnx TCBs. Compact any
  * guest entries out of that bounded result and append every live guest from the
  * seam-owned TCB table with the exact per-slot DWT runtime. This both prevents a
@@ -884,14 +889,6 @@ static int slot_for_pid(uintptr_t identity)
  * when some low-activity host threads remain represented by threads-overflow. */
 static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 {
-	_Static_assert(sizeof(struct lxp_thread_info) == sizeof(struct ove_thread_info),
-		       "LXP/ove thread snapshot ABI mismatch");
-	_Static_assert(offsetof(struct lxp_thread_info, identity) ==
-			       offsetof(struct ove_thread_info, identity),
-		       "LXP/ove thread identity offset mismatch");
-	_Static_assert(offsetof(struct lxp_thread_info, lxp_slot) ==
-			       offsetof(struct ove_thread_info, lxp_slot),
-		       "LXP/ove thread slot offset mismatch");
 	size_t guest_count = 0;
 	for (int s = 0; s < LXP_NSLOT; s++)
 		if (g_pid[s] >= 0)
@@ -899,12 +896,13 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	size_t host_limit = guest_count < m ? m - guest_count : 0;
 	size_t local_n = 0;
 	size_t *written = n ? n : &local_n;
-	int rc = ove_thread_list((struct ove_thread_info *)o, host_limit, written);
+	int rc = lxp_ove_thread_snapshot_read(&g_thread_snapshot, o, host_limit,
+					      written, slot_for_pid);
 	size_t raw_count = *written < host_limit ? *written : host_limit;
 	size_t count = 0;
 
 	for (size_t i = 0; i < raw_count; i++) {
-		if (slot_for_pid(o[i].identity) != LXP_THREAD_SLOT_NONE)
+		if (o[i].lxp_slot != LXP_THREAD_SLOT_NONE)
 			continue;
 		if (count != i)
 			o[count] = o[i];
@@ -916,7 +914,7 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 		if (g_pid[s] < 0)
 			continue;
 		if (count >= m) {
-			rc = OVE_ERR_QUEUE_FULL;
+			rc = LXP_ERR_QUEUE_FULL;
 			break;
 		}
 
