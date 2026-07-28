@@ -328,18 +328,19 @@ CONFIG_ISR_STACK_SIZE=12288
 # ample. It was 24 KB; the reclaimed 16 KB funds LXP_NREG=10 (its extra per-slot g_lxp_proc /
 # tramp-stack / domain state is SRAM-resident), keeping the 256 KB budget net-neutral.
 CONFIG_HEAP_MEM_POOL_SIZE=8192
+# Every STM32 Linux-personality profile XIPs its rootfs from the on-board N25Q at 0x90000000.
+# The common ove-linux.overlay enables and retypes the QSPI window; keep its driver and
+# memory-mapped mode independent of framebuffer support so headless Minimal can boot too.
+CONFIG_FLASH=y
+CONFIG_FLASH_STM32_QSPI=y
+CONFIG_STM32_MEMMAP=y
 {% if get_bool("CONFIG_OVE_FB") %}
-# lvbench on the panel: re-enable the LTDC display + the QSPI-XIP rootfs (overrides the headless
-# CONFIG_DISPLAY=n above; the ove-linux-fb.overlay re-enables the DT nodes). STM32_MEMMAP auto-maps
-# the N25Q at 0x90000000 at boot so the personality reads its rootfs from it. Board-gated: only the
-# real F746 has the panel + NOR (the an521 has neither).
+# lvbench on the panel: re-enable the LTDC display over the headless CONFIG_DISPLAY=n above.
+# The ove-linux-fb.overlay re-enables the display nodes and applies display-active FMC timing.
 CONFIG_DISPLAY=y
 CONFIG_STM32_LTDC=y
 CONFIG_STM32_LTDC_RGB565=y
 CONFIG_STM32_LTDC_FB_NUM=1
-CONFIG_FLASH=y
-CONFIG_FLASH_STM32_QSPI=y
-CONFIG_STM32_MEMMAP=y
 {% endif %}
 # Enable the Cortex-M7 I-cache. Zephyr's stm32f7 soc init calls sys_cache_instr_enable() /
 # sys_cache_data_enable(), but both are no-ops unless CONFIG_CACHE_MANAGEMENT is set — so the M7

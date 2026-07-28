@@ -3,10 +3,10 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Linux personality WITH a display (lvbench): re-enable the LTDC panel + the QSPI-XIP rootfs that
- * the headless ove-linux.overlay disabled, and set up the guest-text MPU window + the FMC read-pipe
- * fix. Applied AFTER ove-linux.overlay so it overrides the disables. The framebuffer (in SDRAM1,
- * 255 KB) coexists with the personality's program pool (both NOLOAD in SDRAM1, disjoint).
+ * Linux personality WITH a display (lvbench): re-enable the LTDC panel and apply the FMC read-pipe
+ * fix. The common ove-linux.overlay owns the QSPI-XIP rootfs because headless profiles need it too.
+ * Applied AFTER ove-linux.overlay. The framebuffer (in SDRAM1, 255 KB) coexists with the
+ * personality's program pool (both NOLOAD in SDRAM1, disjoint).
  */
 
 #include <zephyr/dt-bindings/memory-controller/stm32-fmc-sdram.h>
@@ -14,48 +14,6 @@
 &ltdc {
 	status = "okay";
 	interrupts = <88 3>, <89 3>;
-};
-
-&quadspi {
-	status = "okay";
-	interrupts = <92 3>;
-	/* Enable the QUADSPI half-cycle Sample Shift (SampleShifting = HALFCYCLE), matching the
-	 * STM32Cube/FreeRTOS BSP + the NuttX board patch.  The stock Zephyr driver leaves it NONE
-	 * unless ssht-enable is set; without it the memory-mapped quad reads capture in the wrong
-	 * window above ~54 MHz — the real cause of the marginal reads described at &n25q128a1 below
-	 * (long mis-blamed on the Disco's QSPI routing). */
-	ssht-enable;
-};
-
-/*
- * Guest-text XIP window. The board maps 0x90000000 (16 MB) as a static MPU region, but typed
- * ATTR_MPU_IO = Device / execute-never / unprivileged-No-Access — so the unprivileged guest cannot
- * XIP its FDPIC text there. Retype to ATTR_MPU_FLASH = Normal, user Read + eXecute, not writable:
- * exactly the RO+X XIP window, I-cacheable. It is the SAME static region slot, so the 8-region
- * PMSAv7 budget stays 8/8 (no per-domain partition needed — analogous to how the internal-flash
- * cpio was covered by the kernel's user-RX flash region). Keep &quadspi_memory deleted (done in
- * ove-linux.overlay) so there is no duplicate 0x90000000 region.
- */
-&ext_memory {
-	zephyr,memory-attr = <DT_MEM_ARM(ATTR_MPU_FLASH)>;
-};
-
-/* Fast 1-4-4 quad memory-mapped read (0xEB); without this the driver falls back to slow
- * single-line 0x03 and the guest's XIP text fetch crawls.
- *
- * Clock the NOR at 108 MHz (216 MHz AHB3 / 2) — the N25Q128A's rated quad ceiling, matching
- * FreeRTOS/Cube. The guest XIPs its entire program text AND reads rodata straight from this NOR,
- * memory-mapped, continuously. This needs the QUADSPI half-cycle sample shift (ssht-enable on
- * &quadspi above): without it, above ~54 MHz the quad reads capture in the wrong window and an
- * occasional mis-clocked word feeds the loader/ld.so a garbage pointer that faults (e.g. the
- * dynamic-tag store `info[d_tag]=dyn` with a corrupt base) — an intermittent, execution-driven
- * crash long mis-blamed on the Disco's QSPI routing and worked around by backing off to 54 MHz.
- * With the sample shift the reads are clean at 108. (CS-high-time is already the Zephyr driver
- * default 8 cycles, so no CSHT change is needed — unlike the NuttX raw driver, which also needed
- * CONFIG_STM32F7_QSPI_CSHT=6.) */
-&n25q128a1 {
-	spi-bus-width = <4>;
-	qspi-max-frequency = <108000000>;
 };
 
 /*
