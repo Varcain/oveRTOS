@@ -14,6 +14,7 @@
 #include "../framework/ove_test.h"
 
 #include "ove/lxp_host.h"
+#include "ove/lxp_metrics.h"
 #include "ove_net_ready.h"
 #include "lxp_ove_thread_adapter.h"
 #include "lxp/lxp_net_ops.h"
@@ -222,6 +223,34 @@ static void test_thread_adapter_maps_unknown_state(void **state)
 	assert_int_equal(out.state, LXP_THREAD_STATE_UNKNOWN);
 }
 
+static void test_svc_metrics_own_window_and_lifetime(void **state)
+{
+	(void)state;
+	struct ove_lxp_svc_metrics window;
+	struct ove_lxp_svc_metrics total;
+
+	ove_lxp_svc_metrics_record(7u, 40u);
+	ove_lxp_svc_metrics_record(8u, 20u);
+	ove_lxp_svc_metrics_record(9u, 60u);
+	ove_lxp_svc_metrics_take(&window, &total);
+
+	assert_int_equal(window.calls, 3u);
+	assert_int_equal(window.min_cycles, 20u);
+	assert_int_equal(window.max_cycles, 60u);
+	assert_int_equal(window.total_cycles, 120u);
+	assert_int_equal(window.max_syscall, 9u);
+	assert_int_equal(total.calls, window.calls);
+	assert_int_equal(total.min_cycles, window.min_cycles);
+	assert_int_equal(total.max_cycles, window.max_cycles);
+	assert_int_equal(total.total_cycles, window.total_cycles);
+	assert_int_equal(total.max_syscall, window.max_syscall);
+
+	ove_lxp_svc_metrics_take(&window, &total);
+	assert_int_equal(window.calls, 0u);
+	assert_int_equal(total.calls, 3u);
+	assert_int_equal(total.total_cycles, 120u);
+}
+
 int test_lxp_adapter_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -230,6 +259,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_host_facade_owns_composition),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
+		cmocka_unit_test(test_svc_metrics_own_window_and_lifetime),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

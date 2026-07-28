@@ -41,6 +41,7 @@
 #include "lxp_ove_thread_adapter.h"
 #include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+#include "ove/lxp_metrics.h"
 #include "ove_zephyr_lnx_metrics.h"
 #endif
 
@@ -237,68 +238,8 @@ static int lxp_exception_dump_init(void)
 SYS_INIT(lxp_exception_dump_init, PRE_KERNEL_1, 0);
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-/* SVC is the sole svc-metric writer. The coordinator is the sole critical-
- * metric writer. On this single-core target, switching the active window
- * before copying the old one leaves that old window quiescent. Lifetime
- * seqlocks protect the 64-bit accumulators from a preempting writer. */
-static volatile uint32_t g_svc_metrics_active;
-static struct ove_zephyr_lnx_svc_metrics g_svc_metrics_window[2] = {
-	{.min_cycles = UINT32_MAX},
-	{.min_cycles = UINT32_MAX},
-};
-static volatile uint32_t g_svc_metrics_total_seq;
-static struct ove_zephyr_lnx_svc_metrics g_svc_metrics_total = {
-	.min_cycles = UINT32_MAX,
-};
-
-static void svc_metrics_add(struct ove_zephyr_lnx_svc_metrics *metrics, uint32_t syscall,
-			    uint32_t cycles)
-{
-	if (metrics->calls == 0u || cycles < metrics->min_cycles)
-		metrics->min_cycles = cycles;
-	if (metrics->calls == 0u || cycles > metrics->max_cycles) {
-		metrics->max_cycles = cycles;
-		metrics->max_syscall = syscall;
-	}
-	metrics->calls++;
-	metrics->total_cycles += cycles;
-}
-
-static void svc_metrics_record(uint32_t syscall, uint32_t cycles)
-{
-	uint32_t active = g_svc_metrics_active;
-	svc_metrics_add(&g_svc_metrics_window[active], syscall, cycles);
-
-	g_svc_metrics_total_seq++;
-	__asm__ volatile("" ::: "memory");
-	svc_metrics_add(&g_svc_metrics_total, syscall, cycles);
-	__asm__ volatile("" ::: "memory");
-	g_svc_metrics_total_seq++;
-}
-
-void ove_zephyr_lnx_svc_metrics_take(struct ove_zephyr_lnx_svc_metrics *window,
-				     struct ove_zephyr_lnx_svc_metrics *total)
-{
-	uint32_t old_active = g_svc_metrics_active;
-	g_svc_metrics_active = old_active ^ 1u;
-	__asm__ volatile("" ::: "memory");
-
-	*window = g_svc_metrics_window[old_active];
-	g_svc_metrics_window[old_active] = (struct ove_zephyr_lnx_svc_metrics){
-		.min_cycles = UINT32_MAX,
-	};
-
-	uint32_t before;
-	uint32_t after;
-	do {
-		before = g_svc_metrics_total_seq;
-		__asm__ volatile("" ::: "memory");
-		*total = g_svc_metrics_total;
-		__asm__ volatile("" ::: "memory");
-		after = g_svc_metrics_total_seq;
-	} while (before != after || (after & 1u) != 0u);
-}
-
+/* The coordinator is the sole critical-metric writer. Window switching uses
+ * the same single-core handoff as the common SVC accumulator. */
 static volatile uint32_t g_critical_metrics_active;
 static struct ove_zephyr_lnx_critical_metrics g_critical_metrics_window[2];
 static volatile uint32_t g_critical_metrics_total_seq;
@@ -345,7 +286,7 @@ void ove_zephyr_lnx_critical_metrics_take(struct ove_zephyr_lnx_critical_metrics
 	} while (before != after || (after & 1u) != 0u);
 }
 
-uint32_t ove_zephyr_lnx_metrics_counter_hz(void)
+uint32_t ove_lxp_metrics_counter_hz(void)
 {
 	return sys_clock_hw_cycles_per_sec();
 }
@@ -448,7 +389,8 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee, ui
 				}
 #endif
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-				svc_metrics_record(syscall, k_cycle_get_32() - svc_start_cycles);
+				ove_lxp_svc_metrics_record(syscall,
+							   k_cycle_get_32() - svc_start_cycles);
 #endif
 				return;
 			}
