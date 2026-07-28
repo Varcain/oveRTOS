@@ -2705,8 +2705,50 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
     return res
 
 
+def test_lxp_memory_layout_config(ove_dir, output_dir):
+    """Verify the generated Linux rootfs/pool topology for every external-memory substrate."""
+    del output_dir
+    import kconfiglib
+
+    cases = [
+        ("freertos-an500", "FREERTOS", "QEMU_MPS2_AN500", False,
+         ("0x60000000", "0x00c00000", "0x60c00000", "0x00400000")),
+        ("nuttx-an500", "NUTTX", "QEMU_MPS2_AN500", False,
+         ("0x60000000", "0x00800000", "0x60800000", "0x00800000")),
+        ("zephyr-an521", "ZEPHYR", "QEMU_MPS2_AN521", False,
+         ("0x80000000", "0x00ef0000", "0x80ef0000", "0x00110000")),
+        ("zephyr-stm32", "ZEPHYR", "STM32F746G_DISCO", True,
+         ("0x90000000", "0x01000000", "0", "0")),
+    ]
+    names = ("OVE_LINUX_ROOTFS_BASE", "OVE_LINUX_ROOTFS_SIZE",
+             "OVE_LINUX_GUEST_POOL_BASE", "OVE_LINUX_GUEST_POOL_SIZE")
+    result = TestResults(suite="lxp-layout-config")
+    os.environ["srctree"] = ove_dir
+
+    for label, rtos, board, qspi, expected in cases:
+        kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"),
+                                   warn=False)
+        kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
+        kconf.syms[f"OVE_BOARD_{board}"].set_value(2)
+        kconf.syms["OVE_ARENA"].set_value(2)
+        kconf.syms["OVE_LOADER"].set_value(2)
+        kconf.syms["OVE_LINUX"].set_value(2)
+        if qspi:
+            kconf.syms["OVE_LINUX_ROOTFS_QSPI"].set_value(2)
+        actual = tuple(kconf.syms[name].str_value for name in names)
+        if actual == expected:
+            result.passed += 1
+        else:
+            result.failed += 1
+            result.failed_names.append(label)
+            logger.error("%s memory layout: expected %s, got %s",
+                         label, expected, actual)
+    return result
+
+
 # Test name -> function mapping
 TEST_TARGETS = {
+    "lxp-layout-config": test_lxp_memory_layout_config,
     "stub": test_stub,
     "lvgl-compile": test_lvgl_bindings_compile,
     "stub-sanitize": test_stub_sanitize,
@@ -2767,7 +2809,7 @@ TEST_TARGETS = {
 }
 
 # Grouped test sets
-SIM_TESTS = ["stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
+SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
                "qemu-nuttx-zeroheap",
                "qemu-zephyr", "qemu-zephyr-zeroheap"]

@@ -60,12 +60,15 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         echo "[qemu-run] ERROR: rootfs.cpio not found at ${ROOTFS_CPIO} (build Buildroot first)" >&2
         exit 1
     fi
+    ROOTFS_BASE="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_BASE=//p' "${PERSONALITY_CFG}")"
+    ROOTFS_LIMIT="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_SIZE=//p' "${PERSONALITY_CFG}")"
     ROOTFS_SIZE="$(stat -c %s "${ROOTFS_CPIO}")"
-    if [ "${ROOTFS_SIZE}" -gt $((0x00ef0000)) ]; then
-        echo "[qemu-run] ERROR: rootfs.cpio is ${ROOTFS_SIZE} bytes; AN521 PSRAM window is $((0x00ef0000))" >&2
+    if [ -z "${ROOTFS_BASE}" ] || [ -z "${ROOTFS_LIMIT}" ] ||
+       [ "${ROOTFS_SIZE}" -gt "$((ROOTFS_LIMIT))" ]; then
+        echo "[qemu-run] ERROR: rootfs.cpio is ${ROOTFS_SIZE} bytes; configured window is ${ROOTFS_LIMIT:-missing}" >&2
         exit 1
     fi
-    PERS_ARGS=(-device "loader,file=${ROOTFS_CPIO},addr=0x80000000,force-raw=on")
+    PERS_ARGS=(-device "loader,file=${ROOTFS_CPIO},addr=${ROOTFS_BASE},force-raw=on")
 fi
 
 QEMU_ARGS=(

@@ -106,6 +106,14 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         echo "[qemu-run] ERROR: rootfs.cpio not found at ${ROOTFS_CPIO} (build Buildroot first)" >&2
         exit 1
     fi
+    ROOTFS_BASE="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_BASE=//p' "${PERSONALITY_CFG}")"
+    ROOTFS_LIMIT="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_SIZE=//p' "${PERSONALITY_CFG}")"
+    ROOTFS_SIZE="$(stat -c %s "${ROOTFS_CPIO}")"
+    if [ -z "${ROOTFS_BASE}" ] || [ -z "${ROOTFS_LIMIT}" ] ||
+       [ "${ROOTFS_SIZE}" -gt "$((ROOTFS_LIMIT))" ]; then
+        echo "[qemu-run] ERROR: rootfs.cpio is ${ROOTFS_SIZE} bytes; configured window is ${ROOTFS_LIMIT:-missing}" >&2
+        exit 1
+    fi
     PERS_ARGS=(
         -machine "${QEMU_MACHINE}" -m 16
         # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive
@@ -115,7 +123,7 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         -serial none -serial stdio -monitor none -display none
         -kernel "${ELF}"
         # Rootfs XIP'd from PSRAM: raw cpio loaded to 0x60000000 at reset.
-        -device "loader,file=${ROOTFS_CPIO},addr=0x60000000,force-raw=on"
+        -device "loader,file=${ROOTFS_CPIO},addr=${ROOTFS_BASE},force-raw=on"
     )
     # GDB server (enabled by default; --no-gdb turns it off): just opens the port, the firmware
     # still boots normally. Enables turnkey FDPIC source-level debugging via

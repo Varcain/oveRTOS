@@ -67,6 +67,7 @@
 
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
+#include "ove/lxp_memory_layout.h"
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #include "lxp/lxp_netfs.h"
 #endif
@@ -153,14 +154,12 @@ extern dq_queue_t g_stoppedtasks;
  * the guest overlays; its first 1M subregion stays disabled for the LTDC
  * framebuffer. The context-switch note hook overlays the running program's
  * exact data and dynamic-pool ranges as unprivileged RW. */
-#define NUTTX_SDRAM_POOL_BASE \
-	0xC0100000u /* 1M past the SDRAM base, well clear of the framebuffer */
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] = (uint8_t (*)[LXP_DYN_POOL_SIZE])
-	NUTTX_SDRAM_POOL_BASE;
+	OVE_LXP_GUEST_POOL_BASE;
 static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] = (uint8_t (*)[LXP_PROG_REGION_SIZE])(
-	NUTTX_SDRAM_POOL_BASE + (size_t)LXP_NREG * LXP_DYN_POOL_SIZE);
+	OVE_LXP_GUEST_POOL_BASE + (size_t)LXP_NREG * LXP_DYN_POOL_SIZE);
 _Static_assert((size_t)LXP_NREG *(LXP_DYN_POOL_SIZE + LXP_PROG_REGION_SIZE) <=
-		       0xC0800000u - NUTTX_SDRAM_POOL_BASE,
+		       OVE_LXP_GUEST_POOL_SIZE,
 	       "STM32 program pools overflow external SDRAM");
 #elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 /* QEMU mps2-an500: the 16M block at 0x60000000 (QEMU mps.ram, fixed — the machine model rejects
@@ -182,16 +181,16 @@ _Static_assert((size_t)LXP_NREG *(LXP_DYN_POOL_SIZE + LXP_PROG_REGION_SIZE) <=
  * sibling's memory. A 12M window cannot be expressed at all. So the cpio must fit in 8M —
  * moving the pool up buys nothing.
  *
- * ove_config.cmake.j2 sizes LXP_NREG=5 for this pool: 5*256K program regions + 5*512K dynamic
- * pools = 3.75M. Its comment claims a "bottom 12 MiB" rootfs window, which is not achievable
- * for the reason above.
+ * ove_config.cmake.j2 sizes LXP_NREG=6 for this pool: 6*256K program regions + 6*512K dynamic
+ * pools = 4.5M. The remaining capacity is deliberate headroom for future bounded row growth.
  *
  * Kernel RAM had to leave 0x60000000 regardless (see this board's nuttx/patches/0001-* and
  * ove_board_defconfig.linux): a rootfs at the base was overwritten by NuttX's .data copy and
  * .bss zeroing before it could be parsed. That move is what makes the full 8M usable. */
-#define NUTTX_AN500_POOL_BASE 0x60800000u
+_Static_assert(OVE_LXP_ROOTFS_END == OVE_LXP_GUEST_POOL_BASE,
+	       "AN500 rootfs and guest-pool ranges must be adjacent");
 _Static_assert((size_t)LXP_NREG *LXP_PROG_REGION_SIZE + (size_t)LXP_NREG * LXP_DYN_POOL_SIZE <=
-		       0x61000000u - NUTTX_AN500_POOL_BASE,
+		       OVE_LXP_GUEST_POOL_SIZE,
 	       "an500 program pool overflows the top of mps.ram");
 /* Put the larger-alignment array first. Every dynamic pool begins on its own
  * boundary, and the following program array is aligned whenever the aggregate
@@ -199,9 +198,9 @@ _Static_assert((size_t)LXP_NREG *LXP_PROG_REGION_SIZE + (size_t)LXP_NREG * LXP_D
 _Static_assert(((size_t)LXP_NREG * LXP_DYN_POOL_SIZE) % LXP_PROG_REGION_SIZE == 0,
 	       "dynamic pool extent must align the following program regions");
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] = (uint8_t (*)[LXP_DYN_POOL_SIZE])
-	NUTTX_AN500_POOL_BASE;
+	OVE_LXP_GUEST_POOL_BASE;
 static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] = (uint8_t (*)[LXP_PROG_REGION_SIZE])(
-	NUTTX_AN500_POOL_BASE + (size_t)LXP_NREG * LXP_DYN_POOL_SIZE);
+	OVE_LXP_GUEST_POOL_BASE + (size_t)LXP_NREG * LXP_DYN_POOL_SIZE);
 #else
 static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE] __attribute__((aligned(32)));
 /* Per-region dynamic-link scratch pool: a dynamic FDPIC proc's arena lives here so ld.so can
@@ -231,7 +230,8 @@ static lxp_exec_capture_t g_exec_captures[LXP_NSLOT];
 	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
 static uint8_t (*const g_nuttx_stacks)[LXP_NUTTX_STACK_SIZE] = (uint8_t (*)[LXP_NUTTX_STACK_SIZE])
 	NUTTX_SDRAM_STACK_BASE;
-_Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <= NUTTX_SDRAM_POOL_BASE,
+_Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <=
+		       OVE_LXP_GUEST_POOL_BASE,
 	       "trusted NuttX slot stacks overlap the STM32 program pool");
 #else
 static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((aligned(8)));
@@ -1035,10 +1035,9 @@ static void lxp_mpu_init(void)
 	/* Derived, not spelled again: this region must cover exactly the pool the
 	 * prog_regions/dyn_pools pointers above are carved from. Hard-coding it a
 	 * second time let the two drift — the base said 8M at 0x60800000 while the
-	 * pool had moved to the top 4M, so the region granted the wrong span. RASR
-	 * SIZE encodes 2^(SIZE+1) bytes: 4M -> 21. */
-	const uint32_t pool_base = NUTTX_AN500_POOL_BASE;
-	const uint32_t pool_sz = OVE_MPU_RASR_SIZE_FIELD(0x61000000u - NUTTX_AN500_POOL_BASE);
+	 * pool had moved to the top 4M, so the region granted the wrong span. */
+	const uint32_t pool_base = OVE_LXP_GUEST_POOL_BASE;
+	const uint32_t pool_sz = OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_GUEST_POOL_SIZE);
 #endif
 	/* Region 0: code (shared by every program) — priv RW / unpriv RO (AP=0b010), executable
 	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park loop. The
@@ -1072,8 +1071,10 @@ static void lxp_mpu_init(void)
 	 * every program — the switch hook rewrites only regions 2,3,5,6, so region
 	 * 4 survives every context switch. */
 	*mpu_rnr = 4;
-	*mpu_rbar = 0x90000000u;
-	*mpu_rasr = (1u << 0) | (23u << 1) | (0x02u << 16) | (0x2u << 24);
+	*mpu_rbar = OVE_LXP_ROOTFS_BASE;
+	*mpu_rasr = (1u << 0) |
+		    (OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_ROOTFS_SIZE) << 1) |
+		    (0x02u << 16) | (0x2u << 24);
 #elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 	/* Region 4: the same XIP window for the an500, where the cpio is staged in the bottom of
 	 * mps.ram by QEMU's -device loader rather than programmed into NOR. Without it the guest
@@ -1088,9 +1089,9 @@ static void lxp_mpu_init(void)
 	 * So the rootfs.cpio has to fit in 8M. Normal non-cacheable (mps.ram is ordinary RAM in QEMU,
 	 * unlike the STM32's NOR), RO so there is no coherence concern. */
 	*mpu_rnr = 4;
-	*mpu_rbar = 0x60000000u;
+	*mpu_rbar = OVE_LXP_ROOTFS_BASE;
 	*mpu_rasr = (1u << 0) |
-		    (OVE_MPU_RASR_SIZE_FIELD(NUTTX_AN500_POOL_BASE - 0x60000000u) << 1) |
+		    (OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_ROOTFS_SIZE) << 1) |
 		    (0x08u << 16) | (0x2u << 24);
 #endif
 	/* Device regions are per-slot and installed by lxp_note_resume(). Disable

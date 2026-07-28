@@ -405,7 +405,9 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=8)
 # an500 QEMU Linux: the rootfs cpio XIPs from the bottom of the 16 MiB block at 0x60000000
 # (QEMU -device loader), so the FDPIC program pools share the rest -> fewer program regions.
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
-# NuttX retains six regions in its fixed 8 MiB pool. The seam lays its 512K dynamic rows first,
+# NuttX retains six regions in its fixed upper 8 MiB pool. Its single rootfs MPU region covers
+# the lower 8 MiB only; CONFIG_OVE_LINUX_ROOTFS_SIZE is the shared app/seam/runner bound.
+# The seam lays its 512K dynamic rows first,
 # so every PMSAv7 base remains naturally aligned even when the configured count is odd.
 add_compile_definitions(LXP_NREG=6)
 {% else %}

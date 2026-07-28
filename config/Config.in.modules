@@ -179,6 +179,56 @@ config OVE_LINUX_ROOTFS_OUTPUT
       after the guest ABI is changed. Use OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE for
       an explicit out-of-tree directory.
 
+config OVE_LINUX_ROOTFS_BASE
+    hex
+    depends on OVE_LINUX
+    default 0x90000000 if OVE_LINUX_ROOTFS_QSPI
+    default 0x60000000 if OVE_BOARD_QEMU_MPS2_AN500
+    default 0x80000000 if OVE_BOARD_QEMU_MPS2_AN521
+    default 0
+    help
+      Generated physical base of the externally staged, executable rootfs
+      window. This is consumed by the application, RTOS isolation seam and
+      board runner so those layers cannot silently describe different ranges.
+
+config OVE_LINUX_ROOTFS_SIZE
+    hex
+    depends on OVE_LINUX
+    default 0x01000000 if OVE_LINUX_ROOTFS_QSPI
+    default 0x00800000 if OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_NUTTX
+    default 0x00c00000 if OVE_BOARD_QEMU_MPS2_AN500
+    default 0x00ef0000 if OVE_BOARD_QEMU_MPS2_AN521
+    default 0
+    help
+      Generated usable extent of the externally staged rootfs. The AN500
+      value is engine-specific: NuttX has one 8 MiB PMSAv7 region, while
+      FreeRTOS uses adjacent 8 MiB and 4 MiB task regions.
+
+config OVE_LINUX_GUEST_POOL_BASE
+    hex
+    depends on OVE_LINUX
+    default 0xc0100000 if OVE_BOARD_STM32F746G_DISCO && OVE_RTOS_NUTTX
+    default 0x60800000 if OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_NUTTX
+    default 0x60c00000 if OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_FREERTOS
+    default 0x80ef0000 if OVE_BOARD_QEMU_MPS2_AN521
+    default 0
+    help
+      Generated base of a fixed-address guest program pool. A zero value means
+      that the engine linker/devicetree owns placement instead.
+
+config OVE_LINUX_GUEST_POOL_SIZE
+    hex
+    depends on OVE_LINUX
+    default 0x00700000 if OVE_BOARD_STM32F746G_DISCO && OVE_RTOS_NUTTX
+    default 0x00800000 if OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_NUTTX
+    default 0x00400000 if OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_FREERTOS
+    default 0x00110000 if OVE_BOARD_QEMU_MPS2_AN521
+    default 0
+    help
+      Generated extent of a fixed-address guest program pool. The seam checks
+      its configured rows against this bound; linkers/devicetree retain their
+      own overflow checks at the placement boundary.
+
 config OVE_QSPI
     bool "QSPI NOR flash (memory-mapped XIP)"
     default n
