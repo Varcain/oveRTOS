@@ -35,6 +35,18 @@
 
 #if defined(CONFIG_OVE_LINUX)
 
+#include <nuttx/config.h>
+
+#if !defined(CONFIG_BUILD_FLAT)
+#error "The NuttX Linux personality requires CONFIG_BUILD_FLAT"
+#endif
+#if defined(CONFIG_ARM_MPU)
+#error "The NuttX Linux personality owns the MPU; CONFIG_ARM_MPU must be disabled"
+#endif
+#if !defined(CONFIG_DRIVERS_NOTE) || !defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+#error "The NuttX Linux personality requires the scheduler-switch note hook"
+#endif
+
 #include <stddef.h>
 
 #include <nuttx/arch.h> /* up_perf_gettime — exact guest runtime accounting */
@@ -45,9 +57,7 @@
 #include <nuttx/sched.h> /* nxtask_init, nxtask_activate, struct task_tcb_s */
 #include <nuttx/semaphore.h> /* nxsem_init/post/tickwait — coordinator wakeup */
 #include <nuttx/version.h>
-#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 #include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
-#endif
 #include <errno.h>
 #include <sched.h> /* task_delete */
 #include <stdint.h>
@@ -1038,11 +1048,8 @@ static void lxp_mpu_init(void)
 	*mpu_rbar = code_base;
 	*mpu_rasr = (1u << 0) | (code_sz << 1) | (code_texscb << 16) | (0x2u << 24);
 	/* Region 1: the WHOLE program pool, with the same Normal-memory attributes
-	 * as the per-guest overlays. In a fallback build with
-	 * no context-switch hook it is unprivileged RW too (AP=0b011), providing kernel isolation but not
-	 * sibling isolation. The normal per-switch configuration makes it PRIVILEGED-ONLY (AP=0b001) —
-	 * the base that lets the privileged
-	 * coordinator/seam touch ANY program's pool region as Normal memory; the
+	 * as the per-guest overlays, but PRIVILEGED-ONLY (AP=0b001). This base lets
+	 * the privileged coordinator/seam touch ANY program's pool region; the
 	 * prepared regions 2+3 grant the running program access to only its own region.
 	 * On STM32 the 8M region's first 1M subregion is disabled: it contains the
 	 * LTDC framebuffer, which must fall through to the default Device mapping
@@ -1054,15 +1061,9 @@ static void lxp_mpu_init(void)
 #else
 	const uint32_t pool_srd = 0u;
 #endif
-#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	*mpu_rasr = (1u << 0) | (pool_sz << 1) | pool_srd |
 		    (NUTTX_POOL_TEXSCB << 16) | (0x1u << 24) |
 		    (1u << 28); /* priv RW, unpriv NO */
-#else
-	*mpu_rasr = (1u << 0) | (pool_sz << 1) | pool_srd |
-		    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) |
-		    (1u << 28); /* fallback: RW/RW */
-#endif
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* Region 4: the QSPI NOR XIP window. The UNPRIVILEGED guest XIPs its FDPIC text in place
 	 * from 0x90000000 → unpriv RO + executable (XN=0), like the internal-flash code region 0.
@@ -1134,7 +1135,6 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 	return 0; /* exception-return: the program spins in park_loop until reaped */
 }
 
-#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 /* ---- inter-program isolation: per-program MPU regions on every context switch ---------------- */
 /* Program regions 2+3 for the program that owns region `ridx`: region 2 = its data segment
  * (prog_regions[ridx]), region 3 = its dynamic-link arena (dyn_pools[ridx]) — HIGHER priority than
@@ -1288,7 +1288,6 @@ static struct note_driver_s g_lxp_note_driver = {
 	.ops = &g_lxp_note_ops,
 };
 static bool g_lxp_note_registered;
-#endif /* CONFIG_SCHED_INSTRUMENTATION_SWITCH */
 
 /* Per-run bring-up / teardown (was the body of the old lxp_run() wrapper). The
  * public lxp_run() now lives in the module (src/lxp_run.c) and calls these via
@@ -1316,7 +1315,6 @@ static int nuttx_prepare(void)
 	    nuttx_attach_lxp_irq(LXP_IRQ_USGFAULT, lxp_memfault_handler,
 				 LXP_IRQ_INSTALLED_USAGE) < 0)
 		return -1;
-#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	/* NuttX has no public note-driver unregister API. Register this static
 	 * driver once, then reset its per-run accounting state on every launch. */
 	if (!g_lxp_note_registered) {
@@ -1325,7 +1323,6 @@ static int nuttx_prepare(void)
 		g_lxp_note_registered = true;
 	}
 	ove_nuttx_runtime_reset(getpid());
-#endif
 	return 0;
 }
 
@@ -1344,18 +1341,7 @@ static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared)
 
 static void nuttx_teardown(void)
 {
-#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	nuttx_disable_dynamic_regions();
-#else
-	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
-	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
-		*mpu_rnr = LXP_DEVICE_MPU_FIRST + i;
-		*mpu_rasr = 0;
-	}
-	__asm__ volatile("dsb 0xf" ::: "memory");
-	__asm__ volatile("isb 0xf" ::: "memory");
-#endif
 	memset(g_device_maps, 0, sizeof(g_device_maps));
 	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
 	g_installed_policy_valid = 0;
