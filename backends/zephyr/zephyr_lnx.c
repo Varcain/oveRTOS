@@ -568,6 +568,7 @@ static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    lxp_memory_policy_validate(&policy) != LXP_OK ||
 	    policy.address_space.index != ridx || policy.device_count != 0 ||
 	    policy.copied_text_executable != (uint8_t)(prog->region_exec != 0))
 		return -1;
@@ -674,6 +675,7 @@ static int zephyr_bind_prepared_domain(int sidx, uint32_t generation, int ridx)
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    lxp_memory_policy_validate(&policy) != LXP_OK ||
 	    policy.address_space.index != ridx || policy.device_count != 0 ||
 	    !g_domain_policy_valid[ridx] ||
 	    !lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx]))
