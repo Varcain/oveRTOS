@@ -377,10 +377,11 @@ __attribute__((naked)) void SVC_Handler(void)
 /* An UNPRIVILEGED program making an illegal access raises MemManage (enabled by the MPU port's
  * prvSetupMPU). Contain it like a default-action SIGSEGV: publish a typed exit intent (139),
  * synthesize a trusted return frame on its internal trampoline stack, wake the coordinator (which
- * reaps the slot + frees the region via EV_EXIT), and exception-return to the park loop. A fault
+ * reaps the slot + frees the region via EV_EXIT), and exception-return to the park entry. A fault
  * from any NON-program (privileged kernel) context is a real bug -> fatal. Strong symbol overriding
  * the weak MemManage_Handler in the CMSIS startup. */
 static void freertos_event_post(void) LXP_FAULT_GPR_ONLY; /* defined with the vtable below */
+static void freertos_park_entry(void *token);
 
 /* Terminal handler for a fault that cannot be attributed to a guest — i.e. a fault in host /
  * privileged context (the coordinator, an ISR, or before any guest is live). Such a fault means the
@@ -446,7 +447,7 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		 * host memory.  Build a basic frame at the top of the task's original
 		 * internal-SRAM trampoline stack, which is still its automatic MPU stack
 		 * region.  Exception return consumes the frame and enters the stackless
-		 * park loop; the already-pended coordinator then deletes the task. */
+		 * park entry; the already-pended coordinator then deletes the task. */
 		volatile uint32_t *frame =
 			(uint32_t *)&g_tramp_stacks[sidx][TRAMP_STACK_WORDS - 8u];
 		frame[0] = 0;
@@ -455,7 +456,7 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		frame[3] = 0;
 		frame[4] = 0;
 		frame[5] = 0;
-		frame[6] = ((uint32_t)&lxp_park_loop) & ~1u;
+		frame[6] = ((uint32_t)&freertos_park_entry) & ~1u;
 		frame[7] = (1u << 24); /* xPSR.T (Thumb) */
 
 		*(volatile uint32_t *)0xE000ED28u = *(
@@ -598,7 +599,7 @@ _Static_assert(RESUME_DESC_CLSPAN <=
 /* Reserve the top 256 bytes of each aligned 1K bootstrap-stack allocation for
  * the persistent resume descriptor. The FreeRTOS task receives the lower 768
  * bytes as its logical stack; the ARM MPU port rounds that 768-byte stack region
- * to the containing aligned 1K region, so the unprivileged park loop can read
+ * to the containing aligned 1K region, so the unprivileged park entry can read
  * the tail without consuming another configurable MPU region. Unlike storage
  * below ctx->sp, this address is independent of Linux stack depth and cannot be
  * overwritten by exception or context-switch frames. */
@@ -629,7 +630,7 @@ static void *freertos_park_prepare(int sidx, uint32_t generation,
  * coordinator suspends the task before exception return; the bounded race is a
  * read-only wait on guest memory. spawn_resume publishes the descriptor and
  * resumes this same task, which restores the complete Linux register context. */
-void lxp_park_loop(void *token)
+static void freertos_park_entry(void *token)
 {
 	struct resume_desc *d = token;
 	while (!__atomic_load_n(&d->ready, __ATOMIC_ACQUIRE))
@@ -1008,7 +1009,7 @@ static void LXP_FAULT_GPR_ONLY freertos_event_post(void)
 	/* Pend a context switch if the (higher-priority) coordinator was woken: event_post runs
 	 * from the SVC/MemManage handler (e.g. a program's exit park_frame). Without this yield the
 	 * woken coordinator does NOT preempt, so an EXITED unprivileged restricted task keeps spinning
-	 * in lxp_park_loop and is context-switched (corrupting its saved registers under the MPU
+	 * in the park entry and is context-switched (corrupting its saved registers under the MPU
 	 * port) before the coordinator reaps it. Yielding reaps it promptly, before any such switch. */
 	portYIELD_FROM_ISR(woken);
 }
@@ -1135,6 +1136,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.spawn_launch = freertos_spawn_launch,
 	.spawn_resume = freertos_spawn_resume,
 	.abort_slot = freertos_abort_slot,
+	.park_entry = freertos_park_entry,
 	.park_prepare = freertos_park_prepare,
 	.park_slot = freertos_park_slot,
 	.crit_enter = freertos_crit_enter,

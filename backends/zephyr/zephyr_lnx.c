@@ -483,7 +483,8 @@ static void *zephyr_park_prepare(int sidx, uint32_t generation,
  * higher priority and suspends it at the pending exception return. Keeping the
  * trampoline naked guarantees the saved native frame remains at the captured
  * PSP; spawn_resume replaces that frame before the thread can execute again. */
-__attribute__((naked)) void lxp_park_loop(void *token __attribute__((unused)))
+static void __attribute__((naked))
+zephyr_park_entry(void *token __attribute__((unused)))
 {
 	__asm__ volatile("1: b 1b\n");
 }
@@ -697,7 +698,7 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 		    !lxp_memory_policy_matches_key(&policy, &g_slot_policy[sidx]))
 			return -1;
 		/* PendSV saved the svc frame that park_frame redirected to the naked
-		 * lxp_park_loop. Reuse that exact native frame: deriving a new PSP
+		 * the park entry. Reuse that exact native frame: deriving a new PSP
 		 * from the Linux SP loses Zephyr's exception-alignment/lazy-FP
 		 * invariants, while resuming through another user exception can try
 	 * to preserve stale privileged lazy-FP state under the guest MPU. */
@@ -807,7 +808,7 @@ static void zephyr_event_post(void)
 	/* The give readies the higher-priority coordinator, but a program svc reaches us via the
 	 * kernel-oops path (svc.S .L_oops returns with `pop {r0,pc}`, bypassing z_arm_int_exit),
 	 * so nothing pends PendSV — the just-parked K_USER program keeps busy-spinning in
-	 * lxp_park_loop until its timeslice expires (~tens of ms), which is the entire cause
+	 * the park entry until its timeslice expires (~tens of ms), which is the entire cause
 	 * of the multi-ms pipe/spawn latency. Pend PendSV ourselves so the coordinator is switched
 	 * in on exception return, exactly as z_arm_exc_exit would for a real ISR. A rare no-op
 	 * self-switch (nothing higher became ready) is harmless. In thread context (the
@@ -967,6 +968,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.spawn_launch = zephyr_spawn_launch,
 	.spawn_resume = zephyr_spawn_resume,
 	.abort_slot = zephyr_abort_slot,
+	.park_entry = zephyr_park_entry,
 	.park_prepare = zephyr_park_prepare,
 	.park_slot = zephyr_park_slot,
 	.crit_enter = zephyr_crit_enter,

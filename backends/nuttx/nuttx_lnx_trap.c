@@ -681,7 +681,7 @@ static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
 		/* Build a native NuttX exception frame immediately below the captured
 		 * guest SP. Cortex-M exception return consumes the frame and leaves PSP
 		 * exactly at ctx->sp. Reusing the old parked frame is unsafe: it may be
-		 * lower on the guest stack after lxp_park_loop briefly ran, while merely
+		 * lower on the guest stack after the park entry briefly ran, while merely
 		 * changing REG_SP does not move the hardware frame NuttX restores. */
 		irqstate_t flags = enter_critical_section();
 		if (g_tcb[sidx].cmn.task_state == TSTATE_TASK_STOPPED) {
@@ -792,6 +792,15 @@ static int nuttx_park_slot(int sidx, uint32_t generation)
 		return -1;
 	nxsched_suspend(&g_tcb[sidx].cmn);
 	return g_tcb[sidx].cmn.task_state == TSTATE_TASK_STOPPED ? 0 : -1;
+}
+
+/* Native saved-frame resume replaces the parked frame before this task becomes
+ * runnable again, so the token is intentionally unused. */
+static void nuttx_park_entry(void *token)
+{
+	(void)token;
+	for (;;)
+		__asm__ volatile("nop");
 }
 
 /* Guest entropy source (AT_RANDOM and getrandom). GRND_NONBLOCK makes every
@@ -980,6 +989,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.spawn_launch = nuttx_spawn_launch,
 	.spawn_resume = nuttx_spawn_resume,
 	.abort_slot = nuttx_abort_slot,
+	.park_entry = nuttx_park_entry,
 	.park_prepare = nuttx_park_prepare,
 	.park_slot = nuttx_park_slot,
 	.crit_enter = nuttx_crit_enter,
@@ -1012,7 +1022,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
  * sibling program. PRIVDEFENA keeps the privileged kernel on the ARM default map (unchanged); the
  * unprivileged program sees ONLY these regions:
  *   region 0 = code (flash/ROM): unprivileged RO + executable (XN=0) — the shared FDPIC text runs
- *              in-place from the embedded cpio here, and the contained-fault park loop lives here;
+ *              in-place from the embedded cpio here, and the contained-fault park entry lives here;
  *   region 1 = privileged-only Normal-memory base for coordinator access to the complete pool;
  *   regions 2/3 = the running address space's program and dynamic pools;
  *   region 4 = optional shared QSPI rootfs, user RO + executable;
@@ -1042,7 +1052,7 @@ static void lxp_mpu_init(void)
 	const uint32_t pool_sz = OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_GUEST_POOL_SIZE);
 #endif
 	/* Region 0: code (shared by every program) — priv RW / unpriv RO (AP=0b010), executable
-	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park loop. The
+	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park entry. The
 	 * per-program data regions are reprogrammed on every context switch from
 	 * the slot's prepared policy, so a running program sees only its own region. */
 	*mpu_rnr = 0;
@@ -1113,7 +1123,7 @@ static void lxp_mpu_init(void)
 
 /* MemManage fault containment. The unprivileged program's stray/hostile access to an ungranted
  * address (kernel RAM, a peripheral, a sibling's region) traps HERE instead of corrupting the
- * system: kill JUST that program (exit 139 = 128+SIGSEGV), park it in the shared park loop, and wake
+ * system: kill JUST that program (exit 139 = 128+SIGSEGV), park it in the shared entry, and wake
  * the coordinator so its EV_EXIT pass reaps the slot + reports the status to the parent (the shell
  * sees $?=139) — the kernel and any sibling programs run on. A MemManage from a non-program
  * (privileged) context is a genuine kernel bug → chain to NuttX's panicking HardFault path. */
@@ -1133,9 +1143,9 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 		.address = fault_address,
 	};
 	(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
-	regs[REG_PC] = (uint32_t)(uintptr_t)&lxp_park_loop & ~1u;
+	regs[REG_PC] = (uint32_t)(uintptr_t)&nuttx_park_entry & ~1u;
 	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
-	return 0; /* exception-return: the program spins in park_loop until reaped */
+	return 0; /* exception-return: the program spins in the park entry until reaped */
 }
 
 /* ---- inter-program isolation: per-program MPU regions on every context switch ---------------- */
