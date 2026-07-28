@@ -316,12 +316,17 @@ set(OVE_LINUX_GUEST_FLOAT_ABI "soft")
                      ("DEV","CONFIG_OVE_LINUX_DEV"), ("DEV_FB","CONFIG_OVE_LINUX_DEV_FB"),
                      ("DEV_DMA2D","CONFIG_OVE_LINUX_DEV_DMA2D"),
                      ("DEV_INPUT","CONFIG_OVE_LINUX_DEV_INPUT"),
-                     ("DEV_INPUT_TESTPAD","CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD"),
-                     ("TOUCH","CONFIG_OVE_FT5336")] %}
+                     ("DEV_INPUT_TESTPAD","CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD")] %}
 {% if config.get(cfg) == True %}
 add_compile_definitions(LXP_ENABLE_{{ feat }}=1)
 {% endif %}
 {% endfor %}
+{% if config.get("CONFIG_OVE_LINUX_DEV_INPUT") == True and
+      config.get("CONFIG_OVE_FT5336") == True %}
+# Physical touch is an input-provider implementation, not a standalone LXP
+# subsystem. Do not require display ops when the Linux input device is absent.
+add_compile_definitions(LXP_ENABLE_TOUCH=1)
+{% endif %}
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
 # Guest text XIPs from the rootfs CPIO backing, so a dynamic program region holds only the exec's
 # small RW data, ld.so RW data, and stack. The real STM32 QSPI image uses 128K regions to increase
