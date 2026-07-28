@@ -439,8 +439,17 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_path.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_pipe.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_tmpfs.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/proc/lxp_procfs.c")
-# Engine-agnostic run loop + svc dispatch (shared by all three seams).
+# Engine-agnostic run-loop core + compiled coordinator policies (shared by all
+# three seams). Keep this explicit so embedded builds exercise the same
+# translation-unit boundaries as standalone LXP.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_run.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_blocked.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_exec.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_exit.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_fork.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_guest_event.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_lifecycle.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_primary.c")
 # Signal delivery over the svc frame (extracted out of lxp_run.c).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_signal.c")
 # CPU/process snapshot for ps/top (fed by the run loop, read by /proc).

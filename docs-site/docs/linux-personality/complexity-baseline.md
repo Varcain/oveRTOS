@@ -327,18 +327,20 @@ latencies of 25.11 us on FreeRTOS, 24.33 us on NuttX, and 55.09 us on Zephyr.
 
 Iteration 4 separates coordinator policy into private lifecycle, guest-event,
 primary-event, blocked-operation, fork/vfork, exec, and exit/reap modules.
-`lxp_run.c` remains the single translation unit: it unity-includes those
-implementation parts so the coordinator state stays private while each policy
-area becomes independently reviewable and directly reachable by the
-coordinator unit suite. Standalone, test, fuzz, feature-gate, and Cortex-M4
-build source discovery explicitly excludes the included implementation parts.
+The initial split kept them as unity-included implementation parts. A later
+complexity pass converted all seven to compiled translation units behind
+`src/run/lxp_coordinator.h`. The slot and region tables remain private to
+`lxp_run.c`; policy modules can mutate them only through the private
+coordinator contract. Standalone LXP, oveRTOS engine builds, coordinator tests,
+and the Cortex-M7 QEMU harness now compile the same module boundaries. Stub and
+fuzz targets continue to exclude the coordinator as a whole.
 
 The main coordinator loop now performs only event claim, typed primary
 dispatch, typed blocked-state scan, liveness/maintenance, and event wait. Its
 fair rotating cursor, one-event claim limit, bounded critical section,
 readiness wakeups, nearest-deadline calculation, and existing polling fallback
-are unchanged. Moving policy out of the loop reduces `lxp_run.c` from 3,704 to
-2,771 lines.
+are unchanged. The source is split by ownership rather than textual inclusion;
+the compiler now rejects undeclared cross-policy dependencies.
 
 Handlers express lifecycle changes as typed outcome requests through one
 applicator. Only the lifecycle module invokes `spawn_launch`, `spawn_resume`,
