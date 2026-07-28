@@ -434,6 +434,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_bootstrap.c")
 # Generation-scoped privileged guest-memory validation and copy boundary.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_guest.c")
+# Core-owned active network/display provider bindings.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_provider.c")
 # Syscall-core subsystems the dispatcher delegates to (extracted out of lxp_syscall.c):
 # path resolution + rootfs lookup, the pipe ring, the writable-VFS (tmpfs) node store,
 # and synthetic /proc content generation.
@@ -475,8 +477,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_loader.c")
 # /dev character-device layer: core registry + routing (class drivers added by
 # their own CONFIG_OVE_LINUX_DEV_* below).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev.c")
-# Host adapter for the display/input port: bridges fb/touch ops to ove_fb_* /
-# ove_ft5336_*. Statically wires g_ove_lnx_disp_ops.
+# Host adapter for the display/input port: exports the immutable provider table
+# passed to lxp_run(), bridging fb/touch ops to ove_fb_* / ove_ft5336_*.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_disp_adapter.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_fb.c")
