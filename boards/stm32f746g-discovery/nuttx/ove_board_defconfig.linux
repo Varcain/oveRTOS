@@ -44,9 +44,9 @@ CONFIG_STM32F7_I2C3=y
 # CONFIG_STM32F7_DTCMEXCLUDE is not set
 CONFIG_MM_REGIONS=3
 
-# The personality's console reads RX through NuttX's IRQ-filled serial buffer (nuttx_lnx_trap.c
-# serial_poll_*), then puts the console in RAW mode via tcsetattr so NuttX does not also echo each
-# keystroke (the guest shell owns echo) or line-buffer to a newline. tcsetattr/TCSETS need termios.
+# The NuttX console backend reads RX through NuttX's IRQ-filled serial buffer and puts its
+# non-blocking descriptor in raw mode so NuttX does not also echo each keystroke (the guest shell
+# owns echo) or line-buffer to a newline. tcsetattr/TCSETS need termios.
 CONFIG_SERIAL_TERMIOS=y
 
 # Inter-program isolation: a note driver (backends/nuttx/nuttx_lnx_trap.c) hooks EVERY

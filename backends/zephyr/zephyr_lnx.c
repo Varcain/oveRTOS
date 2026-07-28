@@ -135,47 +135,6 @@ static uint8_t *zephyr_exec_stage(size_t *cap)
 }
 #endif
 
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch)
- * polls USART1 directly from the PRIVILEGED run loop. Zephyr already brought USART1 up as its own
- * console; we only steal RX from its IRQ path: serial_poll_begin() clears RXNEIE so the polled
- * reads own the receiver. STM32F7 USART1 @ 0x40011000: CR1(0x00) RXNEIE=b5, ISR(0x1C) RXNE=b5
- * TXE=b7, RDR(0x24), TDR(0x28). */
-#define OVE_Z_USART1 0x40011000u
-#define OVE_Z_U1_CR1 (*(volatile uint32_t *)(OVE_Z_USART1 + 0x00u))
-#define OVE_Z_U1_ISR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x1Cu))
-#define OVE_Z_U1_ICR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x20u))
-#define OVE_Z_U1_RDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x24u))
-#define OVE_Z_U1_TDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x28u))
-/* ISR/ICR error bits: FE=b1 NF=b2 ORE=b3. ICR clears them (FECF/NECF/ORECF). */
-#define OVE_Z_U1_RXERR ((1u << 1) | (1u << 2) | (1u << 3))
-void serial_poll_begin(void)
-{
-	OVE_Z_U1_CR1 &= ~(1u << 5); /* clear RXNEIE → polled access owns RX */
-}
-int serial_poll_rx_ready(void)
-{
-	uint32_t isr = OVE_Z_U1_ISR;
-	/* Clear a latched RX error. An overrun (ORE) — a burst that outpaced the polled
-	 * run loop — blocks RXNE for EVERY subsequent byte on the STM32 USART until cleared,
-	 * so without this the console wedges permanently after one overrun. Clearing ORE/FE/NF
-	 * via ICR lets RX self-heal (dropping only the overrun byte). */
-	if (isr & OVE_Z_U1_RXERR)
-		OVE_Z_U1_ICR = OVE_Z_U1_RXERR;
-	return (isr & (1u << 5)) ? 1 : 0; /* RXNE */
-}
-int serial_poll_getc(void)
-{
-	return (int)(OVE_Z_U1_RDR & 0xFFu);
-}
-void serial_poll_putc(char c)
-{
-	while (!(OVE_Z_U1_ISR & (1u << 7))) { /* wait for TXE */
-	}
-	OVE_Z_U1_TDR = (unsigned char)c;
-}
-#endif
-
 /* Per-region MPU domain: guest image + dynamic arena, required libc TLS, and (where the MPU
  * budget permits) Zephyr's malloc partition. The guest itself uses uClibc malloc. */
 extern struct k_mem_partition z_libc_partition;

@@ -31,6 +31,7 @@
 
 #include <string.h>
 
+#include "ove/console.h"
 #include "ove/thread.h"
 #include "ove/time.h"
 
@@ -113,32 +114,32 @@ static int app_lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
  * interactive top's 'q' quit works (a finite poll reports readiness instead of blocking the
  * whole CPU the way semihosting SYS_READC would). */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* Real STM32F746 hardware: serial_wrapper.c owns USART1 and its IRQ-filled RX buffer. */
-extern void serial_poll_begin(void);
-extern int serial_poll_rx_ready(void);
-extern int serial_poll_getc(void);
-extern void serial_poll_putc(char c);
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-extern void serial_write(const unsigned char *data, unsigned int length);
-#endif
+/* The console backend owns USART1/FIFO policy. Keep one byte of lookahead so
+ * readiness remains a non-consuming query to the LXP coordinator. */
+static int g_uart_lookahead = -1;
+static int uart_rx_ready(void);
 
 static void uart_init(void)
 {
-	serial_poll_begin();
+	(void)uart_rx_ready();
 }
 static void sh_writec(char c)
 {
-	serial_poll_putc(c);
+	ove_console_putchar((unsigned char)c);
 }
 static int uart_rx_ready(void)
 {
-	return serial_poll_rx_ready();
+	if (g_uart_lookahead < 0)
+		g_uart_lookahead = ove_console_try_getchar();
+	return g_uart_lookahead >= 0;
 }
 static int sh_readc(void)
 {
-	while (!serial_poll_rx_ready()) { /* block until a keystroke arrives */
+	while (!uart_rx_ready()) { /* block until a keystroke arrives */
 	}
-	return serial_poll_getc();
+	int c = g_uart_lookahead;
+	g_uart_lookahead = -1;
+	return c;
 }
 static void sh_exit(unsigned int code)
 {
@@ -461,7 +462,7 @@ static long console_write(void *ctx, int fd, const void *buf, size_t len)
 	UNUSED(ctx);
 	UNUSED(fd);
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && defined(CONFIG_OVE_RTOS_FREERTOS)
-	serial_write((const unsigned char *)buf, (unsigned int)len);
+	ove_console_write((const char *)buf, (unsigned int)len);
 #else
 	const char *p = (const char *)buf;
 	for (size_t i = 0; i < len; i++) {

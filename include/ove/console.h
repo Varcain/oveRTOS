@@ -62,6 +62,19 @@ int ove_console_init(void);
 int ove_console_getchar(void);
 
 /**
+ * @brief Try to read one character without blocking.
+ *
+ * Claims any backend-specific non-blocking input path on first use and returns
+ * immediately. This is suitable for event loops that must not hold an RTOS
+ * worker or coordinator while the console is idle.
+ *
+ * @return Character value in the range [0, 255], or -1 when no character is
+ *         available or the backend has no non-blocking input path.
+ * @note Requires @c CONFIG_OVE_CONSOLE.
+ */
+int ove_console_try_getchar(void);
+
+/**
  * @brief Write one character to the console.
  *
  * Transmits the character @p c via the console output path. The call may
@@ -92,6 +105,10 @@ static inline int ove_console_init(void)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_console_getchar(void)
+{
+	return -1;
+}
+static inline int ove_console_try_getchar(void)
 {
 	return -1;
 }

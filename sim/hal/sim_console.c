@@ -76,7 +76,7 @@ int ove_console_init(void)
 	return OVE_OK;
 }
 
-int ove_console_getchar(void)
+static int console_read(int timeout_ms)
 {
 	struct pollfd pfd[2];
 	int nfds = 0;
@@ -91,7 +91,7 @@ int ove_console_getchar(void)
 		nfds++;
 	}
 
-	if (poll(pfd, (nfds_t)nfds, -1) <= 0)
+	if (poll(pfd, (nfds_t)nfds, timeout_ms) <= 0)
 		return -1;
 
 	for (int i = 0; i < nfds; i++) {
@@ -102,6 +102,16 @@ int ove_console_getchar(void)
 		}
 	}
 	return -1;
+}
+
+int ove_console_getchar(void)
+{
+	return console_read(-1);
+}
+
+int ove_console_try_getchar(void)
+{
+	return console_read(0);
 }
 
 void ove_console_putchar(int c)

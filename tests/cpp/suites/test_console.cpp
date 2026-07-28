@@ -37,6 +37,20 @@ static void test_cpp_console_getchar(void **state)
 	close(saved_stdin);
 }
 
+static void test_cpp_console_try_getchar(void **state)
+{
+	(void)state;
+	int saved_stdin = dup(STDIN_FILENO);
+	int devnull_fd = open("/dev/null", O_RDONLY);
+	dup2(devnull_fd, STDIN_FILENO);
+	close(devnull_fd);
+
+	assert_int_equal(ove::console::try_getchar(), -1);
+
+	dup2(saved_stdin, STDIN_FILENO);
+	close(saved_stdin);
+}
+
 int test_cpp_console_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -44,6 +58,7 @@ int test_cpp_console_run(void)
 		cmocka_unit_test(test_cpp_console_putchar),
 		cmocka_unit_test(test_cpp_console_write),
 		cmocka_unit_test(test_cpp_console_getchar),
+		cmocka_unit_test(test_cpp_console_try_getchar),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

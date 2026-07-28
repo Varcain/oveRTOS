@@ -921,3 +921,13 @@ isolated host tests use that same seam explicitly. The optional POSIX port now
 returns its provider table through `lxp_posix_net_ops()` instead of acquiring
 module state as a link-time side effect. The hardened production images remain
 within 24 bytes of their pre-change flash footprints with no static-RAM change.
+
+Board console ownership is likewise outside the personality trap seams.
+`ove_console_try_getchar()` is the single non-blocking input contract; the
+FreeRTOS, NuttX, and Zephyr console backends own their respective IRQ buffer,
+raw descriptor, or polled-UART policy. The Linux interop application keeps only
+one byte of lookahead to turn that consuming API into readiness, and the
+FreeRTOS SVC priority is configured by the personality prepare hook rather than
+as a side effect of console initialization. Hardened production builds after
+this move use 243,032 B of flash on FreeRTOS, 237,620 B on NuttX, and 283,788 B
+on Zephyr, with no static-RAM growth.

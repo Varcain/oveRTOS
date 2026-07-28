@@ -1141,7 +1141,7 @@ fn testTimeDelayUs() !void {
 }
 
 // ---------------------------------------------------------------------------
-// Console tests (2)
+// Console tests (3)
 // ---------------------------------------------------------------------------
 
 fn testConsolePutchar() !void {
@@ -1151,6 +1151,10 @@ fn testConsolePutchar() !void {
 
 fn testConsoleWrite() !void {
     ove.console.write("[I] Zig console test\n");
+}
+
+fn testConsoleTryGetchar() !void {
+    _ = ove.console.tryGetchar();
 }
 
 // ---------------------------------------------------------------------------
@@ -1967,6 +1971,7 @@ pub fn main() void {
     runSuite("Console", &.{
         .{ .name = "putchar", .func = testConsolePutchar },
         .{ .name = "write", .func = testConsoleWrite },
+        .{ .name = "try_getchar", .func = testConsoleTryGetchar },
     });
 
     runSuite("Board", &.{

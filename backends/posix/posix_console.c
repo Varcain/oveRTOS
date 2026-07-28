@@ -8,6 +8,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include <poll.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -19,6 +20,18 @@ int ove_console_init(void)
 int ove_console_getchar(void)
 {
 	return getchar();
+}
+
+int ove_console_try_getchar(void)
+{
+	struct pollfd pfd = {
+		.fd = STDIN_FILENO,
+		.events = POLLIN,
+	};
+	unsigned char c;
+	if (poll(&pfd, 1, 0) <= 0 || !(pfd.revents & (POLLIN | POLLHUP)))
+		return -1;
+	return read(STDIN_FILENO, &c, 1) == 1 ? (int)c : -1;
 }
 
 void ove_console_putchar(int c)

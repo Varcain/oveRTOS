@@ -28,6 +28,12 @@ pub fn getchar() -> Option<i32> {
     if c < 0 { None } else { Some(c) }
 }
 
+/// Try to read one character without blocking.
+pub fn try_getchar() -> Option<i32> {
+    let c = unsafe { bindings::ove_console_try_getchar() };
+    if c < 0 { None } else { Some(c) }
+}
+
 /// Write a single character to the console output.
 ///
 /// `c` is interpreted as an unsigned 8-bit byte (`0..=255`).
