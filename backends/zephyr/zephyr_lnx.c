@@ -31,6 +31,8 @@
 #include <zephyr/sys/time_units.h>
 #include <zephyr/version.h>
 #include <stddef.h>
+#include <stdarg.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "lxp/lxp_exec.h"
