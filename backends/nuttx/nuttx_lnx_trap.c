@@ -394,7 +394,7 @@ static int current_slot(void)
 static int lxp_svc_handler(int irq, void *context, void *arg)
 {
 	uint32_t *regs = (uint32_t *)context;
-	if (!g_lxp_active || !regs)
+	if (!lxp_trap_active() || !regs)
 		return arm_svcall(irq, context, arg);
 	/* Escalation gate + Linux-vs-NuttX discriminator. The Linux program runs UNPRIVILEGED, so a svc
 	 * from an unprivileged frame (saved CONTROL.nPRIV set) is ALWAYS a Linux syscall — dispatch it
@@ -1187,7 +1187,7 @@ static void lxp_mpu_init(void)
 static int lxp_memfault_handler(int irq, void *context, void *arg)
 {
 	uint32_t *regs = (uint32_t *)context;
-	int sidx = (g_lxp_active && regs) ? current_slot() : -1;
+	int sidx = (lxp_trap_active() && regs) ? current_slot() : -1;
 	if (sidx < 0)
 		return arm_hardfault(irq, context, arg); /* privileged kernel fault → NuttX panic */
 	uint32_t cfsr = OVE_SCS_CFSR & 0x03ffffffu;
@@ -1311,7 +1311,7 @@ static void nuttx_disable_dynamic_regions(void)
 static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 {
 	(void)drv;
-	if (!g_lxp_active || !tcb)
+	if (!lxp_trap_active() || !tcb)
 		return;
 	guest_runtime_switch(tcb->pid);
 	ove_nuttx_runtime_switch(tcb->pid);

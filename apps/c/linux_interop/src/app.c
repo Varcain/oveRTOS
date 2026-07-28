@@ -700,7 +700,7 @@ static uint8_t g_ftest_stack[512] __attribute__((aligned(512)));
 static void ftest_body(void *arg)
 {
 	UNUSED(arg);
-	ove_thread_sleep_ms(4000); /* let phase 2 bring the guest up, so g_lxp_active is set */
+	ove_thread_sleep_ms(4000); /* let phase 2 publish the active personality run */
 	sh_write0("[c6] faulting a privileged host task (udf) while a guest runs;"
 		  " expect HOST FAULT + watchdog reset\n");
 	__asm volatile("udf #0"); /* UsageFault in host context -> seam declines -> ove_lnx_host_fatal */

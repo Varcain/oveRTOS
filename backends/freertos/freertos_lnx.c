@@ -236,7 +236,7 @@ void ove_freertos_lxp_tick(void)
 	static uint32_t budget_ticks;
 	static TaskHandle_t budget_owner;
 	int current = current_slot();
-	if (!g_lxp_active || current < 0) {
+	if (!lxp_trap_active() || current < 0) {
 		budget_ticks = 0;
 		budget_owner = NULL;
 		return;
@@ -381,10 +381,11 @@ extern void vPortSVCHandler(void); /* FreeRTOS's own (start-scheduler / yield / 
 __attribute__((naked)) void SVC_Handler(void)
 {
 	__asm__ volatile(
-		"ldr   r1, =g_lxp_active \n"
+		"ldr   r1, =g_lxp_trap_gate \n"
 		"ldr   r1, [r1]              \n"
 		"cmp   r1, #0                \n"
 		"beq   1f                    \n" /* inactive -> FreeRTOS */
+		"dmb                          \n"
 		/* EXC_RETURN bit 3 == 0 -> the svc was taken from HANDLER mode.  A Linux program
 			  * always syscalls from THREAD mode (it runs as an unprivileged thread-mode task),
 			  * so a handler-mode svc is never a program syscall — it is FreeRTOS's own (yield /
@@ -478,7 +479,8 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 	int sidx = current_slot();
 	/* A Linux guest always runs in Thread mode on PSP.  Do not misclassify a
 	 * nested host/ISR fault merely because a guest TCB is current. */
-	if (g_lxp_active && sidx >= 0 && (exc_return & (1u << 3)) && (exc_return & (1u << 2))) {
+	if (lxp_trap_active() && sidx >= 0 && (exc_return & (1u << 3)) &&
+	    (exc_return & (1u << 2))) {
 		volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 		diag->count++;
 		diag->cfsr = *(volatile uint32_t *)0xE000ED28u;
