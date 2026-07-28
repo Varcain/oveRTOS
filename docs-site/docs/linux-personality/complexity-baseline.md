@@ -726,3 +726,137 @@ before their network stacks became connect-ready, but the post-boot ICMP and
 TCP/SSH checks confirm the steady-state network path. The board was left
 running the clean FreeRTOS image after 170,767 releases and executions with
 zero misses, late finishes, IRQ overruns, or pending releases.
+
+## Closure qualification (2026-07-28)
+
+The post-Iteration 8 closure pass culminates at oveRTOS `9c093e1` and LXP
+`2cf71eb`. Iteration 9 was deliberately skipped: this pass contains no native
+spawn prototype or go/no-go decision.
+
+The wider STM32 profile sweep found six integration defects which were not
+visible in the original Full-profile gate:
+
+| Commit | Finding and resolution |
+|---|---|
+| LXP `2cf71eb`, oveRTOS `fee3bfa` | A completed remote-netfs exec request could leave the coordinator asleep because completion published an ordinary wakeup instead of the exec intent. Completion now publishes the pending remote-exec intent, with a host regression test, and oveRTOS pins it. |
+| oveRTOS `0a33437` | The board socket smoke ran once before slower network stacks became ready. It now retries within a bounded readiness window and reports elapsed time and attempt count. |
+| oveRTOS `48fc5f1` | The Linux touch provider was started even when the selected profile had guest input disabled. Provider startup is now gated by the generated guest-input feature. |
+| oveRTOS `d5ca20b` | FreeRTOS Minimal could fail its second Linux run after watchdog reboot. `vTaskAllocateMPURegions()` cleared the coordinator task's regions, but the cached mapped-region index survived; a same-index access then skipped the remap and read stale SDRAM through the background alias. Resetting the cache before installing the task regions preserves the existing 11-region capacity and makes repeated boot deterministic. |
+| oveRTOS `54fccd2` | NuttX Hardened's per-region protection metadata exceeded internal SRAM by 756 B at 11 regions. Minimal and Hardened now use 10 regions, leaving 2,636 B of SRAM1 headroom in the clean Hardened link. Full and Diagnostic retain 8 regions. |
+| oveRTOS `9c093e1` | Zephyr's headless overlay disabled QUADSPI, although every STM32 Linux-personality profile boots its rootfs from QSPI. Full-feature profiles accidentally masked this through the framebuffer overlay. QSPI, its memory map, and flash configuration are now common; the framebuffer overlay contains only display-specific LTDC/FMC setup. |
+
+### Ten-minute Full-profile workload
+
+The workload starts `lvmusic`, injects the Play touch, runs the heavy render
+scene, and repeatedly transfers data over the network. Each engine was observed
+for 600 seconds after warm-up. The raw captures identify LXP `53673b3`;
+FreeRTOS, NuttX, and Zephyr identify oveRTOS `b130a96`, `3902ebc`, and
+`88601c5`, respectively. Subsequent closure commits listed above affect
+publication, readiness/profile gating, and headless resource configuration,
+not the measured render or periodic RT-scope hot paths.
+
+| Metric | FreeRTOS | NuttX | Zephyr |
+|---|---:|---:|---:|
+| Active LVGL samples | 1,771 | 1,817 | 1,819 |
+| FPS min / p05 / median / mean / p95 / max | 1 / 6 / 6 / 6.05 / 7 / 7 | 4 / 5 / 6 / 5.93 / 6 / 13 | 5 / 6 / 6 / 6.03 / 6 / 17 |
+| Render ms p05 / median / mean / p95 / p99 / max | 128 / 141 / 141.82 / 150 / 167 / 665 | 127 / 139 / 138.32 / 147 / 155 / 162 | 120 / 131 / 130.36 / 138 / 140 / 148 |
+| Flush ms median / p99 / max | 5 / 6 / 7 | 5 / 6 / 15 | 6 / 7 / 10 |
+| LVGL CPU mean | 100.00% | 100.00% | 100.00% |
+| Completed network transfers / failures | 5 / 0 | 5 / 0 | 9 / 0 |
+| Network completions per minute | 0.475 | 0.475 | 0.853 |
+
+FreeRTOS and NuttX still had an in-flight transfer when the measurement ended;
+the harness stopped it during cleanup. This is not counted as a transport
+failure. There were no serial reconnects or fault reports on any engine.
+Zephyr has the best render distribution and highest network throughput in this
+sample. NuttX is about 7 ms faster than FreeRTOS at median render and 4.7 ms
+faster at the mean. FreeRTOS's 665 ms render maximum is a single long-tail
+event; its p99 remains 167 ms and its p05, median, and p95 remain close to
+NuttX.
+
+| RT-scope metric | FreeRTOS | NuttX | Zephyr |
+|---|---:|---:|---:|
+| Accepted windows | 54 | 59 | aggregate capture |
+| Releases / executions | 544,510 / 544,510 | 592,821 / 592,821 | 620,626 / 620,626 |
+| Missed / late / IRQ overrun / max pending | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 |
+| Dispatch min / weighted mean / maximum | 5.96 / 9.92 / 74.69 us | 6.98 / 13.00 / 823.13 us | 5.57 / 9.20 / 57.72 us |
+| Worst p99 / p99.9 bucket | <=16 / <=32 us | <=32 / <=32 us | <=32 / <=32 us |
+| Window-maximum median / p95 | 34.25 / 72.41 us | 30.81 / 34.19 us | not recoverable |
+| Work min / max | 5.15 / 12.11 us | 4.96 / 10.24 us | 4.94 / 9.57 us |
+| SVC calls / mean / maximum | 293,196 / 17.38 / 19.96 us | not instrumented | 417,136 / 15.30 / 17.52 us |
+
+NuttX's 823.13 us dispatch is one isolated maximum: 95% of its per-window
+maxima are at or below 34.19 us, both high-percentile buckets are at or below
+32 us, and no release was missed or finished late. It remains a useful
+worst-observed value, not a demonstrated hard bound. Zephyr's UART stream
+interleaved one RT-scope prefix with userspace output, so the JSON parser
+correctly rejected it as a complete window. The totals and timing fields above
+were reconstructed from the retained aggregate lines; a per-window maximum
+distribution cannot be recovered from that capture.
+
+### STM32 profile matrix
+
+All 12 engine/profile combinations build. Every combination was also flashed
+to the STM32F746G-DISCO and reached BusyBox userspace. Minimal was checked for
+phase-1 launch, login, `uname`, capacity reporting, and reboot where the seam
+needed a repeated-run regression. Diagnostic additionally read and executed a
+hard-float FDPIC program over 9P. Hardened read over 9P but rejected remote
+execution as configured. The Full profile received the extended outage,
+recovery, and console-login tests.
+
+| Engine | Minimal | Full compatibility | Diagnostic | Hardened |
+|---|---|---|---|---|
+| FreeRTOS | PASS; clean repeated boot | PASS; read, exec, outage/recovery, login | PASS; read and exec | PASS; read, exec denied |
+| NuttX | PASS; clean final build | PASS; read, exec, outage/recovery, login | PASS; read and exec | PASS; clean build, read, exec denied |
+| Zephyr | PASS; clean QSPI-rootfs build | PASS; read, exec, outage/recovery, login | PASS; read, exec and RT-scope | PASS; read, exec denied |
+
+The Full-profile network readiness observations were 43 ms on attempt 1 for
+FreeRTOS, 560 ms on attempt 3 for NuttX, and 3,796 ms on attempt 6 for Zephyr.
+With the temporary 9P server removed, every engine returned bounded
+`EIO` to userspace rather than hanging the coordinator; after the server
+returned, both read and remote exec recovered. A deliberately incorrect
+console login returned a new prompt and accepted the following root login in
+3.525, 3.522, and 3.521 seconds on FreeRTOS, NuttX, and Zephyr, respectively.
+Observed RT-scope windows retained zero misses, late finishes, IRQ overruns,
+and pending releases throughout these checks.
+
+`free` reports guest-region capacity rather than physical byte-addressable RAM.
+One region contributes 640 KiB: 128 KiB of program storage and 512 KiB of
+dynamic storage. The final Minimal/Hardened capacities are therefore 7,040 KiB
+from 11 regions on FreeRTOS, 6,400 KiB from 10 regions on NuttX, and 7,680 KiB
+from 12 regions on Zephyr. Full/Diagnostic use 8/8/9 regions on
+FreeRTOS/NuttX/Zephyr. `NSLOT` is `NREG + 4`, so the corresponding
+Minimal/Hardened slot counts are 15, 14, and 16.
+
+### Final STM32 build footprint
+
+These are clean linker/build reports from the final profile sweep. Zephyr's
+internal-RAM values are reported in rounded KiB by its build system. NuttX's
+fixed-address external pools are not part of the linker accounting.
+
+| Engine | Profile | Internal flash | Internal RAM | Linker-accounted external SDRAM |
+|---|---|---:|---:|---:|
+| FreeRTOS | Minimal | 116,280 B | DTCM 46,624 B; SRAM 128,016 B | 7,737,040 B |
+| FreeRTOS | Full | 245,988 B | DTCM 45,472 B; SRAM 199,152 B | 7,077,472 B |
+| FreeRTOS | Diagnostic | 247,796 B | DTCM 45,472 B; SRAM 201,200 B | 7,077,472 B |
+| FreeRTOS | Hardened | 242,680 B | DTCM 46,624 B; SRAM 208,616 B | 7,737,040 B |
+| NuttX | Minimal | 162,060 B | SRAM1 199,772 B | fixed-address pools |
+| NuttX | Full | 253,784 B | SRAM1 236,596 B | fixed-address pools |
+| NuttX | Diagnostic | 257,384 B | SRAM1 237,780 B | fixed-address pools |
+| NuttX | Hardened | 239,228 B | SRAM1 243,124 B | fixed-address pools |
+| Zephyr | Minimal | 156,952 B | 177 KiB / 256 KiB | 8,042,560 B |
+| Zephyr | Full | 287,192 B | 230 KiB / 256 KiB; DTCM 12,544 B | 7,775,200 B |
+| Zephyr | Diagnostic | 289,624 B | 234 KiB / 256 KiB; DTCM 12,544 B | 7,775,200 B |
+| Zephyr | Hardened | 280,988 B | 240 KiB / 256 KiB; DTCM 12,544 B | 8,303,680 B |
+
+The apparent increase from the earlier Iteration 8 table is primarily a target
+difference: that table records QEMU resource gates, while this one records the
+STM32F746G-DISCO production image with display, Ethernet, QSPI, target seams,
+and board-specific memory placement.
+
+The final LXP source was rebuilt rather than tested through a stale host binary.
+All 45 normal CTest targets and all 45 AddressSanitizer plus
+UndefinedBehaviorSanitizer targets pass at `2cf71eb`. Hardware transcripts are
+retained under `output/closure-hardware-20260728/` and
+`output/closure-profile-smoke-20260728/`; workload captures and machine-readable
+summaries are under `output/lvmusic-net-comparison-20260727-closure/`.
