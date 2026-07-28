@@ -35,6 +35,7 @@
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
 #include "lxp/lxp_syscall.h"
+#include "ove/lxp_metrics.h"
 #endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 #include "FreeRTOS.h"
@@ -417,16 +418,6 @@ static char *append_ticks_us(char *p, uint32_t ticks)
 }
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-typedef struct ove_freertos_lnx_svc_metrics svc_metrics_t;
-#define RT_SCOPE_SVC_METRICS_TAKE ove_freertos_lnx_svc_metrics_take
-#define RT_SCOPE_SVC_COUNTER_HZ ove_freertos_lnx_svc_counter_hz
-#else
-typedef struct ove_zephyr_lnx_svc_metrics svc_metrics_t;
-#define RT_SCOPE_SVC_METRICS_TAKE ove_zephyr_lnx_svc_metrics_take
-#define RT_SCOPE_SVC_COUNTER_HZ ove_zephyr_lnx_metrics_counter_hz
-#endif
-
 static char *append_cycles_us(char *p, uint32_t cycles, uint32_t counter_hz)
 {
 	uint32_t hundredths =
@@ -518,13 +509,13 @@ static char *append_syscall(char *p, uint32_t nr)
 
 static void report_svc_metrics(void)
 {
-	svc_metrics_t window;
-	svc_metrics_t total;
+	struct ove_lxp_svc_metrics window;
+	struct ove_lxp_svc_metrics total;
 	char line[192];
 	char *p;
-	uint32_t counter_hz = RT_SCOPE_SVC_COUNTER_HZ();
+	uint32_t counter_hz = ove_lxp_metrics_counter_hz();
 
-	RT_SCOPE_SVC_METRICS_TAKE(&window, &total);
+	ove_lxp_svc_metrics_take(&window, &total);
 
 	p = append_text(line, "[rt-scope] svc-us window calls=");
 	p = append_u32(p, window.calls);
@@ -566,7 +557,7 @@ static void report_thread_snapshot_metrics(void)
 	struct ove_freertos_thread_snapshot_metrics total;
 	char line[160];
 	char *p;
-	uint32_t counter_hz = ove_freertos_lnx_svc_counter_hz();
+	uint32_t counter_hz = ove_lxp_metrics_counter_hz();
 
 	ove_freertos_thread_snapshot_metrics_take(&window, &total);
 	p = append_text(line, "[rt-scope] thread-snapshot-us window calls=");
@@ -595,7 +586,7 @@ static void report_critical_metrics(void)
 	struct ove_zephyr_lnx_critical_metrics total;
 	char line[192];
 	char *p;
-	uint32_t counter_hz = ove_zephyr_lnx_metrics_counter_hz();
+	uint32_t counter_hz = ove_lxp_metrics_counter_hz();
 
 	ove_zephyr_lnx_critical_metrics_take(&window, &total);
 	p = append_text(line, "[rt-scope] irq-lock-us window sections=");
