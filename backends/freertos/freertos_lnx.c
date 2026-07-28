@@ -801,12 +801,21 @@ static int freertos_spawn_common(int sidx, uint32_t generation, int ridx,
 	};
 	for (unsigned i = 0; i < portNUM_CONFIGURABLE_REGIONS; i++)
 		tp.xRegions[i] = g_prepared_profile[sidx].regions[i];
+	/* xTaskCreateRestrictedStatic may make the guest ready before returning.
+	 * Publish its generation first so an immediate SVC resolves the current
+	 * slot against the core's already-published runnable capability. */
+	g_task_generation[sidx] = generation;
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
+	if (ok != pdPASS)
+		g_task_generation[sidx] = 0;
 	return (ok == pdPASS) ? 0 : -1;
 #else
 	(void)ridx;
+	g_task_generation[sidx] = generation;
 	g_tid[sidx] = xTaskCreateStatic(prog_tramp, nm, TRAMP_STACK_WORDS, desc, SLOT_PROG_PRIO,
 					g_tramp_stacks[sidx], &g_tcb[sidx]);
+	if (!g_tid[sidx])
+		g_task_generation[sidx] = 0;
 	return g_tid[sidx] ? 0 : -1;
 #endif
 }
@@ -879,44 +888,41 @@ static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 	diag->last_desc = (uint32_t)(uintptr_t)d;
 	diag->last_ridx = (uint32_t)ridx;
 	diag->last_kind = 1u;
-	int rc = freertos_spawn_common(sidx, generation, ridx, d);
-	if (rc == 0)
-		g_task_generation[sidx] = generation;
-	return rc;
+	return freertos_spawn_common(sidx, generation, ridx, d);
 }
 
 static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
+				  lxp_spawn_resume_mode_t mode,
 				  const struct lxp_resume_ctx *ctx, long r0val)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
 	struct resume_desc *d = g_park_desc[sidx];
-	int persistent = !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_tid[sidx] && d;
-	if (persistent) {
-		if (g_task_generation[sidx] != generation)
+	if (mode == LXP_SPAWN_RESUME_PARKED) {
+		if (!g_tid[sidx] || !d || g_task_generation[sidx] != generation)
 			return -1;
 		d->r0 = (uint32_t)r0val;
 		d->ctx = *ctx;
 		__atomic_store_n(&d->ready, 1u, __ATOMIC_RELEASE);
-	} else {
-		d = stash_desc(sidx, ctx, r0val);
+		volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
+		diag->last_spawn_sp = ctx->sp;
+		diag->last_spawn_pc = ctx->pc;
+		diag->last_desc = (uint32_t)(uintptr_t)d;
+		diag->last_ridx = (uint32_t)ridx;
+		diag->last_kind = 3u;
+		vTaskResume(g_tid[sidx]);
+		return 0;
 	}
+	if (mode != LXP_SPAWN_RESUME_START || g_tid[sidx])
+		return -1;
+	d = stash_desc(sidx, ctx, r0val);
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 	diag->last_spawn_sp = ctx->sp;
 	diag->last_spawn_pc = ctx->pc;
 	diag->last_desc = (uint32_t)(uintptr_t)d;
 	diag->last_ridx = (uint32_t)ridx;
-	diag->last_kind = persistent ? 3u : 2u;
-	if (persistent) {
-		vTaskResume(g_tid[sidx]);
-		return 0;
-	}
-	if (g_tid[sidx])
-		return -1;
-	int rc = freertos_spawn_common(sidx, generation, ridx, d);
-	if (rc == 0)
-		g_task_generation[sidx] = generation;
-	return rc;
+	diag->last_kind = 2u;
+	return freertos_spawn_common(sidx, generation, ridx, d);
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)

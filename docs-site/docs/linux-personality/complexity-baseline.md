@@ -352,6 +352,13 @@ host-state and runnable publication. A failed native transition therefore
 follows the same containment path regardless of whether it originated in fork,
 exec, exit, signal, timeout, or an I/O retry.
 
+The seam now distinguishes starting a captured fork child from resuming a
+parked native task with an explicit `spawn_resume` mode. The coordinator
+publishes the generation-qualified runnable capability before a port can
+schedule either task, and ports publish their matching native generation before
+calling an RTOS API that can dispatch it. Resume behavior no longer depends on
+inferring intent from a mutable runnable bit or native handle.
+
 Clean production images built from oveRTOS `75113a4` and LXP `5adf7fc`
 compare with Iteration 3 as follows:
 
