@@ -90,6 +90,23 @@ int ove_console_getchar(void)
 	return ch;
 }
 
+int ove_console_try_getchar(void)
+{
+	ensure_init();
+	if (sem_trywait(&con_sem) != 0)
+		return -1;
+
+	pthread_mutex_lock(&con_lock);
+	int ch = -1;
+	if (con_count > 0) {
+		ch = con_buf[con_tail];
+		con_tail = (con_tail + 1) % CONSOLE_BUF_SIZE;
+		con_count--;
+	}
+	pthread_mutex_unlock(&con_lock);
+	return ch;
+}
+
 void ove_console_putchar(int c)
 {
 	putchar(c);

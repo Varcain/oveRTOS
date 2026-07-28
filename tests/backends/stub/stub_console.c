@@ -24,6 +24,11 @@ int ove_console_getchar(void)
 	return getchar();
 }
 
+int ove_console_try_getchar(void)
+{
+	return -1;
+}
+
 void ove_console_putchar(int c)
 {
 	putchar(c);

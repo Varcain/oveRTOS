@@ -60,6 +60,25 @@ static void test_console_getchar_from_empty_stdin(void **state)
 #endif
 }
 
+static void test_console_try_getchar_from_empty_stdin(void **state)
+{
+	(void)state;
+	ove_console_init();
+#if !defined(OVE_QEMU_ARM)
+	int saved_stdin = dup(STDIN_FILENO);
+	int devnull = open("/dev/null", O_RDONLY);
+	dup2(devnull, STDIN_FILENO);
+	close(devnull);
+
+	assert_int_equal(ove_console_try_getchar(), -1);
+
+	dup2(saved_stdin, STDIN_FILENO);
+	close(saved_stdin);
+#else
+	skip();
+#endif
+}
+
 static void test_console_init_multiple(void **state)
 {
 	(void)state;
@@ -81,6 +100,7 @@ int test_console_run(void)
 		cmocka_unit_test(test_console_put_char),
 		cmocka_unit_test(test_console_write),
 		cmocka_unit_test(test_console_getchar_from_empty_stdin),
+		cmocka_unit_test(test_console_try_getchar_from_empty_stdin),
 		cmocka_unit_test(test_console_init_multiple),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

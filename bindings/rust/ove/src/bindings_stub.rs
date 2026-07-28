@@ -362,6 +362,10 @@ unsafe extern "C" {
     pub fn ove_console_getchar() -> core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " @brief Try to read one character without blocking.\n\n Claims any backend-specific non-blocking input path on first use and returns\n immediately. This is suitable for event loops that must not hold an RTOS\n worker or coordinator while the console is idle.\n\n @return Character value in the range [0, 255], or -1 when no character is\n         available or the backend has no non-blocking input path.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    pub fn ove_console_try_getchar() -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Write one character to the console.\n\n Transmits the character @p c via the console output path. The call may\n block until the transmit buffer has space.\n\n @param[in] c  Character to transmit, interpreted as an @c unsigned @c char.\n @note Requires @c CONFIG_OVE_CONSOLE."]
     pub fn ove_console_putchar(c: core::ffi::c_int);
 }

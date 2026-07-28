@@ -1182,6 +1182,11 @@ static int freertos_prepare(void)
 {
 	if (!g_ev)
 		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	/* The SVC top half posts g_ev through a FreeRTOS ISR API. Keep the exception
+	 * at the kernel's syscall-safe priority; console code does not own this. */
+	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+#endif
 #if (portUSING_MPU_WRAPPERS == 1)
 	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
 #endif

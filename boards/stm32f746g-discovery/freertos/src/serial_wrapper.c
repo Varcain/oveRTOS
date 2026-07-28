@@ -17,7 +17,6 @@
 #define CIRC_BUFF_SIZE OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE
 #define CIRC_BUFF_MASK (CIRC_BUFF_SIZE - 1U)
 #define SERIAL_TX_BUDGET_MS 1000U
-#define SERIAL_POLL_SPIN_LIMIT 1000000U
 
 static UART_HandleTypeDef uartHandle;
 static StaticSemaphore_t mutex_storage;
@@ -206,6 +205,11 @@ unsigned char serial_getChar(void)
 	return c;
 }
 
+int serial_rx_ready(void)
+{
+	return (head != tail) ? 1 : 0;
+}
+
 void USART1_IRQHandler(void)
 {
 	unsigned int nextHead;
@@ -224,36 +228,4 @@ void USART1_IRQHandler(void)
 
 		__HAL_UART_CLEAR_OREFLAG(&uartHandle);
 	}
-}
-
-/* ---- IRQ-buffered USART1 console for the Linux personality (see serial_wrapper.h) ---- */
-void serial_poll_begin(void)
-{
-	if (mutex == NULL) /* serial_init() creates `mutex` last — call it once to bring USART1 up */
-		serial_init();
-	/* Keep IRQ-driven RX on: it drains bursts into the circular buffer while the
-	 * coordinator or a guest is busy. SVCall posts the coordinator's FreeRTOS event,
-	 * so it must remain at the kernel's syscall-safe interrupt priority. */
-	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-}
-
-int serial_poll_rx_ready(void)
-{
-	return (head != tail) ? 1 : 0; /* the IRQ-filled circular buffer has a byte waiting */
-}
-
-int serial_poll_getc(void)
-{
-	return (int)serial_getChar(); /* pop one byte from the IRQ-filled buffer */
-}
-
-void serial_poll_putc(char c)
-{
-	/* Legacy diagnostic path: never let a failed UART hold a privileged caller
-	 * forever, including when the HAL tick is unavailable or interrupts are masked. */
-	for (uint32_t spins = 0; spins < SERIAL_POLL_SPIN_LIMIT; spins++)
-		if (__HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_TXE)) {
-			uartHandle.Instance->TDR = (unsigned char)c;
-			return;
-		}
 }

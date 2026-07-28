@@ -60,6 +60,15 @@ inline int getchar()
 }
 
 /**
+ * @brief Tries to read one character without blocking.
+ * @return The character read, or -1 when no character is available.
+ */
+inline int try_getchar()
+{
+	return ove_console_try_getchar();
+}
+
+/**
  * @brief Writes a single character to the console output.
  * @param[in] c The character to write.
  */

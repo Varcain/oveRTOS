@@ -49,13 +49,11 @@
 #include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
 #endif
 #include <errno.h>
-#include <fcntl.h> /* open — non-blocking console RX via NuttX's serial buffer */
 #include <sched.h> /* task_delete */
 #include <stdint.h>
 #include <string.h>
 #include <sys/random.h> /* getrandom — guest entropy (AT_RANDOM seed + getrandom(2)) */
-#include <termios.h> /* tcgetattr/tcsetattr — put the console in raw mode (no NuttX echo/canon) */
-#include <unistd.h>  /* usleep, read */
+#include <unistd.h> /* usleep */
 
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
@@ -1346,82 +1344,6 @@ static struct note_driver_s g_lxp_note_driver = {
 };
 static bool g_lxp_note_registered;
 #endif /* CONFIG_SCHED_INSTRUMENTATION_SWITCH */
-
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch) polls
- * USART1 directly. NuttX already brought USART1 up as its own console (CONFIG_USART1), so we only
- * steal RX from its IRQ path: serial_poll_begin() clears RXNEIE so the personality's polled reads own
- * the receiver (raw register polling works in the svc-exception context, where NuttX's IRQ-driven
- * serial read would deadlock). STM32F7 USART1 @ 0x40011000: CR1(0x00) RXNEIE=b5, ISR(0x1C) RXNE=b5
- * TXE=b7, RDR(0x24), TDR(0x28). */
-#define OVE_NX_USART1 0x40011000u
-#define OVE_NX_U1_CR1 (*(volatile uint32_t *)(OVE_NX_USART1 + 0x00u))
-#define OVE_NX_U1_ISR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x1Cu))
-#define OVE_NX_U1_RDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x24u))
-#define OVE_NX_U1_TDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x28u))
-/* RX rides NuttX's own IRQ-filled serial receive buffer, read non-blocking through the console
- * device — NOT a raw poll of the 1-byte RDR. NuttX owns the USART1 RX IRQ (RXNEIE) and drains each
- * arriving byte into its recv FIFO; a raw RDR poll both races that IRQ (bytes vanish into NuttX's
- * buffer) and overruns the single RDR on a multi-byte paste. Reading the FIFO instead captures every
- * byte, mirroring the FreeRTOS serial_wrapper.c "read the IRQ buffer, not the RDR" design. The
- * personality's console read is parked and resumed from the run-loop (task) context, so the
- * non-blocking read() is a normal file op there; O_NONBLOCK also means it never waits. TX stays a
- * direct polled TDR write below (the personality owns TX once it starts; NuttX does no console TX
- * after boot). */
-static int g_con_rfd = -1;
-static int g_rx_look = -1; /* one-byte lookahead: rx_ready pulls from the FIFO, getc returns it */
-void serial_poll_begin(void)
-{
-	if (g_con_rfd >= 0)
-		return;
-	g_con_rfd = open("/dev/console", O_RDONLY | O_NONBLOCK);
-#if defined(CONFIG_SERIAL_TERMIOS)
-	/* Raw console: the personality's guest shell owns echo + line editing, so strip NuttX's
-	 * default cooked mode (ISIG|ECHO|ICANON). Without this NuttX echoes every keystroke a second
-	 * time (doubled input) and line-buffers RX to a newline instead of delivering bytes as they
-	 * arrive. VMIN=0/VTIME=0 keeps read() non-blocking. */
-	if (g_con_rfd >= 0) {
-		struct termios t;
-		if (tcgetattr(g_con_rfd, &t) == 0) {
-			t.c_lflag &= ~(tcflag_t)(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-			t.c_iflag &= ~(tcflag_t)(ICRNL | INLCR | IGNCR | IXON);
-			t.c_cc[VMIN] = 0;
-			t.c_cc[VTIME] = 0;
-			tcsetattr(g_con_rfd, TCSANOW, &t);
-		}
-	}
-#endif
-}
-int serial_poll_rx_ready(void)
-{
-	if (g_rx_look >= 0)
-		return 1;
-	unsigned char c;
-	if (g_con_rfd >= 0 && read(g_con_rfd, &c, 1) == 1) {
-		g_rx_look = (int)c;
-		return 1;
-	}
-	return 0;
-}
-int serial_poll_getc(void)
-{
-	if (g_rx_look >= 0) {
-		int c = g_rx_look;
-		g_rx_look = -1;
-		return c;
-	}
-	unsigned char c = 0;
-	if (g_con_rfd >= 0 && read(g_con_rfd, &c, 1) == 1)
-		return (int)c;
-	return 0;
-}
-void serial_poll_putc(char c)
-{
-	while (!(OVE_NX_U1_ISR & (1u << 7))) { /* wait for TXE */
-	}
-	OVE_NX_U1_TDR = (unsigned char)c;
-}
-#endif
 
 /* Per-run bring-up / teardown (was the body of the old lxp_run() wrapper). The
  * public lxp_run() now lives in the module (src/lxp_run.c) and calls these via

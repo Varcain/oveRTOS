@@ -33,12 +33,18 @@ pub fn putchar(ch: u8) void {
     c.ove_console_putchar(@intCast(ch));
 }
 
-/// Read one character from the console input without blocking.
+/// Read one character from the console input. The backend may block.
 ///
-/// Returns `null` if no character is available. Returns the character as a
-/// `u8` if one is ready in the receive buffer.
+/// Returns `null` on EOF or error.
 pub fn getchar() ?u8 {
     const ch = c.ove_console_getchar();
+    if (ch < 0) return null;
+    return @intCast(ch);
+}
+
+/// Try to read one character without blocking.
+pub fn tryGetchar() ?u8 {
+    const ch = c.ove_console_try_getchar();
     if (ch < 0) return null;
     return @intCast(ch);
 }

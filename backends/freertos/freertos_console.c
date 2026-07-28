@@ -18,8 +18,12 @@ int ove_console_init(void)
 
 int ove_console_getchar(void)
 {
-	unsigned char c = serial_getChar();
-	return (c != 0) ? (int)c : -1;
+	return ove_console_try_getchar();
+}
+
+int ove_console_try_getchar(void)
+{
+	return serial_rx_ready() ? (int)serial_getChar() : -1;
 }
 
 void ove_console_putchar(int c)
