@@ -13,6 +13,7 @@
 
 #include "../framework/ove_test.h"
 
+#include "ove/lxp_host.h"
 #include "ove_net_ready.h"
 #include "lxp_ove_thread_adapter.h"
 #include "lxp/lxp_net_ops.h"
@@ -20,6 +21,45 @@
 
 extern const struct lxp_net_ops g_lxp_host_net_ops;
 static unsigned g_socket_kicks;
+static unsigned g_rootfs_window_calls;
+static const void *g_rootfs_window_base;
+static size_t g_rootfs_window_size;
+static const lxp_os_ops_t *g_run_os_ops;
+static const lxp_net_ops_t *g_run_net_ops;
+static const lxp_display_ops_t *g_run_display_ops;
+static const lxp_run_config_t *g_run_config;
+
+static void test_rootfs_window(const void *base, size_t len)
+{
+	g_rootfs_window_calls++;
+	g_rootfs_window_base = base;
+	g_rootfs_window_size = len;
+}
+
+const lxp_os_ops_t g_lxp_host_engine = {
+	.abi_version = LXP_OS_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_os_ops_t),
+	.rootfs_window = test_rootfs_window,
+};
+
+const lxp_display_ops_t g_lxp_host_display_ops = {
+	.abi_version = LXP_DISPLAY_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_display_ops_t),
+};
+
+int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
+	    const lxp_display_ops_t *display_ops, const lxp_run_config_t *config, const char *path,
+	    int argc, const char *const argv[])
+{
+	(void)path;
+	(void)argc;
+	(void)argv;
+	g_run_os_ops = os_ops;
+	g_run_net_ops = net_ops;
+	g_run_display_ops = display_ops;
+	g_run_config = config;
+	return 37;
+}
 
 void lxp_sock_kick(void)
 {
@@ -89,8 +129,7 @@ static void test_adapter_open_close(void **state)
 	unsigned revents = 0;
 	assert_int_equal(ops->sock_poll(t, 0, &revents, 0), OVE_ERR_INVALID_PARAM);
 	ops->run_end();
-	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_ERR_INVALID_PARAM);
 
 	/* A run-end owns rollback for a provider handle the core failed to close. */
 	assert_int_equal(ops->run_begin(), OVE_OK);
@@ -100,6 +139,30 @@ static void test_adapter_open_close(void **state)
 	assert_int_equal(g_socket_kicks, 2);
 	assert_int_equal(ops->run_begin(), OVE_OK);
 	ops->run_end();
+}
+
+static void test_host_facade_owns_composition(void **state)
+{
+	(void)state;
+	static const uint8_t rootfs[16];
+	const lxp_run_config_t config = {0};
+	const char *const argv[] = {"init", NULL};
+
+	g_rootfs_window_calls = 0;
+	ove_lxp_prepare_rootfs_access(rootfs, sizeof(rootfs));
+	assert_int_equal(g_rootfs_window_calls, 1);
+	assert_ptr_equal(g_rootfs_window_base, rootfs);
+	assert_int_equal(g_rootfs_window_size, sizeof(rootfs));
+
+	g_run_os_ops = NULL;
+	g_run_net_ops = NULL;
+	g_run_display_ops = NULL;
+	g_run_config = NULL;
+	assert_int_equal(ove_lxp_run(&config, "/init", 1, argv), 37);
+	assert_ptr_equal(g_run_os_ops, &g_lxp_host_engine);
+	assert_ptr_equal(g_run_net_ops, &g_lxp_host_net_ops);
+	assert_ptr_equal(g_run_display_ops, &g_lxp_host_display_ops);
+	assert_ptr_equal(g_run_config, &config);
 }
 
 static int32_t test_slot_lookup(uintptr_t identity)
@@ -164,6 +227,7 @@ int test_lxp_adapter_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_adapter_ops_wired),
 		cmocka_unit_test(test_adapter_open_close),
+		cmocka_unit_test(test_host_facade_owns_composition),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
 	};

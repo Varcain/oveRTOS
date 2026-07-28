@@ -83,6 +83,7 @@ set(STUB_SOURCES
     # host test covers only the consumer-side glue, so no lxp sources are built.
     ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
+    ${OVE_ROOT}/backends/common/lxp_ove_host.c
     # Explicit thread-snapshot type translation at the oveRTOS/LXP boundary.
     ${OVE_ROOT}/backends/common/lxp_ove_thread_adapter.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*

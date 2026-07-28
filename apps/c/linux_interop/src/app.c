@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "ove/console.h"
+#include "ove/lxp_host.h"
 #include "ove/thread.h"
 #include "ove/time.h"
 
@@ -72,28 +73,6 @@
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
 #endif
-
-/* ---- the Linux-personality port binding ----------------------------------- */
-extern const lxp_os_ops_t g_lxp_host_engine;
-#if defined(CONFIG_OVE_LINUX_NET)
-extern const lxp_net_ops_t g_lxp_host_net_ops;
-#define APP_LXP_NET_OPS (&g_lxp_host_net_ops)
-#else
-#define APP_LXP_NET_OPS NULL
-#endif
-#if defined(CONFIG_OVE_LINUX_DEV)
-extern const lxp_display_ops_t g_lxp_host_display_ops;
-#define APP_LXP_DISPLAY_OPS (&g_lxp_host_display_ops)
-#else
-#define APP_LXP_DISPLAY_OPS NULL
-#endif
-
-static int app_lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
-	const char *const argv[])
-{
-	return lxp_run(&g_lxp_host_engine, APP_LXP_NET_OPS,
-		       APP_LXP_DISPLAY_OPS, cfg, path, argc, argv);
-}
 
 /* ---- the personality console (program stdin/stdout + program exit) --------- */
 /* Driven from the privileged coordinator task; must be NON-BLOCKING-pollable so
@@ -1075,9 +1054,7 @@ static void demo_body(void *arg)
 	 * personality BEFORE the first read of it (the CPIO parse just below): on the STM32F746 this
 	 * installs a bounded, non-cacheable MPU region for this coordinator task so the M7 D-cache
 	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
-	if (g_lxp_host_engine.rootfs_window)
-		g_lxp_host_engine.rootfs_window(LXP_EXTERNAL_ROOTFS,
-					      LXP_EXTERNAL_ROOTFS_MAX);
+	ove_lxp_prepare_rootfs_access(LXP_EXTERNAL_ROOTFS, LXP_EXTERNAL_ROOTFS_MAX);
 #endif
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
@@ -1231,7 +1208,7 @@ static void demo_body(void *arg)
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
 	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
-	int rc1 = app_lxp_run(&cfg1, "/bin/busybox", 1, cat_argv);
+	int rc1 = ove_lxp_run(&cfg1, "/bin/busybox", 1, cat_argv);
 
 	g_linux_done = 1;
 	while (!g_worker_exited) /* wait for the worker to drain and return */
@@ -1306,13 +1283,13 @@ static void demo_body(void *arg)
 #endif
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
 	const char *const fp_argv[] = {"fpcheck", NULL};
-	rc2 = app_lxp_run(&cfg2, "/usr/bin/fpcheck", 1, fp_argv);
+	rc2 = ove_lxp_run(&cfg2, "/usr/bin/fpcheck", 1, fp_argv);
 	sh_write0("\n=== interop demo done (hard-float self-test exited) ===\n");
 #else
 	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
 	 * a login shell on the console. */
 	const char *const init_argv[] = {"init", NULL};
-	rc2 = app_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
+	rc2 = ove_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
 	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
 #endif
 #if LXP_ENABLE_LATENCY
