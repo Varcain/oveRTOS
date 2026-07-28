@@ -469,6 +469,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_signal.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_stats.c")
 # Explicit oveRTOS -> LXP thread-snapshot contract adapter.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_thread_adapter.c")
+# oveRTOS-owned provider composition and pre-rootfs-access facade.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_host.c")
 # Coordinator latency counters. The TU is empty unless the gate below is on.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_latency.c")
 {% if config.get("CONFIG_OVE_LINUX_LATENCY") == True %}
