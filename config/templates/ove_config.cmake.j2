@@ -435,44 +435,21 @@ add_compile_definitions(LXP_NREG=1)
 # OVE_BUILDROOT is resolved against the oveRTOS root in cmake/OveLinuxFixtures.cmake.
 set(OVE_BUILDROOT "{{ config.get('CONFIG_OVE_BUILDROOT', '../buildroot') }}")
 set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output') }}")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
-# Immutable CPIO ingestion and initial guest-stack construction.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_bootstrap.c")
-# Generation-scoped privileged guest-memory validation and copy boundary.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_guest.c")
-# Core-owned active network/display provider bindings.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_provider.c")
-# Syscall-core subsystems the dispatcher delegates to (extracted out of lxp_syscall.c):
-# descriptor/OFD lifetime, path resolution + rootfs lookup, the pipe ring, the
-# writable-VFS (tmpfs) node store, and synthetic /proc content generation.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_fd.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_path.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_pipe.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_tmpfs.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/proc/lxp_process.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/proc/lxp_procfs.c")
-# Engine-agnostic run-loop core + compiled coordinator policies (shared by all
-# three seams). Keep this explicit so embedded builds exercise the same
-# translation-unit boundaries as standalone LXP.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_run.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_blocked.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_exec.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_exit.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_fork.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_guest_event.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_image.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_lifecycle.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/run/lxp_primary.c")
-# Signal delivery over the svc frame (extracted out of lxp_run.c).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_signal.c")
-# CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_stats.c")
+# The module owns the one translation-unit inventory shared by standalone,
+# firmware, host-test, and fuzz consumers. Firmware selects the feature groups
+# below; adding an unclassified src/*.c file makes configuration fail closed.
+include("${OVE_DIR}/modules/lxp/cmake/lxp_sources.cmake")
+list(APPEND OVE_BACKEND_SOURCES
+     ${LXP_RUNTIME_SOURCES}
+     ${LXP_COORDINATOR_SOURCES}
+     ${LXP_POST_COORDINATOR_SOURCES})
 # Explicit oveRTOS -> LXP thread-snapshot contract adapter.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_thread_adapter.c")
 # oveRTOS-owned provider composition and pre-rootfs-access facade.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_host.c")
-# Coordinator latency counters. The TU is empty unless the gate below is on.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_latency.c")
+# Coordinator counters plus module-owned arena / loader utilities retain their
+# established archive order after the oveRTOS adapters.
+list(APPEND OVE_BACKEND_SOURCES ${LXP_UTILITY_SOURCES})
 {% if config.get("CONFIG_OVE_LINUX_LATENCY") == True %}
 # The module spells this gate LXP_ENABLE_LATENCY, not CONFIG_OVE_*: modules/lxp builds
 # standalone under its own suites and check-decoupled.sh forbids oveRTOS symbols inside it,
@@ -481,23 +458,18 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_latency.c")
 # quietly pair a real recorder with a no-op reader.
 add_compile_definitions(LXP_ENABLE_LATENCY=1)
 {% endif %}
-# The module's own vendored copies of the arena allocator + FDPIC loader (the
-# oveRTOS originals in backends/common/ove_arena.c + loader/ove_loader.c stay for
-# their own tests / non-personality users).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_arena.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_loader.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV") == True %}
 # /dev character-device layer: core registry + routing (class drivers added by
 # their own CONFIG_OVE_LINUX_DEV_* below).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_SOURCES})
 # Host adapter for the display/input port: exports the immutable provider table
 # passed to lxp_run(), bridging fb/touch ops to ove_fb_* / ove_ft5336_*.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_disp_adapter.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_fb.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_FB_SOURCES})
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_DEV_DMA2D") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_dma2d.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_DMA2D_SOURCES})
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # NuttX STM32: the strong backend ONLY — a weak fallback in the same static
 # archive would satisfy the reference first and the strong object never pull.
@@ -512,7 +484,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_hal_dma2d.c")
 {% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_DEV_INPUT") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_input.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_INPUT_SOURCES})
 {% endif %}
 {% if config.get("CONFIG_OVE_FT5336") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
@@ -522,7 +494,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
 # Socket layer: bridges the personality's socket syscalls (FD_SOCKET) to the
 # engine-neutral ove_net HAL. Selects CONFIG_OVE_NET, whose block adds the
 # per-engine *_net.c backend + the native TCP/IP stack (lwIP on FreeRTOS).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/net/lxp_net.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_NET_SOURCES})
 # Host adapter for the personality's handle-based net-ops port: owns the socket
 # storage pool and bridges to the ove_net HAL. Statically wires g_ove_lnx_net_ops.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_adapter.c")
@@ -530,12 +502,12 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_adapter.c")
 {% if config.get("CONFIG_OVE_LINUX_NETFS") == True %}
 # Remote filesystem: a coordinator-owned 9P2000.L client bridging FD_NET opens on
 # a /mnt path to a 9P server (diod). Selects CONFIG_OVE_NET for the TCP transport.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/netfs/lxp_netfs.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_NETFS_SOURCES})
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_PTY") == True %}
 # Pseudo-terminal layer: /dev/ptmx + /dev/pts/N (FD_PTY) with a minimal line
 # discipline — the interactive tty for a network login shell (dropbear over SSH).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/pty/lxp_pty.c")
+list(APPEND OVE_BACKEND_SOURCES ${LXP_PTY_SOURCES})
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_RT_SCOPE") == True and
       (config.get("CONFIG_OVE_RTOS_FREERTOS") == True or
