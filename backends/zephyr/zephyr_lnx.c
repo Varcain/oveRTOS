@@ -43,9 +43,6 @@
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 #include "ove_zephyr_lnx_metrics.h"
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "lxp/lxp_netfs.h"
-#endif
 
 BUILD_ASSERT(IS_ENABLED(CONFIG_USERSPACE),
 	     "the Zephyr Linux personality requires unprivileged user threads");
@@ -997,11 +994,6 @@ static int zephyr_park_slot(int sidx, uint32_t generation)
 	return 0;
 }
 
-static void zephyr_sleep_ms(unsigned ms)
-{
-	k_msleep((int32_t)ms);
-}
-
 static int32_t slot_for_thread(uintptr_t identity)
 {
 	for (int s = 0; s < LXP_NSLOT; s++)
@@ -1071,7 +1063,6 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.abort_slot = zephyr_abort_slot,
 	.park_prepare = zephyr_park_prepare,
 	.park_slot = zephyr_park_slot,
-	.sleep_ms = zephyr_sleep_ms,
 	.crit_enter = zephyr_crit_enter,
 	.crit_exit = zephyr_crit_exit,
 	.event_post = zephyr_event_post,

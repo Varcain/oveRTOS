@@ -37,9 +37,6 @@
 #include "ove/thread.h"	     /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
 #include "lxp/lxp_syscall.h"
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "lxp/lxp_netfs.h"
-#endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "bsp.h"       /* bsp_random_fill -> hardware-backed guest entropy */
@@ -1059,11 +1056,6 @@ static int freertos_park_slot(int sidx, uint32_t generation)
 	return 0;
 }
 
-static void freertos_sleep_ms(unsigned ms)
-{
-	vTaskDelay(pdMS_TO_TICKS(ms));
-}
-
 /* Coordinator critical section: taskENTER_CRITICAL raises BASEPRI to mask the
  * configurable-priority interrupts (NOT vTaskSuspendAll, which only defers thread
  * switches). Held only for the brief proc-table flag snapshot. */
@@ -1217,7 +1209,6 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.abort_slot = freertos_abort_slot,
 	.park_prepare = freertos_park_prepare,
 	.park_slot = freertos_park_slot,
-	.sleep_ms = freertos_sleep_ms,
 	.crit_enter = freertos_crit_enter,
 	.crit_exit = freertos_crit_exit,
 	.event_post = freertos_event_post,

@@ -63,14 +63,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/random.h> /* getrandom — guest entropy (AT_RANDOM seed + getrandom(2)) */
-#include <unistd.h> /* usleep */
 
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "lxp/lxp_netfs.h"
-#endif
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
@@ -737,7 +733,7 @@ static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
 	regs[REG_XPSR] = ctx->xpsr | (1u << 24); /* flags/IT state + Thumb */
 	regs[REG_R0] = (uint32_t)r0val;
 #if LXP_ENABLE_FPU_CONTEXT
-	/* Restore the parked guest's VFP state into the recreated task's context. */
+	/* Restore the captured child's VFP state into its new native task. */
 	if (ctx->fp.active) {
 		for (int i = 0; i < 16; i++)
 			regs[REG_S0 + i] = ctx->fp.s[i];
@@ -781,11 +777,6 @@ static int nuttx_park_slot(int sidx, uint32_t generation)
 		return -1;
 	nxsched_suspend(&g_tcb[sidx].cmn);
 	return g_tcb[sidx].cmn.task_state == TSTATE_TASK_STOPPED ? 0 : -1;
-}
-
-static void nuttx_sleep_ms(unsigned ms)
-{
-	usleep(ms * 1000u);
 }
 
 /* Guest entropy source (AT_RANDOM and getrandom). GRND_NONBLOCK makes every
@@ -977,7 +968,6 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.abort_slot = nuttx_abort_slot,
 	.park_prepare = nuttx_park_prepare,
 	.park_slot = nuttx_park_slot,
-	.sleep_ms = nuttx_sleep_ms,
 	.crit_enter = nuttx_crit_enter,
 	.crit_exit = nuttx_crit_exit,
 	.event_post = nuttx_event_post,
@@ -1290,7 +1280,7 @@ static bool g_lxp_note_registered;
 
 /* Per-run bring-up / teardown (was the body of the old lxp_run() wrapper). The
  * public lxp_run() now lives in the module (src/lxp_run.c) and calls these via
- * g_lxp_host_engine.prepare()/.teardown() around lxp_run_common(). */
+ * g_lxp_host_engine.prepare()/.teardown() around the internal run loop. */
 static int nuttx_prepare(void)
 {
 	g_irq_install_mask = 0;
