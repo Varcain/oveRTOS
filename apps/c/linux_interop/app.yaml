@@ -42,6 +42,12 @@ rtos_defconfig:
     # tasks, avoiding involuntary switches among unrelated equal-priority host
     # work while preventing a no-syscall guest from starving its peers.
     - CONFIG_FREERTOS_USE_TIME_SLICING=n
+    # The lwIP RX task publishes readiness through the engine-neutral network
+    # channel; the LXP host adapter subscribes while it owns sockets.
+    - CONFIG_OVE_NET_RX_READY_NOTIFY=y
+    # Bound saturated RX work explicitly as a network scheduling policy, not as
+    # hidden Linux-personality behavior inside the generic FreeRTOS backend.
+    - CONFIG_OVE_NET_RX_FAIR_SCHEDULING=y
 # Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
 #   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
 #   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)

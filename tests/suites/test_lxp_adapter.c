@@ -13,11 +13,18 @@
 
 #include "../framework/ove_test.h"
 
+#include "ove_net_ready.h"
 #include "lxp_ove_thread_adapter.h"
 #include "lxp/lxp_net_ops.h"
 #include "ove/types.h" /* OVE_OK — the ove_net return the adapter forwards */
 
 extern const struct lxp_net_ops g_lxp_host_net_ops;
+static unsigned g_socket_kicks;
+
+void lxp_sock_kick(void)
+{
+	g_socket_kicks++;
+}
 
 /* The exported adapter table passed to lxp_run must be complete and versioned. */
 static void test_adapter_ops_wired(void **state)
@@ -48,12 +55,12 @@ static void test_adapter_ops_wired(void **state)
 	assert_non_null(ops->netif_get_flags);
 	assert_non_null(ops->netif_set_addr);
 	assert_non_null(ops->netif_set_up);
+	assert_true(ops->capabilities & LXP_NET_CAP_SOCKET_READY_EVENT);
 }
 
 /* open -> close through the adapter reaches the ove_net backend (posix_net):
  * exercises the storage-pool slot alloc/free and the ove_socket_open_ex bridge.
- * A UDP socket needs no peer, so this stays hermetic. The back-to-back stream
- * open proves the freed slot is reused (owned-storage lifecycle). */
+ * Readiness remains subscribed until the last concurrently owned socket closes. */
 static void test_adapter_open_close(void **state)
 {
 	(void)state;
@@ -62,12 +69,19 @@ static void test_adapter_open_close(void **state)
 	lxp_socket_t s = NULL;
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_OK);
 	assert_non_null(s);
-	ops->sock_close(s);
-
 	lxp_socket_t t = NULL;
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_STREAM, 0, &t), OVE_OK);
 	assert_non_null(t);
+
+	g_socket_kicks = 0;
+	ove_net_ready_publish();
+	assert_int_equal(g_socket_kicks, 1);
+	ops->sock_close(s);
+	ove_net_ready_publish();
+	assert_int_equal(g_socket_kicks, 2);
 	ops->sock_close(t);
+	ove_net_ready_publish();
+	assert_int_equal(g_socket_kicks, 2);
 }
 
 static int32_t test_slot_lookup(uintptr_t identity)

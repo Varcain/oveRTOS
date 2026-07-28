@@ -24,6 +24,10 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 
 #include "ove/net.h"
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+#include "ove_net_ready.h"
+#include "lxp/lxp_net.h"
+#endif
 #include "lxp/lxp_net_ops.h"
 
 #include <string.h>
@@ -40,6 +44,15 @@ struct lxp_socket {
 
 static struct lxp_socket g_pool[LXP_ADAPTER_NSOCK];
 
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+static unsigned g_open_sockets;
+
+static void socket_ready(void)
+{
+	lxp_sock_kick();
+}
+#endif
+
 static struct lxp_socket *slot_alloc(void)
 {
 	for (int i = 0; i < LXP_ADAPTER_NSOCK; i++)
@@ -48,6 +61,23 @@ static struct lxp_socket *slot_alloc(void)
 			return &g_pool[i];
 		}
 	return NULL;
+}
+
+static int slot_publish(struct lxp_socket *s, lxp_socket_t *out)
+{
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	if (g_open_sockets == 0) {
+		int rc = ove_net_ready_subscribe(socket_ready);
+		if (rc != OVE_OK) {
+			ove_socket_close(s->h);
+			memset(s, 0, sizeof(*s));
+			return rc;
+		}
+	}
+	g_open_sockets++;
+#endif
+	*out = s;
+	return OVE_OK;
 }
 
 /* ---- lxp <-> ove address conversion (same fields + values) ------------------ */
@@ -74,8 +104,7 @@ static int a_open(lxp_af_t af, lxp_sock_type_t type, int proto, lxp_socket_t *ou
 		s->used = 0;
 		return r;
 	}
-	*out = s;
-	return OVE_OK;
+	return slot_publish(s, out);
 }
 static int a_accept(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_ns)
 {
@@ -87,15 +116,20 @@ static int a_accept(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_n
 		s->used = 0; /* also the OVE_ERR_TIMEOUT (no pending connection) path */
 		return r;
 	}
-	*out = s;
-	return OVE_OK;
+	return slot_publish(s, out);
 }
 static void a_close(lxp_socket_t s)
 {
-	if (!s)
+	if (!s || !s->used)
 		return;
 	ove_socket_close(s->h);
-	s->used = 0;
+	memset(s, 0, sizeof(*s));
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	if (g_open_sockets > 0)
+		g_open_sockets--;
+	if (g_open_sockets == 0)
+		ove_net_ready_unsubscribe(socket_ready);
+#endif
 }
 static int a_connect(lxp_socket_t s, const lxp_sockaddr_t *a, uint64_t t)
 {
@@ -235,8 +269,8 @@ const struct lxp_net_ops g_lxp_host_net_ops = {
 	.netif_get_flags = a_netif_get_flags,
 	.netif_set_addr = a_netif_set_addr,
 	.netif_set_up = a_netif_set_up,
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-	/* freertos_net.c posts lxp_sock_kick() after each delivered RX batch. */
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	/* The ove_net backend publishes readiness without depending on LXP. */
 	.capabilities = LXP_NET_CAP_SOCKET_READY_EVENT,
 #endif
 };
