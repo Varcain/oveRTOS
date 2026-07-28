@@ -102,10 +102,10 @@ extern const lxp_display_ops_t g_lxp_host_display_ops;
 #endif
 
 static int app_lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
-		       const char *const argv[])
+	const char *const argv[])
 {
 	return lxp_run(&g_lxp_host_engine, APP_LXP_NET_OPS,
-		       APP_LXP_DISPLAY_OPS, NULL, cfg, path, argc, argv);
+		       APP_LXP_DISPLAY_OPS, cfg, path, argc, argv);
 }
 
 /* ---- the personality console (program stdin/stdout + program exit) --------- */

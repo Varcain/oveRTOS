@@ -905,3 +905,10 @@ console-reader ownership. This preserves each subsystem's retry behavior while
 removing duplicated timeout classification; asynchronous console control input
 also reports ordinary scan progress and is delivered without an extra
 maintenance sleep.
+
+The runner no longer accepts a second one-field-family configuration object.
+Display geometry now belongs to `lxp_run_config_t` with the rootfs and console
+settings, reducing the public entry contract and making all per-run values share
+one lifetime. A zero dimension is republished as the documented default on every
+run, so a zero-initialized later invocation cannot inherit an earlier panel
+configuration.
