@@ -112,21 +112,27 @@ _Static_assert(sizeof(struct lxp_ext_storage) <= OVE_LXP_GUEST_POOL_SIZE,
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #define g_netfs_exec_stage (g_lxp_ext_storage.netfs_exec_stage)
 #endif
-static StaticTask_t g_tcb[LXP_NSLOT];
-static TaskHandle_t g_tid[LXP_NSLOT];
-static uint32_t g_task_generation[LXP_NSLOT];
 struct freertos_prepared_profile {
 	lxp_memory_policy_key_t key;
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
 	uint8_t valid;
 };
-static struct freertos_prepared_profile g_prepared_profile[LXP_NSLOT];
+struct resume_desc;
+struct freertos_lxp_slot {
+	TaskHandle_t tid;
+	uint32_t generation;
+	struct freertos_prepared_profile profile;
+	struct resume_desc *park_desc;
+};
+static struct freertos_lxp_slot g_slots[LXP_NSLOT];
+/* FreeRTOS owns the opaque task control-block storage; the seam owns g_slots. */
+static StaticTask_t g_tcb[LXP_NSLOT];
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
 	return (lxp_slot_ref_t){
 		.index = (int16_t)slot,
-		.generation = slot >= 0 && slot < LXP_NSLOT ? g_task_generation[slot] : 0,
+		.generation = slot >= 0 && slot < LXP_NSLOT ? g_slots[slot].generation : 0,
 	};
 }
 
@@ -163,7 +169,7 @@ static int current_slot(void)
 	extern void *volatile pxCurrentTCB;
 	TaskHandle_t t = (TaskHandle_t)pxCurrentTCB;
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_tid[i] == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
+		if (g_slots[i].tid == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
 }
@@ -184,8 +190,8 @@ void ove_freertos_lxp_tick(void)
 		budget_owner = NULL;
 		return;
 	}
-	if (budget_owner != g_tid[current]) {
-		budget_owner = g_tid[current];
+	if (budget_owner != g_slots[current].tid) {
+		budget_owner = g_slots[current].tid;
 		budget_ticks = 0;
 	}
 	uint32_t quantum_ticks =
@@ -199,7 +205,7 @@ void ove_freertos_lxp_tick(void)
 		return;
 	budget_ticks = 0;
 	for (int s = 0; s < LXP_NSLOT; s++) {
-		if (s != current && g_tid[s] && lxp_slot_ref_is_runnable(task_slot_ref(s))) {
+		if (s != current && g_slots[s].tid && lxp_slot_ref_is_runnable(task_slot_ref(s))) {
 			portYIELD_FROM_ISR(pdTRUE);
 			return;
 		}
@@ -531,7 +537,6 @@ struct resume_desc {
 	struct lxp_resume_ctx ctx;
 	volatile uint32_t ready;
 };
-static struct resume_desc *g_park_desc[LXP_NSLOT];
 
 /* prog_tramp is naked asm that reaches ctx as r0+4 and then loads every core register by hardcoded
  * offset (ldmia for r4-r11, then r12/lr/sp/pc, then r1/r2/r3/xpsr). Pin each so a change to
@@ -617,12 +622,12 @@ static struct resume_desc *stash_desc(int sidx, const struct lxp_resume_ctx *ctx
 static void *freertos_park_prepare(int sidx, uint32_t generation,
 				   const struct lxp_resume_ctx *ctx)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || !g_tid[sidx] ||
-	    g_task_generation[sidx] != generation)
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].tid ||
+	    g_slots[sidx].generation != generation)
 		return NULL;
 	struct resume_desc *d = stash_desc(sidx, ctx, 0);
 	__atomic_store_n(&d->ready, 0u, __ATOMIC_RELEASE);
-	g_park_desc[sidx] = d;
+	g_slots[sidx].park_desc = d;
 	return d;
 }
 
@@ -669,7 +674,7 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 	    lxp_memory_policy_validate(&policy) != LXP_OK ||
 	    policy.address_space.index != ridx || policy.device_count != 0)
 		return -1;
-	struct freertos_prepared_profile *prepared = &g_prepared_profile[sidx];
+	struct freertos_prepared_profile *prepared = &g_slots[sidx].profile;
 	if (prepared->valid && lxp_memory_policy_matches_key(&policy, &prepared->key))
 		return 0;
 
@@ -740,14 +745,14 @@ static int freertos_spawn_common(int sidx, uint32_t generation, int ridx,
 		.pxTaskBuffer = &g_tcb[sidx],
 	};
 	for (unsigned i = 0; i < portNUM_CONFIGURABLE_REGIONS; i++)
-		tp.xRegions[i] = g_prepared_profile[sidx].regions[i];
+		tp.xRegions[i] = g_slots[sidx].profile.regions[i];
 	/* xTaskCreateRestrictedStatic may make the guest ready before returning.
 	 * Publish its generation first so an immediate SVC resolves the current
 	 * slot against the core's already-published runnable capability. */
-	g_task_generation[sidx] = generation;
-	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
+	g_slots[sidx].generation = generation;
+	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_slots[sidx].tid);
 	if (ok != pdPASS)
-		g_task_generation[sidx] = 0;
+		g_slots[sidx].generation = 0;
 	return (ok == pdPASS) ? 0 : -1;
 }
 
@@ -772,9 +777,9 @@ static lxp_exec_capture_t *freertos_exec_capture(int sidx)
 static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 				 const lxp_guest_launch_t *launch)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_tid[sidx])
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_slots[sidx].tid)
 		return -1;
-	g_park_desc[sidx] = NULL;
+	g_slots[sidx].park_desc = NULL;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* The loader wrote this program's image (data + relocations) to the SDRAM program region
 	 * through the coordinator's uncached (Device background) view, and materialised new code paths.
@@ -819,9 +824,9 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
-	struct resume_desc *d = g_park_desc[sidx];
+	struct resume_desc *d = g_slots[sidx].park_desc;
 	if (mode == LXP_SPAWN_RESUME_PARKED) {
-		if (!g_tid[sidx] || !d || g_task_generation[sidx] != generation)
+		if (!g_slots[sidx].tid || !d || g_slots[sidx].generation != generation)
 			return -1;
 		d->r0 = (uint32_t)r0val;
 		d->ctx = *ctx;
@@ -832,10 +837,10 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 		diag->last_desc = (uint32_t)(uintptr_t)d;
 		diag->last_ridx = (uint32_t)ridx;
 		diag->last_kind = 3u;
-		vTaskResume(g_tid[sidx]);
+		vTaskResume(g_slots[sidx].tid);
 		return 0;
 	}
-	if (mode != LXP_SPAWN_RESUME_START || g_tid[sidx])
+	if (mode != LXP_SPAWN_RESUME_START || g_slots[sidx].tid)
 		return -1;
 	d = stash_desc(sidx, ctx, r0val);
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
@@ -936,10 +941,10 @@ static size_t g_slot_stack_used_max;
 
 static void slot_sample_stack(int sidx)
 {
-	if (!g_tid[sidx])
+	if (!g_slots[sidx].tid)
 		return;
 	/* uxTaskGetStackHighWaterMark returns the minimum free stack ever seen, in words. */
-	UBaseType_t free_words = uxTaskGetStackHighWaterMark(g_tid[sidx]);
+	UBaseType_t free_words = uxTaskGetStackHighWaterMark(g_slots[sidx].tid);
 	size_t used = (size_t)(TRAMP_STACK_WORDS - free_words) * sizeof(StackType_t);
 	if (used > g_slot_stack_used_max)
 		g_slot_stack_used_max = used;
@@ -950,7 +955,7 @@ static void slot_sample_stack(int sidx)
 size_t ove_lnx_slot_stack_hwm(void)
 {
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_tid[i])
+		if (g_slots[i].tid)
 			slot_sample_stack(i);
 	return g_slot_stack_used_max;
 }
@@ -959,17 +964,17 @@ static int freertos_abort_slot(int sidx, uint32_t generation)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT)
 		return -1;
-	if (g_tid[sidx] && g_task_generation[sidx] != generation)
+	if (g_slots[sidx].tid && g_slots[sidx].generation != generation)
 		return -1;
-	if (g_tid[sidx]) {
+	if (g_slots[sidx].tid) {
 		slot_sample_stack(
 			sidx); /* capture the HWM before the task (and its mark) is gone */
-		vTaskDelete(g_tid[sidx]);
+		vTaskDelete(g_slots[sidx].tid);
 	}
-	g_tid[sidx] = NULL;
-	g_park_desc[sidx] = NULL;
-	g_task_generation[sidx] = 0;
-	g_prepared_profile[sidx].valid = 0;
+	g_slots[sidx].tid = NULL;
+	g_slots[sidx].park_desc = NULL;
+	g_slots[sidx].generation = 0;
+	g_slots[sidx].profile.valid = 0;
 	return 0;
 }
 
@@ -977,9 +982,9 @@ static int freertos_park_slot(int sidx, uint32_t generation)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT ||
 	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
-	    !g_tid[sidx] || g_task_generation[sidx] != generation)
+	    !g_slots[sidx].tid || g_slots[sidx].generation != generation)
 		return -1;
-	vTaskSuspend(g_tid[sidx]);
+	vTaskSuspend(g_slots[sidx].tid);
 	return 0;
 }
 
@@ -1022,7 +1027,7 @@ static void freertos_event_wait(unsigned ms)
 static int32_t slot_for_thread(uintptr_t identity)
 {
 	for (int s = 0; s < LXP_NSLOT; s++)
-		if (identity == (uintptr_t)g_tid[s])
+		if (identity == (uintptr_t)g_slots[s].tid)
 			return s;
 	return LXP_THREAD_SLOT_NONE;
 }
@@ -1099,7 +1104,8 @@ static int freertos_prepare(void)
 	 * at the kernel's syscall-safe priority; console code does not own this. */
 	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 #endif
-	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
+	for (int s = 0; s < LXP_NSLOT; s++)
+		g_slots[s].profile.valid = 0;
 	/* SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
 	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
 	return 0;
