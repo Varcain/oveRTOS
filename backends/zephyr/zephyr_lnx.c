@@ -764,23 +764,23 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 /* Coordinator critical section: irq_lock masks SVCall (the program svc is an
  * exception, so k_sched_lock would NOT exclude it). Held only for the brief
  * proc-table flag snapshot — never across abort/spawn (which may yield). */
-static unsigned int g_crit_key;
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 static uint32_t g_crit_start_cycles;
 #endif
-static void zephyr_crit_enter(void)
+static lxp_critical_token_t zephyr_crit_enter(void)
 {
-	g_crit_key = irq_lock();
+	unsigned int key = irq_lock();
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	g_crit_start_cycles = k_cycle_get_32();
 #endif
+	return (lxp_critical_token_t)key;
 }
-static void zephyr_crit_exit(void)
+static void zephyr_crit_exit(lxp_critical_token_t token)
 {
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	uint32_t elapsed = k_cycle_get_32() - g_crit_start_cycles;
 #endif
-	irq_unlock(g_crit_key);
+	irq_unlock((unsigned int)token);
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	/* Keep the measurement update outside the interval being measured. */
 	critical_metrics_record(elapsed);

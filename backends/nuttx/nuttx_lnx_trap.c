@@ -823,14 +823,13 @@ static int nuttx_random_fill(void *buf, size_t len)
 }
 
 /* Coordinator critical section: disable IRQs around the brief proc-table snapshot. */
-static irqstate_t g_crit_flags;
-static void nuttx_crit_enter(void)
+static lxp_critical_token_t nuttx_crit_enter(void)
 {
-	g_crit_flags = enter_critical_section();
+	return (lxp_critical_token_t)enter_critical_section();
 }
-static void nuttx_crit_exit(void)
+static void nuttx_crit_exit(lxp_critical_token_t token)
 {
-	leave_critical_section(g_crit_flags);
+	leave_critical_section((irqstate_t)token);
 }
 
 /* Event wakeup: the coordinator blocks here; the dispatch (svc-interrupt context)

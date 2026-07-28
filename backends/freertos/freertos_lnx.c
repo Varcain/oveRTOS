@@ -985,12 +985,14 @@ static int freertos_park_slot(int sidx, uint32_t generation)
 /* Coordinator critical section: taskENTER_CRITICAL raises BASEPRI to mask the
  * configurable-priority interrupts (NOT vTaskSuspendAll, which only defers thread
  * switches). Held only for the brief proc-table flag snapshot. */
-static void freertos_crit_enter(void)
+static lxp_critical_token_t freertos_crit_enter(void)
 {
 	taskENTER_CRITICAL();
+	return 0;
 }
-static void freertos_crit_exit(void)
+static void freertos_crit_exit(lxp_critical_token_t token)
 {
+	(void)token;
 	taskEXIT_CRITICAL();
 }
 
