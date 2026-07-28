@@ -885,6 +885,24 @@ static void nuttx_crit_exit(void)
 /* Event wakeup: the coordinator blocks here; the dispatch (svc-interrupt context)
  * posts when a program parks. nxsem_post is interrupt-safe. */
 static sem_t g_ev;
+static bool g_ev_initialized;
+static uint8_t g_irq_install_mask;
+
+enum {
+	LXP_IRQ_INSTALLED_SVC = 1u << 0,
+	LXP_IRQ_INSTALLED_MEM = 1u << 1,
+	LXP_IRQ_INSTALLED_BUS = 1u << 2,
+	LXP_IRQ_INSTALLED_USAGE = 1u << 3,
+};
+
+static int nuttx_attach_lxp_irq(int irq, xcpt_t handler, uint8_t installed_bit)
+{
+	int rc = irq_attach(irq, handler, NULL);
+	if (rc >= 0)
+		g_irq_install_mask |= installed_bit;
+	return rc;
+}
+
 static void nuttx_event_post(void)
 {
 	nxsem_post(&g_ev);
@@ -1409,6 +1427,7 @@ void serial_poll_putc(char c)
  * g_lxp_host_engine.prepare()/.teardown() around lxp_run_common(). */
 static int nuttx_prepare(void)
 {
+	g_irq_install_mask = 0;
 	memset(g_device_maps, 0, sizeof(g_device_maps));
 	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
 	g_installed_policy_valid = 0;
@@ -1417,11 +1436,18 @@ static int nuttx_prepare(void)
 		g_pid[i] = -1;
 		g_task_generation[i] = 0;
 	}
-	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
-	irq_attach(LXP_IRQ_SVCALL, lxp_svc_handler, NULL);
-	irq_attach(LXP_IRQ_MEMFAULT, lxp_memfault_handler, NULL); /* contain program MPU faults */
-	irq_attach(LXP_IRQ_BUSFAULT, lxp_memfault_handler, NULL); /* + bus faults */
-	irq_attach(LXP_IRQ_USGFAULT, lxp_memfault_handler, NULL); /* + usage faults (bad instr) */
+	if (nxsem_init(&g_ev, 0, 0) < 0)
+		return -1;
+	g_ev_initialized = true;
+	if (nuttx_attach_lxp_irq(LXP_IRQ_SVCALL, lxp_svc_handler,
+				 LXP_IRQ_INSTALLED_SVC) < 0 ||
+	    nuttx_attach_lxp_irq(LXP_IRQ_MEMFAULT, lxp_memfault_handler,
+				 LXP_IRQ_INSTALLED_MEM) < 0 ||
+	    nuttx_attach_lxp_irq(LXP_IRQ_BUSFAULT, lxp_memfault_handler,
+				 LXP_IRQ_INSTALLED_BUS) < 0 ||
+	    nuttx_attach_lxp_irq(LXP_IRQ_USGFAULT, lxp_memfault_handler,
+				 LXP_IRQ_INSTALLED_USAGE) < 0)
+		return -1;
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	/* NuttX has no public note-driver unregister API. Register this static
 	 * driver once, then reset its per-run accounting state on every launch. */
@@ -1466,10 +1492,19 @@ static void nuttx_teardown(void)
 	memset(g_device_maps, 0, sizeof(g_device_maps));
 	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
 	g_installed_policy_valid = 0;
-	irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL); /* restore NuttX's handlers */
-	irq_attach(LXP_IRQ_MEMFAULT, arm_hardfault, NULL);
-	irq_attach(LXP_IRQ_BUSFAULT, arm_hardfault, NULL);
-	irq_attach(LXP_IRQ_USGFAULT, arm_hardfault, NULL);
+	if (g_irq_install_mask & LXP_IRQ_INSTALLED_SVC)
+		irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL);
+	if (g_irq_install_mask & LXP_IRQ_INSTALLED_MEM)
+		irq_attach(LXP_IRQ_MEMFAULT, arm_hardfault, NULL);
+	if (g_irq_install_mask & LXP_IRQ_INSTALLED_BUS)
+		irq_attach(LXP_IRQ_BUSFAULT, arm_hardfault, NULL);
+	if (g_irq_install_mask & LXP_IRQ_INSTALLED_USAGE)
+		irq_attach(LXP_IRQ_USGFAULT, arm_hardfault, NULL);
+	g_irq_install_mask = 0;
+	if (g_ev_initialized) {
+		nxsem_destroy(&g_ev);
+		g_ev_initialized = false;
+	}
 }
 
 #endif /* CONFIG_OVE_LINUX */
