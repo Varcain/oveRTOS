@@ -267,7 +267,7 @@ SECTIONS
      * restricted tasks having no background region, not from a dedicated privileged region. */
     /* The unprivileged-flash MPU region always covers the INTERNAL flash: the
      * unprivileged personality guest first executes the kernel's prog_tramp /
-     * park_loop trampolines (which live here) before and between running its own
+     * park-entry trampolines (which live here) before and between running its own
      * code.  With the rootfs in QSPI the guest's cpio text is XIP'd from the
      * 0x90000000 window instead — that window gets its OWN per-task MPU region in
      * freertos_spawn_common (RO+X), since one static region cannot span both
