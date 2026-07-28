@@ -888,3 +888,12 @@ operations now have narrow headers; mutable process state lives in
 point. CPIO ingestion and startup-stack construction moved out of the syscall
 dispatcher into a separately compiled bootstrap unit. Including `lxp_seam.h`
 therefore no longer exposes or depends on the process representation.
+
+The follow-up diagnostics pass also removed two implicit lifecycle contracts.
+Private host-state values are now compile-time aligned with their public
+diagnostic representation, and every public diagnostic enum is exhaustively
+covered by its allocation-free name table. Native-task presence is qualified by
+the lifecycle epoch observed by the RTOS census, so snapshots and invariant
+checks cannot compare a newly transitioned slot with stale scheduler data.
+Launch and teardown checkpoints take a real census instead of manufacturing an
+empty native-task view.
