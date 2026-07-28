@@ -13,13 +13,13 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveZephyrCommon.cmake)
 ove_zephyr_pre_find()
 
 if(OVE_LINUX)
-    # Headless Linux personality: place the program-image regions in the FMC SDRAM (NOLOAD) and
-    # free it from the LTDC display (ove-linux.overlay disables the display + LTDC). Must be set
-    # before find_package(Zephyr) — devicetree is processed there.
+    # Linux personality: place the program-image regions in FMC SDRAM (NOLOAD), free it from LTDC,
+    # and enable the QSPI-XIP rootfs used by every profile. Must be set before find_package(Zephyr)
+    # because devicetree is processed there.
     set(EXTRA_DTC_OVERLAY_FILE ${CMAKE_CURRENT_LIST_DIR}/ove-linux.overlay)
     if(OVE_FB)
-        # lvbench on the panel: the fb overlay (applied AFTER) re-enables the LTDC + QSPI-XIP the
-        # headless overlay disabled, and retypes the 0x90000000 guest-text MPU window RO+X.
+        # lvbench on the panel: the fb overlay (applied AFTER) re-enables LTDC and applies the
+        # display-active FMC timing fix. QSPI remains owned by the common Linux overlay.
         set(EXTRA_DTC_OVERLAY_FILE
             "${EXTRA_DTC_OVERLAY_FILE} ${CMAKE_CURRENT_LIST_DIR}/ove-linux-fb.overlay")
     endif()

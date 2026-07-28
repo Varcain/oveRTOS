@@ -18,8 +18,8 @@
 /* Interrupt-priority contract for the personality workload. Zephyr priority 0
  * is the highest ordinary (kernel-callable) level and belongs to the TIM3
  * scope deadline. Network and board peripherals remain kernel-callable but
- * cannot delay that reference ISR. The display/QSPI priorities are applied in
- * ove-linux-fb.overlay, where those devices are re-enabled. */
+ * cannot delay that reference ISR. The display priority is applied in
+ * ove-linux-fb.overlay, where that device is re-enabled. */
 &timers3 {
 	interrupts = <29 0>;
 };
@@ -51,12 +51,31 @@
  * Free an MPU region for the program's memory domain. This M7 has only 8 PMSAv7 regions; the Linux
  * program needs three domain partitions (libc TLS + image + dynamic arena) plus its K_USER stack.
  * The STM32 seam deliberately omits Zephyr's unused malloc partition. These do not fit alongside
- * the full static set and stack guard. The headless build never uses the QSPI window at 0x90000000,
- * whose placeholder memory-region ("QSPI_PLACEHOLDER") costs a static MPU region — delete it (and
- * disable the unused controller) to reclaim the room.
+ * the full static set and stack guard. Delete the board's placeholder QSPI memory-region because
+ * it duplicates &ext_memory below; the rootfs still needs one static RO+X mapping at 0x90000000.
  */
 /delete-node/ &quadspi_memory;
 
 &quadspi {
-	status = "disabled";
+	status = "okay";
+	interrupts = <92 3>;
+	/* Enable the QUADSPI half-cycle Sample Shift (SampleShifting = HALFCYCLE), matching the
+	 * STM32Cube/FreeRTOS BSP + the NuttX board patch. The stock Zephyr driver leaves it NONE
+	 * unless ssht-enable is set; without it memory-mapped quad reads are marginal at 108 MHz. */
+	ssht-enable;
+};
+
+/*
+ * Rootfs and guest-text XIP window. Every STM32 Linux-personality profile uses the QSPI NOR,
+ * including headless Minimal. Retype the board's existing static region to Normal, user RO+X;
+ * deleting &quadspi_memory above avoids consuming a second PMSAv7 MPU region for the same range.
+ */
+&ext_memory {
+	zephyr,memory-attr = <DT_MEM_ARM(ATTR_MPU_FLASH)>;
+};
+
+/* Fast 1-4-4 memory-mapped reads at the N25Q128A's rated quad ceiling. */
+&n25q128a1 {
+	spi-bus-width = <4>;
+	qspi-max-frequency = <108000000>;
 };
