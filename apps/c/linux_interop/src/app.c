@@ -37,10 +37,10 @@
 #include "ove/time.h"
 
 #include "ove/app.h"
+#include "lxp/lxp_bootstrap.h"
 #include "lxp/lxp_config.h" /* LXP_NSLOT (the latency report walks the slots) */
 #include "lxp/lxp_latency.h"
 #include "lxp/lxp_run.h"
-#include "lxp/lxp_syscall.h"
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
 #if defined(CONFIG_OVE_LINUX_DEV_DMA2D)

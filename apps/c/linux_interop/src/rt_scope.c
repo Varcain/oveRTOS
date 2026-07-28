@@ -34,7 +34,7 @@
 #include "ove/time.h"
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
-#include "lxp/lxp_syscall.h"
+#include "lxp/lxp_linux_uapi.h"
 #include "ove/lxp_metrics.h"
 #endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)

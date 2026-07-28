@@ -64,6 +64,7 @@
 #include <string.h>
 #include <sys/random.h> /* getrandom — guest entropy (AT_RANDOM seed + getrandom(2)) */
 
+#include "lxp/lxp_exec.h"
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
