@@ -835,12 +835,10 @@ static lxp_exec_capture_t *freertos_exec_capture(int sidx)
 }
 
 static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
-				 const lxp_flat_t *prog, void *entry, void *sp,
-				 void *stack_lo)
+				 const lxp_guest_launch_t *launch)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_tid[sidx])
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_tid[sidx])
 		return -1;
-	(void)stack_lo;
 	g_park_desc[sidx] = NULL;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* The loader wrote this program's image (data + relocations) to the SDRAM program region
@@ -868,16 +866,9 @@ static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 	__DSB();
 	__ISB();
 #endif
-	/* FDPIC entry: r7 = exec loadmap, r8 = interp (ld.so) loadmap, r9 = GOT (r4_11[3..5]);
-	 * r4/5/6/10/11/r12/lr = 0 (the crt _start sets them up); r0 = 0 (static fini = NULL); pc = entry. */
 	struct lxp_resume_ctx c;
-	memset(&c, 0, sizeof(c));
-	c.r4_11[3] = prog->is_fdpic ? (uint32_t)prog->loadmap : 0u;
-	c.r4_11[4] = prog->is_fdpic ? (uint32_t)prog->interp_loadmap : 0u;
-	c.r4_11[5] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
-	c.sp = (uint32_t)sp;
-	c.pc = (uint32_t)entry;
-	struct resume_desc *d = stash_desc(sidx, &c, 0);
+	lxp_resume_ctx_from_launch(&c, launch);
+	struct resume_desc *d = stash_desc(sidx, &c, launch->r[0]);
 	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
 	diag->last_spawn_sp = c.sp;
 	diag->last_spawn_pc = c.pc;

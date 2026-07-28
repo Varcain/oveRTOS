@@ -596,19 +596,19 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
  * I-cache range is invalidated before the task becomes runnable.
  */
 #define NUTTX_EXEC_PUBLISH_CHUNK 1024u
-static int nuttx_publish_copied_text(const lxp_flat_t *prog, int ridx)
+static int nuttx_publish_copied_text(const lxp_guest_launch_t *launch, int ridx)
 {
-	if (!prog->region_exec)
+	if (launch->copied_text_size == 0)
 		return 0;
 
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
 	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
-	uintptr_t text_lo = prog->text_base;
-	if (prog->text_size == 0 || text_lo < region_lo || text_lo >= region_hi ||
-	    prog->text_size > region_hi - text_lo)
+	uintptr_t text_lo = launch->copied_text_base;
+	if (text_lo < region_lo || text_lo >= region_hi ||
+	    launch->copied_text_size > region_hi - text_lo)
 		return -1;
 
-	uintptr_t text_hi = text_lo + prog->text_size;
+	uintptr_t text_hi = text_lo + launch->copied_text_size;
 	for (uintptr_t start = text_lo; start < text_hi;) {
 		uintptr_t end = text_hi - start > NUTTX_EXEC_PUBLISH_CHUNK
 					? start + NUTTX_EXEC_PUBLISH_CHUNK
@@ -622,31 +622,46 @@ static int nuttx_publish_copied_text(const lxp_flat_t *prog, int ridx)
 #endif
 
 static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
-			      const lxp_flat_t *prog, void *entry, void *sp,
-			      void *stack_lo)
+			      const lxp_guest_launch_t *launch)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || ridx < 0 ||
-	    ridx >= LXP_NREG || !prog || g_pid[sidx] >= 0)
+	    ridx >= LXP_NREG || !launch || g_pid[sidx] >= 0)
+		return -1;
+	lxp_memory_policy_t policy;
+	lxp_slot_ref_t slot = {
+		.index = (int16_t)sidx,
+		.generation = generation,
+	};
+	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    lxp_memory_policy_validate(&policy) != LXP_OK ||
+	    policy.address_space.index != ridx ||
+	    policy.copied_text_executable != (uint8_t)(launch->copied_text_size != 0))
 		return -1;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (nuttx_publish_copied_text(prog, ridx) != 0)
+	if (nuttx_publish_copied_text(launch, ridx) != 0)
 		return -1;
 #endif
-	(void)stack_lo;
-	if (spawn_task(sidx, (uintptr_t)sp) != 0)
+	if (spawn_task(sidx, launch->r[13]) != 0)
 		return -1;
 	g_task_generation[sidx] = generation;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
-	regs[REG_PC] = (uint32_t)(uintptr_t)entry & ~1u;
-	regs[REG_SP] = (uint32_t)(uintptr_t)sp;
-	regs[REG_R0] = 0; /* static fini = NULL (uClinux entry convention) */
-	/* FDPIC entry registers: r7 = the exec's loadmap
-	 * (the crt _start self-relocates from it); r8 = ld.so's loadmap (dynamic only); r9 = the
-	 * GOT base — for a dynamic exec ld.so's _start reads the entry r9 as its _DYNAMIC ptr. The
-	 * resume path restores all three from the captured ctx->r4_11[3..5]. */
-	regs[REG_R7] = prog->is_fdpic ? (uint32_t)prog->loadmap : 0u;
-	regs[REG_R8] = prog->is_fdpic ? (uint32_t)prog->interp_loadmap : 0u;
-	regs[REG_R9] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
+	regs[REG_R0] = launch->r[0];
+	regs[REG_R1] = launch->r[1];
+	regs[REG_R2] = launch->r[2];
+	regs[REG_R3] = launch->r[3];
+	regs[REG_R4] = launch->r[4];
+	regs[REG_R5] = launch->r[5];
+	regs[REG_R6] = launch->r[6];
+	regs[REG_R7] = launch->r[7];
+	regs[REG_R8] = launch->r[8];
+	regs[REG_R9] = launch->r[9];
+	regs[REG_R10] = launch->r[10];
+	regs[REG_R11] = launch->r[11];
+	regs[REG_R12] = launch->r[12];
+	regs[REG_SP] = launch->r[13];
+	regs[REG_LR] = launch->r[14];
+	regs[REG_PC] = launch->r[15] & ~1u;
+	regs[REG_XPSR] = launch->xpsr | (1u << 24);
 	regs[REG_CONTROL] |=
 		CONTROL_NPRIV; /* run UNPRIVILEGED — MPU-restricted to its granted regions */
 	nxtask_activate(&g_tcb[sidx].cmn);
