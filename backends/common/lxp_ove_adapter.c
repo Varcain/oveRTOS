@@ -241,7 +241,4 @@ const struct lxp_net_ops g_lxp_host_net_ops = {
 #endif
 };
 
-/* Active only while lxp_run() publishes a provider. */
-const struct lxp_net_ops *g_lxp_net_ops;
-
 #endif /* CONFIG_OVE_LINUX_NET */

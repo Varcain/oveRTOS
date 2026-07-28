@@ -11,8 +11,8 @@
  * are filled when /dev/fb0 is built; the touch ops when an FT5336 is present
  * (otherwise NULL — the input driver falls back to the synthetic testpad).
  *
- * g_lxp_disp_ops is statically pointed here, so linking this TU wires the
- * personality to the display HAL with no init call.
+ * The exported provider table is passed explicitly to lxp_run(), which publishes
+ * it only for the duration of the personality run.
  */
 
 #include "ove_config.h"
@@ -103,8 +103,5 @@ const lxp_display_ops_t g_lxp_host_display_ops = {
 	.touch_read = d_touch_read,
 #endif
 };
-
-/* Active only while lxp_run() publishes a provider. */
-const lxp_display_ops_t *g_lxp_disp_ops;
 
 #endif /* CONFIG_OVE_LINUX_DEV */

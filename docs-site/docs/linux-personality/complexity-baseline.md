@@ -912,3 +912,12 @@ settings, reducing the public entry contract and making all per-run values share
 one lifetime. A zero dimension is republished as the documented default on every
 run, so a zero-initialized later invocation cannot inherit an earlier panel
 configuration.
+
+Active network and display bindings are now core-owned run state. Host adapters
+export immutable provider tables but no longer define writable LXP globals, and
+the public headers no longer expose those bindings for arbitrary mutation.
+`lxp_run()` publishes and clears both providers through one private operation;
+isolated host tests use that same seam explicitly. The optional POSIX port now
+returns its provider table through `lxp_posix_net_ops()` instead of acquiring
+module state as a link-time side effect. The hardened production images remain
+within 24 bytes of their pre-change flash footprints with no static-RAM change.
