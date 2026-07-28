@@ -430,6 +430,8 @@ add_compile_definitions(LXP_NREG=1)
 set(OVE_BUILDROOT "{{ config.get('CONFIG_OVE_BUILDROOT', '../buildroot') }}")
 set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output') }}")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
+# Immutable CPIO ingestion and initial guest-stack construction.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_bootstrap.c")
 # Generation-scoped privileged guest-memory validation and copy boundary.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_guest.c")
 # Syscall-core subsystems the dispatcher delegates to (extracted out of lxp_syscall.c):

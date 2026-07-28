@@ -872,3 +872,19 @@ UndefinedBehaviorSanitizer targets pass at `2cf71eb`. Hardware transcripts are
 retained under `output/closure-hardware-20260728/` and
 `output/closure-profile-smoke-20260728/`; workload captures and machine-readable
 summaries are under `output/lvmusic-net-comparison-20260727-closure/`.
+
+## Post-closure complexity pass
+
+A later seam audit removed two residual implicit contracts. Spawn/resume now
+carries an explicit captured-child versus parked-task action, and the
+generation-qualified dispatch capability is published before an RTOS API can
+schedule the task. Ports no longer infer lifecycle intent from mutable
+runnable/native-handle state.
+
+The syscall umbrella was also removed from RTOS and subsystem interfaces.
+Generation identities, exec capture, immutable program input, and bootstrap
+operations now have narrow headers; mutable process state lives in
+`lxp_proc.h`, while `lxp_syscall.h` remains a compatibility dispatch entry
+point. CPIO ingestion and startup-stack construction moved out of the syscall
+dispatcher into a separately compiled bootstrap unit. Including `lxp_seam.h`
+therefore no longer exposes or depends on the process representation.
