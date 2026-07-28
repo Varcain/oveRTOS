@@ -32,6 +32,7 @@
 
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
+#include "ove/lxp_memory_layout.h"
 #include "ove/time.h"	     /* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h"	     /* ove_thread_list -> engine thread_list op */
 #include "lxp/lxp_syscall.h"
@@ -165,6 +166,12 @@ static struct lxp_ext_storage g_lxp_ext_storage
 	__attribute__((section(LXP_EXT_STORAGE_SECTION), aligned(LXP_DYN_POOL_SIZE)));
 _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_SIZE == 0,
 	       "program rows must be aligned to their MPU region size");
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+_Static_assert(OVE_LXP_ROOTFS_END == OVE_LXP_GUEST_POOL_BASE,
+	       "AN500 rootfs and guest-pool ranges must be adjacent");
+_Static_assert(sizeof(struct lxp_ext_storage) <= OVE_LXP_GUEST_POOL_SIZE,
+	       "AN500 guest storage overflows its generated pool");
+#endif
 #define dyn_pools (g_lxp_ext_storage.dyn_pools)
 #define prog_regions (g_lxp_ext_storage.prog_regions)
 #define g_exec_captures (g_lxp_ext_storage.exec_captures)
@@ -754,21 +761,21 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 	};
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	prepared->regions[2] = (MemoryRegion_t){
-		.pvBaseAddress = (void *)0x90000000u,
-		.ulLengthInBytes = 16u * 1024u * 1024u,
+		.pvBaseAddress = (void *)OVE_LXP_ROOTFS_MPU0_BASE,
+		.ulLengthInBytes = OVE_LXP_ROOTFS_MPU0_SIZE,
 		.ulParameters = portMPU_REGION_READ_ONLY |
 				(0x02u << portMPU_RASR_TEX_S_C_B_LOCATION),
 	};
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	prepared->regions[2] = (MemoryRegion_t){
-		.pvBaseAddress = (void *)0x60000000u,
-		.ulLengthInBytes = 8u * 1024u * 1024u,
+		.pvBaseAddress = (void *)OVE_LXP_ROOTFS_MPU0_BASE,
+		.ulLengthInBytes = OVE_LXP_ROOTFS_MPU0_SIZE,
 		.ulParameters = portMPU_REGION_READ_ONLY |
 				(configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION),
 	};
 	prepared->regions[3] = (MemoryRegion_t){
-		.pvBaseAddress = (void *)0x60800000u,
-		.ulLengthInBytes = 4u * 1024u * 1024u,
+		.pvBaseAddress = (void *)OVE_LXP_ROOTFS_MPU1_BASE,
+		.ulLengthInBytes = OVE_LXP_ROOTFS_MPU1_SIZE,
 		.ulParameters = portMPU_REGION_READ_ONLY |
 				(configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION),
 	};
@@ -1166,6 +1173,13 @@ static int freertos_random_fill(void *buf, size_t len)
  * lxp_run() via g_lxp_host_engine.prepare before the run loop. */
 static int freertos_prepare(void)
 {
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	const uintptr_t storage_base = (uintptr_t)&g_lxp_ext_storage;
+	const uintptr_t storage_end = storage_base + sizeof(g_lxp_ext_storage);
+	if (storage_base < OVE_LXP_GUEST_POOL_BASE ||
+	    storage_end > OVE_LXP_GUEST_POOL_END)
+		return -1;
+#endif
 	if (!g_ev)
 		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)

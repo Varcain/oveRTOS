@@ -59,26 +59,12 @@
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
 #include "rt_scope.h"
 
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
-/* The rootfs.cpio is programmed into the on-board QSPI NOR, memory-mapped at
- * 0x90000000 (bsp_qspi_init brings up QUADSPI before we parse it), freeing the
- * internal flash for the firmware. The length is an upper bound — the CPIO parse
- * stops at the TRAILER!!! record before the erased tail. */
-#define LXP_QSPI_ROOTFS ((const uint8_t *)0x90000000u)
-#define LXP_QSPI_ROOTFS_MAX (16u * 1024u * 1024u)
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-/* an500 (QEMU): the rootfs.cpio is XIP'd from PSRAM @ 0x60000000, where QEMU's `-device
- * loader` places it at reset (see qemu-run.sh) — NOT embedded in the ELF, so it never costs
- * the 4 MB internal FLASH. The length is an upper bound (the 12 MiB PSRAM rootfs window); the
- * CPIO parse stops at the TRAILER!!! record. */
-#define LXP_PSRAM_ROOTFS ((const uint8_t *)0x60000000u)
-#define LXP_PSRAM_ROOTFS_MAX (12u * 1024u * 1024u)
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
-/* an521 (QEMU): keep the production Buildroot image out of the 4 MiB internal
- * flash as well. QEMU loads it into the lower PSRAM window; the final 1088 KiB
- * remains a linker-owned NOLOAD pool for the Zephyr seam. */
-#define LXP_PSRAM_ROOTFS ((const uint8_t *)0x80000000u)
-#define LXP_PSRAM_ROOTFS_MAX 0x00ef0000u
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+#include "ove/lxp_memory_layout.h"
+#define LXP_EXTERNAL_ROOTFS ((const uint8_t *)OVE_LXP_ROOTFS_BASE)
+#define LXP_EXTERNAL_ROOTFS_MAX ((size_t)OVE_LXP_ROOTFS_SIZE)
 #else
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
 #endif
@@ -1090,19 +1076,18 @@ static void demo_body(void *arg)
 	 * installs a bounded, non-cacheable MPU region for this coordinator task so the M7 D-cache
 	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
 	if (g_lxp_host_engine.rootfs_window)
-		g_lxp_host_engine.rootfs_window(LXP_QSPI_ROOTFS,
-					      LXP_QSPI_ROOTFS_MAX);
-	g_rootfs_image = LXP_QSPI_ROOTFS;
-	g_rootfs_image_size = LXP_QSPI_ROOTFS_MAX;
-	g_rootfs_n = lxp_cpio_to_rootfs(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX, g_rootfs,
-					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+		g_lxp_host_engine.rootfs_window(LXP_EXTERNAL_ROOTFS,
+					      LXP_EXTERNAL_ROOTFS_MAX);
+#endif
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
-	/* PSRAM is ordinary RAM in QEMU (no D-cache / external-NOR hazard). */
-	g_rootfs_image = LXP_PSRAM_ROOTFS;
-	g_rootfs_image_size = LXP_PSRAM_ROOTFS_MAX;
-	g_rootfs_n = lxp_cpio_to_rootfs(LXP_PSRAM_ROOTFS, LXP_PSRAM_ROOTFS_MAX, g_rootfs,
-					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
+	/* The generated layout is shared with the isolation seam and board runner. */
+	g_rootfs_image = LXP_EXTERNAL_ROOTFS;
+	g_rootfs_image_size = LXP_EXTERNAL_ROOTFS_MAX;
+	g_rootfs_n = lxp_cpio_to_rootfs(LXP_EXTERNAL_ROOTFS, LXP_EXTERNAL_ROOTFS_MAX,
+					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
+					    sizeof(g_rootfs_names));
 #else
 	g_rootfs_image = ove_test_rootfs_cpio;
 	g_rootfs_image_size = ove_test_rootfs_cpio_len;

@@ -35,6 +35,7 @@
 
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
+#include "ove/lxp_memory_layout.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "ove_zephyr_priority.h"
@@ -145,10 +146,20 @@ extern struct k_mem_partition z_malloc_partition;
 /* QEMU injects the CPIO into PSRAM instead of embedding it in Zephyr's static
  * user-RX text. Give every guest the reserved, read/execute-only rootfs window. */
 static struct k_mem_partition g_rootfs_partition = {
-	.start = 0x80000000u,
-	.size = 0x00ef0000u,
+	.start = OVE_LXP_ROOTFS_BASE,
+	.size = OVE_LXP_ROOTFS_SIZE,
 	.attr = K_MEM_PARTITION_P_RX_U_RX,
 };
+BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(lxp_rootfs_ram)) == OVE_LXP_ROOTFS_BASE,
+	     "generated rootfs base must match devicetree");
+BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(lxp_rootfs_ram)) == OVE_LXP_ROOTFS_SIZE,
+	     "generated rootfs size must match devicetree");
+BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(lxp_pool_ram)) == OVE_LXP_GUEST_POOL_BASE,
+	     "generated guest-pool base must match devicetree");
+BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(lxp_pool_ram)) == OVE_LXP_GUEST_POOL_SIZE,
+	     "generated guest-pool size must match devicetree");
+BUILD_ASSERT(OVE_LXP_ROOTFS_END == OVE_LXP_GUEST_POOL_BASE,
+	     "AN521 rootfs and guest-pool ranges must be adjacent");
 #endif
 static struct k_mem_domain g_domains[LXP_NREG];
 static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
