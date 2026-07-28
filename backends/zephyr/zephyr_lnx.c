@@ -477,18 +477,7 @@ __attribute__((naked)) void __wrap_z_do_kernel_oops(const struct arch_esf *esf,
 			 "bx lr\n");
 }
 
-/* ---- thread entry trampolines ---------------------------------------------- */
-/* Enter a freshly loaded program: SP -> argc block, r0 = 0 (static fini). */
-static void arg_tramp(void *sp, void *entry, void *unused)
-{
-	ARG_UNUSED(unused);
-	__asm__ volatile("mov sp, %0\n mov r0, #0\n bx %1\n"
-			 :
-			 : "r"(sp), "r"(entry)
-			 : "r0", "memory");
-	__builtin_unreachable();
-}
-
+/* ---- thread entry trampoline ----------------------------------------------- */
 #if LXP_ENABLE_FPU_CONTEXT
 /* Restore the guest's VFP state (ctx.fp) before the trampoline hands control back — r1 still holds
  * ctx here. Offsets pinned so a resume_ctx layout change is a build error, not silent corruption. */
@@ -560,7 +549,7 @@ __attribute__((naked)) void lxp_park_loop(void *token __attribute__((unused)))
 /* (Re)build region ridx's MPU domain (W^X text/data split) only when the
  * address-space/device/execute policy changed. Per-slot keys are retained
  * separately because several CLONE_VM threads may bind the same native domain. */
-static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_t *prog)
+static int setup_domain(int sidx, uint32_t generation, int ridx)
 {
 	lxp_memory_policy_t policy;
 	lxp_slot_ref_t slot = {
@@ -569,8 +558,7 @@ static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
 	    lxp_memory_policy_validate(&policy) != LXP_OK ||
-	    policy.address_space.index != ridx || policy.device_count != 0 ||
-	    policy.copied_text_executable != (uint8_t)(prog->region_exec != 0))
+	    policy.address_space.index != ridx || policy.device_count != 0)
 		return -1;
 	if (g_domain_policy_valid[ridx] &&
 	    lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx])) {
@@ -584,7 +572,7 @@ static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_data[ridx]);
 	}
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	if (prog->region_exec) {
+	if (policy.copied_text_executable) {
 		/* Remote/RAM exec (a program launched off the 9P mount): the loader COPIED the exec's own
 		 * text into the region head (copy_text), so the region must be EXECUTABLE — map it RWX, a
 		 * per-process, MPU-contained W^X relaxation (needs CONFIG_EXECUTE_XOR_WRITE=n, which the
@@ -601,25 +589,15 @@ static int setup_domain(int sidx, uint32_t generation, int ridx, const lxp_flat_
 		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	} else
 #endif
-		if (prog->is_dynamic) {
-		/* Dynamic FDPIC: ALL code (exec + ld.so + libc.so text) is shared IN-PLACE from the
-		 * cpio's executable .text subsection (.text.ove_rootfs — user-RX, already covered by the
-		 * kernel's static .text MPU region the K_USER thread runs trampolines from), so the
-		 * per-process region + arena hold ONLY RW data now. Map them RW — W^X is RESTORED (the
-		 * old RWX relaxation, and CONFIG_EXECUTE_XOR_WRITE=n, are gone). The board-specific domain
-		 * setup below adds required libc TLS and, on PMSAv8, Zephyr's malloc partition. */
+		{
+		/* Ordinary FDPIC code (static or dynamic) executes in place from the
+		 * rootfs executable mapping. The per-process region and dynamic pool
+		 * therefore contain only writable load state, arenas, and stacks. */
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = LXP_PROG_REGION_SIZE;
 		g_text[ridx].attr = OVE_MEM_PART_RW_CACHE;
 		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
 		g_data[ridx].size = LXP_DYN_POOL_SIZE;
-		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
-	} else {
-		g_text[ridx].start = (uintptr_t)region;
-		g_text[ridx].size = prog->text_size;
-		g_text[ridx].attr = K_MEM_PARTITION_P_RX_U_RX;
-		g_data[ridx].start = (uintptr_t)region + prog->text_size;
-		g_data[ridx].size = LXP_PROG_REGION_SIZE - prog->text_size;
 		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	}
 	if (!g_dom_inited[ridx]) {
@@ -728,40 +706,24 @@ static void slot_task_name(char name[6], int sidx)
 }
 
 static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
-			       const lxp_flat_t *prog, void *entry, void *sp,
-			       void *stack_lo)
+			       const lxp_guest_launch_t *launch)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || g_tid[sidx])
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_tid[sidx])
 		return -1;
-	ARG_UNUSED(stack_lo);
-	if (setup_domain(sidx, generation, ridx, prog) != 0) {
+	if (setup_domain(sidx, generation, ridx) != 0) {
 		printk("[lxp] zephyr domain setup failed slot=%d region=%d\n", sidx, ridx);
 		return -1;
 	}
-	if (prog->is_fdpic) {
-		/* FDPIC needs r7=exec loadmap, r8=ld.so loadmap, r9=GOT at entry. Rather than a
-		 * bespoke unprivileged trampoline, REUSE the proven resume_tramp: synthesize a resume
-		 * ctx with the FDPIC registers + the entry as the resume PC, stashed below SP in the
-		 * program's own region (where resume_tramp already reads it). r4_11[3..5] = r7/r8/r9
-		 * (all 0 for static FDPIC's r8/r9, which the crt overwrites). r0 = 0 (static fini). */
-		struct lxp_resume_ctx *slot =
-			(struct lxp_resume_ctx *)((uintptr_t)sp - sizeof(struct lxp_resume_ctx));
-		memset(slot, 0, sizeof(*slot));
-		slot->r4_11[3] = (uint32_t)prog->loadmap;	 /* r7 */
-		slot->r4_11[4] = (uint32_t)prog->interp_loadmap; /* r8 */
-		slot->r4_11[5] = (uint32_t)prog->got;		 /* r9 */
-		slot->sp = (uint32_t)(uintptr_t)sp;
-		slot->pc = (uint32_t)(uintptr_t)entry;
-		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
-					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
-					      resume_tramp, (void *)0, slot, NULL,
-					      OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
-	} else {
-		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
-					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
-					      arg_tramp, sp, entry, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST,
-					      K_USER, K_FOREVER);
-	}
+	/* Reuse the complete-context trampoline for every image. The core owns
+	 * FDPIC register semantics; this seam only translates the launch record
+	 * into Zephyr's native task entry. */
+	struct lxp_resume_ctx *slot =
+		(struct lxp_resume_ctx *)((uintptr_t)launch->r[13] - sizeof(struct lxp_resume_ctx));
+	lxp_resume_ctx_from_launch(slot, launch);
+	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
+				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
+				      resume_tramp, (void *)(uintptr_t)launch->r[0], slot, NULL,
+				      OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
