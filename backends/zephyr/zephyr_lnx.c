@@ -38,6 +38,7 @@
 #include "ove/lxp_memory_layout.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
+#include "lxp_ove_thread_adapter.h"
 #include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 #include "ove_zephyr_lnx_metrics.h"
@@ -108,6 +109,7 @@ struct lxp_ext_storage {
 	uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE];
 	uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE];
 	lxp_exec_capture_t exec_captures[LXP_NSLOT];
+	struct lxp_ove_thread_snapshot thread_snapshot;
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	uint8_t netfs_exec_stage[256u * 1024u];
 #endif
@@ -120,6 +122,7 @@ _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_
 #define dyn_pools (g_lxp_ext_storage.dyn_pools)
 #define prog_regions (g_lxp_ext_storage.prog_regions)
 #define g_exec_captures (g_lxp_ext_storage.exec_captures)
+#define g_thread_snapshot (g_lxp_ext_storage.thread_snapshot)
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #define g_netfs_exec_stage (g_lxp_ext_storage.netfs_exec_stage)
 #endif
@@ -999,31 +1002,19 @@ static void zephyr_sleep_ms(unsigned ms)
 	k_msleep((int32_t)ms);
 }
 
-/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout) so
- * the seam can fill the engine's lxp_thread_info-typed thread_list op. */
-static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
+static int32_t slot_for_thread(uintptr_t identity)
 {
-	_Static_assert(sizeof(struct lxp_thread_info) == sizeof(struct ove_thread_info),
-		       "LXP/ove thread snapshot ABI mismatch");
-	_Static_assert(offsetof(struct lxp_thread_info, identity) ==
-			       offsetof(struct ove_thread_info, identity),
-		       "LXP/ove thread identity offset mismatch");
-	_Static_assert(offsetof(struct lxp_thread_info, lxp_slot) ==
-			       offsetof(struct ove_thread_info, lxp_slot),
-		       "LXP/ove thread slot offset mismatch");
-	size_t local_n = 0;
-	size_t *written = n ? n : &local_n;
-	int rc = ove_thread_list((struct ove_thread_info *)o, m, written);
-	size_t count = *written < m ? *written : m;
-	for (size_t i = 0; i < count; i++) {
-		o[i].lxp_slot = LXP_THREAD_SLOT_NONE;
-		for (int s = 0; s < LXP_NSLOT; s++)
-			if (o[i].identity == (uintptr_t)g_tid[s]) {
-				o[i].lxp_slot = s;
-				break;
-			}
-	}
-	return rc;
+	for (int s = 0; s < LXP_NSLOT; s++)
+		if (identity == (uintptr_t)g_tid[s])
+			return s;
+	return LXP_THREAD_SLOT_NONE;
+}
+
+static int lxp_seam_thread_list(struct lxp_thread_info *out, size_t max_count,
+				size_t *actual_count)
+{
+	return lxp_ove_thread_snapshot_read(&g_thread_snapshot, out, max_count,
+					    actual_count, slot_for_thread);
 }
 
 static int lxp_seam_mem_stats(struct lxp_mem_stats *out)

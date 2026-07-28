@@ -78,12 +78,12 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_arena.c
     # Module loader (platform-independent)
     ${OVE_ROOT}/loader/ove_loader.c
-    # Host adapter for the handle-based lxp net-ops port (owns socket storage,
-    # bridges to ove_net = posix_net.c here; statically sets g_lxp_net_ops). The
-    # lxp module itself is tested in isolation in the lxp repo (lxp/tests, its own
-    # POSIX port); the oveRTOS host test covers only this consumer-side adapter
-    # (suites/test_lxp_adapter.c), so no lxp module sources are compiled here.
+    # Host adapters for LXP's handle-based network port and thread snapshots.
+    # The lxp module itself is tested in isolation in the lxp repo; the oveRTOS
+    # host test covers only the consumer-side glue, so no lxp sources are built.
     ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
+    # Explicit thread-snapshot type translation at the oveRTOS/LXP boundary.
+    ${OVE_ROOT}/backends/common/lxp_ove_thread_adapter.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
     # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
     ${OVE_ROOT}/backends/common/ove_heap_lock.c
