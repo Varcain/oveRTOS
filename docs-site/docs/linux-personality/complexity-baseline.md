@@ -258,8 +258,11 @@ incarnation. It contains the process record (and therefore the typed intent and
 wait state from Iteration 2), resume context, deferred mailbox, generation,
 host lifecycle, and runnable publication. This replaces the independently
 indexed process, resume, mailbox, generation, lifecycle, and used/runnable
-arrays. Public process-table access is now a bounded read operation rather than
-a writable global.
+arrays. At this point public process-table access became a bounded read
+operation rather than a writable global. A later descriptor-ownership pass
+removed even that transitional accessor: pipe and PTY endpoint liveness follows
+open-file-description lifetime, PTY signals route through a narrow
+process-group operation, and `sysinfo` consumes an aggregate process count.
 
 `lxp_slot_ref_t` carries a slot index and generation across dispatch, fault,
 transaction, and delayed-completion boundaries. `lxp_region_ref_t` does the
