@@ -241,7 +241,7 @@ static volatile uint32_t g_guest_fault_dump_lines;
 
 static void lxp_exception_dump(const char *format, va_list args)
 {
-	if (g_lxp_active && current_slot() >= 0) {
+	if (lxp_trap_active() && current_slot() >= 0) {
 		g_guest_fault_dump_lines++;
 		return;
 	}
@@ -386,7 +386,7 @@ extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t 
 static __attribute__((noinline, used)) void
 zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee, uint32_t exc_return)
 {
-	if (g_lxp_active) {
+	if (lxp_trap_active()) {
 		const uint16_t *svc = (const uint16_t *)(esf->basic.pc - 2);
 		if ((*svc & 0xff00u) == 0xdf00u && (*svc & 0x00ffu) == 0x00u) {
 			int sidx = current_slot();
@@ -968,7 +968,7 @@ static uint32_t g_guest_fault_dump_consumed;
 
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 {
-	if (g_lxp_active) {
+	if (lxp_trap_active()) {
 		int sidx = current_slot();
 		if (sidx >= 0) {
 			volatile struct zephyr_lnx_fault_diag *diag =
