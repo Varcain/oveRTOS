@@ -1139,7 +1139,7 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
  * never be promoted merely by changing backend-local state. */
 static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 {
-	if (!policy || sidx < 0 || sidx >= LXP_NSLOT ||
+	if (lxp_memory_policy_validate(policy) != LXP_OK || sidx < 0 || sidx >= LXP_NSLOT ||
 	    policy->address_space.index < 0 || policy->address_space.index >= LXP_NREG ||
 	    policy->device_count > LXP_DEVICE_MPU_COUNT)
 		return -1;

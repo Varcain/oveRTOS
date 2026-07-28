@@ -731,6 +731,7 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
+	    lxp_memory_policy_validate(&policy) != LXP_OK ||
 	    policy.address_space.index != ridx || policy.device_count != 0)
 		return -1;
 	struct freertos_prepared_profile *prepared = &g_prepared_profile[sidx];
