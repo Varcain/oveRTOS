@@ -264,24 +264,6 @@ static uint8_t *nuttx_exec_stage(size_t *cap)
 }
 #endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
 static struct task_tcb_s g_tcb[LXP_NSLOT];
-static int g_pid[LXP_NSLOT];
-static uint32_t g_task_generation[LXP_NSLOT];
-
-static lxp_slot_ref_t task_slot_ref(int slot)
-{
-	return (lxp_slot_ref_t){
-		.index = (int16_t)slot,
-		.generation = slot >= 0 && slot < LXP_NSLOT ? g_task_generation[slot] : 0,
-	};
-}
-
-static uint64_t guest_runtime_us(int sidx)
-{
-	uint64_t cycles = 0;
-	if (sidx >= 0 && sidx < LXP_NSLOT && g_pid[sidx] >= 0)
-		(void)ove_nuttx_runtime_get(g_pid[sidx], &cycles, NULL);
-	return ove_nuttx_runtime_cycles_to_us(cycles);
-}
 
 /* Device mappings are part of a Linux slot's unprivileged MPU view, not global
  * process state. Regions 5 and 6 cover the two ranges recorded by
@@ -298,7 +280,6 @@ struct nuttx_device_map {
 	uint8_t attrs;
 	uint8_t used;
 };
-static struct nuttx_device_map g_device_maps[LXP_NSLOT][LXP_DEVICE_MPU_COUNT];
 
 #define LXP_NATIVE_POLICY_REGIONS (2u + LXP_DEVICE_MPU_COUNT)
 struct nuttx_prepared_profile {
@@ -307,9 +288,32 @@ struct nuttx_prepared_profile {
 	uint32_t rasr[LXP_NATIVE_POLICY_REGIONS];
 	uint8_t valid;
 };
-static struct nuttx_prepared_profile g_prepared_profile[LXP_NSLOT];
+struct nuttx_lxp_slot {
+	int pid;
+	uint32_t generation;
+	struct nuttx_device_map device_maps[LXP_DEVICE_MPU_COUNT];
+	struct nuttx_prepared_profile profile;
+};
+static struct nuttx_lxp_slot g_slots[LXP_NSLOT];
+/* NuttX owns the opaque task control blocks and stacks; the seam owns g_slots. */
 static lxp_memory_policy_key_t g_installed_policy;
 static uint8_t g_installed_policy_valid;
+
+static lxp_slot_ref_t task_slot_ref(int slot)
+{
+	return (lxp_slot_ref_t){
+		.index = (int16_t)slot,
+		.generation = slot >= 0 && slot < LXP_NSLOT ? g_slots[slot].generation : 0,
+	};
+}
+
+static uint64_t guest_runtime_us(int sidx)
+{
+	uint64_t cycles = 0;
+	if (sidx >= 0 && sidx < LXP_NSLOT && g_slots[sidx].pid >= 0)
+		(void)ove_nuttx_runtime_get(g_slots[sidx].pid, &cycles, NULL);
+	return ove_nuttx_runtime_cycles_to_us(cycles);
+}
 
 /* The RUNNING task. Our SVCall interposer and fault handlers ALWAYS run in exception context
  * (IPSR != 0). There, NuttX's nxsched_self()/this_task() == g_readytorun.head is the wrong
@@ -330,7 +334,7 @@ static int current_slot(void)
 {
 	pid_t self = lxp_running_tcb()->pid;
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_pid[i] == self && lxp_slot_ref_is_runnable(task_slot_ref(i)))
+		if (g_slots[i].pid == self && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
 }
@@ -460,9 +464,10 @@ static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attr
 	if (sidx < 0 || sidx >= LXP_NSLOT || attrs > LXP_MAP_DEV)
 		return -1;
 
+	struct nuttx_device_map *device_maps = g_slots[sidx].device_maps;
 	irqstate_t flags = enter_critical_section();
 	if (size == 0) {
-		memset(g_device_maps[sidx], 0, sizeof(g_device_maps[sidx]));
+		memset(device_maps, 0, sizeof(g_slots[sidx].device_maps));
 		leave_critical_section(flags);
 		return 0;
 	}
@@ -485,11 +490,11 @@ static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attr
 	int free_map = -1;
 	int map = -1;
 	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
-		if (g_device_maps[sidx][i].used && g_device_maps[sidx][i].addr == addr) {
+		if (device_maps[i].used && device_maps[i].addr == addr) {
 			map = (int)i;
 			break;
 		}
-		if (!g_device_maps[sidx][i].used && free_map < 0)
+		if (!device_maps[i].used && free_map < 0)
 			free_map = (int)i;
 	}
 	if (map < 0)
@@ -502,7 +507,7 @@ static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attr
 	/* TEX/S/C/B from the LXP_MAP_* hint: NC=0 -> Normal non-cacheable,
 	 * WT=1 -> Normal write-through, DEV=2 -> Device. */
 	uint32_t texscb = (attrs == LXP_MAP_WT) ? 0x02u : (attrs == LXP_MAP_DEV) ? 0x01u : 0x08u;
-	g_device_maps[sidx][map] = (struct nuttx_device_map){
+	device_maps[map] = (struct nuttx_device_map){
 		.addr = addr,
 		.size = size,
 		.rbar = (uint32_t)(addr & ~(uintptr_t)(rsz - 1u)),
@@ -534,8 +539,8 @@ static void *nuttx_park_prepare(int sidx, uint32_t generation,
 			       const struct lxp_resume_ctx *ctx)
 {
 	(void)ctx;
-	if (sidx < 0 || sidx >= LXP_NSLOT || g_pid[sidx] < 0 ||
-	    g_task_generation[sidx] != generation)
+	if (sidx < 0 || sidx >= LXP_NSLOT || g_slots[sidx].pid < 0 ||
+	    g_slots[sidx].generation != generation)
 		return NULL;
 	/* NuttX retains the complete interrupted register set in tcb->xcp.regs.
 	 * spawn_resume rewrites that frame before moving the TCB out of the stopped
@@ -578,7 +583,7 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	uint32_t *guest_regs = (uint32_t *)(guest_sp - XCPTCONTEXT_SIZE);
 	memcpy(guest_regs, g_tcb[sidx].cmn.xcp.regs, XCPTCONTEXT_SIZE);
 	g_tcb[sidx].cmn.xcp.regs = guest_regs;
-	g_pid[sidx] = g_tcb[sidx].cmn.pid;
+	g_slots[sidx].pid = g_tcb[sidx].cmn.pid;
 	return 0;
 }
 
@@ -625,7 +630,7 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 			      const lxp_guest_launch_t *launch)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || ridx < 0 ||
-	    ridx >= LXP_NREG || !launch || g_pid[sidx] >= 0)
+	    ridx >= LXP_NREG || !launch || g_slots[sidx].pid >= 0)
 		return -1;
 	lxp_memory_policy_t policy;
 	lxp_slot_ref_t slot = {
@@ -643,7 +648,7 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 #endif
 	if (spawn_task(sidx, launch->r[13]) != 0)
 		return -1;
-	g_task_generation[sidx] = generation;
+	g_slots[sidx].generation = generation;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_R0] = launch->r[0];
 	regs[REG_R1] = launch->r[1];
@@ -676,7 +681,7 @@ static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
 	if (mode == LXP_SPAWN_RESUME_PARKED) {
-		if (g_pid[sidx] < 0 || g_task_generation[sidx] != generation)
+		if (g_slots[sidx].pid < 0 || g_slots[sidx].generation != generation)
 			return -1;
 		/* Build a native NuttX exception frame immediately below the captured
 		 * guest SP. Cortex-M exception return consumes the frame and leaves PSP
@@ -724,11 +729,11 @@ static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
 		leave_critical_section(flags);
 		return -1;
 	}
-	if (mode != LXP_SPAWN_RESUME_START || g_pid[sidx] >= 0)
+	if (mode != LXP_SPAWN_RESUME_START || g_slots[sidx].pid >= 0)
 		return -1;
 	if (spawn_task(sidx, (uintptr_t)ctx->sp) != 0)
 		return -1;
-	g_task_generation[sidx] = generation;
+	g_slots[sidx].generation = generation;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_R4] = ctx->r4_11[0];
 	regs[REG_R5] = ctx->r4_11[1];
@@ -767,20 +772,20 @@ static int nuttx_abort_slot(int sidx, uint32_t generation)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT)
 		return -1;
-	if (g_pid[sidx] >= 0 && g_task_generation[sidx] != generation)
+	if (g_slots[sidx].pid >= 0 && g_slots[sidx].generation != generation)
 		return -1;
-	if (g_pid[sidx] >= 0) {
+	if (g_slots[sidx].pid >= 0) {
 		/* Slot teardown is synchronous: a parked task has no later
 		 * cancellation point at which a deferred delete could complete.
 		 * Its cancellation metadata is now trusted, but forced cancellation
 		 * still expresses the required host-side transition semantics. */
 		g_tcb[sidx].cmn.flags |= TCB_FLAG_FORCED_CANCEL;
-		if (task_delete(g_pid[sidx]) < 0)
+		if (task_delete(g_slots[sidx].pid) < 0)
 			return -1;
 	}
 	(void)nuttx_map_device(sidx, 0, 0, 0);
-	g_pid[sidx] = -1;
-	g_task_generation[sidx] = 0;
+	g_slots[sidx].pid = -1;
+	g_slots[sidx].generation = 0;
 	return 0;
 }
 
@@ -788,7 +793,7 @@ static int nuttx_park_slot(int sidx, uint32_t generation)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT ||
 	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
-	    g_pid[sidx] < 0 || g_task_generation[sidx] != generation)
+	    g_slots[sidx].pid < 0 || g_slots[sidx].generation != generation)
 		return -1;
 	nxsched_suspend(&g_tcb[sidx].cmn);
 	return g_tcb[sidx].cmn.task_state == TSTATE_TASK_STOPPED ? 0 : -1;
@@ -890,7 +895,7 @@ static lxp_thread_state_t guest_thread_state(const struct tcb_s *tcb)
 static int32_t slot_for_pid(uintptr_t identity)
 {
 	for (int s = 0; s < LXP_NSLOT; s++)
-		if (g_pid[s] >= 0 && identity == (uintptr_t)(uint32_t)g_pid[s])
+		if (g_slots[s].pid >= 0 && identity == (uintptr_t)(uint32_t)g_slots[s].pid)
 			return s;
 	return LXP_THREAD_SLOT_NONE;
 }
@@ -905,7 +910,7 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 {
 	size_t guest_count = 0;
 	for (int s = 0; s < LXP_NSLOT; s++)
-		if (g_pid[s] >= 0)
+		if (g_slots[s].pid >= 0)
 			guest_count++;
 	size_t host_limit = guest_count < m ? m - guest_count : 0;
 	size_t local_n = 0;
@@ -925,7 +930,7 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	}
 
 	for (int s = 0; s < LXP_NSLOT; s++) {
-		if (g_pid[s] < 0)
+		if (g_slots[s].pid < 0)
 			continue;
 		if (count >= m) {
 			rc = LXP_ERR_QUEUE_FULL;
@@ -939,7 +944,7 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 #else
 		info->name = "lnx";
 #endif
-		info->identity = (uintptr_t)(uint32_t)g_pid[s];
+		info->identity = (uintptr_t)(uint32_t)g_slots[s].pid;
 		info->lxp_slot = s;
 		info->state = guest_thread_state(&g_tcb[s].cmn);
 		info->priority = (int)g_tcb[s].cmn.sched_priority;
@@ -1158,16 +1163,17 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
  * code lives in the shared region 0). */
 /* Compile one complete logical policy into the four native MPU descriptors
  * used by the switch hook: program, dynamic pool, and two driver capabilities.
- * The registered driver's map_device transition produced g_device_maps; the
- * core snapshot is cross-checked so an arbitrary or stale physical range can
- * never be promoted merely by changing backend-local state. */
+ * The registered driver's map_device transition produced the slot's device
+ * descriptors; the core snapshot is cross-checked so an arbitrary or stale
+ * physical range can never be promoted merely by changing backend-local
+ * state. */
 static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 {
 	if (lxp_memory_policy_validate(policy) != LXP_OK || sidx < 0 || sidx >= LXP_NSLOT ||
 	    policy->address_space.index < 0 || policy->address_space.index >= LXP_NREG ||
 	    policy->device_count > LXP_DEVICE_MPU_COUNT)
 		return -1;
-	struct nuttx_prepared_profile *prepared = &g_prepared_profile[sidx];
+	struct nuttx_prepared_profile *prepared = &g_slots[sidx].profile;
 	if (prepared->valid && lxp_memory_policy_matches_key(policy, &prepared->key))
 		return 0;
 
@@ -1183,7 +1189,7 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 
 	unsigned caps = 0;
 	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
-		const struct nuttx_device_map *map = &g_device_maps[sidx][i];
+		const struct nuttx_device_map *map = &g_slots[sidx].device_maps[i];
 		if (!map->used)
 			continue;
 		if (caps >= policy->device_count ||
@@ -1277,7 +1283,7 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 		return;
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < LXP_NSLOT; i++) {
-		if (g_pid[i] == pid && lxp_slot_ref_is_runnable(task_slot_ref(i))) {
+		if (g_slots[i].pid == pid && lxp_slot_ref_is_runnable(task_slot_ref(i))) {
 			lxp_memory_policy_t policy;
 			if (lxp_slot_memory_policy(task_slot_ref(i), &policy) != LXP_OK ||
 			    nuttx_prepare_profile(i, &policy) != 0) {
@@ -1286,7 +1292,7 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 			}
 			if (!g_installed_policy_valid ||
 			    !lxp_memory_policy_matches_key(&policy, &g_installed_policy))
-				nuttx_install_profile(&g_prepared_profile[i]);
+				nuttx_install_profile(&g_slots[i].profile);
 			return;
 		}
 	}
@@ -1308,14 +1314,11 @@ static bool g_lxp_note_registered;
 static int nuttx_prepare(void)
 {
 	g_irq_install_mask = 0;
-	memset(g_device_maps, 0, sizeof(g_device_maps));
-	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
+	memset(g_slots, 0, sizeof(g_slots));
 	g_installed_policy_valid = 0;
 	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
-	for (int i = 0; i < LXP_NSLOT; i++) {
-		g_pid[i] = -1;
-		g_task_generation[i] = 0;
-	}
+	for (int i = 0; i < LXP_NSLOT; i++)
+		g_slots[i].pid = -1;
 	if (nxsem_init(&g_ev, 0, 0) < 0)
 		return -1;
 	g_ev_initialized = true;
@@ -1355,8 +1358,10 @@ static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared)
 static void nuttx_teardown(void)
 {
 	nuttx_disable_dynamic_regions();
-	memset(g_device_maps, 0, sizeof(g_device_maps));
-	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
+	for (int i = 0; i < LXP_NSLOT; i++) {
+		memset(g_slots[i].device_maps, 0, sizeof(g_slots[i].device_maps));
+		memset(&g_slots[i].profile, 0, sizeof(g_slots[i].profile));
+	}
 	g_installed_policy_valid = 0;
 	if (g_irq_install_mask & LXP_IRQ_INSTALLED_SVC)
 		irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL);
