@@ -162,11 +162,16 @@ BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(lxp_pool_ram)) == OVE_LXP_GUEST_POOL_SIZE,
 BUILD_ASSERT(OVE_LXP_ROOTFS_END == OVE_LXP_GUEST_POOL_BASE,
 	     "AN521 rootfs and guest-pool ranges must be adjacent");
 #endif
+struct zephyr_lxp_region {
+	struct k_mem_partition text;
+	struct k_mem_partition data;
+	lxp_memory_policy_key_t policy;
+	uint8_t initialized;
+	uint8_t policy_valid;
+};
+/* Keep kernel objects in a native array so Zephyr can describe it compactly. */
 static struct k_mem_domain g_domains[LXP_NREG];
-static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
-static int g_dom_inited[LXP_NREG];
-static lxp_memory_policy_key_t g_domain_policy[LXP_NREG];
-static uint8_t g_domain_policy_valid[LXP_NREG];
+static struct zephyr_lxp_region g_regions[LXP_NREG];
 
 /* Guest program pool: Normal write-back write-allocate, NON-shareable, CACHEABLE — deliberately the
  * SAME memory attribute the privileged run loop sees through Zephyr's static SDRAM region. The two
@@ -507,16 +512,17 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 	    lxp_memory_policy_validate(&policy) != LXP_OK ||
 	    policy.address_space.index != ridx || policy.device_count != 0)
 		return -1;
-	if (g_domain_policy_valid[ridx] &&
-	    lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx])) {
+	struct zephyr_lxp_region *state = &g_regions[ridx];
+	if (state->policy_valid &&
+	    lxp_memory_policy_address_space_matches_key(&policy, &state->policy)) {
 		g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
 		g_slots[sidx].policy_valid = 1u;
 		return 0;
 	}
 	uint8_t *region = prog_regions[ridx];
-	if (g_dom_inited[ridx]) {
-		k_mem_domain_remove_partition(&g_domains[ridx], &g_text[ridx]);
-		k_mem_domain_remove_partition(&g_domains[ridx], &g_data[ridx]);
+	if (state->initialized) {
+		k_mem_domain_remove_partition(&g_domains[ridx], &state->text);
+		k_mem_domain_remove_partition(&g_domains[ridx], &state->data);
 	}
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	if (policy.copied_text_executable) {
@@ -528,26 +534,26 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		 * (still XIP from the cpio) — stays plain RW. The RWX attr is WBWA-cacheable non-shareable,
 		 * the SAME cache attributes as the coordinator's SDRAM1 view, so the guest stays coherent
 		 * (only the XN bit differs from OVE_MEM_PART_RW_CACHE). */
-		g_text[ridx].start = (uintptr_t)region;
-		g_text[ridx].size = LXP_PROG_REGION_SIZE;
-		g_text[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
-		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
-		g_data[ridx].size = LXP_DYN_POOL_SIZE;
-		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
+		state->text.start = (uintptr_t)region;
+		state->text.size = LXP_PROG_REGION_SIZE;
+		state->text.attr = K_MEM_PARTITION_P_RWX_U_RWX;
+		state->data.start = (uintptr_t)dyn_pools[ridx];
+		state->data.size = LXP_DYN_POOL_SIZE;
+		state->data.attr = OVE_MEM_PART_RW_CACHE;
 	} else
 #endif
 		{
 		/* Ordinary FDPIC code (static or dynamic) executes in place from the
 		 * rootfs executable mapping. The per-process region and dynamic pool
 		 * therefore contain only writable load state, arenas, and stacks. */
-		g_text[ridx].start = (uintptr_t)region;
-		g_text[ridx].size = LXP_PROG_REGION_SIZE;
-		g_text[ridx].attr = OVE_MEM_PART_RW_CACHE;
-		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
-		g_data[ridx].size = LXP_DYN_POOL_SIZE;
-		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
+		state->text.start = (uintptr_t)region;
+		state->text.size = LXP_PROG_REGION_SIZE;
+		state->text.attr = OVE_MEM_PART_RW_CACHE;
+		state->data.start = (uintptr_t)dyn_pools[ridx];
+		state->data.size = LXP_DYN_POOL_SIZE;
+		state->data.attr = OVE_MEM_PART_RW_CACHE;
 	}
-	if (!g_dom_inited[ridx]) {
+	if (!state->initialized) {
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
 		/* Real STM32F746 (M7, PMSAv7): only 8 MPU regions. After the board-specific static set and
 		 * the K_USER thread's own stack region, exactly 3 domain partitions fit. z_libc_partition is
@@ -580,13 +586,13 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		if (k_mem_domain_init(&g_domains[ridx], ARRAY_SIZE(base), base) != 0)
 			return -1;
 #endif
-		g_dom_inited[ridx] = 1;
+		state->initialized = 1;
 	}
-	if (k_mem_domain_add_partition(&g_domains[ridx], &g_text[ridx]) != 0 ||
-	    k_mem_domain_add_partition(&g_domains[ridx], &g_data[ridx]) != 0)
+	if (k_mem_domain_add_partition(&g_domains[ridx], &state->text) != 0 ||
+	    k_mem_domain_add_partition(&g_domains[ridx], &state->data) != 0)
 		return -1;
-	g_domain_policy[ridx] = lxp_memory_policy_make_key(&policy);
-	g_domain_policy_valid[ridx] = 1u;
+	state->policy = lxp_memory_policy_make_key(&policy);
+	state->policy_valid = 1u;
 	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
 	g_slots[sidx].policy_valid = 1u;
 	return 0;
@@ -602,8 +608,8 @@ static int zephyr_bind_prepared_domain(int sidx, uint32_t generation, int ridx)
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
 	    lxp_memory_policy_validate(&policy) != LXP_OK ||
 	    policy.address_space.index != ridx || policy.device_count != 0 ||
-	    !g_domain_policy_valid[ridx] ||
-	    !lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx]))
+	    !g_regions[ridx].policy_valid ||
+	    !lxp_memory_policy_address_space_matches_key(&policy, &g_regions[ridx].policy))
 		return -1;
 	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
 	g_slots[sidx].policy_valid = 1u;
@@ -943,7 +949,8 @@ static const char *lxp_seam_system_version(void)
 
 static int zephyr_prepare(void)
 {
-	memset(g_domain_policy_valid, 0, sizeof(g_domain_policy_valid));
+	for (int r = 0; r < LXP_NREG; r++)
+		g_regions[r].policy_valid = 0;
 	for (int s = 0; s < LXP_NSLOT; s++)
 		g_slots[s].policy_valid = 0;
 	return LXP_OK;
