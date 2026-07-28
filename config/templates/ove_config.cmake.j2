@@ -440,8 +440,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_guest.c")
 # Core-owned active network/display provider bindings.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_provider.c")
 # Syscall-core subsystems the dispatcher delegates to (extracted out of lxp_syscall.c):
-# path resolution + rootfs lookup, the pipe ring, the writable-VFS (tmpfs) node store,
-# and synthetic /proc content generation.
+# descriptor/OFD lifetime, path resolution + rootfs lookup, the pipe ring, the
+# writable-VFS (tmpfs) node store, and synthetic /proc content generation.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_fd.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_path.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_pipe.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_tmpfs.c")
