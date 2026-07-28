@@ -30,6 +30,7 @@
 #endif
 #include "lxp/lxp_config.h"
 #include "lxp/lxp_net_ops.h"
+#include "lxp/lxp_types.h"
 
 #include <stdint.h>
 #include <string.h>
