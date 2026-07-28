@@ -1286,6 +1286,14 @@ static void freertos_rootfs_window(const void *base, size_t len)
 	regions[2].pvBaseAddress = (void *)(uintptr_t)base;
 	regions[2].ulLengthInBytes = (uint32_t)len;
 	regions[2].ulParameters = par;
+	/* vTaskAllocateMPURegions replaces every configurable descriptor, so the
+	 * zero entries above remove coord_map's region 0/1 views from the TCB. A
+	 * previous sequential lxp_run may have left g_coord_mapped_ridx pointing at
+	 * the same region the next run launches in. Invalidate that software cache:
+	 * otherwise coord_map returns early and the coordinator reads guest WBWA
+	 * data through the uncached background map (stale argv/path bytes showed up
+	 * as intermittent EFAULT/ENOENT while BusyBox init launched its children). */
+	g_coord_mapped_ridx = -1;
 	/* Record it in this task's TCB (configurable region 2) so PendSV re-applies it on every
 	 * context switch back to the coordinator — persistent for the whole coordinator life. */
 	vTaskAllocateMPURegions(NULL, regions);
