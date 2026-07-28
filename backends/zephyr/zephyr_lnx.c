@@ -45,6 +45,8 @@
 #include "lxp/lxp_netfs.h"
 #endif
 
+BUILD_ASSERT(IS_ENABLED(CONFIG_USERSPACE),
+	     "the Zephyr Linux personality requires unprivileged user threads");
 BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_LXP_COORDINATOR,
 	     "LXP coordinator priority must match the Zephyr priority contract");
 BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE,

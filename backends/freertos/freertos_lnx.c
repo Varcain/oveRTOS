@@ -22,6 +22,10 @@
 #include "semphr.h"
 #include "task.h"
 
+#if !defined(portUSING_MPU_WRAPPERS) || (portUSING_MPU_WRAPPERS != 1)
+#error "The FreeRTOS Linux personality requires an MPU-wrapper port"
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -122,13 +126,13 @@ uint32_t ove_freertos_lnx_svc_counter_hz(void)
 #define CONFIG_OVE_LINUX_GUEST_QUANTUM_MS 10
 #endif
 
-/* Under the ARM_CM4_MPU port the task's privilege rides in the top bit of its priority
- * (portPRIVILEGE_BIT). The restricted-task path below deliberately omits that bit. The
- * non-MPU fallback defines it as zero only so legacy non-personality builds still compile. */
-#ifndef portPRIVILEGE_BIT
-#define portPRIVILEGE_BIT 0u
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+_Static_assert(portNUM_CONFIGURABLE_REGIONS >= 4,
+	       "AN500 Linux guests require four configurable MPU regions");
+#else
+_Static_assert(portNUM_CONFIGURABLE_REGIONS >= 3,
+	       "Linux guests require three configurable MPU regions");
 #endif
-#define SLOT_PROG_PRIO (SLOT_PRIO | portPRIVILEGE_BIT)
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* Real STM32F746 hardware: the MCU has only 320K of internal SRAM — far too small for the
@@ -170,14 +174,12 @@ _Static_assert(offsetof(struct lxp_ext_storage, prog_regions) % LXP_PROG_REGION_
 static StaticTask_t g_tcb[LXP_NSLOT];
 static TaskHandle_t g_tid[LXP_NSLOT];
 static uint32_t g_task_generation[LXP_NSLOT];
-#if (portUSING_MPU_WRAPPERS == 1)
 struct freertos_prepared_profile {
 	lxp_memory_policy_key_t key;
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
 	uint8_t valid;
 };
 static struct freertos_prepared_profile g_prepared_profile[LXP_NSLOT];
-#endif
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
@@ -710,7 +712,6 @@ static void slot_task_name(char name[6], int sidx)
 	}
 }
 
-#if (portUSING_MPU_WRAPPERS == 1)
 /* Compile the core's versioned policy once into the exact native descriptors
  * consumed by xTaskCreateRestrictedStatic(). A fresh slot/address-space/device/
  * execute tuple invalidates the cache; a persistent parked-task resume does not
@@ -776,18 +777,14 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 	prepared->valid = 1u;
 	return 0;
 }
-#endif
 
-/* Spawn the program task entering prog_tramp. Supported personality boards use the MPU branch: a
- * RESTRICTED, UNPRIVILEGED task whose only RW regions are its program region + dyn_pool (both XN;
- * ordinary code XIPs from a separate RO+X rootfs window). The legacy non-MPU compile fallback
- * creates a plain privileged task and is not used by the STM32F746 or an500 personality targets. */
+/* Spawn a RESTRICTED, UNPRIVILEGED task whose only RW regions are its program
+ * region and dynamic pool. Ordinary code XIPs from a separate RO+X window. */
 static int freertos_spawn_common(int sidx, uint32_t generation, int ridx,
 				 struct resume_desc *desc)
 {
 	char nm[6];
 	slot_task_name(nm, sidx); /* diagnostic only; attribution uses the task handle */
-#if (portUSING_MPU_WRAPPERS == 1)
 	if (freertos_prepare_profile(sidx, generation, ridx) != 0)
 		return -1;
 	TaskParameters_t tp = {
@@ -809,15 +806,6 @@ static int freertos_spawn_common(int sidx, uint32_t generation, int ridx,
 	if (ok != pdPASS)
 		g_task_generation[sidx] = 0;
 	return (ok == pdPASS) ? 0 : -1;
-#else
-	(void)ridx;
-	g_task_generation[sidx] = generation;
-	g_tid[sidx] = xTaskCreateStatic(prog_tramp, nm, TRAMP_STACK_WORDS, desc, SLOT_PROG_PRIO,
-					g_tramp_stacks[sidx], &g_tcb[sidx]);
-	if (!g_tid[sidx])
-		g_task_generation[sidx] = 0;
-	return g_tid[sidx] ? 0 : -1;
-#endif
 }
 
 /* ---- the vtable: FreeRTOS task spawn --------------------------------------- */
@@ -925,7 +913,7 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 	return freertos_spawn_common(sidx, generation, ridx, d);
 }
 
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* Give the coordinator (this run-loop task) a Normal-cacheable MPU view of guest region
  * `ridx`'s program region + dyn_pool while it services that slot's DEFERRED syscall or
  * parked-op retry, so the coordinator's CPU reads/writes of the guest's buffers hit the
@@ -1047,9 +1035,7 @@ static int freertos_abort_slot(int sidx, uint32_t generation)
 	g_tid[sidx] = NULL;
 	g_park_desc[sidx] = NULL;
 	g_task_generation[sidx] = 0;
-#if (portUSING_MPU_WRAPPERS == 1)
 	g_prepared_profile[sidx].valid = 0;
-#endif
 	return 0;
 }
 
@@ -1187,9 +1173,7 @@ static int freertos_prepare(void)
 	 * at the kernel's syscall-safe priority; console code does not own this. */
 	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 #endif
-#if (portUSING_MPU_WRAPPERS == 1)
 	memset(g_prepared_profile, 0, sizeof(g_prepared_profile));
-#endif
 	/* SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
 	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
 	return 0;
@@ -1198,7 +1182,7 @@ static int freertos_prepare(void)
 static int freertos_validate_memory_model(lxp_cpu_memory_model_t declared)
 {
 	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
@@ -1212,8 +1196,7 @@ static int freertos_validate_memory_model(lxp_cpu_memory_model_t declared)
 static void freertos_cache_clean(const void *base, size_t len);
 static void freertos_cache_invalidate(const void *base, size_t len);
 #endif
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
-	(portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static void freertos_rootfs_window(const void *base, size_t len);
 #endif
 
@@ -1241,7 +1224,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
 #else
 	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
@@ -1251,12 +1234,11 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.cache_clean = freertos_cache_clean,
 	.cache_invalidate = freertos_cache_invalidate,
 #endif
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.coord_map =
 		freertos_coord_map, /* coherent coordinator view of the serviced slot's pools */
 #endif
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
-	(portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.rootfs_window = freertos_rootfs_window,
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
@@ -1267,8 +1249,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 #endif
 };
 
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
-	(portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* The rootfs.cpio is XIP'd from the memory-mapped QUADSPI NOR at 0x90000000.  The coordinator —
  * THIS task: it runs lxp_cpio_to_rootfs + the FDPIC loader — is a PRIVILEGED, non-restricted
  * FreeRTOS-MPU task, so absent an explicit region it reads the NOR through the PRIVDEFENA
