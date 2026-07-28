@@ -33,6 +33,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "lxp/lxp_exec.h"
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"

@@ -30,13 +30,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "lxp/lxp_exec.h"
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
 #include "ove/time.h"	     /* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h"	     /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
-#include "lxp/lxp_syscall.h"
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "bsp.h"       /* bsp_random_fill -> hardware-backed guest entropy */
