@@ -257,50 +257,69 @@ static uint32_t uptime_ms(void)
 }
 
 #if defined(CONFIG_OVE_LINUX_NET)
-/* Run after phase 1 rather than immediately after assigning the static address.
- * NuttX and Zephyr publish the address before the Ethernet carrier/ARP path is
- * connect-ready, so the old boot-time probe could report UNREACHABLE/TIMEOUT
- * even though the same interface passed ICMP and SSH moments later. */
+/*
+ * Run after phase 1 and allow a bounded readiness window. RTOS network seams
+ * publish the static address before their carrier, worker, and ARP paths
+ * necessarily become connect-ready. A one-shot probe therefore describes a
+ * scheduler race rather than transport health, especially on NuttX.
+ */
 static void network_transport_smoke(void)
 {
 	static ove_socket_storage_t s_sk;
-	ove_socket_t sk = NULL;
-	if (ove_socket_open(&sk, &s_sk, OVE_AF_INET, OVE_SOCK_STREAM) != OVE_OK) {
-		sh_write0("[demo] socket smoke (post-phase1): open failed\n");
-		return;
-	}
-
 	ove_sockaddr_t peer;
 	ove_sockaddr_ipv4(&peer, 172, 1, 1, 1, 22);
-	int cr = ove_socket_connect(sk, &peer, OVE_SEC(5));
-	if (cr == OVE_OK) {
+	const uint32_t started_ms = uptime_ms();
+	int last_rc = -1;
+	for (uint32_t attempt = 1; attempt <= 12; attempt++) {
+		ove_socket_t sk = NULL;
+		last_rc = ove_socket_open(&sk, &s_sk, OVE_AF_INET, OVE_SOCK_STREAM);
+		if (last_rc != OVE_OK)
+			goto retry;
+
+		last_rc = ove_socket_connect(sk, &peer, OVE_MS(500));
+		if (last_rc != OVE_OK) {
+			ove_socket_close(sk);
+			goto retry;
+		}
+
 		char rb[80];
 		size_t got = 0;
-		if (ove_socket_recv(sk, rb, sizeof(rb) - 1, &got, OVE_SEC(5)) == OVE_OK &&
-		    got > 0) {
+		last_rc = ove_socket_recv(sk, rb, sizeof(rb) - 1, &got, OVE_SEC(1));
+		if (last_rc == OVE_OK && got > 0) {
 			for (size_t i = 0; i < got; i++)
 				if (rb[i] == '\r' || rb[i] == '\n')
 					rb[i] = 0;
 			rb[got < sizeof(rb) ? got : sizeof(rb) - 1] = 0;
-			char b[144];
+			char b[176];
 			char *p = put_str(b,
 					  "[demo] socket smoke (post-phase1) OK <- 172.1.1.1:22: ");
 			p = put_str(p, rb);
+			p = put_str(p, " (ready after ");
+			p = put_dec(p, uptime_ms() - started_ms);
+			p = put_str(p, " ms, attempt ");
+			p = put_dec(p, attempt);
+			*p++ = ')';
 			*p++ = '\n';
 			*p = 0;
 			sh_write0(b);
-		} else {
-			sh_write0("[demo] socket smoke (post-phase1): connected, no banner\n");
+			ove_socket_close(sk);
+			return;
 		}
-	} else {
-		char b[80];
-		char *p = put_str(b, "[demo] socket smoke (post-phase1): connect failed rc=-");
-		p = put_dec(p, (uint32_t)(-cr));
-		*p++ = '\n';
-		*p = 0;
-		sh_write0(b);
+		ove_socket_close(sk);
+
+retry:
+		if (attempt < 12)
+			ove_thread_sleep_ms(250);
 	}
-	ove_socket_close(sk);
+
+	char b[112];
+	char *p = put_str(b, "[demo] socket smoke (post-phase1): not ready after ");
+	p = put_dec(p, uptime_ms() - started_ms);
+	p = put_str(p, " ms, last rc=");
+	p = put_sdec(p, last_rc);
+	*p++ = '\n';
+	*p = 0;
+	sh_write0(b);
 }
 #endif
 
