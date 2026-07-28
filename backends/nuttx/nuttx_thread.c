@@ -515,6 +515,7 @@ static struct {
 	bool used;
 } g_nx_runtime[OVE_NX_RUNTIME_MAX];
 static pid_t g_nx_runtime_current = -1;
+static int g_nx_runtime_current_index = -1;
 static uint32_t g_nx_runtime_last;
 static uint64_t g_nx_runtime_total;
 static bool g_nx_runtime_ready;
@@ -551,11 +552,8 @@ static void _runtime_fold(uint32_t now)
 
 	uint32_t delta = now - g_nx_runtime_last;
 	g_nx_runtime_total += delta;
-	if (g_nx_runtime_current >= 0) {
-		int idx = _runtime_find(g_nx_runtime_current, true);
-		if (idx >= 0)
-			g_nx_runtime[idx].cycles += delta;
-	}
+	if (g_nx_runtime_current_index >= 0)
+		g_nx_runtime[g_nx_runtime_current_index].cycles += delta;
 	g_nx_runtime_last = now;
 }
 
@@ -564,22 +562,46 @@ void ove_nuttx_runtime_reset(pid_t current_pid)
 	irqstate_t flags = enter_critical_section();
 	memset(g_nx_runtime, 0, sizeof(g_nx_runtime));
 	g_nx_runtime_current = current_pid;
+	g_nx_runtime_current_index = current_pid >= 0 ? _runtime_find(current_pid, true) : -1;
 	g_nx_runtime_total = 0;
 	g_nx_runtime_last = (uint32_t)up_perf_gettime();
 	g_nx_runtime_ready = true;
-	if (current_pid >= 0)
-		(void)_runtime_find(current_pid, true);
+	g_nx_runtime_overflow = false;
+	leave_critical_section(flags);
+}
+
+void ove_nuttx_runtime_start(pid_t pid)
+{
+	irqstate_t flags = enter_critical_section();
+	int idx = _runtime_find(pid, true);
+	if (idx >= 0)
+		g_nx_runtime[idx].cycles = 0;
+	leave_critical_section(flags);
+}
+
+void ove_nuttx_runtime_stop(pid_t pid)
+{
+	irqstate_t flags = enter_critical_section();
+	int idx = _runtime_find(pid, false);
+	if (idx >= 0) {
+		if (idx == g_nx_runtime_current_index) {
+			_runtime_fold((uint32_t)up_perf_gettime());
+			g_nx_runtime_current = -1;
+			g_nx_runtime_current_index = -1;
+		}
+		memset(&g_nx_runtime[idx], 0, sizeof(g_nx_runtime[idx]));
+	}
 	leave_critical_section(flags);
 }
 
 void ove_nuttx_runtime_switch(pid_t next_pid)
 {
-	irqstate_t flags = enter_critical_section();
+	/* sched_note_resume() runs from NuttX's scheduler switch path with the
+	 * scheduler state protected. Keep this hot path free of a redundant
+	 * nested critical section: it runs for every 1 kHz scope wakeup. */
 	_runtime_fold((uint32_t)up_perf_gettime());
 	g_nx_runtime_current = next_pid;
-	if (next_pid >= 0)
-		(void)_runtime_find(next_pid, true);
-	leave_critical_section(flags);
+	g_nx_runtime_current_index = next_pid >= 0 ? _runtime_find(next_pid, true) : -1;
 }
 
 void ove_nuttx_runtime_snapshot(void)
@@ -619,6 +641,16 @@ uint64_t ove_nuttx_runtime_cycles_to_us(uint64_t cycles)
 void ove_nuttx_runtime_reset(pid_t current_pid)
 {
 	(void)current_pid;
+}
+
+void ove_nuttx_runtime_start(pid_t pid)
+{
+	(void)pid;
+}
+
+void ove_nuttx_runtime_stop(pid_t pid)
+{
+	(void)pid;
 }
 
 void ove_nuttx_runtime_switch(pid_t next_pid)
