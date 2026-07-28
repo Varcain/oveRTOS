@@ -166,9 +166,7 @@ static struct k_mem_domain g_domains[LXP_NREG];
 static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
 static int g_dom_inited[LXP_NREG];
 static lxp_memory_policy_key_t g_domain_policy[LXP_NREG];
-static lxp_memory_policy_key_t g_slot_policy[LXP_NSLOT];
 static uint8_t g_domain_policy_valid[LXP_NREG];
-static uint8_t g_slot_policy_valid[LXP_NSLOT];
 
 /* Guest program pool: Normal write-back write-allocate, NON-shareable, CACHEABLE — deliberately the
  * SAME memory attribute the privileged run loop sees through Zephyr's static SDRAM region. The two
@@ -181,16 +179,22 @@ static uint8_t g_slot_policy_valid[LXP_NSLOT];
  * functional no-op there. */
 #define OVE_MEM_PART_RW_CACHE K_MEM_PARTITION_P_RW_U_RW
 
-static struct k_thread g_thread[LXP_NSLOT];
-static k_tid_t g_tid[LXP_NSLOT];
-static uint32_t g_task_generation[LXP_NSLOT];
+struct zephyr_lxp_slot {
+	k_tid_t tid;
+	uint32_t generation;
+	lxp_memory_policy_key_t policy;
+	uint8_t policy_valid;
+};
+static struct zephyr_lxp_slot g_slots[LXP_NSLOT];
+/* Zephyr owns the opaque thread and stack storage; the seam owns g_slots. */
+static struct k_thread g_thread_storage[LXP_NSLOT];
 K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, LXP_NSLOT, 1024);
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
 	return (lxp_slot_ref_t){
 		.index = (int16_t)slot,
-		.generation = slot >= 0 && slot < LXP_NSLOT ? g_task_generation[slot] : 0,
+		.generation = slot >= 0 && slot < LXP_NSLOT ? g_slots[slot].generation : 0,
 	};
 }
 
@@ -198,7 +202,7 @@ static int current_slot(void)
 {
 	k_tid_t t = k_current_get();
 	for (int i = 0; i < LXP_NSLOT; i++)
-		if (g_tid[i] == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
+		if (g_slots[i].tid == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
 }
@@ -470,8 +474,8 @@ static void *zephyr_park_prepare(int sidx, uint32_t generation,
 				const struct lxp_resume_ctx *ctx)
 {
 	ARG_UNUSED(ctx);
-	if (sidx < 0 || sidx >= LXP_NSLOT || !g_tid[sidx] ||
-	    g_task_generation[sidx] != generation)
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].tid ||
+	    g_slots[sidx].generation != generation)
 		return NULL;
 	/* PendSV retains the exact svc exception frame and callee-saved
 	 * registers in the parked k_thread. spawn_resume rewrites that existing
@@ -505,8 +509,8 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		return -1;
 	if (g_domain_policy_valid[ridx] &&
 	    lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx])) {
-		g_slot_policy[sidx] = lxp_memory_policy_make_key(&policy);
-		g_slot_policy_valid[sidx] = 1u;
+		g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
+		g_slots[sidx].policy_valid = 1u;
 		return 0;
 	}
 	uint8_t *region = prog_regions[ridx];
@@ -583,8 +587,8 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		return -1;
 	g_domain_policy[ridx] = lxp_memory_policy_make_key(&policy);
 	g_domain_policy_valid[ridx] = 1u;
-	g_slot_policy[sidx] = lxp_memory_policy_make_key(&policy);
-	g_slot_policy_valid[sidx] = 1u;
+	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
+	g_slots[sidx].policy_valid = 1u;
 	return 0;
 }
 
@@ -601,8 +605,8 @@ static int zephyr_bind_prepared_domain(int sidx, uint32_t generation, int ridx)
 	    !g_domain_policy_valid[ridx] ||
 	    !lxp_memory_policy_address_space_matches_key(&policy, &g_domain_policy[ridx]))
 		return -1;
-	g_slot_policy[sidx] = lxp_memory_policy_make_key(&policy);
-	g_slot_policy_valid[sidx] = 1u;
+	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
+	g_slots[sidx].policy_valid = 1u;
 	return 0;
 }
 
@@ -651,7 +655,7 @@ static void slot_task_name(char name[6], int sidx)
 static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 			       const lxp_guest_launch_t *launch)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_tid[sidx])
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_slots[sidx].tid)
 		return -1;
 	if (setup_domain(sidx, generation, ridx) != 0) {
 		printk("[lxp] zephyr domain setup failed slot=%d region=%d\n", sidx, ridx);
@@ -663,23 +667,23 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 	struct lxp_resume_ctx *slot =
 		(struct lxp_resume_ctx *)((uintptr_t)launch->r[13] - sizeof(struct lxp_resume_ctx));
 	lxp_resume_ctx_from_launch(slot, launch);
-	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
+	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
 				      resume_tramp, (void *)(uintptr_t)launch->r[0], slot, NULL,
 				      OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
-		k_thread_name_set(g_tid[sidx], nm);
+		k_thread_name_set(g_slots[sidx].tid, nm);
 	}
-	if (k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]) != 0) {
+	if (k_mem_domain_add_thread(&g_domains[ridx], g_slots[sidx].tid) != 0) {
 		printk("[lxp] zephyr domain bind failed slot=%d region=%d\n", sidx, ridx);
-		k_thread_abort(g_tid[sidx]);
-		g_tid[sidx] = NULL;
+		k_thread_abort(g_slots[sidx].tid);
+		g_slots[sidx].tid = NULL;
 		return -1;
 	}
-	g_task_generation[sidx] = generation;
-	k_thread_start(g_tid[sidx]);
+	g_slots[sidx].generation = generation;
+	k_thread_start(g_slots[sidx].tid);
 	return 0;
 }
 
@@ -690,19 +694,19 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
 	if (mode == LXP_SPAWN_RESUME_PARKED) {
-		if (!g_tid[sidx] || g_task_generation[sidx] != generation)
+		if (!g_slots[sidx].tid || g_slots[sidx].generation != generation)
 			return -1;
 		lxp_memory_policy_t policy;
-		if (!g_slot_policy_valid[sidx] ||
+		if (!g_slots[sidx].policy_valid ||
 		    lxp_slot_memory_policy(task_slot_ref(sidx), &policy) != LXP_OK ||
-		    !lxp_memory_policy_matches_key(&policy, &g_slot_policy[sidx]))
+		    !lxp_memory_policy_matches_key(&policy, &g_slots[sidx].policy))
 			return -1;
 		/* PendSV saved the svc frame that park_frame redirected to the naked
 		 * the park entry. Reuse that exact native frame: deriving a new PSP
 		 * from the Linux SP loses Zephyr's exception-alignment/lazy-FP
 		 * invariants, while resuming through another user exception can try
 	 * to preserve stale privileged lazy-FP state under the guest MPU. */
-		struct k_thread *thread = &g_thread[sidx];
+		struct k_thread *thread = &g_thread_storage[sidx];
 		struct arch_esf *esf = (struct arch_esf *)(uintptr_t)thread->callee_saved.psp;
 		esf->basic.r0 = (uint32_t)r0val;
 		esf->basic.r1 = ctx->r1;
@@ -729,10 +733,10 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 			       sizeof(thread->arch.preempt_float));
 		}
 #endif
-		k_thread_resume(g_tid[sidx]);
+		k_thread_resume(g_slots[sidx].tid);
 		return 0;
 	}
-	if (mode != LXP_SPAWN_RESUME_START || g_tid[sidx])
+	if (mode != LXP_SPAWN_RESUME_START || g_slots[sidx].tid)
 		return -1;
 	if (zephyr_bind_prepared_domain(sidx, generation, ridx) != 0)
 		return -1;
@@ -743,22 +747,22 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 	struct lxp_resume_ctx *slot =
 		(struct lxp_resume_ctx *)((uintptr_t)ctx->sp - sizeof(struct lxp_resume_ctx));
 	*slot = *ctx;
-	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
+	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
 				      (void *)r0val, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
 				      K_FOREVER);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
-		k_thread_name_set(g_tid[sidx], nm);
+		k_thread_name_set(g_slots[sidx].tid, nm);
 	}
-	if (k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]) != 0) {
-		k_thread_abort(g_tid[sidx]);
-		g_tid[sidx] = NULL;
+	if (k_mem_domain_add_thread(&g_domains[ridx], g_slots[sidx].tid) != 0) {
+		k_thread_abort(g_slots[sidx].tid);
+		g_slots[sidx].tid = NULL;
 		return -1;
 	}
-	g_task_generation[sidx] = generation;
-	k_thread_start(g_tid[sidx]);
+	g_slots[sidx].generation = generation;
+	k_thread_start(g_slots[sidx].tid);
 	return 0;
 }
 
@@ -881,13 +885,13 @@ static int zephyr_abort_slot(int sidx, uint32_t generation)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT)
 		return -1;
-	if (g_tid[sidx] && g_task_generation[sidx] != generation)
+	if (g_slots[sidx].tid && g_slots[sidx].generation != generation)
 		return -1;
-	if (g_tid[sidx])
-		k_thread_abort(g_tid[sidx]);
-	g_tid[sidx] = NULL;
-	g_task_generation[sidx] = 0;
-	g_slot_policy_valid[sidx] = 0;
+	if (g_slots[sidx].tid)
+		k_thread_abort(g_slots[sidx].tid);
+	g_slots[sidx].tid = NULL;
+	g_slots[sidx].generation = 0;
+	g_slots[sidx].policy_valid = 0;
 	return 0;
 }
 
@@ -895,16 +899,16 @@ static int zephyr_park_slot(int sidx, uint32_t generation)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT ||
 	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
-	    !g_tid[sidx] || g_task_generation[sidx] != generation)
+	    !g_slots[sidx].tid || g_slots[sidx].generation != generation)
 		return -1;
-	k_thread_suspend(g_tid[sidx]);
+	k_thread_suspend(g_slots[sidx].tid);
 	return 0;
 }
 
 static int32_t slot_for_thread(uintptr_t identity)
 {
 	for (int s = 0; s < LXP_NSLOT; s++)
-		if (identity == (uintptr_t)g_tid[s])
+		if (identity == (uintptr_t)g_slots[s].tid)
 			return s;
 	return LXP_THREAD_SLOT_NONE;
 }
@@ -940,7 +944,8 @@ static const char *lxp_seam_system_version(void)
 static int zephyr_prepare(void)
 {
 	memset(g_domain_policy_valid, 0, sizeof(g_domain_policy_valid));
-	memset(g_slot_policy_valid, 0, sizeof(g_slot_policy_valid));
+	for (int s = 0; s < LXP_NSLOT; s++)
+		g_slots[s].policy_valid = 0;
 	return LXP_OK;
 }
 
