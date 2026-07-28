@@ -714,13 +714,14 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 }
 
 static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
+			      lxp_spawn_resume_mode_t mode,
 			      const struct lxp_resume_ctx *ctx, long r0val)
 {
 	(void)ridx;
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
-	if (!lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_pid[sidx] >= 0) {
-		if (g_task_generation[sidx] != generation)
+	if (mode == LXP_SPAWN_RESUME_PARKED) {
+		if (g_pid[sidx] < 0 || g_task_generation[sidx] != generation)
 			return -1;
 		/* Build a native NuttX exception frame immediately below the captured
 		 * guest SP. Cortex-M exception return consumes the frame and leaves PSP
@@ -768,7 +769,7 @@ static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
 		leave_critical_section(flags);
 		return -1;
 	}
-	if (g_pid[sidx] >= 0)
+	if (mode != LXP_SPAWN_RESUME_START || g_pid[sidx] >= 0)
 		return -1;
 	if (spawn_task(sidx, (uintptr_t)ctx->sp) != 0)
 		return -1;

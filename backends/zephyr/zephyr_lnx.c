@@ -805,12 +805,13 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 }
 
 static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
+			       lxp_spawn_resume_mode_t mode,
 			       const struct lxp_resume_ctx *ctx, long r0val)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
-	if (!lxp_slot_ref_is_runnable(task_slot_ref(sidx)) && g_tid[sidx]) {
-		if (g_task_generation[sidx] != generation)
+	if (mode == LXP_SPAWN_RESUME_PARKED) {
+		if (!g_tid[sidx] || g_task_generation[sidx] != generation)
 			return -1;
 		lxp_memory_policy_t policy;
 		if (!g_slot_policy_valid[sidx] ||
@@ -852,7 +853,7 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 		k_thread_resume(g_tid[sidx]);
 		return 0;
 	}
-	if (g_tid[sidx])
+	if (mode != LXP_SPAWN_RESUME_START || g_tid[sidx])
 		return -1;
 	if (zephyr_bind_prepared_domain(sidx, generation, ridx) != 0)
 		return -1;
