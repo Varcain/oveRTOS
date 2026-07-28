@@ -897,3 +897,11 @@ the lifecycle epoch observed by the RTOS census, so snapshots and invariant
 checks cannot compare a newly transitioned slot with stale scheduler data.
 Launch and teardown checkpoints take a real census instead of manufacturing an
 empty native-task view.
+
+The blocked-operation scan now returns one compact policy mask instead of
+exporting a boolean for every wait subsystem. The coordinator consumes only the
+distinctions it owns: polling fallback, event-driven socket readiness, and
+console-reader ownership. This preserves each subsystem's retry behavior while
+removing duplicated timeout classification; asynchronous console control input
+also reports ordinary scan progress and is delivered without an extra
+maintenance sleep.
