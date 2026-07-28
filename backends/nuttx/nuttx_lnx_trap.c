@@ -263,78 +263,13 @@ static lxp_slot_ref_t task_slot_ref(int slot)
 	};
 }
 
-#if defined(CONFIG_ARCH_PERF_EVENTS) && defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-/* The generic NuttX thread-runtime registry is deliberately bounded. A busy
- * Linux-personality image has more native tasks than that registry can hold,
- * and NuttX enumerates the guest TCBs late enough that they can be omitted.
- * Keep the guest-facing accounting exact and bounded by the already configured
- * personality slot count instead. The switch hook folds DWT cycles into the
- * outgoing guest slot; lxp_seam_thread_list() then guarantees one snapshot
- * entry for every live guest even when host enumeration overflows. */
-static uint64_t g_guest_runtime_cycles[LXP_NSLOT];
-static pid_t g_guest_runtime_current = -1;
-static uint32_t g_guest_runtime_last;
-static bool g_guest_runtime_ready;
-
-static void guest_runtime_fold(uint32_t now)
-{
-	if (!g_guest_runtime_ready) {
-		g_guest_runtime_last = now;
-		g_guest_runtime_ready = true;
-		return;
-	}
-
-	uint32_t delta = now - g_guest_runtime_last;
-	for (int s = 0; s < LXP_NSLOT; s++) {
-		if (g_pid[s] >= 0 && g_pid[s] == g_guest_runtime_current) {
-			g_guest_runtime_cycles[s] += delta;
-			break;
-		}
-	}
-	g_guest_runtime_last = now;
-}
-
-static void guest_runtime_switch(pid_t next_pid)
-{
-	guest_runtime_fold((uint32_t)up_perf_gettime());
-	g_guest_runtime_current = next_pid;
-}
-
-static void guest_runtime_reset(pid_t current_pid)
-{
-	irqstate_t flags = enter_critical_section();
-	memset(g_guest_runtime_cycles, 0, sizeof(g_guest_runtime_cycles));
-	g_guest_runtime_current = current_pid;
-	g_guest_runtime_last = (uint32_t)up_perf_gettime();
-	g_guest_runtime_ready = true;
-	leave_critical_section(flags);
-}
-
 static uint64_t guest_runtime_us(int sidx)
 {
-	irqstate_t flags = enter_critical_section();
-	guest_runtime_fold((uint32_t)up_perf_gettime());
-	uint64_t cycles = g_guest_runtime_cycles[sidx];
-	leave_critical_section(flags);
+	uint64_t cycles = 0;
+	if (sidx >= 0 && sidx < LXP_NSLOT && g_pid[sidx] >= 0)
+		(void)ove_nuttx_runtime_get(g_pid[sidx], &cycles, NULL);
 	return ove_nuttx_runtime_cycles_to_us(cycles);
 }
-#else
-static void guest_runtime_switch(pid_t next_pid)
-{
-	(void)next_pid;
-}
-
-static void guest_runtime_reset(pid_t current_pid)
-{
-	(void)current_pid;
-}
-
-static uint64_t guest_runtime_us(int sidx)
-{
-	(void)sidx;
-	return 0;
-}
-#endif
 
 /* Device mappings are part of a Linux slot's unprivileged MPU view, not global
  * process state. Regions 5 and 6 cover the two ranges recorded by
@@ -632,11 +567,6 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	memcpy(guest_regs, g_tcb[sidx].cmn.xcp.regs, XCPTCONTEXT_SIZE);
 	g_tcb[sidx].cmn.xcp.regs = guest_regs;
 	g_pid[sidx] = g_tcb[sidx].cmn.pid;
-#if defined(CONFIG_ARCH_PERF_EVENTS) && defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-	irqstate_t flags = enter_critical_section();
-	g_guest_runtime_cycles[sidx] = 0;
-	leave_critical_section(flags);
-#endif
 	return 0;
 }
 
@@ -1307,12 +1237,25 @@ static void nuttx_disable_dynamic_regions(void)
  * tasks are privileged (PRIVDEFENA), so their region set is irrelevant → skip (leaving the last
  * program's regions is harmless; privileged access uses the default map). Runs in the switch
  * context: bounded register writes + barriers, no allocation, no blocking. */
+static void lxp_note_start(struct note_driver_s *drv, struct tcb_s *tcb)
+{
+	(void)drv;
+	if (lxp_trap_active() && tcb)
+		ove_nuttx_runtime_start(tcb->pid);
+}
+
+static void lxp_note_stop(struct note_driver_s *drv, struct tcb_s *tcb)
+{
+	(void)drv;
+	if (lxp_trap_active() && tcb)
+		ove_nuttx_runtime_stop(tcb->pid);
+}
+
 static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 {
 	(void)drv;
 	if (!lxp_trap_active() || !tcb)
 		return;
-	guest_runtime_switch(tcb->pid);
 	ove_nuttx_runtime_switch(tcb->pid);
 	/* Defensive: this hook fires on EVERY switch, including kernel/coordinator tasks. A valid
 	 * tcb lives in on-chip SRAM/DTCM (0x2000_0000..0x2008_0000); anything else would BusFault on
@@ -1337,6 +1280,8 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 }
 
 static const struct note_driver_ops_s g_lxp_note_ops = {
+	.start = lxp_note_start,
+	.stop = lxp_note_stop,
 	.resume = lxp_note_resume,
 };
 static struct note_driver_s g_lxp_note_driver = {
@@ -1380,7 +1325,6 @@ static int nuttx_prepare(void)
 		g_lxp_note_registered = true;
 	}
 	ove_nuttx_runtime_reset(getpid());
-	guest_runtime_reset(getpid());
 #endif
 	return 0;
 }
