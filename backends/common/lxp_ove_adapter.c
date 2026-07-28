@@ -28,11 +28,17 @@
 #include "ove_net_ready.h"
 #include "lxp/lxp_net.h"
 #endif
+#include "lxp/lxp_config.h"
 #include "lxp/lxp_net_ops.h"
 
+#include <stdint.h>
 #include <string.h>
 
-#define LXP_ADAPTER_NSOCK (LXP_NSOCK + 4)
+/*
+ * The socket core owns at most LXP_NSOCK handles. Netfs has one independent
+ * transport handle, so it contributes exactly one slot when compiled in.
+ */
+#define LXP_ADAPTER_NSOCK (LXP_NSOCK + LXP_ENABLE_NETFS)
 
 /* The opaque handle the module holds: a pool entry carrying the backend-sized
  * storage and the resulting ove_socket handle. */
@@ -43,6 +49,7 @@ struct lxp_socket {
 };
 
 static struct lxp_socket g_pool[LXP_ADAPTER_NSOCK];
+static uint8_t g_run_active;
 
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 static unsigned g_open_sockets;
@@ -53,8 +60,25 @@ static void socket_ready(void)
 }
 #endif
 
+static struct lxp_socket *slot_lookup(lxp_socket_t handle)
+{
+	uintptr_t addr = (uintptr_t)handle;
+	uintptr_t base = (uintptr_t)&g_pool[0];
+	size_t offset;
+
+	if (!handle || addr < base || addr >= base + sizeof(g_pool))
+		return NULL;
+	offset = (size_t)(addr - base);
+	if (offset % sizeof(g_pool[0]) != 0)
+		return NULL;
+	struct lxp_socket *socket = &g_pool[offset / sizeof(g_pool[0])];
+	return socket->used ? socket : NULL;
+}
+
 static struct lxp_socket *slot_alloc(void)
 {
+	if (!g_run_active)
+		return NULL;
 	for (int i = 0; i < LXP_ADAPTER_NSOCK; i++)
 		if (!g_pool[i].used) {
 			g_pool[i].used = 1;
@@ -80,6 +104,47 @@ static int slot_publish(struct lxp_socket *s, lxp_socket_t *out)
 	return OVE_OK;
 }
 
+static void slot_close(struct lxp_socket *socket)
+{
+	ove_socket_close(socket->h);
+	memset(socket, 0, sizeof(*socket));
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	if (g_open_sockets > 0)
+		g_open_sockets--;
+	if (g_open_sockets == 0)
+		ove_net_ready_unsubscribe(socket_ready);
+#endif
+}
+
+static void pool_reset(void)
+{
+	for (int i = 0; i < LXP_ADAPTER_NSOCK; i++)
+		if (g_pool[i].used)
+			slot_close(&g_pool[i]);
+	memset(g_pool, 0, sizeof(g_pool));
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	g_open_sockets = 0;
+	ove_net_ready_unsubscribe(socket_ready);
+#endif
+}
+
+static int a_run_begin(void)
+{
+	if (g_run_active)
+		return OVE_ERR_WOULD_BLOCK;
+	pool_reset();
+	g_run_active = 1;
+	return OVE_OK;
+}
+
+static void a_run_end(void)
+{
+	if (!g_run_active)
+		return;
+	pool_reset();
+	g_run_active = 0;
+}
+
 /* ---- lxp <-> ove address conversion (same fields + values) ------------------ */
 static void to_ove(const lxp_sockaddr_t *a, ove_sockaddr_t *o)
 {
@@ -96,6 +161,8 @@ static void from_ove(const ove_sockaddr_t *o, lxp_sockaddr_t *a)
 
 static int a_open(lxp_af_t af, lxp_sock_type_t type, int proto, lxp_socket_t *out)
 {
+	if (!g_run_active || !out)
+		return OVE_ERR_INVALID_PARAM;
 	struct lxp_socket *s = slot_alloc();
 	if (!s)
 		return LXP_ERR_NO_MEMORY;
@@ -108,10 +175,13 @@ static int a_open(lxp_af_t af, lxp_sock_type_t type, int proto, lxp_socket_t *ou
 }
 static int a_accept(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_ns)
 {
+	struct lxp_socket *listen_socket = slot_lookup(listener);
+	if (!listen_socket || !out)
+		return OVE_ERR_INVALID_PARAM;
 	struct lxp_socket *s = slot_alloc();
 	if (!s)
 		return LXP_ERR_NO_MEMORY;
-	int r = ove_socket_accept(listener->h, &s->h, &s->st, timeout_ns);
+	int r = ove_socket_accept(listen_socket->h, &s->h, &s->st, timeout_ns);
 	if (r != OVE_OK) {
 		s->used = 0; /* also the OVE_ERR_TIMEOUT (no pending connection) path */
 		return r;
@@ -120,88 +190,121 @@ static int a_accept(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_n
 }
 static void a_close(lxp_socket_t s)
 {
-	if (!s || !s->used)
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket)
 		return;
-	ove_socket_close(s->h);
-	memset(s, 0, sizeof(*s));
-#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
-	if (g_open_sockets > 0)
-		g_open_sockets--;
-	if (g_open_sockets == 0)
-		ove_net_ready_unsubscribe(socket_ready);
-#endif
+	slot_close(socket);
 }
 static int a_connect(lxp_socket_t s, const lxp_sockaddr_t *a, uint64_t t)
 {
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || !a)
+		return OVE_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	to_ove(a, &oa);
-	return ove_socket_connect(s->h, &oa, t);
+	return ove_socket_connect(socket->h, &oa, t);
 }
 static int a_bind(lxp_socket_t s, const lxp_sockaddr_t *a)
 {
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || !a)
+		return OVE_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	to_ove(a, &oa);
-	return ove_socket_bind(s->h, &oa);
+	return ove_socket_bind(socket->h, &oa);
 }
 static int a_listen(lxp_socket_t s, int backlog)
 {
-	return ove_socket_listen(s->h, backlog);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_listen(socket->h, backlog);
 }
 static int a_send(lxp_socket_t s, const void *d, size_t n, size_t *sent)
 {
-	return ove_socket_send(s->h, d, n, sent);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || (!d && n != 0))
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_send(socket->h, d, n, sent);
 }
 static int a_recv(lxp_socket_t s, void *b, size_t n, size_t *got, uint64_t t)
 {
-	return ove_socket_recv(s->h, b, n, got, t);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || (!b && n != 0))
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_recv(socket->h, b, n, got, t);
 }
 static int a_sendto(lxp_socket_t s, const void *d, size_t n, size_t *sent,
 		    const lxp_sockaddr_t *dst)
 {
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || (!d && n != 0) || !dst)
+		return OVE_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	to_ove(dst, &oa);
-	return ove_socket_sendto(s->h, d, n, sent, &oa);
+	return ove_socket_sendto(socket->h, d, n, sent, &oa);
 }
 static int a_recvfrom(lxp_socket_t s, void *b, size_t n, size_t *got, lxp_sockaddr_t *src,
 		      uint64_t t)
 {
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || (!b && n != 0))
+		return OVE_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
-	int r = ove_socket_recvfrom(s->h, b, n, got, &oa, t);
+	int r = ove_socket_recvfrom(socket->h, b, n, got, &oa, t);
 	if (r == OVE_OK && src)
 		from_ove(&oa, src);
 	return r;
 }
 static int a_set_nonblock(lxp_socket_t s, int nb)
 {
-	return ove_socket_set_nonblock(s->h, nb);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_set_nonblock(socket->h, nb);
 }
 static int a_poll(lxp_socket_t s, unsigned events, unsigned *revents, uint64_t t)
 {
-	return ove_socket_poll(s->h, events, revents, t);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_poll(socket->h, events, revents, t);
 }
 static int a_shutdown(lxp_socket_t s, int how)
 {
-	return ove_socket_shutdown(s->h, how);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_shutdown(socket->h, how);
 }
 static int a_getsockname(lxp_socket_t s, lxp_sockaddr_t *a)
 {
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || !a)
+		return OVE_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
-	int r = ove_socket_getsockname(s->h, &oa);
+	int r = ove_socket_getsockname(socket->h, &oa);
 	if (r == OVE_OK)
 		from_ove(&oa, a);
 	return r;
 }
 static int a_getpeername(lxp_socket_t s, lxp_sockaddr_t *a)
 {
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket || !a)
+		return OVE_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
-	int r = ove_socket_getpeername(s->h, &oa);
+	int r = ove_socket_getpeername(socket->h, &oa);
 	if (r == OVE_OK)
 		from_ove(&oa, a);
 	return r;
 }
 static int a_get_error(lxp_socket_t s)
 {
-	return ove_socket_get_error(s->h);
+	struct lxp_socket *socket = slot_lookup(s);
+	if (!socket)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_socket_get_error(socket->h);
 }
 
 /* netif ops: the module holds the interface as an lxp_netif_t, which on oveRTOS is
@@ -248,6 +351,8 @@ static int a_netif_set_up(lxp_netif_t nif, int up)
 const struct lxp_net_ops g_lxp_host_net_ops = {
 	.abi_version = LXP_NET_OPS_ABI_VERSION,
 	.struct_size = sizeof(struct lxp_net_ops),
+	.run_begin = a_run_begin,
+	.run_end = a_run_end,
 	.sock_open = a_open,
 	.sock_accept = a_accept,
 	.sock_close = a_close,

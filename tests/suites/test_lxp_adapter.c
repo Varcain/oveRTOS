@@ -34,6 +34,8 @@ static void test_adapter_ops_wired(void **state)
 	assert_non_null(ops);
 	assert_int_equal(ops->abi_version, LXP_NET_OPS_ABI_VERSION);
 	assert_int_equal(ops->struct_size, sizeof(*ops));
+	assert_non_null(ops->run_begin);
+	assert_non_null(ops->run_end);
 	assert_non_null(ops->sock_open);
 	assert_non_null(ops->sock_accept);
 	assert_non_null(ops->sock_close);
@@ -65,6 +67,8 @@ static void test_adapter_open_close(void **state)
 {
 	(void)state;
 	const struct lxp_net_ops *ops = &g_lxp_host_net_ops;
+	assert_int_equal(ops->run_begin(), OVE_OK);
+	assert_int_equal(ops->run_begin(), OVE_ERR_WOULD_BLOCK);
 
 	lxp_socket_t s = NULL;
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_OK);
@@ -82,6 +86,20 @@ static void test_adapter_open_close(void **state)
 	ops->sock_close(t);
 	ove_net_ready_publish();
 	assert_int_equal(g_socket_kicks, 2);
+	unsigned revents = 0;
+	assert_int_equal(ops->sock_poll(t, 0, &revents, 0), OVE_ERR_INVALID_PARAM);
+	ops->run_end();
+	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s),
+			 OVE_ERR_INVALID_PARAM);
+
+	/* A run-end owns rollback for a provider handle the core failed to close. */
+	assert_int_equal(ops->run_begin(), OVE_OK);
+	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_OK);
+	ops->run_end();
+	ove_net_ready_publish();
+	assert_int_equal(g_socket_kicks, 2);
+	assert_int_equal(ops->run_begin(), OVE_OK);
+	ops->run_end();
 }
 
 static int32_t test_slot_lookup(uintptr_t identity)
