@@ -16,6 +16,9 @@
 #include "ove/ove.h"
 #include "ove_backend_common.h"
 #include "ove_ns_to_ticks.h"
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+#include "ove_net_ready.h"
+#endif
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -29,10 +32,6 @@
 #include "lwip/netif.h"
 #include "lwip/ip4_addr.h"
 #include "netif/ethernet.h"
-
-#if defined(CONFIG_OVE_LINUX_NET)
-#include "lxp/lxp_net.h"
-#endif
 
 #include <string.h>
 
@@ -85,7 +84,7 @@ int ethernetif_input(struct netif *netif, unsigned budget)
 static struct netif s_netif;
 static volatile int s_tcpip_ready;
 
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(CONFIG_OVE_NET_RX_FAIR_SCHEDULING)
 /*
  * Limit bulk traffic to roughly one full-size frame per 8 ms (~1.5 Mbit/s), the
  * throughput class measured with NuttX under the same saturating userspace load.
@@ -102,7 +101,7 @@ static void eth_rx_task(void *arg)
 {
 	(void)arg;
 
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(CONFIG_OVE_NET_RX_FAIR_SCHEDULING)
 	unsigned tokens = ETH_RX_TOKEN_BURST;
 	int backlog = 0;
 	TickType_t refill_at = xTaskGetTickCount();
@@ -152,10 +151,12 @@ static void eth_rx_task(void *arg)
 			tokens -= used;
 			backlog = used == budget;
 
-			/* tcpip_input queued these frames before this post. The tcpip
-			 * thread therefore makes socket state visible before the equal-
-			 * priority personality coordinator retries its parked operation. */
-			lxp_sock_kick();
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+			/* tcpip_input queued these frames before publication. A subscriber
+			 * may now recheck socket state without the network backend knowing
+			 * which scheduler or protocol layer consumes that readiness. */
+			ove_net_ready_publish();
+#endif
 		} else
 			backlog = 0;
 

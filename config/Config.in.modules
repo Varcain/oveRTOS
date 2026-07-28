@@ -746,6 +746,23 @@ config OVE_NET_TLS_HEAP_SIZE
       concurrent session.  Pool exhaustion returns OVE_ERR_NO_MEMORY,
       never spills to libc malloc.
 
+config OVE_NET_RX_READY_NOTIFY
+    bool
+    default y if OVE_NET && OVE_RTOS_FREERTOS
+    help
+      Internal capability contract: the selected network backend publishes
+      receive activity through the engine-neutral readiness channel.
+
+config OVE_NET_RX_FAIR_SCHEDULING
+    bool "Bound Ethernet RX work for scheduler fairness"
+    default y if OVE_LINUX
+    default n
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      Rate-limit saturated Ethernet receive processing with a three-frame
+      token bucket. This bounds network task interference while preserving
+      short ARP/TCP bursts. Disable for throughput-oriented native workloads.
+
 comment "lwIP bounded-pool sizing (FreeRTOS only)"
     depends on OVE_NET && OVE_RTOS_FREERTOS
 
