@@ -24,6 +24,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/app_memory/app_memdomain.h>
 #include <zephyr/arch/exception.h>
+#include <zephyr/cache.h>
 #include <zephyr/init.h>
 #include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/random/random.h> /* sys_csrand_get -> engine random_fill op */
@@ -637,6 +638,24 @@ static lxp_exec_capture_t *zephyr_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
+static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t base,
+				     size_t len)
+{
+	int ridx = address_space.index;
+	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
+		return LXP_ERR_INVALID_PARAM;
+	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
+	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
+	if (base < region_lo || base >= region_hi || len > region_hi - base)
+		return LXP_ERR_INVALID_PARAM;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	if (sys_cache_data_flush_range((void *)base, len) != 0 ||
+	    sys_cache_instr_invd_range((void *)base, len) != 0)
+		return LXP_ERR_INVALID_PARAM;
+#endif
+	return LXP_OK;
+}
+
 /* Guest entropy (AT_RANDOM stack-canary seed + getrandom()). sys_csrand_get()
  * propagates entropy-driver failure instead of substituting timer data. */
 static int zephyr_random_fill(void *buf, size_t len)
@@ -996,6 +1015,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+	.publish_executable = zephyr_publish_executable,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
 #else
