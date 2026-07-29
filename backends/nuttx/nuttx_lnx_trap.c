@@ -49,12 +49,11 @@
 
 #include <stddef.h>
 
-#include <nuttx/arch.h> /* up_perf_gettime — exact guest runtime accounting */
-#include <nuttx/cache.h> /* up_invalidate_dcache — reused-region coherency (cacheable prog pool) */
-#include <nuttx/clock.h> /* MSEC2TICK */
-#include <nuttx/irq.h>	 /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
-#include <nuttx/queue.h> /* dq_rem — move a parked TCB out of the stopped list */
-#include <nuttx/sched.h> /* nxtask_init, nxtask_activate, struct task_tcb_s */
+#include <nuttx/arch.h>	     /* up_perf_gettime — exact guest runtime accounting */
+#include <nuttx/clock.h>     /* MSEC2TICK */
+#include <nuttx/irq.h>	     /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
+#include <nuttx/queue.h>     /* dq_rem — move a parked TCB out of the stopped list */
+#include <nuttx/sched.h>     /* nxtask_init, nxtask_activate, struct task_tcb_s */
 #include <nuttx/semaphore.h> /* nxsem_init/post/tickwait — coordinator wakeup */
 #include <nuttx/version.h>
 #include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
@@ -71,6 +70,7 @@
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
+#include "ove_cortex_m_cache.h"
 #include "ove_nuttx_runtime.h"
 
 /* NuttX's own SVCall handler — chained (not patched) for non-Linux svcs.
@@ -212,8 +212,7 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)
 static lxp_exec_capture_t *const g_exec_captures = (lxp_exec_capture_t *)NUTTX_SDRAM_COLD_BASE;
 #define NUTTX_SDRAM_THREAD_SNAPSHOT_BASE \
 	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
-#define g_thread_snapshot \
-	(*(struct lxp_ove_thread_snapshot *)NUTTX_SDRAM_THREAD_SNAPSHOT_BASE)
+#define g_thread_snapshot (*(struct lxp_ove_thread_snapshot *)NUTTX_SDRAM_THREAD_SNAPSHOT_BASE)
 #else
 static lxp_exec_capture_t g_exec_captures[LXP_NSLOT];
 static struct lxp_ove_thread_snapshot g_thread_snapshot;
@@ -233,8 +232,7 @@ static struct lxp_ove_thread_snapshot g_thread_snapshot;
 	LXP_ALIGN_UP(NUTTX_SDRAM_THREAD_SNAPSHOT_BASE + sizeof(g_thread_snapshot), 8u)
 static uint8_t (*const g_nuttx_stacks)[LXP_NUTTX_STACK_SIZE] = (uint8_t (*)[LXP_NUTTX_STACK_SIZE])
 	NUTTX_SDRAM_STACK_BASE;
-_Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <=
-		       OVE_LXP_GUEST_POOL_BASE,
+_Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <= OVE_LXP_GUEST_POOL_BASE,
 	       "trusted NuttX slot stacks overlap the STM32 program pool");
 #else
 static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((aligned(8)));
@@ -536,8 +534,7 @@ static int slot_noentry(int argc, char *argv[])
 	return 0;
 }
 
-static void *nuttx_park_prepare(int sidx, uint32_t generation,
-			       const struct lxp_resume_ctx *ctx)
+static void *nuttx_park_prepare(int sidx, uint32_t generation, const struct lxp_resume_ctx *ctx)
 {
 	(void)ctx;
 	if (sidx < 0 || sidx >= LXP_NSLOT || g_slots[sidx].pid < 0 ||
@@ -588,19 +585,17 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	return 0;
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+#endif
+
 /*
- * Publish RAM-backed executable text without issuing one whole-cache clean.
- * NuttX turns a range at least as large as the 16 KiB M7 D-cache into a
- * set/way clean followed by one DSB. Draining all dirty SDRAM lines behind
- * that barrier can postpone exception entry for multiple 1 ms releases.
- *
  * Ordinary program/dynamic-pool data needs no launch-time maintenance:
  * coordinator and guest use the same WBWA mapping on the same CPU. Copied
- * text is the one CPU-to-I-cache ownership boundary. Cleaning it in bounded
- * chunks leaves an interruptible point between barriers, then the matching
- * I-cache range is invalidated before the task becomes runnable.
+ * text is the one CPU-to-I-cache ownership boundary. The common Cortex-M
+ * publisher derives the live line geometry and maintains only those lines,
+ * without an RTOS range API that may escalate to a whole-cache operation.
  */
-#define NUTTX_EXEC_PUBLISH_CHUNK 1024u
 static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t text_lo,
 				    size_t text_size)
 {
@@ -609,20 +604,12 @@ static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t te
 		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
 	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
-	if (text_lo < region_lo || text_lo >= region_hi ||
-	    text_size > region_hi - text_lo)
+	if (text_lo < region_lo || text_lo >= region_hi || text_size > region_hi - text_lo)
 		return LXP_ERR_INVALID_PARAM;
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	uintptr_t text_hi = text_lo + text_size;
-	for (uintptr_t start = text_lo; start < text_hi;) {
-		uintptr_t end = text_hi - start > NUTTX_EXEC_PUBLISH_CHUNK
-					? start + NUTTX_EXEC_PUBLISH_CHUNK
-					: text_hi;
-		up_clean_dcache(start, end);
-		start = end;
-	}
-	up_invalidate_icache(text_lo, text_hi);
+	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, text_lo, text_size) != 0)
+		return LXP_ERR_INVALID_PARAM;
 #endif
 	return LXP_OK;
 }
@@ -630,8 +617,8 @@ static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t te
 static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 			      const lxp_guest_launch_t *launch)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || ridx < 0 ||
-	    ridx >= LXP_NREG || !launch || g_slots[sidx].pid >= 0)
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || ridx < 0 || ridx >= LXP_NREG ||
+	    !launch || g_slots[sidx].pid >= 0)
 		return -1;
 	lxp_memory_policy_t policy;
 	lxp_slot_ref_t slot = {
@@ -639,8 +626,7 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
-	    lxp_memory_policy_validate(&policy) != LXP_OK ||
-	    policy.address_space.index != ridx ||
+	    lxp_memory_policy_validate(&policy) != LXP_OK || policy.address_space.index != ridx ||
 	    policy.copied_text_executable != (uint8_t)(launch->copied_text_size != 0))
 		return -1;
 	if (spawn_task(sidx, launch->r[13]) != 0)
@@ -670,8 +656,7 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 	return 0;
 }
 
-static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx,
-			      lxp_spawn_resume_mode_t mode,
+static int nuttx_spawn_resume(int sidx, uint32_t generation, int ridx, lxp_spawn_resume_mode_t mode,
 			      const struct lxp_resume_ctx *ctx, long r0val)
 {
 	(void)ridx;
@@ -788,8 +773,7 @@ static int nuttx_abort_slot(int sidx, uint32_t generation)
 
 static int nuttx_park_slot(int sidx, uint32_t generation)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT ||
-	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
+	if (sidx < 0 || sidx >= LXP_NSLOT || !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
 	    g_slots[sidx].pid < 0 || g_slots[sidx].generation != generation)
 		return -1;
 	nxsched_suspend(&g_tcb[sidx].cmn);
@@ -822,8 +806,7 @@ static int nuttx_random_fill(void *buf, size_t len)
 		}
 		if (got < 0 && errno == EINTR)
 			continue;
-		int rc = (got < 0 && errno == EAGAIN) ? LXP_ERR_WOULD_BLOCK :
-							       LXP_ERR_BUS_ERROR;
+		int rc = (got < 0 && errno == EAGAIN) ? LXP_ERR_WOULD_BLOCK : LXP_ERR_BUS_ERROR;
 		memset(buf, 0, len);
 		return rc;
 	}
@@ -912,8 +895,8 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	size_t host_limit = guest_count < m ? m - guest_count : 0;
 	size_t local_n = 0;
 	size_t *written = n ? n : &local_n;
-	int rc = lxp_ove_thread_snapshot_read(&g_thread_snapshot, o, host_limit,
-					      written, slot_for_pid);
+	int rc = lxp_ove_thread_snapshot_read(&g_thread_snapshot, o, host_limit, written,
+					      slot_for_pid);
 	size_t raw_count = *written < host_limit ? *written : host_limit;
 	size_t count = 0;
 
@@ -1075,9 +1058,8 @@ static void lxp_mpu_init(void)
 #else
 	const uint32_t pool_srd = 0u;
 #endif
-	*mpu_rasr = (1u << 0) | (pool_sz << 1) | pool_srd |
-		    (NUTTX_POOL_TEXSCB << 16) | (0x1u << 24) |
-		    (1u << 28); /* priv RW, unpriv NO */
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | pool_srd | (NUTTX_POOL_TEXSCB << 16) |
+		    (0x1u << 24) | (1u << 28); /* priv RW, unpriv NO */
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* Region 4: the QSPI NOR XIP window. The UNPRIVILEGED guest XIPs its FDPIC text in place
 	 * from 0x90000000 → unpriv RO + executable (XN=0), like the internal-flash code region 0.
@@ -1087,8 +1069,7 @@ static void lxp_mpu_init(void)
 	 * 4 survives every context switch. */
 	*mpu_rnr = 4;
 	*mpu_rbar = OVE_LXP_ROOTFS_BASE;
-	*mpu_rasr = (1u << 0) |
-		    (OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_ROOTFS_SIZE) << 1) |
+	*mpu_rasr = (1u << 0) | (OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_ROOTFS_SIZE) << 1) |
 		    (0x02u << 16) | (0x2u << 24);
 #elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 	/* Region 4: the same XIP window for the an500, where the cpio is staged in the bottom of
@@ -1105,8 +1086,7 @@ static void lxp_mpu_init(void)
 	 * unlike the STM32's NOR), RO so there is no coherence concern. */
 	*mpu_rnr = 4;
 	*mpu_rbar = OVE_LXP_ROOTFS_BASE;
-	*mpu_rasr = (1u << 0) |
-		    (OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_ROOTFS_SIZE) << 1) |
+	*mpu_rasr = (1u << 0) | (OVE_MPU_RASR_SIZE_FIELD(OVE_LXP_ROOTFS_SIZE) << 1) |
 		    (0x08u << 16) | (0x2u << 24);
 #endif
 	/* Device regions are per-slot and installed by lxp_note_resume(). Disable
@@ -1190,8 +1170,7 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 		const struct nuttx_device_map *map = &g_slots[sidx].device_maps[i];
 		if (!map->used)
 			continue;
-		if (caps >= policy->device_count ||
-		    policy->devices[caps].base != map->addr ||
+		if (caps >= policy->device_count || policy->devices[caps].base != map->addr ||
 		    policy->devices[caps].size != map->size ||
 		    policy->devices[caps].attrs != map->attrs)
 			return -1;
@@ -1311,6 +1290,10 @@ static bool g_lxp_note_registered;
  * g_lxp_host_engine.prepare()/.teardown() around the internal run loop. */
 static int nuttx_prepare(void)
 {
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	if (ove_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
+		return -1;
+#endif
 	g_irq_install_mask = 0;
 	memset(g_slots, 0, sizeof(g_slots));
 	g_installed_policy_valid = 0;
@@ -1320,14 +1303,13 @@ static int nuttx_prepare(void)
 	if (nxsem_init(&g_ev, 0, 0) < 0)
 		return -1;
 	g_ev_initialized = true;
-	if (nuttx_attach_lxp_irq(LXP_IRQ_SVCALL, lxp_svc_handler,
-				 LXP_IRQ_INSTALLED_SVC) < 0 ||
-	    nuttx_attach_lxp_irq(LXP_IRQ_MEMFAULT, lxp_memfault_handler,
-				 LXP_IRQ_INSTALLED_MEM) < 0 ||
-	    nuttx_attach_lxp_irq(LXP_IRQ_BUSFAULT, lxp_memfault_handler,
-				 LXP_IRQ_INSTALLED_BUS) < 0 ||
-	    nuttx_attach_lxp_irq(LXP_IRQ_USGFAULT, lxp_memfault_handler,
-				 LXP_IRQ_INSTALLED_USAGE) < 0)
+	if (nuttx_attach_lxp_irq(LXP_IRQ_SVCALL, lxp_svc_handler, LXP_IRQ_INSTALLED_SVC) < 0 ||
+	    nuttx_attach_lxp_irq(LXP_IRQ_MEMFAULT, lxp_memfault_handler, LXP_IRQ_INSTALLED_MEM) <
+		    0 ||
+	    nuttx_attach_lxp_irq(LXP_IRQ_BUSFAULT, lxp_memfault_handler, LXP_IRQ_INSTALLED_BUS) <
+		    0 ||
+	    nuttx_attach_lxp_irq(LXP_IRQ_USGFAULT, lxp_memfault_handler, LXP_IRQ_INSTALLED_USAGE) <
+		    0)
 		return -1;
 	/* NuttX has no public note-driver unregister API. Register this static
 	 * driver once, then reset its per-run accounting state on every launch. */
@@ -1348,8 +1330,7 @@ static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared)
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
-	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK
-								 : LXP_ERR_INVALID_PARAM;
+	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK : LXP_ERR_INVALID_PARAM;
 #endif
 }
 

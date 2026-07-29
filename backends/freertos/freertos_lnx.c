@@ -34,9 +34,10 @@
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
-#include "ove/time.h"	     /* ove_time_get_us/ns -> engine time_us/time_ns ops */
-#include "ove/thread.h"	     /* ove_thread_list -> engine thread_list op */
+#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
+#include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
+#include "ove_cortex_m_cache.h"
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "bsp.h"       /* bsp_random_fill -> hardware-backed guest entropy */
@@ -111,6 +112,9 @@ _Static_assert(sizeof(struct lxp_ext_storage) <= OVE_LXP_GUEST_POOL_SIZE,
 #define g_thread_snapshot (g_lxp_ext_storage.thread_snapshot)
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #define g_netfs_exec_stage (g_lxp_ext_storage.netfs_exec_stage)
+#endif
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
 #endif
 struct freertos_prepared_profile {
 	lxp_memory_policy_key_t key;
@@ -195,8 +199,7 @@ void ove_freertos_lxp_tick(void)
 		budget_ticks = 0;
 	}
 	uint32_t quantum_ticks =
-		((uint32_t)CONFIG_OVE_LINUX_GUEST_QUANTUM_MS *
-			 (uint32_t)configTICK_RATE_HZ +
+		((uint32_t)CONFIG_OVE_LINUX_GUEST_QUANTUM_MS * (uint32_t)configTICK_RATE_HZ +
 		 999u) /
 		1000u;
 	if (quantum_ticks == 0)
@@ -619,8 +622,7 @@ static struct resume_desc *stash_desc(int sidx, const struct lxp_resume_ctx *ctx
 
 /* Exception-side half of the persistent handoff. The descriptor remains in the
  * task's user-readable bootstrap-stack MPU region while it is suspended. */
-static void *freertos_park_prepare(int sidx, uint32_t generation,
-				   const struct lxp_resume_ctx *ctx)
+static void *freertos_park_prepare(int sidx, uint32_t generation, const struct lxp_resume_ctx *ctx)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].tid ||
 	    g_slots[sidx].generation != generation)
@@ -671,8 +673,8 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
-	    lxp_memory_policy_validate(&policy) != LXP_OK ||
-	    policy.address_space.index != ridx || policy.device_count != 0)
+	    lxp_memory_policy_validate(&policy) != LXP_OK || policy.address_space.index != ridx ||
+	    policy.device_count != 0)
 		return -1;
 	struct freertos_prepared_profile *prepared = &g_slots[sidx].profile;
 	if (prepared->valid && lxp_memory_policy_matches_key(&policy, &prepared->key))
@@ -728,8 +730,7 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 
 /* Spawn a RESTRICTED, UNPRIVILEGED task whose only RW regions are its program
  * region and dynamic pool. Ordinary code XIPs from a separate RO+X window. */
-static int freertos_spawn_common(int sidx, uint32_t generation, int ridx,
-				 struct resume_desc *desc)
+static int freertos_spawn_common(int sidx, uint32_t generation, int ridx, struct resume_desc *desc)
 {
 	char nm[6];
 	slot_task_name(nm, sidx); /* diagnostic only; attribution uses the task handle */
@@ -774,8 +775,7 @@ static lxp_exec_capture_t *freertos_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
-static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t base,
-				       size_t len)
+static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t base, size_t len)
 {
 	int ridx = address_space.index;
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
@@ -785,18 +785,8 @@ static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t
 	if (base < region_lo || base >= region_hi || len > region_hi - base)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* Preserve the existing publication mechanics while moving their ordering
-	 * into the explicit LXP port boundary. A bounded range-only implementation
-	 * replaces this whole-address-space maintenance in the next iteration. */
-	if (SCB->CCR & SCB_CCR_DC_Msk) {
-		SCB_CleanInvalidateDCache_by_Addr((void *)prog_regions[ridx],
-						  (int32_t)LXP_PROG_REGION_SIZE);
-		SCB_CleanInvalidateDCache_by_Addr((void *)dyn_pools[ridx],
-						  (int32_t)LXP_DYN_POOL_SIZE);
-	}
-	SCB_InvalidateICache();
-	__DSB();
-	__ISB();
+	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
+		return LXP_ERR_INVALID_PARAM;
 #endif
 	return LXP_OK;
 }
@@ -820,8 +810,8 @@ static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 }
 
 static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
-				  lxp_spawn_resume_mode_t mode,
-				  const struct lxp_resume_ctx *ctx, long r0val)
+				 lxp_spawn_resume_mode_t mode, const struct lxp_resume_ctx *ctx,
+				 long r0val)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
@@ -981,8 +971,7 @@ static int freertos_abort_slot(int sidx, uint32_t generation)
 
 static int freertos_park_slot(int sidx, uint32_t generation)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT ||
-	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
+	if (sidx < 0 || sidx >= LXP_NSLOT || !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
 	    !g_slots[sidx].tid || g_slots[sidx].generation != generation)
 		return -1;
 	vTaskSuspend(g_slots[sidx].tid);
@@ -1033,11 +1022,10 @@ static int32_t slot_for_thread(uintptr_t identity)
 	return LXP_THREAD_SLOT_NONE;
 }
 
-static int lxp_seam_thread_list(struct lxp_thread_info *out, size_t max_count,
-				size_t *actual_count)
+static int lxp_seam_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count)
 {
-	return lxp_ove_thread_snapshot_read(&g_thread_snapshot, out, max_count,
-					    actual_count, slot_for_thread);
+	return lxp_ove_thread_snapshot_read(&g_thread_snapshot, out, max_count, actual_count,
+					    slot_for_thread);
 }
 
 static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
@@ -1091,11 +1079,14 @@ static int freertos_random_fill(void *buf, size_t len)
  * lxp_run() via g_lxp_host_engine.prepare before the run loop. */
 static int freertos_prepare(void)
 {
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	if (ove_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
+		return -1;
+#endif
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	const uintptr_t storage_base = (uintptr_t)&g_lxp_ext_storage;
 	const uintptr_t storage_end = storage_base + sizeof(g_lxp_ext_storage);
-	if (storage_base < OVE_LXP_GUEST_POOL_BASE ||
-	    storage_end > OVE_LXP_GUEST_POOL_END)
+	if (storage_base < OVE_LXP_GUEST_POOL_BASE || storage_end > OVE_LXP_GUEST_POOL_END)
 		return -1;
 #endif
 	if (!g_ev)
@@ -1120,8 +1111,7 @@ static int freertos_validate_memory_model(lxp_cpu_memory_model_t declared)
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
-	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK
-								 : LXP_ERR_INVALID_PARAM;
+	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK : LXP_ERR_INVALID_PARAM;
 #endif
 }
 
