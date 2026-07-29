@@ -622,8 +622,7 @@ static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t te
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || text_size == 0)
 		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
-	if (text_lo != region_lo || text_size < 32u || text_size >= LXP_PROG_REGION_SIZE ||
-	    (text_size & (text_size - 1u)) != 0u)
+	if (text_lo != region_lo || text_size != LXP_PROG_REGION_SIZE / 2u)
 		return LXP_ERR_INVALID_PARAM;
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -1027,10 +1026,10 @@ const lxp_os_ops_t g_lxp_host_engine = {
  *   region 0 = code (flash/ROM): unprivileged RO + executable (XN=0) — the shared FDPIC text runs
  *              in-place from the embedded cpio here, and the contained-fault park entry lives here;
  *   region 1 = privileged-only Normal-memory base for coordinator access to the complete pool;
- *   regions 2/3 = the running address space's program and dynamic pools;
+ *   regions 2/3 = the running address space's writable program half and dynamic pool;
  *   region 4 = optional shared QSPI rootfs, user RO + executable;
  *   regions 5/6 = driver-originated device capabilities for the running slot;
- *   region 7 = optional exact copied-text prefix, user RO + executable.
+ *   region 7 = optional copied-text lower half, user RO + executable.
  * Everything else — kernel .data/.bss/heap, peripherals — is ungranted, so an unprivileged access
  * to it faults. NuttX leaves the MPU disabled in FLAT, so we own it (raw registers; arm_mpu.c is
  * not compiled). */
@@ -1184,8 +1183,17 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 
 	int ridx = policy->address_space.index;
 	memset(prepared, 0, sizeof(*prepared));
-	prepared->rbar[0] = (uint32_t)(uintptr_t)prog_regions[ridx];
-	prepared->rasr[0] = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_PROG_REGION_SIZE) |
+	uintptr_t program_base = (uintptr_t)prog_regions[ridx];
+	size_t writable_size = LXP_PROG_REGION_SIZE;
+	if (policy->copied_text_executable) {
+		if (policy->copied_text_base != program_base ||
+		    policy->copied_text_size != LXP_PROG_REGION_SIZE / 2u)
+			return -1;
+		program_base += policy->copied_text_size;
+		writable_size -= policy->copied_text_size;
+	}
+	prepared->rbar[0] = (uint32_t)program_base;
+	prepared->rasr[0] = (1u << 0) | OVE_MPU_RASR_SIZE(writable_size) |
 			    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) | (1u << 28);
 	prepared->rbar[1] = (uint32_t)(uintptr_t)dyn_pools[ridx];
 	prepared->rasr[1] = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_DYN_POOL_SIZE) |
@@ -1207,10 +1215,6 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 	if (caps != policy->device_count)
 		return -1;
 	if (policy->copied_text_executable) {
-		uintptr_t program = (uintptr_t)prog_regions[ridx];
-		if (policy->copied_text_base != program || policy->copied_text_size == 0u ||
-		    policy->copied_text_size >= LXP_PROG_REGION_SIZE)
-			return -1;
 		prepared->rbar[4] = (uint32_t)policy->copied_text_base;
 		/* The global profile remains installed while privileged coordinator
 		 * code runs. AP=2 therefore keeps privileged write access for a later
@@ -1220,8 +1224,8 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 	}
 
 	const struct ove_cortex_m_mpu_expectation program = {
-		.base = (uintptr_t)prog_regions[ridx],
-		.size = LXP_PROG_REGION_SIZE,
+		.base = program_base,
+		.size = writable_size,
 		.texscb = NUTTX_POOL_TEXSCB,
 		.access = 3u,
 		.execute_never = 1u,
@@ -1303,37 +1307,10 @@ static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepa
 		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region[i]],
 								 &expected))
 			return 0;
-		/* Arena and copied-text mappings must also win over every other
+		/* Program, arena, and copied-text mappings must also win over every other
 		 * descriptor, not merely exist at their expected region numbers. */
-		if ((i == 1u || i == 4u) &&
+		if ((i == 0u || i == 1u || i == 4u) &&
 		    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
-			return 0;
-	}
-	if (prepared->key.copied_text_executable) {
-		uintptr_t program = prepared->rbar[0];
-		uintptr_t tail = prepared->key.copied_text_base + prepared->key.copied_text_size;
-		const struct ove_cortex_m_mpu_expectation writable_tail = {
-			.base = tail,
-			.size = program + LXP_PROG_REGION_SIZE - tail,
-			.texscb = NUTTX_POOL_TEXSCB,
-			.access = 3u,
-			.execute_never = 1u,
-		};
-		if (!ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &writable_tail))
-			return 0;
-	} else {
-		struct ove_cortex_m_mpu_region native;
-		if (ove_cortex_m_mpu_region_decode(prepared->rbar[0], prepared->rasr[0], &native) !=
-		    0)
-			return 0;
-		const struct ove_cortex_m_mpu_expectation program = {
-			.base = native.base,
-			.size = native.size,
-			.texscb = native.texscb,
-			.access = native.access,
-			.execute_never = native.execute_never,
-		};
-		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program))
 			return 0;
 	}
 	return 1;
