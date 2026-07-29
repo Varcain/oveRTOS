@@ -299,6 +299,8 @@ static struct nuttx_lxp_slot g_slots[LXP_NSLOT];
 /* NuttX owns the opaque task control blocks and stacks; the seam owns g_slots. */
 static lxp_memory_policy_key_t g_installed_policy;
 static uint8_t g_installed_policy_valid;
+static void nuttx_park_entry(void *token);
+static int nuttx_profile_is_current(int sidx);
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
@@ -364,6 +366,16 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	 * exception-return from a stale/NULL xcp.regs and crash. Re-assert the
 	 * running task's saved-regs pointer so the return replays OUR frame. */
 	lxp_running_tcb()->xcp.regs = regs;
+	if (!nuttx_profile_is_current(sidx)) {
+		lxp_guest_fault_t fault = {
+			.detail = OVE_LXP_MPU_PROFILE_FAULT,
+			.address = 0u,
+		};
+		(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
+		regs[REG_PC] = (uint32_t)(uintptr_t)&nuttx_park_entry & ~1u;
+		regs[REG_XPSR] |= (1u << 24);
+		return 0;
+	}
 
 	/* Populate the uniform frame, dispatch, write the modified HW regs back. */
 	struct lxp_frame f;
@@ -967,8 +979,7 @@ static const char *lxp_seam_system_version(void)
  * the module's lxp_run() invokes them via g_lxp_host_engine.prepare/.teardown. */
 static int nuttx_prepare(void);
 static void nuttx_teardown(void);
-static int
-nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared);
+static int nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared);
 
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
@@ -1193,18 +1204,94 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 	}
 	if (caps != policy->device_count)
 		return -1;
+
+	const struct ove_cortex_m_mpu_expectation program = {
+		.base = (uintptr_t)prog_regions[ridx],
+		.size = LXP_PROG_REGION_SIZE,
+		.texscb = NUTTX_POOL_TEXSCB,
+		.access = 3u,
+		.execute_never = policy->copied_text_executable ? 0u : 1u,
+	};
+	const struct ove_cortex_m_mpu_expectation dynamic = {
+		.base = (uintptr_t)dyn_pools[ridx],
+		.size = LXP_DYN_POOL_SIZE,
+		.texscb = NUTTX_POOL_TEXSCB,
+		.access = 3u,
+		.execute_never = 1u,
+	};
+	if (!ove_cortex_m_mpu_descriptor_matches(prepared->rbar[0], prepared->rasr[0], &program) ||
+	    !ove_cortex_m_mpu_descriptor_matches(prepared->rbar[1], prepared->rasr[1], &dynamic))
+		return -1;
+	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
+		const struct nuttx_device_map *map = &g_slots[sidx].device_maps[i];
+		if (!map->used) {
+			if (prepared->rasr[2u + i] != 0u)
+				return -1;
+			continue;
+		}
+		struct ove_cortex_m_mpu_region native;
+		uint8_t texscb = map->attrs == LXP_MAP_WT    ? 0x02u
+				 : map->attrs == LXP_MAP_DEV ? 0x01u
+							     : 0x08u;
+		if (ove_cortex_m_mpu_region_decode(prepared->rbar[2u + i], prepared->rasr[2u + i],
+						   &native) != 0 ||
+		    native.texscb != texscb || native.access != 3u || native.execute_never != 1u ||
+		    !ove_cortex_m_mpu_region_contains(&native, map->addr, map->size))
+			return -1;
+	}
 	prepared->key = lxp_memory_policy_make_key(policy);
 	prepared->valid = 1u;
 	return 0;
 }
 
-static void nuttx_install_profile(const struct nuttx_prepared_profile *prepared)
+static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepared)
+{
+	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
+	struct ove_cortex_m_mpu_snapshot snapshot;
+	if (!prepared || !prepared->valid || ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    !(snapshot.ctrl & OVE_CORTEX_M_MPU_CTRL_ENABLE))
+		return 0;
+
+	for (unsigned i = 0; i < LXP_NATIVE_POLICY_REGIONS; i++) {
+		if (region[i] >= snapshot.count)
+			return 0;
+		if (prepared->rasr[i] == 0u) {
+			if (snapshot.regions[region[i]].enabled)
+				return 0;
+			continue;
+		}
+		struct ove_cortex_m_mpu_region native;
+		if (ove_cortex_m_mpu_region_decode(prepared->rbar[i], prepared->rasr[i], &native) !=
+		    0)
+			return 0;
+		const struct ove_cortex_m_mpu_expectation expected = {
+			.base = native.base,
+			.size = native.size,
+			.subregion_disable = native.subregion_disable,
+			.texscb = native.texscb,
+			.access = native.access,
+			.execute_never = native.execute_never,
+		};
+		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region[i]],
+								 &expected))
+			return 0;
+		/* Program and arena mappings must also win over every static/device
+		 * overlay, not merely exist at their expected region numbers. */
+		if (i < 2u && !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+			return 0;
+	}
+	return 1;
+}
+
+static int nuttx_install_profile(const struct nuttx_prepared_profile *prepared)
 {
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
 	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
 
+	if (!prepared || !prepared->valid)
+		return -1;
 	for (unsigned i = 0; i < LXP_NATIVE_POLICY_REGIONS; i++) {
 		*mpu_rnr = region[i];
 		if (prepared->rasr[i]) {
@@ -1216,8 +1303,11 @@ static void nuttx_install_profile(const struct nuttx_prepared_profile *prepared)
 	}
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
+	if (!nuttx_profile_live_matches(prepared))
+		return -1;
 	g_installed_policy = prepared->key;
 	g_installed_policy_valid = 1u;
+	return 0;
 }
 
 /* A policy snapshot/compile failure must not leave the previous guest's
@@ -1237,6 +1327,21 @@ static void nuttx_disable_dynamic_regions(void)
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
 	g_installed_policy_valid = 0u;
+}
+
+static int nuttx_profile_is_current(int sidx)
+{
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].profile.valid ||
+	    !g_installed_policy_valid)
+		return 0;
+	const lxp_memory_policy_key_t *prepared = &g_slots[sidx].profile.key;
+	lxp_slot_ref_t slot = task_slot_ref(sidx);
+	return lxp_slot_ref_equal(prepared->slot, slot) &&
+	       lxp_slot_ref_equal(g_installed_policy.slot, slot) &&
+	       lxp_region_ref_equal(prepared->address_space, g_installed_policy.address_space) &&
+	       prepared->device_generation == g_installed_policy.device_generation &&
+	       prepared->exec_generation == g_installed_policy.exec_generation &&
+	       prepared->copied_text_executable == g_installed_policy.copied_text_executable;
 }
 
 /* Note-driver resume hook — fires on EVERY switch TO a task (sched_note_resume, in
@@ -1281,8 +1386,10 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 				return;
 			}
 			if (!g_installed_policy_valid ||
-			    !lxp_memory_policy_matches_key(&policy, &g_installed_policy))
-				nuttx_install_profile(&g_slots[i].profile);
+			    !lxp_memory_policy_matches_key(&policy, &g_installed_policy)) {
+				if (nuttx_install_profile(&g_slots[i].profile) != 0)
+					nuttx_disable_dynamic_regions();
+			}
 			return;
 		}
 	}
@@ -1335,26 +1442,23 @@ static int nuttx_prepare(void)
 	return 0;
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int nuttx_validate_static_mpu(void)
 {
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	struct ove_cortex_m_mpu_snapshot snapshot;
 	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
-	    (snapshot.ctrl &
-	     (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
 		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
 	const struct ove_cortex_m_mpu_region *pool = &snapshot.regions[1];
-	return ove_cortex_m_mpu_region_matches(pool, 0xc0000000u, 8u * 1024u * 1024u,
-					       1u, 0x0bu, 1u, 1u) &&
+	return ove_cortex_m_mpu_region_matches(pool, 0xc0000000u, 8u * 1024u * 1024u, 1u, 0x0bu, 1u,
+					       1u) &&
 	       ove_cortex_m_mpu_region_contains(pool, OVE_LXP_GUEST_POOL_BASE,
 						OVE_LXP_GUEST_POOL_SIZE) &&
 	       !ove_cortex_m_mpu_region_overlaps_enabled(pool, 0xc0000000u, 1024u * 1024u);
-#else
-	return 1;
-#endif
 }
+#endif
 
 static int nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {

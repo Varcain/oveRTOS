@@ -126,6 +126,9 @@ static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
 struct freertos_prepared_profile {
 	lxp_memory_policy_key_t key;
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
+	uint32_t native_rbar[portNUM_CONFIGURABLE_REGIONS];
+	uint32_t native_rasr[portNUM_CONFIGURABLE_REGIONS];
+	uint8_t live_validated;
 	uint8_t valid;
 };
 struct resume_desc;
@@ -138,6 +141,8 @@ struct freertos_lxp_slot {
 static struct freertos_lxp_slot g_slots[LXP_NSLOT];
 /* FreeRTOS owns the opaque task control-block storage; the seam owns g_slots. */
 static StaticTask_t g_tcb[LXP_NSLOT];
+static void freertos_park_entry(void *token);
+static int freertos_validate_active_profile(int sidx);
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
@@ -260,6 +265,16 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	int sidx = current_slot();
 	if (sidx < 0)
 		return 0; /* not a program task → forward to FreeRTOS */
+	if (!freertos_validate_active_profile(sidx)) {
+		lxp_guest_fault_t fault = {
+			.detail = OVE_LXP_MPU_PROFILE_FAULT,
+			.address = 0u,
+		};
+		(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
+		g->hw[6] = ((uint32_t)&freertos_park_entry) & ~1u;
+		g->hw[7] |= (1u << 24);
+		return 1;
+	}
 	struct lxp_frame f;
 	memset(&f, 0, sizeof(f));
 	uint32_t fp_frame_bytes = 0;
@@ -735,6 +750,89 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 	return 0;
 }
 
+static int freertos_capture_native_profile(int sidx)
+{
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].tid || !g_slots[sidx].profile.valid)
+		return 0;
+	struct freertos_prepared_profile *prepared = &g_slots[sidx].profile;
+	const xMPU_SETTINGS *settings = xTaskGetMPUSettings(g_slots[sidx].tid);
+	if (!settings)
+		return 0;
+
+	for (unsigned i = 0; i < portNUM_CONFIGURABLE_REGIONS; i++) {
+		const MemoryRegion_t *logical = &prepared->regions[i];
+		uint32_t rbar = settings->xRegion[i + 1u].ulRegionBaseAddress;
+		uint32_t rasr = settings->xRegion[i + 1u].ulRegionAttribute;
+		struct ove_cortex_m_mpu_region native;
+		if (ove_cortex_m_mpu_region_decode(rbar, rasr, &native) != 0)
+			return 0;
+		if (logical->ulLengthInBytes == 0u) {
+			if (native.enabled)
+				return 0;
+		} else {
+			const struct ove_cortex_m_mpu_expectation expected = {
+				.base = (uintptr_t)logical->pvBaseAddress,
+				.size = logical->ulLengthInBytes,
+				.texscb = (uint8_t)((logical->ulParameters >> 16) & 0x3fu),
+				.access = (uint8_t)((logical->ulParameters >> 24) & 0x7u),
+				.execute_never = (uint8_t)((logical->ulParameters >> 28) & 1u),
+			};
+			if (!ove_cortex_m_mpu_region_matches_expectation(&native, &expected))
+				return 0;
+		}
+		prepared->native_rbar[i] = rbar;
+		prepared->native_rasr[i] = rasr;
+	}
+	prepared->live_validated = 0u;
+	return 1;
+}
+
+static int freertos_validate_active_profile(int sidx)
+{
+	if (sidx < 0 || sidx >= LXP_NSLOT)
+		return 0;
+	struct freertos_prepared_profile *prepared = &g_slots[sidx].profile;
+	lxp_slot_ref_t slot = task_slot_ref(sidx);
+	if (!prepared->valid || !lxp_slot_ref_equal(prepared->key.slot, slot))
+		return 0;
+	if (prepared->live_validated)
+		return 1;
+
+	struct ove_cortex_m_mpu_snapshot snapshot;
+	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+		return 0;
+	for (unsigned i = 0; i < portNUM_CONFIGURABLE_REGIONS; i++) {
+		unsigned region = portFIRST_CONFIGURABLE_REGION + i;
+		if (region >= snapshot.count)
+			return 0;
+		if (prepared->native_rasr[i] == 0u) {
+			if (snapshot.regions[region].enabled)
+				return 0;
+			continue;
+		}
+		struct ove_cortex_m_mpu_region native;
+		if (ove_cortex_m_mpu_region_decode(prepared->native_rbar[i],
+						   prepared->native_rasr[i], &native) != 0)
+			return 0;
+		const struct ove_cortex_m_mpu_expectation expected = {
+			.base = native.base,
+			.size = native.size,
+			.subregion_disable = native.subregion_disable,
+			.texscb = native.texscb,
+			.access = native.access,
+			.execute_never = native.execute_never,
+		};
+		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region],
+								 &expected) ||
+		    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+			return 0;
+	}
+	prepared->live_validated = 1u;
+	return 1;
+}
+
 /* Spawn a RESTRICTED, UNPRIVILEGED task whose only RW regions are its program
  * region and dynamic pool. Ordinary code XIPs from a separate RO+X window. */
 static int freertos_spawn_common(int sidx, uint32_t generation, int ridx, struct resume_desc *desc)
@@ -759,9 +857,21 @@ static int freertos_spawn_common(int sidx, uint32_t generation, int ridx, struct
 	 * slot against the core's already-published runnable capability. */
 	g_slots[sidx].generation = generation;
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_slots[sidx].tid);
-	if (ok != pdPASS)
+	if (ok != pdPASS) {
 		g_slots[sidx].generation = 0;
-	return (ok == pdPASS) ? 0 : -1;
+		return -1;
+	}
+	/* The coordinator outranks SLOT_PRIO, so the new task cannot execute before
+	 * this native TCB readback validates the port's logical-to-PMSAv7
+	 * translation. The first guest SVC separately validates the live install. */
+	if (!freertos_capture_native_profile(sidx)) {
+		vTaskDelete(g_slots[sidx].tid);
+		g_slots[sidx].tid = NULL;
+		g_slots[sidx].generation = 0;
+		g_slots[sidx].profile.valid = 0;
+		return -1;
+	}
+	return 0;
 }
 
 /* ---- the vtable: FreeRTOS task spawn --------------------------------------- */
@@ -826,6 +936,11 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 	if (mode == LXP_SPAWN_RESUME_PARKED) {
 		if (!g_slots[sidx].tid || !d || g_slots[sidx].generation != generation)
 			return -1;
+		lxp_memory_policy_t policy;
+		if (!g_slots[sidx].profile.valid ||
+		    lxp_slot_memory_policy(task_slot_ref(sidx), &policy) != LXP_OK ||
+		    !lxp_memory_policy_matches_key(&policy, &g_slots[sidx].profile.key))
+			return -1;
 		d->r0 = (uint32_t)r0val;
 		d->ctx = *ctx;
 		__atomic_store_n(&d->ready, 1u, __ATOMIC_RELEASE);
@@ -835,6 +950,7 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 		diag->last_desc = (uint32_t)(uintptr_t)d;
 		diag->last_ridx = (uint32_t)ridx;
 		diag->last_kind = 3u;
+		g_slots[sidx].profile.live_validated = 0u;
 		vTaskResume(g_slots[sidx].tid);
 		return 0;
 	}
@@ -1110,14 +1226,13 @@ static int freertos_prepare(void)
 	return 0;
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int freertos_validate_static_mpu(void)
 {
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	struct ove_cortex_m_mpu_snapshot snapshot;
 	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
 	    snapshot.count != configTOTAL_MPU_REGIONS ||
-	    (snapshot.ctrl &
-	     (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
 		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
@@ -1125,8 +1240,7 @@ static int freertos_validate_static_mpu(void)
 	const size_t framebuffer_size = 480u * 272u * 2u;
 	const uintptr_t storage_base = (uintptr_t)&g_lxp_ext_storage;
 	const size_t storage_size = sizeof(g_lxp_ext_storage);
-	if (storage_base < framebuffer_base + framebuffer_size ||
-	    storage_base > 0xc07ff800u ||
+	if (storage_base < framebuffer_base + framebuffer_size || storage_base > 0xc07ff800u ||
 	    storage_size > 0xc07ff800u - storage_base)
 		return 0;
 
@@ -1134,17 +1248,14 @@ static int freertos_validate_static_mpu(void)
 	 * Pools and framebuffer must fall through to the background map until
 	 * coord_map installs its two exact per-address-space WBWA overlays. */
 	for (unsigned i = 0; i < snapshot.count; i++)
-		if (ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i],
-							     framebuffer_base,
+		if (ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], framebuffer_base,
 							     framebuffer_size) ||
 		    ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], storage_base,
 							     storage_size))
 			return 0;
 	return 1;
-#else
-	return 1;
-#endif
 }
+#endif
 
 static int freertos_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {

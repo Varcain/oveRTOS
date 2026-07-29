@@ -16,6 +16,7 @@
 #define OVE_CORTEX_M_MPU_MAX_REGIONS 16u
 #define OVE_CORTEX_M_MPU_CTRL_ENABLE (1u << 0)
 #define OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA (1u << 2)
+#define OVE_LXP_MPU_PROFILE_FAULT UINT32_C(0x4d505546) /* "MPUF" */
 
 struct ove_cortex_m_mpu_region {
 	uint32_t rbar;
@@ -33,6 +34,15 @@ struct ove_cortex_m_mpu_snapshot {
 	uint32_t ctrl;
 	uint8_t count;
 	struct ove_cortex_m_mpu_region regions[OVE_CORTEX_M_MPU_MAX_REGIONS];
+};
+
+struct ove_cortex_m_mpu_expectation {
+	uintptr_t base;
+	uint64_t size;
+	uint8_t subregion_disable;
+	uint8_t texscb;
+	uint8_t access;
+	uint8_t execute_never;
 };
 
 static inline int ove_cortex_m_mpu_region_decode(uint32_t rbar, uint32_t rasr,
@@ -65,11 +75,10 @@ static inline int ove_cortex_m_mpu_region_decode(uint32_t rbar, uint32_t rasr,
 	return 0;
 }
 
-static inline int ove_cortex_m_mpu_region_contains(
-	const struct ove_cortex_m_mpu_region *region, uintptr_t base, size_t len)
+static inline int ove_cortex_m_mpu_region_contains(const struct ove_cortex_m_mpu_region *region,
+						   uintptr_t base, size_t len)
 {
-	if (!region || !region->enabled || len == 0u ||
-	    (uint64_t)base + len > UINT64_C(1) << 32)
+	if (!region || !region->enabled || len == 0u || (uint64_t)base + len > UINT64_C(1) << 32)
 		return 0;
 
 	uint64_t first = base;
@@ -90,11 +99,11 @@ static inline int ove_cortex_m_mpu_region_contains(
 	return 1;
 }
 
-static inline int ove_cortex_m_mpu_region_overlaps_enabled(
-	const struct ove_cortex_m_mpu_region *region, uintptr_t base, size_t len)
+static inline int
+ove_cortex_m_mpu_region_overlaps_enabled(const struct ove_cortex_m_mpu_region *region,
+					 uintptr_t base, size_t len)
 {
-	if (!region || !region->enabled || len == 0u ||
-	    (uint64_t)base + len > UINT64_C(1) << 32)
+	if (!region || !region->enabled || len == 0u || (uint64_t)base + len > UINT64_C(1) << 32)
 		return 0;
 
 	uint64_t first = base;
@@ -118,13 +127,58 @@ static inline int ove_cortex_m_mpu_region_overlaps_enabled(
 	return 0;
 }
 
-static inline int ove_cortex_m_mpu_region_matches(
-	const struct ove_cortex_m_mpu_region *region, uintptr_t base, uint64_t size,
-	uint8_t subregion_disable, uint8_t texscb, uint8_t access, uint8_t execute_never)
+static inline int ove_cortex_m_mpu_region_matches(const struct ove_cortex_m_mpu_region *region,
+						  uintptr_t base, uint64_t size,
+						  uint8_t subregion_disable, uint8_t texscb,
+						  uint8_t access, uint8_t execute_never)
 {
 	return region && region->enabled && region->base == base && region->size == size &&
 	       region->subregion_disable == subregion_disable && region->texscb == texscb &&
 	       region->access == access && region->execute_never == execute_never;
+}
+
+static inline int
+ove_cortex_m_mpu_region_matches_expectation(const struct ove_cortex_m_mpu_region *region,
+					    const struct ove_cortex_m_mpu_expectation *expected)
+{
+	return expected &&
+	       ove_cortex_m_mpu_region_matches(region, expected->base, expected->size,
+					       expected->subregion_disable, expected->texscb,
+					       expected->access, expected->execute_never);
+}
+
+static inline int
+ove_cortex_m_mpu_descriptor_matches(uint32_t rbar, uint32_t rasr,
+				    const struct ove_cortex_m_mpu_expectation *expected)
+{
+	struct ove_cortex_m_mpu_region region;
+	return ove_cortex_m_mpu_region_decode(rbar, rasr, &region) == 0 &&
+	       ove_cortex_m_mpu_region_matches_expectation(&region, expected);
+}
+
+/*
+ * Require @p expected to be the effective mapping over its complete range.
+ * PMSAv7 resolves overlaps in favour of the highest-numbered region, so the
+ * first overlapping region found while walking down must be the exact expected
+ * descriptor. This rejects a correct-looking lower descriptor hidden by a
+ * stale or accidentally broader higher-priority overlay.
+ */
+static inline int
+ove_cortex_m_mpu_snapshot_effective_matches(const struct ove_cortex_m_mpu_snapshot *snapshot,
+					    const struct ove_cortex_m_mpu_expectation *expected)
+{
+	if (!snapshot || !expected || expected->size == 0u || snapshot->count == 0u ||
+	    snapshot->count > OVE_CORTEX_M_MPU_MAX_REGIONS || expected->size > SIZE_MAX)
+		return 0;
+
+	for (unsigned i = snapshot->count; i > 0u; i--) {
+		const struct ove_cortex_m_mpu_region *region = &snapshot->regions[i - 1u];
+		if (!ove_cortex_m_mpu_region_overlaps_enabled(region, expected->base,
+							      (size_t)expected->size))
+			continue;
+		return ove_cortex_m_mpu_region_matches_expectation(region, expected);
+	}
+	return 0;
 }
 
 #if defined(__arm__) || defined(__thumb__)

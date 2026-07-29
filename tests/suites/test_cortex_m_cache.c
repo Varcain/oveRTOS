@@ -78,8 +78,8 @@ static void test_line_span_rejects_invalid_ranges(void **state)
 	assert_int_equal(ove_cortex_m_cache_line_span(0u, 1u, 32u, NULL), -1);
 }
 
-static uint32_t rasr(unsigned log2_size, uint8_t subregions, uint8_t texscb,
-		     uint8_t access, uint8_t execute_never)
+static uint32_t rasr(unsigned log2_size, uint8_t subregions, uint8_t texscb, uint8_t access,
+		     uint8_t execute_never)
 {
 	return 1u | ((log2_size - 1u) << 1) | ((uint32_t)subregions << 8) |
 	       ((uint32_t)texscb << 16) | ((uint32_t)access << 24) |
@@ -91,39 +91,33 @@ static void test_mpu_region_decode_and_match(void **state)
 	(void)state;
 	struct ove_cortex_m_mpu_region region;
 
-	assert_int_equal(
-		ove_cortex_m_mpu_region_decode(0xc0000001u, rasr(23u, 1u, 0x0bu, 1u, 1u),
-					       &region),
-		0);
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0xc0000001u, rasr(23u, 1u, 0x0bu, 1u, 1u),
+							&region),
+			 0);
 	assert_int_equal(region.base, 0xc0000000u);
 	assert_int_equal(region.size, 8u * 1024u * 1024u);
 	assert_int_equal(region.subregion_disable, 1u);
 	assert_int_equal(region.texscb, 0x0bu);
 	assert_int_equal(region.access, 1u);
 	assert_int_equal(region.execute_never, 1u);
-	assert_true(ove_cortex_m_mpu_region_matches(&region, 0xc0000000u,
-						    8u * 1024u * 1024u, 1u, 0x0bu,
-						    1u, 1u));
-	assert_false(ove_cortex_m_mpu_region_matches(&region, 0xc0000000u,
-						     8u * 1024u * 1024u, 0u, 0x0bu,
-						     1u, 1u));
+	assert_true(ove_cortex_m_mpu_region_matches(&region, 0xc0000000u, 8u * 1024u * 1024u, 1u,
+						    0x0bu, 1u, 1u));
+	assert_false(ove_cortex_m_mpu_region_matches(&region, 0xc0000000u, 8u * 1024u * 1024u, 0u,
+						     0x0bu, 1u, 1u));
 }
 
 static void test_mpu_subregion_ranges(void **state)
 {
 	(void)state;
 	struct ove_cortex_m_mpu_region region;
-	assert_int_equal(
-		ove_cortex_m_mpu_region_decode(0xc0000000u, rasr(23u, 1u, 0x0bu, 1u, 1u),
-					       &region),
-		0);
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0xc0000000u, rasr(23u, 1u, 0x0bu, 1u, 1u),
+							&region),
+			 0);
 
 	assert_false(ove_cortex_m_mpu_region_contains(&region, 0xc0000000u, 0x1000u));
-	assert_false(
-		ove_cortex_m_mpu_region_overlaps_enabled(&region, 0xc0000000u, 0x100000u));
+	assert_false(ove_cortex_m_mpu_region_overlaps_enabled(&region, 0xc0000000u, 0x100000u));
 	assert_true(ove_cortex_m_mpu_region_contains(&region, 0xc0100000u, 0x700000u));
-	assert_true(
-		ove_cortex_m_mpu_region_overlaps_enabled(&region, 0xc00ff000u, 0x2000u));
+	assert_true(ove_cortex_m_mpu_region_overlaps_enabled(&region, 0xc00ff000u, 0x2000u));
 	assert_false(ove_cortex_m_mpu_region_contains(&region, 0xc00ff000u, 0x2000u));
 }
 
@@ -137,6 +131,39 @@ static void test_mpu_rejects_invalid_descriptors_and_ranges(void **state)
 	assert_int_equal(ove_cortex_m_mpu_region_decode(0u, 0u, NULL), -1);
 }
 
+static void test_mpu_effective_mapping_rejects_higher_overlay(void **state)
+{
+	(void)state;
+	const struct ove_cortex_m_mpu_expectation expected = {
+		.base = 0xc0100000u,
+		.size = 256u * 1024u,
+		.texscb = 0x0bu,
+		.access = 3u,
+		.execute_never = 1u,
+	};
+	struct ove_cortex_m_mpu_snapshot snapshot = {
+		.ctrl = OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA,
+		.count = 8u,
+	};
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0xc0100000u, rasr(18u, 0u, 0x0bu, 3u, 1u),
+							&snapshot.regions[2]),
+			 0);
+	assert_true(ove_cortex_m_mpu_descriptor_matches(0xc0100000u, rasr(18u, 0u, 0x0bu, 3u, 1u),
+							&expected));
+	assert_true(ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected));
+
+	/* A higher-numbered stale region wins even though region 2 still looks right. */
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0xc0100000u, rasr(18u, 0u, 0x08u, 3u, 1u),
+							&snapshot.regions[5]),
+			 0);
+	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected));
+	snapshot.regions[5].enabled = 0u;
+	assert_true(ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected));
+
+	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(NULL, &expected));
+	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, NULL));
+}
+
 int test_cortex_m_cache_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -147,6 +174,7 @@ int test_cortex_m_cache_run(void)
 		cmocka_unit_test(test_mpu_region_decode_and_match),
 		cmocka_unit_test(test_mpu_subregion_ranges),
 		cmocka_unit_test(test_mpu_rejects_invalid_descriptors_and_ranges),
+		cmocka_unit_test(test_mpu_effective_mapping_rejects_higher_overlay),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

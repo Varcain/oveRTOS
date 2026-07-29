@@ -194,12 +194,15 @@ struct zephyr_lxp_slot {
 	k_tid_t tid;
 	uint32_t generation;
 	lxp_memory_policy_key_t policy;
+	uint8_t live_validated;
 	uint8_t policy_valid;
 };
 static struct zephyr_lxp_slot g_slots[LXP_NSLOT];
 /* Zephyr owns the opaque thread and stack storage; the seam owns g_slots. */
 static struct k_thread g_thread_storage[LXP_NSLOT];
 K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, LXP_NSLOT, 1024);
+static void zephyr_park_entry(void *token);
+static int zephyr_validate_active_profile(int sidx);
 
 static lxp_slot_ref_t task_slot_ref(int slot)
 {
@@ -319,6 +322,18 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee, ui
 		if ((*svc & 0xff00u) == 0xdf00u && (*svc & 0x00ffu) == 0x00u) {
 			int sidx = current_slot();
 			if (sidx >= 0) {
+				if (!zephyr_validate_active_profile(sidx)) {
+					lxp_guest_fault_t fault = {
+						.detail = OVE_LXP_MPU_PROFILE_FAULT,
+						.address = 0u,
+					};
+					(void)lxp_slot_report_memory_fault(task_slot_ref(sidx),
+									   &fault);
+					((struct arch_esf *)esf)->basic.pc =
+						(uint32_t)(uintptr_t)&zephyr_park_entry & ~1u;
+					((struct arch_esf *)esf)->basic.xpsr |= (1u << 24);
+					return;
+				}
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 				uint32_t syscall = callee->v4;
 				uint32_t svc_start_cycles = k_cycle_get_32();
@@ -521,6 +536,7 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 	    lxp_memory_policy_address_space_matches_key(&policy, &state->policy)) {
 		g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
 		g_slots[sidx].policy_valid = 1u;
+		g_slots[sidx].live_validated = 0u;
 		return 0;
 	}
 	uint8_t *region = prog_regions[ridx];
@@ -592,13 +608,31 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 #endif
 		state->initialized = 1;
 	}
-	if (k_mem_domain_add_partition(&g_domains[ridx], &state->text) != 0 ||
-	    k_mem_domain_add_partition(&g_domains[ridx], &state->data) != 0)
+	k_mem_partition_attr_t expected_text = policy.copied_text_executable
+						       ? K_MEM_PARTITION_P_RWX_U_RWX
+						       : K_MEM_PARTITION_P_RW_U_RW;
+	k_mem_partition_attr_t expected_data = K_MEM_PARTITION_P_RW_U_RW;
+	if (state->text.start != (uintptr_t)prog_regions[ridx] ||
+	    state->text.size != LXP_PROG_REGION_SIZE ||
+	    memcmp(&state->text.attr, &expected_text, sizeof(expected_text)) != 0 ||
+	    state->data.start != (uintptr_t)dyn_pools[ridx] ||
+	    state->data.size != LXP_DYN_POOL_SIZE ||
+	    memcmp(&state->data.attr, &expected_data, sizeof(expected_data)) != 0)
 		return -1;
+	if (k_mem_domain_add_partition(&g_domains[ridx], &state->text) != 0)
+		return -1;
+	if (k_mem_domain_add_partition(&g_domains[ridx], &state->data) != 0) {
+		k_mem_domain_remove_partition(&g_domains[ridx], &state->text);
+		return -1;
+	}
 	state->policy = lxp_memory_policy_make_key(&policy);
 	state->policy_valid = 1u;
+	for (int i = 0; i < LXP_NSLOT; i++)
+		if (g_slots[i].policy_valid && g_slots[i].policy.address_space.index == ridx)
+			g_slots[i].live_validated = 0u;
 	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
 	g_slots[sidx].policy_valid = 1u;
+	g_slots[sidx].live_validated = 0u;
 	return 0;
 }
 
@@ -616,7 +650,68 @@ static int zephyr_bind_prepared_domain(int sidx, uint32_t generation, int ridx)
 		return -1;
 	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
 	g_slots[sidx].policy_valid = 1u;
+	g_slots[sidx].live_validated = 0u;
 	return 0;
+}
+
+static int zephyr_validate_active_profile(int sidx)
+{
+	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].policy_valid)
+		return 0;
+	lxp_slot_ref_t slot = task_slot_ref(sidx);
+	const lxp_memory_policy_key_t *key = &g_slots[sidx].policy;
+	if (!lxp_slot_ref_equal(key->slot, slot) || key->address_space.index < 0 ||
+	    key->address_space.index >= LXP_NREG)
+		return 0;
+	if (g_slots[sidx].live_validated)
+		return 1;
+
+	int ridx = key->address_space.index;
+	const struct zephyr_lxp_region *state = &g_regions[ridx];
+	if (!state->policy_valid ||
+	    !lxp_region_ref_equal(key->address_space, state->policy.address_space) ||
+	    key->device_generation != state->policy.device_generation ||
+	    key->exec_generation != state->policy.exec_generation ||
+	    key->copied_text_executable != state->policy.copied_text_executable)
+		return 0;
+	k_mem_partition_attr_t expected_text = key->copied_text_executable
+						       ? K_MEM_PARTITION_P_RWX_U_RWX
+						       : K_MEM_PARTITION_P_RW_U_RW;
+	k_mem_partition_attr_t expected_data = K_MEM_PARTITION_P_RW_U_RW;
+	if (state->text.start != (uintptr_t)prog_regions[ridx] ||
+	    state->text.size != LXP_PROG_REGION_SIZE ||
+	    memcmp(&state->text.attr, &expected_text, sizeof(expected_text)) != 0 ||
+	    state->data.start != (uintptr_t)dyn_pools[ridx] ||
+	    state->data.size != LXP_DYN_POOL_SIZE ||
+	    memcmp(&state->data.attr, &expected_data, sizeof(expected_data)) != 0)
+		return 0;
+
+#if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
+	struct ove_cortex_m_mpu_snapshot snapshot;
+	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+		return 0;
+	const struct ove_cortex_m_mpu_expectation program = {
+		.base = state->text.start,
+		.size = state->text.size,
+		.texscb = 0x0bu,
+		.access = 3u,
+		.execute_never = key->copied_text_executable ? 0u : 1u,
+	};
+	const struct ove_cortex_m_mpu_expectation dynamic = {
+		.base = state->data.start,
+		.size = state->data.size,
+		.texscb = 0x0bu,
+		.access = 3u,
+		.execute_never = 1u,
+	};
+	if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program) ||
+	    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &dynamic))
+		return 0;
+#endif
+	g_slots[sidx].live_validated = 1u;
+	return 1;
 }
 
 /* ---- the vtable: Zephyr task spawn ----------------------------------------- */
@@ -767,6 +862,7 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 			       sizeof(thread->arch.preempt_float));
 		}
 #endif
+		g_slots[sidx].live_validated = 0u;
 		k_thread_resume(g_slots[sidx].tid);
 		return 0;
 	}
@@ -926,6 +1022,7 @@ static int zephyr_abort_slot(int sidx, uint32_t generation)
 	g_slots[sidx].tid = NULL;
 	g_slots[sidx].generation = 0;
 	g_slots[sidx].policy_valid = 0;
+	g_slots[sidx].live_validated = 0;
 	return 0;
 }
 
@@ -986,28 +1083,25 @@ static int zephyr_prepare(void)
 	return LXP_OK;
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int zephyr_validate_static_mpu(void)
 {
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	struct ove_cortex_m_mpu_snapshot snapshot;
 	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
-	    (snapshot.ctrl &
-	     (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
 		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
 	const struct ove_cortex_m_mpu_region *sdram = NULL;
 	for (unsigned i = 0; i < snapshot.count; i++)
 		if (ove_cortex_m_mpu_region_matches(&snapshot.regions[i], 0xc0000000u,
-						    8u * 1024u * 1024u, 0u, 0x0bu,
-						    1u, 1u)) {
+						    8u * 1024u * 1024u, 0u, 0x0bu, 1u, 1u)) {
 			if (sdram)
 				return 0;
 			sdram = &snapshot.regions[i];
 		}
-	if (!sdram ||
-	    !ove_cortex_m_mpu_region_contains(sdram, (uintptr_t)&g_lxp_ext_storage,
-					      sizeof(g_lxp_ext_storage)))
+	if (!sdram || !ove_cortex_m_mpu_region_contains(sdram, (uintptr_t)&g_lxp_ext_storage,
+							sizeof(g_lxp_ext_storage)))
 		return 0;
 #if defined(CONFIG_OVE_FB)
 	uintptr_t framebuffer = (uintptr_t)ove_hal_fb_buffer();
@@ -1020,10 +1114,8 @@ static int zephyr_validate_static_mpu(void)
 		return 0;
 #endif
 	return 1;
-#else
-	return 1;
-#endif
 }
+#endif
 
 static int zephyr_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
