@@ -13,6 +13,10 @@ defconfig:
   - CONFIG_OVE_ARENA=y
   - CONFIG_OVE_LOADER=y
   - CONFIG_OVE_QUEUE=y
+  # Compile the engine-native SD/FAT substrate now. The personality mounts it
+  # only when its external-filesystem provider is configured, and a missing
+  # card remains a non-fatal mount failure.
+  - CONFIG_OVE_FS=y
   # /dev character-device layer + framebuffer (/dev/fb0). A board without an fb
   # backend links weak "no display" HAL stubs, so /dev/fb0 is simply absent there.
   - CONFIG_OVE_LINUX_DEV=y

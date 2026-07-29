@@ -206,6 +206,7 @@ struct ove_file {
 
 struct ove_dir {
 	DIR *dp;
+	char path[320];
 };
 
 typedef struct ove_file ove_file_storage_t;
@@ -243,7 +244,7 @@ struct ove_socket {
 	 * and parks; ove_socket_poll initiates the real psock_connect from the coordinator thread. */
 	uint8_t connect_pending;
 	uint8_t caddr[4]; /* IPv4 target, network order */
-	uint16_t cport;   /* target port, host order */
+	uint16_t cport;	  /* target port, host order */
 };
 
 struct ove_netif {

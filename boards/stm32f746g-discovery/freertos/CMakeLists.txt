@@ -81,6 +81,10 @@ if(OVE_ASYNC_NET)
     ove_add_board_sources(${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_eth_async.c)
 endif()
 
+if(OVE_FS)
+    ove_add_board_sources(src/stm32f7/fatfs/ffsystem.c)
+endif()
+
 # ── oveRTOS backend sources (from generated config) ─────────────────
 ove_add_backend_sources()
 

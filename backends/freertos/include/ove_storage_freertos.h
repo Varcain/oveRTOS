@@ -16,6 +16,9 @@
 #include "timers.h"
 #include "event_groups.h"
 #include "stream_buffer.h"
+#ifdef CONFIG_OVE_FS
+#include "ff.h"
+#endif
 
 #include "ove/thread_state_stats.h"
 
@@ -273,12 +276,15 @@ struct ove_watchdog {
 typedef struct ove_watchdog ove_watchdog_storage_t;
 
 /* ── Filesystem ───────────────────────────────────────────────────── */
-/*
- * The FreeRTOS FS backend is board-specific (e.g. FatFS).
- * Board headers may provide the full struct definitions before this header.
- * If not defined, provide generic stub-compatible layouts.
- */
-#ifndef OVE_FS_DEFINED
+#ifdef CONFIG_OVE_FS
+struct ove_file {
+	FIL fil;
+	int append;
+};
+struct ove_dir {
+	DIR dir;
+};
+#else
 struct ove_file {
 	int fd;
 };
