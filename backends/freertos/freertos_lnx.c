@@ -747,10 +747,15 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 #endif
 	if (policy.copied_text_executable) {
 		if (policy.copied_text_base != (uintptr_t)prog_regions[ridx] ||
-		    policy.copied_text_size == 0u ||
-		    policy.copied_text_size >= LXP_PROG_REGION_SIZE ||
+		    policy.copied_text_size != LXP_PROG_REGION_SIZE / 2u ||
 		    copied_region >= portNUM_CONFIGURABLE_REGIONS)
 			return -1;
+		prepared->regions[0] = (MemoryRegion_t){
+			.pvBaseAddress =
+				(void *)(policy.copied_text_base + policy.copied_text_size),
+			.ulLengthInBytes = LXP_PROG_REGION_SIZE - policy.copied_text_size,
+			.ulParameters = rw_xn,
+		};
 		prepared->regions[copied_region] = (MemoryRegion_t){
 			.pvBaseAddress = (void *)policy.copied_text_base,
 			.ulLengthInBytes = policy.copied_text_size,
@@ -840,25 +845,7 @@ static int freertos_validate_active_profile(int sidx)
 		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region],
 								 &expected))
 			return 0;
-		if (!(i == 0u && prepared->key.copied_text_executable) &&
-		    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
-			return 0;
-	}
-	if (prepared->key.copied_text_executable) {
-		uintptr_t program = (uintptr_t)prog_regions[prepared->key.address_space.index];
-		uintptr_t tail = prepared->key.copied_text_base + prepared->key.copied_text_size;
-		const struct ove_cortex_m_mpu_expectation writable_tail = {
-			.base = tail,
-			.size = program + LXP_PROG_REGION_SIZE - tail,
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-			.texscb = 0x0bu,
-#else
-			.texscb = configTEX_S_C_B_SRAM,
-#endif
-			.access = 3u,
-			.execute_never = 1u,
-		};
-		if (!ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &writable_tail))
+		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
 			return 0;
 	}
 	prepared->live_validated = 1u;
@@ -930,8 +917,7 @@ static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
 		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
-	if (base != region_lo || len < 32u || len >= LXP_PROG_REGION_SIZE ||
-	    (len & (len - 1u)) != 0u)
+	if (base != region_lo || len != LXP_PROG_REGION_SIZE / 2u)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)

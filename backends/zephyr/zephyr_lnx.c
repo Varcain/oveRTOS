@@ -12,13 +12,13 @@
  *
  * Each program runs as an UNPRIVILEGED K_USER thread in its own k_mem_domain, while
  * the privileged coordinator stays in the default domain and can reload any slot.
- * The domain is board-specific: AN521/PMSAv8 uses libc + Zephyr malloc + rootfs +
- * image + arena partitions; STM32F746/PMSAv7 XIPs the rootfs through a static
- * QSPI mapping, drops the unused Zephyr-malloc partition, and uses libc + image +
- * arena. Both also consume the K_USER stack region. The resume context stays in
- * the guest's own image region so it costs no additional MPU partition. The
- * program's svc #0 is an unprivileged fault routed by Zephyr to
- * z_do_kernel_oops, which we --wrap.
+ * The guest handoff bypasses Zephyr libc/TLS, so a domain contains only the
+ * program's mutable state, dynamic arena, optional copied-text RX half, and
+ * AN521's non-static rootfs. STM32F746 XIPs the rootfs through a static QSPI
+ * mapping. Both also consume Zephyr's implicit K_USER stack region. The resume
+ * context stays in the guest's own writable half and costs no partition. The
+ * program's svc #0 is an unprivileged fault routed by Zephyr to z_do_kernel_oops,
+ * which we --wrap.
  */
 
 #include <zephyr/kernel.h>
@@ -54,6 +54,8 @@
 
 BUILD_ASSERT(IS_ENABLED(CONFIG_USERSPACE),
 	     "the Zephyr Linux personality requires unprivileged user threads");
+BUILD_ASSERT(!IS_ENABLED(CONFIG_USE_SWITCH),
+	     "the Zephyr Linux personality owns the initial Cortex-M exception frame");
 BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_LXP_COORDINATOR,
 	     "LXP coordinator priority must match the Zephyr priority contract");
 BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE,
@@ -215,7 +217,14 @@ static lxp_slot_ref_t task_slot_ref(int slot)
 
 static int current_slot(void)
 {
-	k_tid_t t = k_current_get();
+	/*
+	 * The Linux handoff intentionally bypasses z_thread_entry(), so the
+	 * CONFIG_CURRENT_THREAD_USE_TLS cache read by k_current_get() is not
+	 * initialized for guest threads.  All callers execute in privileged
+	 * exception/fault context, where Zephyr's scheduler-owned _current is
+	 * the authoritative thread identity.
+	 */
+	k_tid_t t = _current;
 	for (int i = 0; i < LXP_NSLOT; i++)
 		if (g_slots[i].tid == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
@@ -470,12 +479,11 @@ _Static_assert(offsetof(struct lxp_resume_ctx, fp.active) == 196u, "resume fp.ac
 #define LXP_ZTRAMP_RESTORE_FP ""
 #endif
 
-/* Resume a parked program at a captured context with a chosen r0 (vfork return). */
-static void resume_tramp(void *r0val, void *ctx, void *unused)
+/* Resume a program at a captured Linux context. This is deliberately naked:
+ * the initial user-mode handoff has already moved PSP into guest memory, so no
+ * compiler prologue may touch Zephyr's privileged stack after the drop. */
+__attribute__((naked, noreturn)) static void resume_tramp(void *r0val, void *ctx, void *unused)
 {
-	ARG_UNUSED(unused);
-	register void *rv __asm__("r0") = r0val;
-	register void *c __asm__("r1") = ctx;
 	__asm__ volatile("mov r3, r1\n" LXP_ZTRAMP_RESTORE_FP "ldmia r3!, {r4-r11}\n"
 			 "ldr r12, [r3], #4\n"
 			 "ldr lr, [r3], #4\n"
@@ -489,22 +497,44 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 			 "ldr r1, [r3]\n"
 			 "ldr r2, [r3, #4]\n"
 			 "ldr r3, [r3, #8]\n"
-			 "pop {pc}\n"
-			 :
-			 : "r"(rv), "r"(c)
-			 : "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12", "lr", "cc",
-			   "memory");
-	__builtin_unreachable();
+			 "pop {pc}\n");
 }
 
-/* Enter through Zephyr's supervisor path so z_thread_entry may touch its
- * private libc/TLS state before the thread becomes unprivileged. The one-way
- * drop then jumps directly to resume_tramp; no Zephyr userspace library state
- * belongs in a Linux guest domain. */
-static void zephyr_guest_user_enter(void *r0val, void *ctx, void *unused)
+/* K_USER creation allocates Zephyr's privileged stack and constructs the
+ * initial exception frame, but its standard user entry runs z_thread_entry
+ * after dropping privilege. z_thread_entry reads z_arm_tls_ptr and therefore
+ * requires z_libc_partition in every guest domain.
+ *
+ * Linux guests own their libc/TLS and never return through z_thread_entry.
+ * Replace only the initial frame PC with this privileged handoff, retain
+ * Zephyr's K_USER stack setup, then move PSP into guest memory and drop
+ * directly into the naked Linux-context trampoline. */
+__attribute__((naked, noreturn)) static void zephyr_guest_arch_enter(void *r0val, void *ctx)
 {
-	k_thread_user_mode_enter(resume_tramp, r0val, ctx, unused);
+	__asm__ volatile("ldr r2, [r1, #40]\n" /* ctx.sp */
+			 "msr psp, r2\n"
+			 "mrs r2, control\n"
+			 "orr r2, r2, #1\n"
+			 "dsb 0xf\n"
+			 "msr control, r2\n"
+			 "isb 0xf\n"
+			 "b resume_tramp\n");
+}
+
+FUNC_NORETURN static void zephyr_guest_initial_enter(k_thread_entry_t ignored, void *r0val,
+						     void *ctx, void *unused)
+{
+	ARG_UNUSED(ignored);
+	ARG_UNUSED(unused);
+	_current->arch.mode |= CONTROL_nPRIV_Msk;
+	zephyr_guest_arch_enter(r0val, ctx);
 	CODE_UNREACHABLE;
+}
+
+static void zephyr_guest_patch_initial_frame(struct k_thread *thread)
+{
+	struct arch_esf *esf = (struct arch_esf *)(uintptr_t)thread->callee_saved.psp;
+	esf->basic.r15 = (uintptr_t)zephyr_guest_initial_enter & ~1u;
 }
 
 static void *zephyr_park_prepare(int sidx, uint32_t generation, const struct lxp_resume_ctx *ctx)
@@ -557,9 +587,9 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		if (state->executable.size != 0u)
 			k_mem_domain_remove_partition(&g_domains[ridx], &state->executable);
 	}
-	/* The full program region is always RW+XN. A copied executable gets a
-	 * higher-priority RO+X prefix overlay; writable load state, descriptors
-	 * and the Linux stack remain in the tail. */
+	/* XIP programs use the full program region as RW+XN. Copied-text programs
+	 * use two disjoint halves: lower RO+X text and upper RW+XN load state,
+	 * descriptors, and Linux stack. */
 	state->program.start = (uintptr_t)region;
 	state->program.size = LXP_PROG_REGION_SIZE;
 	state->program.attr = OVE_MEM_PART_RW_CACHE;
@@ -568,12 +598,14 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 	state->dynamic.attr = OVE_MEM_PART_RW_CACHE;
 	memset(&state->executable, 0, sizeof(state->executable));
 	if (policy.copied_text_executable) {
-		if (policy.copied_text_base != (uintptr_t)region || policy.copied_text_size == 0u ||
-		    policy.copied_text_size >= LXP_PROG_REGION_SIZE)
+		if (policy.copied_text_base != (uintptr_t)region ||
+		    policy.copied_text_size != LXP_PROG_REGION_SIZE / 2u)
 			return -1;
 		state->executable.start = policy.copied_text_base;
 		state->executable.size = policy.copied_text_size;
 		state->executable.attr = K_MEM_PARTITION_P_RX_U_RX;
+		state->program.start += policy.copied_text_size;
+		state->program.size -= policy.copied_text_size;
 	}
 	if (!state->initialized) {
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
@@ -596,8 +628,8 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		state->initialized = 1;
 	}
 	k_mem_partition_attr_t expected_rw = K_MEM_PARTITION_P_RW_U_RW;
-	if (state->program.start != (uintptr_t)prog_regions[ridx] ||
-	    state->program.size != LXP_PROG_REGION_SIZE ||
+	if (state->program.start != (uintptr_t)prog_regions[ridx] + policy.copied_text_size ||
+	    state->program.size != LXP_PROG_REGION_SIZE - policy.copied_text_size ||
 	    memcmp(&state->program.attr, &expected_rw, sizeof(expected_rw)) != 0 ||
 	    state->dynamic.start != (uintptr_t)dyn_pools[ridx] ||
 	    state->dynamic.size != LXP_DYN_POOL_SIZE ||
@@ -666,9 +698,15 @@ static int zephyr_validate_active_profile(int sidx)
 	    key->copied_text_size != state->policy.copied_text_size ||
 	    key->copied_text_executable != state->policy.copied_text_executable)
 		return 0;
+	uintptr_t expected_program_base = (uintptr_t)prog_regions[ridx];
+	size_t expected_program_size = LXP_PROG_REGION_SIZE;
+	if (key->copied_text_executable) {
+		expected_program_base += key->copied_text_size;
+		expected_program_size -= key->copied_text_size;
+	}
 	k_mem_partition_attr_t expected_rw = K_MEM_PARTITION_P_RW_U_RW;
-	if (state->program.start != (uintptr_t)prog_regions[ridx] ||
-	    state->program.size != LXP_PROG_REGION_SIZE ||
+	if (state->program.start != expected_program_base ||
+	    state->program.size != expected_program_size ||
 	    memcmp(&state->program.attr, &expected_rw, sizeof(expected_rw)) != 0 ||
 	    state->dynamic.start != (uintptr_t)dyn_pools[ridx] ||
 	    state->dynamic.size != LXP_DYN_POOL_SIZE ||
@@ -697,7 +735,8 @@ static int zephyr_validate_active_profile(int sidx)
 		.access = 3u,
 		.execute_never = 1u,
 	};
-	if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &dynamic))
+	if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program) ||
+	    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &dynamic))
 		return 0;
 	if (key->copied_text_executable) {
 		const struct ove_cortex_m_mpu_expectation executable = {
@@ -707,19 +746,8 @@ static int zephyr_validate_active_profile(int sidx)
 			.access = 6u,
 			.execute_never = 0u,
 		};
-		const struct ove_cortex_m_mpu_expectation writable_tail = {
-			.base = state->executable.start + state->executable.size,
-			.size = state->program.start + state->program.size -
-				(state->executable.start + state->executable.size),
-			.texscb = 0x0bu,
-			.access = 3u,
-			.execute_never = 1u,
-		};
-		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &executable) ||
-		    !ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &writable_tail))
+		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &executable))
 			return 0;
-	} else if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program)) {
-		return 0;
 	}
 #endif
 	g_slots[sidx].live_validated = 1u;
@@ -759,8 +787,7 @@ static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t b
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
 		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
-	if (base != region_lo || len < 32u || len >= LXP_PROG_REGION_SIZE ||
-	    (len & (len - 1u)) != 0u)
+	if (base != region_lo || len != LXP_PROG_REGION_SIZE / 2u)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
@@ -810,9 +837,9 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 	lxp_resume_ctx_from_launch(slot, launch);
 	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
 					    K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
-					    zephyr_guest_user_enter,
-					    (void *)(uintptr_t)launch->r[0], slot, NULL,
-					    OVE_ZEPHYR_PRIO_LXP_GUEST, 0, K_FOREVER);
+					    resume_tramp, (void *)(uintptr_t)launch->r[0], slot,
+					    NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
+	zephyr_guest_patch_initial_frame(g_slots[sidx].tid);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
@@ -892,8 +919,9 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 	*slot = *ctx;
 	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
 					    K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
-					    zephyr_guest_user_enter, (void *)r0val, slot, NULL,
-					    OVE_ZEPHYR_PRIO_LXP_GUEST, 0, K_FOREVER);
+					    resume_tramp, (void *)r0val, slot, NULL,
+					    OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
+	zephyr_guest_patch_initial_frame(g_slots[sidx].tid);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);

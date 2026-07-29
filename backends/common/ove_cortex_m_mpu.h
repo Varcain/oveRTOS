@@ -181,34 +181,6 @@ ove_cortex_m_mpu_snapshot_effective_matches(const struct ove_cortex_m_mpu_snapsh
 	return 0;
 }
 
-/*
- * Require the effective highest-priority mapping over @p expected's complete
- * range to be one containing descriptor with the expected attributes. Unlike
- * snapshot_effective_matches(), the descriptor may be broader than the range.
- * This is used for the RW+XN tail of a program region whose prefix is hidden by
- * a higher-priority RO+X copied-text overlay.
- */
-static inline int
-ove_cortex_m_mpu_snapshot_effective_contains(const struct ove_cortex_m_mpu_snapshot *snapshot,
-					     const struct ove_cortex_m_mpu_expectation *expected)
-{
-	if (!snapshot || !expected || expected->size == 0u || snapshot->count == 0u ||
-	    snapshot->count > OVE_CORTEX_M_MPU_MAX_REGIONS || expected->size > SIZE_MAX)
-		return 0;
-
-	for (unsigned i = snapshot->count; i > 0u; i--) {
-		const struct ove_cortex_m_mpu_region *region = &snapshot->regions[i - 1u];
-		if (!ove_cortex_m_mpu_region_overlaps_enabled(region, expected->base,
-							      (size_t)expected->size))
-			continue;
-		return ove_cortex_m_mpu_region_contains(region, expected->base,
-							(size_t)expected->size) &&
-		       region->texscb == expected->texscb && region->access == expected->access &&
-		       region->execute_never == expected->execute_never;
-	}
-	return 0;
-}
-
 #if defined(__arm__) || defined(__thumb__)
 
 #define OVE_MPU_TYPE (*(volatile uint32_t *)0xe000ed90u)
