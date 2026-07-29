@@ -24,7 +24,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/app_memory/app_memdomain.h>
 #include <zephyr/arch/exception.h>
-#include <zephyr/cache.h>
 #include <zephyr/init.h>
 #include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/random/random.h> /* sys_csrand_get -> engine random_fill op */
@@ -43,6 +42,7 @@
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
+#include "ove_cortex_m_cache.h"
 #include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 #include "ove/lxp_metrics.h"
@@ -59,8 +59,7 @@ BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
 		     OVE_ZEPHYR_PRIO_LXP_COORDINATOR < OVE_ZEPHYR_PRIO_LXP_GUEST,
 	     "critical, coordinator, and guest priorities must remain ordered");
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-BUILD_ASSERT(IS_ENABLED(CONFIG_CSPRNG_ENABLED) &&
-		     IS_ENABLED(CONFIG_HARDWARE_DEVICE_CS_GENERATOR),
+BUILD_ASSERT(IS_ENABLED(CONFIG_CSPRNG_ENABLED) && IS_ENABLED(CONFIG_HARDWARE_DEVICE_CS_GENERATOR),
 	     "STM32 Linux guests require a hardware-backed CSPRNG");
 #endif
 BUILD_ASSERT(IS_ENABLED(CONFIG_EXCEPTION_DUMP_HOOK_ONLY),
@@ -479,8 +478,7 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 	__builtin_unreachable();
 }
 
-static void *zephyr_park_prepare(int sidx, uint32_t generation,
-				const struct lxp_resume_ctx *ctx)
+static void *zephyr_park_prepare(int sidx, uint32_t generation, const struct lxp_resume_ctx *ctx)
 {
 	ARG_UNUSED(ctx);
 	if (sidx < 0 || sidx >= LXP_NSLOT || !g_slots[sidx].tid ||
@@ -496,8 +494,7 @@ static void *zephyr_park_prepare(int sidx, uint32_t generation,
  * higher priority and suspends it at the pending exception return. Keeping the
  * trampoline naked guarantees the saved native frame remains at the captured
  * PSP; spawn_resume replaces that frame before the thread can execute again. */
-static void __attribute__((naked))
-zephyr_park_entry(void *token __attribute__((unused)))
+static void __attribute__((naked)) zephyr_park_entry(void *token __attribute__((unused)))
 {
 	__asm__ volatile("1: b 1b\n");
 }
@@ -513,8 +510,8 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
-	    lxp_memory_policy_validate(&policy) != LXP_OK ||
-	    policy.address_space.index != ridx || policy.device_count != 0)
+	    lxp_memory_policy_validate(&policy) != LXP_OK || policy.address_space.index != ridx ||
+	    policy.device_count != 0)
 		return -1;
 	struct zephyr_lxp_region *state = &g_regions[ridx];
 	if (state->policy_valid &&
@@ -546,7 +543,7 @@ static int setup_domain(int sidx, uint32_t generation, int ridx)
 		state->data.attr = OVE_MEM_PART_RW_CACHE;
 	} else
 #endif
-		{
+	{
 		/* Ordinary FDPIC code (static or dynamic) executes in place from the
 		 * rootfs executable mapping. The per-process region and dynamic pool
 		 * therefore contain only writable load state, arenas, and stacks. */
@@ -610,9 +607,8 @@ static int zephyr_bind_prepared_domain(int sidx, uint32_t generation, int ridx)
 		.generation = generation,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
-	    lxp_memory_policy_validate(&policy) != LXP_OK ||
-	    policy.address_space.index != ridx || policy.device_count != 0 ||
-	    !g_regions[ridx].policy_valid ||
+	    lxp_memory_policy_validate(&policy) != LXP_OK || policy.address_space.index != ridx ||
+	    policy.device_count != 0 || !g_regions[ridx].policy_valid ||
 	    !lxp_memory_policy_address_space_matches_key(&policy, &g_regions[ridx].policy))
 		return -1;
 	g_slots[sidx].policy = lxp_memory_policy_make_key(&policy);
@@ -638,8 +634,11 @@ static lxp_exec_capture_t *zephyr_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
-static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t base,
-				     size_t len)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+#endif
+
+static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t base, size_t len)
 {
 	int ridx = address_space.index;
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
@@ -649,8 +648,7 @@ static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t b
 	if (base < region_lo || base >= region_hi || len > region_hi - base)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (sys_cache_data_flush_range((void *)base, len) != 0 ||
-	    sys_cache_instr_invd_range((void *)base, len) != 0)
+	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
 		return LXP_ERR_INVALID_PARAM;
 #endif
 	return LXP_OK;
@@ -696,9 +694,9 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 		(struct lxp_resume_ctx *)((uintptr_t)launch->r[13] - sizeof(struct lxp_resume_ctx));
 	lxp_resume_ctx_from_launch(slot, launch);
 	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
-				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
-				      resume_tramp, (void *)(uintptr_t)launch->r[0], slot, NULL,
-				      OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
+					    K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
+					    resume_tramp, (void *)(uintptr_t)launch->r[0], slot,
+					    NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
@@ -716,8 +714,8 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 }
 
 static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
-			       lxp_spawn_resume_mode_t mode,
-			       const struct lxp_resume_ctx *ctx, long r0val)
+			       lxp_spawn_resume_mode_t mode, const struct lxp_resume_ctx *ctx,
+			       long r0val)
 {
 	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0)
 		return -1;
@@ -776,9 +774,9 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 		(struct lxp_resume_ctx *)((uintptr_t)ctx->sp - sizeof(struct lxp_resume_ctx));
 	*slot = *ctx;
 	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
-				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
-				      (void *)r0val, slot, NULL, OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER,
-				      K_FOREVER);
+					    K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
+					    resume_tramp, (void *)r0val, slot, NULL,
+					    OVE_ZEPHYR_PRIO_LXP_GUEST, K_USER, K_FOREVER);
 	{ /* Diagnostic task name; CPU attribution uses the native thread identity. */
 		char nm[6];
 		slot_task_name(nm, sidx);
@@ -925,8 +923,7 @@ static int zephyr_abort_slot(int sidx, uint32_t generation)
 
 static int zephyr_park_slot(int sidx, uint32_t generation)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT ||
-	    !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
+	if (sidx < 0 || sidx >= LXP_NSLOT || !lxp_slot_ref_is_runnable(task_slot_ref(sidx)) ||
 	    !g_slots[sidx].tid || g_slots[sidx].generation != generation)
 		return -1;
 	k_thread_suspend(g_slots[sidx].tid);
@@ -941,11 +938,10 @@ static int32_t slot_for_thread(uintptr_t identity)
 	return LXP_THREAD_SLOT_NONE;
 }
 
-static int lxp_seam_thread_list(struct lxp_thread_info *out, size_t max_count,
-				size_t *actual_count)
+static int lxp_seam_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count)
 {
-	return lxp_ove_thread_snapshot_read(&g_thread_snapshot, out, max_count,
-					    actual_count, slot_for_thread);
+	return lxp_ove_thread_snapshot_read(&g_thread_snapshot, out, max_count, actual_count,
+					    slot_for_thread);
 }
 
 static int lxp_seam_mem_stats(struct lxp_mem_stats *out)
@@ -971,6 +967,10 @@ static const char *lxp_seam_system_version(void)
 
 static int zephyr_prepare(void)
 {
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	if (ove_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
+		return LXP_ERR_INVALID_PARAM;
+#endif
 	for (int r = 0; r < LXP_NREG; r++)
 		g_regions[r].policy_valid = 0;
 	for (int s = 0; s < LXP_NSLOT; s++)
@@ -986,8 +986,7 @@ static int zephyr_validate_memory_model(lxp_cpu_memory_model_t declared)
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
-	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK
-								 : LXP_ERR_INVALID_PARAM;
+	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK : LXP_ERR_INVALID_PARAM;
 #endif
 }
 
