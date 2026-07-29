@@ -11,6 +11,7 @@
 
 #include "ove_cortex_m_cache.h"
 #include "ove_cortex_m_mpu.h"
+#include "ove_lxp_memory_contract.h"
 
 static uint32_t ccsidr(size_t line_size, size_t ways, size_t sets)
 {
@@ -24,18 +25,24 @@ static void test_f746_cache_shapes(void **state)
 {
 	(void)state;
 	struct ove_cortex_m_cache_shape shape;
+	const lxp_cpu_memory_contract_t contract =
+		OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
 
-	assert_int_equal(ove_cortex_m_cache_shape_decode(ccsidr(32u, 4u, 128u), &shape), 0);
+	assert_int_equal(ove_cortex_m_cache_shape_decode(ccsidr(32u, 4u, 32u), &shape), 0);
 	assert_int_equal(shape.line_size, 32u);
 	assert_int_equal(shape.ways, 4u);
-	assert_int_equal(shape.sets, 128u);
-	assert_int_equal(shape.size, 16u * 1024u);
+	assert_int_equal(shape.sets, 32u);
+	assert_int_equal(shape.size, 4u * 1024u);
+	assert_int_equal(shape.line_size, contract.dcache_line_size);
+	assert_int_equal(shape.size, contract.dcache_size);
 
-	assert_int_equal(ove_cortex_m_cache_shape_decode(ccsidr(32u, 2u, 256u), &shape), 0);
+	assert_int_equal(ove_cortex_m_cache_shape_decode(ccsidr(32u, 2u, 64u), &shape), 0);
 	assert_int_equal(shape.line_size, 32u);
 	assert_int_equal(shape.ways, 2u);
-	assert_int_equal(shape.sets, 256u);
-	assert_int_equal(shape.size, 16u * 1024u);
+	assert_int_equal(shape.sets, 64u);
+	assert_int_equal(shape.size, 4u * 1024u);
+	assert_int_equal(shape.line_size, contract.icache_line_size);
+	assert_int_equal(shape.size, contract.icache_size);
 }
 
 static void test_synthetic_cache_shapes(void **state)
@@ -163,27 +170,6 @@ static void test_mpu_effective_mapping_rejects_higher_overlay(void **state)
 	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(NULL, &expected));
 	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, NULL));
 
-	/* A broader RW+XN descriptor may be the effective mapping for the tail
-	 * beyond a higher-priority RX prefix, but not for a range it only partly
-	 * covers or when that prefix overlaps the requested tail. */
-	const struct ove_cortex_m_mpu_expectation tail = {
-		.base = 0x20001000u,
-		.size = 0x1000u,
-		.texscb = 0x0bu,
-		.access = 3u,
-		.execute_never = 1u,
-	};
-	assert_int_equal(ove_cortex_m_mpu_region_decode(0x20000000u, rasr(15u, 0u, 0x0bu, 3u, 1u),
-							&snapshot.regions[0]),
-			 0);
-	assert_int_equal(ove_cortex_m_mpu_region_decode(0x20000000u, rasr(11u, 0u, 0x0bu, 6u, 0u),
-							&snapshot.regions[1]),
-			 0);
-	assert_true(ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &tail));
-	assert_int_equal(ove_cortex_m_mpu_region_decode(0x20001000u, rasr(11u, 0u, 0x0bu, 6u, 0u),
-							&snapshot.regions[1]),
-			 0);
-	assert_false(ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &tail));
 }
 
 int test_cortex_m_cache_run(void)

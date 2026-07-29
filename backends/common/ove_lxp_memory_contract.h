@@ -31,8 +31,8 @@
 			 LXP_CPU_MEMORY_ICACHE_ENABLED,                        \
 		.dcache_line_size = 32u,                                       \
 		.icache_line_size = 32u,                                       \
-		.dcache_size = 16u * 1024u,                                    \
-		.icache_size = 16u * 1024u,                                    \
+		.dcache_size = 4u * 1024u,                                     \
+		.icache_size = 4u * 1024u,                                     \
 	}
 
 #if defined(__arm__) || defined(__thumb__)
