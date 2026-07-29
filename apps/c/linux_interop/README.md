@@ -35,6 +35,41 @@ returns real keystrokes (semihosting `SYS_READC`) and the write callback echoes
 to the console, so **you can type commands** — `ls /`, `echo hi`,
 `cat /etc/hostname`, `pwd`, `echo x > /tmp/f`, … — and `exit` to finish.
 
+## Writable storage
+
+The STM32F746G-DISCO Full profile exposes two writable trees while retaining the
+CPIO system image as a deterministic, read-only root:
+
+| Path | Backing | Lifetime | Semantics |
+|------|---------|----------|-----------|
+| `/tmp` | bounded LXP allocator pool in SDRAM | cleared by reset | 256 KiB pool shared by all temporary files; writes fail once its usable capacity is exhausted |
+| `/data` | engine-native microSD/FAT through `ove_fs` | persistent | files, directories, seek, truncate, rename, unlink, and directory iteration; no symlinks or Unix ownership/mode persistence |
+
+`CONFIG_OVE_LINUX_FS` enables the `/data` provider and selects
+`CONFIG_OVE_FS`. FreeRTOS uses FatFs, NuttX its native VFS/VFAT mount, and
+Zephyr its FAT filesystem API. The personality-facing provider is common: it
+serializes native volume calls on one bounded host worker, so concurrent guests
+cannot race a non-reentrant backend. Operations are synchronous and can block
+the calling guest for the duration of SD I/O.
+
+A missing or unformatted card does not delay Linux-personality startup. The
+virtual `/data` mount point remains visible, while operations below it return
+`ENODEV` until a later mount retry succeeds. `/data` is a subtree, not an
+overlay: `/bin`, `/etc`, shared libraries, and the rest of `/` continue to come
+from the read-only CPIO image.
+
+After flashing any of the three STM32 Full-profile images, run the destructive,
+namespace-confined hardware regression (it only uses
+`/tmp/.ove-storage-probe` and `/data/.ove-storage-probe`):
+
+```sh
+.venv/bin/python tests/sim/freertos-linux/storage_drive.py
+```
+
+It writes a 200 KiB temporary file, exercises persistent create/read/rename and
+directory operations, resets the MCU through ST-Link, and verifies that the
+microSD file survived.
+
 ## Two-channel host real-time proof (STM32F746G-DISCO)
 
 The hardware build enables a scope-friendly experiment by default. It keeps

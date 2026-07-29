@@ -24,7 +24,7 @@ flowchart LR
   subgraph K["Linux personality (the kernel)"]
     S["syscall dispatch<br/>open/read/write/execve<br/>vfork/wait4/pipe/clock_gettime…"]
     R["run loop + coordinator<br/>schedules processes,<br/>park/wake, signals"]
-    V["in-mem rootfs<br/>(CPIO VFS)"]
+    V["VFS<br/>RO CPIO + /tmp + /data"]
     S --- R
     S --- V
   end
@@ -39,9 +39,11 @@ flowchart LR
   (Zephyr K_USER domains; FreeRTOS `ARM_CM4_MPU` restricted tasks; NuttX raw MPU
   regions). A fault traps to a containment handler → the process is killed, the
   kernel and other processes are untouched.
-- **Filesystem** — a read-only Buildroot rootfs (BusyBox + coreutils + editors),
-  supplied as a CPIO blob and served by an in-memory VFS. `/proc`, `/dev/null`,
-  `/dev/console` are synthesised.
+- **Filesystem** — a read-only Buildroot rootfs (BusyBox + coreutils + editors)
+  supplied as a CPIO blob, a bounded volatile `/tmp`, and an optional
+  host-backed `/data` mount (microSD/FAT on STM32). `/proc`, `/dev/null`, and
+  `/dev/console` are synthesised. `/data` is a separate subtree, not an overlay
+  on the immutable system root.
 - **No MMU** — NOMMU FDPIC only (bFLT retired); `vfork` (no copy-on-write `fork`);
   shared-library text is XIP from the board's rootfs backing store.
 

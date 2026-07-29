@@ -1,0 +1,35 @@
+Subject: [PATCH] userspace: keep generated kobject unwind layout stable
+
+With CONFIG_USERSPACE and CONFIG_EXCEPTION_STACK_TRACE, the preliminary
+link uses weak kobject lookup stubs while the final link substitutes gperf
+implementations.  The generated wordlist iterator is non-leaf and needs its
+own Arm unwind entry, but the empty stub is a leaf.  The final .ARM.exidx
+therefore grows by eight bytes after gen_isr_tables.py and
+gen_kobject_list.py have recorded absolute device addresses.
+
+That shifts every following init/device object while leaving the generated
+ISR arguments and kobject keys at their preliminary addresses.  Make the
+stub non-leaf too, so the preliminary and final unwind tables have identical
+shape.  The weak function is never called in the finished image because the
+generated strong implementation replaces it.
+
+diff --git a/kernel/userspace.c b/kernel/userspace.c
+--- a/kernel/userspace.c
++++ b/kernel/userspace.c
+@@ -566,7 +566,16 @@ __weak struct k_object *z_object_gperf_find(const void *obj)
+ }
+ Z_GENERIC_SECTION(.kobject_data.text.dummies)
+ __weak void z_object_gperf_wordlist_foreach(_wordlist_cb_func_t func, void *context)
+ {
++	/*
++	 * Match the generated iterator's non-leaf unwind shape. Otherwise its
++	 * extra final-link .ARM.exidx entry shifts device objects after the
++	 * generators have captured their preliminary absolute addresses.
++	 */
++	struct k_object *(*volatile find)(const void *) = z_object_gperf_find;
++
++	(void)func;
++	(void)find(context);
+ }
+ #else
+ Z_GENERIC_SECTION(.kobject_data.text.dummies)

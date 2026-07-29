@@ -24,12 +24,14 @@ class Console:
     BAUD = 115200
     OPENOCD_CFG = "board/stm32f7discovery.cfg"
 
-    def __init__(self, port=None, baud=None):
+    def __init__(self, port=None, baud=None, tx_delay=0.0):
         import serial  # pyserial; hardware-only dependency
 
         self.ser = serial.Serial(port or self.PORT, baud or self.BAUD, timeout=0.1)
         self.buf = ""          # everything seen, for post-hoc checks
         self._un = ""          # unconsumed tail expect() scans
+        self.tx_delay = tx_delay
+        self.last_status = None
 
     def reset(self):
         """Hardware-reset the board so a run starts from a known boot, not mid-session state."""
@@ -61,8 +63,15 @@ class Console:
         raise Timeout(f"expected {pattern!r}, unseen in {timeout}s")
 
     def sendline(self, s=""):
-        self.ser.write((s + "\r").encode())
-        self.ser.flush()
+        data = (s + "\r").encode()
+        if self.tx_delay:
+            for byte in data:
+                self.ser.write(bytes((byte,)))
+                self.ser.flush()
+                time.sleep(self.tx_delay)
+        else:
+            self.ser.write(data)
+            self.ser.flush()
 
     def login(self, user="root", password="root", boot_timeout=30.0):
         """Wait out boot (phase 1 round trip + phase 2 init) and log into the BusyBox shell. Two
@@ -80,9 +89,17 @@ class Console:
         on, so output is delimited exactly regardless of how long the command took or how much it
         printed — no fixed sleep can desync it."""
         Console._MARK += 1
-        mark = f"__OK_{Console._MARK}__"
-        self.sendline(f"{line}; echo {mark}")
-        out = self.expect(re.escape(mark), timeout=timeout)
+        mark_id = Console._MARK
+        mark = re.compile(rf"__OK_{mark_id}_([0-9]+)__")
+        # Do not put the expanded marker in the command line: terminals echo
+        # input, and expect() would otherwise accept that echo before the
+        # command had run.  The shell expands both %s fields only when printf
+        # executes; the second field captures the command's real exit status.
+        self.sendline(f"{line}; printf '\\n__OK_%s_%s__\\n' {mark_id} $?")
+        out = self.expect(mark.pattern, timeout=timeout)
+        match = mark.search(out)
+        self.last_status = int(match.group(1))
+        out += self.expect(r"# ", timeout=5.0)
         return out
 
     def close(self):
