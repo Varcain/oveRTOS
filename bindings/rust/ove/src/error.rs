@@ -39,6 +39,8 @@ pub enum Error {
     NetUnreachable,
     /// Local address already in use (`OVE_ERR_NET_ADDR_IN_USE`).
     NetAddrInUse,
+    /// Requested local network address is not configured (`OVE_ERR_NET_ADDR_NOT_AVAILABLE`).
+    NetAddrNotAvailable,
     /// Connection was reset by the remote peer (`OVE_ERR_NET_RESET`).
     NetReset,
     /// DNS name resolution failed (`OVE_ERR_NET_DNS_FAIL`).
@@ -97,6 +99,7 @@ impl Error {
             -19 => Err(Error::Eof),
             -20 => Err(Error::Inval),
             -21 => Err(Error::NotFound),
+            -22 => Err(Error::NetAddrNotAvailable),
             other => Err(Error::Unknown(other)),
         }
     }
@@ -126,6 +129,7 @@ impl Error {
             Error::Eof => -19,
             Error::Inval => -20,
             Error::NotFound => -21,
+            Error::NetAddrNotAvailable => -22,
             Error::Unknown(c) => c,
         }
     }
@@ -138,6 +142,7 @@ impl Error {
             Error::NetRefused
                 | Error::NetUnreachable
                 | Error::NetAddrInUse
+                | Error::NetAddrNotAvailable
                 | Error::NetReset
                 | Error::NetDnsFail
                 | Error::NetClosed
@@ -179,6 +184,7 @@ const fn _assert_codes_match() {
     assert!(bindings::OVE_ERR_EOF == -19);
     assert!(bindings::OVE_ERR_INVAL == -20);
     assert!(bindings::OVE_ERR_NOT_FOUND == -21);
+    assert!(bindings::OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22);
 }
 
 #[cfg(not(docsrs))]
@@ -217,6 +223,7 @@ impl core::fmt::Display for Error {
             Error::Eof => write!(f, "end of file"),
             Error::Inval => write!(f, "invalid argument"),
             Error::NotFound => write!(f, "not found"),
+            Error::NetAddrNotAvailable => write!(f, "address not available"),
             Error::Unknown(c) => write!(f, "unknown error ({c})"),
         }
     }
@@ -248,6 +255,7 @@ mod tests {
         (-19, Error::Eof),
         (-20, Error::Inval),
         (-21, Error::NotFound),
+        (-22, Error::NetAddrNotAvailable),
     ];
 
     #[test]

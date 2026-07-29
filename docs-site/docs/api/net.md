@@ -100,6 +100,7 @@ In addition to the common error codes, networking functions may return:
 | `OVE_ERR_NET_RESET` | -11 | Connection reset by peer |
 | `OVE_ERR_NET_DNS_FAIL` | -12 | DNS name resolution failed |
 | `OVE_ERR_NET_CLOSED` | -13 | Connection closed by peer |
+| `OVE_ERR_NET_ADDR_NOT_AVAILABLE` | -22 | Requested local address is not configured |
 
 ## Address and Network Interface
 

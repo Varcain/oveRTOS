@@ -73,6 +73,7 @@ enum class Error : int {
 	NetRefused = OVE_ERR_NET_REFUSED,
 	NetUnreachable = OVE_ERR_NET_UNREACHABLE,
 	NetAddrInUse = OVE_ERR_NET_ADDR_IN_USE,
+	NetAddrNotAvailable = OVE_ERR_NET_ADDR_NOT_AVAILABLE,
 	NetReset = OVE_ERR_NET_RESET,
 	NetDnsFail = OVE_ERR_NET_DNS_FAIL,
 	NetClosed = OVE_ERR_NET_CLOSED,
@@ -110,6 +111,8 @@ static_assert(static_cast<int>(Error::NetUnreachable) == OVE_ERR_NET_UNREACHABLE
 	      "Error::NetUnreachable drifted");
 static_assert(static_cast<int>(Error::NetAddrInUse) == OVE_ERR_NET_ADDR_IN_USE,
 	      "Error::NetAddrInUse drifted");
+static_assert(static_cast<int>(Error::NetAddrNotAvailable) == OVE_ERR_NET_ADDR_NOT_AVAILABLE,
+	      "Error::NetAddrNotAvailable drifted");
 static_assert(static_cast<int>(Error::NetReset) == OVE_ERR_NET_RESET, "Error::NetReset drifted");
 static_assert(static_cast<int>(Error::NetDnsFail) == OVE_ERR_NET_DNS_FAIL,
 	      "Error::NetDnsFail drifted");
@@ -182,6 +185,8 @@ class error_category_impl : public std::error_category
 			return "network unreachable";
 		case Error::NetAddrInUse:
 			return "address in use";
+		case Error::NetAddrNotAvailable:
+			return "address not available";
 		case Error::NetReset:
 			return "connection reset by peer";
 		case Error::NetDnsFail:

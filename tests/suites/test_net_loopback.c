@@ -233,11 +233,35 @@ static void test_tcp_loopback_echo(void **state)
 	 * on assert-failure alike). */
 }
 
+static void test_bind_address_not_available(void **state)
+{
+	(void)state;
+	ove_socket_storage_t storage;
+	ove_socket_t sock;
+	int open_rc = ove_socket_open(&sock, &storage, OVE_AF_INET, OVE_SOCK_DGRAM);
+	if (open_rc == OVE_ERR_NOT_SUPPORTED) {
+		print_message("[  SKIP  ] bind address-not-available — local socket denied\n");
+		skip();
+	}
+	assert_int_equal(open_rc, OVE_OK);
+
+	/* TEST-NET-1 is not assigned to a host interface. */
+	ove_sockaddr_t addr = {
+		.family = OVE_AF_INET,
+		.port = 0,
+		.addr = {192, 0, 2, 1},
+	};
+	int rc = ove_socket_bind(sock, &addr);
+	ove_socket_close(sock);
+	assert_int_equal(rc, OVE_ERR_NET_ADDR_NOT_AVAILABLE);
+}
+
 int test_net_loopback_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup_teardown(test_tcp_loopback_echo, loopback_setup,
 						loopback_teardown),
+		cmocka_unit_test(test_bind_address_not_available),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

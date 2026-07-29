@@ -81,6 +81,12 @@ const VARIANTS: &[(i32, Error)] = &[
     (-14, Error::BusNack),
     (-15, Error::BusBusy),
     (-16, Error::BusError),
+    (-17, Error::QueueEmpty),
+    (-18, Error::WouldBlock),
+    (-19, Error::Eof),
+    (-20, Error::Inval),
+    (-21, Error::NotFound),
+    (-22, Error::NetAddrNotAvailable),
 ];
 
 fn test_from_code_ok() {
@@ -95,7 +101,7 @@ fn test_from_code_all_variants() {
 }
 
 fn test_from_code_unknown() {
-    // Any negative code outside -1..-16 becomes `Error::Unknown(code)`.
+    // Any code outside the known table becomes `Error::Unknown(code)`.
     let err = Error::from_code(-999).expect_err("unknown negative code must be Err");
     assert_eq!(err, Error::Unknown(-999));
     // Unknown preserves positive codes too, but positive codes aren't errors
@@ -126,6 +132,7 @@ fn test_is_net_error_positive() {
         Error::NetRefused,
         Error::NetUnreachable,
         Error::NetAddrInUse,
+        Error::NetAddrNotAvailable,
         Error::NetReset,
         Error::NetDnsFail,
         Error::NetClosed,
@@ -173,12 +180,18 @@ fn test_display_all_variants() {
         (Error::NetRefused, "connection refused"),
         (Error::NetUnreachable, "network unreachable"),
         (Error::NetAddrInUse, "address in use"),
+        (Error::NetAddrNotAvailable, "address not available"),
         (Error::NetReset, "connection reset"),
         (Error::NetDnsFail, "DNS resolution failed"),
         (Error::NetClosed, "connection closed"),
         (Error::BusNack, "bus NACK"),
         (Error::BusBusy, "bus busy"),
         (Error::BusError, "bus error"),
+        (Error::QueueEmpty, "queue empty"),
+        (Error::WouldBlock, "would block"),
+        (Error::Eof, "end of file"),
+        (Error::Inval, "invalid argument"),
+        (Error::NotFound, "not found"),
     ];
     for (v, s) in expected {
         assert_eq!(v.to_string(), s, "display mismatch for {v:?}");

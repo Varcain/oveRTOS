@@ -42,6 +42,8 @@ pub const Error = error{
     NetUnreachable,
     /// The requested local address is already in use.
     NetAddrInUse,
+    /// The requested local address is not configured on this host.
+    NetAddrNotAvailable,
     /// The connection was reset by the remote end.
     NetReset,
     /// DNS name resolution failed.
@@ -92,6 +94,7 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_NET_REFUSED => Error.NetRefused,
         c.OVE_ERR_NET_UNREACHABLE => Error.NetUnreachable,
         c.OVE_ERR_NET_ADDR_IN_USE => Error.NetAddrInUse,
+        c.OVE_ERR_NET_ADDR_NOT_AVAILABLE => Error.NetAddrNotAvailable,
         c.OVE_ERR_NET_RESET => Error.NetReset,
         c.OVE_ERR_NET_DNS_FAIL => Error.NetDnsFail,
         c.OVE_ERR_NET_CLOSED => Error.NetClosed,
@@ -161,4 +164,5 @@ comptime {
     std.debug.assert(c.OVE_ERR_EOF == -19);
     std.debug.assert(c.OVE_ERR_INVAL == -20);
     std.debug.assert(c.OVE_ERR_NOT_FOUND == -21);
+    std.debug.assert(c.OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22);
 }
