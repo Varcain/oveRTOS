@@ -43,6 +43,7 @@
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
 #include "ove_cortex_m_cache.h"
+#include "ove_lxp_memory_contract.h"
 #include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 #include "ove/lxp_metrics.h"
@@ -636,6 +637,11 @@ static lxp_exec_capture_t *zephyr_exec_capture(int sidx)
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
+	OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
+#else
+static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
+	OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER;
 #endif
 
 static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t base, size_t len)
@@ -978,15 +984,17 @@ static int zephyr_prepare(void)
 	return LXP_OK;
 }
 
-static int zephyr_validate_memory_model(lxp_cpu_memory_model_t declared)
+static int
+zephyr_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
-	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
+	if (declared != &g_lxp_memory_contract)
+		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
+	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry)
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
-	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK : LXP_ERR_INVALID_PARAM;
+	return (OVE_SCB_CCR & OVE_SCB_CCR_DC) == 0u ? LXP_OK : LXP_ERR_INVALID_PARAM;
 #endif
 }
 
@@ -1015,12 +1023,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
 	.publish_executable = zephyr_publish_executable,
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
-#else
-	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
-#endif
-	.validate_memory_model = zephyr_validate_memory_model,
+	.cpu_memory_contract = &g_lxp_memory_contract,
+	.validate_memory_contract = zephyr_validate_memory_contract,
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	.exec_stage = zephyr_exec_stage,
 #endif

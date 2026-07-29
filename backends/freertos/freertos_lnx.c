@@ -38,6 +38,7 @@
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
 #include "ove_cortex_m_cache.h"
+#include "ove_lxp_memory_contract.h"
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "bsp.h"       /* bsp_random_fill -> hardware-backed guest entropy */
@@ -115,6 +116,11 @@ _Static_assert(sizeof(struct lxp_ext_storage) <= OVE_LXP_GUEST_POOL_SIZE,
 #endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
+	OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
+#else
+static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
+	OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER;
 #endif
 struct freertos_prepared_profile {
 	lxp_memory_policy_key_t key;
@@ -1103,15 +1109,17 @@ static int freertos_prepare(void)
 	return 0;
 }
 
-static int freertos_validate_memory_model(lxp_cpu_memory_model_t declared)
+static int
+freertos_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
-	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
+	if (declared != &g_lxp_memory_contract)
+		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
+	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry)
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
-	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK : LXP_ERR_INVALID_PARAM;
+	return (OVE_SCB_CCR & OVE_SCB_CCR_DC) == 0u ? LXP_OK : LXP_ERR_INVALID_PARAM;
 #endif
 }
 
@@ -1148,12 +1156,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
 	.publish_executable = freertos_publish_executable,
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
-#else
-	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
-#endif
-	.validate_memory_model = freertos_validate_memory_model,
+	.cpu_memory_contract = &g_lxp_memory_contract,
+	.validate_memory_contract = freertos_validate_memory_contract,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.cache_clean = freertos_cache_clean,
 	.cache_invalidate = freertos_cache_invalidate,

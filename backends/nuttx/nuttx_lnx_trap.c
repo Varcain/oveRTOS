@@ -71,6 +71,7 @@
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
 #include "ove_cortex_m_cache.h"
+#include "ove_lxp_memory_contract.h"
 #include "ove_nuttx_runtime.h"
 
 /* NuttX's own SVCall handler — chained (not patched) for non-Linux svcs.
@@ -587,6 +588,11 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
+	OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
+#else
+static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
+	OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER;
 #endif
 
 /*
@@ -960,7 +966,8 @@ static const char *lxp_seam_system_version(void)
  * the module's lxp_run() invokes them via g_lxp_host_engine.prepare/.teardown. */
 static int nuttx_prepare(void);
 static void nuttx_teardown(void);
-static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared);
+static int
+nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared);
 
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
@@ -989,12 +996,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
 	.publish_executable = nuttx_publish_executable,
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
-#else
-	.cpu_memory_model = LXP_CPU_MEM_UNCACHED,
-#endif
-	.validate_memory_model = nuttx_validate_memory_model,
+	.cpu_memory_contract = &g_lxp_memory_contract,
+	.validate_memory_contract = nuttx_validate_memory_contract,
 	.random_fill =
 		nuttx_random_fill, /* REQUIRED: without it exec() can't seed AT_RANDOM → no launch */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
@@ -1322,15 +1325,17 @@ static int nuttx_prepare(void)
 	return 0;
 }
 
-static int nuttx_validate_memory_model(lxp_cpu_memory_model_t declared)
+static int
+nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
-	const int dcache_enabled = ((*(volatile uint32_t *)0xE000ED14u) & (1u << 16)) != 0;
+	if (declared != &g_lxp_memory_contract)
+		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return declared == LXP_CPU_MEM_COHERENT_SAME_ATTRS && dcache_enabled
+	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry)
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
-	return declared == LXP_CPU_MEM_UNCACHED && !dcache_enabled ? LXP_OK : LXP_ERR_INVALID_PARAM;
+	return (OVE_SCB_CCR & OVE_SCB_CCR_DC) == 0u ? LXP_OK : LXP_ERR_INVALID_PARAM;
 #endif
 }
 
