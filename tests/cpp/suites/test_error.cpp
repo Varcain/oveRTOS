@@ -38,6 +38,8 @@ static void test_cpp_error_int_roundtrip(void **state)
 	assert_int_equal(static_cast<int>(ove::Error::Timeout), OVE_ERR_TIMEOUT);
 	assert_int_equal(static_cast<int>(ove::Error::QueueFull), OVE_ERR_QUEUE_FULL);
 	assert_int_equal(static_cast<int>(ove::Error::NotFound), OVE_ERR_NOT_FOUND);
+	assert_int_equal(static_cast<int>(ove::Error::NetAddrNotAvailable),
+			 OVE_ERR_NET_ADDR_NOT_AVAILABLE);
 }
 
 /* ── from_rc(int) -> Result<void> ───────────────────────────────── */

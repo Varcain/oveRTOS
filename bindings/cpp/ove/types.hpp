@@ -90,6 +90,8 @@ static_assert(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 static_assert(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
 static_assert(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
 static_assert(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
+static_assert(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22,
+	      "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
 
 /* ------------------------------------------------------------------ */
 /*  Duration / timeout types                                          */

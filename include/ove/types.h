@@ -150,6 +150,9 @@ typedef enum ove_err {
 
 	/** Requested key / entry / resource was not found. */
 	OVE_ERR_NOT_FOUND = -21,
+
+	/** Requested local network address is not configured on this host. */
+	OVE_ERR_NET_ADDR_NOT_AVAILABLE = -22,
 } ove_err_t;
 
 /**
@@ -202,6 +205,8 @@ OVE_STATIC_ASSERT(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 OVE_STATIC_ASSERT(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
 OVE_STATIC_ASSERT(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
 OVE_STATIC_ASSERT(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22,
+		  "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
 OVE_STATIC_ASSERT(OVE_WAIT_FOREVER == UINT64_MAX, "OVE_WAIT_FOREVER drifted");
 
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */

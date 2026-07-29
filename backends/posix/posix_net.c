@@ -44,6 +44,8 @@ static int errno_to_ove(int err)
 		return OVE_ERR_TIMEOUT;
 	case EADDRINUSE:
 		return OVE_ERR_NET_ADDR_IN_USE;
+	case EADDRNOTAVAIL:
+		return OVE_ERR_NET_ADDR_NOT_AVAILABLE;
 	case ECONNRESET:
 	case ECONNABORTED:
 		return OVE_ERR_NET_RESET;

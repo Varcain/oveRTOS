@@ -174,6 +174,8 @@ pub const OVE_ERR_EOF: ove_err = -19;
 pub const OVE_ERR_INVAL: ove_err = -20;
 #[doc = " Requested key / entry / resource was not found."]
 pub const OVE_ERR_NOT_FOUND: ove_err = -21;
+#[doc = " Requested local network address is not configured on this host."]
+pub const OVE_ERR_NET_ADDR_NOT_AVAILABLE: ove_err = -22;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]
 pub type ove_err = core::ffi::c_int;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]

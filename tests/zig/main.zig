@@ -1787,6 +1787,10 @@ fn testErrorsKnownCodesRoundTrip() !void {
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_REFUSED), error.NetRefused);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_UNREACHABLE), error.NetUnreachable);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_ADDR_IN_USE), error.NetAddrInUse);
+    try expectErrorIs(
+        ove.err.fromCode(ove.ffi.OVE_ERR_NET_ADDR_NOT_AVAILABLE),
+        error.NetAddrNotAvailable,
+    );
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_RESET), error.NetReset);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_DNS_FAIL), error.NetDnsFail);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_CLOSED), error.NetClosed);
@@ -1810,11 +1814,11 @@ fn testErrorsUnknownCodeGracefulInRelease() !void {
     // `make test-zig` runs this suite in both `ReleaseSafe` (graceful)
     // and `Debug` (panicking).  We can only observe — and only safely
     // invoke — the graceful path when panics are not Debug-fatal, so the
-    // Debug pass treats this as a no-op.  (`OVE_ERR_NOT_FOUND == -21` is
-    // the last pinned code, so `-22` is guaranteed unmapped.)
+    // Debug pass treats this as a no-op. Use a value well outside the
+    // pinned error-code range so adding a new public error cannot alias it.
     if (builtin.mode == .Debug) return;
-    try expectErrorIs(ove.err.fromCode(-22), error.UnknownErrorCode);
-    try expectErrorIs(ove.err.fromCodeInt(-22), error.UnknownErrorCode);
+    try expectErrorIs(ove.err.fromCode(-999), error.UnknownErrorCode);
+    try expectErrorIs(ove.err.fromCodeInt(-999), error.UnknownErrorCode);
 }
 
 fn testErrorsFromCodeIntPositiveIsValue() !void {

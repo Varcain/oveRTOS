@@ -52,6 +52,14 @@ static int zephyr_errno_to_ove(int err)
 		return OVE_ERR_TIMEOUT;
 	case EADDRINUSE:
 		return OVE_ERR_NET_ADDR_IN_USE;
+	case EADDRNOTAVAIL:
+		return OVE_ERR_NET_ADDR_NOT_AVAILABLE;
+	/*
+	 * Zephyr's native IPv4 bind path returns ENOENT when the requested
+	 * unicast address is absent from every interface.
+	 */
+	case ENOENT:
+		return OVE_ERR_NET_ADDR_NOT_AVAILABLE;
 	case ECONNRESET:
 		return OVE_ERR_NET_RESET;
 	case ECONNABORTED:
