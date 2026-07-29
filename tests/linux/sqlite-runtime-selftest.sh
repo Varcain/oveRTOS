@@ -3,11 +3,11 @@
 # Standalone SQLite runtime self-test for the LXP Linux personality on target.
 # Run inside the target shell, or pipe it to `ssh target sh -s`.
 #
-# Extension groups intentionally use fresh sqlite3 processes: combining them
-# exceeds the configured FDPIC process region even though every group passes
-# independently. The suite uses the default rollback journal. WAL currently
-# wedges the guest, and VACUUM currently exhausts the process region even for
-# an 8 KiB database; those remain failing probes rather than required passes.
+# The FDPIC build intentionally omits WAL because the Linux personality does
+# not provide file-backed shared mmap or POSIX record locks. Verify that a WAL
+# request safely remains in rollback-journal mode. Extension groups run in one
+# sqlite3 process and VACUUM is required to pass, guarding the bounded FDPIC
+# memory configuration.
 
 rm -f /tmp/sqlite-runtime-selftest.db \
 	/tmp/sqlite-runtime-selftest.db-journal \
@@ -80,59 +80,50 @@ SQL
 
 sqlite3 :memory: <<'SQL' || exit 1
 .bail on
-SELECT 'scalar-pass',
-	json_extract('{"n":42}', '$.n'),
-	json_array_length('[1,2,3]'),
-	sqrt(81.0),
-	abs(sin(0.0)) < 0.000001;
-SQL
-
-sqlite3 :memory: <<'SQL' || exit 1
-.bail on
+CREATE TEMP TABLE assertion(
+	name TEXT PRIMARY KEY,
+	ok INTEGER NOT NULL CHECK(ok = 1)
+) STRICT;
+INSERT INTO assertion VALUES(
+	'scalar',
+	json_extract('{"n":42}', '$.n') = 42
+	AND json_array_length('[1,2,3]') = 3
+	AND sqrt(81.0) = 9.0
+	AND abs(sin(0.0)) < 0.000001
+);
 WITH RECURSIVE fib(n, a, b) AS (
 	VALUES(0, 0, 1)
 	UNION ALL SELECT n + 1, b, a + b FROM fib WHERE n < 20
 )
-SELECT 'cte-pass', a FROM fib WHERE n = 20;
-SQL
-
-sqlite3 :memory: <<'SQL' || exit 1
-.bail on
+INSERT INTO assertion
+SELECT 'cte', a = 6765 FROM fib WHERE n = 20;
 WITH input(v) AS (VALUES(30), (10), (20)),
 ranked AS (
 	SELECT v, row_number() OVER (ORDER BY v) AS rn FROM input
 )
-SELECT 'window-pass', SUM(v * rn) FROM ranked;
-SQL
-
-sqlite3 :memory: <<'SQL' || exit 1
-.bail on
+INSERT INTO assertion
+SELECT 'window', SUM(v * rn) = 140 FROM ranked;
 CREATE TABLE indexed(id INTEGER PRIMARY KEY, key TEXT NOT NULL, value INTEGER);
 CREATE INDEX indexed_key ON indexed(key);
 INSERT INTO indexed(key, value) VALUES('a', 1), ('b', 2), ('c', 3);
-EXPLAIN QUERY PLAN SELECT value FROM indexed WHERE key = 'b';
-SELECT 'index-pass', value FROM indexed WHERE key = 'b';
-SQL
-
-sqlite3 :memory: <<'SQL' || exit 1
-.bail on
+INSERT INTO assertion
+SELECT 'index', value = 2 FROM indexed WHERE key = 'b';
 CREATE VIRTUAL TABLE docs USING fts4(body);
 INSERT INTO docs VALUES
 	('embedded sqlite runtime test'),
 	('sqlite full text search'),
 	('unrelated row');
-SELECT 'fts4-pass', COUNT(*) FROM docs WHERE docs MATCH 'sqlite';
-SQL
-
-sqlite3 :memory: <<'SQL' || exit 1
-.bail on
+INSERT INTO assertion
+SELECT 'fts4', COUNT(*) = 2 FROM docs WHERE docs MATCH 'sqlite';
 CREATE VIRTUAL TABLE boxes USING rtree(id, x1, x2, y1, y2);
 INSERT INTO boxes VALUES
 	(1, 0, 10, 0, 10),
 	(2, 20, 30, 20, 30),
 	(3, 5, 15, 5, 15);
-SELECT 'rtree-pass', COUNT(*) FROM boxes
+INSERT INTO assertion
+SELECT 'rtree', COUNT(*) = 2 FROM boxes
 WHERE x2 >= 8 AND x1 <= 12 AND y2 >= 8 AND y1 <= 12;
+SELECT 'combined-extension-pass', COUNT(*) FROM assertion;
 SQL
 
 sqlite3 /tmp/sqlite-runtime-selftest.db <<'SQL' || exit 1
@@ -147,6 +138,16 @@ INSERT INTO persisted(value) VALUES('first');
 SELECT 'file-create-pass', COUNT(*) FROM persisted;
 PRAGMA integrity_check;
 SQL
+
+wal_mode=$(
+	sqlite3 -batch -noheader -list /tmp/sqlite-runtime-selftest.db \
+		'PRAGMA journal_mode = WAL;'
+) || exit 1
+if [ "$wal_mode" != "delete" ]; then
+	echo "unexpected FDPIC journal mode: $wal_mode" >&2
+	exit 1
+fi
+echo wal-fallback-pass
 
 sqlite3 /tmp/sqlite-runtime-selftest.db <<'SQL' || exit 1
 .bail on
@@ -164,6 +165,23 @@ CREATE TABLE aux.kv(key TEXT PRIMARY KEY, value INTEGER NOT NULL) STRICT;
 INSERT INTO aux.kv VALUES('answer', 42);
 SELECT 'attach-pass', value FROM aux.kv WHERE key = 'answer';
 DETACH DATABASE aux;
+SQL
+
+sqlite3 /tmp/sqlite-runtime-selftest.db <<'SQL' || exit 1
+.bail on
+CREATE TABLE vacuum_payload(
+	id INTEGER PRIMARY KEY,
+	value TEXT NOT NULL
+) STRICT;
+WITH RECURSIVE n(value) AS (
+	VALUES(1)
+	UNION ALL SELECT value + 1 FROM n WHERE value < 100
+)
+INSERT INTO vacuum_payload
+SELECT value, printf('row-%04d', value) FROM n;
+VACUUM;
+SELECT 'vacuum-pass', COUNT(*) FROM vacuum_payload;
+PRAGMA integrity_check;
 SQL
 
 sqlite3 /tmp/sqlite-runtime-selftest.db <<'SQL' || exit 1
