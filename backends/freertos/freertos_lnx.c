@@ -38,6 +38,7 @@
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
 #include "ove_cortex_m_cache.h"
+#include "ove_cortex_m_mpu.h"
 #include "ove_lxp_memory_contract.h"
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -1109,13 +1110,49 @@ static int freertos_prepare(void)
 	return 0;
 }
 
-static int
-freertos_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
+static int freertos_validate_static_mpu(void)
+{
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	struct ove_cortex_m_mpu_snapshot snapshot;
+	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    snapshot.count != configTOTAL_MPU_REGIONS ||
+	    (snapshot.ctrl &
+	     (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+		return 0;
+
+	const uintptr_t framebuffer_base = 0xc0000000u;
+	const size_t framebuffer_size = 480u * 272u * 2u;
+	const uintptr_t storage_base = (uintptr_t)&g_lxp_ext_storage;
+	const size_t storage_size = sizeof(g_lxp_ext_storage);
+	if (storage_base < framebuffer_base + framebuffer_size ||
+	    storage_base > 0xc07ff800u ||
+	    storage_size > 0xc07ff800u - storage_base)
+		return 0;
+
+	/* The coordinator has no cacheable guest view between service calls.
+	 * Pools and framebuffer must fall through to the background map until
+	 * coord_map installs its two exact per-address-space WBWA overlays. */
+	for (unsigned i = 0; i < snapshot.count; i++)
+		if (ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i],
+							     framebuffer_base,
+							     framebuffer_size) ||
+		    ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], storage_base,
+							     storage_size))
+			return 0;
+	return 1;
+#else
+	return 1;
+#endif
+}
+
+static int freertos_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
 	if (declared != &g_lxp_memory_contract)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry)
+	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
+			       freertos_validate_static_mpu()
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
@@ -1220,15 +1257,17 @@ static void freertos_rootfs_window(const void *base, size_t len)
 	 * context switch back to the coordinator — persistent for the whole coordinator life. */
 	vTaskAllocateMPURegions(NULL, regions);
 	/* vTaskAllocateMPURegions only updates the TCB; the live MPU is not reprogrammed until the
-	 * next context switch.  The very next thing the coordinator does is read the NOR (the cpio
-	 * parse), which needs the bounded NC view immediately — so program configurable region 2
-	 * into the hardware MPU by hand, with the same encoding the port uses on a switch.  Doing it
-	 * directly (not via taskYIELD) avoids forcing a context switch from here, which for this task
-	 * would be its first switch and trips the FreeRTOS stack-overflow guard. */
+	 * next context switch. Clear stale coordinator pool overlays from regions 0/1, then install
+	 * the bounded NC QSPI view in region 2 before the very next cpio read. Doing it directly
+	 * avoids forcing a first context switch that trips the FreeRTOS stack-overflow guard. */
 	unsigned l2 =
 		31u - (unsigned)__builtin_clz((unsigned)len); /* log2(len); len is a power of 2 */
 	volatile uint32_t *const mpu_rbar = (volatile uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (volatile uint32_t *)0xE000EDA0u;
+	*mpu_rbar = (1u << 4) /* VALID */ | 0u /* region 0 */;
+	*mpu_rasr = 0u;
+	*mpu_rbar = (1u << 4) /* VALID */ | 1u /* region 1 */;
+	*mpu_rasr = 0u;
 	*mpu_rbar = (uint32_t)(uintptr_t)base | (1u << 4) /* VALID */ | 2u /* region 2 */;
 	*mpu_rasr = 1u /* ENABLE */ | ((l2 - 1u) << 1) /* SIZE field */ | par;
 	__asm__ volatile("dsb 0xf\n\tisb 0xf" ::: "memory");

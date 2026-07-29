@@ -41,8 +41,10 @@
 #include "ove/lxp_memory_layout.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops (pulls ove_config.h) */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
+#include "ove/hal/hal_fb.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove_cortex_m_cache.h"
+#include "ove_cortex_m_mpu.h"
 #include "ove_lxp_memory_contract.h"
 #include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
@@ -984,13 +986,52 @@ static int zephyr_prepare(void)
 	return LXP_OK;
 }
 
-static int
-zephyr_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
+static int zephyr_validate_static_mpu(void)
+{
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	struct ove_cortex_m_mpu_snapshot snapshot;
+	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
+	    (snapshot.ctrl &
+	     (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+		return 0;
+
+	const struct ove_cortex_m_mpu_region *sdram = NULL;
+	for (unsigned i = 0; i < snapshot.count; i++)
+		if (ove_cortex_m_mpu_region_matches(&snapshot.regions[i], 0xc0000000u,
+						    8u * 1024u * 1024u, 0u, 0x0bu,
+						    1u, 1u)) {
+			if (sdram)
+				return 0;
+			sdram = &snapshot.regions[i];
+		}
+	if (!sdram ||
+	    !ove_cortex_m_mpu_region_contains(sdram, (uintptr_t)&g_lxp_ext_storage,
+					      sizeof(g_lxp_ext_storage)))
+		return 0;
+#if defined(CONFIG_OVE_FB)
+	uintptr_t framebuffer = (uintptr_t)ove_hal_fb_buffer();
+	uintptr_t storage = (uintptr_t)&g_lxp_ext_storage;
+	size_t framebuffer_size = 480u * 272u * 2u;
+	if (framebuffer == 0u ||
+	    !ove_cortex_m_mpu_region_contains(sdram, framebuffer, framebuffer_size) ||
+	    !(storage + sizeof(g_lxp_ext_storage) <= framebuffer ||
+	      framebuffer + framebuffer_size <= storage))
+		return 0;
+#endif
+	return 1;
+#else
+	return 1;
+#endif
+}
+
+static int zephyr_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
 	if (declared != &g_lxp_memory_contract)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry)
+	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
+			       zephyr_validate_static_mpu()
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else
