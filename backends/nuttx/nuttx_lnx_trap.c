@@ -71,6 +71,7 @@
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
 #include "ove_cortex_m_cache.h"
+#include "ove_cortex_m_mpu.h"
 #include "ove_lxp_memory_contract.h"
 #include "ove_nuttx_runtime.h"
 
@@ -1025,6 +1026,15 @@ static void lxp_mpu_init(void)
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	/* prepare() runs privileged with no guest runnable. Rebuild the complete
+	 * personality-owned MPU state from a disabled, empty baseline so a
+	 * sequential run cannot inherit dynamic regions from its predecessor. */
+	*mpu_ctrl = 0u;
+	__asm__ volatile("dsb 0xf\nisb 0xf" ::: "memory");
+	for (unsigned i = 0; i < 8u; i++) {
+		*mpu_rnr = i;
+		*mpu_rasr = 0u;
+	}
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	const uint32_t code_base = 0x08000000u, code_sz = 19u; /* 1M internal flash */
 	const uint32_t code_texscb = 0x02u; /* Normal write-through (real flash) */
@@ -1325,13 +1335,34 @@ static int nuttx_prepare(void)
 	return 0;
 }
 
-static int
-nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
+static int nuttx_validate_static_mpu(void)
+{
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	struct ove_cortex_m_mpu_snapshot snapshot;
+	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
+	    (snapshot.ctrl &
+	     (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+		return 0;
+
+	const struct ove_cortex_m_mpu_region *pool = &snapshot.regions[1];
+	return ove_cortex_m_mpu_region_matches(pool, 0xc0000000u, 8u * 1024u * 1024u,
+					       1u, 0x0bu, 1u, 1u) &&
+	       ove_cortex_m_mpu_region_contains(pool, OVE_LXP_GUEST_POOL_BASE,
+						OVE_LXP_GUEST_POOL_SIZE) &&
+	       !ove_cortex_m_mpu_region_overlaps_enabled(pool, 0xc0000000u, 1024u * 1024u);
+#else
+	return 1;
+#endif
+}
+
+static int nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *declared)
 {
 	if (declared != &g_lxp_memory_contract)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry)
+	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
+			       nuttx_validate_static_mpu()
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 #else

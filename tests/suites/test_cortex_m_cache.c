@@ -10,6 +10,7 @@
 #include "../framework/ove_test.h"
 
 #include "ove_cortex_m_cache.h"
+#include "ove_cortex_m_mpu.h"
 
 static uint32_t ccsidr(size_t line_size, size_t ways, size_t sets)
 {
@@ -77,6 +78,65 @@ static void test_line_span_rejects_invalid_ranges(void **state)
 	assert_int_equal(ove_cortex_m_cache_line_span(0u, 1u, 32u, NULL), -1);
 }
 
+static uint32_t rasr(unsigned log2_size, uint8_t subregions, uint8_t texscb,
+		     uint8_t access, uint8_t execute_never)
+{
+	return 1u | ((log2_size - 1u) << 1) | ((uint32_t)subregions << 8) |
+	       ((uint32_t)texscb << 16) | ((uint32_t)access << 24) |
+	       ((uint32_t)execute_never << 28);
+}
+
+static void test_mpu_region_decode_and_match(void **state)
+{
+	(void)state;
+	struct ove_cortex_m_mpu_region region;
+
+	assert_int_equal(
+		ove_cortex_m_mpu_region_decode(0xc0000001u, rasr(23u, 1u, 0x0bu, 1u, 1u),
+					       &region),
+		0);
+	assert_int_equal(region.base, 0xc0000000u);
+	assert_int_equal(region.size, 8u * 1024u * 1024u);
+	assert_int_equal(region.subregion_disable, 1u);
+	assert_int_equal(region.texscb, 0x0bu);
+	assert_int_equal(region.access, 1u);
+	assert_int_equal(region.execute_never, 1u);
+	assert_true(ove_cortex_m_mpu_region_matches(&region, 0xc0000000u,
+						    8u * 1024u * 1024u, 1u, 0x0bu,
+						    1u, 1u));
+	assert_false(ove_cortex_m_mpu_region_matches(&region, 0xc0000000u,
+						     8u * 1024u * 1024u, 0u, 0x0bu,
+						     1u, 1u));
+}
+
+static void test_mpu_subregion_ranges(void **state)
+{
+	(void)state;
+	struct ove_cortex_m_mpu_region region;
+	assert_int_equal(
+		ove_cortex_m_mpu_region_decode(0xc0000000u, rasr(23u, 1u, 0x0bu, 1u, 1u),
+					       &region),
+		0);
+
+	assert_false(ove_cortex_m_mpu_region_contains(&region, 0xc0000000u, 0x1000u));
+	assert_false(
+		ove_cortex_m_mpu_region_overlaps_enabled(&region, 0xc0000000u, 0x100000u));
+	assert_true(ove_cortex_m_mpu_region_contains(&region, 0xc0100000u, 0x700000u));
+	assert_true(
+		ove_cortex_m_mpu_region_overlaps_enabled(&region, 0xc00ff000u, 0x2000u));
+	assert_false(ove_cortex_m_mpu_region_contains(&region, 0xc00ff000u, 0x2000u));
+}
+
+static void test_mpu_rejects_invalid_descriptors_and_ranges(void **state)
+{
+	(void)state;
+	struct ove_cortex_m_mpu_region region;
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0u, 1u | (3u << 1), &region), -1);
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0u, 0u, &region), 0);
+	assert_false(ove_cortex_m_mpu_region_contains(&region, 0u, 1u));
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0u, 0u, NULL), -1);
+}
+
 int test_cortex_m_cache_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -84,6 +144,9 @@ int test_cortex_m_cache_run(void)
 		cmocka_unit_test(test_synthetic_cache_shapes),
 		cmocka_unit_test(test_line_span_rounds_outward),
 		cmocka_unit_test(test_line_span_rejects_invalid_ranges),
+		cmocka_unit_test(test_mpu_region_decode_and_match),
+		cmocka_unit_test(test_mpu_subregion_ranges),
+		cmocka_unit_test(test_mpu_rejects_invalid_descriptors_and_ranges),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
