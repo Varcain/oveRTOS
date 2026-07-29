@@ -774,29 +774,21 @@ static lxp_exec_capture_t *freertos_exec_capture(int sidx)
 	return (sidx >= 0 && sidx < LXP_NSLOT) ? &g_exec_captures[sidx] : NULL;
 }
 
-static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
-				 const lxp_guest_launch_t *launch)
+static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t base,
+				       size_t len)
 {
-	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_slots[sidx].tid)
-		return -1;
-	g_slots[sidx].park_desc = NULL;
+	int ridx = address_space.index;
+	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
+		return LXP_ERR_INVALID_PARAM;
+	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
+	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
+	if (base < region_lo || base >= region_hi || len > region_hi - base)
+		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* The loader wrote this program's image (data + relocations) to the SDRAM program region
-	 * through the coordinator's uncached (Device background) view, and materialised new code paths.
-	 * With the D-cache ON the region is Normal WBWA cacheable (freertos_spawn_common), so INVALIDATE
-	 * exactly this region before the guest runs: drop stale cacheable lines from the previous tenant
-	 * of this ridx so the guest's first reads miss + fill the fresh image from SDRAM.  Invalidate —
-	 * NOT clean — a clean would write those stale lines back OVER the loader's fresh SDRAM.  (D-cache
-	 * off: no lines to drop; skip the walk.)  Then invalidate the I-cache so the CPU fetches the real
-	 * code rather than whatever was physically in SDRAM. */
+	/* Preserve the existing publication mechanics while moving their ordering
+	 * into the explicit LXP port boundary. A bounded range-only implementation
+	 * replaces this whole-address-space maintenance in the next iteration. */
 	if (SCB->CCR & SCB_CCR_DC_Msk) {
-		/* freertos_coord_map now gives the loader a CACHEABLE view of this region, so its
-		 * image writes can sit in dirty D-cache lines. CLEAN (write back to SDRAM so the
-		 * I-cache refills the real code) then INVALIDATE (drop the previous tenant's stale
-		 * lines) both the program region and the dyn_pool — a dynamic exec's ld.so lays
-		 * libc text into the latter. If the D-cache view was uncached (initial launch,
-		 * before any coord_map) the clean is a harmless no-op and this reduces to the
-		 * previous invalidate. */
 		SCB_CleanInvalidateDCache_by_Addr((void *)prog_regions[ridx],
 						  (int32_t)LXP_PROG_REGION_SIZE);
 		SCB_CleanInvalidateDCache_by_Addr((void *)dyn_pools[ridx],
@@ -806,6 +798,15 @@ static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
 	__DSB();
 	__ISB();
 #endif
+	return LXP_OK;
+}
+
+static int freertos_spawn_launch(int sidx, uint32_t generation, int ridx,
+				 const lxp_guest_launch_t *launch)
+{
+	if (sidx < 0 || sidx >= LXP_NSLOT || generation == 0 || !launch || g_slots[sidx].tid)
+		return -1;
+	g_slots[sidx].park_desc = NULL;
 	struct lxp_resume_ctx c;
 	lxp_resume_ctx_from_launch(&c, launch);
 	struct resume_desc *d = stash_desc(sidx, &c, launch->r[0]);
@@ -1156,6 +1157,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+	.publish_executable = freertos_publish_executable,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
 #else
