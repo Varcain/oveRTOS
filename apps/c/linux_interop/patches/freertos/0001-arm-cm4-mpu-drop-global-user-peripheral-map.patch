@@ -1,23 +1,44 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: oveRTOS <noreply@overtos.local>
 Date: Wed, 29 Jul 2026 00:00:00 +0200
-Subject: [PATCH] ARM_CM4_MPU: drop global user peripheral map
+Subject: [PATCH] ARM_CM4_MPU: dedicate peripheral region to tasks
 
 The Linux personality grants devices through generation-keyed per-task
 capabilities. FreeRTOS' default 512 MiB unprivileged peripheral mapping both
 bypasses that policy and consumes an MPU region needed for copied-text W^X.
 
-Keep the three kernel/static regions and stack region, and return the removed
-slot to the task-configurable set.
+Keep the three kernel/static regions and stack region, return the removed slot
+to the task-configurable set, and restore the additional descriptor in both
+context-switch paths.
 ---
- portable/GCC/ARM_CM4_MPU/port.c      | 12 ------------
+ portable/GCC/ARM_CM4_MPU/port.c      | 22 ++++++++++------------
  portable/GCC/ARM_CM4_MPU/portmacro.h |  7 +++----
- 2 files changed, 3 insertions(+), 16 deletions(-)
+ 2 files changed, 13 insertions(+), 16 deletions(-)
 
 diff --git a/portable/GCC/ARM_CM4_MPU/port.c b/portable/GCC/ARM_CM4_MPU/port.c
 index 0000000..0000000 100644
 --- a/portable/GCC/ARM_CM4_MPU/port.c
 +++ b/portable/GCC/ARM_CM4_MPU/port.c
+@@ -781,6 +781,11 @@ static void prvRestoreContextOfFirstTask( void )
+             " stmia r0, {r4-r11}                    \n" /* Write 4 sets of MPU registers. [MPU Region # 9 - 12]. */
+         #endif /* configTOTAL_MPU_REGIONS == 16. */
++        #if ( ( portTOTAL_NUM_REGIONS_IN_TCB % 4UL ) == 1UL )
++            " ldmia r2!, {r4-r5}                    \n" /* Read the final set of MPU registers. */
++            " stmia r0, {r4-r5}                     \n" /* Write the final set of MPU registers. */
++        #endif
+         "                                       \n"
+         " ldr r0, =0xe000ed94                   \n" /* MPU_CTRL register. */
+         " ldr r3, [r0]                          \n" /* Read the value of MPU_CTRL. */
+@@ -1140,6 +1145,11 @@ void xPortPendSVHandler( void )
+             " stmia r0, {r4-r11}                    \n" /* Write 4 sets of MPU registers. [MPU Region # 8 - 11]. */
+         #endif /* configTOTAL_MPU_REGIONS == 16. */
++        #if ( ( portTOTAL_NUM_REGIONS_IN_TCB % 4UL ) == 1UL )
++            " ldmia r2!, {r4-r5}                    \n" /* Read the final set of MPU registers. */
++            " stmia r0, {r4-r5}                     \n" /* Write the final set of MPU registers. */
++        #endif
+         "                                       \n"
+         " ldr r0, =0xe000ed94                   \n" /* MPU_CTRL register. */
+         " ldr r3, [r0]                          \n" /* Read the value of MPU_CTRL. */
 @@ -1290,16 +1290,6 @@ static void prvSetupMPU( void )
                                         prvGetMPURegionSizeSetting( ( uint32_t ) __privileged_data_end__ - ( uint32_t ) __privileged_data_start__ ) |
                                         ( portMPU_REGION_ENABLE );
