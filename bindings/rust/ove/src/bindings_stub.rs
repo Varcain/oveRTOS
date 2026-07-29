@@ -106,6 +106,10 @@ pub const OVE_FS_O_READ: u32 = 1;
 pub const OVE_FS_O_WRITE: u32 = 2;
 pub const OVE_FS_O_CREATE: u32 = 4;
 pub const OVE_FS_O_APPEND: u32 = 8;
+pub const OVE_FS_O_TRUNC: u32 = 16;
+pub const OVE_FS_O_EXCL: u32 = 32;
+pub const OVE_FS_TYPE_FILE: u32 = 1;
+pub const OVE_FS_TYPE_DIR: u32 = 2;
 pub const OVE_FS_SEEK_SET: u32 = 0;
 pub const OVE_FS_SEEK_CUR: u32 = 1;
 pub const OVE_FS_SEEK_END: u32 = 2;
@@ -176,6 +180,18 @@ pub const OVE_ERR_INVAL: ove_err = -20;
 pub const OVE_ERR_NOT_FOUND: ove_err = -21;
 #[doc = " Requested local network address is not configured on this host."]
 pub const OVE_ERR_NET_ADDR_NOT_AVAILABLE: ove_err = -22;
+pub const OVE_ERR_ALREADY_EXISTS: ove_err = -23;
+pub const OVE_ERR_NO_SPACE: ove_err = -24;
+pub const OVE_ERR_NOT_DIR: ove_err = -25;
+pub const OVE_ERR_IS_DIR: ove_err = -26;
+pub const OVE_ERR_NOT_EMPTY: ove_err = -27;
+pub const OVE_ERR_READ_ONLY: ove_err = -28;
+pub const OVE_ERR_IO: ove_err = -29;
+pub const OVE_ERR_BUSY: ove_err = -30;
+pub const OVE_ERR_NAME_TOO_LONG: ove_err = -31;
+pub const OVE_ERR_BAD_HANDLE: ove_err = -32;
+pub const OVE_ERR_PERMISSION: ove_err = -33;
+pub const OVE_ERR_CROSS_DEVICE: ove_err = -34;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]
 pub type ove_err = core::ffi::c_int;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]
@@ -1620,6 +1636,13 @@ const _: () = {
     ["Offset of field: ove_dirent::size"][core::mem::offset_of!(ove_dirent, size) - 256usize];
     ["Offset of field: ove_dirent::is_dir"][core::mem::offset_of!(ove_dirent, is_dir) - 260usize];
 };
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_fs_stat {
+    pub size: u64,
+    pub mtime_sec: u64,
+    pub type_: core::ffi::c_uint,
+}
 unsafe extern "C" {
     #[doc = " @brief Open a file using caller-provided static storage.\n\n Opens the file at @p path with the given @p flags and stores the resulting\n handle in @p file. The caller must ensure @p storage remains valid for the\n lifetime of the open file.\n\n @param[out] file     Receives the opened file handle.\n @param[in]  storage  Pointer to statically-allocated file storage.\n @param[in]  path     Absolute path of the file to open.\n @param[in]  flags    Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
     pub fn ove_fs_open_init(
@@ -1724,6 +1747,16 @@ unsafe extern "C" {
         old_path: *const core::ffi::c_char,
         new_path: *const core::ffi::c_char,
     ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_fs_stat(
+        path: *const core::ffi::c_char,
+        out_stat: *mut ove_fs_stat,
+    ) -> core::ffi::c_int;
+    pub fn ove_fs_mkdir(path: *const core::ffi::c_char) -> core::ffi::c_int;
+    pub fn ove_fs_rmdir(path: *const core::ffi::c_char) -> core::ffi::c_int;
+    pub fn ove_fs_truncate(file: ove_file_t, length: u64) -> core::ffi::c_int;
+    pub fn ove_fs_sync(file: ove_file_t) -> core::ffi::c_int;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

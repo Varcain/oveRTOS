@@ -126,6 +126,38 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
+int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
+{
+	(void)path;
+	(void)out_stat;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_fs_mkdir(const char *path)
+{
+	(void)path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_fs_rmdir(const char *path)
+{
+	(void)path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_fs_truncate(ove_file_t file, uint64_t length)
+{
+	(void)file;
+	(void)length;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_fs_sync(ove_file_t file)
+{
+	(void)file;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
 #else
 /* Native/POSIX fallback for sim targets (POSIX and NuttX backends have compatible structs) */
 #include <stdio.h>
@@ -136,6 +168,8 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <errno.h>
+#include "ove_backend_common.h"
 
 static int flags_to_posix(int flags)
 {
@@ -152,6 +186,12 @@ static int flags_to_posix(int flags)
 	}
 	if (flags & OVE_FS_O_APPEND) {
 		mode |= O_APPEND;
+	}
+	if (flags & OVE_FS_O_TRUNC) {
+		mode |= O_TRUNC;
+	}
+	if (flags & OVE_FS_O_EXCL) {
+		mode |= O_EXCL;
 	}
 	return mode;
 }
@@ -181,8 +221,9 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 	int mode = flags_to_posix(flags);
 	f->fd = open(path, mode, 0666);
 	if (f->fd < 0) {
+		int err = errno;
 		free(f);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(err);
 	}
 	*file = f;
 	return OVE_OK;
@@ -208,7 +249,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 	}
 	ssize_t n = read(f->fd, buf, count);
 	if (n < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	if (bytes_read) {
 		*bytes_read = (size_t)n;
@@ -224,7 +265,7 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_w
 	}
 	ssize_t n = write(f->fd, buf, count);
 	if (n < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	if (bytes_written) {
 		*bytes_written = (size_t)n;
@@ -238,10 +279,11 @@ int ove_fs_size(ove_file_t file, size_t *out_size)
 	if (!f || !out_size) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	off_t cur = lseek(f->fd, 0, SEEK_CUR);
-	off_t end = lseek(f->fd, 0, SEEK_END);
-	lseek(f->fd, cur, SEEK_SET);
-	*out_size = (size_t)end;
+	struct stat st;
+	if (fstat(f->fd, &st) != 0) {
+		return ove_errno_to_ove(errno);
+	}
+	*out_size = (size_t)st.st_size;
 	return OVE_OK;
 }
 
@@ -266,7 +308,7 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (lseek(f->fd, offset, w) < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	return OVE_OK;
 }
@@ -292,8 +334,9 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	}
 	d->dp = opendir(path);
 	if (!d->dp) {
+		int err = errno;
 		free(d);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(err);
 	}
 	*dir = d;
 	return OVE_OK;
@@ -306,11 +349,11 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	if (!d || !entry) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	errno = 0;
 	struct dirent *de = readdir(d->dp);
 	if (!de) {
-		/* End of directory — return OK with empty name */
 		memset(entry, 0, sizeof(*entry));
-		return OVE_OK;
+		return (errno == 0) ? OVE_ERR_EOF : ove_errno_to_ove(errno);
 	}
 	strncpy(entry->name, de->d_name, sizeof(entry->name) - 1);
 	entry->name[sizeof(entry->name) - 1] = '\0';
@@ -338,7 +381,7 @@ int ove_fs_unlink(const char *path)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (unlink(path) != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	return OVE_OK;
 }
@@ -349,7 +392,67 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (rename(old_path, new_path) != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
+	}
+	return OVE_OK;
+}
+
+int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
+{
+	struct stat st;
+
+	if (!path || !out_stat) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (stat(path, &st) != 0) {
+		return ove_errno_to_ove(errno);
+	}
+	out_stat->size = S_ISDIR(st.st_mode) ? 0u : (uint64_t)st.st_size;
+	out_stat->mtime_sec = (uint64_t)st.st_mtime;
+	out_stat->type = S_ISDIR(st.st_mode) ? OVE_FS_TYPE_DIR : OVE_FS_TYPE_FILE;
+	return OVE_OK;
+}
+
+int ove_fs_mkdir(const char *path)
+{
+	if (!path) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (mkdir(path, 0777) != 0) {
+		return ove_errno_to_ove(errno);
+	}
+	return OVE_OK;
+}
+
+int ove_fs_rmdir(const char *path)
+{
+	if (!path) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (rmdir(path) != 0) {
+		return ove_errno_to_ove(errno);
+	}
+	return OVE_OK;
+}
+
+int ove_fs_truncate(ove_file_t file, uint64_t length)
+{
+	if (!file || length > (uint64_t)INT64_MAX) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (ftruncate(file->fd, (off_t)length) != 0) {
+		return ove_errno_to_ove(errno);
+	}
+	return OVE_OK;
+}
+
+int ove_fs_sync(ove_file_t file)
+{
+	if (!file) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (fsync(file->fd) != 0) {
+		return ove_errno_to_ove(errno);
 	}
 	return OVE_OK;
 }

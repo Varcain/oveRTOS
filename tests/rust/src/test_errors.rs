@@ -87,6 +87,18 @@ const VARIANTS: &[(i32, Error)] = &[
     (-20, Error::Inval),
     (-21, Error::NotFound),
     (-22, Error::NetAddrNotAvailable),
+    (-23, Error::AlreadyExists),
+    (-24, Error::NoSpace),
+    (-25, Error::NotDir),
+    (-26, Error::IsDir),
+    (-27, Error::NotEmpty),
+    (-28, Error::ReadOnly),
+    (-29, Error::Io),
+    (-30, Error::Busy),
+    (-31, Error::NameTooLong),
+    (-32, Error::BadHandle),
+    (-33, Error::Permission),
+    (-34, Error::CrossDevice),
 ];
 
 fn test_from_code_ok() {
@@ -192,6 +204,18 @@ fn test_display_all_variants() {
         (Error::Eof, "end of file"),
         (Error::Inval, "invalid argument"),
         (Error::NotFound, "not found"),
+        (Error::AlreadyExists, "already exists"),
+        (Error::NoSpace, "no space left"),
+        (Error::NotDir, "not a directory"),
+        (Error::IsDir, "is a directory"),
+        (Error::NotEmpty, "directory not empty"),
+        (Error::ReadOnly, "read-only filesystem"),
+        (Error::Io, "I/O error"),
+        (Error::Busy, "resource busy"),
+        (Error::NameTooLong, "name too long"),
+        (Error::BadHandle, "bad handle"),
+        (Error::Permission, "permission denied"),
+        (Error::CrossDevice, "cross-device operation"),
     ];
     for (v, s) in expected {
         assert_eq!(v.to_string(), s, "display mismatch for {v:?}");

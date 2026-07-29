@@ -63,6 +63,30 @@ pub enum Error {
     Inval,
     /// Requested key / entry / resource was not found (`OVE_ERR_NOT_FOUND`).
     NotFound,
+    /// A filesystem entry already exists (`OVE_ERR_ALREADY_EXISTS`).
+    AlreadyExists,
+    /// A storage device has no space remaining (`OVE_ERR_NO_SPACE`).
+    NoSpace,
+    /// A required path component is not a directory (`OVE_ERR_NOT_DIR`).
+    NotDir,
+    /// A file-only operation targeted a directory (`OVE_ERR_IS_DIR`).
+    IsDir,
+    /// A directory is not empty (`OVE_ERR_NOT_EMPTY`).
+    NotEmpty,
+    /// The target storage is read-only (`OVE_ERR_READ_ONLY`).
+    ReadOnly,
+    /// A storage input/output error occurred (`OVE_ERR_IO`).
+    Io,
+    /// The resource is busy (`OVE_ERR_BUSY`).
+    Busy,
+    /// A path or name is too long (`OVE_ERR_NAME_TOO_LONG`).
+    NameTooLong,
+    /// A handle is closed or invalid (`OVE_ERR_BAD_HANDLE`).
+    BadHandle,
+    /// Permission was denied (`OVE_ERR_PERMISSION`).
+    Permission,
+    /// Paths belong to different filesystems (`OVE_ERR_CROSS_DEVICE`).
+    CrossDevice,
     /// An error code not covered by the above variants; the raw code is preserved.
     Unknown(i32),
 }
@@ -100,6 +124,18 @@ impl Error {
             -20 => Err(Error::Inval),
             -21 => Err(Error::NotFound),
             -22 => Err(Error::NetAddrNotAvailable),
+            -23 => Err(Error::AlreadyExists),
+            -24 => Err(Error::NoSpace),
+            -25 => Err(Error::NotDir),
+            -26 => Err(Error::IsDir),
+            -27 => Err(Error::NotEmpty),
+            -28 => Err(Error::ReadOnly),
+            -29 => Err(Error::Io),
+            -30 => Err(Error::Busy),
+            -31 => Err(Error::NameTooLong),
+            -32 => Err(Error::BadHandle),
+            -33 => Err(Error::Permission),
+            -34 => Err(Error::CrossDevice),
             other => Err(Error::Unknown(other)),
         }
     }
@@ -130,6 +166,18 @@ impl Error {
             Error::Inval => -20,
             Error::NotFound => -21,
             Error::NetAddrNotAvailable => -22,
+            Error::AlreadyExists => -23,
+            Error::NoSpace => -24,
+            Error::NotDir => -25,
+            Error::IsDir => -26,
+            Error::NotEmpty => -27,
+            Error::ReadOnly => -28,
+            Error::Io => -29,
+            Error::Busy => -30,
+            Error::NameTooLong => -31,
+            Error::BadHandle => -32,
+            Error::Permission => -33,
+            Error::CrossDevice => -34,
             Error::Unknown(c) => c,
         }
     }
@@ -185,6 +233,18 @@ const fn _assert_codes_match() {
     assert!(bindings::OVE_ERR_INVAL == -20);
     assert!(bindings::OVE_ERR_NOT_FOUND == -21);
     assert!(bindings::OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22);
+    assert!(bindings::OVE_ERR_ALREADY_EXISTS == -23);
+    assert!(bindings::OVE_ERR_NO_SPACE == -24);
+    assert!(bindings::OVE_ERR_NOT_DIR == -25);
+    assert!(bindings::OVE_ERR_IS_DIR == -26);
+    assert!(bindings::OVE_ERR_NOT_EMPTY == -27);
+    assert!(bindings::OVE_ERR_READ_ONLY == -28);
+    assert!(bindings::OVE_ERR_IO == -29);
+    assert!(bindings::OVE_ERR_BUSY == -30);
+    assert!(bindings::OVE_ERR_NAME_TOO_LONG == -31);
+    assert!(bindings::OVE_ERR_BAD_HANDLE == -32);
+    assert!(bindings::OVE_ERR_PERMISSION == -33);
+    assert!(bindings::OVE_ERR_CROSS_DEVICE == -34);
 }
 
 #[cfg(not(docsrs))]
@@ -224,6 +284,18 @@ impl core::fmt::Display for Error {
             Error::Inval => write!(f, "invalid argument"),
             Error::NotFound => write!(f, "not found"),
             Error::NetAddrNotAvailable => write!(f, "address not available"),
+            Error::AlreadyExists => write!(f, "already exists"),
+            Error::NoSpace => write!(f, "no space left"),
+            Error::NotDir => write!(f, "not a directory"),
+            Error::IsDir => write!(f, "is a directory"),
+            Error::NotEmpty => write!(f, "directory not empty"),
+            Error::ReadOnly => write!(f, "read-only filesystem"),
+            Error::Io => write!(f, "I/O error"),
+            Error::Busy => write!(f, "resource busy"),
+            Error::NameTooLong => write!(f, "name too long"),
+            Error::BadHandle => write!(f, "bad handle"),
+            Error::Permission => write!(f, "permission denied"),
+            Error::CrossDevice => write!(f, "cross-device operation"),
             Error::Unknown(c) => write!(f, "unknown error ({c})"),
         }
     }
@@ -256,6 +328,18 @@ mod tests {
         (-20, Error::Inval),
         (-21, Error::NotFound),
         (-22, Error::NetAddrNotAvailable),
+        (-23, Error::AlreadyExists),
+        (-24, Error::NoSpace),
+        (-25, Error::NotDir),
+        (-26, Error::IsDir),
+        (-27, Error::NotEmpty),
+        (-28, Error::ReadOnly),
+        (-29, Error::Io),
+        (-30, Error::Busy),
+        (-31, Error::NameTooLong),
+        (-32, Error::BadHandle),
+        (-33, Error::Permission),
+        (-34, Error::CrossDevice),
     ];
 
     #[test]

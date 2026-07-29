@@ -54,6 +54,10 @@ extern "C" {
 #define OVE_FS_O_CREATE 0x04
 /** @brief Seek to the end of the file before each write. */
 #define OVE_FS_O_APPEND 0x08
+/** @brief Truncate an existing file to zero bytes when opening it. */
+#define OVE_FS_O_TRUNC 0x10
+/** @brief With @c OVE_FS_O_CREATE, fail if the path already exists. */
+#define OVE_FS_O_EXCL 0x20
 /** @} */
 
 /**
@@ -76,6 +80,17 @@ struct ove_dirent {
 	char name[256];	   /**< @brief Null-terminated entry name (not full path). */
 	unsigned int size; /**< @brief File size in bytes; 0 for directories. */
 	int is_dir;	   /**< @brief Non-zero if the entry is a directory. */
+};
+
+/** @brief Portable file-system object types returned by @ref ove_fs_stat. */
+#define OVE_FS_TYPE_FILE 1u
+#define OVE_FS_TYPE_DIR 2u
+
+/** @brief Metadata for a file-system path. */
+struct ove_fs_stat {
+	uint64_t size;	    /**< @brief Object size in bytes; zero for directories. */
+	uint64_t mtime_sec; /**< @brief Last modification time in Unix seconds, if available. */
+	unsigned int type;  /**< @brief One of @c OVE_FS_TYPE_FILE or @c OVE_FS_TYPE_DIR. */
 };
 
 #ifdef CONFIG_OVE_FS
@@ -301,6 +316,21 @@ int ove_fs_unlink(const char *path);
  */
 int ove_fs_rename(const char *old_path, const char *new_path);
 
+/** @brief Query metadata for a path without opening it. */
+int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat);
+
+/** @brief Create a directory. */
+int ove_fs_mkdir(const char *path);
+
+/** @brief Remove an empty directory. */
+int ove_fs_rmdir(const char *path);
+
+/** @brief Resize an open file. */
+int ove_fs_truncate(ove_file_t file, uint64_t length);
+
+/** @brief Flush buffered file data and metadata to the storage device. */
+int ove_fs_sync(ove_file_t file);
+
 #else /* !CONFIG_OVE_FS */
 
 static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
@@ -386,6 +416,33 @@ static inline int ove_fs_rename(const char *old_path, const char *new_path)
 {
 	(void)old_path;
 	(void)new_path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
+{
+	(void)path;
+	(void)out_stat;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_mkdir(const char *path)
+{
+	(void)path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_rmdir(const char *path)
+{
+	(void)path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_truncate(ove_file_t file, uint64_t length)
+{
+	(void)file;
+	(void)length;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_sync(ove_file_t file)
+{
+	(void)file;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

@@ -40,6 +40,8 @@ static void test_cpp_error_int_roundtrip(void **state)
 	assert_int_equal(static_cast<int>(ove::Error::NotFound), OVE_ERR_NOT_FOUND);
 	assert_int_equal(static_cast<int>(ove::Error::NetAddrNotAvailable),
 			 OVE_ERR_NET_ADDR_NOT_AVAILABLE);
+	assert_int_equal(static_cast<int>(ove::Error::NoSpace), OVE_ERR_NO_SPACE);
+	assert_int_equal(static_cast<int>(ove::Error::CrossDevice), OVE_ERR_CROSS_DEVICE);
 }
 
 /* ── from_rc(int) -> Result<void> ───────────────────────────────── */

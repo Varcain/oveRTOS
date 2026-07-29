@@ -24,6 +24,10 @@ pub const O_WRITE = c.OVE_FS_O_WRITE;
 pub const O_CREATE = c.OVE_FS_O_CREATE;
 /// Open flag: append writes to the end of the file.
 pub const O_APPEND = c.OVE_FS_O_APPEND;
+/// Open flag: truncate an existing file to zero bytes.
+pub const O_TRUNC = c.OVE_FS_O_TRUNC;
+/// Open flag: with `O_CREATE`, fail if the path already exists.
+pub const O_EXCL = c.OVE_FS_O_EXCL;
 
 /// Seek origin: seek relative to the start of the file.
 pub const SEEK_SET = c.OVE_FS_SEEK_SET;
@@ -42,6 +46,13 @@ pub const Dirent = struct {
     is_dir: bool,
     /// File size in bytes (0 for directories).
     size: usize,
+};
+
+/// Portable metadata for a filesystem path.
+pub const Metadata = struct {
+    size: u64,
+    mtime_sec: u64,
+    is_dir: bool,
 };
 
 /// File handle for reading, writing, and seeking within a file.
@@ -107,6 +118,16 @@ pub const File = struct {
     /// Return the current file position as a byte offset from the start.
     pub fn tell(self: File) i64 {
         return c.ove_fs_tell(self.handle);
+    }
+
+    /// Resize the open file.
+    pub fn truncate(self: File, length: u64) Error!void {
+        try err.fromCode(c.ove_fs_truncate(self.handle, length));
+    }
+
+    /// Flush buffered data and metadata to storage.
+    pub fn sync(self: File) Error!void {
+        try err.fromCode(c.ove_fs_sync(self.handle));
     }
 
     // ----- std.io.GenericReader / GenericWriter integration -----
@@ -210,4 +231,25 @@ pub fn unlink(path: [*:0]const u8) Error!void {
 /// Returns `Error` if the source does not exist or the rename fails.
 pub fn rename(old_path: [*:0]const u8, new_path: [*:0]const u8) Error!void {
     try err.fromCode(c.ove_fs_rename(old_path, new_path));
+}
+
+/// Query metadata for `path`.
+pub fn stat(path: [*:0]const u8) Error!Metadata {
+    var raw: c.struct_ove_fs_stat = undefined;
+    try err.fromCode(c.ove_fs_stat(path, &raw));
+    return .{
+        .size = raw.size,
+        .mtime_sec = raw.mtime_sec,
+        .is_dir = @field(raw, "type") == c.OVE_FS_TYPE_DIR,
+    };
+}
+
+/// Create a directory.
+pub fn mkdir(path: [*:0]const u8) Error!void {
+    try err.fromCode(c.ove_fs_mkdir(path));
+}
+
+/// Remove an empty directory.
+pub fn rmdir(path: [*:0]const u8) Error!void {
+    try err.fromCode(c.ove_fs_rmdir(path));
 }

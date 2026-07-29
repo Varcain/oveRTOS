@@ -14,7 +14,7 @@
 
 struct ove_file {
 	FIL fil;
-	FILINFO fno; /* cached info from open */
+	int append;
 };
 
 struct ove_dir {
@@ -32,6 +32,100 @@ struct ove_dir {
 static char fatfs_path[16];
 static FATFS fatfs;
 
+static int fatfs_result(FRESULT result)
+{
+	switch (result) {
+	case FR_OK:
+		return OVE_OK;
+	case FR_NO_FILE:
+	case FR_NO_PATH:
+		return OVE_ERR_NOT_FOUND;
+	case FR_INVALID_NAME:
+		return OVE_ERR_NAME_TOO_LONG;
+	case FR_EXIST:
+		return OVE_ERR_ALREADY_EXISTS;
+	case FR_WRITE_PROTECTED:
+		return OVE_ERR_READ_ONLY;
+	case FR_INVALID_OBJECT:
+		return OVE_ERR_BAD_HANDLE;
+	case FR_TIMEOUT:
+		return OVE_ERR_TIMEOUT;
+	case FR_LOCKED:
+		return OVE_ERR_BUSY;
+	case FR_NOT_ENOUGH_CORE:
+		return OVE_ERR_NO_MEMORY;
+	case FR_TOO_MANY_OPEN_FILES:
+		return OVE_ERR_NO_MEMORY;
+	case FR_DENIED:
+		return OVE_ERR_PERMISSION;
+	case FR_DISK_ERR:
+	case FR_INT_ERR:
+	case FR_NOT_READY:
+		return OVE_ERR_IO;
+	case FR_INVALID_DRIVE:
+	case FR_INVALID_PARAMETER:
+		return OVE_ERR_INVALID_PARAM;
+	case FR_NOT_ENABLED:
+	case FR_NO_FILESYSTEM:
+	case FR_MKFS_ABORTED:
+	default:
+		return OVE_ERR_NOT_SUPPORTED;
+	}
+}
+
+static int open_common(struct ove_file *file, const char *path, int flags)
+{
+	BYTE mode = 0;
+
+	if (path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	if (flags & OVE_FS_O_READ) {
+		mode |= FA_READ;
+	}
+	if (flags & OVE_FS_O_WRITE) {
+		mode |= FA_WRITE;
+	}
+	if (mode == 0) {
+		mode = FA_READ;
+	}
+	if ((flags & (OVE_FS_O_CREATE | OVE_FS_O_EXCL)) == (OVE_FS_O_CREATE | OVE_FS_O_EXCL)) {
+		mode |= FA_CREATE_NEW;
+	} else if ((flags & (OVE_FS_O_CREATE | OVE_FS_O_TRUNC)) ==
+		   (OVE_FS_O_CREATE | OVE_FS_O_TRUNC)) {
+		mode |= FA_CREATE_ALWAYS;
+	} else if (flags & OVE_FS_O_CREATE) {
+		mode |= FA_OPEN_ALWAYS;
+	}
+	if ((flags & OVE_FS_O_TRUNC) && !(flags & OVE_FS_O_WRITE)) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+
+	FRESULT result = f_open(&file->fil, path, mode);
+	if (result != FR_OK) {
+		return fatfs_result(result);
+	}
+	if ((flags & OVE_FS_O_TRUNC) && !(flags & OVE_FS_O_CREATE)) {
+		result = f_lseek(&file->fil, 0);
+		if (result == FR_OK) {
+			result = f_truncate(&file->fil);
+		}
+		if (result != FR_OK) {
+			(void)f_close(&file->fil);
+			return fatfs_result(result);
+		}
+	}
+	file->append = (flags & OVE_FS_O_APPEND) != 0;
+	if (file->append) {
+		result = f_lseek(&file->fil, f_size(&file->fil));
+		if (result != FR_OK) {
+			(void)f_close(&file->fil);
+			return fatfs_result(result);
+		}
+	}
+	return OVE_OK;
+}
+
 int ove_fs_mount(const char *dev_path, const char *mount_point)
 {
 	FRESULT fres;
@@ -41,7 +135,7 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	FATFS_LinkDriver(&SD_Driver, fatfs_path);
 	fres = f_mount(&fatfs, "", 0);
 	if (fres != FR_OK) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 	return OVE_OK;
 }
@@ -57,34 +151,13 @@ void ove_fs_unmount(const char *mount_point)
 int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags)
 {
 	struct ove_file *f = (struct ove_file *)storage;
-	BYTE mode = 0;
-	FRESULT fres;
-
-	if (file == NULL || storage == NULL) {
+	if (file == NULL || storage == NULL || path == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-
-	if (flags & OVE_FS_O_READ) {
-		mode |= FA_READ;
-	}
-	if (flags & OVE_FS_O_WRITE) {
-		mode |= FA_WRITE;
-	}
-	if (flags & OVE_FS_O_CREATE) {
-		mode |= FA_CREATE_ALWAYS;
-	}
-	if (flags & OVE_FS_O_APPEND) {
-		mode |= FA_OPEN_APPEND;
-	}
-	if (mode == 0) {
-		mode = FA_READ;
-	}
-
-	fres = f_open(&f->fil, path, mode);
-	if (fres != FR_OK) {
-		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path, (int)fres);
-		return (fres == FR_NO_FILE || fres == FR_NO_PATH) ? OVE_ERR_NOT_FOUND
-								  : OVE_ERR_NOT_SUPPORTED;
+	int ret = open_common(f, path, flags);
+	if (ret != OVE_OK) {
+		OVE_LOG("fs: f_open(%s) failed: %d\n", path, ret);
+		return ret;
 	}
 
 	*file = f;
@@ -93,8 +166,10 @@ int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *
 
 int ove_fs_close_deinit(ove_file_t file)
 {
-	f_close(&file->fil);
-	return OVE_OK;
+	if (file == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	return fatfs_result(f_close(&file->fil));
 }
 
 int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *path)
@@ -109,7 +184,7 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *
 	fres = f_opendir(&d->dir, path);
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 
 	*dir = d;
@@ -128,24 +203,6 @@ int ove_fs_closedir_deinit(ove_dir_t dir)
 int ove_fs_open(ove_file_t *file, const char *path, int flags)
 {
 	struct ove_file *f;
-	BYTE mode = 0;
-	FRESULT fres;
-
-	if (flags & OVE_FS_O_READ) {
-		mode |= FA_READ;
-	}
-	if (flags & OVE_FS_O_WRITE) {
-		mode |= FA_WRITE;
-	}
-	if (flags & OVE_FS_O_CREATE) {
-		mode |= FA_CREATE_ALWAYS;
-	}
-	if (flags & OVE_FS_O_APPEND) {
-		mode |= FA_OPEN_APPEND;
-	}
-	if (mode == 0) {
-		mode = FA_READ;
-	}
 
 	f = OVE_BACKEND_MALLOC(sizeof(*f));
 	if (f == NULL) {
@@ -153,12 +210,11 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	fres = f_open(&f->fil, path, mode);
-	if (fres != FR_OK) {
-		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path, (int)fres);
+	int ret = open_common(f, path, flags);
+	if (ret != OVE_OK) {
+		OVE_LOG("fs: f_open(%s) failed: %d\n", path, ret);
 		OVE_BACKEND_FREE(f);
-		return (fres == FR_NO_FILE || fres == FR_NO_PATH) ? OVE_ERR_NOT_FOUND
-								  : OVE_ERR_NOT_SUPPORTED;
+		return ret;
 	}
 
 	*file = f;
@@ -167,9 +223,11 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 
 int ove_fs_close(ove_file_t file)
 {
-	f_close(&file->fil);
-	OVE_BACKEND_FREE(file);
-	return OVE_OK;
+	int ret = ove_fs_close_deinit(file);
+	if (ret == OVE_OK) {
+		OVE_BACKEND_FREE(file);
+	}
+	return ret;
 }
 
 int ove_fs_opendir(ove_dir_t *dir, const char *path)
@@ -186,7 +244,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
 		OVE_BACKEND_FREE(d);
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 
 	*dir = d;
@@ -209,29 +267,13 @@ static int dir_pool_used[FS_POOL_DIRS];
 
 int ove_fs_open(ove_file_t *file, const char *path, int flags)
 {
-	BYTE mode = 0;
-	FRESULT fres;
-
-	if (flags & OVE_FS_O_READ)
-		mode |= FA_READ;
-	if (flags & OVE_FS_O_WRITE)
-		mode |= FA_WRITE;
-	if (flags & OVE_FS_O_CREATE)
-		mode |= FA_CREATE_ALWAYS;
-	if (flags & OVE_FS_O_APPEND)
-		mode |= FA_OPEN_APPEND;
-	if (mode == 0)
-		mode = FA_READ;
-
 	for (int i = 0; i < FS_POOL_FILES; i++) {
 		if (!file_pool_used[i]) {
 			file_pool_used[i] = 1;
-			fres = f_open(&file_pool[i].fil, path, mode);
-			if (fres != FR_OK) {
+			int ret = open_common(&file_pool[i], path, flags);
+			if (ret != OVE_OK) {
 				file_pool_used[i] = 0;
-				return (fres == FR_NO_FILE || fres == FR_NO_PATH)
-					       ? OVE_ERR_NOT_FOUND
-					       : OVE_ERR_NOT_SUPPORTED;
+				return ret;
 			}
 			*file = &file_pool[i];
 			return OVE_OK;
@@ -262,7 +304,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 			fres = f_opendir(&dir_pool[i].dir, path);
 			if (fres != FR_OK) {
 				dir_pool_used[i] = 0;
-				return OVE_ERR_NOT_SUPPORTED;
+				return fatfs_result(fres);
 			}
 			*dir = &dir_pool[i];
 			return OVE_OK;
@@ -295,7 +337,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_read failed: FRESULT=%d (count=%u)\n", (int)fres,
 			(unsigned int)count);
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 	if (bytes_read != NULL) {
 		*bytes_read = br;
@@ -308,9 +350,15 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_w
 	unsigned int bw;
 	FRESULT fres;
 
+	if (file->append) {
+		fres = f_lseek(&file->fil, f_size(&file->fil));
+		if (fres != FR_OK) {
+			return fatfs_result(fres);
+		}
+	}
 	fres = f_write(&file->fil, buf, count, &bw);
 	if (fres != FR_OK) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 	if (bytes_written != NULL) {
 		*bytes_written = bw;
@@ -332,7 +380,7 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	fres = f_readdir(&dir->dir, &fno);
 	if (fres != FR_OK || fno.fname[0] == 0) {
 		entry->name[0] = '\0';
-		return (fres == FR_OK) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+		return (fres == FR_OK) ? OVE_ERR_EOF : fatfs_result(fres);
 	}
 
 	strncpy(entry->name, fno.fname, sizeof(entry->name) - 1);
@@ -362,7 +410,7 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 
 	FRESULT fres = f_lseek(&file->fil, pos);
 	if (fres != FR_OK) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 	return OVE_OK;
 }
@@ -376,7 +424,7 @@ int ove_fs_unlink(const char *path)
 {
 	FRESULT fres = f_unlink(path);
 	if (fres != FR_OK) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 	return OVE_OK;
 }
@@ -385,7 +433,60 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 {
 	FRESULT fres = f_rename(old_path, new_path);
 	if (fres != FR_OK) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return fatfs_result(fres);
 	}
 	return OVE_OK;
+}
+
+int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
+{
+	FILINFO info;
+
+	if (path == NULL || out_stat == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	FRESULT result = f_stat(path, &info);
+	if (result != FR_OK) {
+		return fatfs_result(result);
+	}
+	out_stat->size = (info.fattrib & AM_DIR) ? 0u : (uint64_t)info.fsize;
+	out_stat->mtime_sec = 0;
+	out_stat->type = (info.fattrib & AM_DIR) ? OVE_FS_TYPE_DIR : OVE_FS_TYPE_FILE;
+	return OVE_OK;
+}
+
+int ove_fs_mkdir(const char *path)
+{
+	if (path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	return fatfs_result(f_mkdir(path));
+}
+
+int ove_fs_rmdir(const char *path)
+{
+	if (path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	return fatfs_result(f_unlink(path));
+}
+
+int ove_fs_truncate(ove_file_t file, uint64_t length)
+{
+	if (file == NULL || (uint64_t)(FSIZE_t)length != length) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	FRESULT result = f_lseek(&file->fil, (FSIZE_t)length);
+	if (result == FR_OK) {
+		result = f_truncate(&file->fil);
+	}
+	return fatfs_result(result);
+}
+
+int ove_fs_sync(ove_file_t file)
+{
+	if (file == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	return fatfs_result(f_sync(&file->fil));
 }

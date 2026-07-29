@@ -76,6 +76,25 @@ inline void unmount(const char *mount_point)
 	return from_rc(ove_fs_rename(old_path, new_path));
 }
 
+/** @brief Query portable metadata for a path. */
+[[nodiscard]] inline Result<struct ove_fs_stat> stat(const char *path) noexcept
+{
+	struct ove_fs_stat value{};
+	return from_rc(ove_fs_stat(path, &value), value);
+}
+
+/** @brief Create a directory. */
+[[nodiscard]] inline Result<void> mkdir(const char *path) noexcept
+{
+	return from_rc(ove_fs_mkdir(path));
+}
+
+/** @brief Remove an empty directory. */
+[[nodiscard]] inline Result<void> rmdir(const char *path) noexcept
+{
+	return from_rc(ove_fs_rmdir(path));
+}
+
 } /* namespace fs */
 
 /**
@@ -222,6 +241,18 @@ class File
 		size_t out_size = 0;
 		const int rc = ove_fs_size(handle_, &out_size);
 		return from_rc(rc, out_size);
+	}
+
+	/** @brief Resize the open file. */
+	[[nodiscard]] Result<void> truncate(uint64_t length) noexcept
+	{
+		return from_rc(ove_fs_truncate(handle_, length));
+	}
+
+	/** @brief Flush buffered data and metadata to storage. */
+	[[nodiscard]] Result<void> sync() noexcept
+	{
+		return from_rc(ove_fs_sync(handle_));
 	}
 
 	/**

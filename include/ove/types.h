@@ -153,6 +153,42 @@ typedef enum ove_err {
 
 	/** Requested local network address is not configured on this host. */
 	OVE_ERR_NET_ADDR_NOT_AVAILABLE = -22,
+
+	/** The requested file-system entry already exists. */
+	OVE_ERR_ALREADY_EXISTS = -23,
+
+	/** The storage device has no space remaining. */
+	OVE_ERR_NO_SPACE = -24,
+
+	/** A path component that must be a directory is not a directory. */
+	OVE_ERR_NOT_DIR = -25,
+
+	/** A file-only operation was requested for a directory. */
+	OVE_ERR_IS_DIR = -26,
+
+	/** A directory cannot be removed because it is not empty. */
+	OVE_ERR_NOT_EMPTY = -27,
+
+	/** The target storage is read-only. */
+	OVE_ERR_READ_ONLY = -28,
+
+	/** The storage backend reported an input/output error. */
+	OVE_ERR_IO = -29,
+
+	/** The requested resource is currently busy. */
+	OVE_ERR_BUSY = -30,
+
+	/** A path or name exceeds the backend limit. */
+	OVE_ERR_NAME_TOO_LONG = -31,
+
+	/** The supplied handle is closed or otherwise invalid. */
+	OVE_ERR_BAD_HANDLE = -32,
+
+	/** The caller does not have permission for the operation. */
+	OVE_ERR_PERMISSION = -33,
+
+	/** Source and destination belong to different mounted filesystems. */
+	OVE_ERR_CROSS_DEVICE = -34,
 } ove_err_t;
 
 /**
@@ -205,8 +241,19 @@ OVE_STATIC_ASSERT(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 OVE_STATIC_ASSERT(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
 OVE_STATIC_ASSERT(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
 OVE_STATIC_ASSERT(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
-OVE_STATIC_ASSERT(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22,
-		  "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22, "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
+OVE_STATIC_ASSERT(OVE_ERR_ALREADY_EXISTS == -23, "OVE_ERR_ALREADY_EXISTS drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NO_SPACE == -24, "OVE_ERR_NO_SPACE drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NOT_DIR == -25, "OVE_ERR_NOT_DIR drifted");
+OVE_STATIC_ASSERT(OVE_ERR_IS_DIR == -26, "OVE_ERR_IS_DIR drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NOT_EMPTY == -27, "OVE_ERR_NOT_EMPTY drifted");
+OVE_STATIC_ASSERT(OVE_ERR_READ_ONLY == -28, "OVE_ERR_READ_ONLY drifted");
+OVE_STATIC_ASSERT(OVE_ERR_IO == -29, "OVE_ERR_IO drifted");
+OVE_STATIC_ASSERT(OVE_ERR_BUSY == -30, "OVE_ERR_BUSY drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NAME_TOO_LONG == -31, "OVE_ERR_NAME_TOO_LONG drifted");
+OVE_STATIC_ASSERT(OVE_ERR_BAD_HANDLE == -32, "OVE_ERR_BAD_HANDLE drifted");
+OVE_STATIC_ASSERT(OVE_ERR_PERMISSION == -33, "OVE_ERR_PERMISSION drifted");
+OVE_STATIC_ASSERT(OVE_ERR_CROSS_DEVICE == -34, "OVE_ERR_CROSS_DEVICE drifted");
 OVE_STATIC_ASSERT(OVE_WAIT_FOREVER == UINT64_MAX, "OVE_WAIT_FOREVER drifted");
 
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */
