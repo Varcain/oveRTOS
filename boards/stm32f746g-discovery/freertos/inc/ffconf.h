@@ -232,7 +232,7 @@
 /  _NORTC_MDAY and _NORTC_YEAR have no effect. 
 /  These options have no effect at read-only configuration (_FS_READONLY == 1). */
 
-#define _FS_LOCK 0
+#define _FS_LOCK 16
 /* The _FS_LOCK option switches file lock feature to control duplicated file open
 /  and illegal operation to open objects. This option must be 0 when _FS_READONLY
 /  is 1.
@@ -243,7 +243,7 @@
 /      can be opened simultaneously under file lock control. Note that the file
 /      lock feature is independent of re-entrancy. */
 
-#define _FS_REENTRANT 0
+#define _FS_REENTRANT 1
 #define _FS_TIMEOUT 1000
 #define _SYNC_t SemaphoreHandle_t
 /* The _FS_REENTRANT option switches the re-entrancy (thread safe) of the FatFs

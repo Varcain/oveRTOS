@@ -6,22 +6,10 @@
  * This file is part of oveRTOS.
  */
 
-/* Define the real FS structs before storage.h provides its stubs. */
 #include "FreeRTOS.h"
 #include "ff.h"
 #include "ff_gen_drv.h"
 #include "sd_diskio.h"
-
-struct ove_file {
-	FIL fil;
-	int append;
-};
-
-struct ove_dir {
-	DIR dir;
-};
-
-#define OVE_FS_DEFINED
 
 #include "ove/fs.h"
 #include "ove/storage.h"
@@ -31,6 +19,15 @@ struct ove_dir {
 /* Static path buffer for FatFS driver linking */
 static char fatfs_path[16];
 static FATFS fatfs;
+static int driver_linked;
+
+static int validate_path(const char *path)
+{
+	if (path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	return strnlen(path, OVE_FS_PATH_MAX) < OVE_FS_PATH_MAX ? OVE_OK : OVE_ERR_NAME_TOO_LONG;
+}
 
 static int fatfs_result(FRESULT result)
 {
@@ -77,8 +74,9 @@ static int open_common(struct ove_file *file, const char *path, int flags)
 {
 	BYTE mode = 0;
 
-	if (path == NULL) {
-		return OVE_ERR_INVALID_PARAM;
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
 	}
 	if (flags & OVE_FS_O_READ) {
 		mode |= FA_READ;
@@ -132,8 +130,16 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	(void)dev_path;
 	(void)mount_point;
 
-	FATFS_LinkDriver(&SD_Driver, fatfs_path);
-	fres = f_mount(&fatfs, "", 0);
+	if (!driver_linked) {
+		if (FATFS_LinkDriver(&SD_Driver, fatfs_path) != 0) {
+			return OVE_ERR_NO_MEMORY;
+		}
+		driver_linked = 1;
+	}
+
+	/* opt=1 probes the card and FAT volume now. A missing/unformatted card
+	 * must fail mount rather than surfacing as an unrelated first-open error. */
+	fres = f_mount(&fatfs, fatfs_path, 1);
 	if (fres != FR_OK) {
 		return fatfs_result(fres);
 	}
@@ -143,7 +149,11 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 void ove_fs_unmount(const char *mount_point)
 {
 	(void)mount_point;
-	f_mount(NULL, "", 0);
+	if (driver_linked) {
+		(void)f_mount(NULL, fatfs_path, 0);
+		(void)FATFS_UnLinkDriver(fatfs_path);
+		driver_linked = 0;
+	}
 }
 
 /* ─── _init / _deinit (static storage) ───────────────────────────────── */
@@ -151,7 +161,7 @@ void ove_fs_unmount(const char *mount_point)
 int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags)
 {
 	struct ove_file *f = (struct ove_file *)storage;
-	if (file == NULL || storage == NULL || path == NULL) {
+	if (file == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	int ret = open_common(f, path, flags);
@@ -180,6 +190,10 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *
 	if (dir == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
+	}
 
 	fres = f_opendir(&d->dir, path);
 	if (fres != FR_OK) {
@@ -193,8 +207,10 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *
 
 int ove_fs_closedir_deinit(ove_dir_t dir)
 {
-	f_closedir(&dir->dir);
-	return OVE_OK;
+	if (dir == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	return fatfs_result(f_closedir(&dir->dir));
 }
 
 /* ─── _create / _destroy (heap-gated) ────────────────────────────────── */
@@ -240,6 +256,11 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 		return OVE_ERR_NO_MEMORY;
 	}
 
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		OVE_BACKEND_FREE(d);
+		return ret;
+	}
 	fres = f_opendir(&d->dir, path);
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
@@ -253,9 +274,11 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 
 int ove_fs_closedir(ove_dir_t dir)
 {
-	f_closedir(&dir->dir);
-	OVE_BACKEND_FREE(dir);
-	return OVE_OK;
+	int ret = ove_fs_closedir_deinit(dir);
+	if (ret == OVE_OK) {
+		OVE_BACKEND_FREE(dir);
+	}
+	return ret;
 }
 #else /* zero-heap: use static pool */
 #define FS_POOL_FILES 4
@@ -284,7 +307,10 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 
 int ove_fs_close(ove_file_t file)
 {
-	f_close(&file->fil);
+	int ret = ove_fs_close_deinit(file);
+	if (ret != OVE_OK) {
+		return ret;
+	}
 	for (int i = 0; i < FS_POOL_FILES; i++) {
 		if (&file_pool[i] == file) {
 			file_pool_used[i] = 0;
@@ -297,6 +323,10 @@ int ove_fs_close(ove_file_t file)
 int ove_fs_opendir(ove_dir_t *dir, const char *path)
 {
 	FRESULT fres;
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
+	}
 
 	for (int i = 0; i < FS_POOL_DIRS; i++) {
 		if (!dir_pool_used[i]) {
@@ -315,7 +345,10 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 
 int ove_fs_closedir(ove_dir_t dir)
 {
-	f_closedir(&dir->dir);
+	int ret = ove_fs_closedir_deinit(dir);
+	if (ret != OVE_OK) {
+		return ret;
+	}
 	for (int i = 0; i < FS_POOL_DIRS; i++) {
 		if (&dir_pool[i] == dir) {
 			dir_pool_used[i] = 0;
@@ -392,23 +425,40 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 
 int ove_fs_seek(ove_file_t file, long offset, int whence)
 {
-	DWORD pos;
+	uint64_t base;
 
 	switch (whence) {
 	case OVE_FS_SEEK_SET:
-		pos = (DWORD)offset;
+		base = 0;
 		break;
 	case OVE_FS_SEEK_CUR:
-		pos = f_tell(&file->fil) + (DWORD)offset;
+		base = f_tell(&file->fil);
 		break;
 	case OVE_FS_SEEK_END:
-		pos = f_size(&file->fil) + (DWORD)offset;
+		base = f_size(&file->fil);
 		break;
 	default:
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	FRESULT fres = f_lseek(&file->fil, pos);
+	uint64_t pos;
+	if (offset < 0) {
+		uint64_t magnitude = (uint64_t)(-(offset + 1L)) + 1u;
+		if (magnitude > base) {
+			return OVE_ERR_INVALID_PARAM;
+		}
+		pos = base - magnitude;
+	} else {
+		pos = base + (uint64_t)offset;
+		if (pos < base) {
+			return OVE_ERR_INVALID_PARAM;
+		}
+	}
+	if ((uint64_t)(FSIZE_t)pos != pos) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+
+	FRESULT fres = f_lseek(&file->fil, (FSIZE_t)pos);
 	if (fres != FR_OK) {
 		return fatfs_result(fres);
 	}
@@ -422,6 +472,10 @@ long ove_fs_tell(ove_file_t file)
 
 int ove_fs_unlink(const char *path)
 {
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
+	}
 	FRESULT fres = f_unlink(path);
 	if (fres != FR_OK) {
 		return fatfs_result(fres);
@@ -431,6 +485,13 @@ int ove_fs_unlink(const char *path)
 
 int ove_fs_rename(const char *old_path, const char *new_path)
 {
+	int ret = validate_path(old_path);
+	if (ret == OVE_OK) {
+		ret = validate_path(new_path);
+	}
+	if (ret != OVE_OK) {
+		return ret;
+	}
 	FRESULT fres = f_rename(old_path, new_path);
 	if (fres != FR_OK) {
 		return fatfs_result(fres);
@@ -445,6 +506,10 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 	if (path == NULL || out_stat == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
+	}
 	FRESULT result = f_stat(path, &info);
 	if (result != FR_OK) {
 		return fatfs_result(result);
@@ -457,16 +522,18 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 
 int ove_fs_mkdir(const char *path)
 {
-	if (path == NULL) {
-		return OVE_ERR_INVALID_PARAM;
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
 	}
 	return fatfs_result(f_mkdir(path));
 }
 
 int ove_fs_rmdir(const char *path)
 {
-	if (path == NULL) {
-		return OVE_ERR_INVALID_PARAM;
+	int ret = validate_path(path);
+	if (ret != OVE_OK) {
+		return ret;
 	}
 	return fatfs_result(f_unlink(path));
 }

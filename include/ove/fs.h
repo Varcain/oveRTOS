@@ -12,10 +12,10 @@
  * @ingroup ove_data
  * @brief VFS abstraction for portable file and directory access.
  *
- * Provides a thin virtual file system (VFS) layer that maps POSIX-like
- * file and directory operations onto the underlying RTOS storage backend.
- * Volumes are mounted by path prefix, and all subsequent operations use
- * absolute path strings.
+ * Provides a thin file-system layer that maps POSIX-like file and directory
+ * operations onto one mounted backend volume. Paths passed after mounting are
+ * volume-relative; a leading slash denotes the root of that volume rather than
+ * an oveRTOS-wide VFS namespace.
  *
  * File and directory handles follow the same dual-allocation pattern used
  * elsewhere in oveRTOS:
@@ -59,6 +59,9 @@ extern "C" {
 /** @brief With @c OVE_FS_O_CREATE, fail if the path already exists. */
 #define OVE_FS_O_EXCL 0x20
 /** @} */
+
+/** @brief Maximum supported path length including the null terminator. */
+#define OVE_FS_PATH_MAX 256
 
 /**
  * @name Seek whence constants
@@ -193,11 +196,11 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path);
 int ove_fs_closedir(ove_dir_t dir);
 
 /**
- * @brief Mount a storage device at a virtual path prefix.
+ * @brief Mount the backend storage volume.
  *
- * Associates the block device at @p dev_path with the mount point
- * @p mount_point. All file and directory paths rooted at @p mount_point
- * will be dispatched to this device.
+ * Backends with a native VFS use @p dev_path and @p mount_point directly.
+ * Backends with a fixed logical drive accept @c NULL to select their board
+ * defaults. File API paths remain relative to the mounted volume.
  *
  * @param[in] dev_path     Path identifying the storage device.
  * @param[in] mount_point  Absolute path to use as the mount prefix.

@@ -1,0 +1,24 @@
+stm32f746g-disco: select the concrete SDMMC1 pinset
+
+The board defines clocks for SDMMC but does not select the concrete alternate
+function names introduced by the non-legacy STM32F7 pin maps. Enabling
+CONFIG_STM32F7_SDMMC1 therefore leaves the driver referring to undefined bare
+GPIO_SDMMC1_* names. Select the Discovery board's PC8-PC12/PD2 pinout and keep
+the documented 50 MHz GPIO speed.
+
+--- a/boards/arm/stm32f7/stm32f746g-disco/include/board.h
++++ b/boards/arm/stm32f7/stm32f746g-disco/include/board.h
+@@ -252,6 +252,13 @@
+
+ /* SDMMC */
+
++#define GPIO_SDMMC1_CK  (GPIO_SDMMC1_CK_0|GPIO_SPEED_50MHz)
++#define GPIO_SDMMC1_CMD (GPIO_SDMMC1_CMD_0|GPIO_SPEED_50MHz)
++#define GPIO_SDMMC1_D0  (GPIO_SDMMC1_D0_0|GPIO_SPEED_50MHz)
++#define GPIO_SDMMC1_D1  (GPIO_SDMMC1_D1_0|GPIO_SPEED_50MHz)
++#define GPIO_SDMMC1_D2  (GPIO_SDMMC1_D2_0|GPIO_SPEED_50MHz)
++#define GPIO_SDMMC1_D3  (GPIO_SDMMC1_D3_0|GPIO_SPEED_50MHz)
++
+ /* SDIO dividers.  Note that slower clocking is required when DMA is disabled
+  * in order to avoid RX overrun/TX underrun errors due to delayed responses
+  * to service FIFOs in interrupt driven mode.  These values have not been

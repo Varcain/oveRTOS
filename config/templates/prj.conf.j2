@@ -86,6 +86,18 @@ CONFIG_DISK_DRIVER_SDMMC=y
 CONFIG_FILE_SYSTEM=y
 CONFIG_FAT_FILESYSTEM_ELM=y
 CONFIG_FS_FATFS_WINDOW_ALIGNMENT=32
+# Never format removable media as a mount-error side effect. A missing,
+# unformatted, or damaged card must fail closed and leave its contents intact.
+CONFIG_FS_FATFS_MOUNT_MKFS=n
+# Match the public OVE_FS_PATH_MAX contract and allow the personality's bounded
+# descriptor table to use the native volume without hitting Zephyr's default
+# four-file limit.
+CONFIG_FS_FATFS_LFN=y
+CONFIG_FS_FATFS_LFN_MODE_STACK=y
+CONFIG_FS_FATFS_MAX_LFN=255
+CONFIG_FS_FATFS_REENTRANT=y
+CONFIG_FS_FATFS_NUM_FILES=16
+CONFIG_FS_FATFS_NUM_DIRS=8
 {% endif %}
 
 {% if config.get("CONFIG_OVE_NET") == True %}
