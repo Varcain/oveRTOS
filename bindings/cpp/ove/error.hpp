@@ -85,6 +85,18 @@ enum class Error : int {
 	Eof = OVE_ERR_EOF,
 	Inval = OVE_ERR_INVAL,
 	NotFound = OVE_ERR_NOT_FOUND,
+	AlreadyExists = OVE_ERR_ALREADY_EXISTS,
+	NoSpace = OVE_ERR_NO_SPACE,
+	NotDir = OVE_ERR_NOT_DIR,
+	IsDir = OVE_ERR_IS_DIR,
+	NotEmpty = OVE_ERR_NOT_EMPTY,
+	ReadOnly = OVE_ERR_READ_ONLY,
+	Io = OVE_ERR_IO,
+	Busy = OVE_ERR_BUSY,
+	NameTooLong = OVE_ERR_NAME_TOO_LONG,
+	BadHandle = OVE_ERR_BAD_HANDLE,
+	Permission = OVE_ERR_PERMISSION,
+	CrossDevice = OVE_ERR_CROSS_DEVICE,
 };
 
 /*
@@ -127,6 +139,22 @@ static_assert(static_cast<int>(Error::WouldBlock) == OVE_ERR_WOULD_BLOCK,
 static_assert(static_cast<int>(Error::Eof) == OVE_ERR_EOF, "Error::Eof drifted");
 static_assert(static_cast<int>(Error::Inval) == OVE_ERR_INVAL, "Error::Inval drifted");
 static_assert(static_cast<int>(Error::NotFound) == OVE_ERR_NOT_FOUND, "Error::NotFound drifted");
+static_assert(static_cast<int>(Error::AlreadyExists) == OVE_ERR_ALREADY_EXISTS,
+	      "Error::AlreadyExists drifted");
+static_assert(static_cast<int>(Error::NoSpace) == OVE_ERR_NO_SPACE, "Error::NoSpace drifted");
+static_assert(static_cast<int>(Error::NotDir) == OVE_ERR_NOT_DIR, "Error::NotDir drifted");
+static_assert(static_cast<int>(Error::IsDir) == OVE_ERR_IS_DIR, "Error::IsDir drifted");
+static_assert(static_cast<int>(Error::NotEmpty) == OVE_ERR_NOT_EMPTY, "Error::NotEmpty drifted");
+static_assert(static_cast<int>(Error::ReadOnly) == OVE_ERR_READ_ONLY, "Error::ReadOnly drifted");
+static_assert(static_cast<int>(Error::Io) == OVE_ERR_IO, "Error::Io drifted");
+static_assert(static_cast<int>(Error::Busy) == OVE_ERR_BUSY, "Error::Busy drifted");
+static_assert(static_cast<int>(Error::NameTooLong) == OVE_ERR_NAME_TOO_LONG,
+	      "Error::NameTooLong drifted");
+static_assert(static_cast<int>(Error::BadHandle) == OVE_ERR_BAD_HANDLE, "Error::BadHandle drifted");
+static_assert(static_cast<int>(Error::Permission) == OVE_ERR_PERMISSION,
+	      "Error::Permission drifted");
+static_assert(static_cast<int>(Error::CrossDevice) == OVE_ERR_CROSS_DEVICE,
+	      "Error::CrossDevice drifted");
 
 /**
  * @brief `std::expected`-based result alias.
@@ -209,6 +237,30 @@ class error_category_impl : public std::error_category
 			return "argument or state invalid";
 		case Error::NotFound:
 			return "resource not found";
+		case Error::AlreadyExists:
+			return "filesystem entry already exists";
+		case Error::NoSpace:
+			return "no space left on device";
+		case Error::NotDir:
+			return "not a directory";
+		case Error::IsDir:
+			return "is a directory";
+		case Error::NotEmpty:
+			return "directory not empty";
+		case Error::ReadOnly:
+			return "read-only filesystem";
+		case Error::Io:
+			return "storage I/O error";
+		case Error::Busy:
+			return "resource busy";
+		case Error::NameTooLong:
+			return "name too long";
+		case Error::BadHandle:
+			return "bad handle";
+		case Error::Permission:
+			return "permission denied";
+		case Error::CrossDevice:
+			return "cross-device operation";
 		}
 		return "unknown ove error";
 	}

@@ -33,6 +33,21 @@ pub const O_WRITE: i32 = bindings::OVE_FS_O_WRITE as i32;
 pub const O_CREATE: i32 = bindings::OVE_FS_O_CREATE as i32;
 /// Open flag: all writes append to the end of the file.
 pub const O_APPEND: i32 = bindings::OVE_FS_O_APPEND as i32;
+/// Open flag: truncate an existing file to zero bytes.
+pub const O_TRUNC: i32 = bindings::OVE_FS_O_TRUNC as i32;
+/// Open flag: with [`O_CREATE`], fail if the path already exists.
+pub const O_EXCL: i32 = bindings::OVE_FS_O_EXCL as i32;
+
+/// Portable metadata returned by [`stat`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Metadata {
+    /// Object size in bytes; zero for directories.
+    pub size: u64,
+    /// Last modification time in Unix seconds, or zero if unavailable.
+    pub mtime_sec: u64,
+    /// Whether this object is a directory.
+    pub is_dir: bool,
+}
 
 /// Mount a filesystem.
 ///
@@ -86,6 +101,18 @@ impl File {
         };
         Error::from_code(rc)?;
         Ok(bytes_written)
+    }
+
+    /// Resize the open file.
+    pub fn truncate(&self, length: u64) -> Result<()> {
+        let rc = unsafe { bindings::ove_fs_truncate(self.handle, length) };
+        Error::from_code(rc)
+    }
+
+    /// Flush buffered data and metadata to storage.
+    pub fn sync(&self) -> Result<()> {
+        let rc = unsafe { bindings::ove_fs_sync(self.handle) };
+        Error::from_code(rc)
     }
 }
 
@@ -182,4 +209,42 @@ fn cstr_to_slice(buf: &[u8]) -> &[u8] {
         len += 1;
     }
     &buf[..len]
+}
+
+/// Query metadata for `path`. `path` must be `\0`-terminated.
+pub fn stat(path: &[u8]) -> Result<Metadata> {
+    let mut raw: bindings::ove_fs_stat = unsafe { core::mem::zeroed() };
+    let rc = unsafe { bindings::ove_fs_stat(path.as_ptr() as *const _, &mut raw) };
+    Error::from_code(rc)?;
+    Ok(Metadata {
+        size: raw.size,
+        mtime_sec: raw.mtime_sec,
+        is_dir: raw.type_ == bindings::OVE_FS_TYPE_DIR,
+    })
+}
+
+/// Create a directory. `path` must be `\0`-terminated.
+pub fn mkdir(path: &[u8]) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_mkdir(path.as_ptr() as *const _) };
+    Error::from_code(rc)
+}
+
+/// Remove an empty directory. `path` must be `\0`-terminated.
+pub fn rmdir(path: &[u8]) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_rmdir(path.as_ptr() as *const _) };
+    Error::from_code(rc)
+}
+
+/// Delete a file. `path` must be `\0`-terminated.
+pub fn unlink(path: &[u8]) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_unlink(path.as_ptr() as *const _) };
+    Error::from_code(rc)
+}
+
+/// Rename a file or directory. Both paths must be `\0`-terminated.
+pub fn rename(old_path: &[u8], new_path: &[u8]) -> Result<()> {
+    let rc = unsafe {
+        bindings::ove_fs_rename(old_path.as_ptr() as *const _, new_path.as_ptr() as *const _)
+    };
+    Error::from_code(rc)
 }

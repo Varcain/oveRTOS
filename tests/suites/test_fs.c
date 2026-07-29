@@ -207,6 +207,10 @@ static void test_fs_opendir_readdir_closedir(void **state)
 	/* Sandbox contains exactly one file ("file") created by fs_setup. */
 	rc = ove_fs_readdir(d, &entry);
 	assert_int_equal(rc, OVE_OK);
+	do {
+		rc = ove_fs_readdir(d, &entry);
+	} while (rc == OVE_OK);
+	assert_int_equal(rc, OVE_ERR_EOF);
 
 	rc = fs_closedir(d);
 	assert_int_equal(rc, OVE_OK);
@@ -267,9 +271,86 @@ static void test_fs_open_nonexistent(void **state)
 
 	ove_file_t f = NULL;
 	int rc = fs_open(&f, "/tmp/ove_nonexistent_file_xyz", OVE_FS_O_READ);
-	assert_int_not_equal(rc, OVE_OK);
+	assert_int_equal(rc, OVE_ERR_NOT_FOUND);
 
 	ove_fs_unmount("/");
+}
+
+static void test_fs_open_creation_semantics(void **state)
+{
+	(void)state;
+	ove_file_t f = NULL;
+	const char payload[] = "preserve";
+
+	assert_int_equal(fs_open(&f, s_tmppath, OVE_FS_O_WRITE), OVE_OK);
+	assert_int_equal(ove_fs_write(f, payload, sizeof(payload) - 1, NULL), OVE_OK);
+	assert_int_equal(fs_close(f), OVE_OK);
+
+	/* CREATE must not imply truncation. */
+	assert_int_equal(fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_CREATE), OVE_OK);
+	size_t size = 0;
+	assert_int_equal(ove_fs_size(f, &size), OVE_OK);
+	assert_int_equal(size, sizeof(payload) - 1);
+	assert_int_equal(fs_close(f), OVE_OK);
+
+	assert_int_equal(fs_open(&f, s_tmppath, OVE_FS_O_WRITE | OVE_FS_O_CREATE | OVE_FS_O_EXCL),
+			 OVE_ERR_ALREADY_EXISTS);
+
+	assert_int_equal(fs_open(&f, s_tmppath, OVE_FS_O_WRITE | OVE_FS_O_TRUNC), OVE_OK);
+	assert_int_equal(ove_fs_size(f, &size), OVE_OK);
+	assert_int_equal(size, 0);
+	assert_int_equal(fs_close(f), OVE_OK);
+}
+
+static void test_fs_append_truncate_sync(void **state)
+{
+	(void)state;
+	ove_file_t f = NULL;
+
+	assert_int_equal(fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_TRUNC),
+			 OVE_OK);
+	assert_int_equal(ove_fs_write(f, "abc", 3, NULL), OVE_OK);
+	assert_int_equal(fs_close(f), OVE_OK);
+
+	assert_int_equal(fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_APPEND),
+			 OVE_OK);
+	assert_int_equal(ove_fs_seek(f, 0, OVE_FS_SEEK_SET), OVE_OK);
+	assert_int_equal(ove_fs_write(f, "d", 1, NULL), OVE_OK);
+	assert_int_equal(ove_fs_truncate(f, 2), OVE_OK);
+	assert_int_equal(ove_fs_sync(f), OVE_OK);
+	size_t size = 0;
+	assert_int_equal(ove_fs_size(f, &size), OVE_OK);
+	assert_int_equal(size, 2);
+	assert_int_equal(fs_close(f), OVE_OK);
+}
+
+static void test_fs_directory_and_stat(void **state)
+{
+	(void)state;
+	char dirpath[320];
+	char childpath[352];
+	snprintf(dirpath, sizeof(dirpath), "%s/subdir", s_tmpdir);
+	snprintf(childpath, sizeof(childpath), "%s/child", dirpath);
+
+	assert_int_equal(ove_fs_mkdir(dirpath), OVE_OK);
+	assert_int_equal(ove_fs_mkdir(dirpath), OVE_ERR_ALREADY_EXISTS);
+
+	struct ove_fs_stat st;
+	assert_int_equal(ove_fs_stat(dirpath, &st), OVE_OK);
+	assert_int_equal(st.type, OVE_FS_TYPE_DIR);
+
+	ove_file_t f = NULL;
+	assert_int_equal(fs_open(&f, childpath, OVE_FS_O_WRITE | OVE_FS_O_CREATE), OVE_OK);
+	assert_int_equal(ove_fs_write(f, "x", 1, NULL), OVE_OK);
+	assert_int_equal(fs_close(f), OVE_OK);
+	assert_int_equal(ove_fs_stat(childpath, &st), OVE_OK);
+	assert_int_equal(st.type, OVE_FS_TYPE_FILE);
+	assert_int_equal(st.size, 1);
+
+	assert_int_equal(ove_fs_rmdir(dirpath), OVE_ERR_NOT_EMPTY);
+	assert_int_equal(ove_fs_unlink(childpath), OVE_OK);
+	assert_int_equal(ove_fs_rmdir(dirpath), OVE_OK);
+	assert_int_equal(ove_fs_stat(dirpath, &st), OVE_ERR_NOT_FOUND);
 }
 
 static void test_fs_unmount(void **state)
@@ -301,6 +382,11 @@ int test_fs_run(void)
 		cmocka_unit_test_setup_teardown(test_fs_unlink, fs_setup, fs_teardown),
 		cmocka_unit_test_setup_teardown(test_fs_rename, fs_setup, fs_teardown),
 		cmocka_unit_test_setup_teardown(test_fs_open_nonexistent, fs_setup, fs_teardown),
+		cmocka_unit_test_setup_teardown(test_fs_open_creation_semantics, fs_setup,
+						fs_teardown),
+		cmocka_unit_test_setup_teardown(test_fs_append_truncate_sync, fs_setup,
+						fs_teardown),
+		cmocka_unit_test_setup_teardown(test_fs_directory_and_stat, fs_setup, fs_teardown),
 		cmocka_unit_test_setup_teardown(test_fs_unmount, fs_setup, fs_teardown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

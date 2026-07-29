@@ -90,8 +90,19 @@ static_assert(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 static_assert(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
 static_assert(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
 static_assert(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
-static_assert(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22,
-	      "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
+static_assert(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22, "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
+static_assert(OVE_ERR_ALREADY_EXISTS == -23, "OVE_ERR_ALREADY_EXISTS drifted");
+static_assert(OVE_ERR_NO_SPACE == -24, "OVE_ERR_NO_SPACE drifted");
+static_assert(OVE_ERR_NOT_DIR == -25, "OVE_ERR_NOT_DIR drifted");
+static_assert(OVE_ERR_IS_DIR == -26, "OVE_ERR_IS_DIR drifted");
+static_assert(OVE_ERR_NOT_EMPTY == -27, "OVE_ERR_NOT_EMPTY drifted");
+static_assert(OVE_ERR_READ_ONLY == -28, "OVE_ERR_READ_ONLY drifted");
+static_assert(OVE_ERR_IO == -29, "OVE_ERR_IO drifted");
+static_assert(OVE_ERR_BUSY == -30, "OVE_ERR_BUSY drifted");
+static_assert(OVE_ERR_NAME_TOO_LONG == -31, "OVE_ERR_NAME_TOO_LONG drifted");
+static_assert(OVE_ERR_BAD_HANDLE == -32, "OVE_ERR_BAD_HANDLE drifted");
+static_assert(OVE_ERR_PERMISSION == -33, "OVE_ERR_PERMISSION drifted");
+static_assert(OVE_ERR_CROSS_DEVICE == -34, "OVE_ERR_CROSS_DEVICE drifted");
 
 /* ------------------------------------------------------------------ */
 /*  Duration / timeout types                                          */

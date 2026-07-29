@@ -149,26 +149,43 @@ static inline int ove_errno_to_ove(int e)
 	case ENOENT:
 		return OVE_ERR_NOT_FOUND;
 	case ENOTDIR:
-		return OVE_ERR_INVALID_PARAM;
+		return OVE_ERR_NOT_DIR;
 	case EISDIR:
-		return OVE_ERR_INVALID_PARAM;
+		return OVE_ERR_IS_DIR;
+	case EEXIST:
+		return OVE_ERR_ALREADY_EXISTS;
+	case ENOTEMPTY:
+		return OVE_ERR_NOT_EMPTY;
 	case ERANGE:
 		return OVE_ERR_INVALID_PARAM;
 	case ENAMETOOLONG:
-		return OVE_ERR_INVALID_PARAM;
+		return OVE_ERR_NAME_TOO_LONG;
 	case ENOMEM:
 		return OVE_ERR_NO_MEMORY;
 	case ENOSPC:
-		return OVE_ERR_NO_MEMORY;
+		return OVE_ERR_NO_SPACE;
 	case EDQUOT:
-		return OVE_ERR_NO_MEMORY;
+		return OVE_ERR_NO_SPACE;
+	case EROFS:
+		return OVE_ERR_READ_ONLY;
+	case EIO:
+		return OVE_ERR_IO;
+	case EBUSY:
+		return OVE_ERR_BUSY;
+	case EBADF:
+		return OVE_ERR_BAD_HANDLE;
+	case EACCES:
+	case EPERM:
+		return OVE_ERR_PERMISSION;
+	case EXDEV:
+		return OVE_ERR_CROSS_DEVICE;
 	case ETIMEDOUT:
 		return OVE_ERR_TIMEOUT;
 	case EAGAIN:
-		return OVE_ERR_TIMEOUT;
+		return OVE_ERR_WOULD_BLOCK;
 #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
 	case EWOULDBLOCK:
-		return OVE_ERR_TIMEOUT;
+		return OVE_ERR_WOULD_BLOCK;
 #endif
 	default:
 		return OVE_ERR_NOT_SUPPORTED;

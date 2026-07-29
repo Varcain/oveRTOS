@@ -66,6 +66,30 @@ pub const Error = error{
     Inval,
     /// Requested key / entry / resource was not found.
     NotFound,
+    /// A filesystem entry already exists.
+    AlreadyExists,
+    /// The storage device has no free space.
+    NoSpace,
+    /// A required path component is not a directory.
+    NotDir,
+    /// A file-only operation targeted a directory.
+    IsDir,
+    /// A directory is not empty.
+    NotEmpty,
+    /// The filesystem is read-only.
+    ReadOnly,
+    /// A storage input/output error occurred.
+    Io,
+    /// The resource is busy.
+    Busy,
+    /// A path or name is too long.
+    NameTooLong,
+    /// A handle is closed or invalid.
+    BadHandle,
+    /// Permission was denied.
+    Permission,
+    /// Paths belong to different filesystems.
+    CrossDevice,
     /// The C layer returned a negative code this binding does not
     /// recognise — almost always because the substrate added a new
     /// `OVE_ERR_*` that `mapErrorCode` has not caught up with.  In
@@ -106,6 +130,18 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_EOF => Error.Eof,
         c.OVE_ERR_INVAL => Error.Inval,
         c.OVE_ERR_NOT_FOUND => Error.NotFound,
+        c.OVE_ERR_ALREADY_EXISTS => Error.AlreadyExists,
+        c.OVE_ERR_NO_SPACE => Error.NoSpace,
+        c.OVE_ERR_NOT_DIR => Error.NotDir,
+        c.OVE_ERR_IS_DIR => Error.IsDir,
+        c.OVE_ERR_NOT_EMPTY => Error.NotEmpty,
+        c.OVE_ERR_READ_ONLY => Error.ReadOnly,
+        c.OVE_ERR_IO => Error.Io,
+        c.OVE_ERR_BUSY => Error.Busy,
+        c.OVE_ERR_NAME_TOO_LONG => Error.NameTooLong,
+        c.OVE_ERR_BAD_HANDLE => Error.BadHandle,
+        c.OVE_ERR_PERMISSION => Error.Permission,
+        c.OVE_ERR_CROSS_DEVICE => Error.CrossDevice,
         // An unrecognised substrate code is almost always a binding bug —
         // the substrate added a new `OVE_ERR_*` and this map didn't catch
         // up.  In `Debug` builds, panic at the FFI boundary so the failure
@@ -165,4 +201,16 @@ comptime {
     std.debug.assert(c.OVE_ERR_INVAL == -20);
     std.debug.assert(c.OVE_ERR_NOT_FOUND == -21);
     std.debug.assert(c.OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22);
+    std.debug.assert(c.OVE_ERR_ALREADY_EXISTS == -23);
+    std.debug.assert(c.OVE_ERR_NO_SPACE == -24);
+    std.debug.assert(c.OVE_ERR_NOT_DIR == -25);
+    std.debug.assert(c.OVE_ERR_IS_DIR == -26);
+    std.debug.assert(c.OVE_ERR_NOT_EMPTY == -27);
+    std.debug.assert(c.OVE_ERR_READ_ONLY == -28);
+    std.debug.assert(c.OVE_ERR_IO == -29);
+    std.debug.assert(c.OVE_ERR_BUSY == -30);
+    std.debug.assert(c.OVE_ERR_NAME_TOO_LONG == -31);
+    std.debug.assert(c.OVE_ERR_BAD_HANDLE == -32);
+    std.debug.assert(c.OVE_ERR_PERMISSION == -33);
+    std.debug.assert(c.OVE_ERR_CROSS_DEVICE == -34);
 }

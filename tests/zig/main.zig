@@ -1797,6 +1797,18 @@ fn testErrorsKnownCodesRoundTrip() !void {
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_NACK), error.BusNack);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_BUSY), error.BusBusy);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_ERROR), error.BusError);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_ALREADY_EXISTS), error.AlreadyExists);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NO_SPACE), error.NoSpace);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_DIR), error.NotDir);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_IS_DIR), error.IsDir);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_EMPTY), error.NotEmpty);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_READ_ONLY), error.ReadOnly);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_IO), error.Io);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUSY), error.Busy);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NAME_TOO_LONG), error.NameTooLong);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BAD_HANDLE), error.BadHandle);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_PERMISSION), error.Permission);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_CROSS_DEVICE), error.CrossDevice);
 }
 
 fn testErrorsZeroIsOk() !void {

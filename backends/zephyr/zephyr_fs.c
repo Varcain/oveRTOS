@@ -65,6 +65,8 @@ static int zflags_from(int flags)
 		zflags |= FS_O_CREATE;
 	if (flags & OVE_FS_O_APPEND)
 		zflags |= FS_O_APPEND;
+	if (flags & OVE_FS_O_TRUNC)
+		zflags |= FS_O_TRUNC;
 	if (zflags == 0)
 		zflags = FS_O_READ;
 	return zflags;
@@ -81,6 +83,17 @@ int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *
 	struct ove_file *f = (struct ove_file *)storage;
 	fs_file_t_init(&f->file);
 	build_path(fullpath, sizeof(fullpath), path);
+
+	if ((flags & (OVE_FS_O_CREATE | OVE_FS_O_EXCL)) == (OVE_FS_O_CREATE | OVE_FS_O_EXCL)) {
+		struct fs_dirent entry;
+		int stat_res = fs_stat(fullpath, &entry);
+		if (stat_res == 0) {
+			return OVE_ERR_ALREADY_EXISTS;
+		}
+		if (stat_res != -ENOENT) {
+			return ove_errno_to_ove(-stat_res);
+		}
+	}
 
 	int res = fs_open(&f->file, fullpath, zflags_from(flags));
 	if (res != 0) {
@@ -288,7 +301,7 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	int res = fs_readdir(&dir->dir, &de);
 	if (res != 0 || de.name[0] == '\0') {
 		entry->name[0] = '\0';
-		return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
+		return (res == 0) ? OVE_ERR_EOF : ove_errno_to_ove(-res);
 	}
 
 	strncpy(entry->name, de.name, sizeof(entry->name) - 1);
@@ -360,5 +373,66 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 	build_path(old_full, sizeof(old_full), old_path);
 	build_path(new_full, sizeof(new_full), new_path);
 	int res = fs_rename(old_full, new_full);
+	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
+}
+
+int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
+{
+	char fullpath[128];
+	struct fs_dirent entry;
+
+	if (path == NULL || out_stat == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	build_path(fullpath, sizeof(fullpath), path);
+	int res = fs_stat(fullpath, &entry);
+	if (res != 0) {
+		return ove_errno_to_ove(-res);
+	}
+	out_stat->size = (entry.type == FS_DIR_ENTRY_DIR) ? 0u : (uint64_t)entry.size;
+	out_stat->mtime_sec = 0;
+	out_stat->type = (entry.type == FS_DIR_ENTRY_DIR) ? OVE_FS_TYPE_DIR : OVE_FS_TYPE_FILE;
+	return OVE_OK;
+}
+
+int ove_fs_mkdir(const char *path)
+{
+	char fullpath[128];
+
+	if (path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	build_path(fullpath, sizeof(fullpath), path);
+	int res = fs_mkdir(fullpath);
+	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
+}
+
+int ove_fs_rmdir(const char *path)
+{
+	char fullpath[128];
+
+	if (path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	build_path(fullpath, sizeof(fullpath), path);
+	int res = fs_unlink(fullpath);
+	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
+}
+
+int ove_fs_truncate(ove_file_t file, uint64_t length)
+{
+	if (file == NULL || length > (uint64_t)INT64_MAX) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	int res = fs_truncate(&file->file, (off_t)length);
+	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
+}
+
+int ove_fs_sync(ove_file_t file)
+{
+	if (file == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	int res = fs_sync(&file->file);
 	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
 }
