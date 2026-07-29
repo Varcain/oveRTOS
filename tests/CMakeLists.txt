@@ -246,6 +246,10 @@ add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestArmFloatAbi.cmake)
+add_test(NAME ove_lxp_wx_config_cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DOVE_ROOT=${OVE_ROOT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestLxpWxConfig.cmake)
 if(OVE_TEST_BUILD_ASAN)
     add_test(NAME ove_stub_tests_asan COMMAND ove_test_stub_asan)
     # libasan's leak-detector is noisy against CMocka's intentional allocations
