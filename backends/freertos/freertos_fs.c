@@ -510,6 +510,19 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 	if (ret != OVE_OK) {
 		return ret;
 	}
+	/*
+	 * FatFs rejects "/" in f_stat() even though f_opendir("/") is the
+	 * mounted volume root.  The portable contract exposes that root as a
+	 * directory, and this backend can answer it without probing a child.
+	 */
+	if (strcmp(path, "/") == 0) {
+		if (!driver_linked) {
+			return OVE_ERR_NOT_REGISTERED;
+		}
+		memset(out_stat, 0, sizeof(*out_stat));
+		out_stat->type = OVE_FS_TYPE_DIR;
+		return OVE_OK;
+	}
 	FRESULT result = f_stat(path, &info);
 	if (result != FR_OK) {
 		return fatfs_result(result);

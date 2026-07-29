@@ -16,6 +16,7 @@ NuttX, and Zephyr unless noted.
 | **Signals** | `Ctrl-C`; cross-process `kill(pid, sig)` — delivered at the target's next syscall boundary, or by the coordinator if it is parked |
 | **Threads** | real pthreads (LinuxThreads: `clone(CLONE_VM)` + signal-based suspend/restart) |
 | **/proc, /dev** | `/proc/{stat,uptime,meminfo,cpuinfo,…}`, `/dev/{null,console,tty}` synthesised |
+| **Writable storage** | bounded volatile `/tmp`; on the STM32 Full profile, persistent microSD/FAT at `/data` through the same provider contract on FreeRTOS, NuttX, and Zephyr |
 | **Networking** | socket syscalls bridge to the selected RTOS network stack; BusyBox networking, curl, dropbear/SSH, and optional 9P netfs are supported |
 | **Isolation** | programs run **unprivileged** in per-program MPU regions; a stray access is contained — the process is killed (like SIGSEGV, exit 139) and the shell survives |
 | **Hardening** | the syscall boundary validates user pointers (`access_ok`-style); fault classes (UsageFault/BusFault/MemManage) are contained |
@@ -26,7 +27,8 @@ NuttX, and Zephyr unless noted.
 |----------------|-------------|
 | **No MMU** | NOMMU FDPIC only (bFLT retired); `vfork` has no copy-on-write; shared-library text is XIP from the rootfs backing store |
 | **Fixed MPU region pool** | concurrency is bounded by compile-time `NREG` (current QEMU defaults: Zephyr/an521 = 8, FreeRTOS/an500 = 5, NuttX/an500 = 6); `/proc/lxp_resources` reports live capacity |
-| **Read-only rootfs** | the CPIO rootfs is RO; `/tmp` is writable but volatile, while persistence requires an engine/device-backed filesystem or netfs |
+| **Read-only system root** | the CPIO rootfs remains RO and is not overlaid; `/tmp` is volatile and bounded, while STM32 Full profiles mount persistent microSD/FAT as the separate `/data` subtree |
+| **FAT `/data` semantics** | no symlinks or persistent Unix uid/gid/mode bits; native volume operations are serialized and synchronously block the calling guest during SD I/O |
 | **Ring-buffer pipes** | pipes are small (< 4 KiB) blocking ring buffers with backpressure — not POSIX-atomic for large writes |
 | **Signals are not preemptive** | delivered at syscall boundaries (or by the coordinator when the target is parked), not asynchronously mid-computation |
 | **Cosmetic noise** | a few unimplemented syscalls return `ENOSYS`; harmless |
