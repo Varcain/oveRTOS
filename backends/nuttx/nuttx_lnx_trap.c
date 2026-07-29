@@ -588,7 +588,6 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 	return 0;
 }
 
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /*
  * Publish RAM-backed executable text without issuing one whole-cache clean.
  * NuttX turns a range at least as large as the 16 KiB M7 D-cache into a
@@ -602,19 +601,20 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
  * I-cache range is invalidated before the task becomes runnable.
  */
 #define NUTTX_EXEC_PUBLISH_CHUNK 1024u
-static int nuttx_publish_copied_text(const lxp_guest_launch_t *launch, int ridx)
+static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t text_lo,
+				    size_t text_size)
 {
-	if (launch->copied_text_size == 0)
-		return 0;
-
+	int ridx = address_space.index;
+	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || text_size == 0)
+		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
 	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
-	uintptr_t text_lo = launch->copied_text_base;
 	if (text_lo < region_lo || text_lo >= region_hi ||
-	    launch->copied_text_size > region_hi - text_lo)
-		return -1;
+	    text_size > region_hi - text_lo)
+		return LXP_ERR_INVALID_PARAM;
 
-	uintptr_t text_hi = text_lo + launch->copied_text_size;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	uintptr_t text_hi = text_lo + text_size;
 	for (uintptr_t start = text_lo; start < text_hi;) {
 		uintptr_t end = text_hi - start > NUTTX_EXEC_PUBLISH_CHUNK
 					? start + NUTTX_EXEC_PUBLISH_CHUNK
@@ -623,9 +623,9 @@ static int nuttx_publish_copied_text(const lxp_guest_launch_t *launch, int ridx)
 		start = end;
 	}
 	up_invalidate_icache(text_lo, text_hi);
-	return 0;
-}
 #endif
+	return LXP_OK;
+}
 
 static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 			      const lxp_guest_launch_t *launch)
@@ -643,10 +643,6 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 	    policy.address_space.index != ridx ||
 	    policy.copied_text_executable != (uint8_t)(launch->copied_text_size != 0))
 		return -1;
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (nuttx_publish_copied_text(launch, ridx) != 0)
-		return -1;
-#endif
 	if (spawn_task(sidx, launch->r[13]) != 0)
 		return -1;
 	g_slots[sidx].generation = generation;
@@ -1009,6 +1005,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.mem_stats = lxp_seam_mem_stats,
 	.system_version = lxp_seam_system_version,
+	.publish_executable = nuttx_publish_executable,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.cpu_memory_model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,
 #else
