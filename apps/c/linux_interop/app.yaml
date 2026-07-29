@@ -17,6 +17,9 @@ defconfig:
   # only when its external-filesystem provider is configured, and a missing
   # card remains a non-fatal mount failure.
   - CONFIG_OVE_FS=y
+  # Mount that substrate at /data through the engine-agnostic LXP host-filesystem
+  # provider. The mount is retried after absent-media failures without delaying boot.
+  - CONFIG_OVE_LINUX_FS=y
   # /dev character-device layer + framebuffer (/dev/fb0). A board without an fb
   # backend links weak "no display" HAL stubs, so /dev/fb0 is simply absent there.
   - CONFIG_OVE_LINUX_DEV=y

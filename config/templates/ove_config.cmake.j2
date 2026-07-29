@@ -341,17 +341,16 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_PIPE_BUF=2048 LXP_PTY_
 {% else %}
 add_compile_definitions(LXP_PROG_REGION_SIZE=0x40000u LXP_PIPE_BUF=2048 LXP_PTY_BUF=512)
 {% endif %}
-# tmpfs (/tmp) byte pool. On the real STM32F746 it rides in SDRAM via LXP_FAR_BSS (set in the board
-# block below), so it can be LARGE: 128 KiB lets a guest mmap a sizeable /tmp-backed buffer — iperf3
-# builds its per-stream send/recv buffer with mkstemp+ftruncate+mmap, and ftruncate fails EFBIG when
-# the pool is smaller than the block (default 128K / -l 32K). 128K in SDRAM covers -l up to ~120K and
-# still leaves SDRAM1 headroom. Elsewhere (an521 QEMU) the pool stays in .bss where the 256 KiB SRAM
-# is tight beside the net stack, so keep it modest (16 KiB — a point-to-point test writes little /tmp).
-{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
-add_compile_definitions(LXP_WFS_POOL=0x20000u)
-{% else %}
-add_compile_definitions(LXP_WFS_POOL=0x4000u)
 {% endif %}
+# tmpfs (/tmp) byte pool. All three STM32 engines place this coordinator-owned
+# storage in external SDRAM and expose the same 256 KiB capacity. That supports
+# sizeable temporary databases and mmap-backed network buffers while keeping
+# the allocation bounded. Zephyr's SRAM-limited an521 profile stays at 16 KiB;
+# other boards retain LXP's portable 64 KiB default.
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+add_compile_definitions(LXP_WFS_POOL=0x40000u)
+{% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
+add_compile_definitions(LXP_WFS_POOL=0x4000u)
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # STM32F746 (Zephyr): 12-slot pipe pool for SSH pipelines. A single dropbear session's
@@ -392,10 +391,15 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=11)
 # STM32F746 (NuttX): match FreeRTOS's 12-slot pipe pool. A single non-interactive dropbear session's
 # stdin/stdout/stderr pipes alone peak at 4 slots, so the 4-slot default leaves nothing for the
 # shell's own pipeline (`ls | head` -> EMFILE). NuttX owns its linker script and has no .sdram_bss
-# NOLOAD hook (the seam's guest pools use fixed SDRAM addresses, not a section), so the pool stays in
-# internal-SRAM .bss; a 2 KiB per-pipe buffer keeps 12 x 2K = 24K within the SRAM budget (vs the
+# NOLOAD hook (the seam's large pools use fixed SDRAM addresses, not a section), so the pipe pool
+# stays in internal-SRAM .bss; a 2 KiB per-pipe buffer keeps 12 x 2K = 24K within the SRAM budget (vs the
 # 4 x 4K = 16K default) and matches the proven Zephyr LXP_PIPE_BUF.
 add_compile_definitions(LXP_NPIPE=12 LXP_PIPE_BUF=2048)
+# The tmpfs pool is ordinary privileged coordinator memory, not a guest MPU
+# allocation. Put it in the unused cacheable tail of the 8 MiB SDRAM envelope:
+# above every dynamic/program/staging row and outside the framebuffer's Device
+# subregion. The NuttX seam statically rejects future layout overlap.
+add_compile_definitions(LXP_WFS_POOL_BASE=0xC07C0000u)
 {% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") != True %}
 # The NuttX seam lays the large program/dynamic pools in external SDRAM, but each region also
 # adds one process slot plus four transient slots worth of privileged metadata to SRAM1. Keep
