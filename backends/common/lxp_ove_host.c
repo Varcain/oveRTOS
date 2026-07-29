@@ -27,6 +27,8 @@ extern const lxp_display_ops_t g_lxp_host_display_ops;
 #define OVE_LXP_DISPLAY_OPS NULL
 #endif
 
+#define OVE_LXP_FS_OPS NULL
+
 void ove_lxp_prepare_rootfs_access(const void *base, size_t len)
 {
 	if (g_lxp_host_engine.rootfs_window)
@@ -36,6 +38,6 @@ void ove_lxp_prepare_rootfs_access(const void *base, size_t len)
 int ove_lxp_run(const lxp_run_config_t *config, const char *path, int argc,
 		const char *const argv[])
 {
-	return lxp_run(&g_lxp_host_engine, OVE_LXP_NET_OPS, OVE_LXP_DISPLAY_OPS, config, path, argc,
-		       argv);
+	return lxp_run(&g_lxp_host_engine, OVE_LXP_NET_OPS, OVE_LXP_DISPLAY_OPS, OVE_LXP_FS_OPS,
+		       config, path, argc, argv);
 }

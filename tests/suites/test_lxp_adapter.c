@@ -28,6 +28,7 @@ static size_t g_rootfs_window_size;
 static const lxp_os_ops_t *g_run_os_ops;
 static const lxp_net_ops_t *g_run_net_ops;
 static const lxp_display_ops_t *g_run_display_ops;
+static const lxp_fs_ops_t *g_run_fs_ops;
 static const lxp_run_config_t *g_run_config;
 
 static void test_rootfs_window(const void *base, size_t len)
@@ -49,8 +50,9 @@ const lxp_display_ops_t g_lxp_host_display_ops = {
 };
 
 int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
-	    const lxp_display_ops_t *display_ops, const lxp_run_config_t *config, const char *path,
-	    int argc, const char *const argv[])
+	    const lxp_display_ops_t *display_ops, const lxp_fs_ops_t *fs_ops,
+	    const lxp_run_config_t *config, const char *path, int argc,
+	    const char *const argv[])
 {
 	(void)path;
 	(void)argc;
@@ -58,6 +60,7 @@ int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
 	g_run_os_ops = os_ops;
 	g_run_net_ops = net_ops;
 	g_run_display_ops = display_ops;
+	g_run_fs_ops = fs_ops;
 	g_run_config = config;
 	return 37;
 }
@@ -158,11 +161,13 @@ static void test_host_facade_owns_composition(void **state)
 	g_run_os_ops = NULL;
 	g_run_net_ops = NULL;
 	g_run_display_ops = NULL;
+	g_run_fs_ops = NULL;
 	g_run_config = NULL;
 	assert_int_equal(ove_lxp_run(&config, "/init", 1, argv), 37);
 	assert_ptr_equal(g_run_os_ops, &g_lxp_host_engine);
 	assert_ptr_equal(g_run_net_ops, &g_lxp_host_net_ops);
 	assert_ptr_equal(g_run_display_ops, &g_lxp_host_display_ops);
+	assert_null(g_run_fs_ops);
 	assert_ptr_equal(g_run_config, &config);
 }
 
