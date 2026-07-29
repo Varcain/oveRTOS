@@ -264,6 +264,20 @@ config OVE_LINUX_NET
       the board's Ethernet driver. The interface is brought up by the board/app
       before the program runs (static IP or DHCP).
 
+config OVE_LINUX_FS
+    bool "Linux personality: persistent /data filesystem"
+    default n
+    depends on OVE_LINUX
+    select OVE_FS
+    select OVE_QUEUE
+    select OVE_SYNC
+    help
+      Route the Linux personality's /data mount to the engine-native ove_fs
+      volume (SD/FAT on STM32F746). Native filesystem calls execute on one
+      serialized host worker and use bounded, statically owned handles.
+      Missing or unformatted media does not prevent the personality from
+      starting; /data operations report ENODEV until the volume can mount.
+
 config OVE_LINUX_NETFS
     bool "Linux personality: remote filesystem (9P2000.L)"
     default n

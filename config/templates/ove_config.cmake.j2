@@ -314,7 +314,8 @@ add_compile_definitions(LXP_ENABLE_FPU_CONTEXT=1)
 {% else %}
 set(OVE_LINUX_GUEST_FLOAT_ABI "soft")
 {% endif %}
-{% for feat, cfg in [("NET","CONFIG_OVE_LINUX_NET"), ("NETFS","CONFIG_OVE_LINUX_NETFS"),
+{% for feat, cfg in [("FS","CONFIG_OVE_LINUX_FS"), ("NET","CONFIG_OVE_LINUX_NET"),
+                     ("NETFS","CONFIG_OVE_LINUX_NETFS"),
                      ("NETFS_EXEC","CONFIG_OVE_LINUX_NETFS_EXEC"), ("PTY","CONFIG_OVE_LINUX_PTY"),
                      ("DEV","CONFIG_OVE_LINUX_DEV"), ("DEV_FB","CONFIG_OVE_LINUX_DEV_FB"),
                      ("DEV_DMA2D","CONFIG_OVE_LINUX_DEV_DMA2D"),
@@ -447,6 +448,11 @@ list(APPEND OVE_BACKEND_SOURCES
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_thread_adapter.c")
 # oveRTOS-owned provider composition and pre-rootfs-access facade.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_host.c")
+{% if config.get("CONFIG_OVE_LINUX_FS") == True %}
+# Persistent /data provider: all native volume operations are serialized on a
+# host worker so LXP owns Linux VFS semantics while oveRTOS owns storage access.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_fs_adapter.c")
+{% endif %}
 # Coordinator counters plus module-owned arena / loader utilities retain their
 # established archive order after the oveRTOS adapters.
 list(APPEND OVE_BACKEND_SOURCES ${LXP_UTILITY_SOURCES})

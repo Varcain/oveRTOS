@@ -1,0 +1,670 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Serialized oveRTOS storage provider for LXP's persistent /data mount.
+ */
+
+#include "ove_config.h"
+
+#if defined(CONFIG_OVE_LINUX_FS)
+
+#include "lxp/lxp_config.h"
+#include "lxp/lxp_fs_ops.h"
+#include "ove/fs.h"
+#include "ove/queue.h"
+#include "ove/sync.h"
+#include "ove/thread.h"
+
+#include <limits.h>
+#include <stdint.h>
+#include <string.h>
+
+#define LXP_OVE_FS_WORKER_STACK 4096u
+
+/*
+ * LXP has at most LXP_NHOSTFS_OPEN co-resident external descriptors. A single
+ * tagged union therefore covers every possible file/directory split without
+ * provisioning two independent worst-case pools.
+ */
+struct lxp_fs_file {
+	ove_file_storage_t storage;
+	ove_file_t native;
+};
+
+struct lxp_fs_dir {
+	ove_dir_storage_t storage;
+	ove_dir_t native;
+};
+
+enum fs_handle_kind {
+	FS_HANDLE_FREE = 0,
+	FS_HANDLE_FILE,
+	FS_HANDLE_DIR,
+};
+
+struct fs_handle_slot {
+	union {
+		struct lxp_fs_file file;
+		struct lxp_fs_dir dir;
+	} handle;
+	uint8_t kind;
+};
+
+enum fs_request_op {
+	FS_REQ_MOUNT = 0,
+	FS_REQ_FILE_OPEN,
+	FS_REQ_FILE_CLOSE,
+	FS_REQ_FILE_READ,
+	FS_REQ_FILE_WRITE,
+	FS_REQ_FILE_SEEK,
+	FS_REQ_FILE_STAT,
+	FS_REQ_FILE_TRUNCATE,
+	FS_REQ_FILE_SYNC,
+	FS_REQ_DIR_OPEN,
+	FS_REQ_DIR_READ,
+	FS_REQ_DIR_CLOSE,
+	FS_REQ_PATH_STAT,
+	FS_REQ_PATH_MKDIR,
+	FS_REQ_PATH_RMDIR,
+	FS_REQ_PATH_UNLINK,
+	FS_REQ_PATH_RENAME,
+	FS_REQ_STOP,
+};
+
+struct fs_request {
+	enum fs_request_op op;
+	int result;
+	union {
+		struct {
+			const char *path;
+			unsigned int flags;
+			lxp_fs_file_t *out;
+		} file_open;
+		struct {
+			lxp_fs_file_t file;
+		} file;
+		struct {
+			lxp_fs_file_t file;
+			void *buf;
+			size_t count;
+			size_t *done;
+		} file_read;
+		struct {
+			lxp_fs_file_t file;
+			const void *buf;
+			size_t count;
+			size_t *done;
+		} file_write;
+		struct {
+			lxp_fs_file_t file;
+			int64_t offset;
+			int whence;
+			uint64_t *new_offset;
+		} file_seek;
+		struct {
+			lxp_fs_file_t file;
+			lxp_fs_stat_t *out;
+		} file_stat;
+		struct {
+			lxp_fs_file_t file;
+			uint64_t length;
+		} file_truncate;
+		struct {
+			const char *path;
+			lxp_fs_dir_t *out;
+		} dir_open;
+		struct {
+			lxp_fs_dir_t dir;
+			lxp_fs_dirent_t *entry;
+		} dir_read;
+		struct {
+			lxp_fs_dir_t dir;
+		} dir;
+		struct {
+			const char *path;
+			lxp_fs_stat_t *out;
+		} path_stat;
+		struct {
+			const char *path;
+		} path;
+		struct {
+			const char *old_path;
+			const char *new_path;
+		} path_rename;
+	} args;
+};
+
+static struct fs_handle_slot g_handles[LXP_NHOSTFS_OPEN];
+static ove_mutex_storage_t g_submit_lock_storage;
+static ove_mutex_t g_submit_lock;
+static ove_event_storage_t g_complete_storage;
+static ove_event_t g_complete;
+static ove_queue_storage_t g_request_queue_storage;
+static ove_queue_t g_request_queue;
+static struct fs_request *g_request_queue_buffer[1];
+static ove_thread_storage_t g_worker_storage;
+static ove_thread_t g_worker;
+OVE_THREAD_STACK_DEFINE_STATIC_(g_worker_stack, LXP_OVE_FS_WORKER_STACK);
+static int g_active;
+static int g_mounted;
+
+_Static_assert(LXP_FS_O_READ == OVE_FS_O_READ, "filesystem read flag drifted");
+_Static_assert(LXP_FS_O_WRITE == OVE_FS_O_WRITE, "filesystem write flag drifted");
+_Static_assert(LXP_FS_O_CREATE == OVE_FS_O_CREATE, "filesystem create flag drifted");
+_Static_assert(LXP_FS_O_APPEND == OVE_FS_O_APPEND, "filesystem append flag drifted");
+_Static_assert(LXP_FS_O_TRUNC == OVE_FS_O_TRUNC, "filesystem truncate flag drifted");
+_Static_assert(LXP_FS_O_EXCL == OVE_FS_O_EXCL, "filesystem exclusive flag drifted");
+_Static_assert(LXP_FS_SEEK_SET == OVE_FS_SEEK_SET, "filesystem seek-set drifted");
+_Static_assert(LXP_FS_SEEK_CUR == OVE_FS_SEEK_CUR, "filesystem seek-cur drifted");
+_Static_assert(LXP_FS_SEEK_END == OVE_FS_SEEK_END, "filesystem seek-end drifted");
+_Static_assert(LXP_FS_TYPE_FILE == OVE_FS_TYPE_FILE, "filesystem file type drifted");
+_Static_assert(LXP_FS_TYPE_DIR == OVE_FS_TYPE_DIR, "filesystem directory type drifted");
+
+static struct fs_handle_slot *file_slot(lxp_fs_file_t file)
+{
+	if (file == NULL)
+		return NULL;
+	for (size_t i = 0; i < LXP_NHOSTFS_OPEN; i++)
+		if (g_handles[i].kind == FS_HANDLE_FILE && &g_handles[i].handle.file == file)
+			return &g_handles[i];
+	return NULL;
+}
+
+static struct fs_handle_slot *dir_slot(lxp_fs_dir_t dir)
+{
+	if (dir == NULL)
+		return NULL;
+	for (size_t i = 0; i < LXP_NHOSTFS_OPEN; i++)
+		if (g_handles[i].kind == FS_HANDLE_DIR && &g_handles[i].handle.dir == dir)
+			return &g_handles[i];
+	return NULL;
+}
+
+static struct fs_handle_slot *free_slot(void)
+{
+	for (size_t i = 0; i < LXP_NHOSTFS_OPEN; i++)
+		if (g_handles[i].kind == FS_HANDLE_FREE)
+			return &g_handles[i];
+	return NULL;
+}
+
+static int ensure_mounted(void)
+{
+	if (g_mounted)
+		return LXP_OK;
+	if (ove_fs_mount(NULL, NULL) != OVE_OK)
+		return LXP_ERR_NOT_REGISTERED;
+	g_mounted = 1;
+	return LXP_OK;
+}
+
+static void stat_to_lxp(lxp_fs_stat_t *out, const struct ove_fs_stat *native)
+{
+	memset(out, 0, sizeof(*out));
+	out->size = native->size;
+	out->mtime_sec = native->mtime_sec;
+	out->type = native->type == OVE_FS_TYPE_DIR ? LXP_FS_TYPE_DIR : LXP_FS_TYPE_FILE;
+}
+
+static void close_all_handles(void)
+{
+	for (size_t i = 0; i < LXP_NHOSTFS_OPEN; i++) {
+		if (g_handles[i].kind == FS_HANDLE_FILE)
+			(void)ove_fs_close_deinit(g_handles[i].handle.file.native);
+		else if (g_handles[i].kind == FS_HANDLE_DIR)
+			(void)ove_fs_closedir_deinit(g_handles[i].handle.dir.native);
+		memset(&g_handles[i], 0, sizeof(g_handles[i]));
+	}
+}
+
+static int execute_request(struct fs_request *request)
+{
+	struct fs_handle_slot *slot;
+	struct ove_fs_stat native_stat;
+	struct ove_dirent native_entry;
+	size_t size;
+	long position;
+	int rc;
+
+	if (request->op == FS_REQ_MOUNT)
+		return ensure_mounted();
+	if (request->op == FS_REQ_STOP) {
+		close_all_handles();
+		if (g_mounted)
+			ove_fs_unmount(NULL);
+		g_mounted = 0;
+		return LXP_OK;
+	}
+	rc = ensure_mounted();
+	if (rc != LXP_OK)
+		return rc;
+
+	switch (request->op) {
+	case FS_REQ_FILE_OPEN:
+		if (request->args.file_open.path == NULL || request->args.file_open.out == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		if ((request->args.file_open.flags &
+		     ~(LXP_FS_O_READ | LXP_FS_O_WRITE | LXP_FS_O_CREATE | LXP_FS_O_APPEND |
+		       LXP_FS_O_TRUNC | LXP_FS_O_EXCL)) != 0u ||
+		    (request->args.file_open.flags & (LXP_FS_O_READ | LXP_FS_O_WRITE)) == 0u)
+			return LXP_ERR_INVALID_PARAM;
+		slot = free_slot();
+		if (slot == NULL)
+			return LXP_ERR_NO_MEMORY;
+		memset(slot, 0, sizeof(*slot));
+		rc = ove_fs_open_init(&slot->handle.file.native, &slot->handle.file.storage,
+				      request->args.file_open.path,
+				      (int)request->args.file_open.flags);
+		if (rc != OVE_OK) {
+			memset(slot, 0, sizeof(*slot));
+			return rc;
+		}
+		slot->kind = FS_HANDLE_FILE;
+		*request->args.file_open.out = &slot->handle.file;
+		return LXP_OK;
+	case FS_REQ_FILE_CLOSE:
+		slot = file_slot(request->args.file.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		rc = ove_fs_close_deinit(slot->handle.file.native);
+		if (rc == OVE_OK)
+			memset(slot, 0, sizeof(*slot));
+		return rc;
+	case FS_REQ_FILE_READ:
+		slot = file_slot(request->args.file_read.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		return ove_fs_read(slot->handle.file.native, request->args.file_read.buf,
+				   request->args.file_read.count, request->args.file_read.done);
+	case FS_REQ_FILE_WRITE:
+		slot = file_slot(request->args.file_write.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		return ove_fs_write(slot->handle.file.native, request->args.file_write.buf,
+				    request->args.file_write.count, request->args.file_write.done);
+	case FS_REQ_FILE_SEEK:
+		slot = file_slot(request->args.file_seek.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		if (request->args.file_seek.new_offset == NULL ||
+		    request->args.file_seek.offset < INT32_MIN ||
+		    request->args.file_seek.offset > INT32_MAX ||
+		    request->args.file_seek.whence < OVE_FS_SEEK_SET ||
+		    request->args.file_seek.whence > OVE_FS_SEEK_END)
+			return LXP_ERR_INVALID_PARAM;
+		rc = ove_fs_seek(slot->handle.file.native, (long)request->args.file_seek.offset,
+				 request->args.file_seek.whence);
+		if (rc != OVE_OK)
+			return rc;
+		position = ove_fs_tell(slot->handle.file.native);
+		if (position < 0)
+			return LXP_ERR_IO;
+		*request->args.file_seek.new_offset = (uint64_t)(unsigned long)position;
+		return LXP_OK;
+	case FS_REQ_FILE_STAT:
+		slot = file_slot(request->args.file_stat.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		if (request->args.file_stat.out == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		rc = ove_fs_size(slot->handle.file.native, &size);
+		if (rc != OVE_OK)
+			return rc;
+		memset(request->args.file_stat.out, 0, sizeof(*request->args.file_stat.out));
+		request->args.file_stat.out->size = size;
+		request->args.file_stat.out->type = LXP_FS_TYPE_FILE;
+		return LXP_OK;
+	case FS_REQ_FILE_TRUNCATE:
+		slot = file_slot(request->args.file_truncate.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		return ove_fs_truncate(slot->handle.file.native,
+				       request->args.file_truncate.length);
+	case FS_REQ_FILE_SYNC:
+		slot = file_slot(request->args.file.file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		return ove_fs_sync(slot->handle.file.native);
+	case FS_REQ_DIR_OPEN:
+		if (request->args.dir_open.path == NULL || request->args.dir_open.out == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		slot = free_slot();
+		if (slot == NULL)
+			return LXP_ERR_NO_MEMORY;
+		memset(slot, 0, sizeof(*slot));
+		rc = ove_fs_opendir_init(&slot->handle.dir.native, &slot->handle.dir.storage,
+					 request->args.dir_open.path);
+		if (rc != OVE_OK) {
+			memset(slot, 0, sizeof(*slot));
+			return rc;
+		}
+		slot->kind = FS_HANDLE_DIR;
+		*request->args.dir_open.out = &slot->handle.dir;
+		return LXP_OK;
+	case FS_REQ_DIR_READ:
+		slot = dir_slot(request->args.dir_read.dir);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		if (request->args.dir_read.entry == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		rc = ove_fs_readdir(slot->handle.dir.native, &native_entry);
+		if (rc != OVE_OK)
+			return rc;
+		memset(request->args.dir_read.entry, 0, sizeof(*request->args.dir_read.entry));
+		memcpy(request->args.dir_read.entry->name, native_entry.name,
+		       sizeof(request->args.dir_read.entry->name));
+		request->args.dir_read.entry->name[LXP_FS_NAME_MAX - 1u] = '\0';
+		request->args.dir_read.entry->size = native_entry.size;
+		request->args.dir_read.entry->type = native_entry.is_dir ? LXP_FS_TYPE_DIR
+									 : LXP_FS_TYPE_FILE;
+		return LXP_OK;
+	case FS_REQ_DIR_CLOSE:
+		slot = dir_slot(request->args.dir.dir);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		rc = ove_fs_closedir_deinit(slot->handle.dir.native);
+		if (rc == OVE_OK)
+			memset(slot, 0, sizeof(*slot));
+		return rc;
+	case FS_REQ_PATH_STAT:
+		if (request->args.path_stat.path == NULL || request->args.path_stat.out == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		rc = ove_fs_stat(request->args.path_stat.path, &native_stat);
+		if (rc == OVE_OK)
+			stat_to_lxp(request->args.path_stat.out, &native_stat);
+		return rc;
+	case FS_REQ_PATH_MKDIR:
+		return request->args.path.path == NULL ? LXP_ERR_INVALID_PARAM
+						       : ove_fs_mkdir(request->args.path.path);
+	case FS_REQ_PATH_RMDIR:
+		return request->args.path.path == NULL ? LXP_ERR_INVALID_PARAM
+						       : ove_fs_rmdir(request->args.path.path);
+	case FS_REQ_PATH_UNLINK:
+		return request->args.path.path == NULL ? LXP_ERR_INVALID_PARAM
+						       : ove_fs_unlink(request->args.path.path);
+	case FS_REQ_PATH_RENAME:
+		return request->args.path_rename.old_path == NULL ||
+				       request->args.path_rename.new_path == NULL
+			       ? LXP_ERR_INVALID_PARAM
+			       : ove_fs_rename(request->args.path_rename.old_path,
+					       request->args.path_rename.new_path);
+	case FS_REQ_MOUNT:
+	case FS_REQ_STOP:
+	default:
+		return LXP_ERR_INVALID_PARAM;
+	}
+}
+
+static void fs_worker(void *arg)
+{
+	(void)arg;
+	for (;;) {
+		struct fs_request *request = NULL;
+		int rc = ove_queue_receive(g_request_queue, &request, OVE_WAIT_FOREVER);
+		if (rc != OVE_OK)
+			continue;
+		request->result = execute_request(request);
+		int stop = request->op == FS_REQ_STOP;
+		ove_event_signal(g_complete);
+		if (stop)
+			return;
+	}
+}
+
+static int submit(struct fs_request *request)
+{
+	if (!g_active || request == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	int rc = ove_mutex_lock(g_submit_lock, OVE_WAIT_FOREVER);
+	if (rc != OVE_OK)
+		return rc;
+	struct fs_request *queued = request;
+	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
+	if (rc == OVE_OK)
+		rc = ove_event_wait(g_complete, OVE_WAIT_FOREVER);
+	ove_mutex_unlock(g_submit_lock);
+	return rc == OVE_OK ? request->result : rc;
+}
+
+static int fs_run_begin(void)
+{
+	struct fs_request request = {.op = FS_REQ_MOUNT};
+	int rc;
+
+	if (g_active)
+		return LXP_ERR_WOULD_BLOCK;
+	memset(g_handles, 0, sizeof(g_handles));
+	g_mounted = 0;
+	rc = ove_mutex_init(&g_submit_lock, &g_submit_lock_storage);
+	if (rc != OVE_OK)
+		return rc;
+	rc = ove_event_init(&g_complete, &g_complete_storage);
+	if (rc != OVE_OK)
+		goto fail_event;
+	rc = ove_queue_init(&g_request_queue, &g_request_queue_storage, g_request_queue_buffer,
+			    sizeof(g_request_queue_buffer[0]), 1);
+	if (rc != OVE_OK)
+		goto fail_queue;
+	rc = ove_thread_init(&g_worker, &g_worker_storage, "lxp-fs", fs_worker, NULL,
+			     OVE_PRIO_NORMAL, sizeof(g_worker_stack), g_worker_stack);
+	if (rc != OVE_OK)
+		goto fail_thread;
+	g_active = 1;
+	/* Missing media is intentionally not a lifecycle failure. The worker retries
+	 * mounting on the first subsequent operation, so hot insertion also works. */
+	(void)submit(&request);
+	return LXP_OK;
+
+fail_thread:
+	ove_queue_deinit(g_request_queue);
+fail_queue:
+	ove_event_deinit(g_complete);
+fail_event:
+	ove_mutex_deinit(g_submit_lock);
+	return rc;
+}
+
+static void fs_run_end(void)
+{
+	struct fs_request request = {.op = FS_REQ_STOP};
+
+	if (!g_active)
+		return;
+	int rc = submit(&request);
+	if (rc == LXP_OK)
+		(void)ove_thread_deinit(g_worker);
+	g_active = 0;
+	ove_queue_deinit(g_request_queue);
+	ove_event_deinit(g_complete);
+	ove_mutex_deinit(g_submit_lock);
+	memset(g_handles, 0, sizeof(g_handles));
+}
+
+static int fs_file_open(const char *path, unsigned int flags, lxp_fs_file_t *out)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_OPEN,
+		.args.file_open = {.path = path, .flags = flags, .out = out},
+	};
+	return submit(&request);
+}
+
+static int fs_file_close(lxp_fs_file_t file)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_CLOSE,
+		.args.file = {.file = file},
+	};
+	return submit(&request);
+}
+
+static int fs_file_read(lxp_fs_file_t file, void *buf, size_t count, size_t *bytes_read)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_READ,
+		.args.file_read =
+			{
+				.file = file,
+				.buf = buf,
+				.count = count,
+				.done = bytes_read,
+			},
+	};
+	return submit(&request);
+}
+
+static int fs_file_write(lxp_fs_file_t file, const void *buf, size_t count, size_t *bytes_written)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_WRITE,
+		.args.file_write =
+			{
+				.file = file,
+				.buf = buf,
+				.count = count,
+				.done = bytes_written,
+			},
+	};
+	return submit(&request);
+}
+
+static int fs_file_seek(lxp_fs_file_t file, int64_t offset, int whence, uint64_t *new_offset)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_SEEK,
+		.args.file_seek =
+			{
+				.file = file,
+				.offset = offset,
+				.whence = whence,
+				.new_offset = new_offset,
+			},
+	};
+	return submit(&request);
+}
+
+static int fs_file_stat(lxp_fs_file_t file, lxp_fs_stat_t *out)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_STAT,
+		.args.file_stat = {.file = file, .out = out},
+	};
+	return submit(&request);
+}
+
+static int fs_file_truncate(lxp_fs_file_t file, uint64_t length)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_TRUNCATE,
+		.args.file_truncate = {.file = file, .length = length},
+	};
+	return submit(&request);
+}
+
+static int fs_file_sync(lxp_fs_file_t file)
+{
+	struct fs_request request = {
+		.op = FS_REQ_FILE_SYNC,
+		.args.file = {.file = file},
+	};
+	return submit(&request);
+}
+
+static int fs_dir_open(const char *path, lxp_fs_dir_t *out)
+{
+	struct fs_request request = {
+		.op = FS_REQ_DIR_OPEN,
+		.args.dir_open = {.path = path, .out = out},
+	};
+	return submit(&request);
+}
+
+static int fs_dir_read(lxp_fs_dir_t dir, lxp_fs_dirent_t *entry)
+{
+	struct fs_request request = {
+		.op = FS_REQ_DIR_READ,
+		.args.dir_read = {.dir = dir, .entry = entry},
+	};
+	return submit(&request);
+}
+
+static int fs_dir_close(lxp_fs_dir_t dir)
+{
+	struct fs_request request = {
+		.op = FS_REQ_DIR_CLOSE,
+		.args.dir = {.dir = dir},
+	};
+	return submit(&request);
+}
+
+static int fs_path_stat(const char *path, lxp_fs_stat_t *out)
+{
+	struct fs_request request = {
+		.op = FS_REQ_PATH_STAT,
+		.args.path_stat = {.path = path, .out = out},
+	};
+	return submit(&request);
+}
+
+static int fs_path_mkdir(const char *path)
+{
+	struct fs_request request = {
+		.op = FS_REQ_PATH_MKDIR,
+		.args.path = {.path = path},
+	};
+	return submit(&request);
+}
+
+static int fs_path_rmdir(const char *path)
+{
+	struct fs_request request = {
+		.op = FS_REQ_PATH_RMDIR,
+		.args.path = {.path = path},
+	};
+	return submit(&request);
+}
+
+static int fs_path_unlink(const char *path)
+{
+	struct fs_request request = {
+		.op = FS_REQ_PATH_UNLINK,
+		.args.path = {.path = path},
+	};
+	return submit(&request);
+}
+
+static int fs_path_rename(const char *old_path, const char *new_path)
+{
+	struct fs_request request = {
+		.op = FS_REQ_PATH_RENAME,
+		.args.path_rename = {.old_path = old_path, .new_path = new_path},
+	};
+	return submit(&request);
+}
+
+const lxp_fs_ops_t g_lxp_host_fs_ops = {
+	.abi_version = LXP_FS_OPS_ABI_VERSION,
+	.struct_size = sizeof(lxp_fs_ops_t),
+	.run_begin = fs_run_begin,
+	.run_end = fs_run_end,
+	.file_open = fs_file_open,
+	.file_close = fs_file_close,
+	.file_read = fs_file_read,
+	.file_write = fs_file_write,
+	.file_seek = fs_file_seek,
+	.file_stat = fs_file_stat,
+	.file_truncate = fs_file_truncate,
+	.file_sync = fs_file_sync,
+	.dir_open = fs_dir_open,
+	.dir_read = fs_dir_read,
+	.dir_close = fs_dir_close,
+	.path_stat = fs_path_stat,
+	.path_mkdir = fs_path_mkdir,
+	.path_rmdir = fs_path_rmdir,
+	.path_unlink = fs_path_unlink,
+	.path_rename = fs_path_rename,
+};
+
+#endif /* CONFIG_OVE_LINUX_FS */

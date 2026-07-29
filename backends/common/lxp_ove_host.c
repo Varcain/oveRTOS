@@ -27,7 +27,12 @@ extern const lxp_display_ops_t g_lxp_host_display_ops;
 #define OVE_LXP_DISPLAY_OPS NULL
 #endif
 
+#if defined(CONFIG_OVE_LINUX_FS)
+extern const lxp_fs_ops_t g_lxp_host_fs_ops;
+#define OVE_LXP_FS_OPS (&g_lxp_host_fs_ops)
+#else
 #define OVE_LXP_FS_OPS NULL
+#endif
 
 void ove_lxp_prepare_rootfs_access(const void *base, size_t len)
 {

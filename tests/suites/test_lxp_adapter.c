@@ -20,7 +20,12 @@
 #include "lxp/lxp_net_ops.h"
 #include "ove/types.h" /* OVE_OK — the ove_net return the adapter forwards */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 extern const struct lxp_net_ops g_lxp_host_net_ops;
+extern const lxp_fs_ops_t g_lxp_host_fs_ops;
 static unsigned g_socket_kicks;
 static unsigned g_rootfs_window_calls;
 static const void *g_rootfs_window_base;
@@ -104,6 +109,104 @@ static void test_adapter_ops_wired(void **state)
 	assert_true(ops->capabilities & LXP_NET_CAP_SOCKET_READY_EVENT);
 }
 
+static void test_fs_adapter_ops_wired(void **state)
+{
+	(void)state;
+	const lxp_fs_ops_t *ops = &g_lxp_host_fs_ops;
+	assert_int_equal(ops->abi_version, LXP_FS_OPS_ABI_VERSION);
+	assert_int_equal(ops->struct_size, sizeof(*ops));
+	assert_non_null(ops->run_begin);
+	assert_non_null(ops->run_end);
+	assert_non_null(ops->file_open);
+	assert_non_null(ops->file_close);
+	assert_non_null(ops->file_read);
+	assert_non_null(ops->file_write);
+	assert_non_null(ops->file_seek);
+	assert_non_null(ops->file_stat);
+	assert_non_null(ops->file_truncate);
+	assert_non_null(ops->file_sync);
+	assert_non_null(ops->dir_open);
+	assert_non_null(ops->dir_read);
+	assert_non_null(ops->dir_close);
+	assert_non_null(ops->path_stat);
+	assert_non_null(ops->path_mkdir);
+	assert_non_null(ops->path_rmdir);
+	assert_non_null(ops->path_unlink);
+	assert_non_null(ops->path_rename);
+}
+
+static void test_fs_adapter_serialized_lifecycle(void **state)
+{
+	(void)state;
+	const lxp_fs_ops_t *ops = &g_lxp_host_fs_ops;
+	char base[] = "/tmp/ove-lxp-fs-XXXXXX";
+	char file[128];
+	char moved[128];
+	char child[128];
+	char readback[8] = {0};
+	const char payload[] = "hello";
+	lxp_fs_file_t handle = NULL;
+	lxp_fs_dir_t dir = NULL;
+	lxp_fs_stat_t stat;
+	lxp_fs_dirent_t entry;
+	size_t done = 0;
+	uint64_t offset = UINT64_MAX;
+	int found = 0;
+
+	assert_non_null(mkdtemp(base));
+	assert_true(snprintf(file, sizeof(file), "%s/file", base) > 0);
+	assert_true(snprintf(moved, sizeof(moved), "%s/moved", base) > 0);
+	assert_true(snprintf(child, sizeof(child), "%s/child", base) > 0);
+
+	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->run_begin(), LXP_ERR_WOULD_BLOCK);
+	assert_int_equal(ops->file_open(file,
+					LXP_FS_O_READ | LXP_FS_O_WRITE | LXP_FS_O_CREATE |
+						LXP_FS_O_TRUNC,
+					&handle),
+			 LXP_OK);
+	assert_non_null(handle);
+	assert_int_equal(ops->file_write(handle, payload, sizeof(payload) - 1u, &done), LXP_OK);
+	assert_int_equal(done, sizeof(payload) - 1u);
+	assert_int_equal(ops->file_seek(handle, 0, LXP_FS_SEEK_SET, &offset), LXP_OK);
+	assert_int_equal(offset, 0);
+	assert_int_equal(ops->file_read(handle, readback, sizeof(payload) - 1u, &done), LXP_OK);
+	assert_int_equal(done, sizeof(payload) - 1u);
+	assert_memory_equal(readback, payload, sizeof(payload) - 1u);
+	assert_int_equal(ops->file_stat(handle, &stat), LXP_OK);
+	assert_int_equal(stat.type, LXP_FS_TYPE_FILE);
+	assert_int_equal(stat.size, sizeof(payload) - 1u);
+	assert_int_equal(ops->file_truncate(handle, 3), LXP_OK);
+	assert_int_equal(ops->file_sync(handle), LXP_OK);
+	assert_int_equal(ops->file_close(handle), LXP_OK);
+	assert_int_equal(ops->file_close(handle), LXP_ERR_BAD_HANDLE);
+
+	assert_int_equal(ops->path_rename(file, moved), LXP_OK);
+	assert_int_equal(ops->path_stat(moved, &stat), LXP_OK);
+	assert_int_equal(stat.size, 3);
+	assert_int_equal(ops->dir_open(base, &dir), LXP_OK);
+	while (ops->dir_read(dir, &entry) == LXP_OK)
+		if (strcmp(entry.name, "moved") == 0)
+			found = 1;
+	assert_true(found);
+	assert_int_equal(ops->dir_close(dir), LXP_OK);
+	assert_int_equal(ops->path_mkdir(child), LXP_OK);
+	assert_int_equal(ops->path_rmdir(child), LXP_OK);
+	assert_int_equal(ops->path_unlink(moved), LXP_OK);
+	assert_int_equal(ops->path_rmdir(base), LXP_OK);
+	ops->run_end();
+
+	assert_int_equal(ops->path_stat(base, &stat), LXP_ERR_INVALID_PARAM);
+	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->file_open("/tmp/ove-lxp-fs-leaked",
+					LXP_FS_O_WRITE | LXP_FS_O_CREATE | LXP_FS_O_TRUNC, &handle),
+			 LXP_OK);
+	ops->run_end(); /* Provider teardown owns leaked native handles. */
+	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->path_unlink("/tmp/ove-lxp-fs-leaked"), LXP_OK);
+	ops->run_end();
+}
+
 /* open -> close through the adapter reaches the ove_net backend (posix_net):
  * exercises the storage-pool slot alloc/free and the ove_socket_open_ex bridge.
  * Readiness remains subscribed until the last concurrently owned socket closes. */
@@ -167,7 +270,7 @@ static void test_host_facade_owns_composition(void **state)
 	assert_ptr_equal(g_run_os_ops, &g_lxp_host_engine);
 	assert_ptr_equal(g_run_net_ops, &g_lxp_host_net_ops);
 	assert_ptr_equal(g_run_display_ops, &g_lxp_host_display_ops);
-	assert_null(g_run_fs_ops);
+	assert_ptr_equal(g_run_fs_ops, &g_lxp_host_fs_ops);
 	assert_ptr_equal(g_run_config, &config);
 }
 
@@ -260,6 +363,8 @@ int test_lxp_adapter_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_adapter_ops_wired),
+		cmocka_unit_test(test_fs_adapter_ops_wired),
+		cmocka_unit_test(test_fs_adapter_serialized_lifecycle),
 		cmocka_unit_test(test_adapter_open_close),
 		cmocka_unit_test(test_host_facade_owns_composition),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
