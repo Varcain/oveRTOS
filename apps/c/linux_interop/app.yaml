@@ -27,9 +27,10 @@ defconfig:
   # stock networking tools (wget, nc, ping) run under the personality. On QEMU the
   # board provides a shared-memory NIC; on real STM32F746 the LAN8742 driver.
   - CONFIG_OVE_LINUX_NET=y
-  # Full compatibility includes the read-only 9P filesystem and the optional
-  # remote FDPIC exec path. Use linux_interop_hardened when strict W^X is the
-  # production priority.
+  # Full compatibility includes the read-only 9P filesystem and remote FDPIC
+  # execution. Copied text is published through the same strict W^X policy as
+  # local execution; the hardened profile disables remote exec as an additional
+  # attack-surface reduction.
   - CONFIG_OVE_LINUX_NETFS=y
   - CONFIG_OVE_LINUX_NETFS_EXEC=y
   # Pseudo-terminal layer (/dev/ptmx + /dev/pts/N) for an interactive network login
