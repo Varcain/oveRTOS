@@ -82,6 +82,7 @@ set(STUB_SOURCES
     # The lxp module itself is tested in isolation in the lxp repo; the oveRTOS
     # host test covers only the consumer-side glue, so no lxp sources are built.
     ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
+    ${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c
@@ -196,6 +197,7 @@ function(ove_add_stub_variant name)
         # the one lxp-touching TU the host test compiles. The lxp module sources + their
         # LXP_ENABLE_* gates live in the lxp repo's own test build now, not here.
         CONFIG_OVE_LINUX_NET=1
+        CONFIG_OVE_LINUX_FS=1
         CONFIG_OVE_NET_RX_READY_NOTIFY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
