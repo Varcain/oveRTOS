@@ -244,13 +244,26 @@ static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((al
 #define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
 #define DYN_POOLS_BYTES ((size_t)LXP_NREG * LXP_DYN_POOL_SIZE)
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#define NUTTX_EXEC_STAGE_BYTES (256u * 1024u)
+#else
+#define NUTTX_EXEC_STAGE_BYTES 0u
+#endif
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && defined(LXP_WFS_POOL_BASE)
+#define NUTTX_GUEST_STORAGE_END \
+	(OVE_LXP_GUEST_POOL_BASE + DYN_POOLS_BYTES + PROG_REGIONS_BYTES + NUTTX_EXEC_STAGE_BYTES)
+_Static_assert(NUTTX_GUEST_STORAGE_END <= (uintptr_t)LXP_WFS_POOL_BASE,
+	       "NuttX guest storage overlaps the fixed tmpfs pool");
+_Static_assert((uintptr_t)LXP_WFS_POOL_BASE + (size_t)LXP_WFS_POOL <= OVE_LXP_GUEST_POOL_END,
+	       "NuttX tmpfs pool exceeds external SDRAM");
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Remote-exec (9P netfs) staging buffer: the coordinator fetches a remote FDPIC ELF into
  * this 256K scratch, then launches it (its own text is copied into a program region). On the
  * SDRAM/PSRAM boards it sits immediately after the contiguous dyn+program pool window — still
- * inside the whole-pool Normal non-cacheable MPU region (region 1), so the privileged
- * coordinator reaches it (STM32: 0xC0700000..0xC0740000, well within the 8M SDRAM region).
+ * inside the whole-pool privileged Normal-memory MPU region (STM32 WBWA, QEMU
+ * non-cacheable), so the coordinator reaches it (STM32:
+ * 0xC0700000..0xC0740000, well within the 8M SDRAM region).
  * Mirrors the FreeRTOS seam's g_netfs_exec_stage. */
-#define NUTTX_EXEC_STAGE_BYTES (256u * 1024u)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 static uint8_t *const g_netfs_exec_stage =
 	(uint8_t *)((uintptr_t)prog_regions + PROG_REGIONS_BYTES);
