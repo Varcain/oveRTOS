@@ -162,6 +162,28 @@ static void test_mpu_effective_mapping_rejects_higher_overlay(void **state)
 
 	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(NULL, &expected));
 	assert_false(ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, NULL));
+
+	/* A broader RW+XN descriptor may be the effective mapping for the tail
+	 * beyond a higher-priority RX prefix, but not for a range it only partly
+	 * covers or when that prefix overlaps the requested tail. */
+	const struct ove_cortex_m_mpu_expectation tail = {
+		.base = 0x20001000u,
+		.size = 0x1000u,
+		.texscb = 0x0bu,
+		.access = 3u,
+		.execute_never = 1u,
+	};
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0x20000000u, rasr(15u, 0u, 0x0bu, 3u, 1u),
+							&snapshot.regions[0]),
+			 0);
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0x20000000u, rasr(11u, 0u, 0x0bu, 6u, 0u),
+							&snapshot.regions[1]),
+			 0);
+	assert_true(ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &tail));
+	assert_int_equal(ove_cortex_m_mpu_region_decode(0x20001000u, rasr(11u, 0u, 0x0bu, 6u, 0u),
+							&snapshot.regions[1]),
+			 0);
+	assert_false(ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &tail));
 }
 
 int test_cortex_m_cache_run(void)

@@ -282,7 +282,7 @@ struct nuttx_device_map {
 	uint8_t used;
 };
 
-#define LXP_NATIVE_POLICY_REGIONS (2u + LXP_DEVICE_MPU_COUNT)
+#define LXP_NATIVE_POLICY_REGIONS (3u + LXP_DEVICE_MPU_COUNT)
 struct nuttx_prepared_profile {
 	lxp_memory_policy_key_t key;
 	uint32_t rbar[LXP_NATIVE_POLICY_REGIONS];
@@ -622,8 +622,8 @@ static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t te
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || text_size == 0)
 		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
-	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
-	if (text_lo < region_lo || text_lo >= region_hi || text_size > region_hi - text_lo)
+	if (text_lo != region_lo || text_size < 32u || text_size >= LXP_PROG_REGION_SIZE ||
+	    (text_size & (text_size - 1u)) != 0u)
 		return LXP_ERR_INVALID_PARAM;
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -646,6 +646,8 @@ static int nuttx_spawn_launch(int sidx, uint32_t generation, int ridx,
 	};
 	if (lxp_slot_memory_policy(slot, &policy) != LXP_OK ||
 	    lxp_memory_policy_validate(&policy) != LXP_OK || policy.address_space.index != ridx ||
+	    policy.copied_text_base != launch->copied_text_base ||
+	    policy.copied_text_size != launch->copied_text_size ||
 	    policy.copied_text_executable != (uint8_t)(launch->copied_text_size != 0))
 		return -1;
 	if (spawn_task(sidx, launch->r[13]) != 0)
@@ -1027,7 +1029,8 @@ const lxp_os_ops_t g_lxp_host_engine = {
  *   region 1 = privileged-only Normal-memory base for coordinator access to the complete pool;
  *   regions 2/3 = the running address space's program and dynamic pools;
  *   region 4 = optional shared QSPI rootfs, user RO + executable;
- *   regions 5/6 = driver-originated device capabilities for the running slot.
+ *   regions 5/6 = driver-originated device capabilities for the running slot;
+ *   region 7 = optional exact copied-text prefix, user RO + executable.
  * Everything else — kernel .data/.bss/heap, peripherals — is ungranted, so an unprivileged access
  * to it faults. NuttX leaves the MPU disabled in FLAT, so we own it (raw registers; arm_mpu.c is
  * not compiled). */
@@ -1183,8 +1186,7 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 	memset(prepared, 0, sizeof(*prepared));
 	prepared->rbar[0] = (uint32_t)(uintptr_t)prog_regions[ridx];
 	prepared->rasr[0] = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_PROG_REGION_SIZE) |
-			    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) |
-			    (policy->copied_text_executable ? 0u : (1u << 28));
+			    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) | (1u << 28);
 	prepared->rbar[1] = (uint32_t)(uintptr_t)dyn_pools[ridx];
 	prepared->rasr[1] = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_DYN_POOL_SIZE) |
 			    (NUTTX_POOL_TEXSCB << 16) | (0x3u << 24) | (1u << 28);
@@ -1204,13 +1206,25 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 	}
 	if (caps != policy->device_count)
 		return -1;
+	if (policy->copied_text_executable) {
+		uintptr_t program = (uintptr_t)prog_regions[ridx];
+		if (policy->copied_text_base != program || policy->copied_text_size == 0u ||
+		    policy->copied_text_size >= LXP_PROG_REGION_SIZE)
+			return -1;
+		prepared->rbar[4] = (uint32_t)policy->copied_text_base;
+		/* The global profile remains installed while privileged coordinator
+		 * code runs. AP=2 therefore keeps privileged write access for a later
+		 * reload while granting the guest read-only execution. */
+		prepared->rasr[4] = (1u << 0) | OVE_MPU_RASR_SIZE(policy->copied_text_size) |
+				    (NUTTX_POOL_TEXSCB << 16) | (0x2u << 24);
+	}
 
 	const struct ove_cortex_m_mpu_expectation program = {
 		.base = (uintptr_t)prog_regions[ridx],
 		.size = LXP_PROG_REGION_SIZE,
 		.texscb = NUTTX_POOL_TEXSCB,
 		.access = 3u,
-		.execute_never = policy->copied_text_executable ? 0u : 1u,
+		.execute_never = 1u,
 	};
 	const struct ove_cortex_m_mpu_expectation dynamic = {
 		.base = (uintptr_t)dyn_pools[ridx],
@@ -1239,6 +1253,20 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 		    !ove_cortex_m_mpu_region_contains(&native, map->addr, map->size))
 			return -1;
 	}
+	if (policy->copied_text_executable) {
+		const struct ove_cortex_m_mpu_expectation executable = {
+			.base = policy->copied_text_base,
+			.size = policy->copied_text_size,
+			.texscb = NUTTX_POOL_TEXSCB,
+			.access = 2u,
+			.execute_never = 0u,
+		};
+		if (!ove_cortex_m_mpu_descriptor_matches(prepared->rbar[4], prepared->rasr[4],
+							 &executable))
+			return -1;
+	} else if (prepared->rasr[4] != 0u) {
+		return -1;
+	}
 	prepared->key = lxp_memory_policy_make_key(policy);
 	prepared->valid = 1u;
 	return 0;
@@ -1246,7 +1274,7 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 
 static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepared)
 {
-	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
+	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u, 7u};
 	struct ove_cortex_m_mpu_snapshot snapshot;
 	if (!prepared || !prepared->valid || ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
 	    !(snapshot.ctrl & OVE_CORTEX_M_MPU_CTRL_ENABLE))
@@ -1275,9 +1303,37 @@ static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepa
 		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region[i]],
 								 &expected))
 			return 0;
-		/* Program and arena mappings must also win over every static/device
-		 * overlay, not merely exist at their expected region numbers. */
-		if (i < 2u && !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+		/* Arena and copied-text mappings must also win over every other
+		 * descriptor, not merely exist at their expected region numbers. */
+		if ((i == 1u || i == 4u) &&
+		    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+			return 0;
+	}
+	if (prepared->key.copied_text_executable) {
+		uintptr_t program = prepared->rbar[0];
+		uintptr_t tail = prepared->key.copied_text_base + prepared->key.copied_text_size;
+		const struct ove_cortex_m_mpu_expectation writable_tail = {
+			.base = tail,
+			.size = program + LXP_PROG_REGION_SIZE - tail,
+			.texscb = NUTTX_POOL_TEXSCB,
+			.access = 3u,
+			.execute_never = 1u,
+		};
+		if (!ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &writable_tail))
+			return 0;
+	} else {
+		struct ove_cortex_m_mpu_region native;
+		if (ove_cortex_m_mpu_region_decode(prepared->rbar[0], prepared->rasr[0], &native) !=
+		    0)
+			return 0;
+		const struct ove_cortex_m_mpu_expectation program = {
+			.base = native.base,
+			.size = native.size,
+			.texscb = native.texscb,
+			.access = native.access,
+			.execute_never = native.execute_never,
+		};
+		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program))
 			return 0;
 	}
 	return 1;
@@ -1288,7 +1344,7 @@ static int nuttx_install_profile(const struct nuttx_prepared_profile *prepared)
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
+	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u, 7u};
 
 	if (!prepared || !prepared->valid)
 		return -1;
@@ -1318,7 +1374,7 @@ static void nuttx_disable_dynamic_regions(void)
 {
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u};
+	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u, 7u};
 
 	for (unsigned i = 0; i < LXP_NATIVE_POLICY_REGIONS; i++) {
 		*mpu_rnr = region[i];
@@ -1341,6 +1397,8 @@ static int nuttx_profile_is_current(int sidx)
 	       lxp_region_ref_equal(prepared->address_space, g_installed_policy.address_space) &&
 	       prepared->device_generation == g_installed_policy.device_generation &&
 	       prepared->exec_generation == g_installed_policy.exec_generation &&
+	       prepared->copied_text_base == g_installed_policy.copied_text_base &&
+	       prepared->copied_text_size == g_installed_policy.copied_text_size &&
 	       prepared->copied_text_executable == g_installed_policy.copied_text_executable;
 }
 

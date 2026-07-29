@@ -251,20 +251,10 @@ CONFIG_ETH_STM32_HAL_RX_THREAD_PREEMPTIVE=y
 CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO=4
 {% endif %}
 {% endif %}
-# W^X holds for every program: bFLT + static-FDPIC use RX-text / RW-data partitions, and a
-# DYNAMIC FDPIC proc shares ALL its code IN-PLACE from the cpio's user-RX .text subsection, so
-# its per-process region + arena are RW-only (see setup_domain) — no RWX partitions anywhere.
-# Enforce W^X explicitly (Zephyr's own default is OFF) now that no program needs an RWX region.
-{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
-# EXCEPT with netfs exec-off-mount: a program launched off the 9P mount runs its OWN text copied
-# into its program region, which setup_domain must then map RWX (a per-process, MPU-contained W^X
-# hole). k_mem_domain_add_partition REJECTS an RWX partition while EXECUTE_XOR_WRITE is on, so this
-# one build turns the global enforcement off; the relaxation is still confined to the single
-# region_exec process (every other program keeps its RX-text / RW-data split).
-CONFIG_EXECUTE_XOR_WRITE=n
-{% else %}
+# W^X holds for every program. Rootfs code executes from a shared RX mapping;
+# remote code uses a rounded RO+X prefix over the full RW+XN program region.
+# Keep Zephyr's own domain-policy enforcement enabled for every profile.
 CONFIG_EXECUTE_XOR_WRITE=y
-{% endif %}
 # The USERSPACE thread-id bitmap must cover every k_thread kobject: the NSLOT program slots
 # (NREG+4) + the kernel's own threads + the board's driver threads. On the real STM32F746 with
 # NREG bumped to 10 (LXP_NREG, for SSH-session process depth) that total reaches 25, needing 4

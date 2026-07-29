@@ -63,11 +63,11 @@ uint32_t ove_lxp_metrics_counter_hz(void)
 #endif
 
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-_Static_assert(portNUM_CONFIGURABLE_REGIONS >= 4,
-	       "AN500 Linux guests require four configurable MPU regions");
+_Static_assert(portNUM_CONFIGURABLE_REGIONS >= 5,
+	       "AN500 Linux guests require five configurable MPU regions");
 #else
-_Static_assert(portNUM_CONFIGURABLE_REGIONS >= 3,
-	       "Linux guests require three configurable MPU regions");
+_Static_assert(portNUM_CONFIGURABLE_REGIONS >= 4,
+	       "Linux guests require four configurable MPU regions");
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -710,14 +710,10 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 #endif
 	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
 			       (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
-	uint32_t prog_attr = rw_xn;
-	if (policy.copied_text_executable)
-		prog_attr = portMPU_REGION_READ_WRITE |
-			    (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
 	prepared->regions[0] = (MemoryRegion_t){
 		.pvBaseAddress = prog_regions[ridx],
 		.ulLengthInBytes = LXP_PROG_REGION_SIZE,
-		.ulParameters = prog_attr,
+		.ulParameters = rw_xn,
 	};
 	prepared->regions[1] = (MemoryRegion_t){
 		.pvBaseAddress = dyn_pools[ridx],
@@ -731,6 +727,7 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 		.ulParameters = portMPU_REGION_READ_ONLY |
 				(0x02u << portMPU_RASR_TEX_S_C_B_LOCATION),
 	};
+	const unsigned copied_region = 3u;
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	prepared->regions[2] = (MemoryRegion_t){
 		.pvBaseAddress = (void *)OVE_LXP_ROOTFS_MPU0_BASE,
@@ -744,7 +741,23 @@ static int freertos_prepare_profile(int sidx, uint32_t generation, int ridx)
 		.ulParameters = portMPU_REGION_READ_ONLY |
 				(configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION),
 	};
+	const unsigned copied_region = 4u;
+#else
+	const unsigned copied_region = 2u;
 #endif
+	if (policy.copied_text_executable) {
+		if (policy.copied_text_base != (uintptr_t)prog_regions[ridx] ||
+		    policy.copied_text_size == 0u ||
+		    policy.copied_text_size >= LXP_PROG_REGION_SIZE ||
+		    copied_region >= portNUM_CONFIGURABLE_REGIONS)
+			return -1;
+		prepared->regions[copied_region] = (MemoryRegion_t){
+			.pvBaseAddress = (void *)policy.copied_text_base,
+			.ulLengthInBytes = policy.copied_text_size,
+			.ulParameters = portMPU_REGION_READ_ONLY |
+					(tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION),
+		};
+	}
 	prepared->key = lxp_memory_policy_make_key(&policy);
 	prepared->valid = 1u;
 	return 0;
@@ -825,8 +838,27 @@ static int freertos_validate_active_profile(int sidx)
 			.execute_never = native.execute_never,
 		};
 		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region],
-								 &expected) ||
+								 &expected))
+			return 0;
+		if (!(i == 0u && prepared->key.copied_text_executable) &&
 		    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+			return 0;
+	}
+	if (prepared->key.copied_text_executable) {
+		uintptr_t program = (uintptr_t)prog_regions[prepared->key.address_space.index];
+		uintptr_t tail = prepared->key.copied_text_base + prepared->key.copied_text_size;
+		const struct ove_cortex_m_mpu_expectation writable_tail = {
+			.base = tail,
+			.size = program + LXP_PROG_REGION_SIZE - tail,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+			.texscb = 0x0bu,
+#else
+			.texscb = configTEX_S_C_B_SRAM,
+#endif
+			.access = 3u,
+			.execute_never = 1u,
+		};
+		if (!ove_cortex_m_mpu_snapshot_effective_contains(&snapshot, &writable_tail))
 			return 0;
 	}
 	prepared->live_validated = 1u;
@@ -898,8 +930,8 @@ static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t
 	if (ridx < 0 || ridx >= LXP_NREG || address_space.generation == 0 || len == 0)
 		return LXP_ERR_INVALID_PARAM;
 	uintptr_t region_lo = (uintptr_t)prog_regions[ridx];
-	uintptr_t region_hi = region_lo + LXP_PROG_REGION_SIZE;
-	if (base < region_lo || base >= region_hi || len > region_hi - base)
+	if (base != region_lo || len < 32u || len >= LXP_PROG_REGION_SIZE ||
+	    (len & (len - 1u)) != 0u)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
@@ -980,8 +1012,8 @@ static int freertos_spawn_resume(int sidx, uint32_t generation, int ridx,
 static int g_coord_mapped_ridx = -1;
 
 /* The persistent bounded, non-cacheable window over the memory-mapped QUADSPI NOR (0x90000000):
- * rootfs_window installs it on the coordinator's one spare configurable region (2 — coord_map
- * owns 0 and 1). Recorded here so coord_map RE-SPECIFIES region 2 in the TCB on every remap and
+ * rootfs_window installs it on coordinator configurable region 2 (coord_map owns 0 and 1).
+ * Recorded here so coord_map RE-SPECIFIES region 2 in the TCB on every remap and
  * never drops it: without this the first coord_map would zero region 2, and the loader's next NOR
  * read (launch() reading an FDPIC ELF straight from QSPI) would fall through to the oversized
  * cacheable PRIVDEFENA background — the exact burst/speculation hazard the window prevents. Zero
@@ -1253,6 +1285,14 @@ static int freertos_validate_static_mpu(void)
 		    ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], storage_base,
 							     storage_size))
 			return 0;
+	/* The app patch reclaims FreeRTOS' broad unprivileged peripheral
+	 * mapping. Device access must come only from core-issued capabilities;
+	 * this seam currently accepts none. */
+	for (unsigned i = 0; i < snapshot.count; i++)
+		if ((snapshot.regions[i].access & 0x2u) != 0u &&
+		    ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], 0x40000000u,
+							     0x20000000u))
+			return 0;
 	return 1;
 }
 #endif
@@ -1347,8 +1387,9 @@ static void freertos_rootfs_window(const void *base, size_t len)
 	const uint32_t par =
 		portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
 		(0x08u << portMPU_RASR_TEX_S_C_B_LOCATION); /* TEX=001,S/C/B=0 = Normal NC */
-	/* Configurable region 2 — the coordinator's one spare (coord_map owns 0 and 1). Record the
-	 * window so coord_map re-specifies region 2 on every remap and never drops it. */
+	/* Configurable region 2 is reserved for the coordinator rootfs window
+	 * (coord_map owns 0 and 1). Record it so coord_map re-specifies the
+	 * window on every remap and never drops it. */
 	g_qspi_win_base = (uint32_t)(uintptr_t)base;
 	g_qspi_win_len = (uint32_t)len;
 	g_qspi_win_par = par;

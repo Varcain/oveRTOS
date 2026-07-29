@@ -76,7 +76,8 @@
 #define OVE_IRQ_MEMFAULT 4
 
 /* Guard region: 32 bytes, naturally aligned (the ARMv7-M minimum region size).
- * Region 7 is unused by NuttX's flat build. */
+ * This standalone protected-mode test owns the MPU and may use region 7;
+ * linux_interop's separate flat-build seam uses it for copied text. */
 #define GUARD_REGION 7u
 #define GUARD_SIZE 32u
 #define GUARD_LOG2 5u /* 2^5 == 32 */
