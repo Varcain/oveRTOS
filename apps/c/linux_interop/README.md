@@ -154,9 +154,11 @@ instrumentation; it does not select an alternative lifecycle implementation.
 | Diagnostic | `linux_interop_diagnostic` | yes | yes | yes | yes | yes | yes + debug log | default (off) | board default |
 | Hardened | `linux_interop_hardened` | yes | yes | yes | no | yes | no + warning log | on | off |
 
-Remote exec stages a fetched image in an MPU-contained RWX program region.
-Full and Diagnostic enable that compatibility path. Hardened keeps strict W^X
-while retaining read-only remote files, networking, display/input, and PTYs.
+Remote exec stages a fetched image in an MPU-contained RW+XN program region,
+then overlays the exact copied-text prefix RO+X before launch. Full and
+Diagnostic enable that path. Hardened still disables remote execution to
+retain the narrower attack surface while keeping read-only remote files,
+networking, display/input, and PTYs.
 Minimal pins all optional personality subsystems off, including RT scope, so a
 new Kconfig default cannot silently grow the baseline.
 
