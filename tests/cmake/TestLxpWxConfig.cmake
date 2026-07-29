@@ -24,3 +24,25 @@ if(PRJ_TEXT MATCHES "CONFIG_EXECUTE_XOR_WRITE=n")
     message(FATAL_ERROR
         "${PRJ_TEMPLATE} must not disable CONFIG_EXECUTE_XOR_WRITE in any profile")
 endif()
+
+set(FREERTOS_MPU_PATCH
+    "${OVE_ROOT}/apps/c/linux_interop/patches/freertos/0001-arm-cm4-mpu-drop-global-user-peripheral-map.patch")
+file(READ "${FREERTOS_MPU_PATCH}" FREERTOS_MPU_PATCH_TEXT)
+
+# Returning the peripheral slot expands xMPU_SETTINGS by one descriptor. Both
+# initial task restore and PendSV must install that tail descriptor.
+string(REGEX MATCHALL "portTOTAL_NUM_REGIONS_IN_TCB % 4UL"
+    FREERTOS_TAIL_GUARDS "${FREERTOS_MPU_PATCH_TEXT}")
+string(REGEX MATCHALL "ldmia r2!, \\{r4-r5\\}"
+    FREERTOS_TAIL_LOADS "${FREERTOS_MPU_PATCH_TEXT}")
+string(REGEX MATCHALL "stmia r0, \\{r4-r5\\}"
+    FREERTOS_TAIL_STORES "${FREERTOS_MPU_PATCH_TEXT}")
+list(LENGTH FREERTOS_TAIL_GUARDS FREERTOS_TAIL_GUARD_COUNT)
+list(LENGTH FREERTOS_TAIL_LOADS FREERTOS_TAIL_LOAD_COUNT)
+list(LENGTH FREERTOS_TAIL_STORES FREERTOS_TAIL_STORE_COUNT)
+if(NOT FREERTOS_TAIL_GUARD_COUNT EQUAL 2 OR
+   NOT FREERTOS_TAIL_LOAD_COUNT EQUAL 2 OR
+   NOT FREERTOS_TAIL_STORE_COUNT EQUAL 2)
+    message(FATAL_ERROR
+        "${FREERTOS_MPU_PATCH} must restore the final task MPU descriptor in both context paths")
+endif()
