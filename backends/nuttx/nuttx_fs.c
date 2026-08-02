@@ -8,6 +8,10 @@
 
 #include "ove/fs.h"
 #include "ove_backend_common.h"
+#include "ove_config.h"
+#if defined(CONFIG_OVE_LINUX_FS)
+#include "lxp/lxp_config.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -16,9 +20,61 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <errno.h>
+#include <nuttx/irq.h>
 #define SD_MOUNT_POINT_DEFAULT "/mnt/sd"
 #define SD_DEVICE_DEFAULT "/dev/mmcsd0"
 #define NATIVE_PATH_MAX 320
+#define FS_POOL_FILES 4
+
+#ifdef CONFIG_FAT_DMAMEMORY
+/*
+ * The STM32F7 SDMMC DMA driver rejects cacheable buffers that are not aligned
+ * to a complete Cortex-M7 cache line. NuttX FAT needs one sector cache for the
+ * mount and one per open file. Keep those buffers in an explicitly owned,
+ * fixed SRAM pool rather than relying on the general heap's alignment.
+ */
+#define FAT_DMA_SECTOR_SIZE 512
+#if defined(CONFIG_OVE_LINUX_FS)
+#define FAT_DMA_OPEN_FILE_COUNT LXP_NHOSTFS_OPEN
+#else
+#define FAT_DMA_OPEN_FILE_COUNT FS_POOL_FILES
+#endif
+#define FAT_DMA_BUFFER_COUNT (FAT_DMA_OPEN_FILE_COUNT + 1)
+
+static uint8_t fat_dma_buffers[FAT_DMA_BUFFER_COUNT][FAT_DMA_SECTOR_SIZE]
+	__attribute__((aligned(32)));
+static uint8_t fat_dma_buffer_used[FAT_DMA_BUFFER_COUNT];
+
+void *fat_dma_alloc(size_t size)
+{
+	if (size > FAT_DMA_SECTOR_SIZE)
+		return NULL;
+
+	irqstate_t flags = enter_critical_section();
+	for (size_t i = 0; i < FAT_DMA_BUFFER_COUNT; ++i) {
+		if (fat_dma_buffer_used[i] == 0u) {
+			fat_dma_buffer_used[i] = 1u;
+			leave_critical_section(flags);
+			return fat_dma_buffers[i];
+		}
+	}
+	leave_critical_section(flags);
+	return NULL;
+}
+
+void fat_dma_free(void *memory, size_t size)
+{
+	(void)size;
+	irqstate_t flags = enter_critical_section();
+	for (size_t i = 0; i < FAT_DMA_BUFFER_COUNT; ++i) {
+		if (memory == fat_dma_buffers[i]) {
+			fat_dma_buffer_used[i] = 0u;
+			break;
+		}
+	}
+	leave_critical_section(flags);
+}
+#endif
 
 static char active_mount_point[64] = SD_MOUNT_POINT_DEFAULT;
 static int volume_mounted;
@@ -92,6 +148,7 @@ static int open_common(struct ove_file *f, const char *path, int flags)
 {
 	char fullpath[NATIVE_PATH_MAX];
 	int oflags = O_RDONLY;
+	struct stat st;
 
 	if (flags & OVE_FS_O_WRITE) {
 		oflags = O_WRONLY;
@@ -120,7 +177,53 @@ static int open_common(struct ove_file *f, const char *path, int flags)
 	if (f->fd < 0) {
 		return ove_errno_to_ove(errno);
 	}
+	f->position = 0;
+	f->native_position = 0;
+	f->native_position_valid = 1;
+	f->append = (flags & OVE_FS_O_APPEND) != 0;
+	/*
+	 * NuttX FAT's fstat implementation reads the on-media directory entry,
+	 * whose size is not refreshed until fsync/close. Snapshot the initial
+	 * size, then maintain the open handle's live size after writes and
+	 * truncates so positioned I/O never observes stale metadata.
+	 */
+	if ((flags & OVE_FS_O_TRUNC) != 0) {
+		f->size = 0;
+	} else if (fstat(f->fd, &st) == 0) {
+		f->size = (uint64_t)st.st_size;
+	} else {
+		int error = errno;
+		(void)close(f->fd);
+		return ove_errno_to_ove(error);
+	}
 	return OVE_OK;
+}
+
+/*
+ * Keep the API-visible file position separate from NuttX FAT's native cursor.
+ *
+ * LXP implements POSIX pread/pwrite by saving, changing, and restoring the
+ * visible offset. Materializing the restore in FAT makes the next sequential
+ * positioned read traverse the cluster chain from its beginning again. At
+ * SQLite database sizes this becomes quadratic. Defer native seeks until I/O;
+ * adjacent positioned operations then keep using FAT's already-hot cursor,
+ * while an ordinary read after a logical restore still seeks correctly.
+ */
+static int position_native_cursor(struct ove_file *f)
+{
+	if (f->native_position_valid && f->native_position == f->position) {
+		return OVE_OK;
+	}
+	if (f->position > (uint64_t)INT32_MAX) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	off_t position = lseek(f->fd, (off_t)f->position, SEEK_SET);
+	if (position < 0) {
+		return ove_errno_to_ove(errno);
+	}
+	f->native_position = (uint64_t)position;
+	f->native_position_valid = 1;
+	return f->native_position == f->position ? OVE_OK : OVE_ERR_IO;
 }
 
 static int opendir_common(struct ove_dir *dir, const char *path)
@@ -212,7 +315,6 @@ int ove_fs_close(ove_file_t file)
 	return ret;
 }
 #else /* zero-heap: static pool */
-#define FS_POOL_FILES 4
 #define FS_POOL_DIRS 4
 static struct ove_file file_pool[FS_POOL_FILES];
 static int file_pool_used[FS_POOL_FILES];
@@ -255,10 +357,16 @@ int ove_fs_close(ove_file_t file)
 int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	struct ove_file *f = file;
+	int rc = position_native_cursor(f);
+	if (rc != OVE_OK) {
+		return rc;
+	}
 	ssize_t br = read(f->fd, buf, count);
 	if (br < 0) {
 		return ove_errno_to_ove(errno);
 	}
+	f->position += (uint64_t)br;
+	f->native_position += (uint64_t)br;
 	if (bytes_read != NULL) {
 		*bytes_read = (size_t)br;
 	}
@@ -268,24 +376,37 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
 	struct ove_file *f = file;
+	if (f->append) {
+		f->position = f->size;
+	}
+	int rc = position_native_cursor(f);
+	if (rc != OVE_OK) {
+		return rc;
+	}
 	ssize_t bw = write(f->fd, buf, count);
 	if (bw < 0) {
 		return ove_errno_to_ove(errno);
 	}
+	f->position += (uint64_t)bw;
+	f->native_position += (uint64_t)bw;
 	if (bytes_written != NULL) {
 		*bytes_written = (size_t)bw;
+	}
+	if (f->position > f->size) {
+		f->size = f->position;
 	}
 	return OVE_OK;
 }
 
 int ove_fs_size(ove_file_t file, size_t *out_size)
 {
-	struct ove_file *f = file;
-	struct stat st;
-	if (fstat(f->fd, &st) != 0) {
-		return ove_errno_to_ove(errno);
+	if (file == NULL || out_size == NULL) {
+		return OVE_ERR_INVALID_PARAM;
 	}
-	*out_size = st.st_size;
+	if (file->size > SIZE_MAX) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	*out_size = (size_t)file->size;
 	return OVE_OK;
 }
 
@@ -393,33 +514,43 @@ int ove_fs_closedir(ove_dir_t dir)
 int ove_fs_seek(ove_file_t file, long offset, int whence)
 {
 	struct ove_file *f = file;
-	int posix_whence;
+	uint64_t base;
 
 	switch (whence) {
 	case OVE_FS_SEEK_SET:
-		posix_whence = SEEK_SET;
+		base = 0;
 		break;
 	case OVE_FS_SEEK_CUR:
-		posix_whence = SEEK_CUR;
+		base = f->position;
 		break;
 	case OVE_FS_SEEK_END:
-		posix_whence = SEEK_END;
+		base = f->size;
 		break;
 	default:
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	off_t res = lseek(f->fd, (off_t)offset, posix_whence);
-	if (res < 0) {
-		return ove_errno_to_ove(errno);
+	uint64_t position;
+	if (offset < 0) {
+		uint64_t magnitude = (uint64_t)(-(offset + 1L)) + 1u;
+		if (magnitude > base) {
+			return OVE_ERR_INVALID_PARAM;
+		}
+		position = base - magnitude;
+	} else {
+		position = base + (uint64_t)offset;
+		if (position < base || position > (uint64_t)INT32_MAX) {
+			return OVE_ERR_INVALID_PARAM;
+		}
 	}
+	f->position = position;
 	return OVE_OK;
 }
 
 long ove_fs_tell(ove_file_t file)
 {
 	struct ove_file *f = file;
-	return (long)lseek(f->fd, 0, SEEK_CUR);
+	return (long)f->position;
 }
 
 int ove_fs_unlink(const char *path)
@@ -514,6 +645,13 @@ int ove_fs_truncate(ove_file_t file, uint64_t length)
 	if (ftruncate(file->fd, (off_t)length) != 0) {
 		return ove_errno_to_ove(errno);
 	}
+	file->size = length;
+	/*
+	 * NuttX FAT may reposition its internal cursor while changing the
+	 * cluster chain. Preserve the POSIX-visible offset and rematerialize it
+	 * only before the next read or write.
+	 */
+	file->native_position_valid = 0;
 	return OVE_OK;
 }
 
