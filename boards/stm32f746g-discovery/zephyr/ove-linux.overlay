@@ -17,15 +17,19 @@
 
 /* Interrupt-priority contract for the personality workload. Zephyr priority 0
  * is the highest ordinary (kernel-callable) level and belongs to the TIM3
- * scope deadline. Network and board peripherals remain kernel-callable but
- * cannot delay that reference ISR. The display priority is applied in
- * ove-linux-fb.overlay, where that device is re-enabled. */
+ * scope deadline. Storage, network, and board peripherals remain
+ * kernel-callable but cannot delay that reference ISR. The display priority
+ * is applied in ove-linux-fb.overlay, where that device is re-enabled. */
 &timers3 {
 	interrupts = <29 0>;
 };
 
 &mac {
 	interrupts = <61 2>;
+};
+
+&sdmmc1 {
+	interrupts = <49 3>;
 };
 
 &usart1 {
@@ -74,8 +78,12 @@
 	zephyr,memory-attr = <DT_MEM_ARM(ATTR_MPU_FLASH)>;
 };
 
-/* Fast 1-4-4 memory-mapped reads at the N25Q128A's rated quad ceiling. */
+/* Fast 1-4-4 memory-mapped reads at the N25Q128A's rated quad ceiling. Match
+ * the STM32746G BSP and NuttX seam's six-cycle chip-select-high interval: the
+ * upstream Zephyr board value is only four cycles, which is marginal at
+ * 108 MHz under sustained XIP plus peripheral traffic. */
 &n25q128a1 {
 	spi-bus-width = <4>;
 	qspi-max-frequency = <108000000>;
+	cs-high-time = <6>;
 };
