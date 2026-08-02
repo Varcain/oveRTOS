@@ -22,6 +22,8 @@
 #include <string.h>
 
 #define LXP_OVE_FS_WORKER_STACK 4096u
+#define LXP_OVE_FS_WORKER_PRIORITY OVE_PRIO_ABOVE_NORMAL
+#define LXP_OVE_FS_IO_CHUNK 4096u
 
 /*
  * LXP has at most LXP_NHOSTFS_OPEN co-resident external descriptors. A single
@@ -89,13 +91,13 @@ struct fs_request {
 			lxp_fs_file_t file;
 			void *buf;
 			size_t count;
-			size_t *done;
+			size_t transferred;
 		} file_read;
 		struct {
 			lxp_fs_file_t file;
 			const void *buf;
 			size_t count;
-			size_t *done;
+			size_t transferred;
 		} file_write;
 		struct {
 			lxp_fs_file_t file;
@@ -147,6 +149,15 @@ static struct fs_request *g_request_queue_buffer[1];
 static ove_thread_storage_t g_worker_storage;
 static ove_thread_t g_worker;
 OVE_THREAD_STACK_DEFINE_STATIC_(g_worker_stack, LXP_OVE_FS_WORKER_STACK);
+/*
+ * Native filesystems may hand their caller buffer directly to a block-device
+ * DMA engine. Linux guest memory is cacheable external memory whose MPU and
+ * lifetime are owned by the guest, so it must never cross either the native
+ * worker-task or device boundary. The coordinator copies guest data while
+ * holding g_submit_lock; the serialized worker only accesses this aligned
+ * staging buffer.
+ */
+static uint8_t g_io_buffer[LXP_OVE_FS_IO_CHUNK] __attribute__((aligned(32)));
 static int g_active;
 static int g_mounted;
 
@@ -276,14 +287,22 @@ static int execute_request(struct fs_request *request)
 		slot = file_slot(request->args.file_read.file);
 		if (slot == NULL)
 			return LXP_ERR_BAD_HANDLE;
-		return ove_fs_read(slot->handle.file.native, request->args.file_read.buf,
-				   request->args.file_read.count, request->args.file_read.done);
+		if (request->args.file_read.count > sizeof(g_io_buffer))
+			return LXP_ERR_INVALID_PARAM;
+		request->args.file_read.transferred = 0;
+		return ove_fs_read(slot->handle.file.native, g_io_buffer,
+				   request->args.file_read.count,
+				   &request->args.file_read.transferred);
 	case FS_REQ_FILE_WRITE:
 		slot = file_slot(request->args.file_write.file);
 		if (slot == NULL)
 			return LXP_ERR_BAD_HANDLE;
-		return ove_fs_write(slot->handle.file.native, request->args.file_write.buf,
-				    request->args.file_write.count, request->args.file_write.done);
+		if (request->args.file_write.count > sizeof(g_io_buffer))
+			return LXP_ERR_INVALID_PARAM;
+		request->args.file_write.transferred = 0;
+		return ove_fs_write(slot->handle.file.native, g_io_buffer,
+				    request->args.file_write.count,
+				    &request->args.file_write.transferred);
 	case FS_REQ_FILE_SEEK:
 		slot = file_slot(request->args.file_seek.file);
 		if (slot == NULL)
@@ -420,10 +439,31 @@ static int submit(struct fs_request *request)
 	int rc = ove_mutex_lock(g_submit_lock, OVE_WAIT_FOREVER);
 	if (rc != OVE_OK)
 		return rc;
+	if (request->op == FS_REQ_FILE_WRITE) {
+		if (request->args.file_write.buf == NULL ||
+		    request->args.file_write.count > sizeof(g_io_buffer)) {
+			ove_mutex_unlock(g_submit_lock);
+			return LXP_ERR_INVALID_PARAM;
+		}
+		memcpy(g_io_buffer, request->args.file_write.buf, request->args.file_write.count);
+	} else if (request->op == FS_REQ_FILE_READ &&
+		   (request->args.file_read.buf == NULL ||
+		    request->args.file_read.count > sizeof(g_io_buffer))) {
+		ove_mutex_unlock(g_submit_lock);
+		return LXP_ERR_INVALID_PARAM;
+	}
 	struct fs_request *queued = request;
 	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
 	if (rc == OVE_OK)
 		rc = ove_event_wait(g_complete, OVE_WAIT_FOREVER);
+	if (rc == OVE_OK && request->op == FS_REQ_FILE_READ) {
+		if (request->args.file_read.transferred > request->args.file_read.count) {
+			rc = LXP_ERR_IO;
+		} else if (request->args.file_read.transferred != 0u) {
+			memcpy(request->args.file_read.buf, g_io_buffer,
+			       request->args.file_read.transferred);
+		}
+	}
 	ove_mutex_unlock(g_submit_lock);
 	return rc == OVE_OK ? request->result : rc;
 }
@@ -447,8 +487,14 @@ static int fs_run_begin(void)
 			    sizeof(g_request_queue_buffer[0]), 1);
 	if (rc != OVE_OK)
 		goto fail_queue;
+	/*
+	 * The coordinator waits synchronously for this worker. It must therefore
+	 * outrank every Linux guest: a second guest can reach its park trampoline
+	 * while the coordinator is waiting and, with time slicing disabled, would
+	 * otherwise starve a normal-priority worker indefinitely.
+	 */
 	rc = ove_thread_init(&g_worker, &g_worker_storage, "lxp-fs", fs_worker, NULL,
-			     OVE_PRIO_NORMAL, sizeof(g_worker_stack), g_worker_stack);
+			     LXP_OVE_FS_WORKER_PRIORITY, sizeof(g_worker_stack), g_worker_stack);
 	if (rc != OVE_OK)
 		goto fail_thread;
 	g_active = 1;
@@ -502,32 +548,72 @@ static int fs_file_close(lxp_fs_file_t file)
 
 static int fs_file_read(lxp_fs_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
-	struct fs_request request = {
-		.op = FS_REQ_FILE_READ,
-		.args.file_read =
-			{
-				.file = file,
-				.buf = buf,
-				.count = count,
-				.done = bytes_read,
-			},
-	};
-	return submit(&request);
+	uint8_t *destination = buf;
+	size_t total = 0;
+
+	if ((buf == NULL && count != 0u) || bytes_read == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	*bytes_read = 0;
+	while (total < count) {
+		size_t chunk = count - total;
+		if (chunk > sizeof(g_io_buffer))
+			chunk = sizeof(g_io_buffer);
+		struct fs_request request = {
+			.op = FS_REQ_FILE_READ,
+			.args.file_read =
+				{
+					.file = file,
+					.buf = destination + total,
+					.count = chunk,
+				},
+		};
+		int rc = submit(&request);
+		size_t received = request.args.file_read.transferred;
+		if (received > chunk)
+			return LXP_ERR_IO;
+		total += received;
+		if (rc != LXP_OK || received < chunk) {
+			*bytes_read = total;
+			return total != 0u ? LXP_OK : rc;
+		}
+	}
+	*bytes_read = total;
+	return LXP_OK;
 }
 
 static int fs_file_write(lxp_fs_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
-	struct fs_request request = {
-		.op = FS_REQ_FILE_WRITE,
-		.args.file_write =
-			{
-				.file = file,
-				.buf = buf,
-				.count = count,
-				.done = bytes_written,
-			},
-	};
-	return submit(&request);
+	const uint8_t *source = buf;
+	size_t total = 0;
+
+	if ((buf == NULL && count != 0u) || bytes_written == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	*bytes_written = 0;
+	while (total < count) {
+		size_t chunk = count - total;
+		if (chunk > sizeof(g_io_buffer))
+			chunk = sizeof(g_io_buffer);
+		struct fs_request request = {
+			.op = FS_REQ_FILE_WRITE,
+			.args.file_write =
+				{
+					.file = file,
+					.buf = source + total,
+					.count = chunk,
+				},
+		};
+		int rc = submit(&request);
+		size_t written = request.args.file_write.transferred;
+		if (written > chunk)
+			return LXP_ERR_IO;
+		total += written;
+		if (rc != LXP_OK || written < chunk) {
+			*bytes_written = total;
+			return total != 0u ? LXP_OK : rc;
+		}
+	}
+	*bytes_written = total;
+	return LXP_OK;
 }
 
 static int fs_file_seek(lxp_fs_file_t file, int64_t offset, int whence, uint64_t *new_offset)
