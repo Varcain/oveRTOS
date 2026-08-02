@@ -202,6 +202,11 @@ typedef struct ove_watchdog ove_watchdog_storage_t;
 
 struct ove_file {
 	int fd;
+	uint64_t size;
+	uint64_t position;
+	uint64_t native_position;
+	int native_position_valid;
+	int append;
 };
 
 struct ove_dir {

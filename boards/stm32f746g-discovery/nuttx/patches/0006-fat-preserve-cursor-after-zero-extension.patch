@@ -1,0 +1,147 @@
+fs/fat: rebuild the cluster cursor before zero extension
+
+fat_dirextend() assumes that ff_currentcluster and ff_currentsector describe
+the file tail.  They actually describe the most recently accessed part of the
+file, and are only initialized to the first cluster when a file is reopened.
+Growing a reopened or randomly accessed file can therefore zero the wrong
+sectors or extend the wrong cluster chain.
+
+The function also advances ff_currentcluster and ff_currentsector while
+filling the new range, but leaves ff_pos describing the cluster that was
+current before the extension.  A subsequent write at the new EOF may then
+traverse one cluster too far and return EIO.
+
+This is reproducible on the STM32F746 with SQLite's sparse pwrite sequence:
+grow a reopened 61440-byte database to offset 69632, then write a 4096-byte
+page there.  The stale cursor either corrupts the database or makes the
+immediately following write fail.
+
+Reconstruct the tail cursor from the FAT chain when the cached cursor does not
+already identify the final cluster.  Represent an EOF exactly at a cluster
+boundary as one-past the current cluster so the loop allocates the next
+cluster.  Finally, keep ff_pos synchronized with the cluster containing the
+last byte zeroed.
+
+--- a/fs/fat/fs_fat32util.c
++++ b/fs/fat/fs_fat32util.c
+@@ -1598,8 +1598,12 @@ int fat_dirextend(FAR struct fat_mountpt_s *fs, FAR struct fat_file_s *ff,
+                   off_t length)
+ {
+   int32_t cluster;
++  off_t clustersize;
++  off_t clustersector;
+   off_t remaining;
+   off_t pos;
++  unsigned int nclusters;
++  unsigned int i;
+   unsigned int zerosize;
+   int sectndx;
+   int ret;
+@@ -1610,32 +1614,82 @@ int fat_dirextend(FAR struct fat_mountpt_s *fs, FAR struct fat_file_s *ff,
+    */
+ 
+   pos = ff->ff_size;
++  clustersize = fs->fs_fatsecperclus * fs->fs_hwsectorsize;
+ 
+-  /* Get the first sector to write to. */
++  /* Reconstruct the cluster cursor at EOF.  ff_currentcluster tracks the
++   * most recently accessed part of the file, which need not be the tail
++   * after a reopen or random I/O.
++   */
+ 
+-  if (!ff->ff_currentsector)
++  if (pos == 0)
+     {
+-      /* Has the starting cluster been defined? */
+-
+       if (ff->ff_startcluster == 0)
+         {
+-          /* No.. we have to create a new cluster chain */
++          cluster = fat_createchain(fs);
++          if (cluster < 0)
++            {
++              return (int)cluster;
++            }
++          else if (cluster < 2 || cluster >= fs->fs_nclusters + 2)
++            {
++              return -ENOSPC;
++            }
+ 
+-          ff->ff_startcluster     = fat_createchain(fs);
+-          ff->ff_currentcluster   = ff->ff_startcluster;
+-          ff->ff_sectorsincluster = fs->fs_fatsecperclus;
++          ff->ff_startcluster = cluster;
+         }
+ 
+-      /* The current sector can then be determined from the current cluster
+-       * and the file offset.
+-       */
++      ff->ff_currentcluster = ff->ff_startcluster;
++      ff->ff_pos = 0;
++    }
++  else
++    {
++      nclusters = 1 + (pos - 1) / clustersize;
++      if (ff->ff_currentsector != 0 &&
++          ff->ff_pos == (nclusters - 1) * clustersize)
++        {
++          cluster = ff->ff_currentcluster;
++        }
++      else
++        {
++          cluster = ff->ff_startcluster;
++          for (i = 1; i < nclusters; i++)
++            {
++              cluster = fat_getcluster(fs, cluster);
++              if (cluster < 2 || cluster >= fs->fs_nclusters + 2)
++                {
++                  return cluster < 0 ? (int)cluster : -EIO;
++                }
++            }
++        }
++
++      if (cluster < 2 || cluster >= fs->fs_nclusters + 2)
++        {
++          return -EIO;
++        }
++
++      ff->ff_currentcluster = cluster;
++      ff->ff_pos = (nclusters - 1) * clustersize;
++    }
+ 
++  if (pos == 0 || pos % clustersize != 0)
++    {
+       ret = fat_currentsector(fs, ff, pos);
+       if (ret < 0)
+         {
+           return ret;
+         }
+     }
++  else
++    {
++      clustersector = fat_cluster2sector(fs, ff->ff_currentcluster);
++      if (clustersector < 0)
++        {
++          return (int)clustersector;
++        }
++
++      ff->ff_currentsector = clustersector + fs->fs_fatsecperclus;
++      ff->ff_sectorsincluster = 0;
++    }
+ 
+   /* Loop until either (1) the file has been fully extended with zeroed data
+    * or (2) an error occurs.  We assume we start with the current sector in
+@@ -1755,6 +1809,13 @@ int fat_dirextend(FAR struct fat_mountpt_s *fs, FAR struct fat_file_s *ff,
+   /* The truncation has completed without error.  Update the file size */
+ 
+   ff->ff_size = length;
++
++  /* The cursor describes the cluster containing the last byte zeroed.
++   * Keep its logical base in step with ff_currentcluster so a subsequent
++   * fat_get_sectors() traversal does not start from a stale cluster index.
++   */
++
++  ff->ff_pos = (length - 1) / clustersize * clustersize;
+   return OK;
+ }
+ 
