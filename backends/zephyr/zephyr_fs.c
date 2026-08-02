@@ -19,6 +19,7 @@ static struct fs_mount_t mp = {
 	.fs_data = &fat_fs,
 	.mnt_point = "/SD:",
 };
+static const uint8_t zero_fill[512] __aligned(32);
 static int volume_mounted;
 #define NATIVE_PATH_MAX (OVE_FS_PATH_MAX + 8)
 
@@ -99,6 +100,7 @@ static int zflags_from(int flags)
 int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags)
 {
 	char fullpath[NATIVE_PATH_MAX];
+	struct fs_dirent entry;
 
 	if (file == NULL || storage == NULL || path == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -127,8 +129,44 @@ int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *
 		OVE_LOG_ERR("fs_open(%s) failed: %d\n", fullpath, res);
 		return ove_errno_to_ove(-res);
 	}
+	f->position = 0;
+	f->native_position = 0;
+	f->native_position_valid = 1;
+	f->append = (flags & OVE_FS_O_APPEND) != 0;
+	if ((flags & OVE_FS_O_TRUNC) != 0) {
+		f->size = 0;
+	} else {
+		res = fs_stat(fullpath, &entry);
+		if (res != 0) {
+			(void)fs_close(&f->file);
+			return ove_errno_to_ove(-res);
+		}
+		f->size = entry.size;
+	}
 
 	*file = f;
+	return OVE_OK;
+}
+
+/*
+ * Preserve the API-visible cursor without eagerly moving FatFs' cursor.
+ * LXP implements pread/pwrite by saving and restoring that visible offset;
+ * deferring the native seek lets adjacent positioned I/O stay sequential.
+ */
+static int position_native_cursor(struct ove_file *file)
+{
+	if (file->native_position_valid && file->native_position == file->position) {
+		return OVE_OK;
+	}
+	if (file->position > (uint64_t)INT32_MAX) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	int res = fs_seek(&file->file, (off_t)file->position, FS_SEEK_SET);
+	if (res != 0) {
+		return ove_errno_to_ove(-res);
+	}
+	file->native_position = file->position;
+	file->native_position_valid = 1;
 	return OVE_OK;
 }
 
@@ -208,10 +246,16 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 	if (file == NULL || (buf == NULL && count != 0)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	int res = position_native_cursor(file);
+	if (res != OVE_OK) {
+		return res;
+	}
 	ssize_t br = fs_read(&file->file, buf, count);
 	if (br < 0) {
 		return ove_errno_to_ove((int)-br);
 	}
+	file->position += (size_t)br;
+	file->native_position += (size_t)br;
 	if (bytes_read != NULL) {
 		*bytes_read = (size_t)br;
 	}
@@ -223,9 +267,21 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_w
 	if (file == NULL || (buf == NULL && count != 0)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	if (file->append) {
+		file->position = file->size;
+	}
+	int res = position_native_cursor(file);
+	if (res != OVE_OK) {
+		return res;
+	}
 	ssize_t bw = fs_write(&file->file, buf, count);
 	if (bw < 0) {
 		return ove_errno_to_ove((int)-bw);
+	}
+	file->position += (size_t)bw;
+	file->native_position += (size_t)bw;
+	if (file->position > file->size) {
+		file->size = file->position;
 	}
 	if (bytes_written != NULL) {
 		*bytes_written = (size_t)bw;
@@ -238,21 +294,10 @@ int ove_fs_size(ove_file_t file, size_t *out_size)
 	if (file == NULL || out_size == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	off_t cur = fs_tell(&file->file);
-	if (cur < 0) {
-		return ove_errno_to_ove((int)-cur);
+	if (file->size > SIZE_MAX) {
+		return OVE_ERR_INVALID_PARAM;
 	}
-	int res = fs_seek(&file->file, 0, FS_SEEK_END);
-	if (res != 0) {
-		return ove_errno_to_ove(-res);
-	}
-	off_t end = fs_tell(&file->file);
-	if (end < 0) {
-		fs_seek(&file->file, cur, FS_SEEK_SET);
-		return ove_errno_to_ove((int)-end);
-	}
-	fs_seek(&file->file, cur, FS_SEEK_SET);
-	*out_size = (size_t)end;
+	*out_size = (size_t)file->size;
 	return OVE_OK;
 }
 
@@ -374,29 +419,39 @@ int ove_fs_closedir(ove_dir_t dir)
 
 int ove_fs_seek(ove_file_t file, long offset, int whence)
 {
-	int zwhence;
+	uint64_t base;
 
 	if (file == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	switch (whence) {
 	case OVE_FS_SEEK_SET:
-		zwhence = FS_SEEK_SET;
+		base = 0;
 		break;
 	case OVE_FS_SEEK_CUR:
-		zwhence = FS_SEEK_CUR;
+		base = file->position;
 		break;
 	case OVE_FS_SEEK_END:
-		zwhence = FS_SEEK_END;
+		base = file->size;
 		break;
 	default:
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	int res = fs_seek(&file->file, (off_t)offset, zwhence);
-	if (res != 0) {
-		return ove_errno_to_ove(-res);
+	uint64_t position;
+	if (offset < 0) {
+		uint64_t magnitude = (uint64_t)(-(offset + 1L)) + 1u;
+		if (magnitude > base) {
+			return OVE_ERR_INVALID_PARAM;
+		}
+		position = base - magnitude;
+	} else {
+		position = base + (uint64_t)offset;
+		if (position < base || position > (uint64_t)INT32_MAX) {
+			return OVE_ERR_INVALID_PARAM;
+		}
 	}
+	file->position = position;
 	return OVE_OK;
 }
 
@@ -405,7 +460,7 @@ long ove_fs_tell(ove_file_t file)
 	if (file == NULL) {
 		return -1;
 	}
-	return (long)fs_tell(&file->file);
+	return (long)file->position;
 }
 
 int ove_fs_unlink(const char *path)
@@ -487,11 +542,54 @@ int ove_fs_rmdir(const char *path)
 
 int ove_fs_truncate(ove_file_t file, uint64_t length)
 {
-	if (file == NULL || length > (uint64_t)INT64_MAX) {
+	if (file == NULL || length > (uint64_t)INT32_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int res = fs_truncate(&file->file, (off_t)length);
-	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
+
+	if (length < file->size) {
+		int res = fs_truncate(&file->file, (off_t)length);
+		if (res != 0) {
+			file->native_position_valid = 0;
+			return ove_errno_to_ove(-res);
+		}
+		file->size = length;
+		file->native_position = length;
+		file->native_position_valid = 1;
+		return OVE_OK;
+	}
+
+	/*
+	 * Zephyr's FatFs wrapper expands files with one-byte f_write() calls.
+	 * Positioned SQLite writes can create large zero-filled gaps, so that
+	 * implementation can monopolize the serialized host-FS worker for
+	 * minutes. Grow explicitly in bounded chunks while preserving both POSIX
+	 * hole contents and the API-visible cursor.
+	 */
+	if (length > file->size) {
+		uint64_t logical_position = file->position;
+		file->position = file->size;
+		int res = position_native_cursor(file);
+		if (res != OVE_OK) {
+			file->position = logical_position;
+			return res;
+		}
+		while (file->size < length) {
+			size_t chunk = (size_t)(length - file->size);
+			if (chunk > sizeof(zero_fill)) {
+				chunk = sizeof(zero_fill);
+			}
+			ssize_t written = fs_write(&file->file, zero_fill, chunk);
+			if (written <= 0) {
+				file->position = logical_position;
+				file->native_position_valid = 0;
+				return written < 0 ? ove_errno_to_ove((int)-written) : OVE_ERR_IO;
+			}
+			file->size += (uint64_t)written;
+			file->native_position += (uint64_t)written;
+		}
+		file->position = logical_position;
+	}
+	return OVE_OK;
 }
 
 int ove_fs_sync(ove_file_t file)
