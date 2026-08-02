@@ -279,6 +279,7 @@ typedef struct ove_watchdog ove_watchdog_storage_t;
 #ifdef CONFIG_OVE_FS
 struct ove_file {
 	FIL fil;
+	FSIZE_t position;
 	int append;
 };
 struct ove_dir {
