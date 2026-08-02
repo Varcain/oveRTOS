@@ -75,6 +75,7 @@
 &sdmmc1 {
 	dmas = <&dma2 6 4 0x30000 0x00>, <&dma2 3 4 0x30000 0x00>;
 	dma-names = "tx", "rx";
+	clk-div = <22>;
 	/delete-property/ cd-gpios;
 };
 
