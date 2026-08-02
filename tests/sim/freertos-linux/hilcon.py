@@ -99,7 +99,10 @@ class Console:
         out = self.expect(mark.pattern, timeout=timeout)
         match = mark.search(out)
         self.last_status = int(match.group(1))
-        out += self.expect(r"# ", timeout=5.0)
+        # A completed child may hand the console back just after the RT-scope
+        # task's reporting window. Allow one full report interval for the
+        # interactive shell to emit its next prompt.
+        out += self.expect(r"# ", timeout=15.0)
         return out
 
     def close(self):
