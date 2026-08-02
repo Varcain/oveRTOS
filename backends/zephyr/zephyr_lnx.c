@@ -460,6 +460,25 @@ __attribute__((naked)) void __wrap_z_do_kernel_oops(const struct arch_esf *esf,
 }
 
 /* ---- thread entry trampoline ----------------------------------------------- */
+#define LXP_ZEPHYR_ENTRY_FRAME_HEADROOM                                                    \
+	ROUND_UP(sizeof(struct arch_esf) + 2u * sizeof(uint32_t), 8u)
+
+/* The final handoff changes PSP before it has loaded r1-r3 from the saved
+ * context. An interrupt in that short window stacks one basic or extended FP
+ * exception frame below the Linux SP. The trampoline also pushes its target PC
+ * and that 4-byte adjustment can make exception entry add an alignment word.
+ * Keep the saved context below all three pieces of architecture-owned stack. */
+_Static_assert(LXP_ZEPHYR_ENTRY_FRAME_HEADROOM >=
+	       sizeof(struct arch_esf) + 2u * sizeof(uint32_t),
+	       "entry headroom must hold trampoline and aligned exception frames");
+
+static struct lxp_resume_ctx *zephyr_guest_resume_slot(uint32_t sp)
+{
+	uintptr_t context_top = ROUND_DOWN((uintptr_t)sp - LXP_ZEPHYR_ENTRY_FRAME_HEADROOM, 8u);
+
+	return (struct lxp_resume_ctx *)(context_top - sizeof(struct lxp_resume_ctx));
+}
+
 #if LXP_ENABLE_FPU_CONTEXT
 /* Restore the guest's VFP state (ctx.fp) before the trampoline hands control back — r1 still holds
  * ctx here. Offsets pinned so a resume_ctx layout change is a build error, not silent corruption. */
@@ -479,9 +498,9 @@ _Static_assert(offsetof(struct lxp_resume_ctx, fp.active) == 196u, "resume fp.ac
 #define LXP_ZTRAMP_RESTORE_FP ""
 #endif
 
-/* Resume a program at a captured Linux context. This is deliberately naked:
- * the initial user-mode handoff has already moved PSP into guest memory, so no
- * compiler prologue may touch Zephyr's privileged stack after the drop. */
+/* Resume a program at a captured Linux context. This is deliberately naked so
+ * no compiler prologue touches the active stack during the privilege/PSP
+ * handoff. */
 __attribute__((naked, noreturn)) static void resume_tramp(void *r0val, void *ctx, void *unused)
 {
 	__asm__ volatile("mov r3, r1\n" LXP_ZTRAMP_RESTORE_FP "ldmia r3!, {r4-r11}\n"
@@ -507,13 +526,13 @@ __attribute__((naked, noreturn)) static void resume_tramp(void *r0val, void *ctx
  *
  * Linux guests own their libc/TLS and never return through z_thread_entry.
  * Replace only the initial frame PC with this privileged handoff, retain
- * Zephyr's K_USER stack setup, then move PSP into guest memory and drop
- * directly into the naked Linux-context trampoline. */
+ * Zephyr's K_USER stack setup, then drop directly into the naked Linux-context
+ * trampoline. The trampoline moves PSP only after consuming the saved FP and
+ * callee-saved state, minimizing the interval in which an exception can use
+ * the guest stack before the handoff is complete. */
 __attribute__((naked, noreturn)) static void zephyr_guest_arch_enter(void *r0val, void *ctx)
 {
-	__asm__ volatile("ldr r2, [r1, #40]\n" /* ctx.sp */
-			 "msr psp, r2\n"
-			 "mrs r2, control\n"
+	__asm__ volatile("mrs r2, control\n"
 			 "orr r2, r2, #1\n"
 			 "dsb 0xf\n"
 			 "msr control, r2\n"
@@ -832,8 +851,7 @@ static int zephyr_spawn_launch(int sidx, uint32_t generation, int ridx,
 	/* Reuse the complete-context trampoline for every image. The core owns
 	 * FDPIC register semantics; this seam only translates the launch record
 	 * into Zephyr's native task entry. */
-	struct lxp_resume_ctx *slot =
-		(struct lxp_resume_ctx *)((uintptr_t)launch->r[13] - sizeof(struct lxp_resume_ctx));
+	struct lxp_resume_ctx *slot = zephyr_guest_resume_slot(launch->r[13]);
 	lxp_resume_ctx_from_launch(slot, launch);
 	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
 					    K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
@@ -910,12 +928,13 @@ static int zephyr_spawn_resume(int sidx, uint32_t generation, int ridx,
 		return -1;
 	if (zephyr_bind_prepared_domain(sidx, generation, ridx) != 0)
 		return -1;
-	/* Stash the resume ctx in the program's OWN user-RW region, just below its resume SP, so
-	 * resume_tramp can read it without another MPU partition. AN521 already uses stack plus four
-	 * domain partitions; STM32F746 uses stack plus three. A separate shared partition previously
-	 * overflowed the AN521 dynamic-region budget and dropped executable kernel text. */
-	struct lxp_resume_ctx *slot =
-		(struct lxp_resume_ctx *)((uintptr_t)ctx->sp - sizeof(struct lxp_resume_ctx));
+	/* Stash the resume ctx in the program's OWN user-RW region below the
+	 * architecture exception-frame headroom, so resume_tramp can read it
+	 * without another MPU partition. AN521 already uses stack plus four domain
+	 * partitions; STM32F746 uses stack plus three. A separate shared partition
+	 * previously overflowed the AN521 dynamic-region budget and dropped
+	 * executable kernel text. */
+	struct lxp_resume_ctx *slot = zephyr_guest_resume_slot(ctx->sp);
 	*slot = *ctx;
 	g_slots[sidx].tid = k_thread_create(&g_thread_storage[sidx], g_tramp_stacks[sidx],
 					    K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]),
