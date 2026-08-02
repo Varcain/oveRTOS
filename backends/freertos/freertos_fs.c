@@ -20,6 +20,36 @@
 static char fatfs_path[16];
 static FATFS fatfs;
 static int driver_linked;
+static const uint8_t zero_fill[512];
+
+static FRESULT position_native_cursor(struct ove_file *file)
+{
+	if (f_tell(&file->fil) == file->position) {
+		return FR_OK;
+	}
+	return f_lseek(&file->fil, file->position);
+}
+
+static FRESULT extend_zero_filled(struct ove_file *file, FSIZE_t length)
+{
+	FSIZE_t size = f_size(&file->fil);
+	if (length <= size) {
+		return FR_OK;
+	}
+
+	FRESULT result = f_lseek(&file->fil, size);
+	while (result == FR_OK && size < length) {
+		FSIZE_t remaining = length - size;
+		UINT chunk = remaining < sizeof(zero_fill) ? (UINT)remaining : sizeof(zero_fill);
+		UINT written = 0;
+		result = f_write(&file->fil, zero_fill, chunk, &written);
+		if (result == FR_OK && written != chunk) {
+			result = FR_DISK_ERR;
+		}
+		size += written;
+	}
+	return result;
+}
 
 static int validate_path(const char *path)
 {
@@ -114,12 +144,9 @@ static int open_common(struct ove_file *file, const char *path, int flags)
 		}
 	}
 	file->append = (flags & OVE_FS_O_APPEND) != 0;
+	file->position = 0;
 	if (file->append) {
-		result = f_lseek(&file->fil, f_size(&file->fil));
-		if (result != FR_OK) {
-			(void)f_close(&file->fil);
-			return fatfs_result(result);
-		}
+		file->position = f_size(&file->fil);
 	}
 	return OVE_OK;
 }
@@ -366,6 +393,16 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 	unsigned int br;
 	FRESULT fres;
 
+	if (file->position >= f_size(&file->fil)) {
+		if (bytes_read != NULL) {
+			*bytes_read = 0;
+		}
+		return OVE_OK;
+	}
+	fres = position_native_cursor(file);
+	if (fres != FR_OK) {
+		return fatfs_result(fres);
+	}
 	fres = f_read(&file->fil, buf, count, &br);
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_read failed: FRESULT=%d (count=%u)\n", (int)fres,
@@ -375,6 +412,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 	if (bytes_read != NULL) {
 		*bytes_read = br;
 	}
+	file->position += br;
 	return OVE_OK;
 }
 
@@ -384,10 +422,14 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_w
 	FRESULT fres;
 
 	if (file->append) {
-		fres = f_lseek(&file->fil, f_size(&file->fil));
-		if (fres != FR_OK) {
-			return fatfs_result(fres);
-		}
+		file->position = f_size(&file->fil);
+	}
+	fres = extend_zero_filled(file, file->position);
+	if (fres == FR_OK) {
+		fres = position_native_cursor(file);
+	}
+	if (fres != FR_OK) {
+		return fatfs_result(fres);
 	}
 	fres = f_write(&file->fil, buf, count, &bw);
 	if (fres != FR_OK) {
@@ -396,6 +438,7 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_w
 	if (bytes_written != NULL) {
 		*bytes_written = bw;
 	}
+	file->position += bw;
 	return OVE_OK;
 }
 
@@ -432,7 +475,7 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 		base = 0;
 		break;
 	case OVE_FS_SEEK_CUR:
-		base = f_tell(&file->fil);
+		base = file->position;
 		break;
 	case OVE_FS_SEEK_END:
 		base = f_size(&file->fil);
@@ -458,16 +501,13 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	FRESULT fres = f_lseek(&file->fil, (FSIZE_t)pos);
-	if (fres != FR_OK) {
-		return fatfs_result(fres);
-	}
+	file->position = (FSIZE_t)pos;
 	return OVE_OK;
 }
 
 long ove_fs_tell(ove_file_t file)
 {
-	return (long)f_tell(&file->fil);
+	return (long)file->position;
 }
 
 int ove_fs_unlink(const char *path)
@@ -556,8 +596,14 @@ int ove_fs_truncate(ove_file_t file, uint64_t length)
 	if (file == NULL || (uint64_t)(FSIZE_t)length != length) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	FRESULT result = f_lseek(&file->fil, (FSIZE_t)length);
-	if (result == FR_OK) {
+	FSIZE_t target = (FSIZE_t)length;
+	FRESULT result;
+	if (target > f_size(&file->fil)) {
+		result = extend_zero_filled(file, target);
+	} else {
+		result = f_lseek(&file->fil, target);
+	}
+	if (result == FR_OK && target < f_size(&file->fil)) {
 		result = f_truncate(&file->fil);
 	}
 	return fatfs_result(result);
