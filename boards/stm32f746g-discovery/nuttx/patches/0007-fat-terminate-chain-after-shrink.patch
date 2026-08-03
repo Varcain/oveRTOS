@@ -1,0 +1,34 @@
+fs/fat: terminate the retained chain after shrinking a file
+
+fat_dirshrink() marks the last retained cluster with value zero before
+freeing the remainder of the chain.  Zero means that the cluster itself is
+free, not that it terminates an allocated chain.  The directory entry keeps
+pointing at a chain whose final cluster is therefore reported as unallocated.
+
+This is reproducible with SQLite VACUUM on FAT: shrinking a seven-cluster
+database to six clusters succeeds, but the first later write that reaches the
+sixth-cluster boundary fails with EIO because fat_extendchain() reads zero
+from the cached tail cluster.
+
+Use the same all-ones EOF marker used by fat_extendchain() when it allocates a
+new cluster.  fat_putcluster() masks that value appropriately for FAT12,
+FAT16, and FAT32, so the retained chain remains valid and the removed suffix
+can be reused independently.
+
+--- a/fs/fat/fs_fat32util.c
++++ b/fs/fat/fs_fat32util.c
+@@ -1552,11 +1552,11 @@ int fat_dirshrink(struct fat_mountpt_s *fs, FAR uint8_t *direntry,
+ 
+       if (remaining <= clustersize)
+         {
+-          /* No.. then nullify next cluster -- removing it from the
+-           * chain.
++          /* No.. then terminate the retained chain before freeing its
++           * old suffix.
+            */
+ 
+-          ret = fat_putcluster(fs, lastcluster, 0);
++          ret = fat_putcluster(fs, lastcluster, 0x0fffffff);
+           if (ret < 0)
+             {
+               return ret;
