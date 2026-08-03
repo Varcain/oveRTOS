@@ -273,14 +273,12 @@ CONFIG_EXECUTE_XOR_WRITE=y
 # bytes (32 slots). gen_kobject_list.py hard-errors ("Too many thread objects") if it's too small;
 # 4 is harmless for the an521 (fewer threads).
 CONFIG_MAX_THREAD_BYTES=4
-# Keep native round-robin disabled for the personality. Persistent guest tasks
-# removed task deletion/recreation, but every blocking syscall still suspends
-# and resumes a guest. On Zephyr 4.4 that rate of per-CPU slice-timeout resets
-# can reinsert a zero-delta timeout while tickless sys_clock_announce() is
-# draining elapsed ticks; the timer ISR then loops forever and the STM32 locks
-# during lvmusic plus TCP traffic. Coordinator and host RT priorities 0..5
-# already preempt guests immediately, and blocking syscalls rotate guests.
-# A no-syscall guest still needs a seam-specific quantum implementation.
+# Keep native round-robin disabled for the personality. On Zephyr 4.4 its
+# per-CPU slice-timeout reset can reinsert a zero-delta timeout while tickless
+# sys_clock_announce() drains elapsed ticks, locking STM32 under frequent guest
+# park/resume. The LXP seam instead rotates only priority-6 guest threads with
+# its own bounded quantum timer; coordinator and host RT priorities 0..5 remain
+# immediately preemptive and unrelated equal-priority work is unaffected.
 CONFIG_TIMESLICING=n
 # Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the
 # program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC

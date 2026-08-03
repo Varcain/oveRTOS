@@ -64,6 +64,7 @@
 #include <sys/random.h> /* getrandom — guest entropy (AT_RANDOM seed + getrandom(2)) */
 
 #include "lxp/lxp_exec.h"
+#include "lxp/lxp_run.h"
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
@@ -278,6 +279,7 @@ static uint8_t *nuttx_exec_stage(size_t *cap)
 }
 #endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
 static struct task_tcb_s g_tcb[LXP_NSLOT];
+static pid_t g_guest_budget_pid = -1;
 
 /* Device mappings are part of a Linux slot's unprivileged MPU view, not global
  * process state. Regions 5 and 6 cover the two ranges recorded by
@@ -794,6 +796,8 @@ static int nuttx_abort_slot(int sidx, uint32_t generation)
 		 * cancellation point at which a deferred delete could complete.
 		 * Its cancellation metadata is now trusted, but forced cancellation
 		 * still expresses the required host-side transition semantics. */
+		if (g_guest_budget_pid == g_slots[sidx].pid)
+			g_guest_budget_pid = -1;
 		g_tcb[sidx].cmn.flags |= TCB_FLAG_FORCED_CANCEL;
 		if (task_delete(g_slots[sidx].pid) < 0)
 			return -1;
@@ -1427,6 +1431,16 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < LXP_NSLOT; i++) {
 		if (g_slots[i].pid == pid && lxp_slot_ref_is_runnable(task_slot_ref(i))) {
+			/* Preserve a partially consumed slice across host/RT preemption, but
+			 * assign a fresh weighted slice when guest ownership changes. All
+			 * guests retain SLOT_PRIO; niceness cannot cross an RTOS class. */
+			if (g_guest_budget_pid != pid) {
+				uint32_t base_ticks = MSEC2TICK(CONFIG_RR_INTERVAL);
+				uint32_t weight = lxp_guest_sched_weight(i);
+				uint32_t ticks = (base_ticks * weight + 19u) / 20u;
+				g_tcb[i].cmn.timeslice = ticks != 0u ? (int32_t)ticks : 1;
+				g_guest_budget_pid = pid;
+			}
 			lxp_memory_policy_t policy;
 			if (lxp_slot_memory_policy(task_slot_ref(i), &policy) != LXP_OK ||
 			    nuttx_prepare_profile(i, &policy) != 0) {
@@ -1463,6 +1477,7 @@ static int nuttx_prepare(void)
 		return -1;
 #endif
 	g_irq_install_mask = 0;
+	g_guest_budget_pid = -1;
 	memset(g_slots, 0, sizeof(g_slots));
 	g_installed_policy_valid = 0;
 	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */

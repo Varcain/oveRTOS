@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "lxp/lxp_exec.h"
+#include "lxp/lxp_run.h"
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
@@ -210,10 +211,14 @@ void ove_freertos_lxp_tick(void)
 		budget_owner = g_slots[current].tid;
 		budget_ticks = 0;
 	}
-	uint32_t quantum_ticks =
+	uint32_t base_ticks =
 		((uint32_t)CONFIG_OVE_LINUX_GUEST_QUANTUM_MS * (uint32_t)configTICK_RATE_HZ +
 		 999u) /
 		1000u;
+	if (base_ticks == 0)
+		base_ticks = 1;
+	uint32_t weight = lxp_guest_sched_weight(current);
+	uint32_t quantum_ticks = (base_ticks * weight + 19u) / 20u;
 	if (quantum_ticks == 0)
 		quantum_ticks = 1;
 	if (++budget_ticks < quantum_ticks)
