@@ -271,12 +271,33 @@ config OVE_LINUX_FS
     select OVE_FS
     select OVE_QUEUE
     select OVE_SYNC
+    select OVE_TIME
     help
       Route the Linux personality's /data mount to the engine-native ove_fs
       volume (SD/FAT on STM32F746). Native filesystem calls execute on one
       serialized host worker and use bounded, statically owned handles.
       Missing or unformatted media does not prevent the personality from
       starting; /data operations report ENODEV until the volume can mount.
+
+config OVE_LINUX_FS_SERVER_PERIOD_US
+    int "Native filesystem server period (microseconds)"
+    default 1000
+    range 100 1000000
+    depends on OVE_LINUX_FS
+    help
+      Minimum admission period for the serialized native filesystem worker.
+      At most one bounded request is started per period.
+
+config OVE_LINUX_FS_SERVER_BUDGET_US
+    int "Native filesystem request wall-time budget (microseconds)"
+    default 300
+    range 1 1000000
+    depends on OVE_LINUX_FS
+    help
+      Telemetry threshold for one native filesystem request. Calls exceeding
+      this wall-time budget increment /proc/lxp_fs budget_overruns. The RTOS
+      may preempt the worker, so this is an overrun detector, not a claim that
+      an opaque filesystem call can be forcibly stopped at the threshold.
 
 config OVE_LINUX_NETFS
     bool "Linux personality: remote filesystem (9P2000.L)"

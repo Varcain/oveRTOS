@@ -26,6 +26,9 @@
 #define LXP_OVE_FS_WORKER_PRIORITY OVE_PRIO_ABOVE_NORMAL
 #define LXP_OVE_FS_IO_CHUNK 4096u
 
+_Static_assert(OVE_PRIO_ABOVE_NORMAL < OVE_PRIO_HIGH,
+	       "native FS worker must remain below high-priority RT work");
+
 /*
  * LXP has at most LXP_NHOSTFS_OPEN co-resident external descriptors. A single
  * tagged union therefore covers every possible file/directory split without
@@ -83,6 +86,7 @@ struct fs_request {
 	enum fs_request_op op;
 	int result;
 	uint8_t asynchronous;
+	uint8_t budget_overrun;
 	uint64_t submitted_us;
 	uint64_t started_us;
 	uint64_t finished_us;
@@ -207,6 +211,8 @@ static uint64_t g_selected_owner;
 static uint64_t g_async_owner;
 static int g_async_cancelled;
 static int g_async_state;
+static uint64_t g_server_period_start_us;
+static unsigned int g_server_requests;
 
 _Static_assert(LXP_FS_O_READ == OVE_FS_O_READ, "filesystem read flag drifted");
 _Static_assert(LXP_FS_O_WRITE == OVE_FS_O_WRITE, "filesystem write flag drifted");
@@ -688,6 +694,27 @@ static int async_collect(struct fs_request *request)
 	return g_async_request.result;
 }
 
+static void fs_server_admit(void)
+{
+	const uint64_t period_us = CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US;
+	uint64_t now = 0;
+	(void)ove_time_get_us(&now);
+	if (g_server_period_start_us == 0u || now < g_server_period_start_us ||
+	    now - g_server_period_start_us >= period_us) {
+		g_server_period_start_us = now;
+		g_server_requests = 0;
+	}
+	if (g_server_requests != 0u) {
+		uint64_t release = g_server_period_start_us + period_us;
+		if (release > now)
+			ove_time_delay_us((uint32_t)(release - now));
+		(void)ove_time_get_us(&now);
+		g_server_period_start_us = now;
+		g_server_requests = 0;
+	}
+	g_server_requests++;
+}
+
 static void fs_worker(void *arg)
 {
 	(void)arg;
@@ -696,9 +723,15 @@ static void fs_worker(void *arg)
 		int rc = ove_queue_receive(g_request_queue, &request, OVE_WAIT_FOREVER);
 		if (rc != OVE_OK)
 			continue;
+		if (request->op != FS_REQ_MOUNT && request->op != FS_REQ_STOP)
+			fs_server_admit();
 		(void)ove_time_get_us(&request->started_us);
 		request->result = execute_request(request);
 		(void)ove_time_get_us(&request->finished_us);
+		request->budget_overrun =
+			request->finished_us >= request->started_us &&
+			request->finished_us - request->started_us >
+				CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US;
 		int stop = request->op == FS_REQ_STOP;
 		if (request->asynchronous) {
 			if (__atomic_load_n(&g_async_cancelled, __ATOMIC_ACQUIRE)) {
@@ -802,6 +835,8 @@ static int submit_sync(struct fs_request *request)
 		g_metrics.service_us_total += service_us;
 		if (service_us > g_metrics.service_us_max)
 			g_metrics.service_us_max = service_us;
+		if (request->budget_overrun)
+			g_metrics.budget_overruns++;
 	}
 	ove_mutex_unlock(g_submit_lock);
 	return rc == OVE_OK ? request->result : rc;
@@ -834,6 +869,8 @@ static void async_metrics_complete(const struct fs_request *request, int result)
 	g_metrics.service_us_total += service_us;
 	if (service_us > g_metrics.service_us_max)
 		g_metrics.service_us_max = service_us;
+	if (request->budget_overrun)
+		g_metrics.budget_overruns++;
 }
 
 static int submit_async(struct fs_request *request)
@@ -912,6 +949,8 @@ static int fs_run_begin(void)
 	g_async_owner = 0;
 	g_async_cancelled = 0;
 	g_async_state = FS_ASYNC_IDLE;
+	g_server_period_start_us = 0;
+	g_server_requests = 0;
 	g_mounted = 0;
 	rc = ove_mutex_init(&g_submit_lock, &g_submit_lock_storage);
 	if (rc != OVE_OK)

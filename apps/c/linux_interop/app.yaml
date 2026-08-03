@@ -20,6 +20,8 @@ defconfig:
   # Mount that substrate at /data through the engine-agnostic LXP host-filesystem
   # provider. The mount is retried after absent-media failures without delaying boot.
   - CONFIG_OVE_LINUX_FS=y
+  - CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US=1000
+  - CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US=300
   # /dev character-device layer + framebuffer (/dev/fb0). A board without an fb
   # backend links weak "no display" HAL stubs, so /dev/fb0 is simply absent there.
   - CONFIG_OVE_LINUX_DEV=y
