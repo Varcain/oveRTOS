@@ -37,6 +37,13 @@ class Console:
         """Hardware-reset the board so a run starts from a known boot, not mid-session state."""
         subprocess.run(["openocd", "-f", self.OPENOCD_CFG, "-c", "init; reset run; exit"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        # ST-Link may retain console bytes emitted before/during the reset. If
+        # an old login prompt remains in either buffer, login() can accept it
+        # and transmit credentials while the new firmware is still booting.
+        # Preserve the complete transcript in self.buf, but make future
+        # expect() calls consume only bytes emitted after this reset.
+        self.ser.reset_input_buffer()
+        self._un = ""
 
     def _pump(self):
         n = self.ser.in_waiting
