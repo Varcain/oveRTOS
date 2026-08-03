@@ -35,6 +35,10 @@ void ove_lxp_svc_metrics_record(uint32_t syscall, uint32_t cycles);
 void ove_lxp_svc_metrics_take(struct ove_lxp_svc_metrics *window,
 			      struct ove_lxp_svc_metrics *total);
 
+/* Return the lifetime counters without switching or resetting the report
+ * window. Safe for procfs readers in task/SVC context. */
+void ove_lxp_svc_metrics_snapshot(struct ove_lxp_svc_metrics *total);
+
 /* Engine implementation supplies the frequency of its SVC cycle counter. */
 uint32_t ove_lxp_metrics_counter_hz(void);
 

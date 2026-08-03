@@ -352,6 +352,9 @@ static void test_svc_metrics_own_window_and_lifetime(void **state)
 	assert_int_equal(total.max_cycles, window.max_cycles);
 	assert_int_equal(total.total_cycles, window.total_cycles);
 	assert_int_equal(total.max_syscall, window.max_syscall);
+	struct ove_lxp_svc_metrics snapshot;
+	ove_lxp_svc_metrics_snapshot(&snapshot);
+	assert_memory_equal(&snapshot, &total, sizeof(snapshot));
 
 	ove_lxp_svc_metrics_take(&window, &total);
 	assert_int_equal(window.calls, 0u);

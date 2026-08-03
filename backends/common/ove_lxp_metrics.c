@@ -26,6 +26,23 @@ static struct ove_lxp_svc_metrics g_total = {
 	.min_cycles = UINT32_MAX,
 };
 
+void ove_lxp_svc_metrics_snapshot(struct ove_lxp_svc_metrics *total)
+{
+	uint32_t before;
+	uint32_t after;
+	do {
+		before = g_total_seq;
+		__asm__ volatile("" ::: "memory");
+		total->calls = g_total.calls;
+		total->min_cycles = g_total.min_cycles;
+		total->max_cycles = g_total.max_cycles;
+		total->total_cycles = g_total.total_cycles;
+		total->max_syscall = g_total.max_syscall;
+		__asm__ volatile("" ::: "memory");
+		after = g_total_seq;
+	} while (before != after || (after & 1u) != 0u);
+}
+
 static void metrics_add(struct ove_lxp_svc_metrics *metrics, uint32_t syscall, uint32_t cycles)
 {
 	if (metrics->calls == 0u || cycles < metrics->min_cycles)
@@ -62,17 +79,5 @@ void ove_lxp_svc_metrics_take(struct ove_lxp_svc_metrics *window,
 		.min_cycles = UINT32_MAX,
 	};
 
-	uint32_t before;
-	uint32_t after;
-	do {
-		before = g_total_seq;
-		__asm__ volatile("" ::: "memory");
-		total->calls = g_total.calls;
-		total->min_cycles = g_total.min_cycles;
-		total->max_cycles = g_total.max_cycles;
-		total->total_cycles = g_total.total_cycles;
-		total->max_syscall = g_total.max_syscall;
-		__asm__ volatile("" ::: "memory");
-		after = g_total_seq;
-	} while (before != after || (after & 1u) != 0u);
+	ove_lxp_svc_metrics_snapshot(total);
 }
