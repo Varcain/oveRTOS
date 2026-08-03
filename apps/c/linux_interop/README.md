@@ -50,7 +50,22 @@ CPIO system image as a deterministic, read-only root:
 Zephyr its FAT filesystem API. The personality-facing provider is common: it
 serializes native volume calls on one bounded host worker, so concurrent guests
 cannot race a non-reentrant backend. Operations are synchronous and can block
-the calling guest for the duration of SD I/O.
+the calling guest for the duration of SD I/O, but the guest's RTOS task is
+parked rather than consuming CPU or being destroyed and recreated. The worker
+runs above best-effort guests and below host real-time work. It admits at most
+one bounded request per `CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US` (1 ms by
+default); one request transfers at most the personality's 4 KiB syscall
+quantum. Because an opaque engine filesystem call cannot be preempted at an
+arbitrary wall-time boundary, `CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US` is an
+overrun threshold, not a hard abort deadline.
+
+The coordinator gives completed filesystem, socket, console, and ordinary
+guest wakeups weighted 4:3:2:1 service opportunities, rotates among processes
+within each class, and promotes a class after 20 ms of waiting. This prevents a
+network-heavy guest from consuming every coordinator opportunity without
+letting storage service preempt the RT scope task. `/proc/lxp_fs` reports queue
+depth/high-water, request and byte counts, service time, cancellations,
+failures, and budget overruns.
 
 A missing or unformatted card does not delay Linux-personality startup. The
 virtual `/data` mount point remains visible, while operations below it return
@@ -85,6 +100,14 @@ namespace-confined hardware regression (it only uses
 It writes a 200 KiB temporary file, exercises persistent create/read/rename and
 directory operations, resets the MCU through ST-Link, and verifies that the
 microSD file survived.
+
+The corresponding guest-share regression runs two compute-only Lua guests at
+nice -20 and nice 19, verifies their `/proc` values and forward progress, and
+checks that the favoured guest receives a larger CPU share:
+
+```sh
+.venv/bin/python tests/sim/freertos-linux/nice_drive.py
+```
 
 ## Two-channel host real-time proof (STM32F746G-DISCO)
 
