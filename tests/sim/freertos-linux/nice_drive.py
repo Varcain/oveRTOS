@@ -32,7 +32,10 @@ def checked(console, command, timeout=30.0):
 def run():
     # Pace the compound command so the test measures guest scheduling rather
     # than the small polled STM32 console RX path.
-    console = Console(tx_delay=0.025)
+    # The coordinator also services socket waiters while getty is parked. A
+    # 100 ms byte interval stays comfortably above the polled USART's
+    # worst-case service latency even while an SSH listener is active.
+    console = Console(tx_delay=0.100)
     try:
         print("--- niceness: reset + login ---")
         console.reset()
