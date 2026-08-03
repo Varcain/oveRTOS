@@ -775,7 +775,10 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 static void report_metrics(void)
 {
 	struct rt_scope_metrics metrics;
-	struct rt_scope_totals totals;
+	/* The reporter is single-threaded. Keep its enlarged lifetime snapshot out
+	 * of the deliberately small RT report stack; procfs readers use their own
+	 * independent snapshot. */
+	static struct rt_scope_totals totals;
 	char line[224];
 	char *p;
 	static uint32_t previous_releases;
