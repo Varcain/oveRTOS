@@ -1205,6 +1205,7 @@ static void demo_body(void *arg)
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
 		.on_guest_exit = on_guest_exit,
+		.rt_scope_read = linux_rt_scope_proc_read,
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
 	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
@@ -1268,6 +1269,7 @@ static void demo_body(void *arg)
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
 		.on_guest_exit = on_guest_exit,
+		.rt_scope_read = linux_rt_scope_proc_read,
 	};
 	int rc2;
 #if LXP_ENABLE_LATENCY

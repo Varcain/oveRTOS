@@ -184,6 +184,10 @@ static struct rt_scope_metrics g_metrics[2] = {
 		.work_min_ticks = UINT32_MAX,
 	},
 };
+static struct rt_scope_metrics g_lifetime_metrics = {
+	.dispatch_min_ticks = UINT32_MAX,
+	.work_min_ticks = UINT32_MAX,
+};
 
 static inline void response_high(void)
 {
@@ -296,12 +300,9 @@ static uint32_t histogram_bin(uint32_t ticks)
 	return RT_SCOPE_HIST_BINS - 1u;
 }
 
-static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks, uint32_t work_ticks,
-			   uint32_t missed, int late_finish)
+static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_ticks,
+			uint32_t work_ticks, uint32_t missed, int late_finish)
 {
-	uint32_t active = __atomic_load_n(&g_active_metrics, __ATOMIC_ACQUIRE);
-	struct rt_scope_metrics *metrics = &g_metrics[active];
-
 	metrics->executions++;
 	metrics->missed += missed;
 	if (late_finish)
@@ -316,7 +317,16 @@ static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks, uint32_t 
 	if (work_ticks > metrics->work_max_ticks)
 		metrics->work_max_ticks = work_ticks;
 	metrics->dispatch_hist[histogram_bin(dispatch_ticks)]++;
+}
+
+static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks, uint32_t work_ticks,
+			   uint32_t missed, int late_finish)
+{
+	uint32_t active = __atomic_load_n(&g_active_metrics, __ATOMIC_ACQUIRE);
+	metrics_add(&g_metrics[active], dispatch_ticks, work_ticks, missed, late_finish);
+
 	__atomic_add_fetch(&g_total_generation, 1u, __ATOMIC_ACQ_REL);
+	metrics_add(&g_lifetime_metrics, dispatch_ticks, work_ticks, missed, late_finish);
 	__atomic_add_fetch(&g_total_executions, 1u, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_total_missed, missed, __ATOMIC_RELAXED);
 	if (late_finish)
@@ -629,6 +639,7 @@ static uint32_t percentile_upper_us(const struct rt_scope_metrics *metrics, uint
 }
 
 struct rt_scope_totals {
+	struct rt_scope_metrics metrics;
 	uint32_t releases;
 	uint32_t executions;
 	uint32_t missed;
@@ -653,8 +664,112 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 			__atomic_load_n(&g_last_execution_deadline, __ATOMIC_RELAXED);
 		totals->irq_overrun = __atomic_load_n(&g_irq_overrun_count, __ATOMIC_RELAXED);
 		totals->releases = __atomic_load_n(&g_deadline_count, __ATOMIC_ACQUIRE);
+		totals->metrics = g_lifetime_metrics;
 		after = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
 	} while (before != after || (after & 1u) != 0u);
+}
+
+struct proc_builder {
+	char *buf;
+	size_t off;
+	size_t cap;
+};
+
+static void proc_text(struct proc_builder *builder, const char *text)
+{
+	while (*text != '\0' && builder->off < builder->cap)
+		builder->buf[builder->off++] = *text++;
+}
+
+static void proc_u64(struct proc_builder *builder, uint64_t value)
+{
+	char reversed[20];
+	size_t count = 0u;
+
+	if (value == 0u) {
+		if (builder->off < builder->cap)
+			builder->buf[builder->off++] = '0';
+		return;
+	}
+	while (value != 0u) {
+		reversed[count++] = (char)('0' + value % 10u);
+		value /= 10u;
+	}
+	while (count != 0u && builder->off < builder->cap)
+		builder->buf[builder->off++] = reversed[--count];
+}
+
+static void proc_metric(struct proc_builder *builder, const char *name, uint64_t value)
+{
+	proc_text(builder, name);
+	proc_text(builder, " ");
+	proc_u64(builder, value);
+	proc_text(builder, "\n");
+}
+
+static uint64_t ticks_to_ns(uint32_t ticks)
+{
+	return ((uint64_t)ticks * 1000000000ull + RT_SCOPE_TICKS_PER_US * 500000ull) /
+	       (RT_SCOPE_TICKS_PER_US * 1000000ull);
+}
+
+long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
+{
+	(void)ctx;
+	if (!buf || cap == 0u)
+		return -1;
+
+	struct rt_scope_totals totals;
+	totals_snapshot(&totals);
+	const struct rt_scope_metrics *metrics = &totals.metrics;
+	uint32_t average_ticks = metrics->executions == 0u
+					 ? 0u
+					 : (uint32_t)(metrics->dispatch_sum_ticks /
+						      metrics->executions);
+	uint32_t dispatch_min = metrics->executions == 0u ? 0u : metrics->dispatch_min_ticks;
+	uint32_t work_min = metrics->executions == 0u ? 0u : metrics->work_min_ticks;
+	struct proc_builder builder = {.buf = buf, .cap = cap};
+
+	proc_metric(&builder, "available", 1u);
+	proc_metric(&builder, "period_us", RT_SCOPE_PERIOD_US);
+	proc_metric(&builder, "timer_hz", RT_SCOPE_TICKS_PER_US * 1000000u);
+	proc_metric(&builder, "releases", totals.releases);
+	proc_metric(&builder, "executions", totals.executions);
+	proc_metric(&builder, "missed", totals.missed);
+	proc_metric(&builder, "late_finish", totals.late_finish);
+	proc_metric(&builder, "irq_overrun", totals.irq_overrun);
+	proc_metric(&builder, "pending", totals.releases - totals.last_execution_deadline);
+	proc_metric(&builder, "dispatch_samples", metrics->executions);
+	proc_metric(&builder, "dispatch_min_ns", ticks_to_ns(dispatch_min));
+	proc_metric(&builder, "dispatch_avg_ns", ticks_to_ns(average_ticks));
+	proc_metric(&builder, "dispatch_p99_us_ceiling",
+		    metrics->executions == 0u ? 0u : percentile_upper_us(metrics, 990u));
+	proc_metric(&builder, "dispatch_p999_us_ceiling",
+		    metrics->executions == 0u ? 0u : percentile_upper_us(metrics, 999u));
+	proc_metric(&builder, "dispatch_max_ns", ticks_to_ns(metrics->dispatch_max_ticks));
+	proc_metric(&builder, "dispatch_jitter_ns",
+		    ticks_to_ns(metrics->dispatch_max_ticks - dispatch_min));
+	proc_metric(&builder, "work_min_ns", ticks_to_ns(work_min));
+	proc_metric(&builder, "work_max_ns", ticks_to_ns(metrics->work_max_ticks));
+
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
+	struct ove_lxp_svc_metrics svc;
+	ove_lxp_svc_metrics_snapshot(&svc);
+	proc_metric(&builder, "svc_available", 1u);
+	proc_metric(&builder, "svc_counter_hz", ove_lxp_metrics_counter_hz());
+	proc_metric(&builder, "svc_calls", svc.calls);
+	proc_metric(&builder, "svc_min_cycles", svc.calls == 0u ? 0u : svc.min_cycles);
+	proc_metric(&builder, "svc_avg_cycles",
+		    svc.calls == 0u ? 0u : svc.total_cycles / svc.calls);
+	proc_metric(&builder, "svc_max_cycles", svc.max_cycles);
+	proc_metric(&builder, "svc_max_syscall", svc.max_syscall);
+	proc_text(&builder, "svc_max_syscall_name ");
+	proc_text(&builder, svc.calls == 0u ? "?" : svc_syscall_name(svc.max_syscall));
+	proc_text(&builder, "\n");
+#else
+	proc_metric(&builder, "svc_available", 0u);
+#endif
+	return (long)builder.off;
 }
 
 static void report_metrics(void)
@@ -848,6 +963,17 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 {
 	(void)write_fn;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+
+long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
+{
+	(void)ctx;
+	static const char unavailable[] = "available 0\n";
+	if (!buf || cap < sizeof(unavailable) - 1u)
+		return -1;
+	for (size_t i = 0; i < sizeof(unavailable) - 1u; ++i)
+		buf[i] = unavailable[i];
+	return (long)(sizeof(unavailable) - 1u);
 }
 
 #endif /* CONFIG_OVE_LINUX_RT_SCOPE */

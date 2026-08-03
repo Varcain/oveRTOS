@@ -167,6 +167,21 @@ parenthesised name is `?` for a number not in the reporter's compact name table.
 The window row is reset every 10 seconds, while `svc-total` retains the lifetime
 maximum and the syscall that produced it.
 
+The guest can read the same experiment without scraping the native UART:
+
+```sh
+cat /proc/rt_scope
+```
+
+`/proc/rt_scope` is a coherent, non-destructive lifetime snapshot. It reports
+release/execution/failure counts, dispatch and fixed-work timings in integer
+nanoseconds, histogram-derived p99/p99.9 ceilings, and the lifetime SVC timing
+on FreeRTOS and Zephyr. `timer_hz` and `svc_counter_hz` document the conversion
+bases. NuttX reports `svc_available 0` because its shared native/personality SVC
+path does not yet have the same bounded timing point. Opening the file neither
+rotates the 10-second UART window nor resets any counter, so benchmark readers
+cannot perturb or consume the measurement.
+
 Zephyr also prints `irq-lock-us`: the count, average, and maximum duration of
 the coordinator's IRQ-masked process-table snapshots for both the current
 window and the whole run. Its measurement update happens after IRQs are
