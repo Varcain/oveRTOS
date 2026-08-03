@@ -16,6 +16,7 @@
 #include "ove/queue.h"
 #include "ove/sync.h"
 #include "ove/thread.h"
+#include "ove/time.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -78,6 +79,9 @@ enum fs_request_op {
 struct fs_request {
 	enum fs_request_op op;
 	int result;
+	uint64_t submitted_us;
+	uint64_t started_us;
+	uint64_t finished_us;
 	union {
 		struct {
 			const char *path;
@@ -160,6 +164,7 @@ OVE_THREAD_STACK_DEFINE_STATIC_(g_worker_stack, LXP_OVE_FS_WORKER_STACK);
 static uint8_t g_io_buffer[LXP_OVE_FS_IO_CHUNK] __attribute__((aligned(32)));
 static int g_active;
 static int g_mounted;
+static lxp_fs_metrics_t g_metrics;
 
 _Static_assert(LXP_FS_O_READ == OVE_FS_O_READ, "filesystem read flag drifted");
 _Static_assert(LXP_FS_O_WRITE == OVE_FS_O_WRITE, "filesystem write flag drifted");
@@ -424,7 +429,9 @@ static void fs_worker(void *arg)
 		int rc = ove_queue_receive(g_request_queue, &request, OVE_WAIT_FOREVER);
 		if (rc != OVE_OK)
 			continue;
+		(void)ove_time_get_us(&request->started_us);
 		request->result = execute_request(request);
+		(void)ove_time_get_us(&request->finished_us);
 		int stop = request->op == FS_REQ_STOP;
 		ove_event_signal(g_complete);
 		if (stop)
@@ -452,6 +459,17 @@ static int submit(struct fs_request *request)
 		ove_mutex_unlock(g_submit_lock);
 		return LXP_ERR_INVALID_PARAM;
 	}
+	int measured = request->op != FS_REQ_MOUNT && request->op != FS_REQ_STOP;
+	request->submitted_us = 0;
+	request->started_us = 0;
+	request->finished_us = 0;
+	if (measured) {
+		(void)ove_time_get_us(&request->submitted_us);
+		g_metrics.requests_submitted++;
+		g_metrics.pending++;
+		if (g_metrics.pending > g_metrics.queue_depth_max)
+			g_metrics.queue_depth_max = g_metrics.pending;
+	}
 	struct fs_request *queued = request;
 	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
 	if (rc == OVE_OK)
@@ -463,6 +481,32 @@ static int submit(struct fs_request *request)
 			memcpy(request->args.file_read.buf, g_io_buffer,
 			       request->args.file_read.transferred);
 		}
+	}
+	if (measured) {
+		uint64_t queue_us = request->started_us >= request->submitted_us
+					    ? request->started_us - request->submitted_us
+					    : 0;
+		uint64_t service_us = request->finished_us >= request->started_us
+					      ? request->finished_us - request->started_us
+					      : 0;
+		g_metrics.pending--;
+		if (rc == OVE_OK) {
+			g_metrics.requests_completed++;
+			if (request->result != LXP_OK && request->result != LXP_ERR_EOF)
+				g_metrics.requests_failed++;
+			if (request->op == FS_REQ_FILE_READ)
+				g_metrics.bytes_read += request->args.file_read.transferred;
+			else if (request->op == FS_REQ_FILE_WRITE)
+				g_metrics.bytes_written += request->args.file_write.transferred;
+		} else {
+			g_metrics.requests_failed++;
+		}
+		g_metrics.queue_wait_us_total += queue_us;
+		if (queue_us > g_metrics.queue_wait_us_max)
+			g_metrics.queue_wait_us_max = queue_us;
+		g_metrics.service_us_total += service_us;
+		if (service_us > g_metrics.service_us_max)
+			g_metrics.service_us_max = service_us;
 	}
 	ove_mutex_unlock(g_submit_lock);
 	return rc == OVE_OK ? request->result : rc;
@@ -476,6 +520,7 @@ static int fs_run_begin(void)
 	if (g_active)
 		return LXP_ERR_WOULD_BLOCK;
 	memset(g_handles, 0, sizeof(g_handles));
+	memset(&g_metrics, 0, sizeof(g_metrics));
 	g_mounted = 0;
 	rc = ove_mutex_init(&g_submit_lock, &g_submit_lock_storage);
 	if (rc != OVE_OK)
@@ -730,6 +775,14 @@ static int fs_path_rename(const char *old_path, const char *new_path)
 	return submit(&request);
 }
 
+static int fs_metrics(lxp_fs_metrics_t *out)
+{
+	if (out == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	*out = g_metrics;
+	return g_active ? LXP_OK : LXP_ERR_NOT_REGISTERED;
+}
+
 const lxp_fs_ops_t g_lxp_host_fs_ops = {
 	.abi_version = LXP_FS_OPS_ABI_VERSION,
 	.struct_size = sizeof(lxp_fs_ops_t),
@@ -751,6 +804,7 @@ const lxp_fs_ops_t g_lxp_host_fs_ops = {
 	.path_rmdir = fs_path_rmdir,
 	.path_unlink = fs_path_unlink,
 	.path_rename = fs_path_rename,
+	.metrics = fs_metrics,
 };
 
 #endif /* CONFIG_OVE_LINUX_FS */
