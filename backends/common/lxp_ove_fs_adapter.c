@@ -58,6 +58,7 @@ struct fs_handle_slot {
 enum fs_request_op {
 	FS_REQ_MOUNT = 0,
 	FS_REQ_FILE_OPEN,
+	FS_REQ_OBJECT_OPEN,
 	FS_REQ_FILE_CLOSE,
 	FS_REQ_FILE_READ,
 	FS_REQ_FILE_WRITE,
@@ -65,6 +66,8 @@ enum fs_request_op {
 	FS_REQ_FILE_STAT,
 	FS_REQ_FILE_TRUNCATE,
 	FS_REQ_FILE_SYNC,
+	FS_REQ_FILE_PREAD,
+	FS_REQ_FILE_PWRITE,
 	FS_REQ_DIR_OPEN,
 	FS_REQ_DIR_READ,
 	FS_REQ_DIR_CLOSE,
@@ -89,6 +92,12 @@ struct fs_request {
 			lxp_fs_file_t *out;
 		} file_open;
 		struct {
+			const char *path;
+			unsigned int flags;
+			int require_dir;
+			lxp_fs_open_result_t *out;
+		} object_open;
+		struct {
 			lxp_fs_file_t file;
 		} file;
 		struct {
@@ -103,6 +112,20 @@ struct fs_request {
 			size_t count;
 			size_t transferred;
 		} file_write;
+		struct {
+			lxp_fs_file_t file;
+			void *buf;
+			size_t count;
+			uint64_t offset;
+			size_t transferred;
+		} file_pread;
+		struct {
+			lxp_fs_file_t file;
+			const void *buf;
+			size_t count;
+			uint64_t offset;
+			size_t transferred;
+		} file_pwrite;
 		struct {
 			lxp_fs_file_t file;
 			int64_t offset;
@@ -280,6 +303,55 @@ static int execute_request(struct fs_request *request)
 		slot->kind = FS_HANDLE_FILE;
 		*request->args.file_open.out = &slot->handle.file;
 		return LXP_OK;
+	case FS_REQ_OBJECT_OPEN:
+		if (request->args.object_open.path == NULL || request->args.object_open.out == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		memset(request->args.object_open.out, 0, sizeof(*request->args.object_open.out));
+		rc = ove_fs_stat(request->args.object_open.path, &native_stat);
+		if (rc == OVE_OK && native_stat.type == OVE_FS_TYPE_DIR) {
+			if ((request->args.object_open.flags & OVE_FS_O_WRITE) != 0u ||
+			    (request->args.object_open.flags &
+			     (OVE_FS_O_CREATE | OVE_FS_O_TRUNC)) != 0u)
+				return LXP_ERR_IS_DIR;
+			slot = free_slot();
+			if (slot == NULL)
+				return LXP_ERR_NO_MEMORY;
+			memset(slot, 0, sizeof(*slot));
+			rc = ove_fs_opendir_init(&slot->handle.dir.native, &slot->handle.dir.storage,
+						 request->args.object_open.path);
+			if (rc != OVE_OK) {
+				memset(slot, 0, sizeof(*slot));
+				return rc;
+			}
+			slot->kind = FS_HANDLE_DIR;
+			request->args.object_open.out->handle.dir = &slot->handle.dir;
+			request->args.object_open.out->type = LXP_FS_TYPE_DIR;
+			return LXP_OK;
+		}
+		if (rc != OVE_OK && rc != OVE_ERR_NOT_FOUND)
+			return rc;
+		if (request->args.object_open.require_dir)
+			return rc == OVE_ERR_NOT_FOUND ? rc : LXP_ERR_NOT_DIR;
+		if ((request->args.object_open.flags &
+		     ~(LXP_FS_O_READ | LXP_FS_O_WRITE | LXP_FS_O_CREATE | LXP_FS_O_APPEND |
+		       LXP_FS_O_TRUNC | LXP_FS_O_EXCL)) != 0u ||
+		    (request->args.object_open.flags & (LXP_FS_O_READ | LXP_FS_O_WRITE)) == 0u)
+			return LXP_ERR_INVALID_PARAM;
+		slot = free_slot();
+		if (slot == NULL)
+			return LXP_ERR_NO_MEMORY;
+		memset(slot, 0, sizeof(*slot));
+		rc = ove_fs_open_init(&slot->handle.file.native, &slot->handle.file.storage,
+				      request->args.object_open.path,
+				      (int)request->args.object_open.flags);
+		if (rc != OVE_OK) {
+			memset(slot, 0, sizeof(*slot));
+			return rc;
+		}
+		slot->kind = FS_HANDLE_FILE;
+		request->args.object_open.out->handle.file = &slot->handle.file;
+		request->args.object_open.out->type = LXP_FS_TYPE_FILE;
+		return LXP_OK;
 	case FS_REQ_FILE_CLOSE:
 		slot = file_slot(request->args.file.file);
 		if (slot == NULL)
@@ -308,6 +380,50 @@ static int execute_request(struct fs_request *request)
 		return ove_fs_write(slot->handle.file.native, g_io_buffer,
 				    request->args.file_write.count,
 				    &request->args.file_write.transferred);
+	case FS_REQ_FILE_PREAD:
+	case FS_REQ_FILE_PWRITE: {
+		int write = request->op == FS_REQ_FILE_PWRITE;
+		lxp_fs_file_t file = write ? request->args.file_pwrite.file
+					       : request->args.file_pread.file;
+		size_t count = write ? request->args.file_pwrite.count
+				     : request->args.file_pread.count;
+		uint64_t offset = write ? request->args.file_pwrite.offset
+					: request->args.file_pread.offset;
+		slot = file_slot(file);
+		if (slot == NULL)
+			return LXP_ERR_BAD_HANDLE;
+		if (count > sizeof(g_io_buffer) || offset > (uint64_t)LONG_MAX)
+			return LXP_ERR_INVALID_PARAM;
+		long saved = ove_fs_tell(slot->handle.file.native);
+		if (saved < 0)
+			return LXP_ERR_IO;
+		rc = ove_fs_size(slot->handle.file.native, &size);
+		if (rc != OVE_OK)
+			return rc;
+		if (!write && offset >= size) {
+			request->args.file_pread.transferred = 0;
+			return LXP_ERR_EOF;
+		}
+		if (write && offset > size) {
+			rc = ove_fs_truncate(slot->handle.file.native, offset);
+			if (rc != OVE_OK)
+				return rc;
+		}
+		rc = ove_fs_seek(slot->handle.file.native, (long)offset, OVE_FS_SEEK_SET);
+		if (rc != OVE_OK)
+			return rc;
+		if (write) {
+			request->args.file_pwrite.transferred = 0;
+			rc = ove_fs_write(slot->handle.file.native, g_io_buffer, count,
+					  &request->args.file_pwrite.transferred);
+		} else {
+			request->args.file_pread.transferred = 0;
+			rc = ove_fs_read(slot->handle.file.native, g_io_buffer, count,
+					 &request->args.file_pread.transferred);
+		}
+		int restore = ove_fs_seek(slot->handle.file.native, saved, OVE_FS_SEEK_SET);
+		return rc == OVE_OK || rc == OVE_ERR_EOF ? (restore == OVE_OK ? rc : restore) : rc;
+	}
 	case FS_REQ_FILE_SEEK:
 		slot = file_slot(request->args.file_seek.file);
 		if (slot == NULL)
@@ -446,16 +562,24 @@ static int submit(struct fs_request *request)
 	int rc = ove_mutex_lock(g_submit_lock, OVE_WAIT_FOREVER);
 	if (rc != OVE_OK)
 		return rc;
-	if (request->op == FS_REQ_FILE_WRITE) {
-		if (request->args.file_write.buf == NULL ||
-		    request->args.file_write.count > sizeof(g_io_buffer)) {
+	if (request->op == FS_REQ_FILE_WRITE || request->op == FS_REQ_FILE_PWRITE) {
+		const void *source = request->op == FS_REQ_FILE_WRITE
+					     ? request->args.file_write.buf
+					     : request->args.file_pwrite.buf;
+		size_t count = request->op == FS_REQ_FILE_WRITE
+				       ? request->args.file_write.count
+				       : request->args.file_pwrite.count;
+		if (source == NULL || count > sizeof(g_io_buffer)) {
 			ove_mutex_unlock(g_submit_lock);
 			return LXP_ERR_INVALID_PARAM;
 		}
-		memcpy(g_io_buffer, request->args.file_write.buf, request->args.file_write.count);
-	} else if (request->op == FS_REQ_FILE_READ &&
-		   (request->args.file_read.buf == NULL ||
-		    request->args.file_read.count > sizeof(g_io_buffer))) {
+		memcpy(g_io_buffer, source, count);
+	} else if ((request->op == FS_REQ_FILE_READ &&
+		    (request->args.file_read.buf == NULL ||
+		     request->args.file_read.count > sizeof(g_io_buffer))) ||
+		   (request->op == FS_REQ_FILE_PREAD &&
+		    (request->args.file_pread.buf == NULL ||
+		     request->args.file_pread.count > sizeof(g_io_buffer)))) {
 		ove_mutex_unlock(g_submit_lock);
 		return LXP_ERR_INVALID_PARAM;
 	}
@@ -474,12 +598,19 @@ static int submit(struct fs_request *request)
 	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
 	if (rc == OVE_OK)
 		rc = ove_event_wait(g_complete, OVE_WAIT_FOREVER);
-	if (rc == OVE_OK && request->op == FS_REQ_FILE_READ) {
-		if (request->args.file_read.transferred > request->args.file_read.count) {
+	if (rc == OVE_OK &&
+	    (request->op == FS_REQ_FILE_READ || request->op == FS_REQ_FILE_PREAD)) {
+		size_t transferred = request->op == FS_REQ_FILE_READ
+					     ? request->args.file_read.transferred
+					     : request->args.file_pread.transferred;
+		size_t count = request->op == FS_REQ_FILE_READ ? request->args.file_read.count
+							: request->args.file_pread.count;
+		void *destination = request->op == FS_REQ_FILE_READ ? request->args.file_read.buf
+							     : request->args.file_pread.buf;
+		if (transferred > count) {
 			rc = LXP_ERR_IO;
-		} else if (request->args.file_read.transferred != 0u) {
-			memcpy(request->args.file_read.buf, g_io_buffer,
-			       request->args.file_read.transferred);
+		} else if (transferred != 0u) {
+			memcpy(destination, g_io_buffer, transferred);
 		}
 	}
 	if (measured) {
@@ -496,8 +627,12 @@ static int submit(struct fs_request *request)
 				g_metrics.requests_failed++;
 			if (request->op == FS_REQ_FILE_READ)
 				g_metrics.bytes_read += request->args.file_read.transferred;
+			else if (request->op == FS_REQ_FILE_PREAD)
+				g_metrics.bytes_read += request->args.file_pread.transferred;
 			else if (request->op == FS_REQ_FILE_WRITE)
 				g_metrics.bytes_written += request->args.file_write.transferred;
+			else if (request->op == FS_REQ_FILE_PWRITE)
+				g_metrics.bytes_written += request->args.file_pwrite.transferred;
 		} else {
 			g_metrics.requests_failed++;
 		}
@@ -582,6 +717,21 @@ static int fs_file_open(const char *path, unsigned int flags, lxp_fs_file_t *out
 	return submit(&request);
 }
 
+static int fs_object_open(const char *path, unsigned int flags, int require_dir,
+			  lxp_fs_open_result_t *out)
+{
+	struct fs_request request = {
+		.op = FS_REQ_OBJECT_OPEN,
+		.args.object_open = {
+			.path = path,
+			.flags = flags,
+			.require_dir = require_dir,
+			.out = out,
+		},
+	};
+	return submit(&request);
+}
+
 static int fs_file_close(lxp_fs_file_t file)
 {
 	struct fs_request request = {
@@ -649,6 +799,78 @@ static int fs_file_write(lxp_fs_file_t file, const void *buf, size_t count, size
 		};
 		int rc = submit(&request);
 		size_t written = request.args.file_write.transferred;
+		if (written > chunk)
+			return LXP_ERR_IO;
+		total += written;
+		if (rc != LXP_OK || written < chunk) {
+			*bytes_written = total;
+			return total != 0u ? LXP_OK : rc;
+		}
+	}
+	*bytes_written = total;
+	return LXP_OK;
+}
+
+static int fs_file_pread(lxp_fs_file_t file, void *buf, size_t count, uint64_t offset,
+			 size_t *bytes_read)
+{
+	uint8_t *destination = buf;
+	size_t total = 0;
+
+	if ((buf == NULL && count != 0u) || bytes_read == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	*bytes_read = 0;
+	while (total < count) {
+		size_t chunk = count - total;
+		if (chunk > sizeof(g_io_buffer))
+			chunk = sizeof(g_io_buffer);
+		struct fs_request request = {
+			.op = FS_REQ_FILE_PREAD,
+			.args.file_pread = {
+				.file = file,
+				.buf = destination + total,
+				.count = chunk,
+				.offset = offset + total,
+			},
+		};
+		int rc = submit(&request);
+		size_t received = request.args.file_pread.transferred;
+		if (received > chunk)
+			return LXP_ERR_IO;
+		total += received;
+		if (rc != LXP_OK || received < chunk) {
+			*bytes_read = total;
+			return total != 0u ? LXP_OK : rc;
+		}
+	}
+	*bytes_read = total;
+	return LXP_OK;
+}
+
+static int fs_file_pwrite(lxp_fs_file_t file, const void *buf, size_t count, uint64_t offset,
+			  size_t *bytes_written)
+{
+	const uint8_t *source = buf;
+	size_t total = 0;
+
+	if ((buf == NULL && count != 0u) || bytes_written == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	*bytes_written = 0;
+	while (total < count) {
+		size_t chunk = count - total;
+		if (chunk > sizeof(g_io_buffer))
+			chunk = sizeof(g_io_buffer);
+		struct fs_request request = {
+			.op = FS_REQ_FILE_PWRITE,
+			.args.file_pwrite = {
+				.file = file,
+				.buf = source + total,
+				.count = chunk,
+				.offset = offset + total,
+			},
+		};
+		int rc = submit(&request);
+		size_t written = request.args.file_pwrite.transferred;
 		if (written > chunk)
 			return LXP_ERR_IO;
 		total += written;
@@ -789,6 +1011,7 @@ const lxp_fs_ops_t g_lxp_host_fs_ops = {
 	.run_begin = fs_run_begin,
 	.run_end = fs_run_end,
 	.file_open = fs_file_open,
+	.object_open = fs_object_open,
 	.file_close = fs_file_close,
 	.file_read = fs_file_read,
 	.file_write = fs_file_write,
@@ -796,6 +1019,8 @@ const lxp_fs_ops_t g_lxp_host_fs_ops = {
 	.file_stat = fs_file_stat,
 	.file_truncate = fs_file_truncate,
 	.file_sync = fs_file_sync,
+	.file_pread = fs_file_pread,
+	.file_pwrite = fs_file_pwrite,
 	.dir_open = fs_dir_open,
 	.dir_read = fs_dir_read,
 	.dir_close = fs_dir_close,
