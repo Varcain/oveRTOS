@@ -45,8 +45,8 @@ def run():
         print(f"engine: {engines[0]}")
 
         command = (
-            "nice -n -20 lua -e 'local x=0 while true do x=x+1 end' & hi=$!; "
-            "nice -n 19 lua -e 'local x=0 while true do x=x+1 end' & lo=$!; "
+            "busybox nice -n -20 lua -e 'local x=0 while true do x=x+1 end' & hi=$!; "
+            "busybox nice -n 19 lua -e 'local x=0 while true do x=x+1 end' & lo=$!; "
             "sleep 6; "
             "awk '{print \"CPU\",$1,$14,$19}' /proc/$hi/stat /proc/$lo/stat; "
             "kill $hi $lo; wait $hi; wait $lo; true"
