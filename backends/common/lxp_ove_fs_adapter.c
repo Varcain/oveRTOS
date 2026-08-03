@@ -82,6 +82,7 @@ enum fs_request_op {
 struct fs_request {
 	enum fs_request_op op;
 	int result;
+	uint8_t asynchronous;
 	uint64_t submitted_us;
 	uint64_t started_us;
 	uint64_t finished_us;
@@ -188,6 +189,24 @@ static uint8_t g_io_buffer[LXP_OVE_FS_IO_CHUNK] __attribute__((aligned(32)));
 static int g_active;
 static int g_mounted;
 static lxp_fs_metrics_t g_metrics;
+enum fs_async_state {
+	FS_ASYNC_IDLE = 0,
+	FS_ASYNC_ACTIVE,
+	FS_ASYNC_COMPLETE,
+};
+static struct fs_request g_async_request;
+static char g_async_path[LXP_FS_NAME_MAX];
+static char g_async_new_path[LXP_FS_NAME_MAX];
+static lxp_fs_file_t g_async_file;
+static lxp_fs_dir_t g_async_dir;
+static lxp_fs_open_result_t g_async_open;
+static lxp_fs_stat_t g_async_stat;
+static lxp_fs_dirent_t g_async_dirent;
+static uint64_t g_async_offset;
+static uint64_t g_selected_owner;
+static uint64_t g_async_owner;
+static int g_async_cancelled;
+static int g_async_state;
 
 _Static_assert(LXP_FS_O_READ == OVE_FS_O_READ, "filesystem read flag drifted");
 _Static_assert(LXP_FS_O_WRITE == OVE_FS_O_WRITE, "filesystem write flag drifted");
@@ -537,6 +556,138 @@ static int execute_request(struct fs_request *request)
 	}
 }
 
+static int async_copy_path(char dst[LXP_FS_NAME_MAX], const char *src)
+{
+	if (src == NULL)
+		return LXP_ERR_INVALID_PARAM;
+	size_t length = 0;
+	while (length < LXP_FS_NAME_MAX && src[length] != '\0')
+		length++;
+	if (length == LXP_FS_NAME_MAX)
+		return LXP_ERR_NAME_TOO_LONG;
+	memcpy(dst, src, length + 1u);
+	return LXP_OK;
+}
+
+static int async_prepare(const struct fs_request *source)
+{
+	g_async_request = *source;
+	g_async_request.asynchronous = 1u;
+	switch (source->op) {
+	case FS_REQ_FILE_OPEN:
+		if (async_copy_path(g_async_path, source->args.file_open.path) != LXP_OK)
+			return LXP_ERR_NAME_TOO_LONG;
+		g_async_request.args.file_open.path = g_async_path;
+		g_async_request.args.file_open.out = &g_async_file;
+		break;
+	case FS_REQ_OBJECT_OPEN:
+		if (async_copy_path(g_async_path, source->args.object_open.path) != LXP_OK)
+			return LXP_ERR_NAME_TOO_LONG;
+		g_async_request.args.object_open.path = g_async_path;
+		g_async_request.args.object_open.out = &g_async_open;
+		break;
+	case FS_REQ_FILE_SEEK:
+		g_async_request.args.file_seek.new_offset = &g_async_offset;
+		break;
+	case FS_REQ_FILE_STAT:
+		g_async_request.args.file_stat.out = &g_async_stat;
+		break;
+	case FS_REQ_DIR_OPEN:
+		if (async_copy_path(g_async_path, source->args.dir_open.path) != LXP_OK)
+			return LXP_ERR_NAME_TOO_LONG;
+		g_async_request.args.dir_open.path = g_async_path;
+		g_async_request.args.dir_open.out = &g_async_dir;
+		break;
+	case FS_REQ_DIR_READ:
+		g_async_request.args.dir_read.entry = &g_async_dirent;
+		break;
+	case FS_REQ_PATH_STAT:
+		if (async_copy_path(g_async_path, source->args.path_stat.path) != LXP_OK)
+			return LXP_ERR_NAME_TOO_LONG;
+		g_async_request.args.path_stat.path = g_async_path;
+		g_async_request.args.path_stat.out = &g_async_stat;
+		break;
+	case FS_REQ_PATH_MKDIR:
+	case FS_REQ_PATH_RMDIR:
+	case FS_REQ_PATH_UNLINK:
+		if (async_copy_path(g_async_path, source->args.path.path) != LXP_OK)
+			return LXP_ERR_NAME_TOO_LONG;
+		g_async_request.args.path.path = g_async_path;
+		break;
+	case FS_REQ_PATH_RENAME:
+		if (async_copy_path(g_async_path, source->args.path_rename.old_path) != LXP_OK ||
+		    async_copy_path(g_async_new_path, source->args.path_rename.new_path) != LXP_OK)
+			return LXP_ERR_NAME_TOO_LONG;
+		g_async_request.args.path_rename.old_path = g_async_path;
+		g_async_request.args.path_rename.new_path = g_async_new_path;
+		break;
+	default:
+		break;
+	}
+	return LXP_OK;
+}
+
+static int async_collect(struct fs_request *request)
+{
+	if (request->op != g_async_request.op)
+		return LXP_ERR_INVALID_PARAM;
+	switch (request->op) {
+	case FS_REQ_FILE_OPEN:
+		if (request->args.file_open.out)
+			*request->args.file_open.out = g_async_file;
+		break;
+	case FS_REQ_OBJECT_OPEN:
+		if (request->args.object_open.out)
+			*request->args.object_open.out = g_async_open;
+		break;
+	case FS_REQ_FILE_READ:
+		request->args.file_read.transferred = g_async_request.args.file_read.transferred;
+		if (request->args.file_read.transferred > request->args.file_read.count)
+			return LXP_ERR_IO;
+		if (request->args.file_read.transferred != 0u)
+			memcpy(request->args.file_read.buf, g_io_buffer,
+			       request->args.file_read.transferred);
+		break;
+	case FS_REQ_FILE_WRITE:
+		request->args.file_write.transferred = g_async_request.args.file_write.transferred;
+		break;
+	case FS_REQ_FILE_PREAD:
+		request->args.file_pread.transferred = g_async_request.args.file_pread.transferred;
+		if (request->args.file_pread.transferred > request->args.file_pread.count)
+			return LXP_ERR_IO;
+		if (request->args.file_pread.transferred != 0u)
+			memcpy(request->args.file_pread.buf, g_io_buffer,
+			       request->args.file_pread.transferred);
+		break;
+	case FS_REQ_FILE_PWRITE:
+		request->args.file_pwrite.transferred = g_async_request.args.file_pwrite.transferred;
+		break;
+	case FS_REQ_FILE_SEEK:
+		if (request->args.file_seek.new_offset)
+			*request->args.file_seek.new_offset = g_async_offset;
+		break;
+	case FS_REQ_FILE_STAT:
+		if (request->args.file_stat.out)
+			*request->args.file_stat.out = g_async_stat;
+		break;
+	case FS_REQ_DIR_OPEN:
+		if (request->args.dir_open.out)
+			*request->args.dir_open.out = g_async_dir;
+		break;
+	case FS_REQ_DIR_READ:
+		if (request->args.dir_read.entry)
+			*request->args.dir_read.entry = g_async_dirent;
+		break;
+	case FS_REQ_PATH_STAT:
+		if (request->args.path_stat.out)
+			*request->args.path_stat.out = g_async_stat;
+		break;
+	default:
+		break;
+	}
+	return g_async_request.result;
+}
+
 static void fs_worker(void *arg)
 {
 	(void)arg;
@@ -549,13 +700,22 @@ static void fs_worker(void *arg)
 		request->result = execute_request(request);
 		(void)ove_time_get_us(&request->finished_us);
 		int stop = request->op == FS_REQ_STOP;
-		ove_event_signal(g_complete);
+		if (request->asynchronous) {
+			if (__atomic_load_n(&g_async_cancelled, __ATOMIC_ACQUIRE)) {
+				__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
+			} else {
+				__atomic_store_n(&g_async_state, FS_ASYNC_COMPLETE, __ATOMIC_RELEASE);
+			}
+			lxp_fs_kick();
+		} else {
+			ove_event_signal(g_complete);
+		}
 		if (stop)
 			return;
 	}
 }
 
-static int submit(struct fs_request *request)
+static int submit_sync(struct fs_request *request)
 {
 	if (!g_active || request == NULL)
 		return LXP_ERR_INVALID_PARAM;
@@ -647,6 +807,97 @@ static int submit(struct fs_request *request)
 	return rc == OVE_OK ? request->result : rc;
 }
 
+static void async_metrics_complete(const struct fs_request *request, int result)
+{
+	uint64_t queue_us = request->started_us >= request->submitted_us
+				    ? request->started_us - request->submitted_us
+				    : 0;
+	uint64_t service_us = request->finished_us >= request->started_us
+				      ? request->finished_us - request->started_us
+				      : 0;
+	if (g_metrics.pending)
+		g_metrics.pending--;
+	g_metrics.requests_completed++;
+	if (result != LXP_OK && result != LXP_ERR_EOF)
+		g_metrics.requests_failed++;
+	if (request->op == FS_REQ_FILE_READ)
+		g_metrics.bytes_read += request->args.file_read.transferred;
+	else if (request->op == FS_REQ_FILE_PREAD)
+		g_metrics.bytes_read += request->args.file_pread.transferred;
+	else if (request->op == FS_REQ_FILE_WRITE)
+		g_metrics.bytes_written += request->args.file_write.transferred;
+	else if (request->op == FS_REQ_FILE_PWRITE)
+		g_metrics.bytes_written += request->args.file_pwrite.transferred;
+	g_metrics.queue_wait_us_total += queue_us;
+	if (queue_us > g_metrics.queue_wait_us_max)
+		g_metrics.queue_wait_us_max = queue_us;
+	g_metrics.service_us_total += service_us;
+	if (service_us > g_metrics.service_us_max)
+		g_metrics.service_us_max = service_us;
+}
+
+static int submit_async(struct fs_request *request)
+{
+	int state = __atomic_load_n(&g_async_state, __ATOMIC_ACQUIRE);
+	if (state == FS_ASYNC_ACTIVE)
+		return LXP_ERR_WOULD_BLOCK;
+	if (state == FS_ASYNC_COMPLETE) {
+		if (g_async_owner != g_selected_owner || request->op != g_async_request.op)
+			return LXP_ERR_WOULD_BLOCK;
+		int result = async_collect(request);
+		async_metrics_complete(&g_async_request, result);
+		g_async_owner = 0;
+		__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
+		return result;
+	}
+
+	if ((request->op == FS_REQ_FILE_WRITE || request->op == FS_REQ_FILE_PWRITE)) {
+		const void *source = request->op == FS_REQ_FILE_WRITE
+					     ? request->args.file_write.buf
+					     : request->args.file_pwrite.buf;
+		size_t count = request->op == FS_REQ_FILE_WRITE
+				       ? request->args.file_write.count
+				       : request->args.file_pwrite.count;
+		if ((source == NULL && count != 0u) || count > sizeof(g_io_buffer))
+			return LXP_ERR_INVALID_PARAM;
+		if (count)
+			memcpy(g_io_buffer, source, count);
+	} else if ((request->op == FS_REQ_FILE_READ &&
+		    (request->args.file_read.buf == NULL && request->args.file_read.count != 0u)) ||
+		   (request->op == FS_REQ_FILE_PREAD &&
+		    (request->args.file_pread.buf == NULL && request->args.file_pread.count != 0u))) {
+		return LXP_ERR_INVALID_PARAM;
+	}
+
+	int rc = async_prepare(request);
+	if (rc != LXP_OK)
+		return rc;
+	g_async_owner = g_selected_owner;
+	__atomic_store_n(&g_async_cancelled, 0, __ATOMIC_RELEASE);
+	(void)ove_time_get_us(&g_async_request.submitted_us);
+	g_metrics.requests_submitted++;
+	g_metrics.pending++;
+	if (g_metrics.pending > g_metrics.queue_depth_max)
+		g_metrics.queue_depth_max = g_metrics.pending;
+	__atomic_store_n(&g_async_state, FS_ASYNC_ACTIVE, __ATOMIC_RELEASE);
+	struct fs_request *queued = &g_async_request;
+	rc = ove_queue_send(g_request_queue, &queued, 0);
+	if (rc != OVE_OK) {
+		__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
+		g_metrics.pending--;
+		g_metrics.requests_failed++;
+		return rc;
+	}
+	return LXP_ERR_WOULD_BLOCK;
+}
+
+static int submit(struct fs_request *request)
+{
+	return g_selected_owner != 0u && request->op != FS_REQ_MOUNT && request->op != FS_REQ_STOP
+		       ? submit_async(request)
+		       : submit_sync(request);
+}
+
 static int fs_run_begin(void)
 {
 	struct fs_request request = {.op = FS_REQ_MOUNT};
@@ -656,6 +907,11 @@ static int fs_run_begin(void)
 		return LXP_ERR_WOULD_BLOCK;
 	memset(g_handles, 0, sizeof(g_handles));
 	memset(&g_metrics, 0, sizeof(g_metrics));
+	memset(&g_async_request, 0, sizeof(g_async_request));
+	g_selected_owner = 0;
+	g_async_owner = 0;
+	g_async_cancelled = 0;
+	g_async_state = FS_ASYNC_IDLE;
 	g_mounted = 0;
 	rc = ove_mutex_init(&g_submit_lock, &g_submit_lock_storage);
 	if (rc != OVE_OK)
@@ -698,6 +954,7 @@ static void fs_run_end(void)
 
 	if (!g_active)
 		return;
+	g_selected_owner = 0;
 	int rc = submit(&request);
 	if (rc == LXP_OK)
 		(void)ove_thread_deinit(g_worker);
@@ -706,6 +963,28 @@ static void fs_run_end(void)
 	ove_event_deinit(g_complete);
 	ove_mutex_deinit(g_submit_lock);
 	memset(g_handles, 0, sizeof(g_handles));
+}
+
+static void fs_request_owner(uint64_t owner)
+{
+	g_selected_owner = owner;
+}
+
+static void fs_request_cancel(uint64_t owner)
+{
+	if (owner == 0u || owner != g_async_owner)
+		return;
+	int state = __atomic_load_n(&g_async_state, __ATOMIC_ACQUIRE);
+	if (state == FS_ASYNC_COMPLETE) {
+		async_metrics_complete(&g_async_request, LXP_ERR_WOULD_BLOCK);
+		g_async_owner = 0;
+		__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
+	} else if (state == FS_ASYNC_ACTIVE) {
+		__atomic_store_n(&g_async_cancelled, 1, __ATOMIC_RELEASE);
+		if (g_metrics.pending)
+			g_metrics.pending--;
+		g_metrics.requests_failed++;
+	}
 }
 
 static int fs_file_open(const char *path, unsigned int flags, lxp_fs_file_t *out)
@@ -1010,6 +1289,8 @@ const lxp_fs_ops_t g_lxp_host_fs_ops = {
 	.struct_size = sizeof(lxp_fs_ops_t),
 	.run_begin = fs_run_begin,
 	.run_end = fs_run_end,
+	.request_owner = fs_request_owner,
+	.request_cancel = fs_request_cancel,
 	.file_open = fs_file_open,
 	.object_open = fs_object_open,
 	.file_close = fs_file_close,
