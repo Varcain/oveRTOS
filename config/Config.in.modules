@@ -59,16 +59,16 @@ config OVE_LINUX_GUEST_QUANTUM_MS
     default 10
     range 1 100
     help
-      Maximum continuous CPU budget for one Linux guest while another
-      equal-priority guest is runnable. Host real-time and coordinator threads
-      remain at higher priorities and can preempt guests immediately.
+      Base continuous CPU budget for a nice-0 Linux guest while another guest
+      is runnable. nice -20..19 maps to a bounded 40..1 share weight, scaling
+      this quantum around weight 20. Every guest remains in one best-effort
+      RTOS priority class; host real-time, service, and coordinator threads can
+      always preempt it immediately.
 
-      FreeRTOS applies this as a guest-only tick budget and NuttX sets its
-      round-robin interval. Zephyr 4.4's native time slicing is disabled for
-      the personality because its per-CPU slice timeout can deadlock the
-      tickless timeout drain under the guest park/resume rate. Zephyr guests
-      therefore rotate at blocking syscalls today; a compute-only guest still
-      needs a seam-specific handoff mechanism.
+      FreeRTOS applies a guest-only SysTick budget. NuttX adjusts only guest
+      SCHED_RR slices (subject to its kernel tick granularity). Zephyr keeps
+      native global time slicing disabled and uses a seam-owned guest-only
+      quantum timer, avoiding its per-CPU slice-timeout park/resume hazard.
 
 config OVE_BUILDROOT
     string "Buildroot tree path (Linux-personality rootfs.cpio source)"

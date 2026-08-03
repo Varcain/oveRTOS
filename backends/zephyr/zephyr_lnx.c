@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include "lxp/lxp_exec.h"
+#include "lxp/lxp_run.h"
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
@@ -229,6 +230,49 @@ static int current_slot(void)
 		if (g_slots[i].tid == t && lxp_slot_ref_is_runnable(task_slot_ref(i)))
 			return i;
 	return -1;
+}
+
+/* CONFIG_TIMESLICING stays disabled: Zephyr 4.4's per-CPU slice timeout can
+ * reinsert a zero-delta timeout when persistent guests suspend frequently.
+ * This seam-owned 1 ms sampler rotates only guest threads, using the public
+ * suspend/resume APIs to move an expired guest to the end of priority 6. */
+static struct k_timer g_guest_quantum_timer;
+static uint32_t g_guest_budget_ms;
+static int g_guest_budget_slot = -1;
+static uint8_t g_guest_quantum_timer_started;
+
+static void zephyr_guest_quantum_tick(struct k_timer *timer)
+{
+	(void)timer;
+	int current = current_slot();
+	if (!lxp_trap_active() || current < 0) {
+		g_guest_budget_slot = -1;
+		g_guest_budget_ms = 0;
+		return;
+	}
+	if (g_guest_budget_slot != current) {
+		g_guest_budget_slot = current;
+		g_guest_budget_ms = 0;
+	}
+	uint32_t weight = lxp_guest_sched_weight(current);
+	uint32_t quantum_ms =
+		((uint32_t)CONFIG_OVE_LINUX_GUEST_QUANTUM_MS * weight + 19u) / 20u;
+	if (quantum_ms == 0u)
+		quantum_ms = 1u;
+	if (++g_guest_budget_ms < quantum_ms)
+		return;
+	g_guest_budget_ms = 0;
+
+	for (int s = 0; s < LXP_NSLOT; s++) {
+		if (s == current || !g_slots[s].tid || lxp_guest_sched_weight(s) == 0u)
+			continue;
+		/* Both APIs are ISR-safe on the single-core port. Suspending and
+		 * immediately readying the interrupted thread preserves its task and
+		 * generation while placing it behind its equal-priority peers. */
+		k_thread_suspend(g_slots[current].tid);
+		k_thread_resume(g_slots[current].tid);
+		return;
+	}
 }
 
 /* Zephyr normally prints a long register/fault decode from fault context before
@@ -1140,7 +1184,22 @@ static int zephyr_prepare(void)
 		g_regions[r].policy_valid = 0;
 	for (int s = 0; s < LXP_NSLOT; s++)
 		g_slots[s].policy_valid = 0;
+	g_guest_budget_slot = -1;
+	g_guest_budget_ms = 0;
+	k_timer_init(&g_guest_quantum_timer, zephyr_guest_quantum_tick, NULL);
+	k_timer_start(&g_guest_quantum_timer, K_MSEC(1), K_MSEC(1));
+	g_guest_quantum_timer_started = 1u;
 	return LXP_OK;
+}
+
+static void zephyr_teardown(void)
+{
+	if (g_guest_quantum_timer_started) {
+		k_timer_stop(&g_guest_quantum_timer);
+		g_guest_quantum_timer_started = 0u;
+	}
+	g_guest_budget_slot = -1;
+	g_guest_budget_ms = 0;
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -1195,6 +1254,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
 	.struct_size = sizeof(lxp_os_ops_t),
 	.prepare = zephyr_prepare,
+	.teardown = zephyr_teardown,
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
 	.exec_capture = zephyr_exec_capture,

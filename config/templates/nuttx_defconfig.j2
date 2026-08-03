@@ -12,9 +12,9 @@
 CONFIG_DEBUG_FULLOPT=y
 
 {% if config.get("CONFIG_OVE_LINUX") == True %}
-# Linux guests share one NuttX priority. Give every runnable guest a bounded
-# turn even when it makes no syscalls; higher-priority host RT tasks remain
-# immediately preemptive.
+# Linux guests share one NuttX priority. This is the nice-0 base interval; the
+# seam scales each guest's SCHED_RR slice without changing its native priority.
+# Higher-priority host RT tasks remain immediately preemptive.
 CONFIG_RR_INTERVAL={{ config.get("CONFIG_OVE_LINUX_GUEST_QUANTUM_MS", 10) }}
 {% endif %}
 

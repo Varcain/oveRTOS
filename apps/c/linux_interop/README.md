@@ -58,6 +58,22 @@ virtual `/data` mount point remains visible, while operations below it return
 overlay: `/bin`, `/etc`, shared libraries, and the rest of `/` continue to come
 from the read-only CPIO image.
 
+## Guest scheduling and niceness
+
+All Linux guests run in one best-effort native RTOS priority class below the
+coordinator, filesystem worker, and host real-time work. `nice`, `renice`,
+`getpriority`, and `setpriority` alter only the CPU share among runnable guests;
+they never map to a native RTOS priority. Nice values survive `fork`/`clone` and
+`exec`, and `/proc/<pid>/stat` and `/proc/<pid>/status` report them.
+
+The embedded policy maps nice -20..19 linearly to bounded weights 40..1, with
+nice 0 at weight 20. `CONFIG_OVE_LINUX_GUEST_QUANTUM_MS` is the nice-0 base
+quantum. FreeRTOS and Zephyr rotate only guest tasks from seam-owned tick paths;
+Zephyr intentionally leaves global `CONFIG_TIMESLICING` off. NuttX scales the
+guests' existing equal-priority `SCHED_RR` slices, with ratios rounded to the
+native kernel tick. In every engine, higher-priority host work remains
+immediately preemptive.
+
 After flashing any of the three STM32 Full-profile images, run the destructive,
 namespace-confined hardware regression (it only uses
 `/tmp/.ove-storage-probe` and `/data/.ove-storage-probe`):
