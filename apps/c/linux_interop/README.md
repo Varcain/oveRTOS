@@ -83,11 +83,12 @@ they never map to a native RTOS priority. Nice values survive `fork`/`clone` and
 
 The embedded policy maps nice -20..19 linearly to bounded weights 40..1, with
 nice 0 at weight 20. `CONFIG_OVE_LINUX_GUEST_QUANTUM_MS` is the nice-0 base
-quantum. FreeRTOS and Zephyr rotate only guest tasks from seam-owned tick paths;
-Zephyr intentionally leaves global `CONFIG_TIMESLICING` off. NuttX scales the
-guests' existing equal-priority `SCHED_RR` slices, with ratios rounded to the
-native kernel tick. In every engine, higher-priority host work remains
-immediately preemptive.
+quantum. FreeRTOS rotates guest tasks from its seam-owned tick path. Zephyr's
+timer callback only accounts the quantum and wakes a small native seam thread
+to perform the guest ready-queue rotation in thread context; global
+`CONFIG_TIMESLICING` remains off. NuttX scales the guests' existing
+equal-priority `SCHED_RR` slices, with ratios rounded to the native kernel tick.
+In every engine, higher-priority host work remains immediately preemptive.
 
 After flashing any of the three STM32 Full-profile images, run the destructive,
 namespace-confined hardware regression (it only uses
