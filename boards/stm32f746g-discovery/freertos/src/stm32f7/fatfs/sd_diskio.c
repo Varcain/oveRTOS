@@ -50,6 +50,33 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#define SD_DMA_BUFFER_SIZE 512u
+#define SD_DMA_CACHE_LINE_SIZE 32u
+#define SD_DMA_TIMEOUT_MS 5000u
+
+_Static_assert(_MAX_SS == SD_DMA_BUFFER_SIZE, "STM32 SD DMA bounce buffer must hold one sector");
+_Static_assert((SD_DMA_BUFFER_SIZE % SD_DMA_CACHE_LINE_SIZE) == 0u,
+	       "SD DMA buffer must span complete M7 cache lines");
+
+extern SD_HandleTypeDef uSdHandle;
+
+enum sd_dma_result {
+	SD_DMA_PENDING = 0,
+	SD_DMA_COMPLETE,
+	SD_DMA_ERROR,
+};
+
+/* FatFs passes both its internal sector window and caller-owned buffers to the
+ * disk layer. Their cache-line alignment and neighbouring ownership are not
+ * guaranteed, so cache maintenance on those addresses could discard unrelated
+ * dirty data. Keep DMA ownership in one aligned, whole-cache-line bounce sector
+ * and copy at the CPU boundary instead. The disk API is already serialized by
+ * FatFs/the native FS server, hence one buffer and one waiter are sufficient. */
+static uint32_t g_dma_buffer[SD_DMA_BUFFER_SIZE / sizeof(uint32_t)]
+	__attribute__((aligned(SD_DMA_CACHE_LINE_SIZE)));
+static volatile TaskHandle_t g_dma_waiter;
+static volatile uint8_t g_dma_result;
+
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -77,6 +104,93 @@ const Diskio_drvTypeDef SD_Driver = {
 	SD_ioctl,
 #endif /* _USE_IOCTL == 1 */
 };
+
+static void sd_dma_complete_from_isr(uint8_t result)
+{
+	TaskHandle_t waiter = g_dma_waiter;
+	BaseType_t wake = pdFALSE;
+
+	g_dma_result = result;
+	__DMB();
+	if (waiter != NULL) {
+		vTaskNotifyGiveFromISR(waiter, &wake);
+		portYIELD_FROM_ISR(wake);
+	}
+}
+
+void BSP_SD_ReadCpltCallback(void)
+{
+	sd_dma_complete_from_isr(SD_DMA_COMPLETE);
+}
+
+void BSP_SD_WriteCpltCallback(void)
+{
+	sd_dma_complete_from_isr(SD_DMA_COMPLETE);
+}
+
+void BSP_SD_AbortCallback(void)
+{
+	sd_dma_complete_from_isr(SD_DMA_ERROR);
+}
+
+void HAL_SD_ErrorCallback(SD_HandleTypeDef *hsd)
+{
+	(void)hsd;
+	sd_dma_complete_from_isr(SD_DMA_ERROR);
+}
+
+void SDMMC1_IRQHandler(void)
+{
+	HAL_SD_IRQHandler(&uSdHandle);
+}
+
+void DMA2_Stream3_IRQHandler(void)
+{
+	HAL_DMA_IRQHandler(uSdHandle.hdmarx);
+}
+
+void DMA2_Stream6_IRQHandler(void)
+{
+	HAL_DMA_IRQHandler(uSdHandle.hdmatx);
+}
+
+static void sd_dma_begin(void)
+{
+	/* A late notification from an aborted transfer must not satisfy the next
+	 * request. Publish the waiter only after draining its notification slot. */
+	(void)ulTaskNotifyTake(pdTRUE, 0u);
+	g_dma_result = SD_DMA_PENDING;
+	g_dma_waiter = xTaskGetCurrentTaskHandle();
+	__DMB();
+}
+
+static DRESULT sd_dma_wait(void)
+{
+	if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SD_DMA_TIMEOUT_MS)) == 0u) {
+		g_dma_waiter = NULL;
+		__DMB();
+		(void)HAL_SD_Abort(&uSdHandle);
+		return RES_ERROR;
+	}
+
+	uint8_t result = g_dma_result;
+	g_dma_waiter = NULL;
+	__DMB();
+	return result == SD_DMA_COMPLETE ? RES_OK : RES_ERROR;
+}
+
+static DRESULT sd_wait_card_ready(void)
+{
+	TickType_t start = xTaskGetTickCount();
+	TickType_t timeout = pdMS_TO_TICKS(SD_DMA_TIMEOUT_MS);
+
+	while (BSP_SD_GetCardState() != MSD_OK) {
+		if (xTaskGetTickCount() - start >= timeout)
+			return RES_ERROR;
+		vTaskDelay(1u);
+	}
+	return RES_OK;
+}
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -125,32 +239,23 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 {
 	UINT i;
 	DRESULT res = RES_OK;
-	uint8_t sd_res;
 
 	for (i = 0; i < count; i++) {
-		uint32_t timeout = 100000;
-
-		/* Mask interrupts during SDMMC FIFO polling to prevent overflow.
-       A single 512-byte sector takes ~50 us at 25 MHz / 4-bit — well
-       within the audio DMA deadline (~2.9 ms at 44.1 kHz / 128 samples).
-       taskENTER_CRITICAL raises BASEPRI to configMAX_SYSCALL_INTERRUPT_
-       PRIORITY (5), masking audio DMA (6) and SysTick (15). */
-		taskENTER_CRITICAL();
-		sd_res = BSP_SD_ReadBlocks((uint32_t *)(buff + i * _MAX_SS), (uint32_t)(sector + i),
-					   1, SD_DATATIMEOUT);
-		taskEXIT_CRITICAL();
-
-		if (sd_res != MSD_OK) {
+		/* Clean first so no pre-DMA dirty line can later overwrite received
+		 * bytes, then invalidate after completion before the CPU copies them. */
+		SCB_CleanInvalidateDCache_by_Addr(g_dma_buffer, sizeof(g_dma_buffer));
+		sd_dma_begin();
+		if (BSP_SD_ReadBlocks_DMA(g_dma_buffer, (uint32_t)(sector + i), 1u) != MSD_OK) {
+			g_dma_waiter = NULL;
+			__DMB();
 			res = RES_ERROR;
-			break;
+		} else {
+			res = sd_dma_wait();
 		}
-
-		/* Poll for card ready with interrupts enabled */
-		while (BSP_SD_GetCardState() != MSD_OK) {
-			if (timeout-- == 0) {
-				res = RES_ERROR;
-				break;
-			}
+		if (res == RES_OK) {
+			SCB_InvalidateDCache_by_Addr(g_dma_buffer, sizeof(g_dma_buffer));
+			memcpy(buff + i * _MAX_SS, g_dma_buffer, _MAX_SS);
+			res = sd_wait_card_ready();
 		}
 		if (res != RES_OK)
 			break;
@@ -172,27 +277,20 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 {
 	UINT i;
 	DRESULT res = RES_OK;
-	uint8_t sd_res;
 
 	for (i = 0; i < count; i++) {
-		uint32_t timeout = 100000;
-
-		taskENTER_CRITICAL();
-		sd_res = BSP_SD_WriteBlocks((uint32_t *)(buff + i * _MAX_SS),
-					    (uint32_t)(sector + i), 1, SD_DATATIMEOUT);
-		taskEXIT_CRITICAL();
-
-		if (sd_res != MSD_OK) {
+		memcpy(g_dma_buffer, buff + i * _MAX_SS, _MAX_SS);
+		SCB_CleanDCache_by_Addr(g_dma_buffer, sizeof(g_dma_buffer));
+		sd_dma_begin();
+		if (BSP_SD_WriteBlocks_DMA(g_dma_buffer, (uint32_t)(sector + i), 1u) != MSD_OK) {
+			g_dma_waiter = NULL;
+			__DMB();
 			res = RES_ERROR;
-			break;
+		} else {
+			res = sd_dma_wait();
 		}
-
-		while (BSP_SD_GetCardState() != MSD_OK) {
-			if (timeout-- == 0) {
-				res = RES_ERROR;
-				break;
-			}
-		}
+		if (res == RES_OK)
+			res = sd_wait_card_ready();
 		if (res != RES_OK)
 			break;
 	}
