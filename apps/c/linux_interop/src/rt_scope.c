@@ -686,6 +686,7 @@ struct rt_scope_totals {
 	uint32_t releases;
 	uint32_t executions;
 	uint32_t missed;
+	uint32_t pending;
 	uint32_t late_finish;
 	uint32_t irq_overrun;
 	uint32_t irq_entry_age_max_ticks;
@@ -696,6 +697,9 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 {
 	uint32_t before;
 	uint32_t after;
+	uint32_t release_before;
+	uint32_t release_after;
+	uint32_t phase_ticks;
 
 	do {
 		before = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
@@ -709,10 +713,40 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 		totals->irq_overrun = __atomic_load_n(&g_irq_overrun_count, __ATOMIC_RELAXED);
 		totals->irq_entry_age_max_ticks =
 			__atomic_load_n(&g_irq_entry_age_max_ticks, __ATOMIC_RELAXED);
-		totals->releases = __atomic_load_n(&g_deadline_count, __ATOMIC_ACQUIRE);
 		totals->metrics = g_lifetime_metrics;
+		do {
+			release_before =
+				__atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
+			if ((release_before & 1u) != 0u)
+				continue;
+			totals->releases =
+				__atomic_load_n(&g_deadline_count, __ATOMIC_RELAXED);
+			phase_ticks = RT_TIM3_CNT;
+			release_after =
+				__atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
+		} while (release_before != release_after || (release_after & 1u) != 0u);
 		after = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
 	} while (before != after || (after & 1u) != 0u);
+
+	/* A response acknowledges every release up to its sampled deadline. While
+	 * that task is stalled, all outstanding releases except the newest are
+	 * already impossible to execute distinctly. Fold those confirmed misses
+	 * and their live age into the read-only snapshot immediately instead of
+	 * reporting a misleading zero until the response task eventually runs. */
+	totals->pending = totals->releases - totals->last_execution_deadline;
+	uint32_t backlog_missed = totals->pending > 0u ? totals->pending - 1u : 0u;
+	if (UINT32_MAX - totals->missed < backlog_missed)
+		totals->missed = UINT32_MAX;
+	else
+		totals->missed += backlog_missed;
+	if (backlog_missed > totals->metrics.max_consecutive_missed)
+		totals->metrics.max_consecutive_missed = backlog_missed;
+	if (totals->pending != 0u) {
+		uint64_t age = (uint64_t)backlog_missed * RT_SCOPE_PERIOD_TICKS + phase_ticks;
+		uint32_t age_ticks = age > UINT32_MAX ? UINT32_MAX : (uint32_t)age;
+		if (age_ticks > totals->metrics.oldest_release_age_max_ticks)
+			totals->metrics.oldest_release_age_max_ticks = age_ticks;
+	}
 }
 
 struct proc_builder {
@@ -784,7 +818,7 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	proc_metric(&builder, "missed", totals.missed);
 	proc_metric(&builder, "late_finish", totals.late_finish);
 	proc_metric(&builder, "irq_overrun", totals.irq_overrun);
-	proc_metric(&builder, "pending", totals.releases - totals.last_execution_deadline);
+	proc_metric(&builder, "pending", totals.pending);
 	proc_metric(&builder, "dispatch_samples", metrics->executions);
 	proc_metric(&builder, "dispatch_min_ns", ticks_to_ns(dispatch_min));
 	proc_metric(&builder, "dispatch_avg_ns", ticks_to_ns(average_ticks));
@@ -858,7 +892,7 @@ static void report_metrics(void)
 	p = append_text(p, " irq-overrun=");
 	p = append_u32(p, totals.irq_overrun);
 	p = append_text(p, " pending=");
-	p = append_u32(p, totals.releases - totals.last_execution_deadline);
+	p = append_u32(p, totals.pending);
 	*p++ = '\r';
 	*p++ = '\n';
 	*p = '\0';
