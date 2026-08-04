@@ -240,7 +240,10 @@ static int current_slot(void)
  * save and eventually leave an invalid PSP/ready-queue state. */
 static struct k_timer g_guest_quantum_timer;
 K_SEM_DEFINE(g_guest_quantum_sem, 0, 1);
-K_THREAD_STACK_DEFINE(g_guest_quantum_stack, 1024);
+/* This seam worker always runs in supervisor mode. A userspace-capable stack
+ * makes Zephyr reserve a second CONFIG_PRIVILEGED_STACK_SIZE allocation that
+ * can never be used and needlessly consumes the constrained internal SRAM. */
+K_KERNEL_STACK_DEFINE(g_guest_quantum_stack, 1024);
 static struct k_thread g_guest_quantum_thread;
 static k_tid_t g_guest_quantum_tid;
 static uint32_t g_guest_budget_ms;
@@ -1238,7 +1241,7 @@ static int zephyr_prepare(void)
 	k_sem_reset(&g_guest_quantum_sem);
 	g_guest_quantum_tid =
 		k_thread_create(&g_guest_quantum_thread, g_guest_quantum_stack,
-				K_THREAD_STACK_SIZEOF(g_guest_quantum_stack),
+				K_KERNEL_STACK_SIZEOF(g_guest_quantum_stack),
 				zephyr_guest_quantum_worker, NULL, NULL, NULL,
 				OVE_ZEPHYR_PRIO_NET_TC, 0, K_NO_WAIT);
 	k_thread_name_set(g_guest_quantum_tid, "lxp-q");
