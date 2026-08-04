@@ -234,11 +234,20 @@ static int current_slot(void)
 
 /* CONFIG_TIMESLICING stays disabled: Zephyr 4.4's per-CPU slice timeout can
  * reinsert a zero-delta timeout when persistent guests suspend frequently.
- * This seam-owned 1 ms sampler rotates only guest threads, using the public
- * suspend/resume APIs to move an expired guest to the end of priority 6. */
+ * This seam-owned 1 ms sampler accounts only guest threads. Rotation is
+ * deferred to a native thread: suspending and resuming the interrupted K_USER
+ * thread directly from timer ISR context can race the architecture's exception
+ * save and eventually leave an invalid PSP/ready-queue state. */
 static struct k_timer g_guest_quantum_timer;
+K_SEM_DEFINE(g_guest_quantum_sem, 0, 1);
+K_THREAD_STACK_DEFINE(g_guest_quantum_stack, 1024);
+static struct k_thread g_guest_quantum_thread;
+static k_tid_t g_guest_quantum_tid;
 static uint32_t g_guest_budget_ms;
 static int g_guest_budget_slot = -1;
+static int g_guest_quantum_target = -1;
+static uint32_t g_guest_quantum_generation;
+static uint8_t g_guest_quantum_stop;
 static uint8_t g_guest_quantum_timer_started;
 
 static void zephyr_guest_quantum_tick(struct k_timer *timer)
@@ -266,12 +275,49 @@ static void zephyr_guest_quantum_tick(struct k_timer *timer)
 	for (int s = 0; s < LXP_NSLOT; s++) {
 		if (s == current || !g_slots[s].tid || lxp_guest_sched_weight(s) == 0u)
 			continue;
-		/* Both APIs are ISR-safe on the single-core port. Suspending and
-		 * immediately readying the interrupted thread preserves its task and
-		 * generation while placing it behind its equal-priority peers. */
-		k_thread_suspend(g_slots[current].tid);
-		k_thread_resume(g_slots[current].tid);
+		g_guest_quantum_target = current;
+		g_guest_quantum_generation = g_slots[current].generation;
+		k_sem_give(&g_guest_quantum_sem);
 		return;
+	}
+}
+
+static void zephyr_guest_quantum_worker(void *unused1, void *unused2, void *unused3)
+{
+	ARG_UNUSED(unused1);
+	ARG_UNUSED(unused2);
+	ARG_UNUSED(unused3);
+	for (;;) {
+		k_sem_take(&g_guest_quantum_sem, K_FOREVER);
+		/* Keep the target's LXP lifecycle state and Zephyr ready-queue move
+		 * indivisible. A higher-priority coordinator may otherwise park the
+		 * target between the check and resume, which would wake a blocked
+		 * syscall guest behind the coordinator's back. */
+		unsigned int key = irq_lock();
+		if (g_guest_quantum_stop) {
+			irq_unlock(key);
+			return;
+		}
+		int target = g_guest_quantum_target;
+		uint32_t generation = g_guest_quantum_generation;
+		g_guest_quantum_target = -1;
+		if (target >= 0 && target < LXP_NSLOT && g_slots[target].tid &&
+		    g_slots[target].generation == generation &&
+		    lxp_slot_ref_is_runnable(task_slot_ref(target))) {
+			for (int s = 0; s < LXP_NSLOT; s++) {
+				if (s == target || !g_slots[s].tid ||
+				    lxp_guest_sched_weight(s) == 0u)
+					continue;
+				/* In thread context these public APIs requeue an inactive
+				 * peer without touching an in-flight exception save. The
+				 * outer IRQ lock defers the resulting context switch until
+				 * both operations and the lifecycle check are complete. */
+				k_thread_suspend(g_slots[target].tid);
+				k_thread_resume(g_slots[target].tid);
+				break;
+			}
+		}
+		irq_unlock(key);
 	}
 }
 
@@ -1186,6 +1232,16 @@ static int zephyr_prepare(void)
 		g_slots[s].policy_valid = 0;
 	g_guest_budget_slot = -1;
 	g_guest_budget_ms = 0;
+	g_guest_quantum_target = -1;
+	g_guest_quantum_generation = 0u;
+	g_guest_quantum_stop = 0u;
+	k_sem_reset(&g_guest_quantum_sem);
+	g_guest_quantum_tid =
+		k_thread_create(&g_guest_quantum_thread, g_guest_quantum_stack,
+				K_THREAD_STACK_SIZEOF(g_guest_quantum_stack),
+				zephyr_guest_quantum_worker, NULL, NULL, NULL,
+				OVE_ZEPHYR_PRIO_NET_TC, 0, K_NO_WAIT);
+	k_thread_name_set(g_guest_quantum_tid, "lxp-q");
 	k_timer_init(&g_guest_quantum_timer, zephyr_guest_quantum_tick, NULL);
 	k_timer_start(&g_guest_quantum_timer, K_MSEC(1), K_MSEC(1));
 	g_guest_quantum_timer_started = 1u;
@@ -1198,8 +1254,15 @@ static void zephyr_teardown(void)
 		k_timer_stop(&g_guest_quantum_timer);
 		g_guest_quantum_timer_started = 0u;
 	}
+	if (g_guest_quantum_tid) {
+		g_guest_quantum_stop = 1u;
+		k_sem_give(&g_guest_quantum_sem);
+		(void)k_thread_join(g_guest_quantum_tid, K_FOREVER);
+		g_guest_quantum_tid = NULL;
+	}
 	g_guest_budget_slot = -1;
 	g_guest_budget_ms = 0;
+	g_guest_quantum_target = -1;
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)

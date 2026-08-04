@@ -276,9 +276,10 @@ CONFIG_MAX_THREAD_BYTES=4
 # Keep native round-robin disabled for the personality. On Zephyr 4.4 its
 # per-CPU slice-timeout reset can reinsert a zero-delta timeout while tickless
 # sys_clock_announce() drains elapsed ticks, locking STM32 under frequent guest
-# park/resume. The LXP seam instead rotates only priority-6 guest threads with
-# its own bounded quantum timer; coordinator and host RT priorities 0..5 remain
-# immediately preemptive and unrelated equal-priority work is unaffected.
+# park/resume. The LXP seam instead accounts only priority-6 guests in a bounded
+# timer callback and wakes a priority-5 seam thread to rotate an expired guest
+# in thread context. Coordinator and host RT priorities 0..4 remain immediately
+# preemptive and unrelated equal-priority work is unaffected.
 CONFIG_TIMESLICING=n
 # Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the
 # program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC

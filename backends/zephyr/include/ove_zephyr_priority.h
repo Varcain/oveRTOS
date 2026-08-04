@@ -19,7 +19,7 @@
  *   2 high
  *   3 coordinator     privileged LXP run loop (main)
  *   4 above-normal    Ethernet RX
- *   5 network TC
+ *   5 network TC / guest-quantum server
  *   6 guest           unprivileged Linux programs
  *   7 system workqueue
  *   8..14 remaining public bands
