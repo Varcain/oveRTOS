@@ -149,10 +149,14 @@ fresh timing window plus lifetime failure counters every 10 seconds:
 `missed` counts timer releases for which no distinct response execution began.
 `irq-overrun` is the subset recovered after multiple hardware releases collapsed
 into one pending TIM3 interrupt, and `late-finish` counts responses that crossed
-the following 1 ms release. `pending` is an instantaneous release already
-scheduled but not yet started; it is not counted as missed. The software report
-adds a few register accesses to the measured path, so keep the GPIO capture as
-the independent physical cross-check.
+the following 1 ms release. `pending` is the number of releases not yet
+acknowledged by the response task. One pending release can still become the next
+execution; when the backlog exceeds one, the older releases are already
+unserviceable and the lifetime `missed`, `oldest-release`, and
+`max-consecutive-missed` snapshot fields include them immediately. They no
+longer remain falsely at zero while a response task is stalled. The software
+report adds a few register accesses to the measured path, so keep the GPIO
+capture as the independent physical cross-check.
 
 `dispatch-us` retains the phase of the newest timer release, which is directly
 comparable with the CH1-to-CH2 delay while no release is missed. Because that
