@@ -140,6 +140,7 @@ fresh timing window plus lifetime failure counters every 10 seconds:
 ```text
 [rt-scope] window releases=10082 exec=10082 missed=0 late-finish=0 | total releases=180831 exec=180831 missed=0 late-finish=0 irq-overrun=0 pending=0
 [rt-scope] dispatch-us min=7.30 avg=10.13 p99<=20 p99.9<=250 max=364.80 jitter=357.50
+[rt-scope] oldest-release-us window=364.80 max-consecutive-missed=0 | total=364.80 max-consecutive-missed=0 irq-entry=2.11
 [rt-scope] work-us min=5.15 max=5.37 late-finish=0
 [rt-scope] svc-us window calls=11430 min=10.87 avg=12.20 max=13.47 syscall=413(pselect6_time64)
 [rt-scope] svc-total calls=102176 avg-us=12.20 max-us=13.69 syscall=403(clock_gettime64)
@@ -152,6 +153,14 @@ the following 1 ms release. `pending` is an instantaneous release already
 scheduled but not yet started; it is not counted as missed. The software report
 adds a few register accesses to the measured path, so keep the GPIO capture as
 the independent physical cross-check.
+
+`dispatch-us` retains the phase of the newest timer release, which is directly
+comparable with the CH1-to-CH2 delay while no release is missed. Because that
+phase wraps every 1 ms, `oldest-release-us` separately adds all collapsed or
+unserved periods and is the true worst response age when misses occur.
+`max-consecutive-missed` reports the longest such run. `irq-entry` measures the
+oldest release's age when TIM3's ISR finally began; compare it with the total
+oldest-release age to separate interrupt masking from post-ISR scheduling delay.
 
 On Zephyr, TIM3 runs at ordinary IRQ priority 0 (the highest kernel-callable
 level). Ethernet runs at 2; LTDC, QSPI, USART1, EXTI, and DMA2 run at 3. The
@@ -175,13 +184,14 @@ cat /proc/rt_scope
 ```
 
 `/proc/rt_scope` is a coherent, non-destructive lifetime snapshot. It reports
-release/execution/failure counts, dispatch and fixed-work timings in integer
-nanoseconds, histogram-derived p99/p99.9 ceilings, and the lifetime SVC timing
-on FreeRTOS and Zephyr. `timer_hz` and `svc_counter_hz` document the conversion
-bases. NuttX reports `svc_available 0` because its shared native/personality SVC
-path does not yet have the same bounded timing point. Opening the file neither
-rotates the 10-second UART window nor resets any counter, so benchmark readers
-cannot perturb or consume the measurement.
+release/execution/failure counts, newest- and oldest-release dispatch maxima,
+the longest missed run, ISR-entry and fixed-work timings in integer nanoseconds,
+histogram-derived p99/p99.9 ceilings, and the lifetime SVC timing on FreeRTOS
+and Zephyr. `timer_hz` and `svc_counter_hz` document the conversion bases. NuttX
+reports `svc_available 0` because its shared native/personality SVC path does not
+yet have the same bounded timing point. Opening the file neither rotates the
+10-second UART window nor resets any counter, so benchmark readers cannot
+perturb or consume the measurement.
 
 Zephyr also prints `irq-lock-us`: the count, average, and maximum duration of
 the coordinator's IRQ-masked process-table snapshots for both the current

@@ -153,6 +153,8 @@ static volatile uint32_t g_payload_state = 0x6d2b79f5u;
 static volatile uint32_t g_deadline_count;
 static volatile uint32_t g_response_count;
 static volatile uint32_t g_irq_overrun_count;
+static volatile uint32_t g_release_generation;
+static volatile uint32_t g_irq_entry_age_max_ticks;
 static uint32_t g_last_deadline_us;
 static volatile uint32_t g_last_execution_deadline;
 static volatile uint32_t g_total_executions;
@@ -167,6 +169,8 @@ struct rt_scope_metrics {
 	uint32_t late_finish;
 	uint32_t dispatch_min_ticks;
 	uint32_t dispatch_max_ticks;
+	uint32_t oldest_release_age_max_ticks;
+	uint32_t max_consecutive_missed;
 	uint64_t dispatch_sum_ticks;
 	uint32_t work_min_ticks;
 	uint32_t work_max_ticks;
@@ -205,18 +209,31 @@ static void timer_update(void)
 	 * the 32-bit TIM5 timebase recovers how many 1 ms releases elapsed even
 	 * when the TIM3 update flag was already pending. */
 	uint32_t now_us = RT_TIM5_CNT;
-	uint32_t phase_us = RT_TIM3_CNT / RT_SCOPE_TICKS_PER_US;
+	uint32_t phase_ticks = RT_TIM3_CNT;
+	uint32_t phase_us = phase_ticks / RT_SCOPE_TICKS_PER_US;
 	uint32_t deadline_us = now_us - phase_us;
 	uint32_t elapsed_us = deadline_us - g_last_deadline_us;
 	uint32_t periods = (elapsed_us + RT_SCOPE_PERIOD_US / 2u) / RT_SCOPE_PERIOD_US;
 
 	if (periods == 0u)
 		periods = 1u;
+	uint64_t irq_entry_age = (uint64_t)(periods - 1u) * RT_SCOPE_PERIOD_TICKS +
+				 phase_ticks;
+	uint32_t irq_entry_age_ticks =
+		irq_entry_age > UINT32_MAX ? UINT32_MAX : (uint32_t)irq_entry_age;
+	if (irq_entry_age_ticks > g_irq_entry_age_max_ticks)
+		g_irq_entry_age_max_ticks = irq_entry_age_ticks;
+
+	/* Publish the release count and its sampled timer phase as one observation.
+	 * The response thread uses this sequence counter to avoid combining a new
+	 * release count with the previous period's phase (or vice versa). */
+	__atomic_add_fetch(&g_release_generation, 1u, __ATOMIC_ACQ_REL);
 	g_last_deadline_us += periods * RT_SCOPE_PERIOD_US;
 	RT_TIM3_SR = 0u;
 	if (periods > 1u)
 		__atomic_add_fetch(&g_irq_overrun_count, periods - 1u, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&g_deadline_count, periods, __ATOMIC_RELEASE);
+	__atomic_add_fetch(&g_deadline_count, periods, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&g_release_generation, 1u, __ATOMIC_RELEASE);
 	ove_event_signal_from_isr(g_deadline_event);
 }
 
@@ -301,7 +318,8 @@ static uint32_t histogram_bin(uint32_t ticks)
 }
 
 static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_ticks,
-			uint32_t work_ticks, uint32_t missed, int late_finish)
+			uint32_t oldest_release_age_ticks, uint32_t work_ticks, uint32_t missed,
+			int late_finish)
 {
 	metrics->executions++;
 	metrics->missed += missed;
@@ -311,6 +329,10 @@ static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_tick
 		metrics->dispatch_min_ticks = dispatch_ticks;
 	if (dispatch_ticks > metrics->dispatch_max_ticks)
 		metrics->dispatch_max_ticks = dispatch_ticks;
+	if (oldest_release_age_ticks > metrics->oldest_release_age_max_ticks)
+		metrics->oldest_release_age_max_ticks = oldest_release_age_ticks;
+	if (missed > metrics->max_consecutive_missed)
+		metrics->max_consecutive_missed = missed;
 	metrics->dispatch_sum_ticks += dispatch_ticks;
 	if (work_ticks < metrics->work_min_ticks)
 		metrics->work_min_ticks = work_ticks;
@@ -319,14 +341,17 @@ static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_tick
 	metrics->dispatch_hist[histogram_bin(dispatch_ticks)]++;
 }
 
-static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks, uint32_t work_ticks,
-			   uint32_t missed, int late_finish)
+static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks,
+			   uint32_t oldest_release_age_ticks, uint32_t work_ticks, uint32_t missed,
+			   int late_finish)
 {
 	uint32_t active = __atomic_load_n(&g_active_metrics, __ATOMIC_ACQUIRE);
-	metrics_add(&g_metrics[active], dispatch_ticks, work_ticks, missed, late_finish);
+	metrics_add(&g_metrics[active], dispatch_ticks, oldest_release_age_ticks, work_ticks,
+		    missed, late_finish);
 
 	__atomic_add_fetch(&g_total_generation, 1u, __ATOMIC_ACQ_REL);
-	metrics_add(&g_lifetime_metrics, dispatch_ticks, work_ticks, missed, late_finish);
+	metrics_add(&g_lifetime_metrics, dispatch_ticks, oldest_release_age_ticks, work_ticks,
+		    missed, late_finish);
 	__atomic_add_fetch(&g_total_executions, 1u, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_total_missed, missed, __ATOMIC_RELAXED);
 	if (late_finish)
@@ -342,12 +367,29 @@ static void response_thread(void *arg)
 	for (;;) {
 		if (ove_event_wait(g_deadline_event, OVE_WAIT_FOREVER) != OVE_OK)
 			continue;
-		uint32_t deadline = __atomic_load_n(&g_deadline_count, __ATOMIC_ACQUIRE);
+		uint32_t before;
+		uint32_t after;
+		uint32_t deadline;
+		uint32_t dispatch_ticks;
+		for (;;) {
+			before = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
+			if ((before & 1u) != 0u)
+				continue;
+			deadline = __atomic_load_n(&g_deadline_count, __ATOMIC_RELAXED);
+			dispatch_ticks = RT_TIM3_CNT;
+			after = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
+			if (before == after && (after & 1u) == 0u)
+				break;
+		}
 		if (deadline == __atomic_load_n(&g_response_count, __ATOMIC_RELAXED))
 			continue; /* drain a stale counting-semaphore post on NuttX */
 
-		uint32_t dispatch_ticks = RT_TIM3_CNT;
 		uint32_t missed = deadline - g_last_execution_deadline - 1u;
+		uint64_t oldest_release_age = (uint64_t)missed * RT_SCOPE_PERIOD_TICKS +
+					      dispatch_ticks;
+		uint32_t oldest_release_age_ticks = oldest_release_age > UINT32_MAX
+							? UINT32_MAX
+							: (uint32_t)oldest_release_age;
 		response_high();
 
 		/* A fixed, observable host workload makes CH2 width useful as well as
@@ -370,7 +412,8 @@ static void response_thread(void *arg)
 		uint32_t work_ticks =
 			late_finish ? RT_SCOPE_PERIOD_TICKS - dispatch_ticks + finish_ticks
 				    : finish_ticks - dispatch_ticks;
-		metrics_record(deadline, dispatch_ticks, work_ticks, missed, late_finish);
+		metrics_record(deadline, dispatch_ticks, oldest_release_age_ticks, work_ticks,
+			       missed, late_finish);
 	}
 }
 
@@ -645,6 +688,7 @@ struct rt_scope_totals {
 	uint32_t missed;
 	uint32_t late_finish;
 	uint32_t irq_overrun;
+	uint32_t irq_entry_age_max_ticks;
 	uint32_t last_execution_deadline;
 };
 
@@ -663,6 +707,8 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 		totals->last_execution_deadline =
 			__atomic_load_n(&g_last_execution_deadline, __ATOMIC_RELAXED);
 		totals->irq_overrun = __atomic_load_n(&g_irq_overrun_count, __ATOMIC_RELAXED);
+		totals->irq_entry_age_max_ticks =
+			__atomic_load_n(&g_irq_entry_age_max_ticks, __ATOMIC_RELAXED);
 		totals->releases = __atomic_load_n(&g_deadline_count, __ATOMIC_ACQUIRE);
 		totals->metrics = g_lifetime_metrics;
 		after = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
@@ -749,6 +795,11 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	proc_metric(&builder, "dispatch_max_ns", ticks_to_ns(metrics->dispatch_max_ticks));
 	proc_metric(&builder, "dispatch_jitter_ns",
 		    ticks_to_ns(metrics->dispatch_max_ticks - dispatch_min));
+	proc_metric(&builder, "oldest_release_age_max_ns",
+		    ticks_to_ns(metrics->oldest_release_age_max_ticks));
+	proc_metric(&builder, "max_consecutive_missed", metrics->max_consecutive_missed);
+	proc_metric(&builder, "irq_entry_age_max_ns",
+		    ticks_to_ns(totals.irq_entry_age_max_ticks));
 	proc_metric(&builder, "work_min_ns", ticks_to_ns(work_min));
 	proc_metric(&builder, "work_max_ns", ticks_to_ns(metrics->work_max_ticks));
 
@@ -828,6 +879,21 @@ static void report_metrics(void)
 	p = append_ticks_us(p, metrics.dispatch_max_ticks);
 	p = append_text(p, " jitter=");
 	p = append_ticks_us(p, jitter_ticks);
+	*p++ = '\r';
+	*p++ = '\n';
+	*p = '\0';
+	g_report_write(line);
+
+	p = append_text(line, "[rt-scope] oldest-release-us window=");
+	p = append_ticks_us(p, metrics.oldest_release_age_max_ticks);
+	p = append_text(p, " max-consecutive-missed=");
+	p = append_u32(p, metrics.max_consecutive_missed);
+	p = append_text(p, " | total=");
+	p = append_ticks_us(p, totals.metrics.oldest_release_age_max_ticks);
+	p = append_text(p, " max-consecutive-missed=");
+	p = append_u32(p, totals.metrics.max_consecutive_missed);
+	p = append_text(p, " irq-entry=");
+	p = append_ticks_us(p, totals.irq_entry_age_max_ticks);
 	*p++ = '\r';
 	*p++ = '\n';
 	*p = '\0';
