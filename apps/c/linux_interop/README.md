@@ -165,6 +165,19 @@ unserved periods and is the true worst response age when misses occur.
 `max-consecutive-missed` reports the longest such run. `irq-entry` measures the
 oldest release's age when TIM3's ISR finally began; compare it with the total
 oldest-release age to separate interrupt masking from post-ISR scheduling delay.
+`irq-signal` is sampled after the ISR publishes the response event. A large
+entry-to-signal delta identifies time inside the interrupt/event-post path; a
+low signal age paired with a high dispatch age identifies scheduler latency
+after the wakeup was made runnable.
+
+NuttX additionally reports `scheduler_lock_probe_available 1`. Its
+`irq_preempt_locked_samples` counter records releases that interrupted a task
+while its scheduler lock was held. `preempt_locked_dispatch_max_ns` and its
+owner PID retain the worst corresponding dispatch, while
+`preempt_unlocked_dispatch_max_ns` classifies the remaining releases. This
+distinguishes NuttX's documented deferred-preemption path from interrupt
+tail-chaining without enabling the substantially heavier critical-monitor note
+instrumentation.
 
 On Zephyr, TIM3 runs at ordinary IRQ priority 0 (the highest kernel-callable
 level). Ethernet runs at 2; LTDC, QSPI, USART1, EXTI, and DMA2 run at 3. The
