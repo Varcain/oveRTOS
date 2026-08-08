@@ -11,6 +11,7 @@
 #include "ove/thread.h"
 #include "ove/trace.h"
 #include "ove_backend_common.h"
+#include <nuttx/irq.h>
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
@@ -309,15 +310,28 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
+static void event_signal(ove_event_t evt)
+{
+	/* An ove_event is a binary auto-reset event, not a counting semaphore.
+	 * Keep NuttX's backing semaphore at one token just like Zephyr's k_sem
+	 * max=1 and FreeRTOS's explicit latch. The critical section makes the
+	 * read-and-post atomic against both task and ISR signalers. */
+	irqstate_t flags = enter_critical_section();
+	int value;
+	if (nxsem_get_value(&evt->sem, &value) == 0 && value < 1)
+		(void)nxsem_post(&evt->sem);
+	leave_critical_section(flags);
+}
+
 void ove_event_signal(ove_event_t evt)
 {
-	nxsem_post(&evt->sem);
+	event_signal(evt);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
-	nxsem_post(&evt->sem);
+	event_signal(evt);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
