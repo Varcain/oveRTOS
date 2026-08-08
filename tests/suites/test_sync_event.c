@@ -96,6 +96,22 @@ static void test_event_auto_reset(void **state)
 	ove_test_event_destroy(evt);
 }
 
+static void test_event_coalesces_repeated_signals(void **state)
+{
+	(void)state;
+	ove_event_t evt = NULL;
+	ove_test_event_create(&evt, &s_evt_storage);
+	ove_event_signal(evt);
+	ove_event_signal(evt);
+	assert_int_equal(ove_event_wait(evt, 0), OVE_OK);
+	assert_int_equal(ove_event_wait(evt, 0), OVE_ERR_TIMEOUT);
+	ove_event_signal_from_isr(evt);
+	ove_event_signal_from_isr(evt);
+	assert_int_equal(ove_event_wait(evt, 0), OVE_OK);
+	assert_int_equal(ove_event_wait(evt, 0), OVE_ERR_TIMEOUT);
+	ove_test_event_destroy(evt);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void test_event_destroy_null(void **state)
 {
@@ -115,6 +131,7 @@ int test_sync_event_run(void)
 		cmocka_unit_test(test_event_cross_thread),
 		cmocka_unit_test(test_event_signal_from_isr),
 		cmocka_unit_test(test_event_auto_reset),
+		cmocka_unit_test(test_event_coalesces_repeated_signals),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_event_destroy_null),
 #endif

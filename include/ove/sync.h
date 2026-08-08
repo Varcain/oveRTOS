@@ -446,7 +446,8 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data) OVE_NON
  * Blocks the calling thread until ove_event_signal() or
  * ove_event_signal_from_isr() is called on @p evt, or until the timeout
  * expires.  The event is automatically reset (consumed) after a successful
- * wait.
+ * wait. Multiple signals issued before that wait coalesce into one pending
+ * event.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
