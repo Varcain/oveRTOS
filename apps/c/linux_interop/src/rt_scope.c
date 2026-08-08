@@ -48,6 +48,8 @@
 #include <arch/chip/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
+#include <nuttx/sched.h>
+#include <sched.h>
 #else
 #error "The STM32 real-time scope demo needs a supported target RTOS engine"
 #endif
@@ -155,6 +157,10 @@ static volatile uint32_t g_response_count;
 static volatile uint32_t g_irq_overrun_count;
 static volatile uint32_t g_release_generation;
 static volatile uint32_t g_irq_entry_age_max_ticks;
+static volatile uint32_t g_irq_signal_age_max_ticks;
+static volatile uint32_t g_irq_preempt_locked_samples;
+static volatile uint32_t g_release_preempt_locked;
+static volatile uint32_t g_release_preempt_lock_owner_pid;
 static uint32_t g_last_deadline_us;
 static volatile uint32_t g_last_execution_deadline;
 static volatile uint32_t g_total_executions;
@@ -171,6 +177,9 @@ struct rt_scope_metrics {
 	uint32_t dispatch_max_ticks;
 	uint32_t oldest_release_age_max_ticks;
 	uint32_t max_consecutive_missed;
+	uint32_t preempt_locked_dispatch_max_ticks;
+	uint32_t preempt_locked_dispatch_max_owner_pid;
+	uint32_t preempt_unlocked_dispatch_max_ticks;
 	uint64_t dispatch_sum_ticks;
 	uint32_t work_min_ticks;
 	uint32_t work_max_ticks;
@@ -217,10 +226,9 @@ static void timer_update(void)
 
 	if (periods == 0u)
 		periods = 1u;
-	uint64_t irq_entry_age = (uint64_t)(periods - 1u) * RT_SCOPE_PERIOD_TICKS +
-				 phase_ticks;
-	uint32_t irq_entry_age_ticks =
-		irq_entry_age > UINT32_MAX ? UINT32_MAX : (uint32_t)irq_entry_age;
+	uint64_t irq_entry_age = (uint64_t)(periods - 1u) * RT_SCOPE_PERIOD_TICKS + phase_ticks;
+	uint32_t irq_entry_age_ticks = irq_entry_age > UINT32_MAX ? UINT32_MAX
+								  : (uint32_t)irq_entry_age;
 	if (irq_entry_age_ticks > g_irq_entry_age_max_ticks)
 		g_irq_entry_age_max_ticks = irq_entry_age_ticks;
 
@@ -228,6 +236,20 @@ static void timer_update(void)
 	 * The response thread uses this sequence counter to avoid combining a new
 	 * release count with the previous period's phase (or vice versa). */
 	__atomic_add_fetch(&g_release_generation, 1u, __ATOMIC_ACQ_REL);
+#if defined(CONFIG_OVE_RTOS_NUTTX)
+	/* nxsem_post() defers a newly readied higher-priority task when the
+	 * interrupted NuttX task owns a scheduler lock. Preserve that state with
+	 * this release so a rare dispatch tail can be assigned to preemption
+	 * locking rather than merely inferred from the aggregate maximum. */
+	uint32_t preempt_locked = sched_lockcount() > 0 ? 1u : 0u;
+	g_release_preempt_locked = preempt_locked;
+	g_release_preempt_lock_owner_pid = preempt_locked ? (uint32_t)nxsched_getpid() : 0u;
+	if (preempt_locked)
+		__atomic_add_fetch(&g_irq_preempt_locked_samples, 1u, __ATOMIC_RELAXED);
+#else
+	g_release_preempt_locked = 0u;
+	g_release_preempt_lock_owner_pid = 0u;
+#endif
 	g_last_deadline_us += periods * RT_SCOPE_PERIOD_US;
 	RT_TIM3_SR = 0u;
 	if (periods > 1u)
@@ -235,6 +257,9 @@ static void timer_update(void)
 	__atomic_add_fetch(&g_deadline_count, periods, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_release_generation, 1u, __ATOMIC_RELEASE);
 	ove_event_signal_from_isr(g_deadline_event);
+	uint32_t signal_age_ticks = RT_TIM3_CNT;
+	if (signal_age_ticks > g_irq_signal_age_max_ticks)
+		g_irq_signal_age_max_ticks = signal_age_ticks;
 }
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
@@ -319,7 +344,7 @@ static uint32_t histogram_bin(uint32_t ticks)
 
 static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_ticks,
 			uint32_t oldest_release_age_ticks, uint32_t work_ticks, uint32_t missed,
-			int late_finish)
+			int late_finish, uint32_t preempt_locked, uint32_t preempt_lock_owner_pid)
 {
 	metrics->executions++;
 	metrics->missed += missed;
@@ -333,6 +358,12 @@ static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_tick
 		metrics->oldest_release_age_max_ticks = oldest_release_age_ticks;
 	if (missed > metrics->max_consecutive_missed)
 		metrics->max_consecutive_missed = missed;
+	if (preempt_locked && dispatch_ticks > metrics->preempt_locked_dispatch_max_ticks) {
+		metrics->preempt_locked_dispatch_max_ticks = dispatch_ticks;
+		metrics->preempt_locked_dispatch_max_owner_pid = preempt_lock_owner_pid;
+	}
+	if (!preempt_locked && dispatch_ticks > metrics->preempt_unlocked_dispatch_max_ticks)
+		metrics->preempt_unlocked_dispatch_max_ticks = dispatch_ticks;
 	metrics->dispatch_sum_ticks += dispatch_ticks;
 	if (work_ticks < metrics->work_min_ticks)
 		metrics->work_min_ticks = work_ticks;
@@ -343,15 +374,16 @@ static void metrics_add(struct rt_scope_metrics *metrics, uint32_t dispatch_tick
 
 static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks,
 			   uint32_t oldest_release_age_ticks, uint32_t work_ticks, uint32_t missed,
-			   int late_finish)
+			   int late_finish, uint32_t preempt_locked,
+			   uint32_t preempt_lock_owner_pid)
 {
 	uint32_t active = __atomic_load_n(&g_active_metrics, __ATOMIC_ACQUIRE);
 	metrics_add(&g_metrics[active], dispatch_ticks, oldest_release_age_ticks, work_ticks,
-		    missed, late_finish);
+		    missed, late_finish, preempt_locked, preempt_lock_owner_pid);
 
 	__atomic_add_fetch(&g_total_generation, 1u, __ATOMIC_ACQ_REL);
 	metrics_add(&g_lifetime_metrics, dispatch_ticks, oldest_release_age_ticks, work_ticks,
-		    missed, late_finish);
+		    missed, late_finish, preempt_locked, preempt_lock_owner_pid);
 	__atomic_add_fetch(&g_total_executions, 1u, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_total_missed, missed, __ATOMIC_RELAXED);
 	if (late_finish)
@@ -371,11 +403,17 @@ static void response_thread(void *arg)
 		uint32_t after;
 		uint32_t deadline;
 		uint32_t dispatch_ticks;
+		uint32_t preempt_locked;
+		uint32_t preempt_lock_owner_pid;
 		for (;;) {
 			before = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
 			if ((before & 1u) != 0u)
 				continue;
 			deadline = __atomic_load_n(&g_deadline_count, __ATOMIC_RELAXED);
+			preempt_locked =
+				__atomic_load_n(&g_release_preempt_locked, __ATOMIC_RELAXED);
+			preempt_lock_owner_pid = __atomic_load_n(&g_release_preempt_lock_owner_pid,
+								 __ATOMIC_RELAXED);
 			dispatch_ticks = RT_TIM3_CNT;
 			after = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
 			if (before == after && (after & 1u) == 0u)
@@ -385,11 +423,10 @@ static void response_thread(void *arg)
 			continue; /* drain a stale counting-semaphore post on NuttX */
 
 		uint32_t missed = deadline - g_last_execution_deadline - 1u;
-		uint64_t oldest_release_age = (uint64_t)missed * RT_SCOPE_PERIOD_TICKS +
-					      dispatch_ticks;
-		uint32_t oldest_release_age_ticks = oldest_release_age > UINT32_MAX
-							? UINT32_MAX
-							: (uint32_t)oldest_release_age;
+		uint64_t oldest_release_age =
+			(uint64_t)missed * RT_SCOPE_PERIOD_TICKS + dispatch_ticks;
+		uint32_t oldest_release_age_ticks =
+			oldest_release_age > UINT32_MAX ? UINT32_MAX : (uint32_t)oldest_release_age;
 		response_high();
 
 		/* A fixed, observable host workload makes CH2 width useful as well as
@@ -413,7 +450,7 @@ static void response_thread(void *arg)
 			late_finish ? RT_SCOPE_PERIOD_TICKS - dispatch_ticks + finish_ticks
 				    : finish_ticks - dispatch_ticks;
 		metrics_record(deadline, dispatch_ticks, oldest_release_age_ticks, work_ticks,
-			       missed, late_finish);
+			       missed, late_finish, preempt_locked, preempt_lock_owner_pid);
 	}
 }
 
@@ -690,6 +727,8 @@ struct rt_scope_totals {
 	uint32_t late_finish;
 	uint32_t irq_overrun;
 	uint32_t irq_entry_age_max_ticks;
+	uint32_t irq_signal_age_max_ticks;
+	uint32_t irq_preempt_locked_samples;
 	uint32_t last_execution_deadline;
 };
 
@@ -713,17 +752,18 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 		totals->irq_overrun = __atomic_load_n(&g_irq_overrun_count, __ATOMIC_RELAXED);
 		totals->irq_entry_age_max_ticks =
 			__atomic_load_n(&g_irq_entry_age_max_ticks, __ATOMIC_RELAXED);
+		totals->irq_signal_age_max_ticks =
+			__atomic_load_n(&g_irq_signal_age_max_ticks, __ATOMIC_RELAXED);
+		totals->irq_preempt_locked_samples =
+			__atomic_load_n(&g_irq_preempt_locked_samples, __ATOMIC_RELAXED);
 		totals->metrics = g_lifetime_metrics;
 		do {
-			release_before =
-				__atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
+			release_before = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
 			if ((release_before & 1u) != 0u)
 				continue;
-			totals->releases =
-				__atomic_load_n(&g_deadline_count, __ATOMIC_RELAXED);
+			totals->releases = __atomic_load_n(&g_deadline_count, __ATOMIC_RELAXED);
 			phase_ticks = RT_TIM3_CNT;
-			release_after =
-				__atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
+			release_after = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
 		} while (release_before != release_after || (release_after & 1u) != 0u);
 		after = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
 	} while (before != after || (after & 1u) != 0u);
@@ -802,10 +842,10 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	struct rt_scope_totals totals;
 	totals_snapshot(&totals);
 	const struct rt_scope_metrics *metrics = &totals.metrics;
-	uint32_t average_ticks = metrics->executions == 0u
-					 ? 0u
-					 : (uint32_t)(metrics->dispatch_sum_ticks /
-						      metrics->executions);
+	uint32_t average_ticks =
+		metrics->executions == 0u
+			? 0u
+			: (uint32_t)(metrics->dispatch_sum_ticks / metrics->executions);
 	uint32_t dispatch_min = metrics->executions == 0u ? 0u : metrics->dispatch_min_ticks;
 	uint32_t work_min = metrics->executions == 0u ? 0u : metrics->work_min_ticks;
 	struct proc_builder builder = {.buf = buf, .cap = cap};
@@ -832,8 +872,21 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	proc_metric(&builder, "oldest_release_age_max_ns",
 		    ticks_to_ns(metrics->oldest_release_age_max_ticks));
 	proc_metric(&builder, "max_consecutive_missed", metrics->max_consecutive_missed);
-	proc_metric(&builder, "irq_entry_age_max_ns",
-		    ticks_to_ns(totals.irq_entry_age_max_ticks));
+	proc_metric(&builder, "irq_entry_age_max_ns", ticks_to_ns(totals.irq_entry_age_max_ticks));
+	proc_metric(&builder, "irq_signal_age_max_ns",
+		    ticks_to_ns(totals.irq_signal_age_max_ticks));
+#if defined(CONFIG_OVE_RTOS_NUTTX)
+	proc_metric(&builder, "scheduler_lock_probe_available", 1u);
+#else
+	proc_metric(&builder, "scheduler_lock_probe_available", 0u);
+#endif
+	proc_metric(&builder, "irq_preempt_locked_samples", totals.irq_preempt_locked_samples);
+	proc_metric(&builder, "preempt_locked_dispatch_max_ns",
+		    ticks_to_ns(metrics->preempt_locked_dispatch_max_ticks));
+	proc_metric(&builder, "preempt_locked_dispatch_max_owner_pid",
+		    metrics->preempt_locked_dispatch_max_owner_pid);
+	proc_metric(&builder, "preempt_unlocked_dispatch_max_ns",
+		    ticks_to_ns(metrics->preempt_unlocked_dispatch_max_ticks));
 	proc_metric(&builder, "work_min_ns", ticks_to_ns(work_min));
 	proc_metric(&builder, "work_max_ns", ticks_to_ns(metrics->work_max_ticks));
 
@@ -928,6 +981,8 @@ static void report_metrics(void)
 	p = append_u32(p, totals.metrics.max_consecutive_missed);
 	p = append_text(p, " irq-entry=");
 	p = append_ticks_us(p, totals.irq_entry_age_max_ticks);
+	p = append_text(p, " irq-signal=");
+	p = append_ticks_us(p, totals.irq_signal_age_max_ticks);
 	*p++ = '\r';
 	*p++ = '\n';
 	*p = '\0';
