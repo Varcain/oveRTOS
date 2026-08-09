@@ -521,7 +521,8 @@ list(APPEND OVE_BACKEND_SOURCES ${LXP_PTY_SOURCES})
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_RT_SCOPE") == True and
       (config.get("CONFIG_OVE_RTOS_FREERTOS") == True or
-       config.get("CONFIG_OVE_RTOS_ZEPHYR") == True) %}
+       config.get("CONFIG_OVE_RTOS_ZEPHYR") == True or
+       config.get("CONFIG_OVE_RTOS_NUTTX") == True) %}
 # Engine-neutral SVC timing accumulator. Trap seams only record cycle samples
 # and supply their counter frequency.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lxp_metrics.c")

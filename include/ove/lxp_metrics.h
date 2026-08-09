@@ -26,8 +26,8 @@ struct ove_lxp_svc_metrics {
 	uint32_t max_syscall;
 };
 
-/* Single-core trap writer. FreeRTOS and Zephyr call this after dispatching one
- * guest SVC; NuttX currently has no matching bounded trap timing point. */
+/* Single-core trap writer. Each hardware seam calls this after dispatching one
+ * guest SVC and before performing the observer's bookkeeping. */
 void ove_lxp_svc_metrics_record(uint32_t syscall, uint32_t cycles);
 
 /* Switch to a fresh window, return the completed window and a coherent

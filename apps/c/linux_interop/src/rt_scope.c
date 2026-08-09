@@ -33,7 +33,8 @@
 #include "ove/thread.h"
 #include "ove/time.h"
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR) || \
+	defined(CONFIG_OVE_RTOS_NUTTX)
 #include "lxp/lxp_linux_uapi.h"
 #include "ove/lxp_metrics.h"
 #endif
@@ -507,7 +508,8 @@ static char *append_ticks_us(char *p, uint32_t ticks)
 	return p;
 }
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR) || \
+	defined(CONFIG_OVE_RTOS_NUTTX)
 static char *append_cycles_us(char *p, uint32_t cycles, uint32_t counter_hz)
 {
 	uint32_t hundredths =
@@ -703,7 +705,7 @@ static void report_critical_metrics(void)
 	g_report_write(line);
 }
 #endif /* CONFIG_OVE_RTOS_ZEPHYR */
-#endif /* CONFIG_OVE_RTOS_FREERTOS || CONFIG_OVE_RTOS_ZEPHYR */
+#endif /* CONFIG_OVE_RTOS_FREERTOS || CONFIG_OVE_RTOS_ZEPHYR || CONFIG_OVE_RTOS_NUTTX */
 
 static uint32_t percentile_upper_us(const struct rt_scope_metrics *metrics, uint32_t per_mille)
 {
@@ -890,7 +892,8 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	proc_metric(&builder, "work_min_ns", ticks_to_ns(work_min));
 	proc_metric(&builder, "work_max_ns", ticks_to_ns(metrics->work_max_ticks));
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR) || \
+	defined(CONFIG_OVE_RTOS_NUTTX)
 	struct ove_lxp_svc_metrics svc;
 	ove_lxp_svc_metrics_snapshot(&svc);
 	proc_metric(&builder, "svc_available", 1u);
@@ -999,7 +1002,8 @@ static void report_metrics(void)
 	*p = '\0';
 	g_report_write(line);
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR)
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR) || \
+	defined(CONFIG_OVE_RTOS_NUTTX)
 	report_svc_metrics();
 #endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
