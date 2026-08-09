@@ -1,0 +1,64 @@
+fs/fat: reset the open-file cursor after shrinking
+
+fat_dirshrink() changes the cluster chain without updating the fat_file_s
+cursor cached by fat_get_sectors().  If the file was last accessed in the
+removed suffix, a later write at or beyond that logical cluster offset starts
+from the now-free cached cluster instead of traversing from ff_startcluster.
+The write then either returns EIO or attaches storage to the wrong chain.
+
+SQLite VACUUM reliably exposes this: ftruncate() shrinks the database, then
+later transactions grow it through the stale cursor.  Depending on the old
+cursor position, the first failure is delayed by several transactions.  A
+damaged chain can also leave a later truncate or sync walking indefinitely.
+
+Flush and invalidate the per-file sector buffer before changing the chain so
+dirty data cannot be written into a cluster after it has been freed.  Once the
+shrink succeeds, reset the traversal cursor to the start of the retained
+chain.  A zero-length truncate also has to clear ff_startcluster because
+fat_dirtruncate() clears only the on-media directory entry.  Keep filep->f_pos
+unchanged as required by ftruncate(); fat_get_sectors() will traverse or grow
+from the rebuilt cursor when I/O resumes.
+
+--- a/fs/fat/fs_fat32.c
++++ b/fs/fat/fs_fat32.c
+@@ -1896,6 +1896,17 @@ static int fat_truncate(FAR struct file *filep, off_t length)
+       FAR uint8_t *direntry;
+       int ndx;
+ 
++      /* The sector buffer and cluster cursor may still describe the suffix
++       * which is about to be freed.  Publish dirty data while the old chain
++       * is valid, then discard that cached location before changing it.
++       */
++
++      ret = fat_ffcacheinvalidate(fs, ff);
++      if (ret < 0)
++        {
++          goto errout_with_lock;
++        }
++
+       /* We are shrinking the file.
+        *
+        * Read the directory entry into the fs_buffer.
+@@ -1933,10 +1944,21 @@ static int fat_truncate(FAR struct file *filep, off_t length)
+       if (ret >= 0)
+         {
+           /* The truncation has completed without error.  Update the file
+-           * size.
++           * size and rebuild the open-file traversal cursor.  The logical
++           * file position is intentionally unchanged by ftruncate().
+            */
+ 
++          if (length == 0)
++            {
++              ff->ff_startcluster = 0;
++            }
++
++          ff->ff_currentcluster   = ff->ff_startcluster;
++          ff->ff_currentsector    = 0;
++          ff->ff_sectorsincluster = fs->fs_fatsecperclus;
++          ff->ff_cachesector      = 0;
++          ff->ff_pos              = 0;
+           ff->ff_size = length;
+           ret = OK;
+         }
+     }
