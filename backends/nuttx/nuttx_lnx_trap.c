@@ -68,6 +68,9 @@
 #include "lxp/lxp_seam.h"
 #include "ove/build.h"
 #include "ove/lxp_memory_layout.h"
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+#include "ove/lxp_metrics.h"
+#endif
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
@@ -109,6 +112,13 @@ extern dq_queue_t g_stoppedtasks;
 #define OVE_MPU_RASR_SIZE(sz) (OVE_MPU_RASR_SIZE_FIELD(sz) << 1)
 
 #define SLOT_PRIO 60 /* below the run-loop/main task (100) */
+
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+uint32_t ove_lxp_metrics_counter_hz(void)
+{
+	return (uint32_t)up_perf_getfreq();
+}
+#endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* Coordinator base and guest overlays use this identical Normal-memory type. */
@@ -375,6 +385,11 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	if (sidx < 0)
 		return arm_svcall(irq, context, arg);
 
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	uint32_t svc_syscall = regs[REG_R7];
+	uint32_t svc_start_cycles = (uint32_t)up_perf_gettime();
+#endif
+
 	/* arm_doirq() skips re-saving the interrupted context for an SVCall whose
 	 * regs[REG_R0] == SYS_restore_context (== 1) — but a Linux syscall's r0 can
 	 * legitimately be 1 (e.g. ioctl(fd=1, ...)), in which case arm_doirq would
@@ -456,6 +471,13 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	for (int i = 0; i < 16; i++)
 		regs[REG_S16 + i] = fpctx.s[16 + i];
 	regs[REG_FPSCR] = fpctx.fpscr;
+#endif
+#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
+	/* Include nested IRQ time: an RT release can preempt this handler, but
+	 * Cortex-M cannot dispatch its woken thread until the outer SVC returns.
+	 * Reading the endpoint before recording excludes telemetry bookkeeping. */
+	uint32_t svc_cycles = (uint32_t)up_perf_gettime() - svc_start_cycles;
+	ove_lxp_svc_metrics_record(svc_syscall, svc_cycles);
 #endif
 	return 0;
 }
