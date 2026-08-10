@@ -15,6 +15,7 @@
 
 #include "ove/lxp_host.h"
 #include "ove/lxp_metrics.h"
+#include "ove/thread.h"
 #include "ove_net_ready.h"
 #include "lxp_ove_thread_adapter.h"
 #include "lxp/lxp_net_ops.h"
@@ -23,10 +24,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 extern const struct lxp_net_ops g_lxp_host_net_ops;
 extern const lxp_fs_ops_t g_lxp_host_fs_ops;
 static unsigned g_socket_kicks;
+static unsigned g_fs_kicks;
 static unsigned g_rootfs_window_calls;
 static const void *g_rootfs_window_base;
 static size_t g_rootfs_window_size;
@@ -75,6 +78,11 @@ void lxp_sock_kick(void)
 	g_socket_kicks++;
 }
 
+void lxp_fs_kick(void)
+{
+	__atomic_add_fetch(&g_fs_kicks, 1u, __ATOMIC_RELAXED);
+}
+
 /* The exported adapter table passed to lxp_run must be complete and versioned. */
 static void test_adapter_ops_wired(void **state)
 {
@@ -117,7 +125,10 @@ static void test_fs_adapter_ops_wired(void **state)
 	assert_int_equal(ops->struct_size, sizeof(*ops));
 	assert_non_null(ops->run_begin);
 	assert_non_null(ops->run_end);
+	assert_non_null(ops->request_owner);
+	assert_non_null(ops->request_cancel);
 	assert_non_null(ops->file_open);
+	assert_non_null(ops->object_open);
 	assert_non_null(ops->file_close);
 	assert_non_null(ops->file_read);
 	assert_non_null(ops->file_write);
@@ -125,6 +136,8 @@ static void test_fs_adapter_ops_wired(void **state)
 	assert_non_null(ops->file_stat);
 	assert_non_null(ops->file_truncate);
 	assert_non_null(ops->file_sync);
+	assert_non_null(ops->file_pread);
+	assert_non_null(ops->file_pwrite);
 	assert_non_null(ops->dir_open);
 	assert_non_null(ops->dir_read);
 	assert_non_null(ops->dir_close);
@@ -133,6 +146,7 @@ static void test_fs_adapter_ops_wired(void **state)
 	assert_non_null(ops->path_rmdir);
 	assert_non_null(ops->path_unlink);
 	assert_non_null(ops->path_rename);
+	assert_non_null(ops->metrics);
 }
 
 static void test_fs_adapter_serialized_lifecycle(void **state)
@@ -207,6 +221,38 @@ static void test_fs_adapter_serialized_lifecycle(void **state)
 	ops->run_end();
 }
 
+/* A non-zero owner selects the coordinator-facing asynchronous path. The
+ * first call submits work and parks; the wake hook tells the coordinator to
+ * retry, and that retry collects the completed native result. */
+static void test_fs_adapter_async_completion(void **state)
+{
+	(void)state;
+	const lxp_fs_ops_t *ops = &g_lxp_host_fs_ops;
+	char path[] = "/tmp/ove-lxp-fs-async-XXXXXX";
+	lxp_fs_file_t handle = NULL;
+	int fd = mkstemp(path);
+	assert_true(fd >= 0);
+	assert_int_equal(close(fd), 0);
+
+	assert_int_equal(ops->run_begin(), LXP_OK);
+	ops->request_owner(42u);
+	__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
+	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
+			 LXP_ERR_WOULD_BLOCK);
+	for (unsigned int i = 0;
+	     i < 100000u && __atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED) == 0u;
+	     i++)
+		ove_thread_yield();
+	assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
+	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_OK);
+	assert_non_null(handle);
+
+	ops->request_owner(0u);
+	assert_int_equal(ops->file_close(handle), LXP_OK);
+	assert_int_equal(ops->path_unlink(path), LXP_OK);
+	ops->run_end();
+}
+
 /* open -> close through the adapter reaches the ove_net backend (posix_net):
  * exercises the storage-pool slot alloc/free and the ove_socket_open_ex bridge.
  * Readiness remains subscribed until the last concurrently owned socket closes. */
@@ -218,7 +264,13 @@ static void test_adapter_open_close(void **state)
 	assert_int_equal(ops->run_begin(), OVE_ERR_WOULD_BLOCK);
 
 	lxp_socket_t s = NULL;
-	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_OK);
+	int rc = ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s);
+	if (rc == OVE_ERR_NOT_SUPPORTED) {
+		ops->run_end();
+		print_message("[  SKIP  ] lxp adapter sockets denied by test sandbox\n");
+		skip();
+	}
+	assert_int_equal(rc, OVE_OK);
 	assert_non_null(s);
 	lxp_socket_t t = NULL;
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_STREAM, 0, &t), OVE_OK);
@@ -354,7 +406,11 @@ static void test_svc_metrics_own_window_and_lifetime(void **state)
 	assert_int_equal(total.max_syscall, window.max_syscall);
 	struct ove_lxp_svc_metrics snapshot;
 	ove_lxp_svc_metrics_snapshot(&snapshot);
-	assert_memory_equal(&snapshot, &total, sizeof(snapshot));
+	assert_int_equal(snapshot.calls, total.calls);
+	assert_int_equal(snapshot.min_cycles, total.min_cycles);
+	assert_int_equal(snapshot.max_cycles, total.max_cycles);
+	assert_int_equal(snapshot.total_cycles, total.total_cycles);
+	assert_int_equal(snapshot.max_syscall, total.max_syscall);
 
 	ove_lxp_svc_metrics_take(&window, &total);
 	assert_int_equal(window.calls, 0u);
@@ -368,6 +424,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_adapter_ops_wired),
 		cmocka_unit_test(test_fs_adapter_ops_wired),
 		cmocka_unit_test(test_fs_adapter_serialized_lifecycle),
+		cmocka_unit_test(test_fs_adapter_async_completion),
 		cmocka_unit_test(test_adapter_open_close),
 		cmocka_unit_test(test_host_facade_owns_composition),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
