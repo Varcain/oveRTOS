@@ -48,6 +48,11 @@ CONFIG_DEBUG_BUSFAULT=y
 CONFIG_DEBUG_MEMFAULT=y
 CONFIG_DEBUG_USAGEFAULT=y
 CONFIG_ARMV7M_USEBASEPRI=y
+# STM32F746 silicon uses Cortex-M7 r0p1. Erratum 837070 can let the
+# instruction following a BASEPRI raise be preempted before the new mask takes
+# effect, violating NuttX scheduler critical sections. Serialize priority
+# raises through PRIMASK using NuttX's architecture workaround.
+CONFIG_ARMV7M_BASEPRI_WAR=y
 
 # --- Linux personality: the init task (ove_app_main) runs the FDPIC loader + the
 # personality run loop on its own stack, which are stack-heavy. The ~2K default INIT
