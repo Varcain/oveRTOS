@@ -1,0 +1,29 @@
+stm32f7: stop terminal I2C interrupt tail-chaining
+
+The transfer-complete condition is level-sensitive and is cleared by the
+peripheral only after STOP progresses.  The terminal ISR currently wakes the
+waiting task while leaving TCIE enabled, relying on that task to mask the I2C
+interrupts.  If TC remains asserted across exception return, Cortex-M
+tail-chains back into the event ISR indefinitely and the waiter never runs.
+
+Mask the transfer interrupt sources once the ISR has reached its terminal
+state, before posting the waiter.  The waiting path already performs the same
+mask after it resumes, so this merely closes the unsafe scheduling gap.
+
+--- a/arch/arm/src/stm32f7/stm32_i2c.c
++++ b/arch/arm/src/stm32f7/stm32_i2c.c
+@@ -2103,5 +2103,14 @@ static int stm32_i2c_isr_process(struct stm32_i2c_priv_s *priv)
+ #else
+ 
++      /* TC remains level-sensitive until STOP progresses.  Do not leave the
++       * event source enabled while waking the waiter: if TC is still asserted
++       * on exception return, Cortex-M tail-chains back here and the task that
++       * normally masks these sources never gets CPU time.
++       */
++
++      stm32_i2c_modifyreg32(priv, STM32_I2C_CR1_OFFSET,
++                            I2C_CR1_ALLINTS, 0);
++
+       /* We will update private state to capture NACK which is used in
+        * combination with the astart flag to report the type of NACK received
+        * (address vs data) to the upper layers once we exit the ISR.
