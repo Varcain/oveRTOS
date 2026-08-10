@@ -1,0 +1,42 @@
+stm32f746g-disco: use the conservative SDMMC transfer clock
+
+The board's existing DMA divider drives the removable microSD interface at
+16 MHz and explicitly describes that setting as untuned.  Repeated SQLite
+FULL-synchronous commits under LTDC/FMC load intermittently fail with a block
+I/O error at that rate, while the completed database remains structurally
+valid.  The same workload completes reliably with the divider already used by
+the non-DMA path.
+
+Use 12 MHz for both DMA and interrupt-driven transfers.  This trades a small
+amount of peak SD throughput for the signaling margin required by durable FAT
+writes on the Discovery board.
+
+--- a/boards/arm/stm32f7/stm32f746g-disco/include/board.h
++++ b/boards/arm/stm32f7/stm32f746g-disco/include/board.h
+@@ -268,22 +268,22 @@
+ 
+ #define STM32_SDMMC_INIT_CLKDIV      (118 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
+ 
+-/* DMA ON:  SDIOCLK=48MHz, SDIO_CK=SDIOCLK/(1+2)=16 MHz
++/* DMA ON:  SDIOCLK=48MHz, SDIO_CK=SDIOCLK/(2+2)=12 MHz
+  * DMA OFF: SDIOCLK=48MHz, SDIO_CK=SDIOCLK/(2+2)=12 MHz
+  */
+ 
+ #ifdef CONFIG_SDIO_DMA
+-#  define STM32_SDMMC_MMCXFR_CLKDIV  (1 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
++#  define STM32_SDMMC_MMCXFR_CLKDIV  (2 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
+ #else
+ #  define STM32_SDMMC_MMCXFR_CLKDIV  (2 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
+ #endif
+ 
+-/* DMA ON:  SDIOCLK=48MHz, SDIO_CK=SDIOCLK/(1+2)=16 MHz
++/* DMA ON:  SDIOCLK=48MHz, SDIO_CK=SDIOCLK/(2+2)=12 MHz
+  * DMA OFF: SDIOCLK=48MHz, SDIO_CK=SDIOCLK/(2+2)=12 MHz
+  */
+ 
+ #ifdef CONFIG_SDIO_DMA
+-#  define STM32_SDMMC_SDXFR_CLKDIV   (1 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
++#  define STM32_SDMMC_SDXFR_CLKDIV   (2 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
+ #else
+ #  define STM32_SDMMC_SDXFR_CLKDIV   (2 << STM32_SDMMC_CLKCR_CLKDIV_SHIFT)
+ #endif
