@@ -381,7 +381,12 @@ add_compile_definitions(LXP_NREG=12)
 # STM32F746: bigger pipe pool for SSH pipelines, relocated to external SDRAM.
 add_compile_definitions(LXP_NPIPE=12)
 add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]==])
-{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") != True %}
+{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
+# Remote exec retains 256K program rows and adds a 256K staging buffer. Nine
+# regions still fit the external-SDRAM envelope and are the minimum useful
+# capacity for SSH + lvmusic + network traffic + a transient sqlite3 child.
+add_compile_definitions(LXP_NREG=9)
+{% else %}
 # QSPI-backed dynamic executables keep text XIP, so 128K program/stack regions plus the unchanged
 # 512K dynamic arenas allow 11 isolated processes in the 7 MiB pool window.
 add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=11)
