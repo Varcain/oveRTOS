@@ -1,0 +1,131 @@
+fs/fat: reset every open cursor after shrinking a file
+
+The FAT mount keeps one fat_file_s for every open or duplicated native file
+description.  Each object caches the file size and a position in the cluster
+chain.  fat_truncate() previously updated only the object on which ftruncate
+was invoked.  Another object for the same directory entry could therefore
+continue from a cluster freed by the shrink, or use the pre-shrink size when
+deciding how far to traverse the retained chain.
+
+SQLite VACUUM exposes this with a long-lived database connection.  VACUUM
+shrinks the database after copying its compacted image, then later pager
+writes can use another open description retained by the Unix VFS.  The first
+few transactions succeed, followed by a write into the stale chain, a disk
+I/O error, and a malformed SQLite freelist.  Closing and reopening the
+connection avoids the corruption because all FAT cursors are rebuilt.
+
+Before changing the chain, flush and invalidate every open object referring
+to the same directory entry.  Once the shrink succeeds, publish the new
+start cluster and size to all of them and reset every traversal cursor.  The
+mount lock already serializes the open-file list and the cache operations.
+
+--- a/fs/fat/fs_fat32.c
++++ b/fs/fat/fs_fat32.c
+@@ -1834,6 +1834,72 @@ static int fat_stat(FAR struct inode *mountpt, FAR const char *relpath,
+   return ret;
+ }
+ 
++/****************************************************************************
++ * Name: fat_samefile
++ *
++ * Description:
++ *   Return true when two open objects refer to the same FAT directory entry.
++ *   The caller holds the mountpoint lock, so neither the directory identity
++ *   nor the open-file list can change while it is inspected.
++ *
++ ****************************************************************************/
++
++static bool fat_samefile(FAR const struct fat_file_s *left,
++                         FAR const struct fat_file_s *right)
++{
++  return left->ff_dirsector == right->ff_dirsector &&
++         left->ff_dirindex == right->ff_dirindex;
++}
++
++/****************************************************************************
++ * Name: fat_invalidatealiases
++ ****************************************************************************/
++
++static int fat_invalidatealiases(FAR struct fat_mountpt_s *fs,
++                                 FAR struct fat_file_s *target)
++{
++  FAR struct fat_file_s *alias;
++  int ret;
++
++  for (alias = fs->fs_head; alias != NULL; alias = alias->ff_next)
++    {
++      if (fat_samefile(alias, target))
++        {
++          ret = fat_ffcacheinvalidate(fs, alias);
++          if (ret < 0)
++            {
++              return ret;
++            }
++        }
++    }
++
++  return OK;
++}
++
++/****************************************************************************
++ * Name: fat_resetaliases
++ ****************************************************************************/
++
++static void fat_resetaliases(FAR struct fat_mountpt_s *fs,
++                             FAR struct fat_file_s *target, off_t length)
++{
++  FAR struct fat_file_s *alias;
++
++  for (alias = fs->fs_head; alias != NULL; alias = alias->ff_next)
++    {
++      if (fat_samefile(alias, target))
++        {
++          alias->ff_startcluster     = target->ff_startcluster;
++          alias->ff_currentcluster   = target->ff_startcluster;
++          alias->ff_currentsector    = 0;
++          alias->ff_sectorsincluster = fs->fs_fatsecperclus;
++          alias->ff_cachesector      = 0;
++          alias->ff_pos              = 0;
++          alias->ff_size             = length;
++        }
++    }
++}
++
+ /****************************************************************************
+  * Name: fat_truncate
+  *
+@@ -1901,7 +1967,7 @@ static int fat_truncate(FAR struct file *filep, off_t length)
+        * is valid, then discard that cached location before changing it.
+        */
+ 
+-      ret = fat_ffcacheinvalidate(fs, ff);
++      ret = fat_invalidatealiases(fs, ff);
+       if (ret < 0)
+         {
+           goto errout_with_lock;
+@@ -1944,21 +2010,17 @@ static int fat_truncate(FAR struct file *filep, off_t length)
+       if (ret >= 0)
+         {
+           /* The truncation has completed without error.  Update the file
+-           * size and rebuild the open-file traversal cursor.  The logical
+-           * file position is intentionally unchanged by ftruncate().
++           * size and rebuild every open traversal cursor for this directory
++           * entry.  The logical file positions are intentionally unchanged
++           * by ftruncate().
+            */
+ 
+           if (length == 0)
+             {
+               ff->ff_startcluster = 0;
+             }
+ 
+-          ff->ff_currentcluster   = ff->ff_startcluster;
+-          ff->ff_currentsector    = 0;
+-          ff->ff_sectorsincluster = fs->fs_fatsecperclus;
+-          ff->ff_cachesector      = 0;
+-          ff->ff_pos              = 0;
+-          ff->ff_size = length;
++          fat_resetaliases(fs, ff, length);
+           ret = OK;
+         }
+     }
