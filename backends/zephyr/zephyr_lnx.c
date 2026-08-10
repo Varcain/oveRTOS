@@ -572,6 +572,8 @@ static struct lxp_resume_ctx *zephyr_guest_resume_slot(uint32_t sp)
 	return (struct lxp_resume_ctx *)(context_top - sizeof(struct lxp_resume_ctx));
 }
 
+_Static_assert(offsetof(struct lxp_resume_ctx, sp) == 40u, "resume sp offset");
+
 #if LXP_ENABLE_FPU_CONTEXT
 /* Restore the guest's VFP state (ctx.fp) before the trampoline hands control back — r1 still holds
  * ctx here. Offsets pinned so a resume_ctx layout change is a build error, not silent corruption. */
@@ -620,12 +622,17 @@ __attribute__((naked, noreturn)) static void resume_tramp(void *r0val, void *ctx
  * Linux guests own their libc/TLS and never return through z_thread_entry.
  * Replace only the initial frame PC with this privileged handoff, retain
  * Zephyr's K_USER stack setup, then drop directly into the naked Linux-context
- * trampoline. The trampoline moves PSP only after consuming the saved FP and
- * callee-saved state, minimizing the interval in which an exception can use
- * the guest stack before the handoff is complete. */
+ * trampoline. PSP must move into the guest's reserved exception-frame
+ * headroom while this shim is still privileged. Dropping privilege first
+ * leaves a short interval where an interrupt tries to stack onto Zephyr's
+ * privileged-only startup stack and raises MSTKERR. An interrupt after the PSP
+ * move is safe: the saved context sits below the complete basic/extended frame
+ * headroom reserved by zephyr_guest_resume_slot(). */
 __attribute__((naked, noreturn)) static void zephyr_guest_arch_enter(void *r0val, void *ctx)
 {
-	__asm__ volatile("mrs r2, control\n"
+	__asm__ volatile("ldr r2, [r1, #40]\n" /* ctx.sp */
+			 "msr psp, r2\n"
+			 "mrs r2, control\n"
 			 "orr r2, r2, #1\n"
 			 "dsb 0xf\n"
 			 "msr control, r2\n"
