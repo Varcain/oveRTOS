@@ -1,0 +1,199 @@
+mmcsd: recover and replay transient multi-block transfers
+
+The STM32F746 SDMMC can terminate a DMA burst with EIO or ETIMEDOUT under
+concurrent LTDC/FMC traffic.  The block driver currently returns that error
+directly to FAT even though an arbitrary prefix of the sector range may have
+already reached the card.  SQLite then observes a disk I/O error and FAT may
+hold a partially applied metadata update.
+
+Make cancellation stop the STM32 data-path state machine as well as DMA, then
+recover the card to TRANS after a transient multi-block failure.  Replay the
+same bounded range once with single-block commands.  Rewriting the same block
+range is idempotent, while the single-block fallback avoids immediately
+re-entering the failing burst mode.  Removal, protection, setup, and permanent
+media errors are not retried.
+
+--- a/arch/arm/src/stm32f7/stm32_sdmmc.c
++++ b/arch/arm/src/stm32f7/stm32_sdmmc.c
+@@ -2342,6 +2342,10 @@ static int stm32_cancel(struct sdio_dev_s *dev)
+ 
+   wd_cancel(&priv->waitwdog);
+ 
++  /* Stop the data-path state machine even when its watchdog won the race. */
++
++  stm32_datadisable(priv);
++
+   /* If this was a DMA transfer, make sure that DMA is stopped */
+ 
+ #ifdef CONFIG_STM32F7_SDMMC_DMA
+@@ -2355,6 +2359,17 @@ static int stm32_cancel(struct sdio_dev_s *dev)
+ 
+       stm32_dmastop(priv->dma);
+     }
++
++  /* A canceled receive may have populated cache lines before DMA stopped. */
++
++  if (priv->rxbuffer)
++    {
++      up_invalidate_dcache((uintptr_t)priv->rxbuffer,
++                           (uintptr_t)priv->rxend);
++      priv->rxbuffer = 0;
++    }
++
++  priv->dmamode = false;
+ #endif
+ 
+   /* Mark no transfer in progress */
+--- a/drivers/mmcsd/mmcsd_sdio.c
++++ b/drivers/mmcsd/mmcsd_sdio.c
+@@ -1436,6 +1436,108 @@ static int mmcsd_stoptransmission(FAR struct mmcsd_state_s *priv)
+ }
+ #endif
+ 
++#if MMCSD_MULTIBLOCK_LIMIT != 1
++/****************************************************************************
++ * Name: mmcsd_recovertransfer
++ *
++ * Description:
++ *   Quiesce the host and return a card left in a data/programming state to
++ *   TRANS before retrying an idempotent block operation.
++ ****************************************************************************/
++
++static int mmcsd_recovertransfer(FAR struct mmcsd_state_s *priv)
++{
++  uint32_t r1;
++  int ret;
++
++  SDIO_CANCEL(priv->dev);
++
++  ret = mmcsd_sendcmdpoll(priv, MMCSD_CMD13,
++                          (uint32_t)priv->rca << 16);
++  if (ret != OK)
++    {
++      return ret;
++    }
++
++  /* Read the state even if the failed transfer left status error bits set;
++   * the ordinary status helper intentionally turns those bits into EIO.
++   */
++
++  ret = SDIO_RECVR1(priv->dev, MMCSD_CMD13, &r1);
++  if (ret != OK)
++    {
++      return ret;
++    }
++
++  if (IS_STATE(r1, MMCSD_R1_STATE_TRAN))
++    {
++      priv->wrbusy = false;
++      return OK;
++    }
++
++  if (IS_STATE(r1, MMCSD_R1_STATE_DATA) ||
++      IS_STATE(r1, MMCSD_R1_STATE_RCV))
++    {
++      ret = mmcsd_stoptransmission(priv);
++      if (ret != OK)
++        {
++          return ret;
++        }
++    }
++  else if (!IS_STATE(r1, MMCSD_R1_STATE_PRG))
++    {
++      return -EIO;
++    }
++
++  /* Reuse the existing bounded busy/status poll for RCV/PRG -> TRANS. */
++
++  priv->wrbusy = true;
++  return mmcsd_transferready(priv);
++}
++
++static ssize_t mmcsd_readsingle_retry(FAR struct mmcsd_part_s *part,
++                                      FAR uint8_t *buffer,
++                                      off_t startblock, size_t nblocks)
++{
++  FAR struct mmcsd_state_s *priv = part->priv;
++  size_t block;
++  ssize_t ret;
++
++  for (block = 0; block < nblocks; block++)
++    {
++      ret = mmcsd_readsingle(part, buffer + block * priv->blocksize,
++                             startblock + block);
++      if (ret < 0)
++        {
++          return ret;
++        }
++    }
++
++  return nblocks;
++}
++
++static ssize_t mmcsd_writesingle_retry(FAR struct mmcsd_part_s *part,
++                                       FAR const uint8_t *buffer,
++                                       off_t startblock, size_t nblocks)
++{
++  FAR struct mmcsd_state_s *priv = part->priv;
++  size_t block;
++  ssize_t ret;
++
++  for (block = 0; block < nblocks; block++)
++    {
++      ret = mmcsd_writesingle(part, buffer + block * priv->blocksize,
++                              startblock + block);
++      if (ret < 0)
++        {
++          return ret;
++        }
++    }
++
++  return nblocks;
++}
++#endif
++
+ /****************************************************************************
+  * Name: mmcsd_setblocklen
+  *
+@@ -2414,7 +2516,19 @@ static ssize_t mmcsd_read(FAR struct inode *inode,
+             }
+           else
+             {
+-              nread = mmcsd_readmultiple(part, buffer, sector, nread);
++              size_t requested = nread;
++
++              nread = mmcsd_readmultiple(part, buffer, sector, requested);
++              if ((nread == -EIO || nread == -ETIMEDOUT) &&
++                  mmcsd_recovertransfer(priv) == OK)
++                {
++                  /* The original range may be partially present in the
++                   * buffer.  Replay every block exactly once.
++                   */
++
++                  nread = mmcsd_readsingle_retry(part, buffer, sector,
++                                                 requested);
++                }
+             }
+ 
+ #endif
+@@ -2495,7 +2609,19 @@ static ssize_t mmcsd_write(FAR struct inode *inode,
+             }
+           else
+             {
+-              nwrite = mmcsd_writemultiple(part, buffer, sector, nwrite);
++              size_t requested = nwrite;
++
++              nwrite = mmcsd_writemultiple(part, buffer, sector, requested);
++              if ((nwrite == -EIO || nwrite == -ETIMEDOUT) &&
++                  mmcsd_recovertransfer(priv) == OK)
++                {
++                  /* Rewriting an identical sector range is idempotent and
++                   * closes any partial-prefix ambiguity below FAT.
++                   */
++
++                  nwrite = mmcsd_writesingle_retry(part, buffer, sector,
++                                                   requested);
++                }
+             }
+ 
+ #endif
