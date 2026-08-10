@@ -222,6 +222,13 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)
 /* The framebuffer ends at 0xC003FC00. The next aligned span is privileged-only
  * cold coordinator storage, safely below the program pool at 0xC0100000. */
 #define NUTTX_SDRAM_COLD_BASE 0xC0040000u
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* Remote-exec staging is privileged coordinator scratch. Keep it in the cold
+ * SDRAM window rather than consuming the tail reserved for guest rows and
+ * tmpfs. The disabled first MPU subregion keeps this storage inaccessible to
+ * every unprivileged guest. */
+#define NUTTX_SDRAM_EXEC_STAGE_BASE 0xC00C0000u
+#endif
 static lxp_exec_capture_t *const g_exec_captures = (lxp_exec_capture_t *)NUTTX_SDRAM_COLD_BASE;
 #define NUTTX_SDRAM_THREAD_SNAPSHOT_BASE \
 	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
@@ -245,8 +252,14 @@ static struct lxp_ove_thread_snapshot g_thread_snapshot;
 	LXP_ALIGN_UP(NUTTX_SDRAM_THREAD_SNAPSHOT_BASE + sizeof(g_thread_snapshot), 8u)
 static uint8_t (*const g_nuttx_stacks)[LXP_NUTTX_STACK_SIZE] = (uint8_t (*)[LXP_NUTTX_STACK_SIZE])
 	NUTTX_SDRAM_STACK_BASE;
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+_Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <=
+		       NUTTX_SDRAM_EXEC_STAGE_BASE,
+	       "trusted NuttX slot storage overlaps the remote-exec stage");
+#else
 _Static_assert(NUTTX_SDRAM_STACK_BASE + LXP_NUTTX_STACK_SIZE * LXP_NSLOT <= OVE_LXP_GUEST_POOL_BASE,
 	       "trusted NuttX slot stacks overlap the STM32 program pool");
+#endif
 #else
 static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((aligned(8)));
 #endif
@@ -261,21 +274,25 @@ static uint8_t g_nuttx_stacks[LXP_NSLOT][LXP_NUTTX_STACK_SIZE] __attribute__((al
 #endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && defined(LXP_WFS_POOL_BASE)
 #define NUTTX_GUEST_STORAGE_END \
-	(OVE_LXP_GUEST_POOL_BASE + DYN_POOLS_BYTES + PROG_REGIONS_BYTES + NUTTX_EXEC_STAGE_BYTES)
+	(OVE_LXP_GUEST_POOL_BASE + DYN_POOLS_BYTES + PROG_REGIONS_BYTES)
 _Static_assert(NUTTX_GUEST_STORAGE_END <= (uintptr_t)LXP_WFS_POOL_BASE,
 	       "NuttX guest storage overlaps the fixed tmpfs pool");
 _Static_assert((uintptr_t)LXP_WFS_POOL_BASE + (size_t)LXP_WFS_POOL <= OVE_LXP_GUEST_POOL_END,
 	       "NuttX tmpfs pool exceeds external SDRAM");
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+_Static_assert(NUTTX_SDRAM_EXEC_STAGE_BASE + NUTTX_EXEC_STAGE_BYTES <= OVE_LXP_GUEST_POOL_BASE,
+	       "NuttX remote-exec stage overlaps the guest pool");
+#endif
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* Remote-exec (9P netfs) staging buffer: the coordinator fetches a remote FDPIC ELF into
- * this 256K scratch, then launches it (its own text is copied into a program region). On the
- * SDRAM/PSRAM boards it sits immediately after the contiguous dyn+program pool window — still
- * inside the whole-pool privileged Normal-memory MPU region (STM32 WBWA, QEMU
- * non-cacheable), so the coordinator reaches it (STM32:
- * 0xC0700000..0xC0740000, well within the 8M SDRAM region).
- * Mirrors the FreeRTOS seam's g_netfs_exec_stage. */
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_ARCH_BOARD_MPS2_AN500)
+ * this 256K scratch, then launches it (its own text is copied into a program region). STM32
+ * places this coordinator-only buffer in the privileged cold window below the guest pool;
+ * AN500 retains it immediately after its contiguous guest rows.
+ * Mirrors the other engine seams' g_netfs_exec_stage contract. */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static uint8_t *const g_netfs_exec_stage = (uint8_t *)NUTTX_SDRAM_EXEC_STAGE_BASE;
+#elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 static uint8_t *const g_netfs_exec_stage =
 	(uint8_t *)((uintptr_t)prog_regions + PROG_REGIONS_BYTES);
 #else

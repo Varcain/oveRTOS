@@ -405,7 +405,12 @@ add_compile_definitions(LXP_NPIPE=12 LXP_PIPE_BUF=2048)
 # above every dynamic/program/staging row and outside the framebuffer's Device
 # subregion. The NuttX seam statically rejects future layout overlap.
 add_compile_definitions(LXP_WFS_POOL_BASE=0xC07C0000u)
-{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") != True %}
+{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
+# The 256K remote-exec stage still leaves room for nine 768K guest rows below
+# the fixed tmpfs pool. Nine regions are required for an inbound SSH session
+# to retain lvmusic + network traffic + one transient database child.
+add_compile_definitions(LXP_NREG=9)
+{% else %}
 # The NuttX seam lays the large program/dynamic pools in external SDRAM, but each region also
 # adds one process slot plus four transient slots worth of privileged metadata to SRAM1. Keep
 # this profile at the same eight-region/twelve-slot capacity as the proven full profile. Ten
