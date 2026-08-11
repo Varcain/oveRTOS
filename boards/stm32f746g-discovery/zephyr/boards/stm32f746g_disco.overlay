@@ -75,7 +75,9 @@
 &sdmmc1 {
 	dmas = <&dma2 6 4 0x30000 0x00>, <&dma2 3 4 0x30000 0x00>;
 	dma-names = "tx", "rx";
-	clk-div = <22>;
+	/* 48 MHz / (2 + 2) = 12 MHz.  The single-sector DMA policy still bounds
+	 * each operation and avoids the STM32F7 HAL multiblock stop path. */
+	clk-div = <2>;
 	/delete-property/ cd-gpios;
 };
 
