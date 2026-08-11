@@ -29,6 +29,12 @@ CONFIG_ARCH_INTERRUPTSTACK=4096
 CONFIG_SIG_DEFAULT=y
 CONFIG_SIG_SIGSTOP_ACTION=y
 
+# Match the personality's millisecond timer/sleep contract.  NuttX defaults to
+# a 10 ms system tick on this board, which rounds the short sleeps in LVGL's
+# userspace loop and coordinator wakeups to 10 ms even though the M7 timestamp
+# source itself has sub-tick precision.
+CONFIG_USEC_PER_TICK=1000
+
 # Physical FT5336 touch controller on I2C3 (PH7=SCL, PH8=SDA). board_init.c
 # registers this controller as /dev/i2c2, matching ove's zero-based instance 2.
 CONFIG_I2C=y
