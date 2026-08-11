@@ -22,6 +22,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#if defined(__ZEPHYR__) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#include <zephyr/linker/section_tags.h>
+#define LXP_OVE_FS_IO_BUFFER_SECTION __dtcm_bss_section
+#else
+#define LXP_OVE_FS_IO_BUFFER_SECTION
+#endif
+
 #define LXP_OVE_FS_WORKER_STACK 4096u
 #define LXP_OVE_FS_WORKER_PRIORITY OVE_PRIO_ABOVE_NORMAL
 #define LXP_OVE_FS_IO_CHUNK 4096u
@@ -189,7 +196,8 @@ OVE_THREAD_STACK_DEFINE_STATIC_(g_worker_stack, LXP_OVE_FS_WORKER_STACK);
  * holding g_submit_lock; the serialized worker only accesses this aligned
  * staging buffer.
  */
-static uint8_t g_io_buffer[LXP_OVE_FS_IO_CHUNK] __attribute__((aligned(32)));
+static uint8_t g_io_buffer[LXP_OVE_FS_IO_CHUNK] LXP_OVE_FS_IO_BUFFER_SECTION
+	__attribute__((aligned(32)));
 static int g_active;
 static int g_mounted;
 static lxp_fs_metrics_t g_metrics;
