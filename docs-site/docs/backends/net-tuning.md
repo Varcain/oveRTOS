@@ -26,8 +26,16 @@ The protocol stacks (lwIP, mbedTLS, the Zephyr network stack, NuttX networking) 
 | `CONFIG_OVE_ZEPHYR_NET_MAX_CONTEXTS` | 16 | `CONFIG_NET_MAX_CONTEXTS` — socket-like contexts |
 | `CONFIG_OVE_ZEPHYR_NET_PKT_RX_COUNT` | 14 | RX `net_pkt` slab |
 | `CONFIG_OVE_ZEPHYR_NET_PKT_TX_COUNT` | 14 | TX `net_pkt` slab |
+| `CONFIG_OVE_ZEPHYR_NET_BUF_DATA_SIZE` | 128 | Payload bytes per `net_buf` fragment |
 | `CONFIG_OVE_ZEPHYR_NET_BUF_RX_COUNT` | 36 | RX `net_buf` payload pool |
 | `CONFIG_OVE_ZEPHYR_NET_BUF_TX_COUNT` | 36 | TX `net_buf` payload pool |
+
+Size the three `NET_BUF` options as one geometry.  Increasing data size reduces
+fragment chaining, but the product of data size and count determines most of the
+static SRAM cost and the TCP receive window.  For example, `linux_interop` uses
+512-byte fragments and twelve RX/TX buffers: three fragments per Ethernet
+frame, four full-frame slots, enough objects for concurrent small packets, and
+a 2048-byte derived receive window.
 
 ## NuttX net stack (zero-heap only)
 

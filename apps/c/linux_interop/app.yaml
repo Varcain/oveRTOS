@@ -58,6 +58,15 @@ rtos_defconfig:
     # Bound saturated RX work explicitly as a network scheduling policy, not as
     # hidden Linux-personality behavior inside the generic FreeRTOS backend.
     - CONFIG_OVE_NET_RX_FAIR_SCHEDULING=y
+  zephyr:
+    # The generic 128-byte Zephyr fragments chain a full Ethernet frame across
+    # about twelve net_buf objects and leave this workload with a 1536-byte TCP
+    # receive window.  Keep four full-frame slots while reducing the chain to
+    # three fragments and increasing the derived window to 2048 bytes.  Twelve
+    # objects also leave room for small ACK/ARP traffic alongside full frames.
+    - CONFIG_OVE_ZEPHYR_NET_BUF_DATA_SIZE=512
+    - CONFIG_OVE_ZEPHYR_NET_BUF_RX_COUNT=12
+    - CONFIG_OVE_ZEPHYR_NET_BUF_TX_COUNT=12
 # Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
 #   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
 #   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)

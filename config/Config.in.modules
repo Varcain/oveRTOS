@@ -909,6 +909,16 @@ config OVE_ZEPHYR_NET_BUF_TX_COUNT
     help
       CONFIG_NET_BUF_TX_COUNT.  Transmit payload buffer pool.
 
+config OVE_ZEPHYR_NET_BUF_DATA_SIZE
+    int "net_buf payload size (bytes)"
+    default 128
+    range 96 2048
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_BUF_DATA_SIZE.  Payload bytes carried by each network
+      fragment.  Choose this together with the RX/TX fragment counts: larger
+      fragments reduce per-frame chaining but consume more static SRAM.
+
 config OVE_NET_HTTP_MAX_RESPONSE
     int "HTTP client max response buffer size (bytes)"
     default 8192
