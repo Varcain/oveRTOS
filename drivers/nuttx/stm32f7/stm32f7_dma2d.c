@@ -8,8 +8,8 @@
  * STM32F746 DMA2D (Chrom-ART) driver — the NuttX ove_hal_dma2d backend. Same
  * register sequence as the FreeRTOS backend, but NuttX primitives: raw register
  * pokes (no CMSIS struct on the app path), up_{clean,invalidate}_dcache for
- * coherency (no-ops when the D-cache is off), and a raw RCC clock enable. The
- * coordinator has already bounds-checked every address against the guest region.
+ * cacheable planes, and a raw RCC clock enable. The coordinator has already
+ * bounds-checked every address against the guest region.
  */
 
 #include "ove_config.h"
@@ -20,6 +20,7 @@
 #include "ove/types.h"
 
 #include <nuttx/cache.h>
+#include <nuttx/config.h>
 #include <stdint.h>
 
 #define DMA2D_BASE 0x4002b000u
@@ -62,10 +63,37 @@ static uint32_t bpp_of(uint32_t cf)
 	}
 }
 
+static uint32_t plane_span(uint32_t w, uint32_t h, uint32_t off, uint32_t cf)
+{
+	return ((h - 1u) * (w + off) + w) * bpp_of(cf);
+}
+
+/* The NuttX LXP MPU deliberately leaves the LTDC framebuffer as Device memory.
+ * Range cache APIs do not inspect MPU attributes before applying their
+ * whole-cache fast path, so a large framebuffer range would otherwise clean or
+ * invalidate the complete D-cache even though the range itself is not cached. */
+static int plane_is_nocache_framebuffer(uintptr_t addr, uint32_t w, uint32_t h, uint32_t off,
+					uint32_t cf)
+{
+#if defined(CONFIG_STM32F7_LTDC_FB_BASE)
+	const uintptr_t fb_start = (uintptr_t)CONFIG_STM32F7_LTDC_FB_BASE;
+	const uintptr_t fb_end = fb_start +
+		(uintptr_t)CONFIG_POSIX_DISPLAY_WIDTH * CONFIG_POSIX_DISPLAY_HEIGHT * 2u;
+	uint32_t span = plane_span(w, h, off, cf);
+	return addr >= fb_start && addr < fb_end && span <= fb_end - addr;
+#else
+	(void)addr;
+	(void)w;
+	(void)h;
+	(void)off;
+	(void)cf;
+	return 0;
+#endif
+}
+
 static void cache_plane(uintptr_t addr, uint32_t w, uint32_t h, uint32_t off, uint32_t cf, int inv)
 {
-	uint32_t bpp = bpp_of(cf);
-	uint32_t span = ((h - 1u) * (w + off) + w) * bpp;
+	uint32_t span = plane_span(w, h, off, cf);
 	uintptr_t start = addr & ~(uintptr_t)31u;
 	uintptr_t end = ((addr + span - 1u) & ~(uintptr_t)31u) + 32u;
 	if (inv)
@@ -88,14 +116,18 @@ int ove_hal_dma2d_submit(const ove_dma2d_desc_t *op)
 		return OVE_ERR_INVALID_PARAM;
 	int is_r2m = (op->mode == 4u);
 	int is_blend = (op->mode == 2u || op->mode == 3u);
+	int out_nocache = plane_is_nocache_framebuffer(op->out_addr, op->w, op->h,
+						      op->out_offset, op->out_cf);
 
-	/* Clean sources + output so DMA2D reads fresh SDRAM and no dirty CPU line can
-	 * evict over the result (up_* are no-ops when the D-cache is off). */
+	/* Clean cacheable sources + output so DMA2D reads fresh memory and no dirty
+	 * CPU line can evict over the result.  The LTDC framebuffer is explicitly
+	 * non-cacheable and must not reach NuttX's whole-cache range shortcut. */
 	if (!is_r2m)
 		cache_plane(op->fg_addr, op->w, op->h, op->fg_offset, op->fg_cf, 0);
 	if (is_blend)
 		cache_plane(op->bg_addr, op->w, op->h, op->bg_offset, op->bg_cf, 0);
-	cache_plane(op->out_addr, op->w, op->h, op->out_offset, op->out_cf, 0);
+	if (!out_nocache)
+		cache_plane(op->out_addr, op->w, op->h, op->out_offset, op->out_cf, 0);
 
 	D2(D2_CR) = cr_mode[op->mode] << 16;
 	D2(D2_OPFCCR) = op->out_cf & 0x7u;
@@ -127,7 +159,8 @@ int ove_hal_dma2d_submit(const ove_dma2d_desc_t *op)
 	if (D2(D2_ISR) & (ISR_TEIF | ISR_CEIF))
 		return OVE_ERR_BUS_ERROR;
 
-	cache_plane(op->out_addr, op->w, op->h, op->out_offset, op->out_cf, 1);
+	if (!out_nocache)
+		cache_plane(op->out_addr, op->w, op->h, op->out_offset, op->out_cf, 1);
 	return OVE_OK;
 }
 
