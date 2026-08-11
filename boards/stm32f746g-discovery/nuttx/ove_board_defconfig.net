@@ -13,3 +13,11 @@ CONFIG_STM32F7_PHYSR_SPEED=0x0004
 CONFIG_STM32F7_PHYSR_100MBPS=0x0000
 CONFIG_STM32F7_PHYSR_MODE=0x0010
 CONFIG_STM32F7_PHYSR_FULLDUPLEX=0x0010
+
+# Keep one Ethernet frame in one IOB.  The generic zero-heap default uses
+# 196-byte IOBs for small packet transports; with this MAC it made NuttX chain
+# eight IOBs per full-size frame.  More importantly, TCP derives its receive
+# window from the four buffers above CONFIG_IOB_THROTTLE, limiting the window
+# to only 784 bytes.  Twelve MTU-sized buffers retain the hard-float build's
+# bounded pool while providing a 6136-byte receive window.
+CONFIG_IOB_BUFSIZE=1534
