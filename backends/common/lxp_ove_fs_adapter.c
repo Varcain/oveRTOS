@@ -748,6 +748,18 @@ static void fs_worker(void *arg)
 	}
 }
 
+static void metrics_record_completion_wait(const struct fs_request *request)
+{
+	uint64_t collected_us = 0;
+	(void)ove_time_get_us(&collected_us);
+	uint64_t wait_us = collected_us >= request->finished_us
+				   ? collected_us - request->finished_us
+				   : 0;
+	g_metrics.completion_wait_us_total += wait_us;
+	if (wait_us > g_metrics.completion_wait_us_max)
+		g_metrics.completion_wait_us_max = wait_us;
+}
+
 static int submit_sync(struct fs_request *request)
 {
 	if (!g_active || request == NULL)
@@ -807,6 +819,7 @@ static int submit_sync(struct fs_request *request)
 		}
 	}
 	if (measured) {
+		metrics_record_completion_wait(request);
 		uint64_t queue_us = request->started_us >= request->submitted_us
 					    ? request->started_us - request->submitted_us
 					    : 0;
@@ -844,6 +857,7 @@ static int submit_sync(struct fs_request *request)
 
 static void async_metrics_complete(const struct fs_request *request, int result)
 {
+	metrics_record_completion_wait(request);
 	uint64_t queue_us = request->started_us >= request->submitted_us
 				    ? request->started_us - request->submitted_us
 				    : 0;
