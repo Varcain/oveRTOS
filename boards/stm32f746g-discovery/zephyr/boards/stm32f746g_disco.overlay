@@ -75,9 +75,11 @@
 &sdmmc1 {
 	dmas = <&dma2 6 4 0x30000 0x00>, <&dma2 3 4 0x30000 0x00>;
 	dma-names = "tx", "rx";
-	/* 48 MHz / (2 + 2) = 12 MHz.  The single-sector DMA policy still bounds
-	 * each operation and avoids the STM32F7 HAL multiblock stop path. */
-	clk-div = <2>;
+	/* 48 MHz / (10 + 2) = 4 MHz.  Faster clocks completed short probes but
+	 * could intermittently leave the F7 SDMMC/HAL path non-responsive during
+	 * repeated SQLite rewrites.  Keep the single-sector DMA policy and de-rate
+	 * the bus while retaining twice the original 2 MHz throughput. */
+	clk-div = <10>;
 	/delete-property/ cd-gpios;
 };
 
