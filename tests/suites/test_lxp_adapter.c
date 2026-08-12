@@ -28,8 +28,10 @@
 
 extern const struct lxp_net_ops g_lxp_host_net_ops;
 extern const lxp_fs_ops_t g_lxp_host_fs_ops;
+extern const lxp_block_ops_t g_lxp_host_block_ops;
 static unsigned g_socket_kicks;
 static unsigned g_fs_kicks;
+static unsigned g_block_kicks;
 static unsigned g_rootfs_window_calls;
 static const void *g_rootfs_window_base;
 static size_t g_rootfs_window_size;
@@ -37,6 +39,7 @@ static const lxp_os_ops_t *g_run_os_ops;
 static const lxp_net_ops_t *g_run_net_ops;
 static const lxp_display_ops_t *g_run_display_ops;
 static const lxp_fs_ops_t *g_run_fs_ops;
+static const lxp_block_ops_t *g_run_block_ops;
 static const lxp_run_config_t *g_run_config;
 
 static void test_rootfs_window(const void *base, size_t len)
@@ -59,6 +62,7 @@ const lxp_display_ops_t g_lxp_host_display_ops = {
 
 int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
 	    const lxp_display_ops_t *display_ops, const lxp_fs_ops_t *fs_ops,
+	    const lxp_block_ops_t *block_ops,
 	    const lxp_run_config_t *config, const char *path, int argc,
 	    const char *const argv[])
 {
@@ -69,6 +73,7 @@ int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
 	g_run_net_ops = net_ops;
 	g_run_display_ops = display_ops;
 	g_run_fs_ops = fs_ops;
+	g_run_block_ops = block_ops;
 	g_run_config = config;
 	return 37;
 }
@@ -76,6 +81,11 @@ int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
 void lxp_sock_kick(void)
 {
 	g_socket_kicks++;
+}
+
+void lxp_block_kick(void)
+{
+	g_block_kicks++;
 }
 
 void lxp_fs_kick(void)
@@ -127,6 +137,9 @@ static void test_fs_adapter_ops_wired(void **state)
 	assert_non_null(ops->run_end);
 	assert_non_null(ops->request_owner);
 	assert_non_null(ops->request_cancel);
+	assert_non_null(ops->mount);
+	assert_non_null(ops->unmount);
+	assert_non_null(ops->is_mounted);
 	assert_non_null(ops->file_open);
 	assert_non_null(ops->object_open);
 	assert_non_null(ops->file_close);
@@ -147,6 +160,61 @@ static void test_fs_adapter_ops_wired(void **state)
 	assert_non_null(ops->path_unlink);
 	assert_non_null(ops->path_rename);
 	assert_non_null(ops->metrics);
+}
+
+static void test_block_adapter_media_arbitration(void **state)
+{
+	(void)state;
+	const lxp_fs_ops_t *fs = &g_lxp_host_fs_ops;
+	const lxp_block_ops_t *block = &g_lxp_host_block_ops;
+	char image[] = "/tmp/ove-lxp-block-XXXXXX";
+	int fd = mkstemp(image);
+	assert_true(fd >= 0);
+	assert_int_equal(ftruncate(fd, 8192), 0);
+	assert_int_equal(close(fd), 0);
+	assert_int_equal(setenv("OVE_BLOCK_IMAGE", image, 1), 0);
+
+	assert_int_equal(fs->run_begin(), LXP_OK);
+	assert_int_equal(block->run_begin(), LXP_OK);
+	assert_int_equal(fs->run_begin(), LXP_ERR_WOULD_BLOCK);
+	assert_int_equal(block->run_begin(), LXP_ERR_WOULD_BLOCK);
+	lxp_block_info_t info = {0};
+	assert_int_equal(block->get_info(&info), LXP_OK);
+	assert_int_equal(info.block_count, 16);
+	assert_int_equal(info.logical_block_size, 512);
+	assert_int_equal(info.erase_block_size, 512);
+
+	/* Read-only inspection can coexist with /data. Writable raw ownership cannot. */
+	assert_int_equal(block->open(0), LXP_OK);
+	block->close(0);
+	assert_int_equal(block->open(LXP_BLOCK_OPEN_WRITE), LXP_ERR_BUSY);
+	assert_int_equal(fs->unmount(), LXP_OK);
+	assert_false(fs->is_mounted());
+	assert_int_equal(block->open(LXP_BLOCK_OPEN_WRITE), LXP_OK);
+	lxp_fs_mount_spec_t volume = {
+		.block_count = info.block_count,
+		.logical_block_size = info.logical_block_size,
+	};
+	assert_int_equal(fs->mount(&volume), LXP_ERR_BUSY);
+
+	/* Cross-sector byte I/O proves the adapter's bounded read/modify/write path. */
+	const uint8_t written[] = {0x12, 0x34, 0x56};
+	uint8_t readback[sizeof(written)] = {0};
+	size_t done = 0;
+	assert_int_equal(block->write(511, written, sizeof(written), &done), LXP_OK);
+	assert_int_equal(done, sizeof(written));
+	assert_int_equal(block->read(511, readback, sizeof(readback), &done), LXP_OK);
+	assert_int_equal(done, sizeof(readback));
+	assert_memory_equal(readback, written, sizeof(written));
+	assert_int_equal(block->sync(), LXP_OK);
+	block->close(LXP_BLOCK_OPEN_WRITE); /* Last writable close also syncs. */
+
+	assert_int_equal(fs->mount(&volume), LXP_OK);
+	assert_true(fs->is_mounted());
+	block->run_end();
+	fs->run_end();
+	assert_int_equal(unsetenv("OVE_BLOCK_IMAGE"), 0);
+	assert_int_equal(unlink(image), 0);
 }
 
 static void test_fs_adapter_serialized_lifecycle(void **state)
@@ -317,12 +385,14 @@ static void test_host_facade_owns_composition(void **state)
 	g_run_net_ops = NULL;
 	g_run_display_ops = NULL;
 	g_run_fs_ops = NULL;
+	g_run_block_ops = NULL;
 	g_run_config = NULL;
 	assert_int_equal(ove_lxp_run(&config, "/init", 1, argv), 37);
 	assert_ptr_equal(g_run_os_ops, &g_lxp_host_engine);
 	assert_ptr_equal(g_run_net_ops, &g_lxp_host_net_ops);
 	assert_ptr_equal(g_run_display_ops, &g_lxp_host_display_ops);
 	assert_ptr_equal(g_run_fs_ops, &g_lxp_host_fs_ops);
+	assert_ptr_equal(g_run_block_ops, &g_lxp_host_block_ops);
 	assert_ptr_equal(g_run_config, &config);
 }
 
@@ -423,6 +493,7 @@ int test_lxp_adapter_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_adapter_ops_wired),
 		cmocka_unit_test(test_fs_adapter_ops_wired),
+		cmocka_unit_test(test_block_adapter_media_arbitration),
 		cmocka_unit_test(test_fs_adapter_serialized_lifecycle),
 		cmocka_unit_test(test_fs_adapter_async_completion),
 		cmocka_unit_test(test_adapter_open_close),

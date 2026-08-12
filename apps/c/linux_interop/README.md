@@ -73,6 +73,43 @@ virtual `/data` mount point remains visible, while operations below it return
 overlay: `/bin`, `/etc`, shared libraries, and the rest of `/` continue to come
 from the read-only CPIO image.
 
+## Raw microSD administration
+
+`CONFIG_OVE_LINUX_BLOCK` exposes the same microSD medium as a Linux block node,
+`/dev/mmcblk0`. A bounded MBR parser creates `/dev/mmcblk0p1` through `p4` for
+valid primary partitions, and `/proc/partitions` reports the discovered views.
+The class driver implements 64-bit byte offsets plus `BLKSSZGET`,
+`BLKGETSIZE`, `BLKGETSIZE64`, `HDIO_GETGEO`, `BLKRRPART`, and durable sync, so
+the BusyBox `fdisk` and `mkfs.vfat` applets can use their normal block-device
+paths even on cards larger than 2 GiB.
+
+Raw media and `/data` share the same serialized storage worker and an explicit
+lease. Read-only inspection may coexist with the mounted filesystem, but a
+writable raw open fails with `EBUSY` until `/data` is unmounted. Conversely,
+mounting fails while a raw writer is open. The final writable close flushes the
+card. Guest buffers never reach an SD DMA driver directly: the adapter moves at
+most 4 KiB through its aligned native staging area and performs bounded
+sector-level read/modify/write for unaligned byte requests.
+
+The conventional administration sequence is:
+
+```sh
+fdisk -l /dev/mmcblk0
+cat /proc/partitions
+umount /data
+fdisk /dev/mmcblk0
+mkfs.vfat /dev/mmcblk0p1
+mount -t vfat /dev/mmcblk0p1 /data
+```
+
+Formatting is destructive. The initial partition model deliberately supports
+only DOS/MBR's four primary entries: GPT, extended/logical partitions, and
+automatic raw-write unmounting are not implemented. Across all three STM32
+engines, `/data` can portably mount a superfloppy or the first primary
+partition; NuttX can additionally mount the other validated primary views.
+Writable raw access has a separate `CONFIG_OVE_LINUX_BLOCK_WRITE` gate and is
+off by default outside this administration-focused demo.
+
 ## Guest scheduling and niceness
 
 All Linux guests run in one best-effort native RTOS priority class below the

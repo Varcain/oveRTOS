@@ -63,6 +63,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_nvs.c
     ${POSIX_CORE_DIR}/posix_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
+    ${POSIX_CORE_DIR}/posix_block.c
     ${POSIX_CORE_DIR}/posix_net.c
     ${POSIX_CORE_DIR}/posix_protected.c
     # Async runtime substrate (compiled to no-ops when CONFIG_OVE_ASYNC=n).
@@ -198,6 +199,9 @@ function(ove_add_stub_variant name)
         # LXP_ENABLE_* gates live in the lxp repo's own test build now, not here.
         CONFIG_OVE_LINUX_NET=1
         CONFIG_OVE_LINUX_FS=1
+        CONFIG_OVE_BLOCK=1
+        CONFIG_OVE_LINUX_BLOCK=1
+        CONFIG_OVE_LINUX_BLOCK_WRITE=1
         CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US=1000
         CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US=300
         CONFIG_OVE_NET_RX_READY_NOTIFY=1

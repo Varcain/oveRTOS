@@ -96,6 +96,15 @@ struct ove_fs_stat {
 	unsigned int type;  /**< @brief One of @c OVE_FS_TYPE_FILE or @c OVE_FS_TYPE_DIR. */
 };
 
+/** Validated raw-media view used when mounting a partition-backed volume. */
+struct ove_fs_volume {
+	uint64_t first_block;
+	uint64_t block_count;
+	uint32_t logical_block_size;
+	uint8_t partition;
+	uint8_t _reserved[3];
+};
+
 #ifdef CONFIG_OVE_FS
 
 /**
@@ -207,6 +216,9 @@ int ove_fs_closedir(ove_dir_t dir);
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_fs_mount(const char *dev_path, const char *mount_point);
+
+/** Mount a validated whole-disk or partition view. */
+int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point);
 
 /**
  * @brief Unmount a previously mounted storage device.
@@ -339,6 +351,13 @@ int ove_fs_sync(ove_file_t file);
 static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
 {
 	(void)dev_path;
+	(void)mount_point;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_mount_volume(const struct ove_fs_volume *volume,
+				      const char *mount_point)
+{
+	(void)volume;
 	(void)mount_point;
 	return OVE_ERR_NOT_SUPPORTED;
 }

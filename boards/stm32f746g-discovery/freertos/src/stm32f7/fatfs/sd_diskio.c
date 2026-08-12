@@ -337,8 +337,10 @@ DRESULT SD_ioctl(BYTE lun, BYTE cmd, void *buff)
 
 	/* Get erase block size in unit of sector (DWORD) */
 	case GET_BLOCK_SIZE:
-		BSP_SD_GetCardInfo(&CardInfo);
-		*(DWORD *)buff = CardInfo.LogBlockSize;
+		/* The HAL exposes no erase-group geometry. Report one logical sector,
+		 * a conservative valid granularity, rather than the old byte count. */
+		*(DWORD *)buff = 1u;
+		res = RES_OK;
 		break;
 
 	default:

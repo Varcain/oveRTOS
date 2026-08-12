@@ -34,6 +34,13 @@ extern const lxp_fs_ops_t g_lxp_host_fs_ops;
 #define OVE_LXP_FS_OPS NULL
 #endif
 
+#if defined(CONFIG_OVE_LINUX_BLOCK)
+extern const lxp_block_ops_t g_lxp_host_block_ops;
+#define OVE_LXP_BLOCK_OPS (&g_lxp_host_block_ops)
+#else
+#define OVE_LXP_BLOCK_OPS NULL
+#endif
+
 void ove_lxp_prepare_rootfs_access(const void *base, size_t len)
 {
 	if (g_lxp_host_engine.rootfs_window)
@@ -44,5 +51,5 @@ int ove_lxp_run(const lxp_run_config_t *config, const char *path, int argc,
 		const char *const argv[])
 {
 	return lxp_run(&g_lxp_host_engine, OVE_LXP_NET_OPS, OVE_LXP_DISPLAY_OPS, OVE_LXP_FS_OPS,
-		       config, path, argc, argv);
+		       OVE_LXP_BLOCK_OPS, config, path, argc, argv);
 }
