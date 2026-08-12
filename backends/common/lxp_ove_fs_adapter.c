@@ -70,6 +70,7 @@ struct fs_handle_slot {
 enum fs_request_op {
 	FS_REQ_MOUNT = 0,
 	FS_REQ_UNMOUNT,
+	FS_REQ_VOLUME_STAT,
 	FS_REQ_FILE_OPEN,
 	FS_REQ_OBJECT_OPEN,
 	FS_REQ_FILE_CLOSE,
@@ -109,6 +110,9 @@ struct fs_request {
 		struct {
 			const lxp_fs_mount_spec_t *spec;
 		} mount;
+		struct {
+			lxp_fs_volume_stat_t *out;
+		} volume_stat;
 		struct {
 			const char *path;
 			unsigned int flags;
@@ -250,6 +254,7 @@ static lxp_fs_file_t g_async_file;
 static lxp_fs_dir_t g_async_dir;
 static lxp_fs_open_result_t g_async_open;
 static lxp_fs_stat_t g_async_stat;
+static lxp_fs_volume_stat_t g_async_volume_stat;
 static lxp_fs_dirent_t g_async_dirent;
 static lxp_block_info_t g_async_block_info;
 static lxp_fs_mount_spec_t g_async_mount_spec;
@@ -436,6 +441,19 @@ static void stat_to_lxp(lxp_fs_stat_t *out, const struct ove_fs_stat *native)
 	out->type = native->type == OVE_FS_TYPE_DIR ? LXP_FS_TYPE_DIR : LXP_FS_TYPE_FILE;
 }
 
+static void volume_stat_to_lxp(lxp_fs_volume_stat_t *out, const struct ove_fs_statvfs *native)
+{
+	memset(out, 0, sizeof(*out));
+	out->blocks = native->blocks;
+	out->blocks_free = native->blocks_free;
+	out->blocks_available = native->blocks_available;
+	out->files = native->files;
+	out->files_free = native->files_free;
+	out->block_size = native->block_size;
+	out->fragment_size = native->fragment_size;
+	out->name_max = native->name_max;
+}
+
 static void close_all_handles(void)
 {
 	for (size_t i = 0; i < LXP_NHOSTFS_OPEN; i++) {
@@ -451,6 +469,7 @@ static int execute_request(struct fs_request *request)
 {
 	struct fs_handle_slot *slot;
 	struct ove_fs_stat native_stat;
+	struct ove_fs_statvfs native_volume_stat;
 	struct ove_dirent native_entry;
 	size_t size;
 	long position;
@@ -534,6 +553,13 @@ static int execute_request(struct fs_request *request)
 		return rc;
 
 	switch (request->op) {
+	case FS_REQ_VOLUME_STAT:
+		if (request->args.volume_stat.out == NULL)
+			return LXP_ERR_INVALID_PARAM;
+		rc = ove_fs_statvfs(&native_volume_stat);
+		if (rc == OVE_OK)
+			volume_stat_to_lxp(request->args.volume_stat.out, &native_volume_stat);
+		return rc;
 	case FS_REQ_FILE_OPEN:
 		if (request->args.file_open.path == NULL || request->args.file_open.out == NULL)
 			return LXP_ERR_INVALID_PARAM;
@@ -820,6 +846,9 @@ static int async_prepare(const struct fs_request *source)
 			g_async_request.args.mount.spec = &g_async_mount_spec;
 		}
 		break;
+	case FS_REQ_VOLUME_STAT:
+		g_async_request.args.volume_stat.out = &g_async_volume_stat;
+		break;
 	case FS_REQ_FILE_OPEN:
 		if (async_copy_path(g_async_path, source->args.file_open.path) != LXP_OK)
 			return LXP_ERR_NAME_TOO_LONG;
@@ -881,6 +910,10 @@ static int async_collect(struct fs_request *request)
 	if (request->op != g_async_request.op)
 		return LXP_ERR_INVALID_PARAM;
 	switch (request->op) {
+	case FS_REQ_VOLUME_STAT:
+		if (request->args.volume_stat.out)
+			*request->args.volume_stat.out = g_async_volume_stat;
+		break;
 	case FS_REQ_BLOCK_INFO:
 		if (request->args.block_info.out)
 			*request->args.block_info.out = g_async_block_info;
@@ -1382,6 +1415,15 @@ static int fs_is_mounted(void)
 	return __atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0;
 }
 
+static int fs_volume_stat(lxp_fs_volume_stat_t *out)
+{
+	struct fs_request request = {
+		.op = FS_REQ_VOLUME_STAT,
+		.args.volume_stat = {.out = out},
+	};
+	return submit(&request);
+}
+
 static int fs_file_open(const char *path, unsigned int flags, lxp_fs_file_t *out)
 {
 	struct fs_request request = {
@@ -1780,6 +1822,7 @@ const lxp_fs_ops_t g_lxp_host_fs_ops = {
 	.mount = hostfs_mount,
 	.unmount = hostfs_unmount,
 	.is_mounted = fs_is_mounted,
+	.volume_stat = fs_volume_stat,
 	.file_open = fs_file_open,
 	.object_open = fs_object_open,
 	.file_close = fs_file_close,

@@ -131,6 +131,13 @@ disabled, and Unix device/suid semantics are not projected onto the mount.
 
 `/proc/mounts` reports the live source, target, type, read-only state, and
 intrinsic `nosuid,nodev,noexec` policy. `/proc/filesystems` lists `vfat`.
+`statfs64()` and `fstatfs64()` obtain the mounted FAT volume's live allocation
+geometry from the engine-native filesystem, so `df` and `df /data` report real
+card capacity, used space, and available space. FAT has no fixed inode table,
+so inode totals remain zero. Objects under the external mount have a distinct
+device identity, allowing path-based tools to associate them with the correct
+`/proc/mounts` entry. `sync`, `syncfs`, `fsync`, and `fdatasync` flush open
+provider-backed files through the serialized storage worker.
 Only one SD medium and one external mount are supported; a second mount is not
 an alias and returns busy. The following remain explicit non-features:
 

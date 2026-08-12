@@ -140,6 +140,12 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
+int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
+{
+	(void)out_stat;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
 int ove_fs_mkdir(const char *path)
 {
 	(void)path;
@@ -172,6 +178,7 @@ int ove_fs_sync(ove_file_t file)
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -424,6 +431,26 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 	out_stat->size = S_ISDIR(st.st_mode) ? 0u : (uint64_t)st.st_size;
 	out_stat->mtime_sec = (uint64_t)st.st_mtime;
 	out_stat->type = S_ISDIR(st.st_mode) ? OVE_FS_TYPE_DIR : OVE_FS_TYPE_FILE;
+	return OVE_OK;
+}
+
+int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
+{
+	struct statvfs native;
+
+	if (!out_stat)
+		return OVE_ERR_INVALID_PARAM;
+	if (statvfs(".", &native) != 0)
+		return ove_errno_to_ove(errno);
+	memset(out_stat, 0, sizeof(*out_stat));
+	out_stat->blocks = native.f_blocks;
+	out_stat->blocks_free = native.f_bfree;
+	out_stat->blocks_available = native.f_bavail;
+	out_stat->files = native.f_files;
+	out_stat->files_free = native.f_ffree;
+	out_stat->block_size = native.f_bsize;
+	out_stat->fragment_size = native.f_frsize;
+	out_stat->name_max = native.f_namemax;
 	return OVE_OK;
 }
 

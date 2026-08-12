@@ -353,6 +353,22 @@ static void test_fs_directory_and_stat(void **state)
 	assert_int_equal(ove_fs_stat(dirpath, &st), OVE_ERR_NOT_FOUND);
 }
 
+static void test_fs_volume_stat(void **state)
+{
+	(void)state;
+	struct ove_fs_statvfs stat;
+
+	assert_int_equal(ove_fs_mount(NULL, "/"), OVE_OK);
+	assert_int_equal(ove_fs_statvfs(&stat), OVE_OK);
+	assert_true(stat.block_size > 0u);
+	assert_true(stat.fragment_size > 0u);
+	assert_true(stat.blocks > 0u);
+	assert_true(stat.blocks_free <= stat.blocks);
+	assert_true(stat.blocks_available <= stat.blocks_free);
+	assert_true(stat.name_max > 0u);
+	ove_fs_unmount("/");
+}
+
 static void test_fs_unmount(void **state)
 {
 	(void)state;
@@ -373,6 +389,7 @@ int test_fs_run(void)
 #else
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup_teardown(test_fs_mount, fs_setup, fs_teardown),
+		cmocka_unit_test_setup_teardown(test_fs_volume_stat, fs_setup, fs_teardown),
 		cmocka_unit_test_setup_teardown(test_fs_open_close, fs_setup, fs_teardown),
 		cmocka_unit_test_setup_teardown(test_fs_write_read, fs_setup, fs_teardown),
 		cmocka_unit_test_setup_teardown(test_fs_seek_tell, fs_setup, fs_teardown),
