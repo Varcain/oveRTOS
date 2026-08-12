@@ -28,13 +28,19 @@ SERVER_SOURCE = HERE / "hammer_stream_server.py"
 FLASH = {
     "freertos": ROOT / "output/stm32f746/freertos/linux_interop/flash",
     "nuttx": ROOT / "output/stm32f746/nuttx/linux_interop/flash",
-    "zephyr": ROOT / "output/stm32f746/zephyr/linux_interop/flash",
+    "zephyr": ROOT / "output/stm32f746g-discovery/zephyr/linux_interop/flash",
 }
 
 FIRMWARE = {
     "freertos": FLASH["freertos"].parent / "images/hard-guest-hard/firmware.bin",
     "nuttx": FLASH["nuttx"].parent / "images/firmware.bin",
     "zephyr": FLASH["zephyr"].parent / "images/firmware.bin",
+}
+
+EXPECTED_OVERTOS = {
+    "freertos": "ove-fa0ec69",
+    "nuttx": "ove-56b7c86",
+    "zephyr": "ove-96fc3fc",
 }
 
 SHELL_SOURCE = (
@@ -165,6 +171,11 @@ def wait_for_target(engine):
             if engine.lower() not in identity.lower():
                 raise RuntimeError(
                     f"expected {engine}, target reports {identity!r}"
+                )
+            expected = EXPECTED_OVERTOS[engine]
+            if expected not in identity or "-dirty" in identity:
+                raise RuntimeError(
+                    f"expected clean {expected}, target reports {identity!r}"
                 )
             # A mountpoint can exist before the asynchronous native SD mount is
             # writable (notably on NuttX). Require a real create/remove cycle.
