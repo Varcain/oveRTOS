@@ -67,6 +67,15 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	return OVE_OK;
 }
 
+int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
+{
+	if (!volume || volume->logical_block_size != 512u || volume->block_count == 0u ||
+	    volume->partition > 1u)
+		return OVE_ERR_INVALID_PARAM;
+	/* Zephyr's FatFs disk layer performs the same superfloppy/MBR discovery. */
+	return ove_fs_mount(NULL, mount_point);
+}
+
 void ove_fs_unmount(const char *mount_point)
 {
 	if (!volume_mounted || (mount_point != NULL && strcmp(mount_point, mp.mnt_point) != 0)) {

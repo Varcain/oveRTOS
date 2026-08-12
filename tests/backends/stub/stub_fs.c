@@ -29,6 +29,13 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	return OVE_OK;
 }
 
+int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
+{
+	(void)volume;
+	(void)mount_point;
+	return OVE_OK;
+}
+
 void ove_fs_unmount(const char *mount_point)
 {
 	(void)mount_point;
@@ -199,6 +206,13 @@ static int flags_to_posix(int flags)
 int ove_fs_mount(const char *dev_path, const char *mount_point)
 {
 	(void)dev_path;
+	(void)mount_point;
+	return OVE_OK;
+}
+
+int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
+{
+	(void)volume;
 	(void)mount_point;
 	return OVE_OK;
 }

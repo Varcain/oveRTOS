@@ -52,7 +52,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
 {% endif %}
 
 # Module flags
-{% for mod in ["THREAD", "APP", "SYNC", "AUDIO", "FS", "CONSOLE", "LOG",
+{% for mod in ["THREAD", "APP", "SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "LOG",
                "TIME", "BSP", "BOARD", "GPIO", "LED", "LVGL", "QUEUE",
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
@@ -166,7 +166,7 @@ set(OVE_BACKEND_SOURCES
 {% else %}
     ${OVE_DIR}/backends/freertos/freertos_libc_malloc.c
 {% endif %}
-{% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
+{% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "SHELL", "NET", "PM"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
@@ -184,7 +184,7 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
-{% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
+{% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "SHELL", "NET", "PM",
                "UART", "SPI", "I2C", "I2S"] %}
@@ -207,7 +207,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/nuttx/nuttx_heap_lock.c
     ${OVE_DIR}/backends/nuttx/nuttx_zh_reserved_heap.c
 {% endif %}
-{% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
+{% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "SHELL", "NET", "PM",
                "UART", "SPI", "I2C", "I2S"] %}
@@ -235,7 +235,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/posix/posix_thread.c
 {% endif %}
 {% set wasm_skip = ["THREAD", "TIMER", "TIME", "CONSOLE", "NET", "UART", "SPI", "I2C", "I2S"] if wasm_on else [] %}
-{% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
+{% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "SHELL", "NET", "PM",
                "UART", "SPI", "I2C", "I2S"] %}
@@ -314,7 +314,7 @@ add_compile_definitions(LXP_ENABLE_FPU_CONTEXT=1)
 {% else %}
 set(OVE_LINUX_GUEST_FLOAT_ABI "soft")
 {% endif %}
-{% for feat, cfg in [("FS","CONFIG_OVE_LINUX_FS"), ("NET","CONFIG_OVE_LINUX_NET"),
+{% for feat, cfg in [("FS","CONFIG_OVE_LINUX_FS"), ("BLOCK","CONFIG_OVE_LINUX_BLOCK"), ("NET","CONFIG_OVE_LINUX_NET"),
                      ("NETFS","CONFIG_OVE_LINUX_NETFS"),
                      ("NETFS_EXEC","CONFIG_OVE_LINUX_NETFS_EXEC"), ("PTY","CONFIG_OVE_LINUX_PTY"),
                      ("DEV","CONFIG_OVE_LINUX_DEV"), ("DEV_FB","CONFIG_OVE_LINUX_DEV_FB"),
@@ -482,6 +482,9 @@ add_compile_definitions(LXP_ENABLE_LATENCY=1)
 # /dev character-device layer: core registry + routing (class drivers added by
 # their own CONFIG_OVE_LINUX_DEV_* below).
 list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_SOURCES})
+{% if config.get("CONFIG_OVE_LINUX_BLOCK") == True %}
+list(APPEND OVE_BACKEND_SOURCES ${LXP_BLOCK_SOURCES})
+{% endif %}
 # Host adapter for the display/input port: exports the immutable provider table
 # passed to lxp_run(), bridging fb/touch ops to ove_fb_* / ove_ft5336_*.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_disp_adapter.c")

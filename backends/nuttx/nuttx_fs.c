@@ -21,10 +21,12 @@
 #include <sys/mount.h>
 #include <errno.h>
 #include <nuttx/irq.h>
+#include <nuttx/fs/fs.h>
 #define SD_MOUNT_POINT_DEFAULT "/mnt/sd"
 #define SD_DEVICE_DEFAULT "/dev/mmcsd0"
 #define NATIVE_PATH_MAX 320
 #define FS_POOL_FILES 4
+#define SD_PARTITION_DEVICE "/dev/ove-sdp"
 
 #ifdef CONFIG_FAT_DMAMEMORY
 /*
@@ -78,6 +80,7 @@ void fat_dma_free(void *memory, size_t size)
 
 static char active_mount_point[64] = SD_MOUNT_POINT_DEFAULT;
 static int volume_mounted;
+static int partition_registered;
 
 static int build_path(char *buf, size_t bufsz, const char *path)
 {
@@ -133,6 +136,31 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	return OVE_OK;
 }
 
+int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
+{
+	if (!volume || volume->logical_block_size == 0u || volume->block_count == 0u ||
+	    volume->partition > 4u)
+		return OVE_ERR_INVALID_PARAM;
+	if (volume_mounted)
+		return OVE_ERR_BUSY;
+	if (volume->partition == 0u)
+		return ove_fs_mount(SD_DEVICE_DEFAULT, mount_point);
+	if (volume->first_block > (uint64_t)INT64_MAX ||
+	    volume->block_count > (uint64_t)INT64_MAX)
+		return OVE_ERR_INVALID_PARAM;
+	int rc = register_blockpartition(SD_PARTITION_DEVICE, 0660, SD_DEVICE_DEFAULT,
+				 (off_t)volume->first_block, (off_t)volume->block_count);
+	if (rc < 0)
+		return ove_errno_to_ove(-rc);
+	partition_registered = 1;
+	rc = ove_fs_mount(SD_PARTITION_DEVICE, mount_point);
+	if (rc != OVE_OK) {
+		(void)unregister_driver(SD_PARTITION_DEVICE);
+		partition_registered = 0;
+	}
+	return rc;
+}
+
 void ove_fs_unmount(const char *mount_point)
 {
 	if (!volume_mounted ||
@@ -141,6 +169,10 @@ void ove_fs_unmount(const char *mount_point)
 	}
 	if (umount(active_mount_point) == 0) {
 		volume_mounted = 0;
+		if (partition_registered) {
+			(void)unregister_driver(SD_PARTITION_DEVICE);
+			partition_registered = 0;
+		}
 	}
 }
 

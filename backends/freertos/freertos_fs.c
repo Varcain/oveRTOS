@@ -173,6 +173,16 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	return OVE_OK;
 }
 
+int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
+{
+	if (!volume || volume->logical_block_size != 512u || volume->block_count == 0u ||
+	    volume->partition > 1u)
+		return OVE_ERR_INVALID_PARAM;
+	/* FatFs probes sector zero and follows the first valid MBR primary partition.
+	 * A partitionless volume is handled as a superfloppy. */
+	return ove_fs_mount(NULL, mount_point);
+}
+
 void ove_fs_unmount(const char *mount_point)
 {
 	(void)mount_point;

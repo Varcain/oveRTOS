@@ -299,6 +299,33 @@ config OVE_LINUX_FS_SERVER_BUDGET_US
       may preempt the worker, so this is an overrun detector, not a claim that
       an opaque filesystem call can be forcibly stopped at the threshold.
 
+config OVE_BLOCK
+    bool "Raw block-media API"
+    default n
+    help
+      Provide engine-neutral sector geometry, read, write, and sync operations.
+      This is intentionally separate from ove_fs: callers must arbitrate raw
+      media ownership against mounted filesystems.
+
+config OVE_LINUX_BLOCK
+    bool "Linux personality: /dev/mmcblk0 block device"
+    default n
+    depends on OVE_LINUX
+    select OVE_BLOCK
+    select OVE_LINUX_FS
+    select OVE_LINUX_DEV
+    help
+      Expose SD media as /dev/mmcblk0 plus validated MBR primary partition
+      views. Uses the same bounded storage server and ownership state as /data.
+
+config OVE_LINUX_BLOCK_WRITE
+    bool "Allow writable Linux raw block opens"
+    default n
+    depends on OVE_LINUX_BLOCK
+    help
+      Permit privileged guests to modify raw media after /data is explicitly
+      unmounted. Keep disabled unless fdisk/mkfs-style administration is needed.
+
 config OVE_LINUX_NETFS
     bool "Linux personality: remote filesystem (9P2000.L)"
     default n

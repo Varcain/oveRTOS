@@ -137,6 +137,7 @@
 #include "ove/console.h"
 #include "ove/time.h"
 #include "ove/board.h"
+#include "ove/block.h"
 #include "ove/gpio.h"
 #include "ove/led.h"
 #include "ove/bsp.h"
