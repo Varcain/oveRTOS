@@ -542,6 +542,32 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 	return OVE_OK;
 }
 
+int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
+{
+	struct fs_statvfs native;
+
+	if (out_stat == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!volume_mounted)
+		return OVE_ERR_NOT_REGISTERED;
+	int res = fs_statvfs(mp.mnt_point, &native);
+	if (res != 0)
+		return ove_errno_to_ove(-res);
+
+	memset(out_stat, 0, sizeof(*out_stat));
+	out_stat->blocks = native.f_blocks;
+	out_stat->blocks_free = native.f_bfree;
+	out_stat->blocks_available = native.f_bfree;
+	out_stat->block_size = native.f_bsize;
+	out_stat->fragment_size = native.f_frsize;
+#if FF_USE_LFN != 0
+	out_stat->name_max = FF_MAX_LFN;
+#else
+	out_stat->name_max = 12u;
+#endif
+	return OVE_OK;
+}
+
 int ove_fs_mkdir(const char *path)
 {
 	char fullpath[NATIVE_PATH_MAX];

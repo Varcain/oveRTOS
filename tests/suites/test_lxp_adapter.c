@@ -140,6 +140,7 @@ static void test_fs_adapter_ops_wired(void **state)
 	assert_non_null(ops->mount);
 	assert_non_null(ops->unmount);
 	assert_non_null(ops->is_mounted);
+	assert_non_null(ops->volume_stat);
 	assert_non_null(ops->file_open);
 	assert_non_null(ops->object_open);
 	assert_non_null(ops->file_close);

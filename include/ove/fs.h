@@ -96,6 +96,19 @@ struct ove_fs_stat {
 	unsigned int type;  /**< @brief One of @c OVE_FS_TYPE_FILE or @c OVE_FS_TYPE_DIR. */
 };
 
+/** Capacity and allocation statistics for the mounted backend volume. */
+struct ove_fs_statvfs {
+	uint64_t blocks;	   /**< Allocation units in the volume. */
+	uint64_t blocks_free;	   /**< Free allocation units. */
+	uint64_t blocks_available; /**< Free units available to ordinary callers. */
+	uint64_t files;		   /**< File-node capacity, or zero when not meaningful. */
+	uint64_t files_free;	   /**< Free file nodes, or zero when not meaningful. */
+	uint32_t block_size;	   /**< Preferred transfer size in bytes. */
+	uint32_t fragment_size;	   /**< Size in bytes of one allocation unit. */
+	uint32_t name_max;	   /**< Maximum single path-component length. */
+	uint32_t _reserved;
+};
+
 /** Validated raw-media view used when mounting a partition-backed volume. */
 struct ove_fs_volume {
 	uint64_t first_block;
@@ -334,6 +347,9 @@ int ove_fs_rename(const char *old_path, const char *new_path);
 /** @brief Query metadata for a path without opening it. */
 int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat);
 
+/** @brief Query allocation statistics for the currently mounted volume. */
+int ove_fs_statvfs(struct ove_fs_statvfs *out_stat);
+
 /** @brief Create a directory. */
 int ove_fs_mkdir(const char *path);
 
@@ -443,6 +459,11 @@ static inline int ove_fs_rename(const char *old_path, const char *new_path)
 static inline int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 {
 	(void)path;
+	(void)out_stat;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
+{
 	(void)out_stat;
 	return OVE_ERR_NOT_SUPPORTED;
 }

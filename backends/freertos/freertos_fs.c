@@ -626,6 +626,38 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 	return OVE_OK;
 }
 
+int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
+{
+	DWORD free_clusters;
+	FATFS *volume;
+
+	if (out_stat == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!driver_linked)
+		return OVE_ERR_NOT_REGISTERED;
+	FRESULT result = f_getfree(active_volume, &free_clusters, &volume);
+	if (result != FR_OK)
+		return fatfs_result(result);
+
+#if _MAX_SS != _MIN_SS
+	uint32_t sector_size = volume->ssize;
+#else
+	uint32_t sector_size = _MIN_SS;
+#endif
+	memset(out_stat, 0, sizeof(*out_stat));
+	out_stat->blocks = volume->n_fatent >= 2u ? (uint64_t)volume->n_fatent - 2u : 0u;
+	out_stat->blocks_free = free_clusters;
+	out_stat->blocks_available = free_clusters;
+	out_stat->block_size = sector_size;
+	out_stat->fragment_size = sector_size * volume->csize;
+#if _USE_LFN != 0
+	out_stat->name_max = _MAX_LFN;
+#else
+	out_stat->name_max = 12u;
+#endif
+	return OVE_OK;
+}
+
 int ove_fs_mkdir(const char *path)
 {
 	char native_path[OVE_FS_PATH_MAX + 4];
