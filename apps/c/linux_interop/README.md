@@ -170,6 +170,42 @@ multi-partition support is used rather than replaced, but upgrading that vendor
 dependency should be treated as a separate compatibility project with on-card
 and power-loss tests, not mixed into the media-ownership change.
 
+### fstab and FAT checking
+
+The oveRTOS Buildroot image supplies `/etc/fstab` entries for `/proc` and the
+superfloppy `/dev/mmcblk0` mounted at `/data`. PID 1 runs `mount -a` before
+`rcS`, and BusyBox mount accepts the same entry for explicit operations such as
+`mount /data`. A missing card makes the `/data` entry fail without stopping the
+remaining init actions. The fstab check-pass field is zero deliberately: FAT
+checking must not run implicitly against mounted or unexpectedly large media.
+
+The image also provides BusyBox `fsck` and dosfstools `fsck.fat`. Safe media
+administration is explicit:
+
+```sh
+umount /data
+fsck.fat -n /dev/mmcblk0       # full read-only check
+fsck.fat -a /dev/mmcblk0       # repair without questions
+mount /data
+```
+
+As with other `fsck` implementations, exit status 1 means that errors were
+found and corrected; a follow-up `-n` pass should return zero. Scripts must not
+treat every nonzero status from an automatic repair as an unqualified failure.
+
+`fsck.fat -b /dev/mmcblk0` validates only the FAT boot sector and uses bounded
+memory, so it is useful even while diagnosing a large card. It is not a full
+FAT or directory-tree check. Upstream dosfstools loads the complete FAT plus
+one owner pointer per cluster for a full pass. That works for FAT volumes whose
+geometry fits the selected LXP process arena, but it is not bounded by this
+port and can return `ENOMEM` on a high-cluster-count card. For example, the
+16 GB validation card has 487,619 clusters and needs about 3.9 MiB for those
+two tables alone, while the STM32F746 FreeRTOS profile provides about 640 KiB
+per guest. A future full-card embedded checker must page FAT entries and use a
+compact ownership bitmap; pretending boot-only checking is equivalent, or
+silently increasing every process region, would weaken either correctness or
+guest concurrency.
+
 ## Guest scheduling and niceness
 
 All Linux guests run in one best-effort native RTOS priority class below the
