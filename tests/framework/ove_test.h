@@ -437,6 +437,7 @@ int test_cortex_m_cache_run(void);
 int test_loader_target_run(void);
 int test_protected_target_run(void);
 int test_storage_bounds_run(void);
+int test_media_run(void);
 int test_renode_stm32_obs_run(void);
 int test_renode_stm32_periph_run(void);
 int test_renode_stm32_net_run(void);

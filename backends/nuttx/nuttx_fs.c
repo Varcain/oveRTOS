@@ -7,6 +7,7 @@
  */
 
 #include "ove/fs.h"
+#include "ove/media.h"
 #include "ove_backend_common.h"
 #include "ove_config.h"
 #if defined(CONFIG_OVE_LINUX_FS)
@@ -105,18 +106,8 @@ static int build_path(char *buf, size_t bufsz, const char *path)
 	return needed < 0 || (size_t)needed >= bufsz ? OVE_ERR_NAME_TOO_LONG : OVE_OK;
 }
 
-int ove_fs_mount(const char *dev_path, const char *mount_point)
+static int mount_native(const char *device, const char *target)
 {
-	const char *device = dev_path != NULL ? dev_path : SD_DEVICE_DEFAULT;
-	const char *target = mount_point != NULL ? mount_point : SD_MOUNT_POINT_DEFAULT;
-
-	if (strnlen(target, sizeof(active_mount_point)) >= sizeof(active_mount_point)) {
-		return OVE_ERR_NAME_TOO_LONG;
-	}
-	if (volume_mounted) {
-		return strcmp(target, active_mount_point) == 0 ? OVE_OK : OVE_ERR_BUSY;
-	}
-
 	if (strcmp(target, SD_MOUNT_POINT_DEFAULT) == 0) {
 		if (mkdir("/mnt", 0777) != 0 && errno != EEXIST) {
 			return ove_errno_to_ove(errno);
@@ -127,13 +118,30 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	}
 
 	int res = mount(device, target, "vfat", 0, NULL);
-	if (res != 0) {
+	if (res != 0)
 		return ove_errno_to_ove(errno);
-	}
 	strncpy(active_mount_point, target, sizeof(active_mount_point));
 	active_mount_point[sizeof(active_mount_point) - 1] = '\0';
 	volume_mounted = 1;
 	return OVE_OK;
+}
+
+int ove_fs_mount(const char *dev_path, const char *mount_point)
+{
+	const char *device = dev_path != NULL ? dev_path : SD_DEVICE_DEFAULT;
+	const char *target = mount_point != NULL ? mount_point : SD_MOUNT_POINT_DEFAULT;
+
+	if (strnlen(target, sizeof(active_mount_point)) >= sizeof(active_mount_point))
+		return OVE_ERR_NAME_TOO_LONG;
+	if (volume_mounted)
+		return strcmp(target, active_mount_point) == 0 ? OVE_OK : OVE_ERR_BUSY;
+	int rc = ove_media_fs_acquire();
+	if (rc != OVE_OK)
+		return rc;
+	rc = mount_native(device, target);
+	if (rc != OVE_OK)
+		ove_media_fs_release();
+	return rc;
 }
 
 int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
@@ -145,18 +153,27 @@ int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_po
 		return OVE_ERR_BUSY;
 	if (volume->partition == 0u)
 		return ove_fs_mount(SD_DEVICE_DEFAULT, mount_point);
-	if (volume->first_block > (uint64_t)INT64_MAX ||
-	    volume->block_count > (uint64_t)INT64_MAX)
+	if (volume->first_block > (uint64_t)INT64_MAX || volume->block_count > (uint64_t)INT64_MAX)
 		return OVE_ERR_INVALID_PARAM;
-	int rc = register_blockpartition(SD_PARTITION_DEVICE, 0660, SD_DEVICE_DEFAULT,
-				 (off_t)volume->first_block, (off_t)volume->block_count);
-	if (rc < 0)
+	int rc = ove_media_fs_acquire();
+	if (rc != OVE_OK)
+		return rc;
+	rc = register_blockpartition(SD_PARTITION_DEVICE, 0660, SD_DEVICE_DEFAULT,
+				     (off_t)volume->first_block, (off_t)volume->block_count);
+	if (rc < 0) {
+		ove_media_fs_release();
 		return ove_errno_to_ove(-rc);
+	}
 	partition_registered = 1;
-	rc = ove_fs_mount(SD_PARTITION_DEVICE, mount_point);
+	const char *target = mount_point != NULL ? mount_point : SD_MOUNT_POINT_DEFAULT;
+	if (strnlen(target, sizeof(active_mount_point)) >= sizeof(active_mount_point))
+		rc = OVE_ERR_NAME_TOO_LONG;
+	else
+		rc = mount_native(SD_PARTITION_DEVICE, target);
 	if (rc != OVE_OK) {
 		(void)unregister_driver(SD_PARTITION_DEVICE);
 		partition_registered = 0;
+		ove_media_fs_release();
 	}
 	return rc;
 }
@@ -173,6 +190,7 @@ void ove_fs_unmount(const char *mount_point)
 			(void)unregister_driver(SD_PARTITION_DEVICE);
 			partition_registered = 0;
 		}
+		ove_media_fs_release();
 	}
 }
 

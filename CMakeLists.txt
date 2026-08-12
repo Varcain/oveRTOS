@@ -25,6 +25,8 @@ set(_OVE_CORE_SOURCES
     ${OVE_DIR}/src/ove_sync.c
     ${OVE_DIR}/src/ove_audio.c
     ${OVE_DIR}/src/ove_fs.c
+    ${OVE_DIR}/src/ove_media.c
+    ${OVE_DIR}/src/ove_block.c
     ${OVE_DIR}/src/ove_queue.c
     ${OVE_DIR}/src/ove_timer.c
     ${OVE_DIR}/src/ove_console.c
