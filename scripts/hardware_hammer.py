@@ -76,8 +76,6 @@ def target_argv(command):
     return [
         "setsid", "-w", "ssh",
         "-o", "ConnectTimeout=10",
-        "-o", "ServerAliveInterval=5",
-        "-o", "ServerAliveCountMax=3",
         "-o", "StrictHostKeyChecking=no",
         "-o", "UserKnownHostsFile=/dev/null",
         "-J", PI_HOST,
