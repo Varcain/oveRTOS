@@ -68,10 +68,12 @@ depth/high-water, request and byte counts, service time, cancellations,
 failures, and budget overruns.
 
 A missing or unformatted card does not delay Linux-personality startup. The
-virtual `/data` mount point remains visible, while operations below it return
-`ENODEV` until a later mount retry succeeds. `/data` is a subtree, not an
-overlay: `/bin`, `/etc`, shared libraries, and the rest of `/` continue to come
-from the read-only CPIO image.
+default virtual `/data` mount point remains visible, while operations below it
+return `ENODEV` until a later mount retry succeeds. `/data` is a subtree, not
+an overlay: `/bin`, `/etc`, shared libraries, and the rest of `/` continue to
+come from the read-only CPIO image. The single external volume can instead be
+mounted at any existing directory (for example `/mnt`); doing so moves the
+provider's routing boundary rather than creating a second mount.
 
 ## Raw microSD administration
 
@@ -83,13 +85,17 @@ The class driver implements 64-bit byte offsets plus `BLKSSZGET`,
 the BusyBox `fdisk` and `mkfs.vfat` applets can use their normal block-device
 paths even on cards larger than 2 GiB.
 
-Raw media and `/data` share the same serialized storage worker and an explicit
-lease. Read-only inspection may coexist with the mounted filesystem, but a
-writable raw open fails with `EBUSY` until `/data` is unmounted. Conversely,
-mounting fails while a raw writer is open. The final writable close flushes the
-card. Guest buffers never reach an SD DMA driver directly: the adapter moves at
-most 4 KiB through its aligned native staging area and performs bounded
-sector-level read/modify/write for unaligned byte requests.
+Raw media and the external FAT mount share the same serialized storage worker
+and the engine-neutral media lease in `include/ove/media.h`. The lease is below
+LXP: native RTOS callers of `ove_fs` and `ove_block` participate in the same
+policy. Read-only inspection may coexist with the mounted filesystem, but a
+writable raw open fails with `EBUSY` until the filesystem is unmounted.
+Conversely, mounting fails while a raw writer is open. Raw handles are qualified
+by the card generation; removal or replacement makes an old handle unusable
+instead of letting it access the replacement medium. The final writable close
+flushes the card. Guest buffers never reach an SD DMA driver directly: the
+adapter moves at most 4 KiB through its aligned native staging area and performs
+bounded sector-level read/modify/write for unaligned byte requests.
 
 The conventional administration sequence is:
 
@@ -104,11 +110,65 @@ mount -t vfat /dev/mmcblk0p1 /data
 
 Formatting is destructive. The initial partition model deliberately supports
 only DOS/MBR's four primary entries: GPT, extended/logical partitions, and
-automatic raw-write unmounting are not implemented. Across all three STM32
-engines, `/data` can portably mount a superfloppy or the first primary
-partition; NuttX can additionally mount the other validated primary views.
-Writable raw access has a separate `CONFIG_OVE_LINUX_BLOCK_WRITE` gate and is
-off by default outside this administration-focused demo.
+automatic raw-write unmounting are not implemented. All three STM32 engines
+can mount a superfloppy or any one of the four validated primary partition
+views. NuttX uses `register_blockpartition()`; FreeRTOS and Zephyr use their
+native FatFs `VolToPart[]` multi-partition facilities. Writable raw access has
+a separate `CONFIG_OVE_LINUX_BLOCK_WRITE` gate and is off by default outside
+this administration-focused demo.
+
+### Mount semantics and deliberate limits
+
+The guest accepts `vfat`, `msdos`, `fat`, or `auto` and rejects any other
+filesystem type with `ENODEV`. It understands `ro`/`rw`, `remount`, `nosuid`,
+`nodev`, `noexec`, `noatime`, `nodiratime`, and `relatime`; unknown options and
+unsupported flag bits fail with `EOPNOTSUPP` rather than being silently
+ignored. `ro` is enforced at the LXP VFS boundary for open, write, truncate,
+mkdir, unlink, rmdir, and rename. Switching a live mount to read-only requires
+all regular files to be closed, preventing a pre-existing writable native
+handle from bypassing the new policy. FAT guest execution is intrinsically
+disabled, and Unix device/suid semantics are not projected onto the mount.
+
+`/proc/mounts` reports the live source, target, type, read-only state, and
+intrinsic `nosuid,nodev,noexec` policy. `/proc/filesystems` lists `vfat`.
+Only one SD medium and one external mount are supported; a second mount is not
+an alias and returns busy. The following remain explicit non-features:
+
+- FAT cannot persist Unix ownership/modes or provide symlinks and hard links.
+  Emulating those semantics would require a metadata database or an overlay,
+  which would no longer be a directly PC-readable FAT tree.
+- Bind mounts, overlays, and move mounts require a general mount graph and
+  path-resolution layers that LXP intentionally does not have. Forced or lazy
+  unmount would also violate the bounded native-handle ownership contract, so
+  only a clean unmount with no open handles is accepted.
+- GPT requires 64-bit GPT header/table validation and CRC processing, while
+  extended MBR requires walking an unbounded-on-media EBR chain. Neither fits
+  the current one-sector, bounded `BLKRRPART` state machine. Primary MBR is kept
+  because it has a fixed four-entry validation cost and is supported by every
+  native engine path.
+- The public block contract is a singleton rather than a handle-based device
+  enumerator. Adding a second block device therefore needs an ABI extension;
+  pretending all media are the SD singleton would weaken ownership.
+- Discard/TRIM, secure erase, sysfs, udev, and Linux hotplug broadcasts are not
+  portable across the three selected RTOS storage drivers. Presence and media
+  generation are available through `ove_block_get_info()` instead.
+- Raw readers can inspect a mounted medium, but that is not a coherent live
+  filesystem image while FAT metadata is changing. Raw writers and a mounted
+  filesystem are always mutually exclusive.
+- Formatting ext2 would not make it mountable: only the engine-native FAT
+  implementations are shared by all three targets. A generic FatFs-over-
+  `ove_block` adapter remains an optional fallback for a future engine without
+  native FAT, and is deliberately disabled here to avoid duplicating the
+  existing native integration.
+- The interface targets bounded BusyBox media tools, not general util-linux or
+  sysfs compatibility. The rootfs enables BusyBox `fdisk`, `mkfs.vfat`, and
+  `dd`; ordinary programs can also use `read`, `write`, `pread`, and `pwrite`
+  on the block node.
+
+The FreeRTOS backend still uses STM32Cube's old FatFs R0.11 integration. Its
+multi-partition support is used rather than replaced, but upgrading that vendor
+dependency should be treated as a separate compatibility project with on-card
+and power-loss tests, not mixed into the media-ownership change.
 
 ## Guest scheduling and niceness
 
