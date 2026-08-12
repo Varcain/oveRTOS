@@ -37,12 +37,6 @@ FIRMWARE = {
     "zephyr": FLASH["zephyr"].parent / "images/firmware.bin",
 }
 
-EXPECTED_OVERTOS = {
-    "freertos": "ove-fa0ec69",
-    "nuttx": "ove-56b7c86",
-    "zephyr": "ove-96fc3fc",
-}
-
 SHELL_SOURCE = (
     BUILDROOT / "board/overtos/rootfs-overlay/usr/libexec/ove-hammer-shell"
 )
@@ -162,7 +156,27 @@ def flash_target(engine):
         )
 
 
-def wait_for_target(engine):
+def firmware_identity(engine, allow_dirty):
+    path = FIRMWARE[engine]
+    if not path.is_file():
+        raise RuntimeError(f"missing {engine} firmware artifact: {path}")
+    identities = {
+        match.decode()
+        for match in re.findall(rb"ove-[0-9a-f]{7,}(?:-dirty)?", path.read_bytes())
+    }
+    if len(identities) != 1:
+        raise RuntimeError(
+            f"expected one oveRTOS identity in {path}, found {sorted(identities)}"
+        )
+    identity = identities.pop()
+    if identity.endswith("-dirty") and not allow_dirty:
+        raise RuntimeError(
+            f"refusing dirty {engine} firmware artifact {identity}: {path}"
+        )
+    return identity
+
+
+def wait_for_target(engine, expected):
     deadline = time.monotonic() + 120
     last = ""
     while time.monotonic() < deadline:
@@ -172,10 +186,12 @@ def wait_for_target(engine):
                 raise RuntimeError(
                     f"expected {engine}, target reports {identity!r}"
                 )
-            expected = EXPECTED_OVERTOS[engine]
-            if expected not in identity or "-dirty" in identity:
+            reported = re.search(
+                r"\bove-[0-9a-f]{7,}(?:-dirty)?\b", identity
+            )
+            if not reported or reported.group(0) != expected:
                 raise RuntimeError(
-                    f"expected clean {expected}, target reports {identity!r}"
+                    f"expected {expected}, target reports {identity!r}"
                 )
             # A mountpoint can exist before the asynchronous native SD mount is
             # writable (notably on NuttX). Require a real create/remove cycle.
@@ -505,9 +521,12 @@ def parse_summary(engine, mode, duration, identity, text, wall_s, network):
     return summary
 
 
-def run_one(engine, mode, duration, script, min_network_mbps, data_directory):
+def run_one(
+    engine, mode, duration, script, min_network_mbps, data_directory,
+    expected_identity,
+):
     reset_target()
-    identity = wait_for_target(engine)
+    identity = wait_for_target(engine, expected_identity)
     target_exec(f"mkdir -p {shlex.quote(data_directory)}", timeout=30)
     stage(f"/tmp/ove-hammer-{mode}", script)
     pi_http("reset")
@@ -523,14 +542,24 @@ def run_one(engine, mode, duration, script, min_network_mbps, data_directory):
         )
     print(f"[{engine}/{mode}] starting: {identity}", flush=True)
     started = time.monotonic()
-    result = run(
-        target_argv(command),
-        timeout=duration + 600,
-        check=False,
-    )
+    raw_path = RESULT_DIR / f"{engine}-{mode}.raw"
+    try:
+        result = run(
+            target_argv(command),
+            timeout=duration + 600,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        partial = error.stdout or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode(errors="replace")
+        raw_path.write_text(partial)
+        raise RuntimeError(
+            f"{engine}/{mode} exceeded its {duration + 600}s hard "
+            f"deadline; partial output is in {raw_path}"
+        ) from error
     wall_s = time.monotonic() - started
     text = result.stdout
-    raw_path = RESULT_DIR / f"{engine}-{mode}.raw"
     raw_path.write_text(text)
     if result.returncode != 0:
         raise RuntimeError(
@@ -646,6 +675,10 @@ def main():
     )
     parser.add_argument("--skip-flash", action="store_true")
     parser.add_argument(
+        "--allow-dirty-firmware", action="store_true",
+        help="permit an explicitly selected dirty artifact for development testing",
+    )
+    parser.add_argument(
         "--min-network-mbps", type=float, default=0.5,
         help="fail a run below this actual server-side throughput",
     )
@@ -663,13 +696,19 @@ def main():
     scripts = {"shell": shell, "lua": lua, "micropython": micropython}
     combined = []
     for engine in args.engines:
+        expected_identity = firmware_identity(
+            engine, args.allow_dirty_firmware
+        )
         if not args.skip_flash:
-            print(f"[{engine}] flashing via pi: {FIRMWARE[engine]}", flush=True)
+            print(
+                f"[{engine}] flashing {expected_identity} via pi: "
+                f"{FIRMWARE[engine]}", flush=True,
+            )
             flash_target(engine)
         for mode in args.modes:
             combined.append(run_one(
                 engine, mode, args.duration, scripts[mode],
-                args.min_network_mbps, args.data_directory,
+                args.min_network_mbps, args.data_directory, expected_identity,
             ))
     (RESULT_DIR / "comparison.json").write_text(
         json.dumps(combined, indent=2) + "\n"
