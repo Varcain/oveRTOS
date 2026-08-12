@@ -289,6 +289,26 @@ def instrumented_scripts(data_directory):
     return shell, lua, micropython
 
 
+def validate_sources():
+    checks = (
+        (["sh", "-n", str(SHELL_SOURCE)], 30),
+        (["luac", "-p", str(LUA_SOURCE)], 30),
+        ([sys.executable, "-m", "py_compile", str(MICROPYTHON_SOURCE)], 30),
+    )
+    env = os.environ.copy()
+    env["PYTHONPYCACHEPREFIX"] = "/tmp/ove-hammer-pycache"
+    for argv, timeout in checks:
+        result = subprocess.run(
+            argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace", timeout=timeout,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"source validation failed ({result.returncode}): {argv!r}\n"
+                f"{result.stdout}"
+            )
+
+
 def parse_block(text, begin, end):
     match = re.search(re.escape(begin) + r"\s*(.*?)" + re.escape(end), text, re.S)
     if not match:
@@ -625,6 +645,7 @@ def main():
     args = parser.parse_args()
     if not re.fullmatch(r"/data/[A-Za-z0-9_.-]+", args.data_directory):
         parser.error("--data-directory must be one direct child of /data")
+    validate_sources()
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     deploy_server()
     shell, lua, micropython = instrumented_scripts(args.data_directory)
