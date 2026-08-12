@@ -93,6 +93,7 @@ enum fs_request_op {
 	FS_REQ_BLOCK_READ,
 	FS_REQ_BLOCK_WRITE,
 	FS_REQ_BLOCK_SYNC,
+	FS_REQ_BLOCK_CLOSE,
 	FS_REQ_STOP,
 };
 
@@ -231,6 +232,7 @@ static int g_fs_run_entered;
 static int g_block_run_entered;
 static unsigned int g_raw_readers;
 static unsigned int g_raw_writer;
+static ove_block_t g_raw_block;
 static struct ove_fs_volume g_mount_volume;
 static int g_mount_volume_valid;
 static struct ove_block_info g_block_info;
@@ -303,13 +305,10 @@ static int ensure_mounted(void)
 {
 	if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0)
 		return LXP_OK;
-	if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u ||
-	    __atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) != 0u)
-		return LXP_ERR_BUSY;
 	int rc = g_mount_volume_valid ? ove_fs_mount_volume(&g_mount_volume, NULL)
 				      : ove_fs_mount(NULL, NULL);
 	if (rc != OVE_OK)
-		return LXP_ERR_NOT_REGISTERED;
+		return rc;
 	__atomic_store_n(&g_mounted, 1, __ATOMIC_RELEASE);
 	return LXP_OK;
 }
@@ -358,6 +357,14 @@ static int block_read_bytes(uint64_t offset, void *buffer, size_t count)
 	int rc = block_bounds(offset, count);
 	if (rc != LXP_OK || count == 0u)
 		return rc;
+	ove_block_t temporary = OVE_BLOCK_INITIALIZER;
+	ove_block_t *handle = &g_raw_block;
+	if (!g_raw_block.lease.active) {
+		rc = ove_block_open(&temporary, 0u);
+		if (rc != OVE_OK)
+			return rc;
+		handle = &temporary;
+	}
 	uint8_t *out = buffer;
 	uint32_t size = g_block_info.logical_block_size;
 	while (count) {
@@ -367,19 +374,23 @@ static int block_read_bytes(uint64_t offset, void *buffer, size_t count)
 		if (chunk > count)
 			chunk = count;
 		if (within == 0u && chunk == size)
-			rc = ove_block_read(block, 1u, out);
+			rc = ove_block_read(handle, block, 1u, out);
 		else {
-			rc = ove_block_read(block, 1u, g_block_sector);
+			rc = ove_block_read(handle, block, 1u, g_block_sector);
 			if (rc == OVE_OK)
 				memcpy(out, g_block_sector + within, chunk);
 		}
 		if (rc != OVE_OK)
-			return rc;
+			break;
 		offset += chunk;
 		out += chunk;
 		count -= chunk;
 	}
-	return LXP_OK;
+	if (handle == &temporary)
+		ove_block_close(&temporary);
+	if (rc != OVE_OK)
+		g_block_info_valid = 0;
+	return rc;
 }
 
 static int block_write_bytes(uint64_t offset, const void *buffer, size_t count)
@@ -387,6 +398,8 @@ static int block_write_bytes(uint64_t offset, const void *buffer, size_t count)
 	int rc = block_bounds(offset, count);
 	if (rc != LXP_OK || count == 0u)
 		return rc;
+	if (!g_raw_block.lease.active || (g_raw_block.flags & OVE_BLOCK_OPEN_WRITE) == 0u)
+		return LXP_ERR_PERMISSION;
 	const uint8_t *in = buffer;
 	uint32_t size = g_block_info.logical_block_size;
 	while (count) {
@@ -396,16 +409,18 @@ static int block_write_bytes(uint64_t offset, const void *buffer, size_t count)
 		if (chunk > count)
 			chunk = count;
 		if (within == 0u && chunk == size)
-			rc = ove_block_write(block, 1u, in);
+			rc = ove_block_write(&g_raw_block, block, 1u, in);
 		else {
-			rc = ove_block_read(block, 1u, g_block_sector);
+			rc = ove_block_read(&g_raw_block, block, 1u, g_block_sector);
 			if (rc == OVE_OK) {
 				memcpy(g_block_sector + within, in, chunk);
-				rc = ove_block_write(block, 1u, g_block_sector);
+				rc = ove_block_write(&g_raw_block, block, 1u, g_block_sector);
 			}
 		}
-		if (rc != OVE_OK)
+		if (rc != OVE_OK) {
+			g_block_info_valid = 0;
 			return rc;
+		}
 		offset += chunk;
 		in += chunk;
 		count -= chunk;
@@ -443,10 +458,7 @@ static int execute_request(struct fs_request *request)
 
 	if (request->op == FS_REQ_MOUNT) {
 		if (request->args.mount.spec) {
-			if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0 ||
-			    handles_open() ||
-			    __atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u ||
-			    __atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) != 0u)
+			if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0 || handles_open())
 				return LXP_ERR_BUSY;
 			g_mount_volume.first_block = request->args.mount.spec->first_block;
 			g_mount_volume.block_count = request->args.mount.spec->block_count;
@@ -467,6 +479,11 @@ static int execute_request(struct fs_request *request)
 	}
 	if (request->op == FS_REQ_STOP) {
 		close_all_handles();
+		if (g_raw_block.lease.active) {
+			ove_block_close(&g_raw_block);
+		}
+		g_raw_readers = 0u;
+		g_raw_writer = 0u;
 		if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0)
 			ove_fs_unmount(NULL);
 		__atomic_store_n(&g_mounted, 0, __ATOMIC_RELEASE);
@@ -479,8 +496,7 @@ static int execute_request(struct fs_request *request)
 		if (rc != LXP_OK)
 			return rc;
 		request->args.block_info.out->block_count = g_block_info.block_count;
-		request->args.block_info.out->logical_block_size =
-			g_block_info.logical_block_size;
+		request->args.block_info.out->logical_block_size = g_block_info.logical_block_size;
 		request->args.block_info.out->erase_block_size = g_block_info.erase_block_size;
 		request->args.block_info.out->flags = g_block_info.flags;
 		request->args.block_info.out->generation = g_block_info.generation;
@@ -491,8 +507,8 @@ static int execute_request(struct fs_request *request)
 			return LXP_ERR_INVALID_PARAM;
 		rc = block_read_bytes(request->args.block_read.offset, g_io_buffer,
 				      request->args.block_read.count);
-		request->args.block_read.transferred =
-			rc == LXP_OK ? request->args.block_read.count : 0u;
+		request->args.block_read.transferred = rc == LXP_OK ? request->args.block_read.count
+								    : 0u;
 		return rc;
 	}
 	if (request->op == FS_REQ_BLOCK_WRITE) {
@@ -505,7 +521,12 @@ static int execute_request(struct fs_request *request)
 		return rc;
 	}
 	if (request->op == FS_REQ_BLOCK_SYNC)
-		return ove_block_sync();
+		return g_raw_block.lease.active ? ove_block_sync(&g_raw_block)
+						: LXP_ERR_NOT_REGISTERED;
+	if (request->op == FS_REQ_BLOCK_CLOSE) {
+		ove_block_close(&g_raw_block);
+		return LXP_OK;
+	}
 	if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u)
 		return LXP_ERR_BUSY;
 	rc = ensure_mounted();
@@ -549,7 +570,8 @@ static int execute_request(struct fs_request *request)
 			if (slot == NULL)
 				return LXP_ERR_NO_MEMORY;
 			memset(slot, 0, sizeof(*slot));
-			rc = ove_fs_opendir_init(&slot->handle.dir.native, &slot->handle.dir.storage,
+			rc = ove_fs_opendir_init(&slot->handle.dir.native,
+						 &slot->handle.dir.storage,
 						 request->args.object_open.path);
 			if (rc != OVE_OK) {
 				memset(slot, 0, sizeof(*slot));
@@ -616,7 +638,7 @@ static int execute_request(struct fs_request *request)
 	case FS_REQ_FILE_PWRITE: {
 		int write = request->op == FS_REQ_FILE_PWRITE;
 		lxp_fs_file_t file = write ? request->args.file_pwrite.file
-					       : request->args.file_pread.file;
+					   : request->args.file_pread.file;
 		size_t count = write ? request->args.file_pwrite.count
 				     : request->args.file_pread.count;
 		uint64_t offset = write ? request->args.file_pwrite.offset
@@ -872,7 +894,8 @@ static int async_collect(struct fs_request *request)
 			       request->args.block_read.transferred);
 		break;
 	case FS_REQ_BLOCK_WRITE:
-		request->args.block_write.transferred = g_async_request.args.block_write.transferred;
+		request->args.block_write.transferred =
+			g_async_request.args.block_write.transferred;
 		break;
 	case FS_REQ_FILE_OPEN:
 		if (request->args.file_open.out)
@@ -902,7 +925,8 @@ static int async_collect(struct fs_request *request)
 			       request->args.file_pread.transferred);
 		break;
 	case FS_REQ_FILE_PWRITE:
-		request->args.file_pwrite.transferred = g_async_request.args.file_pwrite.transferred;
+		request->args.file_pwrite.transferred =
+			g_async_request.args.file_pwrite.transferred;
 		break;
 	case FS_REQ_FILE_SEEK:
 		if (request->args.file_seek.new_offset)
@@ -964,16 +988,16 @@ static void fs_worker(void *arg)
 		(void)ove_time_get_us(&request->started_us);
 		request->result = execute_request(request);
 		(void)ove_time_get_us(&request->finished_us);
-		request->budget_overrun =
-			request->finished_us >= request->started_us &&
-			request->finished_us - request->started_us >
-				CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US;
+		request->budget_overrun = request->finished_us >= request->started_us &&
+					  request->finished_us - request->started_us >
+						  CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US;
 		int stop = request->op == FS_REQ_STOP;
 		if (request->asynchronous) {
 			if (__atomic_load_n(&g_async_cancelled, __ATOMIC_ACQUIRE)) {
 				__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
 			} else {
-				__atomic_store_n(&g_async_state, FS_ASYNC_COMPLETE, __ATOMIC_RELEASE);
+				__atomic_store_n(&g_async_state, FS_ASYNC_COMPLETE,
+						 __ATOMIC_RELEASE);
 			}
 			if (request->op == FS_REQ_BLOCK_INFO || request->op == FS_REQ_BLOCK_READ ||
 			    request->op == FS_REQ_BLOCK_WRITE || request->op == FS_REQ_BLOCK_SYNC)
@@ -992,9 +1016,8 @@ static void metrics_record_completion_wait(const struct fs_request *request)
 {
 	uint64_t collected_us = 0;
 	(void)ove_time_get_us(&collected_us);
-	uint64_t wait_us = collected_us >= request->finished_us
-				   ? collected_us - request->finished_us
-				   : 0;
+	uint64_t wait_us =
+		collected_us >= request->finished_us ? collected_us - request->finished_us : 0;
 	g_metrics.completion_wait_us_total += wait_us;
 	if (wait_us > g_metrics.completion_wait_us_max)
 		g_metrics.completion_wait_us_max = wait_us;
@@ -1009,16 +1032,14 @@ static int submit_sync(struct fs_request *request)
 		return rc;
 	if (request->op == FS_REQ_FILE_WRITE || request->op == FS_REQ_FILE_PWRITE ||
 	    request->op == FS_REQ_BLOCK_WRITE) {
-		const void *source = request->op == FS_REQ_FILE_WRITE
-					     ? request->args.file_write.buf
-					     : request->op == FS_REQ_FILE_PWRITE
-						       ? request->args.file_pwrite.buf
-						       : request->args.block_write.buf;
-		size_t count = request->op == FS_REQ_FILE_WRITE
-				       ? request->args.file_write.count
-				       : request->op == FS_REQ_FILE_PWRITE
-						 ? request->args.file_pwrite.count
-						 : request->args.block_write.count;
+		const void *source = request->op == FS_REQ_FILE_WRITE ? request->args.file_write.buf
+				     : request->op == FS_REQ_FILE_PWRITE
+					     ? request->args.file_pwrite.buf
+					     : request->args.block_write.buf;
+		size_t count = request->op == FS_REQ_FILE_WRITE ? request->args.file_write.count
+			       : request->op == FS_REQ_FILE_PWRITE
+				       ? request->args.file_pwrite.count
+				       : request->args.block_write.count;
 		if (source == NULL || count > sizeof(g_io_buffer)) {
 			ove_mutex_unlock(g_submit_lock);
 			return LXP_ERR_INVALID_PARAM;
@@ -1051,24 +1072,19 @@ static int submit_sync(struct fs_request *request)
 	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
 	if (rc == OVE_OK)
 		rc = ove_event_wait(g_complete, OVE_WAIT_FOREVER);
-	if (rc == OVE_OK && (request->op == FS_REQ_FILE_READ ||
-			    request->op == FS_REQ_FILE_PREAD ||
-			    request->op == FS_REQ_BLOCK_READ)) {
-		size_t transferred = request->op == FS_REQ_FILE_READ
-					     ? request->args.file_read.transferred
-					     : request->op == FS_REQ_FILE_PREAD
-						       ? request->args.file_pread.transferred
-						       : request->args.block_read.transferred;
-		size_t count = request->op == FS_REQ_FILE_READ
-				       ? request->args.file_read.count
-				       : request->op == FS_REQ_FILE_PREAD
-						 ? request->args.file_pread.count
-						 : request->args.block_read.count;
-		void *destination = request->op == FS_REQ_FILE_READ
-					    ? request->args.file_read.buf
-					    : request->op == FS_REQ_FILE_PREAD
-						      ? request->args.file_pread.buf
-						      : request->args.block_read.buf;
+	if (rc == OVE_OK && (request->op == FS_REQ_FILE_READ || request->op == FS_REQ_FILE_PREAD ||
+			     request->op == FS_REQ_BLOCK_READ)) {
+		size_t transferred =
+			request->op == FS_REQ_FILE_READ	   ? request->args.file_read.transferred
+			: request->op == FS_REQ_FILE_PREAD ? request->args.file_pread.transferred
+							   : request->args.block_read.transferred;
+		size_t count = request->op == FS_REQ_FILE_READ	  ? request->args.file_read.count
+			       : request->op == FS_REQ_FILE_PREAD ? request->args.file_pread.count
+								  : request->args.block_read.count;
+		void *destination = request->op == FS_REQ_FILE_READ ? request->args.file_read.buf
+				    : request->op == FS_REQ_FILE_PREAD
+					    ? request->args.file_pread.buf
+					    : request->args.block_read.buf;
 		if (transferred > count) {
 			rc = LXP_ERR_IO;
 		} else if (transferred != 0u) {
@@ -1161,26 +1177,24 @@ static int submit_async(struct fs_request *request)
 
 	if (request->op == FS_REQ_FILE_WRITE || request->op == FS_REQ_FILE_PWRITE ||
 	    request->op == FS_REQ_BLOCK_WRITE) {
-		const void *source = request->op == FS_REQ_FILE_WRITE
-					     ? request->args.file_write.buf
-					     : request->op == FS_REQ_FILE_PWRITE
-						       ? request->args.file_pwrite.buf
-						       : request->args.block_write.buf;
-		size_t count = request->op == FS_REQ_FILE_WRITE
-				       ? request->args.file_write.count
-				       : request->op == FS_REQ_FILE_PWRITE
-						 ? request->args.file_pwrite.count
-						 : request->args.block_write.count;
+		const void *source = request->op == FS_REQ_FILE_WRITE ? request->args.file_write.buf
+				     : request->op == FS_REQ_FILE_PWRITE
+					     ? request->args.file_pwrite.buf
+					     : request->args.block_write.buf;
+		size_t count = request->op == FS_REQ_FILE_WRITE ? request->args.file_write.count
+			       : request->op == FS_REQ_FILE_PWRITE
+				       ? request->args.file_pwrite.count
+				       : request->args.block_write.count;
 		if ((source == NULL && count != 0u) || count > sizeof(g_io_buffer))
 			return LXP_ERR_INVALID_PARAM;
 		if (count)
 			memcpy(g_io_buffer, source, count);
 	} else if ((request->op == FS_REQ_FILE_READ &&
 		    (request->args.file_read.buf == NULL && request->args.file_read.count != 0u)) ||
-		   (request->op == FS_REQ_FILE_PREAD &&
-		    (request->args.file_pread.buf == NULL && request->args.file_pread.count != 0u)) ||
-		   (request->op == FS_REQ_BLOCK_READ &&
-		    (request->args.block_read.buf == NULL && request->args.block_read.count != 0u))) {
+		   (request->op == FS_REQ_FILE_PREAD && (request->args.file_pread.buf == NULL &&
+							 request->args.file_pread.count != 0u)) ||
+		   (request->op == FS_REQ_BLOCK_READ && (request->args.block_read.buf == NULL &&
+							 request->args.block_read.count != 0u))) {
 		return LXP_ERR_INVALID_PARAM;
 	}
 
@@ -1208,9 +1222,8 @@ static int submit_async(struct fs_request *request)
 
 static int submit(struct fs_request *request)
 {
-	return g_selected_owner != 0u && request->op != FS_REQ_STOP
-		       ? submit_async(request)
-		       : submit_sync(request);
+	return g_selected_owner != 0u && request->op != FS_REQ_STOP ? submit_async(request)
+								    : submit_sync(request);
 }
 
 static int storage_run_begin(void)
@@ -1224,6 +1237,7 @@ static int storage_run_begin(void)
 	}
 	memset(g_handles, 0, sizeof(g_handles));
 	memset(&g_metrics, 0, sizeof(g_metrics));
+	memset(&g_raw_block, 0, sizeof(g_raw_block));
 	memset(&g_async_request, 0, sizeof(g_async_request));
 	g_selected_owner = 0;
 	g_async_owner = 0;
@@ -1382,12 +1396,13 @@ static int fs_object_open(const char *path, unsigned int flags, int require_dir,
 {
 	struct fs_request request = {
 		.op = FS_REQ_OBJECT_OPEN,
-		.args.object_open = {
-			.path = path,
-			.flags = flags,
-			.require_dir = require_dir,
-			.out = out,
-		},
+		.args.object_open =
+			{
+				.path = path,
+				.flags = flags,
+				.require_dir = require_dir,
+				.out = out,
+			},
 	};
 	return submit(&request);
 }
@@ -1486,12 +1501,13 @@ static int fs_file_pread(lxp_fs_file_t file, void *buf, size_t count, uint64_t o
 			chunk = sizeof(g_io_buffer);
 		struct fs_request request = {
 			.op = FS_REQ_FILE_PREAD,
-			.args.file_pread = {
-				.file = file,
-				.buf = destination + total,
-				.count = chunk,
-				.offset = offset + total,
-			},
+			.args.file_pread =
+				{
+					.file = file,
+					.buf = destination + total,
+					.count = chunk,
+					.offset = offset + total,
+				},
 		};
 		int rc = submit(&request);
 		size_t received = request.args.file_pread.transferred;
@@ -1522,12 +1538,13 @@ static int fs_file_pwrite(lxp_fs_file_t file, const void *buf, size_t count, uin
 			chunk = sizeof(g_io_buffer);
 		struct fs_request request = {
 			.op = FS_REQ_FILE_PWRITE,
-			.args.file_pwrite = {
-				.file = file,
-				.buf = source + total,
-				.count = chunk,
-				.offset = offset + total,
-			},
+			.args.file_pwrite =
+				{
+					.file = file,
+					.buf = source + total,
+					.count = chunk,
+					.offset = offset + total,
+				},
 		};
 		int rc = submit(&request);
 		size_t written = request.args.file_pwrite.transferred;
@@ -1681,16 +1698,23 @@ static int block_open(unsigned flags)
 #if !defined(CONFIG_OVE_LINUX_BLOCK_WRITE)
 		return LXP_ERR_PERMISSION;
 #else
-		if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0 ||
-		    __atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u ||
+		if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u ||
 		    __atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) != 0u)
 			return LXP_ERR_BUSY;
+		int rc = ove_block_open(&g_raw_block, OVE_BLOCK_OPEN_WRITE);
+		if (rc != OVE_OK)
+			return rc;
 		__atomic_store_n(&g_raw_writer, 1u, __ATOMIC_RELEASE);
 		return LXP_OK;
 #endif
 	}
 	if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u)
 		return LXP_ERR_BUSY;
+	if (__atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) == 0u) {
+		int rc = ove_block_open(&g_raw_block, 0u);
+		if (rc != OVE_OK)
+			return rc;
+	}
 	__atomic_add_fetch(&g_raw_readers, 1u, __ATOMIC_ACQ_REL);
 	return LXP_OK;
 }
@@ -1699,11 +1723,15 @@ static void block_close(unsigned flags)
 {
 	if ((flags & LXP_BLOCK_OPEN_WRITE) != 0u) {
 		fs_request_owner(0u);
-		struct fs_request request = {.op = FS_REQ_BLOCK_SYNC};
+		struct fs_request request = {.op = FS_REQ_BLOCK_CLOSE};
 		(void)submit(&request);
 		__atomic_store_n(&g_raw_writer, 0u, __ATOMIC_RELEASE);
 	} else if (__atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) != 0u) {
-		__atomic_sub_fetch(&g_raw_readers, 1u, __ATOMIC_ACQ_REL);
+		if (__atomic_sub_fetch(&g_raw_readers, 1u, __ATOMIC_ACQ_REL) == 0u) {
+			fs_request_owner(0u);
+			struct fs_request request = {.op = FS_REQ_BLOCK_CLOSE};
+			(void)submit(&request);
+		}
 	}
 }
 

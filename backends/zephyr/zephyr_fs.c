@@ -7,6 +7,7 @@
  */
 
 #include "ove/fs.h"
+#include "ove/media.h"
 #include "ove/log.h"
 #include "ove_backend_common.h"
 #include <zephyr/fs/fs.h>
@@ -14,10 +15,18 @@
 #include <string.h>
 #include <stdio.h>
 static FATFS fat_fs;
+#if FF_MULTI_PARTITION
+static char fatfs_mount_point[] = "/0:";
+PARTITION VolToPart[FF_VOLUMES] = {
+	{0, 0}, {0, 1}, {0, 2}, {0, 3}, {0, 4},
+};
+#else
+static char fatfs_mount_point[] = "/SD:";
+#endif
 static struct fs_mount_t mp = {
 	.type = FS_FATFS,
 	.fs_data = &fat_fs,
-	.mnt_point = "/SD:",
+	.mnt_point = fatfs_mount_point,
 };
 static const uint8_t zero_fill[512] __aligned(32);
 static int volume_mounted;
@@ -38,11 +47,11 @@ static int build_path(char *buf, size_t bufsz, const char *path)
 
 	int needed;
 	if (path[0] == '/' && path[1] == '\0') {
-		needed = snprintf(buf, bufsz, "/SD:");
+		needed = snprintf(buf, bufsz, "%s", mp.mnt_point);
 	} else if (path[0] == '/') {
-		needed = snprintf(buf, bufsz, "/SD:%s", path);
+		needed = snprintf(buf, bufsz, "%s%s", mp.mnt_point, path);
 	} else {
-		needed = snprintf(buf, bufsz, "/SD:/%s", path);
+		needed = snprintf(buf, bufsz, "%s/%s", mp.mnt_point, path);
 	}
 	return needed < 0 || (size_t)needed >= bufsz ? OVE_ERR_NAME_TOO_LONG : OVE_OK;
 }
@@ -56,9 +65,13 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	if (volume_mounted) {
 		return OVE_OK;
 	}
+	int lease_rc = ove_media_fs_acquire();
+	if (lease_rc != OVE_OK)
+		return lease_rc;
 
 	int res = fs_mount(&mp);
 	if (res != 0) {
+		ove_media_fs_release();
 		OVE_LOG_ERR("fs_mount failed: %d\n", res);
 		return ove_errno_to_ove(-res);
 	}
@@ -70,10 +83,19 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
 {
 	if (!volume || volume->logical_block_size != 512u || volume->block_count == 0u ||
-	    volume->partition > 1u)
+	    volume->partition > 4u)
 		return OVE_ERR_INVALID_PARAM;
-	/* Zephyr's FatFs disk layer performs the same superfloppy/MBR discovery. */
+#if FF_MULTI_PARTITION
+	if (volume_mounted)
+		return OVE_ERR_BUSY;
+	fatfs_mount_point[1] = (char)('0' + volume->partition);
 	return ove_fs_mount(NULL, mount_point);
+#else
+	if (volume->partition > 1u)
+		return OVE_ERR_NOT_SUPPORTED;
+	/* The single-volume configuration performs superfloppy/first-MBR discovery. */
+	return ove_fs_mount(NULL, mount_point);
+#endif
 }
 
 void ove_fs_unmount(const char *mount_point)
@@ -83,6 +105,7 @@ void ove_fs_unmount(const char *mount_point)
 	}
 	if (fs_unmount(&mp) == 0) {
 		volume_mounted = 0;
+		ove_media_fs_release();
 	}
 }
 

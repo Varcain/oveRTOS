@@ -8,6 +8,7 @@
 
 #define _GNU_SOURCE
 #include "ove/ove.h"
+#include "ove/media.h"
 #include "ove_backend_common.h"
 #include <stdio.h>
 #include <string.h>
@@ -17,6 +18,8 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
+
+static int volume_mounted;
 
 static int flags_to_posix(int flags)
 {
@@ -47,6 +50,12 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 {
 	(void)dev_path;
 	(void)mount_point;
+	if (volume_mounted)
+		return OVE_OK;
+	int rc = ove_media_fs_acquire();
+	if (rc != OVE_OK)
+		return rc;
+	volume_mounted = 1;
 	return OVE_OK;
 }
 
@@ -60,6 +69,10 @@ int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_po
 void ove_fs_unmount(const char *mount_point)
 {
 	(void)mount_point;
+	if (volume_mounted) {
+		volume_mounted = 0;
+		ove_media_fs_release();
+	}
 }
 
 int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags)

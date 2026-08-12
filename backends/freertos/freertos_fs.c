@@ -12,15 +12,25 @@
 #include "sd_diskio.h"
 
 #include "ove/fs.h"
+#include "ove/media.h"
 #include "ove/storage.h"
 #include "ove/log.h"
 #include "ove_backend_common.h"
+#include <stdio.h>
 #include <string.h>
 /* Static path buffer for FatFS driver linking */
 static char fatfs_path[16];
+static char active_volume[3] = "0:";
 static FATFS fatfs;
 static int driver_linked;
 static const uint8_t zero_fill[512];
+
+#if _MULTI_PARTITION
+PARTITION VolToPart[_VOLUMES] = {
+	{0, 0}, /* whole disk / automatic superfloppy-or-first-partition search */
+	{0, 1}, {0, 2}, {0, 3}, {0, 4},
+};
+#endif
 
 static FRESULT position_native_cursor(struct ove_file *file)
 {
@@ -57,6 +67,16 @@ static int validate_path(const char *path)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	return strnlen(path, OVE_FS_PATH_MAX) < OVE_FS_PATH_MAX ? OVE_OK : OVE_ERR_NAME_TOO_LONG;
+}
+
+static int build_path(char *out, size_t capacity, const char *path)
+{
+	int rc = validate_path(path);
+	if (rc != OVE_OK)
+		return rc;
+	int needed = path[0] == '/' ? snprintf(out, capacity, "%s%s", active_volume, path)
+				    : snprintf(out, capacity, "%s/%s", active_volume, path);
+	return needed < 0 || (size_t)needed >= capacity ? OVE_ERR_NAME_TOO_LONG : OVE_OK;
 }
 
 static int fatfs_result(FRESULT result)
@@ -102,9 +122,10 @@ static int fatfs_result(FRESULT result)
 
 static int open_common(struct ove_file *file, const char *path, int flags)
 {
+	char native_path[OVE_FS_PATH_MAX + 4];
 	BYTE mode = 0;
 
-	int ret = validate_path(path);
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -129,7 +150,7 @@ static int open_common(struct ove_file *file, const char *path, int flags)
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	FRESULT result = f_open(&file->fil, path, mode);
+	FRESULT result = f_open(&file->fil, native_path, mode);
 	if (result != FR_OK) {
 		return fatfs_result(result);
 	}
@@ -151,45 +172,60 @@ static int open_common(struct ove_file *file, const char *path, int flags)
 	return OVE_OK;
 }
 
-int ove_fs_mount(const char *dev_path, const char *mount_point)
+static int mount_partition(uint8_t partition)
 {
 	FRESULT fres;
-	(void)dev_path;
-	(void)mount_point;
+	if (partition >= _VOLUMES)
+		return OVE_ERR_INVALID_PARAM;
+	if (driver_linked)
+		return active_volume[0] == (char)('0' + partition) ? OVE_OK : OVE_ERR_BUSY;
+	int lease_rc = ove_media_fs_acquire();
+	if (lease_rc != OVE_OK)
+		return lease_rc;
 
-	if (!driver_linked) {
-		if (FATFS_LinkDriver(&SD_Driver, fatfs_path) != 0) {
-			return OVE_ERR_NO_MEMORY;
-		}
-		driver_linked = 1;
+	if (FATFS_LinkDriver(&SD_Driver, fatfs_path) != 0) {
+		ove_media_fs_release();
+		return OVE_ERR_NO_MEMORY;
 	}
+	driver_linked = 1;
+	active_volume[0] = (char)('0' + partition);
 
 	/* opt=1 probes the card and FAT volume now. A missing/unformatted card
 	 * must fail mount rather than surfacing as an unrelated first-open error. */
-	fres = f_mount(&fatfs, fatfs_path, 1);
+	fres = f_mount(&fatfs, active_volume, 1);
 	if (fres != FR_OK) {
+		(void)FATFS_UnLinkDriver(fatfs_path);
+		driver_linked = 0;
+		ove_media_fs_release();
 		return fatfs_result(fres);
 	}
 	return OVE_OK;
 }
 
+int ove_fs_mount(const char *dev_path, const char *mount_point)
+{
+	(void)dev_path;
+	(void)mount_point;
+	return mount_partition(0u);
+}
+
 int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
 {
 	if (!volume || volume->logical_block_size != 512u || volume->block_count == 0u ||
-	    volume->partition > 1u)
+	    volume->partition > 4u)
 		return OVE_ERR_INVALID_PARAM;
-	/* FatFs probes sector zero and follows the first valid MBR primary partition.
-	 * A partitionless volume is handled as a superfloppy. */
-	return ove_fs_mount(NULL, mount_point);
+	(void)mount_point;
+	return mount_partition(volume->partition);
 }
 
 void ove_fs_unmount(const char *mount_point)
 {
 	(void)mount_point;
 	if (driver_linked) {
-		(void)f_mount(NULL, fatfs_path, 0);
+		(void)f_mount(NULL, active_volume, 0);
 		(void)FATFS_UnLinkDriver(fatfs_path);
 		driver_linked = 0;
+		ove_media_fs_release();
 	}
 }
 
@@ -223,16 +259,17 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *
 {
 	struct ove_dir *d = (struct ove_dir *)storage;
 	FRESULT fres;
+	char native_path[OVE_FS_PATH_MAX + 4];
 
 	if (dir == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int ret = validate_path(path);
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
 
-	fres = f_opendir(&d->dir, path);
+	fres = f_opendir(&d->dir, native_path);
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
 		return fatfs_result(fres);
@@ -287,18 +324,19 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 {
 	struct ove_dir *d;
 	FRESULT fres;
+	char native_path[OVE_FS_PATH_MAX + 4];
 
 	d = OVE_BACKEND_MALLOC(sizeof(*d));
 	if (d == NULL) {
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	int ret = validate_path(path);
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(d);
 		return ret;
 	}
-	fres = f_opendir(&d->dir, path);
+	fres = f_opendir(&d->dir, native_path);
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
 		OVE_BACKEND_FREE(d);
@@ -360,7 +398,8 @@ int ove_fs_close(ove_file_t file)
 int ove_fs_opendir(ove_dir_t *dir, const char *path)
 {
 	FRESULT fres;
-	int ret = validate_path(path);
+	char native_path[OVE_FS_PATH_MAX + 4];
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -368,7 +407,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	for (int i = 0; i < FS_POOL_DIRS; i++) {
 		if (!dir_pool_used[i]) {
 			dir_pool_used[i] = 1;
-			fres = f_opendir(&dir_pool[i].dir, path);
+			fres = f_opendir(&dir_pool[i].dir, native_path);
 			if (fres != FR_OK) {
 				dir_pool_used[i] = 0;
 				return fatfs_result(fres);
@@ -522,11 +561,12 @@ long ove_fs_tell(ove_file_t file)
 
 int ove_fs_unlink(const char *path)
 {
-	int ret = validate_path(path);
+	char native_path[OVE_FS_PATH_MAX + 4];
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
-	FRESULT fres = f_unlink(path);
+	FRESULT fres = f_unlink(native_path);
 	if (fres != FR_OK) {
 		return fatfs_result(fres);
 	}
@@ -535,14 +575,16 @@ int ove_fs_unlink(const char *path)
 
 int ove_fs_rename(const char *old_path, const char *new_path)
 {
-	int ret = validate_path(old_path);
+	char native_old[OVE_FS_PATH_MAX + 4];
+	char native_new[OVE_FS_PATH_MAX + 4];
+	int ret = build_path(native_old, sizeof(native_old), old_path);
 	if (ret == OVE_OK) {
-		ret = validate_path(new_path);
+		ret = build_path(native_new, sizeof(native_new), new_path);
 	}
 	if (ret != OVE_OK) {
 		return ret;
 	}
-	FRESULT fres = f_rename(old_path, new_path);
+	FRESULT fres = f_rename(native_old, native_new);
 	if (fres != FR_OK) {
 		return fatfs_result(fres);
 	}
@@ -552,11 +594,12 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 {
 	FILINFO info;
+	char native_path[OVE_FS_PATH_MAX + 4];
 
 	if (path == NULL || out_stat == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int ret = validate_path(path);
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -573,7 +616,7 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 		out_stat->type = OVE_FS_TYPE_DIR;
 		return OVE_OK;
 	}
-	FRESULT result = f_stat(path, &info);
+	FRESULT result = f_stat(native_path, &info);
 	if (result != FR_OK) {
 		return fatfs_result(result);
 	}
@@ -585,20 +628,22 @@ int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 
 int ove_fs_mkdir(const char *path)
 {
-	int ret = validate_path(path);
+	char native_path[OVE_FS_PATH_MAX + 4];
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
-	return fatfs_result(f_mkdir(path));
+	return fatfs_result(f_mkdir(native_path));
 }
 
 int ove_fs_rmdir(const char *path)
 {
-	int ret = validate_path(path);
+	char native_path[OVE_FS_PATH_MAX + 4];
+	int ret = build_path(native_path, sizeof(native_path), path);
 	if (ret != OVE_OK) {
 		return ret;
 	}
-	return fatfs_result(f_unlink(path));
+	return fatfs_result(f_unlink(native_path));
 }
 
 int ove_fs_truncate(ove_file_t file, uint64_t length)

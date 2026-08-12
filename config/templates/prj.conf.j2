@@ -98,6 +98,12 @@ CONFIG_FS_FATFS_MAX_LFN=255
 CONFIG_FS_FATFS_REENTRANT=y
 CONFIG_FS_FATFS_NUM_FILES=16
 CONFIG_FS_FATFS_NUM_DIRS=8
+# Preserve the native Zephyr/FatFs path while exposing the four fixed primary
+# MBR views used by ove_fs_mount_volume(). Logical volumes 0..4 all map to the
+# same physical SD disk through the backend's VolToPart[].
+CONFIG_FS_FATFS_MULTI_PARTITION=y
+CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT=5
+CONFIG_FS_FATFS_CUSTOM_MOUNT_POINTS="SD,SD,SD,SD,SD"
 {% endif %}
 
 {% if config.get("CONFIG_OVE_NET") == True %}
