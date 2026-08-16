@@ -1,0 +1,610 @@
+diff --git a/drivers/disk/Kconfig.sdmmc b/drivers/disk/Kconfig.sdmmc
+--- a/drivers/disk/Kconfig.sdmmc
++++ b/drivers/disk/Kconfig.sdmmc
+@@ -66,6 +66,29 @@
+ 	  state between blocks. This avoids the STM32F7 HAL multiblock stop-command
+ 	  state machine while retaining interrupt- or DMA-driven FIFO service.
+ 
++config SDMMC_STM32_BOUNDED_MULTIBLOCK
++	bool "Use bounded STM32 SDMMC multiblock transfers"
++	depends on SDMMC_STM32 && !SDMMC_STM32_EMMC && !SDMMC_STM32_SINGLE_BLOCK
++	help
++	  Stage at most eight blocks in an owned, cache-aligned buffer. Multiblock
++	  completion and recovery run in thread context, and a failed range is
++	  replayed once with single-block commands. This avoids the STM32F7 HAL's
++	  interrupt-context stop-command path while retaining bounded DMA batches.
++
++config SDMMC_STM32_BOUNDED_BUFFER_ZEPHYR_REGION
++	bool "Place the bounded STM32 SDMMC buffer in a Zephyr memory region"
++	depends on SDMMC_STM32_BOUNDED_MULTIBLOCK
++	help
++	  Place the owned DMA staging buffer in the linker memory region named by
++	  SDMMC_STM32_BOUNDED_BUFFER_REGION_NAME. This is useful when the normal
++	  kernel SRAM is constrained and the selected region is DMA-accessible.
++
++config SDMMC_STM32_BOUNDED_BUFFER_REGION_NAME
++	string "Zephyr memory-region name for the bounded STM32 SDMMC buffer"
++	depends on SDMMC_STM32_BOUNDED_BUFFER_ZEPHYR_REGION
++	help
++	  Name from a zephyr,memory-region node, for example SDRAM1.
++
+ config SDMMC_STM32_EMMC
+ 	bool "STM32 SDMMC eMMC mode"
+ 	depends on SDMMC_STM32
+diff --git a/drivers/disk/sdmmc_stm32.c b/drivers/disk/sdmmc_stm32.c
+--- a/drivers/disk/sdmmc_stm32.c
++++ b/drivers/disk/sdmmc_stm32.c
+@@ -18,6 +18,7 @@
+ #include <zephyr/logging/log.h>
+ #include <zephyr/irq.h>
+ #include <zephyr/cache.h>
++#include <zephyr/linker/section_tags.h>
+ #include <soc.h>
+ #include <stm32_ll_rcc.h>
+ #include <string.h>
+@@ -27,6 +28,8 @@
+ #define STM32_SDMMC_USE_DMA DT_NODE_HAS_PROP(DT_DRV_INST(0), dmas)
+ #define STM32_SDMMC_TRANSFER_TIMEOUT K_SECONDS(5)
+ #define STM32_SDMMC_CARD_READY_TIMEOUT_MS 5000
++#define STM32_SDMMC_BOUNDED_BLOCKS 8u
++#define STM32_SDMMC_BOUNDED_BYTES (STM32_SDMMC_BOUNDED_BLOCKS * BLOCKSIZE)
+ 
+ #if STM32_SDMMC_USE_DMA
+ #include <zephyr/drivers/dma.h>
+@@ -124,13 +127,11 @@
+ 	struct k_spinlock metrics_lock;
+ 	struct stm32_sdmmc_metrics metrics;
+ 
+ #if defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK) && \
+ 	(STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma)))
+-	/* Cache maintenance on an arbitrary FatFs buffer can invalidate dirty
+-	 * bytes sharing its boundary cache lines. Single-block mode owns this
+-	 * aligned sector buffer so DMA never touches caller storage directly. */
++	/* Keep DMA away from arbitrary caller cache lines and CPU-only DTCM. */
+ 	uint8_t dma_buffer[BLOCKSIZE] __aligned(CONFIG_DCACHE_LINE_SIZE);
+ #endif
+ 
+ #if STM32_SDMMC_USE_DMA
+ #if STM32_SDMMC_USE_DMA_SHARED
+@@ -145,6 +146,25 @@
+ #endif /* STM32_SDMMC_USE_DMA */
+ };
+ 
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK)
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_BUFFER_ZEPHYR_REGION)
++#define STM32_SDMMC_BOUNDED_BUFFER_SECTION \
++	Z_GENERIC_SECTION(CONFIG_SDMMC_STM32_BOUNDED_BUFFER_REGION_NAME)
++#else
++#define STM32_SDMMC_BOUNDED_BUFFER_SECTION
++#endif
++static uint8_t stm32_sdmmc_bounded_buffer[STM32_SDMMC_BOUNDED_BYTES]
++	STM32_SDMMC_BOUNDED_BUFFER_SECTION __aligned(CONFIG_DCACHE_LINE_SIZE);
++#endif
++
++static void stm32_sdmmc_signal_isr(HandleTypeDef *hsd)
++{
++	struct stm32_sdmmc_priv *priv = CONTAINER_OF(hsd, struct stm32_sdmmc_priv, hsd);
++
++	priv->status = (int)hsd->ErrorCode;
++	k_sem_give(&priv->sync);
++}
++
+ #ifdef CONFIG_SDMMC_STM32_HWFC
+ static void stm32_sdmmc_fc_enable(struct stm32_sdmmc_priv *priv)
+ {
+@@ -179,6 +199,50 @@
+ 	hdma->Instance->FCR &= ~DMA_IT_FE;
+ 	__HAL_DMA_DISABLE(hdma);
+ }
++
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && !defined(CONFIG_SDMMC_STM32_EMMC)
++static void stm32_sdmmc_bounded_rx_complete(DMA_HandleTypeDef *hdma)
++{
++	HandleTypeDef *hsd = hdma->Parent;
++
++	STM32_SDMMC_DISABLE_IT(hsd, SDMMC_IT_DATAEND | SDMMC_IT_DCRCFAIL |
++				      SDMMC_IT_DTIMEOUT | SDMMC_IT_TXUNDERR |
++				      SDMMC_IT_RXOVERR | SDMMC_IT_TXFIFOHE |
++				      SDMMC_IT_RXFIFOHF);
++	hsd->Instance->DCTRL = 0u;
++	STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_DATA_FLAGS);
++	hsd->State = HAL_SD_STATE_READY;
++	hsd->Context = SD_CONTEXT_NONE;
++	stm32_sdmmc_signal_isr(hsd);
++}
++
++static void stm32_sdmmc_bounded_tx_complete(DMA_HandleTypeDef *hdma)
++{
++	HandleTypeDef *hsd = hdma->Parent;
++
++	/* The SDMMC DATAEND interrupt, not DMA completion, owns write completion. */
++	__HAL_SD_ENABLE_IT(hsd, SDMMC_IT_DATAEND);
++}
++
++static void stm32_sdmmc_bounded_dma_error(DMA_HandleTypeDef *hdma)
++{
++	HandleTypeDef *hsd = hdma->Parent;
++	uint32_t context = hsd->Context;
++
++	/* STM32Cube treats a FIFO-only indication as non-fatal. */
++	if (HAL_DMA_GetError(hdma) == HAL_DMA_ERROR_FE)
++		return;
++	hsd->ErrorCode |= HAL_SD_ERROR_DMA;
++	STM32_SDMMC_DISABLE_IT(hsd, SDMMC_IT_DATAEND | SDMMC_IT_DCRCFAIL |
++				      SDMMC_IT_DTIMEOUT | SDMMC_IT_TXUNDERR |
++				      SDMMC_IT_RXOVERR | SDMMC_IT_TXFIFOHE |
++				      SDMMC_IT_RXFIFOHF);
++	hsd->Instance->DCTRL = 0u;
++	stm32_sdmmc_dma_quiesce_isr(hsd, context);
++	STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_DATA_FLAGS);
++	stm32_sdmmc_signal_isr(hsd);
++}
++#endif
+ #endif
+ 
+ static void stm32_sdmmc_abort_transfer(struct stm32_sdmmc_priv *priv)
+@@ -237,6 +301,14 @@
+ 	k_spin_unlock(&priv->metrics_lock, key);
+ }
+ 
++static void stm32_sdmmc_record_recovery(struct stm32_sdmmc_priv *priv)
++{
++	k_spinlock_key_t key = k_spin_lock(&priv->metrics_lock);
++
++	priv->metrics.recoveries++;
++	k_spin_unlock(&priv->metrics_lock, key);
++}
++
+ static void stm32_sdmmc_isr(const struct device *dev)
+ {
+ 	struct stm32_sdmmc_priv *priv = dev->data;
+@@ -272,11 +344,30 @@
+ 		}
+ #endif
+ 		STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_DATA_FLAGS);
+-		priv->status = (int)hsd->ErrorCode;
+-		k_sem_give(&priv->sync);
++		stm32_sdmmc_signal_isr(hsd);
+ 		return;
+ 	}
+ 
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA && \
++	!defined(CONFIG_SDMMC_STM32_EMMC)
++	/* DMA completion enables DATAEND for writes. Complete the data path here
++	 * and leave CMD12 to the waiting disk thread. */
++	if ((status & SDMMC_FLAG_DATAEND) != 0u &&
++	    (context & (SD_CONTEXT_WRITE_MULTIPLE_BLOCK | SD_CONTEXT_DMA)) ==
++		(SD_CONTEXT_WRITE_MULTIPLE_BLOCK | SD_CONTEXT_DMA)) {
++		STM32_SDMMC_DISABLE_IT(hsd, SDMMC_IT_DATAEND | SDMMC_IT_DCRCFAIL |
++					      SDMMC_IT_DTIMEOUT | SDMMC_IT_TXUNDERR |
++					      SDMMC_IT_RXOVERR | SDMMC_IT_TXFIFOHE |
++					      SDMMC_IT_RXFIFOHF);
++		hsd->Instance->DCTRL = 0u;
++		STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_DATA_FLAGS);
++		hsd->State = HAL_SD_STATE_READY;
++		hsd->Context = SD_CONTEXT_NONE;
++		stm32_sdmmc_signal_isr(hsd);
++		return;
++	}
++#endif
++
+ #ifdef CONFIG_SDMMC_STM32_EMMC
+ 	HAL_MMC_IRQHandler(hsd);
+ #else
+@@ -287,11 +378,7 @@
+ #define DEFINE_HAL_CALLBACK(name)                                                                  \
+ 	void name(HandleTypeDef *hsd)                                                           \
+ 	{                                                                                          \
+-		struct stm32_sdmmc_priv *priv = CONTAINER_OF(hsd, struct stm32_sdmmc_priv, hsd);   \
+-                                                                                                   \
+-		priv->status = hsd->ErrorCode;                                                     \
+-                                                                                                   \
+-		k_sem_give(&priv->sync);                                                           \
++		stm32_sdmmc_signal_isr(hsd);                                                     \
+ 	}
+ 
+ #ifdef CONFIG_SDMMC_STM32_EMMC
+@@ -692,6 +779,191 @@
+ 	return -ETIMEDOUT;
+ }
+ 
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA && \
++	!defined(CONFIG_SDMMC_STM32_EMMC)
++static int stm32_sdmmc_stop_multiblock(struct stm32_sdmmc_priv *priv,
++				       const char *operation)
++{
++	uint32_t error = SDMMC_CmdStopTransfer(priv->hsd.Instance);
++
++	if (error == HAL_SD_ERROR_NONE)
++		return 0;
++	priv->hsd.ErrorCode |= error;
++	LOG_ERR("sd %s stop failed: error=0x%x sta=0x%x", operation,
++		priv->hsd.ErrorCode, priv->hsd.Instance->STA);
++	return -EIO;
++}
++
++static int stm32_sdmmc_recover_transfer(struct stm32_sdmmc_priv *priv,
++					const char *operation)
++{
++	int64_t deadline = k_uptime_get() + STM32_SDMMC_CARD_READY_TIMEOUT_MS;
++	bool stop_sent = false;
++
++	stm32_sdmmc_record_recovery(priv);
++	/* HAL abort runs in this disk thread, where its bounded tick waits and any
++	 * status/stop commands cannot wedge interrupt context. */
++	stm32_sdmmc_abort_transfer(priv);
++	priv->hsd.ErrorCode = HAL_SD_ERROR_NONE;
++	priv->hsd.State = HAL_SD_STATE_READY;
++	priv->hsd.Context = SD_CONTEXT_NONE;
++
++	do {
++		HAL_SD_CardStateTypeDef state = HAL_SD_GetCardState(&priv->hsd);
++
++		if (state == HAL_SD_CARD_TRANSFER) {
++			priv->hsd.ErrorCode = HAL_SD_ERROR_NONE;
++			return 0;
++		}
++		if ((state == HAL_SD_CARD_SENDING || state == HAL_SD_CARD_RECEIVING) &&
++		    !stop_sent) {
++			uint32_t error = SDMMC_CmdStopTransfer(priv->hsd.Instance);
++
++			if (error != HAL_SD_ERROR_NONE) {
++				priv->hsd.ErrorCode |= error;
++				break;
++			}
++			stop_sent = true;
++		} else if (state != HAL_SD_CARD_PROGRAMMING &&
++			   state != HAL_SD_CARD_SENDING && state != HAL_SD_CARD_RECEIVING) {
++			break;
++		}
++		k_msleep(1);
++	} while (k_uptime_get() < deadline);
++
++	LOG_ERR("sd %s recovery failed: state=%u error=0x%x sta=0x%x", operation,
++		HAL_SD_GetCardState(&priv->hsd), priv->hsd.ErrorCode,
++		priv->hsd.Instance->STA);
++	return -EIO;
++}
++
++static void stm32_sdmmc_bounded_start_failed(HandleTypeDef *hsd,
++					     DMA_HandleTypeDef *hdma,
++					     uint32_t error, bool dma_started)
++{
++	STM32_SDMMC_DISABLE_IT(hsd, SDMMC_IT_DATAEND | SDMMC_IT_DCRCFAIL |
++				      SDMMC_IT_DTIMEOUT | SDMMC_IT_TXUNDERR |
++				      SDMMC_IT_RXOVERR);
++	hsd->Instance->DCTRL = 0u;
++	if (dma_started)
++		(void)HAL_DMA_Abort(hdma);
++	STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_FLAGS);
++	hsd->ErrorCode |= error;
++	hsd->State = HAL_SD_STATE_READY;
++	hsd->Context = SD_CONTEXT_NONE;
++}
++
++static HAL_StatusTypeDef stm32_sdmmc_read_multiblock_dma(HandleTypeDef *hsd,
++						 uint8_t *data_buf,
++						 uint32_t start_sector,
++						 uint32_t num_sector)
++{
++	SDMMC_DataInitTypeDef config;
++	uint32_t address = start_sector;
++	uint32_t error;
++
++	if (data_buf == NULL || num_sector <= 1u || start_sector > hsd->SdCard.LogBlockNbr ||
++	    num_sector > hsd->SdCard.LogBlockNbr - start_sector) {
++		hsd->ErrorCode |= HAL_SD_ERROR_PARAM;
++		return HAL_ERROR;
++	}
++	if (hsd->State != HAL_SD_STATE_READY)
++		return HAL_BUSY;
++
++	hsd->ErrorCode = HAL_SD_ERROR_NONE;
++	hsd->State = HAL_SD_STATE_BUSY;
++	hsd->Instance->DCTRL = 0u;
++	hsd->Context = SD_CONTEXT_READ_MULTIPLE_BLOCK | SD_CONTEXT_DMA;
++	STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_DATA_FLAGS);
++	__HAL_SD_ENABLE_IT(hsd, SDMMC_IT_DCRCFAIL | SDMMC_IT_DTIMEOUT |
++				  SDMMC_IT_RXOVERR | SDMMC_IT_DATAEND);
++	hsd->hdmarx->XferCpltCallback = stm32_sdmmc_bounded_rx_complete;
++	hsd->hdmarx->XferErrorCallback = stm32_sdmmc_bounded_dma_error;
++	hsd->hdmarx->XferAbortCallback = NULL;
++	hsd->hdmarx->Init.Direction = DMA_PERIPH_TO_MEMORY;
++	MODIFY_REG(hsd->hdmarx->Instance->CR, DMA_SxCR_DIR,
++		   hsd->hdmarx->Init.Direction);
++	if (HAL_DMA_Start_IT(hsd->hdmarx, (uint32_t)&hsd->Instance->FIFO,
++			     (uint32_t)data_buf,
++			     (uint32_t)(BLOCKSIZE * num_sector) / 4u) != HAL_OK) {
++		stm32_sdmmc_bounded_start_failed(hsd, hsd->hdmarx,
++						 HAL_SD_ERROR_DMA, false);
++		return HAL_ERROR;
++	}
++	__HAL_SD_DMA_ENABLE(hsd);
++	if (hsd->SdCard.CardType != CARD_SDHC_SDXC)
++		address *= BLOCKSIZE;
++	config.DataTimeOut = SDMMC_DATATIMEOUT;
++	config.DataLength = BLOCKSIZE * num_sector;
++	config.DataBlockSize = SDMMC_DATABLOCK_SIZE_512B;
++	config.TransferDir = SDMMC_TRANSFER_DIR_TO_SDMMC;
++	config.TransferMode = SDMMC_TRANSFER_MODE_BLOCK;
++	config.DPSM = SDMMC_DPSM_ENABLE;
++	(void)SDMMC_ConfigData(hsd->Instance, &config);
++	error = SDMMC_CmdReadMultiBlock(hsd->Instance, address);
++	if (error != HAL_SD_ERROR_NONE) {
++		stm32_sdmmc_bounded_start_failed(hsd, hsd->hdmarx, error, true);
++		return HAL_ERROR;
++	}
++	return HAL_OK;
++}
++
++static HAL_StatusTypeDef stm32_sdmmc_write_multiblock_dma(HandleTypeDef *hsd,
++						  uint8_t *data_buf,
++						  uint32_t start_sector,
++						  uint32_t num_sector)
++{
++	SDMMC_DataInitTypeDef config;
++	uint32_t address = start_sector;
++	uint32_t error;
++
++	if (data_buf == NULL || num_sector <= 1u || start_sector > hsd->SdCard.LogBlockNbr ||
++	    num_sector > hsd->SdCard.LogBlockNbr - start_sector) {
++		hsd->ErrorCode |= HAL_SD_ERROR_PARAM;
++		return HAL_ERROR;
++	}
++	if (hsd->State != HAL_SD_STATE_READY)
++		return HAL_BUSY;
++
++	hsd->ErrorCode = HAL_SD_ERROR_NONE;
++	hsd->State = HAL_SD_STATE_BUSY;
++	hsd->Instance->DCTRL = 0u;
++	hsd->Context = SD_CONTEXT_WRITE_MULTIPLE_BLOCK | SD_CONTEXT_DMA;
++	STM32_SDMMC_CLEAR_FLAG(hsd, SDMMC_STATIC_DATA_FLAGS);
++	__HAL_SD_ENABLE_IT(hsd, SDMMC_IT_DCRCFAIL | SDMMC_IT_DTIMEOUT |
++				  SDMMC_IT_TXUNDERR);
++	hsd->hdmatx->XferCpltCallback = stm32_sdmmc_bounded_tx_complete;
++	hsd->hdmatx->XferErrorCallback = stm32_sdmmc_bounded_dma_error;
++	hsd->hdmatx->XferAbortCallback = NULL;
++	if (hsd->SdCard.CardType != CARD_SDHC_SDXC)
++		address *= BLOCKSIZE;
++	error = SDMMC_CmdWriteMultiBlock(hsd->Instance, address);
++	if (error != HAL_SD_ERROR_NONE) {
++		stm32_sdmmc_bounded_start_failed(hsd, hsd->hdmatx, error, false);
++		return HAL_ERROR;
++	}
++	hsd->hdmatx->Init.Direction = DMA_MEMORY_TO_PERIPH;
++	MODIFY_REG(hsd->hdmatx->Instance->CR, DMA_SxCR_DIR,
++		   hsd->hdmatx->Init.Direction);
++	if (HAL_DMA_Start_IT(hsd->hdmatx, (uint32_t)data_buf,
++			     (uint32_t)&hsd->Instance->FIFO,
++			     (uint32_t)(BLOCKSIZE * num_sector) / 4u) != HAL_OK) {
++		stm32_sdmmc_bounded_start_failed(hsd, hsd->hdmatx,
++						 HAL_SD_ERROR_DMA, false);
++		return HAL_ERROR;
++	}
++	__HAL_SD_DMA_ENABLE(hsd);
++	config.DataTimeOut = SDMMC_DATATIMEOUT;
++	config.DataLength = BLOCKSIZE * num_sector;
++	config.DataBlockSize = SDMMC_DATABLOCK_SIZE_512B;
++	config.TransferDir = SDMMC_TRANSFER_DIR_TO_CARD;
++	config.TransferMode = SDMMC_TRANSFER_MODE_BLOCK;
++	config.DPSM = SDMMC_DPSM_ENABLE;
++	(void)SDMMC_ConfigData(hsd->Instance, &config);
++	return HAL_OK;
++}
++#endif
++
+ static int stm32_sdmmc_read_blocks(HandleTypeDef *hsd, uint8_t *data_buf,
+ 				   uint32_t start_sector, uint32_t num_sector)
+ {
+@@ -701,6 +973,12 @@
+ #ifdef CONFIG_SDMMC_STM32_EMMC
+ 	hal_ret = HAL_MMC_ReadBlocks_DMA(hsd, data_buf, start_sector, num_sector);
+ #else
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA
++	if (num_sector > 1u)
++		hal_ret = stm32_sdmmc_read_multiblock_dma(hsd, data_buf, start_sector,
++						       num_sector);
++	else
++#endif
+ 	hal_ret = HAL_SD_ReadBlocks_DMA(hsd, data_buf, start_sector, num_sector);
+ #endif
+ 
+@@ -749,6 +1027,17 @@
+ 		goto failed;
+ 	}
+ 	started = k_cycle_get_64();
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA && \
++	!defined(CONFIG_SDMMC_STM32_EMMC)
++	if (num_sector > 1u) {
++		err = stm32_sdmmc_stop_multiblock(priv, "read");
++		if (err != 0) {
++			stm32_sdmmc_record_wait(priv, true,
++					 stm32_sdmmc_elapsed_us(started));
++			goto failed;
++		}
++	}
++#endif
+ 	err = stm32_sdmmc_wait_for_card(priv, "read");
+ 	stm32_sdmmc_record_wait(priv, true, stm32_sdmmc_elapsed_us(started));
+ 	if (err == 0) {
+@@ -760,6 +1049,40 @@
+ 	return err;
+ }
+ 
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA
++static int stm32_sdmmc_read_bounded(struct stm32_sdmmc_priv *priv,
++				    uint32_t start_sector, uint32_t num_sector)
++{
++	size_t bytes = (size_t)num_sector * BLOCKSIZE;
++	int err;
++
++	sys_cache_data_flush_and_invd_range(stm32_sdmmc_bounded_buffer, bytes);
++	err = stm32_sdmmc_read_transfer(priv, stm32_sdmmc_bounded_buffer, start_sector,
++					 num_sector);
++	if (err == 0) {
++		sys_cache_data_invd_range(stm32_sdmmc_bounded_buffer, bytes);
++		return 0;
++	}
++	sys_cache_data_invd_range(stm32_sdmmc_bounded_buffer, bytes);
++	if (stm32_sdmmc_recover_transfer(priv, "read") != 0)
++		return err;
++
++	LOG_WRN("sd read retry: sector=%u count=%u", start_sector, num_sector);
++	for (uint32_t i = 0; i < num_sector; i++) {
++		uint8_t *sector_buf = stm32_sdmmc_bounded_buffer + (size_t)i * BLOCKSIZE;
++
++		sys_cache_data_flush_and_invd_range(sector_buf, BLOCKSIZE);
++		err = stm32_sdmmc_read_transfer(priv, sector_buf, start_sector + i, 1);
++		if (err != 0) {
++			(void)stm32_sdmmc_recover_transfer(priv, "read retry");
++			return err;
++		}
++	}
++	sys_cache_data_invd_range(stm32_sdmmc_bounded_buffer, bytes);
++	return 0;
++}
++#endif
++
+ static int stm32_sdmmc_access_read(struct disk_info *disk, uint8_t *data_buf,
+ 				   uint32_t start_sector, uint32_t num_sector)
+ {
+@@ -784,7 +1107,8 @@
+ #endif
+ 
+ #if (STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))) && \
+-	!defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
++	!defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK) && \
++	!defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK)
+ 	/* A flush is performed before the DMA operation, to prevent accidental data
+ 	 * loss when the buffer is not properly aligned to the cache-line (e.g:
+ 	 * 32-bytes for STM32H7).
+@@ -792,7 +1116,21 @@
+ 	sys_cache_data_flush_and_invd_range((void *)data_buf, BLOCKSIZE * num_sector);
+ #endif
+ 
+-#if defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA
++	err = 0;
++	for (uint32_t done = 0; done < num_sector;) {
++		uint32_t count = num_sector - done;
++
++		if (count > STM32_SDMMC_BOUNDED_BLOCKS)
++			count = STM32_SDMMC_BOUNDED_BLOCKS;
++		err = stm32_sdmmc_read_bounded(priv, start_sector + done, count);
++		if (err != 0)
++			goto end;
++		memcpy(data_buf + (size_t)done * BLOCKSIZE, stm32_sdmmc_bounded_buffer,
++		       (size_t)count * BLOCKSIZE);
++		done += count;
++	}
++#elif defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
+ 	/* Keep the STM32F7 HAL out of its multiblock CMD18/stop-transfer path.
+ 	 * DMA through a cache-line-aligned owned sector so the post-transfer
+ 	 * invalidate cannot discard unrelated FatFs or caller state. */
+@@ -822,7 +1160,8 @@
+ #endif
+ 
+ #if (STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))) && \
+-	!defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
++	!defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK) && \
++	!defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK)
+ 	/* Invalidate again after the operation is complete, to protect against
+ 	 * speculative / spurious reads. Note that this is slightly unsafe when
+ 	 * `data_buf` is not aligned to the cache line, and shares the cache line
+@@ -854,6 +1193,12 @@
+ #ifdef CONFIG_SDMMC_STM32_EMMC
+ 	hal_ret = HAL_MMC_WriteBlocks_DMA(hsd, data_buf, start_sector, num_sector);
+ #else
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA
++	if (num_sector > 1u)
++		hal_ret = stm32_sdmmc_write_multiblock_dma(hsd, data_buf, start_sector,
++							num_sector);
++	else
++#endif
+ 	hal_ret = HAL_SD_WriteBlocks_DMA(hsd, data_buf, start_sector, num_sector);
+ #endif
+ 
+@@ -902,6 +1247,17 @@
+ 		goto failed;
+ 	}
+ 	started = k_cycle_get_64();
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA && \
++	!defined(CONFIG_SDMMC_STM32_EMMC)
++	if (num_sector > 1u) {
++		err = stm32_sdmmc_stop_multiblock(priv, "write");
++		if (err != 0) {
++			stm32_sdmmc_record_wait(priv, true,
++					 stm32_sdmmc_elapsed_us(started));
++			goto failed;
++		}
++	}
++#endif
+ 	err = stm32_sdmmc_wait_for_card(priv, "write");
+ 	stm32_sdmmc_record_wait(priv, true, stm32_sdmmc_elapsed_us(started));
+ 	if (err == 0) {
+@@ -913,6 +1269,36 @@
+ 	return err;
+ }
+ 
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA
++static int stm32_sdmmc_write_bounded(struct stm32_sdmmc_priv *priv,
++				     uint32_t start_sector, uint32_t num_sector)
++{
++	size_t bytes = (size_t)num_sector * BLOCKSIZE;
++	int err;
++
++	sys_cache_data_flush_range(stm32_sdmmc_bounded_buffer, bytes);
++	err = stm32_sdmmc_write_transfer(priv, stm32_sdmmc_bounded_buffer, start_sector,
++					  num_sector);
++	if (err == 0)
++		return 0;
++	if (stm32_sdmmc_recover_transfer(priv, "write") != 0)
++		return err;
++
++	LOG_WRN("sd write retry: sector=%u count=%u", start_sector, num_sector);
++	for (uint32_t i = 0; i < num_sector; i++) {
++		uint8_t *sector_buf = stm32_sdmmc_bounded_buffer + (size_t)i * BLOCKSIZE;
++
++		sys_cache_data_flush_range(sector_buf, BLOCKSIZE);
++		err = stm32_sdmmc_write_transfer(priv, sector_buf, start_sector + i, 1);
++		if (err != 0) {
++			(void)stm32_sdmmc_recover_transfer(priv, "write retry");
++			return err;
++		}
++	}
++	return 0;
++}
++#endif
++
+ static int stm32_sdmmc_access_write(struct disk_info *disk,
+ 				    const uint8_t *data_buf,
+ 				    uint32_t start_sector, uint32_t num_sector)
+@@ -938,11 +1324,26 @@
+ #endif
+ 
+ #if (STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))) && \
+-	!defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
++	!defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK) && \
++	!defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK)
+ 	sys_cache_data_flush_range((void *)data_buf, BLOCKSIZE * num_sector);
+ #endif
+ 
+-#if defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
++#if defined(CONFIG_SDMMC_STM32_BOUNDED_MULTIBLOCK) && STM32_SDMMC_USE_DMA
++	err = 0;
++	for (uint32_t done = 0; done < num_sector;) {
++		uint32_t count = num_sector - done;
++
++		if (count > STM32_SDMMC_BOUNDED_BLOCKS)
++			count = STM32_SDMMC_BOUNDED_BLOCKS;
++		memcpy(stm32_sdmmc_bounded_buffer, data_buf + (size_t)done * BLOCKSIZE,
++		       (size_t)count * BLOCKSIZE);
++		err = stm32_sdmmc_write_bounded(priv, start_sector + done, count);
++		if (err != 0)
++			goto end;
++		done += count;
++	}
++#elif defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK)
+ 	/* Keep the STM32F7 HAL out of its multiblock CMD25/stop-transfer path.
+ 	 * Copy into the owned sector before cleaning so DMA never observes or
+ 	 * maintains an unaligned caller cache line. */

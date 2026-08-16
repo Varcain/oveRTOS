@@ -75,10 +75,8 @@
 &sdmmc1 {
 	dmas = <&dma2 6 4 0x30000 0x00>, <&dma2 3 4 0x30000 0x00>;
 	dma-names = "tx", "rx";
-	/* 48 MHz / (22 + 2) = 2 MHz.  Faster clocks complete short probes, but
-	 * sustained SQLite rewrites can still leave this board's F7 SDMMC path
-	 * non-responsive at 4 MHz.  Keep the proven-safe clock together with the
-	 * bounded single-sector DMA policy. */
+	/* 48 MHz / (22 + 2) = 2 MHz. Keep the proven-safe clock while the bounded
+	 * multiblock DMA path is qualified under sustained SQLite rewrites. */
 	clk-div = <22>;
 	/delete-property/ cd-gpios;
 };
