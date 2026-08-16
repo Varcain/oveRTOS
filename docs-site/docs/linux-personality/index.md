@@ -76,3 +76,6 @@ own guest programs as FDPIC binaries under `board/overtos/progs/` (see
 - [Benchmarks](benchmarks.md) — the personality tax (process vs native thread) on silicon.
 - [Complexity remediation baseline](complexity-baseline.md) — frozen runtime,
   firmware-size, and invariant guardrails for the structural cleanup.
+- [Port migration baseline](port-migration-baseline.md) — current app/seam
+  ownership, build cost, and the guardrails for moving reusable RTOS ports into
+  LXP.
