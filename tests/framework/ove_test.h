@@ -433,7 +433,7 @@ int test_loader_run(void);
 int test_protected_run(void);
 int test_sandbox_run(void);
 int test_lxp_adapter_run(void);
-int test_cortex_m_cache_run(void);
+int test_lxp_memory_policy_run(void);
 int test_loader_target_run(void);
 int test_protected_target_run(void);
 int test_storage_bounds_run(void);

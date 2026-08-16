@@ -74,8 +74,8 @@
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
-#include "ove_cortex_m_cache.h"
-#include "ove_cortex_m_mpu.h"
+#include "lxp/arch/cortex_m_cache.h"
+#include "lxp/arch/cortex_m_mpu.h"
 #include "ove_lxp_memory_contract.h"
 #include "ove_nuttx_runtime.h"
 
@@ -415,7 +415,7 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	lxp_running_tcb()->xcp.regs = regs;
 	if (!nuttx_profile_is_current(sidx)) {
 		lxp_guest_fault_t fault = {
-			.detail = OVE_LXP_MPU_PROFILE_FAULT,
+			.detail = LXP_CORTEX_M_MPU_PROFILE_FAULT,
 			.address = 0u,
 		};
 		(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
@@ -654,7 +654,7 @@ static int spawn_task(int sidx, uintptr_t guest_sp)
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+static struct lxp_cortex_m_cache_geometry g_lxp_cache_geometry;
 static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
 	OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
 #else
@@ -680,7 +680,7 @@ static int nuttx_publish_executable(lxp_region_ref_t address_space, uintptr_t te
 		return LXP_ERR_INVALID_PARAM;
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, text_lo, text_size) != 0)
+	if (lxp_cortex_m_publish_executable(&g_lxp_cache_geometry, text_lo, text_size) != 0)
 		return LXP_ERR_INVALID_PARAM;
 #endif
 	return LXP_OK;
@@ -1279,22 +1279,22 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 				    (NUTTX_POOL_TEXSCB << 16) | (0x2u << 24);
 	}
 
-	const struct ove_cortex_m_mpu_expectation program = {
+	const struct lxp_cortex_m_mpu_expectation program = {
 		.base = program_base,
 		.size = writable_size,
 		.texscb = NUTTX_POOL_TEXSCB,
 		.access = 3u,
 		.execute_never = 1u,
 	};
-	const struct ove_cortex_m_mpu_expectation dynamic = {
+	const struct lxp_cortex_m_mpu_expectation dynamic = {
 		.base = (uintptr_t)dyn_pools[ridx],
 		.size = LXP_DYN_POOL_SIZE,
 		.texscb = NUTTX_POOL_TEXSCB,
 		.access = 3u,
 		.execute_never = 1u,
 	};
-	if (!ove_cortex_m_mpu_descriptor_matches(prepared->rbar[0], prepared->rasr[0], &program) ||
-	    !ove_cortex_m_mpu_descriptor_matches(prepared->rbar[1], prepared->rasr[1], &dynamic))
+	if (!lxp_cortex_m_mpu_descriptor_matches(prepared->rbar[0], prepared->rasr[0], &program) ||
+	    !lxp_cortex_m_mpu_descriptor_matches(prepared->rbar[1], prepared->rasr[1], &dynamic))
 		return -1;
 	for (unsigned i = 0; i < LXP_DEVICE_MPU_COUNT; i++) {
 		const struct nuttx_device_map *map = &g_slots[sidx].device_maps[i];
@@ -1303,25 +1303,25 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 				return -1;
 			continue;
 		}
-		struct ove_cortex_m_mpu_region native;
+		struct lxp_cortex_m_mpu_region native;
 		uint8_t texscb = map->attrs == LXP_MAP_WT    ? 0x02u
 				 : map->attrs == LXP_MAP_DEV ? 0x01u
 							     : 0x08u;
-		if (ove_cortex_m_mpu_region_decode(prepared->rbar[2u + i], prepared->rasr[2u + i],
+		if (lxp_cortex_m_mpu_region_decode(prepared->rbar[2u + i], prepared->rasr[2u + i],
 						   &native) != 0 ||
 		    native.texscb != texscb || native.access != 3u || native.execute_never != 1u ||
-		    !ove_cortex_m_mpu_region_contains(&native, map->addr, map->size))
+		    !lxp_cortex_m_mpu_region_contains(&native, map->addr, map->size))
 			return -1;
 	}
 	if (policy->copied_text_executable) {
-		const struct ove_cortex_m_mpu_expectation executable = {
+		const struct lxp_cortex_m_mpu_expectation executable = {
 			.base = policy->copied_text_base,
 			.size = policy->copied_text_size,
 			.texscb = NUTTX_POOL_TEXSCB,
 			.access = 2u,
 			.execute_never = 0u,
 		};
-		if (!ove_cortex_m_mpu_descriptor_matches(prepared->rbar[4], prepared->rasr[4],
+		if (!lxp_cortex_m_mpu_descriptor_matches(prepared->rbar[4], prepared->rasr[4],
 							 &executable))
 			return -1;
 	} else if (prepared->rasr[4] != 0u) {
@@ -1335,9 +1335,9 @@ static int nuttx_prepare_profile(int sidx, const lxp_memory_policy_t *policy)
 static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepared)
 {
 	static const uint8_t region[LXP_NATIVE_POLICY_REGIONS] = {2u, 3u, 5u, 6u, 7u};
-	struct ove_cortex_m_mpu_snapshot snapshot;
-	if (!prepared || !prepared->valid || ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
-	    !(snapshot.ctrl & OVE_CORTEX_M_MPU_CTRL_ENABLE))
+	struct lxp_cortex_m_mpu_snapshot snapshot;
+	if (!prepared || !prepared->valid || lxp_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    !(snapshot.ctrl & LXP_CORTEX_M_MPU_CTRL_ENABLE))
 		return 0;
 
 	for (unsigned i = 0; i < LXP_NATIVE_POLICY_REGIONS; i++) {
@@ -1348,11 +1348,11 @@ static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepa
 				return 0;
 			continue;
 		}
-		struct ove_cortex_m_mpu_region native;
-		if (ove_cortex_m_mpu_region_decode(prepared->rbar[i], prepared->rasr[i], &native) !=
+		struct lxp_cortex_m_mpu_region native;
+		if (lxp_cortex_m_mpu_region_decode(prepared->rbar[i], prepared->rasr[i], &native) !=
 		    0)
 			return 0;
-		const struct ove_cortex_m_mpu_expectation expected = {
+		const struct lxp_cortex_m_mpu_expectation expected = {
 			.base = native.base,
 			.size = native.size,
 			.subregion_disable = native.subregion_disable,
@@ -1360,13 +1360,13 @@ static int nuttx_profile_live_matches(const struct nuttx_prepared_profile *prepa
 			.access = native.access,
 			.execute_never = native.execute_never,
 		};
-		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region[i]],
+		if (!lxp_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region[i]],
 								 &expected))
 			return 0;
 		/* Program, arena, and copied-text mappings must also win over every other
 		 * descriptor, not merely exist at their expected region numbers. */
 		if ((i == 0u || i == 1u || i == 4u) &&
-		    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+		    !lxp_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
 			return 0;
 	}
 	return 1;
@@ -1512,7 +1512,7 @@ static bool g_lxp_note_registered;
 static int nuttx_prepare(void)
 {
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (ove_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
+	if (lxp_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
 		return -1;
 #endif
 	g_irq_install_mask = 0;
@@ -1547,18 +1547,18 @@ static int nuttx_prepare(void)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int nuttx_validate_static_mpu(void)
 {
-	struct ove_cortex_m_mpu_snapshot snapshot;
-	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
-	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
-		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+	struct lxp_cortex_m_mpu_snapshot snapshot;
+	if (lxp_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
+	    (snapshot.ctrl & (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
-	const struct ove_cortex_m_mpu_region *pool = &snapshot.regions[1];
-	return ove_cortex_m_mpu_region_matches(pool, 0xc0000000u, 8u * 1024u * 1024u, 1u, 0x0bu, 1u,
+	const struct lxp_cortex_m_mpu_region *pool = &snapshot.regions[1];
+	return lxp_cortex_m_mpu_region_matches(pool, 0xc0000000u, 8u * 1024u * 1024u, 1u, 0x0bu, 1u,
 					       1u) &&
-	       ove_cortex_m_mpu_region_contains(pool, OVE_LXP_GUEST_POOL_BASE,
+	       lxp_cortex_m_mpu_region_contains(pool, OVE_LXP_GUEST_POOL_BASE,
 						OVE_LXP_GUEST_POOL_SIZE) &&
-	       !ove_cortex_m_mpu_region_overlaps_enabled(pool, 0xc0000000u, 1024u * 1024u);
+	       !lxp_cortex_m_mpu_region_overlaps_enabled(pool, 0xc0000000u, 1024u * 1024u);
 }
 #endif
 
@@ -1567,7 +1567,7 @@ static int nuttx_validate_memory_contract(const lxp_cpu_memory_contract_t *decla
 	if (declared != &g_lxp_memory_contract)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
+	return lxp_cortex_m_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
 			       nuttx_validate_static_mpu()
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;

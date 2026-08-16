@@ -37,6 +37,23 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_host.c"
     "backends/common/lxp_ove_thread_adapter.c")
 
+set(LXP_ARCH_HEADERS
+    "modules/lxp/include/lxp/arch/cortex_m_cache.h"
+    "modules/lxp/include/lxp/arch/cortex_m_memory.h"
+    "modules/lxp/include/lxp/arch/cortex_m_mpu.h")
+foreach(HEADER IN LISTS LXP_ARCH_HEADERS)
+    if(NOT EXISTS "${OVE_ROOT}/${HEADER}")
+        message(FATAL_ERROR "LXP-owned architecture header is missing: ${HEADER}")
+    endif()
+endforeach()
+foreach(RETIRED_HEADER IN ITEMS
+        "backends/common/ove_cortex_m_cache.h"
+        "backends/common/ove_cortex_m_mpu.h")
+    if(EXISTS "${OVE_ROOT}/${RETIRED_HEADER}")
+        message(FATAL_ERROR "retired oveRTOS architecture duplicate remains: ${RETIRED_HEADER}")
+    endif()
+endforeach()
+
 set(BUILD_TEMPLATE "${OVE_ROOT}/config/templates/ove_config.cmake.j2")
 file(READ "${BUILD_TEMPLATE}" BUILD_TEXT)
 foreach(SOURCE IN LISTS LEGACY_SEAMS HOST_ADAPTERS)

@@ -3,15 +3,14 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * oveRTOS declarations and live-cache checks for LXP's portable CPU-memory
- * contract. Native MPU descriptor checks remain engine-owned.
+ * oveRTOS board policy for LXP's portable CPU-memory contract. Cortex-M
+ * geometry, executable publication, and live-cache validation are LXP-owned.
  */
 
 #ifndef OVE_LXP_MEMORY_CONTRACT_H
 #define OVE_LXP_MEMORY_CONTRACT_H
 
-#include "lxp/lxp_port.h"
-#include "ove_cortex_m_cache.h"
+#include "lxp/arch/cortex_m_memory.h"
 
 #define OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER                         \
 	{                                                                    \
@@ -34,27 +33,5 @@
 		.dcache_size = 4u * 1024u,                                     \
 		.icache_size = 4u * 1024u,                                     \
 	}
-
-#if defined(__arm__) || defined(__thumb__)
-static inline int ove_lxp_memory_contract_matches_cache(
-	const lxp_cpu_memory_contract_t *contract,
-	const struct ove_cortex_m_cache_geometry *geometry)
-{
-	if (!contract || !geometry)
-		return 0;
-
-	uint32_t flags = 0u;
-	if ((OVE_SCB_CCR & OVE_SCB_CCR_DC) != 0u)
-		flags |= LXP_CPU_MEMORY_DCACHE_ENABLED;
-	if ((OVE_SCB_CCR & OVE_SCB_CCR_IC) != 0u)
-		flags |= LXP_CPU_MEMORY_ICACHE_ENABLED;
-
-	return contract->flags == flags &&
-	       contract->dcache_line_size == geometry->d_line_size &&
-	       contract->icache_line_size == geometry->i_line_size &&
-	       contract->dcache_size == geometry->d_size &&
-	       contract->icache_size == geometry->i_size;
-}
-#endif
 
 #endif /* OVE_LXP_MEMORY_CONTRACT_H */
