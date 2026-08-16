@@ -14,7 +14,7 @@ personality core:
 |--------|-------|-----|-------------------|
 | **Zephyr**   | `qemu-mps2-an521` | Cortex-M33 | unprivileged + MPU (`CONFIG_USERSPACE`) |
 | **FreeRTOS** | `qemu-mps2-an500` | Cortex-M7  | unprivileged + MPU (`ARM_CM4_MPU`) |
-| **NuttX**    | `qemu-mps2-an500` | Cortex-M7  | unprivileged + MPU (`CONTROL.nPRIV` + `PRIVDEFENA`, programmed by the seam in `BUILD_FLAT`) |
+| **NuttX**    | `qemu-mps2-an500` | Cortex-M7  | unprivileged + MPU (`CONTROL.nPRIV` + `PRIVDEFENA`, programmed by LXP's port in `BUILD_FLAT`) |
 
 ## Phase 1 — bidirectional round trip
 
@@ -580,7 +580,7 @@ explicit MPU regions, while the coordinator remains privileged.
 
 **NuttX — `qemu-mps2-an500` (Cortex-M7).** Also reuses the *stock* an500 board.
 NuttX is the hard engine: its own `svc #0` *is* the syscall/context-switch ABI, so
-the seam (`backends/nuttx/nuttx_lnx_trap.c`) `irq_attach`es SVCall and identifies a
+LXP's NuttX port (`modules/lxp/ports/nuttx/lxp_nuttx_port.c`) `irq_attach`es SVCall and identifies a
 Linux syscall by the saved `CONTROL.nPRIV` bit plus the current personality slot;
 only a privileged NuttX SVC may chain to `arm_svcall`. Each program is a real NuttX
 task created with `nxtask_init`, and both launch and resume set `CONTROL.nPRIV` in

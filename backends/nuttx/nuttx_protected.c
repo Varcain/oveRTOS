@@ -25,7 +25,7 @@
  * This generic CONFIG_OVE_PROTECTED backend keeps an ordinary NuttX FLAT task
  * privileged and provides Level-1 fault recovery around one no-access guard; it
  * does not implement per-task address spaces. Do not confuse it with the Linux
- * personality's specialized NuttX seam: that seam sets CONTROL.nPRIV on every
+ * personality's specialized LXP NuttX port: that port sets CONTROL.nPRIV on every
  * guest and swaps complete per-program MPU views on context switches, still in
  * BUILD_FLAT. Here, the no-access region traps a stray load/store into MemManage,
  * which we recover from rather than panicking — the on-target analog of the host

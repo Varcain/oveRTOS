@@ -82,7 +82,7 @@ rtos_defconfig:
     - CONFIG_OVE_BOARD=y
   nuttx:
     # NuttX brings its OWN STM32F746 clock + FMC external SDRAM + USART1 console. The program runs
-    # UNPRIVILEGED behind an MPU view the seam programs raw (nuttx_lnx_trap.c: lxp_mpu_init +
+    # UNPRIVILEGED behind an MPU view LXP's NuttX port programs raw (lxp_nuttx_port.c: lxp_mpu_init +
     # per-switch note driver). LVGL rootfs in QSPI: the FDPIC userspace is ~1.45 MB, past the 1 MB
     # internal flash, so XIP it from the on-board N25Q NOR at 0x90000000 (boards/.../nuttx/src/
     # board_init.c memory-maps it + adds the FMC read-pipe fix from ove_hal_board_init, which
