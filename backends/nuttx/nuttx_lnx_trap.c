@@ -468,7 +468,8 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	 * (e.g. clone/vfork setting the child's frame, or a signal-return restoring context), and the
 	 * guest must observe it across the SVC return. The exception-return restores regs[REG_R4..R11]
 	 * into the guest's r4-r11, so mirror the (possibly modified) frame back here — the NuttX
-	 * counterpart of the FreeRTOS seam's r4-r11 write-back (backends/freertos/freertos_lnx.c). */
+	 * counterpart of the FreeRTOS port's r4-r11 write-back
+	 * (modules/lxp/ports/freertos/lxp_freertos_port.c). */
 	regs[REG_R4] = f.r[4];
 	regs[REG_R5] = f.r[5];
 	regs[REG_R6] = f.r[6];

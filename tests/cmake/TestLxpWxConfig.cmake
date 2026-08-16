@@ -26,7 +26,7 @@ if(PRJ_TEXT MATCHES "CONFIG_EXECUTE_XOR_WRITE=n")
 endif()
 
 set(FREERTOS_MPU_PATCH
-    "${OVE_ROOT}/apps/c/linux_interop/patches/freertos/0001-arm-cm4-mpu-drop-global-user-peripheral-map.patch")
+    "${OVE_ROOT}/modules/lxp/ports/freertos/patches/0001-arm-cm4-mpu-drop-global-user-peripheral-map.patch")
 file(READ "${FREERTOS_MPU_PATCH}" FREERTOS_MPU_PATCH_TEXT)
 
 # Returning the peripheral slot expands xMPU_SETTINGS by one descriptor. Both

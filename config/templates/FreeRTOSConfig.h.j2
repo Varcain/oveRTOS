@@ -139,9 +139,9 @@ header file. */
 
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS
 standard names.  The SVC alias is OMITTED for the Linux personality
-(CONFIG_OVE_LINUX): the personality seam (backends/freertos/freertos_lnx.c) OWNS
-the SVC_Handler vector and forwards FreeRTOS's start-scheduler svc to the port's
-vPortSVCHandler, so vPortSVCHandler must keep its own name (else the seam's
+(CONFIG_OVE_LINUX): LXP's FreeRTOS port OWNS the SVC_Handler vector and forwards
+FreeRTOS's start-scheduler svc to the kernel port's
+vPortSVCHandler, so vPortSVCHandler must keep its own name (else LXP's port
 `b vPortSVCHandler` is an undefined reference). PendSV is untouched by the seam. */
 {% if config.get("CONFIG_OVE_LINUX") != True %}
 #define vPortSVCHandler SVC_Handler
@@ -176,7 +176,7 @@ vPortSVCHandler, so vPortSVCHandler must keep its own name (else the seam's
 {% else %}
 #define configENABLE_ERRATA_837070_WORKAROUND           0
 {% endif %}
-/* Our SVC vector is the seam's strong SVC_Handler (not vPortSVCHandler), so the
+/* Our SVC vector is LXP's strong SVC_Handler (not vPortSVCHandler), so the
  * port's handler-installation assert must be disabled or it hangs at boot. */
 #define configCHECK_HANDLER_INSTALLATION                0
 #define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY     0

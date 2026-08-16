@@ -137,7 +137,7 @@ extern void ove_backend_trace_task_blocking(void);
 /* Map FreeRTOS port handlers to CMSIS names. The Linux personality seam owns the
  * SVC_Handler vector (to trap a loaded program's svc), so under CONFIG_OVE_LINUX
  * this alias is dropped: FreeRTOS's handler stays named vPortSVCHandler and the
- * seam (backends/freertos/freertos_lnx.c) forwards the start-scheduler svc to it. */
+ * LXP FreeRTOS port forwards the start-scheduler svc to it. */
 #ifndef CONFIG_OVE_LINUX
 #define vPortSVCHandler SVC_Handler
 #endif
@@ -148,7 +148,7 @@ extern void ove_backend_trace_task_blocking(void);
  * per-task MPU region set so a stray access faults instead of corrupting the kernel.
  * Values verified against the corrected QEMU an500 Cortex-M7 model via the gdbstub:
  * MPU_TYPE.DREGION = 16 and CPUID = 0x411fc272 (r1p2). The r0p0/r0p1 workaround stays OFF;
- * enabling it makes prvSetupMPU's configASSERT hang at boot. Our SVC vector is the seam's strong
+ * enabling it makes prvSetupMPU's configASSERT hang at boot. Our SVC vector is LXP's strong
  * SVC_Handler (not vPortSVCHandler) → configCHECK_HANDLER_INSTALLATION must be 0. */
 #define configUSE_MPU_WRAPPERS_V1                       1
 /* 16, NOT 8: QEMU's mps2-an500 Cortex-M7 reports MPU_TYPE.DREGION=16, and the ARM_CM4_MPU port

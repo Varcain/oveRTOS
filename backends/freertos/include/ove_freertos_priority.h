@@ -43,7 +43,7 @@ static inline UBaseType_t ove_freertos_map_priority(ove_prio_t prio)
 	UBaseType_t p = ove_freertos_priority_value(prio);
 #if (portUSING_MPU_WRAPPERS == 1)
 	/* OVE framework threads are trusted runtime code. Linux program slots are
-	 * the only unprivileged tasks and are created directly by freertos_lnx.c. */
+	 * the only unprivileged tasks and are created directly by LXP's FreeRTOS port. */
 	p |= portPRIVILEGE_BIT;
 #endif
 	return p;

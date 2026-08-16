@@ -30,6 +30,10 @@
 #include "task.h"
 #include "timers.h"
 
+#if defined(CONFIG_OVE_LINUX)
+#include "lxp/ports/freertos.h"
+#endif
+
 /*
  * Idle stack sizing.  CONFIG_OVE_PM hooks vApplicationIdleHook to drive
  * the PM state machine, which can fire user PRE_SLEEP / POST_WAKE
@@ -157,20 +161,15 @@ __attribute__((weak)) void ove_freertos_time_tick(void)
 {
 }
 
-/* The Linux-personality seam overrides this to rotate only equal-priority
- * guest tasks at its configured quantum. Keeping this separate from
- * configUSE_TIME_SLICING avoids imposing the 1 ms scheduler tick on unrelated
- * equal-priority host tasks. */
-__attribute__((weak)) void ove_freertos_lxp_tick(void)
-{
-}
-
 OVE_WEAK
 void vApplicationTickHook(void)
 {
 	/* Sampling CYCCNT every 1 ms catches its ~19.86 s wrap so CLOCK_MONOTONIC stays 64-bit. */
 	ove_freertos_time_tick();
-	ove_freertos_lxp_tick();
+#if defined(CONFIG_OVE_LINUX)
+	/* Guest-only weighted slicing is owned by LXP's FreeRTOS port. */
+	lxp_freertos_tick();
+#endif
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	/* QEMU has no DWT, so its run-time-stat counter advances with SysTick.
 	 * Hardware builds use the wrap-stitched DWT counter instead. */

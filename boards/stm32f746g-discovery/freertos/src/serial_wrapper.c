@@ -135,9 +135,9 @@ void serial_safe_write(const char *str, unsigned int len)
 	HAL_UART_Transmit(&uartHandle, (uint8_t *)str, len, 1000);
 }
 
-/* Fatal host-fault diagnostic: overrides the weak ove_lnx_host_fatal in the FreeRTOS Linux seam
- * (backends/freertos/freertos_lnx.c). Runs in fault context after the seam decides a fault belongs
- * to host/privileged code and cannot be contained, so it pokes USART1 directly — no HAL (its
+/* Fatal host-fault diagnostic supplied to LXP's FreeRTOS port by the oveRTOS host binding. Runs
+ * in fault context after the port decides a fault belongs to host/privileged code and cannot be
+ * contained, so it pokes USART1 directly — no HAL (its
  * tick-based timeout is frozen with interrupts masked), no FreeRTOS, no VFP (general-regs-only, so
  * a pending lazy-FP stack to an invalid frame can't nest another fault) — then halts. A watchdog,
  * if armed, reboots; R8's reset-cause read then reports it. */
@@ -159,9 +159,9 @@ static FAULT_GPR void fault_puthex(uint32_t v)
 		fault_putc("0123456789abcdef"[(v >> i) & 0xfu]);
 }
 
-void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc); /* weak in the seam; strong here */
+void ove_freertos_lxp_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc);
 
-FAULT_GPR void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc)
+FAULT_GPR void ove_freertos_lxp_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc)
 {
 	fault_puts("\n!!! HOST FAULT (privileged/host context - not a guest, cannot contain)\n!!! pc=0x");
 	fault_puthex(pc);
