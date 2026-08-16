@@ -1,0 +1,62 @@
+diff --git a/subsys/fs/Kconfig.fatfs b/subsys/fs/Kconfig.fatfs
+--- a/subsys/fs/Kconfig.fatfs
++++ b/subsys/fs/Kconfig.fatfs
+@@ -80,5 +80,22 @@ config FS_FATFS_NUM_FILES
+ 	  This affects use of fs_open on FAT type mounted file systems.
+ 
++config FS_FATFS_TINY
++	bool "Use one shared sector buffer per volume"
++	default y
++	help
++	  Select the FatFs tiny-memory configuration. It saves one sector buffer
++	  per open file, but data access must repeatedly reuse the volume window
++	  and can substantially amplify physical block traffic.
++
++config FS_FATFS_FILE_POOL_DTCM
++	bool "Place FatFs file objects in DTCM"
++	depends on DT_HAS_ARM_DTCM_ENABLED
++	help
++	  Place the statically allocated FatFs FIL object pool in the DTCM no-init
++	  section. This is useful when non-tiny FIL objects would exhaust ordinary
++	  SRAM. The disk driver must not DMA directly into FIL sector buffers on
++	  platforms where DTCM is CPU-only.
++
+ config FS_FATFS_NUM_DIRS
+ 	int "Maximum number of opened directories"
+ 	default 4
+diff --git a/modules/fatfs/zephyr_fatfs_config.h b/modules/fatfs/zephyr_fatfs_config.h
+--- a/modules/fatfs/zephyr_fatfs_config.h
++++ b/modules/fatfs/zephyr_fatfs_config.h
+@@ -87,7 +87,7 @@
+  * options.
+  */
+ #undef FF_FS_TINY
+-#define FF_FS_TINY 1
++#define FF_FS_TINY CONFIG_FS_FATFS_TINY
+ 
+ #undef FF_FS_NORTC
+ #if defined(CONFIG_FS_FATFS_HAS_RTC)
+diff --git a/subsys/fs/fat_fs.c b/subsys/fs/fat_fs.c
+--- a/subsys/fs/fat_fs.c
++++ b/subsys/fs/fat_fs.c
+@@ -8,6 +8,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ #include <zephyr/kernel.h>
++#include <zephyr/linker/section_tags.h>
+ #include <zephyr/types.h>
+ #include <errno.h>
+ #include <zephyr/init.h>
+@@ -27,7 +28,12 @@ K_MEM_SLAB_DEFINE(fatfs_dirp_pool, sizeof(DIR),
+ 			CONFIG_FS_FATFS_NUM_DIRS, 4);
+ 
+ /* Memory pool for FatFs file objects */
++#if defined(CONFIG_FS_FATFS_FILE_POOL_DTCM)
++K_MEM_SLAB_DEFINE_IN_SECT(fatfs_filep_pool, __dtcm_noinit_section, sizeof(FIL),
++			  CONFIG_FS_FATFS_NUM_FILES, 4);
++#else
+ K_MEM_SLAB_DEFINE(fatfs_filep_pool, sizeof(FIL),
+ 			CONFIG_FS_FATFS_NUM_FILES, 4);
++#endif
+ 
+ static int translate_error(int error)
