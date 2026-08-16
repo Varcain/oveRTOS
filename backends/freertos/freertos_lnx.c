@@ -38,8 +38,8 @@
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "lxp_ove_thread_adapter.h"
-#include "ove_cortex_m_cache.h"
-#include "ove_cortex_m_mpu.h"
+#include "lxp/arch/cortex_m_cache.h"
+#include "lxp/arch/cortex_m_mpu.h"
 #include "ove_lxp_memory_contract.h"
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -117,7 +117,7 @@ _Static_assert(sizeof(struct lxp_ext_storage) <= OVE_LXP_GUEST_POOL_SIZE,
 #define g_netfs_exec_stage (g_lxp_ext_storage.netfs_exec_stage)
 #endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+static struct lxp_cortex_m_cache_geometry g_lxp_cache_geometry;
 static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
 	OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
 #else
@@ -272,7 +272,7 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 		return 0; /* not a program task → forward to FreeRTOS */
 	if (!freertos_validate_active_profile(sidx)) {
 		lxp_guest_fault_t fault = {
-			.detail = OVE_LXP_MPU_PROFILE_FAULT,
+			.detail = LXP_CORTEX_M_MPU_PROFILE_FAULT,
 			.address = 0u,
 		};
 		(void)lxp_slot_report_memory_fault(task_slot_ref(sidx), &fault);
@@ -786,21 +786,21 @@ static int freertos_capture_native_profile(int sidx)
 		const MemoryRegion_t *logical = &prepared->regions[i];
 		uint32_t rbar = settings->xRegion[i + 1u].ulRegionBaseAddress;
 		uint32_t rasr = settings->xRegion[i + 1u].ulRegionAttribute;
-		struct ove_cortex_m_mpu_region native;
-		if (ove_cortex_m_mpu_region_decode(rbar, rasr, &native) != 0)
+		struct lxp_cortex_m_mpu_region native;
+		if (lxp_cortex_m_mpu_region_decode(rbar, rasr, &native) != 0)
 			return 0;
 		if (logical->ulLengthInBytes == 0u) {
 			if (native.enabled)
 				return 0;
 		} else {
-			const struct ove_cortex_m_mpu_expectation expected = {
+			const struct lxp_cortex_m_mpu_expectation expected = {
 				.base = (uintptr_t)logical->pvBaseAddress,
 				.size = logical->ulLengthInBytes,
 				.texscb = (uint8_t)((logical->ulParameters >> 16) & 0x3fu),
 				.access = (uint8_t)((logical->ulParameters >> 24) & 0x7u),
 				.execute_never = (uint8_t)((logical->ulParameters >> 28) & 1u),
 			};
-			if (!ove_cortex_m_mpu_region_matches_expectation(&native, &expected))
+			if (!lxp_cortex_m_mpu_region_matches_expectation(&native, &expected))
 				return 0;
 		}
 		prepared->native_rbar[i] = rbar;
@@ -821,10 +821,10 @@ static int freertos_validate_active_profile(int sidx)
 	if (prepared->live_validated)
 		return 1;
 
-	struct ove_cortex_m_mpu_snapshot snapshot;
-	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
-	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
-		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+	struct lxp_cortex_m_mpu_snapshot snapshot;
+	if (lxp_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    (snapshot.ctrl & (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 	for (unsigned i = 0; i < portNUM_CONFIGURABLE_REGIONS; i++) {
 		unsigned region = portFIRST_CONFIGURABLE_REGION + i;
@@ -835,11 +835,11 @@ static int freertos_validate_active_profile(int sidx)
 				return 0;
 			continue;
 		}
-		struct ove_cortex_m_mpu_region native;
-		if (ove_cortex_m_mpu_region_decode(prepared->native_rbar[i],
+		struct lxp_cortex_m_mpu_region native;
+		if (lxp_cortex_m_mpu_region_decode(prepared->native_rbar[i],
 						   prepared->native_rasr[i], &native) != 0)
 			return 0;
-		const struct ove_cortex_m_mpu_expectation expected = {
+		const struct lxp_cortex_m_mpu_expectation expected = {
 			.base = native.base,
 			.size = native.size,
 			.subregion_disable = native.subregion_disable,
@@ -847,10 +847,10 @@ static int freertos_validate_active_profile(int sidx)
 			.access = native.access,
 			.execute_never = native.execute_never,
 		};
-		if (!ove_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region],
+		if (!lxp_cortex_m_mpu_region_matches_expectation(&snapshot.regions[region],
 								 &expected))
 			return 0;
-		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
+		if (!lxp_cortex_m_mpu_snapshot_effective_matches(&snapshot, &expected))
 			return 0;
 	}
 	prepared->live_validated = 1u;
@@ -925,7 +925,7 @@ static int freertos_publish_executable(lxp_region_ref_t address_space, uintptr_t
 	if (base != region_lo || len != LXP_PROG_REGION_SIZE / 2u)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
+	if (lxp_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
 		return LXP_ERR_INVALID_PARAM;
 #endif
 	return LXP_OK;
@@ -1226,7 +1226,7 @@ static int freertos_random_fill(void *buf, size_t len)
 static int freertos_prepare(void)
 {
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (ove_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
+	if (lxp_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
 		return -1;
 #endif
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
@@ -1252,11 +1252,11 @@ static int freertos_prepare(void)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int freertos_validate_static_mpu(void)
 {
-	struct ove_cortex_m_mpu_snapshot snapshot;
-	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	struct lxp_cortex_m_mpu_snapshot snapshot;
+	if (lxp_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
 	    snapshot.count != configTOTAL_MPU_REGIONS ||
-	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
-		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+	    (snapshot.ctrl & (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
 	const uintptr_t framebuffer_base = 0xc0000000u;
@@ -1271,9 +1271,9 @@ static int freertos_validate_static_mpu(void)
 	 * Pools and framebuffer must fall through to the background map until
 	 * coord_map installs its two exact per-address-space WBWA overlays. */
 	for (unsigned i = 0; i < snapshot.count; i++)
-		if (ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], framebuffer_base,
+		if (lxp_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], framebuffer_base,
 							     framebuffer_size) ||
-		    ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], storage_base,
+		    lxp_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], storage_base,
 							     storage_size))
 			return 0;
 	/* The app patch reclaims FreeRTOS' broad unprivileged peripheral
@@ -1281,7 +1281,7 @@ static int freertos_validate_static_mpu(void)
 	 * this seam currently accepts none. */
 	for (unsigned i = 0; i < snapshot.count; i++)
 		if ((snapshot.regions[i].access & 0x2u) != 0u &&
-		    ove_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], 0x40000000u,
+		    lxp_cortex_m_mpu_region_overlaps_enabled(&snapshot.regions[i], 0x40000000u,
 							     0x20000000u))
 			return 0;
 	return 1;
@@ -1293,7 +1293,7 @@ static int freertos_validate_memory_contract(const lxp_cpu_memory_contract_t *de
 	if (declared != &g_lxp_memory_contract)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
+	return lxp_cortex_m_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
 			       freertos_validate_static_mpu()
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;

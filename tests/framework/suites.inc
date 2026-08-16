@@ -91,7 +91,7 @@ OVE_SUITE_STUB(loader,        "Module loader")
 OVE_SUITE_STUB(protected,     "Protected tasks")
 OVE_SUITE_STUB(sandbox,       "Phase-0 integration")
 OVE_SUITE_STUB(lxp_adapter,   "lxp host adapters (consumer glue)")
-OVE_SUITE_STUB(cortex_m_cache, "Cortex-M cache and MPU")
+OVE_SUITE_STUB(lxp_memory_policy, "LXP STM32F746 memory policy")
 
 #ifdef _OVE_SUITES_INC_DEFAULTED_CORE
 #undef OVE_SUITE

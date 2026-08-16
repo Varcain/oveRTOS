@@ -111,3 +111,50 @@ Runtime numbers are intentionally not duplicated here. The existing
 [complexity remediation baseline](complexity-baseline.md) contains the detailed
 functional and real-time history; this document freezes the current repository
 boundary and current build cost for the new port migration.
+
+## Iteration 1: LXP-owned Cortex-M support
+
+Iteration 1 moves the reusable cache geometry, bounded executable-publication,
+PMSAv7 descriptor decoding, live MPU snapshot, and CPU-memory-contract
+validation helpers into canonical LXP under `include/lxp/arch/`. Their public
+names now use the `lxp_cortex_m_*` namespace. The pure host tests moved with the
+implementation.
+
+oveRTOS removed its two 420-line duplicate architecture headers and the
+188-line pure architecture test. It retains a 37-line host-policy header that
+declares the uncached and STM32F746 WBWA contracts, plus a focused 57-line test
+that checks those board-owned declarations against LXP's decoder. No forwarding
+header or compatibility alias remains.
+
+The generated configurations and all static-memory figures are unchanged.
+Production links against LXP `3ca880f` compare with Iteration 0 as follows:
+
+| Engine | Iteration 0 flash | Iteration 1 flash | Delta | Iteration 1 binary |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 308,548 B | 308,556 B | +8 B | 310,708 B |
+| NuttX | 352,676 B | 352,684 B | +8 B | 352,684 B |
+| Zephyr | 355,120 B | 355,132 B | +12 B | 336,700 B |
+
+The 8–12 byte text differences are within compiler/link layout noise from the
+renamed inline interface. There is no configuration, data, BSS, pool, or stack
+change.
+
+All 47 canonical LXP CTest targets and all 46 oveRTOS host/structural targets
+pass. The LXP header contract now recursively compiles architecture subdirectory
+headers by themselves in both C11 and C++17. The oveRTOS migration guard requires
+the three LXP headers and rejects either retired oveRTOS duplicate.
+
+Each production image was then flashed to the same STM32F746G-DISCO and checked
+through the Linux guest over SSH. Every engine booted with LXP `3ca880f`, exposed
+the expected 13 slots and nine regions, and served both `/proc/lxp_resources`
+and `/proc/rt_scope`:
+
+| Engine | RT releases/executions | Missed / late / overrun | Dispatch avg / max |
+|---|---:|---:|---:|
+| FreeRTOS 11.2.0 | 11,449 / 11,449 | 0 / 0 / 0 | 7.35 / 34.67 us |
+| NuttX 12.12.0 | 11,828 / 11,828 | 0 / 0 / 0 | 8.02 / 33.72 us |
+| Zephyr 4.4.0 | 131,421 / 131,421 | 0 / 0 / 0 | 7.98 / 57.46 us |
+
+These are boot smoke intervals, not workload benchmarks; they establish that
+the relocated cache and MPU logic still validates live silicon and permits
+unprivileged Linux guests to execute on every engine.

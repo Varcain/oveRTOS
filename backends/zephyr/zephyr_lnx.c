@@ -44,8 +44,8 @@
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "ove/hal/hal_fb.h"
 #include "lxp_ove_thread_adapter.h"
-#include "ove_cortex_m_cache.h"
-#include "ove_cortex_m_mpu.h"
+#include "lxp/arch/cortex_m_cache.h"
+#include "lxp/arch/cortex_m_mpu.h"
 #include "ove_lxp_memory_contract.h"
 #include "ove_zephyr_priority.h"
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
@@ -427,7 +427,7 @@ zephyr_lnx_kernel_oops_c(const struct arch_esf *esf, _callee_saved_t *callee, ui
 			if (sidx >= 0) {
 				if (!zephyr_validate_active_profile(sidx)) {
 					lxp_guest_fault_t fault = {
-						.detail = OVE_LXP_MPU_PROFILE_FAULT,
+						.detail = LXP_CORTEX_M_MPU_PROFILE_FAULT,
 						.address = 0u,
 					};
 					(void)lxp_slot_report_memory_fault(task_slot_ref(sidx),
@@ -835,37 +835,37 @@ static int zephyr_validate_active_profile(int sidx)
 		return 0;
 
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
-	struct ove_cortex_m_mpu_snapshot snapshot;
-	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
-	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
-		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+	struct lxp_cortex_m_mpu_snapshot snapshot;
+	if (lxp_cortex_m_mpu_snapshot_read(&snapshot) != 0 ||
+	    (snapshot.ctrl & (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
-	const struct ove_cortex_m_mpu_expectation program = {
+	const struct lxp_cortex_m_mpu_expectation program = {
 		.base = state->program.start,
 		.size = state->program.size,
 		.texscb = 0x0bu,
 		.access = 3u,
 		.execute_never = 1u,
 	};
-	const struct ove_cortex_m_mpu_expectation dynamic = {
+	const struct lxp_cortex_m_mpu_expectation dynamic = {
 		.base = state->dynamic.start,
 		.size = state->dynamic.size,
 		.texscb = 0x0bu,
 		.access = 3u,
 		.execute_never = 1u,
 	};
-	if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program) ||
-	    !ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &dynamic))
+	if (!lxp_cortex_m_mpu_snapshot_effective_matches(&snapshot, &program) ||
+	    !lxp_cortex_m_mpu_snapshot_effective_matches(&snapshot, &dynamic))
 		return 0;
 	if (key->copied_text_executable) {
-		const struct ove_cortex_m_mpu_expectation executable = {
+		const struct lxp_cortex_m_mpu_expectation executable = {
 			.base = state->executable.start,
 			.size = state->executable.size,
 			.texscb = 0x0bu,
 			.access = 6u,
 			.execute_never = 0u,
 		};
-		if (!ove_cortex_m_mpu_snapshot_effective_matches(&snapshot, &executable))
+		if (!lxp_cortex_m_mpu_snapshot_effective_matches(&snapshot, &executable))
 			return 0;
 	}
 #endif
@@ -892,7 +892,7 @@ static lxp_exec_capture_t *zephyr_exec_capture(int sidx)
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-static struct ove_cortex_m_cache_geometry g_lxp_cache_geometry;
+static struct lxp_cortex_m_cache_geometry g_lxp_cache_geometry;
 static const lxp_cpu_memory_contract_t g_lxp_memory_contract =
 	OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
 #else
@@ -909,7 +909,7 @@ static int zephyr_publish_executable(lxp_region_ref_t address_space, uintptr_t b
 	if (base != region_lo || len != LXP_PROG_REGION_SIZE / 2u)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (ove_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
+	if (lxp_cortex_m_publish_executable(&g_lxp_cache_geometry, base, len) != 0)
 		return LXP_ERR_INVALID_PARAM;
 #endif
 	return LXP_OK;
@@ -1233,7 +1233,7 @@ static const char *lxp_seam_system_version(void)
 static int zephyr_prepare(void)
 {
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	if (ove_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
+	if (lxp_cortex_m_cache_geometry_read(&g_lxp_cache_geometry) != 0)
 		return LXP_ERR_INVALID_PARAM;
 #endif
 	for (int r = 0; r < LXP_NREG; r++)
@@ -1278,21 +1278,21 @@ static void zephyr_teardown(void)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int zephyr_validate_static_mpu(void)
 {
-	struct ove_cortex_m_mpu_snapshot snapshot;
-	if (ove_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
-	    (snapshot.ctrl & (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
-		    (OVE_CORTEX_M_MPU_CTRL_ENABLE | OVE_CORTEX_M_MPU_CTRL_PRIVDEFENA))
+	struct lxp_cortex_m_mpu_snapshot snapshot;
+	if (lxp_cortex_m_mpu_snapshot_read(&snapshot) != 0 || snapshot.count != 8u ||
+	    (snapshot.ctrl & (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA)) !=
+		    (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
-	const struct ove_cortex_m_mpu_region *sdram = NULL;
+	const struct lxp_cortex_m_mpu_region *sdram = NULL;
 	for (unsigned i = 0; i < snapshot.count; i++)
-		if (ove_cortex_m_mpu_region_matches(&snapshot.regions[i], 0xc0000000u,
+		if (lxp_cortex_m_mpu_region_matches(&snapshot.regions[i], 0xc0000000u,
 						    8u * 1024u * 1024u, 0u, 0x0bu, 1u, 1u)) {
 			if (sdram)
 				return 0;
 			sdram = &snapshot.regions[i];
 		}
-	if (!sdram || !ove_cortex_m_mpu_region_contains(sdram, (uintptr_t)&g_lxp_ext_storage,
+	if (!sdram || !lxp_cortex_m_mpu_region_contains(sdram, (uintptr_t)&g_lxp_ext_storage,
 							sizeof(g_lxp_ext_storage)))
 		return 0;
 #if defined(CONFIG_OVE_FB)
@@ -1300,7 +1300,7 @@ static int zephyr_validate_static_mpu(void)
 	uintptr_t storage = (uintptr_t)&g_lxp_ext_storage;
 	size_t framebuffer_size = 480u * 272u * 2u;
 	if (framebuffer == 0u ||
-	    !ove_cortex_m_mpu_region_contains(sdram, framebuffer, framebuffer_size) ||
+	    !lxp_cortex_m_mpu_region_contains(sdram, framebuffer, framebuffer_size) ||
 	    !(storage + sizeof(g_lxp_ext_storage) <= framebuffer ||
 	      framebuffer + framebuffer_size <= storage))
 		return 0;
@@ -1314,7 +1314,7 @@ static int zephyr_validate_memory_contract(const lxp_cpu_memory_contract_t *decl
 	if (declared != &g_lxp_memory_contract)
 		return LXP_ERR_INVALID_PARAM;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	return ove_lxp_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
+	return lxp_cortex_m_memory_contract_matches_cache(declared, &g_lxp_cache_geometry) &&
 			       zephyr_validate_static_mpu()
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
