@@ -118,6 +118,21 @@ struct ove_fs_volume {
 	uint8_t _reserved[3];
 };
 
+/** Aggregate physical-media telemetry for the mounted filesystem backend. */
+struct ove_fs_media_metrics {
+	uint64_t read_commands;
+	uint64_t write_commands;
+	uint64_t read_blocks;
+	uint64_t write_blocks;
+	uint64_t multiblock_commands;
+	uint64_t completion_wait_us_total;
+	uint64_t completion_wait_us_max;
+	uint64_t ready_wait_us_total;
+	uint64_t ready_wait_us_max;
+	uint64_t errors;
+	uint64_t recoveries;
+};
+
 #ifdef CONFIG_OVE_FS
 
 /**
@@ -362,6 +377,12 @@ int ove_fs_truncate(ove_file_t file, uint64_t length);
 /** @brief Flush buffered file data and metadata to the storage device. */
 int ove_fs_sync(ove_file_t file);
 
+/** Snapshot optional physical-media telemetry for the mounted backend. */
+int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics);
+
+/** Reset optional physical-media telemetry at the start of a measurement run. */
+void ove_fs_media_metrics_reset(void);
+
 #else /* !CONFIG_OVE_FS */
 
 static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
@@ -487,6 +508,14 @@ static inline int ove_fs_sync(ove_file_t file)
 {
 	(void)file;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
+{
+	(void)out_metrics;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_fs_media_metrics_reset(void)
+{
 }
 
 #endif /* CONFIG_OVE_FS */

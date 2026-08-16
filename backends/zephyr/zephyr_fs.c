@@ -10,6 +10,9 @@
 #include "ove/media.h"
 #include "ove/log.h"
 #include "ove_backend_common.h"
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/disk/sdmmc_stm32.h>
 #include <zephyr/fs/fs.h>
 #include <ff.h>
 #include <string.h>
@@ -107,6 +110,47 @@ void ove_fs_unmount(const char *mount_point)
 		volume_mounted = 0;
 		ove_media_fs_release();
 	}
+}
+
+int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
+{
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_sdmmc)
+	const struct device *dev =
+		DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_sdmmc));
+	struct stm32_sdmmc_metrics metrics;
+
+	if (out_metrics == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!device_is_ready(dev))
+		return OVE_ERR_NOT_REGISTERED;
+	stm32_sdmmc_get_metrics(dev, &metrics);
+	out_metrics->read_commands = metrics.read_commands;
+	out_metrics->write_commands = metrics.write_commands;
+	out_metrics->read_blocks = metrics.read_blocks;
+	out_metrics->write_blocks = metrics.write_blocks;
+	out_metrics->multiblock_commands = metrics.multiblock_commands;
+	out_metrics->completion_wait_us_total = metrics.completion_wait_us_total;
+	out_metrics->completion_wait_us_max = metrics.completion_wait_us_max;
+	out_metrics->ready_wait_us_total = metrics.ready_wait_us_total;
+	out_metrics->ready_wait_us_max = metrics.ready_wait_us_max;
+	out_metrics->errors = metrics.errors;
+	out_metrics->recoveries = metrics.recoveries;
+	return OVE_OK;
+#else
+	(void)out_metrics;
+	return OVE_ERR_NOT_SUPPORTED;
+#endif
+}
+
+void ove_fs_media_metrics_reset(void)
+{
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_sdmmc)
+	const struct device *dev =
+		DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_sdmmc));
+
+	if (device_is_ready(dev))
+		stm32_sdmmc_reset_metrics(dev);
+#endif
 }
 
 /* ─── _open_init / _close_deinit ─────────────────────────────────────── */
