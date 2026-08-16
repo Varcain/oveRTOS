@@ -357,7 +357,7 @@ restored, so the instrumentation does not lengthen the reported interval.
 
 Contained Zephyr guest faults do not write the normal multi-line register dump
 from exception context. The seam preserves CFSR/HFSR, fault-address registers,
-PC, and the number of suppressed dump lines in `g_zephyr_lxp_fault_diag`, then
+PC, and the number of suppressed dump lines in `g_lxp_zephyr_fault_diag`, then
 the coordinator emits the existing single `[lxp] guest-exit ...` line. A fault
 in privileged Zephyr or oveRTOS code still receives Zephyr's full dump and
 halts; the dump hook does not hide host failures.
@@ -564,8 +564,10 @@ host-defined interval because one coordinator serializes deferred guest work:
 its `svc` trapped via `CONFIG_USERSPACE`. A minimal M33 USERSPACE board (no
 LVGL/audio sim); when `CONFIG_OVE_LINUX` is set it adds the one engine-seam link
 option (`-Wl,--wrap=z_do_kernel_oops`) and the rootfs-fixture include path. The
-`CONFIG_USERSPACE` knobs come from `config/templates/prj.conf.j2`; illegal guest
-accesses terminate only the current Linux process through the fatal-error hook.
+`CONFIG_USERSPACE` knobs come from `config/templates/prj.conf.j2`; LXP's Zephyr
+port (`modules/lxp/ports/zephyr/lxp_zephyr_port.c`) owns the native K_USER
+thread, memory-domain and fatal-error hooks, so illegal guest accesses terminate
+only the current Linux process.
 
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
 board (no dedicated board); when `CONFIG_OVE_LINUX` is set it (a) drops the sim

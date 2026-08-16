@@ -44,7 +44,7 @@
 #include "stm32f746xx.h"
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 #include <zephyr/irq.h>
-#include "ove_zephyr_lnx_metrics.h"
+#include "lxp/ports/zephyr.h"
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
 #include <arch/chip/irq.h>
 #include <nuttx/arch.h>
@@ -674,13 +674,13 @@ static void report_thread_snapshot_metrics(void)
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 static void report_critical_metrics(void)
 {
-	struct ove_zephyr_lnx_critical_metrics window;
-	struct ove_zephyr_lnx_critical_metrics total;
+	lxp_zephyr_critical_metrics_t window;
+	lxp_zephyr_critical_metrics_t total;
 	char line[192];
 	char *p;
 	uint32_t counter_hz = ove_lxp_metrics_counter_hz();
 
-	ove_zephyr_lnx_critical_metrics_take(&window, &total);
+	lxp_zephyr_critical_metrics_take(&window, &total);
 	p = append_text(line, "[rt-scope] irq-lock-us window sections=");
 	p = append_u32(p, window.sections);
 	if (window.sections != 0u) {

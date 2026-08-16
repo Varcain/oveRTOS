@@ -6,9 +6,9 @@
  * Linux personality (headless) on the STM32F746G-Discovery. The upstream board enables the LTDC
  * display, which uses the 8 MB FMC SDRAM (sdram1 @0xC0000000) as its framebuffer. The Linux
  * personality places its program-image pool (NREG x 768K) in that same SDRAM (the "SDRAM1" NOLOAD
- * linker region, via Z_GENERIC_SECTION in backends/zephyr/zephyr_lnx.c), so disable the display to
- * free the whole region. The FMC controller itself stays enabled (the memc driver still brings the
- * SDRAM up at boot).
+ * linker region, via Z_GENERIC_SECTION in backends/zephyr/zephyr_lxp_host.c), so disable the display
+ * to free the whole region. The FMC controller itself stays enabled (the memc driver still brings
+ * the SDRAM up at boot).
  */
 
 &ltdc {

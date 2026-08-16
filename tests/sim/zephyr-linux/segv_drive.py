@@ -4,9 +4,9 @@
 # Boots the firmware, logs in, and runs /usr/bin/segv — a tiny UNPRIVILEGED Linux program that
 # deliberately writes to kernel SRAM (0x20000000), outside its K_USER MPU domain. The MPU raises a
 # fatal fault; Zephyr's default k_sys_fatal_error_handler HALTS the whole system, so the personality
-# OVERRIDES it (backends/zephyr/zephyr_lnx.c): a faulting program is marked killed (exit 139) and the
-# coordinator reaps it — the program dies like a default-action SIGSEGV and the shell survives, the
-# same containment FreeRTOS/NuttX get from their MemManage handlers. Broken containment would instead
+# OVERRIDES it (modules/lxp/ports/zephyr/lxp_zephyr_port.c): a faulting program is marked killed
+# (exit 139), and the coordinator reaps it. The program dies like a default-action SIGSEGV and the
+# shell survives, matching the FreeRTOS/NuttX MemManage containment. Broken containment would instead
 # hang the system (no SEGV_RC, QEMU runs to timeout) or let the store return (segv prints "FAILED").
 #
 # Same shell-pipeline shape as the freertos/nuttx segv_drive.py (piped keystrokes, output redirected
