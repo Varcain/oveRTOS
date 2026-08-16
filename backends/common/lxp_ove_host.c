@@ -41,15 +41,28 @@ extern const lxp_block_ops_t g_lxp_host_block_ops;
 #define OVE_LXP_BLOCK_OPS NULL
 #endif
 
-void ove_lxp_prepare_rootfs_access(const void *base, size_t len)
+int ove_lxp_host_init_cpio(lxp_host_t *host, const void *rootfs_image, size_t rootfs_image_size,
+			   lxp_file_t *rootfs_storage, int rootfs_capacity,
+			   char *rootfs_name_storage, size_t rootfs_name_capacity)
 {
-	if (g_lxp_host_engine.rootfs_window)
-		g_lxp_host_engine.rootfs_window(base, len);
+	const lxp_host_config_t config = {
+		.os_ops = &g_lxp_host_engine,
+		.net_ops = OVE_LXP_NET_OPS,
+		.display_ops = OVE_LXP_DISPLAY_OPS,
+		.fs_ops = OVE_LXP_FS_OPS,
+		.block_ops = OVE_LXP_BLOCK_OPS,
+		.rootfs_image = rootfs_image,
+		.rootfs_image_size = rootfs_image_size,
+		.rootfs_storage = rootfs_storage,
+		.rootfs_capacity = rootfs_capacity,
+		.rootfs_name_storage = rootfs_name_storage,
+		.rootfs_name_capacity = rootfs_name_capacity,
+	};
+	return lxp_host_init_cpio(host, &config);
 }
 
-int ove_lxp_run(const lxp_run_config_t *config, const char *path, int argc,
-		const char *const argv[])
+int ove_lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config, const char *path,
+		     int argc, const char *const argv[])
 {
-	return lxp_run(&g_lxp_host_engine, OVE_LXP_NET_OPS, OVE_LXP_DISPLAY_OPS, OVE_LXP_FS_OPS,
-		       OVE_LXP_BLOCK_OPS, config, path, argc, argv);
+	return lxp_host_run(host, config, path, argc, argv);
 }

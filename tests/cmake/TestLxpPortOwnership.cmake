@@ -50,6 +50,13 @@ foreach(HEADER IN LISTS LXP_ARCH_HEADERS)
         message(FATAL_ERROR "LXP-owned architecture header is missing: ${HEADER}")
     endif()
 endforeach()
+foreach(HOST_FACADE IN ITEMS
+        "modules/lxp/include/lxp/lxp_host.h"
+        "modules/lxp/src/lxp_host.c")
+    if(NOT EXISTS "${OVE_ROOT}/${HOST_FACADE}")
+        message(FATAL_ERROR "LXP-owned host facade is missing: ${HOST_FACADE}")
+    endif()
+endforeach()
 foreach(RETIRED_HEADER IN ITEMS
         "backends/common/ove_cortex_m_cache.h"
         "backends/common/ove_cortex_m_mpu.h")
@@ -125,6 +132,11 @@ file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
 if(APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR "app.c must not include native RTOS headers")
+endif()
+if(APP_TEXT MATCHES
+   "lxp_cpio_to_rootfs|lxp_run_config_t|ove_lxp_prepare_rootfs_access|ove_lxp_run\\(")
+    message(FATAL_ERROR
+        "app.c regained LXP-owned rootfs bootstrap or provider/run composition")
 endif()
 
 execute_process(
