@@ -183,7 +183,9 @@ def build_freertos(ws):
     fw_build = os.path.join(ws.build_dir, "firmware")
     _prepare_freertos_build_dir(fw_build, ws.arm_float_abi)
 
-    # Apply board patches, then app patches to FreeRTOS source tree
+    # Apply board patches, then reusable LXP-port patches, then any app-local
+    # patches to the FreeRTOS source tree. Kernel coupling required by a port
+    # belongs with that port rather than whichever application happens to use it.
     freertos_src = os.path.join(ws.ws_dl_dir, "FreeRTOS-Kernel")
     if os.path.isdir(freertos_src):
         patches_stamp = os.path.join(freertos_src,
@@ -192,6 +194,13 @@ def build_freertos(ws):
                        os.path.join(board_dir, "patches"),
                        patches_stamp, label="board patch",
                        log_file=ws.build_log)
+        if ws.config.get("CONFIG_OVE_LINUX"):
+            _apply_patches(
+                freertos_src,
+                os.path.join(ws.ove_dir, "modules", "lxp", "ports",
+                             "freertos", "patches"),
+                patches_stamp, label="LXP FreeRTOS port patch",
+                log_file=ws.build_log)
         if ws.app_dir:
             _apply_patches(freertos_src,
                            os.path.join(ws.app_dir, "patches", "freertos"),

@@ -60,6 +60,10 @@
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
 #include "rt_scope.h"
 
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#include "lxp/ports/freertos.h"
+#endif
+
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
@@ -669,7 +673,7 @@ static void ftest_body(void *arg)
 	ove_thread_sleep_ms(4000); /* let phase 2 publish the active personality run */
 	sh_write0("[c6] faulting a privileged host task (udf) while a guest runs;"
 		  " expect HOST FAULT + watchdog reset\n");
-	__asm volatile("udf #0"); /* UsageFault in host context -> seam declines -> ove_lnx_host_fatal */
+	__asm volatile("udf #0"); /* host UsageFault -> LXP port invokes the fatal host callback */
 	for (;;) { /* unreachable */
 	}
 }
@@ -990,11 +994,10 @@ static void stack_audit(void)
 	audit_thread("lat-monitor", g_mon, sizeof(g_mon_stack));
 #endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
-	/* Guest-slot tramp stack (TRAMP_STACK_WORDS=192 words = 768 B in the seam): worst across all
+	/* Guest-slot tramp stack (192 words = 768 B in the LXP port): worst across all
 	 * slots this run. The remaining 256 bytes of each aligned 1K allocation hold the persistent
 	 * resume descriptor and are not part of the task stack. */
-	extern size_t ove_lnx_slot_stack_hwm(void);
-	audit_stack_line("guest-slot(tramp)", ove_lnx_slot_stack_hwm(), 768u);
+	audit_stack_line("guest-slot(tramp)", lxp_freertos_slot_stack_high_water_mark(), 768u);
 #endif
 	/* peak_used is the high-water of heap usage over the whole run, so it captures a cumulative
 	 * leak (it would climb toward total across a soak) — a better single number than a boot-vs-end

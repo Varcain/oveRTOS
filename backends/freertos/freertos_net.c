@@ -40,7 +40,7 @@
  * PRIVILEGED — they touch the lwIP heap, the ETH DMA descriptors, and MAC registers,
  * and their stacks live in SDRAM where exception (un)stacking needs kernel access.
  * portPRIVILEGE_BIT ORs into the task priority; on the non-MPU port the symbol is
- * undefined -> 0 (a no-op). Mirrors freertos_thread.c / freertos_lnx.c. */
+ * undefined -> 0 (a no-op). Mirrors freertos_thread.c and LXP's FreeRTOS port. */
 #ifndef portPRIVILEGE_BIT
 #define portPRIVILEGE_BIT 0u
 #endif

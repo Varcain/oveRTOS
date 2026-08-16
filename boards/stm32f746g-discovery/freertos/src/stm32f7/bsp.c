@@ -176,7 +176,7 @@ static void bsp_qspi_init(void)
  * enough that the CPU's read-data capture goes marginal at 108 MHz → SDRAM reads
  * take bit-flips → a corrupted lv_obj class pointer crashes LVGL's event dispatch.
  * (Originally diagnosed with the guest pool mapped uncached, so every heap access
- * was a real SDRAM read; the pool is now WBWA-cached — see freertos_lnx.c — but
+ * was a real SDRAM read; the pool is now WBWA-cached by LXP's FreeRTOS port, but
  * D-cache line fills are still SDRAM bursts, so the fix stays.)  One read-pipe
  * cycle restores the
  * capture margin.  Verified on silicon: lvbench renders to completion with the

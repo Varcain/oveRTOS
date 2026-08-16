@@ -570,7 +570,8 @@ accesses terminate only the current Linux process through the fatal-error hook.
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
 board (no dedicated board); when `CONFIG_OVE_LINUX` is set it (a) drops the sim
 framework + dashboard/trace/profiler (the personality is headless), (b) drops the
-`vPortSVCHandler → SVC_Handler` alias so the seam (`backends/freertos/freertos_lnx.c`)
+`vPortSVCHandler → SVC_Handler` alias so LXP's FreeRTOS port
+(`modules/lxp/ports/freertos/lxp_freertos_port.c`)
 owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to
 `vPortSVCHandler`, and (c) makes the run script inject the rootfs CPIO into PSRAM
 and attach the interactive console. The `ARM_CM4_MPU` port creates each guest with

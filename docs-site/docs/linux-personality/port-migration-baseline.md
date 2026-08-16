@@ -59,7 +59,9 @@ source-only move.
 
 ## Current source ownership
 
-The current integration is 10,012 lines across the following groups:
+The baseline integration was 10,012 lines across the following groups. The
+FreeRTOS portion has since moved to canonical LXP and is no longer an oveRTOS
+migration exception.
 
 | Group | Lines | Current owner | Intended owner |
 |---|---:|---|---|
@@ -71,12 +73,13 @@ The current integration is 10,012 lines across the following groups:
 The exact transitional inventory is enforced by
 `tests/cmake/TestLxpPortOwnership.cmake`. It currently admits:
 
-- `backends/freertos/freertos_lnx.c`;
 - `backends/nuttx/nuttx_lnx_trap.c`;
 - `backends/zephyr/zephyr_lnx.c`;
-- the five common provider adapters named by the test;
+- the common provider adapters and narrow FreeRTOS host-policy binding named by
+  the test;
 - `app.c`, `rt_scope.c`, and `rt_scope.h`; and
-- the application-local FreeRTOS MPU patch.
+- `modules/lxp/ports/freertos/lxp_freertos_port.c` and its LXP-owned kernel
+  patch.
 
 These are migration exceptions, not endorsements of their current location.
 Each later move must remove the old file and update the ledger atomically.

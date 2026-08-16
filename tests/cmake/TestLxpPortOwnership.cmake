@@ -11,7 +11,6 @@ endif()
 set(EXPECTED_APP_FILES
     "README.md"
     "app.yaml"
-    "patches/freertos/0001-arm-cm4-mpu-drop-global-user-peripheral-map.patch"
     "src/app.c"
     "src/rt_scope.c"
     "src/rt_scope.h")
@@ -27,7 +26,6 @@ if(NOT ACTUAL_APP_FILES STREQUAL EXPECTED_APP_FILES)
 endif()
 
 set(LEGACY_SEAMS
-    "backends/freertos/freertos_lnx.c"
     "backends/nuttx/nuttx_lnx_trap.c"
     "backends/zephyr/zephyr_lnx.c")
 set(HOST_ADAPTERS
@@ -35,7 +33,11 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_disp_adapter.c"
     "backends/common/lxp_ove_fs_adapter.c"
     "backends/common/lxp_ove_host.c"
-    "backends/common/lxp_ove_thread_adapter.c")
+    "backends/common/lxp_ove_thread_adapter.c"
+    "backends/freertos/freertos_lxp_host.c")
+
+set(LXP_RTOS_PORTS
+    "modules/lxp/ports/freertos/lxp_freertos_port.c")
 
 set(LXP_ARCH_HEADERS
     "modules/lxp/include/lxp/arch/cortex_m_cache.h"
@@ -56,7 +58,7 @@ endforeach()
 
 set(BUILD_TEMPLATE "${OVE_ROOT}/config/templates/ove_config.cmake.j2")
 file(READ "${BUILD_TEMPLATE}" BUILD_TEXT)
-foreach(SOURCE IN LISTS LEGACY_SEAMS HOST_ADAPTERS)
+foreach(SOURCE IN LISTS LEGACY_SEAMS HOST_ADAPTERS LXP_RTOS_PORTS)
     if(NOT EXISTS "${OVE_ROOT}/${SOURCE}")
         message(FATAL_ERROR "migration ledger names missing source: ${SOURCE}")
     endif()
@@ -68,7 +70,24 @@ foreach(SOURCE IN LISTS LEGACY_SEAMS HOST_ADAPTERS)
     endif()
 endforeach()
 
-# General task/trap code may not spread to additional backend files unnoticed.
+if(EXISTS "${OVE_ROOT}/backends/freertos/freertos_lnx.c")
+    message(FATAL_ERROR "retired consumer-owned FreeRTOS seam remains")
+endif()
+file(READ "${OVE_ROOT}/modules/lxp/ports/freertos/lxp_freertos_port.c"
+    FREERTOS_PORT_TEXT)
+if(FREERTOS_PORT_TEXT MATCHES "CONFIG_OVE_|#[ \t]*include[ \t]*[<\"]ove/")
+    message(FATAL_ERROR "LXP FreeRTOS port regained oveRTOS coupling")
+endif()
+file(READ "${OVE_ROOT}/modules/lxp/ports/qemu-mps2/engine.c"
+    FREERTOS_FIXTURE_TEXT)
+if(FREERTOS_FIXTURE_TEXT MATCHES
+   "SVC_Handler|MemManage_Handler|xTaskCreateRestrictedStatic")
+    message(FATAL_ERROR
+        "standalone FreeRTOS fixture duplicated task/trap machinery from the production port")
+endif()
+
+# Remaining consumer-owned task/trap code may not spread to additional backend
+# files unnoticed. FreeRTOS is now represented by the LXP-owned port above.
 file(GLOB ACTUAL_LEGACY_SEAMS
     RELATIVE "${OVE_ROOT}"
     "${OVE_ROOT}/backends/freertos/*lnx*.c"

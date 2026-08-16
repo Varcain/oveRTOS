@@ -106,7 +106,7 @@ config OVE_LINUX_GUEST_FLOAT_ABI_HARD
     help
       Use the Cortex-M7 FPv5-SP hard-float FDPIC Buildroot userspace from
       "output-hardfloat" and preserve s0-s31 plus FPSCR across every deferred
-      syscall, signal and recreated guest task. Supported by the FreeRTOS seam
+      syscall, signal and parked guest task resume. Supported by the FreeRTOS port
       (STM32F746G-DISCO, MPS2-AN500), the NuttX seam (STM32F746G-DISCO, via
       CONFIG_ARCH_FPU + regs[] VFP capture) and the Zephyr seam (STM32F746G-DISCO,
       via CONFIG_FPU_SHARING + extended-ESF VFP capture).
