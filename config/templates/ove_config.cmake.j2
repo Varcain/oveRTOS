@@ -311,6 +311,9 @@ include_directories(${OVE_DIR}/modules/lxp/src)
 # not CONFIG_OVE_*. oveRTOS supplies them here from its Kconfig (its adapters + seams,
 # which include the module's headers, need them too, so these are compile-wide).
 add_compile_definitions(LXP_ENABLE_LINUX=1 LXP_ENABLE_LOADER=1)
+{% if config.get("CONFIG_OVE_LINUX_RT_SCOPE") == True %}
+add_compile_definitions(LXP_ENABLE_RT_METRICS=1)
+{% endif %}
 {% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True %}
 # The guest ABI is independent of the host firmware ABI. A hard-float guest can
 # park in the syscall top half and later resume in a recreated FreeRTOS task, so
@@ -553,9 +556,13 @@ list(APPEND OVE_BACKEND_SOURCES
     "${OVE_DIR}/modules/lxp/ports/nuttx/lxp_nuttx_port.c"
     "${OVE_DIR}/backends/nuttx/nuttx_lxp_host.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_lnx.c")
-# The Zephyr seam traps lxp_run()'s guest svc #0 by interposing the engine's
-# software-fault handler; the app must add the link option:
+# LXP owns native Zephyr K_USER thread/trap/domain mechanics. oveRTOS supplies
+# external-memory placement and host policy through g_lxp_zephyr_port_config.
+list(APPEND OVE_BACKEND_SOURCES
+    "${OVE_DIR}/modules/lxp/ports/zephyr/lxp_zephyr_port.c"
+    "${OVE_DIR}/backends/zephyr/zephyr_lxp_host.c")
+# The port traps lxp_run()'s guest svc #0 by interposing Zephyr's
+# software-fault handler; the board must add the link option:
 #   target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
 {% elif config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
 list(APPEND OVE_BACKEND_SOURCES

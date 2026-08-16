@@ -59,8 +59,8 @@ source-only move.
 
 ## Current source ownership
 
-The baseline integration was 10,012 lines across the following groups. The
-FreeRTOS and NuttX portions have since moved to canonical LXP and are no longer
+The baseline integration was 10,012 lines across the following groups. All
+three RTOS portions have since moved to canonical LXP and are no longer
 oveRTOS migration exceptions.
 
 | Group | Lines | Current owner | Intended owner |
@@ -70,18 +70,16 @@ oveRTOS migration exceptions.
 | FreeRTOS, NuttX, and Zephyr task/trap/MPU seams (baseline) | 4,430 | mixed during migration | LXP `ports/<rtos>/` |
 | Cortex-M cache/MPU/memory helpers and LXP metrics | 612 | oveRTOS backends | reusable port mechanics move to LXP; host metrics facade may remain |
 
-The exact transitional inventory is enforced by
+The exact ownership inventory is enforced by
 `tests/cmake/TestLxpPortOwnership.cmake`. It currently admits:
 
-- `backends/zephyr/zephyr_lnx.c`;
-- the common provider adapters and narrow FreeRTOS/NuttX host-policy bindings named by
+- the common provider adapters and narrow per-engine host-policy bindings named by
   the test;
 - `app.c`, `rt_scope.c`, and `rt_scope.h`; and
-- `modules/lxp/ports/freertos/lxp_freertos_port.c`, its LXP-owned kernel patch,
-  and `modules/lxp/ports/nuttx/lxp_nuttx_port.c`.
+- the FreeRTOS, NuttX, and Zephyr implementations under `modules/lxp/ports/`.
 
-These are migration exceptions, not endorsements of their current location.
-Each later move must remove the old file and update the ledger atomically.
+This is an enforced ownership boundary: the ledger rejects any reintroduced
+consumer-owned task/trap seam or unlisted host adapter.
 
 ## Ownership rule
 

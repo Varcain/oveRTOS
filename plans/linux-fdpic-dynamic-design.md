@@ -131,7 +131,7 @@ personality/FreeRTOS heap → only ~1.6MB headroom) + **PSRAM 4M @ 0x60000000**.
 concurrent procs need ~3×580K = ~1.74MB of pool, which does NOT fit the ~1.6MB RAM headroom
 beside the 2MB regions. So the mmap pool MUST live in **PSRAM (0x60000000)** — the an500 has
 it (NuttX already executes from there); mirror Zephyr an521's NOLOAD-PSRAM region placement
-(`backends/zephyr/zephyr_lnx.c` + `ove-psram.overlay`). Per-region pool slices (NREG × ~640K)
+(`backends/zephyr/zephyr_lxp_host.c` + `ove-psram.overlay`). Per-region pool slices (NREG × ~640K)
 fit PSRAM comfortably; reclaim = reset the slice cursor on launch (slot reuse). FR an500 needs
 a PSRAM MEMORY region added to `mps2_an500.ld` + the pool placed there via a section attr.
 **Later payoff:** libc.so **text-sharing** (one ~500K copy across all procs, not N) — harder

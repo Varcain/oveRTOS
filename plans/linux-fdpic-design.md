@@ -32,7 +32,7 @@ readelf -hld -r m.fdpic     # Type DYN, EF_ARM_FDPIC, PT_LOAD x2, PT_DYNAMIC, th
 - `modules/lxp/src/lxp_run.c`: after load, `rw = region + align16(region_used)`,
   arena (96K) at `rw`, stack above arena, then `spawn_launch(sidx, ridx, &prog, entry, sp,
   stack_lo)`.
-- Per-engine `spawn_launch` (`zephyr_lnx.c:187`, `freertos_lnx.c:163`, `nuttx_lnx_trap.c:153`):
+- Per-engine `spawn_launch` (the production implementations under `modules/lxp/ports/`):
   set SP, r0=0, PC=entry. **No r9/GOT register is set today** — bFLT is single-base. FDPIC's
   defining need is the **FDPIC register r9 = the loaded GOT**.
 
