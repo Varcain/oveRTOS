@@ -158,3 +158,29 @@ and `/proc/rt_scope`:
 These are boot smoke intervals, not workload benchmarks; they establish that
 the relocated cache and MPU logic still validates live silicon and permits
 unprivileged Linux guests to execute on every engine.
+
+## Iteration 5: immutable host and rootfs composition
+
+After the three RTOS ports moved, the application still performed one reusable
+piece of personality work: it published the external rootfs window, parsed the
+newc archive, repeated four rootfs fields in every `lxp_run_config_t`, and
+reselected the same five provider tables for every launch.
+
+Canonical LXP now exposes `lxp_host_init_cpio()` and `lxp_host_run()`. The host
+object is caller-allocated and zero-heap. Initialization publishes the memory
+window before the first archive read, parses the CPIO once into caller-owned
+table/name storage, and captures an immutable provider bundle. Each sequential
+launch supplies only console, environment, display, exit-diagnostic, and
+RT-scope policy through `lxp_launch_config_t`; LXP constructs the complete run
+contract internally.
+
+oveRTOS's `lxp_ove_host.c` remains the narrow composition adapter that selects
+the configured OS, network, display, filesystem, and block providers. The app
+still owns the rootfs image choice and bounded storage sizes. Its RTOS worker,
+network smoke test, watchdog/fault demonstrations, latency reporting, and
+two-phase workload deliberately remain application policy. FreeRTOS scheduler
+startup also remains under the general oveRTOS application-lifecycle contract,
+not the Linux-personality API.
+
+The ownership test rejects direct CPIO parsing, raw `lxp_run_config_t`
+construction, and the retired pre-facade wrappers in `linux_interop/src/app.c`.

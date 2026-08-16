@@ -32,27 +32,16 @@ extern const lxp_block_ops_t g_lxp_host_block_ops;
 static unsigned g_socket_kicks;
 static unsigned g_fs_kicks;
 static unsigned g_block_kicks;
-static unsigned g_rootfs_window_calls;
-static const void *g_rootfs_window_base;
-static size_t g_rootfs_window_size;
-static const lxp_os_ops_t *g_run_os_ops;
-static const lxp_net_ops_t *g_run_net_ops;
-static const lxp_display_ops_t *g_run_display_ops;
-static const lxp_fs_ops_t *g_run_fs_ops;
-static const lxp_block_ops_t *g_run_block_ops;
-static const lxp_run_config_t *g_run_config;
-
-static void test_rootfs_window(const void *base, size_t len)
-{
-	g_rootfs_window_calls++;
-	g_rootfs_window_base = base;
-	g_rootfs_window_size = len;
-}
+static unsigned g_host_init_calls;
+static lxp_host_t *g_host_init_target;
+static lxp_host_config_t g_host_init_config;
+static unsigned g_host_run_calls;
+static const lxp_host_t *g_host_run_target;
+static const lxp_launch_config_t *g_host_run_config;
 
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
 	.struct_size = sizeof(lxp_os_ops_t),
-	.rootfs_window = test_rootfs_window,
 };
 
 const lxp_display_ops_t g_lxp_host_display_ops = {
@@ -60,21 +49,23 @@ const lxp_display_ops_t g_lxp_host_display_ops = {
 	.struct_size = sizeof(lxp_display_ops_t),
 };
 
-int lxp_run(const lxp_os_ops_t *os_ops, const lxp_net_ops_t *net_ops,
-	    const lxp_display_ops_t *display_ops, const lxp_fs_ops_t *fs_ops,
-	    const lxp_block_ops_t *block_ops,
-	    const lxp_run_config_t *config, const char *path, int argc,
-	    const char *const argv[])
+int lxp_host_init_cpio(lxp_host_t *host, const lxp_host_config_t *config)
+{
+	g_host_init_calls++;
+	g_host_init_target = host;
+	g_host_init_config = *config;
+	return 23;
+}
+
+int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config,
+		 const char *path, int argc, const char *const argv[])
 {
 	(void)path;
 	(void)argc;
 	(void)argv;
-	g_run_os_ops = os_ops;
-	g_run_net_ops = net_ops;
-	g_run_display_ops = display_ops;
-	g_run_fs_ops = fs_ops;
-	g_run_block_ops = block_ops;
-	g_run_config = config;
+	g_host_run_calls++;
+	g_host_run_target = host;
+	g_host_run_config = config;
 	return 37;
 }
 
@@ -373,28 +364,39 @@ static void test_host_facade_owns_composition(void **state)
 {
 	(void)state;
 	static const uint8_t rootfs[16];
-	const lxp_run_config_t config = {0};
+	static lxp_file_t files[4];
+	static char names[64];
+	lxp_host_t host;
+	const lxp_launch_config_t config = {0};
 	const char *const argv[] = {"init", NULL};
 
-	g_rootfs_window_calls = 0;
-	ove_lxp_prepare_rootfs_access(rootfs, sizeof(rootfs));
-	assert_int_equal(g_rootfs_window_calls, 1);
-	assert_ptr_equal(g_rootfs_window_base, rootfs);
-	assert_int_equal(g_rootfs_window_size, sizeof(rootfs));
+	g_host_init_calls = 0;
+	g_host_init_target = NULL;
+	memset(&g_host_init_config, 0, sizeof(g_host_init_config));
+	assert_int_equal(ove_lxp_host_init_cpio(&host, rootfs, sizeof(rootfs), files, 4, names,
+					       sizeof(names)),
+			 23);
+	assert_int_equal(g_host_init_calls, 1);
+	assert_ptr_equal(g_host_init_target, &host);
+	assert_ptr_equal(g_host_init_config.os_ops, &g_lxp_host_engine);
+	assert_ptr_equal(g_host_init_config.net_ops, &g_lxp_host_net_ops);
+	assert_ptr_equal(g_host_init_config.display_ops, &g_lxp_host_display_ops);
+	assert_ptr_equal(g_host_init_config.fs_ops, &g_lxp_host_fs_ops);
+	assert_ptr_equal(g_host_init_config.block_ops, &g_lxp_host_block_ops);
+	assert_ptr_equal(g_host_init_config.rootfs_image, rootfs);
+	assert_int_equal(g_host_init_config.rootfs_image_size, sizeof(rootfs));
+	assert_ptr_equal(g_host_init_config.rootfs_storage, files);
+	assert_int_equal(g_host_init_config.rootfs_capacity, 4);
+	assert_ptr_equal(g_host_init_config.rootfs_name_storage, names);
+	assert_int_equal(g_host_init_config.rootfs_name_capacity, sizeof(names));
 
-	g_run_os_ops = NULL;
-	g_run_net_ops = NULL;
-	g_run_display_ops = NULL;
-	g_run_fs_ops = NULL;
-	g_run_block_ops = NULL;
-	g_run_config = NULL;
-	assert_int_equal(ove_lxp_run(&config, "/init", 1, argv), 37);
-	assert_ptr_equal(g_run_os_ops, &g_lxp_host_engine);
-	assert_ptr_equal(g_run_net_ops, &g_lxp_host_net_ops);
-	assert_ptr_equal(g_run_display_ops, &g_lxp_host_display_ops);
-	assert_ptr_equal(g_run_fs_ops, &g_lxp_host_fs_ops);
-	assert_ptr_equal(g_run_block_ops, &g_lxp_host_block_ops);
-	assert_ptr_equal(g_run_config, &config);
+	g_host_run_calls = 0;
+	g_host_run_target = NULL;
+	g_host_run_config = NULL;
+	assert_int_equal(ove_lxp_host_run(&host, &config, "/init", 1, argv), 37);
+	assert_int_equal(g_host_run_calls, 1);
+	assert_ptr_equal(g_host_run_target, &host);
+	assert_ptr_equal(g_host_run_config, &config);
 }
 
 static int32_t test_slot_lookup(uintptr_t identity)

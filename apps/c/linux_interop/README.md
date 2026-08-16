@@ -598,9 +598,13 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 | File | Role |
 |------|------|
 | `app.yaml`  | framework app manifest — selects the personality and RTOS modules |
-| `src/app.c` | the demo (`ove_main`): worker, fixed I/O staging, interactive console, and two-phase launch |
+| `src/app.c` | demo policy: worker, fixed I/O staging, interactive console, diagnostics, and two launch choices |
 | `src/rt_scope.c` | shared physical scope experiment with thin per-engine IRQ attachment |
 
-The personality core (`modules/lxp`) and the selected engine seam
-(`backends/{freertos,zephyr,nuttx}/*_lnx*.c`) are pulled in by the board and the
-generated `ove_config.cmake`.
+The LXP host facade parses and publishes the selected CPIO once, retains the
+provider composition, and supplies the immutable rootfs fields to each launch.
+The application supplies only image/storage policy and per-launch console,
+diagnostic, and display options. The personality core and selected port under
+`modules/lxp/ports/{freertos,nuttx,zephyr}/` are pulled in by the generated
+`ove_config.cmake`; oveRTOS's corresponding `*_lxp_host.c` file supplies board
+storage, priorities, memory policy, and stable-HAL callbacks.

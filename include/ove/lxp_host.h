@@ -10,24 +10,22 @@
 
 #include <stddef.h>
 
-#include "lxp/lxp_run.h"
+#include "lxp/lxp_host.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * Give the selected engine access to an external rootfs before the application
- * parses it. Engines without a special mapping requirement treat this as a no-op.
- */
-void ove_lxp_prepare_rootfs_access(const void *base, size_t len);
+/** Parse and publish one immutable CPIO rootfs using the providers selected by
+ * the oveRTOS build. The caller supplies only product-selected image/storage. */
+int ove_lxp_host_init_cpio(lxp_host_t *host, const void *rootfs_image, size_t rootfs_image_size,
+			   lxp_file_t *rootfs_storage, int rootfs_capacity,
+			   char *rootfs_name_storage, size_t rootfs_name_capacity);
 
-/**
- * Run a guest with the OS, network, and display providers selected by the
- * oveRTOS build. Applications own only the per-run guest configuration.
- */
-int ove_lxp_run(const lxp_run_config_t *config, const char *path, int argc,
-		const char *const argv[]);
+/** Launch a guest through an initialized host. Rootfs and provider composition
+ * remain owned by LXP; the application supplies per-launch policy only. */
+int ove_lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config, const char *path,
+		     int argc, const char *const argv[]);
 
 #ifdef __cplusplus
 }

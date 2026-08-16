@@ -37,10 +37,8 @@
 #include "ove/time.h"
 
 #include "ove/app.h"
-#include "lxp/lxp_bootstrap.h"
 #include "lxp/lxp_config.h" /* LXP_NSLOT (the latency report walks the slots) */
 #include "lxp/lxp_latency.h"
-#include "lxp/lxp_run.h"
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
 #if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
@@ -522,9 +520,7 @@ static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
 #define ROOTFS_NAME_BYTES (16 * 1024)
 #endif
 static char g_rootfs_names[ROOTFS_NAME_BYTES];
-static int g_rootfs_n;
-static const uint8_t *g_rootfs_image;
-static size_t g_rootfs_image_size;
+static lxp_host_t g_linux_host;
 
 /* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
  * this must run in a task; Zephyr and NuttX call ove_main() from running scheduler
@@ -1052,33 +1048,29 @@ static void demo_body(void *arg)
 		sh_write0("[wd] FAIL: monitor thread init; running without a watchdog\n");
 #endif
 
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
-	/* The rootfs is XIP'd from the memory-mapped QUADSPI NOR.  Declare that window to the
-	 * personality BEFORE the first read of it (the CPIO parse just below): on the STM32F746 this
-	 * installs a bounded, non-cacheable MPU region for this coordinator task so the M7 D-cache
-	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
-	ove_lxp_prepare_rootfs_access(LXP_EXTERNAL_ROOTFS, LXP_EXTERNAL_ROOTFS_MAX);
-#endif
+	const void *rootfs_image;
+	size_t rootfs_image_size;
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
-	/* The generated layout is shared with the isolation seam and board runner. */
-	g_rootfs_image = LXP_EXTERNAL_ROOTFS;
-	g_rootfs_image_size = LXP_EXTERNAL_ROOTFS_MAX;
-	g_rootfs_n = lxp_cpio_to_rootfs(LXP_EXTERNAL_ROOTFS, LXP_EXTERNAL_ROOTFS_MAX,
-					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
-					    sizeof(g_rootfs_names));
+	/* The generated layout is shared with the isolation port and board runner. */
+	rootfs_image = LXP_EXTERNAL_ROOTFS;
+	rootfs_image_size = LXP_EXTERNAL_ROOTFS_MAX;
 #else
-	g_rootfs_image = ove_test_rootfs_cpio;
-	g_rootfs_image_size = ove_test_rootfs_cpio_len;
-	g_rootfs_n = lxp_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
-					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
-					    sizeof(g_rootfs_names));
+	rootfs_image = ove_test_rootfs_cpio;
+	rootfs_image_size = ove_test_rootfs_cpio_len;
 #endif
-	if (g_rootfs_n <= 0) {
+	/* LXP publishes the rootfs window to the selected port before its first
+	 * archive read, parses the CPIO once, and retains provider/rootfs composition
+	 * for every subsequent launch. The application owns only image selection and
+	 * the statically bounded storage policy. */
+	int rootfs_rc = ove_lxp_host_init_cpio(&g_linux_host, rootfs_image, rootfs_image_size,
+					      g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
+					      sizeof(g_rootfs_names));
+	if (rootfs_rc != LXP_OK) {
 		char b[96];
-		char *p = put_str(b, "[demo] FAIL: rootfs CPIO parse failed n=");
-		p = put_dec(p, (uint32_t)g_rootfs_n);
+		char *p = put_str(b, "[demo] FAIL: rootfs host init failed rc=");
+		p = put_sdec(p, rootfs_rc);
 		p = put_str(p, " max_files=");
 		p = put_dec(p, ROOTFS_MAX_FILES);
 		p = put_str(p, " namebuf=");
@@ -1198,11 +1190,7 @@ static void demo_body(void *arg)
 					 * yields → the OVE_PRIO_LOW worker starves and the demo hangs here
 					 * before phase 2.  ove_thread_sleep_ms always usleep()s. */
 
-	const lxp_run_config_t cfg1 = {
-		.rootfs = g_rootfs,
-		.rootfs_count = g_rootfs_n,
-		.rootfs_image = g_rootfs_image,
-		.rootfs_image_size = g_rootfs_image_size,
+	const lxp_launch_config_t cfg1 = {
 		.write_fn = consume_write,
 		.read_fn = feed_read,
 		.io_ctx = NULL,
@@ -1212,7 +1200,7 @@ static void demo_body(void *arg)
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
 	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
-	int rc1 = ove_lxp_run(&cfg1, "/bin/busybox", 1, cat_argv);
+	int rc1 = ove_lxp_host_run(&g_linux_host, &cfg1, "/bin/busybox", 1, cat_argv);
 
 	g_linux_done = 1;
 	while (!g_worker_exited) /* wait for the worker to drain and return */
@@ -1261,11 +1249,7 @@ static void demo_body(void *arg)
 	sh_write0("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
 		  " run commands, `poweroff` to halt) --\n");
 #endif
-	const lxp_run_config_t cfg2 = {
-		.rootfs = g_rootfs,
-		.rootfs_count = g_rootfs_n,
-		.rootfs_image = g_rootfs_image,
-		.rootfs_image_size = g_rootfs_image_size,
+	const lxp_launch_config_t cfg2 = {
 		.write_fn = console_write,
 		.read_fn = console_read,
 		.console_poll = console_poll,
@@ -1288,13 +1272,13 @@ static void demo_body(void *arg)
 #endif
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
 	const char *const fp_argv[] = {"fpcheck", NULL};
-	rc2 = ove_lxp_run(&cfg2, "/usr/bin/fpcheck", 1, fp_argv);
+	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/usr/bin/fpcheck", 1, fp_argv);
 	sh_write0("\n=== interop demo done (hard-float self-test exited) ===\n");
 #else
 	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
 	 * a login shell on the console. */
 	const char *const init_argv[] = {"init", NULL};
-	rc2 = ove_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
+	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/bin/busybox", 1, init_argv);
 	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
 #endif
 #if LXP_ENABLE_LATENCY
