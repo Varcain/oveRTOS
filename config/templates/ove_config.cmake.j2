@@ -402,14 +402,14 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=11)
 # STM32F746 (NuttX): match FreeRTOS's 12-slot pipe pool. A single non-interactive dropbear session's
 # stdin/stdout/stderr pipes alone peak at 4 slots, so the 4-slot default leaves nothing for the
 # shell's own pipeline (`ls | head` -> EMFILE). NuttX owns its linker script and has no .sdram_bss
-# NOLOAD hook (the seam's large pools use fixed SDRAM addresses, not a section), so the pipe pool
+# NOLOAD hook (the NuttX host binding uses fixed SDRAM addresses, not a section), so the pipe pool
 # stays in internal-SRAM .bss; a 2 KiB per-pipe buffer keeps 12 x 2K = 24K within the SRAM budget (vs the
 # 4 x 4K = 16K default) and matches the proven Zephyr LXP_PIPE_BUF.
 add_compile_definitions(LXP_NPIPE=12 LXP_PIPE_BUF=2048)
 # The tmpfs pool is ordinary privileged coordinator memory, not a guest MPU
 # allocation. Put it in the unused cacheable tail of the 8 MiB SDRAM envelope:
 # above every dynamic/program/staging row and outside the framebuffer's Device
-# subregion. The NuttX seam statically rejects future layout overlap.
+# subregion. The LXP NuttX port statically rejects future layout overlap.
 add_compile_definitions(LXP_WFS_POOL_BASE=0xC07C0000u)
 {% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
 # The 256K remote-exec stage still leaves room for nine 768K guest rows below
@@ -417,7 +417,7 @@ add_compile_definitions(LXP_WFS_POOL_BASE=0xC07C0000u)
 # to retain lvmusic + network traffic + one transient database child.
 add_compile_definitions(LXP_NREG=9)
 {% else %}
-# The NuttX seam lays the large program/dynamic pools in external SDRAM, but each region also
+# The NuttX host binding lays the large program/dynamic pools in external SDRAM, but each region also
 # adds one process slot plus four transient slots worth of privileged metadata to SRAM1. Keep
 # this profile at the same eight-region/twelve-slot capacity as the proven full profile. Ten
 # regions leave only about 2.5K of the early kernel heap, so inode_root_reserve() cannot allocate
@@ -542,12 +542,16 @@ list(APPEND OVE_BACKEND_SOURCES ${LXP_PTY_SOURCES})
       (config.get("CONFIG_OVE_RTOS_FREERTOS") == True or
        config.get("CONFIG_OVE_RTOS_ZEPHYR") == True or
        config.get("CONFIG_OVE_RTOS_NUTTX") == True) %}
-# Engine-neutral SVC timing accumulator. Trap seams only record cycle samples
+# Engine-neutral SVC timing accumulator. RTOS ports only record cycle samples
 # and supply their counter frequency.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lxp_metrics.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
+# LXP owns native NuttX task/trap/MPU mechanics. oveRTOS supplies board memory
+# placement and host policy through g_lxp_nuttx_port_config.
+list(APPEND OVE_BACKEND_SOURCES
+    "${OVE_DIR}/modules/lxp/ports/nuttx/lxp_nuttx_port.c"
+    "${OVE_DIR}/backends/nuttx/nuttx_lxp_host.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_lnx.c")
 # The Zephyr seam traps lxp_run()'s guest svc #0 by interposing the engine's

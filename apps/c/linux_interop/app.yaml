@@ -77,7 +77,7 @@ rtos_defconfig:
 #   ove defconfig-fragments stm32f746g-discovery.zephyr.linux_interop    (Cortex-M7 real HW)
 # All three seams are ported to real STM32F746 hardware (program pool in external SDRAM, USART1
 # console), and all three run each Linux program unprivileged behind an MPU view: FreeRTOS uses a
-# restricted MPU task, Zephyr uses K_USER + a memory domain, and the NuttX seam sets CONTROL.nPRIV
+# restricted MPU task, Zephyr uses K_USER + a memory domain, and LXP's NuttX port sets CONTROL.nPRIV
 # and programs the MPU directly in BUILD_FLAT (NuttX's CONFIG_ARM_MPU stays off to avoid conflict).
 incompatible_boards:
   - host

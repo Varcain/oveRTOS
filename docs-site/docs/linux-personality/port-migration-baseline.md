@@ -60,26 +60,25 @@ source-only move.
 ## Current source ownership
 
 The baseline integration was 10,012 lines across the following groups. The
-FreeRTOS portion has since moved to canonical LXP and is no longer an oveRTOS
-migration exception.
+FreeRTOS and NuttX portions have since moved to canonical LXP and are no longer
+oveRTOS migration exceptions.
 
 | Group | Lines | Current owner | Intended owner |
 |---|---:|---|---|
 | `app.c` and `rt_scope.c` | 2,463 | oveRTOS app | app behavior remains; generic bootstrap and lifecycle move out |
 | five `lxp_ove_*` host adapters | 2,507 | oveRTOS common backend | oveRTOS, narrowed to stable HAL/provider translation |
-| FreeRTOS, NuttX, and Zephyr task/trap/MPU seams | 4,430 | oveRTOS backends | LXP `ports/<rtos>/` |
+| FreeRTOS, NuttX, and Zephyr task/trap/MPU seams (baseline) | 4,430 | mixed during migration | LXP `ports/<rtos>/` |
 | Cortex-M cache/MPU/memory helpers and LXP metrics | 612 | oveRTOS backends | reusable port mechanics move to LXP; host metrics facade may remain |
 
 The exact transitional inventory is enforced by
 `tests/cmake/TestLxpPortOwnership.cmake`. It currently admits:
 
-- `backends/nuttx/nuttx_lnx_trap.c`;
 - `backends/zephyr/zephyr_lnx.c`;
-- the common provider adapters and narrow FreeRTOS host-policy binding named by
+- the common provider adapters and narrow FreeRTOS/NuttX host-policy bindings named by
   the test;
 - `app.c`, `rt_scope.c`, and `rt_scope.h`; and
-- `modules/lxp/ports/freertos/lxp_freertos_port.c` and its LXP-owned kernel
-  patch.
+- `modules/lxp/ports/freertos/lxp_freertos_port.c`, its LXP-owned kernel patch,
+  and `modules/lxp/ports/nuttx/lxp_nuttx_port.c`.
 
 These are migration exceptions, not endorsements of their current location.
 Each later move must remove the old file and update the ledger atomically.

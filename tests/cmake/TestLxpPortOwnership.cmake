@@ -26,7 +26,6 @@ if(NOT ACTUAL_APP_FILES STREQUAL EXPECTED_APP_FILES)
 endif()
 
 set(LEGACY_SEAMS
-    "backends/nuttx/nuttx_lnx_trap.c"
     "backends/zephyr/zephyr_lnx.c")
 set(HOST_ADAPTERS
     "backends/common/lxp_ove_adapter.c"
@@ -34,10 +33,12 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_fs_adapter.c"
     "backends/common/lxp_ove_host.c"
     "backends/common/lxp_ove_thread_adapter.c"
-    "backends/freertos/freertos_lxp_host.c")
+    "backends/freertos/freertos_lxp_host.c"
+    "backends/nuttx/nuttx_lxp_host.c")
 
 set(LXP_RTOS_PORTS
-    "modules/lxp/ports/freertos/lxp_freertos_port.c")
+    "modules/lxp/ports/freertos/lxp_freertos_port.c"
+    "modules/lxp/ports/nuttx/lxp_nuttx_port.c")
 
 set(LXP_ARCH_HEADERS
     "modules/lxp/include/lxp/arch/cortex_m_cache.h"
@@ -73,10 +74,18 @@ endforeach()
 if(EXISTS "${OVE_ROOT}/backends/freertos/freertos_lnx.c")
     message(FATAL_ERROR "retired consumer-owned FreeRTOS seam remains")
 endif()
+if(EXISTS "${OVE_ROOT}/backends/nuttx/nuttx_lnx_trap.c")
+    message(FATAL_ERROR "retired consumer-owned NuttX seam remains")
+endif()
 file(READ "${OVE_ROOT}/modules/lxp/ports/freertos/lxp_freertos_port.c"
     FREERTOS_PORT_TEXT)
 if(FREERTOS_PORT_TEXT MATCHES "CONFIG_OVE_|#[ \t]*include[ \t]*[<\"]ove/")
     message(FATAL_ERROR "LXP FreeRTOS port regained oveRTOS coupling")
+endif()
+file(READ "${OVE_ROOT}/modules/lxp/ports/nuttx/lxp_nuttx_port.c"
+    NUTTX_PORT_TEXT)
+if(NUTTX_PORT_TEXT MATCHES "CONFIG_OVE_|#[ \t]*include[ \t]*[<\"]ove/")
+    message(FATAL_ERROR "LXP NuttX port regained oveRTOS coupling")
 endif()
 file(READ "${OVE_ROOT}/modules/lxp/ports/qemu-mps2/engine.c"
     FREERTOS_FIXTURE_TEXT)
@@ -87,7 +96,7 @@ if(FREERTOS_FIXTURE_TEXT MATCHES
 endif()
 
 # Remaining consumer-owned task/trap code may not spread to additional backend
-# files unnoticed. FreeRTOS is now represented by the LXP-owned port above.
+# files unnoticed. FreeRTOS and NuttX are represented by LXP-owned ports above.
 file(GLOB ACTUAL_LEGACY_SEAMS
     RELATIVE "${OVE_ROOT}"
     "${OVE_ROOT}/backends/freertos/*lnx*.c"
