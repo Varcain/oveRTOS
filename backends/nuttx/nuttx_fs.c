@@ -195,6 +195,16 @@ void ove_fs_unmount(const char *mount_point)
 	}
 }
 
+int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
+{
+	(void)out_metrics;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+void ove_fs_media_metrics_reset(void)
+{
+}
+
 static int open_common(struct ove_file *f, const char *path, int flags)
 {
 	char fullpath[NATIVE_PATH_MAX];

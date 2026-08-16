@@ -1,0 +1,208 @@
+diff --git a/include/zephyr/drivers/disk/sdmmc_stm32.h b/include/zephyr/drivers/disk/sdmmc_stm32.h
+--- a/include/zephyr/drivers/disk/sdmmc_stm32.h
++++ b/include/zephyr/drivers/disk/sdmmc_stm32.h
+@@ -59,6 +59,28 @@
+  */
+ void stm32_sdmmc_get_card_csd(const struct device *dev, uint32_t csd[4]);
+ 
++/** Aggregate command and wait-time telemetry since the last reset. */
++struct stm32_sdmmc_metrics {
++	uint64_t read_commands;
++	uint64_t write_commands;
++	uint64_t read_blocks;
++	uint64_t write_blocks;
++	uint64_t multiblock_commands;
++	uint64_t completion_wait_us_total;
++	uint64_t completion_wait_us_max;
++	uint64_t ready_wait_us_total;
++	uint64_t ready_wait_us_max;
++	uint64_t errors;
++	uint64_t recoveries;
++};
++
++/** Snapshot aggregate SDMMC telemetry without resetting it. */
++void stm32_sdmmc_get_metrics(const struct device *dev,
++			     struct stm32_sdmmc_metrics *metrics);
++
++/** Reset aggregate SDMMC telemetry. */
++void stm32_sdmmc_reset_metrics(const struct device *dev);
++
+ /** @} */
+ 
+ #endif /* ZEPHYR_INCLUDE_DRIVERS_DISK_SDMMC_STM32_H_ */
+diff --git a/drivers/disk/sdmmc_stm32.c b/drivers/disk/sdmmc_stm32.c
+--- a/drivers/disk/sdmmc_stm32.c
++++ b/drivers/disk/sdmmc_stm32.c
+@@ -121,6 +121,8 @@ struct stm32_sdmmc_priv {
+ 	struct stm32_pclken *pclken;
+ 	const struct pinctrl_dev_config *pcfg;
+ 	const struct reset_dt_spec reset;
++	struct k_spinlock metrics_lock;
++	struct stm32_sdmmc_metrics metrics;
+ 
+ #if defined(CONFIG_SDMMC_STM32_SINGLE_BLOCK) && \
+ 	(STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma)))
+@@ -188,6 +190,53 @@ static void stm32_sdmmc_abort_transfer(struct stm32_sdmmc_priv *priv)
+ #endif
+ }
+ 
++static uint64_t stm32_sdmmc_elapsed_us(uint64_t start_cycles)
++{
++	return k_cyc_to_us_floor64(k_cycle_get_64() - start_cycles);
++}
++
++static void stm32_sdmmc_record_command(struct stm32_sdmmc_priv *priv,
++				       bool write, uint32_t blocks)
++{
++	k_spinlock_key_t key = k_spin_lock(&priv->metrics_lock);
++
++	if (write) {
++		priv->metrics.write_commands++;
++		priv->metrics.write_blocks += blocks;
++	} else {
++		priv->metrics.read_commands++;
++		priv->metrics.read_blocks += blocks;
++	}
++	if (blocks > 1u) {
++		priv->metrics.multiblock_commands++;
++	}
++	k_spin_unlock(&priv->metrics_lock, key);
++}
++
++static void stm32_sdmmc_record_wait(struct stm32_sdmmc_priv *priv,
++				    bool card_ready, uint64_t elapsed_us)
++{
++	k_spinlock_key_t key = k_spin_lock(&priv->metrics_lock);
++	uint64_t *total = card_ready ? &priv->metrics.ready_wait_us_total
++				     : &priv->metrics.completion_wait_us_total;
++	uint64_t *maximum = card_ready ? &priv->metrics.ready_wait_us_max
++				       : &priv->metrics.completion_wait_us_max;
++
++	*total += elapsed_us;
++	if (elapsed_us > *maximum) {
++		*maximum = elapsed_us;
++	}
++	k_spin_unlock(&priv->metrics_lock, key);
++}
++
++static void stm32_sdmmc_record_error(struct stm32_sdmmc_priv *priv)
++{
++	k_spinlock_key_t key = k_spin_lock(&priv->metrics_lock);
++
++	priv->metrics.errors++;
++	k_spin_unlock(&priv->metrics_lock, key);
++}
++
+ static void stm32_sdmmc_isr(const struct device *dev)
+ {
+ 	struct stm32_sdmmc_priv *priv = dev->data;
+@@ -678,23 +727,37 @@ static int stm32_sdmmc_read_transfer(struct stm32_sdmmc_priv *priv,
+ 				     uint32_t num_sector)
+ {
+ 	int err;
++	uint64_t started;
+ 
++	stm32_sdmmc_record_command(priv, false, num_sector);
+ 	k_sem_reset(&priv->sync);
+ 	priv->status = DISK_STATUS_OK;
+ 	err = stm32_sdmmc_read_blocks(&priv->hsd, data_buf, start_sector, num_sector);
+ 	if (err != 0) {
+-		return err;
++		goto failed;
+ 	}
++	started = k_cycle_get_64();
+ 	err = stm32_sdmmc_wait_for_completion(priv, "read");
++	stm32_sdmmc_record_wait(priv, false, stm32_sdmmc_elapsed_us(started));
+ 	if (err != 0) {
+-		return err;
++		goto failed;
+ 	}
+ 	if (priv->status != DISK_STATUS_OK) {
+ 		stm32_sdmmc_abort_transfer(priv);
+ 		LOG_ERR("sd read error %d", priv->status);
+-		return -EIO;
++		err = -EIO;
++		goto failed;
+ 	}
+-	return stm32_sdmmc_wait_for_card(priv, "read");
++	started = k_cycle_get_64();
++	err = stm32_sdmmc_wait_for_card(priv, "read");
++	stm32_sdmmc_record_wait(priv, true, stm32_sdmmc_elapsed_us(started));
++	if (err == 0) {
++		return 0;
++	}
++
++failed:
++	stm32_sdmmc_record_error(priv);
++	return err;
+ }
+ 
+ static int stm32_sdmmc_access_read(struct disk_info *disk, uint8_t *data_buf,
+@@ -817,23 +880,37 @@ static int stm32_sdmmc_write_transfer(struct stm32_sdmmc_priv *priv,
+ 				      uint32_t num_sector)
+ {
+ 	int err;
++	uint64_t started;
+ 
++	stm32_sdmmc_record_command(priv, true, num_sector);
+ 	k_sem_reset(&priv->sync);
+ 	priv->status = DISK_STATUS_OK;
+ 	err = stm32_sdmmc_write_blocks(&priv->hsd, data_buf, start_sector, num_sector);
+ 	if (err != 0) {
+-		return err;
++		goto failed;
+ 	}
++	started = k_cycle_get_64();
+ 	err = stm32_sdmmc_wait_for_completion(priv, "write");
++	stm32_sdmmc_record_wait(priv, false, stm32_sdmmc_elapsed_us(started));
+ 	if (err != 0) {
+-		return err;
++		goto failed;
+ 	}
+ 	if (priv->status != DISK_STATUS_OK) {
+ 		stm32_sdmmc_abort_transfer(priv);
+ 		LOG_ERR("sd write error %d", priv->status);
+-		return -EIO;
++		err = -EIO;
++		goto failed;
+ 	}
+-	return stm32_sdmmc_wait_for_card(priv, "write");
++	started = k_cycle_get_64();
++	err = stm32_sdmmc_wait_for_card(priv, "write");
++	stm32_sdmmc_record_wait(priv, true, stm32_sdmmc_elapsed_us(started));
++	if (err == 0) {
++		return 0;
++	}
++
++failed:
++	stm32_sdmmc_record_error(priv);
++	return err;
+ }
+ 
+ static int stm32_sdmmc_access_write(struct disk_info *disk,
+@@ -1179,6 +1256,25 @@ void stm32_sdmmc_get_card_csd(const struct device *dev, uint32_t csd[4])
+ 	memcpy(csd, &priv->hsd.CSD, sizeof(priv->hsd.CSD));
+ }
+ 
++void stm32_sdmmc_get_metrics(const struct device *dev,
++			     struct stm32_sdmmc_metrics *metrics)
++{
++	struct stm32_sdmmc_priv *priv = dev->data;
++	k_spinlock_key_t key = k_spin_lock(&priv->metrics_lock);
++
++	*metrics = priv->metrics;
++	k_spin_unlock(&priv->metrics_lock, key);
++}
++
++void stm32_sdmmc_reset_metrics(const struct device *dev)
++{
++	struct stm32_sdmmc_priv *priv = dev->data;
++	k_spinlock_key_t key = k_spin_lock(&priv->metrics_lock);
++
++	memset(&priv->metrics, 0, sizeof(priv->metrics));
++	k_spin_unlock(&priv->metrics_lock, key);
++}
++
+ #if DT_NODE_HAS_STATUS_OKAY(DT_DRV_INST(0))
+ 
+ #if STM32_SDMMC_USE_DMA

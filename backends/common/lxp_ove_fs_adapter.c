@@ -1270,6 +1270,7 @@ static int storage_run_begin(void)
 	}
 	memset(g_handles, 0, sizeof(g_handles));
 	memset(&g_metrics, 0, sizeof(g_metrics));
+	ove_fs_media_metrics_reset();
 	memset(&g_raw_block, 0, sizeof(g_raw_block));
 	memset(&g_async_request, 0, sizeof(g_async_request));
 	g_selected_owner = 0;
@@ -1718,9 +1719,26 @@ static int fs_path_rename(const char *old_path, const char *new_path)
 
 static int fs_metrics(lxp_fs_metrics_t *out)
 {
+	struct ove_fs_media_metrics media;
+
 	if (out == NULL)
 		return LXP_ERR_INVALID_PARAM;
 	*out = g_metrics;
+	memset(&media, 0, sizeof(media));
+	if (ove_fs_media_metrics(&media) == OVE_OK) {
+		out->media_available = 1u;
+		out->media_read_commands = media.read_commands;
+		out->media_write_commands = media.write_commands;
+		out->media_read_blocks = media.read_blocks;
+		out->media_write_blocks = media.write_blocks;
+		out->media_multiblock_commands = media.multiblock_commands;
+		out->media_completion_wait_us_total = media.completion_wait_us_total;
+		out->media_completion_wait_us_max = media.completion_wait_us_max;
+		out->media_ready_wait_us_total = media.ready_wait_us_total;
+		out->media_ready_wait_us_max = media.ready_wait_us_max;
+		out->media_errors = media.errors;
+		out->media_recoveries = media.recoveries;
+	}
 	return g_active ? LXP_OK : LXP_ERR_NOT_REGISTERED;
 }
 
