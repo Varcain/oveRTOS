@@ -340,7 +340,6 @@ struct ove_thread_state_times {
 struct ove_thread_info {
 	const char *name;	   /**< Thread name (static, do not free). */
 	uintptr_t identity;	   /**< Opaque native identity; equality only. */
-	int32_t lxp_slot;	   /**< LXP slot assigned by a personality seam, else -1. */
 	ove_thread_state_t state;  /**< Execution state. */
 	int priority;		   /**< Priority level. */
 	size_t stack_used;	   /**< Stack high-water mark (bytes), or 0 if unavailable. */

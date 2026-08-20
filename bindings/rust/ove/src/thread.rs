@@ -1015,8 +1015,6 @@ pub struct ThreadInfo {
     pub name: &'static [u8],
     /// Opaque native identity, suitable only for equality comparisons.
     pub identity: usize,
-    /// Linux-personality slot assigned by a seam, or -1 for a host thread.
-    pub lxp_slot: i32,
     /// Execution state.
     pub state: bindings::ove_thread_state_t,
     /// Priority level.
@@ -1072,7 +1070,6 @@ pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
         buf[i] = ThreadInfo {
             name,
             identity: raw[i].identity,
-            lxp_slot: raw[i].lxp_slot,
             state: raw[i].state,
             priority: raw[i].priority,
             stack_used: raw[i].stack_used,

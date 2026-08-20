@@ -505,7 +505,6 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	if (!info->name)
 		info->name = "?";
 	info->identity = (uintptr_t)thread;
-	info->lxp_slot = -1;
 	info->state = _map_zephyr_state(thread->base.thread_state);
 	info->priority = (int)k_thread_priority_get((k_tid_t)thread);
 

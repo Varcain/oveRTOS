@@ -179,6 +179,7 @@ file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c" RT_SCOPE_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_host.h" OVE_LXP_HOST_HEADER_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_observability.h" OVE_LXP_OBSERVABILITY_HEADER_TEXT)
+file(READ "${OVE_ROOT}/include/ove/thread.h" OVE_THREAD_HEADER_TEXT)
 if(APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR "app.c must not include native RTOS headers")
@@ -205,6 +206,11 @@ if(OVE_LXP_OBSERVABILITY_HEADER_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_[A-Za-z0-9_]*_t|(^|[^A-Za-z0-9_])LXP_[A-Z0-9_]+")
     message(FATAL_ERROR
         "public OVE observability contract aliases canonical LXP representation")
+endif()
+if(OVE_THREAD_HEADER_TEXT MATCHES
+   "(^|[^A-Za-z0-9_])(lxp_slot|LXP slot|Linux-personality slot)")
+    message(FATAL_ERROR
+        "generic ove_thread_info regained personality-specific ownership state")
 endif()
 if(APP_TEXT MATCHES
    "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*|LXP_RUN_E[A-Z0-9_]*)")

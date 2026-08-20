@@ -466,7 +466,6 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			vTaskGetInfo(handle, &task, pdFALSE, eInvalid);
 			out[i].name = g_frt_tasks[i].name;
 			out[i].identity = (uintptr_t)handle;
-			out[i].lxp_slot = -1;
 			out[i].priority = (int)task.uxCurrentPriority;
 			out[i].stack_size = 0u;
 			out[i].stack_used = 0u;
