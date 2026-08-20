@@ -471,6 +471,8 @@ list(APPEND OVE_BACKEND_SOURCES
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_thread_adapter.c")
 # oveRTOS-owned provider composition and pre-rootfs-access facade.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_host.c")
+# Host-scoped snapshots over LXP diagnostics, latency, and port observations.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_observability.c")
 # System-console transport and run-scoped RX-readiness binding.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_console.c")
 {% if config.get("CONFIG_OVE_LINUX_FS") == True %}

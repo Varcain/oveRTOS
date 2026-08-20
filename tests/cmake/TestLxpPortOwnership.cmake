@@ -31,6 +31,7 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_disp_adapter.c"
     "backends/common/lxp_ove_fs_adapter.c"
     "backends/common/lxp_ove_host.c"
+    "backends/common/lxp_ove_observability.c"
     "backends/common/lxp_ove_console.c"
     "backends/common/lxp_ove_thread_adapter.c"
     "backends/freertos/freertos_lxp_host.c"
@@ -188,6 +189,11 @@ if(APP_TEXT MATCHES
    "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")
     message(FATAL_ERROR
         "app.c regained LXP topology globals or native network lifecycle ownership")
+endif()
+if(APP_TEXT MATCHES
+   "#[ \t]*include[ \t]*[<\"]lxp/(lxp_(config|diag|latency)|ports/)|(^|[^A-Za-z0-9_])lxp_(run_health|diag_|lat_|freertos_slot_stack)")
+    message(FATAL_ERROR
+        "app.c regained direct LXP observability-registry or RTOS-port knowledge")
 endif()
 if(APP_TEXT MATCHES "ove_hal_(dma2d|fb)_")
     message(FATAL_ERROR

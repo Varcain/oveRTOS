@@ -373,3 +373,48 @@ production links compare with Iteration 9 as follows:
 The fixed guest pools and generated engine configurations are unchanged. The
 extra static state is the immutable copied netfs topology; native netif storage
 moved from the application into the host object rather than being duplicated.
+
+## Iteration 11: host-scoped observability
+
+The application still included LXP's sizing, latency, and FreeRTOS-port headers.
+It walked compile-time slot/class bounds, sampled three process-global
+registries independently, called the global coordinator heartbeat directly,
+and selected a FreeRTOS-only guest-stack function. Besides coupling the demo to
+internal capacity, the piecemeal teardown report had no contract preventing a
+snapshot while those registries were changing.
+
+Canonical LXP now exposes one versioned `lxp_host_observation_t`. It copies run
+health, exact build sizes, world-checkpoint health, optional latency service and
+wake rows, and a normalized guest-task stack result. The snapshot requires an
+initialized, quiescent host and returns `LXP_ERR_BUSY` during an active run.
+Latency arrays compile out with the recorder, so the normal profile does not
+pay their stack cost. Service rows carry stable class identifiers rather than
+exporting the registry bounds to consumers.
+
+Native guest-stack introspection is now an optional OS-port operation and the
+OS-port ABI is 11. FreeRTOS publishes its existing 768-byte trampoline-stack
+high-water mark through that generic operation; its public engine-specific
+accessor is removed. NuttX and Zephyr report the metric as unavailable until
+their kernels can provide an equivalent bounded aggregate.
+
+oveRTOS translates the live heartbeat and quiescent record through
+`ove/lxp_observability.h`. The demo retains watchdog decisions, the host
+deadline monitor, text formatting, and its own native-thread/heap accounting,
+but it no longer includes LXP diagnostic/latency/configuration or RTOS-port
+headers. The ownership ledger rejects those dependencies if they return.
+
+All seven canonical LXP project targets, the sanitizer variants, and all 46
+oveRTOS host/structural targets pass. The FreeRTOS diagnostic profile also
+links with latency recording enabled, exercising both the copied latency rows
+and normalized port stack metric. Production links compare with Iteration 10
+as follows:
+
+| Engine | Iteration 10 flash | Iteration 11 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 311,540 B | 311,900 B | +360 B |
+| NuttX | 356,868 B | 357,172 B | +304 B |
+| Zephyr | 358,028 B | 358,200 B | +172 B |
+
+The facade, snapshot path, and OS-port callback plumbing remain small on all
+three engines. The fixed guest pools and generated engine configurations are
+unchanged.

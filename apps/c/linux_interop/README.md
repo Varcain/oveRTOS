@@ -416,6 +416,23 @@ workload and readiness report, not provider lifecycle. It queries the host-owned
 address through `ove_lxp_host_netif_get_addr()` and releases the host after the
 final guest exits.
 
+## Observability ownership
+
+The demo chooses the watchdog policy, measurement window, text format, and
+output transport. It does not enumerate LXP's process-global diagnostic or
+latency registries. `ove_lxp_run_health_snapshot()` supplies the minimal live
+heartbeat needed by the watchdog, including before host initialization, while
+`ove_lxp_host_observe()` takes one versioned copy only after the final run has
+stopped. The latter returns `OVE_ERR_BUSY` if asked to cross an active run.
+
+The copied record contains size accounting, automatic world-checkpoint health,
+latency rows when the Diagnostic profile enables them, and an optional
+host-neutral guest-stack high-water mark. FreeRTOS currently supplies that
+stack metric through LXP's port vtable; NuttX and Zephyr leave it unavailable
+instead of requiring engine conditionals in the app. Application-owned thread
+stack and heap reporting remains local because those resources belong to this
+demo rather than to LXP.
+
 ## Supported profiles
 
 The app has four supported profiles. They all compile the same
