@@ -626,6 +626,6 @@ Zephyr's smaller flash span is the removed excess kobject reserve:
 
 | Engine | Iteration 15 flash | Iteration 16 flash | Delta | Host object | Fixed RAM |
 |---|---:|---:|---:|---:|---:|
-| FreeRTOS | 310,940 B | 311,252 B | +312 B | 23,816 B | 241,048 B |
-| NuttX | 356,076 B | 356,396 B | +320 B | 20,740 B | 231,044 B |
-| Zephyr | 356,996 B | 356,444 B | -552 B | 23,812 B | 247 KiB |
+| FreeRTOS | 310,940 B | 311,244 B | +304 B | 23,816 B | 241,048 B |
+| NuttX | 356,076 B | 356,388 B | +312 B | 20,740 B | 231,044 B |
+| Zephyr | 356,996 B | 356,432 B | -564 B | 23,812 B | 247 KiB |
