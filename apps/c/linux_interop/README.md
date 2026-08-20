@@ -30,10 +30,13 @@ the demonstration allocation-free and make EOF deterministic:
 
 ## Phase 2 — interactive shell
 
-The program then drops into an interactive BusyBox `sh`. The read callback
-returns real keystrokes (semihosting `SYS_READC`) and the write callback echoes
-to the console, so **you can type commands** — `ls /`, `echo hi`,
-`cat /etc/hostname`, `pwd`, `echo x > /tmp/f`, … — and `exit` to finish.
+The program then drops into an interactive BusyBox `sh`. The oveRTOS console
+provider binds the launch's read, write, and non-consuming readiness callbacks,
+so **you can type commands** — `ls /`, `echo hi`, `cat /etc/hostname`, `pwd`,
+`echo x > /tmp/f`, … — and `exit` to finish. STM32 FreeRTOS and Zephyr publish
+UART RX readiness as a run-scoped coordinator event; NuttX and QEMU retain the
+bounded polling fallback because their current console transports expose no
+native readiness subscription.
 
 ## Writable storage
 

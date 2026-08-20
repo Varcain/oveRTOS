@@ -89,6 +89,7 @@ set(STUB_SOURCES
     ${OVE_ROOT}/modules/lxp/src/lxp_async_gate.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
+    ${OVE_ROOT}/backends/common/lxp_ove_console.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c
     # Explicit thread-snapshot type translation at the oveRTOS/LXP boundary.
     ${OVE_ROOT}/backends/common/lxp_ove_thread_adapter.c

@@ -25,6 +25,8 @@ static SemaphoreHandle_t mutex;
 static unsigned char circBuff[CIRC_BUFF_SIZE];
 static volatile unsigned int head;
 static volatile unsigned int tail;
+static ove_console_ready_fn rx_ready_callback;
+static const void *rx_ready_context;
 
 static uint32_t serial_tx_remaining(uint32_t started)
 {
@@ -78,7 +80,10 @@ void serial_init(void)
 		}
 	}
 
-	HAL_NVIC_SetPriority(USART1_IRQn, 2, 0);
+	/* RX readiness may wake the LXP coordinator through an ISR-safe FreeRTOS
+	 * semaphore. Keep USART1 at or below the kernel-call ceiling; priority 2 was
+	 * legal only while this ISR never entered a FreeRTOS API. */
+	HAL_NVIC_SetPriority(USART1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, 0);
 	HAL_NVIC_EnableIRQ(USART1_IRQn);
 	__HAL_UART_ENABLE_IT(&uartHandle, UART_IT_RXNE);
 
@@ -210,9 +215,18 @@ int serial_rx_ready(void)
 	return (head != tail) ? 1 : 0;
 }
 
+void serial_set_rx_ready_callback(ove_console_ready_fn callback, const void *context)
+{
+	taskENTER_CRITICAL();
+	rx_ready_context = context;
+	rx_ready_callback = callback;
+	taskEXIT_CRITICAL();
+}
+
 void USART1_IRQHandler(void)
 {
 	unsigned int nextHead;
+	int published = 0;
 
 	if (__HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_RXNE)) {
 		nextHead = (head + 1) & CIRC_BUFF_MASK;
@@ -220,6 +234,7 @@ void USART1_IRQHandler(void)
 		if (nextHead != tail) {
 			circBuff[head] = (unsigned char)(uartHandle.Instance->RDR & 0xFFU);
 			head = nextHead;
+			published = 1;
 		} else {
 			volatile unsigned char dummy =
 				(unsigned char)(uartHandle.Instance->RDR & 0xFFU);
@@ -228,4 +243,6 @@ void USART1_IRQHandler(void)
 
 		__HAL_UART_CLEAR_OREFLAG(&uartHandle);
 	}
+	if (published && rx_ready_callback)
+		rx_ready_callback(rx_ready_context);
 }

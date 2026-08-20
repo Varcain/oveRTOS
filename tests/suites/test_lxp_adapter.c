@@ -14,6 +14,7 @@
 #include "../framework/ove_test.h"
 
 #include "ove/lxp_host.h"
+#include "ove/lxp_console.h"
 #include "ove/lxp_metrics.h"
 #include "ove/thread.h"
 #include "ove_net_ready.h"
@@ -459,6 +460,34 @@ static void test_host_facade_owns_composition(void **state)
 	assert_ptr_equal(g_host_run_config, &config);
 }
 
+static void test_enosys(long nr)
+{
+	(void)nr;
+}
+
+static void test_console_adapter_binds_only_console_policy(void **state)
+{
+	(void)state;
+	int diagnostic_cookie;
+	lxp_launch_config_t config = {
+		.on_enosys = test_enosys,
+		.rt_scope_ctx = &diagnostic_cookie,
+	};
+	assert_int_equal(ove_lxp_console_init(), OVE_OK);
+	ove_lxp_console_bind(&config);
+	assert_non_null(config.read_fn);
+	assert_non_null(config.write_fn);
+	assert_non_null(config.console_poll);
+	assert_null(config.io_ctx);
+	/* The POSIX stub has no asynchronous RX source, so it deliberately retains
+	 * LXP's bounded polling fallback. */
+	assert_null(config.console_subscribe);
+	assert_null(config.console_unsubscribe);
+	assert_int_equal(config.console_poll(config.io_ctx), 0);
+	assert_ptr_equal(config.on_enosys, test_enosys);
+	assert_ptr_equal(config.rt_scope_ctx, &diagnostic_cookie);
+}
+
 static int32_t test_slot_lookup(uintptr_t identity)
 {
 	return identity == 0x1234u ? 3 : LXP_THREAD_SLOT_NONE;
@@ -562,6 +591,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_fs_adapter_async_cancel_retires_owner),
 		cmocka_unit_test(test_adapter_open_close),
 		cmocka_unit_test(test_host_facade_owns_composition),
+		cmocka_unit_test(test_console_adapter_binds_only_console_policy),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
 		cmocka_unit_test(test_svc_metrics_own_window_and_lifetime),

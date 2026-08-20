@@ -9,9 +9,6 @@
 #include "ove/console.h"
 #include "ove_backend_common.h"
 #include "ove_config.h"
-#if defined(CONFIG_OVE_LINUX)
-#include "lxp/lxp_run.h"
-#endif
 #include <zephyr/console/console.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -36,6 +33,8 @@ static uint8_t g_console_rx[OVE_Z_RX_BUFFER_SIZE];
 static volatile uint16_t g_console_rx_head;
 static volatile uint16_t g_console_rx_tail;
 static int g_console_rx_claimed;
+static ove_console_ready_fn g_console_ready;
+static const void *g_console_ready_context;
 
 static void console_rx_irq(const struct device *dev, void *user_data)
 {
@@ -55,12 +54,8 @@ static void console_rx_irq(const struct device *dev, void *user_data)
 			published = 1;
 		}
 	}
-#if defined(CONFIG_OVE_LINUX)
-	if (published)
-		lxp_console_kick();
-#else
-	(void)published;
-#endif
+	if (published && g_console_ready)
+		g_console_ready(g_console_ready_context);
 }
 
 static void console_claim_rx(void)
@@ -124,4 +119,23 @@ void ove_console_putchar(int c)
 void ove_console_write(const char *buf, unsigned int len)
 {
 	printk("%.*s", (int)len, buf);
+}
+
+int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *context)
+{
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	console_claim_rx();
+	unsigned int key = irq_lock();
+	g_console_ready_context = context;
+	g_console_ready = callback;
+	int pending = callback && g_console_rx_tail != g_console_rx_head;
+	irq_unlock(key);
+	if (pending)
+		callback(context);
+	return OVE_OK;
+#else
+	(void)callback;
+	(void)context;
+	return OVE_ERR_NOT_SUPPORTED;
+#endif
 }
