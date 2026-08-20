@@ -31,6 +31,7 @@ extern const struct lxp_net_ops g_lxp_host_net_ops;
 extern const lxp_fs_ops_t g_lxp_host_fs_ops;
 extern const lxp_block_ops_t g_lxp_host_block_ops;
 static unsigned g_socket_kicks;
+static const void *g_socket_ready_context;
 static unsigned g_fs_kicks;
 static unsigned g_block_kicks;
 static unsigned g_host_init_calls;
@@ -70,9 +71,10 @@ int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config,
 	return 37;
 }
 
-void lxp_sock_kick(void)
+static void test_socket_ready(const void *context)
 {
 	g_socket_kicks++;
+	g_socket_ready_context = context;
 }
 
 void lxp_block_kick(void)
@@ -374,8 +376,10 @@ static void test_adapter_open_close(void **state)
 {
 	(void)state;
 	const struct lxp_net_ops *ops = &g_lxp_host_net_ops;
-	assert_int_equal(ops->run_begin(), OVE_OK);
-	assert_int_equal(ops->run_begin(), OVE_ERR_WOULD_BLOCK);
+	static const unsigned ready_context;
+	assert_int_equal(ops->run_begin(NULL, NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ops->run_begin(test_socket_ready, &ready_context), OVE_OK);
+	assert_int_equal(ops->run_begin(test_socket_ready, &ready_context), OVE_ERR_WOULD_BLOCK);
 
 	lxp_socket_t s = NULL;
 	int rc = ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s);
@@ -391,8 +395,10 @@ static void test_adapter_open_close(void **state)
 	assert_non_null(t);
 
 	g_socket_kicks = 0;
+	g_socket_ready_context = NULL;
 	ove_net_ready_publish();
 	assert_int_equal(g_socket_kicks, 1);
+	assert_ptr_equal(g_socket_ready_context, &ready_context);
 	ops->sock_close(s);
 	ove_net_ready_publish();
 	assert_int_equal(g_socket_kicks, 2);
@@ -405,12 +411,12 @@ static void test_adapter_open_close(void **state)
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_ERR_INVALID_PARAM);
 
 	/* A run-end owns rollback for a provider handle the core failed to close. */
-	assert_int_equal(ops->run_begin(), OVE_OK);
+	assert_int_equal(ops->run_begin(test_socket_ready, &ready_context), OVE_OK);
 	assert_int_equal(ops->sock_open(LXP_AF_INET, LXP_SOCK_DGRAM, 0, &s), OVE_OK);
 	ops->run_end();
 	ove_net_ready_publish();
 	assert_int_equal(g_socket_kicks, 2);
-	assert_int_equal(ops->run_begin(), OVE_OK);
+	assert_int_equal(ops->run_begin(test_socket_ready, &ready_context), OVE_OK);
 	ops->run_end();
 }
 

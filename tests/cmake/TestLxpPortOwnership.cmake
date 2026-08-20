@@ -69,6 +69,15 @@ endif()
 if(NOT STORAGE_ADAPTER_TEXT MATCHES "lxp_async_gate")
     message(FATAL_ERROR "storage adapter bypasses the LXP asynchronous provider gate")
 endif()
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_adapter.c" NETWORK_ADAPTER_TEXT)
+if(NETWORK_ADAPTER_TEXT MATCHES "lxp_sock_kick|#[ \t]*include[ \t]*[<\"]lxp/lxp_net\\.h")
+    message(FATAL_ERROR
+        "network adapter regained an implicit dependency on the LXP socket core")
+endif()
+if(NOT NETWORK_ADAPTER_TEXT MATCHES "lxp_net_ready_fn")
+    message(FATAL_ERROR
+        "network adapter bypasses the run-scoped LXP readiness callback")
+endif()
 foreach(RETIRED_HEADER IN ITEMS
         "backends/common/ove_cortex_m_cache.h"
         "backends/common/ove_cortex_m_mpu.h")
