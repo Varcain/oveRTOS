@@ -186,6 +186,11 @@ if(APP_TEXT MATCHES
         "app.c regained LXP-owned rootfs bootstrap or provider/run composition")
 endif()
 if(APP_TEXT MATCHES
+   "lxp_file_t|ROOTFS_(MAX_FILES|NAME_BYTES)|rootfs_(storage|capacity|name_storage|name_capacity)")
+    message(FATAL_ERROR
+        "app.c regained rootfs workspace allocation or capacity knowledge")
+endif()
+if(APP_TEXT MATCHES
    "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")
     message(FATAL_ERROR
         "app.c regained LXP topology globals or native network lifecycle ownership")

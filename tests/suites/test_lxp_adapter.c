@@ -439,8 +439,6 @@ static void test_host_facade_owns_composition(void **state)
 {
 	(void)state;
 	static const uint8_t rootfs[16];
-	static lxp_file_t files[4];
-	static char names[64];
 	ove_lxp_host_t host;
 	const lxp_launch_config_t config = {0};
 	const char *const argv[] = {"init", NULL};
@@ -454,13 +452,10 @@ static void test_host_facade_owns_composition(void **state)
 	ove_lxp_host_config_t host_config = {
 		.rootfs_image = rootfs,
 		.rootfs_image_size = sizeof(rootfs),
-		.rootfs_storage = files,
-		.rootfs_capacity = 4,
-		.rootfs_name_storage = names,
-		.rootfs_name_capacity = sizeof(names),
 		.netfs_config = &netfs,
 	};
 
+	memset(&host, 0xa5, sizeof(host));
 	g_host_init_calls = 0;
 	g_host_init_target = NULL;
 	memset(&g_host_init_config, 0, sizeof(g_host_init_config));
@@ -474,10 +469,12 @@ static void test_host_facade_owns_composition(void **state)
 	assert_ptr_equal(g_host_init_config.block_ops, &g_lxp_host_block_ops);
 	assert_ptr_equal(g_host_init_config.rootfs_image, rootfs);
 	assert_int_equal(g_host_init_config.rootfs_image_size, sizeof(rootfs));
-	assert_ptr_equal(g_host_init_config.rootfs_storage, files);
-	assert_int_equal(g_host_init_config.rootfs_capacity, 4);
-	assert_ptr_equal(g_host_init_config.rootfs_name_storage, names);
-	assert_int_equal(g_host_init_config.rootfs_name_capacity, sizeof(names));
+	assert_ptr_equal(g_host_init_config.rootfs_storage, host.rootfs_files);
+	assert_int_equal(g_host_init_config.rootfs_capacity, OVE_LXP_ROOTFS_FILE_CAPACITY);
+	assert_ptr_equal(g_host_init_config.rootfs_name_storage, host.rootfs_names);
+	assert_int_equal(g_host_init_config.rootfs_name_capacity, OVE_LXP_ROOTFS_NAME_CAPACITY);
+	/* Host init resets live state, not the potentially large workspace. */
+	assert_int_equal((unsigned char)host.rootfs_names[0], 0xa5);
 	assert_null(g_host_init_config.netif);
 	assert_non_null(g_host_init_config.netfs_config);
 	assert_string_equal(g_host_init_config.netfs_config->mountpoint, "/mnt/pi");
@@ -494,7 +491,9 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_run_calls, 1);
 	assert_ptr_equal(g_host_run_target, &host.core);
 	assert_ptr_equal(g_host_run_config, &config);
+	host.rootfs_names[0] = 'x';
 	ove_lxp_host_deinit(&host);
+	assert_int_equal(host.rootfs_names[0], 'x');
 
 	host_config.netfs_config = &(const ove_lxp_netfs_config_t){
 		.mountpoint = "/mnt/pi",

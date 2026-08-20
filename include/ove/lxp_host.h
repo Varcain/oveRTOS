@@ -13,6 +13,15 @@
 
 #include "lxp/lxp_host.h"
 #include "ove/net.h"
+#include "ove_config.h"
+
+#if !defined(CONFIG_OVE_LINUX_ROOTFS_FILE_CAPACITY) || \
+	!defined(CONFIG_OVE_LINUX_ROOTFS_NAME_CAPACITY)
+#error "LXP host rootfs workspace capacities are missing from ove_config.h"
+#endif
+
+#define OVE_LXP_ROOTFS_FILE_CAPACITY CONFIG_OVE_LINUX_ROOTFS_FILE_CAPACITY
+#define OVE_LXP_ROOTFS_NAME_CAPACITY CONFIG_OVE_LINUX_ROOTFS_NAME_CAPACITY
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,23 +37,27 @@ typedef struct ove_lxp_netfs_config {
 } ove_lxp_netfs_config_t;
 
 /** One-time inputs for an oveRTOS-owned LXP host. Referenced values are consumed
- * during init; LXP copies rootfs metadata and netfs strings into host storage. */
+ * during init; the host owns rootfs metadata storage and LXP copies netfs strings. */
 typedef struct ove_lxp_host_config {
 	const void *rootfs_image;
 	size_t rootfs_image_size;
-	lxp_file_t *rootfs_storage;
-	int rootfs_capacity;
-	char *rootfs_name_storage;
-	size_t rootfs_name_capacity;
 	const ove_netif_config_t *netif_config;
 	/** Bounded best-effort wait for an address after interface bring-up. */
 	uint32_t netif_address_wait_ms;
 	const ove_lxp_netfs_config_t *netfs_config;
 } ove_lxp_host_config_t;
 
-/** oveRTOS-owned native resources plus LXP's immutable host. Do not copy an
- * initialized object. Calls to ove_lxp_host_run() must be sequential. */
+/** oveRTOS-owned rootfs workspace, native resources, and immutable LXP host.
+ *
+ * Workspace members come first to retain the proven STM32 BSS placement used
+ * before this state was consolidated. Runtime reset deliberately does not
+ * clear these potentially large arrays; the rootfs count bounds every read.
+ * Do not copy an initialized object. Calls to ove_lxp_host_run() must be
+ * sequential.
+ */
 typedef struct ove_lxp_host {
+	lxp_file_t rootfs_files[OVE_LXP_ROOTFS_FILE_CAPACITY];
+	char rootfs_names[OVE_LXP_ROOTFS_NAME_CAPACITY];
 	lxp_host_t core;
 	ove_netif_storage_t netif_storage;
 	ove_netif_t netif;

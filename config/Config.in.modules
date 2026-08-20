@@ -204,6 +204,28 @@ config OVE_LINUX_ROOTFS_SIZE
       value is engine-specific: NuttX has one 8 MiB PMSAv7 region, while
       FreeRTOS uses adjacent 8 MiB and 4 MiB task regions.
 
+config OVE_LINUX_ROOTFS_FILE_CAPACITY
+    int
+    default 512
+    range 1 4096
+    depends on OVE_LINUX
+    help
+      Number of immutable CPIO index entries owned by the oveRTOS LXP host.
+      This is host-composition storage rather than application state.
+
+config OVE_LINUX_ROOTFS_NAME_CAPACITY
+    int
+    default 12288 if OVE_BOARD_STM32F746G_DISCO && OVE_RTOS_NUTTX
+    default 15360
+    range 1024 1048576
+    depends on OVE_LINUX
+    help
+      Bytes reserved by the oveRTOS LXP host for normalized CPIO pathnames.
+      The general 15 KiB bound retains more than 4 KiB of growth beyond the
+      measured rootfs. STM32 NuttX uses the proven 12 KiB bound so its early
+      SRAM1 allocator remains below g_idle_topstack before SRAM2 and DTCM are
+      added.
+
 config OVE_LINUX_GUEST_POOL_BASE
     hex
     depends on OVE_LINUX

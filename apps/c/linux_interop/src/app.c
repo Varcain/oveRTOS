@@ -391,20 +391,7 @@ static void on_guest_exit(const lxp_guest_exit_info_t *info)
 	ove_lxp_console_write(b);
 }
 
-/* ---- rootfs (parsed from the board-selected Buildroot CPIO backing) -------- */
-#define ROOTFS_MAX_FILES 512
-static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
-/* NuttX must finish early driver registration from the SRAM1 tail before it can
- * add SRAM2 and DTCM to the heap. Keep the STM32 pathname copy within the
- * current image's measured 11,101 bytes plus useful growth margin; reserving
- * 16 KiB here leaves g_idle_topstack beyond SRAM1 after the personality's
- * per-process state is linked, corrupting the initial allocator before boot. */
-#if defined(CONFIG_OVE_RTOS_NUTTX) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#define ROOTFS_NAME_BYTES (12 * 1024)
-#else
-#define ROOTFS_NAME_BYTES (16 * 1024)
-#endif
-static char g_rootfs_names[ROOTFS_NAME_BYTES];
+/* ---- host (owns the index for the board-selected Buildroot CPIO backing) --- */
 static ove_lxp_host_t g_linux_host;
 
 static void demo_exit(unsigned int code)
@@ -944,10 +931,6 @@ static void demo_body(void *arg)
 	ove_lxp_host_config_t host_config = {
 		.rootfs_image = rootfs_image,
 		.rootfs_image_size = rootfs_image_size,
-		.rootfs_storage = g_rootfs,
-		.rootfs_capacity = ROOTFS_MAX_FILES,
-		.rootfs_name_storage = g_rootfs_names,
-		.rootfs_name_capacity = sizeof(g_rootfs_names),
 	};
 #if defined(CONFIG_OVE_LINUX_NET)
 	/* Product topology remains explicit here; the oveRTOS host owns the native
@@ -973,13 +956,9 @@ static void demo_body(void *arg)
 	 * setup, and retains immutable topology/rootfs composition for each run. */
 	int rootfs_rc = ove_lxp_host_init_cpio(&g_linux_host, &host_config);
 	if (rootfs_rc != LXP_OK) {
-		char b[96];
+		char b[64];
 		char *p = put_str(b, "[demo] FAIL: rootfs host init failed rc=");
 		p = put_sdec(p, rootfs_rc);
-		p = put_str(p, " max_files=");
-		p = put_dec(p, ROOTFS_MAX_FILES);
-		p = put_str(p, " namebuf=");
-		p = put_dec(p, sizeof(g_rootfs_names));
 		*p++ = '\n';
 		*p = 0;
 		ove_lxp_console_write(b);

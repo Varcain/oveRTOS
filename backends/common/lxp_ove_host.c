@@ -72,6 +72,17 @@ static int address_present(const ove_sockaddr_t *address)
 	return address->addr[0] || address->addr[1] || address->addr[2] || address->addr[3];
 }
 
+/* Reset live handles without clearing the fixed rootfs workspace. The CPIO
+ * parser overwrites the indexed prefix and publishes an exact entry count. */
+static void host_runtime_reset(ove_lxp_host_t *host)
+{
+	memset(&host->core, 0, sizeof(host->core));
+	memset(&host->netif_storage, 0, sizeof(host->netif_storage));
+	host->netif = NULL;
+	host->netif_initialized = 0u;
+	host->netif_up = 0u;
+}
+
 void ove_lxp_host_deinit(ove_lxp_host_t *host)
 {
 	if (!host)
@@ -82,14 +93,14 @@ void ove_lxp_host_deinit(ove_lxp_host_t *host)
 	if (host->netif_initialized)
 		ove_netif_deinit(host->netif);
 #endif
-	memset(host, 0, sizeof(*host));
+	host_runtime_reset(host);
 }
 
 int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *config)
 {
 	if (!host || !config)
 		return OVE_ERR_INVALID_PARAM;
-	memset(host, 0, sizeof(*host));
+	host_runtime_reset(host);
 
 	lxp_netfs_config_t netfs;
 	const lxp_netfs_config_t *netfs_config = NULL;
@@ -149,10 +160,10 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 		.block_ops = OVE_LXP_BLOCK_OPS,
 		.rootfs_image = config->rootfs_image,
 		.rootfs_image_size = config->rootfs_image_size,
-		.rootfs_storage = config->rootfs_storage,
-		.rootfs_capacity = config->rootfs_capacity,
-		.rootfs_name_storage = config->rootfs_name_storage,
-		.rootfs_name_capacity = config->rootfs_name_capacity,
+		.rootfs_storage = host->rootfs_files,
+		.rootfs_capacity = OVE_LXP_ROOTFS_FILE_CAPACITY,
+		.rootfs_name_storage = host->rootfs_names,
+		.rootfs_name_capacity = OVE_LXP_ROOTFS_NAME_CAPACITY,
 		.netif = (lxp_netif_t)host->netif,
 		.netfs_config = netfs_config,
 	};
