@@ -629,3 +629,47 @@ Zephyr's smaller flash span is the removed excess kobject reserve:
 | FreeRTOS | 310,940 B | 311,244 B | +304 B | 23,816 B | 241,048 B |
 | NuttX | 356,076 B | 356,388 B | +312 B | 20,740 B | 231,044 B |
 | Zephyr | 356,996 B | 356,432 B | -564 B | 23,812 B | 247 KiB |
+
+## Iteration 17: personality-neutral thread snapshots
+
+The generic `ove_thread_info` record still contained an `lxp_slot` member even
+though no RTOS backend could populate it: FreeRTOS, NuttX, Zephyr, POSIX, and
+WASM all wrote `-1`. The private LXP adapter already resolved each opaque native
+thread identity through the run-scoped slot lookup and wrote the result into
+LXP's own `lxp_thread_info`. The public member was therefore redundant
+personality state in an otherwise engine-neutral API.
+
+The member is removed from the C contract and from the zero-copy C++ alias and
+Rust wrapper. RTOS backends now publish only native identity and scheduling
+statistics; the private adapter remains the sole owner of identity-to-slot
+attribution. A migration-ledger check rejects a future LXP slot field or comment
+in the generic header. Adapter tests retain both the owned-slot and no-owner
+cases, proving that attribution is derived rather than copied from host data.
+
+Verification also exposed that the C++ and Rust POSIX test stubs linked the
+filesystem backend without the common media-ownership implementation it calls.
+Both test compositions now include `ove_media.c`. The checked-in docs.rs Rust
+FFI stub was regenerated from the public headers, bringing earlier console,
+filesystem, media, and block additions back into sync as well as removing the
+thread member.
+
+Clean Full-profile STM32 links show no fixed-RAM or host-object growth. The
+small flash changes are compiler/layout effects from the narrower copy path:
+
+| Engine | Iteration 16 flash | Iteration 17 flash | Delta | Host object | Fixed RAM |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 311,244 B | 311,244 B | 0 B | 23,816 B | 241,048 B |
+| NuttX | 356,388 B | 356,380 B | -8 B | 20,740 B | 231,044 B |
+| Zephyr | 356,432 B | 356,264 B | -168 B | 23,812 B | 247 KiB |
+
+All 46 C tests, 262 C++ tests, 304 Rust tests, and 436 ASan/UBSan tests pass.
+Committed images were then flashed and inspected through the Linux guest over
+SSH. `top` continued to attribute host workers by native identity on every
+engine. The short RT smoke windows recorded zero misses, zero late finishes,
+and zero IRQ overruns:
+
+| Engine | Releases / executions | Dispatch average | Dispatch maximum |
+|---|---:|---:|---:|
+| FreeRTOS | 19,777 / 19,777 | 7.667 us | 74.722 us |
+| NuttX | 12,249 / 12,249 | 7.963 us | 49.704 us |
+| Zephyr | 25,251 / 25,251 | 7.778 us | 66.852 us |

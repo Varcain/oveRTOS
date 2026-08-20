@@ -448,6 +448,10 @@ instead of requiring engine conditionals in the app. Application-owned thread
 stack and heap reporting remains local because those resources belong to this
 demo rather than to LXP.
 
+Generic `ove_thread_info` snapshots likewise carry only an opaque native
+identity. The private LXP thread adapter resolves that identity to a guest slot;
+the generic RTOS thread API does not store or expose personality ownership.
+
 Every public record is an OVE-owned, versioned type. The common backend takes
 the canonical LXP snapshot into private temporary storage and copies fields
 across the boundary; no public header includes or aliases an LXP observation
