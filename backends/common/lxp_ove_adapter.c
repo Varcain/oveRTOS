@@ -26,7 +26,6 @@
 #include "ove/net.h"
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 #include "ove_net_ready.h"
-#include "lxp/lxp_net.h"
 #endif
 #include "lxp/lxp_config.h"
 #include "lxp/lxp_net_ops.h"
@@ -54,10 +53,15 @@ static uint8_t g_run_active;
 
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 static unsigned g_open_sockets;
+static lxp_net_ready_fn g_ready_callback;
+static const void *g_ready_context;
 
 static void socket_ready(void)
 {
-	lxp_sock_kick();
+	lxp_net_ready_fn ready = __atomic_load_n(&g_ready_callback, __ATOMIC_ACQUIRE);
+	const void *context = __atomic_load_n(&g_ready_context, __ATOMIC_ACQUIRE);
+	if (ready)
+		ready(context);
 }
 #endif
 
@@ -125,15 +129,25 @@ static void pool_reset(void)
 	memset(g_pool, 0, sizeof(g_pool));
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 	g_open_sockets = 0;
-	ove_net_ready_unsubscribe(socket_ready);
 #endif
 }
 
-static int a_run_begin(void)
+static int a_run_begin(lxp_net_ready_fn ready, const void *context)
 {
 	if (g_run_active)
 		return OVE_ERR_WOULD_BLOCK;
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	if (!ready)
+		return OVE_ERR_INVALID_PARAM;
+#else
+	(void)ready;
+	(void)context;
+#endif
 	pool_reset();
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	__atomic_store_n(&g_ready_context, context, __ATOMIC_RELEASE);
+	__atomic_store_n(&g_ready_callback, ready, __ATOMIC_RELEASE);
+#endif
 	g_run_active = 1;
 	return OVE_OK;
 }
@@ -144,6 +158,10 @@ static void a_run_end(void)
 		return;
 	pool_reset();
 	g_run_active = 0;
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	__atomic_store_n(&g_ready_callback, NULL, __ATOMIC_RELEASE);
+	__atomic_store_n(&g_ready_context, NULL, __ATOMIC_RELEASE);
+#endif
 }
 
 /* ---- lxp <-> ove address conversion (same fields + values) ------------------ */

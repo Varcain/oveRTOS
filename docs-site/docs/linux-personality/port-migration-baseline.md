@@ -230,3 +230,41 @@ rollback, aggregate block-reader ownership, writer exclusion, and cancellation
 beyond the native handle-slot count. The latter proves that both active and
 already-completed cancelled opens reclaim their otherwise orphaned native
 handles before the request identity can be reused.
+
+## Iteration 7: network readiness ownership
+
+The common network adapter still reached back into the personality through the
+global `lxp_sock_kick()` symbol. That link hid the callback lifetime and made a
+host provider choose a core scheduling primitive. The audit found no equivalent
+to the storage asynchronous-request state machine: every native socket is
+nonblocking, and LXP already owns the sole outstanding state through its
+generation-qualified parked wait, retry operation, deadline, and fairness
+class. Adding cancellation correlation below that boundary would duplicate
+state rather than remove it.
+
+Network-provider ABI version 3 therefore makes readiness explicit and
+run-scoped. `run_begin()` receives a callback and context; a provider advertising
+`LXP_NET_CAP_SOCKET_READY_EVENT` may retain them only until `run_end()` returns.
+LXP translates the callback into its coordinator event, while oveRTOS retains
+the backend-sized native socket pool, first/last-socket subscription to the
+native readiness channel, and RTOS/network-stack execution policy. FreeRTOS
+uses the event path; NuttX and Zephyr deliberately retain the bounded 5 ms
+polling fallback because their native stacks do not yet publish the host event.
+
+The same pass closed a latent boundedness defect. `socket()` and `accept()` had
+ignored failure while enabling native nonblocking mode, which could expose a
+blocking socket to the privileged coordinator. LXP now closes and unpublishes
+the native handle on either failure. Host tests force more consecutive failures
+than the socket-pool depth and then succeed, proving that native handles, LXP
+socket slots, and guest descriptors are all reclaimed. The oveRTOS ownership
+ledger rejects any return of the retired global kick dependency.
+
+All 435 oveRTOS stub cases pass with the loopback and adapter-readiness
+tests enabled. Production links remain bounded; relative to Iteration 6, the
+small callback and fail-closed paths change flash as follows:
+
+| Engine | Iteration 6 flash | Iteration 7 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 309,188 B | 309,428 B | +240 B |
+| NuttX | 354,804 B | 354,948 B | +144 B |
+| Zephyr | 357,464 B | 356,760 B | -704 B |
