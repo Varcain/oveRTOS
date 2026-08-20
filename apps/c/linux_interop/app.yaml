@@ -17,6 +17,9 @@ defconfig:
   # only when its external-filesystem provider is configured, and a missing
   # card remains a non-fatal mount failure.
   - CONFIG_OVE_FS=y
+  # LXP owns sixteen external filesystem descriptors. Native backends which
+  # reserve per-open resources must be able to serve that caller-owned table.
+  - CONFIG_OVE_FS_MAX_OPEN_FILES=16
   # Mount that substrate at /data through the engine-agnostic LXP host-filesystem
   # provider. The mount is retried after absent-media failures without delaying boot.
   - CONFIG_OVE_LINUX_FS=y

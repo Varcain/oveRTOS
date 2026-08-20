@@ -71,6 +71,41 @@ endif()
 if(NOT STORAGE_ADAPTER_TEXT MATCHES "lxp_async_gate")
     message(FATAL_ERROR "storage adapter bypasses the LXP asynchronous provider gate")
 endif()
+if(NOT STORAGE_ADAPTER_TEXT MATCHES
+   "CONFIG_OVE_FS_MAX_OPEN_FILES[ \t]*>=[ \t]*LXP_NHOSTFS_OPEN")
+    message(FATAL_ERROR
+        "storage adapter does not bind native capacity to LXP's descriptor table")
+endif()
+foreach(NATIVE_FS_BACKEND IN ITEMS
+        "backends/freertos/freertos_fs.c"
+        "backends/nuttx/nuttx_fs.c"
+        "backends/zephyr/zephyr_fs.c")
+    file(READ "${OVE_ROOT}/${NATIVE_FS_BACKEND}" NATIVE_FS_TEXT)
+    if(NATIVE_FS_TEXT MATCHES
+       "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])LXP_[A-Z0-9_]+")
+        message(FATAL_ERROR
+            "generic filesystem backend regained LXP coupling: ${NATIVE_FS_BACKEND}")
+    endif()
+endforeach()
+file(READ "${OVE_ROOT}/apps/c/linux_interop/app.yaml" LINUX_APP_CONFIG_TEXT)
+if(NOT LINUX_APP_CONFIG_TEXT MATCHES "CONFIG_OVE_FS_MAX_OPEN_FILES=16")
+    message(FATAL_ERROR
+        "linux_interop must provision all sixteen LXP host filesystem descriptors")
+endif()
+file(READ "${OVE_ROOT}/config/templates/prj.conf.j2" ZEPHYR_CONFIG_TEMPLATE_TEXT)
+if(NOT ZEPHYR_CONFIG_TEMPLATE_TEXT MATCHES
+   "CONFIG_FS_FATFS_NUM_FILES=\\{\\{ config[.]get\\(\"CONFIG_OVE_FS_MAX_OPEN_FILES\"")
+    message(FATAL_ERROR
+        "Zephyr FatFs file pool bypasses the OVE filesystem capacity")
+endif()
+file(READ
+    "${OVE_ROOT}/boards/stm32f746g-discovery/freertos/inc/ffconf.h"
+    FREERTOS_FATFS_CONFIG_TEXT)
+if(NOT FREERTOS_FATFS_CONFIG_TEXT MATCHES
+   "#define[ \t]+_FS_LOCK[ \t]+CONFIG_OVE_FS_MAX_OPEN_FILES")
+    message(FATAL_ERROR
+        "FreeRTOS FatFs lock table bypasses the OVE filesystem capacity")
+endif()
 file(READ "${OVE_ROOT}/backends/common/lxp_ove_adapter.c" NETWORK_ADAPTER_TEXT)
 if(NETWORK_ADAPTER_TEXT MATCHES "lxp_sock_kick|#[ \t]*include[ \t]*[<\"]lxp/lxp_net\\.h")
     message(FATAL_ERROR

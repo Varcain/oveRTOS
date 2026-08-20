@@ -40,6 +40,8 @@
 
 _Static_assert(OVE_PRIO_ABOVE_NORMAL < OVE_PRIO_HIGH,
 	       "native FS worker must remain below high-priority RT work");
+_Static_assert(CONFIG_OVE_FS_MAX_OPEN_FILES >= LXP_NHOSTFS_OPEN,
+	       "native filesystem capacity must cover LXP's descriptor table");
 
 /*
  * LXP has at most LXP_NHOSTFS_OPEN co-resident external descriptors. A single

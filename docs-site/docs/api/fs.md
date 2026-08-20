@@ -164,6 +164,12 @@ ove_fs_unmount("/sd");
 | Option | Default | Description |
 |--------|---------|-------------|
 | `CONFIG_OVE_FS` | `n` | Enable the filesystem abstraction layer |
+| `CONFIG_OVE_FS_MAX_OPEN_FILES` | `4` | Required concurrent caller-owned native file handles; backends use it to size fixed per-open resources where necessary |
+
+`CONFIG_OVE_FS_MAX_OPEN_FILES` does not enlarge the optional four-entry
+`ove_fs_open()` convenience pool. Applications that need the configured
+capacity provide one `ove_file_storage_t` per handle and use
+`ove_fs_open_init()` / `ove_fs_close_deinit()`.
 
 ## Header
 

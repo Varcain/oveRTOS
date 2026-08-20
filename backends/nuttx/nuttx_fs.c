@@ -10,9 +10,6 @@
 #include "ove/media.h"
 #include "ove_backend_common.h"
 #include "ove_config.h"
-#if defined(CONFIG_OVE_LINUX_FS)
-#include "lxp/lxp_config.h"
-#endif
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -38,11 +35,7 @@
  * fixed SRAM pool rather than relying on the general heap's alignment.
  */
 #define FAT_DMA_SECTOR_SIZE 512
-#if defined(CONFIG_OVE_LINUX_FS)
-#define FAT_DMA_OPEN_FILE_COUNT LXP_NHOSTFS_OPEN
-#else
-#define FAT_DMA_OPEN_FILE_COUNT FS_POOL_FILES
-#endif
+#define FAT_DMA_OPEN_FILE_COUNT CONFIG_OVE_FS_MAX_OPEN_FILES
 #define FAT_DMA_BUFFER_COUNT (FAT_DMA_OPEN_FILE_COUNT + 1)
 
 static uint8_t fat_dma_buffers[FAT_DMA_BUFFER_COUNT][FAT_DMA_SECTOR_SIZE]
