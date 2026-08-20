@@ -7,7 +7,7 @@
  * engine table out of applications.
  */
 
-#include "ove/lxp_host.h"
+#include "lxp_ove_host_internal.h"
 
 #include "ove_config.h"
 #include "ove/thread.h"
@@ -67,14 +67,16 @@ static int parse_ipv4(const char *text, uint8_t address[4])
 	return OVE_OK;
 }
 
+#if defined(CONFIG_OVE_LINUX_NET)
 static int address_present(const ove_sockaddr_t *address)
 {
 	return address->addr[0] || address->addr[1] || address->addr[2] || address->addr[3];
 }
+#endif
 
 /* Reset live handles without clearing the fixed rootfs workspace. The CPIO
  * parser overwrites the indexed prefix and publishes an exact entry count. */
-static void host_runtime_reset(ove_lxp_host_t *host)
+static void host_runtime_reset(ove_lxp_host_impl_t *host)
 {
 	memset(&host->core, 0, sizeof(host->core));
 	memset(&host->netif_storage, 0, sizeof(host->netif_storage));
@@ -87,20 +89,22 @@ void ove_lxp_host_deinit(ove_lxp_host_t *host)
 {
 	if (!host)
 		return;
+	ove_lxp_host_impl_t *impl = ove_lxp_host_private(host);
 #if defined(CONFIG_OVE_LINUX_NET)
-	if (host->netif_up)
-		ove_netif_down(host->netif);
-	if (host->netif_initialized)
-		ove_netif_deinit(host->netif);
+	if (impl->netif_up)
+		ove_netif_down(impl->netif);
+	if (impl->netif_initialized)
+		ove_netif_deinit(impl->netif);
 #endif
-	host_runtime_reset(host);
+	host_runtime_reset(impl);
 }
 
 int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *config)
 {
 	if (!host || !config)
 		return OVE_ERR_INVALID_PARAM;
-	host_runtime_reset(host);
+	ove_lxp_host_impl_t *impl = ove_lxp_host_private(host);
+	host_runtime_reset(impl);
 
 	lxp_netfs_config_t netfs;
 	const lxp_netfs_config_t *netfs_config = NULL;
@@ -119,21 +123,21 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 
 #if defined(CONFIG_OVE_LINUX_NET)
 	if (config->netif_config) {
-		int rc = ove_netif_init(&host->netif, &host->netif_storage);
+		int rc = ove_netif_init(&impl->netif, &impl->netif_storage);
 		if (rc != OVE_OK)
 			return rc;
-		host->netif_initialized = 1u;
-		rc = ove_netif_up(host->netif, config->netif_config);
+		impl->netif_initialized = 1u;
+		rc = ove_netif_up(impl->netif, config->netif_config);
 		if (rc != OVE_OK) {
 			ove_lxp_host_deinit(host);
 			return rc;
 		}
-		host->netif_up = 1u;
+		impl->netif_up = 1u;
 
 		uint32_t waited_ms = 0u;
 		for (;;) {
 			ove_sockaddr_t address = {0};
-			if (ove_netif_get_addr(host->netif, &address, NULL, NULL) == OVE_OK &&
+			if (ove_netif_get_addr(impl->netif, &address, NULL, NULL) == OVE_OK &&
 			    address_present(&address))
 				break;
 			if (waited_ms >= config->netif_address_wait_ms)
@@ -160,14 +164,14 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 		.block_ops = OVE_LXP_BLOCK_OPS,
 		.rootfs_image = config->rootfs_image,
 		.rootfs_image_size = config->rootfs_image_size,
-		.rootfs_storage = host->rootfs_files,
+		.rootfs_storage = impl->rootfs_files,
 		.rootfs_capacity = OVE_LXP_ROOTFS_FILE_CAPACITY,
-		.rootfs_name_storage = host->rootfs_names,
+		.rootfs_name_storage = impl->rootfs_names,
 		.rootfs_name_capacity = OVE_LXP_ROOTFS_NAME_CAPACITY,
-		.netif = (lxp_netif_t)host->netif,
+		.netif = (lxp_netif_t)impl->netif,
 		.netfs_config = netfs_config,
 	};
-	int rc = lxp_host_init_cpio(&host->core, &lxp_config);
+	int rc = lxp_host_init_cpio(&impl->core, &lxp_config);
 	if (rc != LXP_OK)
 		ove_lxp_host_deinit(host);
 	return rc;
@@ -177,9 +181,12 @@ int ove_lxp_host_netif_get_addr(const ove_lxp_host_t *host, ove_sockaddr_t *ip,
 				ove_sockaddr_t *gateway, ove_sockaddr_t *netmask)
 {
 #if defined(CONFIG_OVE_LINUX_NET)
-	if (!host || !host->netif_initialized)
+	if (!host)
 		return OVE_ERR_NOT_SUPPORTED;
-	return ove_netif_get_addr(host->netif, ip, gateway, netmask);
+	const ove_lxp_host_impl_t *impl = ove_lxp_host_private_const(host);
+	if (!impl->netif_initialized)
+		return OVE_ERR_NOT_SUPPORTED;
+	return ove_netif_get_addr(impl->netif, ip, gateway, netmask);
 #else
 	(void)host;
 	(void)ip;
@@ -237,6 +244,7 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 {
 	if (!host)
 		return OVE_LXP_RUN_ELAUNCH;
+	const ove_lxp_host_impl_t *impl = ove_lxp_host_private_const(host);
 	lxp_launch_config_t launch;
 	const lxp_launch_config_t *translated = NULL;
 	if (config) {
@@ -258,7 +266,7 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 		};
 		translated = &launch;
 	}
-	int rc = lxp_host_run(&host->core, translated, path, argc, argv);
+	int rc = lxp_host_run(&impl->core, translated, path, argc, argv);
 	switch (rc) {
 	case LXP_RUN_ELAUNCH:
 		return OVE_LXP_RUN_ELAUNCH;

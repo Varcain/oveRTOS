@@ -533,3 +533,45 @@ SRAM1 (-32 bytes), and Zephyr falls from 251 KiB to 247 KiB. Zephyr's larger
 apparent RAM recovery comes from keeping the following address-derived kernel
 object table below a 4 KiB alignment boundary after the optional formatter and
 its stack frame are removed.
+
+## Iteration 15: opaque host storage
+
+The public `ove_lxp_host_t` still exposed canonical `lxp_file_t` and
+`lxp_host_t` members even though applications only allocate the object and pass
+its address back to the host facade. That representation leak let application
+code acquire canonical host internals and made the public oveRTOS header depend
+directly on LXP's host header.
+
+`ove_lxp_host_t` is now pointer-aligned, caller-owned opaque storage. It keeps
+the existing zero-heap lifecycle and exact per-configuration footprint: there
+is no singleton, allocation, indirection, or conservative maximum-size reserve.
+A private common-backend representation contains the rootfs index, pathname
+workspace, canonical host, and native interface state. Only the host and
+observability adapters may translate the public storage to that representation.
+
+The public size expression records the two canonical storage ABI facts needed
+to allocate the object without including canonical types. Private compile-time
+assertions compare those facts, the complete representation size, and its
+alignment against the real LXP types. A canonical layout change therefore
+fails the oveRTOS build instead of silently overflowing opaque storage. Runtime
+reset still leaves the large rootfs workspace untouched, and initialization
+still overwrites only its live prefix.
+
+Host tests verify that the canonical host and both rootfs workspaces reside
+inside the public object, that initialization and launch address the same
+private host, and that teardown preserves workspace bytes. The ownership
+ledger rejects canonical LXP host types in the public header and rejects any
+application inspection of opaque host storage. The separate public
+observability aliases remain a visible canonical dependency and are deliberately
+left for a later boundary iteration. A production build of the supported
+FreeRTOS minimal profile also caught and fixed an existing unguarded network
+helper, so the same host facade now compiles with networking disabled.
+
+Clean production links retain the exact host-object, flash, and fixed-RAM
+sizes. The representation boundary therefore has no runtime or storage cost:
+
+| Engine | Iteration 14 flash | Iteration 15 flash | Delta | Host object | Fixed RAM |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 310,940 B | 310,940 B | 0 B | 23,816 B | 241,048 B |
+| NuttX | 356,076 B | 356,076 B | 0 B | 20,740 B | 231,044 B |
+| Zephyr | 356,996 B | 356,996 B | 0 B | 23,812 B | 247 KiB |

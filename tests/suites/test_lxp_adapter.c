@@ -16,6 +16,7 @@
 #include "ove/lxp_host.h"
 #include "ove/lxp_console.h"
 #include "ove/lxp_metrics.h"
+#include "lxp/lxp_host.h"
 #include "lxp/lxp_rt_metrics.h"
 #include "ove/thread.h"
 #include "ove_net_ready.h"
@@ -491,9 +492,17 @@ static void test_guest_exit(const ove_lxp_guest_exit_info_t *info)
 	g_guest_exit_info = *info;
 }
 
+static int host_storage_contains(const ove_lxp_host_t *host, const void *object, size_t size)
+{
+	uintptr_t base = (uintptr_t)(const void *)host;
+	uintptr_t address = (uintptr_t)object;
+	return address >= base && size <= sizeof(*host) && address - base <= sizeof(*host) - size;
+}
+
 static void test_host_facade_owns_composition(void **state)
 {
 	(void)state;
+	assert_int_equal(sizeof(ove_lxp_host_t), OVE_LXP_HOST_STORAGE_SIZE);
 	static const uint8_t rootfs[16];
 	ove_lxp_host_t host;
 	int io_cookie;
@@ -530,7 +539,7 @@ static void test_host_facade_owns_composition(void **state)
 	memset(&g_host_init_config, 0, sizeof(g_host_init_config));
 	assert_int_equal(ove_lxp_host_init_cpio(&host, &host_config), OVE_OK);
 	assert_int_equal(g_host_init_calls, 1);
-	assert_ptr_equal(g_host_init_target, &host.core);
+	assert_true(host_storage_contains(&host, g_host_init_target, sizeof(*g_host_init_target)));
 	assert_ptr_equal(g_host_init_config.os_ops, &g_lxp_host_engine);
 	assert_ptr_equal(g_host_init_config.net_ops, &g_lxp_host_net_ops);
 	assert_ptr_equal(g_host_init_config.display_ops, &g_lxp_host_display_ops);
@@ -538,12 +547,14 @@ static void test_host_facade_owns_composition(void **state)
 	assert_ptr_equal(g_host_init_config.block_ops, &g_lxp_host_block_ops);
 	assert_ptr_equal(g_host_init_config.rootfs_image, rootfs);
 	assert_int_equal(g_host_init_config.rootfs_image_size, sizeof(rootfs));
-	assert_ptr_equal(g_host_init_config.rootfs_storage, host.rootfs_files);
+	assert_true(host_storage_contains(&host, g_host_init_config.rootfs_storage,
+					  OVE_LXP_ROOTFS_FILE_CAPACITY * sizeof(lxp_file_t)));
 	assert_int_equal(g_host_init_config.rootfs_capacity, OVE_LXP_ROOTFS_FILE_CAPACITY);
-	assert_ptr_equal(g_host_init_config.rootfs_name_storage, host.rootfs_names);
+	assert_true(host_storage_contains(&host, g_host_init_config.rootfs_name_storage,
+					  OVE_LXP_ROOTFS_NAME_CAPACITY));
 	assert_int_equal(g_host_init_config.rootfs_name_capacity, OVE_LXP_ROOTFS_NAME_CAPACITY);
 	/* Host init resets live state, not the potentially large workspace. */
-	assert_int_equal((unsigned char)host.rootfs_names[0], 0xa5);
+	assert_int_equal((unsigned char)g_host_init_config.rootfs_name_storage[0], 0xa5);
 	assert_null(g_host_init_config.netif);
 	assert_non_null(g_host_init_config.netfs_config);
 	assert_string_equal(g_host_init_config.netfs_config->mountpoint, "/mnt/pi");
@@ -560,7 +571,7 @@ static void test_host_facade_owns_composition(void **state)
 	memset(&g_guest_exit_info, 0, sizeof(g_guest_exit_info));
 	assert_int_equal(ove_lxp_host_run(&host, &config, "/init", 1, argv), 37);
 	assert_int_equal(g_host_run_calls, 1);
-	assert_ptr_equal(g_host_run_target, &host.core);
+	assert_ptr_equal(g_host_run_target, g_host_init_target);
 	assert_ptr_equal(g_host_run_config.write_fn, test_launch_write);
 	assert_ptr_equal(g_host_run_config.read_fn, test_launch_read);
 	assert_ptr_equal(g_host_run_config.io_ctx, &io_cookie);
@@ -579,9 +590,9 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_guest_exit_info.reason, OVE_LXP_EXIT_REASON_STATE_CORRUPTION);
 	assert_int_equal(g_guest_exit_info.detail, 0x1234u);
 	assert_int_equal(g_guest_exit_info.address, 0x5678u);
-	host.rootfs_names[0] = 'x';
+	g_host_init_config.rootfs_name_storage[0] = 'x';
 	ove_lxp_host_deinit(&host);
-	assert_int_equal(host.rootfs_names[0], 'x');
+	assert_int_equal(g_host_init_config.rootfs_name_storage[0], 'x');
 
 	host_config.netfs_config = &(const ove_lxp_netfs_config_t){
 		.mountpoint = "/mnt/pi",

@@ -11,7 +11,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "lxp/lxp_host.h"
 #include "ove/lxp_launch.h"
 #include "ove/net.h"
 #include "ove_config.h"
@@ -48,22 +47,43 @@ typedef struct ove_lxp_host_config {
 	const ove_lxp_netfs_config_t *netfs_config;
 } ove_lxp_host_config_t;
 
-/** oveRTOS-owned rootfs workspace, native resources, and immutable LXP host.
+/* Keep this caller-owned object exactly sized without exposing canonical LXP
+ * types. One rootfs entry occupies four pointer-width words on the supported
+ * ABIs. The fixed-state reserve covers the immutable canonical host record;
+ * private compile-time assertions fail if either storage ABI changes. */
+#define OVE_LXP_ALIGN_UP_(value, alignment) \
+	(((value) + (alignment) - 1u) / (alignment) * (alignment))
+#define OVE_LXP_ROOTFS_STORAGE_BYTES_ (OVE_LXP_ROOTFS_FILE_CAPACITY * 4u * sizeof(uintptr_t))
+#define OVE_LXP_CORE_STORAGE_BYTES_ (208u + 10u * sizeof(uintptr_t))
+#define OVE_LXP_CORE_OFFSET_                                                            \
+	OVE_LXP_ALIGN_UP_(OVE_LXP_ROOTFS_STORAGE_BYTES_ + OVE_LXP_ROOTFS_NAME_CAPACITY, \
+			  sizeof(uintptr_t))
+#define OVE_LXP_NETIF_OFFSET_ (OVE_LXP_CORE_OFFSET_ + OVE_LXP_CORE_STORAGE_BYTES_)
+#define OVE_LXP_HANDLE_OFFSET_ \
+	OVE_LXP_ALIGN_UP_(OVE_LXP_NETIF_OFFSET_ + sizeof(ove_netif_storage_t), sizeof(uintptr_t))
+
+enum {
+	OVE_LXP_HOST_STORAGE_SIZE = OVE_LXP_ALIGN_UP_(
+		OVE_LXP_HANDLE_OFFSET_ + sizeof(ove_netif_t) + 2u, sizeof(uintptr_t)),
+};
+
+#undef OVE_LXP_HANDLE_OFFSET_
+#undef OVE_LXP_NETIF_OFFSET_
+#undef OVE_LXP_CORE_OFFSET_
+#undef OVE_LXP_CORE_STORAGE_BYTES_
+#undef OVE_LXP_ROOTFS_STORAGE_BYTES_
+#undef OVE_LXP_ALIGN_UP_
+
+/** Opaque oveRTOS-owned rootfs workspace, native resources, and LXP host.
  *
- * Workspace members come first to retain the proven STM32 BSS placement used
- * before this state was consolidated. Runtime reset deliberately does not
- * clear these potentially large arrays; the rootfs count bounds every read.
- * Do not copy an initialized object. Calls to ove_lxp_host_run() must be
- * sequential.
+ * The pointer-width member supplies the alignment required by the private
+ * representation. Runtime reset deliberately does not clear the large rootfs
+ * workspace. Do not inspect or copy an initialized object. Calls to
+ * ove_lxp_host_run() must be sequential.
  */
-typedef struct ove_lxp_host {
-	lxp_file_t rootfs_files[OVE_LXP_ROOTFS_FILE_CAPACITY];
-	char rootfs_names[OVE_LXP_ROOTFS_NAME_CAPACITY];
-	lxp_host_t core;
-	ove_netif_storage_t netif_storage;
-	ove_netif_t netif;
-	uint8_t netif_initialized;
-	uint8_t netif_up;
+typedef union ove_lxp_host {
+	uintptr_t _alignment;
+	uint8_t _opaque[OVE_LXP_HOST_STORAGE_SIZE];
 } ove_lxp_host_t;
 
 /** Bring up optional native networking, then parse and publish the rootfs. */
