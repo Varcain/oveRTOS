@@ -184,3 +184,49 @@ not the Linux-personality API.
 
 The ownership test rejects direct CPIO parsing, raw `lxp_run_config_t`
 construction, and the retired pre-facade wrappers in `linux_interop/src/app.c`.
+
+## Iteration 6: storage request ownership
+
+The common oveRTOS storage adapter previously contained two pieces of Linux
+personality policy. Its asynchronous completion was correlated through five
+independent owner/state/cancel globals, and raw block reader/writer counts lived
+below the provider boundary even though the provider API exposes one aggregate
+native-media lease rather than a per-open handle.
+
+Canonical LXP now owns a zero-heap asynchronous provider gate. It keys a saved
+request by generation-qualified owner and operation tag, and resolves worker
+completion versus guest cancellation with one atomic state transition. A
+cancelled request is either retired by the worker without publishing a wakeup,
+or an already-complete result is discarded before a reused slot can collect it.
+
+The LXP block class now aggregates Linux opens: the first reader acquires the
+provider, the last reader releases it, and a writer is exclusive. The block
+provider ABI is version 2 to make this lifetime contract explicit. oveRTOS no
+longer duplicates those counts; its native `ove_block_t` remains the physical
+lease shared with RTOS-native filesystem/raw callers.
+
+The audit deliberately retained media-generation arbitration, DMA-safe staging,
+the serialized worker, worker priority, and period/budget admission in oveRTOS.
+Those mechanisms protect native callers and express host scheduling or hardware
+policy. LXP's rotating blocked-operation scan already owns fairness between
+parked guests; moving the RTOS server budget into the personality would invert
+that boundary rather than simplify it.
+
+The first NuttX link exposed a toolchain-specific size trap: GCC specialized
+the complete sync/async dispatcher into every small filesystem wrapper, adding
+about 15 KiB. Keeping that dispatcher out of line restored the intended shared
+boundary. Production links against LXP `93fc5ef` compare with Iteration 5 as
+follows:
+
+| Engine | Iteration 5 flash | Iteration 6 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 309,660 B | 309,188 B | -472 B |
+| NuttX | 354,268 B | 354,804 B | +536 B |
+| Zephyr | 357,688 B | 357,464 B | -224 B |
+
+All 46 oveRTOS host and structural tests pass. Focused canonical LXP tests cover
+the gate state transitions, generation and operation matching, failed-submit
+rollback, aggregate block-reader ownership, writer exclusion, and cancellation
+beyond the native handle-slot count. The latter proves that both active and
+already-completed cancelled opens reclaim their otherwise orphaned native
+handles before the request identity can be reused.
