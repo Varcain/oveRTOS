@@ -6,9 +6,10 @@ and Zephyr images. Flash one STM32 linux_interop image first, then run:
 
     .venv/bin/python tests/sim/freertos-linux/nice_drive.py
 
-Two compute-only Lua guests run concurrently at opposite ends of the supported
+Two CPU-bound Lua guests run concurrently at opposite ends of the supported
 nice range. The test verifies that nice survives exec, both guests make forward
-progress, and the more-favoured guest receives measurably more CPU time.
+progress, and the more-favoured guest receives its weighted CPU share while a
+1 kHz higher-priority host task repeatedly preempts both.
 """
 
 import re
@@ -48,8 +49,13 @@ def run():
         print(f"engine: {engines[0]}")
 
         command = (
-            "busybox nice -n -20 lua -e 'local x=0 while true do x=x+1 end' & hi=$!; "
-            "busybox nice -n 19 lua -e 'local x=0 while true do x=x+1 end' & lo=$!; "
+            # os.clock is deliberately sparse: it gives LXP a signal-delivery
+            # boundary so kill/wait terminate deterministically, while each
+            # 100k-iteration block remains overwhelmingly CPU work.
+            "busybox nice -n -20 lua -e 'local x=0 while true do "
+            "for i=1,100000 do x=x+i end os.clock() end' & hi=$!; "
+            "busybox nice -n 19 lua -e 'local x=0 while true do "
+            "for i=1,100000 do x=x+i end os.clock() end' & lo=$!; "
             "sleep 6; "
             "awk '{print \"CPU\",$1,$14,$19}' /proc/$hi/stat /proc/$lo/stat; "
             "kill $hi $lo; wait $hi; wait $lo; true"
@@ -65,9 +71,9 @@ def run():
             raise RuntimeError(f"one compute-only guest made no progress: {rows}")
         if int(rows[0][2]) != -20 or int(rows[1][2]) != 19:
             raise RuntimeError(f"nice values were not preserved through exec: {rows}")
-        if high_ticks * 4 < low_ticks * 5:
+        if high_ticks < low_ticks * 4:
             raise RuntimeError(
-                "higher-priority guest did not receive a larger CPU share: "
+                "higher-priority guest did not receive a weighted CPU share: "
                 f"high={high_ticks}, low={low_ticks}"
             )
 
