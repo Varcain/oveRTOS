@@ -252,22 +252,22 @@ It writes a 200 KiB temporary file, exercises persistent create/read/rename and
 directory operations, resets the MCU through ST-Link, and verifies that the
 microSD file survived.
 
-The corresponding guest-share regression runs two compute-only Lua guests at
+The corresponding guest-share regression runs two CPU-bound Lua guests at
 nice -20 and nice 19, verifies their `/proc` values and forward progress, and
-checks that the favoured guest receives a larger CPU share:
+checks that the favoured guest receives a weighted CPU share despite the
+1 kHz higher-priority RT-scope task:
 
 ```sh
 .venv/bin/python tests/sim/freertos-linux/nice_drive.py
 ```
 
-The FreeRTOS Full profile currently has one open limitation in that final
-share check. Disabling `configUSE_TIME_SLICING` prevents the tick itself from
-rotating equal-priority guests, but FreeRTOS also advances the selected ready
-list whenever a higher-priority host task blocks and the scheduler chooses a
-guest again. A 1 kHz RT-scope worker therefore tends to equalize two CPU-bound
-guests despite their distinct LXP quantum weights. The nice values and bounded
-guest-only tick path remain intact, but proportional shares under frequent
-host preemption require a separate scheduler-seam correction.
+FreeRTOS's LXP port enforces that share with a single-runnable guest gate. Its
+tick callback only accounts the current guest's weighted quantum; a small
+run-scoped privileged selector then suspends that task and resumes the next
+guest in thread context. This avoids FreeRTOS's otherwise independent
+equal-priority ready-list rotation whenever higher-priority host work wakes.
+Every Linux task remains below the coordinator and host RT classes, and global
+`configUSE_TIME_SLICING` remains disabled in the final Full configuration.
 
 ## Two-channel host real-time proof (STM32F746G-DISCO)
 

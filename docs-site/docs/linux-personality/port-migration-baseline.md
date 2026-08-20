@@ -781,3 +781,51 @@ nice -20 and nice 19 measured 396 and 392 CPU ticks in that condition. The
 run-scoped callback preserves forward progress and isolation from unrelated
 equal-priority host tasks, but strict weighted shares under host preemption need
 a later scheduler-seam correction rather than an ownership-layer workaround.
+
+## Iteration 20: preemption-stable FreeRTOS guest shares
+
+FreeRTOS's `taskSELECT_HIGHEST_PRIORITY_TASK()` advances the ready-list cursor
+whenever the scheduler selects an equal-priority class. That behavior is
+independent of `configUSE_TIME_SLICING`: disabling tick slicing stops the tick
+from requesting a switch, but it does not stop a 1 kHz higher-priority host task
+from causing a new selection each time it wakes and blocks. Multiple native-
+runnable guest tasks therefore bypassed LXP's weighted quantum accounting.
+
+Canonical LXP now keeps exactly one core-runnable FreeRTOS guest native-runnable
+at a time. SysTick charges that task's nice-weighted quantum and posts a binary
+event when a peer should run. A statically allocated privileged selector task,
+one native priority above guests and no higher than the coordinator, performs
+the suspend/resume handoff in thread context. It is not a generic scheduler
+patch: unrelated FreeRTOS tasks never enter the gate, every guest remains in
+the same best-effort native class, and higher-priority host work stays
+immediately preemptive.
+
+The gate participates in the same generation-qualified lifecycle as native
+guest tasks. Fresh launches are either selected or suspended before the
+coordinator can yield; persistent resumes remain suspended when another guest
+owns the share; park and abort synchronously select a peer; and a delayed tick
+notification carries both task identity and slot generation, so it cannot
+rotate a replacement incarnation. The selector task, its 192-word stack, TCB,
+and wake semaphore exist only between the port's `prepare()` and `teardown()`.
+
+The canonical host contracts and the multi-process M2 and futex M5 FreeRTOS
+QEMU fixtures pass. The committed STM32 Full image adds the bounded selector
+resources only to FreeRTOS:
+
+| Engine | Iteration 19 flash | Iteration 20 flash | Delta | Fixed RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 311,492 B | 312,716 B | +1,224 B | 242,080 B | +1,032 B |
+| NuttX | 356,380 B | 356,380 B | 0 B | 231,044 B | 0 B |
+| Zephyr | 356,264 B | 356,264 B | 0 B | 247 KiB | 0 B |
+
+The committed FreeRTOS image was flashed and exercised exclusively through
+SSH. Under the active 1 kHz RT-scope task, nice -20 received 952 CPU ticks while
+nice 19 received 48: a 19.83:1 share, replacing Iteration 19's 396:392 near-tie.
+Both guests made progress and terminated at sparse syscall boundaries; repeated
+and concurrent Lua process churn left no guest tasks behind. The selector itself
+was below `top`'s CPU-resolution floor.
+
+The accompanying lifetime RT snapshot recorded 151,041 releases and executions,
+zero misses, late finishes, IRQ overruns, or pending work, a 7.426 us average
+dispatch, and an 83.000 us maximum. The proportional-share correction therefore
+does not trade away the host's real-time scheduling promise.
