@@ -41,9 +41,6 @@
 #include "lxp/lxp_latency.h"
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
-#if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
-#include "ove/hal/hal_dma2d.h"
-#endif
 #include "lxp/lxp_net.h" /* lxp_sock_set_netif — the SIOC* ioctl target */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
@@ -1126,20 +1123,6 @@ static void demo_body(void *arg)
 			*p++ = '\n';
 			*p = 0;
 			sh_write0(b);
-
-#if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
-			/* Coordinator-side DMA2D proof: a HW fill + read-back (register path +
-			 * D-cache coherency) before any guest touches /dev/dma2d. Boards with
-			 * only the weak fallback report "no HW backend". */
-			{
-				int di = ove_hal_dma2d_init();
-				int dr = (di == OVE_OK) ? ove_hal_dma2d_selftest() : di;
-				sh_write0(dr == OVE_OK ? "[dma2d] selftest: OK\n"
-					  : dr == OVE_ERR_NOT_SUPPORTED
-						  ? "[dma2d] selftest: no HW backend (sw fallback)\n"
-						  : "[dma2d] selftest: FAIL\n");
-			}
-#endif
 
 		} else {
 			sh_write0("[demo] eth0 bring-up FAILED\n");

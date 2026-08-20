@@ -268,3 +268,32 @@ small callback and fail-closed paths change flash as follows:
 | FreeRTOS | 309,188 B | 309,428 B | +240 B |
 | NuttX | 354,804 B | 354,948 B | +144 B |
 | Zephyr | 357,464 B | 356,760 B | -704 B |
+
+## Iteration 8: display and input lifecycle ownership
+
+The display adapter still split one state machine across repositories. LXP
+calculated each framebuffer dirty rectangle but delegated the dirty flag to
+oveRTOS, then invoked a separate periodic present callback. Touch polling kept
+hidden function-static timing and pressed state across sequential runs, while
+the FT5336 provider allocated a new I2C instance on every launch without a
+matching release. DMA2D initialization was even less self-contained: the demo
+application happened to initialize it inside network bring-up before LXP
+registered `/dev/dma2d`.
+
+Display-provider ABI version 2 makes those boundaries explicit. LXP now owns
+dirty-rectangle union and the 30 Hz presentation cadence, passes one coalesced
+rectangle to the provider, resets framebuffer/input timing and event state per
+run, and releases the touch provider before clearing its table. The static
+device namespace remains reusable across launches, but open instances and tick
+subscriptions are run-scoped. `/dev/dma2d` is registered only after the
+provider's explicit initializer succeeds; the demo application no longer
+contains generic DMA2D lifecycle code.
+
+oveRTOS remains responsible for the physical framebuffer and its cache
+publication, synchronous DMA2D hardware/coherency, and FT5336 I2C access. Its
+framebuffer layer is now a stateless forwarder, Zephyr flushes the bounded span
+covering the coalesced rectangle, and FT5336 uses caller-owned static I2C
+storage with a matching deinitializer instead of leaking a heap-backed bus on
+the phase-1 to phase-2 launch transition. The ownership test prevents device
+tick/input policy or generic display initialization from returning to the host
+adapter or demo application.

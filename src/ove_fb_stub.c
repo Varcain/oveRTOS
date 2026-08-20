@@ -41,8 +41,12 @@ __attribute__((weak)) void *ove_hal_fb_buffer(void)
 	return 0;
 }
 
-__attribute__((weak)) void ove_hal_fb_present(void)
+__attribute__((weak)) void ove_hal_fb_present(int x, int y, int w, int h)
 {
+	(void)x;
+	(void)y;
+	(void)w;
+	(void)h;
 }
 
 #endif /* CONFIG_OVE_FB */

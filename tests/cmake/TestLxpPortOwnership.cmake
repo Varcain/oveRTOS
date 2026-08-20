@@ -78,6 +78,19 @@ if(NOT NETWORK_ADAPTER_TEXT MATCHES "lxp_net_ready_fn")
     message(FATAL_ERROR
         "network adapter bypasses the run-scoped LXP readiness callback")
 endif()
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_disp_adapter.c" DISPLAY_ADAPTER_TEXT)
+if(DISPLAY_ADAPTER_TEXT MATCHES "lxp_input_report_touch|lxp_dev_tick")
+    message(FATAL_ERROR
+        "display adapter regained LXP-owned input or tick scheduling")
+endif()
+foreach(DISPLAY_LIFECYCLE IN ITEMS
+        "dma2d_init = d_dma2d_init"
+        "touch_deinit = d_touch_deinit")
+    if(NOT DISPLAY_ADAPTER_TEXT MATCHES "${DISPLAY_LIFECYCLE}")
+        message(FATAL_ERROR
+            "display adapter omits provider lifecycle binding: ${DISPLAY_LIFECYCLE}")
+    endif()
+endforeach()
 foreach(RETIRED_HEADER IN ITEMS
         "backends/common/ove_cortex_m_cache.h"
         "backends/common/ove_cortex_m_mpu.h")
@@ -158,6 +171,10 @@ if(APP_TEXT MATCHES
    "lxp_cpio_to_rootfs|lxp_run_config_t|ove_lxp_prepare_rootfs_access|ove_lxp_run\\(")
     message(FATAL_ERROR
         "app.c regained LXP-owned rootfs bootstrap or provider/run composition")
+endif()
+if(APP_TEXT MATCHES "ove_hal_(dma2d|fb)_")
+    message(FATAL_ERROR
+        "app.c regained generic display-provider initialization or access")
 endif()
 
 execute_process(

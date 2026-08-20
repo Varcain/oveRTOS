@@ -51,25 +51,17 @@ int ove_fb_init(void);
 /** @brief Fill @p info with the framebuffer geometry. Returns OVE_OK or an error. */
 int ove_fb_get_info(struct ove_fb_info *info);
 
-/** @brief The linear pixel buffer (write pixels here, then @ref ove_fb_flush). */
+/** @brief The linear pixel buffer (write pixels here, then @ref ove_fb_present). */
 void *ove_fb_get_buffer(void);
 
 /**
- * @brief Mark a rectangle of the buffer as updated (content already written).
+ * @brief Publish and present an updated rectangle of the framebuffer.
  *
- * Cheap: it only records that a present is due. The actual push to the display
- * happens in @ref ove_fb_present (driven from the run-loop tick). @p x/y/w/h are
- * advisory; the whole buffer is presented for now.
+ * The caller owns dirty-region coalescing. The board backend performs any cache
+ * maintenance needed by scanout and presents the rectangle. Backends that only
+ * support whole-frame updates may treat @p x/y/w/h as advisory.
  */
-void ove_fb_flush(int x, int y, int w, int h);
-
-/**
- * @brief Push the buffer to the display if it is dirty (idempotent when clean).
- *
- * an500 writes the buffer to the host viewer over semihosting; F746's LTDC scans
- * SDRAM continuously so this is a no-op there (D-cache is off → coherent).
- */
-void ove_fb_present(void);
+void ove_fb_present(int x, int y, int w, int h);
 
 #ifdef __cplusplus
 }

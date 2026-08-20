@@ -14,8 +14,7 @@
  * @brief The board-supplied framebuffer primitives the @ref ove_fb layer drives.
  *
  * A board backend (qemu_fb.c on an500, fb_port.c on STM32F746, null_fb.c on
- * an521) implements these; the portable @ref ove_fb layer forwards to them and
- * owns the dirty flag.
+ * an521) implements these; the portable @ref ove_fb layer is a thin forwarder.
  * @{
  */
 
@@ -34,9 +33,9 @@ int ove_hal_fb_get_info(struct ove_fb_info *info);
 /** @brief The linear pixel buffer the display scans out / is pushed from. */
 void *ove_hal_fb_buffer(void);
 
-/** @brief Push the current buffer contents to the physical display (an500: shm
- *  write; F746: no-op, LTDC scans SDRAM continuously). */
-void ove_hal_fb_present(void);
+/** @brief Publish/present the supplied dirty rectangle (an500 may push the
+ * whole buffer; continuously scanned non-cacheable F746 buffers are a no-op). */
+void ove_hal_fb_present(int x, int y, int w, int h);
 
 #ifdef __cplusplus
 }

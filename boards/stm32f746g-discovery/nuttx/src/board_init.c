@@ -156,8 +156,12 @@ int ove_hal_fb_get_info(struct ove_fb_info *info)
 	return OVE_OK;
 }
 
-void ove_hal_fb_present(void)
+void ove_hal_fb_present(int x, int y, int w, int h)
 {
+	(void)x;
+	(void)y;
+	(void)w;
+	(void)h;
 	/* No-op: LTDC scans continuously and lxp_mpu_init() deliberately excludes
 	 * [0xC0000000, 0xC0100000) from its cacheable pool region. The framebuffer
 	 * therefore retains Device/non-cacheable attributes with D-cache enabled. */
