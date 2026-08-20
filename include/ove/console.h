@@ -33,6 +33,10 @@
 extern "C" {
 #endif
 
+/** Notification that the console RX path published one or more bytes. The
+ * callback may run in interrupt context and must therefore be ISR-safe. */
+typedef void (*ove_console_ready_fn)(const void *context);
+
 #ifdef CONFIG_OVE_CONSOLE
 
 /**
@@ -98,6 +102,20 @@ void ove_console_putchar(int c);
  */
 void ove_console_write(const char *buf, unsigned int len);
 
+/**
+ * @brief Install or withdraw the single console RX-readiness subscriber.
+ *
+ * Passing NULL withdraws the current subscription. A successful backend stops
+ * invoking the old callback before replacement or withdrawal returns. Backends
+ * without an event-producing RX path return @ref OVE_ERR_NOT_SUPPORTED and
+ * leave polling through @ref ove_console_try_getchar available.
+ *
+ * @param[in] callback  ISR-safe callback, or NULL to unsubscribe.
+ * @param[in] context   Opaque callback context.
+ * @return OVE_OK when supported, otherwise OVE_ERR_NOT_SUPPORTED.
+ */
+int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *context);
+
 #else /* !CONFIG_OVE_CONSOLE */
 
 static inline int ove_console_init(void)
@@ -120,6 +138,13 @@ static inline void ove_console_write(const char *buf, unsigned int len)
 {
 	(void)buf;
 	(void)len;
+}
+static inline int ove_console_set_ready_callback(ove_console_ready_fn callback,
+						  const void *context)
+{
+	(void)callback;
+	(void)context;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 #endif /* CONFIG_OVE_CONSOLE */

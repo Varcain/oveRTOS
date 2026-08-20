@@ -81,3 +81,10 @@ void ove_console_write(const char *buf, unsigned int len)
 	printf("%.*s", (int)len, buf);
 	(void)fflush(stdout);
 }
+
+int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *context)
+{
+	(void)callback;
+	(void)context;
+	return OVE_ERR_NOT_SUPPORTED;
+}

@@ -36,6 +36,8 @@ static unsigned con_count;
 static pthread_mutex_t con_lock = PTHREAD_MUTEX_INITIALIZER;
 static sem_t con_sem;
 static int con_init_done;
+static ove_console_ready_fn con_ready;
+static const void *con_ready_context;
 
 static void ensure_init(void)
 {
@@ -54,6 +56,8 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 void ove_wasm_console_push(int ch)
 {
+	ove_console_ready_fn ready = NULL;
+	const void *ready_context = NULL;
 	ensure_init();
 	pthread_mutex_lock(&con_lock);
 	if (con_count < CONSOLE_BUF_SIZE) {
@@ -61,8 +65,12 @@ void ove_wasm_console_push(int ch)
 		con_head = (con_head + 1) % CONSOLE_BUF_SIZE;
 		con_count++;
 		sem_post(&con_sem);
+		ready = con_ready;
+		ready_context = con_ready_context;
 	}
 	pthread_mutex_unlock(&con_lock);
+	if (ready)
+		ready(ready_context);
 }
 
 /* ── oveRTOS console API ───────────────────────────────────────────── */
@@ -115,4 +123,17 @@ void ove_console_putchar(int c)
 void ove_console_write(const char *buf, unsigned int len)
 {
 	write(STDOUT_FILENO, buf, len);
+}
+
+int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *context)
+{
+	ensure_init();
+	pthread_mutex_lock(&con_lock);
+	con_ready_context = context;
+	con_ready = callback;
+	int pending = callback && con_count != 0u;
+	pthread_mutex_unlock(&con_lock);
+	if (pending)
+		callback(context);
+	return OVE_OK;
 }

@@ -36,3 +36,9 @@ void ove_console_write(const char *buf, unsigned int len)
 {
 	serial_write((const unsigned char *)buf, len);
 }
+
+int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *context)
+{
+	serial_set_rx_ready_callback(callback, context);
+	return OVE_OK;
+}

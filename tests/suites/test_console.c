@@ -91,6 +91,14 @@ static void test_console_init_multiple(void **state)
 	assert_int_equal(rc, OVE_OK);
 }
 
+static void test_console_ready_subscription_reports_backend_capability(void **state)
+{
+	(void)state;
+	/* The POSIX test backend has no background RX publisher. Polling remains
+	 * available and the unsupported subscription is explicit. */
+	assert_int_equal(ove_console_set_ready_callback(NULL, NULL), OVE_ERR_NOT_SUPPORTED);
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_console_run(void)
@@ -102,6 +110,7 @@ int test_console_run(void)
 		cmocka_unit_test(test_console_getchar_from_empty_stdin),
 		cmocka_unit_test(test_console_try_getchar_from_empty_stdin),
 		cmocka_unit_test(test_console_init_multiple),
+		cmocka_unit_test(test_console_ready_subscription_reports_backend_capability),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

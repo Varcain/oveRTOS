@@ -9,10 +9,13 @@
 #ifndef INC_SERIAL_WRAPPER_H_
 #define INC_SERIAL_WRAPPER_H_
 
+#include "ove/console.h"
+
 void serial_init(void);
 void serial_write(const unsigned char *data, unsigned int length);
 unsigned char serial_getChar(void);
 int serial_rx_ready(void);
+void serial_set_rx_ready_callback(ove_console_ready_fn callback, const void *context);
 void serial_safe_write(const char *str, unsigned int len);
 
 #endif /* INC_SERIAL_WRAPPER_H_ */

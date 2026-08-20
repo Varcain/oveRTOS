@@ -25,13 +25,14 @@
  * The svc top half only snapshots ordinary syscall registers and parks the guest;
  * I/O callbacks run later in the privileged, preemptible coordinator task. Phase 1
  * keeps its fixed arrays and published indices to avoid allocation and unnecessary
- * scheduler traffic. Phase 2 supplies a non-blocking UART readiness probe so an
- * empty console parks the guest instead of blocking the coordinator.
+ * scheduler traffic. Phase 2 binds the oveRTOS system-console provider, whose
+ * non-consuming readiness probe parks an empty console instead of blocking the
+ * coordinator and whose event-capable backends wake it without periodic polling.
  */
 
 #include <string.h>
 
-#include "ove/console.h"
+#include "ove/lxp_console.h"
 #include "ove/lxp_host.h"
 #include "ove/thread.h"
 #include "ove/time.h"
@@ -73,38 +74,8 @@
 #define UNUSED(x) ((void)(x))
 #endif
 
-/* ---- the personality console (program stdin/stdout + program exit) --------- */
-/* Driven from the privileged coordinator task; must be NON-BLOCKING-pollable so
- * interactive top's 'q' quit works (a finite poll reports readiness instead of blocking the
- * whole CPU the way semihosting SYS_READC would). */
+/* ---- product exit policy --------------------------------------------------- */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* The console backend owns USART1/FIFO policy. Keep one byte of lookahead so
- * readiness remains a non-consuming query to the LXP coordinator. */
-static int g_uart_lookahead = -1;
-static int uart_rx_ready(void);
-
-static void uart_init(void)
-{
-	(void)uart_rx_ready();
-}
-static void sh_writec(char c)
-{
-	ove_console_putchar((unsigned char)c);
-}
-static int uart_rx_ready(void)
-{
-	if (g_uart_lookahead < 0)
-		g_uart_lookahead = ove_console_try_getchar();
-	return g_uart_lookahead >= 0;
-}
-static int sh_readc(void)
-{
-	while (!uart_rx_ready()) { /* block until a keystroke arrives */
-	}
-	int c = g_uart_lookahead;
-	g_uart_lookahead = -1;
-	return c;
-}
 static void sh_exit(unsigned int code)
 {
 	(void)code;
@@ -116,43 +87,13 @@ static void sh_exit(unsigned int code)
 	}
 }
 #else
-/* QEMU an500/an521: the engines use UART0 for their own console; the program console rides the
- * CMSDK UART1 (`-serial none -serial stdio` routes UART1 to stdio). SYS_EXIT_EXTENDED via ARM
- * semihosting gives QEMU a clean exit. The MMIO is reachable from the privileged context. */
+/* SYS_EXIT_EXTENDED gives QEMU a clean product-level termination. */
 static long semihost(unsigned long op, void *arg)
 {
 	register unsigned long r0 __asm__("r0") = op;
 	register void *r1 __asm__("r1") = arg;
 	__asm__ volatile("bkpt 0xab" : "+r"(r0) : "r"(r1) : "memory");
 	return (long)r0;
-}
-#if defined(CONFIG_OVE_RTOS_ZEPHYR)
-#define OVE_UART1_BASE 0x50201000u /* AN521 UART1 (secure peripheral region) */
-#else
-#define OVE_UART1_BASE 0x40005000u /* AN500 UART1 */
-#endif
-#define OVE_UART_REG(off) (*(volatile unsigned int *)(OVE_UART1_BASE + (off)))
-/* CMSDK regs: DATA=0x00, STATE=0x04 (b0 TX-full, b1 RX-valid), CTRL=0x08, BAUDDIV=0x10. */
-static void uart_init(void)
-{
-	OVE_UART_REG(0x10) = 16;  /* BAUDDIV >= 16 required to operate */
-	OVE_UART_REG(0x08) = 0x3; /* TX enable | RX enable */
-}
-static void sh_writec(char c)
-{
-	while (OVE_UART_REG(0x04) & 1u) { /* spin while the TX buffer is full */
-	}
-	OVE_UART_REG(0x00) = (unsigned char)c;
-}
-static int uart_rx_ready(void)
-{
-	return (OVE_UART_REG(0x04) & 2u) ? 1 : 0; /* RX-valid bit */
-}
-static int sh_readc(void)
-{
-	while (!uart_rx_ready()) { /* block until a keystroke arrives */
-	}
-	return (int)(OVE_UART_REG(0x00) & 0xffu);
 }
 static void sh_exit(unsigned int code)
 {
@@ -162,13 +103,6 @@ static void sh_exit(unsigned int code)
 	}
 }
 #endif
-
-/* stdout string helper shared by both console backends. */
-static void sh_write0(const char *s)
-{
-	for (; *s; s++)
-		sh_writec(*s);
-}
 
 /* Minimal string builders (no libc printf dependency). */
 static char *put_str(char *p, const char *s)
@@ -266,7 +200,7 @@ static void network_transport_smoke(void)
 			*p++ = ')';
 			*p++ = '\n';
 			*p = 0;
-			sh_write0(b);
+			ove_lxp_console_write(b);
 			ove_socket_close(sk);
 			return;
 		}
@@ -284,7 +218,7 @@ retry:
 	p = put_sdec(p, last_rc);
 	*p++ = '\n';
 	*p = 0;
-	sh_write0(b);
+	ove_lxp_console_write(b);
 }
 #endif
 
@@ -330,7 +264,7 @@ static void rtos_worker(void *arg)
 		q = put_dec(q, (uint32_t)i);
 		*q++ = '\n';
 		*q = 0;
-		sh_write0(b2);
+		ove_lxp_console_write(b2);
 	}
 	g_feed_ready = 1;
 
@@ -349,7 +283,7 @@ static void rtos_worker(void *arg)
 			p = put_str(p, g_round_trip[printed]);
 			p = put_str(p, "\"\n");
 			*p = 0;
-			sh_write0(line);
+			ove_lxp_console_write(line);
 			printed++;
 		}
 		if (g_linux_done && printed >= g_round_trip_n)
@@ -402,42 +336,6 @@ static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 	return (long)len;
 }
 
-/* ---- phase 2 callbacks: a live console for the interactive shell ------------ */
-/* stdin: one real keystroke at a time (the shell's line editor reads char-by-char). */
-static long console_read(void *ctx, int fd, void *buf, size_t len)
-{
-	UNUSED(ctx);
-	UNUSED(fd);
-	if (len == 0)
-		return 0;
-	int c = sh_readc();
-	if (c < 0)
-		return 0; /* host EOF -> the shell exits */
-	if (c == '\n')
-		c = '\r'; /* normalize Enter to CR: the shell's raw line editor expects it */
-	*(char *)buf = (char)c;
-	return 1;
-}
-
-/* stdout: use the task-context board writer on hardware. It serializes output,
- * translates newlines, and has one total deadline for the whole callback. */
-static long console_write(void *ctx, int fd, const void *buf, size_t len)
-{
-	UNUSED(ctx);
-	UNUSED(fd);
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && defined(CONFIG_OVE_RTOS_FREERTOS)
-	ove_console_write((const char *)buf, (unsigned int)len);
-#else
-	const char *p = (const char *)buf;
-	for (size_t i = 0; i < len; i++) {
-		if (p[i] == '\n')
-			sh_writec('\r');
-		sh_writec(p[i]);
-	}
-#endif
-	return (long)len;
-}
-
 static void on_enosys(long nr)
 {
 	char b[40];
@@ -445,7 +343,7 @@ static void on_enosys(long nr)
 	p = put_dec(p, (uint32_t)nr);
 	*p++ = '\n';
 	*p = 0;
-	sh_write0(b);
+	ove_lxp_console_write(b);
 }
 
 static const char *exit_reason_name(uint8_t reason)
@@ -500,7 +398,7 @@ static void on_guest_exit(const lxp_guest_exit_info_t *info)
 	}
 	*p++ = '\n';
 	*p = 0;
-	sh_write0(b);
+	ove_lxp_console_write(b);
 }
 
 /* ---- rootfs (parsed from the board-selected Buildroot CPIO backing) -------- */
@@ -600,10 +498,10 @@ static void wdtest_spin(void *arg)
 static void wd_selftest_maybe_trip(void)
 {
 	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
-		sh_write0("[wd] selftest: recovered from the watchdog reset; not re-tripping\n");
+		ove_lxp_console_write("[wd] selftest: recovered from the watchdog reset; not re-tripping\n");
 		return;
 	}
-	sh_write0("[wd] selftest: starving the coordinator (scheduler stays live);"
+	ove_lxp_console_write("[wd] selftest: starving the coordinator (scheduler stays live);"
 		  " expect a watchdog reset in ~2s...\n");
 	(void)ove_thread_init(&g_wdtest, &g_wdtest_storage, "wdtest", wdtest_spin, NULL,
 			      OVE_PRIO_ABOVE_NORMAL, sizeof(g_wdtest_stack), g_wdtest_stack);
@@ -617,10 +515,10 @@ static void wd_body(void *arg)
 	    ove_watchdog_start(g_wd_dog) != OVE_OK) {
 		/* Could not arm. Running unguarded beats spinning here — a spin would be the very
 		 * kind of wedge nothing is left to catch. */
-		sh_write0("[wd] FAIL: could not arm IWDG; running without a watchdog\n");
+		ove_lxp_console_write("[wd] FAIL: could not arm IWDG; running without a watchdog\n");
 		return;
 	}
-	sh_write0("[wd] IWDG armed: 2000ms timeout, fed every 250ms while the host stays live\n");
+	ove_lxp_console_write("[wd] IWDG armed: 2000ms timeout, fed every 250ms while the host stays live\n");
 
 	uint32_t last = 0;
 	int primed = 0;
@@ -664,7 +562,7 @@ static void ftest_body(void *arg)
 {
 	UNUSED(arg);
 	ove_thread_sleep_ms(4000); /* let phase 2 publish the active personality run */
-	sh_write0("[c6] faulting a privileged host task (udf) while a guest runs;"
+	ove_lxp_console_write("[c6] faulting a privileged host task (udf) while a guest runs;"
 		  " expect HOST FAULT + watchdog reset\n");
 	__asm volatile("udf #0"); /* host UsageFault -> LXP port invokes the fatal host callback */
 	for (;;) { /* unreachable */
@@ -674,7 +572,7 @@ static void ftest_body(void *arg)
 static void faulttest_maybe_arm(void)
 {
 	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
-		sh_write0("[c6] recovered from the host-fault test; not re-arming\n");
+		ove_lxp_console_write("[c6] recovered from the host-fault test; not re-arming\n");
 		return;
 	}
 	(void)ove_thread_init(&g_ftest, &g_ftest_storage, "ftest", ftest_body, NULL, OVE_PRIO_NORMAL,
@@ -709,7 +607,7 @@ static void smashtest_body(void *arg)
 {
 	UNUSED(arg);
 	ove_thread_sleep_ms(4500); /* just after the C6 fault test, if both are on; guest is up */
-	sh_write0("[c9] smashing a host stack buffer; expect STACK SMASH + watchdog reset\n");
+	ove_lxp_console_write("[c9] smashing a host stack buffer; expect STACK SMASH + watchdog reset\n");
 	smash_host_stack(); /* returns through a smashed canary -> __stack_chk_fail */
 	for (;;) { /* unreachable */
 	}
@@ -718,7 +616,7 @@ static void smashtest_body(void *arg)
 static void smashtest_maybe_arm(void)
 {
 	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
-		sh_write0("[c9] recovered from the smash test; not re-arming\n");
+		ove_lxp_console_write("[c9] recovered from the smash test; not re-arming\n");
 		return;
 	}
 	(void)ove_thread_init(&g_smash, &g_smash_storage, "smash", smashtest_body, NULL,
@@ -807,12 +705,12 @@ static void lat_row(const char *what, const char *name, const lxp_lat_stat_t *s)
 	}
 	p = put_str(p, "]\n");
 	*p = 0;
-	sh_write0(line);
+	ove_lxp_console_write(line);
 }
 
 static void lat_report(void)
 {
-	sh_write0("\n=== latency (measurement build; no threshold is enforced) ===\n"
+	ove_lxp_console_write("\n=== latency (measurement build; no threshold is enforced) ===\n"
 		  "[lat] us[] buckets: <1 <2 <4 <8 <16 <32 <64 >=64\n");
 	lat_row("host-wake-overshoot", "", &g_mon_late);
 	for (int c = 1; c < LXP_LAT_CLASSES; c++)
@@ -828,18 +726,10 @@ static void lat_report(void)
 	 * understates exactly the maxima it exists to show. The drivers require this line. The
 	 * delay lets the UART shift out: the caller's exit path resets the part, which would
 	 * otherwise drop whatever is still in flight (this line included). */
-	sh_write0("[lat] end\n");
+	ove_lxp_console_write("[lat] end\n");
 	ove_time_delay_ms(50);
 }
 #endif /* LXP_ENABLE_LATENCY */
-
-/* Non-blocking console-readiness probe for the personality's poll(2) (interactive
- * top's 'q' quit): true when a UART1 RX byte is waiting. */
-static int console_poll(void *ctx)
-{
-	UNUSED(ctx);
-	return uart_rx_ready();
-}
 
 /* ---- teardown stack + heap audit (R9 / C3) -----------------------------------------------
  * Printed after the guest has run (and, in a soak, after the stress workload), so the high-water
@@ -862,7 +752,7 @@ static void audit_stack_line(const char *name, size_t used, size_t size)
 	p = put_dec(p, (uint32_t)(size > used ? size - used : 0));
 	*p++ = '\n';
 	*p = 0;
-	sh_write0(line);
+	ove_lxp_console_write(line);
 }
 
 /* ove_thread_get_stack_usage() returns the high-water FREE bytes (untouched sentinel space), not
@@ -889,7 +779,7 @@ static void audit_thread_free(const char *name, ove_thread_t h)
 	p = put_dec(p, (uint32_t)ove_thread_get_stack_usage(h));
 	*p++ = '\n';
 	*p = 0;
-	sh_write0(line);
+	ove_lxp_console_write(line);
 }
 #endif /* !CONFIG_OVE_RTOS_FREERTOS */
 
@@ -917,7 +807,7 @@ static void lxp_diag_audit(void)
 		p = put_dec(p, (uint32_t)sizes.exec_capture);
 		*p++ = '\n';
 		*p = 0;
-		sh_write0(line);
+		ove_lxp_console_write(line);
 	}
 	{
 		char line[224];
@@ -941,7 +831,7 @@ static void lxp_diag_audit(void)
 		p = put_dec(p, (uint32_t)sizes.signal_save_stack);
 		*p++ = '\n';
 		*p = 0;
-		sh_write0(line);
+		ove_lxp_console_write(line);
 	}
 
 	lxp_diag_health_t health;
@@ -964,14 +854,14 @@ static void lxp_diag_audit(void)
 		}
 		*p++ = '\n';
 		*p = 0;
-		sh_write0(line);
+		ove_lxp_console_write(line);
 	}
 }
 
 static void stack_audit(void)
 {
 	lxp_diag_audit();
-	sh_write0("\n=== stack high-water audit (deepest usage this run) ===\n");
+	ove_lxp_console_write("\n=== stack high-water audit (deepest usage this run) ===\n");
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 	/* FreeRTOS runs the coordinator in an app-owned task (g_demo/g_demo_stack). */
 	audit_thread("coordinator", g_demo, sizeof(g_demo_stack));
@@ -1007,29 +897,29 @@ static void stack_audit(void)
 		p = put_dec(p, (uint32_t)m.total);
 		*p++ = '\n';
 		*p = 0;
-		sh_write0(line);
+		ove_lxp_console_write(line);
 	}
 	/* Terminator + drain: the caller resets the part right after (semihosting sh_exit), which
 	 * would otherwise cut off whatever is still in the UART FIFO — this line included. */
-	sh_write0("[stack] end\n");
+	ove_lxp_console_write("[stack] end\n");
 	ove_time_delay_ms(50);
 }
 
 static void demo_body(void *arg)
 {
 	UNUSED(arg);
-	uart_init(); /* bring up the UART1 program console before any I/O */
-	sh_write0("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
+	(void)ove_lxp_console_init(); /* bring up the program console before any I/O */
+	ove_lxp_console_write("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
 	/* First line out of the box: identifies the running image against the ELF on
 	 * disk, so a stale target cannot be debugged with the wrong symbols. */
-	sh_write0("[build] " OVE_BUILD_ID "\n");
+	ove_lxp_console_write("[build] " OVE_BUILD_ID "\n");
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-	if (linux_rt_scope_start(sh_write0) != OVE_OK) {
-		sh_write0("[rt-scope] FAIL: timer/event/thread setup\n");
+	if (linux_rt_scope_start(ove_lxp_console_write) != OVE_OK) {
+		ove_lxp_console_write("[rt-scope] FAIL: timer/event/thread setup\n");
 		sh_exit(1);
 	}
-	sh_write0("[rt-scope] CH1=D3/PB4 TIM3 1kHz reference; "
+	ove_lxp_console_write("[rt-scope] CH1=D3/PB4 TIM3 1kHz reference; "
 		  "CH2=D4/PG7 critical-thread response\n");
 #endif
 
@@ -1037,12 +927,12 @@ static void demo_body(void *arg)
 	/* Say why we booted (a watchdog recovery must not look like a spontaneous reboot), then start
 	 * the feeder. The monitor is OVE_PRIO_HIGH, so it arms the IWDG and begins feeding immediately,
 	 * independent of the setup work below. */
-	sh_write0("[reset] cause: ");
-	sh_write0(ove_reset_cause_str(ove_reset_cause()));
-	sh_write0("\n");
+	ove_lxp_console_write("[reset] cause: ");
+	ove_lxp_console_write(ove_reset_cause_str(ove_reset_cause()));
+	ove_lxp_console_write("\n");
 	if (ove_thread_init(&g_wd, &g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH,
 			    sizeof(g_wd_stack), g_wd_stack) != OVE_OK)
-		sh_write0("[wd] FAIL: monitor thread init; running without a watchdog\n");
+		ove_lxp_console_write("[wd] FAIL: monitor thread init; running without a watchdog\n");
 #endif
 
 	const void *rootfs_image;
@@ -1074,7 +964,7 @@ static void demo_body(void *arg)
 		p = put_dec(p, sizeof(g_rootfs_names));
 		*p++ = '\n';
 		*p = 0;
-		sh_write0(b);
+		ove_lxp_console_write(b);
 		sh_exit(1);
 	}
 
@@ -1122,10 +1012,10 @@ static void demo_body(void *arg)
 			p = put_dec(p, gw.addr[3]);
 			*p++ = '\n';
 			*p = 0;
-			sh_write0(b);
+			ove_lxp_console_write(b);
 
 		} else {
-			sh_write0("[demo] eth0 bring-up FAILED\n");
+			ove_lxp_console_write("[demo] eth0 bring-up FAILED\n");
 		}
 	}
 #endif
@@ -1154,7 +1044,7 @@ static void demo_body(void *arg)
 #endif
 
 	/* ---- Phase 1: bidirectional round trip through BusyBox `cat` ---------- */
-	sh_write0("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
+	ove_lxp_console_write("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
 	/* BELOW the demo task (OVE_PRIO_NORMAL): the worker feeds the readings (before the program
 	 * launches) and drains its output (during/after the run). It runs when demo_body blocks — in
 	 * the pre-feed wait just below and, once the program is running, in the event-driven
@@ -1164,7 +1054,7 @@ static void demo_body(void *arg)
 	 * rootfs_window callback — so this priority is about I/O ordering, not protecting the load.) */
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
 			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
-		sh_write0("[demo] FAIL: ove_thread_init\n");
+		ove_lxp_console_write("[demo] FAIL: ove_thread_init\n");
 		sh_exit(1);
 	}
 	while (!g_feed_ready) /* let the feeder fill the queue before the program reads */
@@ -1182,7 +1072,7 @@ static void demo_body(void *arg)
 		.rt_scope_read = linux_rt_scope_proc_read,
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
-	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
+	ove_lxp_console_write("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
 	int rc1 = ove_lxp_host_run(&g_linux_host, &cfg1, "/bin/busybox", 1, cat_argv);
 
 	g_linux_done = 1;
@@ -1206,10 +1096,10 @@ static void demo_body(void *arg)
 		p = put_dec(p, (uint32_t)g_round_trip_n);
 		*p++ = '\n';
 		*p = 0;
-		sh_write0(b);
+		ove_lxp_console_write(b);
 		sh_exit(1);
 	}
-	sh_write0(
+	ove_lxp_console_write(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
 
 #if defined(CONFIG_OVE_LINUX_NET)
@@ -1227,20 +1117,17 @@ static void demo_body(void *arg)
 
 	/* ---- Phase 2: boot userspace or run the hard-float context regression - */
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
-	sh_write0("\n-- phase 2: hard-float guest context self-test --\n");
+	ove_lxp_console_write("\n-- phase 2: hard-float guest context self-test --\n");
 #else
-	sh_write0("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
+	ove_lxp_console_write("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
 		  " run commands, `poweroff` to halt) --\n");
 #endif
-	const lxp_launch_config_t cfg2 = {
-		.write_fn = console_write,
-		.read_fn = console_read,
-		.console_poll = console_poll,
-		.io_ctx = NULL,
+	lxp_launch_config_t cfg2 = {
 		.on_enosys = on_enosys,
 		.on_guest_exit = on_guest_exit,
 		.rt_scope_read = linux_rt_scope_proc_read,
 	};
+	ove_lxp_console_bind(&cfg2);
 	int rc2;
 #if LXP_ENABLE_LATENCY
 	/* Start the monitor here, not before phase 1: lxp_run() resets the coordinator's counters
@@ -1249,20 +1136,20 @@ static void demo_body(void *arg)
 	 * exactly the phase-2 run. */
 	if (ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
 			    sizeof(g_mon_stack), g_mon_stack) != OVE_OK) {
-		sh_write0("[demo] FAIL: latency monitor thread init\n");
+		ove_lxp_console_write("[demo] FAIL: latency monitor thread init\n");
 		sh_exit(1);
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
 	const char *const fp_argv[] = {"fpcheck", NULL};
 	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/usr/bin/fpcheck", 1, fp_argv);
-	sh_write0("\n=== interop demo done (hard-float self-test exited) ===\n");
+	ove_lxp_console_write("\n=== interop demo done (hard-float self-test exited) ===\n");
 #else
 	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
 	 * a login shell on the console. */
 	const char *const init_argv[] = {"init", NULL};
 	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/bin/busybox", 1, init_argv);
-	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
+	ove_lxp_console_write("\n=== interop demo done (uClinux halted) ===\n");
 #endif
 #if LXP_ENABLE_LATENCY
 	g_mon_stop = 1;
@@ -1281,7 +1168,7 @@ void ove_main(void)
 	/* FreeRTOS: the scheduler starts in ove_run(); run the demo in a task. */
 	if (ove_thread_init(&g_demo, &g_demo_storage, "demo", demo_body, NULL, OVE_PRIO_NORMAL,
 			    sizeof(g_demo_stack), g_demo_stack) != OVE_OK) {
-		sh_write0("[demo] FAIL: demo thread init\n");
+		ove_lxp_console_write("[demo] FAIL: demo thread init\n");
 		sh_exit(1);
 	}
 	ove_run(); /* ove_thread_start_scheduler() — never returns */

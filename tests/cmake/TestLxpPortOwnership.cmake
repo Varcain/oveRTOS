@@ -31,6 +31,7 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_disp_adapter.c"
     "backends/common/lxp_ove_fs_adapter.c"
     "backends/common/lxp_ove_host.c"
+    "backends/common/lxp_ove_console.c"
     "backends/common/lxp_ove_thread_adapter.c"
     "backends/freertos/freertos_lxp_host.c"
     "backends/nuttx/nuttx_lxp_host.c"
@@ -91,6 +92,17 @@ foreach(DISPLAY_LIFECYCLE IN ITEMS
             "display adapter omits provider lifecycle binding: ${DISPLAY_LIFECYCLE}")
     endif()
 endforeach()
+file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
+if(APP_TEXT MATCHES
+   "g_uart_lookahead|uart_rx_ready|OVE_UART_REG|static long console_(read|write)|static int console_poll|ove_console_(try_getchar|putchar|write)")
+    message(FATAL_ERROR
+        "linux_interop app regained oveRTOS-owned console transport mechanics")
+endif()
+file(READ "${OVE_ROOT}/backends/zephyr/zephyr_console.c" ZEPHYR_CONSOLE_TEXT)
+if(ZEPHYR_CONSOLE_TEXT MATCHES "lxp_console_kick|#[ \t]*include[ \t]*[<\"]lxp/")
+    message(FATAL_ERROR
+        "Zephyr console regained an implicit dependency on the LXP core")
+endif()
 foreach(RETIRED_HEADER IN ITEMS
         "backends/common/ove_cortex_m_cache.h"
         "backends/common/ove_cortex_m_mpu.h")

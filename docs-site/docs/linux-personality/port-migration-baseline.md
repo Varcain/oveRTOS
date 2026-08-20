@@ -297,3 +297,40 @@ storage with a matching deinitializer instead of leaking a heap-backed bus on
 the phase-1 to phase-2 launch transition. The ownership test prevents device
 tick/input policy or generic display initialization from returning to the host
 adapter or demo application.
+
+## Iteration 9: console transport and readiness ownership
+
+The demo application still owned the concrete program-console implementation:
+STM32 FIFO lookahead, QEMU UART1 registers, byte-at-a-time input, output newline
+translation, and readiness polling. Zephyr also called the global
+`lxp_console_kick()` symbol directly from its UART interrupt, coupling a generic
+oveRTOS backend to one personality's coordinator.
+
+Canonical LXP `9759a47` replaces that global entry point with a paired,
+run-scoped subscription in the launch contract. LXP installs its immutable
+coordinator callback only after the OS and memory contracts are ready, removes
+it before teardown, and owns whether a parked console wait uses readiness events
+or the bounded 5 ms polling fallback. A failed subscription fails the launch
+closed, and providers must stop callbacks before unsubscribe returns.
+
+oveRTOS now owns the concrete console transport in `lxp_ove_console.c`. It binds
+only the console fields of a caller-owned launch configuration, so the app keeps
+exit, workload, diagnostics, and RT-scope policy. FreeRTOS and Zephyr publish
+STM32 RX events; NuttX and QEMU retain the polling fallback because their current
+console paths do not expose an appropriate readiness source. Zephyr no longer
+includes or calls LXP from its generic console backend. FreeRTOS USART1 now runs
+at `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`, which is required because its
+RX callback can wake the coordinator through an ISR-safe FreeRTOS semaphore.
+
+All seven canonical LXP CTest targets and all 47 oveRTOS host/structural targets
+pass. Production links compare with Iteration 8 as follows:
+
+| Engine | Iteration 8 flash | Iteration 9 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 310,244 B | 310,596 B | +352 B |
+| NuttX | 355,436 B | 355,908 B | +472 B |
+| Zephyr | 356,640 B | 356,640 B | 0 B |
+
+The generated configurations and fixed LXP pools are unchanged. The ownership
+ledger rejects console transport mechanics in `linux_interop/app.c` and rejects
+any renewed direct dependency from the Zephyr console backend to LXP.
