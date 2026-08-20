@@ -673,3 +673,58 @@ and zero IRQ overruns:
 | FreeRTOS | 19,777 / 19,777 | 7.667 us | 74.722 us |
 | NuttX | 12,249 / 12,249 | 7.963 us | 49.704 us |
 | Zephyr | 25,251 / 25,251 | 7.778 us | 66.852 us |
+
+## Iteration 18: OVE-owned native filesystem capacity
+
+The generic NuttX filesystem backend included `lxp/lxp_config.h` solely to
+size its aligned FAT DMA sector pool from `LXP_NHOSTFS_OPEN`. This was an
+inverse ownership dependency: a reusable native backend knew which personality
+would consume it and how large that personality's descriptor table happened to
+be. FreeRTOS and Zephyr expressed the same requirement as independent literal
+16-entry FatFs reservations.
+
+`CONFIG_OVE_FS_MAX_OPEN_FILES` now defines the application-required number of
+concurrent caller-owned native file handles. It defaults to four for ordinary
+filesystem applications. The Full Linux profile explicitly requests sixteen,
+matching LXP's external descriptor table, while a private adapter assertion
+rejects either side drifting below that requirement. The setting is an OVE
+filesystem contract rather than an LXP definition: NuttX uses it for aligned
+per-file FAT DMA sectors, FreeRTOS for `_FS_LOCK`, and Zephyr for
+`CONFIG_FS_FATFS_NUM_FILES`.
+
+This does not enlarge the separate four-entry `ove_fs_open()` convenience
+pool. High-concurrency clients use `ove_fs_open_init()` with caller-owned
+storage, as the LXP adapter already does. It also does not size directory
+objects: Zephyr's independent eight-directory pool is unchanged. The present
+requirement is specifically the worst case in which all sixteen LXP external
+descriptors are files.
+
+The ownership ledger now rejects LXP includes or constants in every production
+native filesystem backend, requires the adapter capacity assertion, and checks
+that the FreeRTOS and Zephyr native reservations derive from the OVE setting.
+Host verification passed 435 normal C assertions, 262 C++ tests, 304 Rust
+tests, and 436 ASan/UBSan assertions.
+
+The Full profile still reserves exactly the same resources as before: NuttX's
+link contains seventeen aligned 512-byte FAT sectors (sixteen open files plus
+the mounted volume), FreeRTOS's FatFs lock table contains sixteen entries, and
+Zephyr resolves `CONFIG_FS_FATFS_NUM_FILES=16`. Consequently clean committed
+STM32 links have no flash or fixed-RAM cost:
+
+| Engine | Iteration 17 flash | Iteration 18 flash | Delta | Fixed RAM |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 311,244 B | 311,244 B | 0 B | 241,048 B |
+| NuttX | 356,380 B | 356,380 B | 0 B | 231,044 B |
+| Zephyr | 356,264 B | 356,264 B | 0 B | 247 KiB |
+
+Every committed image was flashed and reached the Linux guest over SSH. A Lua
+probe opened sixteen `/data` files simultaneously, wrote and flushed each one,
+closed every handle, and removed the test files successfully on all engines.
+The accompanying light-load RT windows recorded no misses, late finishes, IRQ
+overruns, or pending work:
+
+| Engine | Releases / executions | Dispatch average | Dispatch maximum |
+|---|---:|---:|---:|
+| FreeRTOS | 114,753 / 114,753 | 7.630 us | 81.111 us |
+| NuttX | 45,657 / 45,657 | 7.926 us | 51.389 us |
+| Zephyr | 45,502 / 45,502 | 7.778 us | 50.370 us |
