@@ -575,3 +575,57 @@ sizes. The representation boundary therefore has no runtime or storage cost:
 | FreeRTOS | 310,940 B | 310,940 B | 0 B | 23,816 B | 241,048 B |
 | NuttX | 356,076 B | 356,076 B | 0 B | 20,740 B | 231,044 B |
 | Zephyr | 356,996 B | 356,996 B | 0 B | 23,812 B | 247 KiB |
+
+## Iteration 16: OVE-owned observability records
+
+The public observability facade still included `lxp/lxp_observe.h` and aliased
+all canonical snapshot, diagnostic, and latency structures. Applications did
+not call an LXP function directly, but the public OVE contract nevertheless
+inherited canonical field layout, feature gates, slot bounds, service-class
+bounds, and ABI changes. That was the remaining explicit representation leak
+called out by Iteration 15.
+
+`ove/lxp_observability.h` now defines versioned OVE-owned records for run
+health, size accounting, diagnostic errors and health, guest stack use, and
+optional latency rows. The common backend takes one canonical quiescent
+snapshot into private temporary storage, validates every nested record version
+and size, and copies fields into the public record. Latency recording similarly
+copies an OVE histogram into a private canonical value, invokes LXP's canonical
+bucket algorithm, and copies the result back. Neither path relies on compatible
+structure layout or a representation cast.
+
+OVE bounds the copied latency contract at eight buckets, fifteen service rows,
+and sixteen guest wake rows. Private compile-time assertions bind those limits
+to the current canonical ABI, complete service-class set, supported maximum
+slot count, and matching latency feature gates. Runtime count checks fail
+closed and clear the destination before any oversized canonical record is
+exposed. The ownership ledger also rejects canonical includes, type names, or
+constants if they return to the public header.
+
+The normal profile compiles latency arrays out, just as before. Diagnostic
+collection temporarily holds one additional canonical snapshot on the caller's
+stack after a run has become quiescent; it adds no fixed allocation and no work
+to the active coordinator path. Host tests cover field-by-field independence,
+live-health normalization, canonical latency delegation, busy/error clearing,
+ABI rejection, and capacity rejection.
+
+The extra translation text also exposed a Zephyr userspace build instability:
+absolute device-object addresses are inputs to the generated gperf hash, and a
+small text shift can produce a larger prebuilt table. Zephyr's default 100%
+reserve then moved BSS across a 4 KiB MPU-alignment boundary. The STM32 board
+now reserves 50% instead. That covers every measured final/prebuilt table ratio
+(the worst was 1.23), preserves link-time overflow failure, and removes the
+address-dependent 4 KiB RAM jump. Minimal, Full, and Diagnostic all link with
+the bounded reserve. Hardened still reaches its pre-existing, independently
+reproduced 48,240-byte SDRAM overflow before kobject generation; that profile
+budget defect is not caused by the observability boundary or reserve setting.
+
+Clean Full-profile production links show that the owned record contract adds
+only translation text. Fixed RAM and the public host object are unchanged;
+Zephyr's smaller flash span is the removed excess kobject reserve:
+
+| Engine | Iteration 15 flash | Iteration 16 flash | Delta | Host object | Fixed RAM |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 310,940 B | 311,252 B | +312 B | 23,816 B | 241,048 B |
+| NuttX | 356,076 B | 356,396 B | +320 B | 20,740 B | 231,044 B |
+| Zephyr | 356,996 B | 356,444 B | -552 B | 23,812 B | 247 KiB |

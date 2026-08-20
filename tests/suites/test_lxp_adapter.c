@@ -16,7 +16,9 @@
 #include "ove/lxp_host.h"
 #include "ove/lxp_console.h"
 #include "ove/lxp_metrics.h"
+#include "ove/lxp_observability.h"
 #include "lxp/lxp_host.h"
+#include "lxp/lxp_observe.h"
 #include "lxp/lxp_rt_metrics.h"
 #include "ove/thread.h"
 #include "ove_net_ready.h"
@@ -49,6 +51,12 @@ static const lxp_host_t *g_host_run_target;
 static lxp_launch_config_t g_host_run_config;
 static unsigned g_guest_exit_calls;
 static ove_lxp_guest_exit_info_t g_guest_exit_info;
+static lxp_host_observation_t g_host_observation;
+static const lxp_host_t *g_host_observe_target;
+static int g_host_observe_result;
+static lxp_run_health_t g_run_health;
+static lxp_lat_stat_t g_lat_record_input;
+static unsigned g_lat_record_calls;
 
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
@@ -78,8 +86,8 @@ int lxp_host_init_cpio(lxp_host_t *host, const lxp_host_config_t *config)
 	return LXP_OK;
 }
 
-int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config,
-		 const char *path, int argc, const char *const argv[])
+int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config, const char *path,
+		 int argc, const char *const argv[])
 {
 	(void)path;
 	(void)argc;
@@ -105,6 +113,38 @@ int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config,
 		}
 	}
 	return 37;
+}
+
+int lxp_host_observe(const lxp_host_t *host, lxp_host_observation_t *out)
+{
+	g_host_observe_target = host;
+	if (out)
+		*out = g_host_observation;
+	return g_host_observe_result;
+}
+
+void lxp_run_health(lxp_run_health_t *out)
+{
+	*out = g_run_health;
+}
+
+void lxp_lat_record(lxp_lat_stat_t *stat, uint64_t ns)
+{
+	g_lat_record_calls++;
+	g_lat_record_input = *stat;
+	stat->count++;
+	stat->max_ns = (uint32_t)ns;
+	stat->buckets[6]++;
+}
+
+const char *lxp_lat_class_name(int cls)
+{
+	return cls == LXP_EV_FORK ? "FORK" : "?";
+}
+
+const char *lxp_diag_issue_name(unsigned issue)
+{
+	return issue == 7u ? "bad-seven" : "?";
 }
 
 static void test_socket_ready(const void *context)
@@ -603,6 +643,156 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_init_calls, 1);
 }
 
+static void test_observability_facade_copies_contract(void **state)
+{
+	(void)state;
+	ove_lxp_host_t host = {0};
+	ove_lxp_host_observation_t out;
+	memset(&g_host_observation, 0, sizeof(g_host_observation));
+	g_host_observation.abi_version = LXP_HOST_OBSERVATION_ABI_VERSION;
+	g_host_observation.struct_size = sizeof(g_host_observation);
+	g_host_observation.run_health.coord_iters = 1234u;
+	g_host_observation.run_health.active = 0;
+	g_host_observation.sizes = (lxp_diag_size_report_t){
+		.abi_version = LXP_DIAG_ABI_VERSION,
+		.struct_size = sizeof(lxp_diag_size_report_t),
+		.slots = 12u,
+		.regions = 8u,
+		.proc = 101u,
+		.mm = 102u,
+		.files = 103u,
+		.fs = 104u,
+		.sighand = 105u,
+		.thread_group = 106u,
+		.arena = 107u,
+		.exec_capture = 108u,
+		.resume_context = 109u,
+		.deferred_request = 110u,
+		.signal_save_stack = 111u,
+		.vfork_guard = 112u,
+		.debug_record = 113u,
+		.per_slot_core = 114u,
+		.per_region_core = 115u,
+		.slot_table = 116u,
+		.coordinator_static = 117u,
+	};
+	g_host_observation.diagnostics = (lxp_diag_health_t){
+		.abi_version = LXP_DIAG_ABI_VERSION,
+		.struct_size = sizeof(lxp_diag_health_t),
+		.checks = 91u,
+		.failures = 2u,
+		.first_error =
+			{
+				.abi_version = LXP_DIAG_ABI_VERSION,
+				.struct_size = sizeof(lxp_diag_error_t),
+				.issue = 7u,
+				.slot = 3,
+				.region = 4,
+				.actual = 5u,
+				.expected = 6u,
+			},
+		.last_error =
+			{
+				.abi_version = LXP_DIAG_ABI_VERSION,
+				.struct_size = sizeof(lxp_diag_error_t),
+				.issue = 8u,
+				.slot = 9,
+				.region = 10,
+				.actual = 11u,
+				.expected = 12u,
+			},
+	};
+	g_host_observation.guest_stack.used = 144u;
+	g_host_observation.guest_stack.size = 768u;
+	g_host_observation.guest_stack.available = 1u;
+	g_host_observation.latency_service_count = 1u;
+	g_host_observation.latency_services[0].id = LXP_EV_FORK;
+	g_host_observation.latency_services[0].stat.count = 7u;
+	g_host_observation.latency_services[0].stat.max_ns = 8100u;
+	g_host_observation.latency_services[0].stat.buckets[3] = 7u;
+	g_host_observation.latency_wake_count = 1u;
+	g_host_observation.latency_wakes[0].id = 2u;
+	g_host_observation.latency_wakes[0].stat.count = 3u;
+	g_host_observation.latency_wakes[0].stat.buckets[4] = 3u;
+	g_host_observe_result = LXP_OK;
+	g_host_observe_target = NULL;
+
+	assert_int_equal(ove_lxp_host_observe(&host, &out), OVE_OK);
+	assert_true(host_storage_contains(&host, g_host_observe_target,
+					  sizeof(*g_host_observe_target)));
+	assert_int_equal(out.abi_version, OVE_LXP_HOST_OBSERVATION_ABI_VERSION);
+	assert_int_equal(out.struct_size, sizeof(out));
+	assert_int_equal(out.run_health.coordinator_iterations, 1234u);
+	assert_int_equal(out.run_health.active, 0u);
+	assert_int_equal(out.sizes.abi_version, OVE_LXP_DIAGNOSTICS_ABI_VERSION);
+	assert_int_equal(out.sizes.struct_size, sizeof(out.sizes));
+	assert_int_equal(out.sizes.slots, 12u);
+	assert_int_equal(out.sizes.regions, 8u);
+	assert_int_equal(out.sizes.proc, 101u);
+	assert_int_equal(out.sizes.signal_save_stack, 111u);
+	assert_int_equal(out.sizes.coordinator_static, 117u);
+	assert_int_equal(out.diagnostics.abi_version, OVE_LXP_DIAGNOSTICS_ABI_VERSION);
+	assert_int_equal(out.diagnostics.struct_size, sizeof(out.diagnostics));
+	assert_int_equal(out.diagnostics.checks, 91u);
+	assert_int_equal(out.diagnostics.failures, 2u);
+	assert_int_equal(out.diagnostics.first_error.abi_version, OVE_LXP_DIAGNOSTICS_ABI_VERSION);
+	assert_int_equal(out.diagnostics.first_error.issue, 7u);
+	assert_int_equal(out.diagnostics.first_error.slot, 3);
+	assert_int_equal(out.diagnostics.last_error.expected, 12u);
+	assert_int_equal(out.guest_stack.used, 144u);
+	assert_int_equal(out.guest_stack.size, 768u);
+	assert_int_equal(out.guest_stack.available, 1u);
+	assert_int_equal(out.latency_service_count, 1u);
+	assert_int_equal(out.latency_services[0].id, LXP_EV_FORK);
+	assert_int_equal(out.latency_services[0].stat.count, 7u);
+	assert_int_equal(out.latency_services[0].stat.max_ns, 8100u);
+	assert_int_equal(out.latency_services[0].stat.buckets[3], 7u);
+	assert_string_equal(ove_lxp_observation_service_name(&out, 0u), "FORK");
+	assert_int_equal(out.latency_wake_count, 1u);
+	assert_int_equal(out.latency_wakes[0].id, 2u);
+	assert_int_equal(out.latency_wakes[0].stat.buckets[4], 3u);
+	assert_string_equal(ove_lxp_observation_issue_name(7u), "bad-seven");
+
+	g_host_observation.latency_services[0].stat.count = 99u;
+	assert_int_equal(out.latency_services[0].stat.count, 7u);
+
+	ove_lxp_latency_stat_t stat = {.count = 3u, .max_ns = 10u, .buckets = {3u}};
+	g_lat_record_calls = 0u;
+	memset(&g_lat_record_input, 0, sizeof(g_lat_record_input));
+	ove_lxp_latency_record(&stat, 1234u);
+	assert_int_equal(g_lat_record_calls, 1u);
+	assert_int_equal(g_lat_record_input.count, 3u);
+	assert_int_equal(g_lat_record_input.buckets[0], 3u);
+	assert_int_equal(stat.count, 4u);
+	assert_int_equal(stat.max_ns, 1234u);
+	assert_int_equal(stat.buckets[6], 1u);
+
+	g_run_health.coord_iters = 55u;
+	g_run_health.active = 3;
+	ove_lxp_run_health_t health = {0};
+	ove_lxp_run_health_snapshot(&health);
+	assert_int_equal(health.coordinator_iterations, 55u);
+	assert_int_equal(health.active, 1u);
+
+	g_host_observation.abi_version = 99u;
+	memset(&out, 0xa5, sizeof(out));
+	assert_int_equal(ove_lxp_host_observe(&host, &out), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(out.abi_version, 0u);
+	g_host_observation.abi_version = LXP_HOST_OBSERVATION_ABI_VERSION;
+	g_host_observe_result = LXP_ERR_BUSY;
+	memset(&out, 0xa5, sizeof(out));
+	assert_int_equal(ove_lxp_host_observe(&host, &out), OVE_ERR_BUSY);
+	assert_int_equal(out.struct_size, 0u);
+	assert_int_equal(ove_lxp_host_observe(NULL, &out), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(out.abi_version, 0u);
+
+	g_host_observe_result = LXP_OK;
+	g_host_observation.latency_service_count = OVE_LXP_LATENCY_SERVICE_CAPACITY + 1u;
+	memset(&out, 0xa5, sizeof(out));
+	assert_int_equal(ove_lxp_host_observe(&host, &out), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(out.abi_version, 0u);
+}
+
 static void test_console_adapter_binds_only_console_policy(void **state)
 {
 	(void)state;
@@ -738,6 +928,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_fs_adapter_async_cancel_retires_owner),
 		cmocka_unit_test(test_adapter_open_close),
 		cmocka_unit_test(test_host_facade_owns_composition),
+		cmocka_unit_test(test_observability_facade_copies_contract),
 		cmocka_unit_test(test_console_adapter_binds_only_console_policy),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
