@@ -11,6 +11,7 @@
 #if defined(CONFIG_OVE_LINUX_FS)
 
 #include "lxp/lxp_config.h"
+#include "lxp/lxp_async_gate.h"
 #include "lxp/lxp_block_ops.h"
 #include "lxp/lxp_fs_ops.h"
 #include "ove/block.h"
@@ -34,6 +35,8 @@
 #define LXP_OVE_FS_WORKER_STACK 4096u
 #define LXP_OVE_FS_WORKER_PRIORITY OVE_PRIO_ABOVE_NORMAL
 #define LXP_OVE_FS_IO_CHUNK 4096u
+#define STORAGE_RUN_FS 0x01u
+#define STORAGE_RUN_BLOCK 0x02u
 
 _Static_assert(OVE_PRIO_ABOVE_NORMAL < OVE_PRIO_HIGH,
 	       "native FS worker must remain below high-priority RT work");
@@ -231,22 +234,14 @@ static uint8_t g_io_buffer[LXP_OVE_FS_IO_CHUNK] LXP_OVE_FS_IO_BUFFER_SECTION
 static uint8_t g_block_sector[4096] LXP_OVE_FS_IO_BUFFER_SECTION __attribute__((aligned(32)));
 static int g_active;
 static int g_mounted;
-static unsigned int g_run_users;
-static int g_fs_run_entered;
-static int g_block_run_entered;
-static unsigned int g_raw_readers;
-static unsigned int g_raw_writer;
+static unsigned int g_run_clients;
 static ove_block_t g_raw_block;
 static struct ove_fs_volume g_mount_volume;
 static int g_mount_volume_valid;
 static struct ove_block_info g_block_info;
 static int g_block_info_valid;
 static lxp_fs_metrics_t g_metrics;
-enum fs_async_state {
-	FS_ASYNC_IDLE = 0,
-	FS_ASYNC_ACTIVE,
-	FS_ASYNC_COMPLETE,
-};
+static lxp_async_gate_t g_async_gate;
 static struct fs_request g_async_request;
 static char g_async_path[LXP_FS_NAME_MAX];
 static char g_async_new_path[LXP_FS_NAME_MAX];
@@ -259,10 +254,6 @@ static lxp_fs_dirent_t g_async_dirent;
 static lxp_block_info_t g_async_block_info;
 static lxp_fs_mount_spec_t g_async_mount_spec;
 static uint64_t g_async_offset;
-static uint64_t g_selected_owner;
-static uint64_t g_async_owner;
-static int g_async_cancelled;
-static int g_async_state;
 static uint64_t g_server_period_start_us;
 static unsigned int g_server_requests;
 
@@ -498,11 +489,8 @@ static int execute_request(struct fs_request *request)
 	}
 	if (request->op == FS_REQ_STOP) {
 		close_all_handles();
-		if (g_raw_block.lease.active) {
+		if (g_raw_block.lease.active)
 			ove_block_close(&g_raw_block);
-		}
-		g_raw_readers = 0u;
-		g_raw_writer = 0u;
 		if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0)
 			ove_fs_unmount(NULL);
 		__atomic_store_n(&g_mounted, 0, __ATOMIC_RELEASE);
@@ -546,7 +534,7 @@ static int execute_request(struct fs_request *request)
 		ove_block_close(&g_raw_block);
 		return LXP_OK;
 	}
-	if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u)
+	if (g_raw_block.lease.active && (g_raw_block.flags & OVE_BLOCK_OPEN_WRITE) != 0u)
 		return LXP_ERR_BUSY;
 	rc = ensure_mounted();
 	if (rc != LXP_OK)
@@ -987,6 +975,33 @@ static int async_collect(struct fs_request *request)
 	return g_async_request.result;
 }
 
+/* A cancelled open may already have allocated a native handle before the
+ * worker observes cancellation. Its result will never reach the Linux open
+ * table, so the provider must reclaim that orphan explicitly. Other completed
+ * operations retain their normal interruption semantics: visible side effects
+ * may have happened even when the syscall result is discarded. */
+static void async_discard(const struct fs_request *request)
+{
+	if (!request || request->result != LXP_OK)
+		return;
+	struct fs_handle_slot *slot = NULL;
+	if (request->op == FS_REQ_FILE_OPEN) {
+		slot = file_slot(g_async_file);
+	} else if (request->op == FS_REQ_OBJECT_OPEN) {
+		slot = g_async_open.type == LXP_FS_TYPE_DIR ? dir_slot(g_async_open.handle.dir)
+							  : file_slot(g_async_open.handle.file);
+	} else if (request->op == FS_REQ_DIR_OPEN) {
+		slot = dir_slot(g_async_dir);
+	}
+	if (!slot)
+		return;
+	if (slot->kind == FS_HANDLE_FILE)
+		(void)ove_fs_close_deinit(slot->handle.file.native);
+	else if (slot->kind == FS_HANDLE_DIR)
+		(void)ove_fs_closedir_deinit(slot->handle.dir.native);
+	memset(slot, 0, sizeof(*slot));
+}
+
 static void fs_server_admit(void)
 {
 	const uint64_t period_us = CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US;
@@ -1026,17 +1041,18 @@ static void fs_worker(void *arg)
 						  CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US;
 		int stop = request->op == FS_REQ_STOP;
 		if (request->asynchronous) {
-			if (__atomic_load_n(&g_async_cancelled, __ATOMIC_ACQUIRE)) {
-				__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
+			if (lxp_async_gate_complete(&g_async_gate) == LXP_ASYNC_GATE_WAKE) {
+				if (request->op == FS_REQ_BLOCK_INFO ||
+				    request->op == FS_REQ_BLOCK_READ ||
+				    request->op == FS_REQ_BLOCK_WRITE ||
+				    request->op == FS_REQ_BLOCK_SYNC)
+					lxp_block_kick();
+				else
+					lxp_fs_kick();
 			} else {
-				__atomic_store_n(&g_async_state, FS_ASYNC_COMPLETE,
-						 __ATOMIC_RELEASE);
+				async_discard(request);
+				lxp_async_gate_dropped(&g_async_gate);
 			}
-			if (request->op == FS_REQ_BLOCK_INFO || request->op == FS_REQ_BLOCK_READ ||
-			    request->op == FS_REQ_BLOCK_WRITE || request->op == FS_REQ_BLOCK_SYNC)
-				lxp_block_kick();
-			else
-				lxp_fs_kick();
 		} else {
 			ove_event_signal(g_complete);
 		}
@@ -1054,6 +1070,55 @@ static void metrics_record_completion_wait(const struct fs_request *request)
 	g_metrics.completion_wait_us_total += wait_us;
 	if (wait_us > g_metrics.completion_wait_us_max)
 		g_metrics.completion_wait_us_max = wait_us;
+}
+
+static void metrics_request_submitted(struct fs_request *request)
+{
+	request->submitted_us = 0u;
+	request->started_us = 0u;
+	request->finished_us = 0u;
+	(void)ove_time_get_us(&request->submitted_us);
+	g_metrics.requests_submitted++;
+	g_metrics.pending++;
+	if (g_metrics.pending > g_metrics.queue_depth_max)
+		g_metrics.queue_depth_max = g_metrics.pending;
+}
+
+static void metrics_request_finished(const struct fs_request *request, int result,
+				     int worker_completed)
+{
+	metrics_record_completion_wait(request);
+	uint64_t queue_us = request->started_us >= request->submitted_us
+				    ? request->started_us - request->submitted_us
+				    : 0u;
+	uint64_t service_us = request->finished_us >= request->started_us
+				      ? request->finished_us - request->started_us
+				      : 0u;
+	if (g_metrics.pending)
+		g_metrics.pending--;
+	if (worker_completed) {
+		g_metrics.requests_completed++;
+		if (result != LXP_OK && result != LXP_ERR_EOF)
+			g_metrics.requests_failed++;
+		if (request->op == FS_REQ_FILE_READ)
+			g_metrics.bytes_read += request->args.file_read.transferred;
+		else if (request->op == FS_REQ_FILE_PREAD)
+			g_metrics.bytes_read += request->args.file_pread.transferred;
+		else if (request->op == FS_REQ_FILE_WRITE)
+			g_metrics.bytes_written += request->args.file_write.transferred;
+		else if (request->op == FS_REQ_FILE_PWRITE)
+			g_metrics.bytes_written += request->args.file_pwrite.transferred;
+	} else {
+		g_metrics.requests_failed++;
+	}
+	g_metrics.queue_wait_us_total += queue_us;
+	if (queue_us > g_metrics.queue_wait_us_max)
+		g_metrics.queue_wait_us_max = queue_us;
+	g_metrics.service_us_total += service_us;
+	if (service_us > g_metrics.service_us_max)
+		g_metrics.service_us_max = service_us;
+	if (request->budget_overrun)
+		g_metrics.budget_overruns++;
 }
 
 static int submit_sync(struct fs_request *request)
@@ -1091,16 +1156,8 @@ static int submit_sync(struct fs_request *request)
 		return LXP_ERR_INVALID_PARAM;
 	}
 	int measured = request->op != FS_REQ_MOUNT && request->op != FS_REQ_STOP;
-	request->submitted_us = 0;
-	request->started_us = 0;
-	request->finished_us = 0;
-	if (measured) {
-		(void)ove_time_get_us(&request->submitted_us);
-		g_metrics.requests_submitted++;
-		g_metrics.pending++;
-		if (g_metrics.pending > g_metrics.queue_depth_max)
-			g_metrics.queue_depth_max = g_metrics.pending;
-	}
+	if (measured)
+		metrics_request_submitted(request);
 	struct fs_request *queued = request;
 	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
 	if (rc == OVE_OK)
@@ -1124,90 +1181,29 @@ static int submit_sync(struct fs_request *request)
 			memcpy(destination, g_io_buffer, transferred);
 		}
 	}
-	if (measured) {
-		metrics_record_completion_wait(request);
-		uint64_t queue_us = request->started_us >= request->submitted_us
-					    ? request->started_us - request->submitted_us
-					    : 0;
-		uint64_t service_us = request->finished_us >= request->started_us
-					      ? request->finished_us - request->started_us
-					      : 0;
-		g_metrics.pending--;
-		if (rc == OVE_OK) {
-			g_metrics.requests_completed++;
-			if (request->result != LXP_OK && request->result != LXP_ERR_EOF)
-				g_metrics.requests_failed++;
-			if (request->op == FS_REQ_FILE_READ)
-				g_metrics.bytes_read += request->args.file_read.transferred;
-			else if (request->op == FS_REQ_FILE_PREAD)
-				g_metrics.bytes_read += request->args.file_pread.transferred;
-			else if (request->op == FS_REQ_FILE_WRITE)
-				g_metrics.bytes_written += request->args.file_write.transferred;
-			else if (request->op == FS_REQ_FILE_PWRITE)
-				g_metrics.bytes_written += request->args.file_pwrite.transferred;
-		} else {
-			g_metrics.requests_failed++;
-		}
-		g_metrics.queue_wait_us_total += queue_us;
-		if (queue_us > g_metrics.queue_wait_us_max)
-			g_metrics.queue_wait_us_max = queue_us;
-		g_metrics.service_us_total += service_us;
-		if (service_us > g_metrics.service_us_max)
-			g_metrics.service_us_max = service_us;
-		if (request->budget_overrun)
-			g_metrics.budget_overruns++;
-	}
+	if (measured)
+		metrics_request_finished(request, rc == OVE_OK ? request->result : rc,
+					 rc == OVE_OK);
 	ove_mutex_unlock(g_submit_lock);
 	return rc == OVE_OK ? request->result : rc;
 }
 
-static void async_metrics_complete(const struct fs_request *request, int result)
-{
-	metrics_record_completion_wait(request);
-	uint64_t queue_us = request->started_us >= request->submitted_us
-				    ? request->started_us - request->submitted_us
-				    : 0;
-	uint64_t service_us = request->finished_us >= request->started_us
-				      ? request->finished_us - request->started_us
-				      : 0;
-	if (g_metrics.pending)
-		g_metrics.pending--;
-	g_metrics.requests_completed++;
-	if (result != LXP_OK && result != LXP_ERR_EOF)
-		g_metrics.requests_failed++;
-	if (request->op == FS_REQ_FILE_READ)
-		g_metrics.bytes_read += request->args.file_read.transferred;
-	else if (request->op == FS_REQ_FILE_PREAD)
-		g_metrics.bytes_read += request->args.file_pread.transferred;
-	else if (request->op == FS_REQ_FILE_WRITE)
-		g_metrics.bytes_written += request->args.file_write.transferred;
-	else if (request->op == FS_REQ_FILE_PWRITE)
-		g_metrics.bytes_written += request->args.file_pwrite.transferred;
-	g_metrics.queue_wait_us_total += queue_us;
-	if (queue_us > g_metrics.queue_wait_us_max)
-		g_metrics.queue_wait_us_max = queue_us;
-	g_metrics.service_us_total += service_us;
-	if (service_us > g_metrics.service_us_max)
-		g_metrics.service_us_max = service_us;
-	if (request->budget_overrun)
-		g_metrics.budget_overruns++;
-}
-
 static int submit_async(struct fs_request *request)
 {
-	int state = __atomic_load_n(&g_async_state, __ATOMIC_ACQUIRE);
-	if (state == FS_ASYNC_ACTIVE)
+	lxp_async_gate_action_t action =
+		lxp_async_gate_enter(&g_async_gate, (uint32_t)request->op);
+	if (action == LXP_ASYNC_GATE_BLOCK)
 		return LXP_ERR_WOULD_BLOCK;
-	if (state == FS_ASYNC_COMPLETE) {
-		if (g_async_owner != g_selected_owner || request->op != g_async_request.op)
-			return LXP_ERR_WOULD_BLOCK;
+	if (action == LXP_ASYNC_GATE_COLLECT) {
 		int result = async_collect(request);
-		async_metrics_complete(&g_async_request, result);
-		g_async_owner = 0;
-		__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
+		metrics_request_finished(&g_async_request, result, 1);
+		lxp_async_gate_collected(&g_async_gate);
 		return result;
 	}
+	if (action != LXP_ASYNC_GATE_SUBMIT)
+		return LXP_ERR_INVALID_PARAM;
 
+	int rc = LXP_OK;
 	if (request->op == FS_REQ_FILE_WRITE || request->op == FS_REQ_FILE_PWRITE ||
 	    request->op == FS_REQ_BLOCK_WRITE) {
 		const void *source = request->op == FS_REQ_FILE_WRITE ? request->args.file_write.buf
@@ -1218,8 +1214,10 @@ static int submit_async(struct fs_request *request)
 			       : request->op == FS_REQ_FILE_PWRITE
 				       ? request->args.file_pwrite.count
 				       : request->args.block_write.count;
-		if ((source == NULL && count != 0u) || count > sizeof(g_io_buffer))
-			return LXP_ERR_INVALID_PARAM;
+		if ((source == NULL && count != 0u) || count > sizeof(g_io_buffer)) {
+			rc = LXP_ERR_INVALID_PARAM;
+			goto abort;
+		}
 		if (count)
 			memcpy(g_io_buffer, source, count);
 	} else if ((request->op == FS_REQ_FILE_READ &&
@@ -1228,44 +1226,46 @@ static int submit_async(struct fs_request *request)
 							 request->args.file_pread.count != 0u)) ||
 		   (request->op == FS_REQ_BLOCK_READ && (request->args.block_read.buf == NULL &&
 							 request->args.block_read.count != 0u))) {
-		return LXP_ERR_INVALID_PARAM;
+		rc = LXP_ERR_INVALID_PARAM;
+		goto abort;
 	}
 
-	int rc = async_prepare(request);
+	rc = async_prepare(request);
 	if (rc != LXP_OK)
-		return rc;
-	g_async_owner = g_selected_owner;
-	__atomic_store_n(&g_async_cancelled, 0, __ATOMIC_RELEASE);
-	(void)ove_time_get_us(&g_async_request.submitted_us);
-	g_metrics.requests_submitted++;
-	g_metrics.pending++;
-	if (g_metrics.pending > g_metrics.queue_depth_max)
-		g_metrics.queue_depth_max = g_metrics.pending;
-	__atomic_store_n(&g_async_state, FS_ASYNC_ACTIVE, __ATOMIC_RELEASE);
+		goto abort;
+	metrics_request_submitted(&g_async_request);
 	struct fs_request *queued = &g_async_request;
 	rc = ove_queue_send(g_request_queue, &queued, 0);
 	if (rc != OVE_OK) {
-		__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
 		g_metrics.pending--;
 		g_metrics.requests_failed++;
-		return rc;
+		goto abort;
 	}
 	return LXP_ERR_WOULD_BLOCK;
+
+abort:
+	lxp_async_gate_abort(&g_async_gate);
+	return rc;
 }
 
-static int submit(struct fs_request *request)
+/* NuttX's GCC otherwise specializes this entire dispatcher into every small
+ * provider wrapper, duplicating roughly 15 KiB of sync/async machinery. */
+static __attribute__((noinline)) int submit(struct fs_request *request)
 {
-	return g_selected_owner != 0u && request->op != FS_REQ_STOP ? submit_async(request)
-								    : submit_sync(request);
+	return lxp_async_gate_selected(&g_async_gate) != 0u && request->op != FS_REQ_STOP
+		       ? submit_async(request)
+		       : submit_sync(request);
 }
 
-static int storage_run_begin(void)
+static int storage_run_begin(unsigned int client)
 {
 	struct fs_request request = {.op = FS_REQ_MOUNT};
 	int rc;
 
+	if ((g_run_clients & client) != 0u)
+		return LXP_ERR_WOULD_BLOCK;
 	if (g_active) {
-		g_run_users++;
+		g_run_clients |= client;
 		return LXP_OK;
 	}
 	memset(g_handles, 0, sizeof(g_handles));
@@ -1273,17 +1273,12 @@ static int storage_run_begin(void)
 	ove_fs_media_metrics_reset();
 	memset(&g_raw_block, 0, sizeof(g_raw_block));
 	memset(&g_async_request, 0, sizeof(g_async_request));
-	g_selected_owner = 0;
-	g_async_owner = 0;
-	g_async_cancelled = 0;
-	g_async_state = FS_ASYNC_IDLE;
+	lxp_async_gate_init(&g_async_gate);
 	g_server_period_start_us = 0;
 	g_server_requests = 0;
 	__atomic_store_n(&g_mounted, 0, __ATOMIC_RELEASE);
 	g_mount_volume_valid = 0;
 	g_block_info_valid = 0;
-	g_raw_readers = 0;
-	g_raw_writer = 0;
 	rc = ove_mutex_init(&g_submit_lock, &g_submit_lock_storage);
 	if (rc != OVE_OK)
 		return rc;
@@ -1305,7 +1300,7 @@ static int storage_run_begin(void)
 	if (rc != OVE_OK)
 		goto fail_thread;
 	g_active = 1;
-	g_run_users = 1;
+	g_run_clients = client;
 	/* Missing media is intentionally not a lifecycle failure. The worker retries
 	 * mounting on the first subsequent operation, so hot insertion also works. */
 	(void)submit(&request);
@@ -1320,15 +1315,16 @@ fail_event:
 	return rc;
 }
 
-static void storage_run_end(void)
+static void storage_run_end(unsigned int client)
 {
 	struct fs_request request = {.op = FS_REQ_STOP};
 
-	if (!g_active || g_run_users == 0u)
+	if (!g_active || (g_run_clients & client) == 0u)
 		return;
-	if (--g_run_users != 0u)
+	g_run_clients &= ~client;
+	if (g_run_clients != 0u)
 		return;
-	g_selected_owner = 0;
+	lxp_async_gate_select(&g_async_gate, 0u);
 	int rc = submit(&request);
 	if (rc == LXP_OK)
 		(void)ove_thread_deinit(g_worker);
@@ -1341,56 +1337,37 @@ static void storage_run_end(void)
 
 static int fs_run_begin(void)
 {
-	if (g_fs_run_entered)
-		return LXP_ERR_WOULD_BLOCK;
-	int rc = storage_run_begin();
-	if (rc == LXP_OK)
-		g_fs_run_entered = 1;
-	return rc;
+	return storage_run_begin(STORAGE_RUN_FS);
 }
 
 static void fs_run_end(void)
 {
-	if (!g_fs_run_entered)
-		return;
-	g_fs_run_entered = 0;
-	storage_run_end();
+	storage_run_end(STORAGE_RUN_FS);
 }
 
 static int block_run_begin(void)
 {
-	if (g_block_run_entered)
-		return LXP_ERR_WOULD_BLOCK;
-	int rc = storage_run_begin();
-	if (rc == LXP_OK)
-		g_block_run_entered = 1;
-	return rc;
+	return storage_run_begin(STORAGE_RUN_BLOCK);
 }
 
 static void block_run_end(void)
 {
-	if (!g_block_run_entered)
-		return;
-	g_block_run_entered = 0;
-	storage_run_end();
+	storage_run_end(STORAGE_RUN_BLOCK);
 }
 
 static void fs_request_owner(uint64_t owner)
 {
-	g_selected_owner = owner;
+	lxp_async_gate_select(&g_async_gate, owner);
 }
 
 static void fs_request_cancel(uint64_t owner)
 {
-	if (owner == 0u || owner != g_async_owner)
-		return;
-	int state = __atomic_load_n(&g_async_state, __ATOMIC_ACQUIRE);
-	if (state == FS_ASYNC_COMPLETE) {
-		async_metrics_complete(&g_async_request, LXP_ERR_WOULD_BLOCK);
-		g_async_owner = 0;
-		__atomic_store_n(&g_async_state, FS_ASYNC_IDLE, __ATOMIC_RELEASE);
-	} else if (state == FS_ASYNC_ACTIVE) {
-		__atomic_store_n(&g_async_cancelled, 1, __ATOMIC_RELEASE);
+	lxp_async_gate_cancel_t cancelled = lxp_async_gate_cancel(&g_async_gate, owner);
+	if (cancelled == LXP_ASYNC_GATE_CANCEL_COMPLETE) {
+		async_discard(&g_async_request);
+		metrics_request_finished(&g_async_request, LXP_ERR_WOULD_BLOCK, 1);
+		lxp_async_gate_dropped(&g_async_gate);
+	} else if (cancelled == LXP_ASYNC_GATE_CANCEL_ACTIVE) {
 		if (g_metrics.pending)
 			g_metrics.pending--;
 		g_metrics.requests_failed++;
@@ -1757,42 +1734,19 @@ static int block_open(unsigned flags)
 	if ((flags & LXP_BLOCK_OPEN_WRITE) != 0u) {
 #if !defined(CONFIG_OVE_LINUX_BLOCK_WRITE)
 		return LXP_ERR_PERMISSION;
-#else
-		if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u ||
-		    __atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) != 0u)
-			return LXP_ERR_BUSY;
-		int rc = ove_block_open(&g_raw_block, OVE_BLOCK_OPEN_WRITE);
-		if (rc != OVE_OK)
-			return rc;
-		__atomic_store_n(&g_raw_writer, 1u, __ATOMIC_RELEASE);
-		return LXP_OK;
 #endif
 	}
-	if (__atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) != 0u)
-		return LXP_ERR_BUSY;
-	if (__atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) == 0u) {
-		int rc = ove_block_open(&g_raw_block, 0u);
-		if (rc != OVE_OK)
-			return rc;
-	}
-	__atomic_add_fetch(&g_raw_readers, 1u, __ATOMIC_ACQ_REL);
-	return LXP_OK;
+	return ove_block_open(&g_raw_block, (flags & LXP_BLOCK_OPEN_WRITE) != 0u
+					  ? OVE_BLOCK_OPEN_WRITE
+					  : 0u);
 }
 
 static void block_close(unsigned flags)
 {
-	if ((flags & LXP_BLOCK_OPEN_WRITE) != 0u) {
-		fs_request_owner(0u);
-		struct fs_request request = {.op = FS_REQ_BLOCK_CLOSE};
-		(void)submit(&request);
-		__atomic_store_n(&g_raw_writer, 0u, __ATOMIC_RELEASE);
-	} else if (__atomic_load_n(&g_raw_readers, __ATOMIC_ACQUIRE) != 0u) {
-		if (__atomic_sub_fetch(&g_raw_readers, 1u, __ATOMIC_ACQ_REL) == 0u) {
-			fs_request_owner(0u);
-			struct fs_request request = {.op = FS_REQ_BLOCK_CLOSE};
-			(void)submit(&request);
-		}
-	}
+	(void)flags;
+	fs_request_owner(0u);
+	struct fs_request request = {.op = FS_REQ_BLOCK_CLOSE};
+	(void)submit(&request);
 }
 
 static int block_read(uint64_t offset, void *buf, size_t count, size_t *bytes_read)
@@ -1812,7 +1766,7 @@ static int block_read(uint64_t offset, void *buf, size_t count, size_t *bytes_re
 static int block_write(uint64_t offset, const void *buf, size_t count, size_t *bytes_written)
 {
 	if ((!buf && count) || !bytes_written || count > sizeof(g_io_buffer) ||
-	    __atomic_load_n(&g_raw_writer, __ATOMIC_ACQUIRE) == 0u)
+	    !g_raw_block.lease.active || (g_raw_block.flags & OVE_BLOCK_OPEN_WRITE) == 0u)
 		return LXP_ERR_INVALID_PARAM;
 	*bytes_written = 0u;
 	struct fs_request request = {

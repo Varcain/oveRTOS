@@ -18,6 +18,7 @@
 #include "ove/thread.h"
 #include "ove_net_ready.h"
 #include "lxp_ove_thread_adapter.h"
+#include "lxp/lxp_config.h"
 #include "lxp/lxp_net_ops.h"
 #include "ove/types.h" /* OVE_OK — the ove_net return the adapter forwards */
 
@@ -295,6 +296,21 @@ static void test_fs_adapter_async_completion(void **state)
 	assert_int_equal(close(fd), 0);
 
 	assert_int_equal(ops->run_begin(), LXP_OK);
+	/* Cancel completed opens beyond the native slot count. A leaked orphan
+	 * would exhaust the pool before this loop or the final open can finish. */
+	for (unsigned int owner = 100u; owner < 100u + LXP_NHOSTFS_OPEN + 2u; owner++) {
+		ops->request_owner(owner);
+		__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
+		assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
+				 LXP_ERR_WOULD_BLOCK);
+		for (unsigned int i = 0;
+		     i < 100000u && __atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED) == 0u;
+		     i++)
+			ove_thread_yield();
+		assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
+		ops->request_cancel(owner);
+	}
+
 	ops->request_owner(42u);
 	__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
 	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
@@ -305,6 +321,44 @@ static void test_fs_adapter_async_completion(void **state)
 		ove_thread_yield();
 	assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
 	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_OK);
+	assert_non_null(handle);
+
+	ops->request_owner(0u);
+	assert_int_equal(ops->file_close(handle), LXP_OK);
+	assert_int_equal(ops->path_unlink(path), LXP_OK);
+	ops->run_end();
+}
+
+/* Cancellation and worker completion race through the LXP gate. Whichever
+ * wins must retire the old owner, reclaim an orphaned native open result, and
+ * permit a new generation-qualified owner to make progress. */
+static void test_fs_adapter_async_cancel_retires_owner(void **state)
+{
+	(void)state;
+	const lxp_fs_ops_t *ops = &g_lxp_host_fs_ops;
+	char path[] = "/tmp/ove-lxp-fs-cancel-XXXXXX";
+	lxp_fs_file_t handle = NULL;
+	int fd = mkstemp(path);
+	assert_true(fd >= 0);
+	assert_int_equal(close(fd), 0);
+
+	assert_int_equal(ops->run_begin(), LXP_OK);
+	ops->request_owner(42u);
+	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_ERR_WOULD_BLOCK);
+	ops->request_cancel(42u);
+	__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
+	ops->request_owner(43u);
+	int collected = 0;
+	for (unsigned int i = 0; i < 1000000u; i++) {
+		int rc = ops->file_open(path, LXP_FS_O_READ, &handle);
+		if (rc == LXP_OK) {
+			collected = 1;
+			break;
+		}
+		assert_int_equal(rc, LXP_ERR_WOULD_BLOCK);
+		ove_thread_yield();
+	}
+	assert_true(collected);
 	assert_non_null(handle);
 
 	ops->request_owner(0u);
@@ -499,6 +553,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_block_adapter_media_arbitration),
 		cmocka_unit_test(test_fs_adapter_serialized_lifecycle),
 		cmocka_unit_test(test_fs_adapter_async_completion),
+		cmocka_unit_test(test_fs_adapter_async_cancel_retires_owner),
 		cmocka_unit_test(test_adapter_open_close),
 		cmocka_unit_test(test_host_facade_owns_composition),
 		cmocka_unit_test(test_thread_adapter_copies_contract),

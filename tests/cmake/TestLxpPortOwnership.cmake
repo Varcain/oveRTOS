@@ -51,12 +51,24 @@ foreach(HEADER IN LISTS LXP_ARCH_HEADERS)
     endif()
 endforeach()
 foreach(HOST_FACADE IN ITEMS
+        "modules/lxp/include/lxp/lxp_async_gate.h"
+        "modules/lxp/src/lxp_async_gate.c"
         "modules/lxp/include/lxp/lxp_host.h"
         "modules/lxp/src/lxp_host.c")
     if(NOT EXISTS "${OVE_ROOT}/${HOST_FACADE}")
         message(FATAL_ERROR "LXP-owned host facade is missing: ${HOST_FACADE}")
     endif()
 endforeach()
+
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c" STORAGE_ADAPTER_TEXT)
+if(STORAGE_ADAPTER_TEXT MATCHES
+   "g_async_(state|owner|cancelled)|g_selected_owner|g_raw_(readers|writer)")
+    message(FATAL_ERROR
+        "storage adapter regained LXP-owned async or Linux raw-open state")
+endif()
+if(NOT STORAGE_ADAPTER_TEXT MATCHES "lxp_async_gate")
+    message(FATAL_ERROR "storage adapter bypasses the LXP asynchronous provider gate")
+endif()
 foreach(RETIRED_HEADER IN ITEMS
         "backends/common/ove_cortex_m_cache.h"
         "backends/common/ove_cortex_m_mpu.h")

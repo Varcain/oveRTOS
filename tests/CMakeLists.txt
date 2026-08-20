@@ -82,10 +82,11 @@ set(STUB_SOURCES
     # Module loader (platform-independent)
     ${OVE_ROOT}/loader/ove_loader.c
     # Host adapters for LXP's handle-based network port and thread snapshots.
-    # The lxp module itself is tested in isolation in the lxp repo; the oveRTOS
-    # host test covers only the consumer-side glue, so no lxp sources are built.
+    # The LXP module itself is tested in isolation in its repo. The oveRTOS host
+    # test compiles only the provider gate used by the consumer-side storage glue.
     ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
     ${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c
+    ${OVE_ROOT}/modules/lxp/src/lxp_async_gate.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c
