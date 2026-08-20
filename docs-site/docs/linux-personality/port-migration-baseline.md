@@ -728,3 +728,56 @@ overruns, or pending work:
 | FreeRTOS | 114,753 / 114,753 | 7.630 us | 81.111 us |
 | NuttX | 45,657 / 45,657 | 7.926 us | 51.389 us |
 | Zephyr | 45,502 / 45,502 | 7.778 us | 50.370 us |
+
+## Iteration 19: run-scoped FreeRTOS tick ownership
+
+The generic oveRTOS FreeRTOS tick hook included LXP's port header and called
+`lxp_freertos_tick()` whenever `CONFIG_OVE_LINUX` was compiled in. That made a
+reusable RTOS backend depend directly on one personality implementation, kept
+the personality callback reachable outside a run, and left callback lifetime
+implicit rather than part of the FreeRTOS port contract.
+
+oveRTOS now owns a synchronized single-subscriber tick seam. Subscription and
+withdrawal run in task context under a FreeRTOS critical section, so the
+32-bit callback publication is atomic with respect to SysTick and withdrawal
+cannot return while a callback is executing on this single-core target. The
+tick ISR loads the optional callback once and invokes it indirectly. It neither
+includes an LXP header nor names an LXP symbol, and the ownership ledger rejects
+either dependency returning.
+
+Canonical LXP's FreeRTOS configuration ABI is version 3. Its port requires the
+embedding host's subscribe/unsubscribe operations, publishes its private
+guest-slicing callback from per-run `prepare()`, and withdraws it from
+`teardown()`. Quantum state is explicitly cleared at both boundaries, including
+failed prepare cleanup, so sequential runs cannot inherit a partly consumed
+budget. The standalone QEMU embedding implements the same contract rather than
+calling the port callback permanently from its board hook.
+
+The canonical host contracts and multi-process M2 FreeRTOS QEMU fixture pass.
+oveRTOS verification passed 435 C assertions, 262 C++ tests, 304 Rust tests,
+and the ASan/UBSan suite, while all three STM32 production compositions build.
+Only FreeRTOS gains code for the subscriber and indirect dispatch; NuttX and
+Zephyr remain byte-identical to Iteration 18 and no engine gains fixed RAM:
+
+| Engine | Iteration 18 flash | Iteration 19 flash | Delta | Fixed RAM |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 311,244 B | 311,492 B | +248 B | 241,048 B |
+| NuttX | 356,380 B | 356,380 B | 0 B | 231,044 B |
+| Zephyr | 356,264 B | 356,264 B | 0 B | 247 KiB |
+
+The committed FreeRTOS image was flashed and exercised exclusively through
+the Linux guest's SSH service. Two bounded, compute-only Lua processes both
+completed correctly with global FreeRTOS time slicing still resolving to zero.
+The accompanying RT snapshot recorded 24,442 releases and executions, zero
+misses, late finishes, IRQ overruns, or pending work, a 7.463 us average
+dispatch, and a 57.000 us maximum.
+
+This validation exposed a separate pre-existing proportional-share limitation.
+FreeRTOS's highest-priority selection advances through an equal-priority ready
+list on every scheduler selection, independently of `configUSE_TIME_SLICING`.
+Consequently a frequently waking higher-priority host task, such as the 1 kHz
+RT-scope worker, can rotate guest tasks before LXP's weighted quantum expires;
+nice -20 and nice 19 measured 396 and 392 CPU ticks in that condition. The
+run-scoped callback preserves forward progress and isolation from unrelated
+equal-priority host tasks, but strict weighted shares under host preemption need
+a later scheduler-seam correction rather than an ownership-layer workaround.
