@@ -417,6 +417,15 @@ Consequently, the phase-1 `cat` launch and phase-2 `init` launch reuse deliberat
 host configuration without mutable process-global setters or stale state from
 the preceding run.
 
+Per-launch policy uses `ove_lxp_launch_config_t`, not canonical LXP's launch
+structure. The host facade translates console and diagnostic callbacks,
+environment, display extent, and run results at the boundary. Guest termination
+records are copied field by field into `ove_lxp_guest_exit_info_t`; reason values
+are translated explicitly so an LXP representation change cannot silently alter
+application policy. The `comm` string remains callback-lifetime data by contract.
+Canonical LXP carries a run-scoped callback context, allowing this translation
+without a mutable global active-launch pointer.
+
 The application retains its post-phase-1 socket smoke because that is a demo
 workload and readiness report, not provider lifecycle. It queries the host-owned
 address through `ove_lxp_host_netif_get_addr()` and releases the host after the

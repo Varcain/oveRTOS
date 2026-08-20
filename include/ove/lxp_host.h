@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "lxp/lxp_host.h"
+#include "ove/lxp_launch.h"
 #include "ove/net.h"
 #include "ove_config.h"
 
@@ -77,7 +78,7 @@ int ove_lxp_host_netif_get_addr(const ove_lxp_host_t *host, ove_sockaddr_t *ip,
 
 /** Launch a guest through an initialized host. Rootfs and provider composition
  * remain owned by LXP; the application supplies per-launch policy only. */
-int ove_lxp_host_run(const ove_lxp_host_t *host, const lxp_launch_config_t *config,
+int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *config,
 		     const char *path, int argc, const char *const argv[]);
 
 #ifdef __cplusplus

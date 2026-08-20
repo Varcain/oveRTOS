@@ -143,12 +143,13 @@ static int console_poll(void *ctx)
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
 	(defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR))
-static int console_subscribe(void *ctx, lxp_console_ready_fn ready, const void *ready_context)
+static int console_subscribe(void *ctx, ove_lxp_console_ready_fn ready,
+			     const void *ready_context)
 {
 	(void)ctx;
 	return ove_console_set_ready_callback(ready, ready_context) == OVE_OK
-		       ? LXP_OK
-		       : LXP_ERR_NOT_SUPPORTED;
+		       ? OVE_OK
+		       : OVE_ERR_NOT_SUPPORTED;
 }
 
 static void console_unsubscribe(void *ctx)
@@ -173,7 +174,7 @@ int ove_lxp_console_init(void)
 	return OVE_OK;
 }
 
-void ove_lxp_console_bind(lxp_launch_config_t *config)
+void ove_lxp_console_bind(ove_lxp_launch_config_t *config)
 {
 	if (!config)
 		return;
