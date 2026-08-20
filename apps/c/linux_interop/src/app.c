@@ -339,17 +339,17 @@ static void on_enosys(long nr)
 static const char *exit_reason_name(uint8_t reason)
 {
 	switch (reason) {
-	case LXP_EXIT_REASON_SIGNAL:
+	case OVE_LXP_EXIT_REASON_SIGNAL:
 		return "signal";
-	case LXP_EXIT_REASON_SIGNAL_DEPTH:
+	case OVE_LXP_EXIT_REASON_SIGNAL_DEPTH:
 		return "signal-depth";
-	case LXP_EXIT_REASON_MEMORY_FAULT:
+	case OVE_LXP_EXIT_REASON_MEMORY_FAULT:
 		return "memory-fault";
-	case LXP_EXIT_REASON_EXEC_RESOURCE:
+	case OVE_LXP_EXIT_REASON_EXEC_RESOURCE:
 		return "exec-resource";
-	case LXP_EXIT_REASON_EXEC_LOAD:
+	case OVE_LXP_EXIT_REASON_EXEC_LOAD:
 		return "exec-load";
-	case LXP_EXIT_REASON_STATE_CORRUPTION:
+	case OVE_LXP_EXIT_REASON_STATE_CORRUPTION:
 		return "state-corruption";
 	default:
 		return "unspecified";
@@ -359,9 +359,9 @@ static const char *exit_reason_name(uint8_t reason)
 /* Development-target attribution for contained guest failures. Normal exits stay
  * silent; abnormal records are emitted from coordinator task context, never from
  * an exception handler, and remain bounded to one short UART line. */
-static void on_guest_exit(const lxp_guest_exit_info_t *info)
+static void on_guest_exit(const ove_lxp_guest_exit_info_t *info)
 {
-	if (!info || info->reason == LXP_EXIT_REASON_NORMAL)
+	if (!info || info->reason == OVE_LXP_EXIT_REASON_NORMAL)
 		return;
 	char b[192];
 	char *p = put_str(b, "[lxp] guest-exit slot=");
@@ -955,7 +955,7 @@ static void demo_body(void *arg)
 	/* The host publishes the rootfs window before parsing, owns native provider
 	 * setup, and retains immutable topology/rootfs composition for each run. */
 	int rootfs_rc = ove_lxp_host_init_cpio(&g_linux_host, &host_config);
-	if (rootfs_rc != LXP_OK) {
+	if (rootfs_rc != OVE_OK) {
 		char b[64];
 		char *p = put_str(b, "[demo] FAIL: rootfs host init failed rc=");
 		p = put_sdec(p, rootfs_rc);
@@ -1016,7 +1016,7 @@ static void demo_body(void *arg)
 					 * yields → the OVE_PRIO_LOW worker starves and the demo hangs here
 					 * before phase 2.  ove_thread_sleep_ms always usleep()s. */
 
-	const lxp_launch_config_t cfg1 = {
+	const ove_lxp_launch_config_t cfg1 = {
 		.write_fn = consume_write,
 		.read_fn = feed_read,
 		.io_ctx = NULL,
@@ -1075,7 +1075,7 @@ static void demo_body(void *arg)
 	ove_lxp_console_write("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
 		  " run commands, `poweroff` to halt) --\n");
 #endif
-	lxp_launch_config_t cfg2 = {
+	ove_lxp_launch_config_t cfg2 = {
 		.on_enosys = on_enosys,
 		.on_guest_exit = on_guest_exit,
 		.rt_scope_read = linux_rt_scope_proc_read,

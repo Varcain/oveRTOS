@@ -189,10 +189,84 @@ int ove_lxp_host_netif_get_addr(const ove_lxp_host_t *host, ove_sockaddr_t *ip,
 #endif
 }
 
-int ove_lxp_host_run(const ove_lxp_host_t *host, const lxp_launch_config_t *config,
+static uint8_t guest_exit_reason(uint8_t reason)
+{
+	switch (reason) {
+	case LXP_EXIT_REASON_NORMAL:
+		return OVE_LXP_EXIT_REASON_NORMAL;
+	case LXP_EXIT_REASON_SIGNAL:
+		return OVE_LXP_EXIT_REASON_SIGNAL;
+	case LXP_EXIT_REASON_SIGNAL_DEPTH:
+		return OVE_LXP_EXIT_REASON_SIGNAL_DEPTH;
+	case LXP_EXIT_REASON_MEMORY_FAULT:
+		return OVE_LXP_EXIT_REASON_MEMORY_FAULT;
+	case LXP_EXIT_REASON_EXEC_RESOURCE:
+		return OVE_LXP_EXIT_REASON_EXEC_RESOURCE;
+	case LXP_EXIT_REASON_EXEC_LOAD:
+		return OVE_LXP_EXIT_REASON_EXEC_LOAD;
+	case LXP_EXIT_REASON_STATE_CORRUPTION:
+		return OVE_LXP_EXIT_REASON_STATE_CORRUPTION;
+	case LXP_EXIT_REASON_HOST_TRANSITION:
+		return OVE_LXP_EXIT_REASON_HOST_TRANSITION;
+	default:
+		return OVE_LXP_EXIT_REASON_NONE;
+	}
+}
+
+static void guest_exit_notify(void *ctx, const lxp_guest_exit_info_t *info)
+{
+	const ove_lxp_launch_config_t *config = ctx;
+	if (!config || !config->on_guest_exit || !info)
+		return;
+	const ove_lxp_guest_exit_info_t translated = {
+		.slot = info->slot,
+		.pid = info->pid,
+		.ppid = info->ppid,
+		.status = info->status,
+		.comm = info->comm,
+		.reason = guest_exit_reason(info->reason),
+		.signal = info->signal,
+		.detail = info->detail,
+		.address = info->address,
+	};
+	config->on_guest_exit(&translated);
+}
+
+int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *config,
 		     const char *path, int argc, const char *const argv[])
 {
 	if (!host)
-		return LXP_RUN_ELAUNCH;
-	return lxp_host_run(&host->core, config, path, argc, argv);
+		return OVE_LXP_RUN_ELAUNCH;
+	lxp_launch_config_t launch;
+	const lxp_launch_config_t *translated = NULL;
+	if (config) {
+		launch = (lxp_launch_config_t){
+			.write_fn = config->write_fn,
+			.read_fn = config->read_fn,
+			.io_ctx = config->io_ctx,
+			.on_enosys = config->on_enosys,
+			.console_poll = config->console_poll,
+			.env = config->env,
+			.on_guest_exit = config->on_guest_exit ? guest_exit_notify : NULL,
+			.guest_exit_ctx = (void *)config,
+			.display_width = config->display_width,
+			.display_height = config->display_height,
+			.rt_scope_read = config->rt_scope_read,
+			.rt_scope_ctx = config->rt_scope_ctx,
+			.console_subscribe = config->console_subscribe,
+			.console_unsubscribe = config->console_unsubscribe,
+		};
+		translated = &launch;
+	}
+	int rc = lxp_host_run(&host->core, translated, path, argc, argv);
+	switch (rc) {
+	case LXP_RUN_ELAUNCH:
+		return OVE_LXP_RUN_ELAUNCH;
+	case LXP_RUN_EEXEC:
+		return OVE_LXP_RUN_EEXEC;
+	case LXP_RUN_ETIMEOUT:
+		return OVE_LXP_RUN_ETIMEOUT;
+	default:
+		return rc;
+	}
 }

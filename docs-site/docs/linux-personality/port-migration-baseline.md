@@ -453,3 +453,38 @@ The 15 KiB general pathname bound also recovers 1 KiB of FreeRTOS RAM. Zephyr
 remains at 251 KiB (98.05%); the smaller bound prevents its address-derived
 kernel-object table from pushing the following no-init region across another
 4 KiB alignment boundary. NuttX retains the same 231,076-byte SRAM1 use.
+
+## Iteration 13: facade-owned launch policy
+
+The demo still constructed canonical `lxp_launch_config_t` objects, interpreted
+`lxp_guest_exit_info_t`, and switched on `LXP_EXIT_REASON_*`. The oveRTOS host
+facade therefore owned immutable composition but leaked LXP's per-launch ABI
+back into the application.
+
+`ove/lxp_launch.h` now defines the application-facing callback, launch, run
+result, and guest-exit contracts. `ove_lxp_host_run()` translates every field
+into a local canonical launch configuration. It also copies each exit scalar
+and explicitly maps the exit reason before invoking application policy. The
+guest command name remains valid only during the callback, matching the source
+record's lifetime without allocating.
+
+Canonical LXP now carries a caller context with its guest-exit callback. That
+small contract correction lets the facade identify the synchronous launch
+without a process-global active-config pointer. Core host and coordinator tests
+verify context propagation. oveRTOS adapter tests verify launch-field copying,
+exit-record translation, and preservation of unrelated policy when the system
+console is bound. The ownership ledger rejects direct canonical launch or exit
+types if they return to `app.c`.
+
+Clean production links compare with Iteration 12 as follows:
+
+| Engine | Iteration 12 flash | Iteration 13 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 311,844 B | 312,020 B | +176 B |
+| NuttX | 357,188 B | 357,356 B | +168 B |
+| Zephyr | 358,528 B | 359,104 B | +576 B |
+
+The translation adds no fixed RAM: FreeRTOS remains at 241,040 bytes of RAM,
+NuttX at 231,076 bytes of SRAM1, and Zephyr at 251 KiB. The temporary canonical
+launch object and translated exit record live on the coordinator stack only
+during their synchronous calls.

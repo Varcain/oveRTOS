@@ -191,6 +191,11 @@ if(APP_TEXT MATCHES
         "app.c regained rootfs workspace allocation or capacity knowledge")
 endif()
 if(APP_TEXT MATCHES
+   "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*|LXP_RUN_E[A-Z0-9_]*)")
+    message(FATAL_ERROR
+        "app.c bypasses the oveRTOS launch and guest-exit contract")
+endif()
+if(APP_TEXT MATCHES
    "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")
     message(FATAL_ERROR
         "app.c regained LXP topology globals or native network lifecycle ownership")

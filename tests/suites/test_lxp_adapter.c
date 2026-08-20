@@ -44,7 +44,9 @@ static char g_host_netfs_aname[LXP_NETFS_ANAME_CAP];
 static char g_host_netfs_uname[LXP_NETFS_UNAME_CAP];
 static unsigned g_host_run_calls;
 static const lxp_host_t *g_host_run_target;
-static const lxp_launch_config_t *g_host_run_config;
+static lxp_launch_config_t g_host_run_config;
+static unsigned g_guest_exit_calls;
+static ove_lxp_guest_exit_info_t g_guest_exit_info;
 
 const lxp_os_ops_t g_lxp_host_engine = {
 	.abi_version = LXP_OS_OPS_ABI_VERSION,
@@ -82,7 +84,24 @@ int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config,
 	(void)argv;
 	g_host_run_calls++;
 	g_host_run_target = host;
-	g_host_run_config = config;
+	memset(&g_host_run_config, 0, sizeof(g_host_run_config));
+	if (config) {
+		g_host_run_config = *config;
+		if (config->on_guest_exit) {
+			const lxp_guest_exit_info_t info = {
+				.slot = 3,
+				.pid = 27,
+				.ppid = 7,
+				.status = 139,
+				.comm = "faulty",
+				.reason = LXP_EXIT_REASON_STATE_CORRUPTION,
+				.signal = 11,
+				.detail = 0x1234u,
+				.address = 0x5678u,
+			};
+			config->on_guest_exit(config->guest_exit_ctx, &info);
+		}
+	}
 	return 37;
 }
 
@@ -435,12 +454,61 @@ static void test_adapter_open_close(void **state)
 	ops->run_end();
 }
 
+static long test_launch_write(void *ctx, int fd, const void *buf, size_t len)
+{
+	(void)ctx;
+	(void)fd;
+	(void)buf;
+	return (long)len;
+}
+
+static long test_launch_read(void *ctx, int fd, void *buf, size_t len)
+{
+	(void)ctx;
+	(void)fd;
+	(void)buf;
+	(void)len;
+	return 0;
+}
+
+static void test_enosys(long nr)
+{
+	(void)nr;
+}
+
+static long test_rt_scope_read(void *ctx, char *buf, size_t cap)
+{
+	(void)ctx;
+	(void)buf;
+	(void)cap;
+	return 0;
+}
+
+static void test_guest_exit(const ove_lxp_guest_exit_info_t *info)
+{
+	g_guest_exit_calls++;
+	g_guest_exit_info = *info;
+}
+
 static void test_host_facade_owns_composition(void **state)
 {
 	(void)state;
 	static const uint8_t rootfs[16];
 	ove_lxp_host_t host;
-	const lxp_launch_config_t config = {0};
+	int io_cookie;
+	const char *const env[] = {"PATH=/bin", NULL};
+	const ove_lxp_launch_config_t config = {
+		.write_fn = test_launch_write,
+		.read_fn = test_launch_read,
+		.io_ctx = &io_cookie,
+		.on_enosys = test_enosys,
+		.env = env,
+		.on_guest_exit = test_guest_exit,
+		.display_width = 800,
+		.display_height = 480,
+		.rt_scope_read = test_rt_scope_read,
+		.rt_scope_ctx = &host,
+	};
 	const char *const argv[] = {"init", NULL};
 	const ove_lxp_netfs_config_t netfs = {
 		.mountpoint = "/mnt/pi",
@@ -459,7 +527,7 @@ static void test_host_facade_owns_composition(void **state)
 	g_host_init_calls = 0;
 	g_host_init_target = NULL;
 	memset(&g_host_init_config, 0, sizeof(g_host_init_config));
-	assert_int_equal(ove_lxp_host_init_cpio(&host, &host_config), LXP_OK);
+	assert_int_equal(ove_lxp_host_init_cpio(&host, &host_config), OVE_OK);
 	assert_int_equal(g_host_init_calls, 1);
 	assert_ptr_equal(g_host_init_target, &host.core);
 	assert_ptr_equal(g_host_init_config.os_ops, &g_lxp_host_engine);
@@ -486,11 +554,30 @@ static void test_host_facade_owns_composition(void **state)
 
 	g_host_run_calls = 0;
 	g_host_run_target = NULL;
-	g_host_run_config = NULL;
+	memset(&g_host_run_config, 0, sizeof(g_host_run_config));
+	g_guest_exit_calls = 0;
+	memset(&g_guest_exit_info, 0, sizeof(g_guest_exit_info));
 	assert_int_equal(ove_lxp_host_run(&host, &config, "/init", 1, argv), 37);
 	assert_int_equal(g_host_run_calls, 1);
 	assert_ptr_equal(g_host_run_target, &host.core);
-	assert_ptr_equal(g_host_run_config, &config);
+	assert_ptr_equal(g_host_run_config.write_fn, test_launch_write);
+	assert_ptr_equal(g_host_run_config.read_fn, test_launch_read);
+	assert_ptr_equal(g_host_run_config.io_ctx, &io_cookie);
+	assert_ptr_equal(g_host_run_config.on_enosys, test_enosys);
+	assert_ptr_equal(g_host_run_config.env, env);
+	assert_non_null(g_host_run_config.on_guest_exit);
+	assert_ptr_equal(g_host_run_config.guest_exit_ctx, &config);
+	assert_int_equal(g_host_run_config.display_width, 800);
+	assert_int_equal(g_host_run_config.display_height, 480);
+	assert_ptr_equal(g_host_run_config.rt_scope_read, test_rt_scope_read);
+	assert_ptr_equal(g_host_run_config.rt_scope_ctx, &host);
+	assert_int_equal(g_guest_exit_calls, 1);
+	assert_int_equal(g_guest_exit_info.slot, 3);
+	assert_int_equal(g_guest_exit_info.pid, 27);
+	assert_string_equal(g_guest_exit_info.comm, "faulty");
+	assert_int_equal(g_guest_exit_info.reason, OVE_LXP_EXIT_REASON_STATE_CORRUPTION);
+	assert_int_equal(g_guest_exit_info.detail, 0x1234u);
+	assert_int_equal(g_guest_exit_info.address, 0x5678u);
 	host.rootfs_names[0] = 'x';
 	ove_lxp_host_deinit(&host);
 	assert_int_equal(host.rootfs_names[0], 'x');
@@ -504,16 +591,11 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_init_calls, 1);
 }
 
-static void test_enosys(long nr)
-{
-	(void)nr;
-}
-
 static void test_console_adapter_binds_only_console_policy(void **state)
 {
 	(void)state;
 	int diagnostic_cookie;
-	lxp_launch_config_t config = {
+	ove_lxp_launch_config_t config = {
 		.on_enosys = test_enosys,
 		.rt_scope_ctx = &diagnostic_cookie,
 	};
