@@ -402,14 +402,20 @@ those resources.
 
 ## Host and network ownership
 
-The app supplies product topology—rootfs storage, `172.1.1.2/24`, gateway
+The app supplies product topology—the rootfs image, `172.1.1.2/24`, gateway
 `172.1.1.1`, and the configured 9P endpoint—to `ove_lxp_host_init_cpio()`.
-`ove_lxp_host_t` owns native interface storage, bring-up, bounded address wait,
-rollback, teardown, provider selection, and the immutable LXP host. LXP binds
-the opaque eth0 handle and copied netfs configuration only for each run and
-clears both at teardown. Consequently, the phase-1 `cat` launch and phase-2
-`init` launch reuse deliberate host configuration without mutable process-
-global setters or stale state from the preceding run.
+`ove_lxp_host_t` owns the fixed CPIO file/path workspace, native interface
+storage, bring-up, bounded address wait, rollback, teardown, provider selection,
+and the immutable LXP host. Workspace capacities come from
+`CONFIG_OVE_LINUX_ROOTFS_FILE_CAPACITY` and
+`CONFIG_OVE_LINUX_ROOTFS_NAME_CAPACITY`; the latter retains the smaller proven
+STM32 NuttX bound; the general 15 KiB pathname bound retains more than 4 KiB
+above the measured rootfs. Init and deinit reset only live handles rather than
+clearing the potentially large workspace. LXP binds the opaque eth0 handle and
+copied netfs configuration only for each run and clears both at teardown.
+Consequently, the phase-1 `cat` launch and phase-2 `init` launch reuse deliberate
+host configuration without mutable process-global setters or stale state from
+the preceding run.
 
 The application retains its post-phase-1 socket smoke because that is a demo
 workload and readiness report, not provider lifecycle. It queries the host-owned

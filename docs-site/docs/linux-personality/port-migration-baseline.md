@@ -418,3 +418,38 @@ as follows:
 The facade, snapshot path, and OS-port callback plumbing remain small on all
 three engines. The fixed guest pools and generated engine configurations are
 unchanged.
+
+## Iteration 12: host-owned rootfs workspace
+
+The application still allocated LXP's 512-entry CPIO index, selected pathname
+workspace sizes, carried an STM32 NuttX early-memory exception, and passed four
+storage/capacity fields into the host facade. Those are generic host bootstrap
+mechanics rather than demo policy.
+
+`ove_lxp_host_t` now owns both fixed workspaces and passes them to canonical
+LXP's caller-owned, zero-heap parser contract. The application supplies only
+the rootfs image. Hidden generated configuration centralizes the 512-entry and
+15 KiB defaults while retaining the measured 12 KiB STM32 NuttX pathname bound.
+The general pathname workspace leaves more than 4 KiB beyond the measured
+rootfs. Workspace members precede runtime state inside the host object,
+preserving the previous BSS order on STM32.
+
+Host initialization and teardown reset only the core and native interface
+state. They deliberately do not clear the 20–23 KiB workspace: CPIO parsing
+overwrites the live prefix and the published file count bounds every later
+read. Unit tests preserve this property, verify the exact workspace passed to
+LXP, and the ownership ledger rejects application-side rootfs allocation or
+capacity knowledge.
+
+Clean production links compare with Iteration 11 as follows:
+
+| Engine | Iteration 11 flash | Iteration 12 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 311,900 B | 311,844 B | -56 B |
+| NuttX | 357,172 B | 357,188 B | +16 B |
+| Zephyr | 358,200 B | 358,528 B | +328 B |
+
+The 15 KiB general pathname bound also recovers 1 KiB of FreeRTOS RAM. Zephyr
+remains at 251 KiB (98.05%); the smaller bound prevents its address-derived
+kernel-object table from pushing the following no-init region across another
+4 KiB alignment boundary. NuttX retains the same 231,076-byte SRAM1 use.
