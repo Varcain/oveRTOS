@@ -260,6 +260,15 @@ checks that the favoured guest receives a larger CPU share:
 .venv/bin/python tests/sim/freertos-linux/nice_drive.py
 ```
 
+The FreeRTOS Full profile currently has one open limitation in that final
+share check. Disabling `configUSE_TIME_SLICING` prevents the tick itself from
+rotating equal-priority guests, but FreeRTOS also advances the selected ready
+list whenever a higher-priority host task blocks and the scheduler chooses a
+guest again. A 1 kHz RT-scope worker therefore tends to equalize two CPU-bound
+guests despite their distinct LXP quantum weights. The nice values and bounded
+guest-only tick path remain intact, but proportional shares under frequent
+host preemption require a separate scheduler-seam correction.
+
 ## Two-channel host real-time proof (STM32F746G-DISCO)
 
 The hardware build enables a scope-friendly experiment by default. It keeps
