@@ -38,6 +38,10 @@ static unsigned g_block_kicks;
 static unsigned g_host_init_calls;
 static lxp_host_t *g_host_init_target;
 static lxp_host_config_t g_host_init_config;
+static lxp_netfs_config_t g_host_netfs_config;
+static char g_host_netfs_mountpoint[LXP_NETFS_MOUNTPOINT_CAP];
+static char g_host_netfs_aname[LXP_NETFS_ANAME_CAP];
+static char g_host_netfs_uname[LXP_NETFS_UNAME_CAP];
 static unsigned g_host_run_calls;
 static const lxp_host_t *g_host_run_target;
 static const lxp_launch_config_t *g_host_run_config;
@@ -57,7 +61,17 @@ int lxp_host_init_cpio(lxp_host_t *host, const lxp_host_config_t *config)
 	g_host_init_calls++;
 	g_host_init_target = host;
 	g_host_init_config = *config;
-	return 23;
+	if (config->netfs_config) {
+		g_host_netfs_config = *config->netfs_config;
+		strcpy(g_host_netfs_mountpoint, config->netfs_config->mountpoint);
+		strcpy(g_host_netfs_aname, config->netfs_config->aname);
+		strcpy(g_host_netfs_uname, config->netfs_config->uname);
+		g_host_netfs_config.mountpoint = g_host_netfs_mountpoint;
+		g_host_netfs_config.aname = g_host_netfs_aname;
+		g_host_netfs_config.uname = g_host_netfs_uname;
+		g_host_init_config.netfs_config = &g_host_netfs_config;
+	}
+	return LXP_OK;
 }
 
 int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config,
@@ -427,18 +441,32 @@ static void test_host_facade_owns_composition(void **state)
 	static const uint8_t rootfs[16];
 	static lxp_file_t files[4];
 	static char names[64];
-	lxp_host_t host;
+	ove_lxp_host_t host;
 	const lxp_launch_config_t config = {0};
 	const char *const argv[] = {"init", NULL};
+	const ove_lxp_netfs_config_t netfs = {
+		.mountpoint = "/mnt/pi",
+		.server_ipv4 = "172.1.1.1",
+		.port = 564,
+		.aname = "/srv/pi9",
+		.uname = "root",
+	};
+	ove_lxp_host_config_t host_config = {
+		.rootfs_image = rootfs,
+		.rootfs_image_size = sizeof(rootfs),
+		.rootfs_storage = files,
+		.rootfs_capacity = 4,
+		.rootfs_name_storage = names,
+		.rootfs_name_capacity = sizeof(names),
+		.netfs_config = &netfs,
+	};
 
 	g_host_init_calls = 0;
 	g_host_init_target = NULL;
 	memset(&g_host_init_config, 0, sizeof(g_host_init_config));
-	assert_int_equal(ove_lxp_host_init_cpio(&host, rootfs, sizeof(rootfs), files, 4, names,
-					       sizeof(names)),
-			 23);
+	assert_int_equal(ove_lxp_host_init_cpio(&host, &host_config), LXP_OK);
 	assert_int_equal(g_host_init_calls, 1);
-	assert_ptr_equal(g_host_init_target, &host);
+	assert_ptr_equal(g_host_init_target, &host.core);
 	assert_ptr_equal(g_host_init_config.os_ops, &g_lxp_host_engine);
 	assert_ptr_equal(g_host_init_config.net_ops, &g_lxp_host_net_ops);
 	assert_ptr_equal(g_host_init_config.display_ops, &g_lxp_host_display_ops);
@@ -450,14 +478,31 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_init_config.rootfs_capacity, 4);
 	assert_ptr_equal(g_host_init_config.rootfs_name_storage, names);
 	assert_int_equal(g_host_init_config.rootfs_name_capacity, sizeof(names));
+	assert_null(g_host_init_config.netif);
+	assert_non_null(g_host_init_config.netfs_config);
+	assert_string_equal(g_host_init_config.netfs_config->mountpoint, "/mnt/pi");
+	assert_memory_equal(g_host_init_config.netfs_config->server_ip,
+			    ((const uint8_t[]){172, 1, 1, 1}), 4);
+	assert_int_equal(g_host_init_config.netfs_config->port, 564);
+	assert_string_equal(g_host_init_config.netfs_config->aname, "/srv/pi9");
+	assert_string_equal(g_host_init_config.netfs_config->uname, "root");
 
 	g_host_run_calls = 0;
 	g_host_run_target = NULL;
 	g_host_run_config = NULL;
 	assert_int_equal(ove_lxp_host_run(&host, &config, "/init", 1, argv), 37);
 	assert_int_equal(g_host_run_calls, 1);
-	assert_ptr_equal(g_host_run_target, &host);
+	assert_ptr_equal(g_host_run_target, &host.core);
 	assert_ptr_equal(g_host_run_config, &config);
+	ove_lxp_host_deinit(&host);
+
+	host_config.netfs_config = &(const ove_lxp_netfs_config_t){
+		.mountpoint = "/mnt/pi",
+		.server_ipv4 = "172.1.1.999",
+		.port = 564,
+	};
+	assert_int_equal(ove_lxp_host_init_cpio(&host, &host_config), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(g_host_init_calls, 1);
 }
 
 static void test_enosys(long nr)

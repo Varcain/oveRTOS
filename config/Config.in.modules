@@ -336,8 +336,8 @@ config OVE_LINUX_NETFS
       path like /mnt/pi, so the guest browses it transparently (ls/cat/stat/less)
       over a coordinator-owned, non-blocking TCP connection. Read-only. Selects
       the Linux socket layer, which in turn selects the engine TCP/IP stack. The
-      mount is configured statically at app boot via
-      ove_lnx_netfs_mount_config(); the options below are the defaults.
+      mount topology is supplied to ove_lxp_host_init_cpio(); the options below
+      are the defaults.
 
 config OVE_LINUX_NETFS_SERVER_IP
     string "netfs: 9P server IPv4 (a.b.c.d)"
