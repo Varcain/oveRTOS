@@ -33,13 +33,11 @@
 #include <string.h>
 
 #include "ove/lxp_console.h"
-#include "ove/lxp_host.h"
+#include "ove/lxp_observability.h"
 #include "ove/thread.h"
 #include "ove/time.h"
 
 #include "ove/app.h"
-#include "lxp/lxp_config.h" /* LXP_NSLOT (the latency report walks the slots) */
-#include "lxp/lxp_latency.h"
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h" /* product-level socket smoke over the initialized host network */
 #endif
@@ -51,10 +49,6 @@
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
 #include "rt_scope.h"
-
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-#include "lxp/ports/freertos.h"
-#endif
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
@@ -529,10 +523,11 @@ static void wd_body(void *arg)
 	int tripped = 0;
 #endif
 	for (;;) {
-		lxp_run_health_t h;
-		lxp_run_health(&h);
-		int feed = !primed || wd_should_feed(h.active, h.coord_iters != last);
-		last = h.coord_iters;
+		ove_lxp_run_health_t h;
+		ove_lxp_run_health_snapshot(&h);
+		int feed = !primed ||
+			   wd_should_feed(h.active, h.coordinator_iterations != last);
+		last = h.coordinator_iterations;
 		primed = 1;
 		if (feed)
 			(void)ove_watchdog_feed(g_wd_dog);
@@ -626,7 +621,7 @@ static void smashtest_maybe_arm(void)
 }
 #endif /* CONFIG_OVE_LINUX_SMASHTEST */
 
-#if LXP_ENABLE_LATENCY
+#if defined(CONFIG_OVE_LINUX_LATENCY)
 /* ---- host deadline monitor (measurement builds only) -------------------------------------
  * A periodic OVE_PRIO_HIGH task, i.e. above both the coordinator (OVE_PRIO_NORMAL, this task)
  * and the guest slots (tskIDLE_PRIORITY+1). Being top of the ladder is the point: everything
@@ -665,7 +660,7 @@ static uint8_t g_mon_stack[1024] __attribute__((aligned(1024)));
 #else
 static uint8_t g_mon_stack[512] __attribute__((aligned(512)));
 #endif
-static lxp_lat_stat_t g_mon_late;
+static ove_lxp_latency_stat_t g_mon_late;
 static volatile int g_mon_stop;
 static volatile int g_mon_exited;
 
@@ -679,12 +674,12 @@ static void mon_body(void *arg)
 		(void)ove_time_get_ns(&t1);
 		uint64_t want = (uint64_t)MON_PERIOD_MS * 1000000u;
 		uint64_t slept = (t1 > t0) ? (t1 - t0) : 0;
-		lxp_lat_record(&g_mon_late, slept > want ? slept - want : 0);
+		ove_lxp_latency_record(&g_mon_late, slept > want ? slept - want : 0);
 	}
 	g_mon_exited = 1;
 }
 
-static void lat_row(const char *what, const char *name, const lxp_lat_stat_t *s)
+static void lat_row(const char *what, const char *name, const ove_lxp_latency_stat_t *s)
 {
 	if (!s || !s->count)
 		return; /* a class never dispatched has nothing to say; skip the row */
@@ -700,7 +695,7 @@ static void lat_row(const char *what, const char *name, const lxp_lat_stat_t *s)
 	p = put_str(p, " max_ns=");
 	p = put_dec(p, s->max_ns);
 	p = put_str(p, " us[");
-	for (int b = 0; b < LXP_LAT_BUCKETS; b++) {
+	for (int b = 0; b < OVE_LXP_LATENCY_BUCKETS; b++) {
 		if (b)
 			*p++ = ' ';
 		p = put_dec(p, s->buckets[b]);
@@ -710,18 +705,20 @@ static void lat_row(const char *what, const char *name, const lxp_lat_stat_t *s)
 	ove_lxp_console_write(line);
 }
 
-static void lat_report(void)
+static void lat_report(const ove_lxp_host_observation_t *observation)
 {
 	ove_lxp_console_write("\n=== latency (measurement build; no threshold is enforced) ===\n"
 		  "[lat] us[] buckets: <1 <2 <4 <8 <16 <32 <64 >=64\n");
 	lat_row("host-wake-overshoot", "", &g_mon_late);
-	for (int c = 1; c < LXP_LAT_CLASSES; c++)
-		lat_row("coord-service", lxp_lat_class_name(c), lxp_lat_service_get(c));
-	for (int s = 0; s < LXP_NSLOT; s++) {
+	for (uint32_t row = 0; row < observation->latency_service_count; row++)
+		lat_row("coord-service",
+			ove_lxp_observation_service_name(observation, row),
+			&observation->latency_services[row].stat);
+	for (uint32_t row = 0; row < observation->latency_wake_count; row++) {
 		char nm[8];
-		char *p = put_dec(nm, (uint32_t)s);
+		char *p = put_dec(nm, observation->latency_wakes[row].id);
 		*p = 0;
-		lat_row("guest-wake slot", nm, lxp_lat_wake_get(s));
+		lat_row("guest-wake slot", nm, &observation->latency_wakes[row].stat);
 	}
 	/* Terminator. Rows for classes/slots that saw nothing are skipped, so a report cut short
 	 * is indistinguishable from one that simply had less to say — and a truncated report
@@ -731,7 +728,7 @@ static void lat_report(void)
 	ove_lxp_console_write("[lat] end\n");
 	ove_time_delay_ms(50);
 }
-#endif /* LXP_ENABLE_LATENCY */
+#endif /* CONFIG_OVE_LINUX_LATENCY */
 
 /* ---- teardown stack + heap audit (R9 / C3) -----------------------------------------------
  * Printed after the guest has run (and, in a soak, after the stress workload), so the high-water
@@ -785,28 +782,27 @@ static void audit_thread_free(const char *name, ove_thread_t h)
 }
 #endif /* !CONFIG_OVE_RTOS_FREERTOS */
 
-static void lxp_diag_audit(void)
+static void host_observation_audit(const ove_lxp_host_observation_t *observation)
 {
-	lxp_diag_size_report_t sizes;
-	lxp_diag_size_report(&sizes);
+	const ove_lxp_size_observation_t *sizes = &observation->sizes;
 	{
 		char line[224];
 		char *p = put_str(line, "[lxp-size] slots=");
-		p = put_dec(p, sizes.slots);
+		p = put_dec(p, sizes->slots);
 		p = put_str(p, " regions=");
-		p = put_dec(p, sizes.regions);
+		p = put_dec(p, sizes->regions);
 		p = put_str(p, " proc=");
-		p = put_dec(p, (uint32_t)sizes.proc);
+		p = put_dec(p, (uint32_t)sizes->proc);
 		p = put_str(p, " slot-core=");
-		p = put_dec(p, (uint32_t)sizes.per_slot_core);
+		p = put_dec(p, (uint32_t)sizes->per_slot_core);
 		p = put_str(p, " region-core=");
-		p = put_dec(p, (uint32_t)sizes.per_region_core);
+		p = put_dec(p, (uint32_t)sizes->per_region_core);
 		p = put_str(p, " slot-table=");
-		p = put_dec(p, (uint32_t)sizes.slot_table);
+		p = put_dec(p, (uint32_t)sizes->slot_table);
 		p = put_str(p, " coord-static=");
-		p = put_dec(p, (uint32_t)sizes.coordinator_static);
+		p = put_dec(p, (uint32_t)sizes->coordinator_static);
 		p = put_str(p, " exec-capture=");
-		p = put_dec(p, (uint32_t)sizes.exec_capture);
+		p = put_dec(p, (uint32_t)sizes->exec_capture);
 		*p++ = '\n';
 		*p = 0;
 		ove_lxp_console_write(line);
@@ -814,45 +810,44 @@ static void lxp_diag_audit(void)
 	{
 		char line[224];
 		char *p = put_str(line, "[lxp-size] mm=");
-		p = put_dec(p, (uint32_t)sizes.mm);
+		p = put_dec(p, (uint32_t)sizes->mm);
 		p = put_str(p, " files=");
-		p = put_dec(p, (uint32_t)sizes.files);
+		p = put_dec(p, (uint32_t)sizes->files);
 		p = put_str(p, " fs=");
-		p = put_dec(p, (uint32_t)sizes.fs);
+		p = put_dec(p, (uint32_t)sizes->fs);
 		p = put_str(p, " sighand=");
-		p = put_dec(p, (uint32_t)sizes.sighand);
+		p = put_dec(p, (uint32_t)sizes->sighand);
 		p = put_str(p, " group=");
-		p = put_dec(p, (uint32_t)sizes.thread_group);
+		p = put_dec(p, (uint32_t)sizes->thread_group);
 		p = put_str(p, " arena=");
-		p = put_dec(p, (uint32_t)sizes.arena);
+		p = put_dec(p, (uint32_t)sizes->arena);
 		p = put_str(p, " resume=");
-		p = put_dec(p, (uint32_t)sizes.resume_context);
+		p = put_dec(p, (uint32_t)sizes->resume_context);
 		p = put_str(p, " mailbox=");
-		p = put_dec(p, (uint32_t)sizes.deferred_request);
+		p = put_dec(p, (uint32_t)sizes->deferred_request);
 		p = put_str(p, " signal=");
-		p = put_dec(p, (uint32_t)sizes.signal_save_stack);
+		p = put_dec(p, (uint32_t)sizes->signal_save_stack);
 		*p++ = '\n';
 		*p = 0;
 		ove_lxp_console_write(line);
 	}
 
-	lxp_diag_health_t health;
-	lxp_diag_health(&health);
+	const ove_lxp_diagnostics_observation_t *health = &observation->diagnostics;
 	{
 		char line[224];
 		char *p = put_str(line, "[lxp-world] checks=");
-		p = put_dec(p, health.checks);
+		p = put_dec(p, health->checks);
 		p = put_str(p, " failures=");
-		p = put_dec(p, health.failures);
-		if (health.failures) {
+		p = put_dec(p, health->failures);
+		if (health->failures) {
 			p = put_str(p, " first=");
-			p = put_str(p, lxp_diag_issue_name(health.first_error.issue));
+			p = put_str(p, ove_lxp_observation_issue_name(health->first_error.issue));
 			p = put_str(p, " slot=");
-			p = put_sdec(p, health.first_error.slot);
+			p = put_sdec(p, health->first_error.slot);
 			p = put_str(p, " region=");
-			p = put_sdec(p, health.first_error.region);
+			p = put_sdec(p, health->first_error.region);
 			p = put_str(p, " last=");
-			p = put_str(p, lxp_diag_issue_name(health.last_error.issue));
+			p = put_str(p, ove_lxp_observation_issue_name(health->last_error.issue));
 		}
 		*p++ = '\n';
 		*p = 0;
@@ -860,9 +855,9 @@ static void lxp_diag_audit(void)
 	}
 }
 
-static void stack_audit(void)
+static void stack_audit(const ove_lxp_host_observation_t *observation)
 {
-	lxp_diag_audit();
+	host_observation_audit(observation);
 	ove_lxp_console_write("\n=== stack high-water audit (deepest usage this run) ===\n");
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 	/* FreeRTOS runs the coordinator in an app-owned task (g_demo/g_demo_stack). */
@@ -875,15 +870,12 @@ static void stack_audit(void)
 #if defined(CONFIG_OVE_WATCHDOG)
 	audit_thread("wd-monitor", g_wd, sizeof(g_wd_stack));
 #endif
-#if LXP_ENABLE_LATENCY
+#if defined(CONFIG_OVE_LINUX_LATENCY)
 	audit_thread("lat-monitor", g_mon, sizeof(g_mon_stack));
 #endif
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-	/* Guest-slot tramp stack (192 words = 768 B in the LXP port): worst across all
-	 * slots this run. The remaining 256 bytes of each aligned 1K allocation hold the persistent
-	 * resume descriptor and are not part of the task stack. */
-	audit_stack_line("guest-slot(tramp)", lxp_freertos_slot_stack_high_water_mark(), 768u);
-#endif
+	if (observation->guest_stack.available)
+		audit_stack_line("guest-slot(tramp)", observation->guest_stack.used,
+				 observation->guest_stack.size);
 	/* peak_used is the high-water of heap usage over the whole run, so it captures a cumulative
 	 * leak (it would climb toward total across a soak) — a better single number than a boot-vs-end
 	 * delta, which heap_4 spoils anyway by initialising lazily (free reads 0 before the first
@@ -1111,7 +1103,7 @@ static void demo_body(void *arg)
 	};
 	ove_lxp_console_bind(&cfg2);
 	int rc2;
-#if LXP_ENABLE_LATENCY
+#if defined(CONFIG_OVE_LINUX_LATENCY)
 	/* Start the monitor here, not before phase 1: lxp_run() resets the coordinator's counters
 	 * at entry and it is called once per phase, so a monitor spanning both phases would report
 	 * host lateness over a window the coordinator's own rows do not cover. Both now measure
@@ -1133,14 +1125,21 @@ static void demo_body(void *arg)
 	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/bin/busybox", 1, init_argv);
 	ove_lxp_console_write("\n=== interop demo done (uClinux halted) ===\n");
 #endif
-#if LXP_ENABLE_LATENCY
+#if defined(CONFIG_OVE_LINUX_LATENCY)
 	g_mon_stop = 1;
 	while (!g_mon_exited) /* it may be mid-sleep; let it observe the stop and leave */
 		ove_thread_sleep_ms(1);
 	(void)ove_thread_deinit(g_mon);
-	lat_report(); /* only after the monitor is stopped: the counters are read unlocked */
 #endif
-	stack_audit(); /* R9/C3: worst-case stack + heap usage, now that the workload has run */
+	ove_lxp_host_observation_t observation;
+	if (ove_lxp_host_observe(&g_linux_host, &observation) != OVE_OK) {
+		ove_lxp_console_write("[demo] FAIL: post-run LXP observation unavailable\n");
+		demo_exit(1);
+	}
+#if defined(CONFIG_OVE_LINUX_LATENCY)
+	lat_report(&observation); /* copied only after the monitor and coordinator stopped */
+#endif
+	stack_audit(&observation); /* R9/C3: one coherent post-run snapshot + host resources */
 	demo_exit(rc2 >= 0 ? 0 : 1);
 }
 
