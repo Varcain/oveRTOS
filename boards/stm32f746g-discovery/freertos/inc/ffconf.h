@@ -10,6 +10,7 @@
 /-----------------------------------------------------------------------------*/
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "ove_config.h"
 
 /* Replace 'stm32xxx' with the STM32 Serie used, ex: stm32f4xx_hal.h */
 #include "stm32f7xx_hal.h"
@@ -232,7 +233,7 @@
 /  _NORTC_MDAY and _NORTC_YEAR have no effect. 
 /  These options have no effect at read-only configuration (_FS_READONLY == 1). */
 
-#define _FS_LOCK 16
+#define _FS_LOCK CONFIG_OVE_FS_MAX_OPEN_FILES
 /* The _FS_LOCK option switches file lock feature to control duplicated file open
 /  and illegal operation to open objects. This option must be 0 when _FS_READONLY
 /  is 1.

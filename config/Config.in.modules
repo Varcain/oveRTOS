@@ -515,6 +515,18 @@ config OVE_FS
     bool "File system"
     default n
 
+config OVE_FS_MAX_OPEN_FILES
+    int "Required concurrent native filesystem file handles"
+    default 4
+    range 1 64
+    depends on OVE_FS
+    help
+      Maximum number of caller-owned file handles that an application may
+      keep active concurrently. Backends which reserve per-open native
+      resources use this value as their capacity contract. This does not size
+      the separate four-entry ove_fs_open() convenience pool; callers needing
+      this full capacity use ove_fs_open_init() with caller-owned storage.
+
 config OVE_CONSOLE
     bool "Console I/O"
     default n
