@@ -288,8 +288,8 @@ static void test_runtime_stats(void **state)
 	ove_test_thread_destroy(h);
 }
 
-/* 17. enumeration exposes a stable native identity and leaves personality
- * ownership unset in the generic backend. */
+/* 17. enumeration exposes a stable native identity. Personality ownership is
+ * derived by the personality adapter rather than stored in the generic API. */
 static void test_thread_list_identity(void **state)
 {
 	(void)state;
@@ -309,7 +309,6 @@ static void test_thread_list_identity(void **state)
 		for (size_t i = 0; i < count; i++) {
 			if (strcmp(info[i].name, "tenum") == 0) {
 				assert_true(info[i].identity != 0);
-				assert_int_equal(info[i].lxp_slot, -1);
 				found = true;
 				break;
 			}

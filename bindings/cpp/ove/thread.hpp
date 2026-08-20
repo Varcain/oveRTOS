@@ -808,7 +808,7 @@ struct MemStats {
  * @brief Snapshot of a single thread.
  *
  * Alias of the C @ref ove_thread_info struct.  Exposes the full set of
- * fields the substrate provides (name, identity, lxp_slot, state, priority,
+ * fields the substrate provides (name, identity, state, priority,
  * stack_used, stack_size, cpu_percent_x100, state_times), unchanged from the C
  * layer.  Default-initialise with `ThreadInfo info{};` for zero-init.
  *

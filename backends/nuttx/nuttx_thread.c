@@ -744,7 +744,6 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 #endif
 	snapshot->pid = tcb->pid;
 	info->identity = (uintptr_t)(uint32_t)tcb->pid;
-	info->lxp_slot = -1;
 
 	switch (tcb->task_state) {
 	case TSTATE_TASK_RUNNING:

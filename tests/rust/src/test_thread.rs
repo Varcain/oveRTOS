@@ -233,7 +233,6 @@ fn test_thread_list_smoke() {
     let mut buf = [ThreadInfo {
         name: &[],
         identity: 0,
-        lxp_slot: -1,
         state: 0 as ffi::ove_thread_state_t,
         priority: 0,
         stack_used: 0,
@@ -278,7 +277,6 @@ fn test_thread_list_with_spawned() {
     let mut buf = [ThreadInfo {
         name: &[],
         identity: 0,
-        lxp_slot: -1,
         state: 0 as ffi::ove_thread_state_t,
         priority: 0,
         stack_used: 0,
@@ -299,7 +297,6 @@ fn test_thread_list_with_spawned() {
                 let _ = info.priority;
                 let _ = info.stack_used;
                 let _ = info.identity;
-                let _ = info.lxp_slot;
                 let _ = info.stack_size;
                 let _ = info.cpu_percent_x100;
                 let _ = info.running_us;

@@ -608,7 +608,6 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 		out[count].name = t->name ? t->name : "?";
 		out[count].identity = (uintptr_t)t;
-		out[count].lxp_slot = -1;
 		out[count].state = (ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		out[count].priority = t->priority;
 		out[count].stack_used =

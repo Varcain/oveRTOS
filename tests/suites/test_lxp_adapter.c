@@ -827,7 +827,6 @@ static void test_thread_adapter_copies_contract(void **state)
 	const struct ove_thread_info host = {
 		.name = "worker",
 		.identity = 0x1234u,
-		.lxp_slot = 99,
 		.state = OVE_THREAD_STATE_BLOCKED,
 		.priority = 7,
 		.stack_used = 320,
