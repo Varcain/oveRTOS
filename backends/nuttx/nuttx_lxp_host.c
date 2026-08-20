@@ -268,7 +268,4 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.runtime_stop = host_runtime_stop,
 	.runtime_switch = host_runtime_switch,
 	.runtime_us = host_runtime_us,
-#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-	.svc_metrics_record = ove_lxp_svc_metrics_record,
-#endif
 };

@@ -176,6 +176,7 @@ endif()
 # app.c may compose host providers and policy during the migration, but direct
 # native-RTOS headers are confined to the rt_scope benchmark exception.
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
+file(READ "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c" RT_SCOPE_TEXT)
 if(APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR "app.c must not include native RTOS headers")
@@ -194,6 +195,11 @@ if(APP_TEXT MATCHES
    "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*|LXP_RUN_E[A-Z0-9_]*)")
     message(FATAL_ERROR
         "app.c bypasses the oveRTOS launch and guest-exit contract")
+endif()
+if(RT_SCOPE_TEXT MATCHES
+   "#[ \t]*include[ \t]*[<\"]lxp/|LXP_NR_|lxp_zephyr_critical_metrics|ove_freertos_lnx_metrics")
+    message(FATAL_ERROR
+        "rt_scope.c bypasses the oveRTOS diagnostics metrics contract")
 endif()
 if(APP_TEXT MATCHES
    "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")

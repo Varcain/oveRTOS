@@ -549,8 +549,8 @@ list(APPEND OVE_BACKEND_SOURCES ${LXP_PTY_SOURCES})
       (config.get("CONFIG_OVE_RTOS_FREERTOS") == True or
        config.get("CONFIG_OVE_RTOS_ZEPHYR") == True or
        config.get("CONFIG_OVE_RTOS_NUTTX") == True) %}
-# Engine-neutral SVC timing accumulator. RTOS ports only record cycle samples
-# and supply their counter frequency.
+# OVE-facing timing facade. Canonical LXP owns SVC accumulation and syscall
+# naming; the embedding supplies counter frequency and optional native metrics.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lxp_metrics.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}

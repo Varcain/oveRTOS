@@ -488,3 +488,48 @@ The translation adds no fixed RAM: FreeRTOS remains at 241,040 bytes of RAM,
 NuttX at 231,076 bytes of SRAM1, and Zephyr at 251 KiB. The temporary canonical
 launch object and translated exit record live on the coordinator stack only
 during their synchronous calls.
+
+## Iteration 14: LXP-owned SVC metrics
+
+The RT-scope application still included canonical Linux syscall numbers and
+the Zephyr port header, duplicated a compact syscall-name switch, and consumed
+Zephyr and FreeRTOS diagnostic record types directly. More fundamentally, the
+three LXP ports sent every SVC sample back through an embedding-owned recorder,
+contradicting the ownership rule that LXP owns reusable trap accounting.
+
+Canonical LXP now owns the windowed and lifetime SVC accumulator plus its ARM
+EABI diagnostic-name table in `lxp_rt_metrics`. Each production port records
+directly after taking its cycle endpoint. The obsolete recorder callback was
+removed from all three port configurations and their explicit ABI versions are
+2, so an old embedding fails its size/version check rather than silently
+retaining split ownership.
+
+The OVE metrics facade copies canonical SVC records into its stable public
+contract and supplies the engine-owned counter frequency. It also hides the
+optional Zephyr critical-section and FreeRTOS thread-snapshot records behind
+capability-returning functions. `rt_scope.c` therefore contains no canonical
+LXP include, syscall constant, port metric type, or FreeRTOS-only metrics
+header. Its native IRQ attachment and NuttX scheduler-lock probe remain because
+they define the board experiment rather than reusable personality mechanics.
+
+Canonical unit and sanitizer suites cover window rotation, coherent lifetime
+sampling, maximum attribution, and syscall naming. oveRTOS tests cover facade
+translation and unsupported optional metrics, while the ownership ledger
+rejects any return of the removed application dependencies.
+
+The canonical name lookup uses a compact descriptor table rather than the
+compiler's sparse switch table. Optional native formatters remain selected at
+build time, so an engine does not link report code for a capability it lacks.
+Clean production links compare with Iteration 13 as follows:
+
+| Engine | Iteration 13 flash | Iteration 14 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 312,020 B | 310,940 B | -1,080 B |
+| NuttX | 357,356 B | 356,076 B | -1,280 B |
+| Zephyr | 359,104 B | 356,996 B | -2,108 B |
+
+FreeRTOS uses 241,048 bytes of RAM (+8 bytes), NuttX uses 231,044 bytes of
+SRAM1 (-32 bytes), and Zephyr falls from 251 KiB to 247 KiB. Zephyr's larger
+apparent RAM recovery comes from keeping the following address-derived kernel
+object table below a 4 KiB alignment boundary after the optional formatter and
+its stack frame are removed.

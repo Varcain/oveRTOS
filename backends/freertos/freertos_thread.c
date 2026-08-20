@@ -7,9 +7,9 @@
  */
 
 #include "ove/thread.h"
+#include "ove/lxp_metrics.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
-#include "ove_freertos_lnx_metrics.h"
 #include "ove_freertos_priority.h"
 #include "ove_config.h"
 #include "FreeRTOS.h"
@@ -422,14 +422,17 @@ static void snapshot_metrics_record(uint32_t cycles)
 	}
 }
 
-void ove_freertos_thread_snapshot_metrics_take(struct ove_freertos_thread_snapshot_metrics *window,
-					       struct ove_freertos_thread_snapshot_metrics *total)
+int ove_lxp_thread_snapshot_metrics_take(struct ove_lxp_thread_snapshot_metrics *window,
+					 struct ove_lxp_thread_snapshot_metrics *total)
 {
+	if (!window || !total)
+		return OVE_ERR_INVALID_PARAM;
 	window->calls = __atomic_exchange_n(&g_snapshot_window_calls, 0u, __ATOMIC_ACQ_REL);
 	window->max_cycles =
 		__atomic_exchange_n(&g_snapshot_window_max_cycles, 0u, __ATOMIC_ACQ_REL);
 	total->calls = __atomic_load_n(&g_snapshot_total_calls, __ATOMIC_ACQUIRE);
 	total->max_cycles = __atomic_load_n(&g_snapshot_total_max_cycles, __ATOMIC_ACQUIRE);
+	return OVE_OK;
 }
 #endif
 

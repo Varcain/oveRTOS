@@ -35,16 +35,13 @@
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_ZEPHYR) || \
 	defined(CONFIG_OVE_RTOS_NUTTX)
-#include "lxp/lxp_linux_uapi.h"
 #include "ove/lxp_metrics.h"
 #endif
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 #include "FreeRTOS.h"
-#include "ove_freertos_lnx_metrics.h"
 #include "stm32f746xx.h"
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 #include <zephyr/irq.h>
-#include "lxp/ports/zephyr.h"
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
 #include <arch/chip/irq.h>
 #include <nuttx/arch.h>
@@ -522,79 +519,11 @@ static char *append_cycles_us(char *p, uint32_t cycles, uint32_t counter_hz)
 	return p;
 }
 
-static const char *svc_syscall_name(uint32_t nr)
-{
-#define SVC_NAME(name)      \
-	case LXP_NR_##name: \
-		return #name
-	switch (nr) {
-		SVC_NAME(exit);
-		SVC_NAME(exit_group);
-		SVC_NAME(fork);
-		SVC_NAME(vfork);
-		SVC_NAME(clone);
-		SVC_NAME(read);
-		SVC_NAME(write);
-		SVC_NAME(writev);
-		SVC_NAME(pread64);
-		SVC_NAME(pwrite64);
-		SVC_NAME(open);
-		SVC_NAME(openat);
-		SVC_NAME(close);
-		SVC_NAME(ioctl);
-		SVC_NAME(brk);
-		SVC_NAME(mmap2);
-		SVC_NAME(munmap);
-		SVC_NAME(mprotect);
-		SVC_NAME(getpid);
-		SVC_NAME(getppid);
-		SVC_NAME(gettid);
-		SVC_NAME(sched_yield);
-		SVC_NAME(futex);
-		SVC_NAME(futex_time64);
-		SVC_NAME(nanosleep);
-		SVC_NAME(clock_gettime);
-		SVC_NAME(clock_gettime64);
-		SVC_NAME(gettimeofday);
-		SVC_NAME(poll);
-		SVC_NAME(ppoll_time64);
-		SVC_NAME(pselect6_time64);
-		SVC_NAME(rt_sigaction);
-		SVC_NAME(rt_sigprocmask);
-		SVC_NAME(rt_sigsuspend);
-		SVC_NAME(sigreturn);
-		SVC_NAME(rt_sigreturn);
-		SVC_NAME(kill);
-		SVC_NAME(tkill);
-		SVC_NAME(tgkill);
-		SVC_NAME(socket);
-		SVC_NAME(bind);
-		SVC_NAME(connect);
-		SVC_NAME(listen);
-		SVC_NAME(accept);
-		SVC_NAME(accept4);
-		SVC_NAME(send);
-		SVC_NAME(sendto);
-		SVC_NAME(sendmsg);
-		SVC_NAME(recv);
-		SVC_NAME(recvfrom);
-		SVC_NAME(recvmsg);
-		SVC_NAME(shutdown);
-		SVC_NAME(getsockname);
-		SVC_NAME(getpeername);
-		SVC_NAME(setsockopt);
-		SVC_NAME(getsockopt);
-	default:
-		return "?";
-	}
-#undef SVC_NAME
-}
-
 static char *append_syscall(char *p, uint32_t nr)
 {
 	p = append_u32(p, nr);
 	*p++ = '(';
-	p = append_text(p, svc_syscall_name(nr));
+	p = append_text(p, ove_lxp_syscall_name(nr));
 	*p++ = ')';
 	return p;
 }
@@ -645,13 +574,14 @@ static void report_svc_metrics(void)
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 static void report_thread_snapshot_metrics(void)
 {
-	struct ove_freertos_thread_snapshot_metrics window;
-	struct ove_freertos_thread_snapshot_metrics total;
+	struct ove_lxp_thread_snapshot_metrics window;
+	struct ove_lxp_thread_snapshot_metrics total;
 	char line[160];
 	char *p;
 	uint32_t counter_hz = ove_lxp_metrics_counter_hz();
 
-	ove_freertos_thread_snapshot_metrics_take(&window, &total);
+	if (ove_lxp_thread_snapshot_metrics_take(&window, &total) != OVE_OK)
+		return;
 	p = append_text(line, "[rt-scope] thread-snapshot-us window calls=");
 	p = append_u32(p, window.calls);
 	if (window.calls != 0u) {
@@ -674,13 +604,14 @@ static void report_thread_snapshot_metrics(void)
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 static void report_critical_metrics(void)
 {
-	lxp_zephyr_critical_metrics_t window;
-	lxp_zephyr_critical_metrics_t total;
+	struct ove_lxp_critical_metrics window;
+	struct ove_lxp_critical_metrics total;
 	char line[192];
 	char *p;
 	uint32_t counter_hz = ove_lxp_metrics_counter_hz();
 
-	lxp_zephyr_critical_metrics_take(&window, &total);
+	if (ove_lxp_critical_metrics_take(&window, &total) != OVE_OK)
+		return;
 	p = append_text(line, "[rt-scope] irq-lock-us window sections=");
 	p = append_u32(p, window.sections);
 	if (window.sections != 0u) {
@@ -704,7 +635,7 @@ static void report_critical_metrics(void)
 	*p = '\0';
 	g_report_write(line);
 }
-#endif /* CONFIG_OVE_RTOS_ZEPHYR */
+#endif
 #endif /* CONFIG_OVE_RTOS_FREERTOS || CONFIG_OVE_RTOS_ZEPHYR || CONFIG_OVE_RTOS_NUTTX */
 
 static uint32_t percentile_upper_us(const struct rt_scope_metrics *metrics, uint32_t per_mille)
@@ -905,7 +836,7 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	proc_metric(&builder, "svc_max_cycles", svc.max_cycles);
 	proc_metric(&builder, "svc_max_syscall", svc.max_syscall);
 	proc_text(&builder, "svc_max_syscall_name ");
-	proc_text(&builder, svc.calls == 0u ? "?" : svc_syscall_name(svc.max_syscall));
+	proc_text(&builder, svc.calls == 0u ? "?" : ove_lxp_syscall_name(svc.max_syscall));
 	proc_text(&builder, "\n");
 #else
 	proc_metric(&builder, "svc_available", 0u);

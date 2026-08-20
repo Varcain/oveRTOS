@@ -328,12 +328,14 @@ scope ISR can therefore post its event ahead of the active display/network
 peripherals without using Zephyr's zero-latency class, whose handlers could not
 call the event API.
 
-On FreeRTOS and Zephyr, `svc-us` measures wall-clock cycles from entry into the
-C portion of the Linux guest's SVC handler through syscall dispatch/parking and
+On all three engines, `svc-us` measures wall-clock cycles from entry into the C
+portion of the Linux guest's SVC handler through syscall dispatch/parking and
 register write-back. The small assembly entry/exit shim and the statistics
 update itself are outside the interval. `syscall` is the ARM EABI syscall number
 carried in `r7` (all guest calls use the same `svc #0` instruction); the
-parenthesised name is `?` for a number not in the reporter's compact name table.
+parenthesised name is `?` for a number outside LXP's compact diagnostic table.
+Canonical LXP owns both the accumulator and that table; the oveRTOS facade adds
+only the selected engine's counter frequency and optional native diagnostics.
 The window row is reset every 10 seconds, while `svc-total` retains the lifetime
 maximum and the syscall that produced it.
 
@@ -346,12 +348,10 @@ cat /proc/rt_scope
 `/proc/rt_scope` is a coherent, non-destructive lifetime snapshot. It reports
 release/execution/failure counts, newest- and oldest-release dispatch maxima,
 the longest missed run, ISR-entry and fixed-work timings in integer nanoseconds,
-histogram-derived p99/p99.9 ceilings, and the lifetime SVC timing on FreeRTOS
-and Zephyr. `timer_hz` and `svc_counter_hz` document the conversion bases. NuttX
-reports `svc_available 0` because its shared native/personality SVC path does not
-yet have the same bounded timing point. Opening the file neither rotates the
-10-second UART window nor resets any counter, so benchmark readers cannot
-perturb or consume the measurement.
+histogram-derived p99/p99.9 ceilings, and the lifetime SVC timing on FreeRTOS,
+NuttX, and Zephyr. `timer_hz` and `svc_counter_hz` document the conversion bases.
+Opening the file neither rotates the 10-second UART window nor resets any
+counter, so benchmark readers cannot perturb or consume the measurement.
 
 Zephyr also prints `irq-lock-us`: the count, average, and maximum duration of
 the coordinator's IRQ-masked process-table snapshots for both the current
