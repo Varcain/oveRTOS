@@ -184,6 +184,11 @@ if(APP_TEXT MATCHES
     message(FATAL_ERROR
         "app.c regained LXP-owned rootfs bootstrap or provider/run composition")
 endif()
+if(APP_TEXT MATCHES
+   "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")
+    message(FATAL_ERROR
+        "app.c regained LXP topology globals or native network lifecycle ownership")
+endif()
 if(APP_TEXT MATCHES "ove_hal_(dma2d|fb)_")
     message(FATAL_ERROR
         "app.c regained generic display-provider initialization or access")

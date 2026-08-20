@@ -41,11 +41,7 @@
 #include "lxp/lxp_config.h" /* LXP_NSLOT (the latency report walks the slots) */
 #include "lxp/lxp_latency.h"
 #if defined(CONFIG_OVE_LINUX_NET)
-#include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
-#include "lxp/lxp_net.h" /* lxp_sock_set_netif — the SIOC* ioctl target */
-#endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
-#include "lxp/lxp_netfs.h" /* lxp_netfs_mount_config — the static /mnt/pi mount */
+#include "ove/net.h" /* product-level socket smoke over the initialized host network */
 #endif
 #if defined(CONFIG_OVE_WATCHDOG)
 #include "ove/watchdog.h" /* host-owned IWDG feed */
@@ -415,7 +411,13 @@ static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
 #define ROOTFS_NAME_BYTES (16 * 1024)
 #endif
 static char g_rootfs_names[ROOTFS_NAME_BYTES];
-static lxp_host_t g_linux_host;
+static ove_lxp_host_t g_linux_host;
+
+static void demo_exit(unsigned int code)
+{
+	ove_lxp_host_deinit(&g_linux_host);
+	sh_exit(code);
+}
 
 /* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
  * this must run in a task; Zephyr and NuttX call ove_main() from running scheduler
@@ -917,7 +919,7 @@ static void demo_body(void *arg)
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	if (linux_rt_scope_start(ove_lxp_console_write) != OVE_OK) {
 		ove_lxp_console_write("[rt-scope] FAIL: timer/event/thread setup\n");
-		sh_exit(1);
+		demo_exit(1);
 	}
 	ove_lxp_console_write("[rt-scope] CH1=D3/PB4 TIM3 1kHz reference; "
 		  "CH2=D4/PG7 critical-thread response\n");
@@ -947,13 +949,37 @@ static void demo_body(void *arg)
 	rootfs_image = ove_test_rootfs_cpio;
 	rootfs_image_size = ove_test_rootfs_cpio_len;
 #endif
-	/* LXP publishes the rootfs window to the selected port before its first
-	 * archive read, parses the CPIO once, and retains provider/rootfs composition
-	 * for every subsequent launch. The application owns only image selection and
-	 * the statically bounded storage policy. */
-	int rootfs_rc = ove_lxp_host_init_cpio(&g_linux_host, rootfs_image, rootfs_image_size,
-					      g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
-					      sizeof(g_rootfs_names));
+	ove_lxp_host_config_t host_config = {
+		.rootfs_image = rootfs_image,
+		.rootfs_image_size = rootfs_image_size,
+		.rootfs_storage = g_rootfs,
+		.rootfs_capacity = ROOTFS_MAX_FILES,
+		.rootfs_name_storage = g_rootfs_names,
+		.rootfs_name_capacity = sizeof(g_rootfs_names),
+	};
+#if defined(CONFIG_OVE_LINUX_NET)
+	/* Product topology remains explicit here; the oveRTOS host owns the native
+	 * interface storage, bring-up, rollback, and LXP binding. */
+	ove_netif_config_t net_config = {.use_dhcp = 0};
+	ove_sockaddr_ipv4(&net_config.static_ip, 172, 1, 1, 2, 0);
+	ove_sockaddr_ipv4(&net_config.netmask, 255, 255, 255, 0, 0);
+	ove_sockaddr_ipv4(&net_config.gateway, 172, 1, 1, 1, 0);
+	host_config.netif_config = &net_config;
+	host_config.netif_address_wait_ms = 10000u;
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	const ove_lxp_netfs_config_t netfs_config = {
+		.mountpoint = CONFIG_OVE_LINUX_NETFS_MOUNTPOINT,
+		.server_ipv4 = CONFIG_OVE_LINUX_NETFS_SERVER_IP,
+		.port = (uint16_t)CONFIG_OVE_LINUX_NETFS_PORT,
+		.aname = CONFIG_OVE_LINUX_NETFS_ANAME,
+		.uname = "root",
+	};
+	host_config.netfs_config = &netfs_config;
+#endif
+	/* The host publishes the rootfs window before parsing, owns native provider
+	 * setup, and retains immutable topology/rootfs composition for each run. */
+	int rootfs_rc = ove_lxp_host_init_cpio(&g_linux_host, &host_config);
 	if (rootfs_rc != LXP_OK) {
 		char b[96];
 		char *p = put_str(b, "[demo] FAIL: rootfs host init failed rc=");
@@ -965,34 +991,14 @@ static void demo_body(void *arg)
 		*p++ = '\n';
 		*p = 0;
 		ove_lxp_console_write(b);
-		sh_exit(1);
+		demo_exit(1);
 	}
 
 #if defined(CONFIG_OVE_LINUX_NET)
-	/* Bring eth0 up so the personality's socket layer (FD_SOCKET -> ove_net -> lwIP
-	 * + the STM32 LAN8742 driver) can reach the LAN. Static IP (see below); the
-	 * configured address is printed so a headless run reports the link came up. */
+	/* Report the host-owned native interface without exposing its handle. */
 	{
-		static ove_netif_storage_t s_netif_storage;
-		ove_netif_t nif = NULL;
-		/* Static IP: the board's eth0 is a point-to-point link to the test host
-		 * (a Raspberry Pi at 172.1.1.1/24); no DHCP on that link. */
-		ove_netif_config_t netcfg = {.use_dhcp = 0};
-		ove_sockaddr_ipv4(&netcfg.static_ip, 172, 1, 1, 2, 0);
-		ove_sockaddr_ipv4(&netcfg.netmask, 255, 255, 255, 0, 0);
-		ove_sockaddr_ipv4(&netcfg.gateway, 172, 1, 1, 1, 0);
-		if (ove_netif_init(&nif, &s_netif_storage) == OVE_OK &&
-		    ove_netif_up(nif, &netcfg) == OVE_OK) {
-			/* Register the interface so the personality's SIOC* ioctls (ifconfig/route)
-			 * operate on it. */
-			lxp_sock_set_netif(nif);
-			ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
-			for (int i = 0; i < 200; i++) { /* wait for the interface to report its address */
-				ove_netif_get_addr(nif, &ip, &gw, &nm);
-				if (ip.addr[0] | ip.addr[1] | ip.addr[2] | ip.addr[3])
-					break;
-				ove_thread_sleep_ms(50);
-			}
+		ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
+		if (ove_lxp_host_netif_get_addr(&g_linux_host, &ip, &gw, &nm) == OVE_OK) {
 			char b[96];
 			char *p = put_str(b, "[demo] eth0 up ip=");
 			p = put_dec(p, ip.addr[0]);
@@ -1013,33 +1019,9 @@ static void demo_body(void *arg)
 			*p++ = '\n';
 			*p = 0;
 			ove_lxp_console_write(b);
-
 		} else {
-			ove_lxp_console_write("[demo] eth0 bring-up FAILED\n");
+			ove_lxp_console_write("[demo] eth0 address unavailable after bring-up\n");
 		}
-	}
-#endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
-	/* Configure the static remote-fs mount (/mnt/pi -> the Pi's 9P/diod export). The 9P
-	 * handshake happens later inside lxp_run's coordinator (lxp_netfs_init). */
-	{
-		uint8_t ip[4] = {0, 0, 0, 0};
-		int oct = 0, v = 0;
-		for (const char *c = CONFIG_OVE_LINUX_NETFS_SERVER_IP;; c++) {
-			if (*c >= '0' && *c <= '9') {
-				v = v * 10 + (*c - '0');
-			} else {
-				if (oct < 4)
-					ip[oct] = (uint8_t)v;
-				oct++;
-				v = 0;
-				if (!*c)
-					break;
-			}
-		}
-		lxp_netfs_mount_config(CONFIG_OVE_LINUX_NETFS_MOUNTPOINT, ip,
-					   (uint16_t)CONFIG_OVE_LINUX_NETFS_PORT,
-					   CONFIG_OVE_LINUX_NETFS_ANAME, "root");
 	}
 #endif
 
@@ -1055,7 +1037,7 @@ static void demo_body(void *arg)
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
 			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: ove_thread_init\n");
-		sh_exit(1);
+		demo_exit(1);
 	}
 	while (!g_feed_ready) /* let the feeder fill the queue before the program reads */
 		ove_thread_sleep_ms(1); /* BLOCKING sleep so the lower-priority worker runs: NuttX's
@@ -1097,7 +1079,7 @@ static void demo_body(void *arg)
 		*p++ = '\n';
 		*p = 0;
 		ove_lxp_console_write(b);
-		sh_exit(1);
+		demo_exit(1);
 	}
 	ove_lxp_console_write(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
@@ -1137,7 +1119,7 @@ static void demo_body(void *arg)
 	if (ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
 			    sizeof(g_mon_stack), g_mon_stack) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: latency monitor thread init\n");
-		sh_exit(1);
+		demo_exit(1);
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
@@ -1159,7 +1141,7 @@ static void demo_body(void *arg)
 	lat_report(); /* only after the monitor is stopped: the counters are read unlocked */
 #endif
 	stack_audit(); /* R9/C3: worst-case stack + heap usage, now that the workload has run */
-	sh_exit(rc2 >= 0 ? 0 : 1);
+	demo_exit(rc2 >= 0 ? 0 : 1);
 }
 
 void ove_main(void)
@@ -1169,7 +1151,7 @@ void ove_main(void)
 	if (ove_thread_init(&g_demo, &g_demo_storage, "demo", demo_body, NULL, OVE_PRIO_NORMAL,
 			    sizeof(g_demo_stack), g_demo_stack) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: demo thread init\n");
-		sh_exit(1);
+		demo_exit(1);
 	}
 	ove_run(); /* ove_thread_start_scheduler() — never returns */
 #else

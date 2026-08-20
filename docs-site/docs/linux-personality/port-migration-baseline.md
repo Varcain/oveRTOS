@@ -334,3 +334,42 @@ pass. Production links compare with Iteration 8 as follows:
 The generated configurations and fixed LXP pools are unchanged. The ownership
 ledger rejects console transport mechanics in `linux_interop/app.c` and rejects
 any renewed direct dependency from the Zephyr console backend to LXP.
+
+## Iteration 10: immutable network topology and native interface ownership
+
+The application still allocated the native interface, brought it up, waited for
+an address, mutated LXP's process-global eth0 selector, parsed a dotted IPv4
+string by hand, and mutated a second process-global 9P mount. The mount was
+retained across `lxp_netfs_shutdown()`, so a later host or run could silently
+inherit stale topology.
+
+Canonical LXP now captures the opaque interface handle and a validated copy of
+the optional netfs endpoint in `lxp_host_t`. `lxp_host_run()` forwards both as
+part of the complete run contract. The coordinator binds eth0 only after the
+network provider enters its run lifecycle and clears it before provider
+teardown. Netfs copies topology anew on every run and discards it at shutdown;
+NULL explicitly disables the mount. The obsolete provider-table netif member
+and public topology setters are removed, and the network-provider ABI is 4.
+
+oveRTOS now exposes one `ove_lxp_host_t` that owns native interface storage,
+bring-up, bounded address wait, rollback, teardown, provider selection, and the
+LXP host. The app still selects its static IP, gateway, rootfs, and 9P endpoint,
+but it no longer owns native lifecycle mechanics or parses transport addresses.
+Strict IPv4 validation rejects malformed configuration before touching the
+rootfs. The ownership test prevents the retired setters, direct LXP network
+headers, and native netif lifecycle calls from returning to `app.c`.
+
+The change preserves two sequential personality launches on one initialized
+host while making deinitialization explicit after the final launch. Host tests
+cover copied topology, invalid endpoints, and stale-state clearing. Clean
+production links compare with Iteration 9 as follows:
+
+| Engine | Iteration 9 flash | Iteration 10 flash | Delta |
+|---|---:|---:|---:|
+| FreeRTOS | 310,596 B | 311,540 B | +944 B |
+| NuttX | 355,908 B | 356,868 B | +960 B |
+| Zephyr | 356,640 B | 358,028 B | +1,388 B |
+
+The fixed guest pools and generated engine configurations are unchanged. The
+extra static state is the immutable copied netfs topology; native netif storage
+moved from the application into the host object rather than being duplicated.

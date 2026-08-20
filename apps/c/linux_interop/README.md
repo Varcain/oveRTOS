@@ -400,6 +400,22 @@ The scope output owns TIM3, pinless timebase TIM5, PB4, and PG7. Disable
 `CONFIG_OVE_LINUX_RT_SCOPE` in menuconfig when the application needs any of
 those resources.
 
+## Host and network ownership
+
+The app supplies product topology—rootfs storage, `172.1.1.2/24`, gateway
+`172.1.1.1`, and the configured 9P endpoint—to `ove_lxp_host_init_cpio()`.
+`ove_lxp_host_t` owns native interface storage, bring-up, bounded address wait,
+rollback, teardown, provider selection, and the immutable LXP host. LXP binds
+the opaque eth0 handle and copied netfs configuration only for each run and
+clears both at teardown. Consequently, the phase-1 `cat` launch and phase-2
+`init` launch reuse deliberate host configuration without mutable process-
+global setters or stale state from the preceding run.
+
+The application retains its post-phase-1 socket smoke because that is a demo
+workload and readiness report, not provider lifecycle. It queries the host-owned
+address through `ove_lxp_host_netif_get_addr()` and releases the host after the
+final guest exits.
+
 ## Supported profiles
 
 The app has four supported profiles. They all compile the same

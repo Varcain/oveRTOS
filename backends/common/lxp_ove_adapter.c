@@ -326,8 +326,9 @@ static int a_get_error(lxp_socket_t s)
 	return ove_socket_get_error(socket->h);
 }
 
-/* netif ops: the module holds the interface as an lxp_netif_t, which on oveRTOS is
- * really the ove_netif_t handed in via lxp_net_set_netif — cast back here. */
+/* Netif ops: the immutable oveRTOS host supplies an opaque ove_netif_t to
+ * LXP's run contract; the coordinator binds it for that run and passes it back
+ * through these operations. */
 static int a_netif_get_addr(lxp_netif_t nif, lxp_sockaddr_t *ip, lxp_sockaddr_t *gw,
 			    lxp_sockaddr_t *nm)
 {
