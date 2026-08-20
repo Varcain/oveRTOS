@@ -60,16 +60,21 @@ void *ove_hal_fb_buffer(void)
 	return display_get_framebuffer(g_disp);
 }
 
-void ove_hal_fb_present(void)
+void ove_hal_fb_present(int x, int y, int w, int h)
 {
 	/* Clean (flush) the framebuffer's dirty D-cache lines to SDRAM. The privileged /dev/fb0
 	 * writer and the guest both see SDRAM through Normal WBWA mappings, so pixels can remain in
 	 * cache while the LTDC bus master reads physical SDRAM. Called at ~30 Hz from the run-loop
 	 * tick, which coalesces scanline writes into one push. The CPU-only guest program pool needs
 	 * no such maintenance because coordinator and guest share one coherent cacheable view. */
-	void *fb = display_get_framebuffer(g_disp);
-	if (fb)
-		sys_cache_data_flush_range(fb, (size_t)FB_W * FB_H * 2u);
+	uint8_t *fb = display_get_framebuffer(g_disp);
+	if (!fb || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > FB_W || y + h > FB_H)
+		return;
+	/* Flush the smallest contiguous span containing the dirty rectangle. It may
+	 * include untouched inter-row pixels, but avoids a cache API call per row. */
+	size_t start = (size_t)y * FB_W * 2u + (size_t)x * 2u;
+	size_t len = (size_t)(h - 1) * FB_W * 2u + (size_t)w * 2u;
+	sys_cache_data_flush_range(fb + start, len);
 }
 
 #endif /* CONFIG_OVE_FB */

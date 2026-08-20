@@ -64,8 +64,12 @@ void *ove_hal_fb_buffer(void)
 	return g_fb;
 }
 
-void ove_hal_fb_present(void)
+void ove_hal_fb_present(int x, int y, int w, int h)
 {
+	(void)x;
+	(void)y;
+	(void)w;
+	(void)h;
 	if (!g_shm)
 		return;
 	struct fb_header hdr = {

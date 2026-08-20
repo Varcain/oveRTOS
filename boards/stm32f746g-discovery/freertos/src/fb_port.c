@@ -67,8 +67,12 @@ void *ove_hal_fb_buffer(void)
 	return (void *)LCD_FB_START_ADDRESS;
 }
 
-void ove_hal_fb_present(void)
+void ove_hal_fb_present(int x, int y, int w, int h)
 {
+	(void)x;
+	(void)y;
+	(void)w;
+	(void)h;
 	/* No-op: the LTDC continuously scans the SDRAM framebuffer, and the
 	 * framebuffer @0xC0000000 is non-cacheable (bsp MPU region 0 / the Cortex-M7
 	 * background Device map — the guest's cacheable WBWA MPU regions cover only the

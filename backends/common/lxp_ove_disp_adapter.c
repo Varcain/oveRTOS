@@ -44,18 +44,18 @@ static void *d_fb_get_buffer(void)
 {
 	return ove_fb_get_buffer();
 }
-static void d_fb_flush(int x, int y, int w, int h)
+static void d_fb_present(int x, int y, int w, int h)
 {
-	ove_fb_flush(x, y, w, h);
-}
-static void d_fb_present(void)
-{
-	ove_fb_present();
+	ove_fb_present(x, y, w, h);
 }
 #endif /* CONFIG_OVE_LINUX_DEV_FB */
 
 #if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
 #include "ove/hal/hal_dma2d.h"
+static int d_dma2d_init(void)
+{
+	return ove_hal_dma2d_init();
+}
 /* Bridge the validated lxp DMA2D op to the board HAL (field copy: the lxp op and
  * ove desc are the same layout, but lxp types must not leak into the ove HAL). */
 static int d_dma2d_submit(const lxp_dma2d_op_t *op)
@@ -83,6 +83,10 @@ static int d_touch_read(int *x, int *y, int *pressed)
 {
 	return ove_ft5336_read(x, y, pressed);
 }
+static void d_touch_deinit(void)
+{
+	ove_ft5336_deinit();
+}
 #endif /* CONFIG_OVE_FT5336 */
 
 const lxp_display_ops_t g_lxp_host_display_ops = {
@@ -92,15 +96,16 @@ const lxp_display_ops_t g_lxp_host_display_ops = {
 	.fb_init = d_fb_init,
 	.fb_get_info = d_fb_get_info,
 	.fb_get_buffer = d_fb_get_buffer,
-	.fb_flush = d_fb_flush,
 	.fb_present = d_fb_present,
 #endif
 #if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
+	.dma2d_init = d_dma2d_init,
 	.dma2d_submit = d_dma2d_submit,
 #endif
 #if defined(CONFIG_OVE_FT5336)
 	.touch_init = d_touch_init,
 	.touch_read = d_touch_read,
+	.touch_deinit = d_touch_deinit,
 #endif
 };
 

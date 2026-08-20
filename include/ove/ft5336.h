@@ -26,6 +26,9 @@ extern "C" {
 /** @brief Bring up the touch controller (i2c bus + probe). Returns 0, or <0. */
 int ove_ft5336_init(void);
 
+/** @brief Release the I2C instance acquired by @ref ove_ft5336_init. */
+void ove_ft5336_deinit(void);
+
 /**
  * @brief Read the primary touch point.
  * @param[out] x        X coordinate (panel pixels) when pressed.

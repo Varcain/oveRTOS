@@ -5,9 +5,8 @@
  *
  * This file is part of oveRTOS.
  *
- * Portable framebuffer layer: a thin forwarder over the board HAL that also owns
- * the "needs present" dirty flag (so a per-scanline write burst coalesces into
- * one push per run-loop tick). See ove/fb.h + ove/hal/hal_fb.h.
+ * Portable framebuffer layer: a thin forwarder over the board HAL. Its caller
+ * owns update coalescing; this layer owns only the physical framebuffer API.
  */
 
 #include "ove_config.h"
@@ -18,11 +17,8 @@
 #include "ove/hal/hal_fb.h"
 #include "ove/types.h"
 
-static int g_fb_dirty;
-
 int ove_fb_init(void)
 {
-	g_fb_dirty = 0;
 	return ove_hal_fb_init();
 }
 
@@ -38,21 +34,9 @@ void *ove_fb_get_buffer(void)
 	return ove_hal_fb_buffer();
 }
 
-void ove_fb_flush(int x, int y, int w, int h)
+void ove_fb_present(int x, int y, int w, int h)
 {
-	(void)x;
-	(void)y;
-	(void)w;
-	(void)h;
-	g_fb_dirty = 1; /* the tick presents it; partial-rect tracking is a later nicety */
-}
-
-void ove_fb_present(void)
-{
-	if (!g_fb_dirty)
-		return;
-	g_fb_dirty = 0;
-	ove_hal_fb_present();
+	ove_hal_fb_present(x, y, w, h);
 }
 
 /* The weak "no display" ove_hal_fb_* stubs live in a SEPARATE object (ove_fb_stub.c)

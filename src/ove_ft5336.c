@@ -38,6 +38,8 @@
 #define I2C_TMO_NS 25000000ull /* 25 ms — touch i2c runs on the coordinator thread */
 
 static ove_i2c_t g_ft_i2c;
+static ove_i2c_storage_t g_ft_i2c_storage;
+static int g_ft_initialized;
 static int g_last_x;
 static int g_last_y;
 
@@ -49,21 +51,39 @@ int ove_ft5336_init(void)
 		.instance = CONFIG_OVE_FT5336_I2C_INSTANCE,
 		.speed = OVE_I2C_SPEED_FAST,
 	};
-	if (ove_i2c_create(&g_ft_i2c, &cfg) != OVE_OK)
+	if (g_ft_initialized)
+		return OVE_OK;
+	if (ove_i2c_init(&g_ft_i2c, &g_ft_i2c_storage, &cfg) != OVE_OK)
 		return OVE_ERR_NOT_FOUND;
 	/* An address-only probe is not supported consistently by every RTOS I2C
 	 * backend. Reading and validating the documented ID proves both the bus
 	 * transaction and that the expected controller is present. */
 	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_CHIP_ID, &chip_id,
 			     sizeof(chip_id), I2C_TMO_NS) != OVE_OK ||
-	    chip_id != FT5336_CHIP_ID)
+	    chip_id != FT5336_CHIP_ID) {
+		ove_i2c_deinit(g_ft_i2c);
+		g_ft_i2c = NULL;
 		return OVE_ERR_NOT_FOUND;
+	}
 	/* Match ST's ft5336_TS_Start(): explicitly disable controller-generated
 	 * interrupts and make fresh coordinates available to our periodic poller. */
 	if (ove_i2c_reg_write(g_ft_i2c, FT5336_ADDR, FT5336_REG_GMODE, &mode, sizeof(mode),
-			      I2C_TMO_NS) != OVE_OK)
+			      I2C_TMO_NS) != OVE_OK) {
+		ove_i2c_deinit(g_ft_i2c);
+		g_ft_i2c = NULL;
 		return OVE_ERR_BUS_ERROR;
+	}
+	g_ft_initialized = 1;
 	return OVE_OK;
+}
+
+void ove_ft5336_deinit(void)
+{
+	if (!g_ft_initialized)
+		return;
+	ove_i2c_deinit(g_ft_i2c);
+	g_ft_i2c = NULL;
+	g_ft_initialized = 0;
 }
 
 int ove_ft5336_read(int *x, int *y, int *pressed)
