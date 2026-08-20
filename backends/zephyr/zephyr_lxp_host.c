@@ -244,7 +244,4 @@ const lxp_zephyr_port_config_t g_lxp_zephyr_port_config = {
 	.system_version = host_system_version,
 	.random_fill = host_random_fill,
 	.validate_memory_contract = host_validate_memory_contract,
-#if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-	.svc_metrics_record = ove_lxp_svc_metrics_record,
-#endif
 };

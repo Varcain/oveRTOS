@@ -292,6 +292,5 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 	.validate_memory_contract = host_validate_memory_contract,
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	.svc_cycle_counter = (volatile const uint32_t *)0xe0001004u,
-	.svc_metrics_record = ove_lxp_svc_metrics_record,
 #endif
 };

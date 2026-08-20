@@ -26,12 +26,8 @@ struct ove_lxp_svc_metrics {
 	uint32_t max_syscall;
 };
 
-/* Single-core trap writer. Each hardware seam calls this after dispatching one
- * guest SVC and before performing the observer's bookkeeping. */
-void ove_lxp_svc_metrics_record(uint32_t syscall, uint32_t cycles);
-
 /* Switch to a fresh window, return the completed window and a coherent
- * lifetime snapshot. Available when CONFIG_OVE_LINUX_RT_SCOPE is enabled. */
+ * lifetime snapshot translated from canonical LXP ownership. */
 void ove_lxp_svc_metrics_take(struct ove_lxp_svc_metrics *window,
 			      struct ove_lxp_svc_metrics *total);
 
@@ -39,8 +35,31 @@ void ove_lxp_svc_metrics_take(struct ove_lxp_svc_metrics *window,
  * window. Safe for procfs readers in task/SVC context. */
 void ove_lxp_svc_metrics_snapshot(struct ove_lxp_svc_metrics *total);
 
+/* Canonical LXP diagnostic name for an ARM EABI syscall number. */
+const char *ove_lxp_syscall_name(uint32_t syscall_nr);
+
 /* Engine implementation supplies the frequency of its SVC cycle counter. */
 uint32_t ove_lxp_metrics_counter_hz(void);
+
+struct ove_lxp_critical_metrics {
+	uint32_t sections;
+	uint32_t max_cycles;
+	uint64_t total_cycles;
+};
+
+/* Optional LXP coordinator critical-section timing. Returns OVE_OK when the
+ * selected port provides the metric, OVE_ERR_NOT_SUPPORTED otherwise. */
+int ove_lxp_critical_metrics_take(struct ove_lxp_critical_metrics *window,
+				  struct ove_lxp_critical_metrics *total);
+
+struct ove_lxp_thread_snapshot_metrics {
+	uint32_t calls;
+	uint32_t max_cycles;
+};
+
+/* Optional duration of the host thread snapshot used by LXP observability. */
+int ove_lxp_thread_snapshot_metrics_take(struct ove_lxp_thread_snapshot_metrics *window,
+					 struct ove_lxp_thread_snapshot_metrics *total);
 
 #ifdef __cplusplus
 }

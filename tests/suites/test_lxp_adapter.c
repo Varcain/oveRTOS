@@ -16,6 +16,7 @@
 #include "ove/lxp_host.h"
 #include "ove/lxp_console.h"
 #include "ove/lxp_metrics.h"
+#include "lxp/lxp_rt_metrics.h"
 #include "ove/thread.h"
 #include "ove_net_ready.h"
 #include "lxp_ove_thread_adapter.h"
@@ -677,9 +678,9 @@ static void test_svc_metrics_own_window_and_lifetime(void **state)
 	struct ove_lxp_svc_metrics window;
 	struct ove_lxp_svc_metrics total;
 
-	ove_lxp_svc_metrics_record(7u, 40u);
-	ove_lxp_svc_metrics_record(8u, 20u);
-	ove_lxp_svc_metrics_record(9u, 60u);
+	lxp_rt_svc_metrics_record(7u, 40u);
+	lxp_rt_svc_metrics_record(8u, 20u);
+	lxp_rt_svc_metrics_record(9u, 60u);
 	ove_lxp_svc_metrics_take(&window, &total);
 
 	assert_int_equal(window.calls, 3u);
@@ -704,6 +705,15 @@ static void test_svc_metrics_own_window_and_lifetime(void **state)
 	assert_int_equal(window.calls, 0u);
 	assert_int_equal(total.calls, 3u);
 	assert_int_equal(total.total_cycles, 120u);
+	assert_string_equal(ove_lxp_syscall_name(3u), "read");
+	struct ove_lxp_critical_metrics critical_window;
+	struct ove_lxp_critical_metrics critical_total;
+	assert_int_equal(ove_lxp_critical_metrics_take(&critical_window, &critical_total),
+			 OVE_ERR_NOT_SUPPORTED);
+	struct ove_lxp_thread_snapshot_metrics thread_window;
+	struct ove_lxp_thread_snapshot_metrics thread_total;
+	assert_int_equal(ove_lxp_thread_snapshot_metrics_take(&thread_window, &thread_total),
+			 OVE_ERR_NOT_SUPPORTED);
 }
 
 int test_lxp_adapter_run(void)

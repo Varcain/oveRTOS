@@ -91,6 +91,7 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
     ${OVE_ROOT}/backends/common/lxp_ove_console.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c
+    ${OVE_ROOT}/modules/lxp/src/lxp_rt_metrics.c
     # Explicit thread-snapshot type translation at the oveRTOS/LXP boundary.
     ${OVE_ROOT}/backends/common/lxp_ove_thread_adapter.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
@@ -209,6 +210,7 @@ function(ove_add_stub_variant name)
         CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US=1000
         CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US=300
         CONFIG_OVE_NET_RX_READY_NOTIFY=1
+        LXP_ENABLE_RT_METRICS=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1
