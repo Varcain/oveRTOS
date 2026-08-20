@@ -177,6 +177,7 @@ endif()
 # native-RTOS headers are confined to the rt_scope benchmark exception.
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c" RT_SCOPE_TEXT)
+file(READ "${OVE_ROOT}/include/ove/lxp_host.h" OVE_LXP_HOST_HEADER_TEXT)
 if(APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR "app.c must not include native RTOS headers")
@@ -190,6 +191,14 @@ if(APP_TEXT MATCHES
    "lxp_file_t|ROOTFS_(MAX_FILES|NAME_BYTES)|rootfs_(storage|capacity|name_storage|name_capacity)")
     message(FATAL_ERROR
         "app.c regained rootfs workspace allocation or capacity knowledge")
+endif()
+if(OVE_LXP_HOST_HEADER_TEXT MATCHES
+   "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_(file|host)_t|rootfs_(files|names)|[ \t]core;")
+    message(FATAL_ERROR
+        "public ove_lxp_host_t exposes canonical LXP host storage representation")
+endif()
+if(APP_TEXT MATCHES "g_linux_host[.]_opaque|g_linux_host[.]_alignment")
+    message(FATAL_ERROR "app.c inspects opaque ove_lxp_host_t storage")
 endif()
 if(APP_TEXT MATCHES
    "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*|LXP_RUN_E[A-Z0-9_]*)")

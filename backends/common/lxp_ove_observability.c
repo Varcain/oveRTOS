@@ -7,6 +7,7 @@
  */
 
 #include "ove/lxp_observability.h"
+#include "lxp_ove_host_internal.h"
 
 #include <string.h>
 
@@ -27,7 +28,8 @@ int ove_lxp_host_observe(const ove_lxp_host_t *host, ove_lxp_host_observation_t 
 			memset(out, 0, sizeof(*out));
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int rc = lxp_host_observe(&host->core, out);
+	const ove_lxp_host_impl_t *impl = ove_lxp_host_private_const(host);
+	int rc = lxp_host_observe(&impl->core, out);
 	if (rc == LXP_OK)
 		return OVE_OK;
 	return rc == LXP_ERR_BUSY ? OVE_ERR_BUSY : OVE_ERR_INVALID_PARAM;
