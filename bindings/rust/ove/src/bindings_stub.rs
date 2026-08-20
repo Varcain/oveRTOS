@@ -108,11 +108,17 @@ pub const OVE_FS_O_CREATE: u32 = 4;
 pub const OVE_FS_O_APPEND: u32 = 8;
 pub const OVE_FS_O_TRUNC: u32 = 16;
 pub const OVE_FS_O_EXCL: u32 = 32;
-pub const OVE_FS_TYPE_FILE: u32 = 1;
-pub const OVE_FS_TYPE_DIR: u32 = 2;
+pub const OVE_FS_PATH_MAX: u32 = 256;
 pub const OVE_FS_SEEK_SET: u32 = 0;
 pub const OVE_FS_SEEK_CUR: u32 = 1;
 pub const OVE_FS_SEEK_END: u32 = 2;
+pub const OVE_FS_TYPE_FILE: u32 = 1;
+pub const OVE_FS_TYPE_DIR: u32 = 2;
+pub const OVE_MEDIA_RAW_WRITE: u32 = 1;
+pub const OVE_BLOCK_F_REMOVABLE: u32 = 1;
+pub const OVE_BLOCK_F_READ_ONLY: u32 = 2;
+pub const OVE_BLOCK_F_MEDIA_PRESENT: u32 = 4;
+pub const OVE_BLOCK_OPEN_WRITE: u32 = 1;
 pub const OVE_EG_WAIT_ALL: u32 = 1;
 pub const OVE_EG_CLEAR_ON_EXIT: u32 = 2;
 pub const OVE_SHELL_MAX_ARGS: u32 = 8;
@@ -180,17 +186,29 @@ pub const OVE_ERR_INVAL: ove_err = -20;
 pub const OVE_ERR_NOT_FOUND: ove_err = -21;
 #[doc = " Requested local network address is not configured on this host."]
 pub const OVE_ERR_NET_ADDR_NOT_AVAILABLE: ove_err = -22;
+#[doc = " The requested file-system entry already exists."]
 pub const OVE_ERR_ALREADY_EXISTS: ove_err = -23;
+#[doc = " The storage device has no space remaining."]
 pub const OVE_ERR_NO_SPACE: ove_err = -24;
+#[doc = " A path component that must be a directory is not a directory."]
 pub const OVE_ERR_NOT_DIR: ove_err = -25;
+#[doc = " A file-only operation was requested for a directory."]
 pub const OVE_ERR_IS_DIR: ove_err = -26;
+#[doc = " A directory cannot be removed because it is not empty."]
 pub const OVE_ERR_NOT_EMPTY: ove_err = -27;
+#[doc = " The target storage is read-only."]
 pub const OVE_ERR_READ_ONLY: ove_err = -28;
+#[doc = " The storage backend reported an input/output error."]
 pub const OVE_ERR_IO: ove_err = -29;
+#[doc = " The requested resource is currently busy."]
 pub const OVE_ERR_BUSY: ove_err = -30;
+#[doc = " A path or name exceeds the backend limit."]
 pub const OVE_ERR_NAME_TOO_LONG: ove_err = -31;
+#[doc = " The supplied handle is closed or otherwise invalid."]
 pub const OVE_ERR_BAD_HANDLE: ove_err = -32;
+#[doc = " The caller does not have permission for the operation."]
 pub const OVE_ERR_PERMISSION: ove_err = -33;
+#[doc = " Source and destination belong to different mounted filesystems."]
 pub const OVE_ERR_CROSS_DEVICE: ove_err = -34;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]
 pub type ove_err = core::ffi::c_int;
@@ -371,6 +389,8 @@ unsafe extern "C" {
     #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by higher-level bindings (Rust async runtime) to dispatch\n between the thread-context and ISR-context variants of a wake\n primitive (e.g. @c ove_event_signal vs @c ove_event_signal_from_isr).\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On host-sim backends (POSIX, WASM) the simulator sets a\n       thread-local flag inside its ISR wrappers; outside those\n       paths the function returns @c false.\n @note Requires @c CONFIG_OVE_ASYNC."]
     pub fn ove_is_in_isr() -> bool;
 }
+#[doc = " Notification that the console RX path published one or more bytes. The\n callback may run in interrupt context and must therefore be ISR-safe."]
+pub type ove_console_ready_fn = Option<unsafe extern "C" fn(context: *const core::ffi::c_void)>;
 unsafe extern "C" {
     #[doc = " @brief Initialise the system console hardware.\n\n Configures the underlying serial peripheral (baud rate, framing, etc.)\n as determined by the board support package. Must be called once before\n @ref ove_console_getchar, @ref ove_console_putchar, or\n @ref ove_console_write are used.\n\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_CONSOLE."]
     pub fn ove_console_init() -> core::ffi::c_int;
@@ -390,6 +410,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Write a raw byte buffer to the console.\n\n Transmits exactly @p len bytes from @p buf. No newline translation or\n null termination is applied. The call may block until all bytes have been\n accepted by the transmit buffer.\n\n @param[in] buf  Pointer to the data to transmit.\n @param[in] len  Number of bytes to transmit.\n @note Requires @c CONFIG_OVE_CONSOLE."]
     pub fn ove_console_write(buf: *const core::ffi::c_char, len: core::ffi::c_uint);
+}
+unsafe extern "C" {
+    #[doc = " @brief Install or withdraw the single console RX-readiness subscriber.\n\n Passing NULL withdraws the current subscription. A successful backend stops\n invoking the old callback before replacement or withdrawal returns. Backends\n without an event-producing RX path return @ref OVE_ERR_NOT_SUPPORTED and\n leave polling through @ref ove_console_try_getchar available.\n\n @param[in] callback  ISR-safe callback, or NULL to unsubscribe.\n @param[in] context   Opaque callback context.\n @return OVE_OK when supported, otherwise OVE_ERR_NOT_SUPPORTED."]
+    pub fn ove_console_set_ready_callback(
+        callback: ove_console_ready_fn,
+        context: *const core::ffi::c_void,
+    ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Feed a log line into the httpd log ring buffer.\n\n Call from the log output hook to capture lines for GET /api/log."]
@@ -913,8 +940,6 @@ pub struct ove_thread_info {
     pub name: *const core::ffi::c_char,
     #[doc = "< Opaque native identity; equality only."]
     pub identity: usize,
-    #[doc = "< LXP slot assigned by a personality seam, else -1."]
-    pub lxp_slot: i32,
     #[doc = "< Execution state."]
     pub state: ove_thread_state_t,
     #[doc = "< Priority level."]
@@ -930,26 +955,24 @@ pub struct ove_thread_info {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 88usize];
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 80usize];
     ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
     ["Offset of field: ove_thread_info::name"]
         [core::mem::offset_of!(ove_thread_info, name) - 0usize];
     ["Offset of field: ove_thread_info::identity"]
         [core::mem::offset_of!(ove_thread_info, identity) - 8usize];
-    ["Offset of field: ove_thread_info::lxp_slot"]
-        [core::mem::offset_of!(ove_thread_info, lxp_slot) - 16usize];
     ["Offset of field: ove_thread_info::state"]
-        [core::mem::offset_of!(ove_thread_info, state) - 20usize];
+        [core::mem::offset_of!(ove_thread_info, state) - 16usize];
     ["Offset of field: ove_thread_info::priority"]
-        [core::mem::offset_of!(ove_thread_info, priority) - 24usize];
+        [core::mem::offset_of!(ove_thread_info, priority) - 20usize];
     ["Offset of field: ove_thread_info::stack_used"]
-        [core::mem::offset_of!(ove_thread_info, stack_used) - 32usize];
+        [core::mem::offset_of!(ove_thread_info, stack_used) - 24usize];
     ["Offset of field: ove_thread_info::stack_size"]
-        [core::mem::offset_of!(ove_thread_info, stack_size) - 40usize];
+        [core::mem::offset_of!(ove_thread_info, stack_size) - 32usize];
     ["Offset of field: ove_thread_info::cpu_percent_x100"]
-        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 48usize];
+        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 40usize];
     ["Offset of field: ove_thread_info::state_times"]
-        [core::mem::offset_of!(ove_thread_info, state_times) - 56usize];
+        [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
 };
 unsafe extern "C" {
     #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if unavailable."]
@@ -1097,7 +1120,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Wait for a binary event to be signalled.\n\n Blocks the calling thread until ove_event_signal() or\n ove_event_signal_from_isr() is called on @p evt, or until the timeout\n expires.  The event is automatically reset (consumed) after a successful\n wait.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt         Event handle obtained from ove_event_init() or\n                        ove_event_create().\n @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_event_signal, ove_event_signal_from_isr"]
+    #[doc = " @brief Wait for a binary event to be signalled.\n\n Blocks the calling thread until ove_event_signal() or\n ove_event_signal_from_isr() is called on @p evt, or until the timeout\n expires.  The event is automatically reset (consumed) after a successful\n wait. Multiple signals issued before that wait coalesce into one pending\n event.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt         Event handle obtained from ove_event_init() or\n                        ove_event_create().\n @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_event_signal, ove_event_signal_from_isr"]
     pub fn ove_event_wait(evt: ove_event_t, timeout_ns: u64) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1636,13 +1659,139 @@ const _: () = {
     ["Offset of field: ove_dirent::size"][core::mem::offset_of!(ove_dirent, size) - 256usize];
     ["Offset of field: ove_dirent::is_dir"][core::mem::offset_of!(ove_dirent, is_dir) - 260usize];
 };
+#[doc = " @brief Metadata for a file-system path."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_fs_stat {
+    #[doc = "< @brief Object size in bytes; zero for directories."]
     pub size: u64,
+    #[doc = "< @brief Last modification time in Unix seconds, if available."]
     pub mtime_sec: u64,
+    #[doc = "< @brief One of @c OVE_FS_TYPE_FILE or @c OVE_FS_TYPE_DIR."]
     pub type_: core::ffi::c_uint,
 }
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_fs_stat"][core::mem::size_of::<ove_fs_stat>() - 24usize];
+    ["Alignment of ove_fs_stat"][core::mem::align_of::<ove_fs_stat>() - 8usize];
+    ["Offset of field: ove_fs_stat::size"][core::mem::offset_of!(ove_fs_stat, size) - 0usize];
+    ["Offset of field: ove_fs_stat::mtime_sec"]
+        [core::mem::offset_of!(ove_fs_stat, mtime_sec) - 8usize];
+    ["Offset of field: ove_fs_stat::type_"][core::mem::offset_of!(ove_fs_stat, type_) - 16usize];
+};
+#[doc = " Capacity and allocation statistics for the mounted backend volume."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_fs_statvfs {
+    #[doc = "< Allocation units in the volume."]
+    pub blocks: u64,
+    #[doc = "< Free allocation units."]
+    pub blocks_free: u64,
+    #[doc = "< Free units available to ordinary callers."]
+    pub blocks_available: u64,
+    #[doc = "< File-node capacity, or zero when not meaningful."]
+    pub files: u64,
+    #[doc = "< Free file nodes, or zero when not meaningful."]
+    pub files_free: u64,
+    #[doc = "< Preferred transfer size in bytes."]
+    pub block_size: u32,
+    #[doc = "< Size in bytes of one allocation unit."]
+    pub fragment_size: u32,
+    #[doc = "< Maximum single path-component length."]
+    pub name_max: u32,
+    pub _reserved: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_fs_statvfs"][core::mem::size_of::<ove_fs_statvfs>() - 56usize];
+    ["Alignment of ove_fs_statvfs"][core::mem::align_of::<ove_fs_statvfs>() - 8usize];
+    ["Offset of field: ove_fs_statvfs::blocks"]
+        [core::mem::offset_of!(ove_fs_statvfs, blocks) - 0usize];
+    ["Offset of field: ove_fs_statvfs::blocks_free"]
+        [core::mem::offset_of!(ove_fs_statvfs, blocks_free) - 8usize];
+    ["Offset of field: ove_fs_statvfs::blocks_available"]
+        [core::mem::offset_of!(ove_fs_statvfs, blocks_available) - 16usize];
+    ["Offset of field: ove_fs_statvfs::files"]
+        [core::mem::offset_of!(ove_fs_statvfs, files) - 24usize];
+    ["Offset of field: ove_fs_statvfs::files_free"]
+        [core::mem::offset_of!(ove_fs_statvfs, files_free) - 32usize];
+    ["Offset of field: ove_fs_statvfs::block_size"]
+        [core::mem::offset_of!(ove_fs_statvfs, block_size) - 40usize];
+    ["Offset of field: ove_fs_statvfs::fragment_size"]
+        [core::mem::offset_of!(ove_fs_statvfs, fragment_size) - 44usize];
+    ["Offset of field: ove_fs_statvfs::name_max"]
+        [core::mem::offset_of!(ove_fs_statvfs, name_max) - 48usize];
+    ["Offset of field: ove_fs_statvfs::_reserved"]
+        [core::mem::offset_of!(ove_fs_statvfs, _reserved) - 52usize];
+};
+#[doc = " Validated raw-media view used when mounting a partition-backed volume."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_fs_volume {
+    pub first_block: u64,
+    pub block_count: u64,
+    pub logical_block_size: u32,
+    pub partition: u8,
+    pub _reserved: [u8; 3usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_fs_volume"][core::mem::size_of::<ove_fs_volume>() - 24usize];
+    ["Alignment of ove_fs_volume"][core::mem::align_of::<ove_fs_volume>() - 8usize];
+    ["Offset of field: ove_fs_volume::first_block"]
+        [core::mem::offset_of!(ove_fs_volume, first_block) - 0usize];
+    ["Offset of field: ove_fs_volume::block_count"]
+        [core::mem::offset_of!(ove_fs_volume, block_count) - 8usize];
+    ["Offset of field: ove_fs_volume::logical_block_size"]
+        [core::mem::offset_of!(ove_fs_volume, logical_block_size) - 16usize];
+    ["Offset of field: ove_fs_volume::partition"]
+        [core::mem::offset_of!(ove_fs_volume, partition) - 20usize];
+    ["Offset of field: ove_fs_volume::_reserved"]
+        [core::mem::offset_of!(ove_fs_volume, _reserved) - 21usize];
+};
+#[doc = " Aggregate physical-media telemetry for the mounted filesystem backend."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_fs_media_metrics {
+    pub read_commands: u64,
+    pub write_commands: u64,
+    pub read_blocks: u64,
+    pub write_blocks: u64,
+    pub multiblock_commands: u64,
+    pub completion_wait_us_total: u64,
+    pub completion_wait_us_max: u64,
+    pub ready_wait_us_total: u64,
+    pub ready_wait_us_max: u64,
+    pub errors: u64,
+    pub recoveries: u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_fs_media_metrics"][core::mem::size_of::<ove_fs_media_metrics>() - 88usize];
+    ["Alignment of ove_fs_media_metrics"][core::mem::align_of::<ove_fs_media_metrics>() - 8usize];
+    ["Offset of field: ove_fs_media_metrics::read_commands"]
+        [core::mem::offset_of!(ove_fs_media_metrics, read_commands) - 0usize];
+    ["Offset of field: ove_fs_media_metrics::write_commands"]
+        [core::mem::offset_of!(ove_fs_media_metrics, write_commands) - 8usize];
+    ["Offset of field: ove_fs_media_metrics::read_blocks"]
+        [core::mem::offset_of!(ove_fs_media_metrics, read_blocks) - 16usize];
+    ["Offset of field: ove_fs_media_metrics::write_blocks"]
+        [core::mem::offset_of!(ove_fs_media_metrics, write_blocks) - 24usize];
+    ["Offset of field: ove_fs_media_metrics::multiblock_commands"]
+        [core::mem::offset_of!(ove_fs_media_metrics, multiblock_commands) - 32usize];
+    ["Offset of field: ove_fs_media_metrics::completion_wait_us_total"]
+        [core::mem::offset_of!(ove_fs_media_metrics, completion_wait_us_total) - 40usize];
+    ["Offset of field: ove_fs_media_metrics::completion_wait_us_max"]
+        [core::mem::offset_of!(ove_fs_media_metrics, completion_wait_us_max) - 48usize];
+    ["Offset of field: ove_fs_media_metrics::ready_wait_us_total"]
+        [core::mem::offset_of!(ove_fs_media_metrics, ready_wait_us_total) - 56usize];
+    ["Offset of field: ove_fs_media_metrics::ready_wait_us_max"]
+        [core::mem::offset_of!(ove_fs_media_metrics, ready_wait_us_max) - 64usize];
+    ["Offset of field: ove_fs_media_metrics::errors"]
+        [core::mem::offset_of!(ove_fs_media_metrics, errors) - 72usize];
+    ["Offset of field: ove_fs_media_metrics::recoveries"]
+        [core::mem::offset_of!(ove_fs_media_metrics, recoveries) - 80usize];
+};
 unsafe extern "C" {
     #[doc = " @brief Open a file using caller-provided static storage.\n\n Opens the file at @p path with the given @p flags and stores the resulting\n handle in @p file. The caller must ensure @p storage remains valid for the\n lifetime of the open file.\n\n @param[out] file     Receives the opened file handle.\n @param[in]  storage  Pointer to statically-allocated file storage.\n @param[in]  path     Absolute path of the file to open.\n @param[in]  flags    Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
     pub fn ove_fs_open_init(
@@ -1689,9 +1838,16 @@ unsafe extern "C" {
     pub fn ove_fs_closedir(dir: ove_dir_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Mount a storage device at a virtual path prefix.\n\n Associates the block device at @p dev_path with the mount point\n @p mount_point. All file and directory paths rooted at @p mount_point\n will be dispatched to this device.\n\n @param[in] dev_path     Path identifying the storage device.\n @param[in] mount_point  Absolute path to use as the mount prefix.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Mount the backend storage volume.\n\n Backends with a native VFS use @p dev_path and @p mount_point directly.\n Backends with a fixed logical drive accept @c NULL to select their board\n defaults. File API paths remain relative to the mounted volume.\n\n @param[in] dev_path     Path identifying the storage device.\n @param[in] mount_point  Absolute path to use as the mount prefix.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_fs_mount(
         dev_path: *const core::ffi::c_char,
+        mount_point: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Mount a validated whole-disk or partition view."]
+    pub fn ove_fs_mount_volume(
+        volume: *const ove_fs_volume,
         mount_point: *const core::ffi::c_char,
     ) -> core::ffi::c_int;
 }
@@ -1749,14 +1905,39 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " @brief Query metadata for a path without opening it."]
     pub fn ove_fs_stat(
         path: *const core::ffi::c_char,
         out_stat: *mut ove_fs_stat,
     ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query allocation statistics for the currently mounted volume."]
+    pub fn ove_fs_statvfs(out_stat: *mut ove_fs_statvfs) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Create a directory."]
     pub fn ove_fs_mkdir(path: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Remove an empty directory."]
     pub fn ove_fs_rmdir(path: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Resize an open file."]
     pub fn ove_fs_truncate(file: ove_file_t, length: u64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Flush buffered file data and metadata to the storage device."]
     pub fn ove_fs_sync(file: ove_file_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Snapshot optional physical-media telemetry for the mounted backend."]
+    pub fn ove_fs_media_metrics(out_metrics: *mut ove_fs_media_metrics) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Reset optional physical-media telemetry at the start of a measurement run."]
+    pub fn ove_fs_media_metrics_reset();
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1973,6 +2154,104 @@ unsafe extern "C" {
     #[doc = " @brief Return a pointer to the current board's descriptor structure.\n\n The descriptor contains GPIO port counts, LED definitions, and MCU\n identification fields.\n\n @return Pointer to a read-only @c ove_board_desc, or @c NULL if no\n         descriptor is registered."]
     pub fn ove_board_desc() -> *const ove_board_desc;
 }
+#[doc = " A generation-qualified raw-media lease. Do not copy an active lease."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_media_lease {
+    pub generation: u32,
+    pub access: u8,
+    pub active: u8,
+    pub _reserved: [u8; 2usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_media_lease"][core::mem::size_of::<ove_media_lease>() - 8usize];
+    ["Alignment of ove_media_lease"][core::mem::align_of::<ove_media_lease>() - 4usize];
+    ["Offset of field: ove_media_lease::generation"]
+        [core::mem::offset_of!(ove_media_lease, generation) - 0usize];
+    ["Offset of field: ove_media_lease::access"]
+        [core::mem::offset_of!(ove_media_lease, access) - 4usize];
+    ["Offset of field: ove_media_lease::active"]
+        [core::mem::offset_of!(ove_media_lease, active) - 5usize];
+    ["Offset of field: ove_media_lease::_reserved"]
+        [core::mem::offset_of!(ove_media_lease, _reserved) - 6usize];
+};
+unsafe extern "C" {
+    #[doc = " Publish the currently observed card generation and presence state."]
+    pub fn ove_media_observe(generation: u32, present: core::ffi::c_int);
+}
+unsafe extern "C" {
+    #[doc = " Mark the last observed generation absent without inventing a new identity."]
+    pub fn ove_media_removed();
+}
+unsafe extern "C" {
+    #[doc = " Acquire/release the single native-filesystem ownership slot."]
+    pub fn ove_media_fs_acquire() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_media_fs_release();
+}
+unsafe extern "C" {
+    #[doc = " Acquire/release a raw reader or an exclusive raw writer."]
+    pub fn ove_media_raw_acquire(
+        lease: *mut ove_media_lease,
+        flags: core::ffi::c_uint,
+        generation: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_media_raw_release(lease: *mut ove_media_lease);
+}
+unsafe extern "C" {
+    #[doc = " True only while the lease still refers to the present card generation."]
+    pub fn ove_media_raw_valid(
+        lease: *const ove_media_lease,
+        required_flags: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_block_info {
+    pub block_count: u64,
+    pub logical_block_size: u32,
+    #[doc = "< Erase granularity in bytes."]
+    pub erase_block_size: u32,
+    pub flags: u32,
+    pub generation: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_block_info"][core::mem::size_of::<ove_block_info>() - 24usize];
+    ["Alignment of ove_block_info"][core::mem::align_of::<ove_block_info>() - 8usize];
+    ["Offset of field: ove_block_info::block_count"]
+        [core::mem::offset_of!(ove_block_info, block_count) - 0usize];
+    ["Offset of field: ove_block_info::logical_block_size"]
+        [core::mem::offset_of!(ove_block_info, logical_block_size) - 8usize];
+    ["Offset of field: ove_block_info::erase_block_size"]
+        [core::mem::offset_of!(ove_block_info, erase_block_size) - 12usize];
+    ["Offset of field: ove_block_info::flags"]
+        [core::mem::offset_of!(ove_block_info, flags) - 16usize];
+    ["Offset of field: ove_block_info::generation"]
+        [core::mem::offset_of!(ove_block_info, generation) - 20usize];
+};
+#[doc = " Caller-owned raw block handle carrying its media lease."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_block {
+    pub lease: ove_media_lease,
+    pub flags: u8,
+    pub _reserved: [u8; 3usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_block"][core::mem::size_of::<ove_block>() - 12usize];
+    ["Alignment of ove_block"][core::mem::align_of::<ove_block>() - 4usize];
+    ["Offset of field: ove_block::lease"][core::mem::offset_of!(ove_block, lease) - 0usize];
+    ["Offset of field: ove_block::flags"][core::mem::offset_of!(ove_block, flags) - 8usize];
+    ["Offset of field: ove_block::_reserved"][core::mem::offset_of!(ove_block, _reserved) - 9usize];
+};
+#[doc = " Caller-owned raw block handle carrying its media lease."]
+pub type ove_block_t = ove_block;
 #[doc = "< High-impedance digital input."]
 pub const OVE_GPIO_MODE_INPUT: ove_gpio_mode_t = 0;
 #[doc = "< Push-pull digital output."]
