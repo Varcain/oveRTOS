@@ -89,6 +89,7 @@ set(STUB_SOURCES
     ${OVE_ROOT}/modules/lxp/src/lxp_async_gate.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
+    ${OVE_ROOT}/backends/common/lxp_ove_observability.c
     ${OVE_ROOT}/backends/common/lxp_ove_console.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c
     ${OVE_ROOT}/modules/lxp/src/lxp_rt_metrics.c
@@ -203,6 +204,7 @@ function(ove_add_stub_variant name)
         # the one lxp-touching TU the host test compiles. The lxp module sources + their
         # LXP_ENABLE_* gates live in the lxp repo's own test build now, not here.
         CONFIG_OVE_LINUX_NET=1
+        CONFIG_OVE_LINUX_LATENCY=1
         CONFIG_OVE_LINUX_FS=1
         CONFIG_OVE_BLOCK=1
         CONFIG_OVE_LINUX_BLOCK=1
@@ -211,6 +213,7 @@ function(ove_add_stub_variant name)
         CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US=300
         CONFIG_OVE_NET_RX_READY_NOTIFY=1
         LXP_ENABLE_RT_METRICS=1
+        LXP_ENABLE_LATENCY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1

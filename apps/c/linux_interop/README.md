@@ -448,6 +448,17 @@ instead of requiring engine conditionals in the app. Application-owned thread
 stack and heap reporting remains local because those resources belong to this
 demo rather than to LXP.
 
+Every public record is an OVE-owned, versioned type. The common backend takes
+the canonical LXP snapshot into private temporary storage and copies fields
+across the boundary; no public header includes or aliases an LXP observation
+type. Latency storage has explicit OVE limits of 15 service classes and 16
+guest wake rows. Private compile-time checks reject a canonical class, bucket,
+slot, feature-gate, or ABI change that no longer fits those limits, while the
+runtime translator rejects malformed versions and counts before exposing a
+partial record. The temporary canonical record exists only while collecting a
+quiescent post-run report, so this separation adds no fixed RAM or active-run
+work.
+
 ## Supported profiles
 
 The app has four supported profiles. They all compile the same
