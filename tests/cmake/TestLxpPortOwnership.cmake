@@ -128,6 +128,23 @@ foreach(DISPLAY_LIFECYCLE IN ITEMS
             "display adapter omits provider lifecycle binding: ${DISPLAY_LIFECYCLE}")
     endif()
 endforeach()
+file(READ "${OVE_ROOT}/backends/freertos/freertos_hooks.c" FREERTOS_HOOKS_TEXT)
+if(FREERTOS_HOOKS_TEXT MATCHES
+   "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_[A-Za-z0-9_]+")
+    message(FATAL_ERROR "generic FreeRTOS hooks regained a direct LXP dependency")
+endif()
+if(NOT FREERTOS_HOOKS_TEXT MATCHES
+   "ove_freertos_tick_callback_t callback = g_tick_callback")
+    message(FATAL_ERROR "generic FreeRTOS tick hook bypasses its owned subscriber seam")
+endif()
+file(READ "${OVE_ROOT}/backends/freertos/freertos_lxp_host.c" FREERTOS_HOST_TEXT)
+foreach(TICK_BINDING IN ITEMS
+        "tick_subscribe = ove_freertos_tick_subscribe"
+        "tick_unsubscribe = ove_freertos_tick_unsubscribe")
+    if(NOT FREERTOS_HOST_TEXT MATCHES "${TICK_BINDING}")
+        message(FATAL_ERROR "FreeRTOS LXP host omits run-scoped ${TICK_BINDING}")
+    endif()
+endforeach()
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
 if(APP_TEXT MATCHES
    "g_uart_lookahead|uart_rx_ready|OVE_UART_REG|static long console_(read|write)|static int console_poll|ove_console_(try_getchar|putchar|write)")

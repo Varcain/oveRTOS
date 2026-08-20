@@ -29,10 +29,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "timers.h"
-
-#if defined(CONFIG_OVE_LINUX)
-#include "lxp/ports/freertos.h"
-#endif
+#include "ove_freertos_tick.h"
 
 /*
  * Idle stack sizing.  CONFIG_OVE_PM hooks vApplicationIdleHook to drive
@@ -144,6 +141,28 @@ volatile uint32_t ove_runtime_counter_ms;
 
 #if (configUSE_TICK_HOOK == 1)
 
+static ove_freertos_tick_callback_t volatile g_tick_callback;
+
+int ove_freertos_tick_subscribe(ove_freertos_tick_callback_t callback)
+{
+	if (!callback)
+		return -1;
+	taskENTER_CRITICAL();
+	int result = g_tick_callback && g_tick_callback != callback ? -1 : 0;
+	if (result == 0)
+		g_tick_callback = callback;
+	taskEXIT_CRITICAL();
+	return result;
+}
+
+void ove_freertos_tick_unsubscribe(ove_freertos_tick_callback_t callback)
+{
+	taskENTER_CRITICAL();
+	if (g_tick_callback == callback)
+		g_tick_callback = NULL;
+	taskEXIT_CRITICAL();
+}
+
 #ifdef CONFIG_OVE_PROFILER
 /* Provided by backends/freertos/freertos_profiler.c. Runs in SysTick ISR
  * context and samples the interrupted task's stacked PC. Weak so builds
@@ -166,10 +185,9 @@ void vApplicationTickHook(void)
 {
 	/* Sampling CYCCNT every 1 ms catches its ~19.86 s wrap so CLOCK_MONOTONIC stays 64-bit. */
 	ove_freertos_time_tick();
-#if defined(CONFIG_OVE_LINUX)
-	/* Guest-only weighted slicing is owned by LXP's FreeRTOS port. */
-	lxp_freertos_tick();
-#endif
+	ove_freertos_tick_callback_t callback = g_tick_callback;
+	if (callback)
+		callback();
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	/* QEMU has no DWT, so its run-time-stat counter advances with SysTick.
 	 * Hardware builds use the wrap-stitched DWT counter instead. */
