@@ -1066,9 +1066,10 @@ for Zephyr. Git object storage remains shared. NuttX no longer copies its large
 working tree instead of mutating the download. Cleanup is deterministic, and
 the correctness and cross-workspace isolation are worth this bounded cost.
 
-Three Python regressions exercise modified and deleted patches, corruption of a
-patch-owned file, and identical basenames in distinct layers. The test passes
-both directly and through CTest. The 435-test normal stub suite also passes.
+Five Python regressions exercise modified and deleted patches, corruption of a
+patch-owned file, identical basenames in distinct layers, global worktree
+cleanup, and cleanup without an active configuration. They pass both directly
+and through CTest. The 435-test normal stub suite also passes.
 The final linux_interop compositions build on FreeRTOS, NuttX, and Zephyr, and
 immediate second builds reuse their verified source without refreshing it.
 
@@ -1078,4 +1079,4 @@ identity, mounted the SD FAT volume read-write, completed a create/insert/query
 SQLite transaction with `integrity_check=ok`, and retained zero RT-scope
 misses, late finishes, and IRQ overruns. This follow-up changes source
 preparation only; it introduces no RTOS or personality runtime logic. The
-implementation commits are `dd9bc72d` and `bbedddb0`.
+implementation commits are `dd9bc72d`, `bbedddb0`, and `9e727475`.
