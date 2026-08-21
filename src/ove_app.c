@@ -9,6 +9,10 @@
 #include "ove_config.h"
 #include "ove/ove.h"
 
+#if defined(CONFIG_OVE_RTOS_POSIX)
+#include <stdlib.h>
+#endif
+
 int ove_app_run(void)
 {
 #ifdef CONFIG_OVE_BOARD
@@ -61,4 +65,39 @@ void ove_run(void)
 	ove_heap_lock();
 #endif
 	ove_thread_start_scheduler();
+}
+
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+static long app_semihost(unsigned long op, void *arg)
+{
+	register unsigned long r0 __asm__("r0") = op;
+	register void *r1 __asm__("r1") = arg;
+	__asm__ volatile("bkpt 0xab" : "+r"(r0) : "r"(r1) : "memory");
+	return (long)r0;
+}
+#endif
+
+void ove_app_exit(unsigned int status)
+{
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	/* Preserve AIRCR's priority grouping while requesting a system reset.
+	 * Barriers match ARM's reset sequence: all earlier memory transactions
+	 * complete before SYSRESETREQ and no later access escapes it. */
+	volatile unsigned int *const aircr = (volatile unsigned int *)0xE000ED0Cu;
+	unsigned int value = (*aircr & (7u << 8)) | 0x05FA0004u;
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	*aircr = value;
+	__asm__ volatile("dsb 0xf" ::: "memory");
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+	unsigned long block[2] = {0x20026u /* ADP_Stopped_ApplicationExit */, status};
+	(void)app_semihost(0x20 /* SYS_EXIT_EXTENDED */, block);
+#elif defined(CONFIG_OVE_RTOS_POSIX)
+	exit((int)status);
+#else
+	(void)status;
+#endif
+	for (;;) {
+	}
 }

@@ -4,15 +4,12 @@ description: "Linux personality interop demo — Full compatibility profile"
 sources:
   - src/app.c
   - src/rt_scope.c
-# Pull in the Linux personality (engine-agnostic core + per-engine seam) plus the
-# bounded arena + bFLT loader it runs on, and the oveRTOS RTOS primitives the demo
-# uses on the RTOS side. The seam wiring (USERSPACE/--wrap on Zephyr, the SVC-owning
-# seam on FreeRTOS) and the rootfs placement come from the selected board.
+# Pull in the Linux personality (engine-agnostic core + per-engine seam). It
+# selects its mandatory arena and loader; optional providers below select the
+# RTOS primitives they require. The seam wiring and rootfs placement come from
+# the selected board.
 defconfig:
   - CONFIG_OVE_LINUX=y
-  - CONFIG_OVE_ARENA=y
-  - CONFIG_OVE_LOADER=y
-  - CONFIG_OVE_QUEUE=y
   # Compile the engine-native SD/FAT substrate now. The personality mounts it
   # only when its external-filesystem provider is configured, and a missing
   # card remains a non-fatal mount failure.

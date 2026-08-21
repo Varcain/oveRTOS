@@ -26,9 +26,10 @@ extern "C" {
 /**
  * @brief Application-defined entry point called after board and console init.
  *
- * The application must implement this function.  It is responsible for
- * creating all RTOS resources (threads, queues, timers, …) and then
- * calling ove_run() to start the scheduler.
+ * The application must implement this function.  It creates its bootstrap
+ * resources and then calls ove_run() to apply the configured heap policy and
+ * start the scheduler.  Runtime tasks may create further resources when the
+ * selected heap policy permits it.
  *
  * @note This function must not return before calling ove_run().
  *
@@ -69,6 +70,22 @@ extern void ove_main(void);
  * @see ove_main, ove_heap_lock, ove_thread_start_scheduler
  */
 void ove_run(void);
+
+/**
+ * @brief Finish the application using the platform's product-level policy.
+ *
+ * Simulator targets terminate the simulator with @p status, native host
+ * targets terminate the process, and bare-metal STM32 targets request a
+ * software reset.  This is distinct from returning from a worker thread: use
+ * it only when the complete firmware application has finished or cannot
+ * continue.
+ *
+ * @param[in] status Zero for success, non-zero for failure.  Bare-metal reset
+ *                   targets may not retain the value.
+ *
+ * @note This function never returns.
+ */
+void ove_app_exit(unsigned int status) __attribute__((noreturn));
 
 /**
  * @brief Platform entry point: initialise the board and then run the application.

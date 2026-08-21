@@ -157,7 +157,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
 	 * misaligned stack faults on first entry.  Sanctioned helpers in
 	 * include/ove/storage.h apply aligned(8); this backstops any hand-
-	 * rolled array that skips them.  Zephyr's K_THREAD_STACK_DEFINE
+	 * rolled array that skips them.  Zephyr's K_KERNEL_STACK_DEFINE
 	 * already over-aligns, so caller-supplied stacks from that path
 	 * pass trivially. */
 	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
@@ -169,7 +169,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	}
 
 	/* Use the caller-supplied stack if provided (e.g. from
-	 * K_THREAD_STACK_DEFINE via OVE_THREAD_DEFINE_STATIC).  In zero-heap
+	 * K_KERNEL_STACK_DEFINE via OVE_THREAD_DEFINE_STATIC).  In zero-heap
 	 * mode a NULL stack is a programmer error — there's no kernel pool
 	 * to fall back to.  In heap mode fall back to k_thread_stack_alloc
 	 * (requires CONFIG_DYNAMIC_THREAD). */
@@ -193,14 +193,9 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->next = NULL;
 	storage->stop_requested = 0;
 
-	/* NB: on Zephyr USERSPACE with a power-of-2 MPU (PMSAv7, e.g. the STM32F746 with
-	 * CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT=y), the caller's stack buffer must itself be
-	 * power-of-2 aligned AND power-of-2 sized: k_thread_create rounds the base up to
-	 * Z_POW2_CEIL(size) and fills that many bytes, so a smaller/misaligned buffer overruns into
-	 * whatever follows in memory (here it poisoned the adjacent k_thread with 0xaa and the thread
-	 * never ran). ARCH_THREAD_STACK_RESERVED is 0 on ARM, so the guard lives inside that power-of-2
-	 * region, not beyond it. Callers on such boards must align the buffer to its own size — the
-	 * flexible PMSAv8 layout on the an521 tolerates a plain buffer, which masks this. */
+	/* Public oveRTOS threads remain supervisor-only, so the storage helper uses
+	 * Zephyr's kernel-stack layout. Protected LXP K_USER tasks are outside this
+	 * API and retain their power-of-two-aligned user stacks in the port. */
 	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
 			      (void *)entry, arg, (void *)storage,
 			      ove_zephyr_map_priority(priority), 0, K_NO_WAIT);

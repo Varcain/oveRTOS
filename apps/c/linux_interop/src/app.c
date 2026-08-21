@@ -46,7 +46,7 @@
 #include "ove/reset.h"	  /* why the last reset happened (watchdog recovery is visible) */
 #endif
 
-#include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
+#include "ove_config.h"
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
 #include "rt_scope.h"
 
@@ -62,36 +62,6 @@
 
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
-#endif
-
-/* ---- product exit policy --------------------------------------------------- */
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-static void sh_exit(unsigned int code)
-{
-	(void)code;
-	/* No semihosting on bare metal: poweroff/halt → system reset (back to the boot banner).
-	 * SCB->AIRCR = VECTKEY(0x05FA) | SYSRESETREQ(bit 2). */
-	*(volatile unsigned int *)0xE000ED0Cu = 0x05FA0004u;
-	__asm__ volatile("dsb 0xf" ::: "memory");
-	for (;;) {
-	}
-}
-#else
-/* SYS_EXIT_EXTENDED gives QEMU a clean product-level termination. */
-static long semihost(unsigned long op, void *arg)
-{
-	register unsigned long r0 __asm__("r0") = op;
-	register void *r1 __asm__("r1") = arg;
-	__asm__ volatile("bkpt 0xab" : "+r"(r0) : "r"(r1) : "memory");
-	return (long)r0;
-}
-static void sh_exit(unsigned int code)
-{
-	unsigned long block[2] = {0x20026u /* ADP_Stopped_ApplicationExit */, code};
-	semihost(0x20 /* SYS_EXIT_EXTENDED */, block);
-	for (;;) {
-	}
-}
 #endif
 
 /* Minimal string builders (no libc printf dependency). */
@@ -231,11 +201,7 @@ static volatile int g_round_trip_n;
 
 /* ---- the native RTOS worker thread (feeds, then consumes) ------------------ */
 static ove_thread_t g_worker;
-static ove_thread_storage_t g_worker_storage;
-/* Aligned to its own (power-of-2) size: Zephyr USERSPACE on a power-of-2 MPU (PMSAv7, e.g. the
- * STM32F746) requires thread-stack objects to be power-of-2 aligned+sized, else k_thread_create
- * rounds the base up to Z_POW2_CEIL(size) and overruns the buffer. Harmless on other engines. */
-static uint8_t g_worker_stack[2048] __attribute__((aligned(2048)));
+OVE_THREAD_DEFINE(g_worker_storage, 2048);
 
 static void rtos_worker(void *arg)
 {
@@ -398,28 +364,15 @@ static ove_lxp_host_t g_linux_host;
 static void demo_exit(unsigned int code)
 {
 	ove_lxp_host_deinit(&g_linux_host);
-	sh_exit(code);
+	ove_app_exit(code);
 }
 
-/* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
- * this must run in a task; Zephyr and NuttX call ove_main() from running scheduler
- * contexts and execute it inline. ove_main() below wires that lifecycle. */
-#ifdef CONFIG_OVE_RTOS_FREERTOS
 static ove_thread_t g_demo;
-static ove_thread_storage_t g_demo_storage;
 /* Deferred syscalls execute on this coordinator stack. The O0 QEMU integration build reaches
  * 4320 bytes while loading and running BusyBox, so retain nearly another full call-chain of
- * margin. On STM32 this is a critical host stack and must remain in internal SRAM: the privileged
- * coordinator intentionally sees guest SDRAM through the uncached Device background mapping,
- * which is suitable for controlled aligned buffer accesses but not for compiler-generated stack
- * accesses or exception/FP stacking. Higher-priority host tasks still preempt this task normally. */
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-static uint8_t g_demo_stack[8192]
-	__attribute__((section(".host_stacks"), aligned(32)));
-#else
-static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
-#endif
-#endif
+ * margin. OVE_THREAD_DEFINE_HOST keeps this privileged coordinator's stack in
+ * backend-safe memory while a protected guest address space is active. */
+OVE_THREAD_DEFINE_HOST(g_demo_storage, 8192);
 
 #if defined(CONFIG_OVE_WATCHDOG)
 /* ---- host watchdog: a high-priority task owns the IWDG feed -------------------------------
@@ -441,15 +394,15 @@ static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
 #define WD_FEED_MS 250u
 
 static ove_thread_t g_wd;
-static ove_thread_storage_t g_wd_storage;
 /* Sized per build like the latency monitor: -O0 spills more (see CONFIG_OVE_DEBUG_BUILD). .bss
  * keeps it in internal SRAM, which a host task stack needs on STM32. The R9 soak's stack audit
  * measured only 128 B used at -Os, so 512 B (384 B free) is comfortable. */
 #if defined(CONFIG_OVE_DEBUG_BUILD)
-static uint8_t g_wd_stack[1024] __attribute__((aligned(1024)));
+#define WD_STACK_SIZE 1024u
 #else
-static uint8_t g_wd_stack[512] __attribute__((aligned(512)));
+#define WD_STACK_SIZE 512u
 #endif
+OVE_THREAD_DEFINE(g_wd_storage, WD_STACK_SIZE);
 static ove_watchdog_t g_wd_dog;
 static ove_watchdog_storage_t g_wd_dog_storage;
 
@@ -469,8 +422,7 @@ static int wd_should_feed(int active, int hb_advanced)
  * heartbeat-gating path end to end, not merely scheduler death. One-shot: skipped when this boot
  * came FROM a watchdog reset, so it trips once and then the board runs clean. */
 static ove_thread_t g_wdtest;
-static ove_thread_storage_t g_wdtest_storage;
-static uint8_t g_wdtest_stack[512] __attribute__((aligned(512)));
+OVE_THREAD_DEFINE(g_wdtest_storage, 512);
 
 static void wdtest_spin(void *arg)
 {
@@ -488,7 +440,8 @@ static void wd_selftest_maybe_trip(void)
 	ove_lxp_console_write("[wd] selftest: starving the coordinator (scheduler stays live);"
 		  " expect a watchdog reset in ~2s...\n");
 	(void)ove_thread_init(&g_wdtest, &g_wdtest_storage, "wdtest", wdtest_spin, NULL,
-			      OVE_PRIO_ABOVE_NORMAL, sizeof(g_wdtest_stack), g_wdtest_stack);
+			      OVE_PRIO_ABOVE_NORMAL, sizeof(g_wdtest_storage_stack),
+			      g_wdtest_storage_stack);
 }
 #endif /* CONFIG_OVE_WATCHDOG_SELFTEST */
 
@@ -540,8 +493,7 @@ static void wd_body(void *arg)
  * seam's fault handler sees no owning slot, declines containment, prints a HOST FAULT diagnostic and
  * halts; the watchdog resets. One-shot: skipped when this boot came FROM a watchdog reset. */
 static ove_thread_t g_ftest;
-static ove_thread_storage_t g_ftest_storage;
-static uint8_t g_ftest_stack[512] __attribute__((aligned(512)));
+OVE_THREAD_DEFINE(g_ftest_storage, 512);
 
 static void ftest_body(void *arg)
 {
@@ -561,7 +513,7 @@ static void faulttest_maybe_arm(void)
 		return;
 	}
 	(void)ove_thread_init(&g_ftest, &g_ftest_storage, "ftest", ftest_body, NULL, OVE_PRIO_NORMAL,
-			      sizeof(g_ftest_stack), g_ftest_stack);
+			      sizeof(g_ftest_storage_stack), g_ftest_storage_stack);
 }
 #endif /* CONFIG_OVE_LINUX_FAULTTEST */
 
@@ -571,8 +523,7 @@ static void faulttest_maybe_arm(void)
  * placed above it; its epilogue's canary check then calls __stack_chk_fail (print + halt), and the
  * watchdog resets. One-shot: skipped when this boot came FROM a watchdog reset. */
 static ove_thread_t g_smash;
-static ove_thread_storage_t g_smash_storage;
-static uint8_t g_smash_stack[512] __attribute__((aligned(512)));
+OVE_THREAD_DEFINE(g_smash_storage, 512);
 
 /* noinline so its OWN epilogue runs the canary check right after the overflow — inlined into the
  * caller, the overflow would land far from the caller's canary and never trip. Writing through a
@@ -605,14 +556,16 @@ static void smashtest_maybe_arm(void)
 		return;
 	}
 	(void)ove_thread_init(&g_smash, &g_smash_storage, "smash", smashtest_body, NULL,
-			      OVE_PRIO_NORMAL, sizeof(g_smash_stack), g_smash_stack);
+			      OVE_PRIO_NORMAL, sizeof(g_smash_storage_stack),
+			      g_smash_storage_stack);
 }
 #endif /* CONFIG_OVE_LINUX_SMASHTEST */
 
 #if defined(CONFIG_OVE_LINUX_LATENCY)
 /* ---- host deadline monitor (measurement builds only) -------------------------------------
- * A periodic OVE_PRIO_HIGH task, i.e. above both the coordinator (OVE_PRIO_NORMAL, this task)
- * and the guest slots (tskIDLE_PRIORITY+1). Being top of the ladder is the point: everything
+ * A periodic OVE_PRIO_HIGH task, i.e. above the LXP coordinator and guest slots.  The public
+ * task starts at OVE_PRIO_NORMAL; host preparation gives the coordinator its seam-private
+ * native priority before launching a guest.  Being top of the ladder is the point: everything
  * it still gets delayed by is delay that priority cannot fix. On FreeRTOS that is the
  * interrupt-masked window of the coordinator's taskENTER_CRITICAL(), plus ISRs and tick
  * quantisation — a guest cannot preempt this task, so what is left is the honest measure of
@@ -628,15 +581,7 @@ static void smashtest_maybe_arm(void)
 #define MON_PERIOD_MS 10u
 
 static ove_thread_t g_mon;
-static ove_thread_storage_t g_mon_storage;
-/* Power-of-2 sized+aligned for the same reason as g_worker_stack. Plain .bss keeps it in
- * internal SRAM, which a host task stack requires on STM32 (see g_demo_stack: the coordinator
- * maps guest SDRAM as uncached Device memory, which does not suit compiler-generated stack
- * access) — so this comes out of the scarcest region and is sized accordingly. The body holds
- * four u64s, calls only ove_time_get_ns/ove_thread_sleep_ms, and never prints: demo_body writes
- * the report once the monitor has stopped. Cortex-M ISRs stack on MSP, not this PSP.
- *
- * Sized per build, not once: -O0 spills every local and inlines nothing, so the same body wants
+/* Sized per build, not once: -O0 spills every local and inlines nothing, so the same body wants
  * materially more stack than the optimized build. 512 B is enough optimized (over seven hardware
  * runs configCHECK_FOR_STACK_OVERFLOW=2 never tripped, and this task switches out ~6300 times a
  * run) but overflows at -O0 — where the default vApplicationStackOverflowHook spins silently, so
@@ -644,10 +589,11 @@ static ove_thread_storage_t g_mon_storage;
  * debug figure to every build would cost the STM32 1 KB of internal SRAM it does not have: with
  * the counters in, RAM is left with ~2.3 KB above a 2 KB floor. */
 #if defined(CONFIG_OVE_DEBUG_BUILD)
-static uint8_t g_mon_stack[1024] __attribute__((aligned(1024)));
+#define MON_STACK_SIZE 1024u
 #else
-static uint8_t g_mon_stack[512] __attribute__((aligned(512)));
+#define MON_STACK_SIZE 512u
 #endif
+OVE_THREAD_DEFINE(g_mon_storage, MON_STACK_SIZE);
 static ove_lxp_latency_stat_t g_mon_late;
 static volatile int g_mon_stop;
 static volatile int g_mon_exited;
@@ -751,25 +697,6 @@ static void audit_thread(const char *name, ove_thread_t h, size_t size)
 	audit_stack_line(name, size > freeb ? size - freeb : 0, size);
 }
 
-/* Report only the high-water free margin for a thread whose total stack this app does not own —
- * the RTOS-provided ove_main thread the coordinator runs inline on under Zephyr/NuttX (there is no
- * app-sized g_demo_stack there). Free is still the number the soak floor cares about. */
-#if !defined(CONFIG_OVE_RTOS_FREERTOS) /* used only in the non-FreeRTOS stack_audit() branch below */
-static void audit_thread_free(const char *name, ove_thread_t h)
-{
-	char line[96];
-	char *p = put_str(line, "[stack] ");
-	p = put_str(p, name);
-	while ((p - line) < 26)
-		*p++ = ' ';
-	p = put_str(p, "free=");
-	p = put_dec(p, (uint32_t)ove_thread_get_stack_usage(h));
-	*p++ = '\n';
-	*p = 0;
-	ove_lxp_console_write(line);
-}
-#endif /* !CONFIG_OVE_RTOS_FREERTOS */
-
 static void host_observation_audit(const ove_lxp_host_observation_t *observation)
 {
 	const ove_lxp_size_observation_t *sizes = &observation->sizes;
@@ -847,19 +774,13 @@ static void stack_audit(const ove_lxp_host_observation_t *observation)
 {
 	host_observation_audit(observation);
 	ove_lxp_console_write("\n=== stack high-water audit (deepest usage this run) ===\n");
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-	/* FreeRTOS runs the coordinator in an app-owned task (g_demo/g_demo_stack). */
-	audit_thread("coordinator", g_demo, sizeof(g_demo_stack));
-#else
-	/* Zephyr/NuttX run it inline on the ove_main thread — audit self, free-margin only. */
-	audit_thread_free("coordinator", ove_thread_get_self());
-#endif
-	audit_thread("worker", g_worker, sizeof(g_worker_stack));
+	audit_thread("coordinator", g_demo, sizeof(g_demo_storage_stack));
+	audit_thread("worker", g_worker, sizeof(g_worker_storage_stack));
 #if defined(CONFIG_OVE_WATCHDOG)
-	audit_thread("wd-monitor", g_wd, sizeof(g_wd_stack));
+	audit_thread("wd-monitor", g_wd, sizeof(g_wd_storage_stack));
 #endif
 #if defined(CONFIG_OVE_LINUX_LATENCY)
-	audit_thread("lat-monitor", g_mon, sizeof(g_mon_stack));
+	audit_thread("lat-monitor", g_mon, sizeof(g_mon_storage_stack));
 #endif
 	if (observation->guest_stack.available)
 		audit_stack_line("guest-slot(tramp)", observation->guest_stack.used,
@@ -881,7 +802,7 @@ static void stack_audit(const ove_lxp_host_observation_t *observation)
 		*p = 0;
 		ove_lxp_console_write(line);
 	}
-	/* Terminator + drain: the caller resets the part right after (semihosting sh_exit), which
+	/* Terminator + drain: the caller exits/resets the target right after, which
 	 * would otherwise cut off whatever is still in the UART FIFO — this line included. */
 	ove_lxp_console_write("[stack] end\n");
 	ove_time_delay_ms(50);
@@ -913,7 +834,7 @@ static void demo_body(void *arg)
 	ove_lxp_console_write(ove_reset_cause_str(ove_reset_cause()));
 	ove_lxp_console_write("\n");
 	if (ove_thread_init(&g_wd, &g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH,
-			    sizeof(g_wd_stack), g_wd_stack) != OVE_OK)
+			    sizeof(g_wd_storage_stack), g_wd_storage_stack) != OVE_OK)
 		ove_lxp_console_write("[wd] FAIL: monitor thread init; running without a watchdog\n");
 #endif
 
@@ -999,15 +920,16 @@ static void demo_body(void *arg)
 
 	/* ---- Phase 1: bidirectional round trip through BusyBox `cat` ---------- */
 	ove_lxp_console_write("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
-	/* BELOW the demo task (OVE_PRIO_NORMAL): the worker feeds the readings (before the program
-	 * launches) and drains its output (during/after the run). It runs when demo_body blocks — in
+	/* BELOW the demo task: the worker feeds the readings (before the program launches) and
+	 * drains its output (during/after the run). It runs when demo_body blocks — in
 	 * the pre-feed wait just below and, once the program is running, in the event-driven
 	 * coordinator's event_wait — so both directions co-run without the worker preempting the
 	 * coordinator. (The loader's QUADSPI-NOR reads are preemption-safe in their own right — the
 	 * coordinator reads the NOR through a non-cacheable bounded MPU region, see
 	 * rootfs_window callback — so this priority is about I/O ordering, not protecting the load.) */
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
-			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
+			    OVE_PRIO_LOW, sizeof(g_worker_storage_stack),
+			    g_worker_storage_stack) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: ove_thread_init\n");
 		demo_exit(1);
 	}
@@ -1089,7 +1011,7 @@ static void demo_body(void *arg)
 	 * host lateness over a window the coordinator's own rows do not cover. Both now measure
 	 * exactly the phase-2 run. */
 	if (ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
-			    sizeof(g_mon_stack), g_mon_stack) != OVE_OK) {
+			    sizeof(g_mon_storage_stack), g_mon_storage_stack) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: latency monitor thread init\n");
 		demo_exit(1);
 	}
@@ -1125,16 +1047,10 @@ static void demo_body(void *arg)
 
 void ove_main(void)
 {
-#ifdef CONFIG_OVE_RTOS_FREERTOS
-	/* FreeRTOS: the scheduler starts in ove_run(); run the demo in a task. */
 	if (ove_thread_init(&g_demo, &g_demo_storage, "demo", demo_body, NULL, OVE_PRIO_NORMAL,
-			    sizeof(g_demo_stack), g_demo_stack) != OVE_OK) {
+			    sizeof(g_demo_storage_stack), g_demo_storage_stack) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: demo thread init\n");
 		demo_exit(1);
 	}
-	ove_run(); /* ove_thread_start_scheduler() — never returns */
-#else
-	/* Zephyr: ove_main() already runs as a thread with the scheduler up. */
-	demo_body(NULL);
-#endif
+	ove_run();
 }

@@ -183,18 +183,16 @@ struct ove_dir {
 typedef struct ove_file ove_file_storage_t;
 typedef struct ove_dir ove_dir_storage_t;
 
-/*
- * Zephyr thread stacks require K_THREAD_STACK_DEFINE for MPU alignment.
- * Override the generic OVE_THREAD_DEFINE / OVE_THREAD_DEFINE_STATIC
- * stack allocation to use the Zephyr macro.
- */
-#define OVE_THREAD_STACK_DEFINE_(name, size) K_THREAD_STACK_DEFINE(name, size)
+/* ove_thread_init() creates supervisor-only threads (options == 0); only LXP's
+ * protected guest port creates K_USER threads, using its own user-capable
+ * stacks. Match the public storage helper to that contract. Besides expressing
+ * ownership accurately, K_KERNEL_STACK_DEFINE avoids reserving a privileged
+ * exception stack for every ordinary oveRTOS host thread when CONFIG_USERSPACE
+ * is enabled. */
+#define OVE_THREAD_STACK_DEFINE_(name, size) K_KERNEL_STACK_DEFINE(name, size)
 
-/* K_THREAD_STACK_DEFINE has external linkage; the comment in
- * thread_stack.h explicitly sanctions a leading 'static' to make it
- * file-local.  Used by OVE_TEST_STACK so per-TU stacks with reused names
- * (s_th_stack, s_wq_stack, …) don't collide at link time. */
-#define OVE_THREAD_STACK_DEFINE_STATIC_(name, size) static K_THREAD_STACK_DEFINE(name, size)
+/* K_KERNEL_STACK_DEFINE explicitly permits a leading 'static'. */
+#define OVE_THREAD_STACK_DEFINE_STATIC_(name, size) static K_KERNEL_STACK_DEFINE(name, size)
 
 /* Block-scope thread stack on Zephyr.  K_KERNEL_STACK_DEFINE is the
  * kernel-only stack flavour (no userspace, which we don't use) — it uses

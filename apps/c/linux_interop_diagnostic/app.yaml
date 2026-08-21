@@ -6,9 +6,6 @@ sources:
   - ../linux_interop/src/rt_scope.c
 defconfig:
   - CONFIG_OVE_LINUX=y
-  - CONFIG_OVE_ARENA=y
-  - CONFIG_OVE_LOADER=y
-  - CONFIG_OVE_QUEUE=y
   - CONFIG_OVE_LINUX_DEV=y
   - CONFIG_OVE_LINUX_DEV_FB=y
   - CONFIG_OVE_LINUX_DEV_DMA2D=y
