@@ -328,7 +328,8 @@ static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 
 static void on_enosys(long nr)
 {
-	char b[40];
+	/* Prefix + UINT32_MAX + newline + terminator. */
+	char b[48];
 	char *p = put_str(b, "[demo] unimplemented syscall nr=");
 	p = put_dec(p, (uint32_t)nr);
 	*p++ = '\n';
