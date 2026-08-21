@@ -256,7 +256,13 @@ def _zephyr_patch_worktree(ws, zephyr_download):
 
 def discard_workspace_patch_worktrees(ws):
     """Remove generated patch worktrees owned by the active workspace."""
-    if ws.rtos != "zephyr":
+    try:
+        rtos = ws.rtos
+    except FileNotFoundError:
+        # Preserve `ove clean` as a recovery command when configuration was
+        # never generated or has already been removed.
+        return
+    if rtos != "zephyr":
         return
     source = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
     if not os.path.isdir(source):
