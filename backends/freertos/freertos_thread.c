@@ -16,6 +16,7 @@
 #include "task.h"
 #include "semphr.h"
 #include <stdatomic.h>
+#include <string.h>
 
 /* Portable Cortex-M memory barrier.  CMSIS exposes `__DMB()` via
  * `cmsis_compiler.h`, but the QEMU MPS2-AN500 FreeRTOS test build
@@ -23,7 +24,7 @@
  * (GCC emits `dmb sy` on ARMv7-M) for portability. */
 #define OVE_DMB() atomic_thread_fence(memory_order_seq_cst)
 
-#if (configGENERATE_RUN_TIME_STATS == 1) || (configUSE_TRACE_FACILITY == 1)
+#if configGENERATE_RUN_TIME_STATS == 1
 static uint32_t runtime_percent(configRUN_TIME_COUNTER_TYPE part, configRUN_TIME_COUNTER_TYPE total)
 {
 	if (total == 0)
@@ -452,7 +453,9 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 {
 #if configUSE_TRACE_FACILITY
 	UBaseType_t filled;
+#if configGENERATE_RUN_TIME_STATS == 1
 	configRUN_TIME_COUNTER_TYPE total_runtime;
+#endif
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	uint32_t snapshot_start = DWT->CYCCNT;
 #endif
@@ -468,7 +471,9 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	filled = g_frt_task_count;
 	if (out != NULL && filled > (UBaseType_t)max_count)
 		filled = (UBaseType_t)max_count;
+#if configGENERATE_RUN_TIME_STATS == 1
 	total_runtime = portGET_RUN_TIME_COUNTER_VALUE();
+#endif
 
 	if (out != NULL) {
 		for (UBaseType_t i = 0; i < filled; ++i) {
@@ -481,6 +486,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			out[i].priority = (int)task.uxCurrentPriority;
 			out[i].stack_size = 0u;
 			out[i].stack_used = 0u;
+			out[i].valid_fields = 0u;
 
 			switch (task.eCurrentState) {
 			case eRunning:
@@ -503,21 +509,21 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 				break;
 			}
 
+			out[i].cpu_percent_x100 = 0u;
+			memset(&out[i].state_times, 0, sizeof(out[i].state_times));
+#if configGENERATE_RUN_TIME_STATS == 1
 			out[i].cpu_percent_x100 =
 				runtime_percent(task.ulRunTimeCounter, total_runtime);
-
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 			uint64_t run_us = (uint64_t)task.ulRunTimeCounter * 1000u;
-			uint64_t total_us = (uint64_t)total_runtime * 1000u;
 #else
 			uint64_t cycles_per_us = SystemCoreClock / 1000000u;
 			uint64_t run_us = (uint64_t)task.ulRunTimeCounter / cycles_per_us;
-			uint64_t total_us = (uint64_t)total_runtime / cycles_per_us;
 #endif
 			out[i].state_times.running_us = run_us;
-			out[i].state_times.ready_us = 0u;
-			out[i].state_times.blocked_us = total_us > run_us ? total_us - run_us : 0u;
-			out[i].state_times.suspended_us = 0u;
+			out[i].valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT |
+					       OVE_THREAD_INFO_VALID_RUNNING_TIME;
+#endif
 		}
 	}
 	(void)xTaskResumeAll();

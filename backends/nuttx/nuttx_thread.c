@@ -776,6 +776,7 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	info->stack_size = tcb->adj_stack_size;
 	info->stack_used = 0;
 	info->cpu_percent_x100 = 0;
+	info->valid_fields = OVE_THREAD_INFO_VALID_STACK_SIZE;
 	memset(&info->state_times, 0, sizeof(info->state_times));
 
 	ctx->count++;
@@ -791,6 +792,8 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 	if (ove_nuttx_runtime_get(snapshot->pid, &task_cycles, &total_cycles) == 0) {
 		info->state_times.running_us = ove_nuttx_runtime_cycles_to_us(task_cycles);
 		info->cpu_percent_x100 = _runtime_percent(task_cycles, total_cycles);
+		info->valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT |
+				      OVE_THREAD_INFO_VALID_RUNNING_TIME;
 	}
 #elif !defined(CONFIG_SCHED_CPULOAD_NONE)
 	{
@@ -798,6 +801,7 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 		if (clock_cpuload(snapshot->pid, &cl) == OK && cl.total > 0) {
 			uint32_t pct = (uint32_t)((uint64_t)cl.active * 10000U / cl.total);
 			info->cpu_percent_x100 = pct;
+			info->valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT;
 			/* cl.active is a DECAYED average, not cumulative — integrate the load fraction
 			 * into a monotonic cumulative running_us (see the g_nx_cpuint note). */
 			int idx = -1, freeidx = -1;
@@ -821,6 +825,7 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 				g_nx_cpuint[idx].seen = true;
 				g_nx_cpuint[idx].cum_us += (uint64_t)pct * dt_us / 10000U;
 				info->state_times.running_us = g_nx_cpuint[idx].cum_us;
+				info->valid_fields |= OVE_THREAD_INFO_VALID_RUNNING_TIME;
 			}
 		}
 	}

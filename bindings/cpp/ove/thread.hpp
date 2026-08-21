@@ -821,8 +821,9 @@ struct MemStats {
  *
  * Alias of the C @ref ove_thread_info struct.  Exposes the full set of
  * fields the substrate provides (name, identity, state, priority,
- * stack_used, stack_size, cpu_percent_x100, state_times), unchanged from the C
- * layer.  Default-initialise with `ThreadInfo info{};` for zero-init.
+ * stack_used, stack_size, cpu_percent_x100, valid_fields, state_times),
+ * unchanged from the C layer. Default-initialise with `ThreadInfo info{};` for
+ * zero-init.
  *
  * Previous versions of the binding defined a C++-only subset struct
  * here and did a per-field copy in @ref thread_list.  That added a
@@ -832,6 +833,24 @@ struct MemStats {
  * no binding-side cap.
  */
 using ThreadInfo = struct ove_thread_info;
+
+enum class ThreadInfoField : uint32_t {
+	StackUsed = OVE_THREAD_INFO_VALID_STACK_USED,
+	StackSize = OVE_THREAD_INFO_VALID_STACK_SIZE,
+	CpuPercent = OVE_THREAD_INFO_VALID_CPU_PERCENT,
+	RunningTime = OVE_THREAD_INFO_VALID_RUNNING_TIME,
+	ReadyTime = OVE_THREAD_INFO_VALID_READY_TIME,
+	BlockedTime = OVE_THREAD_INFO_VALID_BLOCKED_TIME,
+	SuspendedTime = OVE_THREAD_INFO_VALID_SUSPENDED_TIME,
+	StateTimes = OVE_THREAD_INFO_VALID_STATE_TIMES,
+};
+
+/** @brief Test whether an optional thread snapshot field is available. */
+[[nodiscard]] constexpr bool thread_info_has(const ThreadInfo &info, ThreadInfoField field) noexcept
+{
+	auto mask = static_cast<uint32_t>(field);
+	return (info.valid_fields & mask) == mask;
+}
 
 /**
  * @brief List all threads in the system.

@@ -939,6 +939,14 @@ const _: () = {
     ["Offset of field: ove_thread_state_times::suspended_us"]
         [core::mem::offset_of!(ove_thread_state_times, suspended_us) - 24usize];
 };
+pub const OVE_THREAD_INFO_VALID_STACK_USED: u32 = 1;
+pub const OVE_THREAD_INFO_VALID_STACK_SIZE: u32 = 2;
+pub const OVE_THREAD_INFO_VALID_CPU_PERCENT: u32 = 4;
+pub const OVE_THREAD_INFO_VALID_RUNNING_TIME: u32 = 8;
+pub const OVE_THREAD_INFO_VALID_READY_TIME: u32 = 16;
+pub const OVE_THREAD_INFO_VALID_BLOCKED_TIME: u32 = 32;
+pub const OVE_THREAD_INFO_VALID_SUSPENDED_TIME: u32 = 64;
+pub const OVE_THREAD_INFO_VALID_STATE_TIMES: u32 = 120;
 #[doc = " @brief Snapshot of a single thread's info."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -957,6 +965,8 @@ pub struct ove_thread_info {
     pub stack_size: usize,
     #[doc = "< CPU usage in 0.01% units (e.g. 1250 = 12.50%)."]
     pub cpu_percent_x100: u32,
+    #[doc = "< Bitwise OR of OVE_THREAD_INFO_VALID_* flags."]
+    pub valid_fields: u32,
     #[doc = "< Per-state cumulative time."]
     pub state_times: ove_thread_state_times,
 }
@@ -978,6 +988,8 @@ const _: () = {
         [core::mem::offset_of!(ove_thread_info, stack_size) - 32usize];
     ["Offset of field: ove_thread_info::cpu_percent_x100"]
         [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 40usize];
+    ["Offset of field: ove_thread_info::valid_fields"]
+        [core::mem::offset_of!(ove_thread_info, valid_fields) - 44usize];
     ["Offset of field: ove_thread_info::state_times"]
         [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
 };

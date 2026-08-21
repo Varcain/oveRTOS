@@ -1043,20 +1043,22 @@ pub struct ThreadInfo {
     pub state: bindings::ove_thread_state_t,
     /// Priority level.
     pub priority: i32,
-    /// Stack high-water mark in bytes.
-    pub stack_used: usize,
-    /// Total stack allocation in bytes, or zero if unavailable.
-    pub stack_size: usize,
-    /// CPU usage in 0.01% units.
-    pub cpu_percent_x100: u32,
-    /// Cumulative time spent running, in microseconds.
-    pub running_us: u64,
-    /// Cumulative time spent ready, in microseconds.
-    pub ready_us: u64,
-    /// Cumulative time spent blocked, in microseconds.
-    pub blocked_us: u64,
-    /// Cumulative time spent suspended, in microseconds.
-    pub suspended_us: u64,
+    /// Raw `OVE_THREAD_INFO_VALID_*` bits for forward-compatible inspection.
+    pub valid_fields: u32,
+    /// Stack high-water mark in bytes, when measured.
+    pub stack_used: Option<usize>,
+    /// Total stack allocation in bytes, when known.
+    pub stack_size: Option<usize>,
+    /// CPU usage in 0.01% units, when measured.
+    pub cpu_percent_x100: Option<u32>,
+    /// Cumulative time spent running, in microseconds, when measured.
+    pub running_us: Option<u64>,
+    /// Cumulative time spent ready, in microseconds, when measured.
+    pub ready_us: Option<u64>,
+    /// Cumulative time spent blocked, in microseconds, when measured.
+    pub blocked_us: Option<u64>,
+    /// Cumulative time spent suspended, in microseconds, when measured.
+    pub suspended_us: Option<u64>,
 }
 
 /// List all threads in the system.
@@ -1096,13 +1098,23 @@ pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
             identity: raw[i].identity,
             state: raw[i].state,
             priority: raw[i].priority,
-            stack_used: raw[i].stack_used,
-            stack_size: raw[i].stack_size,
-            cpu_percent_x100: raw[i].cpu_percent_x100,
-            running_us: raw[i].state_times.running_us,
-            ready_us: raw[i].state_times.ready_us,
-            blocked_us: raw[i].state_times.blocked_us,
-            suspended_us: raw[i].state_times.suspended_us,
+            valid_fields: raw[i].valid_fields,
+            stack_used: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_STACK_USED != 0)
+                .then_some(raw[i].stack_used),
+            stack_size: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_STACK_SIZE != 0)
+                .then_some(raw[i].stack_size),
+            cpu_percent_x100: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_CPU_PERCENT
+                != 0)
+                .then_some(raw[i].cpu_percent_x100),
+            running_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_RUNNING_TIME != 0)
+                .then_some(raw[i].state_times.running_us),
+            ready_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_READY_TIME != 0)
+                .then_some(raw[i].state_times.ready_us),
+            blocked_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_BLOCKED_TIME != 0)
+                .then_some(raw[i].state_times.blocked_us),
+            suspended_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_SUSPENDED_TIME
+                != 0)
+                .then_some(raw[i].state_times.suspended_us),
         };
     }
     Ok(&buf[..actual])

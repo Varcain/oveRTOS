@@ -611,10 +611,10 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	while (t && count < max_count) {
 		uint64_t cpu_ns = _thread_cpu_ns(t->tid);
 		if (refresh) {
-			uint64_t dcpu = (t->cpu_prev_ns && cpu_ns > t->cpu_prev_ns)
-						? (cpu_ns - t->cpu_prev_ns)
-						: 0;
+			int sample_valid = t->cpu_prev_ns && cpu_ns >= t->cpu_prev_ns;
+			uint64_t dcpu = sample_valid ? cpu_ns - t->cpu_prev_ns : 0;
 			t->cpu_pct_x100 = (uint32_t)(dcpu * 10000ULL / delta_wall);
+			t->cpu_pct_valid = (uint8_t)sample_valid;
 			t->cpu_prev_ns = cpu_ns;
 		} else if (!t->cpu_prev_ns) {
 			/* First observation ever — seed so the next refresh
@@ -630,11 +630,18 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			t->stack_base ? _check_stack_hwm(t->stack_base, t->stack_size) : 0;
 		out[count].stack_size = t->stack_size;
 		out[count].cpu_percent_x100 = t->cpu_pct_x100;
+		out[count].valid_fields = 0;
+		if (t->stack_base && t->stack_size)
+			out[count].valid_fields |= OVE_THREAD_INFO_VALID_STACK_USED |
+						   OVE_THREAD_INFO_VALID_STACK_SIZE;
+		if (t->cpu_pct_valid)
+			out[count].valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 		out[count].state_times.running_us = t->st.cumul_us[0];
 		out[count].state_times.ready_us = t->st.cumul_us[1];
 		out[count].state_times.blocked_us = t->st.cumul_us[2];
 		out[count].state_times.suspended_us = t->st.cumul_us[3];
+		out[count].valid_fields |= OVE_THREAD_INFO_VALID_STATE_TIMES;
 #else
 		memset(&out[count].state_times, 0, sizeof(out[count].state_times));
 #endif

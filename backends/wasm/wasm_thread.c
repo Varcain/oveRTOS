@@ -547,12 +547,18 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		out[count].identity = (uintptr_t)t;
 		out[count].state = (ove_thread_state_t)t->state;
 		out[count].priority = t->priority;
+		out[count].valid_fields = 0;
 		size_t headroom = 0;
-		out[count].stack_used = ove_thread_get_stack_headroom(t, &headroom) == OVE_OK &&
-							t->stack_size > headroom
-						? t->stack_size - headroom
-						: 0;
+		if (ove_thread_get_stack_headroom(t, &headroom) == OVE_OK) {
+			out[count].stack_used = t->stack_size > headroom ? t->stack_size - headroom
+									 : 0;
+			out[count].valid_fields |= OVE_THREAD_INFO_VALID_STACK_USED;
+		} else {
+			out[count].stack_used = 0;
+		}
 		out[count].stack_size = t->stack_size;
+		if (t->stack_size)
+			out[count].valid_fields |= OVE_THREAD_INFO_VALID_STACK_SIZE;
 		out[count].cpu_percent_x100 = 0;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 		/* Fold an in-progress RUNNING slice into the snapshot so
@@ -569,6 +575,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		out[count].state_times.ready_us = cumul[1];
 		out[count].state_times.blocked_us = cumul[2];
 		out[count].state_times.suspended_us = cumul[3];
+		out[count].valid_fields |= OVE_THREAD_INFO_VALID_STATE_TIMES;
 		running_us[count] = cumul[0];
 		total_running_us += cumul[0];
 #else
@@ -583,6 +590,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		for (size_t i = 0; i < count; i++)
 			out[i].cpu_percent_x100 =
 				(uint32_t)(running_us[i] * 10000ULL / total_running_us);
+		for (size_t i = 0; i < count; i++)
+			out[i].valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT;
 	}
 #endif
 

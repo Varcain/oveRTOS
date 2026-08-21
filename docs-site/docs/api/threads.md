@@ -165,7 +165,7 @@ OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "wor
 | `ove_thread_request_stop` | `void (ove_thread_t handle)` | Cooperative stop signal. The thread keeps running until it observes `ove_thread_should_stop()` and exits its entry function. |
 | `ove_thread_should_stop` | `bool (ove_thread_t handle)` | Returns `true` once `ove_thread_request_stop()` has been called for the thread. Polled inside the worker's main loop. |
 | `ove_thread_get_runtime_stats` | `int (ove_thread_t handle, struct ove_thread_stats *stats)` | Retrieve total CPU time (`runtime_us`) and utilisation percentage (`cpu_percent_x100`) since the scheduler started. Returns `OVE_ERR_NOT_SUPPORTED` if the backend does not provide runtime accounting. |
-| `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Each entry includes name, state, priority, stack usage/size, CPU usage, and per-state cumulative time. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
+| `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Identity, state, and priority are always populated; `valid_fields` identifies the optional metrics supplied by the backend. Returns `OVE_ERR_NOT_SUPPORTED` if enumeration itself is unavailable. |
 | `ove_sys_get_mem_stats` | `int (struct ove_mem_stats *stats)` | Query system heap totals: `total`, `free`, `used`, `peak_used` bytes. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
 
 ## Runtime Statistics and Stack Profiling
@@ -212,6 +212,44 @@ if (rc == OVE_OK) {
     /* A zero value is meaningful: this thread exhausted its measured margin. */
 }
 ```
+
+## Thread Snapshot Validity
+
+`ove_thread_list()` initializes every metric deterministically, but a numeric
+zero is a measurement only when its validity bit is present. Use
+`ove_thread_info_has()` rather than inferring availability from the value:
+
+```c
+struct ove_thread_info threads[16];
+size_t count;
+int rc = ove_thread_list(threads, 16, &count);
+if (rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL) {
+    for (size_t i = 0; i < count; i++) {
+        if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_CPU_PERCENT)) {
+            consume_cpu_percent(threads[i].cpu_percent_x100);
+        }
+    }
+}
+```
+
+| Flag | Field made valid |
+|------|------------------|
+| `OVE_THREAD_INFO_VALID_STACK_USED` | `stack_used` |
+| `OVE_THREAD_INFO_VALID_STACK_SIZE` | `stack_size` |
+| `OVE_THREAD_INFO_VALID_CPU_PERCENT` | `cpu_percent_x100` |
+| `OVE_THREAD_INFO_VALID_RUNNING_TIME` | `state_times.running_us` |
+| `OVE_THREAD_INFO_VALID_READY_TIME` | `state_times.ready_us` |
+| `OVE_THREAD_INFO_VALID_BLOCKED_TIME` | `state_times.blocked_us` |
+| `OVE_THREAD_INFO_VALID_SUSPENDED_TIME` | `state_times.suspended_us` |
+| `OVE_THREAD_INFO_VALID_STATE_TIMES` | All four state-time fields |
+
+The flags are deliberately granular. For example, FreeRTOS, NuttX, and
+Zephyr can report cumulative running time without pretending that
+`total - running` is exact blocked time; that remainder can also include time
+spent ready or suspended. Heap-enabled POSIX and WASM builds with state
+tracking provide all four state buckets. Snapshot stack scanning stays
+disabled in bounded scheduler-locked traversals, so a backend may know the
+allocation size without providing `stack_used`.
 
 ## Example: Worker Thread with Sleep Loop
 
