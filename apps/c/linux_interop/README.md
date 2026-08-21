@@ -491,6 +491,14 @@ workload and readiness report, not provider lifecycle. It queries the host-owned
 address through `ove_lxp_host_netif_get_addr()` and releases the host after the
 final guest exits.
 
+Application-owned scenarios are separated from lifecycle orchestration without
+promoting them into the generic API. `src/roundtrip.c` owns the fixed native
+worker, guest I/O callbacks, and reply validation. `src/network_smoke.c` owns
+address reporting and the bounded TCP readiness probe, and compiles to no-op
+functions when networking is disabled. `src/app.c` therefore shows the public
+oveRTOS composition directly: initialize the host, prepare per-launch policy,
+run each guest, observe, and deinitialize.
+
 ## Observability ownership
 
 The demo chooses the watchdog policy, measurement window, text format, and

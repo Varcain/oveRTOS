@@ -3,7 +3,9 @@ config_name: linux_interop_minimal
 description: "Linux personality interop demo — Minimal profile"
 sources:
   - ../linux_interop/src/app.c
+  - ../linux_interop/src/network_smoke.c
   - ../linux_interop/src/qualification.c
+  - ../linux_interop/src/roundtrip.c
   - ../linux_interop/src/rt_scope.c
 defconfig:
   - CONFIG_OVE_LINUX=y
