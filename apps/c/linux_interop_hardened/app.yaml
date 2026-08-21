@@ -3,6 +3,7 @@ config_name: linux_interop_hardened
 description: "Linux personality interop demo — Hardened profile"
 sources:
   - ../linux_interop/src/app.c
+  - ../linux_interop/src/qualification.c
   - ../linux_interop/src/rt_scope.c
 defconfig:
   - CONFIG_OVE_LINUX=y

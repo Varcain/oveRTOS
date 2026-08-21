@@ -6,6 +6,8 @@ if(NOT DEFINED OVE_ROOT)
 endif()
 
 set(APP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/app.c")
+set(QUALIFICATION_SOURCE
+    "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c")
 set(RT_SCOPE_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c")
 set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 
@@ -14,7 +16,8 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 1040)
+set(APP_SOURCE_LINE_CEILING 600)
+set(QUALIFICATION_SOURCE_LINE_CEILING 540)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
 
 function(assert_line_ceiling PATH CEILING)
@@ -31,18 +34,24 @@ function(assert_line_ceiling PATH CEILING)
 endfunction()
 
 assert_line_ceiling("${APP_SOURCE}" ${APP_SOURCE_LINE_CEILING})
+assert_line_ceiling("${QUALIFICATION_SOURCE}"
+                    ${QUALIFICATION_SOURCE_LINE_CEILING})
 assert_line_ceiling("${RT_SCOPE_SOURCE}" ${RT_SCOPE_SOURCE_LINE_CEILING})
 
 file(READ "${APP_SOURCE}" APP_TEXT)
+file(READ "${QUALIFICATION_SOURCE}" QUALIFICATION_TEXT)
+set(HOST_APP_TEXT "${APP_TEXT}\n${QUALIFICATION_TEXT}")
 
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
-    message(FATAL_ERROR "linux_interop app must use only engine-neutral oveRTOS APIs")
+    message(FATAL_ERROR
+        "linux_interop host code must use only engine-neutral oveRTOS APIs")
 endif()
 
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_(run|host|dev|proc|syscall)[A-Za-z0-9_]*[ \t\r\n]*\\(")
-    message(FATAL_ERROR "linux_interop app bypasses the public oveRTOS LXP facade")
+    message(FATAL_ERROR
+        "linux_interop host code bypasses the public oveRTOS LXP facade")
 endif()
 
 if(APP_TEXT MATCHES
@@ -61,12 +70,20 @@ if(NOT TARGET_REGISTER_WRITE_COUNT EQUAL 0)
         "linux_interop app must not access target registers directly")
 endif()
 
-if(APP_TEXT MATCHES "CONFIG_OVE_RTOS_(FREERTOS|NUTTX|ZEPHYR)")
-    message(FATAL_ERROR "linux_interop lifecycle must not branch by RTOS engine")
+if(HOST_APP_TEXT MATCHES "CONFIG_OVE_RTOS_(FREERTOS|NUTTX|ZEPHYR)")
+    message(FATAL_ERROR
+        "linux_interop host lifecycle must not branch by RTOS engine")
 endif()
 
-if(APP_TEXT MATCHES "static[ \t]+uint8_t[ \t]+g_[A-Za-z0-9_]*stack")
-    message(FATAL_ERROR "linux_interop thread stacks must use oveRTOS storage helpers")
+if(HOST_APP_TEXT MATCHES "static[ \t]+uint8_t[ \t]+g_[A-Za-z0-9_]*stack")
+    message(FATAL_ERROR
+        "linux_interop host thread stacks must use oveRTOS storage helpers")
+endif()
+
+if(APP_TEXT MATCHES
+   "CONFIG_OVE_WATCHDOG|CONFIG_OVE_LINUX_(FAULTTEST|SMASHTEST|LATENCY)|ove_watchdog_|ove_reset_cause")
+    message(FATAL_ERROR
+        "linux_interop app regained qualification-only implementation policy")
 endif()
 
 # Linux personality owns its required modules.  Applications select the
@@ -97,6 +114,10 @@ foreach(PROFILE IN ITEMS
         linux_interop_minimal)
     set(PROFILE_CONFIG "${OVE_ROOT}/apps/c/${PROFILE}/app.yaml")
     file(READ "${PROFILE_CONFIG}" PROFILE_TEXT)
+    if(NOT PROFILE_TEXT MATCHES "qualification\\.c")
+        message(FATAL_ERROR
+            "${PROFILE_CONFIG} does not include the shared qualification module")
+    endif()
     if(PROFILE_TEXT MATCHES "CONFIG_OVE_(ARENA|LOADER|QUEUE)")
         message(FATAL_ERROR
             "${PROFILE_CONFIG} restates module plumbing selected elsewhere")

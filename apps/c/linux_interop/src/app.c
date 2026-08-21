@@ -33,7 +33,6 @@
 #include <string.h>
 
 #include "ove/lxp_console.h"
-#include "ove/lxp_observability.h"
 #include "ove/thread.h"
 #include "ove/time.h"
 
@@ -41,13 +40,10 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h" /* product-level socket smoke over the initialized host network */
 #endif
-#if defined(CONFIG_OVE_WATCHDOG)
-#include "ove/watchdog.h" /* host-owned IWDG feed */
-#include "ove/reset.h"	  /* why the last reset happened (watchdog recovery is visible) */
-#endif
 
 #include "ove_config.h"
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
+#include "qualification.h"
 #include "rt_scope.h"
 
 #ifndef UNUSED
@@ -381,440 +377,6 @@ static ove_thread_t g_demo;
  * backend-safe memory while a protected guest address space is active. */
 OVE_THREAD_DEFINE_HOST(g_demo_storage, 8192);
 
-#if defined(CONFIG_OVE_WATCHDOG)
-/* ---- host watchdog: a high-priority task owns the IWDG feed -------------------------------
- * The IWDG (LSI-clocked, independent of the core clock) resets the board if it is not fed within
- * its timeout. This monitor at OVE_PRIO_HIGH owns the feed — above the coordinator (NORMAL) and
- * the guest slots (IDLE+1). What it feeds ON is host liveness only:
- *   - while the coordinator is not driving a guest, the monitor running at all proves the
- *     scheduler is alive, which is the whole guarantee available in that window;
- *   - while it is, the monitor feeds only if the coordinator's heartbeat advanced since the last
- *     check. A stalled heartbeat with a live scheduler is a wedged coordinator, which a plain
- *     unconditional high-priority feed would miss.
- * Guest progress never enters the decision: a faulting guest is contained by the MPU, not a reset
- * trigger, and a guest must not be able to hold the watchdog open.
- *
- * The IWDG timeout (not a counter here) is the tolerance for a transient non-advancing window: the
- * longest single coordinator dispatch measured — a ~105 ms fork (R7) — is ~19x under 2 s, so a
- * legitimate long dispatch never resets while a real stall (unfed > 2 s) always does. */
-#define WD_TIMEOUT_MS 2000u
-#define WD_FEED_MS 250u
-
-static ove_thread_t g_wd;
-/* Sized per build like the latency monitor: -O0 spills more (see CONFIG_OVE_DEBUG_BUILD). .bss
- * keeps it in internal SRAM, which a host task stack needs on STM32. The R9 soak's stack audit
- * measured only 128 B used at -Os, so 512 B (384 B free) is comfortable. */
-#if defined(CONFIG_OVE_DEBUG_BUILD)
-#define WD_STACK_SIZE 1024u
-#else
-#define WD_STACK_SIZE 512u
-#endif
-OVE_THREAD_DEFINE(g_wd_storage, WD_STACK_SIZE);
-static ove_watchdog_t g_wd_dog;
-static ove_watchdog_storage_t g_wd_dog_storage;
-
-/* The feed decision, named for what it encodes: feed iff the coordinator is not running a guest,
- * or its heartbeat advanced since the last look. The self-test below exercises the withhold branch
- * (active && !advanced) end to end against real hardware. */
-static int wd_should_feed(int active, int hb_advanced)
-{
-	return !active || hb_advanced;
-}
-
-#if defined(CONFIG_OVE_WATCHDOG_SELFTEST)
-/* Debug-gated proof that the policy resets a wedged host. A spinner at OVE_PRIO_ABOVE_NORMAL —
- * between the coordinator (NORMAL) and the monitor (HIGH) — starves the coordinator so its
- * heartbeat freezes, WITHOUT masking interrupts, so the scheduler stays live and the monitor keeps
- * running, sees the stall, withholds the feed, and the IWDG resets the board. That exercises the
- * heartbeat-gating path end to end, not merely scheduler death. One-shot: skipped when this boot
- * came FROM a watchdog reset, so it trips once and then the board runs clean. */
-static ove_thread_t g_wdtest;
-OVE_THREAD_DEFINE(g_wdtest_storage, 512);
-
-static void wdtest_spin(void *arg)
-{
-	UNUSED(arg);
-	for (;;)
-		__asm volatile("nop"); /* no __disable_irq: starve the coordinator, keep the scheduler */
-}
-
-static void wd_selftest_maybe_trip(void)
-{
-	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
-		ove_lxp_console_write("[wd] selftest: recovered from the watchdog reset; not re-tripping\n");
-		return;
-	}
-	ove_lxp_console_write("[wd] selftest: starving the coordinator (scheduler stays live);"
-		  " expect a watchdog reset in ~2s...\n");
-	(void)ove_thread_init(&g_wdtest, &g_wdtest_storage, "wdtest", wdtest_spin, NULL,
-			      OVE_PRIO_ABOVE_NORMAL, sizeof(g_wdtest_storage_stack),
-			      g_wdtest_storage_stack);
-}
-#endif /* CONFIG_OVE_WATCHDOG_SELFTEST */
-
-static void wd_body(void *arg)
-{
-	UNUSED(arg);
-	if (ove_watchdog_init(&g_wd_dog, &g_wd_dog_storage, WD_TIMEOUT_MS) != OVE_OK ||
-	    ove_watchdog_start(g_wd_dog) != OVE_OK) {
-		/* Could not arm. Running unguarded beats spinning here — a spin would be the very
-		 * kind of wedge nothing is left to catch. */
-		ove_lxp_console_write("[wd] FAIL: could not arm IWDG; running without a watchdog\n");
-		return;
-	}
-	ove_lxp_console_write("[wd] IWDG armed: 2000ms timeout, fed every 250ms while the host stays live\n");
-
-	uint32_t last = 0;
-	int primed = 0;
-#if defined(CONFIG_OVE_WATCHDOG_SELFTEST)
-	unsigned cycle = 0;
-	int tripped = 0;
-#endif
-	for (;;) {
-		ove_lxp_run_health_t h;
-		ove_lxp_run_health_snapshot(&h);
-		int feed = !primed ||
-			   wd_should_feed(h.active, h.coordinator_iterations != last);
-		last = h.coordinator_iterations;
-		primed = 1;
-		if (feed)
-			(void)ove_watchdog_feed(g_wd_dog);
-#if defined(CONFIG_OVE_WATCHDOG_SELFTEST)
-		/* Trip once the guest is actually running (~4 s in), so the wedge stalls a live
-		 * coordinator rather than an idle one. */
-		if (!tripped && cycle >= 16 && h.active) {
-			tripped = 1;
-			wd_selftest_maybe_trip();
-		}
-		cycle++;
-#endif
-		ove_thread_sleep_ms(WD_FEED_MS);
-	}
-}
-#endif /* CONFIG_OVE_WATCHDOG */
-
-#if defined(CONFIG_OVE_LINUX_FAULTTEST)
-/* Debug-gated proof (C6) that a fault in host/privileged context is fatal, never mis-contained as a
- * guest fault. A privileged host task (created like any other via ove_thread_init, so current_slot()
- * cannot match it) executes an undefined instruction a few seconds in, while a guest is running. The
- * seam's fault handler sees no owning slot, declines containment, prints a HOST FAULT diagnostic and
- * halts; the watchdog resets. One-shot: skipped when this boot came FROM a watchdog reset. */
-static ove_thread_t g_ftest;
-OVE_THREAD_DEFINE(g_ftest_storage, 512);
-
-static void ftest_body(void *arg)
-{
-	UNUSED(arg);
-	ove_thread_sleep_ms(4000); /* let phase 2 publish the active personality run */
-	ove_lxp_console_write("[c6] faulting a privileged host task (udf) while a guest runs;"
-		  " expect HOST FAULT + watchdog reset\n");
-	__asm volatile("udf #0"); /* host UsageFault -> LXP port invokes the fatal host callback */
-	for (;;) { /* unreachable */
-	}
-}
-
-static void faulttest_maybe_arm(void)
-{
-	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
-		ove_lxp_console_write("[c6] recovered from the host-fault test; not re-arming\n");
-		return;
-	}
-	(void)ove_thread_init(&g_ftest, &g_ftest_storage, "ftest", ftest_body, NULL, OVE_PRIO_NORMAL,
-			      sizeof(g_ftest_storage_stack), g_ftest_storage_stack);
-}
-#endif /* CONFIG_OVE_LINUX_FAULTTEST */
-
-#if defined(CONFIG_OVE_LINUX_SMASHTEST)
-/* Debug-gated proof (C9) that a stack smash reaches the board's __stack_chk_fail, not picolibc's
- * silent default. smash_host_stack overflows a local buffer past the canary -fstack-protector-strong
- * placed above it; its epilogue's canary check then calls __stack_chk_fail (print + halt), and the
- * watchdog resets. One-shot: skipped when this boot came FROM a watchdog reset. */
-static ove_thread_t g_smash;
-OVE_THREAD_DEFINE(g_smash_storage, 512);
-
-/* noinline so its OWN epilogue runs the canary check right after the overflow — inlined into the
- * caller, the overflow would land far from the caller's canary and never trip. Writing through a
- * volatile pointer keeps the overflow out of the compiler's array-bounds analysis (which would
- * -Werror) and the barrier stops it being elided. The overflow stays within this task's stack, so
- * the canary check — not a wild access — is what trips. */
-static __attribute__((noinline)) void smash_host_stack(void)
-{
-	volatile char buf[16];
-	volatile char *p = buf;
-	for (int i = 0; i < 40; i++)
-		p[i] = (char)(0xa5 + i); /* i >= 16 overruns buf into the canary */
-	__asm__ volatile("" : : "r"(p) : "memory");
-}
-
-static void smashtest_body(void *arg)
-{
-	UNUSED(arg);
-	ove_thread_sleep_ms(4500); /* just after the C6 fault test, if both are on; guest is up */
-	ove_lxp_console_write("[c9] smashing a host stack buffer; expect STACK SMASH + watchdog reset\n");
-	smash_host_stack(); /* returns through a smashed canary -> __stack_chk_fail */
-	for (;;) { /* unreachable */
-	}
-}
-
-static void smashtest_maybe_arm(void)
-{
-	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
-		ove_lxp_console_write("[c9] recovered from the smash test; not re-arming\n");
-		return;
-	}
-	(void)ove_thread_init(&g_smash, &g_smash_storage, "smash", smashtest_body, NULL,
-			      OVE_PRIO_NORMAL, sizeof(g_smash_storage_stack),
-			      g_smash_storage_stack);
-}
-#endif /* CONFIG_OVE_LINUX_SMASHTEST */
-
-#if defined(CONFIG_OVE_LINUX_LATENCY)
-/* ---- host deadline monitor (measurement builds only) -------------------------------------
- * A periodic OVE_PRIO_HIGH task, i.e. above the LXP coordinator and guest slots.  The public
- * task starts at OVE_PRIO_NORMAL; host preparation gives the coordinator its seam-private
- * native priority before launching a guest.  Being top of the ladder is the point: everything
- * it still gets delayed by is delay that priority cannot fix. On FreeRTOS that is the
- * interrupt-masked window of the coordinator's taskENTER_CRITICAL(), plus ISRs and tick
- * quantisation — a guest cannot preempt this task, so what is left is the honest measure of
- * how much a guest's activity can push out a host deadline.
- *
- * Recorded as overshoot of the requested sleep (woken_at - slept_for - period), which folds in
- * tick quantisation: on a 1 kHz tick a 10 ms sleep may legitimately return up to ~1 tick late,
- * so expect a nonzero floor. That floor is the baseline the guest-induced tail sits on top of.
- *
- * Deliberately no deadline and no miss counter: a miss needs a bound to miss, and the bound is
- * what this run exists to inform. Count + max + histogram only.
- */
-#define MON_PERIOD_MS 10u
-
-static ove_thread_t g_mon;
-/* Sized per build, not once: -O0 spills every local and inlines nothing, so the same body wants
- * materially more stack than the optimized build. 512 B is enough optimized (over seven hardware
- * runs configCHECK_FOR_STACK_OVERFLOW=2 never tripped, and this task switches out ~6300 times a
- * run) but overflows at -O0 — where the default vApplicationStackOverflowHook spins silently, so
- * it presents as the system simply stopping rather than as a diagnosable fault. Charging the
- * debug figure to every build would cost the STM32 1 KB of internal SRAM it does not have: with
- * the counters in, RAM is left with ~2.3 KB above a 2 KB floor. */
-#if defined(CONFIG_OVE_DEBUG_BUILD)
-#define MON_STACK_SIZE 1024u
-#else
-#define MON_STACK_SIZE 512u
-#endif
-OVE_THREAD_DEFINE(g_mon_storage, MON_STACK_SIZE);
-static ove_lxp_latency_stat_t g_mon_late;
-static volatile int g_mon_stop;
-static volatile int g_mon_exited;
-
-static void mon_body(void *arg)
-{
-	UNUSED(arg);
-	while (!g_mon_stop) {
-		uint64_t t0 = 0, t1 = 0;
-		(void)ove_time_get_ns(&t0);
-		ove_thread_sleep_ms(MON_PERIOD_MS);
-		(void)ove_time_get_ns(&t1);
-		uint64_t want = (uint64_t)MON_PERIOD_MS * 1000000u;
-		uint64_t slept = (t1 > t0) ? (t1 - t0) : 0;
-		ove_lxp_latency_record(&g_mon_late, slept > want ? slept - want : 0);
-	}
-	g_mon_exited = 1;
-}
-
-static void lat_row(const char *what, const char *name, const ove_lxp_latency_stat_t *s)
-{
-	if (!s || !s->count)
-		return; /* a class never dispatched has nothing to say; skip the row */
-	char line[192];
-	char *p = put_str(line, "[lat] ");
-	p = put_str(p, what);
-	*p++ = ' ';
-	p = put_str(p, name);
-	while ((p - line) < 30)
-		*p++ = ' ';
-	p = put_str(p, "n=");
-	p = put_dec(p, s->count);
-	p = put_str(p, " max_ns=");
-	p = put_dec(p, s->max_ns);
-	p = put_str(p, " us[");
-	for (int b = 0; b < OVE_LXP_LATENCY_BUCKETS; b++) {
-		if (b)
-			*p++ = ' ';
-		p = put_dec(p, s->buckets[b]);
-	}
-	p = put_str(p, "]\n");
-	*p = 0;
-	ove_lxp_console_write(line);
-}
-
-static void lat_report(const ove_lxp_host_observation_t *observation)
-{
-	ove_lxp_console_write("\n=== latency (measurement build; no threshold is enforced) ===\n"
-		  "[lat] us[] buckets: <1 <2 <4 <8 <16 <32 <64 >=64\n");
-	lat_row("host-wake-overshoot", "", &g_mon_late);
-	for (uint32_t row = 0; row < observation->latency_service_count; row++)
-		lat_row("coord-service",
-			ove_lxp_observation_service_name(observation, row),
-			&observation->latency_services[row].stat);
-	for (uint32_t row = 0; row < observation->latency_wake_count; row++) {
-		char nm[8];
-		char *p = put_dec(nm, observation->latency_wakes[row].id);
-		*p = 0;
-		lat_row("guest-wake slot", nm, &observation->latency_wakes[row].stat);
-	}
-	/* Terminator. Rows for classes/slots that saw nothing are skipped, so a report cut short
-	 * is indistinguishable from one that simply had less to say — and a truncated report
-	 * understates exactly the maxima it exists to show. The drivers require this line. The
-	 * delay lets the UART shift out: the caller's exit path resets the part, which would
-	 * otherwise drop whatever is still in flight (this line included). */
-	ove_lxp_console_write("[lat] end\n");
-	ove_time_delay_ms(50);
-}
-#endif /* CONFIG_OVE_LINUX_LATENCY */
-
-/* ---- teardown stack + heap audit (R9 / C3) -----------------------------------------------
- * Printed after the guest has run (and, in a soak, after the stress workload), so the high-water
- * marks reflect the deepest paths actually taken — an idle demo never reaches them, which is why
- * R2's stack criterion was unmet. The coordinator (this task, g_demo) is the one that matters: it
- * runs the program loader and the whole syscall dispatch. Free = size - high-water; a soak driver
- * fails the run if any free falls below its floor. */
-static void audit_stack_line(const char *name, size_t used, size_t size)
-{
-	char line[96];
-	char *p = put_str(line, "[stack] ");
-	p = put_str(p, name);
-	while ((p - line) < 26)
-		*p++ = ' ';
-	p = put_str(p, "used=");
-	p = put_dec(p, (uint32_t)used);
-	p = put_str(p, " size=");
-	p = put_dec(p, (uint32_t)size);
-	p = put_str(p, " free=");
-	p = put_dec(p, (uint32_t)(size > used ? size - used : 0));
-	*p++ = '\n';
-	*p = 0;
-	ove_lxp_console_write(line);
-}
-
-/* ove_thread_get_stack_usage() returns the high-water FREE bytes (untouched sentinel space), not
- * used — consistent across all backends despite the name (see the note in ove/thread.h). Convert
- * to used for the audit so every row means the same thing. */
-static void audit_thread(const char *name, ove_thread_t h, size_t size)
-{
-	size_t freeb = ove_thread_get_stack_usage(h);
-	audit_stack_line(name, size > freeb ? size - freeb : 0, size);
-}
-
-static void host_observation_audit(const ove_lxp_host_observation_t *observation)
-{
-	const ove_lxp_size_observation_t *sizes = &observation->sizes;
-	{
-		char line[224];
-		char *p = put_str(line, "[lxp-size] slots=");
-		p = put_dec(p, sizes->slots);
-		p = put_str(p, " regions=");
-		p = put_dec(p, sizes->regions);
-		p = put_str(p, " proc=");
-		p = put_dec(p, (uint32_t)sizes->proc);
-		p = put_str(p, " slot-core=");
-		p = put_dec(p, (uint32_t)sizes->per_slot_core);
-		p = put_str(p, " region-core=");
-		p = put_dec(p, (uint32_t)sizes->per_region_core);
-		p = put_str(p, " slot-table=");
-		p = put_dec(p, (uint32_t)sizes->slot_table);
-		p = put_str(p, " coord-static=");
-		p = put_dec(p, (uint32_t)sizes->coordinator_static);
-		p = put_str(p, " exec-capture=");
-		p = put_dec(p, (uint32_t)sizes->exec_capture);
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
-	}
-	{
-		char line[224];
-		char *p = put_str(line, "[lxp-size] mm=");
-		p = put_dec(p, (uint32_t)sizes->mm);
-		p = put_str(p, " files=");
-		p = put_dec(p, (uint32_t)sizes->files);
-		p = put_str(p, " fs=");
-		p = put_dec(p, (uint32_t)sizes->fs);
-		p = put_str(p, " sighand=");
-		p = put_dec(p, (uint32_t)sizes->sighand);
-		p = put_str(p, " group=");
-		p = put_dec(p, (uint32_t)sizes->thread_group);
-		p = put_str(p, " arena=");
-		p = put_dec(p, (uint32_t)sizes->arena);
-		p = put_str(p, " resume=");
-		p = put_dec(p, (uint32_t)sizes->resume_context);
-		p = put_str(p, " mailbox=");
-		p = put_dec(p, (uint32_t)sizes->deferred_request);
-		p = put_str(p, " signal=");
-		p = put_dec(p, (uint32_t)sizes->signal_save_stack);
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
-	}
-
-	const ove_lxp_diagnostics_observation_t *health = &observation->diagnostics;
-	{
-		char line[224];
-		char *p = put_str(line, "[lxp-world] checks=");
-		p = put_dec(p, health->checks);
-		p = put_str(p, " failures=");
-		p = put_dec(p, health->failures);
-		if (health->failures) {
-			p = put_str(p, " first=");
-			p = put_str(p, ove_lxp_observation_issue_name(health->first_error.issue));
-			p = put_str(p, " slot=");
-			p = put_sdec(p, health->first_error.slot);
-			p = put_str(p, " region=");
-			p = put_sdec(p, health->first_error.region);
-			p = put_str(p, " last=");
-			p = put_str(p, ove_lxp_observation_issue_name(health->last_error.issue));
-		}
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
-	}
-}
-
-static void stack_audit(const ove_lxp_host_observation_t *observation)
-{
-	host_observation_audit(observation);
-	ove_lxp_console_write("\n=== stack high-water audit (deepest usage this run) ===\n");
-	audit_thread("coordinator", g_demo, sizeof(g_demo_storage_stack));
-	audit_thread("worker", g_worker, sizeof(g_worker_storage_stack));
-#if defined(CONFIG_OVE_WATCHDOG)
-	audit_thread("wd-monitor", g_wd, sizeof(g_wd_storage_stack));
-#endif
-#if defined(CONFIG_OVE_LINUX_LATENCY)
-	audit_thread("lat-monitor", g_mon, sizeof(g_mon_storage_stack));
-#endif
-	if (observation->guest_stack.available)
-		audit_stack_line("guest-slot(tramp)", observation->guest_stack.used,
-				 observation->guest_stack.size);
-	/* peak_used is the high-water of heap usage over the whole run, so it captures a cumulative
-	 * leak (it would climb toward total across a soak) — a better single number than a boot-vs-end
-	 * delta, which heap_4 spoils anyway by initialising lazily (free reads 0 before the first
-	 * malloc, and all tasks here are static). */
-	struct ove_mem_stats m;
-	if (ove_sys_get_mem_stats(&m) == OVE_OK) {
-		char line[96];
-		char *p = put_str(line, "[heap] free=");
-		p = put_dec(p, (uint32_t)m.free);
-		p = put_str(p, " peak_used=");
-		p = put_dec(p, (uint32_t)m.peak_used);
-		p = put_str(p, " total=");
-		p = put_dec(p, (uint32_t)m.total);
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
-	}
-	/* Terminator + drain: the caller exits/resets the target right after, which
-	 * would otherwise cut off whatever is still in the UART FIFO — this line included. */
-	ove_lxp_console_write("[stack] end\n");
-	ove_time_delay_ms(50);
-}
-
 static void demo_body(void *arg)
 {
 	UNUSED(arg);
@@ -833,17 +395,7 @@ static void demo_body(void *arg)
 		  "CH2=D4/PG7 critical-thread response\n");
 #endif
 
-#if defined(CONFIG_OVE_WATCHDOG)
-	/* Say why we booted (a watchdog recovery must not look like a spontaneous reboot), then start
-	 * the feeder. The monitor is OVE_PRIO_HIGH, so it arms the IWDG and begins feeding immediately,
-	 * independent of the setup work below. */
-	ove_lxp_console_write("[reset] cause: ");
-	ove_lxp_console_write(ove_reset_cause_str(ove_reset_cause()));
-	ove_lxp_console_write("\n");
-	if (ove_thread_init(&g_wd, &g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH,
-			    sizeof(g_wd_storage_stack), g_wd_storage_stack) != OVE_OK)
-		ove_lxp_console_write("[wd] FAIL: monitor thread init; running without a watchdog\n");
-#endif
+	linux_interop_qualification_start();
 
 	/* Build configuration owns rootfs placement and product network topology;
 	 * the host facade owns native provider setup, rollback, and teardown. */
@@ -943,12 +495,7 @@ static void demo_body(void *arg)
 	network_transport_smoke(&g_linux_host);
 #endif
 
-#if defined(CONFIG_OVE_LINUX_FAULTTEST)
-	faulttest_maybe_arm(); /* C6: a host task will fault ~4s into phase 2, while the guest runs */
-#endif
-#if defined(CONFIG_OVE_LINUX_SMASHTEST)
-	smashtest_maybe_arm(); /* C9: a host task will smash its stack canary ~4.5s into phase 2 */
-#endif
+	linux_interop_qualification_arm_guest_tests();
 
 	/* ---- Phase 2: boot userspace or run the hard-float context regression - */
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
@@ -964,17 +511,10 @@ static void demo_body(void *arg)
 	};
 	ove_lxp_console_bind(&cfg2);
 	int rc2;
-#if defined(CONFIG_OVE_LINUX_LATENCY)
-	/* Start the monitor here, not before phase 1: each launch resets the coordinator's counters
-	 * at entry and it is called once per phase, so a monitor spanning both phases would report
-	 * host lateness over a window the coordinator's own rows do not cover. Both now measure
-	 * exactly the phase-2 run. */
-	if (ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
-			    sizeof(g_mon_storage_stack), g_mon_storage_stack) != OVE_OK) {
+	if (linux_interop_qualification_measurement_start() != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: latency monitor thread init\n");
 		demo_exit(1);
 	}
-#endif
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
 	const char *const fp_argv[] = {"fpcheck", NULL};
 	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/usr/bin/fpcheck", 1, fp_argv);
@@ -986,21 +526,18 @@ static void demo_body(void *arg)
 	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/bin/busybox", 1, init_argv);
 	ove_lxp_console_write("\n=== interop demo done (uClinux halted) ===\n");
 #endif
-#if defined(CONFIG_OVE_LINUX_LATENCY)
-	g_mon_stop = 1;
-	while (!g_mon_exited) /* it may be mid-sleep; let it observe the stop and leave */
-		ove_thread_sleep_ms(1);
-	(void)ove_thread_deinit(g_mon);
-#endif
+	linux_interop_qualification_measurement_stop();
 	ove_lxp_host_observation_t observation;
 	if (ove_lxp_host_observe(&g_linux_host, &observation) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: post-run LXP observation unavailable\n");
 		demo_exit(1);
 	}
-#if defined(CONFIG_OVE_LINUX_LATENCY)
-	lat_report(&observation); /* copied only after the monitor and coordinator stopped */
-#endif
-	stack_audit(&observation); /* R9/C3: one coherent post-run snapshot + host resources */
+	const linux_interop_thread_audit_t audit_threads[] = {
+		{"coordinator", g_demo, sizeof(g_demo_storage_stack)},
+		{"worker", g_worker, sizeof(g_worker_storage_stack)},
+	};
+	linux_interop_qualification_report(
+		&observation, audit_threads, sizeof(audit_threads) / sizeof(audit_threads[0]));
 	demo_exit(rc2 >= 0 ? 0 : 1);
 }
 
