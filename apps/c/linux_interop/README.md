@@ -1,10 +1,9 @@
 # C example: RTOS kernel ↔ Linux-personality interop
 
 One firmware image, two worlds running side by side — a **native RTOS thread**
-(`ove_thread`) and a stock **Linux program** (BusyBox, an unprivileged uClibc
-FDPIC ELF) launched through the oveRTOS **Linux personality** (`lxp_run`) out of
-a real Buildroot rootfs — exchanging data **in both directions**, then handing
-you an interactive shell.
+(`ove_thread`) and a rootfs-owned **Linux guest demo** launched through the
+oveRTOS **Linux personality** (`lxp_run`) out of a real Buildroot rootfs —
+exchanging data **in both directions**, then handing you an interactive shell.
 
 This is a first-class oveRTOS framework app, built by the `ove` build system, and
 the *same demo* runs on **all three RTOS engines** through the engine-agnostic
@@ -23,9 +22,9 @@ and drains what it echoes back **out** of stdout. Fixed, pre-staged arrays keep
 the demonstration allocation-free and make EOF deterministic:
 
 ```
-  RTOS feeder ─► fixed feed array ─► read cb ─►┌───────────────┐
-                                               │  Linux  cat   │
-  RTOS consumer ◄─ fixed result array ◄─ write cb ◄──────────┘
+  RTOS feeder ─► fixed feed array ─► read cb ─►┌─────────────────┐
+                                               │ guest roundtrip │
+  RTOS consumer ◄─ fixed result array ◄─ write cb ◄────────────┘
 ```
 
 ## Phase 2 — interactive shell
@@ -449,9 +448,26 @@ STM32 NuttX bound; the general 15 KiB pathname bound retains more than 4 KiB
 above the measured rootfs. Init and deinit reset only live handles rather than
 clearing the potentially large workspace. LXP binds the opaque eth0 handle and
 copied netfs configuration only for each run and clears both at teardown.
-Consequently, the phase-1 `cat` launch and phase-2 `init` launch reuse deliberate
-host configuration without mutable process-global setters or stale state from
-the preceding run.
+Consequently, both guest-mode launches reuse deliberate host configuration
+without mutable process-global setters or stale state from the preceding run.
+
+## Guest entrypoint ownership
+
+Both phases launch one stable rootfs contract,
+`/usr/libexec/ove-interop-guest`, with a semantic mode:
+
+| Mode | Rootfs-owned behavior |
+|------|-----------------------|
+| `roundtrip` | relay stdin to stdout for the native two-way demonstration |
+| `boot` | replace PID 1 with the rootfs init implementation |
+| `fpcheck` | run the hard-float guest-context qualification program |
+
+The entrypoint is maintained in Buildroot at
+`board/overtos/rootfs-overlay/usr/libexec/ove-interop-guest`. It owns the
+BusyBox, init, and fpcheck executable choices; `src/app.c` owns only the mode
+choice and launch callbacks. LXP applies the same bounded `#!` parsing to an
+initial `lxp_run()` launch and a later `execve()`, including interpreter symlink
+resolution, so the RTOS application does not need a shell-specific launch API.
 
 Per-launch policy uses `ove_lxp_launch_config_t`, not canonical LXP's launch
 structure. The host facade translates console and diagnostic callbacks,
@@ -607,7 +623,7 @@ make -C ../buildroot O=output-hardfloat
 ```
 
 The opt-in QEMU regression configures the hard guest, builds the firmware, and
-runs `/usr/bin/fpcheck` directly after the normal interop phase:
+selects the rootfs entrypoint's `fpcheck` mode after the normal interop phase:
 
 ```sh
 ove test qemu-freertos-linux-hardfloat
@@ -700,9 +716,10 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 | File | Role |
 |------|------|
 | `app.yaml`  | framework app manifest — selects the personality and RTOS modules |
-| `src/app.c` | demo policy: worker, fixed I/O staging, console, and two launch choices |
+| `src/app.c` | native demo policy: worker, fixed I/O staging, callbacks, and semantic guest modes |
 | `src/qualification.c` | optional watchdog/probes plus latency and resource reporting |
 | `src/rt_scope.c` | shared physical scope experiment with thin per-engine IRQ attachment |
+| Buildroot `board/overtos/rootfs-overlay/usr/libexec/ove-interop-guest` | Linux-side roundtrip, boot, and fpcheck behavior |
 
 The LXP host facade parses and publishes the selected CPIO once, retains the
 provider composition, and supplies the immutable rootfs fields to each launch.

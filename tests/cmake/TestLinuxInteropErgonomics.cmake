@@ -60,6 +60,16 @@ if(APP_TEXT MATCHES
         "linux_interop app must use the configuration-driven LXP host bootstrap")
 endif()
 
+if(APP_TEXT MATCHES "/bin/busybox|/usr/bin/fpcheck")
+    message(FATAL_ERROR
+        "linux_interop app regained rootfs-owned guest executable policy")
+endif()
+if(NOT APP_TEXT MATCHES
+   "GUEST_ENTRYPOINT[ \t]+\"/usr/libexec/ove-interop-guest\"")
+    message(FATAL_ERROR
+        "linux_interop app must launch the stable rootfs guest entrypoint")
+endif()
+
 # Board registers and platform termination belong behind oveRTOS APIs.
 string(REGEX MATCHALL
     "\\*\\(volatile[ ]+unsigned[ ]+int[ ]*\\*\\)0x[0-9A-Fa-f]+[uU]?"

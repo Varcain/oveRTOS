@@ -13,13 +13,13 @@
  * direct Zephyr kernel calls.
  *
  *  Phase 1 — BIDIRECTIONAL round trip. A native RTOS thread (ove_thread) feeds
- *  three "sensor readings" INTO a stock Linux program (BusyBox `cat`, an
- *  unprivileged uClibc FDPIC) through its stdin, and drains what it echoes back
+ *  three "sensor readings" INTO the rootfs-owned guest demo through its stdin,
+ *  and drains what it echoes back
  *  OUT of its stdout:
- *      RTOS feeder -> g_feed_lines[] -> read cb -> [Linux cat] -> write cb -> g_round_trip[] -> RTOS consumer
+ *      RTOS feeder -> g_feed_lines[] -> read cb -> [guest roundtrip] -> write cb -> g_round_trip[] -> RTOS consumer
  *
- *  Phase 2 — INTERACTIVE shell. The program then drops into an interactive
- *  BusyBox `sh`; type commands (ls /, echo hi, cat /etc/hostname, ...) and
+ *  Phase 2 — INTERACTIVE shell. The same rootfs entrypoint boots userspace;
+ *  type commands (ls /, echo hi, cat /etc/hostname, ...) and
  *  `exit` to finish.
  *
  * The svc top half only snapshots ordinary syscall registers and parks the guest;
@@ -49,6 +49,8 @@
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
 #endif
+
+#define GUEST_ENTRYPOINT "/usr/libexec/ove-interop-guest"
 
 /* Minimal string builders (no libc printf dependency). */
 static char *put_str(char *p, const char *s)
@@ -364,6 +366,12 @@ static void on_guest_exit(const ove_lxp_guest_exit_info_t *info)
 /* ---- host (owns the index for the board-selected Buildroot CPIO backing) --- */
 static ove_lxp_host_t g_linux_host;
 
+static int run_guest_mode(const ove_lxp_launch_config_t *config, const char *mode)
+{
+	const char *const argv[] = {"ove-interop-guest", mode, NULL};
+	return ove_lxp_host_run(&g_linux_host, config, GUEST_ENTRYPOINT, 2, argv);
+}
+
 static void demo_exit(unsigned int code)
 {
 	ove_lxp_host_deinit(&g_linux_host);
@@ -429,7 +437,7 @@ static void demo_body(void *arg)
 	}
 #endif
 
-	/* ---- Phase 1: bidirectional round trip through BusyBox `cat` ---------- */
+	/* ---- Phase 1: rootfs-owned bidirectional round trip ------------------- */
 	ove_lxp_console_write("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
 	/* BELOW the demo task: the worker feeds the readings (before the program launches) and
 	 * drains its output (during/after the run). It runs when demo_body blocks — in
@@ -458,9 +466,8 @@ static void demo_body(void *arg)
 		.on_guest_exit = on_guest_exit,
 		.rt_scope_read = linux_rt_scope_proc_read,
 	};
-	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
-	ove_lxp_console_write("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
-	int rc1 = ove_lxp_host_run(&g_linux_host, &cfg1, "/bin/busybox", 1, cat_argv);
+	ove_lxp_console_write("[demo] launching the Linux guest round-trip mode...\n");
+	int rc1 = run_guest_mode(&cfg1, "roundtrip");
 
 	g_linux_done = 1;
 	while (!g_worker_exited) /* wait for the worker to drain and return */
@@ -516,14 +523,10 @@ static void demo_body(void *arg)
 		demo_exit(1);
 	}
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
-	const char *const fp_argv[] = {"fpcheck", NULL};
-	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/usr/bin/fpcheck", 1, fp_argv);
+	rc2 = run_guest_mode(&cfg2, "fpcheck");
 	ove_lxp_console_write("\n=== interop demo done (hard-float self-test exited) ===\n");
 #else
-	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
-	 * a login shell on the console. */
-	const char *const init_argv[] = {"init", NULL};
-	rc2 = ove_lxp_host_run(&g_linux_host, &cfg2, "/bin/busybox", 1, init_argv);
+	rc2 = run_guest_mode(&cfg2, "boot");
 	ove_lxp_console_write("\n=== interop demo done (uClinux halted) ===\n");
 #endif
 	linux_interop_qualification_measurement_stop();
