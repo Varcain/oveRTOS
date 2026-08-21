@@ -26,8 +26,8 @@ RESULT_DIR = Path(os.environ.get(
 SERVER_SOURCE = HERE / "hammer_stream_server.py"
 
 FLASH = {
-    "freertos": ROOT / "output/stm32f746/freertos/linux_interop/flash",
-    "nuttx": ROOT / "output/stm32f746/nuttx/linux_interop/flash",
+    "freertos": ROOT / "output/stm32f746g-discovery/freertos/linux_interop/flash",
+    "nuttx": ROOT / "output/stm32f746g-discovery/nuttx/linux_interop/flash",
     "zephyr": ROOT / "output/stm32f746g-discovery/zephyr/linux_interop/flash",
 }
 
