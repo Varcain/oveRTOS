@@ -16,8 +16,8 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 600)
-set(QUALIFICATION_SOURCE_LINE_CEILING 540)
+set(APP_SOURCE_LINE_CEILING 400)
+set(QUALIFICATION_SOURCE_LINE_CEILING 420)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
 
 function(assert_line_ceiling PATH CEILING)
@@ -68,6 +68,15 @@ if(NOT APP_TEXT MATCHES
    "GUEST_ENTRYPOINT[ \t]+\"/usr/libexec/ove-interop-guest\"")
     message(FATAL_ERROR
         "linux_interop app must launch the stable rootfs guest entrypoint")
+endif()
+if(APP_TEXT MATCHES
+   "static[ \t]+(const[ \t]+char[ \t]*[*]|void)[ \t]+(exit_reason_name|on_enosys|on_guest_exit)")
+    message(FATAL_ERROR
+        "linux_interop app regained generic console-diagnostic plumbing")
+endif()
+if(NOT APP_TEXT MATCHES "ove_lxp_console_bind_diagnostics[ \t\r\n]*[(]")
+    message(FATAL_ERROR
+        "linux_interop app must use the reusable console diagnostics binding")
 endif()
 
 # Board registers and platform termination belong behind oveRTOS APIs.

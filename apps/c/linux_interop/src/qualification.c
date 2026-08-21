@@ -13,6 +13,8 @@
 
 #include "qualification.h"
 
+#include <stdio.h>
+
 #include "ove/lxp_console.h"
 #include "ove/time.h"
 #if defined(CONFIG_OVE_WATCHDOG)
@@ -25,44 +27,6 @@
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
 #endif
-
-/*
- * Small local formatters keep qualification independent of libc printf.
- * Keep them out of line: NuttX app sources use -O3, which otherwise duplicates
- * these loops at every diagnostics field and adds roughly 17 KiB of text.
- */
-static __attribute__((noinline)) char *put_str(char *p, const char *s)
-{
-	while (*s)
-		*p++ = *s++;
-	return p;
-}
-
-static __attribute__((noinline)) char *put_dec(char *p, uint32_t v)
-{
-	char tmp[10];
-	int i = 0;
-	if (v == 0) {
-		*p++ = '0';
-		return p;
-	}
-	while (v) {
-		tmp[i++] = (char)('0' + v % 10);
-		v /= 10;
-	}
-	while (i)
-		*p++ = tmp[--i];
-	return p;
-}
-
-static __attribute__((noinline)) char *put_sdec(char *p, int32_t v)
-{
-	if (v < 0) {
-		*p++ = '-';
-		return put_dec(p, (uint32_t)(-(int64_t)v));
-	}
-	return put_dec(p, (uint32_t)v);
-}
 
 #if defined(CONFIG_OVE_WATCHDOG)
 /*
@@ -260,26 +224,13 @@ static void lat_row(const char *what, const char *name, const ove_lxp_latency_st
 {
 	if (!stat || !stat->count)
 		return;
-	char line[192];
-	char *p = put_str(line, "[lat] ");
-	p = put_str(p, what);
-	*p++ = ' ';
-	p = put_str(p, name);
-	while ((p - line) < 30)
-		*p++ = ' ';
-	p = put_str(p, "n=");
-	p = put_dec(p, stat->count);
-	p = put_str(p, " max_ns=");
-	p = put_dec(p, stat->max_ns);
-	p = put_str(p, " us[");
-	for (int bucket = 0; bucket < OVE_LXP_LATENCY_BUCKETS; bucket++) {
-		if (bucket)
-			*p++ = ' ';
-		p = put_dec(p, stat->buckets[bucket]);
-	}
-	p = put_str(p, "]\n");
-	*p = 0;
-	ove_lxp_console_write(line);
+	ove_lxp_console_printf("[lat] %s%s%s n=%u max_ns=%u us[%u %u %u %u %u %u %u %u]\n", what,
+			       name[0] ? " " : "", name, (unsigned int)stat->count,
+			       (unsigned int)stat->max_ns, (unsigned int)stat->buckets[0],
+			       (unsigned int)stat->buckets[1], (unsigned int)stat->buckets[2],
+			       (unsigned int)stat->buckets[3], (unsigned int)stat->buckets[4],
+			       (unsigned int)stat->buckets[5], (unsigned int)stat->buckets[6],
+			       (unsigned int)stat->buckets[7]);
 }
 
 static void lat_report(const ove_lxp_host_observation_t *observation)
@@ -291,9 +242,9 @@ static void lat_report(const ove_lxp_host_observation_t *observation)
 		lat_row("coord-service", ove_lxp_observation_service_name(observation, row),
 			&observation->latency_services[row].stat);
 	for (uint32_t row = 0; row < observation->latency_wake_count; row++) {
-		char name[8];
-		char *p = put_dec(name, observation->latency_wakes[row].id);
-		*p = 0;
+		char name[12];
+		(void)snprintf(name, sizeof(name), "%u",
+			       (unsigned int)observation->latency_wakes[row].id);
 		lat_row("guest-wake slot", name, &observation->latency_wakes[row].stat);
 	}
 	ove_lxp_console_write("[lat] end\n");
@@ -303,20 +254,8 @@ static void lat_report(const ove_lxp_host_observation_t *observation)
 
 static void audit_stack_line(const char *name, size_t used, size_t size)
 {
-	char line[96];
-	char *p = put_str(line, "[stack] ");
-	p = put_str(p, name);
-	while ((p - line) < 26)
-		*p++ = ' ';
-	p = put_str(p, "used=");
-	p = put_dec(p, (uint32_t)used);
-	p = put_str(p, " size=");
-	p = put_dec(p, (uint32_t)size);
-	p = put_str(p, " free=");
-	p = put_dec(p, (uint32_t)(size > used ? size - used : 0));
-	*p++ = '\n';
-	*p = 0;
-	ove_lxp_console_write(line);
+	ove_lxp_console_printf("[stack] %-18s used=%u size=%u free=%u\n", name, (unsigned int)used,
+			       (unsigned int)size, (unsigned int)(size > used ? size - used : 0));
 }
 
 static void audit_thread(const linux_interop_thread_audit_t *thread)
@@ -330,73 +269,34 @@ static void audit_thread(const linux_interop_thread_audit_t *thread)
 static void host_observation_audit(const ove_lxp_host_observation_t *observation)
 {
 	const ove_lxp_size_observation_t *sizes = &observation->sizes;
-	{
-		char line[224];
-		char *p = put_str(line, "[lxp-size] slots=");
-		p = put_dec(p, sizes->slots);
-		p = put_str(p, " regions=");
-		p = put_dec(p, sizes->regions);
-		p = put_str(p, " proc=");
-		p = put_dec(p, (uint32_t)sizes->proc);
-		p = put_str(p, " slot-core=");
-		p = put_dec(p, (uint32_t)sizes->per_slot_core);
-		p = put_str(p, " region-core=");
-		p = put_dec(p, (uint32_t)sizes->per_region_core);
-		p = put_str(p, " slot-table=");
-		p = put_dec(p, (uint32_t)sizes->slot_table);
-		p = put_str(p, " coord-static=");
-		p = put_dec(p, (uint32_t)sizes->coordinator_static);
-		p = put_str(p, " exec-capture=");
-		p = put_dec(p, (uint32_t)sizes->exec_capture);
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
-	}
-	{
-		char line[224];
-		char *p = put_str(line, "[lxp-size] mm=");
-		p = put_dec(p, (uint32_t)sizes->mm);
-		p = put_str(p, " files=");
-		p = put_dec(p, (uint32_t)sizes->files);
-		p = put_str(p, " fs=");
-		p = put_dec(p, (uint32_t)sizes->fs);
-		p = put_str(p, " sighand=");
-		p = put_dec(p, (uint32_t)sizes->sighand);
-		p = put_str(p, " group=");
-		p = put_dec(p, (uint32_t)sizes->thread_group);
-		p = put_str(p, " arena=");
-		p = put_dec(p, (uint32_t)sizes->arena);
-		p = put_str(p, " resume=");
-		p = put_dec(p, (uint32_t)sizes->resume_context);
-		p = put_str(p, " mailbox=");
-		p = put_dec(p, (uint32_t)sizes->deferred_request);
-		p = put_str(p, " signal=");
-		p = put_dec(p, (uint32_t)sizes->signal_save_stack);
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
-	}
+	ove_lxp_console_printf("[lxp-size] slots=%u regions=%u proc=%u slot-core=%u region-core=%u "
+			       "slot-table=%u coord-static=%u exec-capture=%u\n",
+			       (unsigned int)sizes->slots, (unsigned int)sizes->regions,
+			       (unsigned int)sizes->proc,
+			       (unsigned int)sizes->per_slot_core,
+			       (unsigned int)sizes->per_region_core,
+			       (unsigned int)sizes->slot_table,
+			       (unsigned int)sizes->coordinator_static,
+			       (unsigned int)sizes->exec_capture);
+	ove_lxp_console_printf(
+		"[lxp-size] mm=%u files=%u fs=%u sighand=%u group=%u arena=%u resume=%u "
+		"mailbox=%u signal=%u\n",
+		(unsigned int)sizes->mm, (unsigned int)sizes->files, (unsigned int)sizes->fs,
+		(unsigned int)sizes->sighand, (unsigned int)sizes->thread_group,
+		(unsigned int)sizes->arena, (unsigned int)sizes->resume_context,
+		(unsigned int)sizes->deferred_request, (unsigned int)sizes->signal_save_stack);
 
 	const ove_lxp_diagnostics_observation_t *health = &observation->diagnostics;
-	{
-		char line[224];
-		char *p = put_str(line, "[lxp-world] checks=");
-		p = put_dec(p, health->checks);
-		p = put_str(p, " failures=");
-		p = put_dec(p, health->failures);
-		if (health->failures) {
-			p = put_str(p, " first=");
-			p = put_str(p, ove_lxp_observation_issue_name(health->first_error.issue));
-			p = put_str(p, " slot=");
-			p = put_sdec(p, health->first_error.slot);
-			p = put_str(p, " region=");
-			p = put_sdec(p, health->first_error.region);
-			p = put_str(p, " last=");
-			p = put_str(p, ove_lxp_observation_issue_name(health->last_error.issue));
-		}
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
+	if (!health->failures) {
+		ove_lxp_console_printf("[lxp-world] checks=%u failures=0\n",
+				       (unsigned int)health->checks);
+	} else {
+		ove_lxp_console_printf(
+			"[lxp-world] checks=%u failures=%u first=%s slot=%d region=%d last=%s\n",
+			(unsigned int)health->checks, (unsigned int)health->failures,
+			ove_lxp_observation_issue_name(health->first_error.issue),
+			(int)health->first_error.slot, (int)health->first_error.region,
+			ove_lxp_observation_issue_name(health->last_error.issue));
 	}
 }
 
@@ -491,16 +391,9 @@ void linux_interop_qualification_report(const ove_lxp_host_observation_t *observ
 
 	struct ove_mem_stats memory;
 	if (ove_sys_get_mem_stats(&memory) == OVE_OK) {
-		char line[96];
-		char *p = put_str(line, "[heap] free=");
-		p = put_dec(p, (uint32_t)memory.free);
-		p = put_str(p, " peak_used=");
-		p = put_dec(p, (uint32_t)memory.peak_used);
-		p = put_str(p, " total=");
-		p = put_dec(p, (uint32_t)memory.total);
-		*p++ = '\n';
-		*p = 0;
-		ove_lxp_console_write(line);
+		ove_lxp_console_printf("[heap] free=%u peak_used=%u total=%u\n",
+				       (unsigned int)memory.free, (unsigned int)memory.peak_used,
+				       (unsigned int)memory.total);
 	}
 	ove_lxp_console_write("[stack] end\n");
 	ove_time_delay_ms(50);

@@ -470,13 +470,13 @@ initial `lxp_run()` launch and a later `execve()`, including interpreter symlink
 resolution, so the RTOS application does not need a shell-specific launch API.
 
 Per-launch policy uses `ove_lxp_launch_config_t`, not canonical LXP's launch
-structure. The host facade translates console and diagnostic callbacks,
-environment, display extent, and run results at the boundary. Guest termination
-records are copied field by field into `ove_lxp_guest_exit_info_t`; reason values
-are translated explicitly so an LXP representation change cannot silently alter
-application policy. The `comm` string remains callback-lifetime data by contract.
-Canonical LXP carries a run-scoped callback context, allowing this translation
-without a mutable global active-launch pointer.
+structure. `ove_lxp_console_bind()` supplies interactive I/O while the separate
+`ove_lxp_console_bind_diagnostics()` opt-in supplies bounded ENOSYS and abnormal
+exit reports without overwriting application I/O callbacks. The console's
+bounded `ove_lxp_console_printf()` removes private formatting helpers while
+preserving the QEMU-specific personality console routing. The host facade
+translates guest termination records field by field; reason values are mapped
+explicitly and the `comm` string remains callback-lifetime data by contract.
 
 The application retains its post-phase-1 socket smoke because that is a demo
 workload and readiness report, not provider lifecycle. It queries the host-owned
