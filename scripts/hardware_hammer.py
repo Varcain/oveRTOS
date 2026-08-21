@@ -137,29 +137,6 @@ def deploy_server():
     )
 
 
-def reset_target():
-    run(
-        [
-            "timeout", "-k", "2", "30", "openocd",
-            "-f", "board/stm32f7discovery.cfg",
-            "-c", "init", "-c", "reset run", "-c", "exit",
-        ],
-        timeout=45,
-    )
-
-
-def quiesce_target_storage():
-    """Leave removable media idle before an intentional hardware reset."""
-    result = run(
-        target_argv("sync; umount /data"), timeout=120, check=False
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            "refusing to reset target with /data still mounted:\n"
-            + result.stdout
-        )
-
-
 def flash_target(engine):
     result = run([str(FLASH[engine])], timeout=180)
     if "Verified OK" not in result.stdout:
@@ -535,11 +512,8 @@ def parse_summary(engine, mode, duration, identity, text, wall_s, network):
 
 def run_one(
     engine, mode, duration, script, min_network_mbps, data_directory,
-    expected_identity, reset_before,
+    expected_identity,
 ):
-    if reset_before:
-        quiesce_target_storage()
-        reset_target()
     identity = wait_for_target(engine, expected_identity)
     target_exec(f"mkdir -p {shlex.quote(data_directory)}", timeout=30)
     stage(f"/tmp/ove-hammer-{mode}", script)
@@ -719,11 +693,13 @@ def main():
                 f"{FIRMWARE[engine]}", flush=True,
             )
             flash_target(engine)
-        for mode_index, mode in enumerate(args.modes):
+        # Keep one boot session per engine. Each workload owns distinct files
+        # and validates its cleanup; a raw reset between mounted-FAT runs adds
+        # an unrelated board-reset failure mode to the measurement.
+        for mode in args.modes:
             combined.append(run_one(
                 engine, mode, args.duration, scripts[mode],
                 args.min_network_mbps, args.data_directory, expected_identity,
-                args.skip_flash or mode_index != 0,
             ))
     (RESULT_DIR / "comparison.json").write_text(
         json.dumps(combined, indent=2) + "\n"
