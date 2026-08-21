@@ -68,9 +68,28 @@ if(STORAGE_ADAPTER_TEXT MATCHES
     message(FATAL_ERROR
         "storage adapter regained LXP-owned async or Linux raw-open state")
 endif()
+if(STORAGE_ADAPTER_TEXT MATCHES "lxp_(fs|block)_kick")
+    message(FATAL_ERROR
+        "storage adapter regained a process-global LXP completion dependency")
+endif()
+foreach(STORAGE_READY_TYPE IN ITEMS "lxp_fs_ready_fn" "lxp_block_ready_fn")
+    if(NOT STORAGE_ADAPTER_TEXT MATCHES "${STORAGE_READY_TYPE}")
+        message(FATAL_ERROR
+            "storage adapter omits run-scoped readiness ownership: ${STORAGE_READY_TYPE}")
+    endif()
+endforeach()
 if(NOT STORAGE_ADAPTER_TEXT MATCHES "lxp_async_gate")
     message(FATAL_ERROR "storage adapter bypasses the LXP asynchronous provider gate")
 endif()
+foreach(STORAGE_HEADER IN ITEMS
+        "modules/lxp/include/lxp/lxp_fs_ops.h"
+        "modules/lxp/include/lxp/lxp_block_ops.h")
+    file(READ "${OVE_ROOT}/${STORAGE_HEADER}" STORAGE_HEADER_TEXT)
+    if(STORAGE_HEADER_TEXT MATCHES "lxp_(fs|block)_kick")
+        message(FATAL_ERROR
+            "canonical storage contract regained a process-global completion symbol: ${STORAGE_HEADER}")
+    endif()
+endforeach()
 if(NOT STORAGE_ADAPTER_TEXT MATCHES
    "CONFIG_OVE_FS_MAX_OPEN_FILES[ \t]*>=[ \t]*LXP_NHOSTFS_OPEN")
     message(FATAL_ERROR
