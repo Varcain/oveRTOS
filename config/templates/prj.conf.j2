@@ -254,11 +254,11 @@ CONFIG_THREAD_CUSTOM_DATA=y
 CONFIG_EXCEPTION_DUMP_HOOK=y
 CONFIG_EXCEPTION_DUMP_HOOK_ONLY=y
 # Scheduling contract. All values are PREEMPTIBLE priorities (non-negative):
-# scope critical=0, coordinator/main=3, Ethernet RX=4, network TC=5,
-# Linux guest=6, system workqueue=7. This keeps guest/network saturation below
-# the real-time task and prevents a cooperative infrastructure thread from
-# monopolising the CPU. Keep in sync with ove_zephyr_priority.h.
-CONFIG_MAIN_THREAD_PRIORITY=3
+# scope critical=0, coordinator=3, Ethernet RX=4, network TC=5, Linux guest=6,
+# system workqueue=7, ordinary oveRTOS/main=8. The LXP seam promotes its caller
+# to coordinator priority during host preparation; the application does not
+# encode that private contract. Keep in sync with ove_zephyr_priority.h.
+CONFIG_MAIN_THREAD_PRIORITY=8
 CONFIG_SYSTEM_WORKQUEUE_PRIORITY=7
 {% if config.get("CONFIG_OVE_NET") == True %}
 CONFIG_NET_TC_THREAD_PREEMPTIVE=y

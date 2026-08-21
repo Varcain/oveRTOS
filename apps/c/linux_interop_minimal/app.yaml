@@ -6,9 +6,6 @@ sources:
   - ../linux_interop/src/rt_scope.c
 defconfig:
   - CONFIG_OVE_LINUX=y
-  - CONFIG_OVE_ARENA=y
-  - CONFIG_OVE_LOADER=y
-  - CONFIG_OVE_QUEUE=y
   # Pin every optional personality subsystem off so a new default cannot
   # silently grow this supported baseline.
   - CONFIG_OVE_LINUX_DEV=n

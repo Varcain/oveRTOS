@@ -58,7 +58,7 @@
  * | Backend  | Uses caller stack? | Notes |
  * |----------|--------------------|-------|
  * | FreeRTOS | ✅                 | `xTaskCreateStatic` consumes it directly. |
- * | Zephyr   | ✅                 | `k_thread_create` over the caller's K_THREAD_STACK_DEFINE buffer. |
+ * | Zephyr   | ✅                 | `k_thread_create` over the caller's supervisor-only K_KERNEL_STACK_DEFINE buffer. |
  * | NuttX    | ✅ on target ports | `task_create_with_stack()` forwards it to the architecture; NuttX sim may substitute a larger host stack. NuttX still allocates the TCB and task group internally. |
  * | POSIX    | ⚠ Ignored          | Host-mode backend; `pthread_create` manages its own stack. |
  * | WASM     | ⚠ Ignored          | Host-mode backend; host pthreads manage stack. |
@@ -386,7 +386,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  */
 #define OVE_CONDVAR_DEFINE(name) static ove_condvar_storage_t name
 
-/* Backend-specific thread stack definition (Zephyr needs K_THREAD_STACK_DEFINE) */
+/* Backend-specific thread stack definition (Zephyr needs a kernel-stack object). */
 #ifndef OVE_THREAD_STACK_DEFINE_
 /**
  * @brief Declare a static thread stack array named @p name with size @p size.
@@ -407,12 +407,20 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * multiple TUs).  Includes aligned(8) explicitly since the generic
  * OVE_THREAD_STACK_DEFINE_ doesn't, and AAPCS requires 8-byte alignment
  * for the stack pointer at function-call boundaries.  Zephyr overrides
- * this to pin 'static' onto K_THREAD_STACK_DEFINE since
- * K_THREAD_STACK_DEFINE itself has external linkage. */
+ * this to pin 'static' onto K_KERNEL_STACK_DEFINE since the Zephyr
+ * declaration itself has external linkage. */
 #ifndef OVE_THREAD_STACK_DEFINE_STATIC_
 #define OVE_THREAD_STACK_DEFINE_STATIC_(name, size) \
 	static uint8_t __attribute__((aligned(8))) name[(size)]
 #endif
+
+/** @cond INTERNAL */
+/* A backend may place privileged host/coordinator stacks in a memory region
+ * that remains safe while untrusted address-space attributes are active. */
+#ifndef OVE_THREAD_STACK_DEFINE_HOST_
+#define OVE_THREAD_STACK_DEFINE_HOST_(name, size) OVE_THREAD_STACK_DEFINE_STATIC_(name, size)
+#endif
+/** @endcond */
 
 /** @cond INTERNAL */
 /* Block-scope static variant — safe inside ({...}) statement expressions. */
@@ -450,6 +458,21 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 #define OVE_THREAD_DEFINE(name, stack_size_bytes) \
 	static ove_thread_storage_t name;         \
 	OVE_THREAD_STACK_DEFINE_(name##_stack, stack_size_bytes)
+
+/**
+ * @brief Declare static storage for a privileged host/coordinator thread.
+ *
+ * This has the same call-site shape as @ref OVE_THREAD_DEFINE, but lets a
+ * backend place the stack in memory that stays safe while a protected guest's
+ * address-space policy is active.  On platforms without that distinction it
+ * is identical to an ordinary static thread definition.
+ *
+ * @param name             Variable name for the thread storage.
+ * @param stack_size_bytes Stack size in bytes.
+ */
+#define OVE_THREAD_DEFINE_HOST(name, stack_size_bytes) \
+	static ove_thread_storage_t name;              \
+	OVE_THREAD_STACK_DEFINE_HOST_(name##_stack, stack_size_bytes)
 
 /**
  * @brief Declare a static queue storage variable and its backing buffer.

@@ -46,12 +46,13 @@ config OVE_PROTECTED
 config OVE_LINUX
     bool "Linux personality (syscall surface for loaded programs)"
     default n
-    depends on OVE_LOADER && OVE_ARENA
+    select OVE_ARENA
+    select OVE_LOADER
     help
       Impersonate the Linux syscall ABI so stock uClibc-ng (bFLT/FDPIC)
       binaries can run as oveRTOS programs. Provides the engine-agnostic
-      syscall dispatch; a per-engine SVC trap feeds it. Requires the module
-      loader and the bounded process arena.
+      syscall dispatch; a per-engine SVC trap feeds it. The personality
+      selects its mandatory module loader and bounded process arena.
 
 config OVE_LINUX_GUEST_QUANTUM_MS
     int "Linux guest scheduling quantum (ms)"

@@ -32,8 +32,6 @@
 #include "ove/hal/hal_fb.h"
 #endif
 
-BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_LXP_COORDINATOR,
-	     "LXP coordinator priority must match the Zephyr priority contract");
 BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE,
 	     "system workqueue priority must match the Zephyr priority contract");
 BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
@@ -145,6 +143,17 @@ static int host_random_fill(void *buf, size_t len)
 	return sys_csrand_get(buf, len) == 0 ? LXP_OK : LXP_ERR_BUS_ERROR;
 }
 
+static int host_prepare(void)
+{
+	/* The caller of lxp_run is the privileged coordinator. Its priority is a
+	 * seam invariant, not an application concern: it must preempt a guest that
+	 * has just parked in the SVC return trampoline. The former inline design
+	 * inherited this value from Zephyr main; an app-owned oveRTOS thread must
+	 * acquire it explicitly here. */
+	k_thread_priority_set(k_current_get(), OVE_ZEPHYR_PRIO_LXP_COORDINATOR);
+	return 0;
+}
+
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static struct lxp_cortex_m_cache_geometry g_cache_geometry;
 
@@ -237,6 +246,7 @@ const lxp_zephyr_port_config_t g_lxp_zephyr_port_config = {
 	.guest_priority = OVE_ZEPHYR_PRIO_LXP_GUEST,
 	.quantum_priority = OVE_ZEPHYR_PRIO_NET_TC,
 	.guest_quantum_ms = CONFIG_OVE_LINUX_GUEST_QUANTUM_MS,
+	.host_prepare = host_prepare,
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = host_thread_list,

@@ -22,6 +22,14 @@
 
 #include "ove/thread_state_stats.h"
 
+/* The STM32 FreeRTOS-MPU coordinator sees guest SDRAM through privileged
+ * Device attributes.  Its compiler and exception stack must therefore stay
+ * in the linker's internal-DTCM host-stack region. */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#define OVE_THREAD_STACK_DEFINE_HOST_(name, size) \
+	static uint8_t name[(size)] __attribute__((section(".host_stacks"), aligned(32)))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

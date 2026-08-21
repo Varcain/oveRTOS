@@ -17,7 +17,7 @@
  *   0 critical        scope response
  *   1 realtime
  *   2 high
- *   3 coordinator     privileged LXP run loop (main)
+ *   3 coordinator     privileged LXP run loop (assigned by the seam)
  *   4 above-normal    Ethernet RX
  *   5 network TC / guest-quantum server
  *   6 guest           unprivileged Linux programs
