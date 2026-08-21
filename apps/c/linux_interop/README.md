@@ -700,7 +700,8 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 | File | Role |
 |------|------|
 | `app.yaml`  | framework app manifest — selects the personality and RTOS modules |
-| `src/app.c` | demo policy: worker, fixed I/O staging, interactive console, diagnostics, and two launch choices |
+| `src/app.c` | demo policy: worker, fixed I/O staging, console, and two launch choices |
+| `src/qualification.c` | optional watchdog/probes plus latency and resource reporting |
 | `src/rt_scope.c` | shared physical scope experiment with thin per-engine IRQ attachment |
 
 The LXP host facade parses and publishes the selected CPIO once, retains the

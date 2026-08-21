@@ -12,6 +12,8 @@ set(EXPECTED_APP_FILES
     "README.md"
     "app.yaml"
     "src/app.c"
+    "src/qualification.c"
+    "src/qualification.h"
     "src/rt_scope.c"
     "src/rt_scope.h")
 file(GLOB_RECURSE ACTUAL_APP_FILES
@@ -239,16 +241,18 @@ if(NOT ACTUAL_LEGACY_SEAMS STREQUAL LEGACY_SEAMS)
         "expected: ${LEGACY_SEAMS}\nactual: ${ACTUAL_LEGACY_SEAMS}")
 endif()
 
-# app.c may compose host providers and policy during the migration, but direct
+# The demo and qualification helper use only public oveRTOS contracts. Direct
 # native-RTOS headers are confined to the rt_scope benchmark exception.
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
+file(READ "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c" QUALIFICATION_TEXT)
+set(HOST_APP_TEXT "${APP_TEXT}\n${QUALIFICATION_TEXT}")
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c" RT_SCOPE_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_host.h" OVE_LXP_HOST_HEADER_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_observability.h" OVE_LXP_OBSERVABILITY_HEADER_TEXT)
 file(READ "${OVE_ROOT}/include/ove/thread.h" OVE_THREAD_HEADER_TEXT)
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
-    message(FATAL_ERROR "app.c must not include native RTOS headers")
+    message(FATAL_ERROR "linux_interop host code must not include native RTOS headers")
 endif()
 if(APP_TEXT MATCHES
    "lxp_cpio_to_rootfs|lxp_run_config_t|ove_lxp_prepare_rootfs_access|ove_lxp_run\\(")
