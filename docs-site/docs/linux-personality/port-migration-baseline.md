@@ -1023,3 +1023,59 @@ Raw UART-free SSH transcripts, parsed per-run JSON, LVGL samples, postcondition
 logs, and the aggregate comparison are retained under
 `output/hardware-hammer-i24-final/`. The release-validation fixes are committed
 as `8cdd4ee9`, `9c828736`, and `f00997a2`.
+
+## Iteration 25: deterministic RTOS patch worktrees
+
+Iteration 24 also exposed a build-system defect rather than a runtime defect.
+FreeRTOS and Zephyr patches were applied directly to shared downloaded Git
+trees, while NuttX copied an already selected source and then patched that copy.
+The common stamp stored only patch basenames. It therefore could not detect a
+patch edited in place or removed from the repository, could collapse equal
+basenames in separate global, board, or application layers, and committed no
+transaction boundary around an interrupted patch series. Different build
+workspaces also shared the resulting mutable source state. Removing Zephyr's
+bounded-multiblock patch in Iteration 24 demonstrated the deletion failure: the
+generated source retained the removed diff until it was reversed manually.
+
+The production build path now treats each downloaded Git revision as an
+immutable base and materializes a detached, build-owned worktree. Its state
+records the base commit and the ordered label, basename, and SHA-256 digest of
+every patch from every active layer. A changed base, addition, deletion,
+rename, reorder, or content edit recreates the worktree from `HEAD` and applies
+the complete series with `git apply --index`. The state file is published only
+after all patches succeed. A second fingerprint covers the effective diff of
+all patch-owned paths, so damage or an interrupted preparation also forces a
+clean reconstruction. Tracking paths rather than the entire worktree permits
+NuttX to retain its legitimate generated defconfig edits without weakening
+patch validation.
+
+FreeRTOS and NuttX worktrees live under the active build directory. Zephyr's
+must remain beneath its west workspace so module and manifest discovery still
+works; its location is keyed by the oveRTOS workspace path. `ove clean` removes
+the active Zephyr worktree and registration, while `ove clean --all` removes
+all such retained worktrees before deleting output workspaces. The unused
+legacy configure-time patch API was deleted, leaving one patch ownership and
+lifecycle model. Zephyr also discards an existing CMake tree once when its
+cached `ZEPHYR_BASE` points at the old mutable checkout. The STM32 FreeRTOS
+board now honors the build orchestrator's explicit isolated kernel path.
+
+The isolation has an intentional disk cost. The current generated working
+trees occupy approximately 18 MiB for FreeRTOS, 357 MiB for NuttX, and 441 MiB
+for Zephyr. Git object storage remains shared. NuttX no longer copies its large
+`.git` directory, while FreeRTOS and especially Zephyr now pay for a separate
+working tree instead of mutating the download. Cleanup is deterministic, and
+the correctness and cross-workspace isolation are worth this bounded cost.
+
+Three Python regressions exercise modified and deleted patches, corruption of a
+patch-owned file, and identical basenames in distinct layers. The test passes
+both directly and through CTest. The 435-test normal stub suite also passes.
+The final linux_interop compositions build on FreeRTOS, NuttX, and Zephyr, and
+immediate second builds reuse their verified source without refreshing it.
+
+The committed Zephyr image `ove-bbedddb lxp-e3a3b93` was flashed to the
+STM32F746 and validated exclusively over SSH. It booted with the expected
+identity, mounted the SD FAT volume read-write, completed a create/insert/query
+SQLite transaction with `integrity_check=ok`, and retained zero RT-scope
+misses, late finishes, and IRQ overruns. This follow-up changes source
+preparation only; it introduces no RTOS or personality runtime logic. The
+implementation commits are `dd9bc72d` and `bbedddb0`.
