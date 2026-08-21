@@ -9,7 +9,7 @@
  *
  * One firmware image, two worlds, two phases — built entirely on the
  * engine-agnostic oveRTOS APIs (ove_thread / ove_queue / ove_time) on the RTOS
- * side and the Linux-personality runner (lxp_run) on the Linux side; no
+ * side and the oveRTOS Linux-host facade on the Linux side; no
  * direct Zephyr kernel calls.
  *
  *  Phase 1 — BIDIRECTIONAL round trip. A native RTOS thread (ove_thread) feeds
@@ -1084,7 +1084,7 @@ static void demo_body(void *arg)
 	ove_lxp_console_bind(&cfg2);
 	int rc2;
 #if defined(CONFIG_OVE_LINUX_LATENCY)
-	/* Start the monitor here, not before phase 1: lxp_run() resets the coordinator's counters
+	/* Start the monitor here, not before phase 1: each launch resets the coordinator's counters
 	 * at entry and it is called once per phase, so a monitor spanning both phases would report
 	 * host lateness over a window the coordinator's own rows do not cover. Both now measure
 	 * exactly the phase-2 run. */
