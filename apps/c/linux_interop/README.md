@@ -451,6 +451,14 @@ copied netfs configuration only for each run and clears both at teardown.
 Consequently, both guest-mode launches reuse deliberate host configuration
 without mutable process-global setters or stale state from the preceding run.
 
+The application intentionally keeps the four lifecycle operations visible:
+initialize one host, run sequential guests, observe the quiescent host, then
+deinitialize it. A second session facade would duplicate `ove_lxp_host_t`, hide
+that both launches reuse one parsed rootfs, and make partial-init cleanup less
+obvious. `ove_lxp_host_deinit()` is therefore idempotent and safe after failed
+initialization, while the application remains responsible for its final exit
+policy.
+
 ## Guest entrypoint ownership
 
 Both phases launch one stable rootfs contract,

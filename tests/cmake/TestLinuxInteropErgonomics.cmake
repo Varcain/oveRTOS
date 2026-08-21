@@ -16,7 +16,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 400)
+set(APP_SOURCE_LINE_CEILING 360)
 set(QUALIFICATION_SOURCE_LINE_CEILING 420)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
 
@@ -69,6 +69,13 @@ if(NOT APP_TEXT MATCHES
     message(FATAL_ERROR
         "linux_interop app must launch the stable rootfs guest entrypoint")
 endif()
+foreach(HOST_LIFECYCLE_CALL IN ITEMS init run observe deinit)
+    if(NOT APP_TEXT MATCHES
+       "ove_lxp_host_${HOST_LIFECYCLE_CALL}[ \t\r\n]*[(]")
+        message(FATAL_ERROR
+            "linux_interop app must keep the explicit host ${HOST_LIFECYCLE_CALL} boundary")
+    endif()
+endforeach()
 if(APP_TEXT MATCHES
    "static[ \t]+(const[ \t]+char[ \t]*[*]|void)[ \t]+(exit_reason_name|on_enosys|on_guest_exit)")
     message(FATAL_ERROR
