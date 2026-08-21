@@ -3,7 +3,9 @@ config_name: linux_interop
 description: "Linux personality interop demo — Full compatibility profile"
 sources:
   - src/app.c
+  - src/network_smoke.c
   - src/qualification.c
+  - src/roundtrip.c
   - src/rt_scope.c
 # Pull in the Linux personality (engine-agnostic core + per-engine seam). It
 # selects its mandatory arena and loader; optional providers below select the

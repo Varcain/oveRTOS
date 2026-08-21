@@ -6,8 +6,11 @@ if(NOT DEFINED OVE_ROOT)
 endif()
 
 set(APP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/app.c")
+set(NETWORK_SMOKE_SOURCE
+    "${OVE_ROOT}/apps/c/linux_interop/src/network_smoke.c")
 set(QUALIFICATION_SOURCE
     "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c")
+set(ROUNDTRIP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c")
 set(RT_SCOPE_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c")
 set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 
@@ -16,8 +19,10 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 360)
+set(APP_SOURCE_LINE_CEILING 180)
+set(NETWORK_SMOKE_SOURCE_LINE_CEILING 150)
 set(QUALIFICATION_SOURCE_LINE_CEILING 420)
+set(ROUNDTRIP_SOURCE_LINE_CEILING 180)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
 
 function(assert_line_ceiling PATH CEILING)
@@ -34,13 +39,19 @@ function(assert_line_ceiling PATH CEILING)
 endfunction()
 
 assert_line_ceiling("${APP_SOURCE}" ${APP_SOURCE_LINE_CEILING})
+assert_line_ceiling("${NETWORK_SMOKE_SOURCE}"
+                    ${NETWORK_SMOKE_SOURCE_LINE_CEILING})
 assert_line_ceiling("${QUALIFICATION_SOURCE}"
                     ${QUALIFICATION_SOURCE_LINE_CEILING})
+assert_line_ceiling("${ROUNDTRIP_SOURCE}" ${ROUNDTRIP_SOURCE_LINE_CEILING})
 assert_line_ceiling("${RT_SCOPE_SOURCE}" ${RT_SCOPE_SOURCE_LINE_CEILING})
 
 file(READ "${APP_SOURCE}" APP_TEXT)
+file(READ "${NETWORK_SMOKE_SOURCE}" NETWORK_SMOKE_TEXT)
 file(READ "${QUALIFICATION_SOURCE}" QUALIFICATION_TEXT)
-set(HOST_APP_TEXT "${APP_TEXT}\n${QUALIFICATION_TEXT}")
+file(READ "${ROUNDTRIP_SOURCE}" ROUNDTRIP_TEXT)
+set(HOST_APP_TEXT
+    "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}")
 
 if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
@@ -85,6 +96,21 @@ if(NOT APP_TEXT MATCHES "ove_lxp_console_bind_diagnostics[ \t\r\n]*[(]")
     message(FATAL_ERROR
         "linux_interop app must use the reusable console diagnostics binding")
 endif()
+if(APP_TEXT MATCHES
+   "static[ \t]+[^\r\n]*(feed_read|consume_write|roundtrip_worker|network_transport_smoke)[ \t]*[(]")
+    message(FATAL_ERROR
+        "linux_interop app regained application-owned workload implementation")
+endif()
+foreach(SCENARIO_CALL IN ITEMS
+        linux_interop_roundtrip_prepare
+        linux_interop_roundtrip_complete
+        linux_interop_network_report
+        linux_interop_network_smoke)
+    if(NOT APP_TEXT MATCHES "${SCENARIO_CALL}[ \t\r\n]*[(]")
+        message(FATAL_ERROR
+            "linux_interop app omits scenario module boundary: ${SCENARIO_CALL}")
+    endif()
+endforeach()
 
 # Board registers and platform termination belong behind oveRTOS APIs.
 string(REGEX MATCHALL
@@ -144,6 +170,12 @@ foreach(PROFILE IN ITEMS
         message(FATAL_ERROR
             "${PROFILE_CONFIG} does not include the shared qualification module")
     endif()
+    foreach(SCENARIO_SOURCE IN ITEMS "network_smoke\\.c" "roundtrip\\.c")
+        if(NOT PROFILE_TEXT MATCHES "${SCENARIO_SOURCE}")
+            message(FATAL_ERROR
+                "${PROFILE_CONFIG} omits shared scenario source ${SCENARIO_SOURCE}")
+        endif()
+    endforeach()
     if(PROFILE_TEXT MATCHES "CONFIG_OVE_(ARENA|LOADER|QUEUE)")
         message(FATAL_ERROR
             "${PROFILE_CONFIG} restates module plumbing selected elsewhere")

@@ -12,8 +12,12 @@ set(EXPECTED_APP_FILES
     "README.md"
     "app.yaml"
     "src/app.c"
+    "src/network_smoke.c"
+    "src/network_smoke.h"
     "src/qualification.c"
     "src/qualification.h"
+    "src/roundtrip.c"
+    "src/roundtrip.h"
     "src/rt_scope.c"
     "src/rt_scope.h")
 file(GLOB_RECURSE ACTUAL_APP_FILES
@@ -241,11 +245,14 @@ if(NOT ACTUAL_LEGACY_SEAMS STREQUAL LEGACY_SEAMS)
         "expected: ${LEGACY_SEAMS}\nactual: ${ACTUAL_LEGACY_SEAMS}")
 endif()
 
-# The demo and qualification helper use only public oveRTOS contracts. Direct
-# native-RTOS headers are confined to the rt_scope benchmark exception.
+# Demo host modules use only public oveRTOS contracts. Direct native-RTOS
+# headers are confined to the rt_scope benchmark exception.
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
+file(READ "${OVE_ROOT}/apps/c/linux_interop/src/network_smoke.c" NETWORK_SMOKE_TEXT)
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c" QUALIFICATION_TEXT)
-set(HOST_APP_TEXT "${APP_TEXT}\n${QUALIFICATION_TEXT}")
+file(READ "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c" ROUNDTRIP_TEXT)
+set(HOST_APP_TEXT
+    "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}")
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c" RT_SCOPE_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_host.h" OVE_LXP_HOST_HEADER_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_observability.h" OVE_LXP_OBSERVABILITY_HEADER_TEXT)
@@ -254,23 +261,23 @@ if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR "linux_interop host code must not include native RTOS headers")
 endif()
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "lxp_cpio_to_rootfs|lxp_run_config_t|ove_lxp_prepare_rootfs_access|ove_lxp_run\\(")
     message(FATAL_ERROR
-        "app.c regained LXP-owned rootfs bootstrap or provider/run composition")
+        "linux_interop host modules regained LXP-owned rootfs or run composition")
 endif()
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "lxp_file_t|ROOTFS_(MAX_FILES|NAME_BYTES)|rootfs_(storage|capacity|name_storage|name_capacity)")
     message(FATAL_ERROR
-        "app.c regained rootfs workspace allocation or capacity knowledge")
+        "linux_interop host modules regained rootfs workspace knowledge")
 endif()
 if(OVE_LXP_HOST_HEADER_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_(file|host)_t|rootfs_(files|names)|[ \t]core;")
     message(FATAL_ERROR
         "public ove_lxp_host_t exposes canonical LXP host storage representation")
 endif()
-if(APP_TEXT MATCHES "g_linux_host[.]_opaque|g_linux_host[.]_alignment")
-    message(FATAL_ERROR "app.c inspects opaque ove_lxp_host_t storage")
+if(HOST_APP_TEXT MATCHES "g_linux_host[.]_opaque|g_linux_host[.]_alignment")
+    message(FATAL_ERROR "linux_interop host modules inspect opaque host storage")
 endif()
 if(OVE_LXP_OBSERVABILITY_HEADER_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_[A-Za-z0-9_]*_t|(^|[^A-Za-z0-9_])LXP_[A-Z0-9_]+")
@@ -282,29 +289,29 @@ if(OVE_THREAD_HEADER_TEXT MATCHES
     message(FATAL_ERROR
         "generic ove_thread_info regained personality-specific ownership state")
 endif()
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*|LXP_RUN_E[A-Z0-9_]*)")
     message(FATAL_ERROR
-        "app.c bypasses the oveRTOS launch and guest-exit contract")
+        "linux_interop host modules bypass the oveRTOS launch contract")
 endif()
 if(RT_SCOPE_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|LXP_NR_|lxp_zephyr_critical_metrics|ove_freertos_lnx_metrics")
     message(FATAL_ERROR
         "rt_scope.c bypasses the oveRTOS diagnostics metrics contract")
 endif()
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")
     message(FATAL_ERROR
-        "app.c regained LXP topology globals or native network lifecycle ownership")
+        "linux_interop host modules regained native network lifecycle ownership")
 endif()
-if(APP_TEXT MATCHES
+if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/(lxp_(config|diag|latency)|ports/)|(^|[^A-Za-z0-9_])lxp_(run_health|diag_|lat_|freertos_slot_stack)")
     message(FATAL_ERROR
-        "app.c regained direct LXP observability-registry or RTOS-port knowledge")
+        "linux_interop host modules regained direct LXP observability knowledge")
 endif()
-if(APP_TEXT MATCHES "ove_hal_(dma2d|fb)_")
+if(HOST_APP_TEXT MATCHES "ove_hal_(dma2d|fb)_")
     message(FATAL_ERROR
-        "app.c regained generic display-provider initialization or access")
+        "linux_interop host modules regained display-provider access")
 endif()
 
 execute_process(
