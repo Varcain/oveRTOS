@@ -135,13 +135,7 @@ static void demo_body(void *arg)
 		ove_lxp_console_write("[demo] FAIL: post-run LXP observation unavailable\n");
 		demo_exit(1);
 	}
-	const linux_interop_thread_audit_t audit_threads[] = {
-		{"coordinator", g_demo, sizeof(g_demo_storage_stack)},
-		{"worker", linux_interop_roundtrip_worker(),
-		 linux_interop_roundtrip_worker_stack_size()},
-	};
-	linux_interop_qualification_report(&observation, audit_threads,
-					   sizeof(audit_threads) / sizeof(audit_threads[0]));
+	linux_interop_qualification_report(&observation, g_demo, sizeof(g_demo_storage_stack));
 	demo_exit(rc2 >= 0 ? 0 : 1);
 }
 

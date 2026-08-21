@@ -19,7 +19,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 180)
+set(APP_SOURCE_LINE_CEILING 160)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 150)
 set(QUALIFICATION_SOURCE_LINE_CEILING 420)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 180)
@@ -100,6 +100,30 @@ if(APP_TEXT MATCHES
    "static[ \t]+[^\r\n]*(feed_read|consume_write|roundtrip_worker|network_transport_smoke)[ \t]*[(]")
     message(FATAL_ERROR
         "linux_interop app regained application-owned workload implementation")
+endif()
+if(APP_TEXT MATCHES "linux_interop_roundtrip_(worker|worker_stack_size)[ \t\r\n]*[(]")
+    message(FATAL_ERROR
+        "linux_interop app must not inspect scenario-owned RTOS resources")
+endif()
+string(FIND "${ROUNDTRIP_TEXT}"
+    "linux_interop_qualification_observe_thread(\"worker\""
+    ROUNDTRIP_OBSERVE_POSITION)
+string(FIND "${ROUNDTRIP_TEXT}" "ove_thread_deinit(g_worker)"
+    ROUNDTRIP_DEINIT_POSITION)
+if(ROUNDTRIP_OBSERVE_POSITION EQUAL -1 OR ROUNDTRIP_DEINIT_POSITION EQUAL -1 OR
+   ROUNDTRIP_OBSERVE_POSITION GREATER ROUNDTRIP_DEINIT_POSITION)
+    message(FATAL_ERROR
+        "round-trip worker stack usage must be captured before thread teardown")
+endif()
+string(FIND "${QUALIFICATION_TEXT}"
+    "linux_interop_qualification_observe_thread(\"lat-monitor\""
+    LATENCY_OBSERVE_POSITION)
+string(FIND "${QUALIFICATION_TEXT}" "ove_thread_deinit(g_mon)"
+    LATENCY_DEINIT_POSITION)
+if(LATENCY_OBSERVE_POSITION EQUAL -1 OR LATENCY_DEINIT_POSITION EQUAL -1 OR
+   LATENCY_OBSERVE_POSITION GREATER LATENCY_DEINIT_POSITION)
+    message(FATAL_ERROR
+        "latency monitor stack usage must be captured before thread teardown")
 endif()
 foreach(SCENARIO_CALL IN ITEMS
         linux_interop_roundtrip_prepare

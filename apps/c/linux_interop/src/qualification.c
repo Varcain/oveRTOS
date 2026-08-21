@@ -28,6 +28,17 @@
 #define UNUSED(x) ((void)(x))
 #endif
 
+#define THREAD_AUDIT_CAPACITY 2u
+
+struct thread_audit_snapshot {
+	const char *name;
+	size_t used;
+	size_t size;
+};
+
+static struct thread_audit_snapshot g_thread_audits[THREAD_AUDIT_CAPACITY];
+static size_t g_thread_audit_count;
+
 #if defined(CONFIG_OVE_WATCHDOG)
 /*
  * A high-priority task owns the IWDG feed. It feeds freely while the
@@ -258,12 +269,10 @@ static void audit_stack_line(const char *name, size_t used, size_t size)
 			       (unsigned int)size, (unsigned int)(size > used ? size - used : 0));
 }
 
-static void audit_thread(const linux_interop_thread_audit_t *thread)
+static void audit_thread(const char *name, ove_thread_t thread, size_t stack_size)
 {
-	size_t free_bytes = ove_thread_get_stack_usage(thread->thread);
-	audit_stack_line(thread->name,
-			 thread->stack_size > free_bytes ? thread->stack_size - free_bytes : 0,
-			 thread->stack_size);
+	size_t free_bytes = ove_thread_get_stack_usage(thread);
+	audit_stack_line(name, stack_size > free_bytes ? stack_size - free_bytes : 0, stack_size);
 }
 
 static void host_observation_audit(const ove_lxp_host_observation_t *observation)
@@ -272,8 +281,7 @@ static void host_observation_audit(const ove_lxp_host_observation_t *observation
 	ove_lxp_console_printf("[lxp-size] slots=%u regions=%u proc=%u slot-core=%u region-core=%u "
 			       "slot-table=%u coord-static=%u exec-capture=%u\n",
 			       (unsigned int)sizes->slots, (unsigned int)sizes->regions,
-			       (unsigned int)sizes->proc,
-			       (unsigned int)sizes->per_slot_core,
+			       (unsigned int)sizes->proc, (unsigned int)sizes->per_slot_core,
 			       (unsigned int)sizes->per_region_core,
 			       (unsigned int)sizes->slot_table,
 			       (unsigned int)sizes->coordinator_static,
@@ -302,6 +310,7 @@ static void host_observation_audit(const ove_lxp_host_observation_t *observation
 
 void linux_interop_qualification_start(void)
 {
+	g_thread_audit_count = 0;
 #if defined(CONFIG_OVE_WATCHDOG)
 	ove_lxp_console_write("[reset] cause: ");
 	ove_lxp_console_write(ove_reset_cause_str(ove_reset_cause()));
@@ -314,6 +323,20 @@ void linux_interop_qualification_start(void)
 	}
 	g_wd_started = 1;
 #endif
+}
+
+void linux_interop_qualification_observe_thread(const char *name, ove_thread_t thread,
+						size_t stack_size)
+{
+	if (!name || !thread || !stack_size || g_thread_audit_count >= THREAD_AUDIT_CAPACITY)
+		return;
+
+	size_t free_bytes = ove_thread_get_stack_usage(thread);
+	g_thread_audits[g_thread_audit_count++] = (struct thread_audit_snapshot){
+		.name = name,
+		.used = stack_size > free_bytes ? stack_size - free_bytes : 0,
+		.size = stack_size,
+	};
 }
 
 void linux_interop_qualification_arm_guest_tests(void)
@@ -349,41 +372,28 @@ void linux_interop_qualification_measurement_stop(void)
 	g_mon_stop = 1;
 	while (!g_mon_exited)
 		ove_thread_sleep_ms(1);
+	linux_interop_qualification_observe_thread("lat-monitor", g_mon,
+						   sizeof(g_mon_storage_stack));
 	(void)ove_thread_deinit(g_mon);
 	g_mon_started = 0;
 #endif
 }
 
 void linux_interop_qualification_report(const ove_lxp_host_observation_t *observation,
-					const linux_interop_thread_audit_t *threads,
-					size_t thread_count)
+					ove_thread_t coordinator, size_t coordinator_stack_size)
 {
 #if defined(CONFIG_OVE_LINUX_LATENCY)
 	lat_report(observation);
 #endif
 	host_observation_audit(observation);
 	ove_lxp_console_write("\n=== stack high-water audit (deepest usage this run) ===\n");
-	for (size_t i = 0; i < thread_count; i++)
-		audit_thread(&threads[i]);
+	audit_thread("coordinator", coordinator, coordinator_stack_size);
+	for (size_t i = 0; i < g_thread_audit_count; i++)
+		audit_stack_line(g_thread_audits[i].name, g_thread_audits[i].used,
+				 g_thread_audits[i].size);
 #if defined(CONFIG_OVE_WATCHDOG)
-	if (g_wd_started) {
-		const linux_interop_thread_audit_t watchdog = {
-			.name = "wd-monitor",
-			.thread = g_wd,
-			.stack_size = sizeof(g_wd_storage_stack),
-		};
-		audit_thread(&watchdog);
-	}
-#endif
-#if defined(CONFIG_OVE_LINUX_LATENCY)
-	{
-		const linux_interop_thread_audit_t monitor = {
-			.name = "lat-monitor",
-			.thread = g_mon,
-			.stack_size = sizeof(g_mon_storage_stack),
-		};
-		audit_thread(&monitor);
-	}
+	if (g_wd_started)
+		audit_thread("wd-monitor", g_wd, sizeof(g_wd_storage_stack));
 #endif
 	if (observation->guest_stack.available)
 		audit_stack_line("guest-slot(tramp)", observation->guest_stack.used,

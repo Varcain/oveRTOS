@@ -732,8 +732,10 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 | File | Role |
 |------|------|
 | `app.yaml`  | framework app manifest — selects the personality and RTOS modules |
-| `src/app.c` | native demo policy: worker, fixed I/O staging, callbacks, and semantic guest modes |
-| `src/qualification.c` | optional watchdog/probes plus latency and resource reporting |
+| `src/app.c` | compact native phase and Linux-host lifecycle orchestration |
+| `src/roundtrip.c` | allocation-free RTOS-to-guest round-trip worker and fixed staging |
+| `src/network_smoke.c` | configured-address reporting and bounded TCP readiness smoke |
+| `src/qualification.c` | optional watchdog/probes plus latency and resource reporting; snapshots owned threads before teardown |
 | `src/rt_scope.c` | shared physical scope experiment with thin per-engine IRQ attachment |
 | Buildroot `board/overtos/rootfs-overlay/usr/libexec/ove-interop-guest` | Linux-side roundtrip, boot, and fpcheck behavior |
 
