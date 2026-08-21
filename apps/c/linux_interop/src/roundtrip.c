@@ -15,6 +15,8 @@
 #include "ove/time.h"
 #include "ove/types.h"
 
+#include "qualification.h"
+
 #define N_READINGS 3
 #define LINE_CAPACITY 56
 
@@ -130,6 +132,8 @@ int linux_interop_roundtrip_complete(int guest_status)
 	g_linux_done = 1;
 	while (!g_worker_exited)
 		ove_thread_sleep_ms(1);
+	linux_interop_qualification_observe_thread("worker", g_worker,
+						   sizeof(g_worker_storage_stack));
 	(void)ove_thread_deinit(g_worker);
 
 	int valid = guest_status >= 0 && g_round_trip_n == N_READINGS;
@@ -147,14 +151,4 @@ int linux_interop_roundtrip_complete(int guest_status)
 	ove_lxp_console_write(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
 	return OVE_OK;
-}
-
-ove_thread_t linux_interop_roundtrip_worker(void)
-{
-	return g_worker;
-}
-
-size_t linux_interop_roundtrip_worker_stack_size(void)
-{
-	return sizeof(g_worker_storage_stack);
 }
