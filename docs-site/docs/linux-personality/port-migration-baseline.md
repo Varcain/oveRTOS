@@ -952,3 +952,74 @@ validated as generic personality ownership. The migration is therefore closed:
 LXP owns Linux semantics, guest and coordinator lifecycle, scheduling policy,
 and run-scoped readiness; oveRTOS owns reusable native services, board facts,
 and the explicit adapters between the two contracts.
+
+## Iteration 24: release hardware validation
+
+The release qualification exposed one final Zephyr storage regression. The
+STM32F746 SDMMC controller had previously been stabilized at a 2 MHz transfer
+clock with owned single-sector transfers. A later bounded-multiblock experiment
+was reintroduced without a long stress qualification. Under the complete LVGL,
+network, SQLite, and RT-scope workload, the shell run stopped immediately after
+its pre-test RT snapshot and the MCU could no longer be halted through ST-Link.
+Repository history and a same-board reproduction showed that the multiblock
+policy, rather than the clock rate or the new ownership seam, was the regressed
+variable.
+
+The final Zephyr policy therefore retains the proven 2 MHz clock and enables
+`CONFIG_SDMMC_STM32_SINGLE_BLOCK`. The private bounded-multiblock patch and its
+configuration were removed. Three consecutive five-minute workloads on one
+boot subsequently completed with 59,173 read commands, 62,301 write commands,
+zero multiblock commands, zero media errors, and zero recoveries. This accepts
+lower bulk SQLite throughput in exchange for a storage policy that remains
+bounded and stable under the full mixed workload.
+
+The hardware runner now flashes once per engine and keeps that engine booted
+across its shell, Lua, and MicroPython workloads. Each language owns a distinct
+database and the runner verifies cleanup, so resetting between languages added
+no isolation. Removing those resets also avoids making Zephyr warm-reset board
+startup an accidental part of the workload and makes RT and SVC counters one
+continuous engine-level observation. During the final rebuild, NuttX's compiler
+also exposed that the Linux application's ENOSYS diagnostic needed 48 bytes,
+not 40, for the prefix, a full-width syscall number, newline, and terminator.
+The now-explicit bound removes that latent stack overflow.
+
+All three final images report `ove-f00997a lxp-e3a3b93`. The STM32F746 was
+flashed once per engine and all interaction and validation occurred through the
+Linux guest's SSH service. All nine five-minute workloads passed their network
+deadline, SQLite integrity and row-count checks, filesystem cleanup checks,
+LVGL sampling requirement, and RT-scope assertions:
+
+| Engine | Driver | Wall | SQLite tx | SQLite tx/s | Network | LVGL mean FPS | Render median / p95 | Result |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| FreeRTOS | shell | 344.4 s | 94 | 0.313 | 1.296 Mbit/s | 2.43 | 203 / 300 ms | PASS |
+| FreeRTOS | Lua | 350.2 s | 140 | 0.455 | 1.299 Mbit/s | 2.79 | 196 / 233 ms | PASS |
+| FreeRTOS | MicroPython | 348.5 s | 140 | 0.466 | 1.355 Mbit/s | 2.66 | 201 / 233 ms | PASS |
+| NuttX | shell | 328.7 s | 124 | 0.412 | 2.029 Mbit/s | 2.72 | 201 / 244 ms | PASS |
+| NuttX | Lua | 339.1 s | 200 | 0.654 | 3.187 Mbit/s | 2.92 | 196 / 224 ms | PASS |
+| NuttX | MicroPython | 335.2 s | 200 | 0.660 | 2.540 Mbit/s | 2.70 | 203 / 227 ms | PASS |
+| Zephyr | shell | 334.7 s | 77 | 0.256 | 1.726 Mbit/s | 2.80 | 198 / 232 ms | PASS |
+| Zephyr | Lua | 345.8 s | 98 | 0.325 | 2.002 Mbit/s | 2.96 | 197 / 217 ms | PASS |
+| Zephyr | MicroPython | 335.9 s | 95 | 0.316 | 1.317 Mbit/s | 2.56 | 203 / 223 ms | PASS |
+
+The RT figures below span each engine's entire uninterrupted three-language
+session. The average dispatch is reconstructed from the lifetime counter
+deltas; the maximum and percentile ceilings are the final lifetime values.
+
+| Engine | Releases / executions | Missed / late / overrun | Dispatch average | p99 / p99.9 ceiling | Maximum | SVC average / maximum |
+|---|---:|---:|---:|---:|---:|---:|
+| FreeRTOS | 1,096,824 / 1,096,824 | 0 / 0 / 0 | 8.696 us | 16 / 50 us | 93.111 us | 24.035 / 26.176 us |
+| NuttX | 1,019,213 / 1,019,213 | 0 / 0 / 0 | 10.790 us | 20 / 32 us | 37.944 us | 11.358 / 14.273 us |
+| Zephyr | 1,035,295 / 1,035,295 | 0 / 0 / 0 | 9.587 us | 20 / 50 us | 79.926 us | 13.545 / 16.486 us |
+
+The native LVGL CPU field is intentionally excluded because its engine-side
+counter still wraps to values near `UINT32_MAX`; FPS, render time, and flush
+time remain valid. Native media-command telemetry is currently exported only by
+Zephyr, so zero FreeRTOS and NuttX command counts mean unavailable telemetry,
+not absent I/O. Filesystem `requests_failed` includes expected probes and
+cleanup misses; every workload's externally visible postconditions and SQLite
+integrity check passed.
+
+Raw UART-free SSH transcripts, parsed per-run JSON, LVGL samples, postcondition
+logs, and the aggregate comparison are retained under
+`output/hardware-hammer-i24-final/`. The release-validation fixes are committed
+as `8cdd4ee9`, `9c828736`, and `f00997a2`.
