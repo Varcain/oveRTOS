@@ -38,7 +38,11 @@ extern const lxp_block_ops_t g_lxp_host_block_ops;
 static unsigned g_socket_kicks;
 static const void *g_socket_ready_context;
 static unsigned g_fs_kicks;
+static const void *g_fs_ready_context;
 static unsigned g_block_kicks;
+static const void *g_block_ready_context;
+static const unsigned g_fs_ready_cookie;
+static const unsigned g_block_ready_cookie;
 static unsigned g_host_init_calls;
 static lxp_host_t *g_host_init_target;
 static lxp_host_config_t g_host_init_config;
@@ -153,13 +157,15 @@ static void test_socket_ready(const void *context)
 	g_socket_ready_context = context;
 }
 
-void lxp_block_kick(void)
+static void test_block_ready(const void *context)
 {
-	g_block_kicks++;
+	__atomic_store_n(&g_block_ready_context, context, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&g_block_kicks, 1u, __ATOMIC_RELAXED);
 }
 
-void lxp_fs_kick(void)
+static void test_fs_ready(const void *context)
 {
+	__atomic_store_n(&g_fs_ready_context, context, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_fs_kicks, 1u, __ATOMIC_RELAXED);
 }
 
@@ -245,12 +251,26 @@ static void test_block_adapter_media_arbitration(void **state)
 	assert_int_equal(close(fd), 0);
 	assert_int_equal(setenv("OVE_BLOCK_IMAGE", image, 1), 0);
 
-	assert_int_equal(fs->run_begin(), LXP_OK);
-	assert_int_equal(block->run_begin(), LXP_OK);
-	assert_int_equal(fs->run_begin(), LXP_ERR_WOULD_BLOCK);
-	assert_int_equal(block->run_begin(), LXP_ERR_WOULD_BLOCK);
+	assert_int_equal(fs->run_begin(NULL, NULL), LXP_ERR_INVALID_PARAM);
+	assert_int_equal(block->run_begin(NULL, NULL), LXP_ERR_INVALID_PARAM);
+	assert_int_equal(fs->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_OK);
+	assert_int_equal(block->run_begin(test_block_ready, &g_block_ready_cookie), LXP_OK);
+	assert_int_equal(fs->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_ERR_WOULD_BLOCK);
+	assert_int_equal(block->run_begin(test_block_ready, &g_block_ready_cookie),
+			 LXP_ERR_WOULD_BLOCK);
+	block->request_owner(77u);
+	__atomic_store_n(&g_block_kicks, 0u, __ATOMIC_RELAXED);
+	__atomic_store_n(&g_block_ready_context, NULL, __ATOMIC_RELAXED);
 	lxp_block_info_t info = {0};
+	assert_int_equal(block->get_info(&info), LXP_ERR_WOULD_BLOCK);
+	for (unsigned int i = 0;
+	     i < 100000u && __atomic_load_n(&g_block_kicks, __ATOMIC_RELAXED) == 0u; i++)
+		ove_thread_yield();
+	assert_int_equal(__atomic_load_n(&g_block_kicks, __ATOMIC_RELAXED), 1u);
+	assert_ptr_equal(__atomic_load_n(&g_block_ready_context, __ATOMIC_RELAXED),
+			 &g_block_ready_cookie);
 	assert_int_equal(block->get_info(&info), LXP_OK);
+	block->request_owner(0u);
 	assert_int_equal(info.block_count, 16);
 	assert_int_equal(info.logical_block_size, 512);
 	assert_int_equal(info.erase_block_size, 512);
@@ -311,8 +331,8 @@ static void test_fs_adapter_serialized_lifecycle(void **state)
 	assert_true(snprintf(moved, sizeof(moved), "%s/moved", base) > 0);
 	assert_true(snprintf(child, sizeof(child), "%s/child", base) > 0);
 
-	assert_int_equal(ops->run_begin(), LXP_OK);
-	assert_int_equal(ops->run_begin(), LXP_ERR_WOULD_BLOCK);
+	assert_int_equal(ops->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_OK);
+	assert_int_equal(ops->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_ERR_WOULD_BLOCK);
 	assert_int_equal(ops->file_open(file,
 					LXP_FS_O_READ | LXP_FS_O_WRITE | LXP_FS_O_CREATE |
 						LXP_FS_O_TRUNC,
@@ -350,12 +370,12 @@ static void test_fs_adapter_serialized_lifecycle(void **state)
 	ops->run_end();
 
 	assert_int_equal(ops->path_stat(base, &stat), LXP_ERR_INVALID_PARAM);
-	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_OK);
 	assert_int_equal(ops->file_open("/tmp/ove-lxp-fs-leaked",
 					LXP_FS_O_WRITE | LXP_FS_O_CREATE | LXP_FS_O_TRUNC, &handle),
 			 LXP_OK);
 	ops->run_end(); /* Provider teardown owns leaked native handles. */
-	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_OK);
 	assert_int_equal(ops->path_unlink("/tmp/ove-lxp-fs-leaked"), LXP_OK);
 	ops->run_end();
 }
@@ -373,12 +393,13 @@ static void test_fs_adapter_async_completion(void **state)
 	assert_true(fd >= 0);
 	assert_int_equal(close(fd), 0);
 
-	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_OK);
 	/* Cancel completed opens beyond the native slot count. A leaked orphan
 	 * would exhaust the pool before this loop or the final open can finish. */
 	for (unsigned int owner = 100u; owner < 100u + LXP_NHOSTFS_OPEN + 2u; owner++) {
 		ops->request_owner(owner);
 		__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
+		__atomic_store_n(&g_fs_ready_context, NULL, __ATOMIC_RELAXED);
 		assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
 				 LXP_ERR_WOULD_BLOCK);
 		for (unsigned int i = 0;
@@ -386,11 +407,14 @@ static void test_fs_adapter_async_completion(void **state)
 		     i++)
 			ove_thread_yield();
 		assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
+		assert_ptr_equal(__atomic_load_n(&g_fs_ready_context, __ATOMIC_RELAXED),
+				 &g_fs_ready_cookie);
 		ops->request_cancel(owner);
 	}
 
 	ops->request_owner(42u);
 	__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
+	__atomic_store_n(&g_fs_ready_context, NULL, __ATOMIC_RELAXED);
 	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
 			 LXP_ERR_WOULD_BLOCK);
 	for (unsigned int i = 0;
@@ -398,6 +422,8 @@ static void test_fs_adapter_async_completion(void **state)
 	     i++)
 		ove_thread_yield();
 	assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
+	assert_ptr_equal(__atomic_load_n(&g_fs_ready_context, __ATOMIC_RELAXED),
+			 &g_fs_ready_cookie);
 	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_OK);
 	assert_non_null(handle);
 
@@ -420,7 +446,7 @@ static void test_fs_adapter_async_cancel_retires_owner(void **state)
 	assert_true(fd >= 0);
 	assert_int_equal(close(fd), 0);
 
-	assert_int_equal(ops->run_begin(), LXP_OK);
+	assert_int_equal(ops->run_begin(test_fs_ready, &g_fs_ready_cookie), LXP_OK);
 	ops->request_owner(42u);
 	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_ERR_WOULD_BLOCK);
 	ops->request_cancel(42u);

@@ -258,6 +258,10 @@ static lxp_fs_mount_spec_t g_async_mount_spec;
 static uint64_t g_async_offset;
 static uint64_t g_server_period_start_us;
 static unsigned int g_server_requests;
+static lxp_fs_ready_fn g_fs_ready;
+static const void *g_fs_ready_context;
+static lxp_block_ready_fn g_block_ready;
+static const void *g_block_ready_context;
 
 _Static_assert(LXP_FS_O_READ == OVE_FS_O_READ, "filesystem read flag drifted");
 _Static_assert(LXP_FS_O_WRITE == OVE_FS_O_WRITE, "filesystem write flag drifted");
@@ -1025,6 +1029,13 @@ static void fs_server_admit(void)
 	g_server_requests++;
 }
 
+static int request_is_block(enum fs_request_op op)
+{
+	return op == FS_REQ_BLOCK_INFO || op == FS_REQ_BLOCK_READ ||
+	       op == FS_REQ_BLOCK_WRITE || op == FS_REQ_BLOCK_SYNC ||
+	       op == FS_REQ_BLOCK_CLOSE;
+}
+
 static void fs_worker(void *arg)
 {
 	(void)arg;
@@ -1044,13 +1055,19 @@ static void fs_worker(void *arg)
 		int stop = request->op == FS_REQ_STOP;
 		if (request->asynchronous) {
 			if (lxp_async_gate_complete(&g_async_gate) == LXP_ASYNC_GATE_WAKE) {
-				if (request->op == FS_REQ_BLOCK_INFO ||
-				    request->op == FS_REQ_BLOCK_READ ||
-				    request->op == FS_REQ_BLOCK_WRITE ||
-				    request->op == FS_REQ_BLOCK_SYNC)
-					lxp_block_kick();
-				else
-					lxp_fs_kick();
+				if (request_is_block(request->op)) {
+					lxp_block_ready_fn ready =
+						__atomic_load_n(&g_block_ready, __ATOMIC_ACQUIRE);
+					if (ready)
+						ready(__atomic_load_n(&g_block_ready_context,
+								      __ATOMIC_ACQUIRE));
+				} else {
+					lxp_fs_ready_fn ready =
+						__atomic_load_n(&g_fs_ready, __ATOMIC_ACQUIRE);
+					if (ready)
+						ready(__atomic_load_n(&g_fs_ready_context,
+								      __ATOMIC_ACQUIRE));
+				}
 			} else {
 				async_discard(request);
 				lxp_async_gate_dropped(&g_async_gate);
@@ -1337,24 +1354,42 @@ static void storage_run_end(unsigned int client)
 	memset(g_handles, 0, sizeof(g_handles));
 }
 
-static int fs_run_begin(void)
+static int fs_run_begin(lxp_fs_ready_fn ready, const void *context)
 {
-	return storage_run_begin(STORAGE_RUN_FS);
+	if (!ready)
+		return LXP_ERR_INVALID_PARAM;
+	int rc = storage_run_begin(STORAGE_RUN_FS);
+	if (rc == LXP_OK) {
+		__atomic_store_n(&g_fs_ready_context, context, __ATOMIC_RELEASE);
+		__atomic_store_n(&g_fs_ready, ready, __ATOMIC_RELEASE);
+	}
+	return rc;
 }
 
 static void fs_run_end(void)
 {
 	storage_run_end(STORAGE_RUN_FS);
+	__atomic_store_n(&g_fs_ready, NULL, __ATOMIC_RELEASE);
+	__atomic_store_n(&g_fs_ready_context, NULL, __ATOMIC_RELEASE);
 }
 
-static int block_run_begin(void)
+static int block_run_begin(lxp_block_ready_fn ready, const void *context)
 {
-	return storage_run_begin(STORAGE_RUN_BLOCK);
+	if (!ready)
+		return LXP_ERR_INVALID_PARAM;
+	int rc = storage_run_begin(STORAGE_RUN_BLOCK);
+	if (rc == LXP_OK) {
+		__atomic_store_n(&g_block_ready_context, context, __ATOMIC_RELEASE);
+		__atomic_store_n(&g_block_ready, ready, __ATOMIC_RELEASE);
+	}
+	return rc;
 }
 
 static void block_run_end(void)
 {
 	storage_run_end(STORAGE_RUN_BLOCK);
+	__atomic_store_n(&g_block_ready, NULL, __ATOMIC_RELEASE);
+	__atomic_store_n(&g_block_ready_context, NULL, __ATOMIC_RELEASE);
 }
 
 static void fs_request_owner(uint64_t owner)
