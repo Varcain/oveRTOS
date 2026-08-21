@@ -79,7 +79,7 @@ struct ove_thread {
 	volatile uint64_t last_yield_us; /* timestamp of last yield/sleep/block */
 	/* Stack coloration for high-water measurement. Captured by the
 	 * thread itself (emscripten_stack_get_* work only for the current
-	 * thread); read cross-thread by ove_thread_get_stack_usage. */
+	 * thread); read cross-thread by ove_thread_get_stack_headroom. */
 	uintptr_t stack_base;	    /* highest address (SP when idle) */
 	uintptr_t stack_end;	    /* lowest address (stack limit) */
 	volatile int stack_painted; /* 1 once the thread has filled its

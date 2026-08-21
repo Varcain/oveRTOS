@@ -24,8 +24,7 @@
 #define OVE_DMB() atomic_thread_fence(memory_order_seq_cst)
 
 #if (configGENERATE_RUN_TIME_STATS == 1) || (configUSE_TRACE_FACILITY == 1)
-static uint32_t runtime_percent(configRUN_TIME_COUNTER_TYPE part,
-				configRUN_TIME_COUNTER_TYPE total)
+static uint32_t runtime_percent(configRUN_TIME_COUNTER_TYPE part, configRUN_TIME_COUNTER_TYPE total)
 {
 	if (total == 0)
 		return 0;
@@ -269,10 +268,23 @@ bool ove_thread_should_stop(ove_thread_t handle)
 	return __atomic_load_n(&handle->stop_requested, __ATOMIC_ACQUIRE) != 0;
 }
 
+int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes)
+{
+	if (!headroom_bytes)
+		return OVE_ERR_INVALID_PARAM;
+	*headroom_bytes = 0;
+	if (!handle || !handle->task)
+		return OVE_ERR_INVALID_PARAM;
+
+	UBaseType_t hwm = uxTaskGetStackHighWaterMark(handle->task);
+	*headroom_bytes = (size_t)(hwm * sizeof(StackType_t));
+	return OVE_OK;
+}
+
 size_t ove_thread_get_stack_usage(ove_thread_t handle)
 {
-	UBaseType_t hwm = uxTaskGetStackHighWaterMark(handle->task);
-	return (size_t)(hwm * sizeof(StackType_t));
+	size_t headroom = 0;
+	return ove_thread_get_stack_headroom(handle, &headroom) == OVE_OK ? headroom : 0;
 }
 
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
@@ -515,8 +527,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	if (actual_count)
 		*actual_count = (size_t)filled;
 
-	return (g_frt_task_overflow ||
-		g_frt_task_count > (UBaseType_t)max_count)
+	return (g_frt_task_overflow || g_frt_task_count > (UBaseType_t)max_count)
 		       ? OVE_ERR_QUEUE_FULL
 		       : OVE_OK;
 #else

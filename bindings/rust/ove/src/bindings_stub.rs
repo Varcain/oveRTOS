@@ -864,7 +864,14 @@ unsafe extern "C" {
     pub fn ove_thread_should_stop(handle: ove_thread_t) -> bool;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).\n\n Despite the name, this returns the stack still UNUSED at the deepest point reached — the\n remaining headroom — computed from the untouched fill pattern (FreeRTOS\n uxTaskGetStackHighWaterMark; Zephyr/WASM sentinel scan). For bytes USED, subtract this from the\n stack size. All backends agree on this free-not-used meaning; only the historical name says\n \"usage\".\n\n @param[in] handle  Thread to inspect.\n @return Bytes of stack still free at the historical peak usage, or 0 if the\n         backend does not support stack profiling."]
+    #[doc = " @brief Query the minimum free stack observed for a thread.\n\n The returned headroom is the portion of the stack that remained unused at\n the thread's deepest recorded stack usage. A successful result of zero is\n therefore distinct from a backend which cannot measure stack usage.\n\n @param[in]  handle         Thread to inspect. Must still be valid.\n @param[out] headroom_bytes Receives the minimum free stack in bytes.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED when stack profiling is\n         unavailable, or OVE_ERR_INVALID_PARAM for an invalid argument.\n\n @see ove_thread_get_stack_usage"]
+    pub fn ove_thread_get_stack_headroom(
+        handle: ove_thread_t,
+        headroom_bytes: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).\n\n Despite the name, this returns the stack still UNUSED at the deepest point reached — the\n remaining headroom — computed from the untouched fill pattern (FreeRTOS\n uxTaskGetStackHighWaterMark; Zephyr/WASM sentinel scan). For bytes USED, subtract this from the\n stack size. All backends agree on this free-not-used meaning; only the historical name says\n \"usage\".\n\n @param[in] handle  Thread to inspect.\n This compatibility API cannot distinguish unsupported profiling from a\n genuinely exhausted stack. New code should use\n @ref ove_thread_get_stack_headroom instead.\n\n @return Bytes of stack still free at the historical peak usage, or 0 on\n         error or when the backend does not support stack profiling."]
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
 }
 unsafe extern "C" {

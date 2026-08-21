@@ -126,7 +126,7 @@ static void check_suspend(struct ove_thread *t)
 
 /**
  * Paint the stack below the current frame with a sentinel pattern so
- * ove_thread_get_stack_usage can recover the high-water mark later.
+ * ove_thread_get_stack_headroom can recover the high-water mark later.
  * Runs inside the new pthread (emscripten_stack_* only report the
  * caller's stack).  Leaves a safety margin above the current SP so the
  * local state live on entry is not clobbered.
@@ -450,11 +450,16 @@ bool ove_thread_should_stop(ove_thread_t handle)
 	return __atomic_load_n(&t->stop_requested, __ATOMIC_ACQUIRE) != 0;
 }
 
-size_t ove_thread_get_stack_usage(ove_thread_t handle)
+int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes)
 {
+	if (!headroom_bytes)
+		return OVE_ERR_INVALID_PARAM;
+	*headroom_bytes = 0;
 	struct ove_thread *t = handle;
-	if (!t || !t->stack_painted)
-		return 0;
+	if (!t)
+		return OVE_ERR_INVALID_PARAM;
+	if (!t->stack_painted)
+		return OVE_ERR_NOT_SUPPORTED;
 
 	/* Scan from the stack limit upward for the first word the thread
 	 * has touched.  Stack grows down, so the deepest usage sits at
@@ -469,7 +474,14 @@ size_t ove_thread_get_stack_usage(ove_thread_t handle)
 	const uint32_t *top = (const uint32_t *)t->stack_base;
 	while (p < top && *p == OVE_WASM_STACK_COLOR)
 		p++;
-	return (size_t)(t->stack_base - (uintptr_t)p);
+	*headroom_bytes = (size_t)(t->stack_base - (uintptr_t)p);
+	return OVE_OK;
+}
+
+size_t ove_thread_get_stack_usage(ove_thread_t handle)
+{
+	size_t headroom = 0;
+	return ove_thread_get_stack_headroom(handle, &headroom) == OVE_OK ? headroom : 0;
 }
 
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
@@ -535,7 +547,11 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		out[count].identity = (uintptr_t)t;
 		out[count].state = (ove_thread_state_t)t->state;
 		out[count].priority = t->priority;
-		out[count].stack_used = t->stack_painted ? ove_thread_get_stack_usage(t) : 0;
+		size_t headroom = 0;
+		out[count].stack_used = ove_thread_get_stack_headroom(t, &headroom) == OVE_OK &&
+							t->stack_size > headroom
+						? t->stack_size - headroom
+						: 0;
 		out[count].stack_size = t->stack_size;
 		out[count].cpu_percent_x100 = 0;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS

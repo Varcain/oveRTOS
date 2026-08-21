@@ -880,7 +880,11 @@ fn testThreadList() !void {
 fn testThreadStackUsage() !void {
     var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "stk", .priority = .normal }, threadEntry, .{});
     ove.thread.sleepMs(50);
-    _ = t.getStackUsage();
+    const headroom = t.getStackHeadroom() catch |e| switch (e) {
+        error.NotSupported => null,
+        else => return e,
+    };
+    if (headroom) |bytes| try expect(t.getStackUsage() == bytes);
     t.deinit();
 }
 

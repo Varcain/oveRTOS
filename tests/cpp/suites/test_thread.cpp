@@ -127,7 +127,10 @@ static void test_cpp_thread_stack_usage(void **state)
 	g_cpp_keep_running.store(1);
 	ove::Thread<4096> t(cpp_entry_spin, nullptr, OVE_PRIO_NORMAL, "t10");
 	test_msleep(10);
-	(void)t.get_stack_usage();
+	auto headroom = t.get_stack_headroom();
+	assert_true(headroom.has_value() || headroom.error() == ove::Error::NotSupported);
+	if (headroom.has_value())
+		assert_int_equal(t.get_stack_usage(), headroom.value());
 	g_cpp_keep_running.store(0);
 	test_msleep(20);
 }

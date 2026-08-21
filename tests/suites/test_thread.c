@@ -198,7 +198,7 @@ static void test_get_state_terminated(void **state)
 	ove_test_thread_destroy(h);
 }
 
-/* 10. get_stack_usage doesn't crash */
+/* 10. capability-aware stack headroom and compatibility query */
 static void test_stack_usage(void **state)
 {
 	(void)state;
@@ -207,8 +207,17 @@ static void test_stack_usage(void **state)
 	OVE_TEST_ASSERT_OK(
 		ove_test_thread_run(&h, &s_th_storage, "t10", entry_spin, NULL, s_th_stack, 4096));
 	test_msleep(10);
-	/* Stub returns 0; FreeRTOS returns actual HWM bytes — just verify no crash */
-	(void)ove_thread_get_stack_usage(h);
+	size_t headroom = SIZE_MAX;
+	int rc = ove_thread_get_stack_headroom(h, &headroom);
+	assert_true(rc == OVE_OK || rc == OVE_ERR_NOT_SUPPORTED);
+	if (rc == OVE_ERR_NOT_SUPPORTED)
+		assert_int_equal(headroom, 0);
+	else
+		assert_int_equal(ove_thread_get_stack_usage(h), headroom);
+	assert_int_equal(ove_thread_get_stack_headroom(h, NULL), OVE_ERR_INVALID_PARAM);
+	headroom = SIZE_MAX;
+	assert_int_equal(ove_thread_get_stack_headroom(NULL, &headroom), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(headroom, 0);
 	atomic_store(&g_keep_running, 0);
 	test_msleep(20);
 	ove_test_thread_destroy(h);
@@ -302,8 +311,7 @@ static void test_thread_list_identity(void **state)
 	struct ove_thread_info info[32];
 	size_t count = 0;
 	int rc = ove_thread_list(info, 32, &count);
-	assert_true(rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL ||
-		    rc == OVE_ERR_NOT_SUPPORTED);
+	assert_true(rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL || rc == OVE_ERR_NOT_SUPPORTED);
 	if (rc != OVE_ERR_NOT_SUPPORTED) {
 		bool found = false;
 		for (size_t i = 0; i < count; i++) {
