@@ -32,6 +32,7 @@
 
 struct thread_audit_snapshot {
 	const char *name;
+	int available;
 	size_t used;
 	size_t size;
 };
@@ -263,16 +264,23 @@ static void lat_report(const ove_lxp_host_observation_t *observation)
 }
 #endif /* CONFIG_OVE_LINUX_LATENCY */
 
-static void audit_stack_line(const char *name, size_t used, size_t size)
+static void audit_stack_line(const char *name, int available, size_t used, size_t size)
 {
+	if (!available) {
+		ove_lxp_console_printf("[stack] %-18s unavailable size=%u\n", name,
+				       (unsigned int)size);
+		return;
+	}
 	ove_lxp_console_printf("[stack] %-18s used=%u size=%u free=%u\n", name, (unsigned int)used,
 			       (unsigned int)size, (unsigned int)(size > used ? size - used : 0));
 }
 
 static void audit_thread(const char *name, ove_thread_t thread, size_t stack_size)
 {
-	size_t free_bytes = ove_thread_get_stack_usage(thread);
-	audit_stack_line(name, stack_size > free_bytes ? stack_size - free_bytes : 0, stack_size);
+	size_t headroom = 0;
+	int available = ove_thread_get_stack_headroom(thread, &headroom) == OVE_OK;
+	audit_stack_line(name, available, stack_size > headroom ? stack_size - headroom : 0,
+			 stack_size);
 }
 
 static void host_observation_audit(const ove_lxp_host_observation_t *observation)
@@ -331,10 +339,12 @@ void linux_interop_qualification_observe_thread(const char *name, ove_thread_t t
 	if (!name || !thread || !stack_size || g_thread_audit_count >= THREAD_AUDIT_CAPACITY)
 		return;
 
-	size_t free_bytes = ove_thread_get_stack_usage(thread);
+	size_t headroom = 0;
+	int available = ove_thread_get_stack_headroom(thread, &headroom) == OVE_OK;
 	g_thread_audits[g_thread_audit_count++] = (struct thread_audit_snapshot){
 		.name = name,
-		.used = stack_size > free_bytes ? stack_size - free_bytes : 0,
+		.available = available,
+		.used = available && stack_size > headroom ? stack_size - headroom : 0,
 		.size = stack_size,
 	};
 }
@@ -389,14 +399,14 @@ void linux_interop_qualification_report(const ove_lxp_host_observation_t *observ
 	ove_lxp_console_write("\n=== stack high-water audit (deepest usage this run) ===\n");
 	audit_thread("coordinator", coordinator, coordinator_stack_size);
 	for (size_t i = 0; i < g_thread_audit_count; i++)
-		audit_stack_line(g_thread_audits[i].name, g_thread_audits[i].used,
-				 g_thread_audits[i].size);
+		audit_stack_line(g_thread_audits[i].name, g_thread_audits[i].available,
+				 g_thread_audits[i].used, g_thread_audits[i].size);
 #if defined(CONFIG_OVE_WATCHDOG)
 	if (g_wd_started)
 		audit_thread("wd-monitor", g_wd, sizeof(g_wd_storage_stack));
 #endif
 	if (observation->guest_stack.available)
-		audit_stack_line("guest-slot(tramp)", observation->guest_stack.used,
+		audit_stack_line("guest-slot(tramp)", 1, observation->guest_stack.used,
 				 observation->guest_stack.size);
 
 	struct ove_mem_stats memory;

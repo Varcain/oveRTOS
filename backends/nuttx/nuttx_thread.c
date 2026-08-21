@@ -431,12 +431,23 @@ void ove_backend_thread_set_state(int new_state)
 }
 #endif
 
+int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes)
+{
+	if (!headroom_bytes)
+		return OVE_ERR_INVALID_PARAM;
+	*headroom_bytes = 0;
+	if (!handle)
+		return OVE_ERR_INVALID_PARAM;
+
+	/* The public NuttX task API does not expose a safe stack high-water
+	 * query for this caller-owned thread handle. */
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
 size_t ove_thread_get_stack_usage(ove_thread_t handle)
 {
-	/* NuttX: stack usage tracking not available via POSIX API.
-	 * Returns 0 (unknown) rather than an error code. */
-	(void)handle;
-	return 0;
+	size_t headroom = 0;
+	return ove_thread_get_stack_headroom(handle, &headroom) == OVE_OK ? headroom : 0;
 }
 
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle)

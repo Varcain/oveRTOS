@@ -264,6 +264,22 @@ void ove_thread_request_stop(ove_thread_t handle);
 bool ove_thread_should_stop(ove_thread_t handle);
 
 /**
+ * @brief Query the minimum free stack observed for a thread.
+ *
+ * The returned headroom is the portion of the stack that remained unused at
+ * the thread's deepest recorded stack usage.  A successful result of zero is
+ * therefore distinct from a backend which cannot measure stack usage.
+ *
+ * @param[in]  handle         Thread to inspect. Must still be valid.
+ * @param[out] headroom_bytes Receives the minimum free stack in bytes.
+ * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED when stack profiling is
+ *         unavailable, or OVE_ERR_INVALID_PARAM for an invalid argument.
+ *
+ * @see ove_thread_get_stack_usage
+ */
+int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes);
+
+/**
  * @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).
  *
  * Despite the name, this returns the stack still UNUSED at the deepest point reached — the
@@ -273,8 +289,12 @@ bool ove_thread_should_stop(ove_thread_t handle);
  * "usage".
  *
  * @param[in] handle  Thread to inspect.
- * @return Bytes of stack still free at the historical peak usage, or 0 if the
- *         backend does not support stack profiling.
+ * This compatibility API cannot distinguish unsupported profiling from a
+ * genuinely exhausted stack. New code should use
+ * @ref ove_thread_get_stack_headroom instead.
+ *
+ * @return Bytes of stack still free at the historical peak usage, or 0 on
+ *         error or when the backend does not support stack profiling.
  */
 size_t ove_thread_get_stack_usage(ove_thread_t handle);
 

@@ -376,25 +376,36 @@ void ove_backend_thread_set_state(int new_state)
 }
 #endif
 
-size_t ove_thread_get_stack_usage(ove_thread_t handle)
+int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes)
 {
-#if defined(CONFIG_THREAD_STACK_INFO) && defined(CONFIG_INIT_STACKS)
-	if (handle != NULL) {
-		struct ove_thread *info = handle;
-		const uint8_t *start = (const uint8_t *)info->stack;
-		size_t i;
+	if (!headroom_bytes)
+		return OVE_ERR_INVALID_PARAM;
+	*headroom_bytes = 0;
+	if (!handle)
+		return OVE_ERR_INVALID_PARAM;
 
-		for (i = 0; i < info->stack_size; i++) {
-			if (start[i] != 0xaaU) {
-				break;
-			}
+#if defined(CONFIG_THREAD_STACK_INFO) && defined(CONFIG_INIT_STACKS)
+	struct ove_thread *info = handle;
+	const uint8_t *start = (const uint8_t *)info->stack;
+	size_t i;
+
+	for (i = 0; i < info->stack_size; i++) {
+		if (start[i] != 0xaaU) {
+			break;
 		}
-		return i;
 	}
+	*headroom_bytes = i;
+	return OVE_OK;
 #else
 	(void)handle;
+	return OVE_ERR_NOT_SUPPORTED;
 #endif
-	return 0;
+}
+
+size_t ove_thread_get_stack_usage(ove_thread_t handle)
+{
+	size_t headroom = 0;
+	return ove_thread_get_stack_headroom(handle, &headroom) == OVE_OK ? headroom : 0;
 }
 
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle)

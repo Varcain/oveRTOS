@@ -622,12 +622,26 @@ template <size_t StackSize = 0> class Thread
 	}
 
 	/**
-	 * @brief Returns the number of bytes used by the thread's stack so far.
-	 * @return Peak stack usage in bytes.
+	 * @brief Legacy query for minimum free stack bytes.
+	 *
+	 * A zero result is ambiguous. New code should use
+	 * @ref get_stack_headroom.
 	 */
 	size_t get_stack_usage() const
 	{
 		return ove_thread_get_stack_usage(handle_);
+	}
+
+	/**
+	 * @brief Retrieves the minimum free stack observed for the thread.
+	 * @return Headroom in bytes, or `Error::NotSupported` when the
+	 *         substrate cannot measure it.
+	 */
+	[[nodiscard]] Result<size_t> get_stack_headroom() const noexcept
+	{
+		size_t headroom = 0;
+		const int rc = ove_thread_get_stack_headroom(handle_, &headroom);
+		return from_rc(rc, headroom);
 	}
 
 	/**
@@ -639,8 +653,7 @@ template <size_t StackSize = 0> class Thread
 	 */
 	[[nodiscard]] Result<struct ove_thread_stats> get_runtime_stats() const noexcept
 	{
-		struct ove_thread_stats stats {
-		};
+		struct ove_thread_stats stats{};
 		const int rc = ove_thread_get_runtime_stats(handle_, &stats);
 		return from_rc(rc, stats);
 	}
@@ -790,8 +803,7 @@ struct MemStats {
 [[nodiscard]] inline Result<MemStats> get_mem_stats() noexcept
 {
 	MemStats stats{};
-	struct ove_mem_stats ms {
-	};
+	struct ove_mem_stats ms{};
 	const int rc = ove_sys_get_mem_stats(&ms);
 	if (rc == OVE_OK) {
 		stats.total = ms.total;

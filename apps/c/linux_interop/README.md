@@ -514,7 +514,10 @@ host-neutral guest-stack high-water mark. FreeRTOS currently supplies that
 stack metric through LXP's port vtable; NuttX and Zephyr leave it unavailable
 instead of requiring engine conditionals in the app. Application-owned thread
 stack and heap reporting remains local because those resources belong to this
-demo rather than to LXP.
+demo rather than to LXP. Thread owners snapshot stack headroom before teardown
+through the status-returning oveRTOS query. Unsupported data is printed as
+`unavailable`—not as a fabricated fully consumed stack—and `src/app.c` never
+reaches into another module's RTOS handles.
 
 Generic `ove_thread_info` snapshots likewise carry only an opaque native
 identity. The private LXP thread adapter resolves that identity to a guest slot;

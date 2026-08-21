@@ -12,7 +12,7 @@
 //!   - [`Thread`] is a **non-owning** handle.  Returned by
 //!     [`Thread::current`] and by [`JoinHandle::thread`].  Carries the
 //!     read-only and signal operations (`get_state`,
-//!     `get_stack_usage`, `set_priority`, `suspend`/`resume`,
+//!     `get_stack_headroom`, `set_priority`, `suspend`/`resume`,
 //!     `request_stop`, …).  Dropping a `Thread` value does nothing.
 //!   - [`JoinHandle`] is the **owning** type returned by
 //!     [`Builder::spawn`] (and its `spawn_cooperative`/`spawn_simple`/
@@ -347,10 +347,26 @@ impl Thread {
         unsafe { bindings::ove_thread_set_priority(self.handle, prio as bindings::ove_prio_t) }
     }
 
-    /// Get current stack usage in bytes.
+    /// Legacy query for minimum free stack bytes.
+    ///
+    /// A zero result is ambiguous; new code should use
+    /// [`Thread::get_stack_headroom`].
     #[inline]
     pub fn get_stack_usage(&self) -> usize {
         unsafe { bindings::ove_thread_get_stack_usage(self.handle) }
+    }
+
+    /// Get the minimum free stack observed for this thread.
+    ///
+    /// # Errors
+    /// Returns [`Error::NotSupported`] if this RTOS cannot measure stack
+    /// headroom, or another error if the thread handle is invalid.
+    #[inline]
+    pub fn get_stack_headroom(&self) -> Result<usize> {
+        let mut headroom = 0;
+        let rc = unsafe { bindings::ove_thread_get_stack_headroom(self.handle, &mut headroom) };
+        Error::from_code(rc)?;
+        Ok(headroom)
     }
 
     /// Get the thread's current state.
@@ -918,10 +934,18 @@ impl<'storage, T> JoinHandleBorrowed<'storage, T> {
         self.thread().get_state()
     }
 
-    /// Read the running thread's stack usage.  See [`Thread::get_stack_usage`].
+    /// Read the running thread's legacy stack value. See
+    /// [`Thread::get_stack_usage`].
     #[inline]
     pub fn get_stack_usage(&self) -> usize {
         self.thread().get_stack_usage()
+    }
+
+    /// Read the running thread's minimum free stack. See
+    /// [`Thread::get_stack_headroom`].
+    #[inline]
+    pub fn get_stack_headroom(&self) -> Result<usize> {
+        self.thread().get_stack_headroom()
     }
 
     /// Read the running thread's runtime stats.  See [`Thread::get_runtime_stats`].

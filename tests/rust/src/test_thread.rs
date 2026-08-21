@@ -6,8 +6,8 @@
 
 use crate::framework::run_suite;
 use crate::test_entry;
-use ove::{Thread, ThreadInfo, ThreadState, Error};
 use ove::ffi;
+use ove::{Error, Thread, ThreadInfo, ThreadState};
 use std::sync::atomic::{AtomicI32, Ordering};
 
 static FLAG: AtomicI32 = AtomicI32::new(0);
@@ -103,7 +103,11 @@ fn test_stack_usage() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"t10").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(10);
-    let _usage = th.get_stack_usage();
+    match th.get_stack_headroom() {
+        Ok(headroom) => assert_eq!(th.get_stack_usage(), headroom),
+        Err(Error::NotSupported) => {}
+        Err(error) => panic!("unexpected stack-headroom error: {error:?}"),
+    }
     KEEP_RUNNING.store(0, Ordering::SeqCst);
     Thread::sleep_ms(20);
     drop(th);

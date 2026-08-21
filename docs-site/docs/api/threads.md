@@ -159,7 +159,8 @@ OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "wor
 | `ove_thread_start_scheduler` | `void (void)` | Start the RTOS scheduler. Usually called indirectly via `ove_run()`. Does not return on most platforms. |
 | `ove_thread_suspend` | `void (ove_thread_t handle)` | Prevent a thread from being scheduled. May be called on the calling thread itself. |
 | `ove_thread_resume` | `void (ove_thread_t handle)` | Resume a previously suspended thread. |
-| `ove_thread_get_stack_usage` | `size_t (ove_thread_t handle)` | Return the historical peak stack usage in bytes (high-water mark). Returns `0` if the backend does not support stack profiling. |
+| `ove_thread_get_stack_headroom` | `int (ove_thread_t handle, size_t *headroom_bytes)` | Return the minimum free stack observed, with `OVE_ERR_NOT_SUPPORTED` when profiling is unavailable. |
+| `ove_thread_get_stack_usage` | `size_t (ove_thread_t handle)` | Legacy, misnamed minimum-free-stack query. Returns `0` both for an exhausted stack and when profiling is unavailable. |
 | `ove_thread_get_state` | `ove_thread_state_t (ove_thread_t handle)` | Query the current execution state of a thread. |
 | `ove_thread_request_stop` | `void (ove_thread_t handle)` | Cooperative stop signal. The thread keeps running until it observes `ove_thread_should_stop()` and exits its entry function. |
 | `ove_thread_should_stop` | `bool (ove_thread_t handle)` | Returns `true` once `ove_thread_request_stop()` has been called for the thread. Polled inside the worker's main loop. |
@@ -176,7 +177,7 @@ graph LR
     subgraph Stats
         direction TB
         R["ove_thread_get_runtime_stats()"]
-        S["ove_thread_get_stack_usage()"]
+        S["ove_thread_get_stack_headroom()"]
         ST["ove_thread_get_state()"]
     end
 
@@ -186,11 +187,17 @@ graph LR
 
     R --> RU["runtime_us<br/><small>total CPU time μs</small>"]
     R --> CPU["cpu_percent_x100<br/><small>e.g. 1250 = 12.50%</small>"]
-    S --> HW["stack high-water mark<br/><small>bytes used at peak</small>"]
+    S --> HW["minimum stack headroom<br/><small>free bytes at deepest use</small>"]
     ST --> STATE["OVE_THREAD_STATE_*<br/><small>RUNNING / READY / BLOCKED<br/>SUSPENDED / TERMINATED</small>"]
 ```
 
-`ove_thread_get_runtime_stats()` returns `OVE_ERR_NOT_SUPPORTED` when the backend does not provide CPU accounting. `ove_thread_get_stack_usage()` returns `0` when stack profiling is unavailable.
+`ove_thread_get_runtime_stats()` returns `OVE_ERR_NOT_SUPPORTED` when the
+backend does not provide CPU accounting. Stack profiling follows the same
+explicit convention: `ove_thread_get_stack_headroom()` returns
+`OVE_ERR_NOT_SUPPORTED` instead of conflating unavailable data with a real
+zero-byte margin. FreeRTOS, Zephyr with stack initialization enabled, WASM,
+and heap-enabled POSIX builds provide the measurement. NuttX currently does
+not expose a safe high-water query for an oveRTOS-owned task handle.
 
 ```c
 struct ove_thread_stats stats;
@@ -199,13 +206,16 @@ if (rc == OVE_OK) {
     /* stats.cpu_percent_x100 == 1250 means 12.50 % */
 }
 
-size_t peak = ove_thread_get_stack_usage(worker);
-/* peak > 0 only when the backend supports high-water marking */
+size_t headroom;
+rc = ove_thread_get_stack_headroom(worker, &headroom);
+if (rc == OVE_OK) {
+    /* A zero value is meaningful: this thread exhausted its measured margin. */
+}
 ```
 
 ## Example: Worker Thread with Sleep Loop
 
-A typical pattern for a periodic background task — create once at startup, run forever with a fixed sleep interval, and inspect the stack peak during development.
+A typical pattern for a periodic background task — create once at startup, run forever with a fixed sleep interval, and inspect the remaining stack margin during development.
 
 ```c
 #include <ove/ove.h>

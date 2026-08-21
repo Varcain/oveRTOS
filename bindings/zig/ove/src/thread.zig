@@ -572,6 +572,13 @@ pub fn Thread(comptime stack_size: usize) type {
             return c.ove_thread_get_stack_usage(self.handle);
         }
 
+        /// Return the minimum free stack observed for this thread.
+        pub fn getStackHeadroom(self: Self) Error!usize {
+            var headroom: usize = 0;
+            try err.fromCode(c.ove_thread_get_stack_headroom(self.handle, &headroom));
+            return headroom;
+        }
+
         pub fn getState(self: Self) State {
             return @enumFromInt(c.ove_thread_get_state(self.handle));
         }
