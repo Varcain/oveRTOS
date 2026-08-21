@@ -141,7 +141,9 @@ ove_add_cmsis_dsp()
 # unprivileged Linux-personality isolation; the STM32Cube V10 MPU port is ABI-incompatible
 # with configUSE_PICOLIBC_TLS. Non-Linux keeps the fast STM32Cube V10 ARM_CM7 port.
 if(OVE_LINUX)
-    set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
+    if(NOT DEFINED FREERTOS_PATH)
+        set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
+    endif()
     if(NOT OVE_ZERO_HEAP)
         # xTaskCreate() stacks use an independent heap in internal DTCM; the general heap remains
         # in external SDRAM for the personality's much larger non-stack allocations.

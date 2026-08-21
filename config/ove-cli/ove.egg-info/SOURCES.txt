@@ -31,5 +31,4 @@ ove.egg-info/top_level.txt
 ove/configure/__init__.py
 ove/configure/assets.py
 ove/configure/board_desc.py
-ove/configure/patches.py
 ove/configure/templates.py
