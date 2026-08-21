@@ -873,3 +873,82 @@ received 31, a 19.19:1 share. The accompanying lifetime snapshot recorded
 pending work, a 7.370 us average dispatch, and a 73.667 us maximum. The smaller
 selector stack therefore preserves both proportional progress and the host
 real-time promise on STM32F746 hardware.
+
+## Iteration 23: run-scoped storage readiness and ownership closure
+
+A final ownership audit classified the remaining code in `linux_interop`, the
+common adapters, and all three engine host seams. The application retains only
+product and experiment policy: selecting the rootfs and network topology,
+starting the two-phase Linux demonstration, running product network and fault
+smokes, and publishing the board-specific RT-scope experiment. Engine host
+files retain facts which cannot be canonicalized, including native priority
+placement, clock and entropy access, cache and MPU validation, and native
+statistics. The common display, console, network, thread, observability, and
+storage adapters are narrow OVE-to-LXP translations. Moving any of those
+remaining responsibilities into canonical LXP would either import product
+policy or make LXP depend on an oveRTOS HAL.
+
+The audit did find one final hidden lifecycle dependency. The asynchronous
+filesystem and block worker called process-global `lxp_fs_kick()` and
+`lxp_block_kick()` symbols after completing a request. This was the same
+ownership error previously removed from the network and console seams: a
+provider knew how to wake one global coordinator, completion remained callable
+outside an explicit subscription lifetime, and sequential runs could not prove
+that a wake belonged to the current engine instance.
+
+Canonical LXP filesystem ABI 8 and block ABI 3 now receive independent
+readiness callbacks and immutable engine contexts in `run_begin()`. A provider
+retains them only after a successful begin, leaves an existing subscription
+unchanged when begin fails, and guarantees that no callback survives the
+matching `run_end()`. LXP's filesystem callback also owns its private fairness
+hint before posting the engine event. No public storage contract exports a
+coordinator wake symbol.
+
+The oveRTOS storage adapter publishes the callback context before the callback
+with release ordering. Its shared serialized worker loads the typed callback
+with acquire ordering after retiring the asynchronous request. Teardown first
+stops and joins the worker through the existing shared storage lifecycle, then
+withdraws the callback before clearing its context. Filesystem and block clients
+have separate subscriptions even though they share one native worker. This
+conversion also corrected a latent classification defect: asynchronous block
+close is now delivered through the block callback. The previous two global
+kicks both posted the same event, which had masked that distinction.
+
+The ownership ledger rejects either global storage-kick name in the provider or
+canonical headers and requires both run-scoped callback types. Lifecycle tests
+cover null callbacks, duplicate acquisition, typed context delivery, failed
+prepare rollback, completion before the coordinator global is published, and
+callback withdrawal. Seven canonical LXP CTest targets pass normally and under
+ASan/UBSan. oveRTOS passes 435 normal C tests and 436 ASan/UBSan tests. The
+standalone FreeRTOS execution milestones M1, M2, M3, M4, M7, and M9 also pass;
+M9 retained a 22:1 guest share while its higher-priority native 1 kHz task made
+progress.
+
+The final callback contract has no material memory cost. Small flash deltas are
+compiler and linker-layout effects from indirect callback dispatch. The data
+model adds two callback/context pairs; only NuttX reports a fixed-SRAM change,
+where section alignment rounds that addition to 64 bytes:
+
+| Engine | Iteration 21 flash | Iteration 23 flash | Delta | Fixed RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 312,716 B | 312,940 B | +224 B | 242,080 B | 0 B |
+| NuttX | 356,380 B | 356,244 B | -136 B | 231,108 B | +64 B |
+| Zephyr | 356,264 B | 357,424 B | +1,160 B | 247 KiB | 0 B |
+
+Committed images `ove-159d400 lxp-e3a3b93` were flashed and validated on the
+STM32F746 exclusively through the Linux guest's SSH service. Every engine
+completed `/data` create, write, read, sync, rename, and unlink operations, an
+SQLite create/insert/select transaction, and read-only `fdisk` enumeration of
+the live 14.8 GiB `/dev/mmcblk0`. The concurrent 1 kHz RT-scope snapshots were:
+
+| Engine | Releases / executions | Missed | Late finish | IRQ overrun |
+|---|---:|---:|---:|---:|
+| FreeRTOS | 39,958 / 39,958 | 0 | 0 | 0 |
+| NuttX | 29,384 / 29,384 | 0 | 0 | 0 |
+| Zephyr | 37,013 / 37,013 | 0 | 0 | 0 |
+
+At this audit point, no remaining code in the application or RTOS seams was
+validated as generic personality ownership. The migration is therefore closed:
+LXP owns Linux semantics, guest and coordinator lifecycle, scheduling policy,
+and run-scoped readiness; oveRTOS owns reusable native services, board facts,
+and the explicit adapters between the two contracts.
