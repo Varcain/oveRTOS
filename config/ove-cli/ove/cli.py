@@ -363,6 +363,8 @@ def _cmd_clean(args):
 
     elif args.all:
         logger.info("Cleaning all workspaces and toolchains...")
+        from .build import discard_all_patch_worktrees
+        discard_all_patch_worktrees(ws.dl_dir)
         if os.path.isdir(ws.output_dir):
             shutil.rmtree(ws.output_dir)
         if os.path.islink(ws.config_path) or os.path.isfile(ws.config_path):
@@ -370,6 +372,8 @@ def _cmd_clean(args):
 
     else:
         logger.info("Cleaning active workspace build artifacts...")
+        from .build import discard_workspace_patch_worktrees
+        discard_workspace_patch_worktrees(ws)
         # images_base_dir, not images_dir: clean every ABI variant, and stay
         # usable when .config is absent (images_dir has to read it).
         for d in (ws.build_dir, ws.gen_dir, ws.images_base_dir):
