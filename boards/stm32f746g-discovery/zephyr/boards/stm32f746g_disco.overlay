@@ -75,9 +75,10 @@
 &sdmmc1 {
 	dmas = <&dma2 6 4 0x30000 0x00>, <&dma2 3 4 0x30000 0x00>;
 	dma-names = "tx", "rx";
-	/* 48 MHz / (22 + 2) = 2 MHz. Bounded 4 KiB DMA batches keep the transfer
-	 * cost reasonable, while the proven-safe bus rate avoids the intermittent
-	 * F7 SDMMC lockups seen during sustained SQLite rewrites at 4--24 MHz. */
+	/* 48 MHz / (22 + 2) = 2 MHz. Faster clocks and multiblock transfers can
+	 * survive short probes but intermittently leave this board's F7 SDMMC path
+	 * non-responsive under sustained SQLite rewrites. Keep the proven-safe
+	 * clock together with the owned single-sector DMA policy. */
 	clk-div = <22>;
 	/delete-property/ cd-gpios;
 };
