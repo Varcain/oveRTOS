@@ -10,7 +10,9 @@
 
 #include "ove/lxp_console.h"
 
+#include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #include "ove/console.h"
 #include "ove/types.h"
@@ -192,10 +194,69 @@ void ove_lxp_console_bind(ove_lxp_launch_config_t *config)
 #endif
 }
 
+static const char *guest_exit_reason_name(uint8_t reason)
+{
+	switch (reason) {
+	case OVE_LXP_EXIT_REASON_SIGNAL:
+		return "signal";
+	case OVE_LXP_EXIT_REASON_SIGNAL_DEPTH:
+		return "signal-depth";
+	case OVE_LXP_EXIT_REASON_MEMORY_FAULT:
+		return "memory-fault";
+	case OVE_LXP_EXIT_REASON_EXEC_RESOURCE:
+		return "exec-resource";
+	case OVE_LXP_EXIT_REASON_EXEC_LOAD:
+		return "exec-load";
+	case OVE_LXP_EXIT_REASON_STATE_CORRUPTION:
+		return "state-corruption";
+	case OVE_LXP_EXIT_REASON_HOST_TRANSITION:
+		return "host-transition";
+	default:
+		return "unspecified";
+	}
+}
+
+static void console_report_enosys(long nr)
+{
+	ove_lxp_console_printf("[lxp] unimplemented syscall nr=%ld\n", nr);
+}
+
+static void console_report_guest_exit(const ove_lxp_guest_exit_info_t *info)
+{
+	if (!info || info->reason == OVE_LXP_EXIT_REASON_NORMAL)
+		return;
+	ove_lxp_console_printf("[lxp] guest-exit slot=%d pid=%d comm=%s status=%d reason=%s "
+			       "signal=%u detail=0x%08lx address=0x%08lx\n",
+			       info->slot, info->pid, info->comm ? info->comm : "?", info->status,
+			       guest_exit_reason_name(info->reason), (unsigned int)info->signal,
+			       (unsigned long)info->detail, (unsigned long)info->address);
+}
+
+void ove_lxp_console_bind_diagnostics(ove_lxp_launch_config_t *config)
+{
+	if (!config)
+		return;
+	config->on_enosys = console_report_enosys;
+	config->on_guest_exit = console_report_guest_exit;
+}
+
 void ove_lxp_console_write(const char *text)
 {
 	if (!text)
 		return;
 	while (*text)
 		native_write_char(*text++);
+}
+
+void ove_lxp_console_printf(const char *format, ...)
+{
+	if (!format)
+		return;
+	char text[256];
+	va_list args;
+	va_start(args, format);
+	int length = vsnprintf(text, sizeof(text), format, args);
+	va_end(args);
+	if (length > 0)
+		ove_lxp_console_write(text);
 }

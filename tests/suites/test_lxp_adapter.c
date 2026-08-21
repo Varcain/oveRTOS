@@ -887,6 +887,28 @@ static void test_console_adapter_binds_only_console_policy(void **state)
 	assert_ptr_equal(config.rt_scope_ctx, &diagnostic_cookie);
 }
 
+static void test_console_adapter_binds_diagnostics_separately(void **state)
+{
+	(void)state;
+	int io_cookie;
+	ove_lxp_launch_config_t config = {
+		.write_fn = test_launch_write,
+		.read_fn = test_launch_read,
+		.io_ctx = &io_cookie,
+		.on_enosys = test_enosys,
+		.on_guest_exit = test_guest_exit,
+	};
+	ove_lxp_console_bind_diagnostics(&config);
+	assert_ptr_equal(config.write_fn, test_launch_write);
+	assert_ptr_equal(config.read_fn, test_launch_read);
+	assert_ptr_equal(config.io_ctx, &io_cookie);
+	assert_non_null(config.on_enosys);
+	assert_non_null(config.on_guest_exit);
+	assert_true(config.on_enosys != test_enosys);
+	assert_true(config.on_guest_exit != test_guest_exit);
+	ove_lxp_console_bind_diagnostics(NULL);
+}
+
 static int32_t test_slot_lookup(uintptr_t identity)
 {
 	return identity == 0x1234u ? 3 : LXP_THREAD_SLOT_NONE;
@@ -1001,6 +1023,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_host_facade_configured_bootstrap),
 		cmocka_unit_test(test_observability_facade_copies_contract),
 		cmocka_unit_test(test_console_adapter_binds_only_console_policy),
+		cmocka_unit_test(test_console_adapter_binds_diagnostics_separately),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
 		cmocka_unit_test(test_svc_metrics_own_window_and_lifetime),
