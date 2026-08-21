@@ -18,12 +18,8 @@
  *  type commands (ls /, echo hi, cat /etc/hostname, ...) and
  *  `exit` to finish.
  *
- * The SVC top half only snapshots ordinary syscall registers and parks the guest;
- * I/O callbacks run later in the privileged, preemptible coordinator task. Phase 1
- * keeps its fixed arrays and published indices to avoid allocation and unnecessary
- * scheduler traffic. Phase 2 binds the oveRTOS system-console provider, whose
- * non-consuming readiness probe parks an empty console instead of blocking the
- * coordinator and whose event-capable backends wake it without periodic polling.
+ * Guest callbacks run in the privileged, preemptible coordinator. Fixed staging
+ * keeps the native round trip allocation-free.
  */
 
 #include <stdio.h>
@@ -43,10 +39,6 @@
 #include "qualification.h"
 #include "rt_scope.h"
 
-#ifndef UNUSED
-#define UNUSED(x) ((void)(x))
-#endif
-
 #define GUEST_ENTRYPOINT "/usr/libexec/ove-interop-guest"
 
 static uint32_t uptime_ms(void)
@@ -58,10 +50,8 @@ static uint32_t uptime_ms(void)
 
 #if defined(CONFIG_OVE_LINUX_NET)
 /*
- * Run after phase 1 and allow a bounded readiness window. RTOS network seams
- * publish the static address before their carrier, worker, and ARP paths
- * necessarily become connect-ready. A one-shot probe therefore describes a
- * scheduler race rather than transport health, especially on NuttX.
+ * Allow a bounded post-phase-1 readiness window: publishing a static address
+ * can precede carrier, worker, and ARP readiness.
  */
 static void network_transport_smoke(const ove_lxp_host_t *host)
 {
@@ -138,7 +128,7 @@ OVE_THREAD_DEFINE(g_worker_storage, 2048);
 
 static void rtos_worker(void *arg)
 {
-	UNUSED(arg);
+	(void)arg;
 
 	/* Stage every reading before launch, then let feed_read serve them by index. */
 	for (int i = 1; i <= N_READINGS; i++) {
@@ -169,8 +159,8 @@ static void rtos_worker(void *arg)
 /* ---- phase 1 callbacks ----------------------------------------------------- */
 static long feed_read(void *ctx, int fd, void *buf, size_t len)
 {
-	UNUSED(ctx);
-	UNUSED(fd);
+	(void)ctx;
+	(void)fd;
 	if (g_feed_idx >= N_READINGS)
 		return 0; /* EOF: every staged reading has been served */
 	const char *src = g_feed_lines[g_feed_idx++].text;
@@ -184,8 +174,8 @@ static long feed_read(void *ctx, int fd, void *buf, size_t len)
 /* Capture each guest stdout line for the native consumer. */
 static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 {
-	UNUSED(ctx);
-	UNUSED(fd);
+	(void)ctx;
+	(void)fd;
 	char tmp[56];
 	size_t n = len < sizeof(tmp) - 1 ? len : sizeof(tmp) - 1;
 	memcpy(tmp, buf, n);
@@ -203,7 +193,7 @@ static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 	return (long)len;
 }
 
-/* ---- host (owns the index for the board-selected Buildroot CPIO backing) --- */
+/* One parsed host is reused by both rootfs guest modes. */
 static ove_lxp_host_t g_linux_host;
 
 static int run_guest_mode(const ove_lxp_launch_config_t *config, const char *mode)
@@ -219,20 +209,16 @@ static void demo_exit(unsigned int code)
 }
 
 static ove_thread_t g_demo;
-/* Deferred syscalls execute on this coordinator stack. The O0 QEMU integration build reaches
- * 4320 bytes while loading and running BusyBox, so retain nearly another full call-chain of
- * margin. OVE_THREAD_DEFINE_HOST keeps this privileged coordinator's stack in
- * backend-safe memory while a protected guest address space is active. */
+/* The O0 QEMU integration build uses 4320 bytes of this coordinator stack;
+ * retain nearly another call-chain of margin in backend-safe host memory. */
 OVE_THREAD_DEFINE_HOST(g_demo_storage, 8192);
 
 static void demo_body(void *arg)
 {
-	UNUSED(arg);
-	(void)ove_lxp_console_init(); /* bring up the program console before any I/O */
+	(void)arg;
+	(void)ove_lxp_console_init();
 	ove_lxp_console_write(
 		"=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
-	/* First line out of the box: identifies the running image against the ELF on
-	 * disk, so a stale target cannot be debugged with the wrong symbols. */
 	ove_lxp_console_write("[build] " OVE_BUILD_ID "\n");
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
@@ -255,18 +241,15 @@ static void demo_body(void *arg)
 	}
 
 #if defined(CONFIG_OVE_LINUX_NET)
-	/* Report the host-owned native interface without exposing its handle. */
-	{
-		ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
-		if (ove_lxp_host_netif_get_addr(&g_linux_host, &ip, &gw, &nm) == OVE_OK) {
-			ove_lxp_console_printf("[demo] eth0 up ip=%u.%u.%u.%u gw=%u.%u.%u.%u\n",
-					       (unsigned int)ip.addr[0], (unsigned int)ip.addr[1],
-					       (unsigned int)ip.addr[2], (unsigned int)ip.addr[3],
-					       (unsigned int)gw.addr[0], (unsigned int)gw.addr[1],
-					       (unsigned int)gw.addr[2], (unsigned int)gw.addr[3]);
-		} else {
-			ove_lxp_console_write("[demo] eth0 address unavailable after bring-up\n");
-		}
+	ove_sockaddr_t ip = {0}, gw = {0};
+	if (ove_lxp_host_netif_get_addr(&g_linux_host, &ip, &gw, NULL) == OVE_OK) {
+		ove_lxp_console_printf("[demo] eth0 up ip=%u.%u.%u.%u gw=%u.%u.%u.%u\n",
+				       (unsigned int)ip.addr[0], (unsigned int)ip.addr[1],
+				       (unsigned int)ip.addr[2], (unsigned int)ip.addr[3],
+				       (unsigned int)gw.addr[0], (unsigned int)gw.addr[1],
+				       (unsigned int)gw.addr[2], (unsigned int)gw.addr[3]);
+	} else {
+		ove_lxp_console_write("[demo] eth0 address unavailable after bring-up\n");
 	}
 #endif
 
@@ -285,7 +268,6 @@ static void demo_body(void *arg)
 	ove_lxp_launch_config_t cfg1 = {
 		.write_fn = consume_write,
 		.read_fn = feed_read,
-		.io_ctx = NULL,
 		.rt_scope_read = linux_rt_scope_proc_read,
 	};
 	ove_lxp_console_bind_diagnostics(&cfg1);
@@ -313,8 +295,6 @@ static void demo_body(void *arg)
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
 
 #if defined(CONFIG_OVE_LINUX_NET)
-	/* A real post-readiness TCP round trip over the same host transport used by
-	 * personality sockets and netfs. */
 	network_transport_smoke(&g_linux_host);
 #endif
 
