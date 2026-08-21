@@ -38,11 +38,24 @@ defconfig:
   # stock networking tools (wget, nc, ping) run under the personality. On QEMU the
   # board provides a shared-memory NIC; on real STM32F746 the LAN8742 driver.
   - CONFIG_OVE_LINUX_NET=y
+  # Product topology consumed by ove_lxp_host_init(). Keeping it in the app
+  # profile makes deployment policy visible without recreating native handles
+  # and provider composition in C.
+  - CONFIG_OVE_LINUX_NETIF_DHCP=n
+  - CONFIG_OVE_LINUX_NETIF_IPV4_ADDRESS="172.1.1.2"
+  - CONFIG_OVE_LINUX_NETIF_IPV4_NETMASK="255.255.255.0"
+  - CONFIG_OVE_LINUX_NETIF_IPV4_GATEWAY="172.1.1.1"
+  - CONFIG_OVE_LINUX_NETIF_ADDRESS_WAIT_MS=10000
   # Full compatibility includes the read-only 9P filesystem and remote FDPIC
   # execution. Copied text is published through the same strict W^X policy as
   # local execution; the hardened profile disables remote exec as an additional
   # attack-surface reduction.
   - CONFIG_OVE_LINUX_NETFS=y
+  - CONFIG_OVE_LINUX_NETFS_SERVER_IP="172.1.1.1"
+  - CONFIG_OVE_LINUX_NETFS_PORT=564
+  - CONFIG_OVE_LINUX_NETFS_ANAME="/srv/pi9"
+  - CONFIG_OVE_LINUX_NETFS_MOUNTPOINT="/mnt/pi"
+  - CONFIG_OVE_LINUX_NETFS_UNAME="root"
   - CONFIG_OVE_LINUX_NETFS_EXEC=y
   # Pseudo-terminal layer (/dev/ptmx + /dev/pts/N) for an interactive network login
   # shell — an SSH server (dropbear) runs the login shell on a pty slave.

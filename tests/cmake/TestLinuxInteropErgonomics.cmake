@@ -14,7 +14,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 1140)
+set(APP_SOURCE_LINE_CEILING 1040)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
 
 function(assert_line_ceiling PATH CEILING)
@@ -43,6 +43,12 @@ endif()
 if(APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|(^|[^A-Za-z0-9_])lxp_(run|host|dev|proc|syscall)[A-Za-z0-9_]*[ \t\r\n]*\\(")
     message(FATAL_ERROR "linux_interop app bypasses the public oveRTOS LXP facade")
+endif()
+
+if(APP_TEXT MATCHES
+   "loader_rootfs_image\\.h|ove/lxp_memory_layout\\.h|ove_lxp_host_init_cpio[ \t\r\n]*\\(")
+    message(FATAL_ERROR
+        "linux_interop app must use the configuration-driven LXP host bootstrap")
 endif()
 
 # Board registers and platform termination belong behind oveRTOS APIs.

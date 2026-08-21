@@ -684,6 +684,36 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_init_calls, 1);
 }
 
+static void test_host_facade_configured_bootstrap(void **state)
+{
+	(void)state;
+	ove_lxp_host_t host;
+	memset(&host, 0, sizeof(host));
+	g_host_init_calls = 0;
+	g_host_init_target = NULL;
+	memset(&g_host_init_config, 0, sizeof(g_host_init_config));
+
+	assert_int_equal(ove_lxp_host_init(&host), OVE_OK);
+	assert_int_equal(g_host_init_calls, 1);
+	assert_true(host_storage_contains(&host, g_host_init_target, sizeof(*g_host_init_target)));
+	assert_non_null(g_host_init_config.rootfs_image);
+	assert_int_equal(g_host_init_config.rootfs_image_size, 4u);
+	assert_memory_equal(g_host_init_config.rootfs_image,
+			    ((const unsigned char[]){0x30, 0x37, 0x30, 0x37}), 4u);
+	assert_non_null(g_host_init_config.netif);
+	assert_true(host_storage_contains(&host, g_host_init_config.netif,
+					  sizeof(ove_netif_storage_t)));
+	assert_non_null(g_host_init_config.netfs_config);
+	assert_string_equal(g_host_init_config.netfs_config->mountpoint, "/mnt/test9p");
+	assert_memory_equal(g_host_init_config.netfs_config->server_ip,
+			    ((const uint8_t[]){172, 1, 1, 1}), 4u);
+	assert_int_equal(g_host_init_config.netfs_config->port, 564);
+	assert_string_equal(g_host_init_config.netfs_config->aname, "/srv/test9p");
+	assert_string_equal(g_host_init_config.netfs_config->uname, "test-root");
+
+	ove_lxp_host_deinit(&host);
+}
+
 static void test_observability_facade_copies_contract(void **state)
 {
 	(void)state;
@@ -968,6 +998,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_fs_adapter_async_cancel_retires_owner),
 		cmocka_unit_test(test_adapter_open_close),
 		cmocka_unit_test(test_host_facade_owns_composition),
+		cmocka_unit_test(test_host_facade_configured_bootstrap),
 		cmocka_unit_test(test_observability_facade_copies_contract),
 		cmocka_unit_test(test_console_adapter_binds_only_console_policy),
 		cmocka_unit_test(test_thread_adapter_copies_contract),

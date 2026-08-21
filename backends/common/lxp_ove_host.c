@@ -14,6 +14,14 @@
 
 #include <string.h>
 
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+#include "ove/lxp_memory_layout.h"
+#else
+#include "loader_rootfs_image.h"
+#endif
+
 extern const lxp_os_ops_t g_lxp_host_engine;
 
 #if defined(CONFIG_OVE_LINUX_NET)
@@ -97,6 +105,61 @@ void ove_lxp_host_deinit(ove_lxp_host_t *host)
 		ove_netif_deinit(impl->netif);
 #endif
 	host_runtime_reset(impl);
+}
+
+#if defined(CONFIG_OVE_LINUX_NET)
+static int configured_ipv4(const char *text, ove_sockaddr_t *address)
+{
+	uint8_t octets[4];
+	int rc = parse_ipv4(text, octets);
+	if (rc != OVE_OK)
+		return rc;
+	ove_sockaddr_ipv4(address, octets[0], octets[1], octets[2], octets[3], 0);
+	return OVE_OK;
+}
+#endif
+
+int ove_lxp_host_init(ove_lxp_host_t *host)
+{
+	if (!host)
+		return OVE_ERR_INVALID_PARAM;
+	ove_lxp_host_config_t config = {0};
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+	config.rootfs_image = (const void *)OVE_LXP_ROOTFS_BASE;
+	config.rootfs_image_size = (size_t)OVE_LXP_ROOTFS_SIZE;
+#else
+	config.rootfs_image = ove_test_rootfs_cpio;
+	config.rootfs_image_size = (size_t)ove_test_rootfs_cpio_len;
+#endif
+
+#if defined(CONFIG_OVE_LINUX_NET)
+	ove_netif_config_t netif = {0};
+#if defined(CONFIG_OVE_LINUX_NETIF_DHCP)
+	netif.use_dhcp = 1;
+#else
+	if (configured_ipv4(CONFIG_OVE_LINUX_NETIF_IPV4_ADDRESS, &netif.static_ip) != OVE_OK ||
+	    configured_ipv4(CONFIG_OVE_LINUX_NETIF_IPV4_NETMASK, &netif.netmask) != OVE_OK ||
+	    configured_ipv4(CONFIG_OVE_LINUX_NETIF_IPV4_GATEWAY, &netif.gateway) != OVE_OK)
+		return OVE_ERR_INVALID_PARAM;
+#endif
+	config.netif_config = &netif;
+	config.netif_address_wait_ms = CONFIG_OVE_LINUX_NETIF_ADDRESS_WAIT_MS;
+#endif
+
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	const ove_lxp_netfs_config_t netfs = {
+		.mountpoint = CONFIG_OVE_LINUX_NETFS_MOUNTPOINT,
+		.server_ipv4 = CONFIG_OVE_LINUX_NETFS_SERVER_IP,
+		.port = (uint16_t)CONFIG_OVE_LINUX_NETFS_PORT,
+		.aname = CONFIG_OVE_LINUX_NETFS_ANAME,
+		.uname = CONFIG_OVE_LINUX_NETFS_UNAME,
+	};
+	config.netfs_config = &netfs;
+#endif
+
+	return ove_lxp_host_init_cpio(host, &config);
 }
 
 int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *config)

@@ -433,11 +433,16 @@ those resources.
 
 ## Host and network ownership
 
-The app supplies product topology—the rootfs image, `172.1.1.2/24`, gateway
-`172.1.1.1`, and the configured 9P endpoint—to `ove_lxp_host_init_cpio()`.
+The app profile declares product topology—the rootfs placement,
+`172.1.1.2/24`, gateway `172.1.1.1`, and the 9P endpoint—as
+`CONFIG_OVE_LINUX_*` settings. `ove_lxp_host_init()` consumes that build
+configuration; application C code does not reconstruct native handles or
+provider composition. `ove_lxp_host_init_cpio()` remains available to products
+that genuinely select their rootfs or topology at runtime.
+
 `ove_lxp_host_t` owns the fixed CPIO file/path workspace, native interface
 storage, bring-up, bounded address wait, rollback, teardown, provider selection,
-and the immutable LXP host. Workspace capacities come from
+and immutable LXP host. Workspace capacities come from
 `CONFIG_OVE_LINUX_ROOTFS_FILE_CAPACITY` and
 `CONFIG_OVE_LINUX_ROOTFS_NAME_CAPACITY`; the latter retains the smaller proven
 STM32 NuttX bound; the general 15 KiB pathname bound retains more than 4 KiB
@@ -700,8 +705,9 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 
 The LXP host facade parses and publishes the selected CPIO once, retains the
 provider composition, and supplies the immutable rootfs fields to each launch.
-The application supplies only image/storage policy and per-launch console,
-diagnostic, and display options. The personality core and selected port under
-`modules/lxp/ports/{freertos,nuttx,zephyr}/` are pulled in by the generated
-`ove_config.cmake`; oveRTOS's corresponding `*_lxp_host.c` file supplies board
-storage, priorities, memory policy, and stable-HAL callbacks.
+The application manifest supplies build-time topology while its C code supplies
+only per-launch console, diagnostic, and display policy. The personality core
+and selected port under `modules/lxp/ports/{freertos,nuttx,zephyr}/` are pulled
+in by the generated `ove_config.cmake`; oveRTOS's corresponding
+`*_lxp_host.c` file supplies board storage, priorities, memory policy, and
+stable-HAL callbacks.

@@ -86,6 +86,16 @@ typedef union ove_lxp_host {
 	uint8_t _opaque[OVE_LXP_HOST_STORAGE_SIZE];
 } ove_lxp_host_t;
 
+/**
+ * Bring up the build-configured Linux host.
+ *
+ * Rootfs placement, native interface topology, and optional netfs topology are
+ * taken from CONFIG_OVE_LINUX_* settings. This is the normal application entry
+ * point; use ove_lxp_host_init_cpio() only when supplying a runtime-selected
+ * rootfs or network composition.
+ */
+int ove_lxp_host_init(ove_lxp_host_t *host);
+
 /** Bring up optional native networking, then parse and publish the rootfs. */
 int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *config);
 
