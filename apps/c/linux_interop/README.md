@@ -269,6 +269,21 @@ equal-priority ready-list rotation whenever higher-priority host work wakes.
 Every Linux task remains below the coordinator and host RT classes, and global
 `configUSE_TIME_SLICING` remains disabled in the final Full configuration.
 
+Canonical LXP also carries a hardware-independent version of this regression in
+its standalone FreeRTOS QEMU harness. Milestone M9 runs identical `CLONE_VM`
+workers at nice -20 and nice 19 while a higher-priority native task wakes at
+1 kHz, then asserts forward progress, a bounded weighted ratio, and the native
+wakeup count:
+
+```sh
+cd modules/lxp/ports/qemu-mps2
+M=9 bash run.sh
+```
+
+That stress measured a 33-word peak for the run-scoped selector stack. The
+production port retains 128 words (512 bytes), with FreeRTOS stack-overflow
+checking still enabled.
+
 ## Two-channel host real-time proof (STM32F746G-DISCO)
 
 The hardware build enables a scope-friendly experiment by default. It keeps

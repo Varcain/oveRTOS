@@ -814,7 +814,7 @@ resources only to FreeRTOS:
 
 | Engine | Iteration 19 flash | Iteration 20 flash | Delta | Fixed RAM | RAM delta |
 |---|---:|---:|---:|---:|---:|
-| FreeRTOS | 311,492 B | 312,716 B | +1,224 B | 242,080 B | +1,032 B |
+| FreeRTOS | 311,492 B | 312,716 B | +1,224 B | 242,336 B | +1,288 B |
 | NuttX | 356,380 B | 356,380 B | 0 B | 231,044 B | 0 B |
 | Zephyr | 356,264 B | 356,264 B | 0 B | 247 KiB | 0 B |
 
@@ -829,3 +829,47 @@ The accompanying lifetime RT snapshot recorded 151,041 releases and executions,
 zero misses, late finishes, IRQ overruns, or pending work, a 7.426 us average
 dispatch, and an 83.000 us maximum. The proportional-share correction therefore
 does not trade away the host's real-time scheduling promise.
+
+## Iteration 21: executable FreeRTOS share regression
+
+Canonical LXP now owns a standalone QEMU regression for the scheduling failure
+closed in Iteration 20. Milestone M9 creates two co-resident `CLONE_VM` guest
+workers, applies nice -20 and nice 19 independently, and lets them run the same
+integer workload for a two-second interval. Timing remains in their sleeping
+parent, so the worker counts measure scheduled CPU service rather than repeated
+clock syscalls. Both workers must make progress and their work ratio must remain
+between 8:1 and 40:1.
+
+The QEMU host simultaneously wakes a priority-4 native FreeRTOS task every 1 ms.
+That task is above both the priority-1 guests and priority-2 LXP selector, and M9
+requires at least 1,000 native wakeups before it can pass. The test therefore
+reproduces the scheduler-selection pressure which caused Iteration 19's 396:392
+near-tie; it cannot pass merely because the host-preemption workload is absent.
+Three consecutive runs measured ratios of 22:1, 22:1, and 21:1. All standalone
+milestones M1 through M9 pass with the regenerated pinned guest fixture.
+
+A temporary FreeRTOS high-water probe measured 33 selector stack words (132 B)
+under M9. Canonical LXP now retains 128 words (512 B), nearly four times the
+observed peak, instead of the original 192 words. This removes 256 B from the
+selector's static `.bss`; the production build keeps FreeRTOS's level-2 overflow
+checking enabled. The corrected Iteration 20 row above reports the original
+192-word composition rather than the later reduced stack.
+
+Current production compositions all build. NuttX and Zephyr compile no changed
+runtime source in this iteration, and all three clean flash footprints remain
+byte-for-byte at their Iteration 20 values. The FreeRTOS change is entirely a
+static-memory reduction:
+
+| Engine | Iteration 20 flash | Iteration 21 flash | Delta | Fixed RAM | RAM delta |
+|---|---:|---:|---:|---:|---:|
+| FreeRTOS | 312,716 B | 312,716 B | 0 B | 242,080 B | -256 B |
+| NuttX | 356,380 B | 356,380 B | 0 B | 231,044 B | 0 B |
+| Zephyr | 356,264 B | 356,264 B | 0 B | 247 KiB | 0 B |
+
+The committed FreeRTOS image was flashed and tested exclusively over SSH. Under
+the board's 1 kHz RT-scope task, nice -20 received 595 CPU ticks while nice 19
+received 31, a 19.19:1 share. The accompanying lifetime snapshot recorded
+49,455 releases and executions, zero misses, late finishes, IRQ overruns, or
+pending work, a 7.370 us average dispatch, and a 73.667 us maximum. The smaller
+selector stack therefore preserves both proportional progress and the host
+real-time promise on STM32F746 hardware.
