@@ -515,6 +515,7 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	info->priority = (int)k_thread_priority_get((k_tid_t)thread);
 
 	info->cpu_percent_x100 = 0;
+	info->valid_fields = 0;
 
 	/* Keep the monitor-locked callback bounded. A full stack-fill scan can
 	 * touch hundreds of KiB and is not safe inside this snapshot. */
@@ -522,6 +523,7 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	info->stack_size = 0;
 #if defined(CONFIG_THREAD_STACK_INFO)
 	info->stack_size = thread->stack_info.size;
+	info->valid_fields |= OVE_THREAD_INFO_VALID_STACK_SIZE;
 #endif
 
 	/* CPU utilisation + state times */
@@ -539,11 +541,8 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 				 * core cycle as one microsecond. */
 				info->state_times.running_us =
 					k_cyc_to_us_floor64(rt.execution_cycles);
-				info->state_times.blocked_us =
-					(ctx->total_cycles > rt.execution_cycles)
-						? k_cyc_to_us_floor64(ctx->total_cycles -
-								      rt.execution_cycles)
-						: 0;
+				info->valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT |
+						      OVE_THREAD_INFO_VALID_RUNNING_TIME;
 			}
 		}
 	}

@@ -40,6 +40,25 @@ static int result_to_lxp(int result)
 	}
 }
 
+static uint32_t thread_fields_to_lxp(uint32_t fields)
+{
+	uint32_t mapped = 0;
+#define MAP_FIELD(name)                                         \
+	do {                                                    \
+		if (fields & OVE_THREAD_INFO_VALID_##name)      \
+			mapped |= LXP_THREAD_INFO_VALID_##name; \
+	} while (0)
+	MAP_FIELD(STACK_USED);
+	MAP_FIELD(STACK_SIZE);
+	MAP_FIELD(CPU_PERCENT);
+	MAP_FIELD(RUNNING_TIME);
+	MAP_FIELD(READY_TIME);
+	MAP_FIELD(BLOCKED_TIME);
+	MAP_FIELD(SUSPENDED_TIME);
+#undef MAP_FIELD
+	return mapped;
+}
+
 void lxp_ove_thread_info_copy(struct lxp_thread_info *out, const struct ove_thread_info *host,
 			      lxp_ove_slot_lookup_t slot_lookup)
 {
@@ -48,13 +67,26 @@ void lxp_ove_thread_info_copy(struct lxp_thread_info *out, const struct ove_thre
 	out->lxp_slot = slot_lookup ? slot_lookup(host->identity) : LXP_THREAD_SLOT_NONE;
 	out->state = thread_state_to_lxp(host->state);
 	out->priority = host->priority;
-	out->stack_used = host->stack_used;
-	out->stack_size = host->stack_size;
-	out->cpu_percent_x100 = host->cpu_percent_x100;
-	out->state_times.running_us = host->state_times.running_us;
-	out->state_times.ready_us = host->state_times.ready_us;
-	out->state_times.blocked_us = host->state_times.blocked_us;
-	out->state_times.suspended_us = host->state_times.suspended_us;
+	out->valid_fields = thread_fields_to_lxp(host->valid_fields);
+	out->stack_used = (out->valid_fields & LXP_THREAD_INFO_VALID_STACK_USED) ? host->stack_used
+										 : 0;
+	out->stack_size = (out->valid_fields & LXP_THREAD_INFO_VALID_STACK_SIZE) ? host->stack_size
+										 : 0;
+	out->cpu_percent_x100 = (out->valid_fields & LXP_THREAD_INFO_VALID_CPU_PERCENT)
+					? host->cpu_percent_x100
+					: 0;
+	out->state_times.running_us = (out->valid_fields & LXP_THREAD_INFO_VALID_RUNNING_TIME)
+					      ? host->state_times.running_us
+					      : 0;
+	out->state_times.ready_us = (out->valid_fields & LXP_THREAD_INFO_VALID_READY_TIME)
+					    ? host->state_times.ready_us
+					    : 0;
+	out->state_times.blocked_us = (out->valid_fields & LXP_THREAD_INFO_VALID_BLOCKED_TIME)
+					      ? host->state_times.blocked_us
+					      : 0;
+	out->state_times.suspended_us = (out->valid_fields & LXP_THREAD_INFO_VALID_SUSPENDED_TIME)
+						? host->state_times.suspended_us
+						: 0;
 }
 
 int lxp_ove_thread_snapshot_read(struct lxp_ove_thread_snapshot *snapshot,

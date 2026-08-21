@@ -925,12 +925,16 @@ static void test_thread_adapter_copies_contract(void **state)
 		.stack_used = 320,
 		.stack_size = 1024,
 		.cpu_percent_x100 = 1250,
-		.state_times = {
-			.running_us = 100,
-			.ready_us = 200,
-			.blocked_us = 300,
-			.suspended_us = 400,
-		},
+		.valid_fields =
+			OVE_THREAD_INFO_VALID_STACK_USED | OVE_THREAD_INFO_VALID_STACK_SIZE |
+			OVE_THREAD_INFO_VALID_CPU_PERCENT | OVE_THREAD_INFO_VALID_STATE_TIMES,
+		.state_times =
+			{
+				.running_us = 100,
+				.ready_us = 200,
+				.blocked_us = 300,
+				.suspended_us = 400,
+			},
 	};
 	struct lxp_thread_info out = {0};
 
@@ -944,10 +948,43 @@ static void test_thread_adapter_copies_contract(void **state)
 	assert_int_equal(out.stack_used, host.stack_used);
 	assert_int_equal(out.stack_size, host.stack_size);
 	assert_int_equal(out.cpu_percent_x100, host.cpu_percent_x100);
+	assert_int_equal(out.valid_fields, LXP_THREAD_INFO_VALID_STACK_USED |
+						   LXP_THREAD_INFO_VALID_STACK_SIZE |
+						   LXP_THREAD_INFO_VALID_CPU_PERCENT |
+						   LXP_THREAD_INFO_VALID_STATE_TIMES);
 	assert_int_equal(out.state_times.running_us, host.state_times.running_us);
 	assert_int_equal(out.state_times.ready_us, host.state_times.ready_us);
 	assert_int_equal(out.state_times.blocked_us, host.state_times.blocked_us);
 	assert_int_equal(out.state_times.suspended_us, host.state_times.suspended_us);
+}
+
+static void test_thread_adapter_zeros_unavailable_metrics(void **state)
+{
+	(void)state;
+	const struct ove_thread_info host = {
+		.stack_used = 320,
+		.stack_size = 1024,
+		.cpu_percent_x100 = 1250,
+		.state_times =
+			{
+				.running_us = 100,
+				.ready_us = 200,
+				.blocked_us = 300,
+				.suspended_us = 400,
+			},
+	};
+	struct lxp_thread_info out = {0};
+
+	lxp_ove_thread_info_copy(&out, &host, NULL);
+
+	assert_int_equal(out.valid_fields, 0);
+	assert_int_equal(out.stack_used, 0);
+	assert_int_equal(out.stack_size, 0);
+	assert_int_equal(out.cpu_percent_x100, 0);
+	assert_int_equal(out.state_times.running_us, 0);
+	assert_int_equal(out.state_times.ready_us, 0);
+	assert_int_equal(out.state_times.blocked_us, 0);
+	assert_int_equal(out.state_times.suspended_us, 0);
 }
 
 static void test_thread_adapter_maps_unknown_state(void **state)
@@ -1025,6 +1062,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_console_adapter_binds_only_console_policy),
 		cmocka_unit_test(test_console_adapter_binds_diagnostics_separately),
 		cmocka_unit_test(test_thread_adapter_copies_contract),
+		cmocka_unit_test(test_thread_adapter_zeros_unavailable_metrics),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
 		cmocka_unit_test(test_svc_metrics_own_window_and_lifetime),
 	};

@@ -522,6 +522,9 @@ reaches into another module's RTOS handles.
 Generic `ove_thread_info` snapshots likewise carry only an opaque native
 identity. The private LXP thread adapter resolves that identity to a guest slot;
 the generic RTOS thread API does not store or expose personality ownership.
+Optional stack, CPU, and per-state-time values carry granular validity bits;
+the seam translates those bits explicitly and zeros unavailable values instead
+of turning an unsupported metric into an apparent measurement.
 
 Every public record is an OVE-owned, versioned type. The common backend takes
 the canonical LXP snapshot into private temporary storage and copies fields

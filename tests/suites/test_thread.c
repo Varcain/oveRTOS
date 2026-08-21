@@ -314,7 +314,17 @@ static void test_thread_list_identity(void **state)
 	assert_true(rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL || rc == OVE_ERR_NOT_SUPPORTED);
 	if (rc != OVE_ERR_NOT_SUPPORTED) {
 		bool found = false;
+		const uint32_t known_fields =
+			OVE_THREAD_INFO_VALID_STACK_USED | OVE_THREAD_INFO_VALID_STACK_SIZE |
+			OVE_THREAD_INFO_VALID_CPU_PERCENT | OVE_THREAD_INFO_VALID_STATE_TIMES;
 		for (size_t i = 0; i < count; i++) {
+			assert_int_equal(info[i].valid_fields & ~known_fields, 0);
+			if (!ove_thread_info_has(&info[i], OVE_THREAD_INFO_VALID_STACK_USED))
+				assert_int_equal(info[i].stack_used, 0);
+			if (!ove_thread_info_has(&info[i], OVE_THREAD_INFO_VALID_STACK_SIZE))
+				assert_int_equal(info[i].stack_size, 0);
+			if (!ove_thread_info_has(&info[i], OVE_THREAD_INFO_VALID_CPU_PERCENT))
+				assert_int_equal(info[i].cpu_percent_x100, 0);
 			if (strcmp(info[i].name, "tenum") == 0) {
 				assert_true(info[i].identity != 0);
 				found = true;

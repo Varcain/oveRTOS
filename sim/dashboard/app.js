@@ -1201,6 +1201,16 @@ var THREAD_PRIO_NAMES = [
     "above-normal", "high", "realtime", "critical"
 ];
 
+var THREAD_VALID_STACK_USED     = 1 << 0;
+var THREAD_VALID_STACK_SIZE     = 1 << 1;
+var THREAD_VALID_CPU_PERCENT    = 1 << 2;
+var THREAD_VALID_RUNNING_TIME   = 1 << 3;
+var THREAD_VALID_READY_TIME     = 1 << 4;
+var THREAD_VALID_BLOCKED_TIME   = 1 << 5;
+var THREAD_VALID_SUSPENDED_TIME = 1 << 6;
+var THREAD_VALID_STATE_TIMES = THREAD_VALID_RUNNING_TIME | THREAD_VALID_READY_TIME
+                             | THREAD_VALID_BLOCKED_TIME | THREAD_VALID_SUSPENDED_TIME;
+
 function handleThreadSnapshot(buf, off) {
     ensureWindow("threads");
     var view = new DataView(buf, off);
@@ -1234,12 +1244,13 @@ function handleThreadSnapshot(buf, off) {
     for (var i = 0; i < threadCount; i++) {
         if (pos >= len) break;
         var nameLen = view.getUint8(pos); pos += 1;
-        if (pos + nameLen + 10 > len) break;
+        if (pos + nameLen + 34 > len) break;
         var nameBytes = new Uint8Array(buf, off + pos, nameLen);
         var name = new TextDecoder().decode(nameBytes);
         pos += nameLen;
         var state = view.getUint8(pos); pos += 1;
         var priority = view.getUint8(pos); pos += 1;
+        var validFields = view.getUint32(pos, true); pos += 4;
         var stackUsed = view.getUint32(pos, true); pos += 4;
         var stackSize = view.getUint32(pos, true); pos += 4;
         var cpuX100 = view.getUint32(pos, true); pos += 4;
@@ -1248,6 +1259,7 @@ function handleThreadSnapshot(buf, off) {
         var stBlocked = view.getUint32(pos, true); pos += 4;
         var stSuspended = view.getUint32(pos, true); pos += 4;
         threads.push({ name: name, state: state, priority: priority,
+                        validFields: validFields,
                         stackUsed: stackUsed, stackSize: stackSize,
                         cpuX100: cpuX100,
                         stRunning: stRunning, stReady: stReady,
@@ -1272,13 +1284,14 @@ function handleThreadSnapshot(buf, off) {
         var stIdx = t.state < THREAD_STATE_NAMES.length ? t.state : 5;
         var stName = THREAD_STATE_NAMES[stIdx];
         var stCss = THREAD_STATE_CSS[stIdx];
-        var cpuStr = (t.cpuX100 / 100).toFixed(1);
+        var cpuStr = (t.validFields & THREAD_VALID_CPU_PERCENT)
+                   ? (t.cpuX100 / 100).toFixed(1) + "%" : "--";
         html += "<tr>"
               + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
               + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
               + "<td>" + (THREAD_PRIO_NAMES[t.priority] || t.priority) + "</td>"
-              + "<td class=\"td-num\">" + _fmtStack(t.stackUsed, t.stackSize) + "</td>"
-              + "<td class=\"td-num\">" + cpuStr + "%</td>"
+              + "<td class=\"td-num\">" + _fmtStack(t) + "</td>"
+              + "<td class=\"td-num\">" + cpuStr + "</td>"
               + "<td>" + _fmtStateBar(t) + "</td>"
               + "</tr>";
     }
@@ -1286,6 +1299,8 @@ function handleThreadSnapshot(buf, off) {
 }
 
 function _fmtStateBar(t) {
+    if ((t.validFields & THREAD_VALID_STATE_TIMES) !== THREAD_VALID_STATE_TIMES)
+        return "<span class=\"td-num\" style=\"color:#555\">--</span>";
     var r = (t.stRunning || 0) / 100;
     var rd = (t.stReady || 0) / 100;
     var b = (t.stBlocked || 0) / 100;
@@ -1305,11 +1320,15 @@ function _fmtStateBar(t) {
          + "</div>";
 }
 
-function _fmtStack(used, total) {
-    if (total > 0)
-        return _fmtBytes(used) + " / " + _fmtBytes(total);
-    if (used > 0)
-        return _fmtBytes(used);
+function _fmtStack(t) {
+    var usedValid = (t.validFields & THREAD_VALID_STACK_USED) !== 0;
+    var sizeValid = (t.validFields & THREAD_VALID_STACK_SIZE) !== 0;
+    if (usedValid && sizeValid)
+        return _fmtBytes(t.stackUsed) + " / " + _fmtBytes(t.stackSize);
+    if (usedValid)
+        return _fmtBytes(t.stackUsed);
+    if (sizeValid)
+        return "-- / " + _fmtBytes(t.stackSize);
     return "--";
 }
 

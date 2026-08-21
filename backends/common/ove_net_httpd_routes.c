@@ -364,7 +364,7 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 
 	ove_thread_list(threads, 16, &count);
 
-	char buf[2048];
+	char buf[4096];
 	int off = 0;
 
 	off += snprintf(buf + off, sizeof(buf) - (size_t)off, "{\"threads\":[");
@@ -374,10 +374,28 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 			off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",");
 		off += snprintf(buf + off, sizeof(buf) - (size_t)off,
 				"{\"name\":\"%s\",\"state\":\"%s\","
-				"\"priority\":%d,\"stack_used\":%zu}",
+				"\"priority\":%d,\"valid_fields\":%u,\"stack_used\":",
 				threads[i].name ? threads[i].name : "?",
 				state_str(threads[i].state), threads[i].priority,
-				threads[i].stack_used);
+				(unsigned int)threads[i].valid_fields);
+		if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_STACK_USED))
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%zu",
+					threads[i].stack_used);
+		else
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "null");
+		off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",\"stack_size\":");
+		if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_STACK_SIZE))
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%zu",
+					threads[i].stack_size);
+		else
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "null");
+		off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",\"cpu_x100\":");
+		if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_CPU_PERCENT))
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%u",
+					(unsigned int)threads[i].cpu_percent_x100);
+		else
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "null");
+		off += snprintf(buf + off, sizeof(buf) - (size_t)off, "}");
 		if ((size_t)off >= sizeof(buf) - 2)
 			break;
 	}

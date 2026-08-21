@@ -48,8 +48,8 @@ static struct sim_debug_ctx debug_ctx;
 /* ── Snapshot serialisation ────────────────────────────────────────── */
 
 /* Maximum binary snapshot size:
- *   1 (count) + 16 (mem) + 16 * (1+16+1+1+4+4) = 17 + 16*27 = 449 bytes */
-#define SNAPSHOT_BUF_SIZE 512
+ *   1 (count) + 16 (mem) + 16 * (1+16+1+1+4+4+4+4+16) = 833 bytes */
+#define SNAPSHOT_BUF_SIZE 1024
 
 static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 {
@@ -89,8 +89,8 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		if (name_len > OVE_SIM_DEBUG_MAX_NAME_LEN)
 			name_len = OVE_SIM_DEBUG_MAX_NAME_LEN;
 
-		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 + 16 = name_len + 31 */
-		if (p + name_len + 31 > end)
+		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 + 4 + 16 = name_len + 35 */
+		if (p + name_len + 35 > end)
 			break;
 
 		*p++ = (uint8_t)name_len;
@@ -99,6 +99,9 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 
 		*p++ = (uint8_t)threads[i].state;
 		*p++ = (uint8_t)threads[i].priority;
+
+		memcpy(p, &threads[i].valid_fields, 4);
+		p += 4;
 
 		uint32_t stack_used = (uint32_t)threads[i].stack_used;
 		memcpy(p, &stack_used, 4);
@@ -117,7 +120,8 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		uint64_t total_us =
 			st->running_us + st->ready_us + st->blocked_us + st->suspended_us;
 		uint32_t st_pct[4] = {0, 0, 0, 0};
-		if (total_us > 0) {
+		if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_STATE_TIMES) &&
+		    total_us > 0) {
 			st_pct[0] = (uint32_t)(st->running_us * 10000U / total_us);
 			st_pct[1] = (uint32_t)(st->ready_us * 10000U / total_us);
 			st_pct[2] = (uint32_t)(st->blocked_us * 10000U / total_us);

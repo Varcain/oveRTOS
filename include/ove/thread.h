@@ -354,6 +354,20 @@ struct ove_thread_state_times {
 	uint64_t suspended_us; /**< Time in SUSPENDED state. */
 };
 
+/** @name Optional fields populated by @ref ove_thread_list
+ * @{ */
+#define OVE_THREAD_INFO_VALID_STACK_USED (1u << 0)
+#define OVE_THREAD_INFO_VALID_STACK_SIZE (1u << 1)
+#define OVE_THREAD_INFO_VALID_CPU_PERCENT (1u << 2)
+#define OVE_THREAD_INFO_VALID_RUNNING_TIME (1u << 3)
+#define OVE_THREAD_INFO_VALID_READY_TIME (1u << 4)
+#define OVE_THREAD_INFO_VALID_BLOCKED_TIME (1u << 5)
+#define OVE_THREAD_INFO_VALID_SUSPENDED_TIME (1u << 6)
+#define OVE_THREAD_INFO_VALID_STATE_TIMES                                        \
+	(OVE_THREAD_INFO_VALID_RUNNING_TIME | OVE_THREAD_INFO_VALID_READY_TIME | \
+	 OVE_THREAD_INFO_VALID_BLOCKED_TIME | OVE_THREAD_INFO_VALID_SUSPENDED_TIME)
+/** @} */
+
 /**
  * @brief Snapshot of a single thread's info.
  */
@@ -362,11 +376,20 @@ struct ove_thread_info {
 	uintptr_t identity;	   /**< Opaque native identity; equality only. */
 	ove_thread_state_t state;  /**< Execution state. */
 	int priority;		   /**< Priority level. */
-	size_t stack_used;	   /**< Stack high-water mark (bytes), or 0 if unavailable. */
-	size_t stack_size;	   /**< Total stack allocation (bytes), or 0 if unavailable. */
+	size_t stack_used;	   /**< Stack high-water mark; valid when its flag is set. */
+	size_t stack_size;	   /**< Total stack allocation; valid when its flag is set. */
 	uint32_t cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
+	uint32_t valid_fields;	   /**< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags. */
 	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
 };
+
+/**
+ * @brief Test whether all requested optional snapshot fields are valid.
+ */
+static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint32_t fields)
+{
+	return info != NULL && (info->valid_fields & fields) == fields;
+}
 
 /**
  * @brief List all threads in the system.
@@ -374,8 +397,12 @@ struct ove_thread_info {
  * @param[out] out          Array to fill with thread info.
  * @param[in]  max_count    Maximum entries in @p out.
  * @param[out] actual_count Number of entries written (may be NULL).
+ * Optional metrics are valid only when their corresponding
+ * @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise
+ * just deterministic initialization, not a measurement.
+ *
  * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
- *         or OVE_ERR_NOT_SUPPORTED if unavailable.
+ *         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.
  */
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
 

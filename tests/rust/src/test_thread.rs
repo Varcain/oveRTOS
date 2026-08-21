@@ -239,13 +239,14 @@ fn test_thread_list_smoke() {
         identity: 0,
         state: 0 as ffi::ove_thread_state_t,
         priority: 0,
-        stack_used: 0,
-        stack_size: 0,
-        cpu_percent_x100: 0,
-        running_us: 0,
-        ready_us: 0,
-        blocked_us: 0,
-        suspended_us: 0,
+        valid_fields: 0,
+        stack_used: None,
+        stack_size: None,
+        cpu_percent_x100: None,
+        running_us: None,
+        ready_us: None,
+        blocked_us: None,
+        suspended_us: None,
     }; 16];
     let cap = buf.len();
     match ove::thread::thread_list(&mut buf) {
@@ -283,13 +284,14 @@ fn test_thread_list_with_spawned() {
         identity: 0,
         state: 0 as ffi::ove_thread_state_t,
         priority: 0,
-        stack_used: 0,
-        stack_size: 0,
-        cpu_percent_x100: 0,
-        running_us: 0,
-        ready_us: 0,
-        blocked_us: 0,
-        suspended_us: 0,
+        valid_fields: 0,
+        stack_used: None,
+        stack_size: None,
+        cpu_percent_x100: None,
+        running_us: None,
+        ready_us: None,
+        blocked_us: None,
+        suspended_us: None,
     }; 16];
     match ove::thread::thread_list(&mut buf) {
         Ok(slice) => {
@@ -299,6 +301,7 @@ fn test_thread_list_with_spawned() {
                 let _ = info.name;
                 let _ = info.state;
                 let _ = info.priority;
+                let _ = info.valid_fields;
                 let _ = info.stack_used;
                 let _ = info.identity;
                 let _ = info.stack_size;

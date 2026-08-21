@@ -226,6 +226,10 @@ static void test_cpp_thread_list_layout_compat(void **state)
 		      "(zero-copy pass-through contract)");
 	static_assert(sizeof(ove::ThreadInfo) == sizeof(struct ove_thread_info),
 		      "ThreadInfo size must equal ove_thread_info");
+	ove::ThreadInfo info{};
+	info.valid_fields = OVE_THREAD_INFO_VALID_STACK_SIZE;
+	assert_true(ove::thread_info_has(info, ove::ThreadInfoField::StackSize));
+	assert_false(ove::thread_info_has(info, ove::ThreadInfoField::StackUsed));
 }
 
 static void test_cpp_thread_list_no_binding_cap(void **state)

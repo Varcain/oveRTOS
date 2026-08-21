@@ -78,6 +78,7 @@ struct ove_thread {
 	 * callers don't collapse the delta window to near-zero. */
 	uint64_t cpu_prev_ns;
 	uint32_t cpu_pct_x100;
+	uint8_t cpu_pct_valid;
 #ifdef CONFIG_OVE_PROFILER
 	/* 1 = a SIGRTMIN is in flight for this thread and the handler
 	 * hasn't consumed it yet. Sampler uses this to avoid queuing

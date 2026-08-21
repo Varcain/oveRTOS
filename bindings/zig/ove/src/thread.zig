@@ -622,9 +622,17 @@ pub fn getMemStats() Error!MemStats {
 
 pub const ThreadInfo = struct {
     name: [*:0]const u8,
+    identity: usize,
     state: State,
     priority: i32,
-    stack_used: usize,
+    valid_fields: u32,
+    stack_used: ?usize,
+    stack_size: ?usize,
+    cpu_percent_x100: ?u32,
+    running_us: ?u64,
+    ready_us: ?u64,
+    blocked_us: ?u64,
+    suspended_us: ?u64,
 };
 
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
@@ -635,9 +643,38 @@ pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     for (0..actual) |i| {
         buf[i] = .{
             .name = @ptrCast(raw[i].name),
+            .identity = raw[i].identity,
             .state = @enumFromInt(raw[i].state),
             .priority = raw[i].priority,
-            .stack_used = raw[i].stack_used,
+            .valid_fields = raw[i].valid_fields,
+            .stack_used = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_STACK_USED != 0)
+                raw[i].stack_used
+            else
+                null,
+            .stack_size = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_STACK_SIZE != 0)
+                raw[i].stack_size
+            else
+                null,
+            .cpu_percent_x100 = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_CPU_PERCENT != 0)
+                raw[i].cpu_percent_x100
+            else
+                null,
+            .running_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_RUNNING_TIME != 0)
+                raw[i].state_times.running_us
+            else
+                null,
+            .ready_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_READY_TIME != 0)
+                raw[i].state_times.ready_us
+            else
+                null,
+            .blocked_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_BLOCKED_TIME != 0)
+                raw[i].state_times.blocked_us
+            else
+                null,
+            .suspended_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_SUSPENDED_TIME != 0)
+                raw[i].state_times.suspended_us
+            else
+                null,
         };
     }
     return buf[0..actual];

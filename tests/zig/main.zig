@@ -874,6 +874,10 @@ fn testThreadList() !void {
         switch (info.state) {
             .running, .ready, .blocked, .suspended, .terminated, .unknown => {},
         }
+        try expect((info.stack_used != null) ==
+            (info.valid_fields & ove.ffi.OVE_THREAD_INFO_VALID_STACK_USED != 0));
+        try expect((info.running_us != null) ==
+            (info.valid_fields & ove.ffi.OVE_THREAD_INFO_VALID_RUNNING_TIME != 0));
     }
 }
 
