@@ -11,7 +11,6 @@ Split out of the original ``configure.py`` for navigability:
 - :mod:`templates`   — Jinja2 rendering of ove_config.h / .cmake / RTOS configs
 - :mod:`board_desc`  — board.yaml -> board_desc.h
 - :mod:`assets`      — app.yaml + image pipeline -> app_sources.cmake
-- :mod:`patches`     — RTOS source patching (legacy; build.py has its own)
 """
 
 import json
@@ -20,7 +19,6 @@ import os
 from .templates import render_template, generate_configs
 from .board_desc import generate_board_desc
 from .assets import generate_app_sources
-from .patches import apply_patches, apply_all_patches
 
 # Records the .config that generated/ was rendered from; read back by
 # ove build to refuse a stale configuration.
@@ -31,8 +29,6 @@ __all__ = [
     "generate_configs",
     "generate_board_desc",
     "generate_app_sources",
-    "apply_patches",
-    "apply_all_patches",
     "configure_all",
     "cmd_configure",
 ]

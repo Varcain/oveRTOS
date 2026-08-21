@@ -6,11 +6,14 @@
 
 """Build orchestration — dispatches to cmake per RTOS."""
 
+import hashlib
+import json
 import logging
 import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
@@ -78,41 +81,169 @@ def _preflight_check(ws):
         sys.exit(1)
 
 
-def _apply_patches(source_dir, patches_dir, stamp_path, label="patches",
-                   log_file=None):
-    """Apply .patch files from patches_dir to source_dir (idempotent).
+_PATCH_STATE_VERSION = 1
+_PATCH_STATE_FILE = ".ove_patch_state.json"
 
-    Uses stamp_path to track which patches have been applied.
-    Returns the list of newly applied patch names.
+
+def _collect_patch_series(layers):
+    """Return the complete ordered patch series for ``(label, dir)`` layers."""
+    series = []
+    for label, patches_dir in layers:
+        if not patches_dir or not os.path.isdir(patches_dir):
+            continue
+        for name in sorted(os.listdir(patches_dir)):
+            if name.endswith(".patch"):
+                series.append((label, os.path.join(patches_dir, name)))
+    return series
+
+
+def _git_capture(repo, args, *, binary=False):
+    """Run a read-only git query and return its output."""
+    result = subprocess.run(
+        ["git", *args], cwd=repo, capture_output=True,
+        text=not binary)
+    if result.returncode != 0:
+        stderr = result.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"git {' '.join(args)} failed in {repo}: {stderr.strip()}")
+    return result.stdout
+
+
+def _patch_manifest(source_dir, series):
+    """Describe the immutable source revision and complete ordered patch set."""
+    base = _git_capture(source_dir, ["rev-parse", "HEAD"]).strip()
+    patches = []
+    for label, path in series:
+        with open(path, "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        patches.append({
+            "label": label,
+            "name": os.path.basename(path),
+            "sha256": digest,
+        })
+    return {
+        "version": _PATCH_STATE_VERSION,
+        "base": base,
+        "patches": patches,
+    }
+
+
+def _patched_paths(worktree):
+    """Return every tracked path changed by the applied patch series."""
+    output = _git_capture(
+        worktree, ["diff", "--name-only", "-z", "HEAD"], binary=True)
+    return sorted(p.decode("utf-8", errors="surrogateescape")
+                  for p in output.split(b"\0") if p)
+
+
+def _patch_fingerprint(worktree, paths):
+    """Hash the effective diff for patch-owned paths only.
+
+    NuttX legitimately edits its board defconfig after source preparation. By
+    restricting validation to paths actually owned by patches, those generated
+    edits do not invalidate the source while interrupted or manually damaged
+    patch application still does.
     """
-    if not os.path.isdir(patches_dir):
-        return []
-    patches = sorted(f for f in os.listdir(patches_dir)
-                     if f.endswith(".patch"))
-    if not patches:
-        return []
+    if not paths:
+        return hashlib.sha256(b"").hexdigest()
+    diff = _git_capture(
+        worktree, ["diff", "--binary", "HEAD", "--", *paths], binary=True)
+    return hashlib.sha256(diff).hexdigest()
 
-    # Read already-applied patches from stamp
-    already_applied = set()
-    if os.path.isfile(stamp_path):
-        with open(stamp_path) as f:
-            already_applied = set(f.read().splitlines())
 
-    to_apply = [p for p in patches if p not in already_applied]
-    if not to_apply:
-        return []
+def _load_patch_state(worktree):
+    try:
+        with open(os.path.join(worktree, _PATCH_STATE_FILE)) as f:
+            return json.load(f)
+    except (OSError, ValueError, TypeError):
+        return None
 
-    for p in to_apply:
-        patch_path = os.path.join(patches_dir, p)
-        logger.debug(f"Applying {label}: {p}")
-        run(["git", "apply", patch_path], cwd=source_dir,
+
+def _patch_tree_matches(worktree, manifest):
+    """Return true only for a complete, undamaged prepared worktree."""
+    state = _load_patch_state(worktree)
+    if not state:
+        return False
+    expected = {key: state.get(key) for key in manifest}
+    if expected != manifest:
+        return False
+    paths = state.get("paths")
+    fingerprint = state.get("fingerprint")
+    if not isinstance(paths, list) or not isinstance(fingerprint, str):
+        return False
+    try:
+        if _git_capture(worktree, ["rev-parse", "HEAD"]).strip() \
+                != manifest["base"]:
+            return False
+        return _patch_fingerprint(worktree, paths) == fingerprint
+    except (OSError, RuntimeError):
+        return False
+
+
+def _discard_patch_worktree(source_dir, worktree):
+    """Remove a generated worktree and its now-stale Git registration."""
+    if os.path.islink(worktree) or os.path.isfile(worktree):
+        os.unlink(worktree)
+    elif os.path.isdir(worktree):
+        shutil.rmtree(worktree)
+    # A deleted worktree becomes prunable immediately. This never touches the
+    # source checkout's files or revision.
+    run(["git", "worktree", "prune"], cwd=source_dir)
+
+
+def _prepare_patched_git_tree(source_dir, worktree, layers, *,
+                              log_file=None):
+    """Materialize and verify a build-owned RTOS source worktree.
+
+    The download cache is an immutable Git source. The destination is recreated
+    from its exact HEAD whenever a patch is added, removed, renamed, reordered,
+    or edited in place. State is committed only after every patch applies, so an
+    interrupted preparation is also rebuilt on the next invocation.
+    """
+    source_dir = os.path.realpath(source_dir)
+    worktree = os.path.abspath(worktree)
+    series = _collect_patch_series(layers)
+    manifest = _patch_manifest(source_dir, series)
+
+    if os.path.isdir(worktree) and _patch_tree_matches(worktree, manifest):
+        logger.debug("Patched RTOS source is current: %s", worktree)
+        return worktree
+
+    logger.info("Refreshing patched RTOS source: %s", worktree)
+    os.makedirs(os.path.dirname(worktree), exist_ok=True)
+    _discard_patch_worktree(source_dir, worktree)
+
+    state_tmp = os.path.join(
+        worktree, f"{_PATCH_STATE_FILE}.tmp.{os.getpid()}")
+    try:
+        run(["git", "worktree", "add", "--detach", "--force",
+             worktree, manifest["base"]], cwd=source_dir,
             log_file=log_file)
+        for label, patch_path in series:
+            logger.debug("Applying %s: %s", label,
+                         os.path.basename(patch_path))
+            # Updating the worktree index makes new files part of the verified
+            # diff as well; a plain git apply would leave them untracked.
+            run(["git", "apply", "--index", patch_path], cwd=worktree,
+                log_file=log_file)
 
-    # Append to stamp
-    with open(stamp_path, "a") as f:
-        for p in to_apply:
-            f.write(p + "\n")
-    return to_apply
+        paths = _patched_paths(worktree)
+        state = dict(manifest)
+        state["paths"] = paths
+        state["fingerprint"] = _patch_fingerprint(worktree, paths)
+        with open(state_tmp, "w") as f:
+            json.dump(state, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(state_tmp, os.path.join(worktree, _PATCH_STATE_FILE))
+    except BaseException:
+        if os.path.exists(state_tmp):
+            os.unlink(state_tmp)
+        _discard_patch_worktree(source_dir, worktree)
+        raise
+
+    return worktree
 
 
 def _fallback_rtos_mapping(ws, rtos):
@@ -175,6 +306,26 @@ def _prepare_freertos_build_dir(fw_build, float_abi):
     os.makedirs(fw_build, exist_ok=True)
 
 
+def _prepare_zephyr_build_dir(fw_build, zephyr_base):
+    """Discard CMake state bound to a different Zephyr source worktree."""
+    cache = os.path.join(fw_build, "CMakeCache.txt")
+    cached_base = None
+    if os.path.isfile(cache):
+        with open(cache) as f:
+            for line in f:
+                if line.startswith("ZEPHYR_BASE:"):
+                    cached_base = line.rstrip("\n").split("=", 1)[-1]
+                    break
+
+    if cached_base and os.path.realpath(cached_base) \
+            != os.path.realpath(zephyr_base):
+        logger.info(
+            "Zephyr source worktree changed; cleaning the CMake build tree")
+        shutil.rmtree(fw_build)
+
+    os.makedirs(fw_build, exist_ok=True)
+
+
 def build_freertos(ws):
     """Build FreeRTOS firmware via CMake."""
     cmake = _find_cmake()
@@ -183,29 +334,26 @@ def build_freertos(ws):
     fw_build = os.path.join(ws.build_dir, "firmware")
     _prepare_freertos_build_dir(fw_build, ws.arm_float_abi)
 
-    # Apply board patches, then reusable LXP-port patches, then any app-local
-    # patches to the FreeRTOS source tree. Kernel coupling required by a port
-    # belongs with that port rather than whichever application happens to use it.
-    freertos_src = os.path.join(ws.ws_dl_dir, "FreeRTOS-Kernel")
-    if os.path.isdir(freertos_src):
-        patches_stamp = os.path.join(freertos_src,
-                                     ".ove_patches_applied")
-        _apply_patches(freertos_src,
-                       os.path.join(board_dir, "patches"),
-                       patches_stamp, label="board patch",
-                       log_file=ws.build_log)
+    # Keep the shared download immutable. Board, reusable LXP-port, and app
+    # patches are materialized into this build workspace's verified worktree.
+    # Kernel coupling required by a port belongs with that port rather than
+    # whichever application happens to use it.
+    freertos_download = os.path.join(ws.ws_dl_dir, "FreeRTOS-Kernel")
+    freertos_src = freertos_download
+    if os.path.isdir(freertos_download):
+        patch_layers = [("board patch", os.path.join(board_dir, "patches"))]
         if ws.config.get("CONFIG_OVE_LINUX"):
-            _apply_patches(
-                freertos_src,
+            patch_layers.append((
+                "LXP FreeRTOS port patch",
                 os.path.join(ws.ove_dir, "modules", "lxp", "ports",
-                             "freertos", "patches"),
-                patches_stamp, label="LXP FreeRTOS port patch",
-                log_file=ws.build_log)
+                             "freertos", "patches")))
         if ws.app_dir:
-            _apply_patches(freertos_src,
-                           os.path.join(ws.app_dir, "patches", "freertos"),
-                           patches_stamp, label="app patch",
-                           log_file=ws.build_log)
+            patch_layers.append((
+                "app patch", os.path.join(ws.app_dir, "patches", "freertos")))
+        freertos_src = _prepare_patched_git_tree(
+            freertos_download,
+            os.path.join(ws.build_dir, "rtos-source", "FreeRTOS-Kernel"),
+            patch_layers, log_file=ws.build_log)
 
     toolchain_file = os.path.join(board_dir, "cmake", "arm-none-eabi.cmake")
 
@@ -216,6 +364,7 @@ def build_freertos(ws):
         "-DOVE_GEN_DIR=" + ws.gen_dir,
         "-DOVE_DL_DIR=" + ws.ws_dl_dir,
         "-DBOARD_DIR=" + board_dir,
+        "-DFREERTOS_PATH=" + freertos_src,
     ]
 
     tc = ws.toolchain_dir
@@ -259,30 +408,33 @@ def build_zephyr(ws):
     west = os.path.join(ws.venv_dir, "bin", "west")
     board_dir = os.path.join(ws.board_dir, "zephyr")
     fw_build = os.path.join(ws.build_dir, "firmware")
-    os.makedirs(fw_build, exist_ok=True)
 
-    zephyr_ws = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
-    if os.path.isdir(zephyr_ws):
+    zephyr_download = os.path.join(
+        ws.ws_dl_dir, "zephyr-workspace", "zephyr")
+    zephyr_ws = zephyr_download
+    if os.path.isdir(zephyr_download):
+        patch_layers = [
+            ("global patch",
+             os.path.join(ws.ove_dir, "config", "patches", "zephyr")),
+            ("board patch",
+             os.path.join(ws.board_dir, "zephyr", "patches")),
+        ]
+        if ws.app_dir:
+            patch_layers.append((
+                "app patch", os.path.join(ws.app_dir, "patches", "zephyr")))
+
+        # Keep ZEPHYR_BASE below the original west workspace so west still
+        # discovers its manifest and modules while using our isolated checkout.
+        workspace_key = hashlib.sha256(
+            os.path.realpath(ws.workspace_dir).encode()).hexdigest()[:16]
+        west_topdir = os.path.dirname(zephyr_download)
+        zephyr_ws = _prepare_patched_git_tree(
+            zephyr_download,
+            os.path.join(west_topdir, ".ove-worktrees", workspace_key),
+            patch_layers, log_file=ws.build_log)
         env["ZEPHYR_BASE"] = zephyr_ws
 
-    # Apply engine-wide compatibility patches, then board and app patches to
-    # the Zephyr source tree. Keep the global names distinct: the shared stamp
-    # records patch basenames for all three layers.
-    if os.path.isdir(zephyr_ws):
-        patches_stamp = os.path.join(zephyr_ws, ".ove_patches_applied")
-        _apply_patches(zephyr_ws,
-                       os.path.join(ws.ove_dir, "config", "patches", "zephyr"),
-                       patches_stamp, label="global patch",
-                       log_file=ws.build_log)
-        _apply_patches(zephyr_ws,
-                       os.path.join(ws.board_dir, "zephyr", "patches"),
-                       patches_stamp, label="board patch",
-                       log_file=ws.build_log)
-        if ws.app_dir:
-            _apply_patches(zephyr_ws,
-                           os.path.join(ws.app_dir, "patches", "zephyr"),
-                           patches_stamp, label="app patch",
-                           log_file=ws.build_log)
+    _prepare_zephyr_build_dir(fw_build, zephyr_ws)
 
     # Apply layered config (build guard — fresh by construction)
     from .rtos_menuconfig import ensure_rtos_config_applied
@@ -349,7 +501,7 @@ def _stage_nuttx_tree(src, dest, label):
 
 
 def _setup_nuttx_build_tree(ws, env, log_file=None):
-    """Copy NuttX sources, apply patches, and set up external CMake app.
+    """Prepare patched NuttX sources and set up the external CMake app.
 
     Returns (nuttx_src, apps_build) paths.  The nuttx_src directory is
     used as the CMake source directory (-S); a separate binary directory
@@ -358,25 +510,24 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
     nuttx_src = os.path.join(ws.build_dir, "nuttx")
     apps_build = os.path.join(ws.build_dir, "nuttx-apps")
 
-    # Copy sources to build tree (keeps dl/ pristine).
-    # A stamp file gates re-copy: a bare isdir() check can accept a
-    # partial tree left over from an interrupted copytree, causing
-    # later builds to fail with "No config file found" when the
-    # missing subtree (e.g. boards/arm/stm32f7) was never staged.
-    _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_src,
-                      label="NuttX sources")
+    # Materialize the kernel from immutable downloaded Git state. The build may
+    # subsequently edit its private defconfig; patch validation is deliberately
+    # limited to patch-owned paths so those generated edits remain valid.
+    nuttx_download = os.path.join(ws.ws_dl_dir, "nuttx")
+    patch_layers = [
+        ("board patch", os.path.join(ws.board_dir, "nuttx", "patches")),
+    ]
+    if ws.app_dir:
+        patch_layers.append((
+            "app patch", os.path.join(ws.app_dir, "patches", "nuttx")))
+    _prepare_patched_git_tree(
+        nuttx_download, nuttx_src, patch_layers, log_file=log_file)
+
+    # NuttX apps are not patched, but still need a private writable staging tree.
+    # A stamp gates re-copy: a bare isdir() check can accept a partial copy left
+    # by interruption and later fail with a misleading missing-file error.
     _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx-apps"), apps_build,
                       label="NuttX apps")
-
-    # Apply board patches, then app patches (app patches last)
-    patches_stamp = os.path.join(nuttx_src, ".ove_patches_applied")
-    _apply_patches(nuttx_src,
-                   os.path.join(ws.board_dir, "nuttx", "patches"),
-                   patches_stamp, label="board patch", log_file=log_file)
-    if ws.app_dir:
-        _apply_patches(nuttx_src,
-                       os.path.join(ws.app_dir, "patches", "nuttx"),
-                       patches_stamp, label="app patch", log_file=log_file)
 
     # Set up external app (CMake)
     ext_dir = os.path.join(apps_build, "external")
