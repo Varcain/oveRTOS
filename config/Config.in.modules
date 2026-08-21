@@ -118,9 +118,9 @@ config OVE_LINUX_GUEST_FP_SELFTEST
     depends on OVE_LINUX_GUEST_FLOAT_ABI_HARD
     default n
     help
-      Development/test mode for the linux_interop app. Launch /usr/bin/fpcheck
-      directly after the normal RTOS-to-guest round trip instead of booting
-      BusyBox init. The guest validates s0-s31 plus FPSCR across repeated
+      Development/test mode for the linux_interop app. Select the rootfs guest
+      entrypoint's fpcheck mode after the normal RTOS-to-guest round trip instead
+      of booting userspace. The guest validates s0-s31 plus FPSCR across repeated
       deferred and blocking syscall paths.
 
 config OVE_LINUX_LATENCY
