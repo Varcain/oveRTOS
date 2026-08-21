@@ -11,7 +11,11 @@ import subprocess
 import tempfile
 import unittest
 
-from ove.build import _prepare_patched_git_tree
+from ove.build import (
+    _prepare_patched_git_tree,
+    discard_all_patch_worktrees,
+    discard_workspace_patch_worktrees,
+)
 
 
 def _run(*args, cwd):
@@ -114,6 +118,32 @@ class PatchWorktreeTest(unittest.TestCase):
         ])
         self.assertEqual(self._read_worktree("a.txt"), "bravo\n")
         self.assertEqual(self._read_worktree("b.txt"), "second\n")
+
+    def test_global_cleanup_removes_generated_worktree_registration(self):
+        dl_dir = os.path.join(self.root, "dl")
+        west_topdir = os.path.join(dl_dir, "zephyr-workspace-test")
+        os.makedirs(west_topdir)
+        os.symlink(self.source, os.path.join(west_topdir, "zephyr"))
+        generated = os.path.join(west_topdir, ".ove-worktrees", "test")
+        self._patch_a("bravo")
+        _prepare_patched_git_tree(
+            self.source, generated, [("test patch", self.patches)])
+
+        discard_all_patch_worktrees(dl_dir)
+
+        self.assertFalse(os.path.exists(generated))
+        worktrees = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"], cwd=self.source,
+            check=True, capture_output=True, text=True).stdout
+        self.assertNotIn(generated, worktrees)
+
+    def test_workspace_cleanup_tolerates_missing_config(self):
+        class MissingConfigWorkspace:
+            @property
+            def rtos(self):
+                raise FileNotFoundError("no .config")
+
+        discard_workspace_patch_worktrees(MissingConfigWorkspace())
 
 
 if __name__ == "__main__":
