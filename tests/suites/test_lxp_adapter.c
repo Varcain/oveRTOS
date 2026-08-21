@@ -53,6 +53,7 @@ static char g_host_netfs_uname[LXP_NETFS_UNAME_CAP];
 static unsigned g_host_run_calls;
 static const lxp_host_t *g_host_run_target;
 static lxp_launch_config_t g_host_run_config;
+static int g_host_run_had_config;
 static unsigned g_guest_exit_calls;
 static ove_lxp_guest_exit_info_t g_guest_exit_info;
 static lxp_host_observation_t g_host_observation;
@@ -98,6 +99,7 @@ int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config, cons
 	(void)argv;
 	g_host_run_calls++;
 	g_host_run_target = host;
+	g_host_run_had_config = config != NULL;
 	memset(&g_host_run_config, 0, sizeof(g_host_run_config));
 	if (config) {
 		g_host_run_config = *config;
@@ -632,11 +634,13 @@ static void test_host_facade_owns_composition(void **state)
 
 	g_host_run_calls = 0;
 	g_host_run_target = NULL;
+	g_host_run_had_config = 0;
 	memset(&g_host_run_config, 0, sizeof(g_host_run_config));
 	g_guest_exit_calls = 0;
 	memset(&g_guest_exit_info, 0, sizeof(g_guest_exit_info));
 	assert_int_equal(ove_lxp_host_run(&host, &config, "/init", 1, argv), 37);
 	assert_int_equal(g_host_run_calls, 1);
+	assert_true(g_host_run_had_config);
 	assert_ptr_equal(g_host_run_target, g_host_init_target);
 	assert_ptr_equal(g_host_run_config.write_fn, test_launch_write);
 	assert_ptr_equal(g_host_run_config.read_fn, test_launch_read);
@@ -656,6 +660,17 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_guest_exit_info.reason, OVE_LXP_EXIT_REASON_STATE_CORRUPTION);
 	assert_int_equal(g_guest_exit_info.detail, 0x1234u);
 	assert_int_equal(g_guest_exit_info.address, 0x5678u);
+
+	/* One parsed host serves sequential launches, while launch callbacks remain
+	 * scoped to the invocation that supplied them. */
+	assert_int_equal(ove_lxp_host_run(&host, NULL, "/init", 1, argv), 37);
+	assert_int_equal(g_host_run_calls, 2);
+	assert_ptr_equal(g_host_run_target, g_host_init_target);
+	assert_false(g_host_run_had_config);
+	assert_null(g_host_run_config.write_fn);
+	assert_null(g_host_run_config.read_fn);
+	assert_null(g_host_run_config.on_guest_exit);
+	assert_int_equal(g_guest_exit_calls, 1);
 	g_host_init_config.rootfs_name_storage[0] = 'x';
 	ove_lxp_host_deinit(&host);
 	assert_int_equal(g_host_init_config.rootfs_name_storage[0], 'x');

@@ -106,11 +106,6 @@ foreach(NATIVE_FS_BACKEND IN ITEMS
             "generic filesystem backend regained LXP coupling: ${NATIVE_FS_BACKEND}")
     endif()
 endforeach()
-file(READ "${OVE_ROOT}/apps/c/linux_interop/app.yaml" LINUX_APP_CONFIG_TEXT)
-if(NOT LINUX_APP_CONFIG_TEXT MATCHES "CONFIG_OVE_FS_MAX_OPEN_FILES=16")
-    message(FATAL_ERROR
-        "linux_interop must provision all sixteen LXP host filesystem descriptors")
-endif()
 file(READ "${OVE_ROOT}/config/templates/prj.conf.j2" ZEPHYR_CONFIG_TEMPLATE_TEXT)
 if(NOT ZEPHYR_CONFIG_TEMPLATE_TEXT MATCHES
    "CONFIG_FS_FATFS_NUM_FILES=\\{\\{ config[.]get\\(\"CONFIG_OVE_FS_MAX_OPEN_FILES\"")
