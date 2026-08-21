@@ -47,7 +47,7 @@ ove_zephyr_include_app_sources()
 
 if(OVE_LINUX)
     # The seam traps the program's svc by interposing the kernel-oops handler at link time, and
-    # the demo embeds a rootfs CPIO fixture (generated at build time, not committed).
+    # the host bootstrap embeds a rootfs CPIO fixture (generated at build time, not committed).
     target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
     include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
     ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)

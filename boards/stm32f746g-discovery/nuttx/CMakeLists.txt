@@ -47,7 +47,7 @@ if(OVE_LINUX)
     ove_nuttx_exclude_backends(LVGL AUDIO)
     # With the rootfs in QSPI (OVE_LINUX_ROOTFS_QSPI) it is programmed to the NOR separately
     # (flash-qspi.sh), NOT embedded — the 1 MB internal flash can't hold the ~1.45 MB LVGL
-    # rootfs. Otherwise embed the build-generated cpio fixture (app.c #includes it).
+    # rootfs. Otherwise embed the build-generated CPIO consumed by the host bootstrap.
     if(NOT OVE_LINUX_ROOTFS_QSPI)
         include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
         ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)

@@ -89,8 +89,8 @@ endif()
 ove_add_backend_sources()
 
 # ── Linux personality rootfs fixture ─────────────────────────────────────────
-# The personality demo (#include "loader_rootfs_image.h") needs the embedded cpio on the
-# include path when QSPI XIP is disabled. The program-region pool lives in external SDRAM
+# The configured personality-host bootstrap needs the embedded CPIO on the include path when
+# QSPI XIP is disabled. The program-region pool lives in external SDRAM
 # (.sdram_bss; bsp.c brings up the FMC), with guest permissions supplied by LXP's FreeRTOS port.
 if(OVE_LINUX)
     # With the rootfs in QSPI (OVE_LINUX_ROOTFS_QSPI) it is programmed to the NOR

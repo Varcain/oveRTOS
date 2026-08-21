@@ -5,7 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * RTOS-kernel <-> Linux-personality interop demo (mps2/an521, Cortex-M33).
+ * RTOS-kernel <-> Linux-personality interop demo.
  *
  * One firmware image, two worlds, two phases — built entirely on the
  * engine-agnostic oveRTOS APIs (ove_thread / ove_queue / ove_time) on the RTOS
@@ -49,16 +49,6 @@
 #include "ove_config.h"
 #include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
 #include "rt_scope.h"
-
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
-#include "ove/lxp_memory_layout.h"
-#define LXP_EXTERNAL_ROOTFS ((const uint8_t *)OVE_LXP_ROOTFS_BASE)
-#define LXP_EXTERNAL_ROOTFS_MAX ((size_t)OVE_LXP_ROOTFS_SIZE)
-#else
-#include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
-#endif
 
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
@@ -108,6 +98,18 @@ static char *put_hex32(char *p, uint32_t v)
 	return p;
 }
 
+#if defined(CONFIG_OVE_LINUX_NET)
+static char *put_ipv4(char *p, const ove_sockaddr_t *address)
+{
+	for (unsigned int i = 0; i < 4u; i++) {
+		p = put_dec(p, address->addr[i]);
+		if (i != 3u)
+			*p++ = '.';
+	}
+	return p;
+}
+#endif
+
 static uint32_t uptime_ms(void)
 {
 	uint64_t us = 0;
@@ -122,11 +124,15 @@ static uint32_t uptime_ms(void)
  * necessarily become connect-ready. A one-shot probe therefore describes a
  * scheduler race rather than transport health, especially on NuttX.
  */
-static void network_transport_smoke(void)
+static void network_transport_smoke(const ove_lxp_host_t *host)
 {
 	static ove_socket_storage_t s_sk;
-	ove_sockaddr_t peer;
-	ove_sockaddr_ipv4(&peer, 172, 1, 1, 1, 22);
+	ove_sockaddr_t peer = {0};
+	if (ove_lxp_host_netif_get_addr(host, NULL, &peer, NULL) != OVE_OK) {
+		ove_lxp_console_write("[demo] socket smoke: configured gateway unavailable\n");
+		return;
+	}
+	peer.port = 22;
 	const uint32_t started_ms = uptime_ms();
 	int last_rc = -1;
 	for (uint32_t attempt = 1; attempt <= 12; attempt++) {
@@ -150,8 +156,9 @@ static void network_transport_smoke(void)
 					rb[i] = 0;
 			rb[got < sizeof(rb) ? got : sizeof(rb) - 1] = 0;
 			char b[176];
-			char *p = put_str(b,
-					  "[demo] socket smoke (post-phase1) OK <- 172.1.1.1:22: ");
+			char *p = put_str(b, "[demo] socket smoke (post-phase1) OK <- ");
+			p = put_ipv4(p, &peer);
+			p = put_str(p, ":22: ");
 			p = put_str(p, rb);
 			p = put_str(p, " (ready after ");
 			p = put_dec(p, uptime_ms() - started_ms);
@@ -838,49 +845,13 @@ static void demo_body(void *arg)
 		ove_lxp_console_write("[wd] FAIL: monitor thread init; running without a watchdog\n");
 #endif
 
-	const void *rootfs_image;
-	size_t rootfs_image_size;
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
-	/* The generated layout is shared with the isolation port and board runner. */
-	rootfs_image = LXP_EXTERNAL_ROOTFS;
-	rootfs_image_size = LXP_EXTERNAL_ROOTFS_MAX;
-#else
-	rootfs_image = ove_test_rootfs_cpio;
-	rootfs_image_size = ove_test_rootfs_cpio_len;
-#endif
-	ove_lxp_host_config_t host_config = {
-		.rootfs_image = rootfs_image,
-		.rootfs_image_size = rootfs_image_size,
-	};
-#if defined(CONFIG_OVE_LINUX_NET)
-	/* Product topology remains explicit here; the oveRTOS host owns the native
-	 * interface storage, bring-up, rollback, and LXP binding. */
-	ove_netif_config_t net_config = {.use_dhcp = 0};
-	ove_sockaddr_ipv4(&net_config.static_ip, 172, 1, 1, 2, 0);
-	ove_sockaddr_ipv4(&net_config.netmask, 255, 255, 255, 0, 0);
-	ove_sockaddr_ipv4(&net_config.gateway, 172, 1, 1, 1, 0);
-	host_config.netif_config = &net_config;
-	host_config.netif_address_wait_ms = 10000u;
-#endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
-	const ove_lxp_netfs_config_t netfs_config = {
-		.mountpoint = CONFIG_OVE_LINUX_NETFS_MOUNTPOINT,
-		.server_ipv4 = CONFIG_OVE_LINUX_NETFS_SERVER_IP,
-		.port = (uint16_t)CONFIG_OVE_LINUX_NETFS_PORT,
-		.aname = CONFIG_OVE_LINUX_NETFS_ANAME,
-		.uname = "root",
-	};
-	host_config.netfs_config = &netfs_config;
-#endif
-	/* The host publishes the rootfs window before parsing, owns native provider
-	 * setup, and retains immutable topology/rootfs composition for each run. */
-	int rootfs_rc = ove_lxp_host_init_cpio(&g_linux_host, &host_config);
-	if (rootfs_rc != OVE_OK) {
+	/* Build configuration owns rootfs placement and product network topology;
+	 * the host facade owns native provider setup, rollback, and teardown. */
+	int host_rc = ove_lxp_host_init(&g_linux_host);
+	if (host_rc != OVE_OK) {
 		char b[64];
-		char *p = put_str(b, "[demo] FAIL: rootfs host init failed rc=");
-		p = put_sdec(p, rootfs_rc);
+		char *p = put_str(b, "[demo] FAIL: Linux host init failed rc=");
+		p = put_sdec(p, host_rc);
 		*p++ = '\n';
 		*p = 0;
 		ove_lxp_console_write(b);
@@ -894,21 +865,9 @@ static void demo_body(void *arg)
 		if (ove_lxp_host_netif_get_addr(&g_linux_host, &ip, &gw, &nm) == OVE_OK) {
 			char b[96];
 			char *p = put_str(b, "[demo] eth0 up ip=");
-			p = put_dec(p, ip.addr[0]);
-			*p++ = '.';
-			p = put_dec(p, ip.addr[1]);
-			*p++ = '.';
-			p = put_dec(p, ip.addr[2]);
-			*p++ = '.';
-			p = put_dec(p, ip.addr[3]);
+			p = put_ipv4(p, &ip);
 			p = put_str(p, " gw=");
-			p = put_dec(p, gw.addr[0]);
-			*p++ = '.';
-			p = put_dec(p, gw.addr[1]);
-			*p++ = '.';
-			p = put_dec(p, gw.addr[2]);
-			*p++ = '.';
-			p = put_dec(p, gw.addr[3]);
+			p = put_ipv4(p, &gw);
 			*p++ = '\n';
 			*p = 0;
 			ove_lxp_console_write(b);
@@ -981,7 +940,7 @@ static void demo_body(void *arg)
 #if defined(CONFIG_OVE_LINUX_NET)
 	/* A real post-readiness TCP round trip over the same host transport used by
 	 * personality sockets and netfs. */
-	network_transport_smoke();
+	network_transport_smoke(&g_linux_host);
 #endif
 
 #if defined(CONFIG_OVE_LINUX_FAULTTEST)
