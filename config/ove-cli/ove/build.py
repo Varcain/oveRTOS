@@ -246,6 +246,43 @@ def _prepare_patched_git_tree(source_dir, worktree, layers, *,
     return worktree
 
 
+def _zephyr_patch_worktree(ws, zephyr_download):
+    """Return this build workspace's stable location inside the west tree."""
+    workspace_key = hashlib.sha256(
+        os.path.realpath(ws.workspace_dir).encode()).hexdigest()[:16]
+    return os.path.join(
+        os.path.dirname(zephyr_download), ".ove-worktrees", workspace_key)
+
+
+def discard_workspace_patch_worktrees(ws):
+    """Remove generated patch worktrees owned by the active workspace."""
+    if ws.rtos != "zephyr":
+        return
+    source = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
+    if not os.path.isdir(source):
+        return
+    _discard_patch_worktree(
+        os.path.realpath(source), _zephyr_patch_worktree(ws, source))
+
+
+def discard_all_patch_worktrees(dl_dir):
+    """Remove generated Zephyr worktrees retained outside output/."""
+    import glob
+
+    seen = set()
+    for candidate in glob.glob(os.path.join(dl_dir, "zephyr-workspace-*")):
+        topdir = os.path.realpath(candidate)
+        if topdir in seen:
+            continue
+        seen.add(topdir)
+        source = os.path.join(topdir, "zephyr")
+        generated = os.path.join(topdir, ".ove-worktrees")
+        if not os.path.isdir(source) or not os.path.isdir(generated):
+            continue
+        shutil.rmtree(generated)
+        run(["git", "worktree", "prune"], cwd=source)
+
+
 def _fallback_rtos_mapping(ws, rtos):
     """Fall back to board.yaml _meta for RTOS board mapping."""
     import yaml
@@ -425,12 +462,9 @@ def build_zephyr(ws):
 
         # Keep ZEPHYR_BASE below the original west workspace so west still
         # discovers its manifest and modules while using our isolated checkout.
-        workspace_key = hashlib.sha256(
-            os.path.realpath(ws.workspace_dir).encode()).hexdigest()[:16]
-        west_topdir = os.path.dirname(zephyr_download)
         zephyr_ws = _prepare_patched_git_tree(
             zephyr_download,
-            os.path.join(west_topdir, ".ove-worktrees", workspace_key),
+            _zephyr_patch_worktree(ws, zephyr_download),
             patch_layers, log_file=ws.build_log)
         env["ZEPHYR_BASE"] = zephyr_ws
 
