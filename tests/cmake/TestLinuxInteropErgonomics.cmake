@@ -23,7 +23,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 132)
+set(APP_SOURCE_LINE_CEILING 130)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
 set(QUALIFICATION_SOURCE_LINE_CEILING 407)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 136)
@@ -119,6 +119,11 @@ endif()
 if(NOT APP_TEXT MATCHES "ove_lxp_console_bind_diagnostics[ \t\r\n]*[(]")
     message(FATAL_ERROR
         "linux_interop app must use the reusable console diagnostics binding")
+endif()
+if(APP_TEXT MATCHES "\.rt_scope_(read|ctx)[ \t\r\n]*=" OR
+   NOT APP_TEXT MATCHES "ove_lxp_rt_scope_bind[ \t\r\n]*[(]")
+    message(FATAL_ERROR
+        "linux_interop app must bind RT scope through its owning service")
 endif()
 if(APP_TEXT MATCHES
    "static[ \t]+[^\r\n]*(feed_read|consume_write|roundtrip_worker|network_transport_smoke)[ \t]*[(]")

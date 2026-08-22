@@ -813,11 +813,3 @@ long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 }
 
 #endif /* CONFIG_OVE_LINUX_RT_SCOPE */
-
-void ove_lxp_rt_scope_bind(ove_lxp_launch_config_t *config)
-{
-	if (!config)
-		return;
-	config->rt_scope_read = ove_lxp_rt_scope_proc_read;
-	config->rt_scope_ctx = NULL;
-}
