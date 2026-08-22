@@ -19,8 +19,6 @@ defconfig:
 #include "ove/log.h"
 #include <stdio.h>
 
-OVE_LOG_MODULE_REGISTER(myshell);
-
 static int cmd_hello(int argc, char **argv, ove_shell_t sh)
 {
     (void)argc; (void)argv;

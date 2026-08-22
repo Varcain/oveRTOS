@@ -31,8 +31,6 @@ Keep the app-side critical section short: copy the value out, drop the mutex, *t
 #include "ove/lvgl.h"
 #include <stdio.h>
 
-OVE_LOG_MODULE_REGISTER(ui);
-
 static ove_mutex_t  value_mutex;
 static ove_timer_t  ui_timer;
 static ove_thread_t producer;

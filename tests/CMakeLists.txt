@@ -275,6 +275,11 @@ add_test(NAME ove_allconfigs_python
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
         ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_allconfigs.py)
+add_test(NAME ove_app_new_python
+    COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=${OVE_ROOT}/config/ove-cli
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_app_new.py)
 add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

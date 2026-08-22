@@ -139,7 +139,7 @@ Zephyr ships its own networking stack; oveRTOS uses lwIP under FreeRTOS, NuttX's
 
 | Zephyr | oveRTOS |
 |---|---|
-| `LOG_MODULE_REGISTER(name, LOG_LEVEL_INF)` | `OVE_LOG_MODULE_REGISTER(name)` (level from Kconfig) |
+| `LOG_MODULE_REGISTER(name, LOG_LEVEL_INF)` | No registration needed; level comes from Kconfig |
 | `LOG_ERR("...", ...)` | `OVE_LOG_ERR("...", ...)` |
 | `LOG_WRN("...", ...)` | `OVE_LOG_WRN("...", ...)` |
 | `LOG_INF("...", ...)` | `OVE_LOG_INF("...", ...)` |

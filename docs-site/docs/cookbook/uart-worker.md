@@ -27,8 +27,6 @@ The UART driver's RX callback fires from an ISR (FreeRTOS) or a high-priority co
 #include "ove/stream.h"
 #include "ove/log.h"
 
-OVE_LOG_MODULE_REGISTER(uart_worker);
-
 #define RX_STREAM_SIZE  256
 
 static ove_stream_t rx_stream;

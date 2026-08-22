@@ -26,8 +26,6 @@ The timer callback runs in a privileged context (FreeRTOS timer service task; Ze
 #include "ove/ove.h"
 #include "ove/log.h"
 
-OVE_LOG_MODULE_REGISTER(sensor);
-
 #define SAMPLE_PERIOD_MS  100
 #define QUEUE_DEPTH        16
 

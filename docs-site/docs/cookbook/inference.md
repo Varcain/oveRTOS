@@ -33,8 +33,6 @@ The build emits `generated/your_model_model_data.h` exposing `YOUR_MODEL_data[]`
 #include "ove/audio.h"
 #include "generated/your_model_model_data.h"
 
-OVE_LOG_MODULE_REGISTER(inf);
-
 #define WINDOW_SAMPLES  16000    /* 1 s @ 16 kHz */
 #define TENSOR_ARENA    64 * 1024
 

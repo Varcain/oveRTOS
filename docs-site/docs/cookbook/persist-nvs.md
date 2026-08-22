@@ -28,8 +28,6 @@ The API is identical across all of them.
 #include "ove/nvs.h"
 #include "ove/log.h"
 
-OVE_LOG_MODULE_REGISTER(boot);
-
 #define KEY_BOOT_COUNT  "boot_count"
 
 void ove_main(void)
