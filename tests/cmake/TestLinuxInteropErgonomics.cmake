@@ -21,9 +21,9 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
 set(APP_SOURCE_LINE_CEILING 135)
-set(NETWORK_SMOKE_SOURCE_LINE_CEILING 150)
+set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
 set(QUALIFICATION_SOURCE_LINE_CEILING 420)
-set(ROUNDTRIP_SOURCE_LINE_CEILING 180)
+set(ROUNDTRIP_SOURCE_LINE_CEILING 160)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
 set(FULL_PROFILE_CONFIG_LINE_CEILING 65)
 

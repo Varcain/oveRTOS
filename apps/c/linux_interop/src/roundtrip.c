@@ -35,13 +35,6 @@ static volatile int g_round_trip_n;
 static ove_thread_t g_worker;
 OVE_THREAD_DEFINE(g_worker_storage, 2048);
 
-static uint32_t uptime_ms(void)
-{
-	uint64_t us = 0;
-	(void)ove_time_get_us(&us);
-	return (uint32_t)(us / 1000u);
-}
-
 static void roundtrip_worker(void *arg)
 {
 	(void)arg;
@@ -57,7 +50,9 @@ static void roundtrip_worker(void *arg)
 		while (printed < g_round_trip_n) {
 			ove_lxp_console_printf(
 				"[rtos-consumer] <- Linux (round trip #%d @ %u ms): \"%s\"\n",
-				printed + 1, (unsigned int)uptime_ms(), g_round_trip[printed]);
+				printed + 1,
+				(unsigned int)(ove_time_now_steady_ns() / OVE_MS(1)),
+				g_round_trip[printed]);
 			printed++;
 		}
 		if (g_linux_done && printed >= g_round_trip_n)

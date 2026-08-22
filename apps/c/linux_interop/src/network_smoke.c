@@ -17,13 +17,6 @@
 #include "ove/net.h"
 #include "ove/thread.h"
 #include "ove/time.h"
-
-static uint32_t uptime_ms(void)
-{
-	uint64_t us = 0;
-	(void)ove_time_get_us(&us);
-	return (uint32_t)(us / 1000u);
-}
 #endif
 
 void linux_interop_network_report(const ove_lxp_host_t *host)
@@ -55,7 +48,7 @@ void linux_interop_network_smoke(const ove_lxp_host_t *host)
 		return;
 	}
 	peer.port = 22;
-	const uint32_t started_ms = uptime_ms();
+	const uint64_t started_ns = ove_time_now_steady_ns();
 	int last_rc = -1;
 	for (uint32_t attempt = 1; attempt <= 12; attempt++) {
 		ove_socket_t socket = NULL;
@@ -82,7 +75,8 @@ void linux_interop_network_smoke(const ove_lxp_host_t *host)
 				"(ready after %u ms, attempt %u)\n",
 				(unsigned int)peer.addr[0], (unsigned int)peer.addr[1],
 				(unsigned int)peer.addr[2], (unsigned int)peer.addr[3], reply,
-				(unsigned int)(uptime_ms() - started_ms), (unsigned int)attempt);
+				(unsigned int)((ove_time_now_steady_ns() - started_ns) / OVE_MS(1)),
+				(unsigned int)attempt);
 			ove_socket_close(socket);
 			return;
 		}
@@ -95,7 +89,7 @@ void linux_interop_network_smoke(const ove_lxp_host_t *host)
 
 	ove_lxp_console_printf(
 		"[demo] socket smoke (post-phase1): not ready after %u ms, last rc=%d\n",
-		(unsigned int)(uptime_ms() - started_ms), last_rc);
+		(unsigned int)((ove_time_now_steady_ns() - started_ns) / OVE_MS(1)), last_rc);
 #else
 	(void)host;
 #endif
