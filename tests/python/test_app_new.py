@@ -10,6 +10,8 @@ import os
 import tempfile
 import unittest
 
+import yaml
+
 from ove.app_new import _stamp_tree
 from ove.appgen import _scan_app_dirs
 
@@ -70,6 +72,22 @@ class ExternalAppTemplateTest(unittest.TestCase):
             self.assertEqual(name, "template_smoke")
             self.assertEqual(path, os.path.abspath(output))
             self.assertEqual(data["config_name"], "template_smoke")
+
+    def test_hello_apps_declare_only_used_optional_modules(self):
+        for language in ("c", "cpp", "rust", "zig"):
+            with self.subTest(language=language):
+                output, _source = self._stamp_source(
+                    language,
+                    "src/lib.rs" if language == "rust" else
+                    "src/main.zig" if language == "zig" else
+                    "src/app.cpp" if language == "cpp" else "src/app.c")
+                self.addCleanup(output.cleanup)
+                with open(os.path.join(output.name, "app.yaml")) as f:
+                    manifest = yaml.safe_load(f)
+                self.assertEqual(manifest["defconfig"], [
+                    "CONFIG_OVE_CONSOLE=y",
+                    "CONFIG_OVE_LOG=y",
+                ])
 
 
 if __name__ == "__main__":
