@@ -13,6 +13,7 @@ set(QUALIFICATION_SOURCE
 set(ROUNDTRIP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c")
 set(RT_SCOPE_SOURCE
     "${OVE_ROOT}/backends/common/lxp_ove_rt_scope.c")
+set(RT_SCOPE_HEADER "${OVE_ROOT}/include/ove/lxp_rt_scope.h")
 set(BOARD_RT_SCOPE_SOURCE
     "${OVE_ROOT}/boards/stm32f746g-discovery/common/rt_scope.c")
 set(FULL_PROFILE_CONFIG "${OVE_ROOT}/apps/c/linux_interop/app.yaml")
@@ -27,7 +28,7 @@ set(APP_SOURCE_LINE_CEILING 130)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
 set(QUALIFICATION_SOURCE_LINE_CEILING 407)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 136)
-set(RT_SCOPE_SOURCE_LINE_CEILING 815)
+set(RT_SCOPE_SOURCE_LINE_CEILING 811)
 set(BOARD_RT_SCOPE_SOURCE_LINE_CEILING 300)
 set(FULL_PROFILE_CONFIG_LINE_CEILING 55)
 
@@ -61,6 +62,7 @@ file(READ "${NETWORK_SMOKE_SOURCE}" NETWORK_SMOKE_TEXT)
 file(READ "${QUALIFICATION_SOURCE}" QUALIFICATION_TEXT)
 file(READ "${ROUNDTRIP_SOURCE}" ROUNDTRIP_TEXT)
 file(READ "${RT_SCOPE_SOURCE}" RT_SCOPE_TEXT)
+file(READ "${RT_SCOPE_HEADER}" RT_SCOPE_HEADER_TEXT)
 file(READ "${BOARD_RT_SCOPE_SOURCE}" BOARD_RT_SCOPE_TEXT)
 set(HOST_APP_TEXT
     "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}")
@@ -76,6 +78,9 @@ if(ENGINE_NEUTRAL_SCOPE_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR
         "common LXP RT-scope service must use only engine-neutral oveRTOS APIs")
+endif()
+if(RT_SCOPE_HEADER_TEXT MATCHES "ove_lxp_rt_scope_proc_read")
+    message(FATAL_ERROR "RT-scope proc formatter leaked into the public API")
 endif()
 
 if(HOST_APP_TEXT MATCHES
