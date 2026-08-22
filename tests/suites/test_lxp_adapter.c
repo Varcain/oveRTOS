@@ -1071,12 +1071,12 @@ static void test_rt_scope_reports_unavailable_when_disabled(void **state)
 	assert_int_equal(ove_lxp_rt_scope_start(NULL), OVE_ERR_NOT_SUPPORTED);
 	ove_lxp_rt_scope_bind(&config);
 	assert_ptr_equal(config.write_fn, test_launch_write);
-	assert_ptr_equal(config.rt_scope_read, ove_lxp_rt_scope_proc_read);
+	assert_non_null(config.rt_scope_read);
 	assert_null(config.rt_scope_ctx);
 	ove_lxp_rt_scope_bind(NULL);
-	assert_int_equal(ove_lxp_rt_scope_proc_read(NULL, NULL, sizeof(snapshot)), -1);
-	assert_int_equal(ove_lxp_rt_scope_proc_read(NULL, snapshot, 8u), -1);
-	assert_int_equal(ove_lxp_rt_scope_proc_read(NULL, snapshot, sizeof(snapshot)), 12);
+	assert_int_equal(config.rt_scope_read(config.rt_scope_ctx, NULL, sizeof(snapshot)), -1);
+	assert_int_equal(config.rt_scope_read(config.rt_scope_ctx, snapshot, 8u), -1);
+	assert_int_equal(config.rt_scope_read(config.rt_scope_ctx, snapshot, sizeof(snapshot)), 12);
 	assert_string_equal(snapshot, "available 0\n");
 }
 
