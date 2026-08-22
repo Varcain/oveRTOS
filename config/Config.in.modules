@@ -323,7 +323,7 @@ config OVE_LINUX_NETIF_ADDRESS_WAIT_MS
 config OVE_LINUX_FS
     bool "Linux personality: persistent /data filesystem"
     default n
-    depends on OVE_LINUX
+    depends on OVE_LINUX && !OVE_BOARD_QEMU_MPS2_AN500 && !OVE_BOARD_QEMU_MPS2_AN521
     select OVE_FS
     select OVE_QUEUE
     select OVE_SYNC
@@ -366,7 +366,7 @@ config OVE_BLOCK
 config OVE_LINUX_BLOCK
     bool "Linux personality: /dev/mmcblk0 block device"
     default n
-    depends on OVE_LINUX
+    depends on OVE_LINUX && !OVE_BOARD_QEMU_MPS2_AN500 && !OVE_BOARD_QEMU_MPS2_AN521
     select OVE_BLOCK
     select OVE_LINUX_FS
     select OVE_LINUX_DEV
@@ -556,6 +556,7 @@ config OVE_FS
 
 config OVE_FS_MAX_OPEN_FILES
     int "Required concurrent native filesystem file handles"
+    default 16 if OVE_LINUX_FS
     default 4
     range 1 64
     depends on OVE_FS
