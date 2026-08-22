@@ -188,6 +188,11 @@ class Workspace:
         return get_str(self.config, "CONFIG_OVE_APP_NAME")
 
     @property
+    def is_external_app(self):
+        """Whether this workspace was configured from an external app."""
+        return os.path.isfile(os.path.join(self.workspace_dir, APP_PATH_FILE))
+
+    @property
     def app_dir(self):
         name = self.app_name
         if not name:

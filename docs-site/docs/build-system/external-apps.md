@@ -190,6 +190,9 @@ Save the current config as a minimal defconfig:
 make savedefconfig
 ```
 
+The file is named from the active board, RTOS, and app and saved under
+`defconfigs/`, where `make alldefconfigs` discovers it automatically.
+
 ## Configuration Layering
 
 For NuttX and Zephyr, the RTOS has its own Kconfig system separate from oveRTOS. The build system merges multiple configuration layers at build time, with higher layers overriding lower ones:
