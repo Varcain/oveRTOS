@@ -70,6 +70,13 @@ set(_srcs
   ${OVE_DIR}/src/ove_gpio.c
   ${OVE_DIR}/src/ove_led.c
   ${OVE_DIR}/src/ove_app.c
+  ${OVE_DIR}/src/ove_sync.c
+  ${OVE_DIR}/src/ove_queue.c
+  ${OVE_DIR}/src/ove_timer.c
+  ${OVE_DIR}/src/ove_eventgroup.c
+  ${OVE_DIR}/src/ove_workqueue.c
+  ${OVE_DIR}/src/ove_stream.c
+  ${OVE_DIR}/src/ove_media.c
 
   # Common backend + stubs for hardware-dependent modules.
   ${OVE_DIR}/backends/common/ove_audio_graph.c
@@ -86,6 +93,7 @@ set(_srcs
   ${_stub_dir}/stub_fs.c
 
   # Test suites.
+  ${_suite_dir}/test_media.c
   ${_suite_dir}/test_storage_bounds.c
   ${_suite_dir}/test_hw_stm32f746.c
   ${_suite_dir}/test_renode_stm32_obs.c
