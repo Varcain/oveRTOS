@@ -28,15 +28,12 @@
 
 #include <stdint.h>
 
-#include "ove/storage.h"
 #include "ove/sync.h"
 #include "ove/thread.h"
 #include "ove/time.h"
 
 #include "ove/hal/hal_rt_scope.h"
 #include "ove/lxp_metrics.h"
-#define RT_SCOPE_STACK_SIZE 1024u
-#define RT_SCOPE_REPORT_STACK_SIZE 1024u
 #define RT_SCOPE_WORK_ITERATIONS 512u
 #define RT_SCOPE_REPORT_PERIOD_MS 10000u
 
@@ -55,22 +52,6 @@ static ove_thread_t g_response_thread;
 static ove_thread_storage_t g_response_thread_storage;
 static ove_thread_t g_report_thread;
 static ove_thread_storage_t g_report_thread_storage;
-#if defined(CONFIG_OVE_RTOS_NUTTX)
-/* Keep the latency-sensitive scope stacks in NuttX's DTCM-backed kernel heap.
- * The backend can honor caller buffers, but static application buffers live
- * in the tighter and slower SRAM1 region on this target. */
-#define RT_SCOPE_STACK_BYTES RT_SCOPE_STACK_SIZE
-#define RT_SCOPE_STACK_PTR NULL
-#define RT_SCOPE_REPORT_STACK_BYTES RT_SCOPE_REPORT_STACK_SIZE
-#define RT_SCOPE_REPORT_STACK_PTR NULL
-#else
-OVE_THREAD_STACK_DEFINE_STATIC_(g_response_stack, RT_SCOPE_STACK_SIZE);
-OVE_THREAD_STACK_DEFINE_STATIC_(g_report_stack, RT_SCOPE_REPORT_STACK_SIZE);
-#define RT_SCOPE_STACK_BYTES sizeof(g_response_stack)
-#define RT_SCOPE_STACK_PTR g_response_stack
-#define RT_SCOPE_REPORT_STACK_BYTES sizeof(g_report_stack)
-#define RT_SCOPE_REPORT_STACK_PTR g_report_stack
-#endif
 
 static volatile uint32_t g_payload_state = 0x6d2b79f5u;
 static volatile uint32_t g_deadline_count;
@@ -256,7 +237,7 @@ static void response_thread(void *arg)
 				break;
 		}
 		if (deadline == __atomic_load_n(&g_response_count, __ATOMIC_RELAXED))
-			continue; /* drain a stale counting-semaphore post on NuttX */
+			continue; /* Drain a stale backend event token. */
 
 		uint32_t missed = deadline - g_last_execution_deadline - 1u;
 		uint64_t oldest_release_age =
@@ -771,6 +752,10 @@ static void report_thread(void *arg)
 
 int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 {
+	const ove_hal_rt_scope_stack_t response_stack =
+		ove_hal_rt_scope_worker_stack(OVE_HAL_RT_SCOPE_RESPONSE_WORKER);
+	const ove_hal_rt_scope_stack_t report_stack =
+		ove_hal_rt_scope_worker_stack(OVE_HAL_RT_SCOPE_REPORT_WORKER);
 	int rc = ove_event_init(&g_deadline_event, &g_deadline_event_storage);
 	if (rc != OVE_OK)
 		return rc;
@@ -781,8 +766,8 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 	}
 
 	rc = ove_thread_init(&g_response_thread, &g_response_thread_storage, "rt-scope",
-			     response_thread, NULL, OVE_PRIO_CRITICAL, RT_SCOPE_STACK_BYTES,
-			     RT_SCOPE_STACK_PTR);
+			     response_thread, NULL, OVE_PRIO_CRITICAL, response_stack.size,
+			     response_stack.buffer);
 	if (rc != OVE_OK) {
 		ove_event_deinit(g_deadline_event);
 		return rc;
@@ -791,8 +776,8 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 	g_report_write = write_fn;
 	if (g_report_write != NULL) {
 		rc = ove_thread_init(&g_report_thread, &g_report_thread_storage, "rt-report",
-				     report_thread, NULL, OVE_PRIO_LOW, RT_SCOPE_REPORT_STACK_BYTES,
-				     RT_SCOPE_REPORT_STACK_PTR);
+				     report_thread, NULL, OVE_PRIO_LOW, report_stack.size,
+				     report_stack.buffer);
 		if (rc != OVE_OK) {
 			ove_thread_request_stop(g_response_thread);
 			ove_event_signal(g_deadline_event);

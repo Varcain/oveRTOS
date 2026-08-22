@@ -8,6 +8,7 @@
 #ifndef OVE_HAL_RT_SCOPE_H
 #define OVE_HAL_RT_SCOPE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "ove/types.h"
@@ -21,6 +22,18 @@ extern "C" {
 #define OVE_RT_SCOPE_PERIOD_TICKS (OVE_RT_SCOPE_PERIOD_US * OVE_RT_SCOPE_TICKS_PER_US)
 
 typedef void (*ove_hal_rt_scope_release_fn)(void);
+
+typedef enum {
+	OVE_HAL_RT_SCOPE_RESPONSE_WORKER = 0,
+	OVE_HAL_RT_SCOPE_REPORT_WORKER,
+} ove_hal_rt_scope_worker_t;
+
+typedef struct {
+	size_t size;
+	void *buffer;
+} ove_hal_rt_scope_stack_t;
+
+ove_hal_rt_scope_stack_t ove_hal_rt_scope_worker_stack(ove_hal_rt_scope_worker_t worker);
 
 int ove_hal_rt_scope_irq_prepare(ove_hal_rt_scope_release_fn release);
 void ove_hal_rt_scope_hardware_prepare(void);
