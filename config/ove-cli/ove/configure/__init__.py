@@ -72,7 +72,7 @@ def _emit_cmake_user_presets(ws):
     (VS Code CMake Tools, CLion) pick this up automatically and can
     configure / build without going through `make` or `ove build`.
     """
-    if ws.rtos == "nuttx":
+    if ws.is_isolated or ws.rtos == "nuttx":
         # NuttX wraps cmake itself; an external preset would just confuse
         # CLion when it tries to invoke without nuttx-cmake's build glue.
         return

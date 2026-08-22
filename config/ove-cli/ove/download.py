@@ -1001,8 +1001,7 @@ def download_all(ws):
         ok = download_toolchain(config, ws.dl_dir, ws.toolchains_dir,
                                 manifest=manifest) and ok
         # Create workspace toolchain symlink
-        if os.path.isfile(os.path.join(ws.toolchains_dir, "path.txt")) \
-                and os.path.islink(ws.config_path):
+        if os.path.isfile(os.path.join(ws.toolchains_dir, "path.txt")):
             with open(os.path.join(ws.toolchains_dir, "path.txt")) as f:
                 tc_path = f.read().strip()
             tc_name = os.path.basename(tc_path)
