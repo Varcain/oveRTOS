@@ -19,6 +19,16 @@
 
 static int battery_pct = 85;
 
+static int sleep_until_stopped(ove_thread_t self, uint32_t duration_ms)
+{
+	while (duration_ms > 0 && !ove_thread_should_stop(self)) {
+		uint32_t step_ms = duration_ms > 100 ? 100 : duration_ms;
+		ove_thread_sleep_ms(step_ms);
+		duration_ms -= step_ms;
+	}
+	return ove_thread_should_stop(self);
+}
+
 static void pm_notify(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to, void *user_data)
 {
 	(void)user_data;
@@ -55,50 +65,55 @@ static ove_pm_state_t battery_policy(ove_pm_state_t current, uint32_t idle_ms,
 static void sensor_thread(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	uint32_t reading = 0;
 
 	OVE_LOG_INF("sensor: started");
 
-	while (1) {
+	while (!ove_thread_should_stop(self)) {
 		ove_pm_domain_request(OVE_PM_DOMAIN_SENSOR);
 		ove_pm_activity();
 
-		ove_thread_sleep_ms(50);
+		if (sleep_until_stopped(self, 50)) {
+			ove_pm_domain_release(OVE_PM_DOMAIN_SENSOR);
+			return;
+		}
 		reading += 17;
 
-		OVE_LOG_INF("sensor: reading = %u", reading % 1000);
+		OVE_LOG_INF("sensor: reading = %u", (unsigned int)(reading % 1000));
 
 		ove_pm_domain_release(OVE_PM_DOMAIN_SENSOR);
-		ove_thread_sleep_ms(5000);
+		if (sleep_until_stopped(self, 5000))
+			return;
 	}
 }
 
 static void monitor_thread(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	struct ove_pm_stats stats;
 
 	OVE_LOG_INF("monitor: started");
 
-	while (1) {
-		ove_thread_sleep_ms(10000);
-
+	while (!sleep_until_stopped(self, 10000)) {
 		if (ove_pm_get_stats(&stats) == OVE_OK) {
 			OVE_LOG_INF("=== Power Stats ===");
 			OVE_LOG_INF("  active:  %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_ACTIVE],
-				    stats.transition_count[OVE_PM_STATE_ACTIVE]);
+				    (unsigned int)stats.transition_count[OVE_PM_STATE_ACTIVE]);
 			OVE_LOG_INF("  idle:    %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_IDLE],
-				    stats.transition_count[OVE_PM_STATE_IDLE]);
+				    (unsigned int)stats.transition_count[OVE_PM_STATE_IDLE]);
 			OVE_LOG_INF("  standby: %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_STANDBY],
-				    stats.transition_count[OVE_PM_STATE_STANDBY]);
+				    (unsigned int)stats.transition_count[OVE_PM_STATE_STANDBY]);
 			OVE_LOG_INF("  deep:    %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_DEEP_SLEEP],
-				    stats.transition_count[OVE_PM_STATE_DEEP_SLEEP]);
-			OVE_LOG_INF("  active%%: %u.%02u%%", stats.active_pct_x100 / 100,
-				    stats.active_pct_x100 % 100);
+				    (unsigned int)stats.transition_count[OVE_PM_STATE_DEEP_SLEEP]);
+			OVE_LOG_INF("  active%%: %u.%02u%%",
+				    (unsigned int)(stats.active_pct_x100 / 100),
+				    (unsigned int)(stats.active_pct_x100 % 100));
 		}
 
 		if (battery_pct > 5)
@@ -148,6 +163,7 @@ void ove_main(void)
 	if (ove_thread_create(&monitor, "monitor", monitor_thread, NULL, OVE_PRIO_LOW, 4096) !=
 	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn monitor thread");
+		ove_thread_request_stop(sensor);
 		ove_thread_destroy(sensor);
 		ove_pm_deinit();
 		return;
@@ -157,6 +173,8 @@ void ove_main(void)
 
 	ove_run();
 
+	ove_thread_request_stop(monitor);
+	ove_thread_request_stop(sensor);
 	ove_thread_destroy(monitor);
 	ove_thread_destroy(sensor);
 	ove_pm_deinit();
