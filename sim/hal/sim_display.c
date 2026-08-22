@@ -54,7 +54,8 @@ static int display_get_state(void *ctx, void *buf, size_t buf_len, size_t *out_l
 	int n = snprintf((char *)buf, buf_len,
 			 "{\"type\":\"display\",\"width\":%u,\"height\":%u,"
 			 "\"frames\":%u}",
-			 d->cfg.width, d->cfg.height, d->frame_count);
+			 (unsigned int)d->cfg.width, (unsigned int)d->cfg.height,
+			 (unsigned int)d->frame_count);
 	if (out_len)
 		*out_len = (size_t)n;
 	return OVE_OK;

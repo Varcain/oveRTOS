@@ -170,7 +170,7 @@ void ove_lvgl_lock(void)
 {
 	if (!lvgl_ready)
 		return;
-	ove_mutex_lock(lvgl_mutex, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(lvgl_mutex);
 }
 
 void ove_lvgl_unlock(void)
