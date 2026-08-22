@@ -873,7 +873,7 @@ static void test_console_adapter_binds_only_console_policy(void **state)
 		.on_enosys = test_enosys,
 		.rt_scope_ctx = &diagnostic_cookie,
 	};
-	assert_int_equal(ove_lxp_console_init(), OVE_OK);
+	ove_lxp_console_init();
 	ove_lxp_console_bind(&config);
 	assert_non_null(config.read_fn);
 	assert_non_null(config.write_fn);

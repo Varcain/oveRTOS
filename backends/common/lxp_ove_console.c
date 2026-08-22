@@ -86,14 +86,11 @@ static void console_unsubscribe(void *ctx)
 	(void)ove_hal_lxp_console_set_ready_callback(NULL, NULL);
 }
 
-int ove_lxp_console_init(void)
+void ove_lxp_console_init(void)
 {
-	int rc = ove_hal_lxp_console_init();
-	if (rc != OVE_OK)
-		return rc;
+	ove_hal_lxp_console_init();
 	g_ready_events = ove_hal_lxp_console_ready_events();
 	(void)native_ready();
-	return OVE_OK;
 }
 
 void ove_lxp_console_bind(ove_lxp_launch_config_t *config)

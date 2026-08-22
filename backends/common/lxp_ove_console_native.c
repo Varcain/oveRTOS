@@ -12,12 +12,11 @@
 
 static int g_ready_events;
 
-int ove_hal_lxp_console_init(void)
+void ove_hal_lxp_console_init(void)
 {
 	/* Capability discovery also withdraws any stale subscriber left by an
 	 * aborted launch. Backends without an event source reject the probe. */
 	g_ready_events = ove_console_set_ready_callback(NULL, NULL) == OVE_OK;
-	return OVE_OK;
 }
 
 int ove_hal_lxp_console_try_getchar(void)
