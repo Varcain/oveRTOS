@@ -256,9 +256,22 @@ static void test_bind_address_not_available(void **state)
 	assert_int_equal(rc, OVE_ERR_NET_ADDR_NOT_AVAILABLE);
 }
 
+static void test_ipv4_constructor(void **state)
+{
+	(void)state;
+	ove_sockaddr_t address;
+	memset(&address, 0xa5, sizeof(address));
+	ove_sockaddr_ipv4(&address, 192, 0, 2, 7, 4242);
+	assert_int_equal(address.family, OVE_AF_INET);
+	assert_int_equal(address.port, 4242);
+	const uint8_t expected[16] = {192, 0, 2, 7};
+	assert_memory_equal(address.addr, expected, sizeof(expected));
+}
+
 int test_net_loopback_run(void)
 {
 	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_ipv4_constructor),
 		cmocka_unit_test_setup_teardown(test_tcp_loopback_echo, loopback_setup,
 						loopback_teardown),
 		cmocka_unit_test(test_bind_address_not_available),

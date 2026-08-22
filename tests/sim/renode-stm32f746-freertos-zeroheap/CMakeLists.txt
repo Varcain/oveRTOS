@@ -170,6 +170,7 @@ set(FREERTOS_BACKEND_SOURCES
     # STM32F7_DRIVER_SOURCES below).  Renode's SynopsysEthernetMAC +
     # EthernetPhysicalLayer back the wire; the test only verifies
     # bring-up + IP assignment, no external traffic required.
+    ${OVE_SRC}/ove_net.c
     ${FREERTOS_BACKEND}/freertos_net.c
     ${FREERTOS_BACKEND}/lwip_sys_arch.c
     # FS / NVS deferred — see tests/suites/test_renode_stm32_periph.c

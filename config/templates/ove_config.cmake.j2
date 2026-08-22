@@ -130,6 +130,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BLOCK") == True %}
     ${OVE_DIR}/src/ove_block.c
 {% endif %}
+{% if config.get("CONFIG_OVE_NET") == True %}
+    ${OVE_DIR}/src/ove_net.c
+{% endif %}
 {# Heap-lock common impl: included only on RTOSes where we actually
    apply --wrap (FreeRTOS, NuttX).  Zephyr+zeroheap has zero kernel
    heap by design (audited at link time); pulling the wrap chain in
