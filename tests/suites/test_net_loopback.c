@@ -266,6 +266,13 @@ static void test_ipv4_constructor(void **state)
 	assert_int_equal(address.port, 4242);
 	const uint8_t expected[16] = {192, 0, 2, 7};
 	assert_memory_equal(address.addr, expected, sizeof(expected));
+
+	assert_int_equal(ove_sockaddr_parse_ipv4(&address, "198.51.100.9", 8080), OVE_OK);
+	const uint8_t parsed[16] = {198, 51, 100, 9};
+	assert_memory_equal(address.addr, parsed, sizeof(parsed));
+	assert_int_equal(address.port, 8080);
+	assert_int_equal(ove_sockaddr_parse_ipv4(&address, "256.1.1.1", 0), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_sockaddr_parse_ipv4(&address, "1.2.3", 0), OVE_ERR_INVALID_PARAM);
 }
 
 int test_net_loopback_run(void)
