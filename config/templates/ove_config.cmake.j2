@@ -133,6 +133,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_QUEUE") == True %}
     ${OVE_DIR}/src/ove_queue.c
 {% endif %}
+{% if config.get("CONFIG_OVE_TIMER") == True %}
+    ${OVE_DIR}/src/ove_timer.c
+{% endif %}
 {% if config.get("CONFIG_OVE_STREAM") == True %}
     ${OVE_DIR}/src/ove_stream.c
 {% endif %}

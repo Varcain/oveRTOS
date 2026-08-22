@@ -8,7 +8,6 @@
 
 #include "ove/timer.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 /* k_timer expiry runs in ISR context — defer to system workqueue */
 static void zephyr_timer_expiry(struct k_timer *ztimer)
@@ -47,13 +46,6 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
 	return OVE_OK;
 }
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot)
-{
-	return ove_timer_init_ns(timer, storage, callback, user_data,
-				 (uint64_t)period_ms * 1000000ULL, one_shot);
-}
-
 void ove_timer_deinit(ove_timer_t timer)
 {
 	if (timer != NULL) {
@@ -69,46 +61,6 @@ void ove_timer_deinit(ove_timer_t timer)
 		k_work_cancel_sync(&timer->work, &sync);
 	}
 }
-
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_TIMER
-int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
-			uint64_t period_ns, int one_shot)
-{
-	struct ove_timer *ctx;
-
-	if (timer == NULL || callback == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
-	if (ctx == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	int ret = ove_timer_init_ns(timer, ctx, callback, user_data, period_ns, one_shot);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(ctx);
-	}
-	return ret;
-}
-
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot)
-{
-	return ove_timer_create_ns(timer, callback, user_data, (uint64_t)period_ms * 1000000ULL,
-				   one_shot);
-}
-
-void ove_timer_destroy(ove_timer_t timer)
-{
-	if (timer != NULL) {
-		ove_timer_deinit(timer);
-		OVE_BACKEND_FREE(timer);
-	}
-}
-#endif /* OVE_HEAP_TIMER */
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 

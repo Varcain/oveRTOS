@@ -23,7 +23,6 @@
 
 #include "ove/timer.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include "ove_ns_to_ticks.h"
 #include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
@@ -92,57 +91,12 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
 	return OVE_OK;
 }
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot)
-{
-	return ove_timer_init_ns(timer, storage, callback, user_data,
-				 (uint64_t)period_ms * 1000000ULL, one_shot);
-}
-
 void ove_timer_deinit(ove_timer_t timer)
 {
 	if (timer != NULL) {
 		timer_cleanup(timer);
 	}
 }
-
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_TIMER
-int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
-			uint64_t period_ns, int one_shot)
-{
-	struct ove_timer *ctx;
-
-	if (timer == NULL || callback == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
-	if (ctx == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	timer_setup(ctx, callback, user_data, period_ns, one_shot);
-	*timer = ctx;
-	return OVE_OK;
-}
-
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot)
-{
-	return ove_timer_create_ns(timer, callback, user_data, (uint64_t)period_ms * 1000000ULL,
-				   one_shot);
-}
-
-void ove_timer_destroy(ove_timer_t timer)
-{
-	if (timer != NULL) {
-		timer_cleanup(timer);
-		OVE_BACKEND_FREE(timer);
-	}
-}
-#endif /* OVE_HEAP_TIMER */
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 

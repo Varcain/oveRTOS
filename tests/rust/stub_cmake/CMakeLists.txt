@@ -26,6 +26,7 @@ add_library(ove_stub STATIC
     ${POSIX_CORE_DIR}/posix_queue.c
     ${OVE_SRC}/ove_queue.c
     ${POSIX_CORE_DIR}/posix_timer.c
+    ${OVE_SRC}/ove_timer.c
     ${POSIX_CORE_DIR}/posix_time.c
     ${POSIX_CORE_DIR}/posix_console.c
     ${POSIX_CORE_DIR}/posix_eventgroup.c
