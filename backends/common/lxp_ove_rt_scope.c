@@ -28,7 +28,7 @@
 #include "ove/time.h"
 
 #include "ove/hal/hal_rt_scope.h"
-#include "ove/lxp_metrics.h"
+#include "ove_lxp_metrics.h"
 #define RT_SCOPE_WORK_ITERATIONS 512u
 #define RT_SCOPE_REPORT_PERIOD_MS 10000u
 

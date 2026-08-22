@@ -179,7 +179,7 @@ static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declar
 #endif
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-#include "ove/lxp_metrics.h"
+#include "ove_lxp_metrics.h"
 
 uint32_t ove_lxp_metrics_counter_hz(void)
 {

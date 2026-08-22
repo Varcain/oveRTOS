@@ -26,7 +26,7 @@
 #include "ove_config.h"
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-#include "ove/lxp_metrics.h"
+#include "ove_lxp_metrics.h"
 
 uint32_t ove_lxp_metrics_counter_hz(void)
 {

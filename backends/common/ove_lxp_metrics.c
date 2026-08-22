@@ -7,7 +7,7 @@
  */
 
 #include "lxp/lxp_rt_metrics.h"
-#include "ove/lxp_metrics.h"
+#include "ove_lxp_metrics.h"
 #include "ove/types.h"
 #include "ove_config.h"
 

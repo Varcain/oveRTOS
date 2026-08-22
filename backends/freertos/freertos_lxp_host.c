@@ -32,7 +32,7 @@ void ove_freertos_lxp_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc);
 #endif
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-#include "ove/lxp_metrics.h"
+#include "ove_lxp_metrics.h"
 
 uint32_t ove_lxp_metrics_counter_hz(void)
 {

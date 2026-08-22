@@ -3,11 +3,12 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * This file is part of oveRTOS.
+ * Private metrics seam between the RT-scope service, LXP counters, and the
+ * selected RTOS backend. This is not application API.
  */
 
-#ifndef OVE_LXP_METRICS_H
-#define OVE_LXP_METRICS_H
+#ifndef OVE_LXP_METRICS_INTERNAL_H
+#define OVE_LXP_METRICS_INTERNAL_H
 
 #include <stdint.h>
 
@@ -65,4 +66,4 @@ int ove_lxp_thread_snapshot_metrics_take(struct ove_lxp_thread_snapshot_metrics 
 }
 #endif
 
-#endif /* OVE_LXP_METRICS_H */
+#endif /* OVE_LXP_METRICS_INTERNAL_H */
