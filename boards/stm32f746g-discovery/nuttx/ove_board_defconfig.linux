@@ -23,9 +23,8 @@ CONFIG_ARMV7M_DCACHE_WRITETHROUGH=n
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
 # Park blocked Linux guests in NuttX's stopped-task list and return the same TCB
-# to the ready list on completion. Without this option the scheduler has no
-# persistent STOPPED state and the personality would have to delete/recreate
-# tasks on every wait.
+# to the ready list on completion. Without this option the scheduler cannot
+# satisfy LXP's persistent parked-task contract.
 CONFIG_SIG_DEFAULT=y
 CONFIG_SIG_SIGSTOP_ACTION=y
 

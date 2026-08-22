@@ -341,8 +341,8 @@ add_compile_definitions(LXP_ENABLE_RT_METRICS=1)
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True %}
 # The guest ABI is independent of the host firmware ABI. A hard-float guest can
-# park in the syscall top half and later resume in a recreated FreeRTOS task, so
-# the seam and shared core must carry its complete single-precision VFP state.
+# park in the syscall top half and later resume the same native task, so the seam
+# and shared core must carry its complete single-precision VFP state.
 set(OVE_LINUX_GUEST_FLOAT_ABI "hard")
 add_compile_definitions(LXP_ENABLE_FPU_CONTEXT=1)
 {% else %}
