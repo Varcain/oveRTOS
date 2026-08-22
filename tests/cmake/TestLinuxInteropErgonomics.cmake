@@ -80,6 +80,11 @@ if(APP_TEXT MATCHES "/bin/busybox|/usr/bin/fpcheck")
     message(FATAL_ERROR
         "linux_interop app regained rootfs-owned guest executable policy")
 endif()
+if(APP_TEXT MATCHES "rc2[ \t]*>=[ \t]*0" OR
+   ROUNDTRIP_TEXT MATCHES "guest_status[ \t]*>=[ \t]*0")
+    message(FATAL_ERROR
+        "linux_interop must not treat nonzero guest exit statuses as success")
+endif()
 if(NOT APP_TEXT MATCHES
    "GUEST_ENTRYPOINT[ \t]+\"/usr/libexec/ove-interop-guest\"")
     message(FATAL_ERROR

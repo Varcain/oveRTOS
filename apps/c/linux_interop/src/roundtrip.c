@@ -119,7 +119,7 @@ int linux_interop_roundtrip_complete(int guest_status)
 	(void)ove_thread_deinit(g_worker);
 
 	int received = __atomic_load_n(&g_round_trip_n, __ATOMIC_ACQUIRE);
-	int valid = guest_status >= 0 && received == N_READINGS;
+	int valid = guest_status == 0 && received == N_READINGS;
 	for (int i = 0; valid && i < N_READINGS; i++) {
 		char expected[16];
 		(void)snprintf(expected, sizeof(expected), "reading-%d", i + 1);
