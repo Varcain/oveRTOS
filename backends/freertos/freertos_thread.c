@@ -122,6 +122,10 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
  * read on the typical (worker-already-done) path. */
 static void wait_for_worker_exit(ove_thread_t handle)
 {
+	/* Before ove_run(), the worker cannot have entered and no task can receive
+	 * its exit notification.  The caller may safely delete that dormant task. */
+	if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED)
+		return;
 	handle->destroyer = xTaskGetCurrentTaskHandle();
 	OVE_DMB();
 	if (handle->exited) {
