@@ -24,10 +24,6 @@
 
 #include "ove_config.h"
 
-#ifndef UNUSED
-#define UNUSED(x) ((void)(x))
-#endif
-
 #define THREAD_AUDIT_CAPACITY 2u
 
 struct thread_audit_snapshot {
@@ -78,7 +74,7 @@ OVE_THREAD_DEFINE(g_wdtest_storage, 512);
 
 static void wdtest_spin(void *arg)
 {
-	UNUSED(arg);
+	(void)arg;
 	for (;;)
 		__asm volatile("nop");
 }
@@ -100,7 +96,7 @@ static void wd_selftest_maybe_trip(void)
 
 static void wd_body(void *arg)
 {
-	UNUSED(arg);
+	(void)arg;
 	if (ove_watchdog_init(&g_wd_dog, &g_wd_dog_storage, WD_TIMEOUT_MS) != OVE_OK ||
 	    ove_watchdog_start(g_wd_dog) != OVE_OK) {
 		ove_lxp_console_write(
@@ -143,7 +139,7 @@ OVE_THREAD_DEFINE(g_ftest_storage, 512);
 
 static void ftest_body(void *arg)
 {
-	UNUSED(arg);
+	(void)arg;
 	ove_thread_sleep_ms(4000);
 	ove_lxp_console_write("[c6] faulting a privileged host task (udf) while a guest runs;"
 			      " expect HOST FAULT + watchdog reset\n");
@@ -180,7 +176,7 @@ static __attribute__((noinline)) void smash_host_stack(void)
 
 static void smashtest_body(void *arg)
 {
-	UNUSED(arg);
+	(void)arg;
 	ove_thread_sleep_ms(4500);
 	ove_lxp_console_write(
 		"[c9] smashing a host stack buffer; expect STACK SMASH + watchdog reset\n");
@@ -219,7 +215,7 @@ static int g_mon_started;
 
 static void mon_body(void *arg)
 {
-	UNUSED(arg);
+	(void)arg;
 	const uint64_t period_ns = OVE_MS(MON_PERIOD_MS);
 	while (!g_mon_stop) {
 		uint64_t t0 = ove_time_now_steady_ns();
