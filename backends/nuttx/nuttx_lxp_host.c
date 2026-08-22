@@ -125,11 +125,6 @@ static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_
 	"NuttX " CONFIG_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" OVE_BUILD_LXP_REV
 _Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
 
-static const char *host_system_version(void)
-{
-	return LXP_SYSTEM_VERSION;
-}
-
 static uint64_t host_runtime_us(int32_t pid)
 {
 	uint64_t cycles = 0;
@@ -235,7 +230,7 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.time_ns = ove_time_get_ns,
 	.host_thread_list = host_thread_list,
 	.mem_stats = lxp_ove_mem_stats_read,
-	.system_version = host_system_version,
+	.system_version = LXP_SYSTEM_VERSION,
 	.validate_memory_contract = HOST_MEMORY_VALIDATOR,
 	.runtime_reset = host_runtime_reset,
 	.runtime_start = host_runtime_start,

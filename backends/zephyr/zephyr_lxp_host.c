@@ -111,11 +111,6 @@ static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_
 	"Zephyr " KERNEL_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" OVE_BUILD_LXP_REV
 _Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
 
-static const char *host_system_version(void)
-{
-	return LXP_SYSTEM_VERSION;
-}
-
 static int host_random_fill(void *buf, size_t len)
 {
 	if (!buf && len != 0u)
@@ -225,7 +220,7 @@ const lxp_zephyr_port_config_t g_lxp_zephyr_port_config = {
 	.time_ns = ove_time_get_ns,
 	.thread_list = host_thread_list,
 	.mem_stats = lxp_ove_mem_stats_read,
-	.system_version = host_system_version,
+	.system_version = LXP_SYSTEM_VERSION,
 	.random_fill = host_random_fill,
 	.validate_memory_contract = HOST_MEMORY_VALIDATOR,
 };
