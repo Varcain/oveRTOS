@@ -220,14 +220,12 @@ static int g_mon_started;
 static void mon_body(void *arg)
 {
 	UNUSED(arg);
+	const uint64_t period_ns = OVE_MS(MON_PERIOD_MS);
 	while (!g_mon_stop) {
-		uint64_t t0 = 0, t1 = 0;
-		(void)ove_time_get_ns(&t0);
+		uint64_t t0 = ove_time_now_steady_ns();
 		ove_thread_sleep_ms(MON_PERIOD_MS);
-		(void)ove_time_get_ns(&t1);
-		uint64_t want = (uint64_t)MON_PERIOD_MS * 1000000u;
-		uint64_t slept = (t1 > t0) ? (t1 - t0) : 0;
-		ove_lxp_latency_record(&g_mon_late, slept > want ? slept - want : 0);
+		uint64_t slept = ove_time_now_steady_ns() - t0;
+		ove_lxp_latency_record(&g_mon_late, slept > period_ns ? slept - period_ns : 0);
 	}
 	g_mon_exited = 1;
 }
