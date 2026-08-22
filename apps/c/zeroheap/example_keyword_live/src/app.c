@@ -285,7 +285,8 @@ static void infer_thread(void *arg)
 				peak = s;
 		}
 
-		OVE_LOG_INF("Audio: peak=%d, rate=%u, read=%u", peak, actual_rate, read_count);
+		OVE_LOG_INF("Audio: peak=%d, rate=%u, read=%u", peak, (unsigned int)actual_rate,
+			    read_count);
 
 		/* Update actual sample rate for feature extraction resampling */
 		g_actual_rate = actual_rate > 0 ? actual_rate : AUDIO_SAMPLE_FREQ;
