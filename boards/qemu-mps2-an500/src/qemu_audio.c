@@ -151,10 +151,12 @@ struct qemu_sink_ctx {
 	struct ove_audio_graph *graph;
 	unsigned int frames_per_period;
 	ove_thread_t thread;
-	volatile int running;
 };
 
 static struct qemu_sink_ctx g_qemu_sink;
+#ifdef CONFIG_OVE_ZERO_HEAP
+OVE_THREAD_DEFINE(g_audio_thread_storage, 4096);
+#endif
 
 static int qemu_sink_configure(void *ctx, const struct ove_audio_fmt *in, struct ove_audio_fmt *out)
 {
@@ -182,12 +184,13 @@ static int qemu_sink_process(void *ctx, const struct ove_audio_buf *in, struct o
 static void audio_engine_loop(void *arg)
 {
 	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)arg;
+	ove_thread_t self = ove_thread_get_self();
 
 	unsigned int period_ms = (sc->frames_per_period * 1000) / sc->fmt.sample_rate;
 	if (period_ms < 1)
 		period_ms = 1;
 
-	while (sc->running) {
+	while (!ove_thread_should_stop(self)) {
 		ove_audio_graph_process(sc->graph);
 		ove_thread_sleep_ms(period_ms);
 	}
@@ -196,18 +199,15 @@ static void audio_engine_loop(void *arg)
 static int qemu_sink_start(void *ctx)
 {
 	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
-	sc->running = 1;
 
 #ifdef CONFIG_OVE_ZERO_HEAP
-	static ove_thread_storage_t audio_th_storage;
-	static uint8_t audio_th_stack[4096];
-	if (ove_thread_init(&sc->thread, &audio_th_storage, "qemu_audio", audio_engine_loop, sc,
-			    OVE_PRIO_NORMAL, 4096, audio_th_stack) != OVE_OK) {
+	if (ove_thread_init(&sc->thread, &g_audio_thread_storage, "qemu_audio", audio_engine_loop,
+			    sc, OVE_PRIO_NORMAL, sizeof(g_audio_thread_storage_stack),
+			    g_audio_thread_storage_stack) != OVE_OK) {
 #else
 	if (ove_thread_create(&sc->thread, "qemu_audio", audio_engine_loop, sc, OVE_PRIO_NORMAL,
 			      4096) != OVE_OK) {
 #endif
-		sc->running = 0;
 		return OVE_ERR_NO_MEMORY;
 	}
 	return OVE_OK;
@@ -216,19 +216,16 @@ static int qemu_sink_start(void *ctx)
 static int qemu_sink_stop(void *ctx)
 {
 	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
-	if (!sc->running)
+	if (!sc->thread)
 		return OVE_OK;
 
-	sc->running = 0;
-	if (sc->thread) {
-		ove_thread_sleep_ms(15);
+	ove_thread_request_stop(sc->thread);
 #ifdef CONFIG_OVE_ZERO_HEAP
-		ove_thread_deinit(sc->thread);
+	ove_thread_deinit(sc->thread);
 #else
-		ove_thread_destroy(sc->thread);
+	ove_thread_destroy(sc->thread);
 #endif
-		sc->thread = NULL;
-	}
+	sc->thread = NULL;
 	return OVE_OK;
 }
 
