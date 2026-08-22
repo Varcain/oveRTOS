@@ -10,6 +10,7 @@
 
 #include "ove/app.h"
 #include "ove/lxp_console.h"
+#include "ove/lxp_rt_scope.h"
 #include "ove/thread.h"
 
 #include "ove_config.h"
@@ -17,7 +18,6 @@
 #include "network_smoke.h"
 #include "qualification.h"
 #include "roundtrip.h"
-#include "rt_scope.h"
 
 #define GUEST_ENTRYPOINT "/usr/libexec/ove-interop-guest"
 
@@ -49,7 +49,7 @@ static void demo_body(void *arg)
 	ove_lxp_console_write("[build] " OVE_BUILD_ID "\n");
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
-	if (linux_rt_scope_start(ove_lxp_console_write) != OVE_OK) {
+	if (ove_lxp_rt_scope_start(ove_lxp_console_write) != OVE_OK) {
 		ove_lxp_console_write("[rt-scope] FAIL: timer/event/thread setup\n");
 		demo_exit(1);
 	}
@@ -69,7 +69,7 @@ static void demo_body(void *arg)
 
 	ove_lxp_console_write("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
 	ove_lxp_launch_config_t cfg1 = {
-		.rt_scope_read = linux_rt_scope_proc_read,
+		.rt_scope_read = ove_lxp_rt_scope_proc_read,
 	};
 	int roundtrip_rc = linux_interop_roundtrip_prepare(&cfg1);
 	if (roundtrip_rc != OVE_OK) {
@@ -93,7 +93,7 @@ static void demo_body(void *arg)
 			      " run commands, `poweroff` to halt) --\n");
 #endif
 	ove_lxp_launch_config_t cfg2 = {
-		.rt_scope_read = linux_rt_scope_proc_read,
+		.rt_scope_read = ove_lxp_rt_scope_proc_read,
 	};
 	ove_lxp_console_bind_diagnostics(&cfg2);
 	ove_lxp_console_bind(&cfg2);

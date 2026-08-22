@@ -98,6 +98,7 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_net_ready.c
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
     ${OVE_ROOT}/backends/common/lxp_ove_observability.c
+    ${OVE_ROOT}/backends/common/lxp_ove_rt_scope.c
     ${OVE_ROOT}/backends/common/lxp_ove_console.c
     ${OVE_ROOT}/backends/common/lxp_ove_console_native.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c

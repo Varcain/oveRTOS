@@ -17,9 +17,7 @@ set(EXPECTED_APP_FILES
     "src/qualification.c"
     "src/qualification.h"
     "src/roundtrip.c"
-    "src/roundtrip.h"
-    "src/rt_scope.c"
-    "src/rt_scope.h")
+    "src/roundtrip.h")
 file(GLOB_RECURSE ACTUAL_APP_FILES
     RELATIVE "${OVE_ROOT}/apps/c/linux_interop"
     "${OVE_ROOT}/apps/c/linux_interop/*")
@@ -38,6 +36,7 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_fs_adapter.c"
     "backends/common/lxp_ove_host.c"
     "backends/common/lxp_ove_observability.c"
+    "backends/common/lxp_ove_rt_scope.c"
     "backends/common/lxp_ove_console.c"
     "backends/common/lxp_ove_console_native.c"
     "boards/qemu-mps2/lxp_console.c"
@@ -267,15 +266,14 @@ if(NOT ACTUAL_LEGACY_SEAMS STREQUAL LEGACY_SEAMS)
         "expected: ${LEGACY_SEAMS}\nactual: ${ACTUAL_LEGACY_SEAMS}")
 endif()
 
-# Demo host modules use only public oveRTOS contracts. Direct native-RTOS
-# headers are confined to the rt_scope benchmark exception.
+# Demo host modules use only public oveRTOS contracts.
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/app.c" APP_TEXT)
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/network_smoke.c" NETWORK_SMOKE_TEXT)
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c" QUALIFICATION_TEXT)
 file(READ "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c" ROUNDTRIP_TEXT)
 set(HOST_APP_TEXT
     "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}")
-file(READ "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c" RT_SCOPE_TEXT)
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_rt_scope.c" RT_SCOPE_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_host.h" OVE_LXP_HOST_HEADER_TEXT)
 file(READ "${OVE_ROOT}/include/ove/lxp_observability.h" OVE_LXP_OBSERVABILITY_HEADER_TEXT)
 file(READ "${OVE_ROOT}/include/ove/thread.h" OVE_THREAD_HEADER_TEXT)
@@ -319,7 +317,7 @@ endif()
 if(RT_SCOPE_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"]lxp/|LXP_NR_|lxp_zephyr_critical_metrics|ove_freertos_lnx_metrics")
     message(FATAL_ERROR
-        "rt_scope.c bypasses the oveRTOS diagnostics metrics contract")
+        "LXP RT-scope service bypasses the oveRTOS diagnostics metrics contract")
 endif()
 if(HOST_APP_TEXT MATCHES
    "lxp_sock_set_netif|lxp_netfs_mount_config|#[ \t]*include[ \t]*[<\"]lxp/lxp_(net|netfs)\\.h|ove_netif_(init|up|down|deinit)\\(")

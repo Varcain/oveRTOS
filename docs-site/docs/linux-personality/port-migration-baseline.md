@@ -513,10 +513,13 @@ retaining split ownership.
 The OVE metrics facade copies canonical SVC records into its stable public
 contract and supplies the engine-owned counter frequency. It also hides the
 optional Zephyr critical-section and FreeRTOS thread-snapshot records behind
-capability-returning functions. `rt_scope.c` therefore contains no canonical
-LXP include, syscall constant, port metric type, or FreeRTOS-only metrics
-header. Its native IRQ attachment and NuttX scheduler-lock probe remain because
-they define the board experiment rather than reusable personality mechanics.
+capability-returning functions. The engine-neutral RT-scope service therefore
+contains no canonical LXP include, syscall constant, port metric type, or
+FreeRTOS-only metrics header. Its native IRQ attachment and NuttX
+scheduler-lock probe remain because they define the board experiment rather
+than reusable personality mechanics. The service now lives in
+`backends/common/lxp_ove_rt_scope.c`; the demo only starts it and publishes its
+`/proc/rt_scope` reader.
 
 Canonical unit and sanitizer suites cover window rotation, coherent lifetime
 sampling, maximum attribution, and syscall naming. oveRTOS tests cover facade
