@@ -513,7 +513,7 @@ static void httpd_task(void *arg)
 					size_t got = 0;
 					ret = ove_socket_recv(client, req.body + already,
 							      (size_t)content_length - already,
-							      &got, 5000);
+							      &got, OVE_MS(5000));
 					if (ret != OVE_OK || got == 0)
 						break;
 					already += got;

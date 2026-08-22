@@ -334,23 +334,37 @@ static void ws_send_pong(struct ove_httpd_ws_conn *conn, const uint8_t *payload,
 		(void)ws_send_all(conn->sock, payload, len);
 }
 
+static int ws_recv_exact(ove_socket_t sock, void *buf, size_t len)
+{
+	size_t total = 0;
+	while (total < len) {
+		size_t got = 0;
+		int ret = ove_socket_recv(sock, (uint8_t *)buf + total, len - total, &got,
+					  OVE_MS(1000));
+		if (ret != OVE_OK || got == 0)
+			return -1;
+		total += got;
+	}
+	return 0;
+}
+
 static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 {
-	/*
-	 * Read first 2 bytes to get opcode + payload length.
-	 * Use timeout=0 for non-blocking poll.
-	 */
-	uint8_t hdr[2];
-	size_t got = 0;
-	int ret = ove_socket_recv(conn->sock, hdr, 2, &got, 0);
-
-	if (ret != OVE_OK || got == 0)
-		return 0; /* no data available */
-
-	if (got < 2) {
-		/* Incomplete header — connection broken */
+	/* Poll is the portable non-blocking readiness primitive.  A zero
+	 * receive timeout means "wait forever" on some socket backends. */
+	unsigned revents = 0;
+	int ret = ove_socket_poll(conn->sock, OVE_SOCK_POLLIN, &revents, 0);
+	if (ret != OVE_OK)
 		return -1;
-	}
+	if (revents & (OVE_SOCK_POLLERR | OVE_SOCK_POLLHUP))
+		return -1;
+	if (!(revents & OVE_SOCK_POLLIN))
+		return 0;
+
+	/* Read first 2 bytes to get opcode + payload length. */
+	uint8_t hdr[2];
+	if (ws_recv_exact(conn->sock, hdr, sizeof(hdr)) != 0)
+		return -1;
 
 	int opcode = hdr[0] & 0x0F;
 	int masked = (hdr[1] & 0x80) != 0;
@@ -367,14 +381,12 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 	/* Extended payload length */
 	if (payload_len == 126) {
 		uint8_t ext[2];
-		ret = ove_socket_recv(conn->sock, ext, 2, &got, OVE_MS(1000));
-		if (ret != OVE_OK || got < 2)
+		if (ws_recv_exact(conn->sock, ext, sizeof(ext)) != 0)
 			return -1;
 		payload_len = ((size_t)ext[0] << 8) | ext[1];
 	} else if (payload_len == 127) {
 		uint8_t ext[8];
-		ret = ove_socket_recv(conn->sock, ext, 8, &got, OVE_MS(1000));
-		if (ret != OVE_OK || got < 8)
+		if (ws_recv_exact(conn->sock, ext, sizeof(ext)) != 0)
 			return -1;
 		/* Reject frames whose top 32 bits are set — we don't support >4GB */
 		if (ext[0] | ext[1] | ext[2] | ext[3]) {
@@ -399,20 +411,12 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 
 	/* Read masking key (4 bytes) — presence already enforced above */
 	uint8_t mask[4] = {0};
-	ret = ove_socket_recv(conn->sock, mask, 4, &got, OVE_MS(1000));
-	if (ret != OVE_OK || got < 4)
+	if (ws_recv_exact(conn->sock, mask, sizeof(mask)) != 0)
 		return -1;
 
 	/* Read payload */
-	size_t total = 0;
-	while (total < payload_len) {
-		got = 0;
-		ret = ove_socket_recv(conn->sock, conn->frame_buf + total, payload_len - total,
-				      &got, 1000);
-		if (ret != OVE_OK || got == 0)
-			return -1;
-		total += got;
-	}
+	if (ws_recv_exact(conn->sock, conn->frame_buf, payload_len) != 0)
+		return -1;
 
 	/* Unmask payload */
 	for (size_t i = 0; i < payload_len; i++)
