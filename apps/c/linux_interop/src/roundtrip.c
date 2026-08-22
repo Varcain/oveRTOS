@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "ove/lxp_console.h"
+#include "ove/thread.h"
 #include "ove/time.h"
 #include "ove/types.h"
 
@@ -25,12 +26,9 @@ struct roundtrip_line {
 };
 
 static struct roundtrip_line g_feed_lines[N_READINGS];
-static volatile int g_feed_idx;
-static volatile int g_feed_ready;
-static volatile int g_linux_done;
-static volatile int g_worker_exited;
+static int g_feed_idx;
 static char g_round_trip[N_READINGS][LINE_CAPACITY];
-static volatile int g_round_trip_n;
+static int g_round_trip_n;
 
 static ove_thread_t g_worker;
 OVE_THREAD_DEFINE(g_worker_storage, 2048);
@@ -38,28 +36,20 @@ OVE_THREAD_DEFINE(g_worker_storage, 2048);
 static void roundtrip_worker(void *arg)
 {
 	(void)arg;
-	for (int i = 1; i <= N_READINGS; i++) {
-		(void)snprintf(g_feed_lines[i - 1].text, sizeof(g_feed_lines[i - 1].text),
-			       "reading-%d\n", i);
-		ove_lxp_console_printf("[rtos-feeder] -> Linux: reading-%d\n", i);
-	}
-	g_feed_ready = 1;
-
 	int printed = 0;
 	for (;;) {
-		while (printed < g_round_trip_n) {
+		int available = __atomic_load_n(&g_round_trip_n, __ATOMIC_ACQUIRE);
+		while (printed < available) {
 			ove_lxp_console_printf(
 				"[rtos-consumer] <- Linux (round trip #%d @ %u ms): \"%s\"\n",
-				printed + 1,
-				(unsigned int)(ove_time_now_steady_ns() / OVE_MS(1)),
+				printed + 1, (unsigned int)(ove_time_now_steady_ns() / OVE_MS(1)),
 				g_round_trip[printed]);
 			printed++;
 		}
-		if (g_linux_done && printed >= g_round_trip_n)
+		if (ove_thread_should_stop(g_worker) && printed >= available)
 			break;
-		ove_time_delay_ms(50);
+		ove_thread_sleep_ms(50);
 	}
-	g_worker_exited = 1;
 }
 
 static long feed_read(void *ctx, int fd, void *buf, size_t len)
@@ -87,11 +77,10 @@ static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 		size--;
 	text[size] = 0;
 	if (size) {
-		int index = g_round_trip_n;
+		int index = __atomic_load_n(&g_round_trip_n, __ATOMIC_RELAXED);
 		if (index < N_READINGS) {
 			memcpy(g_round_trip[index], text, size + 1);
-			__asm__ volatile("" ::: "memory");
-			g_round_trip_n = index + 1;
+			__atomic_store_n(&g_round_trip_n, index + 1, __ATOMIC_RELEASE);
 		}
 	}
 	return (long)len;
@@ -104,34 +93,32 @@ int linux_interop_roundtrip_prepare(ove_lxp_launch_config_t *config)
 	memset(g_feed_lines, 0, sizeof(g_feed_lines));
 	memset(g_round_trip, 0, sizeof(g_round_trip));
 	g_feed_idx = 0;
-	g_feed_ready = 0;
-	g_linux_done = 0;
-	g_worker_exited = 0;
-	g_round_trip_n = 0;
+	__atomic_store_n(&g_round_trip_n, 0, __ATOMIC_RELAXED);
+	for (int i = 1; i <= N_READINGS; i++) {
+		(void)snprintf(g_feed_lines[i - 1].text, sizeof(g_feed_lines[i - 1].text),
+			       "reading-%d\n", i);
+		ove_lxp_console_printf("[rtos-feeder] -> Linux: reading-%d\n", i);
+	}
 
 	config->write_fn = consume_write;
 	config->read_fn = feed_read;
 	config->io_ctx = NULL;
-	int rc = ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", roundtrip_worker,
-				 NULL, OVE_PRIO_LOW, sizeof(g_worker_storage_stack),
-				 g_worker_storage_stack);
-	if (rc != OVE_OK)
-		return rc;
-	while (!g_feed_ready)
-		ove_thread_sleep_ms(1);
-	return OVE_OK;
+	return ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", roundtrip_worker, NULL,
+			       OVE_PRIO_LOW, sizeof(g_worker_storage_stack),
+			       g_worker_storage_stack);
 }
 
 int linux_interop_roundtrip_complete(int guest_status)
 {
-	g_linux_done = 1;
-	while (!g_worker_exited)
+	ove_thread_request_stop(g_worker);
+	while (ove_thread_get_state(g_worker) != OVE_THREAD_STATE_TERMINATED)
 		ove_thread_sleep_ms(1);
 	linux_interop_qualification_observe_thread("worker", g_worker,
 						   sizeof(g_worker_storage_stack));
 	(void)ove_thread_deinit(g_worker);
 
-	int valid = guest_status >= 0 && g_round_trip_n == N_READINGS;
+	int received = __atomic_load_n(&g_round_trip_n, __ATOMIC_ACQUIRE);
+	int valid = guest_status >= 0 && received == N_READINGS;
 	for (int i = 0; valid && i < N_READINGS; i++) {
 		char expected[16];
 		(void)snprintf(expected, sizeof(expected), "reading-%d", i + 1);
@@ -140,7 +127,7 @@ int linux_interop_roundtrip_complete(int guest_status)
 	if (!valid) {
 		ove_lxp_console_printf(
 			"[demo] FAIL: phase-1 round trip mismatch rc=%d received=%d\n",
-			guest_status, g_round_trip_n);
+			guest_status, received);
 		return OVE_ERR_IO;
 	}
 	ove_lxp_console_write(
