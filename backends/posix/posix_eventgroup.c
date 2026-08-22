@@ -44,35 +44,6 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 	}
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_eventgroup_create(ove_eventgroup_t *eg)
-{
-	if (!eg)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_eventgroup *g = OVE_BACKEND_MALLOC(sizeof(*g));
-	if (!g) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(g, 0, sizeof(*g));
-	pthread_mutex_init(&g->lock, NULL);
-	pthread_cond_init(&g->cond, NULL);
-	*eg = g;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_eventgroup_destroy(ove_eventgroup_t eg)
-{
-	struct ove_eventgroup *g = eg;
-	if (g) {
-		pthread_mutex_destroy(&g->lock);
-		pthread_cond_destroy(&g->cond);
-		OVE_BACKEND_FREE(g);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	struct ove_eventgroup *g = eg;
