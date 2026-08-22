@@ -17,7 +17,7 @@ function(ove_apply_app_language TARGET)
         target_sources(${TARGET} PRIVATE ${APP_SOURCES})
 
     elseif(OVE_APP_LANG STREQUAL "cpp")
-        # C++: set standard, add flags (CXX enabled via project() declaration)
+        # C++: set standard and add flags (CXX enabled by ove_setup_project)
         set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 23)
         set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD_REQUIRED ON)
         target_compile_options(${TARGET} PRIVATE
