@@ -382,7 +382,7 @@ def build_freertos(ws):
     # Kernel coupling required by a port belongs with that port rather than
     # whichever application happens to use it.
     freertos_download = os.path.join(ws.ws_dl_dir, "FreeRTOS-Kernel")
-    freertos_src = freertos_download
+    freertos_src = None
     if os.path.isdir(freertos_download):
         patch_layers = [("board patch", os.path.join(board_dir, "patches"))]
         if ws.config.get("CONFIG_OVE_LINUX"):
@@ -407,8 +407,15 @@ def build_freertos(ws):
         "-DOVE_GEN_DIR=" + ws.gen_dir,
         "-DOVE_DL_DIR=" + ws.ws_dl_dir,
         "-DBOARD_DIR=" + board_dir,
-        "-DFREERTOS_PATH=" + freertos_src,
     ]
+
+    if freertos_src:
+        cmake_args.append("-DFREERTOS_PATH=" + freertos_src)
+    else:
+        # Non-Linux STM32 profiles intentionally use the FreeRTOS copy bundled
+        # by STM32CubeF7.  Clear a value cached by an earlier standalone-kernel
+        # profile so OveFreeRTOS.cmake can select that board-native fallback.
+        cmake_args.append("-UFREERTOS_PATH")
 
     tc = ws.toolchain_dir
     if tc:
