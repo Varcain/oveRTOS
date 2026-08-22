@@ -98,19 +98,6 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 	return ret;
 }
 
-/*
- * NB (cross-backend caveats, tracked):
- *  - `enabled` is the authoritative dispatch gate (see ove_gpio_irq_dispatch);
- *    enable/disable toggle it in software. enable() does NOT re-arm the line in
- *    hardware, so on backends whose hw_disable() actually masks the IRQ
- *    (freertos NVIC, zephyr gpio_pin_interrupt_configure) a disable→enable
- *    cycle leaves the hardware line masked even though dispatch is re-gated on.
- *    The host/posix backend (hw_disable is a no-op) relies purely on the gate,
- *    so it round-trips correctly. Re-arming HW on enable would need a
- *    hw_reenable HAL hook — deferred.
- *  - hw_disable() return codes diverge: posix OVE_OK (no-op), freertos OVE_OK,
- *    zephyr OVE_OK, nuttx OVE_ERR_NOT_SUPPORTED (GPIO IRQ masking unimplemented).
- */
 int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
@@ -119,6 +106,11 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
 			    GPIO_IRQ_REGISTERED &&
 		    irq_table[i].port == port && irq_table[i].pin == pin) {
+			int ret = ove_hal_gpio_irq_hw_enable(port, pin, irq_table[i].mode,
+							     irq_table[i].callback,
+							     irq_table[i].user_data);
+			if (ret != OVE_OK)
+				return ret;
 			atomic_store_explicit(&irq_table[i].enabled, 1, memory_order_release);
 			return OVE_OK;
 		}

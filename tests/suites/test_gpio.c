@@ -35,6 +35,7 @@ static void gpio_irq_handler(unsigned int port, unsigned int pin, void *user_dat
  * it here to drive the register→enable→deliver path on the host stub, where
  * the HAL can't raise a real edge. */
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
+extern int stub_gpio_irq_is_armed(unsigned int port, unsigned int pin);
 
 /* Unregister the IRQ line after each IRQ test so registrations don't leak
  * across tests/suites (ove_gpio's irq_table is process-global).  That leakage
@@ -113,12 +114,20 @@ static void test_gpio_irq_enable_disable(void **state)
 
 	rc = ove_gpio_irq_disable(TEST_GPIO_PORT, TEST_GPIO_PIN);
 	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(stub_gpio_irq_is_armed(TEST_GPIO_PORT, TEST_GPIO_PIN), 0);
 
 	/* After disable the same dispatch must NOT reach the handler
 	 * (ove_gpio_irq_dispatch gates on the per-line `enabled` flag). */
 	s_irq_fired = 0;
 	ove_gpio_irq_dispatch(TEST_GPIO_PORT, TEST_GPIO_PIN);
 	assert_int_equal(s_irq_fired, 0);
+
+	rc = ove_gpio_irq_enable(TEST_GPIO_PORT, TEST_GPIO_PIN);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(stub_gpio_irq_is_armed(TEST_GPIO_PORT, TEST_GPIO_PIN), 1);
+	s_irq_fired = 0;
+	ove_gpio_irq_dispatch(TEST_GPIO_PORT, TEST_GPIO_PIN);
+	assert_int_equal(s_irq_fired, 1);
 }
 
 static void test_gpio_set_invalid_port(void **state)
