@@ -11,24 +11,24 @@ import sys
 
 from .appgen import generate_app_kconfig
 from .utils import atomic_symlink
-from .workspace import find_ove_dir
+from .workspace import find_ove_dir, write_app_path
 
 
 _VALID_RTOSES = ("freertos", "nuttx", "zephyr", "posix")
 
 
-def _find_external_app_for_defconfig(defconfig_path):
-    """If defconfig_path lives under an external app, return that app dir."""
+def _find_external_app(path):
+    """Return the advertised external app containing *path*, if any."""
     ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
     if not ext_apps_env:
         return None
-    defconfig_abs = os.path.abspath(defconfig_path)
-    for d in ext_apps_env.split(":"):
+    candidate = os.path.realpath(path)
+    for d in ext_apps_env.split(os.pathsep):
         d = d.strip()
         if not d:
             continue
-        app_abs = os.path.abspath(d)
-        if defconfig_abs.startswith(app_abs + os.sep):
+        app_abs = os.path.realpath(d)
+        if candidate == app_abs or candidate.startswith(app_abs + os.sep):
             return app_abs
     return None
 
@@ -120,7 +120,7 @@ def cmd_defconfig(args):
 
     # Determine if this defconfig comes from an external app.
     # If so, place the workspace under the external app's output/ dir.
-    ext_app_dir = _find_external_app_for_defconfig(defconfig_path)
+    ext_app_dir = _find_external_app(defconfig_path)
     ws_dir = workspace_path(
         ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
     if ext_app_dir:
@@ -170,6 +170,8 @@ def _write_workspace_config(kconf, ove_dir, ws_board, ws_rtos, ws_app,
     os.makedirs(ws_dir, exist_ok=True)
     ws_config = os.path.join(ws_dir, ".config")
     kconf.write_config(ws_config)
+    if ext_app_dir:
+        write_app_path(ws_dir, ext_app_dir)
 
     # Keep the workspace self-contained when a downloaded toolchain exists.
     tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
@@ -437,6 +439,7 @@ def cmd_defconfig_fragments(args):
     app_yaml = _load_yaml(app_yaml_path)
     app_config_name = app_yaml.get("config_name", app)
     app_lang = app_yaml.get("lang", "c")
+    ext_app_dir = _find_external_app(app_yaml_path)
 
     # Map lang to Kconfig symbol
     lang_symbol_map = {
@@ -527,13 +530,13 @@ def cmd_defconfig_fragments(args):
 
     activate = not getattr(args, "no_activate", False)
     ws_dir, ws_config = _write_workspace_config(
-        kconf, ove_dir, board, rtos, app, activate=activate)
+        kconf, ove_dir, board, rtos, app, ext_app_dir, activate=activate)
 
     print(f"Configuration written to {ws_config}")
     if activate:
-        print(f"Active workspace: output/{board}/{rtos}/{app}/")
+        print(f"Active workspace: {ws_dir}/")
     else:
-        print(f"Workspace left inactive: output/{board}/{rtos}/{app}/")
+        print(f"Workspace left inactive: {ws_dir}/")
 
 
 def cmd_savedefconfig(args):

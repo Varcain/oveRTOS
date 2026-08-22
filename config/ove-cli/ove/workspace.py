@@ -12,6 +12,17 @@ import os
 
 
 WORKSPACE_DIR_ENV = "OVE_WORKSPACE_DIR"
+APP_PATH_FILE = ".ove-app-path"
+
+
+def write_app_path(workspace_dir, app_dir):
+    """Record the configured external app relative to its workspace."""
+    path = os.path.join(workspace_dir, APP_PATH_FILE)
+    temporary = path + ".tmp"
+    relative = os.path.relpath(os.path.realpath(app_dir), workspace_dir)
+    with open(temporary, "w") as f:
+        f.write(relative + "\n")
+    os.replace(temporary, path)
 
 
 def find_ove_dir():
@@ -181,6 +192,14 @@ class Workspace:
         name = self.app_name
         if not name:
             return None
+        configured_path = os.path.join(self.workspace_dir, APP_PATH_FILE)
+        if os.path.isfile(configured_path):
+            with open(configured_path) as f:
+                path = f.read().strip()
+            if path:
+                if not os.path.isabs(path):
+                    path = os.path.join(self.workspace_dir, path)
+                return os.path.realpath(path)
         # Check app_paths.json first (handles both flat and two-level layouts)
         paths_file = os.path.join(self.ove_dir, "output", "kconfig",
                                   "app_paths.json")
