@@ -598,6 +598,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	__attribute__((used)) static void __attribute__((constructor)) _##name##_ctor(void) \
 	{
 #define OVE_DEFINE_STATIC_CTOR_END_(name)       \
+	(void)_err;                             \
 	OVE_STATIC_INIT_ASSERT(_err == OVE_OK); \
 	}
 /** @endcond */
