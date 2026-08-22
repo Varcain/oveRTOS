@@ -118,23 +118,18 @@ def cmd_defconfig(args):
         print(f"Error: could not parse app name from defconfig '{name}'")
         sys.exit(1)
 
-    output_dir = os.path.join(ove_dir, "output")
-
     # Determine if this defconfig comes from an external app.
     # If so, place the workspace under the external app's output/ dir.
     ext_app_dir = _find_external_app_for_defconfig(defconfig_path)
+    ws_dir = _workspace_path(
+        ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
     if ext_app_dir:
-        ws_output = os.path.join(ext_app_dir, "output")
-        ws_dir = os.path.join(ws_output, ws_board, ws_rtos, ws_app)
         print(f"Loading defconfig: {defconfig_path}")
         print(f"  Workspace: {ws_dir}/")
     else:
-        ws_dir = os.path.join(output_dir, ws_board, ws_rtos, ws_app)
         rel_defconfig = os.path.relpath(defconfig_path, ove_dir)
         print(f"Loading defconfig: {rel_defconfig}")
         print(f"  Workspace: output/{ws_board}/{ws_rtos}/{ws_app}/")
-
-    os.makedirs(ws_dir, exist_ok=True)
 
     # Use kconfiglib to load and expand the defconfig
     try:
@@ -147,25 +142,31 @@ def cmd_defconfig(args):
     generate_app_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     kconf.load_config(defconfig_path)
+    ws_dir, ws_config = _write_workspace_config(
+        kconf, ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
+    print(f"Configuration written to {ws_config}")
+    print(f"Active workspace: {ws_dir}/")
+
+
+def _workspace_path(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
+    """Return the canonical directory for one configured workspace."""
+    base = (os.path.join(ext_app_dir, "output") if ext_app_dir else
+            os.path.join(ove_dir, "output"))
+    return os.path.join(base, ws_board, ws_rtos, ws_app)
+
+
+def _write_workspace_config(kconf, ove_dir, ws_board, ws_rtos, ws_app,
+                            ext_app_dir=None, activate=True):
+    """Write one workspace config, then optionally make it active."""
+    output_dir = os.path.join(ove_dir, "output")
+    ws_dir = _workspace_path(
+        ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
+
+    os.makedirs(ws_dir, exist_ok=True)
     ws_config = os.path.join(ws_dir, ".config")
     kconf.write_config(ws_config)
-    print(f"Configuration written to {ws_config}")
 
-    # Symlink root .config -> workspace .config (atomic; race-safe).
-    config_link = os.path.join(ove_dir, ".config")
-    atomic_symlink(ws_config, config_link)
-
-    # Symlink output/current -> workspace.
-    os.makedirs(output_dir, exist_ok=True)
-    current_link = os.path.join(output_dir, "current")
-    if ext_app_dir:
-        # External app: use absolute path since workspace is outside output/
-        target = ws_dir
-    else:
-        target = os.path.join(ws_board, ws_rtos, ws_app)
-    atomic_symlink(target, current_link)
-
-    # Link toolchain if available
+    # Keep the workspace self-contained when a downloaded toolchain exists.
     tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
     if os.path.isfile(tc_sentinel):
         with open(tc_sentinel) as f:
@@ -177,27 +178,10 @@ def cmd_defconfig(args):
         if os.path.isdir(os.path.join(output_dir, "toolchains", tc_name)):
             atomic_symlink(rel, tc_link)
 
-    print(f"Active workspace: {ws_dir}/")
-
-
-def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None,
-                     activate=True):
-    """Create a workspace and optionally select it as the active one."""
-    output_dir = os.path.join(ove_dir, "output")
-
-    if ext_app_dir:
-        ws_output = os.path.join(ext_app_dir, "output")
-        ws_dir = os.path.join(ws_output, ws_board, ws_rtos, ws_app)
-    else:
-        ws_dir = os.path.join(output_dir, ws_board, ws_rtos, ws_app)
-
-    os.makedirs(ws_dir, exist_ok=True)
-
     if activate:
         # These are user-facing active-workspace links. Matrix builds create
         # their workspaces without changing either one.
         config_link = os.path.join(ove_dir, ".config")
-        ws_config = os.path.join(ws_dir, ".config")
         atomic_symlink(ws_config, config_link)
 
         os.makedirs(output_dir, exist_ok=True)
@@ -208,19 +192,7 @@ def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None,
             target = os.path.join(ws_board, ws_rtos, ws_app)
         atomic_symlink(target, current_link)
 
-    # Link toolchain if available
-    tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
-    if os.path.isfile(tc_sentinel):
-        with open(tc_sentinel) as f:
-            tc_path = f.read().strip()
-        tc_name = os.path.basename(tc_path)
-        tc_link = os.path.join(ws_dir, "toolchain")
-        rel = os.path.relpath(
-            os.path.join(output_dir, "toolchains", tc_name), ws_dir)
-        if os.path.isdir(os.path.join(output_dir, "toolchains", tc_name)):
-            atomic_symlink(rel, tc_link)
-
-    return ws_dir
+    return ws_dir, ws_config
 
 
 def _find_board_dir(ove_dir, board_short):
@@ -549,10 +521,8 @@ def cmd_defconfig_fragments(args):
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     activate = not getattr(args, "no_activate", False)
-    ws_dir = _setup_workspace(ove_dir, board, rtos, app,
-                              activate=activate)
-    ws_config = os.path.join(ws_dir, ".config")
-    kconf.write_config(ws_config)
+    ws_dir, ws_config = _write_workspace_config(
+        kconf, ove_dir, board, rtos, app, activate=activate)
 
     print(f"Configuration written to {ws_config}")
     if activate:
