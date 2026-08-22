@@ -13,7 +13,7 @@ import unittest
 import yaml
 
 from ove.app_new import _stamp_tree
-from ove.appgen import _scan_app_dirs
+from ove.appgen import _scan_app_dirs, _scan_apps_dir
 
 
 class ExternalAppTemplateTest(unittest.TestCase):
@@ -72,6 +72,25 @@ class ExternalAppTemplateTest(unittest.TestCase):
             self.assertEqual(name, "template_smoke")
             self.assertEqual(path, os.path.abspath(output))
             self.assertEqual(data["config_name"], "template_smoke")
+
+    def test_in_tree_scan_is_depth_independent_and_stops_at_app(self):
+        root, context = self._context()
+        with tempfile.TemporaryDirectory() as output:
+            app = os.path.join(output, "language", "profile", "group", "app")
+            template = os.path.join(root, "templates", "external-app", "c")
+            _stamp_tree(template, app, context)
+            nested = os.path.join(app, "vendor", "nested")
+            os.makedirs(nested)
+            with open(os.path.join(nested, "app.yaml"), "w") as f:
+                f.write("config_name: must_not_escape_parent\n")
+
+            apps = []
+            paths = {}
+            _scan_apps_dir(output, apps, paths)
+
+            self.assertEqual(list(paths), ["template_smoke"])
+            self.assertEqual(paths["template_smoke"], app)
+            self.assertEqual(apps[0]["config_name"], "TEMPLATE_SMOKE")
 
     def test_hello_apps_declare_only_used_optional_modules(self):
         for language in ("c", "cpp", "rust", "zig"):
