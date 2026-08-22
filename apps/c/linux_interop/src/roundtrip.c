@@ -104,9 +104,8 @@ int linux_interop_roundtrip_prepare(ove_lxp_launch_config_t *config)
 	config->write_fn = consume_write;
 	config->read_fn = feed_read;
 	config->io_ctx = NULL;
-	return ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", roundtrip_worker, NULL,
-			       OVE_PRIO_LOW, sizeof(g_worker_storage_stack),
-			       g_worker_storage_stack);
+	return OVE_THREAD_INIT_DEFINED(g_worker, g_worker_storage, "rtos-worker", roundtrip_worker,
+				       NULL, OVE_PRIO_LOW);
 }
 
 int linux_interop_roundtrip_complete(int guest_status)

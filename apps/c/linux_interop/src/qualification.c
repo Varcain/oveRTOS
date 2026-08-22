@@ -88,9 +88,8 @@ static void wd_selftest_maybe_trip(void)
 	}
 	ove_lxp_console_write("[wd] selftest: starving the coordinator (scheduler stays live);"
 			      " expect a watchdog reset in ~2s...\n");
-	(void)ove_thread_init(&g_wdtest, &g_wdtest_storage, "wdtest", wdtest_spin, NULL,
-			      OVE_PRIO_ABOVE_NORMAL, sizeof(g_wdtest_storage_stack),
-			      g_wdtest_storage_stack);
+	(void)OVE_THREAD_INIT_DEFINED(g_wdtest, g_wdtest_storage, "wdtest", wdtest_spin, NULL,
+				      OVE_PRIO_ABOVE_NORMAL);
 }
 #endif /* CONFIG_OVE_WATCHDOG_SELFTEST */
 
@@ -154,9 +153,8 @@ static void faulttest_maybe_arm(void)
 		ove_lxp_console_write("[c6] recovered from the host-fault test; not re-arming\n");
 		return;
 	}
-	(void)ove_thread_init(&g_ftest, &g_ftest_storage, "ftest", ftest_body, NULL,
-			      OVE_PRIO_NORMAL, sizeof(g_ftest_storage_stack),
-			      g_ftest_storage_stack);
+	(void)OVE_THREAD_INIT_DEFINED(g_ftest, g_ftest_storage, "ftest", ftest_body, NULL,
+				      OVE_PRIO_NORMAL);
 }
 #endif /* CONFIG_OVE_LINUX_FAULTTEST */
 
@@ -191,9 +189,8 @@ static void smashtest_maybe_arm(void)
 		ove_lxp_console_write("[c9] recovered from the smash test; not re-arming\n");
 		return;
 	}
-	(void)ove_thread_init(&g_smash, &g_smash_storage, "smash", smashtest_body, NULL,
-			      OVE_PRIO_NORMAL, sizeof(g_smash_storage_stack),
-			      g_smash_storage_stack);
+	(void)OVE_THREAD_INIT_DEFINED(g_smash, g_smash_storage, "smash", smashtest_body, NULL,
+				      OVE_PRIO_NORMAL);
 }
 #endif /* CONFIG_OVE_LINUX_SMASHTEST */
 
@@ -315,8 +312,8 @@ void linux_interop_qualification_start(void)
 	ove_lxp_console_write("[reset] cause: ");
 	ove_lxp_console_write(ove_reset_cause_str(ove_reset_cause()));
 	ove_lxp_console_write("\n");
-	if (ove_thread_init(&g_wd, &g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH,
-			    sizeof(g_wd_storage_stack), g_wd_storage_stack) != OVE_OK) {
+	if (OVE_THREAD_INIT_DEFINED(g_wd, g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH) !=
+	    OVE_OK) {
 		ove_lxp_console_write(
 			"[wd] FAIL: monitor thread init; running without a watchdog\n");
 		return;
@@ -355,8 +352,8 @@ int linux_interop_qualification_measurement_start(void)
 {
 #if defined(CONFIG_OVE_LINUX_LATENCY)
 	g_mon_late = (ove_lxp_latency_stat_t){0};
-	int rc = ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
-				 sizeof(g_mon_storage_stack), g_mon_storage_stack);
+	int rc = OVE_THREAD_INIT_DEFINED(g_mon, g_mon_storage, "lat-mon", mon_body, NULL,
+					 OVE_PRIO_HIGH);
 	if (rc != OVE_OK)
 		return rc;
 	g_mon_started = 1;

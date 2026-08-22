@@ -155,6 +155,21 @@ Combines storage declaration, stack allocation, and initialisation into a single
 OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "worker");
 ```
 
+When initialization order or error handling must remain explicit, pair
+`OVE_THREAD_DEFINE` with `OVE_THREAD_INIT_DEFINED`. The companion derives the
+storage and stack arguments without using a file-scope constructor:
+
+```c
+static ove_thread_t worker;
+OVE_THREAD_DEFINE(worker_storage, 2048);
+
+int start_worker(void)
+{
+    return OVE_THREAD_INIT_DEFINED(worker, worker_storage, "worker",
+                                   worker_entry, NULL, OVE_PRIO_NORMAL);
+}
+```
+
 ## API Reference
 
 | Function | Signature | Description |

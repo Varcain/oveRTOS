@@ -8,6 +8,8 @@
 
 #include "../framework/ove_test.h"
 
+#include <stdatomic.h>
+
 /*
  * Smoke test for OVE_*_DEFINE_STATIC macros.
  * Verifies that every macro compiles and that the constructor runs
@@ -27,6 +29,12 @@ static void dummy_work_handler(ove_work_t work)
 	(void)work;
 }
 
+static void dummy_thread_entry(void *arg)
+{
+	atomic_int *ran = arg;
+	atomic_store(ran, 1);
+}
+
 /* --- DEFINE_STATIC declarations (file scope) --- */
 
 OVE_MUTEX_DEFINE_STATIC(s_sd_mutex);
@@ -40,6 +48,8 @@ OVE_STREAM_DEFINE_STATIC(s_sd_stream, 64, 1);
 OVE_TIMER_DEFINE_STATIC(s_sd_timer, dummy_timer_cb, NULL, 1000, 1);
 OVE_WATCHDOG_DEFINE_STATIC(s_sd_watchdog, 5000);
 OVE_WORK_DEFINE_STATIC(s_sd_work, dummy_work_handler);
+OVE_THREAD_DEFINE(s_manual_thread_storage, 1024);
+static ove_thread_t s_manual_thread;
 
 /* --- Tests --- */
 
@@ -122,6 +132,17 @@ static void test_static_define_work(void **state)
 	assert_non_null(s_sd_work);
 }
 
+static void test_manual_thread_init_companion(void **state)
+{
+	(void)state;
+	atomic_int ran = 0;
+	assert_int_equal(OVE_THREAD_INIT_DEFINED(s_manual_thread, s_manual_thread_storage, "manual",
+						 dummy_thread_entry, &ran, OVE_PRIO_NORMAL),
+			 OVE_OK);
+	assert_int_equal(ove_thread_deinit(s_manual_thread), OVE_OK);
+	assert_int_equal(atomic_load(&ran), 1);
+}
+
 /* --- Runner --- */
 
 int test_static_define_run(void)
@@ -138,6 +159,7 @@ int test_static_define_run(void)
 		cmocka_unit_test(test_static_define_timer),
 		cmocka_unit_test(test_static_define_watchdog),
 		cmocka_unit_test(test_static_define_work),
+		cmocka_unit_test(test_manual_thread_init_companion),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
