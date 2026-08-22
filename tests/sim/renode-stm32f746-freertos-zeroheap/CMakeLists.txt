@@ -154,6 +154,7 @@ set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_sync.c
     ${FREERTOS_BACKEND}/freertos_queue.c
     ${FREERTOS_BACKEND}/freertos_timer.c
+    ${OVE_SRC}/ove_timer.c
     ${FREERTOS_BACKEND}/freertos_eventgroup.c
     ${FREERTOS_BACKEND}/freertos_stream.c
     ${FREERTOS_BACKEND}/freertos_workqueue.c

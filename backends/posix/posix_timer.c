@@ -7,7 +7,6 @@
  */
 
 #include "ove/ove.h"
-#include "ove_backend_common.h"
 #include <pthread.h>
 #include <time.h>
 #include <string.h>
@@ -165,13 +164,6 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
 	return OVE_OK;
 }
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot)
-{
-	return ove_timer_init_ns(timer, storage, callback, user_data,
-				 (uint64_t)period_ms * 1000000ULL, one_shot);
-}
-
 void ove_timer_deinit(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
@@ -180,44 +172,6 @@ void ove_timer_deinit(ove_timer_t timer)
 		t->created = 0;
 	}
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
-			uint64_t period_ns, int one_shot)
-{
-	if (!timer || !callback)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
-	if (!t)
-		return OVE_ERR_NO_MEMORY;
-	int rc = timer_setup(t, callback, user_data, period_ns, one_shot);
-	if (rc != OVE_OK) {
-		OVE_BACKEND_FREE(t);
-		return rc;
-	}
-	*timer = t;
-	return OVE_OK;
-}
-
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot)
-{
-	return ove_timer_create_ns(timer, callback, user_data, (uint64_t)period_ms * 1000000ULL,
-				   one_shot);
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_timer_destroy(ove_timer_t timer)
-{
-	struct ove_timer *t = timer;
-	if (t) {
-		if (t->created)
-			timer_teardown(t);
-		OVE_BACKEND_FREE(t);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_timer_start(ove_timer_t timer)
 {
