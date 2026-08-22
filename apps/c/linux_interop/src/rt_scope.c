@@ -390,9 +390,12 @@ static void metrics_record(uint32_t deadline, uint32_t dispatch_ticks,
 static void response_thread(void *arg)
 {
 	(void)arg;
-
+	ove_thread_t self = ove_thread_get_self();
 	for (;;) {
-		if (ove_event_wait(g_deadline_event, OVE_WAIT_FOREVER) != OVE_OK)
+		int rc = ove_event_wait(g_deadline_event, OVE_WAIT_FOREVER);
+		if (ove_thread_should_stop(self))
+			return;
+		if (rc != OVE_OK)
 			continue;
 		uint32_t before;
 		uint32_t after;
@@ -977,8 +980,7 @@ static void gpio_timer_prepare(void)
 	RT_TIM3_EGR = RT_TIM_EGR_UG;
 	RT_TIM3_SR = 0u;
 
-	/* Pinless coarse counter used to distinguish multiple elapsed periods even
-	 * when TIM3's single pending update flag has collapsed them. */
+	/* Pinless counter recovers elapsed periods after TIM3 pending-bit collapse. */
 	RT_TIM5_CR1 = 0u;
 	RT_TIM5_PSC = RT_SCOPE_TIM5_PRESCALER;
 	RT_TIM5_ARR = UINT32_MAX;
@@ -998,6 +1000,11 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 	int rc = ove_event_init(&g_deadline_event, &g_deadline_event_storage);
 	if (rc != OVE_OK)
 		return rc;
+	rc = irq_prepare();
+	if (rc != OVE_OK) {
+		ove_event_deinit(g_deadline_event);
+		return rc;
+	}
 
 	rc = ove_thread_init(&g_response_thread, &g_response_thread_storage, "rt-scope",
 			     response_thread, NULL, OVE_PRIO_CRITICAL, RT_SCOPE_STACK_BYTES,
@@ -1013,19 +1020,12 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 				     report_thread, NULL, OVE_PRIO_LOW, RT_SCOPE_REPORT_STACK_BYTES,
 				     RT_SCOPE_REPORT_STACK_PTR);
 		if (rc != OVE_OK) {
+			ove_thread_request_stop(g_response_thread);
+			ove_event_signal(g_deadline_event);
 			ove_thread_deinit(g_response_thread);
 			ove_event_deinit(g_deadline_event);
 			return rc;
 		}
-	}
-
-	rc = irq_prepare();
-	if (rc != OVE_OK) {
-		if (g_report_write != NULL)
-			ove_thread_deinit(g_report_thread);
-		ove_thread_deinit(g_response_thread);
-		ove_event_deinit(g_deadline_event);
-		return rc;
 	}
 
 	gpio_timer_prepare();
