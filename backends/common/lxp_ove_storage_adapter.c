@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Serialized oveRTOS storage provider for LXP's persistent /data mount.
+ * Serialized oveRTOS filesystem and raw-block provider for LXP storage.
  */
 
 #include "ove_config.h"
