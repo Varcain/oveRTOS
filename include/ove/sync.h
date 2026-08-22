@@ -141,7 +141,7 @@ OVE_NODISCARD int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 void ove_event_deinit(ove_event_t evt);
 
 /* =========================================================================
- * Recursive mutex — _init (static storage)
+ * Recursive mutex — _init / _deinit (static storage)
  * ========================================================================= */
 
 /**
@@ -157,11 +157,23 @@ void ove_event_deinit(ove_event_t evt);
  *                      Must remain valid for the lifetime of the mutex.
  * @return OVE_OK on success, or a negative error code on failure.
  *
- * @see ove_mutex_deinit, ove_recursive_mutex_create,
+ * @see ove_recursive_mutex_deinit, ove_recursive_mutex_create,
  *      ove_recursive_mutex_lock, ove_recursive_mutex_unlock
  */
 OVE_NODISCARD int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 	OVE_NONNULL(1, 2);
+
+/**
+ * @brief Release resources held by a statically allocated recursive mutex.
+ *
+ * The caller retains ownership of the storage passed to
+ * ove_recursive_mutex_init().
+ *
+ * @param[in] mtx  Handle returned by ove_recursive_mutex_init().
+ *
+ * @see ove_recursive_mutex_init
+ */
+void ove_recursive_mutex_deinit(ove_mutex_t mtx);
 
 /* =========================================================================
  * Condition variable — _init / _deinit (static storage)
@@ -679,6 +691,10 @@ static inline int ove_recursive_mutex_init(ove_mutex_t *m, ove_mutex_storage_t *
 	(void)m;
 	(void)s;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_recursive_mutex_deinit(ove_mutex_t m)
+{
+	(void)m;
 }
 static inline int ove_condvar_init(ove_condvar_t *c, ove_condvar_storage_t *s)
 {

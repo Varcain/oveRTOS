@@ -274,8 +274,7 @@ static inline void ove_test_mutex_destroy(ove_mutex_t mtx)
 static inline void ove_test_recursive_mutex_destroy(ove_mutex_t mtx)
 {
 #ifdef CONFIG_OVE_ZERO_HEAP
-	/* recursive_mutex uses same deinit as mutex (no-op on FreeRTOS) */
-	ove_mutex_deinit(mtx);
+	ove_recursive_mutex_deinit(mtx);
 #else
 	ove_recursive_mutex_destroy(mtx);
 #endif

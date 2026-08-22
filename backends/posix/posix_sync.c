@@ -333,6 +333,11 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 	return OVE_OK;
 }
 
+void ove_recursive_mutex_deinit(ove_mutex_t mtx)
+{
+	ove_mutex_deinit(mtx);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_recursive_mutex_create(ove_mutex_t *mtx)
 {
@@ -363,7 +368,10 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 #ifndef CONFIG_OVE_ZERO_HEAP
 void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 {
-	ove_mutex_destroy(mtx);
+	if (mtx) {
+		ove_recursive_mutex_deinit(mtx);
+		OVE_BACKEND_FREE(mtx);
+	}
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 

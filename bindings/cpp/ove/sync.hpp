@@ -279,7 +279,7 @@ class RecursiveMutex
 		if (!handle_)
 			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
-		ove_mutex_deinit(handle_);
+		ove_recursive_mutex_deinit(handle_);
 #else
 		ove_recursive_mutex_destroy(handle_);
 #endif

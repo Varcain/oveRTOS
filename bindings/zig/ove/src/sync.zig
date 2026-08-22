@@ -190,7 +190,7 @@ pub const RecursiveMutex = struct {
 
     pub fn deinit(self: *RecursiveMutex) void {
         if (self.handle) |handle| {
-            c.ove_mutex_deinit(handle);
+            c.ove_recursive_mutex_deinit(handle);
             self.handle = null;
         }
         if (self.storage) |storage| {

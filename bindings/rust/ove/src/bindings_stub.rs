@@ -49,7 +49,7 @@ pub const OVE_SIZEOF_OVE_MUTEX_STORAGE: u32 = 40;
 pub const OVE_SIZEOF_OVE_QUEUE_STORAGE: u32 = 184;
 pub const OVE_SIZEOF_OVE_SEM_STORAGE: u32 = 48;
 pub const OVE_SIZEOF_OVE_STREAM_STORAGE: u32 = 200;
-pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 128;
+pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 136;
 pub const OVE_SIZEOF_OVE_TIMER_STORAGE: u32 = 144;
 pub const OVE_SIZEOF_OVE_WATCHDOG_STORAGE: u32 = 16;
 pub const OVE_SIZEOF_OVE_WORKQUEUE_STORAGE: u32 = 616;
@@ -99,6 +99,14 @@ pub const OVE_HEAP_UART: u32 = 1;
 pub const OVE_HEAP_SPI: u32 = 1;
 pub const OVE_HEAP_I2C: u32 = 1;
 pub const OVE_HEAP_I2S: u32 = 1;
+pub const OVE_THREAD_INFO_VALID_STACK_USED: u32 = 1;
+pub const OVE_THREAD_INFO_VALID_STACK_SIZE: u32 = 2;
+pub const OVE_THREAD_INFO_VALID_CPU_PERCENT: u32 = 4;
+pub const OVE_THREAD_INFO_VALID_RUNNING_TIME: u32 = 8;
+pub const OVE_THREAD_INFO_VALID_READY_TIME: u32 = 16;
+pub const OVE_THREAD_INFO_VALID_BLOCKED_TIME: u32 = 32;
+pub const OVE_THREAD_INFO_VALID_SUSPENDED_TIME: u32 = 64;
+pub const OVE_THREAD_INFO_VALID_STATE_TIMES: u32 = 120;
 pub const OVE_AUDIO_MAX_CHANNELS: u32 = 8;
 pub const OVE_AUDIO_GRAPH_MAX_NODES: u32 = 16;
 pub const OVE_AUDIO_GRAPH_MAX_EDGES: u32 = 16;
@@ -531,11 +539,11 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_thread_storage_t {
-    pub _opaque: [u8; 128usize],
+    pub _opaque: [u8; 136usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_storage_t"][core::mem::size_of::<ove_thread_storage_t>() - 128usize];
+    ["Size of ove_thread_storage_t"][core::mem::size_of::<ove_thread_storage_t>() - 136usize];
     ["Alignment of ove_thread_storage_t"][core::mem::align_of::<ove_thread_storage_t>() - 8usize];
     ["Offset of field: ove_thread_storage_t::_opaque"]
         [core::mem::offset_of!(ove_thread_storage_t, _opaque) - 0usize];
@@ -864,7 +872,7 @@ unsafe extern "C" {
     pub fn ove_thread_should_stop(handle: ove_thread_t) -> bool;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the minimum free stack observed for a thread.\n\n The returned headroom is the portion of the stack that remained unused at\n the thread's deepest recorded stack usage. A successful result of zero is\n therefore distinct from a backend which cannot measure stack usage.\n\n @param[in]  handle         Thread to inspect. Must still be valid.\n @param[out] headroom_bytes Receives the minimum free stack in bytes.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED when stack profiling is\n         unavailable, or OVE_ERR_INVALID_PARAM for an invalid argument.\n\n @see ove_thread_get_stack_usage"]
+    #[doc = " @brief Query the minimum free stack observed for a thread.\n\n The returned headroom is the portion of the stack that remained unused at\n the thread's deepest recorded stack usage.  A successful result of zero is\n therefore distinct from a backend which cannot measure stack usage.\n\n @param[in]  handle         Thread to inspect. Must still be valid.\n @param[out] headroom_bytes Receives the minimum free stack in bytes.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED when stack profiling is\n         unavailable, or OVE_ERR_INVALID_PARAM for an invalid argument.\n\n @see ove_thread_get_stack_usage"]
     pub fn ove_thread_get_stack_headroom(
         handle: ove_thread_t,
         headroom_bytes: *mut usize,
@@ -939,14 +947,6 @@ const _: () = {
     ["Offset of field: ove_thread_state_times::suspended_us"]
         [core::mem::offset_of!(ove_thread_state_times, suspended_us) - 24usize];
 };
-pub const OVE_THREAD_INFO_VALID_STACK_USED: u32 = 1;
-pub const OVE_THREAD_INFO_VALID_STACK_SIZE: u32 = 2;
-pub const OVE_THREAD_INFO_VALID_CPU_PERCENT: u32 = 4;
-pub const OVE_THREAD_INFO_VALID_RUNNING_TIME: u32 = 8;
-pub const OVE_THREAD_INFO_VALID_READY_TIME: u32 = 16;
-pub const OVE_THREAD_INFO_VALID_BLOCKED_TIME: u32 = 32;
-pub const OVE_THREAD_INFO_VALID_SUSPENDED_TIME: u32 = 64;
-pub const OVE_THREAD_INFO_VALID_STATE_TIMES: u32 = 120;
 #[doc = " @brief Snapshot of a single thread's info."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -959,13 +959,13 @@ pub struct ove_thread_info {
     pub state: ove_thread_state_t,
     #[doc = "< Priority level."]
     pub priority: core::ffi::c_int,
-    #[doc = "< Stack high-water mark (bytes), or 0 if unavailable."]
+    #[doc = "< Stack high-water mark; valid when its flag is set."]
     pub stack_used: usize,
-    #[doc = "< Total stack allocation (bytes), or 0 if unavailable."]
+    #[doc = "< Total stack allocation; valid when its flag is set."]
     pub stack_size: usize,
     #[doc = "< CPU usage in 0.01% units (e.g. 1250 = 12.50%)."]
     pub cpu_percent_x100: u32,
-    #[doc = "< Bitwise OR of OVE_THREAD_INFO_VALID_* flags."]
+    #[doc = "< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags."]
     pub valid_fields: u32,
     #[doc = "< Per-state cumulative time."]
     pub state_times: ove_thread_state_times,
@@ -994,7 +994,7 @@ const _: () = {
         [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if unavailable."]
+    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]
     pub fn ove_thread_list(
         out: *mut ove_thread_info,
         max_count: usize,
@@ -1053,11 +1053,15 @@ unsafe extern "C" {
     pub fn ove_event_deinit(evt: ove_event_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
+    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_recursive_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
     pub fn ove_recursive_mutex_init(
         mtx: *mut ove_mutex_t,
         storage: *mut ove_mutex_storage_t,
     ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by a statically allocated recursive mutex.\n\n The caller retains ownership of the storage passed to\n ove_recursive_mutex_init().\n\n @param[in] mtx  Handle returned by ove_recursive_mutex_init().\n\n @see ove_recursive_mutex_init"]
+    pub fn ove_recursive_mutex_deinit(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
     #[doc = " @brief Initialise a condition variable using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] cv       Receives the opaque condition variable handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the condvar.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,\n      ove_condvar_signal, ove_condvar_broadcast"]
@@ -2703,12 +2707,16 @@ unsafe extern "C" {
     pub fn ove_shell_set_output_hook(hook: ove_shell_output_hook_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Application-defined entry point called after board and console init.\n\n The application must implement this function.  It is responsible for\n creating all RTOS resources (threads, queues, timers, …) and then\n calling ove_run() to start the scheduler.\n\n @note This function must not return before calling ove_run().\n\n @note **Object lifetime**: anything that worker threads access after\n       @c ove_main() returns (audio graphs, DSP state, long-lived\n       buffers) must have storage that outlives this function.  In C\n       terms: give it `static` storage class — either a `static` local\n       or a file-scope `static` — or allocate it on the heap.  Plain\n       automatic locals are popped when @c ove_main() unwinds; any\n       pointer a worker kept into them becomes dangling.  This is the\n       same rule that applies whenever a function hands out a pointer\n       to a local, it's just more visible here because workers\n       outlive the scope.  On FreeRTOS the failure is immediate\n       (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr it\n       is latent but still UB.\n\n @see ove_run, ove_app_run"]
+    #[doc = " @brief Application-defined entry point called after board and console init.\n\n The application must implement this function.  It creates its bootstrap\n resources and then calls ove_run() to apply the configured heap policy and\n start the scheduler.  Runtime tasks may create further resources when the\n selected heap policy permits it.\n\n @note This function must not return before calling ove_run().\n\n @note **Object lifetime**: anything that worker threads access after\n       @c ove_main() returns (audio graphs, DSP state, long-lived\n       buffers) must have storage that outlives this function.  In C\n       terms: give it `static` storage class — either a `static` local\n       or a file-scope `static` — or allocate it on the heap.  Plain\n       automatic locals are popped when @c ove_main() unwinds; any\n       pointer a worker kept into them becomes dangling.  This is the\n       same rule that applies whenever a function hands out a pointer\n       to a local, it's just more visible here because workers\n       outlive the scope.  On FreeRTOS the failure is immediate\n       (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr it\n       is latent but still UB.\n\n @see ove_run, ove_app_run"]
     pub fn ove_main();
 }
 unsafe extern "C" {
     #[doc = " @brief End the init phase: lock the heap (zero-heap mode) and launch\n        the RTOS scheduler.\n\n Call this from ove_main() after every static resource has been\n declared and every boot-time helper task spawned.  In zero-heap\n mode `ove_run` calls @ref ove_heap_lock immediately before kicking\n off the scheduler, so any subsequent malloc / kmm_malloc /\n pvPortMalloc traps via DEBUGASSERT (or returns NULL in test mode).\n Apps whose runtime structurally requires post-init dynamic\n allocation (the benchmark suite, dynamic worker pools, etc.) skip\n `ove_run` and call @ref ove_thread_start_scheduler directly to\n opt out of the lock.\n\n On most platforms the scheduler never returns and this function\n blocks forever.\n\n @see ove_main, ove_heap_lock, ove_thread_start_scheduler"]
     pub fn ove_run();
+}
+unsafe extern "C" {
+    #[doc = " @brief Finish the application using the platform's product-level policy.\n\n Simulator targets terminate the simulator with @p status, native host\n targets terminate the process, and bare-metal STM32 targets request a\n software reset.  This is distinct from returning from a worker thread: use\n it only when the complete firmware application has finished or cannot\n continue.\n\n @param[in] status Zero for success, non-zero for failure.  Bare-metal reset\n                   targets may not retain the value.\n\n @note This function never returns."]
+    pub fn ove_app_exit(status: core::ffi::c_uint) -> !;
 }
 unsafe extern "C" {
     #[doc = " @brief Platform entry point: initialise the board and then run the application.\n\n Called by the platform-specific @c main() after registering any necessary\n backends.  Internally it performs board and console initialisation and then\n calls ove_main().\n\n @return 0 on success.  On most platforms the scheduler never returns so\n         this function never actually reaches its @c return statement.\n\n @see ove_main"]
@@ -3097,6 +3105,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Fill a sockaddr from IPv4 address components.\n\n @param[out] addr Destination sockaddr.\n @param[in]  a    First octet.\n @param[in]  b    Second octet.\n @param[in]  c    Third octet.\n @param[in]  d    Fourth octet.\n @param[in]  port Port number in host byte order."]
     pub fn ove_sockaddr_ipv4(addr: *mut ove_sockaddr_t, a: u8, b: u8, c: u8, d: u8, port: u16);
+}
+unsafe extern "C" {
+    #[doc = " @brief Parse dotted-decimal IPv4 text into a socket address.\n @return OVE_OK, or OVE_ERR_INVALID_PARAM for malformed input."]
+    pub fn ove_sockaddr_parse_ipv4(
+        addr: *mut ove_sockaddr_t,
+        text: *const core::ffi::c_char,
+        port: u16,
+    ) -> core::ffi::c_int;
 }
 #[doc = " @brief TLS session configuration.\n\n @note If @c ca_cert is NULL the peer certificate is not verified, so the\n       session is vulnerable to man-in-the-middle. The handshake refuses\n       this configuration unless @c allow_insecure is explicitly set to\n       a non-zero value."]
 #[repr(C)]
