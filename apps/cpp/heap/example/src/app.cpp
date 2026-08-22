@@ -72,10 +72,12 @@ static void producer_thread(ove::stop_token st)
 		if (auto r = counter_queue->try_send_for(count, std::chrono::milliseconds{1000});
 		    !r) {
 			if (r.error() == ove::Error::QueueFull) {
-				OVE_LOG_WRN("Producer: queue full, dropped %u", count);
+				OVE_LOG_WRN("Producer: queue full, dropped %u",
+					    static_cast<unsigned int>(count));
 			} else {
 				OVE_LOG_WRN("Producer: send failed (%d), dropped %u",
-					    static_cast<int>(r.error()), count);
+					    static_cast<int>(r.error()),
+					    static_cast<unsigned int>(count));
 			}
 		}
 		ove::this_thread::sleep_ms(500);
@@ -101,7 +103,7 @@ static void consumer_thread(ove::stop_token st)
 			last_value = val;
 		}
 		if (val % 5 == 0) {
-			OVE_LOG_INF("Consumer: count = %u", val);
+			OVE_LOG_INF("Consumer: count = %u", static_cast<unsigned int>(val));
 		}
 	}
 }
