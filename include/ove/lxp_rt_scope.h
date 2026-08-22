@@ -22,19 +22,9 @@ typedef void (*ove_lxp_rt_scope_write_fn)(const char *text);
 /* Start the configured two-channel host real-time probe. */
 int ove_lxp_rt_scope_start(ove_lxp_rt_scope_write_fn write_fn);
 
-/* Format a coherent, non-destructive lifetime snapshot for /proc/rt_scope.
- * Returns the byte count, or -1 when the destination cannot be used. */
-long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap);
-
 /** Bind the RT-scope proc provider to an otherwise caller-owned launch
  * configuration. Other launch policy is left unchanged. */
-static inline void ove_lxp_rt_scope_bind(ove_lxp_launch_config_t *config)
-{
-	if (config) {
-		config->rt_scope_read = ove_lxp_rt_scope_proc_read;
-		config->rt_scope_ctx = NULL;
-	}
-}
+void ove_lxp_rt_scope_bind(ove_lxp_launch_config_t *config);
 
 #ifdef __cplusplus
 }

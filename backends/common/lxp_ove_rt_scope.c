@@ -5,18 +5,13 @@
  *
  * This file is part of oveRTOS.
  *
- * Two-channel host real-time demonstration for STM32F746G-DISCO:
- *
+ * STM32F746G-DISCO two-channel real-time demonstration:
  *   CH1 / Arduino D3 / PB4 — TIM3_CH1 hardware PWM, 1 kHz, 50 us high
  *   CH2 / Arduino D4 / PG7 — OVE_PRIO_CRITICAL thread response pulse
- *
- * TIM3's update interrupt signals an engine-neutral ove_event. The highest
- * portable host-thread priority waits on that event, raises CH2, performs a
- * fixed calculation, then lowers CH2. CH1 therefore remains a timer-hardware
- * reference even when Linux-personality userspace saturates the CPU, while
- * CH1->CH2 directly exposes interrupt-to-thread dispatch latency. TIM5 is a
- * pinless 1 MHz timebase used to recover the number of hardware releases when
- * a long interrupt mask collapses multiple TIM3 updates into one pending IRQ.
+ * TIM3 signals an engine-neutral event; the critical host thread raises CH2,
+ * performs fixed work, and lowers it. CH1 remains a hardware reference under
+ * userspace saturation, so CH1->CH2 measures dispatch latency. Pinless 1 MHz
+ * TIM5 counts releases collapsed by a long interrupt mask into one pending IRQ.
  */
 
 #include "ove_config.h"
@@ -37,8 +32,7 @@
 #define RT_SCOPE_WORK_ITERATIONS 512u
 #define RT_SCOPE_REPORT_PERIOD_MS 10000u
 
-/* APB1 timers run at 108 MHz. TIM3 runs at 54 MHz so its phase counter gives
- * 18.5 ns dispatch resolution while remaining inside its 16-bit ARR. TIM5 is
+/* TIM3's 54 MHz phase counter gives 18.5 ns dispatch resolution; TIM5 is
  * divided to 1 MHz and wraps after about 71 minutes. */
 #define RT_SCOPE_HIST_BINS 18u
 
@@ -246,9 +240,8 @@ static void response_thread(void *arg)
 			oldest_release_age > UINT32_MAX ? UINT32_MAX : (uint32_t)oldest_release_age;
 		ove_hal_rt_scope_response_set(1);
 
-		/* A fixed, observable host workload makes CH2 width useful as well as
-		 * its rising edge. The empty asm dependency prevents the compiler from
-		 * replacing the loop with a closed-form expression. */
+		/* Fixed work makes CH2 width useful; the asm dependency prevents the
+		 * compiler from replacing the loop with a closed-form expression. */
 		uint32_t state = g_payload_state;
 		for (uint32_t i = 0; i < RT_SCOPE_WORK_ITERATIONS; ++i) {
 			state = state * 1664525u + 1013904223u;
@@ -259,9 +252,8 @@ static void response_thread(void *arg)
 		uint32_t finish_ticks = ove_hal_rt_scope_phase_ticks();
 		int late_finish = finish_ticks < dispatch_ticks;
 
-		/* Collapse missed deadlines instead of emitting a misleading burst of
-		 * late pulses. A new deadline that arrives during the fixed work leaves
-		 * its event pending and is handled on the next iteration. */
+		/* Collapse missed deadlines instead of emitting late pulses. A release
+		 * during fixed work remains pending for the next iteration. */
 		__atomic_store_n(&g_response_count, deadline, __ATOMIC_RELAXED);
 		uint32_t work_ticks =
 			late_finish ? OVE_RT_SCOPE_PERIOD_TICKS - dispatch_ticks + finish_ticks
@@ -276,9 +268,8 @@ static void metrics_take_window(struct rt_scope_metrics *out)
 	uint32_t old_active = __atomic_load_n(&g_active_metrics, __ATOMIC_RELAXED);
 	uint32_t new_active = old_active ^ 1u;
 
-	/* The reporter is lower priority than the sole metrics writer. Therefore,
-	 * if this code is running, no write to the old bucket is in flight. A
-	 * response released after the atomic flip writes the other bucket. */
+	/* The lower-priority reporter cannot overlap the sole writer in the old
+	 * bucket; a response released after this flip writes the other bucket. */
 	__atomic_store_n(&g_active_metrics, new_active, __ATOMIC_RELEASE);
 	*out = g_metrics[old_active];
 	g_metrics[old_active] = (struct rt_scope_metrics){
@@ -512,11 +503,9 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 		after = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
 	} while (before != after || (after & 1u) != 0u);
 
-	/* A response acknowledges every release up to its sampled deadline. While
-	 * that task is stalled, all outstanding releases except the newest are
-	 * already impossible to execute distinctly. Fold those confirmed misses
-	 * and their live age into the read-only snapshot immediately instead of
-	 * reporting a misleading zero until the response task eventually runs. */
+	/* A response acknowledges releases through its sampled deadline. While it
+	 * is stalled, every outstanding release except the newest is impossible to
+	 * execute distinctly; fold those misses and live age into this snapshot. */
 	totals->pending = totals->releases - totals->last_execution_deadline;
 	uint32_t backlog_missed = totals->pending > 0u ? totals->pending - 1u : 0u;
 	if (UINT32_MAX - totals->missed < backlog_missed)
@@ -577,7 +566,7 @@ static uint64_t ticks_to_ns(uint32_t ticks)
 	       (OVE_RT_SCOPE_TICKS_PER_US * 1000000ull);
 }
 
-long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
+static long rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 {
 	(void)ctx;
 	if (!buf || cap == 0u)
@@ -650,9 +639,8 @@ long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 static void report_metrics(void)
 {
 	struct rt_scope_metrics metrics;
-	/* The reporter is single-threaded. Keep its enlarged lifetime snapshot out
-	 * of the deliberately small RT report stack; procfs readers use their own
-	 * independent snapshot. */
+	/* Keep the reporter's lifetime snapshot out of its deliberately small stack;
+	 * procfs readers use an independent snapshot. */
 	static struct rt_scope_totals totals;
 	char line[224];
 	char *p;
@@ -801,7 +789,7 @@ int ove_lxp_rt_scope_start(ove_lxp_rt_scope_write_fn write_fn)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
+static long rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 {
 	(void)ctx;
 	static const char unavailable[] = "available 0\n";
@@ -813,3 +801,11 @@ long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 }
 
 #endif /* CONFIG_OVE_LINUX_RT_SCOPE */
+
+void ove_lxp_rt_scope_bind(ove_lxp_launch_config_t *config)
+{
+	if (!config)
+		return;
+	config->rt_scope_read = rt_scope_proc_read;
+	config->rt_scope_ctx = NULL;
+}
