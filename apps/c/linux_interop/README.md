@@ -32,7 +32,7 @@ the demonstration allocation-free and make EOF deterministic:
 The program then drops into an interactive BusyBox `sh`. The oveRTOS console
 provider binds the launch's read, write, and non-consuming readiness callbacks,
 so **you can type commands** — `ls /`, `echo hi`, `cat /etc/hostname`, `pwd`,
-`echo x > /tmp/f`, … — and `exit` to finish. STM32 FreeRTOS and Zephyr publish
+`echo x > /tmp/f`, … — and `poweroff` to finish. STM32 FreeRTOS and Zephyr publish
 UART RX readiness as a run-scoped coordinator event; NuttX and QEMU retain the
 bounded polling fallback because their current console transports expose no
 native readiness subscription.
@@ -660,8 +660,9 @@ On STM32F746G-DISCO, `/usr/bin/sigctx` provides the corresponding hardware
 regression for nested signal return. It nests SIGUSR2 inside SIGUSR1 and checks
 both complete VFP contexts after LIFO return.
 
-`ove run` launches QEMU with an interactive semihosting console (phase 1 is
-deterministic; phase 2 is your session):
+`ove run` connects QEMU's board-owned personality UART (phase 1 is
+deterministic; phase 2 is your login session; the default credentials are
+`root`/`root`):
 
 ```
 === oveRTOS demo: a native RTOS thread + a Linux program, two-way ===
@@ -671,14 +672,17 @@ deterministic; phase 2 is your session):
 [rtos-consumer] <- Linux (round trip #1/2/3 @ … ms): "reading-1/2/3"
 [demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.
 
--- phase 2: interactive BusyBox shell (type commands; `exit` to quit) --
-/ # ls /
+-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell; run commands, `poweroff` to halt) --
+Welcome to Buildroot
+overtos login: root
+Password:
+/root # ls /
 var      sys      root     mnt      lib32    etc
 usr      sbin     proc     media    lib      dev
 tmp      run      opt      linuxrc  init     bin
-/ # exit
+/root # poweroff
 
-=== interop demo done (interactive shell exited) ===
+=== interop demo done (uClinux halted) ===
 ```
 
 ## How it works (and its constraints)
