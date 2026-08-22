@@ -180,6 +180,15 @@ config OVE_LINUX_ROOTFS_OUTPUT
       after the guest ABI is changed. Use OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE for
       an explicit out-of-tree directory.
 
+config OVE_LINUX_ROOTFS_EXTERNAL
+    bool
+    depends on OVE_LINUX
+    default y if OVE_LINUX_ROOTFS_QSPI
+    default y if OVE_BOARD_QEMU_MPS2_AN500 || OVE_BOARD_QEMU_MPS2_AN521
+    help
+      Derived storage-mode contract for a rootfs staged at the configured
+      physical address instead of linked into the firmware as a fixture.
+
 config OVE_LINUX_ROOTFS_BASE
     hex
     depends on OVE_LINUX

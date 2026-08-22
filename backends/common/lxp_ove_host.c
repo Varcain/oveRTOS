@@ -14,9 +14,7 @@
 
 #include <string.h>
 
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+#if defined(CONFIG_OVE_LINUX_ROOTFS_EXTERNAL)
 #include "ove/lxp_memory_layout.h"
 #else
 #include "loader_rootfs_image.h"
@@ -89,9 +87,7 @@ int ove_lxp_host_init(ove_lxp_host_t *host)
 	if (!host)
 		return OVE_ERR_INVALID_PARAM;
 	ove_lxp_host_config_t config = {0};
-#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+#if defined(CONFIG_OVE_LINUX_ROOTFS_EXTERNAL)
 	config.rootfs_image = (const void *)OVE_LXP_ROOTFS_BASE;
 	config.rootfs_image_size = (size_t)OVE_LXP_ROOTFS_SIZE;
 #else

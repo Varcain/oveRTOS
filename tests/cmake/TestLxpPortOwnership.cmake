@@ -69,6 +69,15 @@ foreach(HOST_FACADE IN ITEMS
         message(FATAL_ERROR "LXP-owned host facade is missing: ${HOST_FACADE}")
     endif()
 endforeach()
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_host.c" HOST_FACADE_TEXT)
+if(HOST_FACADE_TEXT MATCHES "CONFIG_OVE_BOARD_")
+    message(FATAL_ERROR
+        "common LXP host facade regained board-specific rootfs selection")
+endif()
+if(NOT HOST_FACADE_TEXT MATCHES "CONFIG_OVE_LINUX_ROOTFS_EXTERNAL")
+    message(FATAL_ERROR
+        "common LXP host facade bypasses the derived rootfs storage mode")
+endif()
 
 file(READ "${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c" STORAGE_ADAPTER_TEXT)
 if(STORAGE_ADAPTER_TEXT MATCHES
