@@ -32,8 +32,9 @@
 #
 # Usage (in board CMakeLists.txt):
 #   cmake_minimum_required(VERSION 3.20)
+#   project(firmware C ASM)
 #   include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveCommon.cmake)
-#   ove_setup_project(firmware)
+#   ove_setup_project()
 #   ove_add_board_sources(main.c startup.s)
 #   ove_add_backend_sources()
 #   ove_add_stub_backends(BSP GPIO CONSOLE TIME)
@@ -44,12 +45,21 @@ cmake_minimum_required(VERSION 3.20)
 
 include(${CMAKE_CURRENT_LIST_DIR}/OveHelpers.cmake)
 
-# ─── ove_setup_project(name) ─────────────────────────────────────────
-# Resolves all paths, includes generated config, declares the CMake project,
+# ─── ove_setup_project() ─────────────────────────────────────────────
+# Resolves all paths, includes generated config, enables optional languages,
 # sets common compiler flags, and includes the application source list.
-# Must be called first from the board CMakeLists.txt.
-macro(ove_setup_project _proj_name)
-    set(_OVE_PROJ_NAME ${_proj_name})
+# The board must declare its project directly before calling this macro.
+macro(ove_setup_project)
+    if(ARGC GREATER 0)
+        message(FATAL_ERROR
+            "ove_setup_project() takes no arguments; declare "
+            "project(firmware C ASM) directly in the board CMakeLists.txt")
+    endif()
+    if(PROJECT_NAME STREQUAL "Project")
+        message(FATAL_ERROR
+            "ove_setup_project() requires a direct top-level project() call")
+    endif()
+    set(_OVE_PROJ_NAME ${PROJECT_NAME})
 
     # Board directory = the CMakeLists.txt source directory
     if(NOT DEFINED BOARD_DIR)
@@ -108,15 +118,14 @@ macro(ove_setup_project _proj_name)
         set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     endif()
 
-    # Declare project — include CXX if app language or ML inference requires it
+    # The board declares the base C/ASM project directly so CMake performs one
+    # conventional project initialization. Enable CXX only for consumers that
+    # need it after the generated app configuration is available.
     if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
-        project(${_OVE_PROJ_NAME} C CXX ASM)
+        enable_language(CXX)
         set(CMAKE_CXX_STANDARD 23)
         set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    else()
-        project(${_OVE_PROJ_NAME} C ASM)
     endif()
-    enable_language(ASM)
 
     # Always export compile_commands.json for clangd / IDE tooling.
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)

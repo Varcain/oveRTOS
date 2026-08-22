@@ -5,6 +5,7 @@
 # This file is part of oveRTOS.
 
 cmake_minimum_required(VERSION 3.20)
+project(firmware C ASM)
 
 # ============================================================================
 # STM32F746G-Discovery FreeRTOS Build
@@ -13,7 +14,7 @@ cmake_minimum_required(VERSION 3.20)
 include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveCommon.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveFreeRTOS.cmake)
 
-ove_setup_project(firmware)
+ove_setup_project()
 
 # ── Board-specific compile options ───────────────────────────────────
 # __FPU_PRESENT is spelled 1U, not 1, to match CMSIS exactly. It cannot simply be

@@ -274,6 +274,10 @@ add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestArmFloatAbi.cmake)
+add_test(NAME ove_freertos_bootstrap_cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DOVE_ROOT=${OVE_ROOT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestFreeRTOSBootstrap.cmake)
 add_test(NAME ove_lxp_wx_config_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
