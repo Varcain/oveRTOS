@@ -49,7 +49,7 @@ uint32_t ove_lxp_metrics_counter_hz(void)
 /* Largest-alignment rows come first so every PMSAv7 row remains aligned for
  * odd region counts. Board linker scripts place this cold object in external
  * memory and keep it out of the firmware image. */
-struct ove_lxp_freertos_storage {
+struct lxp_ove_freertos_guest_storage {
 	uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE];
 	uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE];
 	lxp_exec_capture_t exec_captures[LXP_NSLOT];
@@ -59,9 +59,11 @@ struct ove_lxp_freertos_storage {
 #endif
 };
 
-static struct ove_lxp_freertos_storage g_lxp_storage
+static struct lxp_ove_freertos_guest_storage g_lxp_storage
 	__attribute__((section(LXP_EXT_STORAGE_SECTION), aligned(LXP_DYN_POOL_SIZE)));
-_Static_assert(offsetof(struct ove_lxp_freertos_storage, prog_regions) % LXP_PROG_REGION_SIZE == 0u,
+_Static_assert(offsetof(struct lxp_ove_freertos_guest_storage, prog_regions) %
+			       LXP_PROG_REGION_SIZE ==
+		       0u,
 	       "program rows must be aligned to their MPU region size");
 
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
@@ -78,8 +80,8 @@ static struct lxp_cortex_m_cache_geometry g_cache_geometry;
 static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count,
 			    lxp_freertos_slot_lookup_t slot_lookup)
 {
-	return lxp_ove_thread_snapshot_read(
-		&g_lxp_storage.thread_snapshot, out, max_count, actual_count, slot_lookup);
+	return lxp_ove_thread_snapshot_read(&g_lxp_storage.thread_snapshot, out, max_count,
+					    actual_count, slot_lookup);
 }
 
 #define LXP_SYSTEM_VERSION \

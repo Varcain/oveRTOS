@@ -69,7 +69,7 @@ BUILD_ASSERT(CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO == OVE_ZEPHYR_PRIO_ABOVE_NORMAL
 
 /* Largest-alignment rows come first. The board linker places this NOLOAD
  * object in external RAM, so its capacity has no firmware-image cost. */
-struct ove_lxp_zephyr_storage {
+struct lxp_ove_zephyr_guest_storage {
 	uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE];
 	uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE];
 	lxp_exec_capture_t exec_captures[LXP_NSLOT];
@@ -79,10 +79,11 @@ struct ove_lxp_zephyr_storage {
 #endif
 };
 
-static struct ove_lxp_zephyr_storage
+static struct lxp_ove_zephyr_guest_storage
 	g_lxp_storage Z_GENERIC_SECTION(LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE))
 		__aligned(LXP_EXT_STORAGE_ALIGN);
-_Static_assert(offsetof(struct ove_lxp_zephyr_storage, prog_regions) % LXP_PROG_REGION_SIZE == 0u,
+_Static_assert(offsetof(struct lxp_ove_zephyr_guest_storage, prog_regions) % LXP_PROG_REGION_SIZE ==
+		       0u,
 	       "program rows must be aligned to their MPU region size");
 
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
