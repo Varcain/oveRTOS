@@ -6,6 +6,7 @@ if(NOT DEFINED OVE_ROOT)
 endif()
 
 set(APP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/app.c")
+set(LXP_UMBRELLA_HEADER "${OVE_ROOT}/include/ove/lxp.h")
 set(NETWORK_SMOKE_SOURCE
     "${OVE_ROOT}/apps/c/linux_interop/src/network_smoke.c")
 set(QUALIFICATION_SOURCE
@@ -58,6 +59,7 @@ assert_line_ceiling("${FULL_PROFILE_CONFIG}"
                     ${FULL_PROFILE_CONFIG_LINE_CEILING})
 
 file(READ "${APP_SOURCE}" APP_TEXT)
+file(READ "${LXP_UMBRELLA_HEADER}" LXP_UMBRELLA_TEXT)
 file(READ "${NETWORK_SMOKE_SOURCE}" NETWORK_SMOKE_TEXT)
 file(READ "${QUALIFICATION_SOURCE}" QUALIFICATION_TEXT)
 file(READ "${ROUNDTRIP_SOURCE}" ROUNDTRIP_TEXT)
@@ -67,6 +69,19 @@ file(READ "${BOARD_RT_SCOPE_SOURCE}" BOARD_RT_SCOPE_TEXT)
 set(HOST_APP_TEXT
     "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}")
 set(ENGINE_NEUTRAL_SCOPE_TEXT "${RT_SCOPE_TEXT}")
+
+if(NOT APP_TEXT MATCHES "#[ \t]*include[ \t]*[<\"]ove/lxp\\.h")
+    message(FATAL_ERROR
+        "linux_interop entrypoint must use the public LXP subsystem umbrella")
+endif()
+foreach(LXP_PUBLIC_HEADER IN ITEMS
+        lxp_launch lxp_host lxp_console lxp_observability lxp_metrics lxp_rt_scope)
+    if(NOT LXP_UMBRELLA_TEXT MATCHES
+       "#[ \t]*include[ \t]*[<\"]ove/${LXP_PUBLIC_HEADER}\\.h")
+        message(FATAL_ERROR
+            "ove/lxp.h omits public personality header: ${LXP_PUBLIC_HEADER}.h")
+    endif()
+endforeach()
 
 if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
