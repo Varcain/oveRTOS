@@ -7,52 +7,30 @@ sources:
   - src/qualification.c
   - src/roundtrip.c
   - src/rt_scope.c
-# Pull in the Linux personality (engine-agnostic core + per-engine seam). It
-# selects its mandatory arena and loader; optional providers below select the
-# RTOS primitives they require. The seam wiring and rootfs placement come from
-# the selected board.
 defconfig:
   - CONFIG_OVE_LINUX=y
-  # Compile the engine-native SD/FAT substrate now. The personality mounts it
-  # only when its external-filesystem provider is configured, and a missing
-  # card remains a non-fatal mount failure.
+  # Persistent FAT storage and raw block maintenance.
   - CONFIG_OVE_FS=y
-  # LXP owns sixteen external filesystem descriptors. Native backends which
-  # reserve per-open resources must be able to serve that caller-owned table.
   - CONFIG_OVE_FS_MAX_OPEN_FILES=16
-  # Mount that substrate at /data through the engine-agnostic LXP host-filesystem
-  # provider. The mount is retried after absent-media failures without delaying boot.
   - CONFIG_OVE_LINUX_FS=y
   - CONFIG_OVE_LINUX_BLOCK=y
   - CONFIG_OVE_LINUX_BLOCK_WRITE=y
   - CONFIG_OVE_LINUX_FS_SERVER_PERIOD_US=1000
   - CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US=300
-  # /dev character-device layer + framebuffer (/dev/fb0). A board without an fb
-  # backend links weak "no display" HAL stubs, so /dev/fb0 is simply absent there.
+  # Framebuffer, DMA2D, and touch devices.
   - CONFIG_OVE_LINUX_DEV=y
   - CONFIG_OVE_LINUX_DEV_FB=y
   - CONFIG_OVE_LINUX_DEV_DMA2D=y
-  # /dev/input/event0 evdev touch + the QEMU synthetic injector (FT5336 is enabled
-  # per-board for real STM32F746 hardware, since it needs an i2c HAL backend).
   - CONFIG_OVE_LINUX_DEV_INPUT=y
   - CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD=y
-  # BSD socket layer: bridge the personality's socket syscalls to ove_net (selects
-  # CONFIG_OVE_NET → per-engine TCP/IP stack + the board's Ethernet driver). Lets
-  # stock networking tools (wget, nc, ping) run under the personality. On QEMU the
-  # board provides a shared-memory NIC; on real STM32F746 the LAN8742 driver.
+  # Sockets and the demo's static network topology.
   - CONFIG_OVE_LINUX_NET=y
-  # Product topology consumed by ove_lxp_host_init(). Keeping it in the app
-  # profile makes deployment policy visible without recreating native handles
-  # and provider composition in C.
   - CONFIG_OVE_LINUX_NETIF_DHCP=n
   - CONFIG_OVE_LINUX_NETIF_IPV4_ADDRESS="172.1.1.2"
   - CONFIG_OVE_LINUX_NETIF_IPV4_NETMASK="255.255.255.0"
   - CONFIG_OVE_LINUX_NETIF_IPV4_GATEWAY="172.1.1.1"
   - CONFIG_OVE_LINUX_NETIF_ADDRESS_WAIT_MS=10000
-  # Full compatibility includes the read-only 9P filesystem and remote FDPIC
-  # execution. Copied text is published through the same strict W^X policy as
-  # local execution; the hardened profile disables remote exec as an additional
-  # attack-surface reduction.
+  # Read-only 9P filesystem with remote FDPIC execution.
   - CONFIG_OVE_LINUX_NETFS=y
   - CONFIG_OVE_LINUX_NETFS_SERVER_IP="172.1.1.1"
   - CONFIG_OVE_LINUX_NETFS_PORT=564
@@ -60,41 +38,21 @@ defconfig:
   - CONFIG_OVE_LINUX_NETFS_MOUNTPOINT="/mnt/pi"
   - CONFIG_OVE_LINUX_NETFS_UNAME="root"
   - CONFIG_OVE_LINUX_NETFS_EXEC=y
-  # Pseudo-terminal layer (/dev/ptmx + /dev/pts/N) for an interactive network login
-  # shell — an SSH server (dropbear) runs the login shell on a pty slave.
+  # PTYs for interactive network login.
   - CONFIG_OVE_LINUX_PTY=y
 rtos_defconfig:
   freertos:
-    # Keep global 1 ms round-robin off. The FreeRTOS LXP seam enforces the
-    # cross-engine CONFIG_OVE_LINUX_GUEST_QUANTUM_MS budget only between guest
-    # tasks, avoiding involuntary switches among unrelated equal-priority host
-    # work while preventing a no-syscall guest from starving its peers.
+    # LXP owns guest rotation; do not time-slice unrelated host work.
     - CONFIG_FREERTOS_USE_TIME_SLICING=n
-    # The lwIP RX task publishes readiness through the engine-neutral network
-    # channel; the LXP host adapter subscribes while it owns sockets.
+    # Wake socket waiters and bound saturated RX work.
     - CONFIG_OVE_NET_RX_READY_NOTIFY=y
-    # Bound saturated RX work explicitly as a network scheduling policy, not as
-    # hidden Linux-personality behavior inside the generic FreeRTOS backend.
     - CONFIG_OVE_NET_RX_FAIR_SCHEDULING=y
   zephyr:
-    # The generic 128-byte Zephyr fragments chain a full Ethernet frame across
-    # about twelve net_buf objects and leave this workload with a 1536-byte TCP
-    # receive window.  Keep four full-frame slots while reducing the chain to
-    # three fragments and increasing the derived window to 2048 bytes.  Twelve
-    # objects also leave room for small ACK/ARP traffic alongside full frames.
+    # Four full-frame RX slots, with room for concurrent ACK/ARP traffic.
     - CONFIG_OVE_ZEPHYR_NET_BUF_DATA_SIZE=512
     - CONFIG_OVE_ZEPHYR_NET_BUF_RX_COUNT=12
     - CONFIG_OVE_ZEPHYR_NET_BUF_TX_COUNT=12
-# Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
-#   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
-#   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)
-#   ove defconfig-fragments stm32f746g-discovery.freertos.linux_interop  (Cortex-M7 real HW)
-#   ove defconfig-fragments stm32f746g-discovery.nuttx.linux_interop     (Cortex-M7 real HW)
-#   ove defconfig-fragments stm32f746g-discovery.zephyr.linux_interop    (Cortex-M7 real HW)
-# All three seams are ported to real STM32F746 hardware (program pool in external SDRAM, USART1
-# console), and all three run each Linux program unprivileged behind an MPU view: FreeRTOS uses a
-# restricted MPU task, Zephyr uses K_USER + a memory domain, and LXP's NuttX port sets CONTROL.nPRIV
-# and programs the MPU directly in BUILD_FLAT (NuttX's CONFIG_ARM_MPU stays off to avoid conflict).
+# Supported QEMU and STM32F746 engine combinations are documented in README.md.
 incompatible_boards:
   - host
   - wasm
