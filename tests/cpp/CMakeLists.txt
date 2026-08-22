@@ -47,6 +47,7 @@ set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../backends/stub)
 set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_thread.c
     ${POSIX_CORE_DIR}/posix_sync.c
+    ${OVE_SRC}/ove_sync.c
     ${POSIX_CORE_DIR}/posix_queue.c
     ${POSIX_CORE_DIR}/posix_timer.c
     ${POSIX_CORE_DIR}/posix_time.c

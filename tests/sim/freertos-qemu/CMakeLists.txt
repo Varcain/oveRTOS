@@ -98,6 +98,7 @@ set(FREERTOS_KERNEL_SOURCES
 set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_thread.c
     ${FREERTOS_BACKEND}/freertos_sync.c
+    ${OVE_SRC}/ove_sync.c
     ${FREERTOS_BACKEND}/freertos_queue.c
     ${FREERTOS_BACKEND}/freertos_timer.c
     ${FREERTOS_BACKEND}/freertos_eventgroup.c

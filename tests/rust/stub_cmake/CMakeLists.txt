@@ -22,6 +22,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/OveTest.cmake)
 add_library(ove_stub STATIC
     ${POSIX_CORE_DIR}/posix_thread.c
     ${POSIX_CORE_DIR}/posix_sync.c
+    ${OVE_SRC}/ove_sync.c
     ${POSIX_CORE_DIR}/posix_queue.c
     ${POSIX_CORE_DIR}/posix_timer.c
     ${POSIX_CORE_DIR}/posix_time.c
