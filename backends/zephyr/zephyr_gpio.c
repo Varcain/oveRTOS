@@ -207,7 +207,7 @@ int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
 		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
 			int ret = gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
-						       GPIO_INT_DISABLE);
+							       GPIO_INT_DISABLE);
 			if (ret != 0)
 				return OVE_ERR_NOT_SUPPORTED;
 			/* Release the driver callback and free the slot, else a
