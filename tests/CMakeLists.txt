@@ -93,7 +93,7 @@ set(STUB_SOURCES
     # The LXP module itself is tested in isolation in its repo. The oveRTOS host
     # test compiles only the provider gate used by the consumer-side storage glue.
     ${OVE_ROOT}/backends/common/lxp_ove_net_adapter.c
-    ${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c
+    ${OVE_ROOT}/backends/common/lxp_ove_storage_adapter.c
     ${OVE_ROOT}/modules/lxp/src/lxp_async_gate.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
     ${OVE_ROOT}/backends/common/lxp_ove_host.c

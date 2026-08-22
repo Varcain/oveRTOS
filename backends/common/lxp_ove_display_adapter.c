@@ -5,7 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * oveRTOS host adapter for the Linux personality's display / input port
+ * oveRTOS host adapter for the Linux personality's display/input port
  * (lxp_display_ops_t). It bridges the /dev/fb0 + /dev/input class drivers
  * to the ove_fb framebuffer HAL and the ove_ft5336 touch controller. The fb ops
  * are filled when /dev/fb0 is built; the touch ops when an FT5336 is present

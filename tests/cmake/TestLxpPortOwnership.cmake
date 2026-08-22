@@ -32,8 +32,8 @@ endif()
 set(LEGACY_SEAMS "")
 set(HOST_ADAPTERS
     "backends/common/lxp_ove_net_adapter.c"
-    "backends/common/lxp_ove_disp_adapter.c"
-    "backends/common/lxp_ove_fs_adapter.c"
+    "backends/common/lxp_ove_display_adapter.c"
+    "backends/common/lxp_ove_storage_adapter.c"
     "backends/common/lxp_ove_host.c"
     "backends/common/lxp_ove_observability.c"
     "backends/common/lxp_ove_rt_scope.c"
@@ -85,7 +85,7 @@ if(NOT EXISTS "${OVE_ROOT}/backends/common/lxp_ove_memory_layout.h")
     message(FATAL_ERROR "private LXP memory-layout contract is missing")
 endif()
 
-file(READ "${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c" STORAGE_ADAPTER_TEXT)
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_storage_adapter.c" STORAGE_ADAPTER_TEXT)
 if(STORAGE_ADAPTER_TEXT MATCHES
    "g_async_(state|owner|cancelled)|g_selected_owner|g_raw_(readers|writer)")
     message(FATAL_ERROR
@@ -152,7 +152,7 @@ if(NOT NETWORK_ADAPTER_TEXT MATCHES "lxp_net_ready_fn")
     message(FATAL_ERROR
         "network adapter bypasses the run-scoped LXP readiness callback")
 endif()
-file(READ "${OVE_ROOT}/backends/common/lxp_ove_disp_adapter.c" DISPLAY_ADAPTER_TEXT)
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_display_adapter.c" DISPLAY_ADAPTER_TEXT)
 if(DISPLAY_ADAPTER_TEXT MATCHES "lxp_input_report_touch|lxp_dev_tick")
     message(FATAL_ERROR
         "display adapter regained LXP-owned input or tick scheduling")
