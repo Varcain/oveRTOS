@@ -33,76 +33,8 @@
 #include "ove/thread.h"
 #include "ove/time.h"
 
+#include "ove/hal/hal_rt_scope.h"
 #include "ove/lxp_metrics.h"
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-#include "FreeRTOS.h"
-#include "stm32f746xx.h"
-#elif defined(CONFIG_OVE_RTOS_ZEPHYR)
-#include <zephyr/irq.h>
-#elif defined(CONFIG_OVE_RTOS_NUTTX)
-#include <arch/chip/irq.h>
-#include <nuttx/arch.h>
-#include <nuttx/irq.h>
-#include <nuttx/sched.h>
-#include <sched.h>
-#else
-#error "The STM32 real-time scope demo needs a supported target RTOS engine"
-#endif
-
-#define REG32(address) (*(volatile uint32_t *)(uintptr_t)(address))
-
-/* STM32F746 register blocks. Keeping this tiny demonstrator independent of
- * each engine's peripheral-driver model makes the physical experiment exactly
- * the same on FreeRTOS, NuttX and Zephyr. */
-#define RT_RCC_BASE 0x40023800u
-#define RT_RCC_AHB1ENR REG32(RT_RCC_BASE + 0x30u)
-#define RT_RCC_APB1RSTR REG32(RT_RCC_BASE + 0x20u)
-#define RT_RCC_APB1ENR REG32(RT_RCC_BASE + 0x40u)
-#define RT_RCC_AHB1ENR_GPIOBEN (1u << 1)
-#define RT_RCC_AHB1ENR_GPIOGEN (1u << 6)
-#define RT_RCC_APB1_TIM3EN (1u << 1)
-#define RT_RCC_APB1_TIM5EN (1u << 3)
-
-#define RT_GPIOB_BASE 0x40020400u
-#define RT_GPIOG_BASE 0x40021800u
-#define RT_GPIO_MODER(base) REG32((base) + 0x00u)
-#define RT_GPIO_OTYPER(base) REG32((base) + 0x04u)
-#define RT_GPIO_OSPEEDR(base) REG32((base) + 0x08u)
-#define RT_GPIO_PUPDR(base) REG32((base) + 0x0cu)
-#define RT_GPIO_BSRR(base) REG32((base) + 0x18u)
-#define RT_GPIO_AFRL(base) REG32((base) + 0x20u)
-
-#define RT_TIM3_BASE 0x40000400u
-#define RT_TIM3_CR1 REG32(RT_TIM3_BASE + 0x00u)
-#define RT_TIM3_DIER REG32(RT_TIM3_BASE + 0x0cu)
-#define RT_TIM3_SR REG32(RT_TIM3_BASE + 0x10u)
-#define RT_TIM3_EGR REG32(RT_TIM3_BASE + 0x14u)
-#define RT_TIM3_CCMR1 REG32(RT_TIM3_BASE + 0x18u)
-#define RT_TIM3_CCER REG32(RT_TIM3_BASE + 0x20u)
-#define RT_TIM3_CNT REG32(RT_TIM3_BASE + 0x24u)
-#define RT_TIM3_PSC REG32(RT_TIM3_BASE + 0x28u)
-#define RT_TIM3_ARR REG32(RT_TIM3_BASE + 0x2cu)
-#define RT_TIM3_CCR1 REG32(RT_TIM3_BASE + 0x34u)
-
-#define RT_TIM5_BASE 0x40000c00u
-#define RT_TIM5_CR1 REG32(RT_TIM5_BASE + 0x00u)
-#define RT_TIM5_EGR REG32(RT_TIM5_BASE + 0x14u)
-#define RT_TIM5_CNT REG32(RT_TIM5_BASE + 0x24u)
-#define RT_TIM5_PSC REG32(RT_TIM5_BASE + 0x28u)
-#define RT_TIM5_ARR REG32(RT_TIM5_BASE + 0x2cu)
-
-#define RT_TIM_CR1_CEN (1u << 0)
-#define RT_TIM_CR1_ARPE (1u << 7)
-#define RT_TIM_DIER_UIE (1u << 0)
-#define RT_TIM_EGR_UG (1u << 0)
-#define RT_TIM_CCMR1_OC1PE (1u << 3)
-#define RT_TIM_CCMR1_OC1M_PWM1 (6u << 4)
-#define RT_TIM_CCER_CC1E (1u << 0)
-
-#define RT_SCOPE_IRQ 29
-/* Zephyr uses 0 as its highest ordinary, kernel-callable IRQ priority. The
- * other engines select their syscall-safe priority in irq_prepare(). */
-#define RT_SCOPE_IRQ_PRIORITY 0
 #define RT_SCOPE_STACK_SIZE 1024u
 #define RT_SCOPE_REPORT_STACK_SIZE 1024u
 #define RT_SCOPE_WORK_ITERATIONS 512u
@@ -111,12 +43,6 @@
 /* APB1 timers run at 108 MHz. TIM3 runs at 54 MHz so its phase counter gives
  * 18.5 ns dispatch resolution while remaining inside its 16-bit ARR. TIM5 is
  * divided to 1 MHz and wraps after about 71 minutes. */
-#define RT_SCOPE_TIM3_PRESCALER 1u
-#define RT_SCOPE_TICKS_PER_US 54u
-#define RT_SCOPE_PERIOD_US 1000u
-#define RT_SCOPE_PERIOD_TICKS (RT_SCOPE_PERIOD_US * RT_SCOPE_TICKS_PER_US)
-#define RT_SCOPE_REFERENCE_HIGH_TICKS (50u * RT_SCOPE_TICKS_PER_US)
-#define RT_SCOPE_TIM5_PRESCALER 107u
 #define RT_SCOPE_HIST_BINS 18u
 
 static const uint16_t g_hist_upper_us[RT_SCOPE_HIST_BINS] = {
@@ -197,31 +123,21 @@ static struct rt_scope_metrics g_lifetime_metrics = {
 	.work_min_ticks = UINT32_MAX,
 };
 
-static inline void response_high(void)
-{
-	RT_GPIO_BSRR(RT_GPIOG_BASE) = 1u << 7;
-}
-
-static inline void response_low(void)
-{
-	RT_GPIO_BSRR(RT_GPIOG_BASE) = 1u << (7u + 16u);
-}
-
 static void timer_update(void)
 {
 	/* TIM3 phase identifies the latest physical CH1 edge. Combining it with
 	 * the 32-bit TIM5 timebase recovers how many 1 ms releases elapsed even
 	 * when the TIM3 update flag was already pending. */
-	uint32_t now_us = RT_TIM5_CNT;
-	uint32_t phase_ticks = RT_TIM3_CNT;
-	uint32_t phase_us = phase_ticks / RT_SCOPE_TICKS_PER_US;
+	uint32_t now_us = ove_hal_rt_scope_time_us();
+	uint32_t phase_ticks = ove_hal_rt_scope_phase_ticks();
+	uint32_t phase_us = phase_ticks / OVE_RT_SCOPE_TICKS_PER_US;
 	uint32_t deadline_us = now_us - phase_us;
 	uint32_t elapsed_us = deadline_us - g_last_deadline_us;
-	uint32_t periods = (elapsed_us + RT_SCOPE_PERIOD_US / 2u) / RT_SCOPE_PERIOD_US;
+	uint32_t periods = (elapsed_us + OVE_RT_SCOPE_PERIOD_US / 2u) / OVE_RT_SCOPE_PERIOD_US;
 
 	if (periods == 0u)
 		periods = 1u;
-	uint64_t irq_entry_age = (uint64_t)(periods - 1u) * RT_SCOPE_PERIOD_TICKS + phase_ticks;
+	uint64_t irq_entry_age = (uint64_t)(periods - 1u) * OVE_RT_SCOPE_PERIOD_TICKS + phase_ticks;
 	uint32_t irq_entry_age_ticks = irq_entry_age > UINT32_MAX ? UINT32_MAX
 								  : (uint32_t)irq_entry_age;
 	if (irq_entry_age_ticks > g_irq_entry_age_max_ticks)
@@ -231,107 +147,29 @@ static void timer_update(void)
 	 * The response thread uses this sequence counter to avoid combining a new
 	 * release count with the previous period's phase (or vice versa). */
 	__atomic_add_fetch(&g_release_generation, 1u, __ATOMIC_ACQ_REL);
-#if defined(CONFIG_OVE_RTOS_NUTTX)
-	/* nxsem_post() defers a newly readied higher-priority task when the
-	 * interrupted NuttX task owns a scheduler lock. Preserve that state with
-	 * this release so a rare dispatch tail can be assigned to preemption
-	 * locking rather than merely inferred from the aggregate maximum. */
-	uint32_t preempt_locked = sched_lockcount() > 0 ? 1u : 0u;
+	uint32_t preempt_locked;
+	uint32_t preempt_lock_owner_pid;
+	(void)ove_hal_rt_scope_release_attribution(&preempt_locked, &preempt_lock_owner_pid);
 	g_release_preempt_locked = preempt_locked;
-	g_release_preempt_lock_owner_pid = preempt_locked ? (uint32_t)nxsched_getpid() : 0u;
-	if (preempt_locked)
+	g_release_preempt_lock_owner_pid = preempt_lock_owner_pid;
+	if (preempt_locked != 0u)
 		__atomic_add_fetch(&g_irq_preempt_locked_samples, 1u, __ATOMIC_RELAXED);
-#else
-	g_release_preempt_locked = 0u;
-	g_release_preempt_lock_owner_pid = 0u;
-#endif
-	g_last_deadline_us += periods * RT_SCOPE_PERIOD_US;
-	RT_TIM3_SR = 0u;
+	g_last_deadline_us += periods * OVE_RT_SCOPE_PERIOD_US;
+	ove_hal_rt_scope_irq_ack();
 	if (periods > 1u)
 		__atomic_add_fetch(&g_irq_overrun_count, periods - 1u, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_deadline_count, periods, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&g_release_generation, 1u, __ATOMIC_RELEASE);
 	ove_event_signal_from_isr(g_deadline_event);
-	uint32_t signal_age_ticks = RT_TIM3_CNT;
+	uint32_t signal_age_ticks = ove_hal_rt_scope_phase_ticks();
 	if (signal_age_ticks > g_irq_signal_age_max_ticks)
 		g_irq_signal_age_max_ticks = signal_age_ticks;
 }
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
-
-void TIM3_IRQHandler(void)
-{
-	timer_update();
-}
-
-static int irq_prepare(void)
-{
-	NVIC_DisableIRQ(TIM3_IRQn);
-	NVIC_ClearPendingIRQ(TIM3_IRQn);
-	/* Highest interrupt urgency from which FreeRTOS APIs may be called. */
-	NVIC_SetPriority(TIM3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	return OVE_OK;
-}
-
-static void rt_scope_irq_enable(void)
-{
-	NVIC_EnableIRQ(TIM3_IRQn);
-}
-
-#elif defined(CONFIG_OVE_RTOS_ZEPHYR)
-
-_Static_assert(RT_SCOPE_IRQ_PRIORITY == 0,
-	       "the Zephyr scope reference must remain the highest ordinary IRQ");
-
-static void timer_isr(const void *arg)
-{
-	(void)arg;
-	timer_update();
-}
-
-static int irq_prepare(void)
-{
-	irq_disable(RT_SCOPE_IRQ);
-	IRQ_CONNECT(RT_SCOPE_IRQ, RT_SCOPE_IRQ_PRIORITY, timer_isr, NULL, 0);
-	return OVE_OK;
-}
-
-static void rt_scope_irq_enable(void)
-{
-	irq_enable(RT_SCOPE_IRQ);
-}
-
-#elif defined(CONFIG_OVE_RTOS_NUTTX)
-
-static int timer_isr(int irq, void *context, void *arg)
-{
-	(void)irq;
-	(void)context;
-	(void)arg;
-	timer_update();
-	return 0;
-}
-
-static int irq_prepare(void)
-{
-	up_disable_irq(STM32_IRQ_TIM3);
-	return irq_attach(STM32_IRQ_TIM3, timer_isr, NULL) < 0 ? OVE_ERR_NOT_REGISTERED : OVE_OK;
-}
-
-static void rt_scope_irq_enable(void)
-{
-	/* NuttX initialises ordinary peripheral IRQs at its highest kernel-callable
-	 * priority. A high-priority/zero-latency IRQ could not call nxsem_post(),
-	 * which is what ove_event_signal_from_isr() uses on this engine. */
-	up_enable_irq(STM32_IRQ_TIM3);
-}
-
-#endif
-
 static uint32_t histogram_bin(uint32_t ticks)
 {
 	for (uint32_t i = 0; i < RT_SCOPE_HIST_BINS; ++i) {
-		if (ticks <= (uint32_t)g_hist_upper_us[i] * RT_SCOPE_TICKS_PER_US)
+		if (ticks <= (uint32_t)g_hist_upper_us[i] * OVE_RT_SCOPE_TICKS_PER_US)
 			return i;
 	}
 	return RT_SCOPE_HIST_BINS - 1u;
@@ -412,7 +250,7 @@ static void response_thread(void *arg)
 				__atomic_load_n(&g_release_preempt_locked, __ATOMIC_RELAXED);
 			preempt_lock_owner_pid = __atomic_load_n(&g_release_preempt_lock_owner_pid,
 								 __ATOMIC_RELAXED);
-			dispatch_ticks = RT_TIM3_CNT;
+			dispatch_ticks = ove_hal_rt_scope_phase_ticks();
 			after = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
 			if (before == after && (after & 1u) == 0u)
 				break;
@@ -422,10 +260,10 @@ static void response_thread(void *arg)
 
 		uint32_t missed = deadline - g_last_execution_deadline - 1u;
 		uint64_t oldest_release_age =
-			(uint64_t)missed * RT_SCOPE_PERIOD_TICKS + dispatch_ticks;
+			(uint64_t)missed * OVE_RT_SCOPE_PERIOD_TICKS + dispatch_ticks;
 		uint32_t oldest_release_age_ticks =
 			oldest_release_age > UINT32_MAX ? UINT32_MAX : (uint32_t)oldest_release_age;
-		response_high();
+		ove_hal_rt_scope_response_set(1);
 
 		/* A fixed, observable host workload makes CH2 width useful as well as
 		 * its rising edge. The empty asm dependency prevents the compiler from
@@ -436,8 +274,8 @@ static void response_thread(void *arg)
 			__asm__ volatile("" : "+r"(state));
 		}
 		g_payload_state = state;
-		response_low();
-		uint32_t finish_ticks = RT_TIM3_CNT;
+		ove_hal_rt_scope_response_set(0);
+		uint32_t finish_ticks = ove_hal_rt_scope_phase_ticks();
 		int late_finish = finish_ticks < dispatch_ticks;
 
 		/* Collapse missed deadlines instead of emitting a misleading burst of
@@ -445,7 +283,7 @@ static void response_thread(void *arg)
 		 * its event pending and is handled on the next iteration. */
 		__atomic_store_n(&g_response_count, deadline, __ATOMIC_RELAXED);
 		uint32_t work_ticks =
-			late_finish ? RT_SCOPE_PERIOD_TICKS - dispatch_ticks + finish_ticks
+			late_finish ? OVE_RT_SCOPE_PERIOD_TICKS - dispatch_ticks + finish_ticks
 				    : finish_ticks - dispatch_ticks;
 		metrics_record(deadline, dispatch_ticks, oldest_release_age_ticks, work_ticks,
 			       missed, late_finish, preempt_locked, preempt_lock_owner_pid);
@@ -495,8 +333,8 @@ static char *append_u32(char *p, uint32_t value)
 
 static char *append_ticks_us(char *p, uint32_t ticks)
 {
-	uint32_t hundredths = (uint32_t)(((uint64_t)ticks * 100u + RT_SCOPE_TICKS_PER_US / 2u) /
-					 RT_SCOPE_TICKS_PER_US);
+	uint32_t hundredths = (uint32_t)(((uint64_t)ticks * 100u + OVE_RT_SCOPE_TICKS_PER_US / 2u) /
+					 OVE_RT_SCOPE_TICKS_PER_US);
 
 	p = append_u32(p, hundredths / 100u);
 	*p++ = '.';
@@ -569,7 +407,6 @@ static void report_svc_metrics(void)
 	g_report_write(line);
 }
 
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
 static void report_thread_snapshot_metrics(void)
 {
 	struct ove_lxp_thread_snapshot_metrics window;
@@ -597,9 +434,7 @@ static void report_thread_snapshot_metrics(void)
 	*p = '\0';
 	g_report_write(line);
 }
-#endif
 
-#if defined(CONFIG_OVE_RTOS_ZEPHYR)
 static void report_critical_metrics(void)
 {
 	struct ove_lxp_critical_metrics window;
@@ -633,7 +468,6 @@ static void report_critical_metrics(void)
 	*p = '\0';
 	g_report_write(line);
 }
-#endif
 static uint32_t percentile_upper_us(const struct rt_scope_metrics *metrics, uint32_t per_mille)
 {
 	uint64_t target = ((uint64_t)metrics->executions * per_mille + 999u) / 1000u;
@@ -691,7 +525,7 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 			if ((release_before & 1u) != 0u)
 				continue;
 			totals->releases = __atomic_load_n(&g_deadline_count, __ATOMIC_RELAXED);
-			phase_ticks = RT_TIM3_CNT;
+			phase_ticks = ove_hal_rt_scope_phase_ticks();
 			release_after = __atomic_load_n(&g_release_generation, __ATOMIC_ACQUIRE);
 		} while (release_before != release_after || (release_after & 1u) != 0u);
 		after = __atomic_load_n(&g_total_generation, __ATOMIC_ACQUIRE);
@@ -711,7 +545,7 @@ static void totals_snapshot(struct rt_scope_totals *totals)
 	if (backlog_missed > totals->metrics.max_consecutive_missed)
 		totals->metrics.max_consecutive_missed = backlog_missed;
 	if (totals->pending != 0u) {
-		uint64_t age = (uint64_t)backlog_missed * RT_SCOPE_PERIOD_TICKS + phase_ticks;
+		uint64_t age = (uint64_t)backlog_missed * OVE_RT_SCOPE_PERIOD_TICKS + phase_ticks;
 		uint32_t age_ticks = age > UINT32_MAX ? UINT32_MAX : (uint32_t)age;
 		if (age_ticks > totals->metrics.oldest_release_age_max_ticks)
 			totals->metrics.oldest_release_age_max_ticks = age_ticks;
@@ -758,8 +592,8 @@ static void proc_metric(struct proc_builder *builder, const char *name, uint64_t
 
 static uint64_t ticks_to_ns(uint32_t ticks)
 {
-	return ((uint64_t)ticks * 1000000000ull + RT_SCOPE_TICKS_PER_US * 500000ull) /
-	       (RT_SCOPE_TICKS_PER_US * 1000000ull);
+	return ((uint64_t)ticks * 1000000000ull + OVE_RT_SCOPE_TICKS_PER_US * 500000ull) /
+	       (OVE_RT_SCOPE_TICKS_PER_US * 1000000ull);
 }
 
 long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
@@ -780,8 +614,8 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	struct proc_builder builder = {.buf = buf, .cap = cap};
 
 	proc_metric(&builder, "available", 1u);
-	proc_metric(&builder, "period_us", RT_SCOPE_PERIOD_US);
-	proc_metric(&builder, "timer_hz", RT_SCOPE_TICKS_PER_US * 1000000u);
+	proc_metric(&builder, "period_us", OVE_RT_SCOPE_PERIOD_US);
+	proc_metric(&builder, "timer_hz", OVE_RT_SCOPE_TICKS_PER_US * 1000000u);
 	proc_metric(&builder, "releases", totals.releases);
 	proc_metric(&builder, "executions", totals.executions);
 	proc_metric(&builder, "missed", totals.missed);
@@ -804,11 +638,8 @@ long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 	proc_metric(&builder, "irq_entry_age_max_ns", ticks_to_ns(totals.irq_entry_age_max_ticks));
 	proc_metric(&builder, "irq_signal_age_max_ns",
 		    ticks_to_ns(totals.irq_signal_age_max_ticks));
-#if defined(CONFIG_OVE_RTOS_NUTTX)
-	proc_metric(&builder, "scheduler_lock_probe_available", 1u);
-#else
-	proc_metric(&builder, "scheduler_lock_probe_available", 0u);
-#endif
+	proc_metric(&builder, "scheduler_lock_probe_available",
+		    (uint64_t)ove_hal_rt_scope_release_attribution_available());
 	proc_metric(&builder, "irq_preempt_locked_samples", totals.irq_preempt_locked_samples);
 	proc_metric(&builder, "preempt_locked_dispatch_max_ns",
 		    ticks_to_ns(metrics->preempt_locked_dispatch_max_ticks));
@@ -925,12 +756,8 @@ static void report_metrics(void)
 	g_report_write(line);
 
 	report_svc_metrics();
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
 	report_thread_snapshot_metrics();
-#endif
-#if defined(CONFIG_OVE_RTOS_ZEPHYR)
 	report_critical_metrics();
-#endif
 }
 
 static void report_thread(void *arg)
@@ -942,65 +769,12 @@ static void report_thread(void *arg)
 	}
 }
 
-static void gpio_timer_prepare(void)
-{
-	/* Enable GPIOB/GPIOG and TIM3/TIM5, then reset the timers to remove
-	 * state left by a bootloader or an engine peripheral driver. */
-	RT_RCC_AHB1ENR |= RT_RCC_AHB1ENR_GPIOBEN | RT_RCC_AHB1ENR_GPIOGEN;
-	RT_RCC_APB1ENR |= RT_RCC_APB1_TIM3EN | RT_RCC_APB1_TIM5EN;
-	(void)RT_RCC_APB1ENR;
-	RT_RCC_APB1RSTR |= RT_RCC_APB1_TIM3EN | RT_RCC_APB1_TIM5EN;
-	RT_RCC_APB1RSTR &= ~(RT_RCC_APB1_TIM3EN | RT_RCC_APB1_TIM5EN);
-
-	/* PB4 = AF2 / TIM3_CH1, push-pull, very high speed, no pulls. */
-	RT_GPIO_MODER(RT_GPIOB_BASE) = (RT_GPIO_MODER(RT_GPIOB_BASE) & ~(3u << (4u * 2u))) |
-				       (2u << (4u * 2u));
-	RT_GPIO_OTYPER(RT_GPIOB_BASE) &= ~(1u << 4);
-	RT_GPIO_OSPEEDR(RT_GPIOB_BASE) |= 3u << (4u * 2u);
-	RT_GPIO_PUPDR(RT_GPIOB_BASE) &= ~(3u << (4u * 2u));
-	RT_GPIO_AFRL(RT_GPIOB_BASE) = (RT_GPIO_AFRL(RT_GPIOB_BASE) & ~(0xfu << (4u * 4u))) |
-				      (2u << (4u * 4u));
-
-	/* PG7 = response GPIO, push-pull, very high speed, initially low. */
-	response_low();
-	RT_GPIO_MODER(RT_GPIOG_BASE) = (RT_GPIO_MODER(RT_GPIOG_BASE) & ~(3u << (7u * 2u))) |
-				       (1u << (7u * 2u));
-	RT_GPIO_OTYPER(RT_GPIOG_BASE) &= ~(1u << 7);
-	RT_GPIO_OSPEEDR(RT_GPIOG_BASE) |= 3u << (7u * 2u);
-	RT_GPIO_PUPDR(RT_GPIOG_BASE) &= ~(3u << (7u * 2u));
-
-	/* 54 MHz phase counter, 1 kHz period, 50 us hardware reference pulse. */
-	RT_TIM3_CR1 = 0u;
-	RT_TIM3_DIER = 0u;
-	RT_TIM3_PSC = RT_SCOPE_TIM3_PRESCALER;
-	RT_TIM3_ARR = RT_SCOPE_PERIOD_TICKS - 1u;
-	RT_TIM3_CCR1 = RT_SCOPE_REFERENCE_HIGH_TICKS;
-	RT_TIM3_CCMR1 = RT_TIM_CCMR1_OC1PE | RT_TIM_CCMR1_OC1M_PWM1;
-	RT_TIM3_CCER = RT_TIM_CCER_CC1E;
-	RT_TIM3_EGR = RT_TIM_EGR_UG;
-	RT_TIM3_SR = 0u;
-
-	/* Pinless counter recovers elapsed periods after TIM3 pending-bit collapse. */
-	RT_TIM5_CR1 = 0u;
-	RT_TIM5_PSC = RT_SCOPE_TIM5_PRESCALER;
-	RT_TIM5_ARR = UINT32_MAX;
-	RT_TIM5_CNT = 0u;
-	RT_TIM5_EGR = RT_TIM_EGR_UG;
-	RT_TIM5_CR1 = RT_TIM_CR1_CEN;
-
-	/* Begin one tick before overflow so the first scheduled CH1 rising edge and
-	 * update interrupt correspond. Model the previous release one period before
-	 * that edge so a delayed first IRQ can recover every elapsed release. */
-	RT_TIM3_CNT = RT_SCOPE_PERIOD_TICKS - 1u;
-	g_last_deadline_us = RT_TIM5_CNT - RT_SCOPE_PERIOD_US;
-}
-
 int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 {
 	int rc = ove_event_init(&g_deadline_event, &g_deadline_event_storage);
 	if (rc != OVE_OK)
 		return rc;
-	rc = irq_prepare();
+	rc = ove_hal_rt_scope_irq_prepare(timer_update);
 	if (rc != OVE_OK) {
 		ove_event_deinit(g_deadline_event);
 		return rc;
@@ -1028,10 +802,9 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 		}
 	}
 
-	gpio_timer_prepare();
-	rt_scope_irq_enable();
-	RT_TIM3_DIER = RT_TIM_DIER_UIE;
-	RT_TIM3_CR1 = RT_TIM_CR1_ARPE | RT_TIM_CR1_CEN;
+	ove_hal_rt_scope_hardware_prepare();
+	g_last_deadline_us = ove_hal_rt_scope_time_us() - OVE_RT_SCOPE_PERIOD_US;
+	ove_hal_rt_scope_start();
 	return OVE_OK;
 }
 

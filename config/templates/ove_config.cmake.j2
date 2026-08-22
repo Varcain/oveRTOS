@@ -336,6 +336,7 @@ include_directories(${OVE_DIR}/modules/lxp/src)
 # which include the module's headers, need them too, so these are compile-wide).
 add_compile_definitions(LXP_ENABLE_LINUX=1 LXP_ENABLE_LOADER=1)
 {% if config.get("CONFIG_OVE_LINUX_RT_SCOPE") == True %}
+set(OVE_LINUX_RT_SCOPE ON)
 add_compile_definitions(LXP_ENABLE_RT_METRICS=1)
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True %}

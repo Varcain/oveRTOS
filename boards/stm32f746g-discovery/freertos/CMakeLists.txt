@@ -106,6 +106,10 @@ if(OVE_LINUX)
     endif()
 endif()
 
+if(OVE_LINUX_RT_SCOPE)
+    ove_add_board_sources(${CMAKE_CURRENT_LIST_DIR}/../common/rt_scope.c)
+endif()
+
 # ── STM32CubeF7 HAL + BSP + FatFs + CMSIS-DSP ───────────────────────
 ove_add_stm32cube_hal(FAMILY f7 STARTUP stm32f746xx)
 ove_add_stm32cube_bsp(
