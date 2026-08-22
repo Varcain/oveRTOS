@@ -68,9 +68,8 @@ static void demo_body(void *arg)
 	linux_interop_network_report(&g_linux_host);
 
 	ove_lxp_console_write("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
-	ove_lxp_launch_config_t cfg1 = {
-		.rt_scope_read = ove_lxp_rt_scope_proc_read,
-	};
+	ove_lxp_launch_config_t cfg1 = {0};
+	ove_lxp_rt_scope_bind(&cfg1);
 	int roundtrip_rc = linux_interop_roundtrip_prepare(&cfg1);
 	if (roundtrip_rc != OVE_OK) {
 		ove_lxp_console_printf("[demo] FAIL: round-trip worker init rc=%d\n", roundtrip_rc);
@@ -92,9 +91,8 @@ static void demo_body(void *arg)
 	ove_lxp_console_write("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
 			      " run commands, `poweroff` to halt) --\n");
 #endif
-	ove_lxp_launch_config_t cfg2 = {
-		.rt_scope_read = ove_lxp_rt_scope_proc_read,
-	};
+	ove_lxp_launch_config_t cfg2 = {0};
+	ove_lxp_rt_scope_bind(&cfg2);
 	ove_lxp_console_bind_diagnostics(&cfg2);
 	ove_lxp_console_bind(&cfg2);
 	int rc2;
