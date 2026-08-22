@@ -4,17 +4,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * This file is part of oveRTOS.
+ *
+ * Private generated-memory contract shared by the oveRTOS LXP backends.
  */
 
-#ifndef OVE_LXP_MEMORY_LAYOUT_H
-#define OVE_LXP_MEMORY_LAYOUT_H
+#ifndef LXP_OVE_MEMORY_LAYOUT_H
+#define LXP_OVE_MEMORY_LAYOUT_H
 
 #include <stdint.h>
 
 #include "ove_config.h"
 
 #if !defined(CONFIG_OVE_LINUX)
-#error "ove/lxp_memory_layout.h is only valid for Linux-personality builds"
+#error "lxp_ove_memory_layout.h is only valid for Linux-personality builds"
 #endif
 
 #if !defined(CONFIG_OVE_LINUX_ROOTFS_BASE) || !defined(CONFIG_OVE_LINUX_ROOTFS_SIZE)
@@ -48,4 +50,4 @@
 #define OVE_LXP_ROOTFS_MPU0_SIZE OVE_LXP_ROOTFS_SIZE
 #endif
 
-#endif /* OVE_LXP_MEMORY_LAYOUT_H */
+#endif /* LXP_OVE_MEMORY_LAYOUT_H */

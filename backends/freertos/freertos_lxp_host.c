@@ -18,7 +18,7 @@
 #include "lxp/ports/freertos.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
-#include "ove/lxp_memory_layout.h"
+#include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
 #include "ove_freertos_tick.h"
 #include "ove_lxp_memory_contract.h"
