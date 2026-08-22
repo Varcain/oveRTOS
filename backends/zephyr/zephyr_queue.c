@@ -36,53 +36,6 @@ void ove_queue_deinit(ove_queue_t q)
 	}
 }
 
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_QUEUE
-int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
-{
-	struct ove_queue *zq;
-
-	if (q == NULL || item_size == 0 || max_items == 0) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	/* Reject item_size * max_items overflow before it wraps to an
-	 * undersized buffer allocation (heap overflow on send). */
-	if (item_size > SIZE_MAX / max_items) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	/* Single allocation for the wrapper struct + message buffer; the
-	 * buffer is the inline_storage[] FAM tail.  Mirrors the FreeRTOS
-	 * backend (was two OVE_BACKEND_MALLOC calls). */
-	size_t storage_size = (size_t)max_items * item_size;
-	if (storage_size > SIZE_MAX - sizeof(struct ove_queue)) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-	zq = OVE_BACKEND_MALLOC(sizeof(*zq) + storage_size);
-	if (zq == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	zq->buffer = zq->inline_storage;
-	zq->notify_cb = NULL;
-	zq->notify_ud = NULL;
-	k_msgq_init(&zq->msgq, zq->buffer, item_size, max_items);
-
-	*q = zq;
-	return OVE_OK;
-}
-
-void ove_queue_destroy(ove_queue_t q)
-{
-	if (q != NULL) {
-		k_msgq_purge(&q->msgq);
-		OVE_BACKEND_FREE(q);
-	}
-}
-#endif /* OVE_HEAP_QUEUE */
-
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
 int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)

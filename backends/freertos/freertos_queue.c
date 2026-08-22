@@ -38,54 +38,6 @@ void ove_queue_deinit(ove_queue_t q)
 	}
 }
 
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_QUEUE
-int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
-{
-	if (item_size == 0 || max_items == 0) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	/* Reject item_size * max_items (and the + sizeof(*w) below) overflow
-	 * before it wraps to an undersized allocation (heap overflow on send). */
-	if (item_size > SIZE_MAX / max_items) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	/* Single allocation for the wrapper struct + queue data buffer.
-	 * The data buffer occupies the flexible-array `inline_storage[]`
-	 * tail of struct ove_queue; `w->storage` points at it so init-
-	 * and create-path queues both go through the same xQueueCreateStatic
-	 * pointer.  Replaces the earlier 2-allocation path measured at
-	 * +3.5 µs over raw xQueueCreate on STM32F746/heap_4. */
-	size_t storage_size = (size_t)max_items * item_size;
-	if (storage_size > SIZE_MAX - sizeof(struct ove_queue)) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-	struct ove_queue *w = OVE_BACKEND_MALLOC(sizeof(*w) + storage_size);
-	if (w == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	w->storage = w->inline_storage;
-	w->queue = xQueueCreateStatic(max_items, item_size, w->storage, &w->static_queue);
-	w->notify_cb = NULL;
-	w->notify_ud = NULL;
-
-	*q = w;
-	return OVE_OK;
-}
-
-void ove_queue_destroy(ove_queue_t q)
-{
-	if (q != NULL) {
-		vQueueDelete(q->queue);
-		OVE_BACKEND_FREE(q);
-	}
-}
-#endif /* OVE_HEAP_QUEUE */
-
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
 int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
