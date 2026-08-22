@@ -472,7 +472,7 @@ template <size_t StackSize = 0> class Thread
 #endif
 
 	/**
-	 * @brief Destroys the thread wrapper, terminating and releasing the kernel thread.
+	 * @brief Requests cooperative stop, joins, and releases the kernel thread.
 	 *
 	 * Calls @ref ove_thread_request_stop before the join wait so
 	 * cooperative workers (built with the @ref stop_token constructor)
@@ -564,9 +564,10 @@ template <size_t StackSize = 0> class Thread
 	 * Analog of @c std::thread::detach.
 	 *
 	 * After @c detach the wrapper is empty: @ref valid returns @c false
-	 * and @ref ~Thread is a no-op.  The kernel thread keeps running
-	 * with its own resources; the RTOS reaps them when the entry
-	 * function returns.
+	 * and @ref ~Thread is a no-op.  The kernel thread keeps running, but
+	 * its oveRTOS handle and stack cannot be reclaimed because ownership
+	 * was discarded.  Use this only for program-lifetime workers and
+	 * accept that bounded resource leak.
 	 *
 	 * Unlike @ref ~Thread, @c detach does NOT call @ref request_stop —
 	 * the worker is genuinely fire-and-forget.  Hand it out a

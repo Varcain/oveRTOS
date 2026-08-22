@@ -888,9 +888,8 @@ impl<'storage, T> JoinHandleBorrowed<'storage, T> {
     }
 
     /// Consume the handle without joining or requesting stop.  The
-    /// underlying kernel thread keeps running; its resources are leaked
-    /// from the binding's perspective (the RTOS may reap them when the
-    /// entry function eventually returns).
+    /// underlying kernel thread keeps running; its oveRTOS handle and
+    /// stack are leaked because no owner remains to destroy them.
     ///
     /// Use this when the worker is fire-and-forget and you don't want
     /// the join wait that [`Drop`] would otherwise do.  Prefer it over

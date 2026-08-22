@@ -48,9 +48,10 @@ A recurring difference is *how a scope-bound resource is released*:
 **Contract notes**
 
 - A live thread handle **owns** the kernel thread. Letting the handle go out of
-  scope requests cooperative stop and then joins/destroys it. To run a thread for
-  the whole program lifetime, **`detach()`** it — do not rely on leaking the
-  handle, and never let a worker's `Drop`/`deinit` join from inside `main`.
+  scope requests cooperative stop and then joins/destroys it. `detach()` discards
+  that owner without stopping the worker, so its oveRTOS handle and stack are not
+  reclaimed. Reserve it for a bounded set of program-lifetime workers; otherwise
+  retain the handle and shut the worker down cooperatively.
 - Cooperative cancellation is the supported shutdown path: the entry loops
   `while (!stop_requested())` and the owner calls `request_stop()` (implicitly via
   drop, or explicitly).
