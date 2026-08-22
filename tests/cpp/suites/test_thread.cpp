@@ -118,7 +118,7 @@ static void test_cpp_thread_get_state_terminated(void **state)
 	ove::Thread<4096> t(cpp_entry_set_flag, nullptr, OVE_PRIO_NORMAL, "t9");
 	test_msleep(100);
 	auto st = t.get_state();
-	assert_true(st == OVE_THREAD_STATE_TERMINATED || st == OVE_THREAD_STATE_SUSPENDED);
+	assert_int_equal(st, OVE_THREAD_STATE_TERMINATED);
 }
 
 static void test_cpp_thread_stack_usage(void **state)
