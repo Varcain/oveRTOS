@@ -25,7 +25,7 @@ set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
 set(QUALIFICATION_SOURCE_LINE_CEILING 414)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 160)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1057)
-set(FULL_PROFILE_CONFIG_LINE_CEILING 65)
+set(FULL_PROFILE_CONFIG_LINE_CEILING 56)
 
 function(assert_line_ceiling PATH CEILING)
     file(READ "${PATH}" TEXT)
@@ -204,7 +204,7 @@ foreach(PROFILE IN ITEMS
                 "${PROFILE_CONFIG} omits shared scenario source ${SCENARIO_SOURCE}")
         endif()
     endforeach()
-    if(PROFILE_TEXT MATCHES "CONFIG_OVE_(ARENA|LOADER|QUEUE)")
+    if(PROFILE_TEXT MATCHES "CONFIG_OVE_(ARENA|LOADER|QUEUE|FS)(=|_MAX_OPEN_FILES)")
         message(FATAL_ERROR
             "${PROFILE_CONFIG} restates module plumbing selected elsewhere")
     endif()
