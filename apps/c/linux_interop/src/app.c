@@ -123,8 +123,8 @@ static void demo_body(void *arg)
 
 void ove_main(void)
 {
-	if (ove_thread_init(&g_demo, &g_demo_storage, "demo", demo_body, NULL, OVE_PRIO_NORMAL,
-			    sizeof(g_demo_storage_stack), g_demo_storage_stack) != OVE_OK) {
+	if (OVE_THREAD_INIT_DEFINED(g_demo, g_demo_storage, "demo", demo_body, NULL,
+				    OVE_PRIO_NORMAL) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: demo thread init\n");
 		demo_exit(1);
 	}

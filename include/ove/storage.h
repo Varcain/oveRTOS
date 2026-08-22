@@ -475,6 +475,25 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	OVE_THREAD_STACK_DEFINE_HOST_(name##_stack, stack_size_bytes)
 
 /**
+ * @brief Initialise a thread from an @ref OVE_THREAD_DEFINE declaration.
+ *
+ * This keeps startup order and error handling at the call site while deriving
+ * the storage address, stack address, and stack size from @p storage_name.
+ * It also accepts storage declared with @ref OVE_THREAD_DEFINE_HOST.
+ *
+ * @param handle        Thread-handle lvalue that receives the new thread.
+ * @param storage_name  Identifier passed to OVE_THREAD_DEFINE or
+ *                      OVE_THREAD_DEFINE_HOST.
+ * @param name          Human-readable thread name.
+ * @param entry         Thread entry point.
+ * @param arg           Argument passed to @p entry.
+ * @param priority      Portable thread priority.
+ */
+#define OVE_THREAD_INIT_DEFINED(handle, storage_name, name, entry, arg, priority)       \
+	ove_thread_init(&(handle), &(storage_name), (name), (entry), (arg), (priority), \
+			sizeof(storage_name##_stack), storage_name##_stack)
+
+/**
  * @brief Declare a static queue storage variable and its backing buffer.
  *
  * @param name    Variable name for the queue storage.
