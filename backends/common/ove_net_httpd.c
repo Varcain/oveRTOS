@@ -107,7 +107,6 @@ static int s_route_count;
 
 static ove_socket_t s_server_sock;
 static ove_socket_storage_t s_server_storage;
-static volatile int s_running;
 static uint16_t s_port;
 
 /* Thread for the server loop */
@@ -426,7 +425,7 @@ static void httpd_task(void *arg)
 {
 	(void)arg;
 
-	while (s_running) {
+	while (!ove_thread_should_stop(ove_thread_get_self())) {
 		/*
 		 * Accept timeout: 50 ms when WebSocket connections are
 		 * active (to poll them frequently), 1000 ms otherwise.
@@ -559,6 +558,9 @@ static void httpd_task(void *arg)
 
 int ove_httpd_start(const ove_httpd_config_t *cfg)
 {
+	if (s_thread != NULL)
+		return OVE_ERR_BUSY;
+
 	s_port = (cfg && cfg->port) ? cfg->port : 80;
 
 	/* Open server socket */
@@ -583,7 +585,6 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 	}
 
 	/* Spawn server thread */
-	s_running = 1;
 #ifdef OVE_HEAP_THREAD
 	ret = ove_thread_create(&s_thread, "httpd", httpd_task, NULL, OVE_PRIO_NORMAL, 8192);
 #else
@@ -593,7 +594,6 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 			      OVE_PRIO_NORMAL, sizeof(httpd_th_stack), httpd_th_stack);
 #endif
 	if (ret != OVE_OK) {
-		s_running = 0;
 		s_thread = NULL; /* spawn failed — keep stop() idempotent */
 		ove_socket_close(s_server_sock);
 		return ret;
@@ -612,10 +612,11 @@ void ove_httpd_stop(void)
 	 * actually returned (on its way out it closes s_server_sock).  Without
 	 * the join, stop() returned while the task was still mid-accept or
 	 * handling a request, racing a caller that frees/reinits — a teardown
-	 * use-after-free.  Worst-case latency is one accept timeout (<= 1s).
+	 * use-after-free.  An idle server stops within one accept timeout;
+	 * an in-flight request can additionally wait for its socket timeout.
 	 *
 	 * Must not be called from the server task itself (would self-deadlock). */
-	s_running = 0;
+	ove_thread_request_stop(s_thread);
 #ifdef OVE_HEAP_THREAD
 	ove_thread_destroy(s_thread);
 #else
