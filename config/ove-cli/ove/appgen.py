@@ -8,16 +8,18 @@
 
 import json
 import os
+import re
 
 try:
     import yaml
 except ImportError:
     yaml = None
 
-try:
-    from jinja2 import Environment
-except ImportError:
-    Environment = None
+_CONFIG_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+class AppManifestError(ValueError):
+    """An app manifest cannot be represented unambiguously in Kconfig."""
 
 
 def _scan_app_dirs(dirs):
@@ -34,8 +36,26 @@ def _scan_app_dirs(dirs):
             with open(app_yaml_path) as f:
                 data = yaml.safe_load(f) or {}
             name = data.get("config_name", os.path.basename(d))
+            if not isinstance(name, str) or not _CONFIG_NAME_RE.fullmatch(name):
+                raise AppManifestError(
+                    f"invalid config_name {name!r} in {app_yaml_path}; "
+                    "use lowercase letters, digits, and underscores"
+                )
             results.append((name, d, data))
     return results
+
+
+def _register_app(record, apps, app_paths):
+    """Add one scanned app, rejecting ambiguous Kconfig identities."""
+    name, path, data = record
+    if name in app_paths:
+        raise AppManifestError(
+            f"duplicate config_name '{name}': {app_paths[name]} and {path}"
+        )
+    data["name"] = name
+    data["config_name"] = name.upper()
+    apps.append(data)
+    app_paths[name] = path
 
 
 def _scan_apps_dir(apps_dir, apps, app_paths):
@@ -47,12 +67,8 @@ def _scan_apps_dir(apps_dir, apps, app_paths):
         if "app.yaml" not in files:
             continue
         dirs[:] = []
-        [(name, path, data)] = _scan_app_dirs([root])
-        data["name"] = name
-        data["config_name"] = name.upper()
-        if name not in app_paths:
-            apps.append(data)
-            app_paths[name] = path
+        [record] = _scan_app_dirs([root])
+        _register_app(record, apps, app_paths)
 
 
 def generate_app_kconfig(ove_dir):
@@ -76,28 +92,18 @@ def generate_app_kconfig(ove_dir):
     apps = []
     app_paths = {}  # config_name -> absolute path mapping
 
-    # In-tree apps (apps/<lang>/<app> or apps/<app>).
-    _scan_apps_dir(os.path.join(ove_dir, "apps"), apps, app_paths)
+    try:
+        _scan_apps_dir(os.path.join(ove_dir, "apps"), apps, app_paths)
+        _scan_apps_dir(os.path.join(ove_dir, "tests", "benchmarks"),
+                       apps, app_paths)
 
-    # Benchmark test suite under tests/benchmarks/<lang>/ — same flat
-    # vs. two-level discovery rules; <lang> = c/cpp/rust/zig.
-    _scan_apps_dir(os.path.join(ove_dir, "tests", "benchmarks"),
-                   apps, app_paths)
-
-    # Scan external apps from OVE_EXTERNAL_APPS env var
-    ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
-    if ext_apps_env:
-        ext_dirs = [d.strip() for d in ext_apps_env.split(":")
-                    if d.strip()]
-        for name, path, data in _scan_app_dirs(ext_dirs):
-            if name in app_paths:
-                print(f"Warning: external app '{name}' shadows "
-                      f"in-tree app, skipping")
-                continue
-            data["name"] = name
-            data["config_name"] = name.upper()
-            apps.append(data)
-            app_paths[name] = path
+        ext_dirs = [path.strip() for path in os.environ.get(
+            "OVE_EXTERNAL_APPS", "").split(os.pathsep) if path.strip()]
+        for record in _scan_app_dirs(ext_dirs):
+            _register_app(record, apps, app_paths)
+    except AppManifestError as exc:
+        print(f"Error: {exc}")
+        raise SystemExit(1) from None
 
     if not apps:
         return
