@@ -32,7 +32,6 @@
 #define CONFIG_OVE_BOARD 1
 #define CONFIG_OVE_GPIO 1
 #define CONFIG_OVE_LED 1
-#define CONFIG_OVE_FS 1
 #define CONFIG_OVE_LVGL 1
 #define CONFIG_OVE_ZERO_HEAP 1
 /* Hardware peripheral APIs — drivers in drivers/freertos/stm32f7/ +
