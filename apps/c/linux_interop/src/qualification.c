@@ -209,21 +209,19 @@ static ove_thread_t g_mon;
 #endif
 OVE_THREAD_DEFINE(g_mon_storage, MON_STACK_SIZE);
 static ove_lxp_latency_stat_t g_mon_late;
-static volatile int g_mon_stop;
-static volatile int g_mon_exited;
 static int g_mon_started;
 
 static void mon_body(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	const uint64_t period_ns = OVE_MS(MON_PERIOD_MS);
-	while (!g_mon_stop) {
+	while (!ove_thread_should_stop(self)) {
 		uint64_t t0 = ove_time_now_steady_ns();
 		ove_thread_sleep_ms(MON_PERIOD_MS);
 		uint64_t slept = ove_time_now_steady_ns() - t0;
 		ove_lxp_latency_record(&g_mon_late, slept > period_ns ? slept - period_ns : 0);
 	}
-	g_mon_exited = 1;
 }
 
 static void lat_row(const char *what, const char *name, const ove_lxp_latency_stat_t *stat)
@@ -357,8 +355,6 @@ int linux_interop_qualification_measurement_start(void)
 {
 #if defined(CONFIG_OVE_LINUX_LATENCY)
 	g_mon_late = (ove_lxp_latency_stat_t){0};
-	g_mon_stop = 0;
-	g_mon_exited = 0;
 	int rc = ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
 				 sizeof(g_mon_storage_stack), g_mon_storage_stack);
 	if (rc != OVE_OK)
@@ -373,8 +369,8 @@ void linux_interop_qualification_measurement_stop(void)
 #if defined(CONFIG_OVE_LINUX_LATENCY)
 	if (!g_mon_started)
 		return;
-	g_mon_stop = 1;
-	while (!g_mon_exited)
+	ove_thread_request_stop(g_mon);
+	while (ove_thread_get_state(g_mon) != OVE_THREAD_STATE_TERMINATED)
 		ove_thread_sleep_ms(1);
 	linux_interop_qualification_observe_thread("lat-monitor", g_mon,
 						   sizeof(g_mon_storage_stack));

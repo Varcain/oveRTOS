@@ -22,7 +22,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # Tighten the ceilings as demo, qualification, and board policy are separated.
 set(APP_SOURCE_LINE_CEILING 135)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
-set(QUALIFICATION_SOURCE_LINE_CEILING 414)
+set(QUALIFICATION_SOURCE_LINE_CEILING 410)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 140)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1057)
 set(FULL_PROFILE_CONFIG_LINE_CEILING 56)
@@ -113,6 +113,15 @@ endif()
 if(NOT ROUNDTRIP_TEXT MATCHES "ove_thread_request_stop[ \t\r\n]*[(]")
     message(FATAL_ERROR
         "round-trip scenario must use the cooperative thread-stop contract")
+endif()
+if(QUALIFICATION_TEXT MATCHES
+   "static[ \t]+volatile[ \t]+int[ \t]+g_mon_(stop|exited)")
+    message(FATAL_ERROR
+        "latency qualification regained ad-hoc volatile thread handshakes")
+endif()
+if(NOT QUALIFICATION_TEXT MATCHES "ove_thread_request_stop[ \t\r\n]*[(]")
+    message(FATAL_ERROR
+        "latency qualification must use the cooperative thread-stop contract")
 endif()
 if(APP_TEXT MATCHES "linux_interop_roundtrip_(worker|worker_stack_size)[ \t\r\n]*[(]")
     message(FATAL_ERROR
