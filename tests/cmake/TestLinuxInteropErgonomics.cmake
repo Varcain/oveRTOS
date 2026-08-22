@@ -23,7 +23,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 set(APP_SOURCE_LINE_CEILING 135)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
 set(QUALIFICATION_SOURCE_LINE_CEILING 414)
-set(ROUNDTRIP_SOURCE_LINE_CEILING 160)
+set(ROUNDTRIP_SOURCE_LINE_CEILING 140)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1057)
 set(FULL_PROFILE_CONFIG_LINE_CEILING 56)
 
@@ -104,6 +104,15 @@ if(APP_TEXT MATCHES
    "static[ \t]+[^\r\n]*(feed_read|consume_write|roundtrip_worker|network_transport_smoke)[ \t]*[(]")
     message(FATAL_ERROR
         "linux_interop app regained application-owned workload implementation")
+endif()
+if(ROUNDTRIP_TEXT MATCHES
+   "static[ \t]+volatile[ \t]+int[ \t]+g_(feed_ready|linux_done|worker_exited|round_trip_n)")
+    message(FATAL_ERROR
+        "round-trip scenario regained ad-hoc volatile thread handshakes")
+endif()
+if(NOT ROUNDTRIP_TEXT MATCHES "ove_thread_request_stop[ \t\r\n]*[(]")
+    message(FATAL_ERROR
+        "round-trip scenario must use the cooperative thread-stop contract")
 endif()
 if(APP_TEXT MATCHES "linux_interop_roundtrip_(worker|worker_stack_size)[ \t\r\n]*[(]")
     message(FATAL_ERROR
