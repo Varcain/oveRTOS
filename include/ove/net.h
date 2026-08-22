@@ -423,6 +423,12 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout
 void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b, uint8_t c, uint8_t d,
 		       uint16_t port);
 
+/**
+ * @brief Parse dotted-decimal IPv4 text into a socket address.
+ * @return OVE_OK, or OVE_ERR_INVALID_PARAM for malformed input.
+ */
+int ove_sockaddr_parse_ipv4(ove_sockaddr_t *addr, const char *text, uint16_t port);
+
 #else /* !CONFIG_OVE_NET */
 
 /** @cond INTERNAL */
@@ -637,6 +643,13 @@ static inline void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b,
 	(void)c;
 	(void)d;
 	(void)port;
+}
+static inline int ove_sockaddr_parse_ipv4(ove_sockaddr_t *addr, const char *text, uint16_t port)
+{
+	(void)addr;
+	(void)text;
+	(void)port;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 /** @endcond */
 

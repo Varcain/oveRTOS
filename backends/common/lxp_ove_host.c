@@ -52,29 +52,6 @@ extern const lxp_block_ops_t g_lxp_host_block_ops;
 #define OVE_LXP_BLOCK_OPS NULL
 #endif
 
-static int parse_ipv4(const char *text, uint8_t address[4])
-{
-	if (!text || !address)
-		return OVE_ERR_INVALID_PARAM;
-	for (unsigned octet = 0; octet < 4u; octet++) {
-		unsigned value = 0u;
-		unsigned digits = 0u;
-		while (*text >= '0' && *text <= '9') {
-			value = value * 10u + (unsigned)(*text - '0');
-			if (value > 255u)
-				return OVE_ERR_INVALID_PARAM;
-			text++;
-			digits++;
-		}
-		if (digits == 0u || (octet < 3u ? *text != '.' : *text != '\0'))
-			return OVE_ERR_INVALID_PARAM;
-		address[octet] = (uint8_t)value;
-		if (octet < 3u)
-			text++;
-	}
-	return OVE_OK;
-}
-
 #if defined(CONFIG_OVE_LINUX_NET)
 static int address_present(const ove_sockaddr_t *address)
 {
@@ -107,18 +84,6 @@ void ove_lxp_host_deinit(ove_lxp_host_t *host)
 	host_runtime_reset(impl);
 }
 
-#if defined(CONFIG_OVE_LINUX_NET)
-static int configured_ipv4(const char *text, ove_sockaddr_t *address)
-{
-	uint8_t octets[4];
-	int rc = parse_ipv4(text, octets);
-	if (rc != OVE_OK)
-		return rc;
-	ove_sockaddr_ipv4(address, octets[0], octets[1], octets[2], octets[3], 0);
-	return OVE_OK;
-}
-#endif
-
 int ove_lxp_host_init(ove_lxp_host_t *host)
 {
 	if (!host)
@@ -139,9 +104,12 @@ int ove_lxp_host_init(ove_lxp_host_t *host)
 #if defined(CONFIG_OVE_LINUX_NETIF_DHCP)
 	netif.use_dhcp = 1;
 #else
-	if (configured_ipv4(CONFIG_OVE_LINUX_NETIF_IPV4_ADDRESS, &netif.static_ip) != OVE_OK ||
-	    configured_ipv4(CONFIG_OVE_LINUX_NETIF_IPV4_NETMASK, &netif.netmask) != OVE_OK ||
-	    configured_ipv4(CONFIG_OVE_LINUX_NETIF_IPV4_GATEWAY, &netif.gateway) != OVE_OK)
+	if (ove_sockaddr_parse_ipv4(&netif.static_ip, CONFIG_OVE_LINUX_NETIF_IPV4_ADDRESS, 0) !=
+		    OVE_OK ||
+	    ove_sockaddr_parse_ipv4(&netif.netmask, CONFIG_OVE_LINUX_NETIF_IPV4_NETMASK, 0) !=
+		    OVE_OK ||
+	    ove_sockaddr_parse_ipv4(&netif.gateway, CONFIG_OVE_LINUX_NETIF_IPV4_GATEWAY, 0) !=
+		    OVE_OK)
 		return OVE_ERR_INVALID_PARAM;
 #endif
 	config.netif_config = &netif;
@@ -172,9 +140,12 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 	lxp_netfs_config_t netfs;
 	const lxp_netfs_config_t *netfs_config = NULL;
 	if (config->netfs_config) {
+		ove_sockaddr_t server;
 		memset(&netfs, 0, sizeof(netfs));
-		if (parse_ipv4(config->netfs_config->server_ipv4, netfs.server_ip) != OVE_OK)
+		if (ove_sockaddr_parse_ipv4(&server, config->netfs_config->server_ipv4, 0) !=
+		    OVE_OK)
 			return OVE_ERR_INVALID_PARAM;
+		memcpy(netfs.server_ip, server.addr, sizeof(netfs.server_ip));
 		netfs.mountpoint = config->netfs_config->mountpoint;
 		netfs.port = config->netfs_config->port;
 		netfs.aname = config->netfs_config->aname;
