@@ -12,6 +12,8 @@ set(QUALIFICATION_SOURCE
     "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c")
 set(ROUNDTRIP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c")
 set(RT_SCOPE_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c")
+set(BOARD_RT_SCOPE_SOURCE
+    "${OVE_ROOT}/boards/stm32f746g-discovery/common/rt_scope.c")
 set(FULL_PROFILE_CONFIG "${OVE_ROOT}/apps/c/linux_interop/app.yaml")
 set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 
@@ -25,6 +27,7 @@ set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
 set(QUALIFICATION_SOURCE_LINE_CEILING 407)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 136)
 set(RT_SCOPE_SOURCE_LINE_CEILING 815)
+set(BOARD_RT_SCOPE_SOURCE_LINE_CEILING 300)
 set(FULL_PROFILE_CONFIG_LINE_CEILING 56)
 
 function(assert_line_ceiling PATH CEILING)
@@ -47,6 +50,8 @@ assert_line_ceiling("${QUALIFICATION_SOURCE}"
                     ${QUALIFICATION_SOURCE_LINE_CEILING})
 assert_line_ceiling("${ROUNDTRIP_SOURCE}" ${ROUNDTRIP_SOURCE_LINE_CEILING})
 assert_line_ceiling("${RT_SCOPE_SOURCE}" ${RT_SCOPE_SOURCE_LINE_CEILING})
+assert_line_ceiling("${BOARD_RT_SCOPE_SOURCE}"
+                    ${BOARD_RT_SCOPE_SOURCE_LINE_CEILING})
 assert_line_ceiling("${FULL_PROFILE_CONFIG}"
                     ${FULL_PROFILE_CONFIG_LINE_CEILING})
 
@@ -55,6 +60,7 @@ file(READ "${NETWORK_SMOKE_SOURCE}" NETWORK_SMOKE_TEXT)
 file(READ "${QUALIFICATION_SOURCE}" QUALIFICATION_TEXT)
 file(READ "${ROUNDTRIP_SOURCE}" ROUNDTRIP_TEXT)
 file(READ "${RT_SCOPE_SOURCE}" RT_SCOPE_TEXT)
+file(READ "${BOARD_RT_SCOPE_SOURCE}" BOARD_RT_SCOPE_TEXT)
 set(HOST_APP_TEXT
     "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}\n${RT_SCOPE_TEXT}")
 
@@ -178,6 +184,22 @@ if(HOST_APP_TEXT MATCHES "CONFIG_OVE_RTOS_(FREERTOS|NUTTX|ZEPHYR)")
     message(FATAL_ERROR
         "linux_interop host lifecycle must not branch by RTOS engine")
 endif()
+
+if(HOST_APP_TEXT MATCHES
+   "(^|[^A-Za-z0-9_])(REG32|NVIC_[A-Za-z0-9_]*|IRQ_CONNECT|irq_attach|up_(enable|disable)_irq|TIM[0-9]+_IRQHandler)[ \t\r\n(]" OR
+   HOST_APP_TEXT MATCHES "0x400[0-9A-Fa-f]{5}")
+    message(FATAL_ERROR
+        "linux_interop host code regained board register or IRQ ownership")
+endif()
+foreach(BOARD_SCOPE_CALL IN ITEMS
+        ove_hal_rt_scope_irq_prepare
+        ove_hal_rt_scope_hardware_prepare
+        ove_hal_rt_scope_worker_stack)
+    if(NOT BOARD_RT_SCOPE_TEXT MATCHES "${BOARD_SCOPE_CALL}[ \t\r\n]*[(]")
+        message(FATAL_ERROR
+            "STM32 RT-scope provider omits board seam: ${BOARD_SCOPE_CALL}")
+    endif()
+endforeach()
 
 if(HOST_APP_TEXT MATCHES "static[ \t]+uint8_t[ \t]+g_[A-Za-z0-9_]*stack")
     message(FATAL_ERROR
