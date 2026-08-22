@@ -180,8 +180,9 @@ def cmd_defconfig(args):
     print(f"Active workspace: {ws_dir}/")
 
 
-def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
-    """Set up workspace directory and symlinks. Returns workspace dir path."""
+def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None,
+                     activate=True):
+    """Create a workspace and optionally select it as the active one."""
     output_dir = os.path.join(ove_dir, "output")
 
     if ext_app_dir:
@@ -192,19 +193,20 @@ def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
 
     os.makedirs(ws_dir, exist_ok=True)
 
-    # Symlink root .config -> workspace .config (atomic; race-safe).
-    config_link = os.path.join(ove_dir, ".config")
-    ws_config = os.path.join(ws_dir, ".config")
-    atomic_symlink(ws_config, config_link)
+    if activate:
+        # These are user-facing active-workspace links. Matrix builds create
+        # their workspaces without changing either one.
+        config_link = os.path.join(ove_dir, ".config")
+        ws_config = os.path.join(ws_dir, ".config")
+        atomic_symlink(ws_config, config_link)
 
-    # Symlink output/current -> workspace.
-    os.makedirs(output_dir, exist_ok=True)
-    current_link = os.path.join(output_dir, "current")
-    if ext_app_dir:
-        target = ws_dir
-    else:
-        target = os.path.join(ws_board, ws_rtos, ws_app)
-    atomic_symlink(target, current_link)
+        os.makedirs(output_dir, exist_ok=True)
+        current_link = os.path.join(output_dir, "current")
+        if ext_app_dir:
+            target = ws_dir
+        else:
+            target = os.path.join(ws_board, ws_rtos, ws_app)
+        atomic_symlink(target, current_link)
 
     # Link toolchain if available
     tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
@@ -546,12 +548,17 @@ def cmd_defconfig_fragments(args):
     import shutil
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    ws_dir = _setup_workspace(ove_dir, board, rtos, app)
+    activate = not getattr(args, "no_activate", False)
+    ws_dir = _setup_workspace(ove_dir, board, rtos, app,
+                              activate=activate)
     ws_config = os.path.join(ws_dir, ".config")
     kconf.write_config(ws_config)
 
     print(f"Configuration written to {ws_config}")
-    print(f"Active workspace: output/{board}/{rtos}/{app}/")
+    if activate:
+        print(f"Active workspace: output/{board}/{rtos}/{app}/")
+    else:
+        print(f"Workspace left inactive: output/{board}/{rtos}/{app}/")
 
 
 def cmd_savedefconfig(args):

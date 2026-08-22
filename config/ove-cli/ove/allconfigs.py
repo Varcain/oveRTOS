@@ -14,16 +14,22 @@ then runs the standard configure → download → build pipeline for each.
 import json
 import logging
 import os
-import re
+import signal
 import subprocess
 import sys
 import time
 
-from .workspace import Workspace
+from .workspace import WORKSPACE_DIR_ENV, Workspace
 
 logger = logging.getLogger("ove")
 
-_CONFIG_NAME_RE = re.compile(r"^\s*config_name\s*:\s*(\S+)", re.MULTILINE)
+
+class _TerminationRequested(Exception):
+    """Turn SIGTERM into normal cleanup while a child build is running."""
+
+    def __init__(self, signum):
+        super().__init__(signum)
+        self.signum = signum
 
 
 def _discover_apps(ove_dir):
@@ -54,25 +60,57 @@ def _discover_apps(ove_dir):
     return sorted(found.items())
 
 
+def _stop_child(proc):
+    """Terminate a command and every descendant in its process group."""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        proc.wait()
+        return
+    try:
+        proc.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        proc.wait()
+        return
+    proc.wait()
+
+
+def _run_command(cmd, env, cwd):
+    """Run one build stage without allowing descendants to outlive it."""
+    proc = subprocess.Popen(cmd, env=env, cwd=cwd, start_new_session=True)
+    try:
+        return proc.wait()
+    except BaseException:
+        _stop_child(proc)
+        raise
+
+
 def _run_app(ove_dir, board, rtos, app, ove_bin):
-    """Configure and build one <board>.<rtos>.<app>. Returns (ok, elapsed)."""
+    """Configure and build one isolated <board>.<rtos>.<app> workspace."""
     spec = f"{board}.{rtos}.{app}"
     start = time.time()
     env = os.environ.copy()
-    cmds = [
-        [ove_bin, "defconfig-fragments", spec],
-        [ove_bin, "download"],
-        [ove_bin, "configure"],
-        [ove_bin, "build"],
-    ]
-    for cmd in cmds:
-        if subprocess.run(cmd, env=env).returncode != 0:
+    workspace_dir = os.path.join(ove_dir, "output", board, rtos, app)
+
+    configure = [ove_bin, "defconfig-fragments", spec, "--no-activate"]
+    if _run_command(configure, env, ove_dir) != 0:
+        return False, time.time() - start
+
+    env[WORKSPACE_DIR_ENV] = workspace_dir
+    for command in ("download", "configure", "build"):
+        if _run_command([ove_bin, command], env, ove_dir) != 0:
             return False, time.time() - start
     return True, time.time() - start
 
 
-def cmd_allconfigs(args):
-    """CLI entry point for 'ove allconfigs <board>.<rtos>'."""
+def _cmd_allconfigs(args):
     spec = args.spec
     if "." not in spec:
         logger.error("usage: ove allconfigs <board>.<rtos>")
@@ -133,6 +171,24 @@ def cmd_allconfigs(args):
         print(f"FAILED: {' '.join(failed)}")
         sys.exit(1)
     print("All configurations built successfully")
+
+
+def cmd_allconfigs(args):
+    """CLI entry point for 'ove allconfigs <board>.<rtos>'."""
+    def _request_termination(signum, _frame):
+        raise _TerminationRequested(signum)
+
+    previous = signal.signal(signal.SIGTERM, _request_termination)
+    try:
+        _cmd_allconfigs(args)
+    except _TerminationRequested as exc:
+        logger.error("allconfigs interrupted")
+        raise SystemExit(128 + exc.signum) from None
+    except KeyboardInterrupt:
+        logger.error("allconfigs interrupted")
+        raise SystemExit(130) from None
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def add_subcommand(sub):

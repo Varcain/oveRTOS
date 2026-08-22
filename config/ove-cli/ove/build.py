@@ -1141,6 +1141,9 @@ def _link_compile_commands(ws):
     configuration. Preferred candidate is the firmware build dir; falls
     back to the cmake-build dir used by NuttX.
     """
+    if ws.is_isolated:
+        return
+
     candidates = [
         os.path.join(ws.build_dir, "firmware", "compile_commands.json"),
         os.path.join(ws.build_dir, "nuttx-cmake", "compile_commands.json"),

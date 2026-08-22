@@ -36,6 +36,8 @@ def main():
                        help="Configure from hierarchical fragments "
                             "(board.rtos.app)")
     p.add_argument("spec", help="board.rtos.app (e.g. qemu.freertos.example_c)")
+    p.add_argument("--no-activate", action="store_true",
+                   help="Write the workspace without selecting it globally")
 
     # ── menuconfig ─────────────────────────────────────────────────────
     sub.add_parser("menuconfig", help="Interactive configuration (TUI)")

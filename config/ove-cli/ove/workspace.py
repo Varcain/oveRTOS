@@ -11,6 +11,9 @@ import json
 import os
 
 
+WORKSPACE_DIR_ENV = "OVE_WORKSPACE_DIR"
+
+
 def find_ove_dir():
     """Find the oveRTOS root directory.
 
@@ -106,11 +109,18 @@ class Workspace:
 
         self._config = None
         self.build_log = None
+        self.is_isolated = False
         self._resolve_workspace()
 
     def _resolve_workspace(self):
-        """Resolve workspace directory from .config symlink."""
-        if os.path.islink(self.config_path):
+        """Resolve an explicit workspace or the repository's active one."""
+        explicit = os.environ.get(WORKSPACE_DIR_ENV)
+        if explicit:
+            self.workspace_dir = os.path.realpath(
+                os.path.abspath(os.path.expanduser(explicit)))
+            self.config_path = os.path.join(self.workspace_dir, ".config")
+            self.is_isolated = True
+        elif os.path.islink(self.config_path):
             real = os.path.realpath(self.config_path)
             self.workspace_dir = os.path.dirname(real)
         else:
@@ -248,10 +258,9 @@ class Workspace:
     def toolchain_dir(self):
         """Resolve the ARM toolchain directory."""
         if get_bool(self.config, "CONFIG_OVE_TOOLCHAIN_DOWNLOAD"):
-            if os.path.islink(self.config_path):
-                tc = os.path.join(self.workspace_dir, "toolchain")
-                if os.path.exists(tc):
-                    return os.path.realpath(tc)
+            tc = os.path.join(self.workspace_dir, "toolchain")
+            if os.path.exists(tc):
+                return os.path.realpath(tc)
             sentinel = os.path.join(self.toolchains_dir, "path.txt")
             if os.path.isfile(sentinel):
                 with open(sentinel) as f:
