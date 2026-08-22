@@ -8,6 +8,7 @@
 
 import contextlib
 import io
+import json
 import os
 import signal
 import tempfile
@@ -17,7 +18,7 @@ from unittest import mock
 
 from ove import allconfigs
 from ove.kconfig import parse_defconfig_name, _write_workspace_config
-from ove.workspace import WORKSPACE_DIR_ENV, Workspace
+from ove.workspace import APP_PATH_FILE, WORKSPACE_DIR_ENV, Workspace
 
 
 class _Config:
@@ -78,7 +79,8 @@ class WorkspaceConfigTest(unittest.TestCase):
         os.makedirs(external)
 
         workspace, config = _write_workspace_config(
-            _Config(), self.root, "board", "rtos", "app", external)
+            _Config('CONFIG_OVE_APP_NAME="app"\n'), self.root,
+            "board", "rtos", "app", external)
 
         expected = os.path.join(
             external, "output", "board", "rtos", "app")
@@ -87,6 +89,18 @@ class WorkspaceConfigTest(unittest.TestCase):
         self.assertEqual(
             os.readlink(os.path.join(self.root, "output", "current")),
             expected)
+        with open(os.path.join(expected, APP_PATH_FILE)) as f:
+            self.assertEqual(
+                os.path.realpath(os.path.join(expected, f.read().strip())),
+                external)
+
+        kconfig = os.path.join(self.root, "output", "kconfig")
+        os.makedirs(kconfig)
+        with open(os.path.join(kconfig, "app_paths.json"), "w") as f:
+            json.dump({"app": "/wrong/global/path"}, f)
+        with mock.patch.dict(os.environ,
+                             {WORKSPACE_DIR_ENV: expected}, clear=False):
+            self.assertEqual(Workspace(self.root).app_dir, external)
 
     def test_failed_config_write_preserves_active_links(self):
         config_target = os.readlink(os.path.join(self.root, ".config"))
