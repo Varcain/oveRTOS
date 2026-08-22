@@ -23,7 +23,7 @@ CONFIG_RR_INTERVAL={{ config.get("CONFIG_OVE_LINUX_GUEST_QUANTUM_MS", 10) }}
 # The guest program uses the VFP with the hard-float ABI, so NuttX must manage the FPU:
 # CONFIG_ARCH_FPU enables CP10/CP11 (CPACR) and — with lazy FPU off — saves the full
 # s0-s31 + FPSCR into regs[] on every exception entry, which LXP's NuttX port copies into the
-# uniform lxp_frame and restores on task recreation. The board CMakeLists also compiles the
+# uniform lxp_frame and restores when the parked task resumes. The board CMakeLists also compiles the
 # firmware -mfloat-abi=hard -mfpu=fpv5-sp-d16 when CONFIG_ARCH_FPU is set.
 CONFIG_ARCH_FPU=y
 # CONFIG_ARMV7M_LAZYFPU is not set
