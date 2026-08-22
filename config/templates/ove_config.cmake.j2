@@ -498,6 +498,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_thread_adapt
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_host.c")
 # Host-scoped snapshots over LXP diagnostics, latency, and port observations.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_observability.c")
+# Reusable real-time probe service and /proc snapshot provider. The disabled
+# implementation is a small capability stub on boards without scope hardware.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_rt_scope.c")
 # System-console transport and run-scoped RX-readiness binding.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_console.c")
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True or config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN521") == True %}

@@ -11,7 +11,8 @@ set(NETWORK_SMOKE_SOURCE
 set(QUALIFICATION_SOURCE
     "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c")
 set(ROUNDTRIP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c")
-set(RT_SCOPE_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c")
+set(RT_SCOPE_SOURCE
+    "${OVE_ROOT}/backends/common/lxp_ove_rt_scope.c")
 set(BOARD_RT_SCOPE_SOURCE
     "${OVE_ROOT}/boards/stm32f746g-discovery/common/rt_scope.c")
 set(FULL_PROFILE_CONFIG "${OVE_ROOT}/apps/c/linux_interop/app.yaml")
@@ -28,7 +29,7 @@ set(QUALIFICATION_SOURCE_LINE_CEILING 407)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 136)
 set(RT_SCOPE_SOURCE_LINE_CEILING 815)
 set(BOARD_RT_SCOPE_SOURCE_LINE_CEILING 300)
-set(FULL_PROFILE_CONFIG_LINE_CEILING 56)
+set(FULL_PROFILE_CONFIG_LINE_CEILING 55)
 
 function(assert_line_ceiling PATH CEILING)
     file(READ "${PATH}" TEXT)
@@ -62,12 +63,19 @@ file(READ "${ROUNDTRIP_SOURCE}" ROUNDTRIP_TEXT)
 file(READ "${RT_SCOPE_SOURCE}" RT_SCOPE_TEXT)
 file(READ "${BOARD_RT_SCOPE_SOURCE}" BOARD_RT_SCOPE_TEXT)
 set(HOST_APP_TEXT
-    "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}\n${RT_SCOPE_TEXT}")
+    "${APP_TEXT}\n${NETWORK_SMOKE_TEXT}\n${QUALIFICATION_TEXT}\n${ROUNDTRIP_TEXT}")
+set(ENGINE_NEUTRAL_SCOPE_TEXT "${RT_SCOPE_TEXT}")
 
 if(HOST_APP_TEXT MATCHES
    "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
     message(FATAL_ERROR
         "linux_interop host code must use only engine-neutral oveRTOS APIs")
+endif()
+
+if(ENGINE_NEUTRAL_SCOPE_TEXT MATCHES
+   "#[ \t]*include[ \t]*[<\"](FreeRTOS\\.h|task\\.h|semphr\\.h|nuttx/|zephyr/)")
+    message(FATAL_ERROR
+        "common LXP RT-scope service must use only engine-neutral oveRTOS APIs")
 endif()
 
 if(HOST_APP_TEXT MATCHES

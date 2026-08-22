@@ -21,7 +21,7 @@
 
 #include "ove_config.h"
 
-#include "rt_scope.h"
+#include "ove/lxp_rt_scope.h"
 #include "ove/types.h"
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
@@ -69,7 +69,7 @@ static volatile uint32_t g_total_executions;
 static volatile uint32_t g_total_missed;
 static volatile uint32_t g_total_late_finish;
 static volatile uint32_t g_total_generation;
-static linux_rt_scope_write_fn g_report_write;
+static ove_lxp_rt_scope_write_fn g_report_write;
 
 struct rt_scope_metrics {
 	uint32_t executions;
@@ -577,7 +577,7 @@ static uint64_t ticks_to_ns(uint32_t ticks)
 	       (OVE_RT_SCOPE_TICKS_PER_US * 1000000ull);
 }
 
-long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
+long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 {
 	(void)ctx;
 	if (!buf || cap == 0u)
@@ -750,7 +750,7 @@ static void report_thread(void *arg)
 	}
 }
 
-int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
+int ove_lxp_rt_scope_start(ove_lxp_rt_scope_write_fn write_fn)
 {
 	const ove_hal_rt_scope_stack_t response_stack =
 		ove_hal_rt_scope_worker_stack(OVE_HAL_RT_SCOPE_RESPONSE_WORKER);
@@ -795,13 +795,13 @@ int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
 
 #else /* !CONFIG_OVE_LINUX_RT_SCOPE */
 
-int linux_rt_scope_start(linux_rt_scope_write_fn write_fn)
+int ove_lxp_rt_scope_start(ove_lxp_rt_scope_write_fn write_fn)
 {
 	(void)write_fn;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-long linux_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
+long ove_lxp_rt_scope_proc_read(void *ctx, char *buf, size_t cap)
 {
 	(void)ctx;
 	static const char unavailable[] = "available 0\n";

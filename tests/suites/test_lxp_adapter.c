@@ -17,6 +17,7 @@
 #include "ove/lxp_console.h"
 #include "ove/lxp_metrics.h"
 #include "ove/lxp_observability.h"
+#include "ove/lxp_rt_scope.h"
 #include "lxp/lxp_host.h"
 #include "lxp/lxp_observe.h"
 #include "lxp/lxp_rt_metrics.h"
@@ -1057,6 +1058,18 @@ static void test_svc_metrics_own_window_and_lifetime(void **state)
 			 OVE_ERR_NOT_SUPPORTED);
 }
 
+static void test_rt_scope_reports_unavailable_when_disabled(void **state)
+{
+	(void)state;
+	char snapshot[16] = {0};
+
+	assert_int_equal(ove_lxp_rt_scope_start(NULL), OVE_ERR_NOT_SUPPORTED);
+	assert_int_equal(ove_lxp_rt_scope_proc_read(NULL, NULL, sizeof(snapshot)), -1);
+	assert_int_equal(ove_lxp_rt_scope_proc_read(NULL, snapshot, 8u), -1);
+	assert_int_equal(ove_lxp_rt_scope_proc_read(NULL, snapshot, sizeof(snapshot)), 12);
+	assert_string_equal(snapshot, "available 0\n");
+}
+
 int test_lxp_adapter_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -1077,6 +1090,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
 		cmocka_unit_test(test_host_mem_stats_adapter),
 		cmocka_unit_test(test_svc_metrics_own_window_and_lifetime),
+		cmocka_unit_test(test_rt_scope_reports_unavailable_when_disabled),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

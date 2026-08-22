@@ -6,7 +6,6 @@ sources:
   - src/network_smoke.c
   - src/qualification.c
   - src/roundtrip.c
-  - src/rt_scope.c
 defconfig:
   - CONFIG_OVE_LINUX=y
   # Persistent FAT storage and raw block maintenance.
