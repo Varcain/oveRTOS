@@ -33,7 +33,7 @@ def _scan_app_dirs(dirs):
         if os.path.isfile(app_yaml_path):
             with open(app_yaml_path) as f:
                 data = yaml.safe_load(f)
-            name = os.path.basename(d)
+            name = data.get("config_name", os.path.basename(d))
             results.append((name, d, data))
     return results
 

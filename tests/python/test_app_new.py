@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 from ove.app_new import _stamp_tree
+from ove.appgen import _scan_app_dirs
 
 
 class ExternalAppTemplateTest(unittest.TestCase):
@@ -57,6 +58,18 @@ class ExternalAppTemplateTest(unittest.TestCase):
                 self.addCleanup(output.cleanup)
                 self.assertIn(call, generated)
                 self.assertNotIn("{{", generated)
+
+    def test_external_app_identity_comes_from_manifest(self):
+        root, context = self._context()
+        with tempfile.TemporaryDirectory(prefix="unrelated-directory-") as output:
+            template = os.path.join(root, "templates", "external-app", "c")
+            _stamp_tree(template, output, context)
+
+            [(name, path, data)] = _scan_app_dirs([output])
+
+            self.assertEqual(name, "template_smoke")
+            self.assertEqual(path, os.path.abspath(output))
+            self.assertEqual(data["config_name"], "template_smoke")
 
 
 if __name__ == "__main__":
