@@ -38,6 +38,15 @@ void ove_main(void)
 {
 }
 
+static int pre_scheduler_thread_ran;
+OVE_THREAD_DEFINE(pre_scheduler_thread_storage, 1024);
+
+static void pre_scheduler_thread(void *arg)
+{
+	(void)arg;
+	pre_scheduler_thread_ran = 1;
+}
+
 static void test_runner_task(void *arg)
 {
 	int failures = 0;
@@ -137,6 +146,15 @@ void SysTick_Handler(void)
 
 int main(void)
 {
+	ove_thread_t thread = NULL;
+	if (ove_thread_init(&thread, &pre_scheduler_thread_storage, "pre-sched",
+			    pre_scheduler_thread, NULL, OVE_PRIO_NORMAL,
+			    sizeof(pre_scheduler_thread_storage_stack),
+			    pre_scheduler_thread_storage_stack) != OVE_OK ||
+	    ove_thread_deinit(thread) != OVE_OK || pre_scheduler_thread_ran) {
+		printf("pre-scheduler thread teardown failed\n");
+		semihosting_exit(1);
+	}
 	xTaskCreate(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
 		    tskIDLE_PRIORITY + 1, NULL);
 	vTaskStartScheduler();
