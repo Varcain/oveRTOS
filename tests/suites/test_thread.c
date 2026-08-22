@@ -186,15 +186,14 @@ static void test_get_state_terminated(void **state)
 	uint64_t st_start = 0, st_now = 0;
 	(void)ove_time_get_us(&st_start);
 	ove_thread_state_t st = ove_thread_get_state(h);
-	/* FreeRTOS threads suspend after entry returns; stub marks terminated */
-	while (st != OVE_THREAD_STATE_TERMINATED && st != OVE_THREAD_STATE_SUSPENDED) {
+	while (st != OVE_THREAD_STATE_TERMINATED) {
 		(void)ove_time_get_us(&st_now);
 		if (st_now >= st_start + 1000000u)
 			break;
 		test_msleep(1);
 		st = ove_thread_get_state(h);
 	}
-	assert_true(st == OVE_THREAD_STATE_TERMINATED || st == OVE_THREAD_STATE_SUSPENDED);
+	assert_int_equal(st, OVE_THREAD_STATE_TERMINATED);
 #if defined(CONFIG_OVE_RTOS_POSIX) && !defined(CONFIG_OVE_ZERO_HEAP)
 	/* POSIX publishes a race-free final coloration snapshot rather than
 	 * scanning another pthread's live stack. */

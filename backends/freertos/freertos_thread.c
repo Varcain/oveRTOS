@@ -294,6 +294,13 @@ size_t ove_thread_get_stack_usage(ove_thread_t handle)
 
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 {
+	/* FreeRTOS has no joinable terminal task state: the wrapper publishes
+	 * completion and parks itself until ove_thread_deinit() deletes the TCB.
+	 * Report the portable entry-returned state instead of leaking that backend
+	 * implementation detail as OVE_THREAD_STATE_SUSPENDED. */
+	if (__atomic_load_n(&handle->exited, __ATOMIC_ACQUIRE) != 0u)
+		return OVE_THREAD_STATE_TERMINATED;
+
 	eTaskState state = eTaskGetState(handle->task);
 
 	switch (state) {
@@ -483,6 +490,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		for (UBaseType_t i = 0; i < filled; ++i) {
 			TaskStatus_t task;
 			TaskHandle_t handle = g_frt_tasks[i].handle;
+			struct ove_thread *wrapper =
+				(struct ove_thread *)xTaskGetApplicationTaskTag(handle);
 
 			vTaskGetInfo(handle, &task, pdFALSE, eInvalid);
 			out[i].name = g_frt_tasks[i].name;
@@ -492,25 +501,30 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			out[i].stack_used = 0u;
 			out[i].valid_fields = 0u;
 
-			switch (task.eCurrentState) {
-			case eRunning:
-				out[i].state = OVE_THREAD_STATE_RUNNING;
-				break;
-			case eReady:
-				out[i].state = OVE_THREAD_STATE_READY;
-				break;
-			case eBlocked:
-				out[i].state = OVE_THREAD_STATE_BLOCKED;
-				break;
-			case eSuspended:
-				out[i].state = OVE_THREAD_STATE_SUSPENDED;
-				break;
-			case eDeleted:
+			if (wrapper &&
+			    __atomic_load_n(&wrapper->exited, __ATOMIC_ACQUIRE) != 0u) {
 				out[i].state = OVE_THREAD_STATE_TERMINATED;
-				break;
-			default:
-				out[i].state = OVE_THREAD_STATE_UNKNOWN;
-				break;
+			} else {
+				switch (task.eCurrentState) {
+				case eRunning:
+					out[i].state = OVE_THREAD_STATE_RUNNING;
+					break;
+				case eReady:
+					out[i].state = OVE_THREAD_STATE_READY;
+					break;
+				case eBlocked:
+					out[i].state = OVE_THREAD_STATE_BLOCKED;
+					break;
+				case eSuspended:
+					out[i].state = OVE_THREAD_STATE_SUSPENDED;
+					break;
+				case eDeleted:
+					out[i].state = OVE_THREAD_STATE_TERMINATED;
+					break;
+				default:
+					out[i].state = OVE_THREAD_STATE_UNKNOWN;
+					break;
+				}
 			}
 
 			out[i].cpu_percent_x100 = 0u;
