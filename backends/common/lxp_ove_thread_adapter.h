@@ -32,4 +32,7 @@ int lxp_ove_thread_snapshot_read(struct lxp_ove_thread_snapshot *snapshot,
 				 struct lxp_thread_info *out, size_t max_count,
 				 size_t *actual_count, lxp_ove_slot_lookup_t slot_lookup);
 
+/** Read and translate the host allocator statistics exposed to LXP. */
+int lxp_ove_mem_stats_read(struct lxp_mem_stats *out);
+
 #endif /* LXP_OVE_THREAD_ADAPTER_H */

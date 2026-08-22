@@ -75,31 +75,11 @@ _Static_assert(sizeof(g_lxp_storage) <= OVE_LXP_GUEST_POOL_SIZE,
 static struct lxp_cortex_m_cache_geometry g_cache_geometry;
 #endif
 
-static int32_t host_slot_lookup_passthrough(uintptr_t identity)
-{
-	(void)identity;
-	return LXP_THREAD_SLOT_NONE;
-}
-
 static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count,
 			    lxp_freertos_slot_lookup_t slot_lookup)
 {
 	return lxp_ove_thread_snapshot_read(
-		&g_lxp_storage.thread_snapshot, out, max_count, actual_count,
-		slot_lookup ? slot_lookup : host_slot_lookup_passthrough);
-}
-
-static int host_mem_stats(struct lxp_mem_stats *out)
-{
-	struct ove_mem_stats stats;
-	int result = ove_sys_get_mem_stats(&stats);
-	if (result != OVE_OK)
-		return result;
-	out->total = stats.total;
-	out->free = stats.free;
-	out->used = stats.used;
-	out->peak_used = stats.peak_used;
-	return LXP_OK;
+		&g_lxp_storage.thread_snapshot, out, max_count, actual_count, slot_lookup);
 }
 
 #define LXP_SYSTEM_VERSION \
@@ -289,7 +269,7 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = host_thread_list,
-	.mem_stats = host_mem_stats,
+	.mem_stats = lxp_ove_mem_stats_read,
 	.system_version = host_system_version,
 	.random_fill = host_random_fill,
 	.validate_memory_contract = host_validate_memory_contract,
