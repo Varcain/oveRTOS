@@ -8,7 +8,6 @@
 
 #include "ove/stream.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 #include <string.h>
 
@@ -103,35 +102,6 @@ void ove_stream_deinit(ove_stream_t stream)
 {
 	(void)stream;
 }
-
-/* ── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_STREAM
-int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
-{
-	struct ove_stream *zs;
-
-	if (stream == NULL || size == 0) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	zs = OVE_BACKEND_MALLOC(sizeof(*zs) + size);
-	if (zs == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	stream_setup(zs, (unsigned char *)zs + sizeof(*zs), size, trigger);
-	*stream = zs;
-	return OVE_OK;
-}
-
-void ove_stream_destroy(ove_stream_t stream)
-{
-	if (stream != NULL) {
-		OVE_BACKEND_FREE(stream);
-	}
-}
-#endif /* OVE_HEAP_STREAM */
 
 /* ── Operations ─────────────────────────────────────────────────────── */
 

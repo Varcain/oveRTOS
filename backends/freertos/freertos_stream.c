@@ -8,7 +8,6 @@
 
 #include "ove/stream.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include "FreeRTOS.h"
 #include "ove_ns_to_ticks.h"
 #include "semphr.h"
@@ -91,61 +90,6 @@ void ove_stream_deinit(ove_stream_t stream)
 {
 	(void)stream;
 }
-
-/* ── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_STREAM
-int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
-{
-	struct ove_stream *w;
-
-	if (stream == NULL || size == 0) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	w = OVE_BACKEND_MALLOC(sizeof(*w));
-	if (w == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	w->buffer = OVE_BACKEND_MALLOC(size);
-	if (w->buffer == NULL) {
-		OVE_BACKEND_FREE(w);
-		return OVE_ERR_NO_MEMORY;
-	}
-	w->data_sem = xSemaphoreCreateCounting(size, 0);
-	w->space_sem = xSemaphoreCreateCounting(size, 0);
-	if (w->data_sem == NULL || w->space_sem == NULL) {
-		if (w->data_sem != NULL)
-			vSemaphoreDelete(w->data_sem);
-		if (w->space_sem != NULL)
-			vSemaphoreDelete(w->space_sem);
-		OVE_BACKEND_FREE(w->buffer);
-		OVE_BACKEND_FREE(w);
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	w->size = size;
-	w->trigger = (trigger > 0) ? trigger : 1;
-	w->head = 0;
-	w->tail = 0;
-	w->count = 0;
-	w->notify_cb = NULL;
-	w->notify_ud = NULL;
-
-	*stream = w;
-	return OVE_OK;
-}
-
-void ove_stream_destroy(ove_stream_t stream)
-{
-	if (stream != NULL) {
-		vSemaphoreDelete(stream->data_sem);
-		vSemaphoreDelete(stream->space_sem);
-		OVE_BACKEND_FREE(stream->buffer);
-		OVE_BACKEND_FREE(stream);
-	}
-}
-#endif /* OVE_HEAP_STREAM */
 
 /* ── Operations ─────────────────────────────────────────────────────── */
 

@@ -8,7 +8,6 @@
 
 #include "ove/stream.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
@@ -66,56 +65,6 @@ void ove_stream_deinit(ove_stream_t stream)
 		pthread_mutex_destroy(&ns->lock);
 	}
 }
-
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_STREAM
-int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
-{
-	struct ove_stream *ns;
-
-	if (stream == NULL || size == 0) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	ns = OVE_BACKEND_MALLOC(sizeof(*ns));
-	if (ns == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	ns->buffer = OVE_BACKEND_MALLOC(size);
-	if (ns->buffer == NULL) {
-		OVE_BACKEND_FREE(ns);
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	ns->size = size;
-	ns->trigger = (trigger > 0) ? trigger : 1; /* 0 is treated as 1 */
-	ns->head = 0;
-	ns->tail = 0;
-	ns->count = 0;
-	ns->notify_cb = NULL;
-	ns->notify_ud = NULL;
-	pthread_mutex_init(&ns->lock, NULL);
-	pthread_cond_init(&ns->not_empty, NULL);
-	pthread_cond_init(&ns->not_full, NULL);
-
-	*stream = ns;
-	return OVE_OK;
-}
-
-void ove_stream_destroy(ove_stream_t stream)
-{
-	if (stream != NULL) {
-		struct ove_stream *ns = stream;
-		pthread_cond_destroy(&ns->not_full);
-		pthread_cond_destroy(&ns->not_empty);
-		pthread_mutex_destroy(&ns->lock);
-		OVE_BACKEND_FREE(ns->buffer);
-		OVE_BACKEND_FREE(ns);
-	}
-}
-#endif /* OVE_HEAP_STREAM */
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 

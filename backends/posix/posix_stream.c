@@ -7,7 +7,6 @@
  */
 
 #include "ove/ove.h"
-#include "ove_backend_common.h"
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
@@ -49,45 +48,6 @@ void ove_stream_deinit(ove_stream_t stream)
 		pthread_cond_destroy(&s->space_avail);
 	}
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
-{
-	if (!stream || size == 0)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_stream *s = OVE_BACKEND_MALLOC(sizeof(*s));
-	if (!s) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(s, 0, sizeof(*s));
-	s->buffer = OVE_BACKEND_MALLOC(size);
-	if (!s->buffer) {
-		OVE_BACKEND_FREE(s);
-		return OVE_ERR_NO_MEMORY;
-	}
-	s->size = size;
-	s->trigger = trigger > 0 ? trigger : 1;
-	pthread_mutex_init(&s->lock, NULL);
-	pthread_cond_init(&s->data_avail, NULL);
-	pthread_cond_init(&s->space_avail, NULL);
-	*stream = s;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_stream_destroy(ove_stream_t stream)
-{
-	struct ove_stream *s = stream;
-	if (s) {
-		pthread_mutex_destroy(&s->lock);
-		pthread_cond_destroy(&s->data_avail);
-		pthread_cond_destroy(&s->space_avail);
-		OVE_BACKEND_FREE(s->buffer);
-		OVE_BACKEND_FREE(s);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent)
