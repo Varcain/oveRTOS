@@ -34,6 +34,7 @@ set(ZEPHYR_BACKEND_SOURCES
     ${ZEPHYR_BACKEND}/zephyr_sync.c
     ${OVE_ROOT}/src/ove_sync.c
     ${ZEPHYR_BACKEND}/zephyr_queue.c
+    ${OVE_ROOT}/src/ove_queue.c
     ${ZEPHYR_BACKEND}/zephyr_timer.c
     ${ZEPHYR_BACKEND}/zephyr_time.c
     ${ZEPHYR_BACKEND}/zephyr_eventgroup.c

@@ -49,53 +49,6 @@ void ove_queue_deinit(ove_queue_t q)
 	}
 }
 
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_QUEUE
-int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
-{
-	if (q == NULL || item_size == 0 || max_items == 0) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	/* Overflow check on the allocation size */
-	if (item_size > SIZE_MAX / max_items) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	struct ove_queue *nq = OVE_BACKEND_MALLOC(sizeof(*nq));
-	if (nq == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(nq, 0, sizeof(*nq));
-
-	nq->buffer = OVE_BACKEND_MALLOC(item_size * max_items);
-	if (nq->buffer == NULL) {
-		OVE_BACKEND_FREE(nq);
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	nq->item_size = item_size;
-	nq->max_items = max_items;
-	nxsem_init(&nq->not_full, 0, max_items);
-	nxsem_init(&nq->not_empty, 0, 0);
-
-	*q = nq;
-	return OVE_OK;
-}
-
-void ove_queue_destroy(ove_queue_t q)
-{
-	if (q != NULL) {
-		struct ove_queue *nq = q;
-		nxsem_destroy(&nq->not_full);
-		nxsem_destroy(&nq->not_empty);
-		OVE_BACKEND_FREE(nq->buffer);
-		OVE_BACKEND_FREE(nq);
-	}
-}
-#endif /* OVE_HEAP_QUEUE */
-
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
 int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)

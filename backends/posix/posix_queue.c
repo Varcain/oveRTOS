@@ -51,49 +51,6 @@ void ove_queue_deinit(ove_queue_t q)
 	}
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
-{
-	if (item_size == 0 || max_items == 0)
-		return OVE_ERR_INVALID_PARAM;
-	/* Reject item_size * max_items overflow before it wraps to an
-	 * undersized buffer allocation (heap overflow on send). */
-	if (item_size > SIZE_MAX / max_items)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_queue *sq = OVE_BACKEND_MALLOC(sizeof(*sq));
-	if (!sq) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(sq, 0, sizeof(*sq));
-	sq->buffer = OVE_BACKEND_MALLOC(item_size * max_items);
-	if (!sq->buffer) {
-		OVE_BACKEND_FREE(sq);
-		return OVE_ERR_NO_MEMORY;
-	}
-	sq->item_size = item_size;
-	sq->max_items = max_items;
-	pthread_mutex_init(&sq->lock, NULL);
-	pthread_cond_init(&sq->not_full, NULL);
-	pthread_cond_init(&sq->not_empty, NULL);
-	*q = sq;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_queue_destroy(ove_queue_t q)
-{
-	struct ove_queue *sq = q;
-	if (sq) {
-		pthread_mutex_destroy(&sq->lock);
-		pthread_cond_destroy(&sq->not_full);
-		pthread_cond_destroy(&sq->not_empty);
-		OVE_BACKEND_FREE(sq->buffer);
-		OVE_BACKEND_FREE(sq);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 {
 	struct ove_queue *sq = q;
