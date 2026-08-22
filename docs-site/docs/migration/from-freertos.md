@@ -16,7 +16,7 @@ Three differences worth knowing up front:
 |---|---|---|
 | `xTaskCreate(fn, name, stack, arg, prio, &h)` | `ove_thread_create(&h, name, fn, arg, prio, stack)` | `OVE_THREAD_DEFINE_STATIC(h, stack, fn, arg, prio, name)` |
 | `xTaskCreateStatic(fn, name, stack, arg, prio, stackbuf, &tcb)` | n/a — use the `OVE_THREAD_DEFINE_STATIC` macro | same macro |
-| `vTaskDelete(h)` | `ove_thread_destroy(h)` | n/a — static lifetime |
+| `vTaskDelete(h)` | cooperative `ove_thread_request_stop(h)` + `ove_thread_destroy(h)` | cooperative `ove_thread_request_stop(h)` + `ove_thread_deinit(h)` |
 | `vTaskDelay(pdMS_TO_TICKS(ms))` | `ove_thread_sleep_ms(ms)` | same |
 | `taskYIELD()` | `ove_thread_yield()` | same |
 | `xTaskGetCurrentTaskHandle()` | `ove_thread_get_self()` | same |
@@ -25,6 +25,10 @@ Three differences worth knowing up front:
 Priority levels map: `tskIDLE_PRIORITY` → `OVE_PRIO_IDLE`, then a small set of named constants (`OVE_PRIO_LOW`, `OVE_PRIO_NORMAL`, `OVE_PRIO_HIGH`, `OVE_PRIO_CRITICAL`). The portable API uses names because FreeRTOS, Zephyr, and NuttX disagree on numeric direction (lower = higher in FreeRTOS, opposite in Zephyr).
 
 There is no portable getter for priority — keep your own copy if you need to read it back.
+
+Unlike `vTaskDelete`, oveRTOS teardown does not forcibly terminate a worker:
+`destroy` and `deinit` join after its entry returns. A blocked cooperative worker
+must also be woken so it can observe the stop request.
 
 ## Mutexes
 
