@@ -110,33 +110,6 @@ int ove_fs_close_deinit(ove_file_t file)
 	return close(f->fd) == 0 ? OVE_OK : ove_errno_to_ove(errno);
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_fs_open(ove_file_t *file, const char *path, int flags)
-{
-	if (!file || !path) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-	struct ove_file *f = OVE_BACKEND_MALLOC(sizeof(*f));
-	if (!f) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	int rc = ove_fs_open_init(file, f, path, flags);
-	if (rc != OVE_OK) {
-		OVE_BACKEND_FREE(f);
-	}
-	return rc;
-}
-
-int ove_fs_close(ove_file_t file)
-{
-	int rc = ove_fs_close_deinit(file);
-	if (rc == OVE_OK) {
-		OVE_BACKEND_FREE(file);
-	}
-	return rc;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	struct ove_file *f = file;
@@ -264,33 +237,6 @@ int ove_fs_closedir_deinit(ove_dir_t dir)
 	}
 	return closedir(d->dp) == 0 ? OVE_OK : ove_errno_to_ove(errno);
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_fs_opendir(ove_dir_t *dir, const char *path)
-{
-	if (!dir || !path) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-	struct ove_dir *d = OVE_BACKEND_MALLOC(sizeof(*d));
-	if (!d) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	int rc = ove_fs_opendir_init(dir, d, path);
-	if (rc != OVE_OK) {
-		OVE_BACKEND_FREE(d);
-	}
-	return rc;
-}
-
-int ove_fs_closedir(ove_dir_t dir)
-{
-	int rc = ove_fs_closedir_deinit(dir);
-	if (rc == OVE_OK) {
-		OVE_BACKEND_FREE(dir);
-	}
-	return rc;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_fs_unlink(const char *path)
 {
