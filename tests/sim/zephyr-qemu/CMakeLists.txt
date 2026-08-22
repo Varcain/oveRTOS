@@ -53,6 +53,7 @@ set(ZEPHYR_BACKEND_SOURCES
     ${ZEPHYR_BACKEND}/zephyr_timer.c
     ${ZEPHYR_BACKEND}/zephyr_time.c
     ${ZEPHYR_BACKEND}/zephyr_eventgroup.c
+    ${OVE_ROOT}/src/ove_eventgroup.c
     ${ZEPHYR_BACKEND}/zephyr_workqueue.c
     ${ZEPHYR_BACKEND}/zephyr_stream.c
     ${ZEPHYR_BACKEND}/zephyr_shell.c

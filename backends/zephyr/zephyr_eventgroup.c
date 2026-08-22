@@ -29,35 +29,6 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 	(void)eg;
 }
 
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_EVENTGROUP
-int ove_eventgroup_create(ove_eventgroup_t *eg)
-{
-	if (eg == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	struct ove_eventgroup *e = OVE_BACKEND_MALLOC(sizeof(*e));
-	if (e == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	int ret = ove_eventgroup_init(eg, e);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(e);
-	}
-	return ret;
-}
-
-void ove_eventgroup_destroy(ove_eventgroup_t eg)
-{
-	if (eg != NULL) {
-		ove_eventgroup_deinit(eg);
-		OVE_BACKEND_FREE(eg);
-	}
-}
-#endif /* OVE_HEAP_EVENTGROUP */
-
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
