@@ -9,8 +9,7 @@
  */
 
 #include "ove/app.h"
-#include "ove/lxp_console.h"
-#include "ove/lxp_rt_scope.h"
+#include "ove/lxp.h"
 #include "ove/thread.h"
 
 #include "ove_config.h"

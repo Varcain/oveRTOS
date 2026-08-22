@@ -67,6 +67,7 @@
  * | ove/i2c.h               | I2C bus master driver                      |
  * | ove/i2s.h               | I2S / SAI audio bus driver                 |
  * | ove/pm.h                | Power management framework                 |
+ * | ove/lxp.h               | Linux personality host and providers       |
  *
  * Application code that prefers fine-grained includes may include individual
  * subsystem headers directly instead.
@@ -164,6 +165,9 @@
 #include "ove/arena.h"
 #include "ove/loader.h"
 #include "ove/protected.h"
+#if defined(CONFIG_OVE_LINUX)
+#include "ove/lxp.h"
+#endif
 
 /** @} */
 
