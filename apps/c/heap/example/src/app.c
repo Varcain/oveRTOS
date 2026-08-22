@@ -65,7 +65,7 @@ static void producer_thread(void *arg)
 		++count;
 		int ret = ove_queue_send(counter_queue, &count, OVE_MS(1000));
 		if (ret != OVE_OK) {
-			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
+			OVE_LOG_WRN("Producer: queue full, dropped %u", (unsigned int)count);
 		}
 		ove_thread_sleep_ms(500);
 	}
@@ -83,12 +83,16 @@ static void consumer_thread(void *arg)
 	while (1) {
 		int ret = ove_queue_receive(counter_queue, &val, OVE_WAIT_FOREVER);
 		if (ret == OVE_OK) {
-			ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
+			ret = ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
+			if (ret != OVE_OK) {
+				OVE_LOG_ERR("Consumer: mutex lock failed: %d", ret);
+				continue;
+			}
 			last_value = val;
 			ove_mutex_unlock(value_mutex);
 
 			if (val % 5 == 0) {
-				OVE_LOG_INF("Consumer: count = %u", val);
+				OVE_LOG_INF("Consumer: count = %u", (unsigned int)val);
 			}
 		}
 	}
@@ -103,7 +107,8 @@ static void ui_timer_cb(ove_timer_t timer, void *user_data)
 	char buf[32];
 	uint32_t val;
 
-	ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
+	if (ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER) != OVE_OK)
+		return;
 	val = last_value;
 	ove_mutex_unlock(value_mutex);
 
