@@ -177,8 +177,8 @@ int ove_pm_init(const struct ove_pm_cfg *cfg)
 	}
 
 	OVE_LOG_INF("pm: initialized (idle=%u ms, standby=%u ms, deep=%u ms)",
-		    cfg->idle_threshold_ms, cfg->standby_threshold_ms,
-		    cfg->deep_sleep_threshold_ms);
+		    (unsigned int)cfg->idle_threshold_ms, (unsigned int)cfg->standby_threshold_ms,
+		    (unsigned int)cfg->deep_sleep_threshold_ms);
 	return OVE_OK;
 }
 
