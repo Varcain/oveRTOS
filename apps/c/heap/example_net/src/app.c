@@ -407,7 +407,7 @@ static void test_sntp(void)
 
 /* ── 6. MQTT client ─────────────────────────────────────────────── */
 
-static volatile int mqtt_rx_count;
+static int mqtt_rx_count;
 static char mqtt_rx_payload[128];
 
 static void mqtt_on_message(const char *topic, size_t topic_len, const void *payload,

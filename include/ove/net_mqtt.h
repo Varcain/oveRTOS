@@ -45,6 +45,10 @@ typedef enum {
 /**
  * @brief MQTT message callback.
  *
+ * Invoked synchronously by the MQTT API call that receives the packet
+ * (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).
+ * The client does not create a background callback thread.
+ *
  * @param[in] topic       Topic string (not NUL-terminated).
  * @param[in] topic_len   Topic length in bytes.
  * @param[in] payload     Message payload.

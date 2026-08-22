@@ -3347,7 +3347,7 @@ pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
 #[doc = "< At least once."]
 pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
 pub type ove_mqtt_qos_t = core::ffi::c_uint;
-#[doc = " @brief MQTT message callback.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
+#[doc = " @brief MQTT message callback.\n\n Invoked synchronously by the MQTT API call that receives the packet\n (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).\n The client does not create a background callback thread.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
 pub type ove_mqtt_msg_cb = Option<
     unsafe extern "C" fn(
         topic: *const core::ffi::c_char,
