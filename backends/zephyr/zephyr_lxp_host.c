@@ -121,11 +121,8 @@ static int host_random_fill(void *buf, size_t len)
 
 static int host_prepare(void)
 {
-	/* The caller of lxp_run is the privileged coordinator. Its priority is a
-	 * seam invariant, not an application concern: it must preempt a guest that
-	 * has just parked in the SVC return trampoline. The former inline design
-	 * inherited this value from Zephyr main; an app-owned oveRTOS thread must
-	 * acquire it explicitly here. */
+	/* The privileged coordinator must outrank a guest parked in the SVC return
+	 * trampoline. Enforce that seam invariant independently of its caller. */
 	k_thread_priority_set(k_current_get(), OVE_ZEPHYR_PRIO_LXP_COORDINATOR);
 	return 0;
 }
