@@ -2,8 +2,8 @@
 
 One firmware image, two worlds running side by side — a **native RTOS thread**
 (`ove_thread`) and a rootfs-owned **Linux guest demo** launched through the
-oveRTOS **Linux personality** (`lxp_run`) out of a real Buildroot rootfs —
-exchanging data **in both directions**, then handing you an interactive shell.
+oveRTOS **Linux personality** (`ove_lxp_host_run()`) out of a real Buildroot
+rootfs — exchanging data **in both directions**, then handing you an interactive shell.
 
 This is a first-class oveRTOS framework app, built by the `ove` build system, and
 the *same demo* runs on **all three RTOS engines** through the engine-agnostic
@@ -488,7 +488,8 @@ owns tty lookahead and run-scoped readiness; the board-selected console HAL
 owns the ordinary native console or QEMU's dedicated CMSDK UART1. The host
 facade translates guest termination records field by field; reason values are
 mapped explicitly and the `comm` string remains callback-lifetime data by
-contract.
+contract. `ove_lxp_rt_scope_bind()` similarly owns the `/proc/rt_scope`
+callback rather than exposing its formatter to the application.
 
 The application retains its post-phase-1 socket smoke because that is a demo
 workload and readiness report, not provider lifecycle. It queries the host-owned
@@ -685,11 +686,10 @@ tmp      run      opt      linuxrc  init     bin
 The RTOS side is built on the **engine-agnostic oveRTOS APIs** (`ove_thread`,
 `ove_time`) and the Linux side on the engine-neutral LXP port; no direct kernel
 calls — which is why the *same* `src/app.c` runs on Zephyr, FreeRTOS and NuttX
-(the only engine-specific line is the lifecycle: on FreeRTOS the demo creates a
-task because the scheduler starts inside `ove_run()`, whereas Zephyr and NuttX
-already call `ove_main()` with their schedulers running).
-Semihosting is the console transport (an architecture facility, not an RTOS
-primitive).
+without engine-specific lifecycle code. `ove_main()` creates the demo thread
+through the common static-thread API, and `ove_run()` owns the selected engine's
+scheduler transition. QEMU uses the board-owned CMSDK UART1 personality console;
+STM32 uses the configured native console transport.
 
 The `svc` handler is a bounded top half: it snapshots an ordinary syscall into a
 fixed per-slot mailbox and parks that guest. I/O callbacks run later in the
@@ -753,8 +753,9 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 The LXP host facade parses and publishes the selected CPIO once, retains the
 provider composition, and supplies the immutable rootfs fields to each launch.
 The application manifest supplies build-time topology while its C code supplies
-only per-launch console, diagnostic, and display policy. The personality core
-and selected port under `modules/lxp/ports/{freertos,nuttx,zephyr}/` are pulled
-in by the generated `ove_config.cmake`; oveRTOS's corresponding
+only per-launch console, diagnostic, RT-scope, and scenario policy. The
+personality core and selected port under
+`modules/lxp/ports/{freertos,nuttx,zephyr}/` are pulled in by the generated
+`ove_config.cmake`; oveRTOS's corresponding
 `*_lxp_host.c` file supplies board storage, priorities, memory policy, and
 stable-HAL callbacks.
