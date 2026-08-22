@@ -6,7 +6,6 @@
 
 use crate::framework::run_suite;
 use crate::test_entry;
-use ove::ffi;
 use ove::{Error, Thread, ThreadInfo, ThreadState};
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -234,27 +233,14 @@ fn test_get_mem_stats() {
 /* ── Thread enumeration ─────────────────────────────────────────── */
 
 fn test_thread_list_smoke() {
-    let mut buf = [ThreadInfo {
-        name: &[],
-        identity: 0,
-        state: 0 as ffi::ove_thread_state_t,
-        priority: 0,
-        valid_fields: 0,
-        stack_used: None,
-        stack_size: None,
-        cpu_percent_x100: None,
-        running_us: None,
-        ready_us: None,
-        blocked_us: None,
-        suspended_us: None,
-    }; 16];
+    let mut buf = [ThreadInfo::empty(); 16];
     let cap = buf.len();
     match ove::thread::thread_list(&mut buf) {
         Ok(slice) => {
             assert!(slice.len() <= cap);
             for info in slice {
                 let _ = format!("{:?}", *info);
-                assert!(info.name.len() < isize::MAX as usize);
+                assert!(info.name().len() < isize::MAX as usize);
             }
         }
         Err(Error::NotSupported) => {}
@@ -279,37 +265,24 @@ fn test_thread_list_with_spawned() {
     let th = Thread::builder().name(c"enum").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(20);
 
-    let mut buf = [ThreadInfo {
-        name: &[],
-        identity: 0,
-        state: 0 as ffi::ove_thread_state_t,
-        priority: 0,
-        valid_fields: 0,
-        stack_used: None,
-        stack_size: None,
-        cpu_percent_x100: None,
-        running_us: None,
-        ready_us: None,
-        blocked_us: None,
-        suspended_us: None,
-    }; 16];
+    let mut buf = [ThreadInfo::empty(); 16];
     match ove::thread::thread_list(&mut buf) {
         Ok(slice) => {
             assert!(!slice.is_empty(), "expected at least one live thread");
             for info in slice {
                 // Exercise the fields so the construction isn't DCE'd.
-                let _ = info.name;
-                let _ = info.state;
+                let _ = info.name();
+                let _ = info.state();
                 let _ = info.priority;
                 let _ = info.valid_fields;
-                let _ = info.stack_used;
+                let _ = info.stack_used();
                 let _ = info.identity;
-                let _ = info.stack_size;
-                let _ = info.cpu_percent_x100;
-                let _ = info.running_us;
-                let _ = info.ready_us;
-                let _ = info.blocked_us;
-                let _ = info.suspended_us;
+                let _ = info.stack_size();
+                let _ = info.cpu_percent_x100();
+                let _ = info.running_us();
+                let _ = info.ready_us();
+                let _ = info.blocked_us();
+                let _ = info.suspended_us();
             }
         }
         Err(Error::NotSupported) => {}
@@ -319,6 +292,38 @@ fn test_thread_list_with_spawned() {
     KEEP_RUNNING.store(0, Ordering::SeqCst);
     Thread::sleep_ms(20);
     drop(th);
+}
+
+fn test_thread_list_uses_full_caller_capacity() {
+    let mut threads = Vec::new();
+    for _ in 0..40 {
+        threads.push(
+            Thread::builder()
+                .name(c"wide")
+                .priority(ove::Priority::Normal)
+                .stack_size(4096)
+                .spawn(|tok| {
+                    while !tok.is_stopped() {
+                        Thread::sleep_ms(1);
+                    }
+                })
+                .unwrap(),
+        );
+    }
+    Thread::sleep_ms(20);
+
+    let mut too_small = [ThreadInfo::empty(); 1];
+    assert!(matches!(
+        ove::thread::thread_list(&mut too_small),
+        Err(Error::QueueFull)
+    ));
+
+    let mut buf = [ThreadInfo::empty(); 48];
+    let list = ove::thread::thread_list(&mut buf).unwrap();
+    assert!(list.len() >= 40, "binding truncated {} live threads", list.len());
+    assert!(list.iter().filter(|info| info.name() == b"wide").count() >= 40);
+
+    drop(threads);
 }
 
 fn test_get_state_running_arm() {
@@ -385,6 +390,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_thread_list_smoke),
         test_entry!(test_thread_list_zero_capacity),
         test_entry!(test_thread_list_with_spawned),
+        test_entry!(test_thread_list_uses_full_caller_capacity),
         test_entry!(test_priority_ordering),
         test_entry!(test_thread_state_debug_eq),
     ])

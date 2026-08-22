@@ -864,21 +864,55 @@ fn testThreadGetStateTerminated() !void {
 }
 
 fn testThreadList() !void {
-    // Exercises threadList's typed-`State` conversion path.  Enumeration
-    // may be unsupported on some backends; a clean error is acceptable —
-    // the point is that the `@enumFromInt` path compiles and runs without
-    // UB, and that every reported entry carries a valid `State` variant.
+    // Enumeration may be unsupported on some backends; a clean error is
+    // acceptable. Every reported entry still carries the ABI-pinned typed
+    // State enum and exposes optional metrics through validity-aware methods.
     var buf: [16]ove.thread.ThreadInfo = undefined;
     const list = ove.thread.threadList(&buf) catch return;
     for (list) |info| {
         switch (info.state) {
             .running, .ready, .blocked, .suspended, .terminated, .unknown => {},
         }
-        try expect((info.stack_used != null) ==
+        try expect((info.stackUsed() != null) ==
             (info.valid_fields & ove.ffi.OVE_THREAD_INFO_VALID_STACK_USED != 0));
-        try expect((info.running_us != null) ==
+        try expect((info.runningUs() != null) ==
             (info.valid_fields & ove.ffi.OVE_THREAD_INFO_VALID_RUNNING_TIME != 0));
     }
+}
+
+fn threadListWorker(stop: ove.StopToken) void {
+    while (!stop.isStopped()) ove.thread.sleepMs(1);
+}
+
+fn testThreadListUsesFullCallerCapacity() !void {
+    var threads: [20]?ove.Thread(4096) = .{null} ** 20;
+    defer {
+        for (&threads) |*slot| {
+            if (slot.*) |*thread| thread.deinit();
+        }
+    }
+
+    for (&threads) |*slot| {
+        slot.* = try ove.Thread(4096).spawn(
+            test_allocator,
+            .{ .name = "wide", .priority = .normal },
+            threadListWorker,
+            .{},
+        );
+    }
+    ove.thread.sleepMs(20);
+
+    var too_small: [1]ove.thread.ThreadInfo = undefined;
+    try expectErrorIs(ove.thread.threadList(&too_small), ove.Error.QueueFull);
+
+    var buf: [24]ove.thread.ThreadInfo = undefined;
+    const list = try ove.thread.threadList(&buf);
+    try expect(list.len >= 20);
+    var named: usize = 0;
+    for (list) |*info| {
+        if (std.mem.eql(u8, info.name(), "wide")) named += 1;
+    }
+    try expect(named >= 20);
 }
 
 fn testThreadStackUsage() !void {
@@ -1956,6 +1990,7 @@ pub fn main() void {
         .{ .name = "get_state_running", .func = testThreadGetStateRunning },
         .{ .name = "get_state_terminated", .func = testThreadGetStateTerminated },
         .{ .name = "thread_list", .func = testThreadList },
+        .{ .name = "thread_list_full_capacity", .func = testThreadListUsesFullCallerCapacity },
         .{ .name = "stack_usage", .func = testThreadStackUsage },
         .{ .name = "suspend_resume", .func = testThreadSuspendResume },
         .{ .name = "runtime_stats", .func = testThreadRuntimeStats },

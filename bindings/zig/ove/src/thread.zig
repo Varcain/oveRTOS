@@ -620,62 +620,82 @@ pub fn getMemStats() Error!MemStats {
 // Thread enumeration
 // ---------------------------------------------------------------------------
 
-pub const ThreadInfo = struct {
-    name: [*:0]const u8,
+/// ABI-compatible thread snapshot filled directly by `ove_thread_list`.
+///
+/// Raw numeric fields remain visible for FFI-oriented code. Prefer the helper
+/// methods for the name and optional metrics. Keeping this type layout-equal to
+/// the C record lets `threadList` use all caller-provided entries without a
+/// binding-owned temporary array or allocator.
+pub const ThreadInfo = extern struct {
+    name_ptr: [*c]const u8,
     identity: usize,
     state: State,
     priority: i32,
+    stack_used_raw: usize,
+    stack_size_raw: usize,
+    cpu_percent_x100_raw: u32,
     valid_fields: u32,
-    stack_used: ?usize,
-    stack_size: ?usize,
-    cpu_percent_x100: ?u32,
-    running_us: ?u64,
-    ready_us: ?u64,
-    blocked_us: ?u64,
-    suspended_us: ?u64,
+    state_times: c.struct_ove_thread_state_times,
+
+    pub fn name(self: *const ThreadInfo) []const u8 {
+        if (self.name_ptr == null) return "";
+        return std.mem.span(@as([*:0]const u8, @ptrCast(self.name_ptr)));
+    }
+
+    pub fn has(self: *const ThreadInfo, fields: u32) bool {
+        return self.valid_fields & fields == fields;
+    }
+
+    pub fn stackUsed(self: *const ThreadInfo) ?usize {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_STACK_USED)) self.stack_used_raw else null;
+    }
+
+    pub fn stackSize(self: *const ThreadInfo) ?usize {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_STACK_SIZE)) self.stack_size_raw else null;
+    }
+
+    pub fn cpuPercentX100(self: *const ThreadInfo) ?u32 {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_CPU_PERCENT)) self.cpu_percent_x100_raw else null;
+    }
+
+    pub fn runningUs(self: *const ThreadInfo) ?u64 {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_RUNNING_TIME)) self.state_times.running_us else null;
+    }
+
+    pub fn readyUs(self: *const ThreadInfo) ?u64 {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_READY_TIME)) self.state_times.ready_us else null;
+    }
+
+    pub fn blockedUs(self: *const ThreadInfo) ?u64 {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_BLOCKED_TIME)) self.state_times.blocked_us else null;
+    }
+
+    pub fn suspendedUs(self: *const ThreadInfo) ?u64 {
+        return if (self.has(c.OVE_THREAD_INFO_VALID_SUSPENDED_TIME)) self.state_times.suspended_us else null;
+    }
 };
 
+comptime {
+    std.debug.assert(@sizeOf(ThreadInfo) == @sizeOf(c.struct_ove_thread_info));
+    std.debug.assert(@alignOf(ThreadInfo) == @alignOf(c.struct_ove_thread_info));
+    std.debug.assert(@offsetOf(ThreadInfo, "name_ptr") == @offsetOf(c.struct_ove_thread_info, "name"));
+    std.debug.assert(@offsetOf(ThreadInfo, "identity") == @offsetOf(c.struct_ove_thread_info, "identity"));
+    std.debug.assert(@offsetOf(ThreadInfo, "state") == @offsetOf(c.struct_ove_thread_info, "state"));
+    std.debug.assert(@offsetOf(ThreadInfo, "priority") == @offsetOf(c.struct_ove_thread_info, "priority"));
+    std.debug.assert(@offsetOf(ThreadInfo, "stack_used_raw") == @offsetOf(c.struct_ove_thread_info, "stack_used"));
+    std.debug.assert(@offsetOf(ThreadInfo, "stack_size_raw") == @offsetOf(c.struct_ove_thread_info, "stack_size"));
+    std.debug.assert(@offsetOf(ThreadInfo, "cpu_percent_x100_raw") == @offsetOf(c.struct_ove_thread_info, "cpu_percent_x100"));
+    std.debug.assert(@offsetOf(ThreadInfo, "valid_fields") == @offsetOf(c.struct_ove_thread_info, "valid_fields"));
+    std.debug.assert(@offsetOf(ThreadInfo, "state_times") == @offsetOf(c.struct_ove_thread_info, "state_times"));
+}
+
+/// Fill the complete caller-provided buffer with thread snapshots.
+///
+/// The binding imposes no capacity limit. Returns `error.QueueFull` if the
+/// caller buffer or backend-native snapshot cannot hold every thread.
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
-    const max = @min(buf.len, 16);
-    var raw: [16]c.struct_ove_thread_info = std.mem.zeroes([16]c.struct_ove_thread_info);
     var actual: usize = 0;
-    try err.fromCode(c.ove_thread_list(&raw, max, &actual));
-    for (0..actual) |i| {
-        buf[i] = .{
-            .name = @ptrCast(raw[i].name),
-            .identity = raw[i].identity,
-            .state = @enumFromInt(raw[i].state),
-            .priority = raw[i].priority,
-            .valid_fields = raw[i].valid_fields,
-            .stack_used = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_STACK_USED != 0)
-                raw[i].stack_used
-            else
-                null,
-            .stack_size = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_STACK_SIZE != 0)
-                raw[i].stack_size
-            else
-                null,
-            .cpu_percent_x100 = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_CPU_PERCENT != 0)
-                raw[i].cpu_percent_x100
-            else
-                null,
-            .running_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_RUNNING_TIME != 0)
-                raw[i].state_times.running_us
-            else
-                null,
-            .ready_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_READY_TIME != 0)
-                raw[i].state_times.ready_us
-            else
-                null,
-            .blocked_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_BLOCKED_TIME != 0)
-                raw[i].state_times.blocked_us
-            else
-                null,
-            .suspended_us = if (raw[i].valid_fields & c.OVE_THREAD_INFO_VALID_SUSPENDED_TIME != 0)
-                raw[i].state_times.suspended_us
-            else
-                null,
-        };
-    }
-    return buf[0..actual];
+    const raw: [*c]c.struct_ove_thread_info = if (buf.len == 0) null else @ptrCast(buf.ptr);
+    try err.fromCode(c.ove_thread_list(raw, buf.len, &actual));
+    return buf[0..@min(actual, buf.len)];
 }
