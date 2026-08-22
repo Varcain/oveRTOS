@@ -18,34 +18,7 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-
-/* The system-console backend owns USART1 and its RX FIFO. One byte of
- * lookahead keeps readiness probing non-consuming. */
-static int g_lookahead = -1;
-
-static void native_write_char(char c)
-{
-	ove_console_putchar((unsigned char)c);
-}
-
-static int native_ready(void)
-{
-	if (g_lookahead < 0)
-		g_lookahead = ove_console_try_getchar();
-	return g_lookahead >= 0;
-}
-
-static int native_read_char(void)
-{
-	while (!native_ready()) {
-	}
-	int c = g_lookahead;
-	g_lookahead = -1;
-	return c;
-}
-
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 
 /* QEMU's engine console occupies UART0. The guest system console therefore
@@ -79,7 +52,8 @@ static int native_read_char(void)
 
 #else
 
-/* Host/reference builds use the ordinary oveRTOS console. */
+/* The ordinary console owns its RX FIFO. One byte of lookahead keeps
+ * readiness probing non-consuming. */
 static int g_lookahead = -1;
 
 static void native_write_char(char c)
@@ -163,9 +137,7 @@ static void console_unsubscribe(void *ctx)
 
 int ove_lxp_console_init(void)
 {
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	(void)native_ready();
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
 	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 	/* CMSDK UART: BAUDDIV >= 16, TX enable | RX enable. */
 	OVE_LXP_UART_REG(0x10) = 16u;
