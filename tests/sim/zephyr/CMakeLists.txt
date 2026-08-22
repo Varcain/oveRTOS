@@ -41,6 +41,7 @@ set(ZEPHYR_BACKEND_SOURCES
     ${ZEPHYR_BACKEND}/zephyr_eventgroup.c
     ${OVE_ROOT}/src/ove_eventgroup.c
     ${ZEPHYR_BACKEND}/zephyr_workqueue.c
+    ${OVE_ROOT}/src/ove_workqueue.c
     ${ZEPHYR_BACKEND}/zephyr_stream.c
     ${OVE_ROOT}/src/ove_stream.c
     ${ZEPHYR_BACKEND}/zephyr_shell.c

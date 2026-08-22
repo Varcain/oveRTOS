@@ -33,6 +33,7 @@ else()
         ${OVE_DIR}/src/ove_timer.c
         ${OVE_DIR}/backends/posix/posix_eventgroup.c
         ${OVE_DIR}/backends/posix/posix_workqueue.c
+        ${OVE_DIR}/src/ove_workqueue.c
         ${OVE_DIR}/backends/posix/posix_stream.c
         ${OVE_DIR}/backends/posix/posix_watchdog.c
         ${OVE_DIR}/backends/posix/posix_nvs.c

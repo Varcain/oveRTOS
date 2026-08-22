@@ -62,6 +62,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_eventgroup.c
     ${OVE_SRC}/ove_eventgroup.c
     ${POSIX_CORE_DIR}/posix_workqueue.c
+    ${OVE_SRC}/ove_workqueue.c
     ${POSIX_CORE_DIR}/posix_stream.c
     ${OVE_SRC}/ove_stream.c
     ${POSIX_CORE_DIR}/posix_watchdog.c
