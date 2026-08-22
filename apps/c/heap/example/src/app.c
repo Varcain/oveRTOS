@@ -57,11 +57,12 @@ static ove_thread_t consumer_thread_handle;
 static void producer_thread(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	uint32_t count = 0;
 
 	OVE_LOG_INF("Producer started");
 
-	while (1) {
+	while (!ove_thread_should_stop(self)) {
 		++count;
 		int ret = ove_queue_send(counter_queue, &count, OVE_MS(1000));
 		if (ret != OVE_OK) {
@@ -76,11 +77,12 @@ static void producer_thread(void *arg)
 static void consumer_thread(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	uint32_t val = 0;
 
 	OVE_LOG_INF("Consumer started");
 
-	while (1) {
+	while (!ove_thread_should_stop(self)) {
 		int ret = ove_queue_receive(counter_queue, &val, OVE_WAIT_FOREVER);
 		if (ret == OVE_OK) {
 			ret = ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
@@ -122,11 +124,12 @@ static void ui_timer_cb(ove_timer_t timer, void *user_data)
 static void graphics_thread(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	uint64_t last_us = 0;
 
 	ove_time_get_us(&last_us);
 
-	while (1) {
+	while (!ove_thread_should_stop(self)) {
 		uint64_t now_us = 0;
 		uint32_t elapsed_ms;
 
@@ -182,6 +185,21 @@ static void create_ui(void)
 	lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 96);
 }
 
+static void stop_thread(ove_thread_t thread)
+{
+	ove_thread_request_stop(thread);
+	ove_thread_destroy(thread);
+}
+
+static void stop_consumer(void)
+{
+	uint32_t wake = 0;
+	ove_thread_request_stop(consumer_thread_handle);
+	int wake_rc = ove_queue_send(counter_queue, &wake, 0);
+	(void)wake_rc; /* A full queue already makes the consumer runnable. */
+	ove_thread_destroy(consumer_thread_handle);
+}
+
 /* --- App entry point --- */
 
 void ove_main(void)
@@ -209,6 +227,16 @@ void ove_main(void)
 		goto cleanup_mutex;
 	}
 
+	/* No worker may enter LVGL before the library and UI are ready. */
+	ret = ove_lvgl_init();
+	if (ret != OVE_OK) {
+		OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
+		goto cleanup_timer;
+	}
+	ove_lvgl_lock();
+	create_ui();
+	ove_lvgl_unlock();
+
 	ret = ove_thread_create(&graphics_thread_handle, "graphics", graphics_thread, NULL,
 				OVE_PRIO_HIGH, 4096);
 	if (ret != OVE_OK) {
@@ -228,17 +256,6 @@ void ove_main(void)
 		goto cleanup_producer;
 	}
 
-	/* Initialise LVGL and build the UI before starting the timer. */
-	ret = ove_lvgl_init();
-	if (ret != OVE_OK) {
-		OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
-		goto cleanup_consumer;
-	}
-
-	ove_lvgl_lock();
-	create_ui();
-	ove_lvgl_unlock();
-
 	ret = ove_timer_start(ui_timer);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to start UI timer: %d", ret);
@@ -255,11 +272,11 @@ void ove_main(void)
 	ove_timer_stop(ui_timer);
 
 cleanup_consumer:
-	ove_thread_destroy(consumer_thread_handle);
+	stop_consumer();
 cleanup_producer:
-	ove_thread_destroy(producer_thread_handle);
+	stop_thread(producer_thread_handle);
 cleanup_graphics:
-	ove_thread_destroy(graphics_thread_handle);
+	stop_thread(graphics_thread_handle);
 cleanup_timer:
 	ove_timer_destroy(ui_timer);
 cleanup_mutex:
