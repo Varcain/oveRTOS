@@ -103,7 +103,7 @@ int ove_gpio_get(unsigned int port, unsigned int pin);
  * @param[in] port      GPIO port index.
  * @param[in] pin       GPIO pin index within the port.
  * @param[in] mode      Edge(s) that should trigger the interrupt.
- * @param[in] callback  Function called when the interrupt fires.
+ * @param[in] callback  Function called when the interrupt fires; must not be NULL.
  * @param[in] user_data Opaque pointer forwarded to @p callback.
  * @return OVE_OK on success, OVE_ERR_ALREADY_EXISTS if the line is already
  *         registered, or another negative error code on failure.

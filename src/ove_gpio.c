@@ -94,7 +94,7 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 {
 	unsigned int i;
 
-	if (validate_port_pin(port, pin) != OVE_OK ||
+	if (validate_port_pin(port, pin) != OVE_OK || callback == NULL ||
 	    (mode != OVE_GPIO_IRQ_RISING && mode != OVE_GPIO_IRQ_FALLING &&
 	     mode != OVE_GPIO_IRQ_BOTH)) {
 		return OVE_ERR_INVALID_PARAM;
