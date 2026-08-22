@@ -92,18 +92,18 @@ static void test_cpp_mutex_contention_success(void **state)
 	mtx.unlock();
 }
 
+#ifndef __SANITIZE_THREAD__
 static void test_cpp_mutex_double_unlock(void **state)
 {
 	(void)state;
-#ifdef __SANITIZE_THREAD__
-	skip(); /* TSan flags double-unlock as UB; same rationale as C side. */
-#else
+	/* Empirical robustness check only: double-unlock is formally undefined
+	 * and is therefore omitted from the TSan suite. */
 	ove::Mutex mtx;
 	mtx.lock();
 	mtx.unlock();
 	mtx.unlock(); /* should not crash */
-#endif
 }
+#endif
 
 static void test_cpp_mutex_zero_timeout_free(void **state)
 {
@@ -303,7 +303,9 @@ int test_cpp_mutex_run(void)
 		cmocka_unit_test(test_cpp_mutex_lock_unlock),
 		cmocka_unit_test(test_cpp_mutex_contention_timeout),
 		cmocka_unit_test(test_cpp_mutex_contention_success),
+#ifndef __SANITIZE_THREAD__
 		cmocka_unit_test(test_cpp_mutex_double_unlock),
+#endif
 		cmocka_unit_test(test_cpp_mutex_zero_timeout_free),
 		cmocka_unit_test(test_cpp_mutex_shared_counter),
 		cmocka_unit_test(test_cpp_mutex_short_timeout),

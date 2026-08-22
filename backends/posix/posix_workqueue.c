@@ -57,8 +57,11 @@ static void *wq_thread_func(void *arg)
 		 * signal) because more than one thread may be waiting on
 		 * different work items. */
 		pthread_mutex_lock(&wq->lock);
-		__atomic_store_n(&w->wq, NULL, __ATOMIC_RELEASE);
 		w->in_progress = 0;
+		/* Publish the terminal backpointer last.  A deinit caller that
+		 * observes NULL is then guaranteed that this worker has completed
+		 * every access to the work item, including in_progress above. */
+		__atomic_store_n(&w->wq, NULL, __ATOMIC_RELEASE);
 		pthread_cond_broadcast(&wq->cond);
 		pthread_mutex_unlock(&wq->lock);
 	}

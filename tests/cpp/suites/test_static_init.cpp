@@ -99,21 +99,18 @@ static std::atomic<int> g_timer_fired;
 	g_timer_fired.store(1);
 }
 
+#ifndef __SANITIZE_THREAD__
 static void test_cpp_static_timer_init(void **state)
 {
 	(void)state;
-#ifdef __SANITIZE_THREAD__
-	skip(); /* Calls tmr.start() which spawns SIGEV_THREAD; same TSan
-		 * skip rationale as test_cpp_timer_oneshot_fires_once. */
-#else
 	g_timer_fired.store(0);
 	ove::Timer tmr(timer_static_cb, nullptr, 50, true);
 	assert_true(tmr.valid());
 	assert_true(tmr.start().has_value());
 	test_msleep(200);
 	assert_true(g_timer_fired.load());
-#endif
 }
+#endif
 
 /* ── Thread ─────────────────────────────────────────────────────────── */
 
@@ -199,7 +196,9 @@ int test_cpp_static_init_run(void)
 		cmocka_unit_test(test_cpp_static_condvar_init),
 		cmocka_unit_test(test_cpp_static_eventgroup_init),
 		cmocka_unit_test(test_cpp_static_queue_init),
+#ifndef __SANITIZE_THREAD__
 		cmocka_unit_test(test_cpp_static_timer_init),
+#endif
 		cmocka_unit_test(test_cpp_static_thread_init),
 		cmocka_unit_test(test_cpp_static_stream_init),
 		cmocka_unit_test(test_cpp_static_watchdog_init),

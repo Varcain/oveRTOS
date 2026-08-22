@@ -995,7 +995,7 @@ static void async_discard(const struct fs_request *request)
 		slot = file_slot(g_async_file);
 	} else if (request->op == FS_REQ_OBJECT_OPEN) {
 		slot = g_async_open.type == LXP_FS_TYPE_DIR ? dir_slot(g_async_open.handle.dir)
-							  : file_slot(g_async_open.handle.file);
+							    : file_slot(g_async_open.handle.file);
 	} else if (request->op == FS_REQ_DIR_OPEN) {
 		slot = dir_slot(g_async_dir);
 	}
@@ -1031,9 +1031,8 @@ static void fs_server_admit(void)
 
 static int request_is_block(enum fs_request_op op)
 {
-	return op == FS_REQ_BLOCK_INFO || op == FS_REQ_BLOCK_READ ||
-	       op == FS_REQ_BLOCK_WRITE || op == FS_REQ_BLOCK_SYNC ||
-	       op == FS_REQ_BLOCK_CLOSE;
+	return op == FS_REQ_BLOCK_INFO || op == FS_REQ_BLOCK_READ || op == FS_REQ_BLOCK_WRITE ||
+	       op == FS_REQ_BLOCK_SYNC || op == FS_REQ_BLOCK_CLOSE;
 }
 
 static void fs_worker(void *arg)
@@ -1054,8 +1053,12 @@ static void fs_worker(void *arg)
 						  CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US;
 		int stop = request->op == FS_REQ_STOP;
 		if (request->asynchronous) {
+			/* Snapshot every field before publishing COMPLETE. A coordinator
+			 * may collect or cancel immediately after that release and reuse
+			 * g_async_request while this worker is issuing the wake callback. */
+			int block_request = request_is_block(request->op);
 			if (lxp_async_gate_complete(&g_async_gate) == LXP_ASYNC_GATE_WAKE) {
-				if (request_is_block(request->op)) {
+				if (block_request) {
 					lxp_block_ready_fn ready =
 						__atomic_load_n(&g_block_ready, __ATOMIC_ACQUIRE);
 					if (ready)
@@ -1209,8 +1212,7 @@ static int submit_sync(struct fs_request *request)
 
 static int submit_async(struct fs_request *request)
 {
-	lxp_async_gate_action_t action =
-		lxp_async_gate_enter(&g_async_gate, (uint32_t)request->op);
+	lxp_async_gate_action_t action = lxp_async_gate_enter(&g_async_gate, (uint32_t)request->op);
 	if (action == LXP_ASYNC_GATE_BLOCK)
 		return LXP_ERR_WOULD_BLOCK;
 	if (action == LXP_ASYNC_GATE_COLLECT) {
@@ -1773,9 +1775,8 @@ static int block_open(unsigned flags)
 		return LXP_ERR_PERMISSION;
 #endif
 	}
-	return ove_block_open(&g_raw_block, (flags & LXP_BLOCK_OPEN_WRITE) != 0u
-					  ? OVE_BLOCK_OPEN_WRITE
-					  : 0u);
+	return ove_block_open(&g_raw_block,
+			      (flags & LXP_BLOCK_OPEN_WRITE) != 0u ? OVE_BLOCK_OPEN_WRITE : 0u);
 }
 
 static void block_close(unsigned flags)
