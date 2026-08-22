@@ -110,13 +110,15 @@ static void demo_body(void *arg)
 	ove_lxp_console_write("\n=== interop demo done (uClinux halted) ===\n");
 #endif
 	linux_interop_qualification_measurement_stop();
+	if (rc2 != 0)
+		ove_lxp_console_printf("[demo] FAIL: phase-2 guest exited rc=%d\n", rc2);
 	ove_lxp_host_observation_t observation;
 	if (ove_lxp_host_observe(&g_linux_host, &observation) != OVE_OK) {
 		ove_lxp_console_write("[demo] FAIL: post-run LXP observation unavailable\n");
 		demo_exit(1);
 	}
 	linux_interop_qualification_report(&observation, g_demo, sizeof(g_demo_storage_stack));
-	demo_exit(rc2 >= 0 ? 0 : 1);
+	demo_exit(rc2 == 0 ? 0 : 1);
 }
 
 void ove_main(void)
