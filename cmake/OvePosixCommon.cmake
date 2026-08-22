@@ -11,8 +11,9 @@
 # Typical usage (boards/host/posix/CMakeLists.txt):
 #
 #   cmake_minimum_required(VERSION 3.14)
+#   project(ove_posix LANGUAGES C CXX)
 #   include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OvePosixCommon.cmake)
-#   ove_posix_setup_project(NAME ove_posix)
+#   ove_posix_setup()
 #   ove_posix_add_common_includes()
 #   ove_posix_build_lvgl()
 #   # ...board-specific backend list + sim framework integration...
@@ -22,17 +23,9 @@
 
 cmake_minimum_required(VERSION 3.14)
 
-# ─── ove_posix_setup_project(NAME <name>) ───────────────────────────
-# Resolve paths, include generated config, declare the CMake project with
-# CXX detection, and set common C flags.  Must be called first from the
-# board CMakeLists.txt.
-macro(ove_posix_setup_project)
-    cmake_parse_arguments(_OVE_PS "" "NAME" "" ${ARGN})
-    if(NOT _OVE_PS_NAME)
-        message(FATAL_ERROR "ove_posix_setup_project: NAME required")
-    endif()
-    set(_OVE_POSIX_NAME "${_OVE_PS_NAME}")
-
+# ─── ove_posix_setup() ──────────────────────────────────────────────
+# Resolve paths, include generated config, and set common language flags.
+macro(ove_posix_setup)
     if(NOT DEFINED OVE_DIR)
         get_filename_component(OVE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
     endif()
@@ -54,18 +47,10 @@ macro(ove_posix_setup_project)
         include(${OVE_GEN_DIR}/ove_config.cmake)
     endif()
 
-    # Include CXX if app language requires it, or if ML inference is
-    # enabled (TFLM is C++).
-    if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
-        project(${_OVE_POSIX_NAME} C CXX)
-        set(CMAKE_CXX_STANDARD 23)
-        set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    else()
-        project(${_OVE_POSIX_NAME} C)
-    endif()
-
     set(CMAKE_C_STANDARD 11)
     set(CMAKE_C_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_STANDARD 23)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
     add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 
     # Debug build: add -g and -O0 when OVE_DEBUG_BUILD is enabled.

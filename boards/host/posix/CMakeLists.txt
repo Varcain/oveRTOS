@@ -5,18 +5,13 @@
 # This file is part of oveRTOS.
 
 cmake_minimum_required(VERSION 3.14)
+project(ove_posix LANGUAGES C CXX)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OvePosixCommon.cmake)
 
-ove_posix_setup_project(NAME ove_posix)
+ove_posix_setup()
 ove_posix_include_app_sources()
 ove_posix_add_common_includes()
-
-# Sim framework include paths (host always uses the sim dashboard)
-include_directories(
-    ${OVE_DIR}/sim/include
-    ${OVE_DIR}/sim/src
-)
 
 ove_posix_build_lvgl()
 
@@ -49,14 +44,10 @@ endif()
 # Simulation plugin framework (display + audio via browser dashboard)
 #############################################################################
 include(${OVE_DIR}/sim/CMakeLists.txt)
-# Remove POSIX backends that the sim framework replaces
-list(FILTER OVE_SOURCES EXCLUDE REGEX "posix_console\\.c$")
-if(OVE_LVGL)
-    list(FILTER OVE_SOURCES EXCLUDE REGEX "posix_lvgl\\.c$")
-endif()
-if(OVE_AUDIO)
-    list(FILTER OVE_SOURCES EXCLUDE REGEX "posix_audio\\.c$")
-endif()
+include_directories(${SIM_INCLUDE_DIRS})
+foreach(replaced IN LISTS SIM_REPLACED_POSIX_SOURCES)
+    list(FILTER OVE_SOURCES EXCLUDE REGEX "${replaced}$")
+endforeach()
 list(APPEND OVE_SOURCES ${SIM_SOURCES})
 
 #############################################################################
