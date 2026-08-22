@@ -1032,90 +1032,153 @@ pub fn get_mem_stats() -> Result<MemStats> {
 // Thread enumeration
 // ---------------------------------------------------------------------------
 
-/// Snapshot of a single thread's info.
-#[derive(Debug, Clone, Copy)]
-pub struct ThreadInfo {
-    /// Thread name (static string from RTOS).
-    pub name: &'static [u8],
-    /// Opaque native identity, suitable only for equality comparisons.
-    pub identity: usize,
-    /// Execution state.
-    pub state: bindings::ove_thread_state_t,
-    /// Priority level.
-    pub priority: i32,
-    /// Raw `OVE_THREAD_INFO_VALID_*` bits for forward-compatible inspection.
-    pub valid_fields: u32,
+/// Zero-copy snapshot of a single thread.
+///
+/// This aliases the C record so [`thread_list`] can fill the caller's complete
+/// buffer directly without a binding-owned capacity limit or allocation. Raw
+/// fields remain available for FFI-oriented code; prefer the methods below for
+/// typed states and optional metrics.
+pub type ThreadInfo = bindings::ove_thread_info;
+
+impl bindings::ove_thread_info {
+    /// Deterministically empty snapshot, useful for fixed-size arrays.
+    pub const fn empty() -> Self {
+        Self {
+            name: core::ptr::null(),
+            identity: 0,
+            state: bindings::OVE_THREAD_STATE_UNKNOWN,
+            priority: 0,
+            stack_used: 0,
+            stack_size: 0,
+            cpu_percent_x100: 0,
+            valid_fields: 0,
+            state_times: bindings::ove_thread_state_times {
+                running_us: 0,
+                ready_us: 0,
+                blocked_us: 0,
+                suspended_us: 0,
+            },
+        }
+    }
+
+    /// Thread name bytes without the trailing NUL.
+    pub fn name(&self) -> &[u8] {
+        if self.name.is_null() {
+            return &[];
+        }
+
+        // SAFETY: the C snapshot contract supplies a static NUL-terminated
+        // name. The returned slice borrows `self`, avoiding an unjustified
+        // `'static` lifetime in the safe API.
+        unsafe {
+            let p = self.name.cast::<u8>();
+            let mut len = 0;
+            while *p.add(len) != 0 {
+                len += 1;
+            }
+            core::slice::from_raw_parts(p, len)
+        }
+    }
+
+    /// Typed execution state.
+    pub const fn state(&self) -> ThreadState {
+        match self.state {
+            bindings::OVE_THREAD_STATE_RUNNING => ThreadState::Running,
+            bindings::OVE_THREAD_STATE_READY => ThreadState::Ready,
+            bindings::OVE_THREAD_STATE_BLOCKED => ThreadState::Blocked,
+            bindings::OVE_THREAD_STATE_SUSPENDED => ThreadState::Suspended,
+            bindings::OVE_THREAD_STATE_TERMINATED => ThreadState::Terminated,
+            _ => ThreadState::Unknown,
+        }
+    }
+
+    /// Whether every requested `OVE_THREAD_INFO_VALID_*` bit is present.
+    pub const fn has(&self, fields: u32) -> bool {
+        self.valid_fields & fields == fields
+    }
+
     /// Stack high-water mark in bytes, when measured.
-    pub stack_used: Option<usize>,
+    pub const fn stack_used(&self) -> Option<usize> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_STACK_USED) {
+            Some(self.stack_used)
+        } else {
+            None
+        }
+    }
+
     /// Total stack allocation in bytes, when known.
-    pub stack_size: Option<usize>,
+    pub const fn stack_size(&self) -> Option<usize> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_STACK_SIZE) {
+            Some(self.stack_size)
+        } else {
+            None
+        }
+    }
+
     /// CPU usage in 0.01% units, when measured.
-    pub cpu_percent_x100: Option<u32>,
+    pub const fn cpu_percent_x100(&self) -> Option<u32> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_CPU_PERCENT) {
+            Some(self.cpu_percent_x100)
+        } else {
+            None
+        }
+    }
+
     /// Cumulative time spent running, in microseconds, when measured.
-    pub running_us: Option<u64>,
+    pub const fn running_us(&self) -> Option<u64> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_RUNNING_TIME) {
+            Some(self.state_times.running_us)
+        } else {
+            None
+        }
+    }
+
     /// Cumulative time spent ready, in microseconds, when measured.
-    pub ready_us: Option<u64>,
+    pub const fn ready_us(&self) -> Option<u64> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_READY_TIME) {
+            Some(self.state_times.ready_us)
+        } else {
+            None
+        }
+    }
+
     /// Cumulative time spent blocked, in microseconds, when measured.
-    pub blocked_us: Option<u64>,
+    pub const fn blocked_us(&self) -> Option<u64> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_BLOCKED_TIME) {
+            Some(self.state_times.blocked_us)
+        } else {
+            None
+        }
+    }
+
     /// Cumulative time spent suspended, in microseconds, when measured.
-    pub suspended_us: Option<u64>,
+    pub const fn suspended_us(&self) -> Option<u64> {
+        if self.has(bindings::OVE_THREAD_INFO_VALID_SUSPENDED_TIME) {
+            Some(self.state_times.suspended_us)
+        } else {
+            None
+        }
+    }
+}
+
+impl Default for bindings::ove_thread_info {
+    fn default() -> Self {
+        Self::empty()
+    }
 }
 
 /// List all threads in the system.
 ///
-/// Fills the provided buffer with thread info snapshots and returns the
-/// slice of entries actually written.
+/// Fills the complete caller-provided buffer directly and returns the slice of
+/// entries actually written. The binding imposes no capacity limit of its own.
 ///
 /// # Errors
-/// Returns an error if the RTOS does not support thread enumeration.
+/// Returns [`Error::QueueFull`] if the caller's buffer or the backend's native
+/// snapshot cannot hold every thread, or another error if enumeration is not
+/// supported.
 pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
-    const MAX_THREADS: usize = 32;
-    let count = buf.len().min(MAX_THREADS);
-    let mut raw: [bindings::ove_thread_info; MAX_THREADS] = unsafe { core::mem::zeroed() };
     let mut actual: usize = 0;
-    let rc = unsafe { bindings::ove_thread_list(raw.as_mut_ptr(), count, &mut actual) };
+    let rc = unsafe { bindings::ove_thread_list(buf.as_mut_ptr(), buf.len(), &mut actual) };
     Error::from_code(rc)?;
-
-    let actual = actual.min(count);
-    for i in 0..actual {
-        let name = if raw[i].name.is_null() {
-            &[]
-        } else {
-            // SAFETY: non-null checked above; `name` is a static NUL-terminated
-            // string owned by the RTOS thread object (outlives this snapshot).
-            // The scan stops at the NUL and the slice covers the bytes before it.
-            unsafe {
-                let p = raw[i].name as *const u8;
-                let mut len = 0;
-                while *p.add(len) != 0 {
-                    len += 1;
-                }
-                core::slice::from_raw_parts(p, len)
-            }
-        };
-        buf[i] = ThreadInfo {
-            name,
-            identity: raw[i].identity,
-            state: raw[i].state,
-            priority: raw[i].priority,
-            valid_fields: raw[i].valid_fields,
-            stack_used: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_STACK_USED != 0)
-                .then_some(raw[i].stack_used),
-            stack_size: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_STACK_SIZE != 0)
-                .then_some(raw[i].stack_size),
-            cpu_percent_x100: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_CPU_PERCENT
-                != 0)
-                .then_some(raw[i].cpu_percent_x100),
-            running_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_RUNNING_TIME != 0)
-                .then_some(raw[i].state_times.running_us),
-            ready_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_READY_TIME != 0)
-                .then_some(raw[i].state_times.ready_us),
-            blocked_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_BLOCKED_TIME != 0)
-                .then_some(raw[i].state_times.blocked_us),
-            suspended_us: (raw[i].valid_fields & bindings::OVE_THREAD_INFO_VALID_SUSPENDED_TIME
-                != 0)
-                .then_some(raw[i].state_times.suspended_us),
-        };
-    }
-    Ok(&buf[..actual])
+    Ok(&buf[..actual.min(buf.len())])
 }

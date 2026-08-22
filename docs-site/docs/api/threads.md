@@ -251,6 +251,35 @@ tracking provide all four state buckets. Snapshot stack scanning stays
 disabled in bounded scheduler-locked traversals, so a backend may know the
 allocation size without providing `stack_used`.
 
+### Rust and Zig snapshots
+
+The Rust and Zig bindings pass their caller-owned snapshot arrays directly to
+the C API. They do not allocate and do not impose a smaller binding-specific
+thread limit. An undersized array returns `QueueFull`; otherwise its complete
+capacity is available to the backend.
+
+Rust exposes validity-aware methods on its zero-copy `ThreadInfo` alias:
+
+```rust
+let mut threads = [ove::ThreadInfo::empty(); 32];
+for info in ove::thread::thread_list(&mut threads)? {
+    if let Some(cpu_x100) = info.cpu_percent_x100() {
+        consume_cpu_percent(cpu_x100);
+    }
+}
+```
+
+Zig uses an ABI-pinned `extern struct` with equivalent helpers:
+
+```zig
+var threads: [32]ove.thread.ThreadInfo = undefined;
+for (try ove.thread.threadList(&threads)) |*info| {
+    if (info.cpuPercentX100()) |cpu_x100| {
+        consumeCpuPercent(cpu_x100);
+    }
+}
+```
+
 ## Example: Worker Thread with Sleep Loop
 
 A typical pattern for a periodic background task — create once at startup, run forever with a fixed sleep interval, and inspect the remaining stack margin during development.
