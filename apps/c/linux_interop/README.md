@@ -61,12 +61,13 @@ quantum. Because an opaque engine filesystem call cannot be preempted at an
 arbitrary wall-time boundary, `CONFIG_OVE_LINUX_FS_SERVER_BUDGET_US` is an
 overrun threshold, not a hard abort deadline.
 
-The Full profile sets `CONFIG_OVE_FS_MAX_OPEN_FILES=16`, matching LXP's
-sixteen-entry external descriptor table. This generic OVE capacity sizes any
-engine resource required per caller-owned native file handle; it does not make
-a native filesystem backend depend on LXP configuration. A private compile-time
-check at the LXP adapter boundary rejects either capacity drifting below the
-personality table.
+Selecting `CONFIG_OVE_LINUX_FS` defaults `CONFIG_OVE_FS_MAX_OPEN_FILES` to 16,
+matching LXP's external descriptor table. This generic OVE capacity sizes any
+engine resource required per caller-owned native file handle. A private
+compile-time check at the adapter boundary rejects either capacity drifting
+below the personality table. The MPS QEMU boards have no native storage
+medium, so their profiles resolve persistent FS and block support off while
+retaining the SDRAM-backed `/tmp` tree.
 
 The coordinator gives completed filesystem, socket, console, and ordinary
 guest wakeups weighted 4:3:2:1 service opportunities, rotates among processes
