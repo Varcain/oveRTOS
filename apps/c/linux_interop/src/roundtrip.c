@@ -36,6 +36,7 @@ OVE_THREAD_DEFINE(g_worker_storage, 2048);
 static void roundtrip_worker(void *arg)
 {
 	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
 	int printed = 0;
 	for (;;) {
 		int available = __atomic_load_n(&g_round_trip_n, __ATOMIC_ACQUIRE);
@@ -46,7 +47,7 @@ static void roundtrip_worker(void *arg)
 				g_round_trip[printed]);
 			printed++;
 		}
-		if (ove_thread_should_stop(g_worker) && printed >= available)
+		if (ove_thread_should_stop(self) && printed >= available)
 			break;
 		ove_thread_sleep_ms(50);
 	}
