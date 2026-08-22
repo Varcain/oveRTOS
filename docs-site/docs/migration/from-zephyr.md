@@ -16,13 +16,17 @@ Three notes up front:
 |---|---|
 | `K_THREAD_DEFINE(id, stack, fn, p1,p2,p3, prio, opts, delay)` | `OVE_THREAD_DEFINE_STATIC(id, stack, fn, arg, prio, "id")` (one arg only — bundle as struct if you need more) |
 | `k_thread_create(&th, stack, sz, fn, p1, p2, p3, prio, opts, delay)` | `ove_thread_create(&h, name, fn, arg, prio, sz)` |
-| `k_thread_abort(h)` | `ove_thread_destroy(h)` |
+| `k_thread_abort(h)` | cooperative `ove_thread_request_stop(h)` + `ove_thread_destroy(h)` |
 | `k_sleep(K_MSEC(ms))` | `ove_thread_sleep_ms(ms)` |
 | `k_yield()` | `ove_thread_yield()` |
 | `k_current_get()` | `ove_thread_get_self()` |
 | `k_thread_priority_set(h, p)` | `ove_thread_set_priority(h, p)` |
 
 There is no portable getter for priority — keep your own copy if you need to read it back.
+
+Unlike `k_thread_abort`, oveRTOS teardown does not forcibly terminate a worker:
+`destroy` and `deinit` join after its entry returns. A blocked cooperative worker
+must also be woken so it can observe the stop request.
 
 ## Mutexes
 

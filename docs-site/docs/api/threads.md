@@ -102,7 +102,8 @@ The simpler API when the heap is available. Both the backend storage object and 
 static void worker_entry(void *arg)
 {
     (void)arg;
-    for (;;) {
+    ove_thread_t self = ove_thread_get_self();
+    while (!ove_thread_should_stop(self)) {
         /* do work */
         ove_thread_sleep_ms(50);
     }
@@ -114,7 +115,17 @@ void app_start(void)
 {
     ove_thread_create(&worker, "worker", worker_entry, NULL, OVE_PRIO_NORMAL, 2048);
 }
+
+void app_stop(void)
+{
+    ove_thread_request_stop(worker);
+    ove_thread_destroy(worker); /* joins, then frees */
+}
 ```
+
+`ove_thread_destroy()` and `ove_thread_deinit()` join; they do not cancel the
+worker. A worker that can run indefinitely must return on a cooperative stop
+request (and its owner must wake any unrelated blocking wait) before teardown.
 
 ### Static allocation — `ove_thread_init` / `ove_thread_deinit`
 
@@ -149,9 +160,9 @@ OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "wor
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a thread from caller-supplied static storage and stack. |
-| `ove_thread_deinit` | `int (ove_thread_t handle)` | Stop and release a thread created with `ove_thread_init()`. Static storage is not freed. |
+| `ove_thread_deinit` | `int (ove_thread_t handle)` | Join and release a thread created with `ove_thread_init()`. Static storage is not freed. |
 | `ove_thread_create` | `int (ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size)` | Heap-allocate and start a thread. Requires `OVE_HEAP_THREAD` (not declared in zero-heap mode). |
-| `ove_thread_destroy` | `int (ove_thread_t handle)` | Stop and free a thread created with `ove_thread_create()`. Heap mode only. |
+| `ove_thread_destroy` | `int (ove_thread_t handle)` | Join and free a thread created with `ove_thread_create()`. Heap mode only. |
 | `ove_thread_get_self` | `ove_thread_t (void)` | Return the handle of the currently executing thread. |
 | `ove_thread_set_priority` | `void (ove_thread_t handle, ove_prio_t prio)` | Change the scheduling priority of a thread at runtime. |
 | `ove_thread_sleep_ms` | `void (uint32_t ms)` | Block the calling thread for at least `ms` milliseconds. Passing `0` yields for one scheduler tick. |

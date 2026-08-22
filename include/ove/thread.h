@@ -106,10 +106,13 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		    void *stack);
 
 /**
- * @brief Terminate and release a thread created with ove_thread_init().
+ * @brief Join and release a thread created with ove_thread_init().
  *
- * Stops the thread and releases any backend-internal resources.  The
- * static storage supplied at init time is not freed.
+ * Waits for the entry function to return, then releases backend-internal
+ * resources.  This function neither requests cooperative stop nor forcibly
+ * terminates the worker.  Signal a cooperative worker with
+ * ove_thread_request_stop() before calling it.  The static storage supplied at
+ * init time is not freed.
  *
  * @param[in] handle  Handle returned by ove_thread_init().
  * @return OVE_OK on success, or a negative error code on failure.
@@ -144,9 +147,13 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 		      ove_prio_t priority, size_t stack_size);
 
 /**
- * @brief Stop and free a thread created with ove_thread_create().
+ * @brief Join and free a thread created with ove_thread_create().
  *
  * @note Requires @c OVE_HEAP_THREAD.
+ *
+ * Waits for the entry function to return; it does not request stop or forcibly
+ * terminate the worker.  Call ove_thread_request_stop() first when the entry
+ * follows the cooperative stop contract.
  *
  * @param[in] handle  Handle returned by ove_thread_create().
  * @return OVE_OK on success, or a negative error code on failure.
@@ -222,17 +229,10 @@ void ove_thread_resume(ove_thread_t handle);
 /**
  * @brief Cooperatively request that a thread stop running.
  *
- * Sets the thread's stop-requested flag.  The worker must poll
- * @ref ove_thread_should_stop and exit its entry function in response;
- * the substrate does NOT forcibly terminate the thread.
- *
- * Safe to call from any context (ISR, other thread, or the thread
- * itself).  Storing the flag is a single uncontended atomic write.
- *
- * The flag is per-thread, allocated unconditionally (1 byte storage,
- * not opt-in).  Calling on a non-stoppable thread is the same as
- * calling on any other thread — the worker just has to choose to
- * observe @ref ove_thread_should_stop.
+ * Sets a per-thread sticky flag.  The worker must poll
+ * @ref ove_thread_should_stop and return in response; the substrate does not
+ * forcibly terminate it.  Safe from an ISR, another thread, or the worker
+ * itself.
  *
  * @param[in] handle  Thread to signal.
  *
@@ -253,8 +253,7 @@ void ove_thread_request_stop(ove_thread_t handle);
  *   }
  * @endcode
  *
- * Safe to call from any context.  The load is a single uncontended
- * atomic read.
+ * Safe to call from any context.
  *
  * @param[in] handle  Thread to inspect.
  * @return @c true if a stop has been requested, @c false otherwise.
