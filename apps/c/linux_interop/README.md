@@ -744,7 +744,7 @@ SIGSEGV. `CONFIG_BUILD_PROTECTED` is neither needed nor used by this personality
 | `src/network_smoke.c` | configured-address reporting and bounded TCP readiness smoke |
 | `src/qualification.c` | optional watchdog/probes plus latency and resource reporting; snapshots owned threads before teardown |
 | `src/rt_scope.c` | engine-neutral RT-scope measurement, reporting, and `/proc/rt_scope` policy |
-| `boards/stm32f746g-discovery/common/rt_scope.c` | board-owned timers, probe pins, IRQ attachment, and optional engine attribution |
+| `boards/stm32f746g-discovery/common/rt_scope.c` | board-owned timers, probe pins, IRQ attachment, worker-stack placement, and optional engine attribution |
 | Buildroot `board/overtos/rootfs-overlay/usr/libexec/ove-interop-guest` | Linux-side roundtrip, boot, and fpcheck behavior |
 
 The LXP host facade parses and publishes the selected CPIO once, retains the

@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "ove_config.h"
+#include "ove/storage.h"
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 #include "FreeRTOS.h"
@@ -80,8 +81,32 @@
 #define RT_SCOPE_TIM3_PRESCALER 1u
 #define RT_SCOPE_REFERENCE_HIGH_TICKS (50u * OVE_RT_SCOPE_TICKS_PER_US)
 #define RT_SCOPE_TIM5_PRESCALER 107u
+#define RT_SCOPE_STACK_SIZE 1024u
+#define RT_SCOPE_REPORT_STACK_SIZE 1024u
+
+#if !defined(CONFIG_OVE_RTOS_NUTTX)
+OVE_THREAD_STACK_DEFINE_STATIC_(g_response_stack, RT_SCOPE_STACK_SIZE);
+OVE_THREAD_STACK_DEFINE_STATIC_(g_report_stack, RT_SCOPE_REPORT_STACK_SIZE);
+#endif
 
 static ove_hal_rt_scope_release_fn g_release;
+
+ove_hal_rt_scope_stack_t ove_hal_rt_scope_worker_stack(ove_hal_rt_scope_worker_t worker)
+{
+	const size_t size = worker == OVE_HAL_RT_SCOPE_RESPONSE_WORKER ? RT_SCOPE_STACK_SIZE
+								       : RT_SCOPE_REPORT_STACK_SIZE;
+#if defined(CONFIG_OVE_RTOS_NUTTX)
+	/* NuttX's kernel heap is DTCM-backed on this target. Static application
+	 * buffers live in the tighter and slower SRAM1 region. */
+	return (ove_hal_rt_scope_stack_t){.size = size, .buffer = NULL};
+#else
+	return (ove_hal_rt_scope_stack_t){
+		.size = size,
+		.buffer = worker == OVE_HAL_RT_SCOPE_RESPONSE_WORKER ? g_response_stack
+								     : g_report_stack,
+	};
+#endif
+}
 
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 
