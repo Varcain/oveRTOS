@@ -17,6 +17,7 @@ OVE_TEST_STORAGE(ove_work_storage_t, s_work_storages[3]);
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
 static volatile int s_work_called;
+static volatile int s_work_finished;
 static _Atomic int s_work_count;
 static _Atomic intptr_t s_received_handle_raw;
 
@@ -36,6 +37,14 @@ static void delayed_handler(ove_work_t work)
 {
 	(void)work;
 	TEST_FLAG_SET(s_work_called, 1);
+}
+
+static void running_handler(ove_work_t work)
+{
+	(void)work;
+	TEST_FLAG_SET(s_work_called, 1);
+	test_msleep(50);
+	TEST_FLAG_SET(s_work_finished, 1);
 }
 
 /* ── tests ───────────────────────────────────────────────────────────── */
@@ -60,9 +69,7 @@ static void test_wq_init_free_work(void **state)
 	OVE_TEST_ASSERT_OK(ove_work_init(&w, work_handler));
 #endif
 	assert_non_null(w);
-#ifndef CONFIG_OVE_ZERO_HEAP
-	ove_work_free(w);
-#endif
+	ove_test_work_destroy(w);
 }
 
 static void test_wq_submit_handler_called(void **state)
@@ -84,12 +91,8 @@ static void test_wq_submit_handler_called(void **state)
 
 	assert_true(wait_for_flag(&s_work_called, 1, 500));
 
-#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_test_work_destroy(w);
 	ove_test_workqueue_destroy(wq);
-#else
-	ove_work_free(w);
-	ove_test_workqueue_destroy(wq);
-#endif
 }
 
 static void test_wq_submit_multiple(void **state)
@@ -123,14 +126,10 @@ static void test_wq_submit_multiple(void **state)
 	}
 	assert_int_equal(atomic_load(&s_work_count), 3);
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_test_workqueue_destroy(wq);
-#else
 	for (int i = 0; i < 3; i++) {
-		ove_work_free(works[i]);
+		ove_test_work_destroy(works[i]);
 	}
 	ove_test_workqueue_destroy(wq);
-#endif
 }
 
 static void test_wq_submit_delayed(void **state)
@@ -157,12 +156,8 @@ static void test_wq_submit_delayed(void **state)
 
 	assert_true(wait_for_flag(&s_work_called, 1, 500));
 
-#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_test_work_destroy(w);
 	ove_test_workqueue_destroy(wq);
-#else
-	ove_work_free(w);
-	ove_test_workqueue_destroy(wq);
-#endif
 }
 
 static void test_wq_cancel_work(void **state)
@@ -182,9 +177,8 @@ static void test_wq_cancel_work(void **state)
 #endif
 
 	/* Cancel immediately — well before the 200 ms delay could fire — so the
-	 * outcome is unambiguous: the cancel must succeed, and the handler must
-	 * never run.  (Cancel clears `pending` ~200 ms before the worker
-	 * re-checks it after its delay sleep, so there is no firing race here.) */
+	 * outcome is unambiguous: cancel must synchronously drain the submission
+	 * and the handler must never run. */
 	ove_work_submit_delayed(wq, w, 200);
 	OVE_TEST_ASSERT_OK(ove_work_cancel(w));
 
@@ -192,12 +186,8 @@ static void test_wq_cancel_work(void **state)
 	test_msleep(300);
 	assert_int_equal(__atomic_load_n(&s_work_called, __ATOMIC_ACQUIRE), 0);
 
-#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_test_work_destroy(w);
 	ove_test_workqueue_destroy(wq);
-#else
-	ove_work_free(w);
-	ove_test_workqueue_destroy(wq);
-#endif
 }
 
 static void test_wq_cancel_not_pending(void **state)
@@ -214,9 +204,7 @@ static void test_wq_cancel_not_pending(void **state)
 	int rc = ove_work_cancel(w);
 	assert_int_equal(rc, OVE_ERR_INVAL);
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-	ove_work_free(w);
-#endif
+	ove_test_work_destroy(w);
 }
 
 static void test_wq_resubmit_after_cancel(void **state)
@@ -245,12 +233,49 @@ static void test_wq_resubmit_after_cancel(void **state)
 		test_msleep(1);
 	assert_int_equal(atomic_load(&s_work_count), 1);
 
+	ove_test_work_destroy(w);
+	ove_test_workqueue_destroy(wq);
+}
+
+static void test_wq_rejects_duplicate_submission(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "busy_wq", OVE_PRIO_NORMAL,
+						     2048, s_wq_stack));
+
+	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_test_workqueue_destroy(wq);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, delayed_handler));
 #else
-	ove_work_free(w);
-	ove_test_workqueue_destroy(wq);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, delayed_handler));
 #endif
+	OVE_TEST_ASSERT_OK(ove_work_submit_delayed(wq, w, 200));
+	assert_int_equal(ove_work_submit(wq, w), OVE_ERR_BUSY);
+	OVE_TEST_ASSERT_OK(ove_work_cancel(w));
+	ove_test_work_destroy(w);
+	ove_test_workqueue_destroy(wq);
+}
+
+static void test_wq_cancel_waits_for_running_handler(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "running_wq",
+						     OVE_PRIO_NORMAL, 2048, s_wq_stack));
+
+	ove_work_t w = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, running_handler));
+#else
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, running_handler));
+#endif
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w));
+	assert_true(wait_for_flag(&s_work_called, 1, 500));
+	assert_int_equal(ove_work_cancel(w), OVE_ERR_INVAL);
+	assert_int_equal(__atomic_load_n(&s_work_finished, __ATOMIC_ACQUIRE), 1);
+	ove_test_work_destroy(w);
+	ove_test_workqueue_destroy(wq);
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -266,6 +291,7 @@ static void test_wq_handler_receives_handle(void **state)
 {
 	(void)state;
 	s_work_called = 0;
+	s_work_finished = 0;
 	atomic_store(&s_received_handle_raw, (intptr_t)NULL);
 
 	ove_workqueue_t wq = NULL;
@@ -283,12 +309,8 @@ static void test_wq_handler_receives_handle(void **state)
 	assert_true(wait_for_flag(&s_work_called, 1, 500));
 	assert_ptr_equal((void *)atomic_load(&s_received_handle_raw), w);
 
-#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_test_work_destroy(w);
 	ove_test_workqueue_destroy(wq);
-#else
-	ove_work_free(w);
-	ove_test_workqueue_destroy(wq);
-#endif
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -314,6 +336,7 @@ static int wq_setup(void **state)
 {
 	(void)state;
 	s_work_called = 0;
+	s_work_finished = 0;
 	atomic_store(&s_work_count, 0);
 	atomic_store(&s_received_handle_raw, (intptr_t)NULL);
 	return 0;
@@ -332,6 +355,8 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_cancel_work, wq_setup),
 		cmocka_unit_test_setup(test_wq_cancel_not_pending, wq_setup),
 		cmocka_unit_test_setup(test_wq_resubmit_after_cancel, wq_setup),
+		cmocka_unit_test_setup(test_wq_rejects_duplicate_submission, wq_setup),
+		cmocka_unit_test_setup(test_wq_cancel_waits_for_running_handler, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif

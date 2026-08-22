@@ -24,8 +24,10 @@
  *   Available in both modes.  See @c OVE_WORKQUEUE_DEFINE_STATIC for a
  *   one-step static helper.
  *
- * Work items have a static helper @ref ove_work_init_static (both modes) and
- * a heap-only pair @ref ove_work_init / @ref ove_work_free (heap mode only).
+ * Work items have a static lifecycle pair @ref ove_work_init_static /
+ * @ref ove_work_deinit (both modes) and a heap-only pair @ref ove_work_init /
+ * @ref ove_work_free. Deinitialising or freeing an item synchronously drains
+ * any queued, delayed, or running use of its storage.
  *
  * @note Requires @c CONFIG_OVE_WORKQUEUE.
  * @{
@@ -46,8 +48,9 @@ extern "C" {
  * @brief Prototype for a work item handler function.
  *
  * Called by the work queue thread when the work item is executed. The
- * @p work handle may be used to reschedule or identify the item inside
- * the handler.
+ * @p work handle may be used to identify the item. Submitting the same item
+ * from its handler is rejected as busy; recurring work needs another item,
+ * a timer, or an external submitter.
  *
  * @param[in] work  Handle of the work item being executed.
  */
@@ -79,8 +82,9 @@ int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, co
 /**
  * @brief Deinitialise a statically-allocated work queue.
  *
- * Stops the underlying thread and releases all RTOS resources. Any work
- * items still in the queue at deinit time are discarded without execution.
+ * Stops the underlying thread and releases all RTOS resources. Deinitialise
+ * every work item submitted to this queue before deinitialising the queue;
+ * this explicit ordering also drains delayed and running submissions.
  *
  * @param[in] wq  Work queue handle returned by @ref ove_workqueue_init.
  * @note Requires @c CONFIG_OVE_WORKQUEUE.
@@ -101,6 +105,19 @@ void ove_workqueue_deinit(ove_workqueue_t wq);
  */
 int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler);
 
+/**
+ * @brief Deinitialise a work item and release its RTOS resources.
+ *
+ * Synchronously cancels a queued or delayed submission and waits for a
+ * handler that is already running. After return, the caller-provided storage
+ * may be reused or leave scope. The target work queue must remain alive until
+ * this function returns.
+ *
+ * @param[in] work  Work handle returned by @ref ove_work_init_static.
+ * @note Call from thread context, never from the item's own handler or an ISR.
+ */
+void ove_work_deinit(ove_work_t work);
+
 #ifdef OVE_HEAP_WORKQUEUE
 /**
  * @brief Allocate and initialise a heap-backed work item.
@@ -118,9 +135,9 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler);
 /**
  * @brief Free a heap-allocated work item.
  *
- * Releases the memory allocated by @ref ove_work_init. The item must not
- * be pending in a work queue when this function is called; cancel it first
- * with @ref ove_work_cancel if necessary.
+ * Synchronously drains the item and releases the memory allocated by
+ * @ref ove_work_init. The target work queue must remain alive until this
+ * function returns.
  *
  * @param[in] work  Work handle returned by @ref ove_work_init.
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
@@ -148,8 +165,9 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t prior
 /**
  * @brief Destroy a heap-allocated work queue.
  *
- * Stops the underlying thread and frees all resources. Pending work items
- * are discarded. Must only be called on handles from @ref ove_workqueue_create.
+ * Stops the underlying thread and frees all resources. Every submitted work
+ * item must first be deinitialised or freed. Must only be called on handles
+ * from @ref ove_workqueue_create.
  *
  * @param[in] wq  Work queue handle returned by @ref ove_workqueue_create.
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
@@ -160,9 +178,8 @@ void ove_workqueue_destroy(ove_workqueue_t wq);
 /**
  * @brief Submit a work item for immediate execution on the work queue.
  *
- * Enqueues @p work for execution on @p wq. If the item is already pending
- * the call may fail or reset the pending state depending on the underlying
- * implementation.
+ * Enqueues @p work for execution on @p wq. Returns @c OVE_ERR_BUSY when the
+ * item is already queued, delayed, or running.
  *
  * @param[in] wq    Target work queue handle.
  * @param[in] work  Work item handle to submit.
@@ -187,8 +204,9 @@ int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_
 /**
  * @brief Cancel a pending work item before it executes.
  *
- * Attempts to remove @p work from the queue before its handler is called.
- * Has no effect if the item is not pending or is already executing.
+ * Synchronously removes @p work before its handler is called. If the handler
+ * is already executing, waits for it to finish. After return, the work item's
+ * storage is no longer referenced asynchronously and may be deinitialised.
  *
  * @param[in] work  Work item handle to cancel.
  * @return OVE_OK if the item was successfully cancelled, @c OVE_ERR_INVAL
@@ -233,6 +251,17 @@ static inline int ove_work_init(ove_work_t *w, ove_work_fn h)
 	(void)w;
 	(void)h;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_work_init_static(ove_work_t *w, ove_work_storage_t *s, ove_work_fn h)
+{
+	(void)w;
+	(void)s;
+	(void)h;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_work_deinit(ove_work_t w)
+{
+	(void)w;
 }
 static inline void ove_work_free(ove_work_t w)
 {

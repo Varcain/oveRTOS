@@ -171,9 +171,11 @@ impl Drop for Work {
             bindings::ove_work_free(self.handle);
         }
         #[cfg(zero_heap)]
-        {
-            self.handle = core::ptr::null_mut();
+        unsafe {
+            bindings::ove_work_deinit(self.handle);
         }
+
+        self.handle = core::ptr::null_mut();
     }
 }
 

@@ -249,7 +249,7 @@ static void test_work_init_static_no_alloc(void **state)
 	int rc;
 	TRACE_INIT(rc, ove_work_init_static(&w, &storage, noop_work_handler));
 	assert_non_null(w);
-	/* ove_work has no _deinit — work items are stateless storage. */
+	ove_work_deinit(w);
 }
 
 /* ── Thread ─────────────────────────────────────────────────────────── */

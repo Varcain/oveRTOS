@@ -174,13 +174,15 @@ class Work
 	}
 
 	/**
-	 * @brief Destroys the work item, freeing its kernel resource (heap mode).
+	 * @brief Destroys the work item after synchronously draining it.
 	 */
 	~Work() noexcept
 	{
 		if (!handle_)
 			return;
-#ifndef CONFIG_OVE_ZERO_HEAP
+#ifdef CONFIG_OVE_ZERO_HEAP
+		ove_work_deinit(handle_);
+#else
 		ove_work_free(handle_);
 #endif
 	}
