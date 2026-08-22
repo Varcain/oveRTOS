@@ -14,28 +14,18 @@
 
 #define GPIO_IRQ_MAX 8
 
-/* `registered` and `enabled` are read from ISR context by
- * `ove_gpio_irq_dispatch` and written from thread context by register /
- * enable / disable.  Marking them `volatile` keeps the compiler from
- * caching or reordering their accesses across function boundaries.
- *
- * `registered` is additionally fenced — writers release-fence after
- * filling the data fields (port/pin/callback/...) and before storing
- * registered=1, so a dispatch that observes registered=1 is guaranteed
- * to see the data fields too.
- *
- * `enabled` is volatile-but-unfenced (a single word, effectively atomic on
- * every supported target). A disable racing an already-in-flight dispatch
- * may let one more callback fire — inherent to disarming a live interrupt
- * and benign, so no stronger ordering is imposed. */
+#define GPIO_IRQ_FREE 0
+#define GPIO_IRQ_REGISTERED 1
+#define GPIO_IRQ_RESERVING 2
+
 struct gpio_irq_entry {
 	unsigned int port;
 	unsigned int pin;
 	ove_gpio_irq_mode_t mode;
 	ove_gpio_irq_cb callback;
 	void *user_data;
-	volatile int registered;
-	volatile int enabled;
+	atomic_int registered;
+	atomic_int enabled;
 };
 
 static struct gpio_irq_entry irq_table[GPIO_IRQ_MAX];
@@ -81,9 +71,12 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	/* Find free slot */
+	/* Reserve a free slot before publishing its callback fields. */
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (!irq_table[i].registered) {
+		int expected = GPIO_IRQ_FREE;
+		if (atomic_compare_exchange_strong_explicit(
+			    &irq_table[i].registered, &expected, GPIO_IRQ_RESERVING,
+			    memory_order_acq_rel, memory_order_acquire)) {
 			break;
 		}
 	}
@@ -96,13 +89,13 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 	irq_table[i].mode = mode;
 	irq_table[i].callback = callback;
 	irq_table[i].user_data = user_data;
-	/* Publish the data fields before marking the slot registered so
-	 * a concurrent dispatch sees a consistent entry. */
-	atomic_thread_fence(memory_order_release);
-	irq_table[i].registered = 1;
-	irq_table[i].enabled = 0;
+	atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_relaxed);
 
-	return ove_hal_gpio_irq_hw_enable(port, pin, mode, callback, user_data);
+	int ret = ove_hal_gpio_irq_hw_enable(port, pin, mode, callback, user_data);
+	atomic_store_explicit(&irq_table[i].registered,
+			      ret == OVE_OK ? GPIO_IRQ_REGISTERED : GPIO_IRQ_FREE,
+			      memory_order_release);
+	return ret;
 }
 
 /*
@@ -123,9 +116,10 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (irq_table[i].registered && irq_table[i].port == port &&
-		    irq_table[i].pin == pin) {
-			irq_table[i].enabled = 1;
+		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
+			    GPIO_IRQ_REGISTERED &&
+		    irq_table[i].port == port && irq_table[i].pin == pin) {
+			atomic_store_explicit(&irq_table[i].enabled, 1, memory_order_release);
 			return OVE_OK;
 		}
 	}
@@ -137,9 +131,10 @@ int ove_gpio_irq_disable(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (irq_table[i].registered && irq_table[i].port == port &&
-		    irq_table[i].pin == pin) {
-			irq_table[i].enabled = 0;
+		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
+			    GPIO_IRQ_REGISTERED &&
+		    irq_table[i].port == port && irq_table[i].pin == pin) {
+			atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_release);
 			return ove_hal_gpio_irq_hw_disable(port, pin);
 		}
 	}
@@ -151,19 +146,22 @@ int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (irq_table[i].registered && irq_table[i].port == port &&
-		    irq_table[i].pin == pin) {
+		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
+			    GPIO_IRQ_REGISTERED &&
+		    irq_table[i].port == port && irq_table[i].pin == pin) {
 			/* Disable the line, then free the slot so the (port,pin)
 			 * can be re-registered.  Clearing `enabled` before
 			 * `registered` keeps a concurrent dispatch from firing a
 			 * half-torn-down entry (it gates on `enabled`). */
-			irq_table[i].enabled = 0;
-			irq_table[i].registered = 0;
+			atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_release);
 			/* Permanent teardown — hw_unregister (not hw_disable) so
 			 * the backend also releases per-registration HW state
 			 * (e.g. Zephyr's gpio_callback), otherwise re-registering
 			 * the same (port,pin) double-registers and double-fires. */
-			return ove_hal_gpio_irq_hw_unregister(port, pin);
+			int ret = ove_hal_gpio_irq_hw_unregister(port, pin);
+			atomic_store_explicit(&irq_table[i].registered, GPIO_IRQ_FREE,
+					      memory_order_release);
+			return ret;
 		}
 	}
 	return OVE_ERR_NOT_SUPPORTED;
@@ -175,13 +173,11 @@ void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (!irq_table[i].registered)
+		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) !=
+		    GPIO_IRQ_REGISTERED)
 			continue;
-		/* Pair with the release fence in ove_gpio_irq_register so
-		 * the data fields read below are observed in their
-		 * post-registration state. */
-		atomic_thread_fence(memory_order_acquire);
-		if (irq_table[i].enabled && irq_table[i].port == port && irq_table[i].pin == pin) {
+		if (atomic_load_explicit(&irq_table[i].enabled, memory_order_acquire) &&
+		    irq_table[i].port == port && irq_table[i].pin == pin) {
 			if (irq_table[i].callback) {
 				irq_table[i].callback(port, pin, irq_table[i].user_data);
 			}
