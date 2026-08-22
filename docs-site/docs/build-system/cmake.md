@@ -21,7 +21,9 @@ oveRTOS/
 
 ## How it works
 
-`oveRTOS/CMakeLists.txt` does not create any CMake targets itself. Instead it populates variables in the parent scope that the parent `CMakeLists.txt` uses to build the firmware:
+`oveRTOS/CMakeLists.txt` creates the `ove` interface target. Linking it adds the portable core sources and public include directory to a firmware target. Backend and board sources remain selected separately because they depend on the configured engine and hardware.
+
+The entry point also exports compatibility variables for older parent projects:
 
 | Variable | Purpose |
 |----------|---------|
@@ -46,17 +48,19 @@ add_subdirectory(oveRTOS/boards/stm32f746g-discovery)
 
 add_executable(firmware
     src/main.c
-    ${OVE_SOURCES}
     ${OVE_BOARD_SOURCES}      # populated by the board subdirectory
     ${OVE_BACKEND_SOURCES}    # populated by the board subdirectory
 )
 
 target_include_directories(firmware PRIVATE
-    ${OVE_INCLUDE_DIR}
     ${OVE_BOARD_INCLUDE_DIRS}
     ${OVE_BACKEND_INCLUDE_DIRS}
 )
+
+target_link_libraries(firmware PRIVATE ove)
 ```
+
+Existing projects may continue to put `${OVE_SOURCES}` in their source list and `${OVE_INCLUDE_DIR}` in their include path instead of linking `ove`; do not use both forms in the same target.
 
 ## Module selection
 

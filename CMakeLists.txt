@@ -21,30 +21,35 @@ set(OVE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(_OVE_CORE_SOURCES
     ${OVE_DIR}/src/ove_app.c
-    ${OVE_DIR}/src/ove_thread.c
     ${OVE_DIR}/src/ove_sync.c
-    ${OVE_DIR}/src/ove_audio.c
+    ${OVE_DIR}/src/ove_eventgroup.c
+    ${OVE_DIR}/src/ove_queue.c
+    ${OVE_DIR}/src/ove_stream.c
+    ${OVE_DIR}/src/ove_timer.c
+    ${OVE_DIR}/src/ove_workqueue.c
     ${OVE_DIR}/src/ove_fs.c
     ${OVE_DIR}/src/ove_media.c
     ${OVE_DIR}/src/ove_block.c
-    ${OVE_DIR}/src/ove_queue.c
-    ${OVE_DIR}/src/ove_timer.c
-    ${OVE_DIR}/src/ove_console.c
-    ${OVE_DIR}/src/ove_time.c
-    ${OVE_DIR}/src/ove_bsp.c
-    ${OVE_DIR}/src/ove_lvgl.c
-    ${OVE_DIR}/src/ove_eventgroup.c
-    ${OVE_DIR}/src/ove_workqueue.c
-    ${OVE_DIR}/src/ove_stream.c
-    ${OVE_DIR}/src/ove_watchdog.c
-    ${OVE_DIR}/src/ove_nvs.c
-    ${OVE_DIR}/src/ove_shell.c
+    ${OVE_DIR}/src/ove_net.c
+    ${OVE_DIR}/src/ove_board.c
+    ${OVE_DIR}/src/ove_gpio.c
+    ${OVE_DIR}/src/ove_led.c
+    ${OVE_DIR}/src/ove_fb.c
+    ${OVE_DIR}/src/ove_fb_stub.c
+    ${OVE_DIR}/src/ove_ft5336.c
+    ${OVE_DIR}/src/ove_lvgl_indev.c
     ${OVE_DIR}/src/ove_uart.c
     ${OVE_DIR}/src/ove_spi.c
     ${OVE_DIR}/src/ove_i2c.c
     ${OVE_DIR}/src/ove_i2s.c
     ${OVE_DIR}/src/ove_pm.c
 )
+
+foreach(_ove_source IN LISTS _OVE_CORE_SOURCES)
+    if(NOT EXISTS "${_ove_source}")
+        message(FATAL_ERROR "oveRTOS core source does not exist: ${_ove_source}")
+    endif()
+endforeach()
 
 # Modern interface target — survives function() / nested scopes that
 # would silently lose PARENT_SCOPE variables.
