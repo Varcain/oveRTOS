@@ -27,7 +27,6 @@
 struct gpio_irq_entry {
 	unsigned int port;
 	unsigned int pin;
-	ove_gpio_irq_mode_t mode;
 	ove_gpio_irq_cb callback;
 	void *user_data;
 	atomic_int registered;
@@ -118,12 +117,11 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 
 	irq_table[i].port = port;
 	irq_table[i].pin = pin;
-	irq_table[i].mode = mode;
 	irq_table[i].callback = callback;
 	irq_table[i].user_data = user_data;
 	atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_relaxed);
 
-	int ret = ove_hal_gpio_irq_hw_enable(port, pin, mode, callback, user_data);
+	int ret = ove_hal_gpio_irq_hw_register(port, pin, mode);
 	atomic_store_explicit(&irq_table[i].registered,
 			      ret == OVE_OK ? GPIO_IRQ_REGISTERED : GPIO_IRQ_FREE,
 			      memory_order_release);
@@ -140,9 +138,7 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
 			    GPIO_IRQ_REGISTERED &&
 		    irq_table[i].port == port && irq_table[i].pin == pin) {
-			int ret = ove_hal_gpio_irq_hw_enable(port, pin, irq_table[i].mode,
-							     irq_table[i].callback,
-							     irq_table[i].user_data);
+			int ret = ove_hal_gpio_irq_hw_enable(port, pin);
 			if (ret != OVE_OK)
 				return ret;
 			atomic_store_explicit(&irq_table[i].enabled, 1, memory_order_release);

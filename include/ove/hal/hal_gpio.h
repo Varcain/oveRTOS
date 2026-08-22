@@ -64,21 +64,28 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin);
 int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode);
 
 /**
- * @brief Program and enable a GPIO interrupt in hardware.
+ * @brief Register a disabled GPIO interrupt in hardware.
  *
- * Called by ove_gpio_irq_enable() after the callback has been registered
- * via ove_gpio_irq_register().  The HAL must configure the edge detector
- * for @p mode and arm the interrupt controller.
+ * Called by ove_gpio_irq_register().  The HAL must configure the pin and
+ * retain any callback-routing state, but leave the interrupt line masked.
  *
  * @param[in] port      GPIO port index.
  * @param[in] pin       GPIO pin index within the port.
  * @param[in] mode      Edge(s) that should trigger the interrupt.
- * @param[in] callback  Function to invoke when the interrupt fires.
- * @param[in] user_data Opaque pointer forwarded to @p callback.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-			       ove_gpio_irq_cb callback, void *user_data);
+int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode);
+
+/**
+ * @brief Arm a registered GPIO interrupt in hardware.
+ *
+ * Called by ove_gpio_irq_enable() after successful registration.
+ *
+ * @param[in] port  GPIO port index.
+ * @param[in] pin   GPIO pin index within the port.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin);
 
 /**
  * @brief Disable a GPIO interrupt in hardware without unregistering the callback.

@@ -10,6 +10,19 @@
 #include "ove_backend_common.h"
 #include "stm32f7xx_hal.h"
 
+static uint32_t gpio_irq_lock(void)
+{
+	uint32_t key = __get_PRIMASK();
+
+	__disable_irq();
+	return key;
+}
+
+static void gpio_irq_unlock(uint32_t key)
+{
+	__set_PRIMASK(key);
+}
+
 static GPIO_TypeDef *port_to_gpio(unsigned int port)
 {
 	switch (port) {
@@ -110,14 +123,11 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return HAL_GPIO_ReadPin(gpio, (uint16_t)(1U << pin)) == GPIO_PIN_SET ? 1 : 0;
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-			       ove_gpio_irq_cb callback, void *user_data)
+int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode)
 {
 	GPIO_TypeDef *gpio;
 	GPIO_InitTypeDef gpio_init;
-
-	(void)callback;
-	(void)user_data;
+	uint32_t key;
 
 	gpio = port_to_gpio(port);
 	if (gpio == NULL) {
@@ -143,9 +153,23 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 		return OVE_ERR_INVALID_PARAM;
 	}
 
+	key = gpio_irq_lock();
 	HAL_GPIO_Init(gpio, &gpio_init);
+	EXTI->IMR &= ~(1U << pin);
 	HAL_NVIC_SetPriority(pin_to_irqn(pin), 5, 0);
 	HAL_NVIC_EnableIRQ(pin_to_irqn(pin));
+	gpio_irq_unlock(key);
+	return OVE_OK;
+}
+
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
+{
+	if (port_to_gpio(port) == NULL || pin >= 16U)
+		return OVE_ERR_INVALID_PARAM;
+
+	uint32_t key = gpio_irq_lock();
+	EXTI->IMR |= 1U << pin;
+	gpio_irq_unlock(key);
 	return OVE_OK;
 }
 
@@ -156,20 +180,25 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 
 	/* EXTI5..9 and EXTI10..15 share NVIC vectors.  Mask only this line;
 	 * disabling the vector would also silence unrelated registered pins. */
+	uint32_t key = gpio_irq_lock();
 	EXTI->IMR &= ~(1U << pin);
+	gpio_irq_unlock(key);
 	return OVE_OK;
 }
 
 int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 {
 	GPIO_TypeDef *gpio = port_to_gpio(port);
+	uint32_t key;
 
 	if (gpio == NULL || pin >= 16U)
 		return OVE_ERR_INVALID_PARAM;
 
 	/* HAL_GPIO_DeInit removes this line's EXTI route and trigger state while
 	 * leaving the shared NVIC vector available to the other EXTI lines. */
+	key = gpio_irq_lock();
 	HAL_GPIO_DeInit(gpio, 1U << pin);
+	gpio_irq_unlock(key);
 	return OVE_OK;
 }
 
