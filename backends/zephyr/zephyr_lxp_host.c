@@ -177,15 +177,9 @@ static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declar
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 }
+#define HOST_MEMORY_VALIDATOR host_validate_memory_contract
 #else
-static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declared,
-					 const struct lxp_cortex_m_cache_geometry *geometry)
-{
-	(void)declared;
-	(void)geometry;
-	return (LXP_CORTEX_M_SCB_CCR & LXP_CORTEX_M_SCB_CCR_DC) == 0u ? LXP_OK
-								      : LXP_ERR_INVALID_PARAM;
-}
+#define HOST_MEMORY_VALIDATOR ove_lxp_validate_uncached_memory_contract
 #endif
 
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
@@ -233,5 +227,5 @@ const lxp_zephyr_port_config_t g_lxp_zephyr_port_config = {
 	.mem_stats = lxp_ove_mem_stats_read,
 	.system_version = host_system_version,
 	.random_fill = host_random_fill,
-	.validate_memory_contract = host_validate_memory_contract,
+	.validate_memory_contract = HOST_MEMORY_VALIDATOR,
 };

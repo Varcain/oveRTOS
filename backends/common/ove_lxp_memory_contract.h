@@ -34,4 +34,18 @@
 		.icache_size = 4u * 1024u,                                     \
 	}
 
+#if defined(__arm__) || defined(__thumb__)
+static inline int ove_lxp_validate_uncached_memory_contract(
+	const lxp_cpu_memory_contract_t *declared,
+	const struct lxp_cortex_m_cache_geometry *geometry)
+{
+	(void)declared;
+	(void)geometry;
+	return (LXP_CORTEX_M_SCB_CCR &
+		(LXP_CORTEX_M_SCB_CCR_DC | LXP_CORTEX_M_SCB_CCR_IC)) == 0u
+		       ? LXP_OK
+		       : LXP_ERR_INVALID_PARAM;
+}
+#endif
+
 #endif /* OVE_LXP_MEMORY_CONTRACT_H */
