@@ -97,8 +97,8 @@ static void test_gpio_irq_rejects_invalid_mode(void **state)
 	(void)state;
 	ove_board_init();
 
-	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN,
-				       (ove_gpio_irq_mode_t)0, gpio_irq_handler, NULL);
+	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, (ove_gpio_irq_mode_t)0,
+				       gpio_irq_handler, NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 	assert_int_equal(stub_gpio_irq_is_armed(TEST_GPIO_PORT, TEST_GPIO_PIN), 0);
 }

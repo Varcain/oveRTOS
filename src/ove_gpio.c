@@ -9,7 +9,6 @@
 #include "ove_config.h"
 #include "ove/gpio.h"
 #include "ove/hal/hal_gpio.h"
-#include "ove/irq.h"
 #include "board_desc.h"
 #include <stdatomic.h>
 
@@ -19,6 +18,11 @@
 #define GPIO_IRQ_REGISTERED 1
 #define GPIO_IRQ_RESERVING 2
 #define GPIO_IRQ_RELEASING 3
+
+#define GPIO_IRQ_CLAIM_BITS 32U
+#define GPIO_IRQ_CLAIM_WORDS                                                         \
+	((OVE_GPIO_PORT_COUNT * OVE_GPIO_PINS_PER_PORT + GPIO_IRQ_CLAIM_BITS - 1U) / \
+	 GPIO_IRQ_CLAIM_BITS)
 
 struct gpio_irq_entry {
 	unsigned int port;
@@ -31,6 +35,27 @@ struct gpio_irq_entry {
 };
 
 static struct gpio_irq_entry irq_table[GPIO_IRQ_MAX];
+static atomic_uint irq_claims[GPIO_IRQ_CLAIM_WORDS];
+
+static int claim_irq_line(unsigned int port, unsigned int pin)
+{
+	unsigned int line = port * OVE_GPIO_PINS_PER_PORT + pin;
+	unsigned int word = line / GPIO_IRQ_CLAIM_BITS;
+	unsigned int mask = 1U << (line % GPIO_IRQ_CLAIM_BITS);
+
+	return (atomic_fetch_or_explicit(&irq_claims[word], mask, memory_order_acq_rel) & mask) == 0
+		       ? OVE_OK
+		       : OVE_ERR_ALREADY_EXISTS;
+}
+
+static void release_irq_line(unsigned int port, unsigned int pin)
+{
+	unsigned int line = port * OVE_GPIO_PINS_PER_PORT + pin;
+	unsigned int word = line / GPIO_IRQ_CLAIM_BITS;
+	unsigned int mask = 1U << (line % GPIO_IRQ_CLAIM_BITS);
+
+	atomic_fetch_and_explicit(&irq_claims[word], ~mask, memory_order_release);
+}
 
 static int validate_port_pin(unsigned int port, unsigned int pin)
 {
@@ -68,8 +93,6 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 			  ove_gpio_irq_cb callback, void *user_data)
 {
 	unsigned int i;
-	unsigned int free_slot = GPIO_IRQ_MAX;
-	ove_irq_key_t key;
 
 	if (validate_port_pin(port, pin) != OVE_OK ||
 	    (mode != OVE_GPIO_IRQ_RISING && mode != OVE_GPIO_IRQ_FALLING &&
@@ -77,41 +100,35 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	/* Serialize ownership selection so concurrent callers cannot reserve two
-	 * entries for the same line.  The hardware call remains outside this short
-	 * critical section. */
-	key = ove_irq_lock();
-	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		int state = atomic_load_explicit(&irq_table[i].registered, memory_order_acquire);
+	if (claim_irq_line(port, pin) != OVE_OK)
+		return OVE_ERR_ALREADY_EXISTS;
 
-		if (state != GPIO_IRQ_FREE && irq_table[i].port == port &&
-		    irq_table[i].pin == pin) {
-			ove_irq_unlock(key);
-			return OVE_ERR_ALREADY_EXISTS;
-		}
-		if (state == GPIO_IRQ_FREE && free_slot == GPIO_IRQ_MAX)
-			free_slot = i;
+	/* Reserve a callback slot after atomically claiming the physical line. */
+	for (i = 0; i < GPIO_IRQ_MAX; i++) {
+		int expected = GPIO_IRQ_FREE;
+		if (atomic_compare_exchange_strong_explicit(
+			    &irq_table[i].registered, &expected, GPIO_IRQ_RESERVING,
+			    memory_order_acq_rel, memory_order_acquire))
+			break;
 	}
-	if (free_slot == GPIO_IRQ_MAX) {
-		ove_irq_unlock(key);
+	if (i >= GPIO_IRQ_MAX) {
+		release_irq_line(port, pin);
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	i = free_slot;
 	irq_table[i].port = port;
 	irq_table[i].pin = pin;
 	irq_table[i].mode = mode;
 	irq_table[i].callback = callback;
 	irq_table[i].user_data = user_data;
 	atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_relaxed);
-	atomic_store_explicit(&irq_table[i].registered, GPIO_IRQ_RESERVING,
-			      memory_order_release);
-	ove_irq_unlock(key);
 
 	int ret = ove_hal_gpio_irq_hw_enable(port, pin, mode, callback, user_data);
 	atomic_store_explicit(&irq_table[i].registered,
 			      ret == OVE_OK ? GPIO_IRQ_REGISTERED : GPIO_IRQ_FREE,
 			      memory_order_release);
+	if (ret != OVE_OK)
+		release_irq_line(port, pin);
 	return ret;
 }
 
@@ -153,21 +170,19 @@ int ove_gpio_irq_disable(unsigned int port, unsigned int pin)
 int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
-	ove_irq_key_t key;
 
-	key = ove_irq_lock();
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
-			    GPIO_IRQ_REGISTERED &&
-		    irq_table[i].port == port && irq_table[i].pin == pin) {
+		int expected = GPIO_IRQ_REGISTERED;
+
+		if (irq_table[i].port == port && irq_table[i].pin == pin &&
+		    atomic_compare_exchange_strong_explicit(
+			    &irq_table[i].registered, &expected, GPIO_IRQ_RELEASING,
+			    memory_order_acq_rel, memory_order_acquire)) {
 			/* Disable the line, then free the slot so the (port,pin)
 			 * can be re-registered.  Clearing `enabled` before
 			 * `registered` keeps a concurrent dispatch from firing a
 			 * half-torn-down entry (it gates on `enabled`). */
 			atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_release);
-			atomic_store_explicit(&irq_table[i].registered, GPIO_IRQ_RELEASING,
-					      memory_order_release);
-			ove_irq_unlock(key);
 			/* Permanent teardown — hw_unregister (not hw_disable) so
 			 * the backend also releases per-registration HW state
 			 * (e.g. Zephyr's gpio_callback), otherwise re-registering
@@ -176,10 +191,11 @@ int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 			atomic_store_explicit(&irq_table[i].registered,
 					      ret == OVE_OK ? GPIO_IRQ_FREE : GPIO_IRQ_REGISTERED,
 					      memory_order_release);
+			if (ret == OVE_OK)
+				release_irq_line(port, pin);
 			return ret;
 		}
 	}
-	ove_irq_unlock(key);
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
