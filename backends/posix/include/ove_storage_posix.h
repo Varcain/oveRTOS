@@ -67,12 +67,14 @@ struct ove_thread {
 	int state; /* ove_thread_state_t */
 	sem_t suspend_sem;
 	int started;
-	const char *name;	     /* thread name (from desc) */
-	size_t stack_size;	     /* allocated stack size */
-	void *stack_base;	     /* caller-allocated stack (painted) */
-	struct ove_thread *next;     /* linked list for enumeration */
-	struct ove_state_tracker st; /* per-state time tracking */
-	uint8_t priority;	     /* ove_prio_t; tracked for reporting */
+	const char *name;	      /* thread name (from desc) */
+	size_t stack_size;	      /* allocated stack size */
+	void *stack_base;	      /* caller-allocated stack (painted) */
+	size_t stack_headroom;	      /* final worker-owned coloration snapshot */
+	uint8_t stack_headroom_valid; /* published with TERMINATED state */
+	struct ove_thread *next;      /* linked list for enumeration */
+	struct ove_state_tracker st;  /* per-state time tracking */
+	uint8_t priority;	      /* ove_prio_t; tracked for reporting */
 	/* CPU usage sampling: last observed CPU ns + last computed %.
 	 * ove_thread_list recomputes at most every 100 ms so rapid
 	 * callers don't collapse the delta window to near-zero. */

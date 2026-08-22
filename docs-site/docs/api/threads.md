@@ -251,6 +251,12 @@ tracking provide all four state buckets. Snapshot stack scanning stays
 disabled in bounded scheduler-locked traversals, so a backend may know the
 allocation size without providing `stack_used`.
 
+The POSIX simulator never scans another pthread's live stack: doing so would
+race ordinary stack writes. It publishes a final coloration snapshot when the
+thread reaches `TERMINATED`; live external stack-headroom queries therefore
+return `OVE_ERR_NOT_SUPPORTED`, and live enumeration reports `stack_size`
+without marking `stack_used` valid.
+
 ### Rust and Zig snapshots
 
 The Rust and Zig bindings pass their caller-owned snapshot arrays directly to
