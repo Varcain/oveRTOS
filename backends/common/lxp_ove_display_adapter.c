@@ -19,7 +19,7 @@
 
 #if defined(CONFIG_OVE_LINUX_DEV)
 
-#include "lxp/lxp_disp_ops.h"
+#include "lxp/lxp_display_ops.h"
 
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 #include "ove/fb.h"
