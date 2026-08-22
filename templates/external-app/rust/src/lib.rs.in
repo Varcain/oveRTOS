@@ -8,7 +8,7 @@ fn app_main() {
     info!("hello from {{NAME}}");
 
     loop {
-        ove::thread::sleep_ms(1000);
+        ove::Thread::sleep_ms(1000);
         info!("tick");
     }
 }

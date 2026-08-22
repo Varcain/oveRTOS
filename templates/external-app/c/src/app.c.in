@@ -1,8 +1,6 @@
 #include "ove/ove.h"
 #include "ove/log.h"
 
-OVE_LOG_MODULE_REGISTER({{CONFIG_NAME}});
-
 void ove_main(void)
 {
     OVE_LOG_INF("hello from {{NAME}}");

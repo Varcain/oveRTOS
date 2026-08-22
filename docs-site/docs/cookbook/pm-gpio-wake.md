@@ -34,8 +34,6 @@ The deeper the state, the longer the wake-up and the less state survives. For "b
 #include "ove/pm.h"
 #include "ove/gpio.h"
 
-OVE_LOG_MODULE_REGISTER(pmgpio);
-
 #define BUTTON_PIN  OVE_GPIO_PIN(0, 0)   /* PA0 on STM32; map per board */
 
 static ove_gpio_t button;

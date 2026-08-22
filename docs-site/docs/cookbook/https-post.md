@@ -28,8 +28,6 @@ TLS certificate validation rejects certificates outside their `notBefore`/`notAf
 #include "ove/net_sntp.h"
 #include <stdio.h>
 
-OVE_LOG_MODULE_REGISTER(telemetry);
-
 #define POST_PERIOD_MS  60000   /* once per minute */
 
 static void post_one(void)
