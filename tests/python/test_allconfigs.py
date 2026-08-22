@@ -18,6 +18,7 @@ from unittest import mock
 
 from ove import allconfigs
 from ove.kconfig import (
+    _advertise_workspace_app,
     _savedefconfig_destination,
     _write_workspace_config,
     parse_defconfig_name,
@@ -113,6 +114,16 @@ class WorkspaceConfigTest(unittest.TestCase):
                 _savedefconfig_destination(ws),
                 os.path.join(external, "defconfigs",
                              "board_posix_app_defconfig"))
+
+    def test_workspace_app_advertisement_preserves_other_external_apps(self):
+        ws = SimpleNamespace(is_external_app=True, app_dir="/apps/current")
+        existing = os.pathsep.join(("/apps/other", "/apps/current/../current"))
+        with mock.patch.dict(os.environ,
+                             {"OVE_EXTERNAL_APPS": existing}, clear=True):
+            _advertise_workspace_app(ws)
+            self.assertEqual(
+                os.environ["OVE_EXTERNAL_APPS"].split(os.pathsep),
+                ["/apps/other", "/apps/current/../current"])
 
     def test_failed_config_write_preserves_active_links(self):
         config_target = os.readlink(os.path.join(self.root, ".config"))

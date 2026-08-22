@@ -17,6 +17,18 @@ from .workspace import Workspace, find_ove_dir, write_app_path
 _VALID_RTOSES = ("freertos", "nuttx", "zephyr", "posix")
 
 
+def _advertise_workspace_app(ws):
+    """Expose a workspace-bound external app to generated Kconfig."""
+    if not ws.is_external_app:
+        return
+    external = [path for path in os.environ.get(
+        "OVE_EXTERNAL_APPS", "").split(os.pathsep) if path]
+    known = {os.path.realpath(path) for path in external}
+    if ws.app_dir not in known:
+        external.insert(0, ws.app_dir)
+    os.environ["OVE_EXTERNAL_APPS"] = os.pathsep.join(external)
+
+
 def _find_external_app(path):
     """Return the advertised external app containing *path*, if any."""
     ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
@@ -55,11 +67,15 @@ def cmd_menuconfig(args):
     ove_dir = find_ove_dir()
     os.chdir(ove_dir)
 
-    config_path = os.path.join(ove_dir, ".config")
-    os.environ.setdefault("KCONFIG_CONFIG", config_path)
+    ws = Workspace(ove_dir)
+    config_path = ws.config_path
+    os.environ["KCONFIG_CONFIG"] = config_path
     os.environ["srctree"] = ove_dir
+    _advertise_workspace_app(ws)
 
-    if os.path.isfile(config_path) and not os.path.islink(config_path):
+    root_config = os.path.join(ove_dir, ".config")
+    if config_path == root_config and os.path.isfile(root_config) \
+            and not os.path.islink(root_config):
         print("WARNING: .config is a regular file, not a workspace symlink.")
         print("  Run 'ove defconfig <name>' to use workspace separation.")
         print()
@@ -566,12 +582,7 @@ def cmd_savedefconfig(args):
         sys.exit(1)
 
     os.environ["srctree"] = ove_dir
-    if ws.is_external_app:
-        external = [path for path in os.environ.get(
-            "OVE_EXTERNAL_APPS", "").split(os.pathsep) if path]
-        if ws.app_dir not in external:
-            external.insert(0, ws.app_dir)
-        os.environ["OVE_EXTERNAL_APPS"] = os.pathsep.join(external)
+    _advertise_workspace_app(ws)
     generate_app_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     kconf.load_config(config_path)
