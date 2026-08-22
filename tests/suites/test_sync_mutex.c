@@ -123,25 +123,20 @@ static void test_mutex_contention_success(void **state)
 	ove_test_mutex_destroy(mtx);
 }
 
+#ifndef __SANITIZE_THREAD__
 static void test_mutex_double_unlock(void **state)
 {
 	(void)state;
-	/* TSan correctly flags double-unlock as UB; this test is
-	 * empirical "should not crash on double-unlock", which contradicts
-	 * the formal rule.  Skip under TSan to keep the CI gate clean.
-	 * Both gcc and clang define __SANITIZE_THREAD__ when built with
-	 * -fsanitize=thread; that's the only macro we need. */
-#ifdef __SANITIZE_THREAD__
-	skip();
-#else
+	/* Empirical robustness check only: double-unlock is formally undefined
+	 * and is therefore omitted from the TSan suite. */
 	ove_mutex_t mtx = NULL;
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 	OVE_TEST_LOCK(mtx);
 	ove_mutex_unlock(mtx);
 	ove_mutex_unlock(mtx); /* should not crash */
 	ove_test_mutex_destroy(mtx);
-#endif
 }
+#endif
 
 static void test_mutex_zero_timeout_free(void **state)
 {
@@ -224,7 +219,9 @@ int test_sync_mutex_run(void)
 		cmocka_unit_test(test_mutex_lock_wait_forever),
 		cmocka_unit_test(test_mutex_contention_timeout),
 		cmocka_unit_test(test_mutex_contention_success),
+#ifndef __SANITIZE_THREAD__
 		cmocka_unit_test(test_mutex_double_unlock),
+#endif
 		cmocka_unit_test(test_mutex_zero_timeout_free),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_mutex_destroy_null),

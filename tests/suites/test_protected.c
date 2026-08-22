@@ -37,11 +37,12 @@ static void test_ptask_ok(void **state)
 }
 
 /*
- * The deliberate-fault test is skipped under AddressSanitizer: ASan owns the
- * SIGSEGV handler and reports the intentional wild write as an error. The
- * containment path is exercised in the default (non-sanitized) stub build.
+ * The deliberate-fault test is omitted under AddressSanitizer and
+ * ThreadSanitizer. ASan owns SIGSEGV, while TSan cannot unwind its runtime
+ * through the backend's signal-handler siglongjmp. The containment path is
+ * exercised in the default (non-sanitized) stub build.
  */
-#ifndef __SANITIZE_ADDRESS__
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
 /* A misbehaving task: writes to a region it must not touch. */
 static void task_fault(void *arg)
 {
@@ -70,14 +71,14 @@ static void test_ptask_fault_contained(void **state)
 
 	munmap(forbidden, 4096);
 }
-#endif /* !__SANITIZE_ADDRESS__ */
+#endif /* no address/thread sanitizer */
 
 int test_protected_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_ptask_rejects_null),
 		cmocka_unit_test(test_ptask_ok),
-#ifndef __SANITIZE_ADDRESS__
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
 		cmocka_unit_test(test_ptask_fault_contained),
 #endif
 	};

@@ -41,7 +41,7 @@ static void run_compute(void *arg)
 	c->out = c->fn(c->in);
 }
 
-#ifndef __SANITIZE_ADDRESS__
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
 struct store_ctx {
 	void (*fn)(long *, long);
 	long *target;
@@ -52,7 +52,7 @@ static void run_store(void *arg)
 	struct store_ctx *c = (struct store_ctx *)arg;
 	c->fn(c->target, c->val);
 }
-#endif /* !__SANITIZE_ADDRESS__ */
+#endif /* no address/thread sanitizer */
 
 /* Map a pool, init an arena over it, load the module into an arena region, and
  * flip the pool to read+execute. Returns the pool (NULL on failure) and fills
@@ -110,9 +110,10 @@ static void test_sandbox_load_and_run(void **state)
 
 /*
  * Containment composes too: a loaded module that misbehaves is trapped while
- * the supervisor survives. Skipped under ASan (it owns SIGSEGV).
+ * the supervisor survives. Omitted under ASan (which owns SIGSEGV) and TSan
+ * (which cannot unwind through the containment handler's siglongjmp).
  */
-#ifndef __SANITIZE_ADDRESS__
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
 static void test_sandbox_contains_module_fault(void **state)
 {
 	(void)state;
@@ -142,13 +143,13 @@ static void test_sandbox_contains_module_fault(void **state)
 	munmap(forbidden, 4096);
 	munmap(pool, POOL_BYTES);
 }
-#endif /* !__SANITIZE_ADDRESS__ */
+#endif /* no address/thread sanitizer */
 
 int test_sandbox_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_sandbox_load_and_run),
-#ifndef __SANITIZE_ADDRESS__
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
 		cmocka_unit_test(test_sandbox_contains_module_fault),
 #endif
 	};
