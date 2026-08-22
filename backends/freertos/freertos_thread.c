@@ -7,7 +7,7 @@
  */
 
 #include "ove/thread.h"
-#include "ove/lxp_metrics.h"
+#include "ove_lxp_metrics.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "ove_freertos_priority.h"

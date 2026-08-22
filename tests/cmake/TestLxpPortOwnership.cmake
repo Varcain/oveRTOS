@@ -7,6 +7,13 @@ if(NOT DEFINED OVE_ROOT)
     message(FATAL_ERROR "OVE_ROOT is required")
 endif()
 
+if(EXISTS "${OVE_ROOT}/include/ove/lxp_metrics.h")
+    message(FATAL_ERROR "backend LXP metrics seam leaked into the public OVE API")
+endif()
+if(NOT EXISTS "${OVE_ROOT}/backends/common/ove_lxp_metrics.h")
+    message(FATAL_ERROR "private OVE/LXP metrics seam is missing")
+endif()
+
 set(EXPECTED_APP_FILES
     "README.md"
     "app.yaml"

@@ -75,7 +75,7 @@ if(NOT APP_TEXT MATCHES "#[ \t]*include[ \t]*[<\"]ove/lxp\\.h")
         "linux_interop entrypoint must use the public LXP subsystem umbrella")
 endif()
 foreach(LXP_PUBLIC_HEADER IN ITEMS
-        lxp_launch lxp_host lxp_console lxp_observability lxp_metrics lxp_rt_scope)
+        lxp_launch lxp_host lxp_console lxp_observability lxp_rt_scope)
     if(NOT LXP_UMBRELLA_TEXT MATCHES
        "#[ \t]*include[ \t]*[<\"]ove/${LXP_PUBLIC_HEADER}\\.h")
         message(FATAL_ERROR
