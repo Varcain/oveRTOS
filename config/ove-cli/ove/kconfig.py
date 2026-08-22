@@ -467,6 +467,7 @@ def cmd_defconfig_fragments(args):
         sys.exit(1)
 
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
+    kconf.warn_assign_redun = False
 
     tmp_dir = tempfile.mkdtemp(prefix="ove_frag_")
 
