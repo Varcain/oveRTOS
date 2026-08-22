@@ -67,7 +67,8 @@ typedef struct {
  * Register routes with ove_httpd_route() before or after starting.
  *
  * @param[in] cfg Server configuration (NULL for defaults).
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another
+ *         negative error code on failure.
  */
 int ove_httpd_start(const ove_httpd_config_t *cfg);
 

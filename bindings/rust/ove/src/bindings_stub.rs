@@ -817,7 +817,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Terminate and release a thread created with ove_thread_init().\n\n Stops the thread and releases any backend-internal resources.  The\n static storage supplied at init time is not freed.\n\n @param[in] handle  Handle returned by ove_thread_init().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_init"]
+    #[doc = " @brief Join and release a thread created with ove_thread_init().\n\n Waits for the entry function to return, then releases backend-internal\n resources.  This function neither requests cooperative stop nor forcibly\n terminates the worker.  Signal a cooperative worker with\n ove_thread_request_stop() before calling it.  The static storage supplied at\n init time is not freed.\n\n @param[in] handle  Handle returned by ove_thread_init().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_init"]
     pub fn ove_thread_deinit(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -832,7 +832,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop and free a thread created with ove_thread_create().\n\n @note Requires @c OVE_HEAP_THREAD.\n\n @param[in] handle  Handle returned by ove_thread_create().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_create"]
+    #[doc = " @brief Join and free a thread created with ove_thread_create().\n\n @note Requires @c OVE_HEAP_THREAD.\n\n Waits for the entry function to return; it does not request stop or forcibly\n terminate the worker.  Call ove_thread_request_stop() first when the entry\n follows the cooperative stop contract.\n\n @param[in] handle  Handle returned by ove_thread_create().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_create"]
     pub fn ove_thread_destroy(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -864,11 +864,11 @@ unsafe extern "C" {
     pub fn ove_thread_resume(handle: ove_thread_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Cooperatively request that a thread stop running.\n\n Sets the thread's stop-requested flag.  The worker must poll\n @ref ove_thread_should_stop and exit its entry function in response;\n the substrate does NOT forcibly terminate the thread.\n\n Safe to call from any context (ISR, other thread, or the thread\n itself).  Storing the flag is a single uncontended atomic write.\n\n The flag is per-thread, allocated unconditionally (1 byte storage,\n not opt-in).  Calling on a non-stoppable thread is the same as\n calling on any other thread — the worker just has to choose to\n observe @ref ove_thread_should_stop.\n\n @param[in] handle  Thread to signal.\n\n @see ove_thread_should_stop"]
+    #[doc = " @brief Cooperatively request that a thread stop running.\n\n Sets a per-thread sticky flag.  The worker must poll\n @ref ove_thread_should_stop and return in response; the substrate does not\n forcibly terminate it.  Safe from an ISR, another thread, or the worker\n itself.\n\n @param[in] handle  Thread to signal.\n\n @see ove_thread_should_stop"]
     pub fn ove_thread_request_stop(handle: ove_thread_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Check whether the calling (or specified) thread has been asked to stop.\n\n Returns @c true if @ref ove_thread_request_stop was called for @p handle.\n The flag is sticky: once set it stays set for the thread's lifetime.\n\n Workers should poll this in their main loop:\n @code\n   while (!ove_thread_should_stop(ove_thread_get_self())) {\n       do_work();\n   }\n @endcode\n\n Safe to call from any context.  The load is a single uncontended\n atomic read.\n\n @param[in] handle  Thread to inspect.\n @return @c true if a stop has been requested, @c false otherwise.\n\n @see ove_thread_request_stop"]
+    #[doc = " @brief Check whether the calling (or specified) thread has been asked to stop.\n\n Returns @c true if @ref ove_thread_request_stop was called for @p handle.\n The flag is sticky: once set it stays set for the thread's lifetime.\n\n Workers should poll this in their main loop:\n @code\n   while (!ove_thread_should_stop(ove_thread_get_self())) {\n       do_work();\n   }\n @endcode\n\n Safe to call from any context.\n\n @param[in] handle  Thread to inspect.\n @return @c true if a stop has been requested, @c false otherwise.\n\n @see ove_thread_request_stop"]
     pub fn ove_thread_should_stop(handle: ove_thread_t) -> bool;
 }
 unsafe extern "C" {
@@ -3544,7 +3544,7 @@ const _: () = {
         [core::mem::offset_of!(ove_httpd_config_t, max_body_size) - 4usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Register routes with ove_httpd_route() before or after starting.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Register routes with ove_httpd_route() before or after starting.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another\n         negative error code on failure."]
     pub fn ove_httpd_start(cfg: *const ove_httpd_config_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
