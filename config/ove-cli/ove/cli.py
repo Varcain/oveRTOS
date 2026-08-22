@@ -30,6 +30,8 @@ def main():
     # ── defconfig ──────────────────────────────────────────────────────
     p = sub.add_parser("defconfig", help="Apply a defconfig and set up workspace")
     p.add_argument("name", help="Defconfig name (e.g. qemu_freertos_example_c)")
+    p.add_argument("--no-activate", action="store_true",
+                   help="Write the workspace without selecting it globally")
 
     # ── defconfig-fragments ──────────────────────────────────────────
     p = sub.add_parser("defconfig-fragments",
@@ -81,7 +83,7 @@ def main():
                         "cmake/ninja")
 
     # ── allconfigs ─────────────────────────────────────────────────────
-    from .allconfigs import add_subcommand as _add_allconfigs
+    from .allconfigs import add_subcommands as _add_allconfigs
     _add_allconfigs(sub)
 
     # ── run ────────────────────────────────────────────────────────────
@@ -283,6 +285,10 @@ def main():
     elif args.command == "allconfigs":
         from .allconfigs import cmd_allconfigs
         cmd_allconfigs(args)
+
+    elif args.command == "alldefconfigs":
+        from .allconfigs import cmd_alldefconfigs
+        cmd_alldefconfigs(args)
 
     elif args.command == "run":
         from .run import cmd_run

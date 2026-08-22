@@ -58,7 +58,7 @@ include $(OVE_DIR)/config/make/ove_app.mk
 | `make all` | Download + configure + build |
 | `make run` | Run firmware (QEMU or host) |
 | `make flash` | Flash firmware to hardware |
-| `make alldefconfigs` | Build every configuration (all board/RTOS/app combinations) |
+| `make alldefconfigs` | Build every saved configuration under `defconfigs/` |
 | `make clean` | Remove `output/` |
 | `make help` | List targets and available configurations |
 
@@ -336,7 +336,10 @@ make zephyr-menuconfig
 make alldefconfigs
 ```
 
-This iterates over all board/RTOS/app combinations, composes each configuration from fragments, and runs the full build pipeline. A summary is printed at the end. This is useful for CI.
+This discovers every `*_defconfig` below the app's `defconfigs/` directory and
+runs the full build pipeline for each. Builds use their own workspaces without
+changing the repository's active configuration. All entries run even when one
+fails, followed by a summary and a non-zero exit status when appropriate.
 
 ## Workspace Layout
 

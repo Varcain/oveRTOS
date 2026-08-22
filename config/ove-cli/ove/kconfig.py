@@ -14,6 +14,9 @@ from .utils import atomic_symlink
 from .workspace import find_ove_dir
 
 
+_VALID_RTOSES = ("freertos", "nuttx", "zephyr", "posix")
+
+
 def _find_external_app_for_defconfig(defconfig_path):
     """If defconfig_path lives under an external app, return that app dir."""
     ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
@@ -28,6 +31,23 @@ def _find_external_app_for_defconfig(defconfig_path):
         if defconfig_abs.startswith(app_abs + os.sep):
             return app_abs
     return None
+
+
+def parse_defconfig_name(name):
+    """Return normalized filename, board, RTOS and app identity."""
+    if not name.endswith("_defconfig"):
+        name += "_defconfig"
+
+    stem = name[:-len("_defconfig")]
+    for rtos in _VALID_RTOSES:
+        marker = f"_{rtos}_"
+        if marker not in stem:
+            continue
+        board, app = stem.split(marker, 1)
+        if board and app:
+            return name, board, rtos, app
+        break
+    raise ValueError(f"cannot parse board/RTOS/app from defconfig '{name}'")
 
 
 def cmd_menuconfig(args):
@@ -68,9 +88,11 @@ def cmd_defconfig(args):
     ove_dir = find_ove_dir()
     name = args.name
 
-    # Ensure it ends with _defconfig
-    if not name.endswith("_defconfig"):
-        name = name + "_defconfig"
+    try:
+        name, ws_board, ws_rtos, ws_app = parse_defconfig_name(name)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
 
     # Find the defconfig file — search in-tree first, then external apps
     search_dirs = [os.path.join(ove_dir, "defconfigs")]
@@ -96,32 +118,10 @@ def cmd_defconfig(args):
         print(f"Error: defconfig '{name}' not found in defconfigs/")
         sys.exit(1)
 
-    # Parse workspace location from defconfig name.
-    # Filename format: <board>_<rtos>_<app>_defconfig
-    # Extract board by finding the first known RTOS name in the stem.
-    stem = name.replace("_defconfig", "")
-    valid_rtos = ("freertos", "nuttx", "zephyr", "posix")
-    ws_board = None
-    ws_rtos = None
-    for rtos in valid_rtos:
-        idx = stem.find(f"_{rtos}_")
-        if idx >= 0:
-            ws_board = stem[:idx]
-            ws_rtos = rtos
-            break
-    if not ws_board or not ws_rtos:
-        print(f"Error: cannot parse board/RTOS from defconfig '{name}'")
-        sys.exit(1)
-
-    ws_app = stem[len(ws_board) + 1 + len(ws_rtos) + 1:]
-    if not ws_app:
-        print(f"Error: could not parse app name from defconfig '{name}'")
-        sys.exit(1)
-
     # Determine if this defconfig comes from an external app.
     # If so, place the workspace under the external app's output/ dir.
     ext_app_dir = _find_external_app_for_defconfig(defconfig_path)
-    ws_dir = _workspace_path(
+    ws_dir = workspace_path(
         ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
     if ext_app_dir:
         print(f"Loading defconfig: {defconfig_path}")
@@ -142,13 +142,18 @@ def cmd_defconfig(args):
     generate_app_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     kconf.load_config(defconfig_path)
+    activate = not getattr(args, "no_activate", False)
     ws_dir, ws_config = _write_workspace_config(
-        kconf, ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
+        kconf, ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir,
+        activate=activate)
     print(f"Configuration written to {ws_config}")
-    print(f"Active workspace: {ws_dir}/")
+    if activate:
+        print(f"Active workspace: {ws_dir}/")
+    else:
+        print(f"Workspace left inactive: {ws_dir}/")
 
 
-def _workspace_path(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
+def workspace_path(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
     """Return the canonical directory for one configured workspace."""
     base = (os.path.join(ext_app_dir, "output") if ext_app_dir else
             os.path.join(ove_dir, "output"))
@@ -159,7 +164,7 @@ def _write_workspace_config(kconf, ove_dir, ws_board, ws_rtos, ws_app,
                             ext_app_dir=None, activate=True):
     """Write one workspace config, then optionally make it active."""
     output_dir = os.path.join(ove_dir, "output")
-    ws_dir = _workspace_path(
+    ws_dir = workspace_path(
         ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
 
     os.makedirs(ws_dir, exist_ok=True)
