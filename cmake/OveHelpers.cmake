@@ -3,9 +3,9 @@
 # ============================================================================
 
 # ─── _ove_filter_backend_list(LIST_VAR MOD1 [MOD2 ...]) ──────────
-# Remove backend source files matching the listed modules from the
-# named list variable.  Backend files are identified by a
-# _(module).c suffix under any backends/ directory.
+# Remove engine backend source files matching the listed modules from the
+# named list variable. Engine files use a _(module).c suffix under a concrete
+# engine directory; shared backends/common composition must remain present.
 macro(_ove_filter_backend_list LIST_VAR)
     foreach(_mod ${ARGN})
         string(TOUPPER "${_mod}" _MOD_UPPER)
@@ -14,7 +14,7 @@ macro(_ove_filter_backend_list LIST_VAR)
         foreach(_bsrc ${${LIST_VAR}})
             get_filename_component(_bname "${_bsrc}" NAME)
             set(_exclude FALSE)
-            if("${_bsrc}" MATCHES "/backends/")
+            if("${_bsrc}" MATCHES "/backends/(freertos|nuttx|posix|wasm|zephyr)/")
                 if("${_bname}" MATCHES "_(${_mod_lower})\\.c$")
                     set(_exclude TRUE)
                 endif()
