@@ -74,6 +74,10 @@ if(OVE_QSPI)
     ove_nuttx_add_sources(${CMAKE_CURRENT_LIST_DIR}/src/board_init.c)
 endif()
 
+if(OVE_LINUX_RT_SCOPE)
+    ove_nuttx_add_sources(${OVE_DIR}/boards/stm32f746g-discovery/common/rt_scope.c)
+endif()
+
 # Build firmware app
 ove_nuttx_register_app()
 

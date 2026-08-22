@@ -42,6 +42,9 @@ target_sources(app PRIVATE
 if(OVE_FB)
     target_sources(app PRIVATE ${OVE_BOARD_DIR}/fb_port.c)
 endif()
+if(OVE_LINUX_RT_SCOPE)
+    target_sources(app PRIVATE ${OVE_BOARD_DIR}/../common/rt_scope.c)
+endif()
 
 ove_zephyr_include_app_sources()
 
