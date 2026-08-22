@@ -12,6 +12,7 @@ set(QUALIFICATION_SOURCE
     "${OVE_ROOT}/apps/c/linux_interop/src/qualification.c")
 set(ROUNDTRIP_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/roundtrip.c")
 set(RT_SCOPE_SOURCE "${OVE_ROOT}/apps/c/linux_interop/src/rt_scope.c")
+set(FULL_PROFILE_CONFIG "${OVE_ROOT}/apps/c/linux_interop/app.yaml")
 set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 
 # Refactoring baseline captured on 2026-08-21. The STM32 full-profile images at
@@ -24,6 +25,7 @@ set(NETWORK_SMOKE_SOURCE_LINE_CEILING 150)
 set(QUALIFICATION_SOURCE_LINE_CEILING 420)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 180)
 set(RT_SCOPE_SOURCE_LINE_CEILING 1072)
+set(FULL_PROFILE_CONFIG_LINE_CEILING 65)
 
 function(assert_line_ceiling PATH CEILING)
     file(READ "${PATH}" TEXT)
@@ -45,6 +47,8 @@ assert_line_ceiling("${QUALIFICATION_SOURCE}"
                     ${QUALIFICATION_SOURCE_LINE_CEILING})
 assert_line_ceiling("${ROUNDTRIP_SOURCE}" ${ROUNDTRIP_SOURCE_LINE_CEILING})
 assert_line_ceiling("${RT_SCOPE_SOURCE}" ${RT_SCOPE_SOURCE_LINE_CEILING})
+assert_line_ceiling("${FULL_PROFILE_CONFIG}"
+                    ${FULL_PROFILE_CONFIG_LINE_CEILING})
 
 file(READ "${APP_SOURCE}" APP_TEXT)
 file(READ "${NETWORK_SMOKE_SOURCE}" NETWORK_SMOKE_TEXT)
