@@ -508,7 +508,7 @@ impl RecursiveMutex {
 crate::ove_handle_impl!(
     RecursiveMutex,
     ove_recursive_mutex_destroy,
-    ove_mutex_deinit
+    ove_recursive_mutex_deinit
 );
 
 /// RAII guard that unlocks a `RecursiveMutex` when dropped.

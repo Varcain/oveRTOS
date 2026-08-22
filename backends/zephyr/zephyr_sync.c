@@ -96,6 +96,11 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 	return OVE_OK;
 }
 
+void ove_recursive_mutex_deinit(ove_mutex_t mtx)
+{
+	ove_mutex_deinit(mtx);
+}
+
 /* ─── Recursive Mutex _create / _destroy ─────────────────────────────── */
 
 #ifdef OVE_HEAP_SYNC
@@ -118,6 +123,7 @@ int ove_recursive_mutex_create(ove_mutex_t *mtx)
 void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 {
 	if (mtx != NULL) {
+		ove_recursive_mutex_deinit(mtx);
 		OVE_BACKEND_FREE(mtx);
 	}
 }

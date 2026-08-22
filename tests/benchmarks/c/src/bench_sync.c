@@ -338,7 +338,7 @@ static void rmtx_lock_unlock_run(void *ctx)
 static void rmtx_lock_unlock_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_deinit(bench_rmtx);
+	ove_recursive_mutex_deinit(bench_rmtx);
 }
 
 /* --- Suite --- */

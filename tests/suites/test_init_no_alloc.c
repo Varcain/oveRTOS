@@ -124,7 +124,7 @@ static void test_recursive_mutex_init_no_alloc(void **state)
 	int rc;
 	TRACE_INIT(rc, ove_recursive_mutex_init(&h, &storage));
 	assert_non_null(h);
-	ove_mutex_deinit(h); /* shared with non-recursive — no separate deinit */
+	ove_recursive_mutex_deinit(h);
 }
 
 static void test_sem_init_no_alloc(void **state)
