@@ -121,6 +121,8 @@ typedef struct ove_eventgroup ove_eventgroup_storage_t;
 struct ove_work {
 	struct k_work_delayable dwork;
 	void (*handler)(struct ove_work *);
+	/* 0 idle, 1 queued/delayed, 2 running, 3 cancellation requested. */
+	int state;
 };
 
 struct ove_workqueue {

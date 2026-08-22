@@ -95,7 +95,7 @@ Each work item is submitted to a specific workqueue; oveRTOS does not expose a g
 | Zephyr | oveRTOS |
 |---|---|
 | `K_WORK_DEFINE(w, handler)` | `OVE_WORK_DEFINE_STATIC(w, handler)` |
-| `k_work_init(&w, handler)` | `ove_work_init(&w, handler)` (heap) or `ove_work_init_static(&w, &storage, handler)` |
+| `k_work_init(&w, handler)` | `ove_work_init(&w, handler)` (heap) or `ove_work_init_static(&w, &storage, handler)`; pair static init with `ove_work_deinit()` |
 | `k_work_submit_to_queue(&q, &w)` | `ove_work_submit(wq, w)` |
 | `k_work_submit(&w)` (system queue) | not exposed — submit to a workqueue you've created |
 

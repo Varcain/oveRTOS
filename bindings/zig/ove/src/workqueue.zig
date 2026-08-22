@@ -155,12 +155,14 @@ pub const Work = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    /// Idempotent — static work items have no substrate-level deinit; we
-    /// just release our storage and clear it so a redundant
+    /// Idempotent — drains the item before releasing its caller-owned storage,
+    /// then clears it so a redundant
     /// `defer work.deinit()` after an explicit `deinit()` is a safe no-op
     /// rather than a double free.
     pub fn deinit(self: *Work) void {
         if (self.storage) |s| {
+            c.ove_work_deinit(self.handle);
+            self.handle = null;
             self.allocator.destroy(s);
             self.storage = null;
         }

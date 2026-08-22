@@ -167,7 +167,9 @@ stateDiagram-v2
     PENDING   --> EXECUTING : worker thread dequeues item
 
     EXECUTING --> IDLE      : handler returns
-    EXECUTING --> PENDING   : handler calls submit() on itself\n(self-rescheduling)
+
+    PENDING   --> PENDING   : duplicate submit rejected\nwith OVE_ERR_BUSY
+    EXECUTING --> EXECUTING : duplicate submit rejected\nwith OVE_ERR_BUSY
 ```
 
 ### API
@@ -179,11 +181,12 @@ stateDiagram-v2
 | `ove_workqueue_create` | `int (ove_workqueue_t *wq, const char *name, ove_prio_t priority, size_t stack_size)` | Heap-allocate the queue and its stack. Requires `OVE_HEAP_WORKQUEUE`. |
 | `ove_workqueue_destroy` | `void (ove_workqueue_t wq)` | Stop the worker and free a heap-allocated queue. |
 | `ove_work_init_static` | `int (ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler)` | Initialise a work item from caller-supplied storage. |
+| `ove_work_deinit` | `void (ove_work_t work)` | Synchronously drain a static work item and release its RTOS resources. |
 | `ove_work_init` | `int (ove_work_t *work, ove_work_fn handler)` | Heap-allocate a work item. Requires `OVE_HEAP_WORKQUEUE`. |
-| `ove_work_free` | `void (ove_work_t work)` | Free a heap-allocated work item. Must not be pending. |
-| `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. |
-| `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. |
-| `ove_work_cancel` | `int (ove_work_t work)` | Remove a pending item before it executes. Returns `OVE_ERR_INVAL` if not pending. |
+| `ove_work_free` | `void (ove_work_t work)` | Synchronously drain and free a heap-allocated work item. |
+| `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. Returns `OVE_ERR_BUSY` if already active. |
+| `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. Returns `OVE_ERR_BUSY` if already active. |
+| `ove_work_cancel` | `int (ove_work_t work)` | Synchronously remove a pending item, or wait for a running handler. Returns `OVE_ERR_INVAL` if the handler already began or the item was idle. |
 
 Handler signature: `typedef void (*ove_work_fn)(ove_work_t work)`. The handler receives the opaque work handle (not a struct pointer), so any per-item context must be associated externally — typically by deriving the work item from a wrapping `OVE_WORK_DEFINE_STATIC` plus a lookup table, or by handing the wrapping struct's pointer via a closure variable.
 
@@ -191,6 +194,10 @@ Static-storage macros (in `ove/storage.h`):
 
 - `OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio)`
 - `OVE_WORK_DEFINE_STATIC(name, handler)`
+
+Destroy or deinitialise work items before their queue. A handler cannot submit
+its own item while it is running; use a second item, timer, or an external
+submitter for recurring work.
 
 ### Example: Deferred I/O from ISR Context
 

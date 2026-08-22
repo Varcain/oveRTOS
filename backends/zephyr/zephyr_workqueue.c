@@ -8,16 +8,26 @@
 
 #include "ove/workqueue.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include "ove_zephyr_priority.h"
 #include <zephyr/kernel.h>
+
+enum {
+	WORK_IDLE,
+	WORK_PENDING,
+	WORK_RUNNING,
+	WORK_CANCELLED,
+};
 
 static void zephyr_work_handler(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct ove_work *zw = CONTAINER_OF(dwork, struct ove_work, dwork);
-	if (zw->handler != NULL) {
-		zw->handler(zw);
+	int expected = WORK_PENDING;
+	if (__atomic_compare_exchange_n(&zw->state, &expected, WORK_RUNNING, 0, __ATOMIC_ACQ_REL,
+					__ATOMIC_ACQUIRE)) {
+		if (zw->handler != NULL)
+			zw->handler(zw);
+		__atomic_store_n(&zw->state, WORK_IDLE, __ATOMIC_RELEASE);
 	}
 }
 
@@ -82,61 +92,48 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	}
 
 	storage->handler = handler;
+	storage->state = WORK_IDLE;
 	k_work_init_delayable(&storage->dwork, zephyr_work_handler);
 
 	*work = storage;
 	return OVE_OK;
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_work_init(ove_work_t *work, ove_work_fn handler)
-{
-	struct ove_work *zw;
-
-	if (work == NULL || handler == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	zw = OVE_BACKEND_MALLOC(sizeof(*zw));
-	if (zw == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	zw->handler = handler;
-	k_work_init_delayable(&zw->dwork, zephyr_work_handler);
-
-	*work = zw;
-	return OVE_OK;
-}
-
-void ove_work_free(ove_work_t work)
+void ove_work_deinit(ove_work_t work)
 {
 	if (work != NULL) {
-		/* Cancel + wait for any in-flight handler before reclaiming
-		 * the struct.  Closes the use-after-free window where the
-		 * worker is still inside zephyr_work_handler when the caller
-		 * frees w.  Zephyr's k_work_cancel_delayable_sync is the
-		 * right primitive — must not be called from ISR or from the
-		 * workqueue thread itself, but ove_work_free is documented
-		 * as task-context only. */
-		struct k_work_sync sync;
-		(void)k_work_cancel_delayable_sync(&work->dwork, &sync);
-		OVE_BACKEND_FREE(work);
+		(void)ove_work_cancel(work);
+		work->handler = NULL;
 	}
 }
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
 int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 {
+	if (wq == NULL || work == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_PENDING, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
 	int ret = k_work_schedule_for_queue(&wq->work_q, &work->dwork, K_NO_WAIT);
+	if (ret < 0)
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
 	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)
 {
+	if (wq == NULL || work == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_PENDING, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
 	int ret = k_work_schedule_for_queue(&wq->work_q, &work->dwork, K_MSEC(delay_ms));
+	if (ret < 0)
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
 	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
@@ -145,12 +142,23 @@ int ove_work_cancel(ove_work_t work)
 	if (work == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	/* Sync variant: stops the delay timer AND waits for any running
-	 * handler to complete.  After this returns the caller may safely
-	 * free the work struct.  The return is true when the work was still
-	 * pending/running, false when there was nothing to cancel. */
+	int result = OVE_ERR_INVAL;
+	for (;;) {
+		int state = __atomic_load_n(&work->state, __ATOMIC_ACQUIRE);
+		if (state == WORK_IDLE)
+			return OVE_ERR_INVAL;
+		if (state == WORK_PENDING) {
+			int expected = WORK_PENDING;
+			if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_CANCELLED, 0,
+							 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+				continue;
+			result = OVE_OK;
+		}
+		break;
+	}
 	struct k_work_sync sync;
-	bool was_active = k_work_cancel_delayable_sync(&work->dwork, &sync);
-	/* Contract: OVE_ERR_INVAL when the item was not pending. */
-	return was_active ? OVE_OK : OVE_ERR_INVAL;
+	(void)k_work_cancel_delayable_sync(&work->dwork, &sync);
+	if (result == OVE_OK)
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
+	return result;
 }

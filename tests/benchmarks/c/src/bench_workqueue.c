@@ -60,6 +60,7 @@ static void wq_submit_run(void *ctx)
 static void wq_submit_teardown(void *ctx)
 {
 	(void)ctx;
+	ove_work_deinit(bench_work);
 	ove_workqueue_deinit(bench_wq);
 	ove_sem_deinit(work_sem);
 }

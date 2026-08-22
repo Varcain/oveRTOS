@@ -2460,7 +2460,7 @@ unsafe extern "C" {
         user_data: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
-#[doc = " @brief Prototype for a work item handler function.\n\n Called by the work queue thread when the work item is executed. The\n @p work handle may be used to reschedule or identify the item inside\n the handler.\n\n @param[in] work  Handle of the work item being executed."]
+#[doc = " @brief Prototype for a work item handler function.\n\n Called by the work queue thread when the work item is executed. The\n @p work handle may be used to identify the item. Submitting the same item\n from its handler is rejected as busy; recurring work needs another item,\n a timer, or an external submitter.\n\n @param[in] work  Handle of the work item being executed."]
 pub type ove_work_fn = Option<unsafe extern "C" fn(work: ove_work_t)>;
 unsafe extern "C" {
     #[doc = " @brief Initialise a work queue using caller-provided static storage.\n\n Creates the underlying RTOS thread with the given @p name, @p priority,\n @p stack_size, and pre-allocated @p stack buffer. The queue begins\n dispatching items as soon as the first work item is submitted.\n\n @param[out] wq          Receives the initialised work queue handle.\n @param[in]  storage     Pointer to statically-allocated work queue storage.\n @param[in]  name        Human-readable name for the underlying thread.\n @param[in]  priority    Thread priority for the work queue thread.\n @param[in]  stack_size  Size of the thread stack in bytes.\n @param[in]  stack       Pointer to the pre-allocated stack buffer.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
@@ -2474,7 +2474,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Deinitialise a statically-allocated work queue.\n\n Stops the underlying thread and releases all RTOS resources. Any work\n items still in the queue at deinit time are discarded without execution.\n\n @param[in] wq  Work queue handle returned by @ref ove_workqueue_init.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
+    #[doc = " @brief Deinitialise a statically-allocated work queue.\n\n Stops the underlying thread and releases all RTOS resources. Deinitialise\n every work item submitted to this queue before deinitialising the queue;\n this explicit ordering also drains delayed and running submissions.\n\n @param[in] wq  Work queue handle returned by @ref ove_workqueue_init.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
     pub fn ove_workqueue_deinit(wq: ove_workqueue_t);
 }
 unsafe extern "C" {
@@ -2486,11 +2486,15 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " @brief Deinitialise a work item and release its RTOS resources.\n\n Synchronously cancels a queued or delayed submission and waits for a\n handler that is already running. After return, the caller-provided storage\n may be reused or leave scope. The target work queue must remain alive until\n this function returns.\n\n @param[in] work  Work handle returned by @ref ove_work_init_static.\n @note Call from thread context, never from the item's own handler or an ISR."]
+    pub fn ove_work_deinit(work: ove_work_t);
+}
+unsafe extern "C" {
     #[doc = " @brief Allocate and initialise a heap-backed work item.\n\n Allocates the work item control structure from the heap and associates\n @p handler with it.\n\n @param[out] work     Receives the created work handle.\n @param[in]  handler  Function to call when the work item is executed.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE."]
     pub fn ove_work_init(work: *mut ove_work_t, handler: ove_work_fn) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Free a heap-allocated work item.\n\n Releases the memory allocated by @ref ove_work_init. The item must not\n be pending in a work queue when this function is called; cancel it first\n with @ref ove_work_cancel if necessary.\n\n @param[in] work  Work handle returned by @ref ove_work_init.\n @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE."]
+    #[doc = " @brief Free a heap-allocated work item.\n\n Synchronously drains the item and releases the memory allocated by\n @ref ove_work_init. The target work queue must remain alive until this\n function returns.\n\n @param[in] work  Work handle returned by @ref ove_work_init.\n @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE."]
     pub fn ove_work_free(work: ove_work_t);
 }
 unsafe extern "C" {
@@ -2502,11 +2506,11 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Destroy a heap-allocated work queue.\n\n Stops the underlying thread and frees all resources. Pending work items\n are discarded. Must only be called on handles from @ref ove_workqueue_create.\n\n @param[in] wq  Work queue handle returned by @ref ove_workqueue_create.\n @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE."]
+    #[doc = " @brief Destroy a heap-allocated work queue.\n\n Stops the underlying thread and frees all resources. Every submitted work\n item must first be deinitialised or freed. Must only be called on handles\n from @ref ove_workqueue_create.\n\n @param[in] wq  Work queue handle returned by @ref ove_workqueue_create.\n @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE."]
     pub fn ove_workqueue_destroy(wq: ove_workqueue_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit a work item for immediate execution on the work queue.\n\n Enqueues @p work for execution on @p wq. If the item is already pending\n the call may fail or reset the pending state depending on the underlying\n implementation.\n\n @param[in] wq    Target work queue handle.\n @param[in] work  Work item handle to submit.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Submit a work item for immediate execution on the work queue.\n\n Enqueues @p work for execution on @p wq. Returns @c OVE_ERR_BUSY when the\n item is already queued, delayed, or running.\n\n @param[in] wq    Target work queue handle.\n @param[in] work  Work item handle to submit.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_work_submit(wq: ove_workqueue_t, work: ove_work_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -2518,7 +2522,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Cancel a pending work item before it executes.\n\n Attempts to remove @p work from the queue before its handler is called.\n Has no effect if the item is not pending or is already executing.\n\n @param[in] work  Work item handle to cancel.\n @return OVE_OK if the item was successfully cancelled, @c OVE_ERR_INVAL\n         if the item was not pending, or another negative error code on failure."]
+    #[doc = " @brief Cancel a pending work item before it executes.\n\n Synchronously removes @p work before its handler is called. If the handler\n is already executing, waits for it to finish. After return, the work item's\n storage is no longer referenced asynchronously and may be deinitialised.\n\n @param[in] work  Work item handle to cancel.\n @return OVE_OK if the item was successfully cancelled, @c OVE_ERR_INVAL\n         if the item was not pending, or another negative error code on failure."]
     pub fn ove_work_cancel(work: ove_work_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {

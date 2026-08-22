@@ -7,7 +7,6 @@
  */
 
 #include "ove/ove.h"
-#include "ove_backend_common.h"
 #include "posix_sleep.h"
 #include <pthread.h>
 #include <string.h>
@@ -32,12 +31,13 @@ static void *wq_thread_func(void *arg)
 		memmove(&wq->queue[0], &wq->queue[1], (size_t)(wq->count - 1) * slot);
 		wq->count--;
 		/* Mark the work as being processed under the same lock that
-		 * cancel/free synchronize on, so they observe in_progress=1
+		 * cancel/deinit synchronize on, so they observe in_progress=1
 		 * even if they race in immediately after the dequeue. */
 		w->in_progress = 1;
+		int execute = wq->running;
 		pthread_mutex_unlock(&wq->lock);
 
-		if (w->delay_ms > 0)
+		if (execute && w->delay_ms > 0)
 			posix_sleep_ms(w->delay_ms);
 
 		/* Re-check pending — cancel may have flipped it during the
@@ -48,15 +48,16 @@ static void *wq_thread_func(void *arg)
 		__atomic_store_n(&w->pending, 0, __ATOMIC_RELEASE);
 		pthread_mutex_unlock(&wq->lock);
 
-		if (still_pending && w->handler) {
+		if (execute && still_pending && w->handler) {
 			w->handler(w);
 		}
 
 		/* Drop in_progress under the lock and broadcast — wakes any
-		 * cancel/free waiters camped on wq->cond.  Broadcast (vs
+		 * cancel/deinit waiters camped on wq->cond.  Broadcast (vs
 		 * signal) because more than one thread may be waiting on
 		 * different work items. */
 		pthread_mutex_lock(&wq->lock);
+		__atomic_store_n(&w->wq, NULL, __ATOMIC_RELEASE);
 		w->in_progress = 0;
 		pthread_cond_broadcast(&wq->cond);
 		pthread_mutex_unlock(&wq->lock);
@@ -116,38 +117,14 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	return OVE_OK;
 }
 
-int ove_work_init(ove_work_t *work, ove_work_fn handler)
-{
-	if (!work || !handler)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_work *w = OVE_BACKEND_MALLOC(sizeof(*w));
-	if (!w) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(w, 0, sizeof(*w));
-	w->handler = handler;
-	*work = w;
-	return OVE_OK;
-}
-
-void ove_work_free(ove_work_t work)
+void ove_work_deinit(ove_work_t work)
 {
 	struct ove_work *w = work;
 	if (!w) {
 		return;
 	}
-	/* If this work was ever submitted, the worker may still be running
-	 * the handler — wait for in_progress to drop before freeing the
-	 * struct, otherwise we hand the worker a use-after-free. */
-	struct ove_workqueue *wq = w->wq;
-	if (wq) {
-		pthread_mutex_lock(&wq->lock);
-		while (w->in_progress) {
-			pthread_cond_wait(&wq->cond, &wq->lock);
-		}
-		pthread_mutex_unlock(&wq->lock);
-	}
-	OVE_BACKEND_FREE(w);
+	(void)ove_work_cancel(w);
+	w->handler = NULL;
 }
 
 int ove_work_submit(ove_workqueue_t wqh, ove_work_t work)
@@ -158,6 +135,10 @@ int ove_work_submit(ove_workqueue_t wqh, ove_work_t work)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	pthread_mutex_lock(&wq->lock);
+	if (!wq->running || w->wq != NULL || w->pending || w->in_progress) {
+		pthread_mutex_unlock(&wq->lock);
+		return OVE_ERR_BUSY;
+	}
 	if (wq->count >= OVE_WQ_MAX_PENDING) {
 		pthread_mutex_unlock(&wq->lock);
 		return OVE_ERR_NO_MEMORY;
@@ -179,6 +160,10 @@ int ove_work_submit_delayed(ove_workqueue_t wqh, ove_work_t work, uint32_t delay
 		return OVE_ERR_INVALID_PARAM;
 	}
 	pthread_mutex_lock(&wq->lock);
+	if (!wq->running || w->wq != NULL || w->pending || w->in_progress) {
+		pthread_mutex_unlock(&wq->lock);
+		return OVE_ERR_BUSY;
+	}
 	if (wq->count >= OVE_WQ_MAX_PENDING) {
 		pthread_mutex_unlock(&wq->lock);
 		return OVE_ERR_NO_MEMORY;
@@ -198,7 +183,7 @@ int ove_work_cancel(ove_work_t work)
 	if (!w) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	struct ove_workqueue *wq = w->wq;
+	struct ove_workqueue *wq = __atomic_load_n(&w->wq, __ATOMIC_ACQUIRE);
 	if (!wq) {
 		/* Never submitted — not pending. */
 		return OVE_ERR_INVAL;
@@ -206,6 +191,18 @@ int ove_work_cancel(ove_work_t work)
 	pthread_mutex_lock(&wq->lock);
 	int was_pending = __atomic_load_n(&w->pending, __ATOMIC_ACQUIRE);
 	__atomic_store_n(&w->pending, 0, __ATOMIC_RELEASE);
+
+	/* If the worker has not dequeued the item, remove the pointer now so
+	 * caller-owned storage can be released immediately and safely. */
+	for (int i = 0; i < wq->count; i++) {
+		if (wq->queue[i] != w)
+			continue;
+		memmove(&wq->queue[i], &wq->queue[i + 1],
+			(size_t)(wq->count - i - 1) * sizeof(wq->queue[0]));
+		wq->count--;
+		__atomic_store_n(&w->wq, NULL, __ATOMIC_RELEASE);
+		break;
+	}
 	/* Wait for any in-flight execution of THIS work item to finish.
 	 * Without this, the caller could free the work while the worker
 	 * is still inside w->handler (the UAF TSan caught). */

@@ -8,7 +8,6 @@
 
 #include "ove/workqueue.h"
 #include "ove/storage.h"
-#include "ove_backend_common.h"
 #include "ove_freertos_priority.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -18,27 +17,39 @@
 
 #include <string.h>
 
+enum {
+	WORK_IDLE,
+	WORK_DELAYED,
+	WORK_QUEUED,
+	WORK_RUNNING,
+	WORK_CANCELLED,
+};
+
+static void work_complete(struct ove_work *work)
+{
+	work->target_wq = NULL;
+	__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
+	xSemaphoreGive(work->completion_sem);
+}
+
 static void wq_thread(void *arg)
 {
 	struct ove_workqueue *wq = (struct ove_workqueue *)arg;
 	struct ove_work *work;
 
-	while (wq->running) {
+	while (1) {
 		if (xQueueReceive(wq->queue, &work, portMAX_DELAY) == pdPASS) {
 			if (work == NULL) {
 				break; /* poison pill — shutdown */
 			}
-			/* Pulled from the queue — no longer pending. */
-			__atomic_store_n(&work->pending, 0, __ATOMIC_RELEASE);
-			__atomic_store_n(&work->in_progress, 1, __ATOMIC_RELEASE);
-			if (work->handler != NULL) {
+			int expected = WORK_QUEUED;
+			if (wq->running &&
+			    __atomic_compare_exchange_n(&work->state, &expected, WORK_RUNNING, 0,
+							__ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) &&
+			    work->handler != NULL) {
 				work->handler(work);
 			}
-			__atomic_store_n(&work->in_progress, 0, __ATOMIC_RELEASE);
-			/* Unconditional give: cancel/free's wait loop drains
-			 * stale tokens before re-checking in_progress, so an
-			 * extra give from a prior iteration is harmless. */
-			xSemaphoreGive(work->completion_sem);
+			work_complete(work);
 		}
 	}
 	/* Signal that worker has finished processing */
@@ -49,17 +60,37 @@ static void wq_thread(void *arg)
 /* Wait until the worker has fully released this work item.
  *
  * The loop pattern handles three cases without races:
- *   1. Worker not yet pulled the work — in_progress==0, immediate exit.
- *   2. Worker mid-handler — Take blocks until worker's give; loop
- *      re-checks because that give might be from a prior iteration.
- *   3. Worker just finished — in_progress==0 but a stale give may
+ *   1. Worker has not yet pulled the work — Take blocks for its ack.
+ *   2. Worker is in the handler — Take blocks until completion.
+ *   3. Worker just finished — idle is observed and a stale give may
  *      sit on the sem; subsequent Take drains it and we exit.
  */
 static void wait_for_completion(struct ove_work *w)
 {
-	while (__atomic_load_n(&w->in_progress, __ATOMIC_ACQUIRE)) {
+	while (__atomic_load_n(&w->state, __ATOMIC_ACQUIRE) != WORK_IDLE) {
 		xSemaphoreTake(w->completion_sem, portMAX_DELAY);
 	}
+}
+
+static void work_timer_drain_done(void *param1, uint32_t param2)
+{
+	(void)param2;
+	xSemaphoreGive((SemaphoreHandle_t)param1);
+}
+
+static void drain_timer_daemon(void)
+{
+	StaticSemaphore_t sem_buf;
+	SemaphoreHandle_t done = xSemaphoreCreateBinaryStatic(&sem_buf);
+	if (done != NULL &&
+	    xTimerPendFunctionCall(work_timer_drain_done, done, 0, portMAX_DELAY) == pdPASS)
+		xSemaphoreTake(done, portMAX_DELAY);
+}
+
+static TickType_t work_delay_ticks(uint32_t delay_ms)
+{
+	TickType_t ticks = pdMS_TO_TICKS(delay_ms);
+	return ticks > 0 ? ticks : 1;
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -122,62 +153,42 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	storage->handler = handler;
 	storage->delay_timer = NULL;
 	storage->target_wq = NULL;
-	storage->in_progress = 0;
-	storage->pending = 0;
+	storage->state = WORK_IDLE;
 	storage->completion_sem = xSemaphoreCreateBinaryStatic(&storage->static_completion_sem);
 
 	*work = storage;
 	return OVE_OK;
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_work_init(ove_work_t *work, ove_work_fn handler)
+void ove_work_deinit(ove_work_t work)
 {
-	struct ove_work *fw;
-
-	if (work == NULL || handler == NULL) {
-		return OVE_ERR_INVALID_PARAM;
+	if (work == NULL)
+		return;
+	(void)ove_work_cancel(work);
+	if (work->delay_timer != NULL) {
+		xTimerDelete(work->delay_timer, portMAX_DELAY);
+		drain_timer_daemon();
+		work->delay_timer = NULL;
 	}
-
-	fw = OVE_BACKEND_MALLOC(sizeof(*fw));
-	if (fw == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	fw->handler = handler;
-	fw->delay_timer = NULL;
-	fw->target_wq = NULL;
-	fw->in_progress = 0;
-	fw->pending = 0;
-	fw->completion_sem = xSemaphoreCreateBinaryStatic(&fw->static_completion_sem);
-
-	*work = fw;
-	return OVE_OK;
+	work->handler = NULL;
 }
-
-void ove_work_free(ove_work_t work)
-{
-	if (work != NULL) {
-		/* Wait for any in-flight handler to finish before reclaiming
-		 * the struct — closes the UAF window. */
-		wait_for_completion(work);
-		if (work->delay_timer != NULL) {
-			xTimerDelete(work->delay_timer, portMAX_DELAY);
-		}
-		OVE_BACKEND_FREE(work);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
 int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 {
-	/* Mark pending before enqueue so the worker (which clears it on
-	 * dequeue) and a concurrent cancel see a consistent value. */
-	__atomic_store_n(&work->pending, 1, __ATOMIC_RELEASE);
+	if (wq == NULL || work == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!wq->running)
+		return OVE_ERR_BUSY;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_QUEUED, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
+	work->target_wq = wq;
 	if (xQueueSend(wq->queue, &work, 0) != pdPASS) {
-		__atomic_store_n(&work->pending, 0, __ATOMIC_RELEASE);
+		work->target_wq = NULL;
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
 		return OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
@@ -187,30 +198,50 @@ static void delay_timer_cb(TimerHandle_t xTimer)
 {
 	struct ove_work *fw = pvTimerGetTimerID(xTimer);
 	ove_workqueue_t fwq = fw->target_wq;
-
-	xQueueSend(fwq->queue, &fw, 0);
+	int expected = WORK_DELAYED;
+	if (!__atomic_compare_exchange_n(&fw->state, &expected, WORK_QUEUED, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return;
+	if (fwq == NULL || !fwq->running || xQueueSend(fwq->queue, &fw, 0) != pdPASS)
+		work_complete(fw);
 }
 
 int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)
 {
+	if (wq == NULL || work == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!wq->running)
+		return OVE_ERR_BUSY;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_DELAYED, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
 	work->target_wq = wq;
 
 	if (work->delay_timer == NULL) {
-		work->delay_timer = xTimerCreateStatic("wq_delay", pdMS_TO_TICKS(delay_ms), pdFALSE,
-						       (void *)work, delay_timer_cb,
+		work->delay_timer = xTimerCreateStatic("wq_delay", work_delay_ticks(delay_ms),
+						       pdFALSE, (void *)work, delay_timer_cb,
 						       &work->static_timer);
 		if (work->delay_timer == NULL) {
+			work->target_wq = NULL;
+			__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
 			return OVE_ERR_NO_MEMORY;
 		}
 	} else {
-		xTimerChangePeriod(work->delay_timer, pdMS_TO_TICKS(delay_ms), portMAX_DELAY);
+		if (xTimerChangePeriod(work->delay_timer, work_delay_ticks(delay_ms),
+				       portMAX_DELAY) != pdPASS) {
+			work->target_wq = NULL;
+			__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
+			return OVE_ERR_TIMEOUT;
+		}
+		return OVE_OK;
 	}
 
 	if (xTimerStart(work->delay_timer, portMAX_DELAY) != pdPASS) {
+		work->target_wq = NULL;
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
 		return OVE_ERR_TIMEOUT;
 	}
-	/* Scheduled — pending until the timer fires and the worker dequeues it. */
-	__atomic_store_n(&work->pending, 1, __ATOMIC_RELEASE);
 	return OVE_OK;
 }
 
@@ -219,13 +250,30 @@ int ove_work_cancel(ove_work_t work)
 	if (work == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int was_pending = __atomic_exchange_n(&work->pending, 0, __ATOMIC_ACQ_REL);
-	if (work->delay_timer != NULL) {
-		xTimerStop(work->delay_timer, portMAX_DELAY);
+	for (;;) {
+		int state = __atomic_load_n(&work->state, __ATOMIC_ACQUIRE);
+		if (state == WORK_IDLE)
+			return OVE_ERR_INVAL;
+		if (state == WORK_DELAYED) {
+			int expected = WORK_DELAYED;
+			if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_CANCELLED, 0,
+							 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+				continue;
+			xTimerStop(work->delay_timer, portMAX_DELAY);
+			drain_timer_daemon();
+			work_complete(work);
+			return OVE_OK;
+		}
+		if (state == WORK_QUEUED) {
+			int expected = WORK_QUEUED;
+			if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_CANCELLED, 0,
+							 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+				continue;
+			wait_for_completion(work);
+			return OVE_OK;
+		}
+		/* Running, or another caller already requested cancellation. */
+		wait_for_completion(work);
+		return OVE_ERR_INVAL;
 	}
-	/* Wait for any in-flight handler to finish so the caller may
-	 * safely free the struct after cancel returns. */
-	wait_for_completion(work);
-	/* Contract: OVE_ERR_INVAL when the item was not pending. */
-	return was_pending ? OVE_OK : OVE_ERR_INVAL;
 }

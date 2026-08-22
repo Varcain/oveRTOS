@@ -352,6 +352,15 @@ static inline void ove_test_workqueue_destroy(ove_workqueue_t wq)
 #endif
 }
 
+static inline void ove_test_work_destroy(ove_work_t work)
+{
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_work_deinit(work);
+#else
+	ove_work_free(work);
+#endif
+}
+
 static inline void ove_test_watchdog_destroy(ove_watchdog_t wdt)
 {
 #ifdef CONFIG_OVE_ZERO_HEAP

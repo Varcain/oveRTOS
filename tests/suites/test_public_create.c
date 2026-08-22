@@ -289,6 +289,7 @@ static void test_public_create_workqueue(void **state)
 	assert_int_equal(ove_work_submit(wq, w), OVE_OK);
 	assert_int_equal(ove_sem_take(s_work_done_sem, OVE_MS(1000)), OVE_OK);
 	assert_int_equal(s_work_ran, 1);
+	ove_work_deinit(w);
 	/* workqueue + sem reclaimed by pub_wq_teardown (success and failure). */
 }
 

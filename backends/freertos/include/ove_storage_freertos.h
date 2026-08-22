@@ -200,22 +200,11 @@ struct ove_work {
 	TimerHandle_t delay_timer;
 	StaticTimer_t static_timer;
 	struct ove_workqueue *target_wq;
-	/* Completion synchronization (closes the cancel/free UAF window
-	 * the POSIX TSan run flagged: cancel/free can race with the
-	 * worker still inside the handler, freeing the struct out from
-	 * under the worker).  in_progress is set/cleared by the worker
-	 * around handler invocation (atomic store-release / load-acquire);
-	 * completion_sem is given unconditionally after each handler so
-	 * cancel/free can block on Take while in_progress is observed.
-	 * Per-work semaphore costs ~80 B static — acceptable for the
-	 * workqueue surface. */
+	/* Synchronous cancel/deinit acknowledgement. */
 	StaticSemaphore_t static_completion_sem;
 	SemaphoreHandle_t completion_sem;
-	int in_progress;
-	/* Set when the item is queued/scheduled, cleared when the worker
-	 * dequeues it; lets ove_work_cancel report OVE_ERR_INVAL for a
-	 * not-pending item (atomic store-release / load-acquire). */
-	int pending;
+	/* 0 idle, 1 delayed, 2 queued, 3 running, 4 cancellation requested. */
+	int state;
 };
 
 struct ove_workqueue {

@@ -159,15 +159,14 @@ struct ove_work {
 	uint32_t delay_ms;
 	int pending;
 	/* in_progress: set by the worker between dequeue and end-of-handler.
-	 * Read by ove_work_cancel / ove_work_free under wq->lock to wait
+	 * Read by ove_work_cancel / ove_work_deinit under wq->lock to wait
 	 * for any in-flight execution of this work item to finish before
 	 * the caller frees it.  Closes the use-after-free TSan flagged
 	 * when test_wq_cancel_work raced cancel+free against the worker. */
 	int in_progress;
 	/* wq: set by submit() under wq->lock; cleared on init.  Cancel /
-	 * free read it to find the wq->cond on which the worker broadcasts
-	 * completion.  NULL = never submitted, no in-flight work to wait
-	 * for, free can proceed immediately. */
+	 * deinit read it to find the wq->cond on which the worker broadcasts
+	 * completion. The worker clears it before publishing completion. */
 	struct ove_workqueue *wq;
 };
 

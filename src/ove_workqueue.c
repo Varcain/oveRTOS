@@ -36,4 +36,27 @@ void ove_workqueue_destroy(ove_workqueue_t wq)
 	}
 }
 
+int ove_work_init(ove_work_t *work, ove_work_fn handler)
+{
+	int rc = ove_check_param(work);
+	if (rc)
+		return rc;
+
+	ove_work_storage_t *storage = OVE_BACKEND_MALLOC(sizeof(*storage));
+	if (!storage)
+		return OVE_ERR_NO_MEMORY;
+	rc = ove_work_init_static(work, storage, handler);
+	if (rc != OVE_OK)
+		OVE_BACKEND_FREE(storage);
+	return rc;
+}
+
+void ove_work_free(ove_work_t work)
+{
+	if (work) {
+		ove_work_deinit(work);
+		OVE_BACKEND_FREE(work);
+	}
+}
+
 #endif

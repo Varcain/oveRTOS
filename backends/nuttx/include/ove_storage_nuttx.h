@@ -141,16 +141,10 @@ typedef struct ove_eventgroup ove_eventgroup_storage_t;
 
 struct ove_work {
 	void (*handler)(struct ove_work *);
-	volatile int cancelled;
 	uint32_t delay_ms;
-	int pending;
-	/* Completion synchronization — same shape as POSIX/FreeRTOS:
-	 * worker sets in_progress around handler invocation and posts
-	 * completion_sem on every iteration; cancel/free wait on the
-	 * sem while in_progress is observed.  Closes the use-after-free
-	 * window where ove_work_free could reclaim the struct while
-	 * wq_task_fn was still inside w->handler. */
-	int in_progress;
+	/* 0 idle, 1 queued/delayed, 2 running, 3 cancellation requested. */
+	int state;
+	struct ove_workqueue *wq;
 	sem_t completion_sem;
 	int completion_sem_inited;
 };
@@ -160,10 +154,14 @@ struct ove_workqueue {
 	struct ove_work *ring[OVE_WQ_QUEUE_DEPTH];
 	unsigned int head;
 	unsigned int tail;
+	unsigned int count;
+	struct ove_work *active_work;
+	int active_delaying;
 	mutex_t lock;
 	sem_t not_full;
 	sem_t not_empty;
 	sem_t delay_sem;
+	sem_t stopped_sem;
 	volatile int running;
 };
 
