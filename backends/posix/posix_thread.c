@@ -107,6 +107,15 @@ static size_t _check_stack_hwm(void *base, size_t size)
 	return size - clean * sizeof(uint32_t);
 }
 
+static void _snapshot_final_stack_headroom(struct ove_thread *t)
+{
+	if (!t->stack_base || !t->stack_size)
+		return;
+	size_t used = _check_stack_hwm(t->stack_base, t->stack_size);
+	t->stack_headroom = t->stack_size > used ? t->stack_size - used : 0;
+	t->stack_headroom_valid = 1;
+}
+
 /* Simple linked list of all live threads for ove_thread_list(). */
 static struct ove_thread *thread_list_head;
 static pthread_mutex_t thread_list_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -163,7 +172,15 @@ static void *thread_wrapper(void *arg)
 
 	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 	t->entry(t->arg);
-	SET_STATE(t, OVE_THREAD_STATE_TERMINATED);
+	/* A foreign thread cannot scan a live pthread stack without racing its
+	 * ordinary stack writes. Capture the final high-water mark on the owner,
+	 * then publish both the snapshot and all preceding writes by releasing the
+	 * TERMINATED state. */
+	ove_trace_emit_state((uintptr_t)t, __atomic_load_n(&t->state, __ATOMIC_RELAXED),
+			     OVE_THREAD_STATE_TERMINATED);
+	ove_state_track_transition(&t->st, OVE_THREAD_STATE_TERMINATED);
+	_snapshot_final_stack_headroom(t);
+	__atomic_store_n(&t->state, OVE_THREAD_STATE_TERMINATED, __ATOMIC_RELEASE);
 	return NULL;
 }
 
@@ -523,8 +540,10 @@ int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes)
 	struct ove_thread *t = handle;
 	if (!t->stack_base || !t->stack_size)
 		return OVE_ERR_NOT_SUPPORTED;
-	size_t used = _check_stack_hwm(t->stack_base, t->stack_size);
-	*headroom_bytes = t->stack_size > used ? t->stack_size - used : 0;
+	if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) != OVE_THREAD_STATE_TERMINATED ||
+	    !t->stack_headroom_valid)
+		return OVE_ERR_NOT_SUPPORTED;
+	*headroom_bytes = t->stack_headroom;
 	return OVE_OK;
 }
 
@@ -624,16 +643,20 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 		out[count].name = t->name ? t->name : "?";
 		out[count].identity = (uintptr_t)t;
-		out[count].state = (ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
+		ove_thread_state_t state =
+			(ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
+		out[count].state = state;
 		out[count].priority = t->priority;
-		out[count].stack_used =
-			t->stack_base ? _check_stack_hwm(t->stack_base, t->stack_size) : 0;
+		int final_stack = state == OVE_THREAD_STATE_TERMINATED && t->stack_headroom_valid &&
+				  t->stack_size >= t->stack_headroom;
+		out[count].stack_used = final_stack ? t->stack_size - t->stack_headroom : 0;
 		out[count].stack_size = t->stack_size;
 		out[count].cpu_percent_x100 = t->cpu_pct_x100;
 		out[count].valid_fields = 0;
+		if (final_stack)
+			out[count].valid_fields |= OVE_THREAD_INFO_VALID_STACK_USED;
 		if (t->stack_base && t->stack_size)
-			out[count].valid_fields |= OVE_THREAD_INFO_VALID_STACK_USED |
-						   OVE_THREAD_INFO_VALID_STACK_SIZE;
+			out[count].valid_fields |= OVE_THREAD_INFO_VALID_STACK_SIZE;
 		if (t->cpu_pct_valid)
 			out[count].valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS

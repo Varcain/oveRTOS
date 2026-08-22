@@ -195,6 +195,13 @@ static void test_get_state_terminated(void **state)
 		st = ove_thread_get_state(h);
 	}
 	assert_true(st == OVE_THREAD_STATE_TERMINATED || st == OVE_THREAD_STATE_SUSPENDED);
+#if defined(CONFIG_OVE_RTOS_POSIX) && !defined(CONFIG_OVE_ZERO_HEAP)
+	/* POSIX publishes a race-free final coloration snapshot rather than
+	 * scanning another pthread's live stack. */
+	size_t final_headroom = 0;
+	assert_int_equal(ove_thread_get_stack_headroom(h, &final_headroom), OVE_OK);
+	assert_true(final_headroom <= 512u * 1024u);
+#endif
 	ove_test_thread_destroy(h);
 }
 
