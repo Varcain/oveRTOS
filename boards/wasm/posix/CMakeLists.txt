@@ -15,6 +15,7 @@
 #   emmake make -C build
 
 cmake_minimum_required(VERSION 3.14)
+project(ove_wasm LANGUAGES C CXX)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OvePosixCommon.cmake)
 
@@ -23,7 +24,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OvePosixCommon.cmake)
 # the flag visible to every translation unit.
 add_compile_options(-pthread)
 
-ove_posix_setup_project(NAME ove_wasm)
+ove_posix_setup()
 ove_posix_include_app_sources()
 ove_posix_add_common_includes()
 

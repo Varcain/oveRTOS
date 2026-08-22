@@ -22,6 +22,7 @@ set(SIM_SOURCES
     ${SIM_DIR}/src/ove_sim_transport_shm.c
     ${SIM_DIR}/hal/sim_board.c
 )
+set(SIM_REPLACED_POSIX_SOURCES posix_console.c)
 
 # Display plugin (replaces posix_lvgl.c)
 if(OVE_LVGL)
@@ -29,6 +30,7 @@ if(OVE_LVGL)
         ${SIM_DIR}/hal/sim_lvgl.c
         ${SIM_DIR}/hal/sim_display.c
     )
+    list(APPEND SIM_REPLACED_POSIX_SOURCES posix_lvgl.c)
 endif()
 
 # Audio plugin (replaces posix_audio.c)
@@ -36,6 +38,7 @@ if(OVE_AUDIO)
     list(APPEND SIM_SOURCES
         ${SIM_DIR}/hal/sim_audio.c
     )
+    list(APPEND SIM_REPLACED_POSIX_SOURCES posix_audio.c)
 endif()
 
 # Network simulation (replaces posix_net.c and ove_net_tls.c)
@@ -83,22 +86,3 @@ list(APPEND SIM_SOURCES
 list(APPEND SIM_SOURCES
     ${SIM_DIR}/hal/sim_profiler.c
 )
-
-# Export to parent scope
-set(SIM_SOURCES ${SIM_SOURCES} PARENT_SCOPE)
-set(SIM_INCLUDE_DIRS ${SIM_INCLUDE_DIRS} PARENT_SCOPE)
-
-# POSIX HAL files that the sim framework REPLACES.
-# The board CMakeLists.txt should exclude these when OVE_SIM is on.
-set(SIM_REPLACED_POSIX_SOURCES posix_console.c PARENT_SCOPE)
-if(OVE_LVGL)
-    list(APPEND SIM_REPLACED_POSIX_SOURCES
-        posix_lvgl.c
-    )
-endif()
-if(OVE_AUDIO)
-    list(APPEND SIM_REPLACED_POSIX_SOURCES
-        posix_audio.c
-    )
-endif()
-set(SIM_REPLACED_POSIX_SOURCES ${SIM_REPLACED_POSIX_SOURCES} PARENT_SCOPE)
