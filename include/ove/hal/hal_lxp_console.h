@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-int ove_hal_lxp_console_init(void);
+void ove_hal_lxp_console_init(void);
 int ove_hal_lxp_console_try_getchar(void);
 void ove_hal_lxp_console_putchar(int c);
 void ove_hal_lxp_console_guest_write(const char *buf, size_t len);

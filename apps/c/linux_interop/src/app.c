@@ -43,7 +43,7 @@ OVE_THREAD_DEFINE_HOST(g_demo_storage, 8192);
 static void demo_body(void *arg)
 {
 	(void)arg;
-	(void)ove_lxp_console_init();
+	ove_lxp_console_init();
 	ove_lxp_console_write(
 		"=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
 	ove_lxp_console_write("[build] " OVE_BUILD_ID "\n");

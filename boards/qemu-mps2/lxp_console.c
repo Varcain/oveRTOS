@@ -24,12 +24,11 @@
 
 #define OVE_LXP_UART_REG(offset) (*(volatile uint32_t *)(uintptr_t)(OVE_LXP_UART_BASE + (offset)))
 
-int ove_hal_lxp_console_init(void)
+void ove_hal_lxp_console_init(void)
 {
 	/* CMSDK UART: BAUDDIV >= 16, TX enable | RX enable. */
 	OVE_LXP_UART_REG(0x10u) = 16u;
 	OVE_LXP_UART_REG(0x08u) = 0x3u;
-	return OVE_OK;
 }
 
 int ove_hal_lxp_console_try_getchar(void)

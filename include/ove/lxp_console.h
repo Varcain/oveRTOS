@@ -14,8 +14,8 @@
 extern "C" {
 #endif
 
-/** Initialize the console transport used by the Linux personality. */
-int ove_lxp_console_init(void);
+/** Initialize the configured console transport used by the Linux personality. */
+void ove_lxp_console_init(void);
 
 /** Fill only the console-related fields of an otherwise caller-owned launch
  * configuration. Diagnostics, environment, display, and workload policy are
