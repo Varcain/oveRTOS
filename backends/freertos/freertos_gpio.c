@@ -140,8 +140,7 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 		gpio_init.Mode = GPIO_MODE_IT_RISING_FALLING;
 		break;
 	default:
-		gpio_init.Mode = GPIO_MODE_IT_RISING;
-		break;
+		return OVE_ERR_INVALID_PARAM;
 	}
 
 	HAL_GPIO_Init(gpio, &gpio_init);
@@ -152,15 +151,26 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 
 int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 {
-	(void)port;
-	HAL_NVIC_DisableIRQ(pin_to_irqn(pin));
+	if (port_to_gpio(port) == NULL || pin >= 16U)
+		return OVE_ERR_INVALID_PARAM;
+
+	/* EXTI5..9 and EXTI10..15 share NVIC vectors.  Mask only this line;
+	 * disabling the vector would also silence unrelated registered pins. */
+	EXTI->IMR &= ~(1U << pin);
 	return OVE_OK;
 }
 
 int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 {
-	/* No per-registration HW state beyond the NVIC mask; same as disable. */
-	return ove_hal_gpio_irq_hw_disable(port, pin);
+	GPIO_TypeDef *gpio = port_to_gpio(port);
+
+	if (gpio == NULL || pin >= 16U)
+		return OVE_ERR_INVALID_PARAM;
+
+	/* HAL_GPIO_DeInit removes this line's EXTI route and trigger state while
+	 * leaving the shared NVIC vector available to the other EXTI lines. */
+	HAL_GPIO_DeInit(gpio, 1U << pin);
+	return OVE_OK;
 }
 
 /* HAL EXTI callback — dispatches to shared IRQ dispatch */

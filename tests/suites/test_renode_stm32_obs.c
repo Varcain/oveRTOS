@@ -145,6 +145,38 @@ static void test_external_irq_trigger(void **state)
 	assert_int_not_equal(g_irq_fired, 0);
 
 	ove_gpio_irq_disable(PORT_A, 0);
+	(void)ove_gpio_irq_unregister(PORT_A, 0);
+}
+
+static void noop_irq_handler(unsigned int port, unsigned int pin, void *user_data)
+{
+	(void)port;
+	(void)pin;
+	(void)user_data;
+}
+
+static void test_disabling_exti_line_preserves_shared_vector_peer(void **state)
+{
+	(void)state;
+	const unsigned int first_pin = 5;
+	const unsigned int peer_pin = 6;
+
+	assert_int_equal(ove_gpio_irq_register(PORT_A, first_pin, OVE_GPIO_IRQ_RISING,
+					       noop_irq_handler, NULL),
+			 OVE_OK);
+	assert_int_equal(ove_gpio_irq_register(PORT_A, peer_pin, OVE_GPIO_IRQ_RISING,
+					       noop_irq_handler, NULL),
+			 OVE_OK);
+	assert_int_equal(ove_gpio_irq_enable(PORT_A, first_pin), OVE_OK);
+	assert_int_equal(ove_gpio_irq_enable(PORT_A, peer_pin), OVE_OK);
+	assert_int_equal(ove_gpio_irq_disable(PORT_A, first_pin), OVE_OK);
+
+	assert_int_equal(ove_obs_read32((uintptr_t)&EXTI->IMR) & (1U << first_pin), 0U);
+	assert_int_equal(ove_obs_read32((uintptr_t)&EXTI->IMR) & (1U << peer_pin),
+			 (1U << peer_pin));
+
+	(void)ove_gpio_irq_unregister(PORT_A, first_pin);
+	(void)ove_gpio_irq_unregister(PORT_A, peer_pin);
 }
 
 #endif /* OVE_OBS_AVAILABLE */
@@ -167,6 +199,7 @@ int test_renode_stm32_obs_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_led_set_observable_in_odr),
 		cmocka_unit_test(test_gpio_set_observable_in_odr),
+		cmocka_unit_test(test_disabling_exti_line_preserves_shared_vector_peer),
 #ifndef OVE_HW
 		/* test_external_irq_trigger needs a host-side stimulus
 		 * (`sysbus.gpioPortA OnGPIO 0 true` in test.resc) — there's
