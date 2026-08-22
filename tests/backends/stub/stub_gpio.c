@@ -22,6 +22,7 @@
 
 static int gpio_state[BSP_MAX_PORTS][BSP_MAX_PINS];
 static int gpio_irq_armed[BSP_MAX_PORTS][BSP_MAX_PINS];
+static int gpio_irq_unregister_result = OVE_OK;
 
 int stub_gpio_get_state(unsigned int port, unsigned int pin)
 {
@@ -35,11 +36,17 @@ void stub_gpio_reset(void)
 {
 	memset(gpio_state, 0, sizeof(gpio_state));
 	memset(gpio_irq_armed, 0, sizeof(gpio_irq_armed));
+	gpio_irq_unregister_result = OVE_OK;
 }
 
 int stub_gpio_irq_is_armed(unsigned int port, unsigned int pin)
 {
 	return port < BSP_MAX_PORTS && pin < BSP_MAX_PINS ? gpio_irq_armed[port][pin] : 0;
+}
+
+void stub_gpio_set_irq_unregister_result(int result)
+{
+	gpio_irq_unregister_result = result;
 }
 
 int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
@@ -92,6 +99,8 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 
 int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 {
+	if (gpio_irq_unregister_result != OVE_OK)
+		return gpio_irq_unregister_result;
 	/* No per-registration HW state on the stub; same as a disable. */
 	return ove_hal_gpio_irq_hw_disable(port, pin);
 }

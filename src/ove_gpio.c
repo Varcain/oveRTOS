@@ -18,6 +18,7 @@
 #define GPIO_IRQ_FREE 0
 #define GPIO_IRQ_REGISTERED 1
 #define GPIO_IRQ_RESERVING 2
+#define GPIO_IRQ_RELEASING 3
 
 struct gpio_irq_entry {
 	unsigned int port;
@@ -152,7 +153,9 @@ int ove_gpio_irq_disable(unsigned int port, unsigned int pin)
 int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
+	ove_irq_key_t key;
 
+	key = ove_irq_lock();
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
 		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
 			    GPIO_IRQ_REGISTERED &&
@@ -162,16 +165,21 @@ int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 			 * `registered` keeps a concurrent dispatch from firing a
 			 * half-torn-down entry (it gates on `enabled`). */
 			atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_release);
+			atomic_store_explicit(&irq_table[i].registered, GPIO_IRQ_RELEASING,
+					      memory_order_release);
+			ove_irq_unlock(key);
 			/* Permanent teardown — hw_unregister (not hw_disable) so
 			 * the backend also releases per-registration HW state
 			 * (e.g. Zephyr's gpio_callback), otherwise re-registering
 			 * the same (port,pin) double-registers and double-fires. */
 			int ret = ove_hal_gpio_irq_hw_unregister(port, pin);
-			atomic_store_explicit(&irq_table[i].registered, GPIO_IRQ_FREE,
+			atomic_store_explicit(&irq_table[i].registered,
+					      ret == OVE_OK ? GPIO_IRQ_FREE : GPIO_IRQ_REGISTERED,
 					      memory_order_release);
 			return ret;
 		}
 	}
+	ove_irq_unlock(key);
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
