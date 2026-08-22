@@ -292,8 +292,8 @@ endmacro()
 
 # ─── ove_werror_own_sources(<target> <sources>) ──────────────────────
 # Compile the project's own sources with -Werror, leaving vendored ones on the
-# plain -Wall policy. Vendored == under ${OVE_DL_DIR} (the workspace's dl/,
-# where downloads land) or a build-tree path; everything else is ours.
+# plain -Wall policy. Vendored == under a download root or an explicitly
+# selected RTOS source root; everything else is ours.
 #
 # Applied per source file because the firmware target contains both.
 #
@@ -308,14 +308,21 @@ function(ove_werror_own_sources _target _sources)
     if(NOT DEFINED OVE_DL_DIR)
         return()
     endif()
-    set(_dl_roots "")
+    set(_vendor_roots "")
     foreach(_root "${OVE_DL_DIR}" "${OVE_DIR}/dl")
         if(IS_DIRECTORY "${_root}")
             get_filename_component(_r "${_root}" REALPATH)
-            list(APPEND _dl_roots "${_root}" "${_r}")
+            list(APPEND _vendor_roots "${_root}" "${_r}")
         endif()
     endforeach()
-    list(REMOVE_DUPLICATES _dl_roots)
+    # The CLI may materialize a patched FreeRTOS worktree beside the firmware
+    # build directory. It remains vendored code even though its literal and
+    # resolved paths no longer sit below a download root.
+    if(DEFINED FREERTOS_PATH AND IS_DIRECTORY "${FREERTOS_PATH}")
+        get_filename_component(_freertos_real "${FREERTOS_PATH}" REALPATH)
+        list(APPEND _vendor_roots "${FREERTOS_PATH}" "${_freertos_real}")
+    endif()
+    list(REMOVE_DUPLICATES _vendor_roots)
 
     set(_own "")
     foreach(_src IN LISTS _sources)
@@ -324,7 +331,7 @@ function(ove_werror_own_sources _target _sources)
         endif()
         get_filename_component(_src_real "${_src}" REALPATH)
         set(_vendored FALSE)
-        foreach(_root IN LISTS _dl_roots)
+        foreach(_root IN LISTS _vendor_roots)
             string(FIND "${_src_real}" "${_root}/" _a)
             string(FIND "${_src}" "${_root}/" _b)
             if(_a EQUAL 0 OR _b EQUAL 0)
