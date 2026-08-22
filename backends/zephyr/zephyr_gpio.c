@@ -127,15 +127,6 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (!zephyr_irq_table[i].registered) {
-			break;
-		}
-	}
-	if (i >= GPIO_IRQ_MAX) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
 	flags = GPIO_INPUT;
 	switch (mode) {
 	case OVE_GPIO_IRQ_RISING:
@@ -147,6 +138,26 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 	case OVE_GPIO_IRQ_BOTH:
 		flags |= GPIO_INT_EDGE_BOTH;
 		break;
+	default:
+		return OVE_ERR_INVALID_PARAM;
+	}
+
+	/* Re-arm an existing callback after gpio_irq_hw_disable(). */
+	for (i = 0; i < GPIO_IRQ_MAX; i++) {
+		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
+		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
+			ret = gpio_pin_interrupt_configure(dev, pin, flags & ~GPIO_INPUT);
+			return ret == 0 ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+		}
+	}
+
+	for (i = 0; i < GPIO_IRQ_MAX; i++) {
+		if (!zephyr_irq_table[i].registered) {
+			break;
+		}
+	}
+	if (i >= GPIO_IRQ_MAX) {
+		return OVE_ERR_NO_MEMORY;
 	}
 
 	ret = gpio_pin_configure(dev, pin, flags);
@@ -162,10 +173,13 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 	zephyr_irq_table[i].dev = dev;
 	zephyr_irq_table[i].pin = (gpio_pin_t)pin;
 	zephyr_irq_table[i].port = port;
-	zephyr_irq_table[i].registered = 1;
-
 	gpio_init_callback(&zephyr_irq_table[i].cb_data, zephyr_gpio_irq_handler, BIT(pin));
-	gpio_add_callback(dev, &zephyr_irq_table[i].cb_data);
+	ret = gpio_add_callback(dev, &zephyr_irq_table[i].cb_data);
+	if (ret != 0) {
+		(void)gpio_pin_interrupt_configure(dev, pin, GPIO_INT_DISABLE);
+		return OVE_ERR_NOT_SUPPORTED;
+	}
+	zephyr_irq_table[i].registered = 1;
 
 	return OVE_OK;
 }

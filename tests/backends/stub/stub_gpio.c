@@ -21,6 +21,7 @@
 #define BSP_MAX_PINS 16
 
 static int gpio_state[BSP_MAX_PORTS][BSP_MAX_PINS];
+static int gpio_irq_armed[BSP_MAX_PORTS][BSP_MAX_PINS];
 
 int stub_gpio_get_state(unsigned int port, unsigned int pin)
 {
@@ -33,6 +34,12 @@ int stub_gpio_get_state(unsigned int port, unsigned int pin)
 void stub_gpio_reset(void)
 {
 	memset(gpio_state, 0, sizeof(gpio_state));
+	memset(gpio_irq_armed, 0, sizeof(gpio_irq_armed));
+}
+
+int stub_gpio_irq_is_armed(unsigned int port, unsigned int pin)
+{
+	return port < BSP_MAX_PORTS && pin < BSP_MAX_PINS ? gpio_irq_armed[port][pin] : 0;
 }
 
 int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
@@ -70,6 +77,7 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 	if (port >= BSP_MAX_PORTS || pin >= BSP_MAX_PINS) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	gpio_irq_armed[port][pin] = 1;
 	return OVE_OK;
 }
 
@@ -78,6 +86,7 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	if (port >= BSP_MAX_PORTS || pin >= BSP_MAX_PINS) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	gpio_irq_armed[port][pin] = 0;
 	return OVE_OK;
 }
 
