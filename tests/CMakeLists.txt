@@ -92,7 +92,7 @@ set(STUB_SOURCES
     # Host adapters for LXP's handle-based network port and thread snapshots.
     # The LXP module itself is tested in isolation in its repo. The oveRTOS host
     # test compiles only the provider gate used by the consumer-side storage glue.
-    ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
+    ${OVE_ROOT}/backends/common/lxp_ove_net_adapter.c
     ${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c
     ${OVE_ROOT}/modules/lxp/src/lxp_async_gate.c
     ${OVE_ROOT}/backends/common/ove_net_ready.c
@@ -210,7 +210,8 @@ function(ove_add_stub_variant name)
     # tests/ove_config.h for why this is per-target rather than global.
     target_compile_definitions(${name} PRIVATE
         CONFIG_OVE_NET=1
-        # CONFIG_OVE_LINUX_NET gates the lxp net adapter (backends/common/lxp_ove_adapter.c),
+        # CONFIG_OVE_LINUX_NET gates the LXP net adapter
+        # (backends/common/lxp_ove_net_adapter.c),
         # the one lxp-touching TU the host test compiles. The lxp module sources + their
         # LXP_ENABLE_* gates live in the lxp repo's own test build now, not here.
         CONFIG_OVE_LINUX_NET=1

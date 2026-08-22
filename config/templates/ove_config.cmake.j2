@@ -571,8 +571,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
 # per-engine *_net.c backend + the native TCP/IP stack (lwIP on FreeRTOS).
 list(APPEND OVE_BACKEND_SOURCES ${LXP_NET_SOURCES})
 # Host adapter for the personality's handle-based net-ops port: owns the socket
-# storage pool and bridges to the ove_net HAL. Statically wires g_ove_lnx_net_ops.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_adapter.c")
+# storage pool and bridges to the ove_net HAL as g_lxp_host_net_ops.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_net_adapter.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_NETFS") == True %}
 # Remote filesystem: a coordinator-owned 9P2000.L client bridging FD_NET opens on
