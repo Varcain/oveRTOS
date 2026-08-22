@@ -32,14 +32,18 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-			       ove_gpio_irq_cb callback, void *user_data)
+int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode)
 {
 	(void)port;
 	(void)pin;
 	(void)mode;
-	(void)callback;
-	(void)user_data;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
+{
+	(void)port;
+	(void)pin;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

@@ -75,12 +75,18 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return gpio_state[port][pin];
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-			       ove_gpio_irq_cb callback, void *user_data)
+int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode)
 {
 	(void)mode;
-	(void)callback;
-	(void)user_data;
+	if (port >= BSP_MAX_PORTS || pin >= BSP_MAX_PINS) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	gpio_irq_armed[port][pin] = 0;
+	return OVE_OK;
+}
+
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
+{
 	if (port >= BSP_MAX_PORTS || pin >= BSP_MAX_PINS) {
 		return OVE_ERR_INVALID_PARAM;
 	}

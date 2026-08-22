@@ -90,6 +90,7 @@ static void test_gpio_irq_register(void **state)
 	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
 				       gpio_irq_handler, NULL);
 	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(stub_gpio_irq_is_armed(TEST_GPIO_PORT, TEST_GPIO_PIN), 0);
 }
 
 static void test_gpio_irq_rejects_invalid_mode(void **state)

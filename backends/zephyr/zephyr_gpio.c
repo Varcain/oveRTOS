@@ -8,16 +8,21 @@
 
 #include "ove/hal/hal_gpio.h"
 #include "ove_backend_common.h"
+#include <stdatomic.h>
 #include <zephyr/drivers/gpio.h>
 
 #define GPIO_IRQ_MAX 8
+#define GPIO_IRQ_FREE 0
+#define GPIO_IRQ_RESERVING 1
+#define GPIO_IRQ_REGISTERED 2
 
 struct zephyr_irq_entry {
 	const struct device *dev;
 	gpio_pin_t pin;
+	gpio_flags_t irq_flags;
 	struct gpio_callback cb_data;
 	unsigned int port;
-	int registered;
+	atomic_int registered;
 };
 
 static struct zephyr_irq_entry zephyr_irq_table[GPIO_IRQ_MAX];
@@ -53,15 +58,10 @@ extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 static void zephyr_gpio_irq_handler(const struct device *dev, struct gpio_callback *cb,
 				    uint32_t pins)
 {
-	unsigned int i;
+	struct zephyr_irq_entry *entry = CONTAINER_OF(cb, struct zephyr_irq_entry, cb_data);
 
-	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].dev == dev &&
-		    (pins & BIT(zephyr_irq_table[i].pin))) {
-			ove_gpio_irq_dispatch(zephyr_irq_table[i].port,
-					      (unsigned int)zephyr_irq_table[i].pin);
-		}
-	}
+	if (entry->dev == dev && (pins & BIT(entry->pin)))
+		ove_gpio_irq_dispatch(entry->port, (unsigned int)entry->pin);
 }
 
 int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
@@ -111,23 +111,19 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return (val < 0) ? OVE_ERR_NOT_SUPPORTED : val;
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-			       ove_gpio_irq_cb callback, void *user_data)
+int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode)
 {
 	const struct device *dev;
 	gpio_flags_t flags;
 	unsigned int i;
 	int ret;
 
-	(void)callback;
-	(void)user_data;
-
 	dev = port_to_dev(port);
 	if (dev == NULL || !device_is_ready(dev)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	flags = GPIO_INPUT;
+	flags = 0;
 	switch (mode) {
 	case OVE_GPIO_IRQ_RISING:
 		flags |= GPIO_INT_EDGE_RISING;
@@ -142,17 +138,11 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	/* Re-arm an existing callback after gpio_irq_hw_disable(). */
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
-		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
-			ret = gpio_pin_interrupt_configure(dev, pin, flags & ~GPIO_INPUT);
-			return ret == 0 ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
-		}
-	}
-
-	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (!zephyr_irq_table[i].registered) {
+		int expected = GPIO_IRQ_FREE;
+		if (atomic_compare_exchange_strong_explicit(
+			    &zephyr_irq_table[i].registered, &expected, GPIO_IRQ_RESERVING,
+			    memory_order_acq_rel, memory_order_acquire)) {
 			break;
 		}
 	}
@@ -160,28 +150,53 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	ret = gpio_pin_configure(dev, pin, flags);
+	ret = gpio_pin_configure(dev, pin, GPIO_INPUT);
 	if (ret != 0) {
+		atomic_store_explicit(&zephyr_irq_table[i].registered, GPIO_IRQ_FREE,
+				      memory_order_release);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
-	ret = gpio_pin_interrupt_configure(dev, pin, flags & ~GPIO_INPUT);
+	ret = gpio_pin_interrupt_configure(dev, pin, GPIO_INT_DISABLE);
 	if (ret != 0) {
+		atomic_store_explicit(&zephyr_irq_table[i].registered, GPIO_IRQ_FREE,
+				      memory_order_release);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
 	zephyr_irq_table[i].dev = dev;
 	zephyr_irq_table[i].pin = (gpio_pin_t)pin;
 	zephyr_irq_table[i].port = port;
+	zephyr_irq_table[i].irq_flags = flags;
 	gpio_init_callback(&zephyr_irq_table[i].cb_data, zephyr_gpio_irq_handler, BIT(pin));
 	ret = gpio_add_callback(dev, &zephyr_irq_table[i].cb_data);
 	if (ret != 0) {
 		(void)gpio_pin_interrupt_configure(dev, pin, GPIO_INT_DISABLE);
+		atomic_store_explicit(&zephyr_irq_table[i].registered, GPIO_IRQ_FREE,
+				      memory_order_release);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
-	zephyr_irq_table[i].registered = 1;
+	atomic_store_explicit(&zephyr_irq_table[i].registered, GPIO_IRQ_REGISTERED,
+			      memory_order_release);
 
 	return OVE_OK;
+}
+
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
+{
+	unsigned int i;
+
+	for (i = 0; i < GPIO_IRQ_MAX; i++) {
+		if (atomic_load_explicit(&zephyr_irq_table[i].registered, memory_order_acquire) ==
+			    GPIO_IRQ_REGISTERED &&
+		    zephyr_irq_table[i].port == port &&
+		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
+			int ret = gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
+							       zephyr_irq_table[i].irq_flags);
+			return ret == 0 ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+		}
+	}
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
@@ -189,11 +204,13 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
+		if (atomic_load_explicit(&zephyr_irq_table[i].registered, memory_order_acquire) ==
+			    GPIO_IRQ_REGISTERED &&
+		    zephyr_irq_table[i].port == port &&
 		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
-			gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
-						     GPIO_INT_DISABLE);
-			return OVE_OK;
+			int ret = gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
+							       GPIO_INT_DISABLE);
+			return ret == 0 ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 		}
 	}
 	return OVE_ERR_NOT_SUPPORTED;
@@ -204,7 +221,9 @@ int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
+		if (atomic_load_explicit(&zephyr_irq_table[i].registered, memory_order_acquire) ==
+			    GPIO_IRQ_REGISTERED &&
+		    zephyr_irq_table[i].port == port &&
 		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
 			int ret = gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
 							       GPIO_INT_DISABLE);
@@ -217,7 +236,8 @@ int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 						   &zephyr_irq_table[i].cb_data);
 			if (ret != 0)
 				return OVE_ERR_NOT_SUPPORTED;
-			zephyr_irq_table[i].registered = 0;
+			atomic_store_explicit(&zephyr_irq_table[i].registered, GPIO_IRQ_FREE,
+					      memory_order_release);
 			return OVE_OK;
 		}
 	}
