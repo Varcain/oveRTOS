@@ -65,30 +65,7 @@ format: $(VENV_STAMP)
 
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
-	@CONFIGS=$$(find $(APP_DIR)/defconfigs -name '*_defconfig' -type f | sort); \
-	TOTAL=$$(echo "$$CONFIGS" | wc -l); \
-	CURRENT=0; FAILED=""; \
-	for cfg in $$CONFIGS; do \
-		NAME=$$(basename $$cfg); \
-		CURRENT=$$((CURRENT + 1)); \
-		echo ""; \
-		echo "============================================================"; \
-		echo "[$$CURRENT/$$TOTAL] Building $$NAME"; \
-		echo "============================================================"; \
-		if $(MAKE) $$NAME && $(MAKE); then \
-			echo "[$$CURRENT/$$TOTAL] $$NAME: OK"; \
-		else \
-			echo "[$$CURRENT/$$TOTAL] $$NAME: FAILED"; \
-			FAILED="$$FAILED $$NAME"; \
-		fi; \
-	done; \
-	echo ""; \
-	echo "============================================================"; \
-	if [ -n "$$FAILED" ]; then \
-		echo "FAILED:$$FAILED"; exit 1; \
-	else \
-		echo "All $$TOTAL configurations built successfully"; \
-	fi
+	@$(OVE) alldefconfigs "$(APP_DIR)"
 
 .PHONY: clean
 clean:

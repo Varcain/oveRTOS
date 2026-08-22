@@ -6,14 +6,17 @@
 
 """Regression tests for workspace configuration and matrix-build cleanup."""
 
+import contextlib
+import io
 import os
 import signal
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from ove import allconfigs
-from ove.kconfig import _write_workspace_config
+from ove.kconfig import parse_defconfig_name, _write_workspace_config
 from ove.workspace import WORKSPACE_DIR_ENV, Workspace
 
 
@@ -115,6 +118,23 @@ class WorkspaceConfigTest(unittest.TestCase):
             os.path.realpath(os.path.join(workspace, "toolchain")),
             toolchain)
 
+    def test_saved_defconfig_identity_preserves_app_underscores(self):
+        self.assertEqual(
+            parse_defconfig_name(
+                "stm32f746g-discovery_freertos_my_app_defconfig"),
+            ("stm32f746g-discovery_freertos_my_app_defconfig",
+             "stm32f746g-discovery", "freertos", "my_app"))
+
+    def test_saved_defconfig_identity_adds_suffix(self):
+        self.assertEqual(
+            parse_defconfig_name("host_posix_example_c"),
+            ("host_posix_example_c_defconfig",
+             "host", "posix", "example_c"))
+
+    def test_invalid_saved_defconfig_identity_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "cannot parse"):
+            parse_defconfig_name("missing_rtos_defconfig")
+
     def test_explicit_workspace_ignores_active_link(self):
         isolated = os.path.join(self.root, "output", "board", "rtos", "app")
         os.makedirs(isolated)
@@ -168,6 +188,74 @@ class WorkspaceConfigTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args_list[-1].args[0], ["ove", "download"])
+
+    def test_saved_defconfig_pipeline_uses_external_workspace(self):
+        calls = []
+
+        def record(command, env, cwd):
+            calls.append((list(command), dict(env), cwd))
+            return 0
+
+        external = os.path.join(self.root, "external")
+        path = os.path.join(
+            external, "defconfigs", "host_posix_my_app_defconfig")
+        with mock.patch.dict(os.environ,
+                             {"OVE_WORKSPACE_DIR": "/stale"}, clear=True), \
+                mock.patch.object(allconfigs, "_run_command",
+                                  side_effect=record):
+            ok, _elapsed = allconfigs._run_defconfig(
+                self.root, external, path, "ove")
+
+        self.assertTrue(ok)
+        self.assertEqual(
+            calls[0][0],
+            ["ove", "defconfig", "host_posix_my_app_defconfig",
+             "--no-activate"])
+        self.assertNotIn(WORKSPACE_DIR_ENV, calls[0][1])
+        self.assertEqual(calls[0][1]["OVE_EXTERNAL_APPS"], external)
+        expected = os.path.join(
+            external, "output", "host", "posix", "my_app")
+        self.assertEqual(
+            [call[1][WORKSPACE_DIR_ENV] for call in calls[1:]],
+            [expected, expected, expected])
+
+    def test_saved_defconfig_discovery_rejects_duplicate_names(self):
+        external = os.path.join(self.root, "external")
+        first = os.path.join(external, "defconfigs", "one")
+        second = os.path.join(external, "defconfigs", "two")
+        os.makedirs(first)
+        os.makedirs(second)
+        name = "host_posix_my_app_defconfig"
+        for directory in (first, second):
+            with open(os.path.join(directory, name), "w") as f:
+                f.write("CONFIG_TEST=y\n")
+
+        with self.assertRaisesRegex(ValueError, "duplicate defconfig"):
+            allconfigs._discover_defconfigs(external)
+
+    def test_saved_defconfig_matrix_continues_then_reports_failure(self):
+        external = os.path.join(self.root, "external")
+        configs = os.path.join(external, "defconfigs")
+        os.makedirs(configs)
+        with open(os.path.join(external, "app.yaml"), "w") as f:
+            f.write("lang: c\n")
+        for name in ("host_posix_first_defconfig",
+                     "host_posix_second_defconfig"):
+            with open(os.path.join(configs, name), "w") as f:
+                f.write("CONFIG_TEST=y\n")
+
+        workspace = SimpleNamespace(
+            ove_dir=self.root, venv_dir=os.path.join(self.root, ".venv"))
+        args = SimpleNamespace(app_dir=external, json=False)
+        with mock.patch.object(allconfigs, "Workspace",
+                               return_value=workspace), \
+                mock.patch.object(allconfigs, "_run_defconfig",
+                                  side_effect=((False, 1.0), (True, 2.0))) \
+                as run, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(SystemExit, "1"):
+                allconfigs._cmd_alldefconfigs(args)
+
+        self.assertEqual(run.call_count, 2)
 
 
 class AllconfigsChildTest(unittest.TestCase):
