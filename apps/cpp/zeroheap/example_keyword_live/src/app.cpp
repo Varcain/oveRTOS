@@ -161,12 +161,12 @@ static int classify_keyword(int &prediction, float &confidence)
 		return static_cast<int>(r.error());
 
 	auto *scores = classifier.output_data<int8_t>(0);
-	int best = 0;
-	for (int i = 1; i < CATEGORY_COUNT; i++)
+	unsigned int best = 0;
+	for (unsigned int i = 1; i < CATEGORY_COUNT; i++)
 		if (scores[i] > scores[best])
 			best = i;
 
-	prediction = best;
+	prediction = static_cast<int>(best);
 	confidence = (static_cast<float>(scores[best]) + 128.0f) / 255.0f;
 	return OVE_OK;
 }
@@ -203,7 +203,8 @@ static void infer_thread(void *)
 			if (s > peak)
 				peak = s;
 		}
-		OVE_LOG_INF("Audio: peak=%d, rate=%u, read=%u", peak, actual_rate, read_count);
+		OVE_LOG_INF("Audio: peak=%d, rate=%u, read=%u", peak,
+			    static_cast<unsigned int>(actual_rate), read_count);
 
 		g_actual_rate = actual_rate > 0 ? actual_rate : AUDIO_SAMPLE_FREQ;
 		if (peak < 10) {

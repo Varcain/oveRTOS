@@ -1,5 +1,5 @@
 /*
- * Model data declarations — auto-generated from models/*.tflite by
+ * Model data declarations — auto-generated from the TFLite models by
  * the build system (models/convert.py → output/generated_models/).
  */
 
