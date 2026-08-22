@@ -59,6 +59,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
     ${OVE_SRC}/ove_media.c
+    ${OVE_SRC}/ove_net.c
     ${POSIX_CORE_DIR}/posix_net.c
     # Async runtime substrate (compiled to no-ops when CONFIG_OVE_ASYNC=n).
     ${POSIX_CORE_DIR}/posix_irq.c

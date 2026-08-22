@@ -130,6 +130,7 @@ set(FREERTOS_BACKEND_SOURCES
     # share the single FreeRTOS heap_4 ucHeap pool.
     ${FREERTOS_BACKEND}/freertos_libc_malloc.c
     # Networking — see zero-heap CMakeLists for rationale.
+    ${OVE_SRC}/ove_net.c
     ${FREERTOS_BACKEND}/freertos_net.c
     ${FREERTOS_BACKEND}/lwip_sys_arch.c
     # Async runtime substrate (CONFIG_OVE_ASYNC).

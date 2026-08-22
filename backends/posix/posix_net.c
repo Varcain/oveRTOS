@@ -603,19 +603,3 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout
 	freeaddrinfo(res);
 	return OVE_OK;
 }
-
-/* ---------- Address helpers ---------- */
-
-void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b, uint8_t c, uint8_t d,
-		       uint16_t port)
-{
-	if (!addr)
-		return;
-	memset(addr, 0, sizeof(*addr));
-	addr->family = OVE_AF_INET;
-	addr->port = port;
-	addr->addr[0] = a;
-	addr->addr[1] = b;
-	addr->addr[2] = c;
-	addr->addr[3] = d;
-}
