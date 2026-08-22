@@ -110,3 +110,18 @@ int lxp_ove_thread_snapshot_read(struct lxp_ove_thread_snapshot *snapshot,
 		*actual_count = count;
 	return result_to_lxp(result);
 }
+
+int lxp_ove_mem_stats_read(struct lxp_mem_stats *out)
+{
+	if (!out)
+		return LXP_ERR_INVALID_PARAM;
+	struct ove_mem_stats host;
+	int result = ove_sys_get_mem_stats(&host);
+	if (result != OVE_OK)
+		return result;
+	out->total = host.total;
+	out->free = host.free;
+	out->used = host.used;
+	out->peak_used = host.peak_used;
+	return LXP_OK;
+}

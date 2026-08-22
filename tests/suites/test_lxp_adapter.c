@@ -1002,6 +1002,17 @@ static void test_thread_adapter_maps_unknown_state(void **state)
 	assert_int_equal(out.state, LXP_THREAD_STATE_UNKNOWN);
 }
 
+static void test_host_mem_stats_adapter(void **state)
+{
+	(void)state;
+	struct lxp_mem_stats stats = {0};
+
+	assert_int_equal(lxp_ove_mem_stats_read(NULL), LXP_ERR_INVALID_PARAM);
+	assert_int_equal(lxp_ove_mem_stats_read(&stats), LXP_OK);
+	assert_true(stats.used <= stats.total);
+	assert_true(stats.free <= stats.total);
+}
+
 static void test_svc_metrics_own_window_and_lifetime(void **state)
 {
 	(void)state;
@@ -1064,6 +1075,7 @@ int test_lxp_adapter_run(void)
 		cmocka_unit_test(test_thread_adapter_copies_contract),
 		cmocka_unit_test(test_thread_adapter_zeros_unavailable_metrics),
 		cmocka_unit_test(test_thread_adapter_maps_unknown_state),
+		cmocka_unit_test(test_host_mem_stats_adapter),
 		cmocka_unit_test(test_svc_metrics_own_window_and_lifetime),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
