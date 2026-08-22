@@ -36,6 +36,7 @@ static void gpio_irq_handler(unsigned int port, unsigned int pin, void *user_dat
  * the HAL can't raise a real edge. */
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 extern int stub_gpio_irq_is_armed(unsigned int port, unsigned int pin);
+extern void stub_gpio_set_irq_unregister_result(int result);
 
 /* Unregister the IRQ line after each IRQ test so registrations don't leak
  * across tests/suites (ove_gpio's irq_table is process-global).  That leakage
@@ -154,6 +155,26 @@ static void test_gpio_irq_enable_disable(void **state)
 	assert_int_equal(s_irq_fired, 1);
 }
 
+static void test_gpio_irq_retains_owner_when_unregister_fails(void **state)
+{
+	(void)state;
+	ove_board_init();
+
+	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
+				       gpio_irq_handler, NULL);
+	assert_int_equal(rc, OVE_OK);
+	stub_gpio_set_irq_unregister_result(OVE_ERR_NOT_SUPPORTED);
+	rc = ove_gpio_irq_unregister(TEST_GPIO_PORT, TEST_GPIO_PIN);
+	assert_int_equal(rc, OVE_ERR_NOT_SUPPORTED);
+	rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
+				   gpio_irq_handler, NULL);
+	assert_int_equal(rc, OVE_ERR_ALREADY_EXISTS);
+
+	stub_gpio_set_irq_unregister_result(OVE_OK);
+	rc = ove_gpio_irq_unregister(TEST_GPIO_PORT, TEST_GPIO_PIN);
+	assert_int_equal(rc, OVE_OK);
+}
+
 static void test_gpio_set_invalid_port(void **state)
 {
 	(void)state;
@@ -175,6 +196,7 @@ int test_gpio_run(void)
 		cmocka_unit_test_teardown(test_gpio_irq_rejects_duplicate_registration,
 					  gpio_irq_teardown),
 		cmocka_unit_test_teardown(test_gpio_irq_enable_disable, gpio_irq_teardown),
+		cmocka_unit_test(test_gpio_irq_retains_owner_when_unregister_fails),
 		cmocka_unit_test(test_gpio_set_invalid_port),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
