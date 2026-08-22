@@ -5,30 +5,15 @@
  *
  * This file is part of oveRTOS.
  *
- * RTOS-kernel <-> Linux-personality interop demo.
- *
- * One firmware image, two worlds, two phases, using only engine-neutral
- * oveRTOS thread, time, socket, console, and Linux-host APIs.
- *
- *  Phase 1 — BIDIRECTIONAL round trip. A native RTOS thread (ove_thread) feeds
- *  three readings into the rootfs-owned guest mode and drains its replies:
- *      RTOS feeder -> read cb -> guest roundtrip -> write cb -> RTOS consumer
- *
- *  Phase 2 — INTERACTIVE shell. The same rootfs entrypoint boots userspace;
- *  type commands (ls /, echo hi, cat /etc/hostname, ...) and
- *  `exit` to finish.
- *
- * Guest callbacks run in the privileged, preemptible coordinator. Fixed staging
- * keeps the native round trip allocation-free.
+ * Engine-neutral RTOS/Linux-personality interoperability demo.
  */
 
+#include "ove/app.h"
 #include "ove/lxp_console.h"
 #include "ove/thread.h"
 
-#include "ove/app.h"
-
 #include "ove_config.h"
-#include "ove/build.h" /* OVE_BUILD_ID — generated revisions with honest fallbacks */
+#include "ove/build.h"
 #include "network_smoke.h"
 #include "qualification.h"
 #include "roundtrip.h"
@@ -36,7 +21,6 @@
 
 #define GUEST_ENTRYPOINT "/usr/libexec/ove-interop-guest"
 
-/* One parsed host is reused by both rootfs guest modes. */
 static ove_lxp_host_t g_linux_host;
 
 static int run_guest_mode(const ove_lxp_launch_config_t *config, const char *mode)
@@ -75,8 +59,6 @@ static void demo_body(void *arg)
 
 	linux_interop_qualification_start();
 
-	/* Build configuration owns rootfs placement and product network topology;
-	 * the host facade owns native provider setup, rollback, and teardown. */
 	int host_rc = ove_lxp_host_init(&g_linux_host);
 	if (host_rc != OVE_OK) {
 		ove_lxp_console_printf("[demo] FAIL: Linux host init failed rc=%d\n", host_rc);
@@ -85,7 +67,6 @@ static void demo_body(void *arg)
 
 	linux_interop_network_report(&g_linux_host);
 
-	/* ---- Phase 1: rootfs-owned bidirectional round trip ------------------- */
 	ove_lxp_console_write("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
 	ove_lxp_launch_config_t cfg1 = {
 		.rt_scope_read = linux_rt_scope_proc_read,
@@ -105,7 +86,6 @@ static void demo_body(void *arg)
 
 	linux_interop_qualification_arm_guest_tests();
 
-	/* ---- Phase 2: boot userspace or run the hard-float context regression - */
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
 	ove_lxp_console_write("\n-- phase 2: hard-float guest context self-test --\n");
 #else

@@ -19,7 +19,7 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # (Zephyr). Those binary sizes are informational because backend/toolchain
 # changes legitimately move them; the source ceilings below are enforced.
 # Tighten the ceilings as demo, qualification, and board policy are separated.
-set(APP_SOURCE_LINE_CEILING 160)
+set(APP_SOURCE_LINE_CEILING 135)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 150)
 set(QUALIFICATION_SOURCE_LINE_CEILING 420)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 180)
