@@ -4,7 +4,7 @@
 #
 # This file is part of oveRTOS.
 
-"""Regression tests for isolated allconfigs workspaces and child cleanup."""
+"""Regression tests for workspace configuration and matrix-build cleanup."""
 
 import os
 import signal
@@ -13,11 +13,23 @@ import unittest
 from unittest import mock
 
 from ove import allconfigs
-from ove.kconfig import _setup_workspace
+from ove.kconfig import _write_workspace_config
 from ove.workspace import WORKSPACE_DIR_ENV, Workspace
 
 
-class AllconfigsWorkspaceTest(unittest.TestCase):
+class _Config:
+    def __init__(self, contents="CONFIG_TEST=y\n", error=None):
+        self.contents = contents
+        self.error = error
+
+    def write_config(self, path):
+        if self.error:
+            raise self.error
+        with open(path, "w") as f:
+            f.write(self.contents)
+
+
+class WorkspaceConfigTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = self.temp.name
@@ -36,15 +48,72 @@ class AllconfigsWorkspaceTest(unittest.TestCase):
         current_target = os.readlink(
             os.path.join(self.root, "output", "current"))
 
-        workspace = _setup_workspace(
-            self.root, "board", "rtos", "app", activate=False)
+        workspace, config = _write_workspace_config(
+            _Config(), self.root, "board", "rtos", "app", activate=False)
 
         self.assertTrue(os.path.isdir(workspace))
+        self.assertTrue(os.path.isfile(config))
         self.assertEqual(
             os.readlink(os.path.join(self.root, ".config")), config_target)
         self.assertEqual(
             os.readlink(os.path.join(self.root, "output", "current")),
             current_target)
+
+    def test_active_workspace_updates_both_links_after_write(self):
+        workspace, config = _write_workspace_config(
+            _Config(), self.root, "board", "rtos", "app")
+
+        self.assertEqual(os.path.realpath(os.path.join(self.root, ".config")),
+                         config)
+        self.assertEqual(
+            os.readlink(os.path.join(self.root, "output", "current")),
+            os.path.join("board", "rtos", "app"))
+        self.assertEqual(workspace, os.path.dirname(config))
+
+    def test_external_workspace_uses_external_output_and_absolute_link(self):
+        external = os.path.join(self.root, "external")
+        os.makedirs(external)
+
+        workspace, config = _write_workspace_config(
+            _Config(), self.root, "board", "rtos", "app", external)
+
+        expected = os.path.join(
+            external, "output", "board", "rtos", "app")
+        self.assertEqual(workspace, expected)
+        self.assertEqual(config, os.path.join(expected, ".config"))
+        self.assertEqual(
+            os.readlink(os.path.join(self.root, "output", "current")),
+            expected)
+
+    def test_failed_config_write_preserves_active_links(self):
+        config_target = os.readlink(os.path.join(self.root, ".config"))
+        current_target = os.readlink(
+            os.path.join(self.root, "output", "current"))
+
+        with self.assertRaisesRegex(OSError, "write failed"):
+            _write_workspace_config(
+                _Config(error=OSError("write failed")), self.root,
+                "board", "rtos", "app")
+
+        self.assertEqual(
+            os.readlink(os.path.join(self.root, ".config")), config_target)
+        self.assertEqual(
+            os.readlink(os.path.join(self.root, "output", "current")),
+            current_target)
+
+    def test_workspace_links_available_downloaded_toolchain(self):
+        toolchains = os.path.join(self.root, "output", "toolchains")
+        toolchain = os.path.join(toolchains, "arm-toolchain")
+        os.makedirs(toolchain)
+        with open(os.path.join(toolchains, "path.txt"), "w") as f:
+            f.write(os.path.join("ignored", "arm-toolchain"))
+
+        workspace, _config = _write_workspace_config(
+            _Config(), self.root, "board", "rtos", "app", activate=False)
+
+        self.assertEqual(
+            os.path.realpath(os.path.join(workspace, "toolchain")),
+            toolchain)
 
     def test_explicit_workspace_ignores_active_link(self):
         isolated = os.path.join(self.root, "output", "board", "rtos", "app")
