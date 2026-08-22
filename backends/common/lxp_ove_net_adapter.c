@@ -5,7 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * oveRTOS host adapter for the lxp network port (struct lxp_net_ops). It bridges
+ * oveRTOS host adapter for the LXP network port (struct lxp_net_ops). It bridges
  * the handle-based, module-owned lxp types to the ove_net HAL (lwIP / NuttX net /
  * Zephyr net / POSIX sockets) and OWNS the socket-storage pool — the backend-sized
  * ove_socket_storage_t the personality no longer embeds. The lxp value types

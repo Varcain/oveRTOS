@@ -31,7 +31,7 @@ endif()
 
 set(LEGACY_SEAMS "")
 set(HOST_ADAPTERS
-    "backends/common/lxp_ove_adapter.c"
+    "backends/common/lxp_ove_net_adapter.c"
     "backends/common/lxp_ove_disp_adapter.c"
     "backends/common/lxp_ove_fs_adapter.c"
     "backends/common/lxp_ove_host.c"
@@ -143,7 +143,7 @@ if(NOT FREERTOS_FATFS_CONFIG_TEXT MATCHES
     message(FATAL_ERROR
         "FreeRTOS FatFs lock table bypasses the OVE filesystem capacity")
 endif()
-file(READ "${OVE_ROOT}/backends/common/lxp_ove_adapter.c" NETWORK_ADAPTER_TEXT)
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_net_adapter.c" NETWORK_ADAPTER_TEXT)
 if(NETWORK_ADAPTER_TEXT MATCHES "lxp_sock_kick|#[ \t]*include[ \t]*[<\"]lxp/lxp_net\\.h")
     message(FATAL_ERROR
         "network adapter regained an implicit dependency on the LXP socket core")
