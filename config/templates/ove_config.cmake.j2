@@ -500,6 +500,17 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_host.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_observability.c")
 # System-console transport and run-scoped RX-readiness binding.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_console.c")
+{% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True or config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN521") == True %}
+# QEMU reserves UART0 for the engine and presents the guest on CMSDK UART1.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/boards/qemu-mps2/lxp_console.c")
+{% else %}
+# Physical boards and host builds reuse their ordinary oveRTOS console.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_console_native.c")
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True and config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+# This backend's bounded bulk writer already performs CRLF translation.
+add_compile_definitions(OVE_LXP_CONSOLE_NATIVE_TRANSLATES_NEWLINES=1)
+{% endif %}
+{% endif %}
 {% if config.get("CONFIG_OVE_LINUX_FS") == True %}
 # Persistent /data provider: all native volume operations are serialized on a
 # host worker so LXP owns Linux VFS semantics while oveRTOS owns storage access.

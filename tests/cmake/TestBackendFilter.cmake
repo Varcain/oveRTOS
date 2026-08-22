@@ -11,6 +11,7 @@ set(BACKENDS
     "${OVE_ROOT}/backends/freertos/freertos_console.c"
     "${OVE_ROOT}/backends/nuttx/nuttx_console.c"
     "${OVE_ROOT}/backends/common/lxp_ove_console.c"
+    "${OVE_ROOT}/backends/common/lxp_ove_console_native.c"
     "${OVE_ROOT}/src/ove_console.c")
 _ove_filter_backend_list(BACKENDS CONSOLE)
 
@@ -23,6 +24,7 @@ endforeach()
 
 foreach(RETAINED IN ITEMS
         "${OVE_ROOT}/backends/common/lxp_ove_console.c"
+        "${OVE_ROOT}/backends/common/lxp_ove_console_native.c"
         "${OVE_ROOT}/src/ove_console.c")
     list(FIND BACKENDS "${RETAINED}" POSITION)
     if(POSITION EQUAL -1)

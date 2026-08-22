@@ -99,6 +99,7 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/lxp_ove_host.c
     ${OVE_ROOT}/backends/common/lxp_ove_observability.c
     ${OVE_ROOT}/backends/common/lxp_ove_console.c
+    ${OVE_ROOT}/backends/common/lxp_ove_console_native.c
     ${OVE_ROOT}/backends/common/ove_lxp_metrics.c
     ${OVE_ROOT}/modules/lxp/src/lxp_rt_metrics.c
     # Explicit thread-snapshot type translation at the oveRTOS/LXP boundary.
