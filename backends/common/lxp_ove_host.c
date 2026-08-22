@@ -15,7 +15,7 @@
 #include <string.h>
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_EXTERNAL)
-#include "ove/lxp_memory_layout.h"
+#include "lxp_ove_memory_layout.h"
 #else
 #include "loader_rootfs_image.h"
 #endif

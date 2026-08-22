@@ -77,6 +77,13 @@ if(NOT HOST_FACADE_TEXT MATCHES "CONFIG_OVE_LINUX_ROOTFS_EXTERNAL")
     message(FATAL_ERROR
         "common LXP host facade bypasses the derived rootfs storage mode")
 endif()
+if(EXISTS "${OVE_ROOT}/include/ove/lxp_memory_layout.h")
+    message(FATAL_ERROR
+        "backend-only LXP memory topology leaked into the public OVE API")
+endif()
+if(NOT EXISTS "${OVE_ROOT}/backends/common/lxp_ove_memory_layout.h")
+    message(FATAL_ERROR "private LXP memory-layout contract is missing")
+endif()
 
 file(READ "${OVE_ROOT}/backends/common/lxp_ove_fs_adapter.c" STORAGE_ADAPTER_TEXT)
 if(STORAGE_ADAPTER_TEXT MATCHES

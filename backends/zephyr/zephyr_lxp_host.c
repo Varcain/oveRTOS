@@ -22,7 +22,7 @@
 #include "lxp/ports/zephyr.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
-#include "ove/lxp_memory_layout.h"
+#include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
 #include "ove_lxp_memory_contract.h"
 #include "ove_zephyr_priority.h"

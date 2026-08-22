@@ -85,7 +85,7 @@ if(HOST_APP_TEXT MATCHES
 endif()
 
 if(APP_TEXT MATCHES
-   "loader_rootfs_image\\.h|ove/lxp_memory_layout\\.h|ove_lxp_host_init_cpio[ \t\r\n]*\\(")
+   "loader_rootfs_image\\.h|lxp_ove_memory_layout\\.h|ove_lxp_host_init_cpio[ \t\r\n]*\\(")
     message(FATAL_ERROR
         "linux_interop app must use the configuration-driven LXP host bootstrap")
 endif()
