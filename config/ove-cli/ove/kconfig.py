@@ -11,7 +11,7 @@ import sys
 
 from .appgen import generate_app_kconfig
 from .utils import atomic_symlink
-from .workspace import find_ove_dir, write_app_path
+from .workspace import Workspace, find_ove_dir, write_app_path
 
 
 _VALID_RTOSES = ("freertos", "nuttx", "zephyr", "posix")
@@ -539,10 +539,19 @@ def cmd_defconfig_fragments(args):
         print(f"Workspace left inactive: {ws_dir}/")
 
 
+def _savedefconfig_destination(ws):
+    """Return the conventional destination for the current workspace."""
+    if not ws.is_external_app:
+        return os.path.join(ws.ove_dir, "defconfig")
+    name = f"{ws.board_name}_{ws.rtos}_{ws.app_name}_defconfig"
+    return os.path.join(ws.app_dir, "defconfigs", name)
+
+
 def cmd_savedefconfig(args):
     """Save current config as minimal defconfig."""
     ove_dir = find_ove_dir()
-    config_path = os.path.join(ove_dir, ".config")
+    ws = Workspace(ove_dir)
+    config_path = ws.config_path
 
     if not os.path.isfile(config_path):
         print("Error: .config not found. Run menuconfig or load a "
@@ -556,8 +565,16 @@ def cmd_savedefconfig(args):
         sys.exit(1)
 
     os.environ["srctree"] = ove_dir
+    if ws.is_external_app:
+        external = [path for path in os.environ.get(
+            "OVE_EXTERNAL_APPS", "").split(os.pathsep) if path]
+        if ws.app_dir not in external:
+            external.insert(0, ws.app_dir)
+        os.environ["OVE_EXTERNAL_APPS"] = os.pathsep.join(external)
     generate_app_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     kconf.load_config(config_path)
-    kconf.write_min_config(os.path.join(ove_dir, "defconfig"))
-    print("Minimal config saved to defconfig")
+    destination = _savedefconfig_destination(ws)
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    kconf.write_min_config(destination)
+    print(f"Minimal config saved to {destination}")

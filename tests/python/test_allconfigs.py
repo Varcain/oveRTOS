@@ -17,7 +17,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 from ove import allconfigs
-from ove.kconfig import parse_defconfig_name, _write_workspace_config
+from ove.kconfig import (
+    _savedefconfig_destination,
+    _write_workspace_config,
+    parse_defconfig_name,
+)
 from ove.workspace import APP_PATH_FILE, WORKSPACE_DIR_ENV, Workspace
 
 
@@ -79,7 +83,9 @@ class WorkspaceConfigTest(unittest.TestCase):
         os.makedirs(external)
 
         workspace, config = _write_workspace_config(
-            _Config('CONFIG_OVE_APP_NAME="app"\n'), self.root,
+            _Config('CONFIG_OVE_BOARD_NAME="board"\n'
+                    'CONFIG_OVE_RTOS_POSIX=y\n'
+                    'CONFIG_OVE_APP_NAME="app"\n'), self.root,
             "board", "rtos", "app", external)
 
         expected = os.path.join(
@@ -100,7 +106,13 @@ class WorkspaceConfigTest(unittest.TestCase):
             json.dump({"app": "/wrong/global/path"}, f)
         with mock.patch.dict(os.environ,
                              {WORKSPACE_DIR_ENV: expected}, clear=False):
-            self.assertEqual(Workspace(self.root).app_dir, external)
+            ws = Workspace(self.root)
+            self.assertTrue(ws.is_external_app)
+            self.assertEqual(ws.app_dir, external)
+            self.assertEqual(
+                _savedefconfig_destination(ws),
+                os.path.join(external, "defconfigs",
+                             "board_posix_app_defconfig"))
 
     def test_failed_config_write_preserves_active_links(self):
         config_target = os.readlink(os.path.join(self.root, ".config"))
