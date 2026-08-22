@@ -44,32 +44,6 @@ void ove_mutex_deinit(ove_mutex_t mtx)
 	}
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_mutex_create(ove_mutex_t *mtx)
-{
-	int ret = ove_check_param(mtx);
-	if (ret)
-		return ret;
-	struct ove_mutex *m = OVE_BACKEND_MALLOC(sizeof(*m));
-	if (m == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	pthread_mutex_init(&m->mtx, NULL);
-	*mtx = m;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_mutex_destroy(ove_mutex_t mtx)
-{
-	if (mtx) {
-		pthread_mutex_destroy(&mtx->mtx);
-		OVE_BACKEND_FREE(mtx);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	if (ove_timeout_is_forever(timeout_ns)) {
@@ -117,36 +91,6 @@ void ove_sem_deinit(ove_sem_t sem)
 		sem_destroy(&s->sem);
 	}
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_sem_create(ove_sem_t *sem, unsigned int initial, unsigned int max)
-{
-	int ret = ove_check_param(sem);
-	if (ret)
-		return ret;
-	(void)max;
-	struct ove_sem *s = OVE_BACKEND_MALLOC(sizeof(*s));
-	if (s == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	sem_init(&s->sem, 0, initial);
-	s->notify_cb = NULL;
-	s->notify_ud = NULL;
-	*sem = s;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_sem_destroy(ove_sem_t sem)
-{
-	struct ove_sem *s = sem;
-	if (s) {
-		sem_destroy(&s->sem);
-		OVE_BACKEND_FREE(s);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 {
@@ -232,36 +176,6 @@ void ove_event_deinit(ove_event_t evt)
 	}
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_event_create(ove_event_t *evt)
-{
-	int ret = ove_check_param(evt);
-	if (ret)
-		return ret;
-	struct ove_event *e = OVE_BACKEND_MALLOC(sizeof(*e));
-	if (e == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(e, 0, sizeof(*e));
-	pthread_mutex_init(&e->lock, NULL);
-	pthread_cond_init(&e->cond, NULL);
-	*evt = e;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_event_destroy(ove_event_t evt)
-{
-	struct ove_event *e = evt;
-	if (e) {
-		pthread_mutex_destroy(&e->lock);
-		pthread_cond_destroy(&e->cond);
-		OVE_BACKEND_FREE(e);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	struct ove_event *e = evt;
@@ -338,23 +252,6 @@ void ove_recursive_mutex_deinit(ove_mutex_t mtx)
 	ove_mutex_deinit(mtx);
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_recursive_mutex_create(ove_mutex_t *mtx)
-{
-	struct ove_mutex *m = OVE_BACKEND_MALLOC(sizeof(*m));
-	if (m == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	pthread_mutexattr_t attr;
-	pthread_mutexattr_init(&attr);
-	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-	pthread_mutex_init(&m->mtx, &attr);
-	pthread_mutexattr_destroy(&attr);
-	*mtx = m;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	return ove_mutex_lock(mtx, timeout_ns);
@@ -364,16 +261,6 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 {
 	ove_mutex_unlock(mtx);
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_recursive_mutex_destroy(ove_mutex_t mtx)
-{
-	if (mtx) {
-		ove_recursive_mutex_deinit(mtx);
-		OVE_BACKEND_FREE(mtx);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 /* ---------- Condition Variable ---------- */
 
@@ -392,33 +279,6 @@ void ove_condvar_deinit(ove_condvar_t cv)
 		pthread_cond_destroy(&c->cond);
 	}
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_condvar_create(ove_condvar_t *cv)
-{
-	int ret = ove_check_param(cv);
-	if (ret)
-		return ret;
-	struct ove_condvar *c = OVE_BACKEND_MALLOC(sizeof(*c));
-	if (c == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	pthread_cond_init(&c->cond, NULL);
-	*cv = c;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_condvar_destroy(ove_condvar_t cv)
-{
-	struct ove_condvar *c = cv;
-	if (c) {
-		pthread_cond_destroy(&c->cond);
-		OVE_BACKEND_FREE(c);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
