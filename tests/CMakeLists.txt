@@ -300,6 +300,10 @@ add_test(NAME ove_linux_interop_ergonomics_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestLinuxInteropErgonomics.cmake)
+add_test(NAME ove_backend_filter_cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DOVE_ROOT=${OVE_ROOT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestBackendFilter.cmake)
 if(OVE_TEST_BUILD_ASAN)
     add_test(NAME ove_stub_tests_asan COMMAND ove_test_stub_asan)
     # libasan's leak-detector is noisy against CMocka's intentional allocations
