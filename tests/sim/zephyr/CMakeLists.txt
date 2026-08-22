@@ -51,6 +51,7 @@ set(CORE_SOURCES
     ${OVE_SRC}/ove_gpio.c
     ${OVE_SRC}/ove_led.c
     ${OVE_SRC}/ove_app.c
+    ${OVE_SRC}/ove_media.c
 )
 
 # --- Stub backend for hardware-dependent modules (7) ---

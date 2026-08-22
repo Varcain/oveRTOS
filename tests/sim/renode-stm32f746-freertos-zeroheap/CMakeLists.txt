@@ -201,6 +201,7 @@ set(CORE_SOURCES
     ${OVE_SRC}/ove_gpio.c
     ${OVE_SRC}/ove_led.c
     ${OVE_SRC}/ove_app.c
+    ${OVE_SRC}/ove_media.c
     # Hardware peripheral dispatchers — paired with the STM32F7 drivers
     # below to drive Renode's modelled peripherals.
     ${OVE_SRC}/ove_i2c.c
