@@ -2320,7 +2320,7 @@ unsafe extern "C" {
     pub fn ove_gpio_get(port: core::ffi::c_uint, pin: core::ffi::c_uint) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register an interrupt callback for a GPIO pin.\n\n The interrupt is registered but not enabled; call ove_gpio_irq_enable()\n to arm it.\n\n @param[in] port      GPIO port index.\n @param[in] pin       GPIO pin index within the port.\n @param[in] mode      Edge(s) that should trigger the interrupt.\n @param[in] callback  Function called when the interrupt fires.\n @param[in] user_data Opaque pointer forwarded to @p callback.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Register an interrupt callback for a GPIO pin.\n\n The interrupt is registered but not enabled; call ove_gpio_irq_enable()\n to arm it.\n\n @param[in] port      GPIO port index.\n @param[in] pin       GPIO pin index within the port.\n @param[in] mode      Edge(s) that should trigger the interrupt.\n @param[in] callback  Function called when the interrupt fires.\n @param[in] user_data Opaque pointer forwarded to @p callback.\n @return OVE_OK on success, OVE_ERR_ALREADY_EXISTS if the line is already\n         registered, or another negative error code on failure."]
     pub fn ove_gpio_irq_register(
         port: core::ffi::c_uint,
         pin: core::ffi::c_uint,

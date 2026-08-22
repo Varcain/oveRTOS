@@ -102,6 +102,19 @@ static void test_gpio_irq_rejects_invalid_mode(void **state)
 	assert_int_equal(stub_gpio_irq_is_armed(TEST_GPIO_PORT, TEST_GPIO_PIN), 0);
 }
 
+static void test_gpio_irq_rejects_duplicate_registration(void **state)
+{
+	(void)state;
+	ove_board_init();
+
+	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
+				       gpio_irq_handler, NULL);
+	assert_int_equal(rc, OVE_OK);
+	rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_FALLING,
+				   gpio_irq_handler, NULL);
+	assert_int_equal(rc, OVE_ERR_ALREADY_EXISTS);
+}
+
 static void test_gpio_irq_enable_disable(void **state)
 {
 	(void)state;
@@ -159,6 +172,8 @@ int test_gpio_run(void)
 		cmocka_unit_test(test_gpio_get),
 		cmocka_unit_test_teardown(test_gpio_irq_register, gpio_irq_teardown),
 		cmocka_unit_test(test_gpio_irq_rejects_invalid_mode),
+		cmocka_unit_test_teardown(test_gpio_irq_rejects_duplicate_registration,
+					  gpio_irq_teardown),
 		cmocka_unit_test_teardown(test_gpio_irq_enable_disable, gpio_irq_teardown),
 		cmocka_unit_test(test_gpio_set_invalid_port),
 	};

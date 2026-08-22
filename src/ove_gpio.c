@@ -9,6 +9,7 @@
 #include "ove_config.h"
 #include "ove/gpio.h"
 #include "ove/hal/hal_gpio.h"
+#include "ove/irq.h"
 #include "board_desc.h"
 #include <stdatomic.h>
 
@@ -66,6 +67,8 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 			  ove_gpio_irq_cb callback, void *user_data)
 {
 	unsigned int i;
+	unsigned int free_slot = GPIO_IRQ_MAX;
+	ove_irq_key_t key;
 
 	if (validate_port_pin(port, pin) != OVE_OK ||
 	    (mode != OVE_GPIO_IRQ_RISING && mode != OVE_GPIO_IRQ_FALLING &&
@@ -73,25 +76,36 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	/* Reserve a free slot before publishing its callback fields. */
+	/* Serialize ownership selection so concurrent callers cannot reserve two
+	 * entries for the same line.  The hardware call remains outside this short
+	 * critical section. */
+	key = ove_irq_lock();
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		int expected = GPIO_IRQ_FREE;
-		if (atomic_compare_exchange_strong_explicit(
-			    &irq_table[i].registered, &expected, GPIO_IRQ_RESERVING,
-			    memory_order_acq_rel, memory_order_acquire)) {
-			break;
+		int state = atomic_load_explicit(&irq_table[i].registered, memory_order_acquire);
+
+		if (state != GPIO_IRQ_FREE && irq_table[i].port == port &&
+		    irq_table[i].pin == pin) {
+			ove_irq_unlock(key);
+			return OVE_ERR_ALREADY_EXISTS;
 		}
+		if (state == GPIO_IRQ_FREE && free_slot == GPIO_IRQ_MAX)
+			free_slot = i;
 	}
-	if (i >= GPIO_IRQ_MAX) {
+	if (free_slot == GPIO_IRQ_MAX) {
+		ove_irq_unlock(key);
 		return OVE_ERR_NO_MEMORY;
 	}
 
+	i = free_slot;
 	irq_table[i].port = port;
 	irq_table[i].pin = pin;
 	irq_table[i].mode = mode;
 	irq_table[i].callback = callback;
 	irq_table[i].user_data = user_data;
 	atomic_store_explicit(&irq_table[i].enabled, 0, memory_order_relaxed);
+	atomic_store_explicit(&irq_table[i].registered, GPIO_IRQ_RESERVING,
+			      memory_order_release);
+	ove_irq_unlock(key);
 
 	int ret = ove_hal_gpio_irq_hw_enable(port, pin, mode, callback, user_data);
 	atomic_store_explicit(&irq_table[i].registered,

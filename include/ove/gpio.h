@@ -105,7 +105,8 @@ int ove_gpio_get(unsigned int port, unsigned int pin);
  * @param[in] mode      Edge(s) that should trigger the interrupt.
  * @param[in] callback  Function called when the interrupt fires.
  * @param[in] user_data Opaque pointer forwarded to @p callback.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_ALREADY_EXISTS if the line is already
+ *         registered, or another negative error code on failure.
  */
 int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
 			  ove_gpio_irq_cb callback, void *user_data);
