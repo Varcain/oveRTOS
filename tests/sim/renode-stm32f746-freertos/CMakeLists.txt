@@ -147,6 +147,7 @@ set(CORE_SOURCES
     ${OVE_SRC}/ove_gpio.c
     ${OVE_SRC}/ove_led.c
     ${OVE_SRC}/ove_app.c
+    ${OVE_SRC}/ove_media.c
     ${OVE_SRC}/ove_i2c.c
     ${OVE_SRC}/ove_spi.c
     ${OVE_SRC}/ove_uart.c
