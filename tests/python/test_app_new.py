@@ -13,7 +13,7 @@ import unittest
 import yaml
 
 from ove.app_new import _stamp_tree
-from ove.appgen import _scan_app_dirs, _scan_apps_dir
+from ove.appgen import AppManifestError, _scan_app_dirs, _scan_apps_dir
 
 
 class ExternalAppTemplateTest(unittest.TestCase):
@@ -91,6 +91,27 @@ class ExternalAppTemplateTest(unittest.TestCase):
             self.assertEqual(list(paths), ["template_smoke"])
             self.assertEqual(paths["template_smoke"], app)
             self.assertEqual(apps[0]["config_name"], "TEMPLATE_SMOKE")
+
+    def test_duplicate_manifest_identities_are_rejected(self):
+        with tempfile.TemporaryDirectory() as output:
+            for directory in ("first", "second"):
+                app = os.path.join(output, directory)
+                os.makedirs(app)
+                with open(os.path.join(app, "app.yaml"), "w") as f:
+                    f.write("config_name: duplicate\n")
+
+            with self.assertRaisesRegex(
+                    AppManifestError, "duplicate config_name 'duplicate'"):
+                _scan_apps_dir(output, [], {})
+
+    def test_invalid_manifest_identity_is_rejected_at_source(self):
+        with tempfile.TemporaryDirectory() as output:
+            with open(os.path.join(output, "app.yaml"), "w") as f:
+                f.write("config_name: invalid-name\n")
+
+            with self.assertRaisesRegex(AppManifestError,
+                                        "invalid config_name"):
+                _scan_app_dirs([output])
 
     def test_hello_apps_declare_only_used_optional_modules(self):
         for language in ("c", "cpp", "rust", "zig"):
