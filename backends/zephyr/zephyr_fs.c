@@ -255,33 +255,9 @@ int ove_fs_close_deinit(ove_file_t file)
 	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
 }
 
-/* ─── _open / _close — heap or zero-heap pool ─────────────────────── */
+/* Compatibility wrappers retained for legacy zero-heap callers. */
 
-#ifdef OVE_HEAP_FS
-int ove_fs_open(ove_file_t *file, const char *path, int flags)
-{
-	struct ove_file *f = OVE_BACKEND_MALLOC(sizeof(*f));
-	if (f == NULL) {
-		OVE_LOG_ERR("fs_open: k_malloc failed\n");
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	int ret = ove_fs_open_init(file, f, path, flags);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(f);
-	}
-	return ret;
-}
-
-int ove_fs_close(ove_file_t file)
-{
-	int ret = ove_fs_close_deinit(file);
-	if (ret == OVE_OK) {
-		OVE_BACKEND_FREE(file);
-	}
-	return ret;
-}
-#else /* zero-heap: static pool */
+#ifndef OVE_HEAP_FS
 #define FS_POOL_FILES 4
 static struct ove_file file_pool[FS_POOL_FILES];
 static int file_pool_used[FS_POOL_FILES];
@@ -315,7 +291,7 @@ int ove_fs_close(ove_file_t file)
 	}
 	return OVE_OK;
 }
-#endif /* OVE_HEAP_FS */
+#endif /* !OVE_HEAP_FS */
 
 int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
@@ -414,24 +390,7 @@ int ove_fs_closedir_deinit(ove_dir_t dir)
 	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
 }
 
-/* ─── _opendir / _closedir — heap or zero-heap pool ─────────────────── */
-
-#ifdef OVE_HEAP_FS
-int ove_fs_opendir(ove_dir_t *dir, const char *path)
-{
-	struct ove_dir *d = OVE_BACKEND_MALLOC(sizeof(*d));
-	if (d == NULL) {
-		OVE_LOG_ERR("opendir: k_malloc failed\n");
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	int ret = ove_fs_opendir_init(dir, d, path);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(d);
-	}
-	return ret;
-}
-#else /* zero-heap: static pool */
+#ifndef OVE_HEAP_FS
 #define FS_POOL_DIRS 4
 static struct ove_dir dir_pool[FS_POOL_DIRS];
 static int dir_pool_used[FS_POOL_DIRS];
@@ -450,7 +409,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	}
 	return OVE_ERR_NO_MEMORY;
 }
-#endif /* OVE_HEAP_FS */
+#endif /* !OVE_HEAP_FS */
 
 int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 {
@@ -472,14 +431,10 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	return OVE_OK;
 }
 
+#ifndef OVE_HEAP_FS
 int ove_fs_closedir(ove_dir_t dir)
 {
 	int ret = ove_fs_closedir_deinit(dir);
-#ifdef OVE_HEAP_FS
-	if (ret == OVE_OK) {
-		OVE_BACKEND_FREE(dir);
-	}
-#else
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -489,9 +444,9 @@ int ove_fs_closedir(ove_dir_t dir)
 			break;
 		}
 	}
-#endif
 	return ret;
 }
+#endif /* !OVE_HEAP_FS */
 
 int ove_fs_seek(ove_file_t file, long offset, int whence)
 {

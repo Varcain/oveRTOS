@@ -297,75 +297,8 @@ int ove_fs_closedir_deinit(ove_dir_t dir)
 	return fatfs_result(f_closedir(&dir->dir));
 }
 
-/* ─── _create / _destroy (heap-gated) ────────────────────────────────── */
-
-#ifdef OVE_HEAP_FS
-int ove_fs_open(ove_file_t *file, const char *path, int flags)
-{
-	struct ove_file *f;
-
-	f = OVE_BACKEND_MALLOC(sizeof(*f));
-	if (f == NULL) {
-		OVE_LOG("fs: alloc failed (%u bytes)\n", (unsigned int)sizeof(*f));
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	int ret = open_common(f, path, flags);
-	if (ret != OVE_OK) {
-		OVE_LOG("fs: f_open(%s) failed: %d\n", path, ret);
-		OVE_BACKEND_FREE(f);
-		return ret;
-	}
-
-	*file = f;
-	return OVE_OK;
-}
-
-int ove_fs_close(ove_file_t file)
-{
-	int ret = ove_fs_close_deinit(file);
-	if (ret == OVE_OK) {
-		OVE_BACKEND_FREE(file);
-	}
-	return ret;
-}
-
-int ove_fs_opendir(ove_dir_t *dir, const char *path)
-{
-	struct ove_dir *d;
-	FRESULT fres;
-	char native_path[OVE_FS_PATH_MAX + 4];
-
-	d = OVE_BACKEND_MALLOC(sizeof(*d));
-	if (d == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	int ret = build_path(native_path, sizeof(native_path), path);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(d);
-		return ret;
-	}
-	fres = f_opendir(&d->dir, native_path);
-	if (fres != FR_OK) {
-		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
-		OVE_BACKEND_FREE(d);
-		return fatfs_result(fres);
-	}
-
-	*dir = d;
-	return OVE_OK;
-}
-
-int ove_fs_closedir(ove_dir_t dir)
-{
-	int ret = ove_fs_closedir_deinit(dir);
-	if (ret == OVE_OK) {
-		OVE_BACKEND_FREE(dir);
-	}
-	return ret;
-}
-#else /* zero-heap: use static pool */
+/* Compatibility wrappers retained for legacy zero-heap callers. */
+#ifndef OVE_HEAP_FS
 #define FS_POOL_FILES 4
 #define FS_POOL_DIRS 4
 static struct ove_file file_pool[FS_POOL_FILES];
@@ -443,7 +376,7 @@ int ove_fs_closedir(ove_dir_t dir)
 	}
 	return OVE_OK;
 }
-#endif /* OVE_HEAP_FS */
+#endif /* !OVE_HEAP_FS */
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 

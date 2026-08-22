@@ -63,6 +63,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_nvs.c
     ${POSIX_CORE_DIR}/posix_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
+    ${OVE_SRC}/ove_fs.c
     ${POSIX_CORE_DIR}/posix_block.c
     ${OVE_SRC}/ove_media.c
     ${OVE_SRC}/ove_block.c
