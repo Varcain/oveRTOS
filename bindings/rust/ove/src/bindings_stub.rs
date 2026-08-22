@@ -4445,11 +4445,11 @@ unsafe extern "C" {
     pub fn ove_pm_set_state(state: ove_pm_state_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the current power state.\n\n Lock-free, ISR-safe — performs a single volatile read of an\n aligned word, which is atomic on every supported target.  The\n returned value may be stale if a state transition is in flight on\n another context, but it can never tear.  Callers that need a\n snapshot synchronised with a specific transition should serialise\n around their own primitive.\n\n @return Current power state."]
+    #[doc = " @brief Query the current power state.\n\n Lock-free, ISR-safe — performs a single atomic read.  The\n returned value may be stale if a state transition is in flight on\n another context, but it can never tear.  Callers that need a\n snapshot synchronised with a specific transition should serialise\n around their own primitive.\n\n @return Current power state."]
     pub fn ove_pm_get_state() -> ove_pm_state_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Report system activity (resets idle timer).\n\n This function is ISR-safe — it performs only a volatile write."]
+    #[doc = " @brief Report system activity (resets idle timer).\n\n This function is ISR-safe — it performs only an atomic store."]
     pub fn ove_pm_activity();
 }
 unsafe extern "C" {

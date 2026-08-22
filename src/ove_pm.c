@@ -48,8 +48,8 @@ struct pm_notifier_entry {
 
 static struct {
 	/* State machine */
-	volatile ove_pm_state_t current_state;
-	volatile int activity_flag;
+	ove_pm_state_t current_state;
+	int activity_flag;
 	uint64_t last_activity_us;
 	uint64_t state_entry_us;
 
@@ -83,6 +83,16 @@ static struct {
 
 	int initialized;
 } pm_ctx;
+
+static inline ove_pm_state_t current_state_load(void)
+{
+	return __atomic_load_n(&pm_ctx.current_state, __ATOMIC_ACQUIRE);
+}
+
+static inline void current_state_store(ove_pm_state_t state)
+{
+	__atomic_store_n(&pm_ctx.current_state, state, __ATOMIC_RELEASE);
+}
 
 /* ── Default policy ─────────────────────────────────────────────────── */
 
@@ -157,7 +167,7 @@ int ove_pm_init(const struct ove_pm_cfg *cfg)
 
 	memset(&pm_ctx, 0, sizeof(pm_ctx));
 	pm_ctx.cfg = *cfg;
-	pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
+	current_state_store(OVE_PM_STATE_ACTIVE);
 	pm_ctx.policy_fn = default_policy;
 	pm_ctx.last_activity_us = pm_now_us();
 	pm_ctx.state_entry_us = pm_ctx.last_activity_us;
@@ -208,7 +218,7 @@ int ove_pm_set_state(ove_pm_state_t state)
 
 	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
-	old = pm_ctx.current_state;
+	old = current_state_load();
 	if (old == state) {
 		ove_mutex_unlock(pm_ctx.mtx);
 		return OVE_OK;
@@ -217,7 +227,7 @@ int ove_pm_set_state(ove_pm_state_t state)
 	now = pm_now_us();
 	update_stats(old, now);
 
-	pm_ctx.current_state = state;
+	current_state_store(state);
 	pm_ctx.transition_count[state]++;
 
 	/* Manual sleep entry anchors the idle baseline to now.  This
@@ -237,19 +247,12 @@ int ove_pm_set_state(ove_pm_state_t state)
 
 ove_pm_state_t ove_pm_get_state(void)
 {
-	/* Intentionally lock-free.  current_state is `volatile` (declared
-	 * at the pm_ctx struct), and aligned-int loads are single-store-
-	 * atomic on every supported target (Cortex-M, x86_64, RISC-V,
-	 * WASM).  A reader can observe the pre- or post-transition value
-	 * around a concurrent set_state / idle_process, but can never
-	 * tear.  Keeping this read lock-free is what makes the function
-	 * usable from ISRs — same contract as ove_pm_activity(). */
-	return pm_ctx.current_state;
+	return current_state_load();
 }
 
 void ove_pm_activity(void)
 {
-	pm_ctx.activity_flag = 1;
+	__atomic_store_n(&pm_ctx.activity_flag, 1, __ATOMIC_RELEASE);
 }
 
 /* ── Wake sources ───────────────────────────────────────────────────── */
@@ -430,7 +433,7 @@ int ove_pm_get_stats(struct ove_pm_stats *stats)
 
 	/* Copy accumulated stats and add current state's ongoing time */
 	memcpy(stats->time_in_state_us, pm_ctx.time_in_state_us, sizeof(stats->time_in_state_us));
-	stats->time_in_state_us[pm_ctx.current_state] += now - pm_ctx.state_entry_us;
+	stats->time_in_state_us[current_state_load()] += now - pm_ctx.state_entry_us;
 
 	memcpy(stats->transition_count, pm_ctx.transition_count, sizeof(stats->transition_count));
 
@@ -461,7 +464,7 @@ void ove_pm_reset_stats(void)
 	memset(pm_ctx.time_in_state_us, 0, sizeof(pm_ctx.time_in_state_us));
 	memset(pm_ctx.transition_count, 0, sizeof(pm_ctx.transition_count));
 	pm_ctx.state_entry_us = now;
-	pm_ctx.transition_count[pm_ctx.current_state] = 1;
+	pm_ctx.transition_count[current_state_load()] = 1;
 
 	ove_mutex_unlock(pm_ctx.mtx);
 }
@@ -508,15 +511,14 @@ void ove_pm_idle_process(void)
 	if (!pm_ctx.initialized)
 		return;
 
-	/* Check and clear activity flag (ISR-safe volatile read) */
-	if (pm_ctx.activity_flag) {
-		pm_ctx.activity_flag = 0;
+	/* Exchange avoids losing activity posted between a separate load and clear. */
+	if (__atomic_exchange_n(&pm_ctx.activity_flag, 0, __ATOMIC_ACQ_REL)) {
 		pm_ctx.last_activity_us = pm_now_us();
-		if (pm_ctx.current_state != OVE_PM_STATE_ACTIVE) {
+		if (current_state_load() != OVE_PM_STATE_ACTIVE) {
 			OVE_LOCK_INFINITE(pm_ctx.mtx);
 			now = pm_now_us();
-			update_stats(pm_ctx.current_state, now);
-			pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
+			update_stats(current_state_load(), now);
+			current_state_store(OVE_PM_STATE_ACTIVE);
 			pm_ctx.transition_count[OVE_PM_STATE_ACTIVE]++;
 			ove_mutex_unlock(pm_ctx.mtx);
 		}
@@ -528,19 +530,19 @@ void ove_pm_idle_process(void)
 	next_timeout_ms = ove_hal_pm_get_next_timeout_ms();
 
 	/* Consult policy */
-	recommended = pm_ctx.policy_fn(pm_ctx.current_state, idle_ms, next_timeout_ms,
+	recommended = pm_ctx.policy_fn(current_state_load(), idle_ms, next_timeout_ms,
 				       pm_ctx.policy_user_data);
 
 	if (recommended >= OVE_PM_STATE_COUNT)
 		recommended = OVE_PM_STATE_ACTIVE;
 
-	if (recommended <= pm_ctx.current_state)
+	if (recommended <= current_state_load())
 		return;
 
 	/* Transition to deeper sleep */
 	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
-	old_state = pm_ctx.current_state;
+	old_state = current_state_load();
 	now = pm_now_us();
 	update_stats(old_state, now);
 
@@ -553,7 +555,7 @@ void ove_pm_idle_process(void)
 			ove_hal_pm_wake_arm(&pm_ctx.wake_table[i].src);
 	}
 
-	pm_ctx.current_state = recommended;
+	current_state_store(recommended);
 	pm_ctx.transition_count[recommended]++;
 
 	/* Enter sleep — blocks until wake.
@@ -570,7 +572,7 @@ void ove_pm_idle_process(void)
 	/* Woke up */
 	now = pm_now_us();
 	update_stats(recommended, now);
-	pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
+	current_state_store(OVE_PM_STATE_ACTIVE);
 	pm_ctx.transition_count[OVE_PM_STATE_ACTIVE]++;
 
 	/* Disarm wake sources */
