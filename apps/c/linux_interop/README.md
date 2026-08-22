@@ -483,9 +483,12 @@ structure. `ove_lxp_console_bind()` supplies interactive I/O while the separate
 `ove_lxp_console_bind_diagnostics()` opt-in supplies bounded ENOSYS and abnormal
 exit reports without overwriting application I/O callbacks. The console's
 bounded `ove_lxp_console_printf()` removes private formatting helpers while
-preserving the QEMU-specific personality console routing. The host facade
-translates guest termination records field by field; reason values are mapped
-explicitly and the `comm` string remains callback-lifetime data by contract.
+preserving the QEMU-specific personality console routing. The common binding
+owns tty lookahead and run-scoped readiness; the board-selected console HAL
+owns the ordinary native console or QEMU's dedicated CMSDK UART1. The host
+facade translates guest termination records field by field; reason values are
+mapped explicitly and the `comm` string remains callback-lifetime data by
+contract.
 
 The application retains its post-phase-1 socket smoke because that is a demo
 workload and readiness report, not provider lifecycle. It queries the host-owned

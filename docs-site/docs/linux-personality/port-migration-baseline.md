@@ -313,14 +313,19 @@ it before teardown, and owns whether a parked console wait uses readiness events
 or the bounded 5 ms polling fallback. A failed subscription fails the launch
 closed, and providers must stop callbacks before unsubscribe returns.
 
-oveRTOS now owns the concrete console transport in `lxp_ove_console.c`. It binds
-only the console fields of a caller-owned launch configuration, so the app keeps
-exit, workload, diagnostics, and RT-scope policy. FreeRTOS and Zephyr publish
-STM32 RX events; NuttX and QEMU retain the polling fallback because their current
-console paths do not expose an appropriate readiness source. Zephyr no longer
-includes or calls LXP from its generic console backend. FreeRTOS USART1 now runs
-at `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`, which is required because its
-RX callback can wake the coordinator through an ISR-safe FreeRTOS semaphore.
+oveRTOS now owns the console binding in `lxp_ove_console.c`. It binds only the
+console fields of a caller-owned launch configuration, so the app keeps exit,
+workload, diagnostics, and RT-scope policy. Physical transport is a separate
+board seam: `lxp_ove_console_native.c` adapts the ordinary oveRTOS console, while
+`boards/qemu-mps2/lxp_console.c` owns the dedicated CMSDK UART1 registers. The
+common adapter therefore contains no board addresses or RTOS selection.
+
+FreeRTOS and Zephyr publish STM32 RX events; NuttX and QEMU retain the polling
+fallback because their current console paths do not expose an appropriate
+readiness source. Zephyr no longer includes or calls LXP from its generic
+console backend. FreeRTOS USART1 now runs at
+`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`, which is required because its RX
+callback can wake the coordinator through an ISR-safe FreeRTOS semaphore.
 
 All seven canonical LXP CTest targets and all 47 oveRTOS host/structural targets
 pass. Production links compare with Iteration 8 as follows:
@@ -332,8 +337,9 @@ pass. Production links compare with Iteration 8 as follows:
 | Zephyr | 356,640 B | 356,640 B | 0 B |
 
 The generated configurations and fixed LXP pools are unchanged. The ownership
-ledger rejects console transport mechanics in `linux_interop/app.c` and rejects
-any renewed direct dependency from the Zephyr console backend to LXP.
+ledger rejects console transport mechanics in `linux_interop/app.c`, board or
+native-console mechanics in the common adapter, and any renewed direct
+dependency from the Zephyr console backend to LXP.
 
 ## Iteration 10: immutable network topology and native interface ownership
 

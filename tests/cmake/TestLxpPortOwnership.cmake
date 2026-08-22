@@ -39,6 +39,8 @@ set(HOST_ADAPTERS
     "backends/common/lxp_ove_host.c"
     "backends/common/lxp_ove_observability.c"
     "backends/common/lxp_ove_console.c"
+    "backends/common/lxp_ove_console_native.c"
+    "boards/qemu-mps2/lxp_console.c"
     "backends/common/lxp_ove_thread_adapter.c"
     "backends/freertos/freertos_lxp_host.c"
     "backends/nuttx/nuttx_lxp_host.c"
@@ -175,6 +177,17 @@ file(READ "${OVE_ROOT}/backends/zephyr/zephyr_console.c" ZEPHYR_CONSOLE_TEXT)
 if(ZEPHYR_CONSOLE_TEXT MATCHES "lxp_console_kick|#[ \t]*include[ \t]*[<\"]lxp/")
     message(FATAL_ERROR
         "Zephyr console regained an implicit dependency on the LXP core")
+endif()
+file(READ "${OVE_ROOT}/backends/common/lxp_ove_console.c" CONSOLE_ADAPTER_TEXT)
+if(CONSOLE_ADAPTER_TEXT MATCHES
+   "CONFIG_OVE_(BOARD|RTOS)|OVE_LXP_UART|0x[0-9A-Fa-f]{8}|ove_console_(try_getchar|putchar|write|set_ready_callback)")
+    message(FATAL_ERROR
+        "common LXP console adapter regained board or native transport ownership")
+endif()
+file(READ "${OVE_ROOT}/boards/qemu-mps2/lxp_console.c" QEMU_CONSOLE_TEXT)
+if(NOT QEMU_CONSOLE_TEXT MATCHES "OVE_LXP_UART_BASE" OR
+   NOT QEMU_CONSOLE_TEXT MATCHES "ove_hal_lxp_console_init")
+    message(FATAL_ERROR "QEMU LXP console omits its physical UART provider")
 endif()
 foreach(RETIRED_HEADER IN ITEMS
         "backends/common/ove_cortex_m_cache.h"
