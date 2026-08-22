@@ -1,8 +1,7 @@
 # Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Transitional ownership ledger for the LXP port migration. A migration commit
-# updates this inventory while removing the old consumer-owned implementation.
+# Permanent ownership ledger for the oveRTOS/LXP boundary.
 
 if(NOT DEFINED OVE_ROOT)
     message(FATAL_ERROR "OVE_ROOT is required")
@@ -25,11 +24,10 @@ list(SORT EXPECTED_APP_FILES)
 list(SORT ACTUAL_APP_FILES)
 if(NOT ACTUAL_APP_FILES STREQUAL EXPECTED_APP_FILES)
     message(FATAL_ERROR
-        "linux_interop inventory changed without updating the LXP migration ledger\n"
+            "linux_interop inventory changed without updating the ownership ledger\n"
         "expected: ${EXPECTED_APP_FILES}\nactual: ${ACTUAL_APP_FILES}")
 endif()
 
-set(LEGACY_SEAMS "")
 set(HOST_ADAPTERS
     "backends/common/lxp_ove_net_adapter.c"
     "backends/common/lxp_ove_display_adapter.c"
@@ -214,7 +212,7 @@ endforeach()
 
 set(BUILD_TEMPLATE "${OVE_ROOT}/config/templates/ove_config.cmake.j2")
 file(READ "${BUILD_TEMPLATE}" BUILD_TEXT)
-foreach(SOURCE IN LISTS LEGACY_SEAMS HOST_ADAPTERS LXP_RTOS_PORTS)
+foreach(SOURCE IN LISTS HOST_ADAPTERS LXP_RTOS_PORTS)
     if(NOT EXISTS "${OVE_ROOT}/${SOURCE}")
         message(FATAL_ERROR "migration ledger names missing source: ${SOURCE}")
     endif()
@@ -265,12 +263,10 @@ file(GLOB ACTUAL_LEGACY_SEAMS
     "${OVE_ROOT}/backends/freertos/*lnx*.c"
     "${OVE_ROOT}/backends/nuttx/*lnx*.c"
     "${OVE_ROOT}/backends/zephyr/*lnx*.c")
-list(SORT LEGACY_SEAMS)
 list(SORT ACTUAL_LEGACY_SEAMS)
-if(NOT ACTUAL_LEGACY_SEAMS STREQUAL LEGACY_SEAMS)
+if(NOT ACTUAL_LEGACY_SEAMS STREQUAL "")
     message(FATAL_ERROR
-        "RTOS seam inventory changed without updating the LXP migration ledger\n"
-        "expected: ${LEGACY_SEAMS}\nactual: ${ACTUAL_LEGACY_SEAMS}")
+        "consumer-owned RTOS task/trap seams returned: ${ACTUAL_LEGACY_SEAMS}")
 endif()
 
 # Demo host modules use only public oveRTOS contracts.
