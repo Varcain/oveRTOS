@@ -108,6 +108,7 @@ set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_stream.c
     ${OVE_SRC}/ove_stream.c
     ${FREERTOS_BACKEND}/freertos_workqueue.c
+    ${OVE_SRC}/ove_workqueue.c
     # Async runtime substrate (CONFIG_OVE_ASYNC).
     ${FREERTOS_BACKEND}/freertos_irq.c
 )

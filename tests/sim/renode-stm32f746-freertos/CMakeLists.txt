@@ -127,6 +127,7 @@ set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_stream.c
     ${OVE_SRC}/ove_stream.c
     ${FREERTOS_BACKEND}/freertos_workqueue.c
+    ${OVE_SRC}/ove_workqueue.c
     ${FREERTOS_BACKEND}/freertos_watchdog.c
     ${FREERTOS_BACKEND}/freertos_gpio.c
     ${FREERTOS_BACKEND}/freertos_shell.c

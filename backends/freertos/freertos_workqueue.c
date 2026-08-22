@@ -67,8 +67,12 @@ static void wait_for_completion(struct ove_work *w)
 int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
 		       ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (wq == NULL || storage == NULL || stack == NULL)
+	if (wq == NULL || storage == NULL)
 		return OVE_ERR_INVALID_PARAM;
+#ifndef OVE_HEAP_WORKQUEUE
+	if (stack == NULL)
+		return OVE_ERR_INVALID_PARAM;
+#endif
 
 	storage->queue = xQueueCreateStatic(OVE_WQ_QUEUE_DEPTH, sizeof(struct ove_work *),
 					    storage->queue_storage, &storage->static_queue);
@@ -79,9 +83,20 @@ int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, co
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	storage->task = xTaskCreateStatic(wq_thread, name ? name : "ove_wq", stack_depth, storage,
-					  ove_freertos_map_priority(priority), (StackType_t *)stack,
-					  &storage->static_task);
+#ifdef OVE_HEAP_WORKQUEUE
+	if (stack == NULL) {
+		if (xTaskCreate(wq_thread, name ? name : "ove_wq", stack_depth, storage,
+				ove_freertos_map_priority(priority), &storage->task) != pdPASS)
+			return OVE_ERR_NO_MEMORY;
+	} else
+#endif
+	{
+		storage->task = xTaskCreateStatic(wq_thread, name ? name : "ove_wq", stack_depth,
+						  storage, ove_freertos_map_priority(priority),
+						  (StackType_t *)stack, &storage->static_task);
+		if (storage->task == NULL)
+			return OVE_ERR_NO_MEMORY;
+	}
 
 	*wq = storage;
 	return OVE_OK;
@@ -114,53 +129,6 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	*work = storage;
 	return OVE_OK;
 }
-
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_WORKQUEUE
-int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t priority,
-			 size_t stack_size)
-{
-	struct ove_workqueue *fwq;
-	BaseType_t ret;
-	uint32_t stack_depth;
-
-	if (wq == NULL)
-		return OVE_ERR_INVALID_PARAM;
-
-	fwq = OVE_BACKEND_MALLOC(sizeof(*fwq));
-	if (fwq == NULL)
-		return OVE_ERR_NO_MEMORY;
-
-	fwq->queue = xQueueCreateStatic(OVE_WQ_QUEUE_DEPTH, sizeof(struct ove_work *),
-					fwq->queue_storage, &fwq->static_queue);
-	fwq->done_sem = xSemaphoreCreateBinaryStatic(&fwq->static_done_sem);
-	fwq->running = 1;
-
-	stack_depth = stack_size / sizeof(StackType_t);
-	if (stack_depth < configMINIMAL_STACK_SIZE)
-		stack_depth = configMINIMAL_STACK_SIZE;
-
-	ret = xTaskCreate(wq_thread, name ? name : "ove_wq", stack_depth, fwq,
-			  ove_freertos_map_priority(priority), &fwq->task);
-	if (ret != pdPASS) {
-		OVE_BACKEND_FREE(fwq);
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	*wq = fwq;
-	return OVE_OK;
-}
-
-void ove_workqueue_destroy(ove_workqueue_t wq)
-{
-	if (wq != NULL) {
-		ove_workqueue_deinit(wq);
-		OVE_BACKEND_FREE(wq);
-	}
-}
-
-#endif /* OVE_HEAP_WORKQUEUE */
 
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_work_init(ove_work_t *work, ove_work_fn handler)

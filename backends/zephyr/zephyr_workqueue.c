@@ -88,41 +88,6 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	return OVE_OK;
 }
 
-/* ─── _create / _destroy ─────────────────────────────────────────────── */
-
-#ifdef OVE_HEAP_WORKQUEUE
-int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t priority,
-			 size_t stack_size)
-{
-	struct ove_workqueue *zwq;
-	int ret;
-
-	if (wq == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	zwq = OVE_BACKEND_MALLOC(sizeof(*zwq));
-	if (zwq == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	ret = ove_workqueue_init(wq, zwq, name, priority, stack_size, NULL);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(zwq);
-		return ret;
-	}
-	return OVE_OK;
-}
-
-void ove_workqueue_destroy(ove_workqueue_t wq)
-{
-	if (wq != NULL) {
-		ove_workqueue_deinit(wq);
-		OVE_BACKEND_FREE(wq);
-	}
-}
-#endif /* OVE_HEAP_WORKQUEUE */
-
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_work_init(ove_work_t *work, ove_work_fn handler)
 {

@@ -139,6 +139,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_STREAM") == True %}
     ${OVE_DIR}/src/ove_stream.c
 {% endif %}
+{% if config.get("CONFIG_OVE_WORKQUEUE") == True %}
+    ${OVE_DIR}/src/ove_workqueue.c
+{% endif %}
 {% if config.get("CONFIG_OVE_FS") == True or config.get("CONFIG_OVE_BLOCK") == True %}
     ${OVE_DIR}/src/ove_media.c
 {% endif %}

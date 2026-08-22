@@ -116,55 +116,6 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	return OVE_OK;
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_workqueue_create(ove_workqueue_t *wqh, const char *name, ove_prio_t priority,
-			 size_t stack_size)
-{
-	(void)name;
-	(void)priority;
-	(void)stack_size;
-
-	if (!wqh)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_workqueue *wq = OVE_BACKEND_MALLOC(sizeof(*wq));
-	if (!wq) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(wq, 0, sizeof(*wq));
-	pthread_mutex_init(&wq->lock, NULL);
-	pthread_cond_init(&wq->cond, NULL);
-	wq->running = 1;
-
-	if (pthread_create(&wq->thread, NULL, wq_thread_func, wq) != 0) {
-		pthread_mutex_destroy(&wq->lock);
-		pthread_cond_destroy(&wq->cond);
-		OVE_BACKEND_FREE(wq);
-		return OVE_ERR_NO_MEMORY;
-	}
-
-	*wqh = wq;
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_workqueue_destroy(ove_workqueue_t wqh)
-{
-	struct ove_workqueue *wq = wqh;
-	if (!wq) {
-		return;
-	}
-	pthread_mutex_lock(&wq->lock);
-	wq->running = 0;
-	pthread_cond_signal(&wq->cond);
-	pthread_mutex_unlock(&wq->lock);
-	pthread_join(wq->thread, NULL);
-	pthread_mutex_destroy(&wq->lock);
-	pthread_cond_destroy(&wq->cond);
-	OVE_BACKEND_FREE(wq);
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
 int ove_work_init(ove_work_t *work, ove_work_fn handler)
 {
 	if (!work || !handler)
