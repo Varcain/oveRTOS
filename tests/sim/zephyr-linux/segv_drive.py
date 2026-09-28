@@ -12,7 +12,7 @@
 # Same shell-pipeline shape as the freertos/nuttx segv_drive.py (piped keystrokes, output redirected
 # to a file, parsed afterward — the Cortex-M MPU emulation is timing-fragile and dislikes host-side
 # readers). NOTE the FULL board name for the workspace: `qemu.zephyr` prefix-matches the an500 and
-# would drop USERSPACE, so the isolation build needs qemu-mps2-an521.zephyr.linux_interop.
+# would drop USERSPACE, so the isolation build needs qemu-mps2-an521.zephyr.linux_interop_minimal.
 #
 # Usage: segv_drive.py [logfile]
 import subprocess, sys, re, os

@@ -2393,6 +2393,10 @@ def test_qemu_freertos_linux_evread(ove_dir, output_dir):
 # the minimal profile, which pins every optional Linux subsystem off.
 NUTTX_QEMU_LINUX_FRAGMENT = "qemu.nuttx.linux_interop_minimal"
 
+# On AN521, Zephyr's SLIP networking pipe shares UART1 with the Linux console
+# and consumes console input, so the isolation suites also run networkless.
+ZEPHYR_QEMU_LINUX_FRAGMENT = "qemu-mps2-an521.zephyr.linux_interop_minimal"
+
 
 def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     """Build the QEMU mps2-an500 NuttX Linux personality and run the NEGATIVE isolation test:
@@ -2452,12 +2456,12 @@ def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
     like the FreeRTOS/NuttX MemManage handlers. tests/sim/zephyr-linux/segv_drive.py boots, logs in,
     runs segv, and asserts all of that (exit 0 = pass).
 
-    Uses the FULL board name (qemu-mps2-an521.zephyr.linux_interop) — `qemu.zephyr` prefix-matches the
-    an500 and would drop USERSPACE. Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying
+    Uses the FULL board name (qemu-mps2-an521.zephyr.linux_interop_minimal) — `qemu.zephyr`
+    prefix-matches the an500 and would drop USERSPACE. Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying
     /usr/bin/segv plus QEMU and the slow uClinux boot, so it is deliberately NOT in any auto-run
     group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
-    run([ove, "defconfig-fragments", "qemu-mps2-an521.zephyr.linux_interop"], cwd=ove_dir)
+    run([ove, "defconfig-fragments", ZEPHYR_QEMU_LINUX_FRAGMENT], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
@@ -2497,7 +2501,7 @@ def test_qemu_nuttx_linux_kstress(ove_dir, output_dir):
 
 
 def test_qemu_zephyr_linux_kstress(ove_dir, output_dir):
-    return _linux_kstress(ove_dir, output_dir, "qemu-mps2-an521.zephyr.linux_interop", "zephyr")
+    return _linux_kstress(ove_dir, output_dir, ZEPHYR_QEMU_LINUX_FRAGMENT, "zephyr")
 
 
 def test_qemu_freertos_linux_kstress(ove_dir, output_dir):
