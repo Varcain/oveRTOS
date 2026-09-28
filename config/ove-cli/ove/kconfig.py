@@ -223,6 +223,8 @@ def _find_board_dir(ove_dir, board_short):
 
     Matches against directory basename or the 'name' field in board.yaml.
     Short names like 'qemu', 'stm32f746', 'host', 'wasm' match via prefix.
+    Directories without a board.yaml hold files shared by several boards
+    (e.g. boards/qemu-mps2/) and are never a match.
     """
     boards_dir = os.path.join(ove_dir, "boards")
     if not os.path.isdir(boards_dir):
@@ -230,7 +232,7 @@ def _find_board_dir(ove_dir, board_short):
 
     for entry in sorted(os.listdir(boards_dir)):
         board_path = os.path.join(boards_dir, entry)
-        if not os.path.isdir(board_path):
+        if not os.path.isfile(os.path.join(board_path, "board.yaml")):
             continue
         # Exact match on directory name
         if entry == board_short:
