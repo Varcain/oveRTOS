@@ -9,7 +9,7 @@
 #         139), not escalate to a HardFault / panic. A MemManage-only handler crashes here.
 # The shell must survive both and poweroff cleanly. Same shell-pipeline shape as segv_drive.py (the
 # Cortex-M MPU emulation is timing-fragile — no host-side pty/reader). Run from the repo root with the
-# active workspace = this engine's linux_interop build (ove run uses it).
+# active workspace = this engine's linux_interop_minimal build (ove run uses it).
 #
 # Usage: kstress_drive.py [logfile]
 import subprocess, sys, re, os

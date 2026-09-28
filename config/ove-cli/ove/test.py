@@ -2388,6 +2388,12 @@ def test_qemu_freertos_linux_evread(ove_dir, output_dir):
                             "qemu-freertos-linux-evread", cwd=ove_dir)
 
 
+# NuttX's AN500 QEMU build has no network device, so the full interop profile
+# stops at eth0 bring-up. The isolation suites need no networking; run them on
+# the minimal profile, which pins every optional Linux subsystem off.
+NUTTX_QEMU_LINUX_FRAGMENT = "qemu.nuttx.linux_interop_minimal"
+
+
 def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     """Build the QEMU mps2-an500 NuttX Linux personality and run the NEGATIVE isolation test:
     /usr/bin/segv deliberately writes kernel SRAM, which the per-program MPU view must contain —
@@ -2398,7 +2404,7 @@ def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/segv plus QEMU and
     the slow uClinux boot, so it is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
-    run([ove, "defconfig-fragments", "qemu.nuttx.linux_interop"], cwd=ove_dir)
+    run([ove, "defconfig-fragments", NUTTX_QEMU_LINUX_FRAGMENT], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
@@ -2424,7 +2430,7 @@ def test_qemu_nuttx_linux_xregion(ove_dir, output_dir):
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/xregion plus QEMU and
     the slow uClinux boot, so it is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
-    run([ove, "defconfig-fragments", "qemu.nuttx.linux_interop"], cwd=ove_dir)
+    run([ove, "defconfig-fragments", NUTTX_QEMU_LINUX_FRAGMENT], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
@@ -2487,7 +2493,7 @@ def _linux_kstress(ove_dir, output_dir, board_frag, engine):
 
 
 def test_qemu_nuttx_linux_kstress(ove_dir, output_dir):
-    return _linux_kstress(ove_dir, output_dir, "qemu.nuttx.linux_interop", "nuttx")
+    return _linux_kstress(ove_dir, output_dir, NUTTX_QEMU_LINUX_FRAGMENT, "nuttx")
 
 
 def test_qemu_zephyr_linux_kstress(ove_dir, output_dir):

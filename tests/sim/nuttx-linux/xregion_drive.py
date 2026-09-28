@@ -15,8 +15,8 @@
 # host-side pty/reader perturbs the unrelated phase-1 program; keystrokes go through a plain shell
 # pipeline with output redirected to a file, parsed afterward).
 #
-# Requires the active workspace to be the an500 NuttX linux_interop build (ove run uses it):
-#   ove defconfig-fragments qemu.nuttx.linux_interop && ove build
+# Requires the active workspace to be the an500 NuttX linux_interop_minimal build (ove run uses it):
+#   ove defconfig-fragments qemu.nuttx.linux_interop_minimal && ove build
 # Run from the repo root.
 #
 # Usage: xregion_drive.py [logfile]
