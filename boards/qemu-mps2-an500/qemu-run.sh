@@ -108,12 +108,15 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
     fi
     ROOTFS_BASE="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_BASE=//p' "${PERSONALITY_CFG}")"
     ROOTFS_LIMIT="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_SIZE=//p' "${PERSONALITY_CFG}")"
-    ROOTFS_SIZE="$(stat -c %s "${ROOTFS_CPIO}")"
-    if [ -z "${ROOTFS_BASE}" ] || [ -z "${ROOTFS_LIMIT}" ] ||
-       [ "${ROOTFS_SIZE}" -gt "$((ROOTFS_LIMIT))" ]; then
-        echo "[qemu-run] ERROR: rootfs.cpio is ${ROOTFS_SIZE} bytes; configured window is ${ROOTFS_LIMIT:-missing}" >&2
+    if [ -z "${ROOTFS_BASE}" ] || [ -z "${ROOTFS_LIMIT}" ]; then
+        echo "[qemu-run] ERROR: the rootfs window is not configured" >&2
         exit 1
     fi
+    # Use the full image when it fits the window, else a copy without optional applications.
+    ROOTFS_FIT_DIR="${OVE_WS_DIR:-$(dirname "$(realpath "${ELF}")")}/build"
+    mkdir -p "${ROOTFS_FIT_DIR}"
+    ROOTFS_CPIO="$(python3 "${OVE_DIR}/boards/qemu-mps2/fit-rootfs.py" "${ROOTFS_CPIO}" \
+        "${ROOTFS_LIMIT}" "${ROOTFS_FIT_DIR}/rootfs-fit.cpio")" || exit 1
     PERS_ARGS=(
         -machine "${QEMU_MACHINE}" -m 16
         # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive
