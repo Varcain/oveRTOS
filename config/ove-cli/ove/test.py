@@ -2722,7 +2722,7 @@ def test_lxp_memory_layout_config(ove_dir, output_dir):
         ("nuttx-an500", "NUTTX", "QEMU_MPS2_AN500", False,
          ("0x60000000", "0x00800000", "0x60800000", "0x00800000")),
         ("zephyr-an521", "ZEPHYR", "QEMU_MPS2_AN521", False,
-         ("0x80000000", "0x00ef0000", "0x80ef0000", "0x00110000")),
+         ("0x80000000", "0x00800000", "0x80800000", "0x00800000")),
         ("zephyr-stm32", "ZEPHYR", "STM32F746G_DISCO", True,
          ("0x90000000", "0x01000000", "0", "0")),
     ]

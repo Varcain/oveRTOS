@@ -5,8 +5,8 @@
  *
  * Linux personality: split the AN521 PSRAM (16 MB @ 0x80000000) between a raw
  * rootfs loaded by QEMU and a NOLOAD linker region ("OVE_PROG_RAM") for the
- * program pools. Keeping both out of the ELF lets the normal 15 MB Buildroot
- * image coexist with Zephyr's 4 MB internal flash limit.
+ * program pools. Keeping both out of the ELF keeps them clear of Zephyr's 4 MB
+ * internal flash limit. The QEMU runner fits the rootfs to its 8 MiB window.
  */
 
 /delete-node/ &psram;
@@ -21,14 +21,14 @@
 	/* qemu-run.sh rejects a rootfs larger than this reserved window. */
 	lxp_rootfs_ram: memory@80000000 {
 		device_type = "memory";
-		reg = <0x80000000 0x00ef0000>;
+		reg = <0x80000000 0x00800000>;
 	};
 
-	/* One QEMU validation region plus its cold captures and optional
-	 * 256 KiB netfs-exec stage fits in the remaining 1088 KiB. */
-	lxp_pool_ram: memory@80ef0000 {
+	/* Guest program rows, their cold captures and the optional 256 KiB
+	 * netfs-exec stage in the upper 8 MiB. */
+	lxp_pool_ram: memory@80800000 {
 		device_type = "memory";
-		reg = <0x80ef0000 0x00110000>;
+		reg = <0x80800000 0x00800000>;
 		compatible = "zephyr,memory-region", "mmio-sram";
 		zephyr,memory-region = "OVE_PROG_RAM";
 	};

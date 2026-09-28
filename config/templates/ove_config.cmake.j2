@@ -473,11 +473,12 @@ add_compile_definitions(LXP_NREG=5)
 {% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN521") == True and config.get("CONFIG_OVE_LINUX") == True %}
-# AN521 has one 16 MiB PSRAM bank. The production rootfs occupies the lower
-# 0x00ef0000 bytes; retain one process region in the remaining 1088 KiB so every
-# supported profile (including the netfs-exec staging buffer) has a runnable
-# QEMU validation target without embedding the rootfs in internal flash.
-add_compile_definitions(LXP_NREG=1)
+# AN521 has one 16 MiB PSRAM bank: the rootfs window takes the lower 8 MiB and
+# the guest pool the upper 8 MiB. exec builds the new image in a second region
+# while the old one is live, so a runnable profile needs at least two. Six rows
+# of 256K program + 512K dynamic memory plus the 256K netfs-exec stage use
+# 4.75 MiB, matching the NuttX AN500 profile.
+add_compile_definitions(LXP_NREG=6)
 {% endif %}
 # The embedded BusyBox rootfs.cpio comes from <OVE_BUILDROOT>/<OVE_LINUX_ROOTFS_OUTPUT>/images/.
 # Both are CONFIG_* (Kconfig) — no local paths are baked into the oveRTOS sources. A relative
