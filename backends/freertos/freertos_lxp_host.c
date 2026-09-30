@@ -156,7 +156,7 @@ static int host_prepare(void)
 {
 	/* The LXP trap posts a FreeRTOS semaphore from SVCall context. */
 	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	return 0;
+	return LXP_OK;
 }
 
 static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declared,
@@ -188,8 +188,8 @@ static int host_prepare(void)
 	uintptr_t storage_base = (uintptr_t)&g_lxp_storage;
 	uintptr_t storage_end = storage_base + sizeof(g_lxp_storage);
 	return storage_base >= OVE_LXP_GUEST_POOL_BASE && storage_end <= OVE_LXP_GUEST_POOL_END
-		       ? 0
-		       : -1;
+		       ? LXP_OK
+		       : LXP_ERR_INVALID_PARAM;
 }
 
 #define HOST_MEMORY_VALIDATOR ove_lxp_validate_uncached_memory_contract

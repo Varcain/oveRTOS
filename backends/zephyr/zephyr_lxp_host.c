@@ -124,7 +124,7 @@ static int host_prepare(void)
 	/* The privileged coordinator must outrank a guest parked in the SVC return
 	 * trampoline. Enforce that seam invariant independently of its caller. */
 	k_thread_priority_set(k_current_get(), OVE_ZEPHYR_PRIO_LXP_COORDINATOR);
-	return 0;
+	return LXP_OK;
 }
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)

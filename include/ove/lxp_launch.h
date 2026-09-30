@@ -67,12 +67,6 @@ typedef struct ove_lxp_launch_config {
 	ove_lxp_console_unsubscribe_fn console_unsubscribe;
 } ove_lxp_launch_config_t;
 
-/** Negative outcomes from @ref ove_lxp_host_run; non-negative values are the
- * init process's exit status. */
-#define OVE_LXP_RUN_ELAUNCH (-1)
-#define OVE_LXP_RUN_EEXEC (-2)
-#define OVE_LXP_RUN_ETIMEOUT (-3)
-
 #ifdef __cplusplus
 }
 #endif

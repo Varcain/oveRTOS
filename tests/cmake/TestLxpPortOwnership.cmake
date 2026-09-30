@@ -320,7 +320,7 @@ if(OVE_THREAD_HEADER_TEXT MATCHES
         "generic ove_thread_info regained personality-specific ownership state")
 endif()
 if(HOST_APP_TEXT MATCHES
-   "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*|LXP_RUN_E[A-Z0-9_]*)")
+   "(^|[^A-Za-z0-9_])(lxp_launch_config_t|lxp_guest_exit_info_t|LXP_EXIT_REASON_[A-Z0-9_]*)")
     message(FATAL_ERROR
         "linux_interop host modules bypass the oveRTOS launch contract")
 endif()

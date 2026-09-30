@@ -274,7 +274,7 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 		     const char *path, int argc, const char *const argv[])
 {
 	if (!host)
-		return OVE_LXP_RUN_ELAUNCH;
+		return OVE_ERR_INVALID_PARAM;
 	const ove_lxp_host_impl_t *impl = ove_lxp_host_private_const(host);
 	lxp_launch_config_t launch;
 	const lxp_launch_config_t *translated = NULL;
@@ -300,14 +300,5 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 		translated = &launch;
 	}
 	int rc = lxp_host_run(&impl->core, translated, path, argc, argv);
-	switch (rc) {
-	case LXP_RUN_ELAUNCH:
-		return OVE_LXP_RUN_ELAUNCH;
-	case LXP_RUN_EEXEC:
-		return OVE_LXP_RUN_EEXEC;
-	case LXP_RUN_ETIMEOUT:
-		return OVE_LXP_RUN_ETIMEOUT;
-	default: /* init's exit status, or a host error */
-		return rc < 0 ? ove_err_from_lxp(rc) : rc;
-	}
+	return rc < 0 ? ove_err_from_lxp(rc) : rc; /* why the run failed, or init's status */
 }

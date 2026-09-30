@@ -53,6 +53,7 @@ static char g_host_netfs_mountpoint[LXP_NETFS_MOUNTPOINT_CAP];
 static char g_host_netfs_aname[LXP_NETFS_ANAME_CAP];
 static char g_host_netfs_uname[LXP_NETFS_UNAME_CAP];
 static unsigned g_host_run_calls;
+static int g_host_run_result;
 static const lxp_host_t *g_host_run_target;
 static lxp_launch_config_t g_host_run_config;
 static int g_host_run_had_config;
@@ -120,7 +121,7 @@ int lxp_host_run(const lxp_host_t *host, const lxp_launch_config_t *config, cons
 			config->on_guest_exit(config->guest_exit_ctx, &info);
 		}
 	}
-	return 37;
+	return g_host_run_result;
 }
 
 int lxp_host_observe(const lxp_host_t *host, lxp_host_observation_t *out)
@@ -635,6 +636,7 @@ static void test_host_facade_owns_composition(void **state)
 	assert_string_equal(g_host_init_config.netfs_config->uname, "root");
 
 	g_host_run_calls = 0;
+	g_host_run_result = 37;
 	g_host_run_target = NULL;
 	g_host_run_had_config = 0;
 	memset(&g_host_run_config, 0, sizeof(g_host_run_config));
@@ -673,6 +675,12 @@ static void test_host_facade_owns_composition(void **state)
 	assert_null(g_host_run_config.read_fn);
 	assert_null(g_host_run_config.on_guest_exit);
 	assert_int_equal(g_guest_exit_calls, 1);
+
+	/* A failed run reports its cause in the oveRTOS error domain. */
+	g_host_run_result = LXP_ERR_NOT_FOUND;
+	assert_int_equal(ove_lxp_host_run(&host, NULL, "/init", 1, argv), OVE_ERR_NOT_FOUND);
+	assert_int_equal(ove_lxp_host_run(NULL, NULL, "/init", 1, argv), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(g_host_run_calls, 3);
 	g_host_init_config.rootfs_name_storage[0] = 'x';
 	ove_lxp_host_deinit(&host);
 	assert_int_equal(g_host_init_config.rootfs_name_storage[0], 'x');

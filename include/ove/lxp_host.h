@@ -107,7 +107,14 @@ int ove_lxp_host_netif_get_addr(const ove_lxp_host_t *host, ove_sockaddr_t *ip,
 				ove_sockaddr_t *gateway, ove_sockaddr_t *netmask);
 
 /** Launch a guest through an initialized host. Rootfs and provider composition
- * remain owned by LXP; the application supplies per-launch policy only. */
+ * remain owned by LXP; the application supplies per-launch policy only.
+ *
+ * @return the init process's exit status (>= 0), or a negative ove_err_t naming why
+ * the run failed: OVE_ERR_INVALID_PARAM for a malformed call or an uninitialized
+ * host, OVE_ERR_NOT_FOUND when @p path does not exist, OVE_ERR_NOT_SUPPORTED when it
+ * cannot be executed or the console refuses readiness events, OVE_ERR_NO_MEMORY, a
+ * native service's own error when run setup fails, or OVE_ERR_TIMEOUT when every
+ * guest process stays blocked with nothing left to wake it. */
 int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *config,
 		     const char *path, int argc, const char *const argv[]);
 
