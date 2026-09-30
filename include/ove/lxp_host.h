@@ -49,12 +49,12 @@ typedef struct ove_lxp_host_config {
 
 /* Keep this caller-owned object exactly sized without exposing canonical LXP
  * types. One rootfs entry occupies four pointer-width words on the supported
- * ABIs. The fixed-state reserve covers the immutable canonical host record;
- * private compile-time assertions fail if either storage ABI changes. */
+ * ABIs, and the LXP host reserves LXP_HOST_STORAGE_WORDS of them; private
+ * compile-time assertions fail if either storage ABI changes. */
 #define OVE_LXP_ALIGN_UP_(value, alignment) \
 	(((value) + (alignment) - 1u) / (alignment) * (alignment))
 #define OVE_LXP_ROOTFS_STORAGE_BYTES_ (OVE_LXP_ROOTFS_FILE_CAPACITY * 4u * sizeof(uintptr_t))
-#define OVE_LXP_CORE_STORAGE_BYTES_ (208u + 10u * sizeof(uintptr_t))
+#define OVE_LXP_CORE_STORAGE_BYTES_ (72u * sizeof(uintptr_t))
 #define OVE_LXP_CORE_OFFSET_                                                            \
 	OVE_LXP_ALIGN_UP_(OVE_LXP_ROOTFS_STORAGE_BYTES_ + OVE_LXP_ROOTFS_NAME_CAPACITY, \
 			  sizeof(uintptr_t))

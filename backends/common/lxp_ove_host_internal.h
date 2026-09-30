@@ -34,8 +34,7 @@ typedef struct OVE_LXP_HOST_MAY_ALIAS_ ove_lxp_host_impl {
 
 _Static_assert(sizeof(lxp_file_t) == 4u * sizeof(uintptr_t),
 	       "update the OVE LXP rootfs-entry storage ABI");
-_Static_assert(sizeof(lxp_host_t) == 208u + 10u * sizeof(uintptr_t),
-	       "update the OVE LXP fixed host storage ABI");
+_Static_assert(LXP_HOST_STORAGE_WORDS == 72u, "update the OVE LXP host storage ABI");
 _Static_assert(sizeof(ove_lxp_host_impl_t) == OVE_LXP_HOST_STORAGE_SIZE,
 	       "OVE LXP host storage size no longer matches its private representation");
 _Static_assert(_Alignof(ove_lxp_host_impl_t) <= _Alignof(ove_lxp_host_t),
