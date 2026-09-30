@@ -487,9 +487,8 @@ set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'ou
 # below; adding an unclassified src/*.c file makes configuration fail closed.
 include("${OVE_DIR}/modules/lxp/cmake/lxp_sources.cmake")
 list(APPEND OVE_BACKEND_SOURCES
-     ${LXP_RUNTIME_SOURCES}
-     ${LXP_COORDINATOR_SOURCES}
-     ${LXP_POST_COORDINATOR_SOURCES})
+     ${LXP_CORE_SOURCES}
+     ${LXP_COORDINATOR_SOURCES})
 # Explicit oveRTOS -> LXP thread-snapshot contract adapter.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_thread_adapter.c")
 # oveRTOS-owned provider composition and pre-rootfs-access facade.
@@ -519,7 +518,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_storage_adap
 {% endif %}
 # Coordinator counters plus module-owned arena / loader utilities retain their
 # established archive order after the oveRTOS adapters.
-list(APPEND OVE_BACKEND_SOURCES ${LXP_UTILITY_SOURCES})
+list(APPEND OVE_BACKEND_SOURCES ${LXP_PORT_SUPPORT_SOURCES})
 {% if config.get("CONFIG_OVE_LINUX_LATENCY") == True %}
 # The module spells this gate LXP_ENABLE_LATENCY, not CONFIG_OVE_*: modules/lxp builds
 # standalone under its own suites and check-decoupled.sh forbids oveRTOS symbols inside it,
