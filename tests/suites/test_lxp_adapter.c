@@ -657,6 +657,9 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_run_config.display_height, 480);
 	assert_ptr_equal(g_host_run_config.rt_scope_read, test_rt_scope_read);
 	assert_ptr_equal(g_host_run_config.rt_scope_ctx, &host);
+	assert_string_equal(g_host_run_config.identity.nodename, "overtos");
+	assert_string_equal(g_host_run_config.identity.fb_id, "ovefb");
+	assert_string_equal(g_host_run_config.identity.input_name, "overtos-touch");
 	assert_int_equal(g_guest_exit_calls, 1);
 	assert_int_equal(g_guest_exit_info.slot, 3);
 	assert_int_equal(g_guest_exit_info.pid, 27);
@@ -666,11 +669,12 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_guest_exit_info.address, 0x5678u);
 
 	/* One parsed host serves sequential launches, while launch callbacks remain
-	 * scoped to the invocation that supplied them. */
+	 * scoped to the invocation that supplied them. The system keeps its names. */
 	assert_int_equal(ove_lxp_host_run(&host, NULL, "/init", 1, argv), 37);
 	assert_int_equal(g_host_run_calls, 2);
 	assert_ptr_equal(g_host_run_target, g_host_init_target);
-	assert_false(g_host_run_had_config);
+	assert_true(g_host_run_had_config);
+	assert_string_equal(g_host_run_config.identity.nodename, "overtos");
 	assert_null(g_host_run_config.console.write);
 	assert_null(g_host_run_config.console.read);
 	assert_null(g_host_run_config.on_guest_exit);

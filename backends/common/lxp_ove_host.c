@@ -254,6 +254,13 @@ static uint8_t guest_exit_reason(uint8_t reason)
 	}
 }
 
+/* The names every oveRTOS guest sees for its system; tools match "overtos login:". */
+static const lxp_identity_t g_ove_guest_identity = {
+	.nodename = "overtos",
+	.fb_id = "ovefb",
+	.input_name = "overtos-touch",
+};
+
 static void guest_exit_notify(void *ctx, const lxp_guest_exit_info_t *info)
 {
 	const ove_lxp_launch_config_t *config = ctx;
@@ -279,8 +286,7 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 	if (!host)
 		return OVE_ERR_INVALID_PARAM;
 	const ove_lxp_host_impl_t *impl = ove_lxp_host_private_const(host);
-	lxp_launch_config_t launch;
-	const lxp_launch_config_t *translated = NULL;
+	lxp_launch_config_t launch = {.identity = g_ove_guest_identity};
 	if (config) {
 		launch = (lxp_launch_config_t){
 			/* LXP tests the subscribe result only against 0, which both error
@@ -302,9 +308,9 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 			.display_height = config->display_height,
 			.rt_scope_read = config->rt_scope_read,
 			.rt_scope_ctx = config->rt_scope_ctx,
+			.identity = g_ove_guest_identity,
 		};
-		translated = &launch;
 	}
-	int rc = lxp_host_run(&impl->core, translated, path, argc, argv);
+	int rc = lxp_host_run(&impl->core, &launch, path, argc, argv);
 	return rc < 0 ? ove_err_from_lxp(rc) : rc; /* why the run failed, or init's status */
 }
