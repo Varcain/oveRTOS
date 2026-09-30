@@ -163,8 +163,8 @@ if(DISPLAY_ADAPTER_TEXT MATCHES "lxp_input_report_touch|lxp_dev_tick")
         "display adapter regained LXP-owned input or tick scheduling")
 endif()
 foreach(DISPLAY_LIFECYCLE IN ITEMS
-        "dma2d_init = d_dma2d_init"
-        "touch_deinit = d_touch_deinit")
+        "\\.init = d_dma2d_init"
+        "\\.deinit = d_touch_deinit")
     if(NOT DISPLAY_ADAPTER_TEXT MATCHES "${DISPLAY_LIFECYCLE}")
         message(FATAL_ERROR
             "display adapter omits provider lifecycle binding: ${DISPLAY_LIFECYCLE}")

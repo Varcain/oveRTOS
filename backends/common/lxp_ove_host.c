@@ -304,8 +304,6 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 			.env = config->env,
 			.on_guest_exit = config->on_guest_exit ? guest_exit_notify : NULL,
 			.guest_exit_ctx = (void *)config,
-			.display_width = config->display_width,
-			.display_height = config->display_height,
 			.rt_scope_read = config->rt_scope_read,
 			.rt_scope_ctx = config->rt_scope_ctx,
 			.identity = g_ove_guest_identity,

@@ -90,23 +90,37 @@ static void d_touch_deinit(void)
 }
 #endif /* CONFIG_OVE_FT5336 */
 
-const lxp_display_ops_t g_lxp_host_display_ops = {
-	.abi_version = LXP_DISPLAY_OPS_ABI_VERSION,
-	.struct_size = sizeof(lxp_display_ops_t),
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
-	.fb_init = d_fb_init,
-	.fb_get_info = d_fb_get_info,
-	.fb_get_buffer = d_fb_get_buffer,
-	.fb_present = d_fb_present,
+static const lxp_fb_ops_t g_fb_ops = {
+	.init = d_fb_init,
+	.get_info = d_fb_get_info,
+	.get_buffer = d_fb_get_buffer,
+	.present = d_fb_present,
+};
 #endif
 #if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
-	.dma2d_init = d_dma2d_init,
-	.dma2d_submit = d_dma2d_submit,
+static const lxp_dma2d_ops_t g_dma2d_ops = {
+	.init = d_dma2d_init,
+	.submit = d_dma2d_submit,
+};
 #endif
 #if defined(CONFIG_OVE_FT5336)
-	.touch_init = d_touch_init,
-	.touch_read = d_touch_read,
-	.touch_deinit = d_touch_deinit,
+static const lxp_touch_ops_t g_touch_ops = {
+	.init = d_touch_init,
+	.read = d_touch_read,
+	.deinit = d_touch_deinit,
+};
+#endif
+
+const lxp_display_ops_t g_lxp_host_display_ops = {
+#if defined(CONFIG_OVE_LINUX_DEV_FB)
+	.fb = &g_fb_ops,
+#endif
+#if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
+	.dma2d = &g_dma2d_ops,
+#endif
+#if defined(CONFIG_OVE_FT5336)
+	.touch = &g_touch_ops,
 #endif
 };
 

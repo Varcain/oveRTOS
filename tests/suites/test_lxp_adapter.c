@@ -71,10 +71,7 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.struct_size = sizeof(lxp_os_ops_t),
 };
 
-const lxp_display_ops_t g_lxp_host_display_ops = {
-	.abi_version = LXP_DISPLAY_OPS_ABI_VERSION,
-	.struct_size = sizeof(lxp_display_ops_t),
-};
+const lxp_display_ops_t g_lxp_host_display_ops = {0};
 
 int lxp_host_init_cpio(lxp_host_t *host, const lxp_host_config_t *config)
 {
@@ -585,8 +582,6 @@ static void test_host_facade_owns_composition(void **state)
 		.on_enosys = test_enosys,
 		.env = env,
 		.on_guest_exit = test_guest_exit,
-		.display_width = 800,
-		.display_height = 480,
 		.rt_scope_read = test_rt_scope_read,
 		.rt_scope_ctx = &host,
 	};
@@ -653,8 +648,6 @@ static void test_host_facade_owns_composition(void **state)
 	assert_ptr_equal(g_host_run_config.env, env);
 	assert_non_null(g_host_run_config.on_guest_exit);
 	assert_ptr_equal(g_host_run_config.guest_exit_ctx, &config);
-	assert_int_equal(g_host_run_config.display_width, 800);
-	assert_int_equal(g_host_run_config.display_height, 480);
 	assert_ptr_equal(g_host_run_config.rt_scope_read, test_rt_scope_read);
 	assert_ptr_equal(g_host_run_config.rt_scope_ctx, &host);
 	assert_string_equal(g_host_run_config.identity.nodename, "overtos");

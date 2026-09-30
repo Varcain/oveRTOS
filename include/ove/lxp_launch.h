@@ -59,8 +59,6 @@ typedef struct ove_lxp_launch_config {
 	int (*console_poll)(void *ctx);
 	const char *const *env;
 	ove_lxp_guest_exit_fn on_guest_exit;
-	uint16_t display_width;
-	uint16_t display_height;
 	ove_lxp_rt_scope_read_fn rt_scope_read;
 	void *rt_scope_ctx;
 	ove_lxp_console_subscribe_fn console_subscribe;
