@@ -116,7 +116,7 @@ static int host_random_fill(void *buf, size_t len)
 {
 	if (!buf && len != 0u)
 		return LXP_ERR_INVALID_PARAM;
-	return sys_csrand_get(buf, len) == 0 ? LXP_OK : LXP_ERR_BUS_ERROR;
+	return sys_csrand_get(buf, len) == 0 ? LXP_OK : LXP_ERR_IO;
 }
 
 static int host_prepare(void)

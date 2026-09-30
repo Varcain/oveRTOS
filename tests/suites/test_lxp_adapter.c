@@ -1099,8 +1099,18 @@ static void test_error_translation_is_exhaustive(void **state)
 	assert_int_equal(ove_err_from_lxp(lxp), ove);
 	LXP_OVE_ERR_PAIRS(CHECK_PAIR)
 #undef CHECK_PAIR
-	for (int err = OVE_ERR_CROSS_DEVICE; err < OVE_OK; err++)
-		assert_true(lxp_err_from_ove(err) != LXP_ERR_IO || err == OVE_ERR_IO);
+#define CHECK_FOLD(ove, lxp) assert_int_equal(lxp_err_from_ove(ove), lxp);
+	LXP_OVE_ERR_FOLDS(CHECK_FOLD)
+#undef CHECK_FOLD
+	/* Every oveRTOS code is paired or folded on purpose, none by default. */
+	for (int err = OVE_ERR_CROSS_DEVICE; err < OVE_OK; err++) {
+		int listed = 0;
+#define IS_LISTED(ove, lxp) listed |= err == (ove);
+		LXP_OVE_ERR_PAIRS(IS_LISTED)
+		LXP_OVE_ERR_FOLDS(IS_LISTED)
+#undef IS_LISTED
+		assert_true(listed);
+	}
 	assert_int_equal(lxp_err_from_ove(-1000), LXP_ERR_IO);
 	assert_int_equal(ove_err_from_lxp(-1000), OVE_ERR_IO);
 }

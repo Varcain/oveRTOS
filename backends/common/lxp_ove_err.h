@@ -9,7 +9,8 @@
  * LXP provider and host contracts speak lxp_err_t. The two enums share their values
  * today, but they are separate contracts and LXP may drop codes it never interprets, so
  * every error that crosses the boundary goes through these switches instead of relying
- * on the coincidence. A code with no counterpart becomes an I/O error.
+ * on the coincidence. An oveRTOS code LXP has no counterpart for folds into the LXP code
+ * that reports it; any other code with no counterpart becomes an I/O error.
  */
 #ifndef LXP_OVE_ERR_H
 #define LXP_OVE_ERR_H
@@ -26,20 +27,14 @@
 	X(OVE_ERR_TIMEOUT, LXP_ERR_TIMEOUT)                                                        \
 	X(OVE_ERR_NOT_SUPPORTED, LXP_ERR_NOT_SUPPORTED)                                            \
 	X(OVE_ERR_QUEUE_FULL, LXP_ERR_QUEUE_FULL)                                                  \
-	X(OVE_ERR_ML_FAILED, LXP_ERR_ML_FAILED)                                                    \
 	X(OVE_ERR_NET_REFUSED, LXP_ERR_NET_REFUSED)                                                \
 	X(OVE_ERR_NET_UNREACHABLE, LXP_ERR_NET_UNREACHABLE)                                        \
 	X(OVE_ERR_NET_ADDR_IN_USE, LXP_ERR_NET_ADDR_IN_USE)                                        \
 	X(OVE_ERR_NET_RESET, LXP_ERR_NET_RESET)                                                    \
 	X(OVE_ERR_NET_DNS_FAIL, LXP_ERR_NET_DNS_FAIL)                                              \
 	X(OVE_ERR_NET_CLOSED, LXP_ERR_NET_CLOSED)                                                  \
-	X(OVE_ERR_BUS_NACK, LXP_ERR_BUS_NACK)                                                      \
-	X(OVE_ERR_BUS_BUSY, LXP_ERR_BUS_BUSY)                                                      \
-	X(OVE_ERR_BUS_ERROR, LXP_ERR_BUS_ERROR)                                                    \
-	X(OVE_ERR_QUEUE_EMPTY, LXP_ERR_QUEUE_EMPTY)                                                \
 	X(OVE_ERR_WOULD_BLOCK, LXP_ERR_WOULD_BLOCK)                                                \
 	X(OVE_ERR_EOF, LXP_ERR_EOF)                                                                \
-	X(OVE_ERR_INVAL, LXP_ERR_INVAL)                                                            \
 	X(OVE_ERR_NOT_FOUND, LXP_ERR_NOT_FOUND)                                                    \
 	X(OVE_ERR_NET_ADDR_NOT_AVAILABLE, LXP_ERR_NET_ADDR_NOT_AVAILABLE)                          \
 	X(OVE_ERR_ALREADY_EXISTS, LXP_ERR_ALREADY_EXISTS)                                          \
@@ -55,6 +50,16 @@
 	X(OVE_ERR_PERMISSION, LXP_ERR_PERMISSION)                                                  \
 	X(OVE_ERR_CROSS_DEVICE, LXP_ERR_CROSS_DEVICE)
 
+/* oveRTOS codes LXP has no counterpart for, one per row: X(oveRTOS code, the LXP code
+ * that reports it). They cross into LXP only. */
+#define LXP_OVE_ERR_FOLDS(X)                                                                       \
+	X(OVE_ERR_INVAL, LXP_ERR_INVALID_PARAM)                                                    \
+	X(OVE_ERR_QUEUE_EMPTY, LXP_ERR_WOULD_BLOCK)                                                \
+	X(OVE_ERR_ML_FAILED, LXP_ERR_IO)                                                           \
+	X(OVE_ERR_BUS_NACK, LXP_ERR_IO)                                                            \
+	X(OVE_ERR_BUS_BUSY, LXP_ERR_IO)                                                            \
+	X(OVE_ERR_BUS_ERROR, LXP_ERR_IO)
+
 /* An oveRTOS result as the LXP contracts report it. */
 static inline int lxp_err_from_ove(int err)
 {
@@ -63,6 +68,7 @@ static inline int lxp_err_from_ove(int err)
 	case ove:                                                                                  \
 		return lxp;
 		LXP_OVE_ERR_PAIRS(LXP_OVE_ERR_TO_LXP)
+		LXP_OVE_ERR_FOLDS(LXP_OVE_ERR_TO_LXP)
 #undef LXP_OVE_ERR_TO_LXP
 	default:
 		return LXP_ERR_IO;
