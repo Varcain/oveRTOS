@@ -646,9 +646,9 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_run_calls, 1);
 	assert_true(g_host_run_had_config);
 	assert_ptr_equal(g_host_run_target, g_host_init_target);
-	assert_ptr_equal(g_host_run_config.write_fn, test_launch_write);
-	assert_ptr_equal(g_host_run_config.read_fn, test_launch_read);
-	assert_ptr_equal(g_host_run_config.io_ctx, &io_cookie);
+	assert_ptr_equal(g_host_run_config.console.write, test_launch_write);
+	assert_ptr_equal(g_host_run_config.console.read, test_launch_read);
+	assert_ptr_equal(g_host_run_config.console.ctx, &io_cookie);
 	assert_ptr_equal(g_host_run_config.on_enosys, test_enosys);
 	assert_ptr_equal(g_host_run_config.env, env);
 	assert_non_null(g_host_run_config.on_guest_exit);
@@ -671,8 +671,8 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(g_host_run_calls, 2);
 	assert_ptr_equal(g_host_run_target, g_host_init_target);
 	assert_false(g_host_run_had_config);
-	assert_null(g_host_run_config.write_fn);
-	assert_null(g_host_run_config.read_fn);
+	assert_null(g_host_run_config.console.write);
+	assert_null(g_host_run_config.console.read);
 	assert_null(g_host_run_config.on_guest_exit);
 	assert_int_equal(g_guest_exit_calls, 1);
 

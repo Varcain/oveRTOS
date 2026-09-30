@@ -283,11 +283,18 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 	const lxp_launch_config_t *translated = NULL;
 	if (config) {
 		launch = (lxp_launch_config_t){
-			.write_fn = config->write_fn,
-			.read_fn = config->read_fn,
-			.io_ctx = config->io_ctx,
+			/* LXP tests the subscribe result only against 0, which both error
+			 * domains use for success, so it needs no translation. */
+			.console =
+				{
+					.write = config->write_fn,
+					.read = config->read_fn,
+					.poll = config->console_poll,
+					.subscribe = config->console_subscribe,
+					.unsubscribe = config->console_unsubscribe,
+					.ctx = config->io_ctx,
+				},
 			.on_enosys = config->on_enosys,
-			.console_poll = config->console_poll,
 			.env = config->env,
 			.on_guest_exit = config->on_guest_exit ? guest_exit_notify : NULL,
 			.guest_exit_ctx = (void *)config,
@@ -295,10 +302,6 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 			.display_height = config->display_height,
 			.rt_scope_read = config->rt_scope_read,
 			.rt_scope_ctx = config->rt_scope_ctx,
-			/* LXP tests the subscribe result only against 0, which both error
-			 * domains use for success, so it needs no translation. */
-			.console_subscribe = config->console_subscribe,
-			.console_unsubscribe = config->console_unsubscribe,
 		};
 		translated = &launch;
 	}
