@@ -10,8 +10,9 @@
 # `file prog.elf` gives wrong line/symbol mappings. Each object therefore needs symbols placed at its
 # own text bias — and a dynamic program has THREE of them (the exec, ld-uClibc.so.0, libc.so.0).
 #
-# The personality publishes the main exec's runtime bases + its _DYNAMIC address in the GDB-readable
-# table `g_lxp_dbg[]` (filled by lxp_slot_publish_image() in modules/lxp/src/lxp_run.c). `ove-fdpic-auto`
+# The personality publishes each slot's program (name, runtime bases, _DYNAMIC) in the GDB-readable
+# table `g_lxp_dbg[]` and calls `lxp_debug_state(slot)` after every change — the debugger contract in
+# modules/lxp/include/lxp/lxp_debug.h, modelled on ld.so's `_dl_debug_state`. `ove-fdpic-auto`
 # uses that to load the exec, runs to the exec's entry (by when ld.so has linked everything and
 # patched the exec's _DYNAMIC[DT_DEBUG]), then walks the standard SVR4/FDPIC rendezvous
 # (DT_DEBUG -> struct r_debug -> the uClibc `elf_resolve` link-map chain, whose FDPIC `l_addr` is a
@@ -138,7 +139,18 @@ def _basename(s):
 
 
 def _nslot():
-    return int(gdb.parse_and_eval("(int)(sizeof(g_lxp_slots)/sizeof(g_lxp_slots[0]))"))
+    return int(gdb.parse_and_eval("(int)(sizeof(g_lxp_dbg)/sizeof(g_lxp_dbg[0]))"))
+
+
+def _dbg_comm(sidx):
+    """The program name in g_lxp_dbg[sidx], or "" while the slot runs none (a NULL comm)."""
+    c = gdb.parse_and_eval("g_lxp_dbg[%d].comm" % sidx)
+    if int(c) == 0:
+        return ""
+    try:
+        return c.string()
+    except gdb.error:
+        return ""
 
 
 # ---- FDPIC loadmap → per-object text/data bias ---------------------------------------------------
@@ -264,7 +276,7 @@ def _unshadow_cpio():
     function (a syscall stub like write), GDB's msymbol lookup returns the cpio blob instead of the
     real symbol, so the frame shows `ove_test_rootfs_cpio` not `write`. Strip JUST that one symbol
     from a debug copy of the firmware ELF and reload it — the array data + every other symbol
-    (lxp_slot_publish_image, g_lxp_dbg, ...) stay, so nothing else changes. Afterwards a debug-info function (the
+    (lxp_debug_state, g_lxp_dbg, ...) stay, so nothing else changes. Afterwards a debug-info function (the
     program, libc C functions) resolves fully (name + source); a bare syscall stub, which GDB's
     section-filtered frame lookup can't name once the blob is gone, shows `?? ()` — its real name is
     one `info symbol $pc` away (that global lookup now returns the lib symbol uniquely)."""
@@ -312,7 +324,7 @@ def _make_firmware_removable():
     the main `file` objfile — only add-symbol-file'd ones. So discard the main file and re-add the SAME
     ELF via add-symbol-file (at its own link addresses — a firmware is fixed-address, so no offset).
     MUST be called BEFORE any FDPIC object is loaded: `symbol-file` with no arg discards ALL symbol
-    tables, so there must be nothing else to lose yet. `lxp_slot_publish_image`, its arguments and
+    tables, so there must be nothing else to lose yet. `lxp_debug_state`, its argument and
     `g_lxp_dbg` all still resolve afterwards (add-symbol-file provides them), so the launch-slot walk
     is unaffected."""
     objs = gdb.objfiles()
@@ -419,28 +431,26 @@ def _map_slot(sidx, elf):
 
 
 def _find_launch_slot(comm):
-    """continue until a new image named comm (its argv[0] basename) is published to a slot; return
-    the slot index. lxp_slot_publish_image() receives the loaded image with comm already set and
-    records its load addresses in g_lxp_dbg[slot]."""
+    """continue until a program named comm (its argv[0] basename) is published to a slot; return
+    the slot index. LXP calls lxp_debug_state(slot) after g_lxp_dbg[slot] changes, so the record
+    is complete when the breakpoint stops (exits and aborted launches clear it and are skipped)."""
     print("[ove-fdpic] waiting for %r to exec on the target — run it now (the shell is live)..." % comm)
-    bp = gdb.Breakpoint("lxp_slot_publish_image", internal=True)
+    bp = gdb.Breakpoint("lxp_debug_state", internal=True)
     try:
-        for _ in range(64):
+        for _ in range(256):  # each command publishes once and clears once
             gdb.execute("continue")
             fr = gdb.selected_frame()
-            if fr is None or fr.name() != "lxp_slot_publish_image":
-                print("[ove-fdpic] stopped outside lxp_slot_publish_image(); aborting")
+            if fr is None or fr.name() != "lxp_debug_state":
+                print("[ove-fdpic] stopped outside lxp_debug_state(); aborting")
                 return None
             try:
-                name = gdb.parse_and_eval("image->comm").string()
-            except gdb.error:
-                name = ""
-            if _basename(name) == comm:
-                return int(gdb.parse_and_eval("slot"))
+                sidx = int(gdb.parse_and_eval("slot"))
+            except gdb.error:  # the argument optimized out: it arrives in r0 (AAPCS)
+                sidx = int(gdb.parse_and_eval("$r0"))
+            if _basename(_dbg_comm(sidx)) == comm:
+                return sidx
         return None
     finally:
-        # let the publish return: g_lxp_dbg[slot] is filled
-        gdb.execute("finish", to_string=True)
         bp.delete()
 
 
@@ -515,10 +525,7 @@ class OveFdpicMap(gdb.Command):
         comm, elf = arg.split()
         _unshadow_cpio()
         for s in range(_nslot()):
-            p = gdb.parse_and_eval("g_lxp_slots[%d].proc" % s)
-            if not int(p["alive"]):
-                continue
-            if _basename(p["comm"].string()) == comm:
+            if _basename(_dbg_comm(s)) == comm:
                 _map_slot(s, elf)
                 return
         print("[ove-fdpic] no live slot named %r" % comm)

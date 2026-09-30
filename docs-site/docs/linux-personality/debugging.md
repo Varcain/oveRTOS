@@ -27,7 +27,9 @@ via ST-Link), then:
 ```
 
 `ove-fdpic-auto` runs until `<comm>` execs, reads the runtime bases the
-personality publishes in `g_lxp_dbg[]`, runs to the exec's entry (by when
+personality publishes in `g_lxp_dbg[]` (it calls `lxp_debug_state(slot)` after
+each change; the contract is `modules/lxp/include/lxp/lxp_debug.h`), runs to
+the exec's entry (by when
 `ld.so` has linked everything), then walks the standard FDPIC `DT_DEBUG →
 r_debug → link-map` rendezvous and `add-symbol-file`s every loaded object at its
 own text bias. From there, breakpoints, `bt`, `next`, and locals all work.

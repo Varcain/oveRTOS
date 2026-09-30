@@ -214,15 +214,16 @@ SECTIONS
     } > RAM
 
     /* LXP keeps a bounded stack of interrupted guest register/FP contexts in
-     * g_sig_save.  It is privileged-only, never DMA-owned, and is reset by the
-     * coordinator before a run, so the unused DTCM tail is a better fit than
-     * either cacheable SDRAM or the already-full general SRAM bank.  Consume
-     * this input section before the broad .bss* wildcard below. */
+     * g_lxp_sig_save, emitted into LXP_SIGNAL_STATE_SECTION.  It is
+     * privileged-only, never DMA-owned, and is reset by the coordinator before
+     * a run, so the unused DTCM tail is a better fit than either cacheable
+     * SDRAM or the already-full general SRAM bank.  Consume this input section
+     * before the broad .bss* wildcard below. */
     .lxp_signal_state (NOLOAD) :
     {
         . = ALIGN(32);
         __lxp_signal_state_start__ = .;
-        *(.bss.g_sig_save)
+        *(.bss.lxp_signal_state)
         . = ALIGN(32);
         __lxp_signal_state_end__ = .;
     } > DSP_DTCM
