@@ -66,10 +66,8 @@ static lxp_run_health_t g_run_health;
 static lxp_lat_stat_t g_lat_record_input;
 static unsigned g_lat_record_calls;
 
-const lxp_os_ops_t g_lxp_host_engine = {
-	.abi_version = LXP_OS_OPS_ABI_VERSION,
-	.struct_size = sizeof(lxp_os_ops_t),
-};
+/* The host composition only passes the engine through; none of its operations run here. */
+const lxp_os_ops_t g_lxp_host_engine = {0};
 
 const lxp_display_ops_t g_lxp_host_display_ops = {0};
 

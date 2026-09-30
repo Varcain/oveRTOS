@@ -14,16 +14,12 @@
 
 #define OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER                         \
 	{                                                                    \
-		.abi_version = LXP_CPU_MEMORY_CONTRACT_ABI_VERSION,           \
-		.struct_size = sizeof(lxp_cpu_memory_contract_t),              \
 		.model = LXP_CPU_MEM_UNCACHED,                                 \
 		.normal_attrs = LXP_CPU_MEM_ATTR_NORMAL_NC_NSH,                \
 	}
 
 #define OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER                        \
 	{                                                                    \
-		.abi_version = LXP_CPU_MEMORY_CONTRACT_ABI_VERSION,           \
-		.struct_size = sizeof(lxp_cpu_memory_contract_t),              \
 		.model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,                      \
 		.normal_attrs = LXP_CPU_MEM_ATTR_NORMAL_WBWA_NSH,              \
 		.flags = LXP_CPU_MEMORY_DCACHE_ENABLED |                       \

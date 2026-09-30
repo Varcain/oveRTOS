@@ -168,8 +168,6 @@ static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declar
 #endif
 
 const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
-	.abi_version = LXP_NUTTX_PORT_CONFIG_ABI_VERSION,
-	.struct_size = sizeof(lxp_nuttx_port_config_t),
 	.common =
 		{
 			LXP_OVE_PORT_STORAGE(g_program_regions, g_dynamic_pools, g_exec_captures),

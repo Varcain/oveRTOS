@@ -197,8 +197,6 @@ static int host_prepare(void)
 #endif
 
 const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
-	.abi_version = LXP_FREERTOS_PORT_CONFIG_ABI_VERSION,
-	.struct_size = sizeof(lxp_freertos_port_config_t),
 	.common =
 		{
 			LXP_OVE_PORT_STORAGE(&g_lxp_storage.prog_regions[0][0],

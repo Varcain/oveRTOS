@@ -186,8 +186,6 @@ uint32_t ove_lxp_metrics_counter_hz(void)
 #endif
 
 const lxp_zephyr_port_config_t g_lxp_zephyr_port_config = {
-	.abi_version = LXP_ZEPHYR_PORT_CONFIG_ABI_VERSION,
-	.struct_size = sizeof(lxp_zephyr_port_config_t),
 	.common =
 		{
 			LXP_OVE_PORT_STORAGE(&g_lxp_storage.prog_regions[0][0],
