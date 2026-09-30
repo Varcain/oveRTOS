@@ -141,8 +141,8 @@ static int host_validate_static_mpu(void)
 
 	const struct lxp_cortex_m_mpu_region *sdram = NULL;
 	for (unsigned i = 0; i < snapshot.count; i++)
-		if (lxp_cortex_m_mpu_region_matches(&snapshot.regions[i], 0xc0000000u,
-						    8u * 1024u * 1024u, 0u, 0x0bu, 1u, 1u)) {
+		if (lxp_cortex_m_mpu_region_matches(&snapshot.regions[i], OVE_LXP_SDRAM_BASE,
+						    OVE_LXP_SDRAM_SIZE, 0u, 0x0bu, 1u, 1u)) {
 			if (sdram)
 				return 0;
 			sdram = &snapshot.regions[i];
@@ -153,7 +153,7 @@ static int host_validate_static_mpu(void)
 #if defined(CONFIG_OVE_FB)
 	uintptr_t framebuffer = (uintptr_t)ove_hal_fb_buffer();
 	uintptr_t storage = (uintptr_t)&g_lxp_storage;
-	size_t framebuffer_size = 480u * 272u * 2u;
+	size_t framebuffer_size = OVE_LXP_FRAMEBUFFER_SIZE;
 	if (framebuffer == 0u ||
 	    !lxp_cortex_m_mpu_region_contains(sdram, framebuffer, framebuffer_size) ||
 	    !(storage + sizeof(g_lxp_storage) <= framebuffer ||

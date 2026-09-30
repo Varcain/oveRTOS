@@ -49,13 +49,15 @@ uint32_t ove_lxp_metrics_counter_hz(void)
 /* The framebuffer occupies the bottom of SDRAM. The first 1 MiB MPU
  * subregion remains disabled; trusted NuttX metadata is placed in that cold
  * window and guest rows begin at the generated pool base above it. */
-#define NUTTX_SDRAM_COLD_BASE 0xC0040000u
+#define NUTTX_SDRAM_COLD_BASE (OVE_LXP_SDRAM_BASE + 0x40000u)
+_Static_assert(OVE_LXP_FRAMEBUFFER_BASE + OVE_LXP_FRAMEBUFFER_SIZE <= NUTTX_SDRAM_COLD_BASE,
+	       "trusted NuttX metadata overlaps the framebuffer");
 #define NUTTX_SDRAM_THREAD_SNAPSHOT_BASE \
 	LXP_ALIGN_UP(NUTTX_SDRAM_COLD_BASE + sizeof(lxp_exec_capture_t) * LXP_NSLOT, 8u)
 #define NUTTX_SDRAM_STACK_BASE \
 	LXP_ALIGN_UP(NUTTX_SDRAM_THREAD_SNAPSHOT_BASE + sizeof(struct lxp_ove_thread_snapshot), 8u)
 #if LXP_ENABLE_NETFS_EXEC
-#define NUTTX_SDRAM_EXEC_STAGE_BASE 0xC00C0000u
+#define NUTTX_SDRAM_EXEC_STAGE_BASE (OVE_LXP_SDRAM_BASE + 0xC0000u)
 #endif
 
 static uint8_t *const g_dynamic_pools = (uint8_t *)OVE_LXP_GUEST_POOL_BASE;
@@ -195,9 +197,12 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.slot_stack_size = LXP_NUTTX_STACK_SIZE,
 	.slot_stack_count = LXP_NSLOT,
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	.code_region = {.base = 0x08000000u, .size = 1024u * 1024u, .texscb = 0x02u, .enabled = 1u},
-	.pool_region = {.base = 0xc0000000u,
-			.size = 8u * 1024u * 1024u,
+	.code_region = {.base = OVE_LXP_CODE_BASE,
+			.size = OVE_LXP_CODE_SIZE,
+			.texscb = 0x02u,
+			.enabled = 1u},
+	.pool_region = {.base = OVE_LXP_SDRAM_BASE,
+			.size = OVE_LXP_SDRAM_SIZE,
 			.texscb = 0x0bu,
 			.subregion_disable = 1u,
 			.enabled = 1u},
@@ -207,11 +212,11 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 			  .texscb = 0x02u,
 			  .enabled = 1u},
 #endif
-	.trusted_tcb_base = 0x20000000u,
-	.trusted_tcb_end = 0x20080000u,
+	.trusted_tcb_base = OVE_LXP_TRUSTED_TCB_BASE,
+	.trusted_tcb_end = OVE_LXP_TRUSTED_TCB_END,
 #else
-	.code_region = {.base = 0x00000000u,
-			.size = 2u * 1024u * 1024u,
+	.code_region = {.base = OVE_LXP_CODE_BASE,
+			.size = OVE_LXP_CODE_SIZE,
 			.texscb = 0x08u,
 			.enabled = 1u},
 	.pool_region = {.base = OVE_LXP_GUEST_POOL_BASE,
@@ -222,8 +227,8 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 			  .size = OVE_LXP_ROOTFS_SIZE,
 			  .texscb = 0x08u,
 			  .enabled = 1u},
-	.trusted_tcb_base = 0x20000000u,
-	.trusted_tcb_end = 0x20400000u,
+	.trusted_tcb_base = OVE_LXP_TRUSTED_TCB_BASE,
+	.trusted_tcb_end = OVE_LXP_TRUSTED_TCB_END,
 #endif
 	.guest_priority = 60u,
 	.runtime_reset = host_runtime_reset,

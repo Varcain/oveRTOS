@@ -128,12 +128,14 @@ static int host_validate_static_mpu(void)
 		    (LXP_CORTEX_M_MPU_CTRL_ENABLE | LXP_CORTEX_M_MPU_CTRL_PRIVDEFENA))
 		return 0;
 
-	const uintptr_t framebuffer_base = 0xc0000000u;
-	const size_t framebuffer_size = 480u * 272u * 2u;
+	/* The linker script reserves the top 2 KiB of SDRAM as ETH_TXBUF. */
+	const uintptr_t eth_txbuf_base = OVE_LXP_SDRAM_END - 0x800u;
+	const uintptr_t framebuffer_base = OVE_LXP_FRAMEBUFFER_BASE;
+	const size_t framebuffer_size = OVE_LXP_FRAMEBUFFER_SIZE;
 	const uintptr_t storage_base = (uintptr_t)&g_lxp_storage;
 	const size_t storage_size = sizeof(g_lxp_storage);
-	if (storage_base < framebuffer_base + framebuffer_size || storage_base > 0xc07ff800u ||
-	    storage_size > 0xc07ff800u - storage_base)
+	if (storage_base < framebuffer_base + framebuffer_size || storage_base > eth_txbuf_base ||
+	    storage_size > eth_txbuf_base - storage_base)
 		return 0;
 
 	for (unsigned i = 0; i < snapshot.count; i++)
