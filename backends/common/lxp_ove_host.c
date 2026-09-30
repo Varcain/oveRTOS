@@ -10,6 +10,7 @@
 #include "lxp_ove_host_internal.h"
 #include "lxp_ove_err.h"
 
+#include "lxp/lxp_port.h" /* g_lxp_host_engine */
 #include "ove_config.h"
 #include "ove/thread.h"
 
@@ -20,8 +21,6 @@
 #else
 #include "loader_rootfs_image.h"
 #endif
-
-extern const lxp_os_ops_t g_lxp_host_engine;
 
 #if defined(CONFIG_OVE_LINUX_NET)
 extern const lxp_net_ops_t g_lxp_host_net_ops;
