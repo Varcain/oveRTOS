@@ -51,11 +51,11 @@ import os
 import struct
 
 # ---- backtrace terminator for the FDPIC entry stub -----------------------------------------------
-# The FDPIC `_start` crt stub carries no CFI. In --userspace mode the firmware is dropped so `_start`
-# resolves — and GDB's prologue-based unwinder then reads a bogus "return address" that points back
-# into `_start`, looping forever (each iteration nudges SP, so GDB's same-frame detection never trips).
-# Register an unwinder that recognises a frame sitting exactly on a known program entry PC and hands
-# GDB a caller PC of 0, so `_start` is treated as the outermost frame and the backtrace stops cleanly.
+# The FDPIC `_start` crt stub carries no CFI. Once a program's symbols are loaded `_start` resolves,
+# and GDB's prologue-based unwinder then reads a bogus "return address" that points back into
+# `_start`, looping forever (each iteration nudges SP, so GDB's same-frame detection never trips).
+# Register an unwinder that recognises a frame inside a mapped program's entry stub and makes its
+# caller identical to it, so GDB's own cycle check ends the backtrace at `_start`.
 # Defensive: any failure (a non-Python / older GDB, an API change) degrades to the harmless loop.
 try:
     from gdb.unwinder import Unwinder as _Unwinder, FrameId as _FrameId
@@ -64,7 +64,7 @@ try:
     class _OveEntryStop(_Unwinder):
         def __init__(self):
             super().__init__("ove-fdpic-entry-stop")
-            self.ranges = []  # [lo, hi) runtime spans of _start stubs (populated by --userspace)
+            self.ranges = []  # [lo, hi) runtime spans of _start stubs, one per mapped program
 
         def __call__(self, pending_frame):
             if not self.ranges:
@@ -426,6 +426,7 @@ def _map_slot(sidx, elf):
     text = int(d["text_base"]) & 0xFFFFFFFF
     data = int(d["data_base"]) & 0xFFFFFFFF
     _add_symbols(elf, text, data)
+    _stop_bt_at_entry(int(d["entry"]) & 0xFFFFFFFF)
     print("[ove-fdpic] slot %d mapped: text bias=0x%08x (RW data base=0x%08x)" % (sidx, text, data))
     print("[ove-fdpic] text is shared XIP -> use `hbreak`, not `break`.")
 
@@ -495,8 +496,7 @@ class OveFdpicAuto(gdb.Command):
         entry = int(d["entry"]) & 0xFFFFFFFF
         dyn = int(d["dynamic"]) & 0xFFFFFFFF
         interp = int(d["interp_base"]) & 0xFFFFFFFF
-        if userspace:
-            _stop_bt_at_entry(entry)  # firmware is dropped -> stop the bt at _start (no CFI, else loops)
+        _stop_bt_at_entry(entry)  # _start has no CFI: end the bt there, else it loops
         if not interp or not dyn:
             # static exec (no interpreter / rendezvous): just map the one object.
             _add_symbols(exec_elf, text, int(d["data_base"]) & 0xFFFFFFFF)
