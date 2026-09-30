@@ -16,6 +16,7 @@
 #include "lxp/arch/cortex_m_memory.h"
 #include "lxp/arch/cortex_m_mpu.h"
 #include "lxp/ports/freertos.h"
+#include "lxp_ove_port_common.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
 #include "lxp_ove_memory_layout.h"
@@ -84,9 +85,9 @@ static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_
 					    actual_count, slot_lookup);
 }
 
-#define LXP_SYSTEM_VERSION \
-	"FreeRTOS " tskKERNEL_VERSION_NUMBER " ove-" OVE_BUILD_OVERTOS_REV " lxp-" OVE_BUILD_LXP_REV
-_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
+#define LXP_SYSTEM_VERSION LXP_OVE_SYSTEM_VERSION("FreeRTOS " tskKERNEL_VERSION_NUMBER)
+_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= LXP_OVE_SYSTEM_VERSION_MAX,
+	       "uname version exceeds Linux utsname field");
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int host_random_fill(void *buf, size_t len)
@@ -200,14 +201,9 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 	.struct_size = sizeof(lxp_freertos_port_config_t),
 	.common =
 		{
-			.program_regions = &g_lxp_storage.prog_regions[0][0],
-			.program_region_stride = LXP_PROG_REGION_SIZE,
-			.program_region_count = LXP_NREG,
-			.dynamic_pools = &g_lxp_storage.dyn_pools[0][0],
-			.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
-			.dynamic_pool_count = LXP_NREG,
-			.exec_captures = g_lxp_storage.exec_captures,
-			.exec_capture_count = LXP_NSLOT,
+			LXP_OVE_PORT_STORAGE(&g_lxp_storage.prog_regions[0][0],
+					     &g_lxp_storage.dyn_pools[0][0],
+					     g_lxp_storage.exec_captures),
 #if LXP_ENABLE_NETFS_EXEC
 			.exec_stage = g_lxp_storage.netfs_exec_stage,
 			.exec_stage_size = sizeof(g_lxp_storage.netfs_exec_stage),
@@ -220,12 +216,8 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
 #endif
 			.host_prepare = host_prepare,
-			.time_us = ove_time_get_us,
-			.time_ns = ove_time_get_ns,
-			.thread_list = host_thread_list,
-			.mem_stats = lxp_ove_mem_stats_read,
-			.system_version = LXP_SYSTEM_VERSION,
-			.validate_memory_contract = HOST_MEMORY_VALIDATOR,
+			LXP_OVE_PORT_SERVICES(host_thread_list, LXP_SYSTEM_VERSION,
+					      HOST_MEMORY_VALIDATOR),
 		},
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	.rootfs_region_count = 1u,

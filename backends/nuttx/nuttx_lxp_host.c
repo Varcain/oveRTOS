@@ -17,6 +17,7 @@
 
 #include "lxp/arch/cortex_m_memory.h"
 #include "lxp/ports/nuttx.h"
+#include "lxp_ove_port_common.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
 #include "lxp_ove_memory_layout.h"
@@ -121,9 +122,9 @@ static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_
 					    slot_lookup);
 }
 
-#define LXP_SYSTEM_VERSION \
-	"NuttX " CONFIG_VERSION_STRING " ove-" OVE_BUILD_OVERTOS_REV " lxp-" OVE_BUILD_LXP_REV
-_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= 65u, "uname version exceeds Linux utsname field");
+#define LXP_SYSTEM_VERSION LXP_OVE_SYSTEM_VERSION("NuttX " CONFIG_VERSION_STRING)
+_Static_assert(sizeof(LXP_SYSTEM_VERSION) <= LXP_OVE_SYSTEM_VERSION_MAX,
+	       "uname version exceeds Linux utsname field");
 
 static uint64_t host_runtime_us(int32_t pid)
 {
@@ -171,14 +172,7 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.struct_size = sizeof(lxp_nuttx_port_config_t),
 	.common =
 		{
-			.program_regions = g_program_regions,
-			.program_region_stride = LXP_PROG_REGION_SIZE,
-			.program_region_count = LXP_NREG,
-			.dynamic_pools = g_dynamic_pools,
-			.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
-			.dynamic_pool_count = LXP_NREG,
-			.exec_captures = g_exec_captures,
-			.exec_capture_count = LXP_NSLOT,
+			LXP_OVE_PORT_STORAGE(g_program_regions, g_dynamic_pools, g_exec_captures),
 #if LXP_ENABLE_NETFS_EXEC
 			.exec_stage = g_exec_stage,
 			.exec_stage_size = NUTTX_EXEC_STAGE_BYTES,
@@ -191,12 +185,8 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 			.guest_memory_texscb = 0x08u,
 			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
 #endif
-			.time_us = ove_time_get_us,
-			.time_ns = ove_time_get_ns,
-			.thread_list = host_thread_list,
-			.mem_stats = lxp_ove_mem_stats_read,
-			.system_version = LXP_SYSTEM_VERSION,
-			.validate_memory_contract = HOST_MEMORY_VALIDATOR,
+			LXP_OVE_PORT_SERVICES(host_thread_list, LXP_SYSTEM_VERSION,
+					      HOST_MEMORY_VALIDATOR),
 		},
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.slot_stacks = g_slot_stacks,
