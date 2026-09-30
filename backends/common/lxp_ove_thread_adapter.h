@@ -9,7 +9,8 @@
 #ifndef LXP_OVE_THREAD_ADAPTER_H
 #define LXP_OVE_THREAD_ADAPTER_H
 
-#include "lxp/lxp_stats.h"
+#include "lxp/lxp_config.h"
+#include "lxp/lxp_types.h"
 #include "ove/thread.h"
 
 typedef int32_t (*lxp_ove_slot_lookup_t)(uintptr_t identity);
