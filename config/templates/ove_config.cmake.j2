@@ -590,6 +590,7 @@ list(APPEND OVE_BACKEND_SOURCES ${LXP_PTY_SOURCES})
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lxp_metrics.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True or
+      config.get("CONFIG_OVE_RTOS_ZEPHYR") == True or
       config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 # Services LXP's Cortex-M ports share, served from their .common configuration.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/ports/common/lxp_cortex_m_port.c")

@@ -102,7 +102,7 @@ BUILD_ASSERT(sizeof(g_lxp_storage) <= OVE_LXP_GUEST_POOL_SIZE,
 #endif
 
 static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count,
-			    lxp_zephyr_slot_lookup_t slot_lookup)
+			    lxp_cortex_m_slot_lookup_t slot_lookup)
 {
 	return lxp_ove_thread_snapshot_read(&g_lxp_storage.thread_snapshot, out, max_count,
 					    actual_count, slot_lookup);
@@ -187,38 +187,43 @@ uint32_t ove_lxp_metrics_counter_hz(void)
 const lxp_zephyr_port_config_t g_lxp_zephyr_port_config = {
 	.abi_version = LXP_ZEPHYR_PORT_CONFIG_ABI_VERSION,
 	.struct_size = sizeof(lxp_zephyr_port_config_t),
-	.program_regions = &g_lxp_storage.prog_regions[0][0],
-	.program_region_stride = LXP_PROG_REGION_SIZE,
-	.program_region_count = LXP_NREG,
-	.dynamic_pools = &g_lxp_storage.dyn_pools[0][0],
-	.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
-	.dynamic_pool_count = LXP_NREG,
-	.exec_captures = g_lxp_storage.exec_captures,
-	.exec_capture_count = LXP_NSLOT,
+	.common =
+		{
+			.program_regions = &g_lxp_storage.prog_regions[0][0],
+			.program_region_stride = LXP_PROG_REGION_SIZE,
+			.program_region_count = LXP_NREG,
+			.dynamic_pools = &g_lxp_storage.dyn_pools[0][0],
+			.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
+			.dynamic_pool_count = LXP_NREG,
+			.exec_captures = g_lxp_storage.exec_captures,
+			.exec_capture_count = LXP_NSLOT,
 #if LXP_ENABLE_NETFS_EXEC
-	.exec_stage = g_lxp_storage.netfs_exec_stage,
-	.exec_stage_size = sizeof(g_lxp_storage.netfs_exec_stage),
+			.exec_stage = g_lxp_storage.netfs_exec_stage,
+			.exec_stage_size = sizeof(g_lxp_storage.netfs_exec_stage),
 #endif
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+			.guest_memory_texscb = 0x08u,
+			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
+#else
+			.guest_memory_texscb = 0x0bu,
+			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER,
+			.cache_geometry = &g_cache_geometry,
+#endif
+			.host_prepare = host_prepare,
+			.time_us = ove_time_get_us,
+			.time_ns = ove_time_get_ns,
+			.thread_list = host_thread_list,
+			.mem_stats = lxp_ove_mem_stats_read,
+			.system_version = LXP_SYSTEM_VERSION,
+			.validate_memory_contract = HOST_MEMORY_VALIDATOR,
+		},
 #if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 	.rootfs_base = OVE_LXP_ROOTFS_BASE,
 	.rootfs_size = OVE_LXP_ROOTFS_SIZE,
 	.rootfs_partition_enabled = 1u,
-	.guest_memory_texscb = 0x08u,
-	.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
-#else
-	.guest_memory_texscb = 0x0bu,
-	.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER,
-	.cache_geometry = &g_cache_geometry,
 #endif
 	.guest_priority = OVE_ZEPHYR_PRIO_LXP_GUEST,
 	.quantum_priority = OVE_ZEPHYR_PRIO_NET_TC,
 	.guest_quantum_ms = CONFIG_OVE_LINUX_GUEST_QUANTUM_MS,
-	.host_prepare = host_prepare,
-	.time_us = ove_time_get_us,
-	.time_ns = ove_time_get_ns,
-	.thread_list = host_thread_list,
-	.mem_stats = lxp_ove_mem_stats_read,
-	.system_version = LXP_SYSTEM_VERSION,
 	.random_fill = host_random_fill,
-	.validate_memory_contract = HOST_MEMORY_VALIDATOR,
 };
