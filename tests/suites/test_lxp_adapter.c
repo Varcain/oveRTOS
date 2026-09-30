@@ -611,11 +611,11 @@ static void test_host_facade_owns_composition(void **state)
 	assert_int_equal(ove_lxp_host_init_cpio(&host, &host_config), OVE_OK);
 	assert_int_equal(g_host_init_calls, 1);
 	assert_true(host_storage_contains(&host, g_host_init_target, sizeof(*g_host_init_target)));
-	assert_ptr_equal(g_host_init_config.os_ops, &g_lxp_host_engine);
-	assert_ptr_equal(g_host_init_config.net_ops, &g_lxp_host_net_ops);
-	assert_ptr_equal(g_host_init_config.display_ops, &g_lxp_host_display_ops);
-	assert_ptr_equal(g_host_init_config.fs_ops, &g_lxp_host_fs_ops);
-	assert_ptr_equal(g_host_init_config.block_ops, &g_lxp_host_block_ops);
+	assert_ptr_equal(g_host_init_config.providers.os, &g_lxp_host_engine);
+	assert_ptr_equal(g_host_init_config.providers.net, &g_lxp_host_net_ops);
+	assert_ptr_equal(g_host_init_config.providers.display, &g_lxp_host_display_ops);
+	assert_ptr_equal(g_host_init_config.providers.fs, &g_lxp_host_fs_ops);
+	assert_ptr_equal(g_host_init_config.providers.block, &g_lxp_host_block_ops);
 	assert_ptr_equal(g_host_init_config.rootfs_image, rootfs);
 	assert_int_equal(g_host_init_config.rootfs_image_size, sizeof(rootfs));
 	assert_true(host_storage_contains(&host, g_host_init_config.rootfs_storage,

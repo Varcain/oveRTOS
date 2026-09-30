@@ -188,11 +188,14 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 #endif
 
 	const lxp_host_config_t lxp_config = {
-		.os_ops = &g_lxp_host_engine,
-		.net_ops = OVE_LXP_NET_OPS,
-		.display_ops = OVE_LXP_DISPLAY_OPS,
-		.fs_ops = OVE_LXP_FS_OPS,
-		.block_ops = OVE_LXP_BLOCK_OPS,
+		.providers =
+			{
+				.os = &g_lxp_host_engine,
+				.net = OVE_LXP_NET_OPS,
+				.display = OVE_LXP_DISPLAY_OPS,
+				.fs = OVE_LXP_FS_OPS,
+				.block = OVE_LXP_BLOCK_OPS,
+			},
 		.rootfs_image = config->rootfs_image,
 		.rootfs_image_size = config->rootfs_image_size,
 		.rootfs_storage = impl->rootfs_files,
