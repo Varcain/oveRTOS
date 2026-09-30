@@ -177,8 +177,6 @@ static void test_adapter_ops_wired(void **state)
 	(void)state;
 	const struct lxp_net_ops *ops = &g_lxp_host_net_ops;
 	assert_non_null(ops);
-	assert_int_equal(ops->abi_version, LXP_NET_OPS_ABI_VERSION);
-	assert_int_equal(ops->struct_size, sizeof(*ops));
 	assert_non_null(ops->run_begin);
 	assert_non_null(ops->run_end);
 	assert_non_null(ops->sock_open);
@@ -209,8 +207,6 @@ static void test_fs_adapter_ops_wired(void **state)
 {
 	(void)state;
 	const lxp_fs_ops_t *ops = &g_lxp_host_fs_ops;
-	assert_int_equal(ops->abi_version, LXP_FS_OPS_ABI_VERSION);
-	assert_int_equal(ops->struct_size, sizeof(*ops));
 	assert_non_null(ops->run_begin);
 	assert_non_null(ops->run_end);
 	assert_non_null(ops->request_owner);

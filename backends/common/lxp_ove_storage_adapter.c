@@ -1827,8 +1827,6 @@ static int block_sync(void)
 }
 
 const lxp_fs_ops_t g_lxp_host_fs_ops = {
-	.abi_version = LXP_FS_OPS_ABI_VERSION,
-	.struct_size = sizeof(lxp_fs_ops_t),
 	.run_begin = fs_run_begin,
 	.run_end = fs_run_end,
 	.request_owner = fs_request_owner,
@@ -1860,8 +1858,6 @@ const lxp_fs_ops_t g_lxp_host_fs_ops = {
 };
 
 const lxp_block_ops_t g_lxp_host_block_ops = {
-	.abi_version = LXP_BLOCK_OPS_ABI_VERSION,
-	.struct_size = sizeof(lxp_block_ops_t),
 	.run_begin = block_run_begin,
 	.run_end = block_run_end,
 	.request_owner = fs_request_owner,

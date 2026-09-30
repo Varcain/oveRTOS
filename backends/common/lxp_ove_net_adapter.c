@@ -370,8 +370,6 @@ static int a_netif_set_up(lxp_netif_t nif, int up)
 }
 
 const struct lxp_net_ops g_lxp_host_net_ops = {
-	.abi_version = LXP_NET_OPS_ABI_VERSION,
-	.struct_size = sizeof(struct lxp_net_ops),
 	.run_begin = a_run_begin,
 	.run_end = a_run_end,
 	.sock_open = a_open,
