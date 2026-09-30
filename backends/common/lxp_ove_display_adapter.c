@@ -20,12 +20,13 @@
 #if defined(CONFIG_OVE_LINUX_DEV)
 
 #include "lxp/lxp_display_ops.h"
+#include "lxp_ove_err.h"
 
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 #include "ove/fb.h"
 static int d_fb_init(void)
 {
-	return ove_fb_init();
+	return lxp_err_from_ove(ove_fb_init());
 }
 static int d_fb_get_info(lxp_fb_info_t *info)
 {
@@ -38,7 +39,7 @@ static int d_fb_get_info(lxp_fb_info_t *info)
 		info->fmt = (uint32_t)o.fmt;
 		info->smem_len = o.smem_len;
 	}
-	return r;
+	return lxp_err_from_ove(r);
 }
 static void *d_fb_get_buffer(void)
 {
@@ -54,7 +55,7 @@ static void d_fb_present(int x, int y, int w, int h)
 #include "ove/hal/hal_dma2d.h"
 static int d_dma2d_init(void)
 {
-	return ove_hal_dma2d_init();
+	return lxp_err_from_ove(ove_hal_dma2d_init());
 }
 /* Bridge the validated lxp DMA2D op to the board HAL (field copy: the lxp op and
  * ove desc are the same layout, but lxp types must not leak into the ove HAL). */
@@ -69,7 +70,7 @@ static int d_dma2d_submit(const lxp_dma2d_op_t *op)
 		.bg_addr = op->bg_addr, .bg_offset = op->bg_offset, .bg_cf = op->bg_cf,
 		.bg_color = op->bg_color, .bg_alpha_mode = op->bg_alpha_mode, .bg_alpha = op->bg_alpha,
 	};
-	return ove_hal_dma2d_submit(&d);
+	return lxp_err_from_ove(ove_hal_dma2d_submit(&d));
 }
 #endif /* CONFIG_OVE_LINUX_DEV_DMA2D */
 
@@ -77,11 +78,11 @@ static int d_dma2d_submit(const lxp_dma2d_op_t *op)
 #include "ove/ft5336.h"
 static int d_touch_init(void)
 {
-	return ove_ft5336_init();
+	return lxp_err_from_ove(ove_ft5336_init());
 }
 static int d_touch_read(int *x, int *y, int *pressed)
 {
-	return ove_ft5336_read(x, y, pressed);
+	return lxp_err_from_ove(ove_ft5336_read(x, y, pressed));
 }
 static void d_touch_deinit(void)
 {

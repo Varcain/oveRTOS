@@ -23,6 +23,7 @@
 #include "lxp/lxp_rt_metrics.h"
 #include "ove/thread.h"
 #include "ove_net_ready.h"
+#include "lxp_ove_err.h"
 #include "lxp_ove_thread_adapter.h"
 #include "lxp/lxp_config.h"
 #include "lxp/lxp_net_ops.h"
@@ -1080,9 +1081,26 @@ static void test_rt_scope_reports_unavailable_when_disabled(void **state)
 	assert_string_equal(snapshot, "available 0\n");
 }
 
+/* Every oveRTOS error has its LXP counterpart and back, no oveRTOS code is missing from
+ * the table, and an unknown value becomes an I/O error rather than passing through. */
+static void test_error_translation_is_exhaustive(void **state)
+{
+	(void)state;
+#define CHECK_PAIR(ove, lxp)                                                                       \
+	assert_int_equal(lxp_err_from_ove(ove), lxp);                                              \
+	assert_int_equal(ove_err_from_lxp(lxp), ove);
+	LXP_OVE_ERR_PAIRS(CHECK_PAIR)
+#undef CHECK_PAIR
+	for (int err = OVE_ERR_CROSS_DEVICE; err < OVE_OK; err++)
+		assert_true(lxp_err_from_ove(err) != LXP_ERR_IO || err == OVE_ERR_IO);
+	assert_int_equal(lxp_err_from_ove(-1000), LXP_ERR_IO);
+	assert_int_equal(ove_err_from_lxp(-1000), OVE_ERR_IO);
+}
+
 int test_lxp_adapter_run(void)
 {
 	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_error_translation_is_exhaustive),
 		cmocka_unit_test(test_adapter_ops_wired),
 		cmocka_unit_test(test_fs_adapter_ops_wired),
 		cmocka_unit_test(test_block_adapter_media_arbitration),

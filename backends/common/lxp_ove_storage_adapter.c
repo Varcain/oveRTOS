@@ -14,6 +14,7 @@
 #include "lxp/lxp_async_gate.h"
 #include "lxp/lxp_block_ops.h"
 #include "lxp/lxp_fs_ops.h"
+#include "lxp_ove_err.h"
 #include "ove/block.h"
 #include "ove/fs.h"
 #include "ove/queue.h"
@@ -306,13 +307,13 @@ static struct fs_handle_slot *free_slot(void)
 static int ensure_mounted(void)
 {
 	if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0)
-		return LXP_OK;
+		return OVE_OK;
 	int rc = g_mount_volume_valid ? ove_fs_mount_volume(&g_mount_volume, NULL)
 				      : ove_fs_mount(NULL, NULL);
 	if (rc != OVE_OK)
 		return rc;
 	__atomic_store_n(&g_mounted, 1, __ATOMIC_RELEASE);
-	return LXP_OK;
+	return OVE_OK;
 }
 
 static int handles_open(void)
@@ -334,30 +335,30 @@ static int refresh_block_info(void)
 	    g_block_info.logical_block_size > sizeof(g_block_sector) ||
 	    g_block_info.block_count == 0u) {
 		g_block_info_valid = 0;
-		return LXP_ERR_INVALID_PARAM;
+		return OVE_ERR_INVALID_PARAM;
 	}
 	g_block_info_valid = 1;
-	return LXP_OK;
+	return OVE_OK;
 }
 
 static int block_bounds(uint64_t offset, size_t count)
 {
 	if (!g_block_info_valid) {
 		int rc = refresh_block_info();
-		if (rc != LXP_OK)
+		if (rc != OVE_OK)
 			return rc;
 	}
 	uint64_t size;
 	if (g_block_info.block_count > UINT64_MAX / g_block_info.logical_block_size)
-		return LXP_ERR_INVALID_PARAM;
+		return OVE_ERR_INVALID_PARAM;
 	size = g_block_info.block_count * g_block_info.logical_block_size;
-	return offset <= size && count <= size - offset ? LXP_OK : LXP_ERR_INVALID_PARAM;
+	return offset <= size && count <= size - offset ? OVE_OK : OVE_ERR_INVALID_PARAM;
 }
 
 static int block_read_bytes(uint64_t offset, void *buffer, size_t count)
 {
 	int rc = block_bounds(offset, count);
-	if (rc != LXP_OK || count == 0u)
+	if (rc != OVE_OK || count == 0u)
 		return rc;
 	ove_block_t temporary = OVE_BLOCK_INITIALIZER;
 	ove_block_t *handle = &g_raw_block;
@@ -398,10 +399,10 @@ static int block_read_bytes(uint64_t offset, void *buffer, size_t count)
 static int block_write_bytes(uint64_t offset, const void *buffer, size_t count)
 {
 	int rc = block_bounds(offset, count);
-	if (rc != LXP_OK || count == 0u)
+	if (rc != OVE_OK || count == 0u)
 		return rc;
 	if (!g_raw_block.lease.active || (g_raw_block.flags & OVE_BLOCK_OPEN_WRITE) == 0u)
-		return LXP_ERR_PERMISSION;
+		return OVE_ERR_PERMISSION;
 	const uint8_t *in = buffer;
 	uint32_t size = g_block_info.logical_block_size;
 	while (count) {
@@ -427,7 +428,7 @@ static int block_write_bytes(uint64_t offset, const void *buffer, size_t count)
 		in += chunk;
 		count -= chunk;
 	}
-	return LXP_OK;
+	return OVE_OK;
 }
 
 static void stat_to_lxp(lxp_fs_stat_t *out, const struct ove_fs_stat *native)
@@ -475,7 +476,7 @@ static int execute_request(struct fs_request *request)
 	if (request->op == FS_REQ_MOUNT) {
 		if (request->args.mount.spec) {
 			if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0 || handles_open())
-				return LXP_ERR_BUSY;
+				return OVE_ERR_BUSY;
 			g_mount_volume.first_block = request->args.mount.spec->first_block;
 			g_mount_volume.block_count = request->args.mount.spec->block_count;
 			g_mount_volume.logical_block_size =
@@ -487,11 +488,11 @@ static int execute_request(struct fs_request *request)
 	}
 	if (request->op == FS_REQ_UNMOUNT) {
 		if (handles_open())
-			return LXP_ERR_BUSY;
+			return OVE_ERR_BUSY;
 		if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0)
 			ove_fs_unmount(NULL);
 		__atomic_store_n(&g_mounted, 0, __ATOMIC_RELEASE);
-		return LXP_OK;
+		return OVE_OK;
 	}
 	if (request->op == FS_REQ_STOP) {
 		close_all_handles();
@@ -500,71 +501,71 @@ static int execute_request(struct fs_request *request)
 		if (__atomic_load_n(&g_mounted, __ATOMIC_ACQUIRE) != 0)
 			ove_fs_unmount(NULL);
 		__atomic_store_n(&g_mounted, 0, __ATOMIC_RELEASE);
-		return LXP_OK;
+		return OVE_OK;
 	}
 	if (request->op == FS_REQ_BLOCK_INFO) {
 		if (!request->args.block_info.out)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = refresh_block_info();
-		if (rc != LXP_OK)
+		if (rc != OVE_OK)
 			return rc;
 		request->args.block_info.out->block_count = g_block_info.block_count;
 		request->args.block_info.out->logical_block_size = g_block_info.logical_block_size;
 		request->args.block_info.out->erase_block_size = g_block_info.erase_block_size;
 		request->args.block_info.out->flags = g_block_info.flags;
 		request->args.block_info.out->generation = g_block_info.generation;
-		return LXP_OK;
+		return OVE_OK;
 	}
 	if (request->op == FS_REQ_BLOCK_READ) {
 		if (request->args.block_read.count > sizeof(g_io_buffer))
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = block_read_bytes(request->args.block_read.offset, g_io_buffer,
 				      request->args.block_read.count);
-		request->args.block_read.transferred = rc == LXP_OK ? request->args.block_read.count
+		request->args.block_read.transferred = rc == OVE_OK ? request->args.block_read.count
 								    : 0u;
 		return rc;
 	}
 	if (request->op == FS_REQ_BLOCK_WRITE) {
 		if (request->args.block_write.count > sizeof(g_io_buffer))
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = block_write_bytes(request->args.block_write.offset, g_io_buffer,
 				       request->args.block_write.count);
 		request->args.block_write.transferred =
-			rc == LXP_OK ? request->args.block_write.count : 0u;
+			rc == OVE_OK ? request->args.block_write.count : 0u;
 		return rc;
 	}
 	if (request->op == FS_REQ_BLOCK_SYNC)
 		return g_raw_block.lease.active ? ove_block_sync(&g_raw_block)
-						: LXP_ERR_NOT_REGISTERED;
+						: OVE_ERR_NOT_REGISTERED;
 	if (request->op == FS_REQ_BLOCK_CLOSE) {
 		ove_block_close(&g_raw_block);
-		return LXP_OK;
+		return OVE_OK;
 	}
 	if (g_raw_block.lease.active && (g_raw_block.flags & OVE_BLOCK_OPEN_WRITE) != 0u)
-		return LXP_ERR_BUSY;
+		return OVE_ERR_BUSY;
 	rc = ensure_mounted();
-	if (rc != LXP_OK)
+	if (rc != OVE_OK)
 		return rc;
 
 	switch (request->op) {
 	case FS_REQ_VOLUME_STAT:
 		if (request->args.volume_stat.out == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = ove_fs_statvfs(&native_volume_stat);
 		if (rc == OVE_OK)
 			volume_stat_to_lxp(request->args.volume_stat.out, &native_volume_stat);
 		return rc;
 	case FS_REQ_FILE_OPEN:
 		if (request->args.file_open.path == NULL || request->args.file_open.out == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		if ((request->args.file_open.flags &
 		     ~(LXP_FS_O_READ | LXP_FS_O_WRITE | LXP_FS_O_CREATE | LXP_FS_O_APPEND |
 		       LXP_FS_O_TRUNC | LXP_FS_O_EXCL)) != 0u ||
 		    (request->args.file_open.flags & (LXP_FS_O_READ | LXP_FS_O_WRITE)) == 0u)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		slot = free_slot();
 		if (slot == NULL)
-			return LXP_ERR_NO_MEMORY;
+			return OVE_ERR_NO_MEMORY;
 		memset(slot, 0, sizeof(*slot));
 		rc = ove_fs_open_init(&slot->handle.file.native, &slot->handle.file.storage,
 				      request->args.file_open.path,
@@ -575,20 +576,20 @@ static int execute_request(struct fs_request *request)
 		}
 		slot->kind = FS_HANDLE_FILE;
 		*request->args.file_open.out = &slot->handle.file;
-		return LXP_OK;
+		return OVE_OK;
 	case FS_REQ_OBJECT_OPEN:
 		if (request->args.object_open.path == NULL || request->args.object_open.out == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		memset(request->args.object_open.out, 0, sizeof(*request->args.object_open.out));
 		rc = ove_fs_stat(request->args.object_open.path, &native_stat);
 		if (rc == OVE_OK && native_stat.type == OVE_FS_TYPE_DIR) {
 			if ((request->args.object_open.flags & OVE_FS_O_WRITE) != 0u ||
 			    (request->args.object_open.flags &
 			     (OVE_FS_O_CREATE | OVE_FS_O_TRUNC)) != 0u)
-				return LXP_ERR_IS_DIR;
+				return OVE_ERR_IS_DIR;
 			slot = free_slot();
 			if (slot == NULL)
-				return LXP_ERR_NO_MEMORY;
+				return OVE_ERR_NO_MEMORY;
 			memset(slot, 0, sizeof(*slot));
 			rc = ove_fs_opendir_init(&slot->handle.dir.native,
 						 &slot->handle.dir.storage,
@@ -600,20 +601,20 @@ static int execute_request(struct fs_request *request)
 			slot->kind = FS_HANDLE_DIR;
 			request->args.object_open.out->handle.dir = &slot->handle.dir;
 			request->args.object_open.out->type = LXP_FS_TYPE_DIR;
-			return LXP_OK;
+			return OVE_OK;
 		}
 		if (rc != OVE_OK && rc != OVE_ERR_NOT_FOUND)
 			return rc;
 		if (request->args.object_open.require_dir)
-			return rc == OVE_ERR_NOT_FOUND ? rc : LXP_ERR_NOT_DIR;
+			return rc == OVE_ERR_NOT_FOUND ? rc : OVE_ERR_NOT_DIR;
 		if ((request->args.object_open.flags &
 		     ~(LXP_FS_O_READ | LXP_FS_O_WRITE | LXP_FS_O_CREATE | LXP_FS_O_APPEND |
 		       LXP_FS_O_TRUNC | LXP_FS_O_EXCL)) != 0u ||
 		    (request->args.object_open.flags & (LXP_FS_O_READ | LXP_FS_O_WRITE)) == 0u)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		slot = free_slot();
 		if (slot == NULL)
-			return LXP_ERR_NO_MEMORY;
+			return OVE_ERR_NO_MEMORY;
 		memset(slot, 0, sizeof(*slot));
 		rc = ove_fs_open_init(&slot->handle.file.native, &slot->handle.file.storage,
 				      request->args.object_open.path,
@@ -625,11 +626,11 @@ static int execute_request(struct fs_request *request)
 		slot->kind = FS_HANDLE_FILE;
 		request->args.object_open.out->handle.file = &slot->handle.file;
 		request->args.object_open.out->type = LXP_FS_TYPE_FILE;
-		return LXP_OK;
+		return OVE_OK;
 	case FS_REQ_FILE_CLOSE:
 		slot = file_slot(request->args.file.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		rc = ove_fs_close_deinit(slot->handle.file.native);
 		if (rc == OVE_OK)
 			memset(slot, 0, sizeof(*slot));
@@ -637,9 +638,9 @@ static int execute_request(struct fs_request *request)
 	case FS_REQ_FILE_READ:
 		slot = file_slot(request->args.file_read.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		if (request->args.file_read.count > sizeof(g_io_buffer))
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		request->args.file_read.transferred = 0;
 		return ove_fs_read(slot->handle.file.native, g_io_buffer,
 				   request->args.file_read.count,
@@ -647,9 +648,9 @@ static int execute_request(struct fs_request *request)
 	case FS_REQ_FILE_WRITE:
 		slot = file_slot(request->args.file_write.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		if (request->args.file_write.count > sizeof(g_io_buffer))
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		request->args.file_write.transferred = 0;
 		return ove_fs_write(slot->handle.file.native, g_io_buffer,
 				    request->args.file_write.count,
@@ -665,18 +666,18 @@ static int execute_request(struct fs_request *request)
 					: request->args.file_pread.offset;
 		slot = file_slot(file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		if (count > sizeof(g_io_buffer) || offset > (uint64_t)LONG_MAX)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		long saved = ove_fs_tell(slot->handle.file.native);
 		if (saved < 0)
-			return LXP_ERR_IO;
+			return OVE_ERR_IO;
 		rc = ove_fs_size(slot->handle.file.native, &size);
 		if (rc != OVE_OK)
 			return rc;
 		if (!write && offset >= size) {
 			request->args.file_pread.transferred = 0;
-			return LXP_ERR_EOF;
+			return OVE_ERR_EOF;
 		}
 		if (write && offset > size) {
 			rc = ove_fs_truncate(slot->handle.file.native, offset);
@@ -701,52 +702,52 @@ static int execute_request(struct fs_request *request)
 	case FS_REQ_FILE_SEEK:
 		slot = file_slot(request->args.file_seek.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		if (request->args.file_seek.new_offset == NULL ||
 		    request->args.file_seek.offset < INT32_MIN ||
 		    request->args.file_seek.offset > INT32_MAX ||
 		    request->args.file_seek.whence < OVE_FS_SEEK_SET ||
 		    request->args.file_seek.whence > OVE_FS_SEEK_END)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = ove_fs_seek(slot->handle.file.native, (long)request->args.file_seek.offset,
 				 request->args.file_seek.whence);
 		if (rc != OVE_OK)
 			return rc;
 		position = ove_fs_tell(slot->handle.file.native);
 		if (position < 0)
-			return LXP_ERR_IO;
+			return OVE_ERR_IO;
 		*request->args.file_seek.new_offset = (uint64_t)(unsigned long)position;
-		return LXP_OK;
+		return OVE_OK;
 	case FS_REQ_FILE_STAT:
 		slot = file_slot(request->args.file_stat.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		if (request->args.file_stat.out == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = ove_fs_size(slot->handle.file.native, &size);
 		if (rc != OVE_OK)
 			return rc;
 		memset(request->args.file_stat.out, 0, sizeof(*request->args.file_stat.out));
 		request->args.file_stat.out->size = size;
 		request->args.file_stat.out->type = LXP_FS_TYPE_FILE;
-		return LXP_OK;
+		return OVE_OK;
 	case FS_REQ_FILE_TRUNCATE:
 		slot = file_slot(request->args.file_truncate.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		return ove_fs_truncate(slot->handle.file.native,
 				       request->args.file_truncate.length);
 	case FS_REQ_FILE_SYNC:
 		slot = file_slot(request->args.file.file);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		return ove_fs_sync(slot->handle.file.native);
 	case FS_REQ_DIR_OPEN:
 		if (request->args.dir_open.path == NULL || request->args.dir_open.out == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		slot = free_slot();
 		if (slot == NULL)
-			return LXP_ERR_NO_MEMORY;
+			return OVE_ERR_NO_MEMORY;
 		memset(slot, 0, sizeof(*slot));
 		rc = ove_fs_opendir_init(&slot->handle.dir.native, &slot->handle.dir.storage,
 					 request->args.dir_open.path);
@@ -756,13 +757,13 @@ static int execute_request(struct fs_request *request)
 		}
 		slot->kind = FS_HANDLE_DIR;
 		*request->args.dir_open.out = &slot->handle.dir;
-		return LXP_OK;
+		return OVE_OK;
 	case FS_REQ_DIR_READ:
 		slot = dir_slot(request->args.dir_read.dir);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		if (request->args.dir_read.entry == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = ove_fs_readdir(slot->handle.dir.native, &native_entry);
 		if (rc != OVE_OK)
 			return rc;
@@ -773,35 +774,35 @@ static int execute_request(struct fs_request *request)
 		request->args.dir_read.entry->size = native_entry.size;
 		request->args.dir_read.entry->type = native_entry.is_dir ? LXP_FS_TYPE_DIR
 									 : LXP_FS_TYPE_FILE;
-		return LXP_OK;
+		return OVE_OK;
 	case FS_REQ_DIR_CLOSE:
 		slot = dir_slot(request->args.dir.dir);
 		if (slot == NULL)
-			return LXP_ERR_BAD_HANDLE;
+			return OVE_ERR_BAD_HANDLE;
 		rc = ove_fs_closedir_deinit(slot->handle.dir.native);
 		if (rc == OVE_OK)
 			memset(slot, 0, sizeof(*slot));
 		return rc;
 	case FS_REQ_PATH_STAT:
 		if (request->args.path_stat.path == NULL || request->args.path_stat.out == NULL)
-			return LXP_ERR_INVALID_PARAM;
+			return OVE_ERR_INVALID_PARAM;
 		rc = ove_fs_stat(request->args.path_stat.path, &native_stat);
 		if (rc == OVE_OK)
 			stat_to_lxp(request->args.path_stat.out, &native_stat);
 		return rc;
 	case FS_REQ_PATH_MKDIR:
-		return request->args.path.path == NULL ? LXP_ERR_INVALID_PARAM
+		return request->args.path.path == NULL ? OVE_ERR_INVALID_PARAM
 						       : ove_fs_mkdir(request->args.path.path);
 	case FS_REQ_PATH_RMDIR:
-		return request->args.path.path == NULL ? LXP_ERR_INVALID_PARAM
+		return request->args.path.path == NULL ? OVE_ERR_INVALID_PARAM
 						       : ove_fs_rmdir(request->args.path.path);
 	case FS_REQ_PATH_UNLINK:
-		return request->args.path.path == NULL ? LXP_ERR_INVALID_PARAM
+		return request->args.path.path == NULL ? OVE_ERR_INVALID_PARAM
 						       : ove_fs_unlink(request->args.path.path);
 	case FS_REQ_PATH_RENAME:
 		return request->args.path_rename.old_path == NULL ||
 				       request->args.path_rename.new_path == NULL
-			       ? LXP_ERR_INVALID_PARAM
+			       ? OVE_ERR_INVALID_PARAM
 			       : ove_fs_rename(request->args.path_rename.old_path,
 					       request->args.path_rename.new_path);
 	case FS_REQ_MOUNT:
@@ -812,7 +813,7 @@ static int execute_request(struct fs_request *request)
 	case FS_REQ_BLOCK_SYNC:
 	case FS_REQ_STOP:
 	default:
-		return LXP_ERR_INVALID_PARAM;
+		return OVE_ERR_INVALID_PARAM;
 	}
 }
 
@@ -1046,7 +1047,7 @@ static void fs_worker(void *arg)
 		if (request->op != FS_REQ_MOUNT && request->op != FS_REQ_STOP)
 			fs_server_admit();
 		(void)ove_time_get_us(&request->started_us);
-		request->result = execute_request(request);
+		request->result = lxp_err_from_ove(execute_request(request));
 		(void)ove_time_get_us(&request->finished_us);
 		request->budget_overrun = request->finished_us >= request->started_us &&
 					  request->finished_us - request->started_us >
@@ -1149,7 +1150,7 @@ static int submit_sync(struct fs_request *request)
 		return LXP_ERR_INVALID_PARAM;
 	int rc = ove_mutex_lock(g_submit_lock, OVE_WAIT_FOREVER);
 	if (rc != OVE_OK)
-		return rc;
+		return lxp_err_from_ove(rc);
 	if (request->op == FS_REQ_FILE_WRITE || request->op == FS_REQ_FILE_PWRITE ||
 	    request->op == FS_REQ_BLOCK_WRITE) {
 		const void *source = request->op == FS_REQ_FILE_WRITE ? request->args.file_write.buf
@@ -1184,8 +1185,10 @@ static int submit_sync(struct fs_request *request)
 	rc = ove_queue_send(g_request_queue, &queued, OVE_WAIT_FOREVER);
 	if (rc == OVE_OK)
 		rc = ove_event_wait(g_complete, OVE_WAIT_FOREVER);
-	if (rc == OVE_OK && (request->op == FS_REQ_FILE_READ || request->op == FS_REQ_FILE_PREAD ||
-			     request->op == FS_REQ_BLOCK_READ)) {
+	int completed = rc == OVE_OK;
+	int result = completed ? request->result : lxp_err_from_ove(rc);
+	if (completed && (request->op == FS_REQ_FILE_READ || request->op == FS_REQ_FILE_PREAD ||
+			  request->op == FS_REQ_BLOCK_READ)) {
 		size_t transferred =
 			request->op == FS_REQ_FILE_READ	   ? request->args.file_read.transferred
 			: request->op == FS_REQ_FILE_PREAD ? request->args.file_pread.transferred
@@ -1198,16 +1201,16 @@ static int submit_sync(struct fs_request *request)
 					    ? request->args.file_pread.buf
 					    : request->args.block_read.buf;
 		if (transferred > count) {
-			rc = LXP_ERR_IO;
+			result = LXP_ERR_IO;
+			completed = 0;
 		} else if (transferred != 0u) {
 			memcpy(destination, g_io_buffer, transferred);
 		}
 	}
 	if (measured)
-		metrics_request_finished(request, rc == OVE_OK ? request->result : rc,
-					 rc == OVE_OK);
+		metrics_request_finished(request, result, completed);
 	ove_mutex_unlock(g_submit_lock);
-	return rc == OVE_OK ? request->result : rc;
+	return result;
 }
 
 static int submit_async(struct fs_request *request)
@@ -1260,6 +1263,7 @@ static int submit_async(struct fs_request *request)
 	if (rc != OVE_OK) {
 		g_metrics.pending--;
 		g_metrics.requests_failed++;
+		rc = lxp_err_from_ove(rc);
 		goto abort;
 	}
 	return LXP_ERR_WOULD_BLOCK;
@@ -1302,7 +1306,7 @@ static int storage_run_begin(unsigned int client)
 	g_block_info_valid = 0;
 	rc = ove_mutex_init(&g_submit_lock, &g_submit_lock_storage);
 	if (rc != OVE_OK)
-		return rc;
+		return lxp_err_from_ove(rc);
 	rc = ove_event_init(&g_complete, &g_complete_storage);
 	if (rc != OVE_OK)
 		goto fail_event;
@@ -1333,7 +1337,7 @@ fail_queue:
 	ove_event_deinit(g_complete);
 fail_event:
 	ove_mutex_deinit(g_submit_lock);
-	return rc;
+	return lxp_err_from_ove(rc);
 }
 
 static void storage_run_end(unsigned int client)
@@ -1775,8 +1779,8 @@ static int block_open(unsigned flags)
 		return LXP_ERR_PERMISSION;
 #endif
 	}
-	return ove_block_open(&g_raw_block,
-			      (flags & LXP_BLOCK_OPEN_WRITE) != 0u ? OVE_BLOCK_OPEN_WRITE : 0u);
+	return lxp_err_from_ove(ove_block_open(
+		&g_raw_block, (flags & LXP_BLOCK_OPEN_WRITE) != 0u ? OVE_BLOCK_OPEN_WRITE : 0u));
 }
 
 static void block_close(unsigned flags)

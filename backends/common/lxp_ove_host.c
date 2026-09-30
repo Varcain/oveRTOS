@@ -8,6 +8,7 @@
  */
 
 #include "lxp_ove_host_internal.h"
+#include "lxp_ove_err.h"
 
 #include "ove_config.h"
 #include "ove/thread.h"
@@ -204,7 +205,7 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 	int rc = lxp_host_init_cpio(&impl->core, &lxp_config);
 	if (rc != LXP_OK)
 		ove_lxp_host_deinit(host);
-	return rc;
+	return ove_err_from_lxp(rc);
 }
 
 int ove_lxp_host_netif_get_addr(const ove_lxp_host_t *host, ove_sockaddr_t *ip,
@@ -291,6 +292,8 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 			.display_height = config->display_height,
 			.rt_scope_read = config->rt_scope_read,
 			.rt_scope_ctx = config->rt_scope_ctx,
+			/* LXP tests the subscribe result only against 0, which both error
+			 * domains use for success, so it needs no translation. */
 			.console_subscribe = config->console_subscribe,
 			.console_unsubscribe = config->console_unsubscribe,
 		};
@@ -304,7 +307,7 @@ int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *
 		return OVE_LXP_RUN_EEXEC;
 	case LXP_RUN_ETIMEOUT:
 		return OVE_LXP_RUN_ETIMEOUT;
-	default:
-		return rc;
+	default: /* init's exit status, or a host error */
+		return rc < 0 ? ove_err_from_lxp(rc) : rc;
 	}
 }

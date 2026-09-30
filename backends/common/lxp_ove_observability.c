@@ -9,6 +9,7 @@
 #include "ove/lxp_observability.h"
 #include "lxp_ove_host_internal.h"
 #include "lxp/lxp_observe.h"
+#include "lxp_ove_err.h"
 
 #include <string.h>
 
@@ -127,7 +128,7 @@ int ove_lxp_host_observe(const ove_lxp_host_t *host, ove_lxp_host_observation_t 
 	lxp_host_observation_t observation;
 	rc = lxp_host_observe(&impl->core, &observation);
 	if (rc != LXP_OK) {
-		rc = rc == LXP_ERR_BUSY ? OVE_ERR_BUSY : OVE_ERR_INVALID_PARAM;
+		rc = ove_err_from_lxp(rc);
 		goto clear;
 	}
 	if (!observation_contract_is_current(&observation))

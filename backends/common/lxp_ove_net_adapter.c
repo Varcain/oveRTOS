@@ -24,6 +24,7 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 
 #include "ove/net.h"
+#include "lxp_ove_err.h"
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 #include "ove_net_ready.h"
 #endif
@@ -100,13 +101,13 @@ static int slot_publish(struct lxp_socket *s, lxp_socket_t *out)
 		if (rc != OVE_OK) {
 			ove_socket_close(s->h);
 			memset(s, 0, sizeof(*s));
-			return rc;
+			return lxp_err_from_ove(rc);
 		}
 	}
 	g_open_sockets++;
 #endif
 	*out = s;
-	return OVE_OK;
+	return LXP_OK;
 }
 
 static void slot_close(struct lxp_socket *socket)
@@ -135,10 +136,10 @@ static void pool_reset(void)
 static int a_run_begin(lxp_net_ready_fn ready, const void *context)
 {
 	if (g_run_active)
-		return OVE_ERR_WOULD_BLOCK;
+		return LXP_ERR_WOULD_BLOCK;
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 	if (!ready)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 #else
 	(void)ready;
 	(void)context;
@@ -149,7 +150,7 @@ static int a_run_begin(lxp_net_ready_fn ready, const void *context)
 	__atomic_store_n(&g_ready_callback, ready, __ATOMIC_RELEASE);
 #endif
 	g_run_active = 1;
-	return OVE_OK;
+	return LXP_OK;
 }
 
 static void a_run_end(void)
@@ -181,14 +182,14 @@ static void from_ove(const ove_sockaddr_t *o, lxp_sockaddr_t *a)
 static int a_open(lxp_af_t af, lxp_sock_type_t type, int proto, lxp_socket_t *out)
 {
 	if (!g_run_active || !out)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	struct lxp_socket *s = slot_alloc();
 	if (!s)
 		return LXP_ERR_NO_MEMORY;
 	int r = ove_socket_open_ex(&s->h, &s->st, (ove_af_t)af, (ove_sock_type_t)type, proto);
 	if (r != OVE_OK) {
 		s->used = 0;
-		return r;
+		return lxp_err_from_ove(r);
 	}
 	return slot_publish(s, out);
 }
@@ -196,14 +197,14 @@ static int a_accept(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_n
 {
 	struct lxp_socket *listen_socket = slot_lookup(listener);
 	if (!listen_socket || !out)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	struct lxp_socket *s = slot_alloc();
 	if (!s)
 		return LXP_ERR_NO_MEMORY;
 	int r = ove_socket_accept(listen_socket->h, &s->h, &s->st, timeout_ns);
 	if (r != OVE_OK) {
 		s->used = 0; /* also the OVE_ERR_TIMEOUT (no pending connection) path */
-		return r;
+		return lxp_err_from_ove(r);
 	}
 	return slot_publish(s, out);
 }
@@ -218,112 +219,112 @@ static int a_connect(lxp_socket_t s, const lxp_sockaddr_t *a, uint64_t t)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || !a)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	to_ove(a, &oa);
-	return ove_socket_connect(socket->h, &oa, t);
+	return lxp_err_from_ove(ove_socket_connect(socket->h, &oa, t));
 }
 static int a_bind(lxp_socket_t s, const lxp_sockaddr_t *a)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || !a)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	to_ove(a, &oa);
-	return ove_socket_bind(socket->h, &oa);
+	return lxp_err_from_ove(ove_socket_bind(socket->h, &oa));
 }
 static int a_listen(lxp_socket_t s, int backlog)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket)
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_listen(socket->h, backlog);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_listen(socket->h, backlog));
 }
 static int a_send(lxp_socket_t s, const void *d, size_t n, size_t *sent)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || (!d && n != 0))
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_send(socket->h, d, n, sent);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_send(socket->h, d, n, sent));
 }
 static int a_recv(lxp_socket_t s, void *b, size_t n, size_t *got, uint64_t t)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || (!b && n != 0))
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_recv(socket->h, b, n, got, t);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_recv(socket->h, b, n, got, t));
 }
 static int a_sendto(lxp_socket_t s, const void *d, size_t n, size_t *sent,
 		    const lxp_sockaddr_t *dst)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || (!d && n != 0) || !dst)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	to_ove(dst, &oa);
-	return ove_socket_sendto(socket->h, d, n, sent, &oa);
+	return lxp_err_from_ove(ove_socket_sendto(socket->h, d, n, sent, &oa));
 }
 static int a_recvfrom(lxp_socket_t s, void *b, size_t n, size_t *got, lxp_sockaddr_t *src,
 		      uint64_t t)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || (!b && n != 0))
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	int r = ove_socket_recvfrom(socket->h, b, n, got, &oa, t);
 	if (r == OVE_OK && src)
 		from_ove(&oa, src);
-	return r;
+	return lxp_err_from_ove(r);
 }
 static int a_set_nonblock(lxp_socket_t s, int nb)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket)
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_set_nonblock(socket->h, nb);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_set_nonblock(socket->h, nb));
 }
 static int a_poll(lxp_socket_t s, unsigned events, unsigned *revents, uint64_t t)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket)
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_poll(socket->h, events, revents, t);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_poll(socket->h, events, revents, t));
 }
 static int a_shutdown(lxp_socket_t s, int how)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket)
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_shutdown(socket->h, how);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_shutdown(socket->h, how));
 }
 static int a_getsockname(lxp_socket_t s, lxp_sockaddr_t *a)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || !a)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	int r = ove_socket_getsockname(socket->h, &oa);
 	if (r == OVE_OK)
 		from_ove(&oa, a);
-	return r;
+	return lxp_err_from_ove(r);
 }
 static int a_getpeername(lxp_socket_t s, lxp_sockaddr_t *a)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket || !a)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 	ove_sockaddr_t oa;
 	int r = ove_socket_getpeername(socket->h, &oa);
 	if (r == OVE_OK)
 		from_ove(&oa, a);
-	return r;
+	return lxp_err_from_ove(r);
 }
 static int a_get_error(lxp_socket_t s)
 {
 	struct lxp_socket *socket = slot_lookup(s);
 	if (!socket)
-		return OVE_ERR_INVALID_PARAM;
-	return ove_socket_get_error(socket->h);
+		return LXP_ERR_INVALID_PARAM;
+	return lxp_err_from_ove(ove_socket_get_error(socket->h));
 }
 
 /* Netif ops: the immutable oveRTOS host supplies an opaque ove_netif_t to
@@ -340,15 +341,15 @@ static int a_netif_get_addr(lxp_netif_t nif, lxp_sockaddr_t *ip, lxp_sockaddr_t 
 		from_ove(&ogw, gw);
 	if (nm)
 		from_ove(&onm, nm);
-	return r;
+	return lxp_err_from_ove(r);
 }
 static int a_netif_get_hwaddr(lxp_netif_t nif, uint8_t mac[6])
 {
-	return ove_netif_get_hwaddr((ove_netif_t)nif, mac);
+	return lxp_err_from_ove(ove_netif_get_hwaddr((ove_netif_t)nif, mac));
 }
 static int a_netif_get_flags(lxp_netif_t nif, unsigned *flags)
 {
-	return ove_netif_get_flags((ove_netif_t)nif, flags);
+	return lxp_err_from_ove(ove_netif_get_flags((ove_netif_t)nif, flags));
 }
 static int a_netif_set_addr(lxp_netif_t nif, const lxp_sockaddr_t *ip, const lxp_sockaddr_t *nm,
 			    const lxp_sockaddr_t *gw)
@@ -360,12 +361,12 @@ static int a_netif_set_addr(lxp_netif_t nif, const lxp_sockaddr_t *ip, const lxp
 		to_ove(nm, &onm);
 	if (gw)
 		to_ove(gw, &ogw);
-	return ove_netif_set_addr((ove_netif_t)nif, ip ? &oip : NULL, nm ? &onm : NULL,
-				  gw ? &ogw : NULL);
+	return lxp_err_from_ove(ove_netif_set_addr((ove_netif_t)nif, ip ? &oip : NULL,
+						   nm ? &onm : NULL, gw ? &ogw : NULL));
 }
 static int a_netif_set_up(lxp_netif_t nif, int up)
 {
-	return ove_netif_set_up((ove_netif_t)nif, up);
+	return lxp_err_from_ove(ove_netif_set_up((ove_netif_t)nif, up));
 }
 
 const struct lxp_net_ops g_lxp_host_net_ops = {
