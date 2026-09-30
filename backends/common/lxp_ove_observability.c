@@ -13,15 +13,11 @@
 
 #include <string.h>
 
-_Static_assert(LXP_HOST_OBSERVATION_ABI_VERSION == 1u,
-	       "update the OVE host-observation translator for the new LXP ABI");
-_Static_assert(LXP_DIAG_ABI_VERSION == 1u,
-	       "update the OVE diagnostic translator for the new LXP ABI");
 _Static_assert(LXP_LAT_BUCKETS == OVE_LXP_LATENCY_BUCKETS,
 	       "OVE and LXP latency histogram contracts differ");
-_Static_assert(LXP_LAT_CLASSES - 1 == OVE_LXP_LATENCY_SERVICE_CAPACITY,
+_Static_assert(LXP_LAT_SERVICE_ROWS == OVE_LXP_LATENCY_SERVICE_CAPACITY,
 	       "OVE service observation capacity is stale");
-_Static_assert(LXP_NSLOT <= OVE_LXP_LATENCY_WAKE_CAPACITY,
+_Static_assert(LXP_LAT_WAKE_ROWS <= OVE_LXP_LATENCY_WAKE_CAPACITY,
 	       "OVE wake observation capacity is too small");
 
 #if defined(CONFIG_OVE_LINUX_LATENCY)
@@ -29,19 +25,6 @@ _Static_assert(LXP_ENABLE_LATENCY == 1, "OVE latency enabled without the LXP rec
 #else
 _Static_assert(LXP_ENABLE_LATENCY == 0, "LXP latency enabled without the OVE contract");
 #endif
-
-static int observation_contract_is_current(const lxp_host_observation_t *in)
-{
-	return in->abi_version == LXP_HOST_OBSERVATION_ABI_VERSION &&
-	       in->struct_size == sizeof(*in) && in->sizes.abi_version == LXP_DIAG_ABI_VERSION &&
-	       in->sizes.struct_size == sizeof(in->sizes) &&
-	       in->diagnostics.abi_version == LXP_DIAG_ABI_VERSION &&
-	       in->diagnostics.struct_size == sizeof(in->diagnostics) &&
-	       in->diagnostics.first_error.abi_version == LXP_DIAG_ABI_VERSION &&
-	       in->diagnostics.first_error.struct_size == sizeof(in->diagnostics.first_error) &&
-	       in->diagnostics.last_error.abi_version == LXP_DIAG_ABI_VERSION &&
-	       in->diagnostics.last_error.struct_size == sizeof(in->diagnostics.last_error);
-}
 
 static void copy_sizes(ove_lxp_size_observation_t *out, const lxp_diag_size_report_t *in)
 {
@@ -131,9 +114,6 @@ int ove_lxp_host_observe(const ove_lxp_host_t *host, ove_lxp_host_observation_t 
 		rc = ove_err_from_lxp(rc);
 		goto clear;
 	}
-	if (!observation_contract_is_current(&observation))
-		goto invalid;
-
 #if defined(CONFIG_OVE_LINUX_LATENCY)
 	if (observation.latency_service_count > OVE_LXP_LATENCY_SERVICE_CAPACITY ||
 	    observation.latency_wake_count > OVE_LXP_LATENCY_WAKE_CAPACITY)

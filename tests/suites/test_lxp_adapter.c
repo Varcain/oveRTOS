@@ -143,9 +143,12 @@ void lxp_lat_record(lxp_lat_stat_t *stat, uint64_t ns)
 	stat->buckets[6]++;
 }
 
+/* A service row id the stubbed class-name lookup knows. */
+#define TEST_FORK_CLASS 3
+
 const char *lxp_lat_class_name(int cls)
 {
-	return cls == LXP_EV_FORK ? "FORK" : "?";
+	return cls == TEST_FORK_CLASS ? "FORK" : "?";
 }
 
 const char *lxp_diag_issue_name(unsigned issue)
@@ -723,13 +726,9 @@ static void test_observability_facade_copies_contract(void **state)
 	ove_lxp_host_t host = {0};
 	ove_lxp_host_observation_t out;
 	memset(&g_host_observation, 0, sizeof(g_host_observation));
-	g_host_observation.abi_version = LXP_HOST_OBSERVATION_ABI_VERSION;
-	g_host_observation.struct_size = sizeof(g_host_observation);
 	g_host_observation.run_health.coord_iters = 1234u;
 	g_host_observation.run_health.active = 0;
 	g_host_observation.sizes = (lxp_diag_size_report_t){
-		.abi_version = LXP_DIAG_ABI_VERSION,
-		.struct_size = sizeof(lxp_diag_size_report_t),
 		.slots = 12u,
 		.regions = 8u,
 		.proc = 101u,
@@ -751,14 +750,10 @@ static void test_observability_facade_copies_contract(void **state)
 		.coordinator_static = 117u,
 	};
 	g_host_observation.diagnostics = (lxp_diag_health_t){
-		.abi_version = LXP_DIAG_ABI_VERSION,
-		.struct_size = sizeof(lxp_diag_health_t),
 		.checks = 91u,
 		.failures = 2u,
 		.first_error =
 			{
-				.abi_version = LXP_DIAG_ABI_VERSION,
-				.struct_size = sizeof(lxp_diag_error_t),
 				.issue = 7u,
 				.slot = 3,
 				.region = 4,
@@ -767,8 +762,6 @@ static void test_observability_facade_copies_contract(void **state)
 			},
 		.last_error =
 			{
-				.abi_version = LXP_DIAG_ABI_VERSION,
-				.struct_size = sizeof(lxp_diag_error_t),
 				.issue = 8u,
 				.slot = 9,
 				.region = 10,
@@ -780,7 +773,7 @@ static void test_observability_facade_copies_contract(void **state)
 	g_host_observation.guest_stack.size = 768u;
 	g_host_observation.guest_stack.available = 1u;
 	g_host_observation.latency_service_count = 1u;
-	g_host_observation.latency_services[0].id = LXP_EV_FORK;
+	g_host_observation.latency_services[0].id = TEST_FORK_CLASS;
 	g_host_observation.latency_services[0].stat.count = 7u;
 	g_host_observation.latency_services[0].stat.max_ns = 8100u;
 	g_host_observation.latency_services[0].stat.buckets[3] = 7u;
@@ -817,7 +810,7 @@ static void test_observability_facade_copies_contract(void **state)
 	assert_int_equal(out.guest_stack.size, 768u);
 	assert_int_equal(out.guest_stack.available, 1u);
 	assert_int_equal(out.latency_service_count, 1u);
-	assert_int_equal(out.latency_services[0].id, LXP_EV_FORK);
+	assert_int_equal(out.latency_services[0].id, TEST_FORK_CLASS);
 	assert_int_equal(out.latency_services[0].stat.count, 7u);
 	assert_int_equal(out.latency_services[0].stat.max_ns, 8100u);
 	assert_int_equal(out.latency_services[0].stat.buckets[3], 7u);
@@ -848,11 +841,6 @@ static void test_observability_facade_copies_contract(void **state)
 	assert_int_equal(health.coordinator_iterations, 55u);
 	assert_int_equal(health.active, 1u);
 
-	g_host_observation.abi_version = 99u;
-	memset(&out, 0xa5, sizeof(out));
-	assert_int_equal(ove_lxp_host_observe(&host, &out), OVE_ERR_INVALID_PARAM);
-	assert_int_equal(out.abi_version, 0u);
-	g_host_observation.abi_version = LXP_HOST_OBSERVATION_ABI_VERSION;
 	g_host_observe_result = LXP_ERR_BUSY;
 	memset(&out, 0xa5, sizeof(out));
 	assert_int_equal(ove_lxp_host_observe(&host, &out), OVE_ERR_BUSY);
