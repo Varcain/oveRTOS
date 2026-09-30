@@ -325,11 +325,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
 # Linux personality — engine-agnostic syscall dispatch + per-engine SVC seam.
 {% if config.get("CONFIG_OVE_LINUX") == True %}
 set(OVE_LINUX ON)
-# The module's extracted subsystem TUs (src/fs/*.c, src/proc/*.c) include their headers
-# src-relative (e.g. #include "fs/lxp_pipe.h"), matching how the module builds itself
-# (lxp's own build adds -I src). lxp_syscall.c gets this for free via quote-include's
-# current-dir search, but the src/fs + src/proc TUs need src on the include path.
-include_directories(${OVE_DIR}/modules/lxp/src)
+# The module's units include their private headers relative to its src/; including
+# lxp_sources.cmake below gives exactly those units that include root, so oveRTOS
+# sources see only the module's public include/.
 # ---- lxp module: map oveRTOS Kconfig -> the module's own LXP_ENABLE_* + sizing ----
 # The lxp module (modules/lxp) is OS-agnostic: it gates on LXP_ENABLE_* / LXP_* knobs,
 # not CONFIG_OVE_*. oveRTOS supplies them here from its Kconfig (its adapters + seams,
