@@ -115,7 +115,7 @@ _Static_assert(DYN_POOLS_BYTES + PROG_REGIONS_BYTES + NUTTX_EXEC_STAGE_BYTES <=
 #endif
 
 static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count,
-			    lxp_nuttx_slot_lookup_t slot_lookup)
+			    lxp_cortex_m_slot_lookup_t slot_lookup)
 {
 	return lxp_ove_thread_snapshot_read(g_thread_snapshot, out, max_count, actual_count,
 					    slot_lookup);
@@ -169,14 +169,35 @@ static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declar
 const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.abi_version = LXP_NUTTX_PORT_CONFIG_ABI_VERSION,
 	.struct_size = sizeof(lxp_nuttx_port_config_t),
-	.program_regions = g_program_regions,
-	.program_region_stride = LXP_PROG_REGION_SIZE,
-	.program_region_count = LXP_NREG,
-	.dynamic_pools = g_dynamic_pools,
-	.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
-	.dynamic_pool_count = LXP_NREG,
-	.exec_captures = g_exec_captures,
-	.exec_capture_count = LXP_NSLOT,
+	.common =
+		{
+			.program_regions = g_program_regions,
+			.program_region_stride = LXP_PROG_REGION_SIZE,
+			.program_region_count = LXP_NREG,
+			.dynamic_pools = g_dynamic_pools,
+			.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
+			.dynamic_pool_count = LXP_NREG,
+			.exec_captures = g_exec_captures,
+			.exec_capture_count = LXP_NSLOT,
+#if LXP_ENABLE_NETFS_EXEC
+			.exec_stage = g_exec_stage,
+			.exec_stage_size = NUTTX_EXEC_STAGE_BYTES,
+#endif
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+			.guest_memory_texscb = 0x0bu,
+			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER,
+			.cache_geometry = &g_cache_geometry,
+#else
+			.guest_memory_texscb = 0x08u,
+			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
+#endif
+			.time_us = ove_time_get_us,
+			.time_ns = ove_time_get_ns,
+			.thread_list = host_thread_list,
+			.mem_stats = lxp_ove_mem_stats_read,
+			.system_version = LXP_SYSTEM_VERSION,
+			.validate_memory_contract = HOST_MEMORY_VALIDATOR,
+		},
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.slot_stacks = g_slot_stacks,
 #else
@@ -185,10 +206,6 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.slot_stack_stride = LXP_NUTTX_STACK_SIZE,
 	.slot_stack_size = LXP_NUTTX_STACK_SIZE,
 	.slot_stack_count = LXP_NSLOT,
-#if LXP_ENABLE_NETFS_EXEC
-	.exec_stage = g_exec_stage,
-	.exec_stage_size = NUTTX_EXEC_STAGE_BYTES,
-#endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.code_region = {.base = 0x08000000u, .size = 1024u * 1024u, .texscb = 0x02u, .enabled = 1u},
 	.pool_region = {.base = 0xc0000000u,
@@ -202,11 +219,8 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 			  .texscb = 0x02u,
 			  .enabled = 1u},
 #endif
-	.guest_memory_texscb = 0x0bu,
 	.trusted_tcb_base = 0x20000000u,
 	.trusted_tcb_end = 0x20080000u,
-	.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER,
-	.cache_geometry = &g_cache_geometry,
 #else
 	.code_region = {.base = 0x00000000u,
 			.size = 2u * 1024u * 1024u,
@@ -220,18 +234,10 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 			  .size = OVE_LXP_ROOTFS_SIZE,
 			  .texscb = 0x08u,
 			  .enabled = 1u},
-	.guest_memory_texscb = 0x08u,
 	.trusted_tcb_base = 0x20000000u,
 	.trusted_tcb_end = 0x20400000u,
-	.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
 #endif
 	.guest_priority = 60u,
-	.time_us = ove_time_get_us,
-	.time_ns = ove_time_get_ns,
-	.host_thread_list = host_thread_list,
-	.mem_stats = lxp_ove_mem_stats_read,
-	.system_version = LXP_SYSTEM_VERSION,
-	.validate_memory_contract = HOST_MEMORY_VALIDATOR,
 	.runtime_reset = host_runtime_reset,
 	.runtime_start = host_runtime_start,
 	.runtime_stop = host_runtime_stop,
