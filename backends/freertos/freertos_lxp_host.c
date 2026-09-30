@@ -78,7 +78,7 @@ static struct lxp_cortex_m_cache_geometry g_cache_geometry;
 #endif
 
 static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count,
-			    lxp_freertos_slot_lookup_t slot_lookup)
+			    lxp_cortex_m_slot_lookup_t slot_lookup)
 {
 	return lxp_ove_thread_snapshot_read(&g_lxp_storage.thread_snapshot, out, max_count,
 					    actual_count, slot_lookup);
@@ -198,19 +198,35 @@ static int host_prepare(void)
 const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 	.abi_version = LXP_FREERTOS_PORT_CONFIG_ABI_VERSION,
 	.struct_size = sizeof(lxp_freertos_port_config_t),
-	.program_regions = &g_lxp_storage.prog_regions[0][0],
-	.program_region_stride = LXP_PROG_REGION_SIZE,
-	.program_region_count = LXP_NREG,
-	.dynamic_pools = &g_lxp_storage.dyn_pools[0][0],
-	.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
-	.dynamic_pool_count = LXP_NREG,
-	.exec_captures = g_lxp_storage.exec_captures,
-	.exec_capture_count = LXP_NSLOT,
+	.common =
+		{
+			.program_regions = &g_lxp_storage.prog_regions[0][0],
+			.program_region_stride = LXP_PROG_REGION_SIZE,
+			.program_region_count = LXP_NREG,
+			.dynamic_pools = &g_lxp_storage.dyn_pools[0][0],
+			.dynamic_pool_stride = LXP_DYN_POOL_SIZE,
+			.dynamic_pool_count = LXP_NREG,
+			.exec_captures = g_lxp_storage.exec_captures,
+			.exec_capture_count = LXP_NSLOT,
 #if LXP_ENABLE_NETFS_EXEC
-	.exec_stage = g_lxp_storage.netfs_exec_stage,
-	.exec_stage_size = sizeof(g_lxp_storage.netfs_exec_stage),
+			.exec_stage = g_lxp_storage.netfs_exec_stage,
+			.exec_stage_size = sizeof(g_lxp_storage.netfs_exec_stage),
 #endif
-	.guest_memory_texscb = configTEX_S_C_B_SRAM,
+			.guest_memory_texscb = configTEX_S_C_B_SRAM,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER,
+			.cache_geometry = &g_cache_geometry,
+#else
+			.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
+#endif
+			.host_prepare = host_prepare,
+			.time_us = ove_time_get_us,
+			.time_ns = ove_time_get_ns,
+			.thread_list = host_thread_list,
+			.mem_stats = lxp_ove_mem_stats_read,
+			.system_version = LXP_SYSTEM_VERSION,
+			.validate_memory_contract = HOST_MEMORY_VALIDATOR,
+		},
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	.rootfs_region_count = 1u,
 	.rootfs_regions =
@@ -244,26 +260,16 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 #else
 	.coordinator_rootfs_region = UINT8_MAX,
 #endif
-	.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER,
-	.cache_geometry = &g_cache_geometry,
 	.cache_clean = host_cache_clean,
 	.cache_invalidate = host_cache_invalidate,
 	.host_fatal = ove_freertos_lxp_host_fatal,
 #else
 	.coordinator_rootfs_region = UINT8_MAX,
-	.cpu_memory_contract = OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER,
 #endif
 	.guest_quantum_ms = CONFIG_OVE_LINUX_GUEST_QUANTUM_MS,
-	.host_prepare = host_prepare,
 	.tick_subscribe = ove_freertos_tick_subscribe,
 	.tick_unsubscribe = ove_freertos_tick_unsubscribe,
-	.time_us = ove_time_get_us,
-	.time_ns = ove_time_get_ns,
-	.thread_list = host_thread_list,
-	.mem_stats = lxp_ove_mem_stats_read,
-	.system_version = LXP_SYSTEM_VERSION,
 	.random_fill = host_random_fill,
-	.validate_memory_contract = HOST_MEMORY_VALIDATOR,
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	.svc_cycle_counter = (volatile const uint32_t *)0xe0001004u,
 #endif

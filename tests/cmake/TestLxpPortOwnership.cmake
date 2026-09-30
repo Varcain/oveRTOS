@@ -51,6 +51,7 @@ set(HOST_ADAPTERS
     "backends/zephyr/zephyr_lxp_host.c")
 
 set(LXP_RTOS_PORTS
+    "modules/lxp/ports/common/lxp_cortex_m_port.c"
     "modules/lxp/ports/freertos/lxp_freertos_port.c"
     "modules/lxp/ports/nuttx/lxp_nuttx_port.c"
     "modules/lxp/ports/zephyr/lxp_zephyr_port.c")
@@ -239,6 +240,11 @@ if(EXISTS "${OVE_ROOT}/backends/nuttx/nuttx_lnx_trap.c")
 endif()
 if(EXISTS "${OVE_ROOT}/backends/zephyr/zephyr_lnx.c")
     message(FATAL_ERROR "retired consumer-owned Zephyr seam remains")
+endif()
+file(READ "${OVE_ROOT}/modules/lxp/ports/common/lxp_cortex_m_port.c"
+    COMMON_PORT_TEXT)
+if(COMMON_PORT_TEXT MATCHES "CONFIG_OVE_|#[ \t]*include[ \t]*[<\"]ove/")
+    message(FATAL_ERROR "LXP shared Cortex-M port services regained oveRTOS coupling")
 endif()
 file(READ "${OVE_ROOT}/modules/lxp/ports/freertos/lxp_freertos_port.c"
     FREERTOS_PORT_TEXT)
