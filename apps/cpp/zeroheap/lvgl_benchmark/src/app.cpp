@@ -78,7 +78,9 @@ static void widgets_demo_cb(void);
 
 /* ── Thread ───────────────────────────────────────────────────────── */
 
-static ove::Thread<4096> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
+/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
+ * deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
+static ove::Thread<16384> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
 
 /* ── Scene types ──────────────────────────────────────────────────── */
 

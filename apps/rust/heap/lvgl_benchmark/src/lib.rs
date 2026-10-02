@@ -1111,11 +1111,18 @@ fn app_main() {
     // Detach the graphics worker: it runs for the program lifetime, so we
     // don't want its `Drop` to request-stop + join.  `detach()` is the
     // binding's recommended fire-and-forget over `core::mem::forget`.
-    ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
-        graphics_entry();
-    })
-    .expect("graphics thread spawn")
-    .detach();
+    // 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image
+    // transforms) recurse deep in the draw pipeline — 4 KB overflows on the
+    // real 480x272 LTDC panel.
+    ove::Thread::builder()
+        .name(c"graphics")
+        .priority(Priority::High)
+        .stack_size(16384)
+        .spawn(|_tok| {
+            graphics_entry();
+        })
+        .expect("graphics thread spawn")
+        .detach();
 
     if lvgl::init().is_err() {
         log::error!("Failed to init LVGL");

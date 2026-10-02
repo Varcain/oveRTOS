@@ -1067,7 +1067,9 @@ static void graphics_thread(void *arg)
 
 /* ── Thread handle (statically allocated) ──────────────────────────── */
 
-OVE_THREAD_DEFINE_STATIC(graphics_thread_handle, 4096, graphics_thread, NULL, OVE_PRIO_HIGH,
+/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
+ * deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
+OVE_THREAD_DEFINE_STATIC(graphics_thread_handle, 16384, graphics_thread, NULL, OVE_PRIO_HIGH,
 			 "graphics");
 
 /* ── Entry point ───────────────────────────────────────────────────── */

@@ -20,8 +20,21 @@
 const std = @import("std");
 const ove = @import("ove");
 
-// FixedBufferAllocator over a static BSS buffer — zero-heap-compatible.
-var arena_bytes: [8192]u8 = undefined;
+// 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
+// deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel.
+const graphics_stack = 16384;
+const GraphicsThread = ove.Thread(graphics_stack);
+
+// FixedBufferAllocator over a static BSS buffer — zero-heap-compatible. It holds only the
+// graphics thread's stack and control block, sized and aligned the way ove.Thread lays them
+// out (Zephyr rounds the stack up to an aligned power of two for its MPU).
+var arena_bytes: [
+    std.mem.alignForward(
+        usize,
+        ove.thread.stackTotal(graphics_stack) + @sizeOf(ove.ffi.ove_thread_storage_t),
+        ove.thread.stackAlign(graphics_stack),
+    )
+]u8 align(ove.thread.stackAlign(graphics_stack)) = undefined;
 var fba: std.heap.FixedBufferAllocator = undefined;
 
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
@@ -1008,7 +1021,7 @@ fn graphicsEntry() void {
 // App entry
 // ---------------------------------------------------------------------------
 
-var graphics_thread: ove.Thread(4096) = undefined;
+var graphics_thread: GraphicsThread = undefined;
 
 fn appMain() void {
     fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
@@ -1016,7 +1029,7 @@ fn appMain() void {
 
     std.log.info("LVGL benchmark (Zig zero-heap): init", .{});
 
-    graphics_thread = ove.Thread(4096).spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = GraphicsThread.spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to init graphics", .{});
         return;
     };

@@ -1106,7 +1106,10 @@ fn app_main() {
     SCENE.init(LvCell::new(SceneState { current: 0 }));
     STATS.init(LvCell::new([SceneStats::default(); 17]));
 
-    ove::thread!("graphics", graphics_entry, Priority::High, 4096).detach();
+    // 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image
+    // transforms) recurse deep in the draw pipeline — 4 KB overflows on the
+    // real 480x272 LTDC panel.
+    ove::thread!("graphics", graphics_entry, Priority::High, 16384).detach();
 
     if lvgl::init().is_err() {
         log::error!("Failed to init LVGL");

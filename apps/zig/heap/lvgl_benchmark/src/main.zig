@@ -1007,12 +1007,15 @@ fn graphicsEntry() void {
 // App entry
 // ---------------------------------------------------------------------------
 
-var graphics_thread: ?ove.Thread(4096) = null;
+// 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
+// deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel.
+const GraphicsThread = ove.Thread(16384);
+var graphics_thread: ?GraphicsThread = null;
 
 fn appMain() void {
     std.log.info("LVGL benchmark (Zig): init", .{});
 
-    graphics_thread = ove.Thread(4096).spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = GraphicsThread.spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to spawn graphics", .{});
         return;
     };

@@ -1120,8 +1120,10 @@ OVE_MAIN()
 {
 	OVE_LOG_INF("LVGL benchmark (C++ heap mode): init");
 
-	auto gfx_thread = std::make_unique<ove::Thread<4096>>(graphics_thread, nullptr,
-							      OVE_PRIO_HIGH, "graphics");
+	/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms)
+	 * recurse deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
+	auto gfx_thread = std::make_unique<ove::Thread<16384>>(graphics_thread, nullptr,
+							       OVE_PRIO_HIGH, "graphics");
 	(void)gfx_thread;
 
 	int ret = ove_lvgl_init();
