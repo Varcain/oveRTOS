@@ -836,9 +836,10 @@ and pending releases throughout these checks.
 One region contributes 640 KiB: 128 KiB of program storage and 512 KiB of
 dynamic storage. The final Minimal/Hardened capacities are therefore 7,040 KiB
 from 11 regions on FreeRTOS, 6,400 KiB from 10 regions on NuttX, and 7,680 KiB
-from 12 regions on Zephyr. Full/Diagnostic use 8/8/9 regions on
-FreeRTOS/NuttX/Zephyr. `NSLOT` is `NREG + 4`, so the corresponding
-Minimal/Hardened slot counts are 15, 14, and 16.
+from 12 regions on Zephyr Minimal; Zephyr Hardened, whose `/dev/fb0` puts the
+framebuffer in the same SDRAM, has 7,040 KiB from 11. Full/Diagnostic use 8/8/9
+regions on FreeRTOS/NuttX/Zephyr. `NSLOT` is `NREG + 4`, so the corresponding
+Minimal/Hardened slot counts are 15, 14, and 16 (15 for Zephyr Hardened).
 
 ### Final STM32 build footprint
 

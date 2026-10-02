@@ -397,13 +397,17 @@ add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section("SDRAM1")))]==])
 # pipeline runs: inetd (listener) + dropbear (session) + the login shell already hold 3 regions,
 # so a 3-stage `ls | grep | wc` (+ its transient vfork snapshot) exhausts the 8-region pool -> a
 # child fails with ENOMEM. More regions leave useful headroom for pipelines and network daemons.
-# With local QSPI XIP, 12 x (128K program + 512K dynamic) retains the old 7.5 MiB pool footprint.
+# With local QSPI XIP, each region is 128K program + 512K dynamic memory.
 {% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
 # netfs exec-off-mount adds a 256K g_netfs_exec_stage buffer + the 9P client's ~24K .bss to SDRAM1,
 # which overflows it at 10 regions. Drop to 9 (frees one 768K region) to fund the stage; the netfs
 # milestone exercises browse/read/exec from shallow process trees (shell + one child), so 9 is ample
 # — and inetd+dropbear+shell+a 2-3 stage pipe still fits for SSH-driven netfs.
 add_compile_definitions(LXP_NREG=9)
+{% elif config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
+# /dev/fb0 puts the 255 KiB LTDC framebuffer in SDRAM1 too: eleven regions leave room for it beside
+# the tmpfs and pipe pools, where twelve overflowed the 8 MiB by 47 KiB.
+add_compile_definitions(LXP_NREG=11)
 {% else %}
 add_compile_definitions(LXP_NREG=12)
 {% endif %}
