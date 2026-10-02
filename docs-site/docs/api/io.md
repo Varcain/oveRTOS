@@ -29,9 +29,10 @@ The GPIO subsystem (`ove/gpio.h`) provides pin configuration, digital read/write
 | `ove_gpio_configure` | `(port, pin, mode) → int` | Configure the direction and drive mode of a pin |
 | `ove_gpio_set` | `(port, pin, value) → int` | Set the output level of a configured output pin |
 | `ove_gpio_get` | `(port, pin) → int` | Read the current logical level (returns 0 or 1, or negative on error) |
-| `ove_gpio_irq_register` | `(port, pin, mode, callback, user_data) → int` | Register an interrupt callback; does not enable the interrupt |
+| `ove_gpio_irq_register` | `(port, pin, mode, callback, user_data) → int` | Register a non-NULL interrupt callback; does not enable the interrupt. A line has one owner: a second registration returns `OVE_ERR_ALREADY_EXISTS` |
 | `ove_gpio_irq_enable` | `(port, pin) → int` | Enable a previously registered GPIO interrupt |
 | `ove_gpio_irq_disable` | `(port, pin) → int` | Disable an interrupt without unregistering the callback |
+| `ove_gpio_irq_unregister` | `(port, pin) → int` | Disable the interrupt and release the line so it can be registered again |
 
 The interrupt callback type is:
 

@@ -138,6 +138,19 @@ pub fn irq_disable(pin: GpioPin) -> Result<()> {
     Error::from_code(rc)
 }
 
+/// Unregister a GPIO interrupt, releasing the line so it can be registered again.
+///
+/// Disables the interrupt and frees the registration; the inverse of
+/// [`irq_register`].  The callback and user data are no longer used once this
+/// returns `Ok`.
+///
+/// # Errors
+/// Returns an error if the pin has no registration.
+pub fn irq_unregister(pin: GpioPin) -> Result<()> {
+    let rc = unsafe { bindings::ove_gpio_irq_unregister(pin.port, pin.pin) };
+    Error::from_code(rc)
+}
+
 // ---------------------------------------------------------------------------
 // Fixed-mode pin newtypes — `embedded_hal::digital::{OutputPin, InputPin}`
 // trait targets.  Created via constructors that pre-configure the

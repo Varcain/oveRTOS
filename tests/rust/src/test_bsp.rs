@@ -36,18 +36,22 @@ fn test_gpio_set_get() {
     assert!(val >= 0);
 }
 
+unsafe extern "C" fn irq_cb(_port: u32, _pin: u32, _user_data: *mut core::ffi::c_void) {}
+
 fn test_gpio_irq() {
     unsafe {
         ove::bsp::gpio_irq_register(
             0, 0,
             ove::bsp::GpioIrqMode::Rising,
-            None,
+            Some(irq_cb),
             core::ptr::null_mut(),
         )
         .unwrap();
     }
     ove::bsp::gpio_irq_enable(0, 0).unwrap();
     ove::bsp::gpio_irq_disable(0, 0).unwrap();
+    // The BSP aliases have no unregister; release the line for the suites that follow.
+    ove::gpio::irq_unregister(ove::gpio::GpioPin::new(0, 0)).unwrap();
 }
 
 pub fn run() -> (usize, usize) {

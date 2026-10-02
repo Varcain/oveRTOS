@@ -121,6 +121,21 @@ namespace ove::gpio
 	return from_rc(ove_gpio_irq_disable(port, pin));
 }
 
+/**
+ * @brief Unregisters the interrupt for a GPIO pin, releasing the line.
+ *
+ * Disables the interrupt and frees the registration so the pin can be
+ * registered again; the inverse of irq_register().
+ * @param[in] port GPIO port index.
+ * @param[in] pin  Pin number within the port.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
+ */
+[[nodiscard]] inline Result<void> irq_unregister(unsigned int port, unsigned int pin) noexcept
+{
+	return from_rc(ove_gpio_irq_unregister(port, pin));
+}
+
 } /* namespace ove::gpio */
 
 #endif /* CONFIG_OVE_GPIO */

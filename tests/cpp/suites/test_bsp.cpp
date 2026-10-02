@@ -26,13 +26,19 @@ static void test_cpp_bsp_gpio_set_get(void **state)
 	assert_true(ove::bsp::gpio_get(0, 0).has_value());
 }
 
+static void bsp_gpio_irq_cb(unsigned int, unsigned int, void *)
+{
+}
+
 static void test_cpp_bsp_gpio_irq(void **state)
 {
 	(void)state;
-	assert_true(ove::bsp::gpio_irq_register(0, 0, OVE_GPIO_IRQ_RISING, nullptr, nullptr)
+	assert_true(ove::bsp::gpio_irq_register(0, 0, OVE_GPIO_IRQ_RISING, bsp_gpio_irq_cb, nullptr)
 			    .has_value());
 	assert_true(ove::bsp::gpio_irq_enable(0, 0).has_value());
 	assert_true(ove::bsp::gpio_irq_disable(0, 0).has_value());
+	/* The BSP aliases have no unregister; release the line for later suites. */
+	assert_true(ove::gpio::irq_unregister(0, 0).has_value());
 }
 
 int test_cpp_bsp_run(void)

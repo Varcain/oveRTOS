@@ -1247,10 +1247,11 @@ fn testBspGpioIrq() !void {
     try ove.gpio.irqRegister(0, 0, 0x01, gpioIrqCallback);
     try ove.gpio.irqEnable(0, 0);
     try ove.gpio.irqDisable(0, 0);
+    try ove.gpio.irqUnregister(0, 0);
 }
 
 // ---------------------------------------------------------------------------
-// GPIO tests (3)
+// GPIO tests (4)
 // ---------------------------------------------------------------------------
 
 fn testGpioSetGet() !void {
@@ -1262,6 +1263,16 @@ fn testGpioIrq() !void {
     try ove.gpio.irqRegister(0, 0, 0x01, gpioIrqCallback);
     try ove.gpio.irqEnable(0, 0);
     try ove.gpio.irqDisable(0, 0);
+    try ove.gpio.irqUnregister(0, 0);
+}
+
+fn testGpioIrqSingleOwner() !void {
+    try ove.gpio.irqRegister(0, 0, 0x01, gpioIrqCallback);
+    try expectErrorIs(ove.gpio.irqRegister(0, 0, 0x02, gpioIrqCallback), error.AlreadyExists);
+    try ove.gpio.irqUnregister(0, 0);
+    try ove.gpio.irqRegister(0, 0, 0x02, gpioIrqCallback);
+    try ove.gpio.irqUnregister(0, 0);
+    try expectError(ove.gpio.irqUnregister(0, 0));
 }
 
 fn testGpioInvalidPort() !void {
@@ -2050,6 +2061,7 @@ pub fn main() void {
     runSuite("GPIO", &.{
         .{ .name = "set_get", .func = testGpioSetGet },
         .{ .name = "irq", .func = testGpioIrq },
+        .{ .name = "irq_single_owner", .func = testGpioIrqSingleOwner },
         .{ .name = "invalid_port", .func = testGpioInvalidPort },
     });
 

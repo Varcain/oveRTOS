@@ -16,18 +16,22 @@ fn test_gpio_set_get() {
     assert!(val >= 0);
 }
 
+unsafe extern "C" fn irq_cb(_port: u32, _pin: u32, _user_data: *mut core::ffi::c_void) {}
+
 fn test_gpio_irq() {
     unsafe {
         ove::bsp::gpio_irq_register(
             0, 0,
             ove::bsp::GpioIrqMode::Rising,
-            None,
+            Some(irq_cb),
             core::ptr::null_mut(),
         )
         .unwrap();
     }
     ove::bsp::gpio_irq_enable(0, 0).unwrap();
     ove::bsp::gpio_irq_disable(0, 0).unwrap();
+    // The BSP aliases have no unregister; release the line for the tests that follow.
+    ove::gpio::irq_unregister(GpioPin::new(0, 0)).unwrap();
 }
 
 fn test_gpio_invalid_port() {
@@ -68,19 +72,55 @@ fn test_gpio_high_level_modes() {
 fn test_gpio_high_level_irq() {
     let p = GpioPin::new(0, 0);
     unsafe {
-        ove::gpio::irq_register(p, GpioIrqMode::Rising, None, core::ptr::null_mut()).unwrap();
+        ove::gpio::irq_register(p, GpioIrqMode::Rising, Some(irq_cb), core::ptr::null_mut())
+            .unwrap();
     }
     ove::gpio::irq_enable(p).unwrap();
     ove::gpio::irq_disable(p).unwrap();
 
     let p2 = GpioPin::new(0, 1);
     unsafe {
-        ove::gpio::irq_register(p2, GpioIrqMode::Falling, None, core::ptr::null_mut()).unwrap();
+        ove::gpio::irq_register(p2, GpioIrqMode::Falling, Some(irq_cb), core::ptr::null_mut())
+            .unwrap();
     }
     let p3 = GpioPin::new(0, 2);
     unsafe {
-        ove::gpio::irq_register(p3, GpioIrqMode::Both, None, core::ptr::null_mut()).unwrap();
+        ove::gpio::irq_register(p3, GpioIrqMode::Both, Some(irq_cb), core::ptr::null_mut())
+            .unwrap();
     }
+    for pin in [p, p2, p3] {
+        ove::gpio::irq_unregister(pin).unwrap();
+    }
+}
+
+fn test_gpio_high_level_irq_single_owner() {
+    let p = GpioPin::new(0, 0);
+    unsafe {
+        ove::gpio::irq_register(p, GpioIrqMode::Rising, Some(irq_cb), core::ptr::null_mut())
+            .unwrap();
+        let again =
+            ove::gpio::irq_register(p, GpioIrqMode::Falling, Some(irq_cb), core::ptr::null_mut());
+        assert_eq!(again, Err(ove::Error::AlreadyExists));
+    }
+    ove::gpio::irq_unregister(p).unwrap();
+    unsafe {
+        ove::gpio::irq_register(p, GpioIrqMode::Falling, Some(irq_cb), core::ptr::null_mut())
+            .unwrap();
+    }
+    ove::gpio::irq_unregister(p).unwrap();
+    assert!(ove::gpio::irq_unregister(p).is_err());
+}
+
+fn test_gpio_high_level_irq_rejects_null_callback() {
+    let rc = unsafe {
+        ove::gpio::irq_register(
+            GpioPin::new(0, 0),
+            GpioIrqMode::Rising,
+            None,
+            core::ptr::null_mut(),
+        )
+    };
+    assert_eq!(rc, Err(ove::Error::InvalidParam));
 }
 
 fn test_gpio_high_level_invalid_port() {
@@ -99,6 +139,8 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_gpio_high_level_configure_set_get),
             test_entry!(test_gpio_high_level_modes),
             test_entry!(test_gpio_high_level_irq),
+            test_entry!(test_gpio_high_level_irq_single_owner),
+            test_entry!(test_gpio_high_level_irq_rejects_null_callback),
             test_entry!(test_gpio_high_level_invalid_port),
         ],
     )

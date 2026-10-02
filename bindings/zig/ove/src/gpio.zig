@@ -115,3 +115,13 @@ pub fn irqEnable(port: u32, pin: u32) Error!void {
 pub fn irqDisable(port: u32, pin: u32) Error!void {
     try err.fromCode(c.ove_gpio_irq_disable(port, pin));
 }
+
+/// Unregister a GPIO interrupt, releasing the pin so it can be registered again.
+///
+/// Disables the interrupt and frees the registration; the inverse of
+/// `irqRegister()`. A context passed to `irqRegisterWithContext()` is no
+/// longer referenced once this returns.
+/// Returns `Error` if the pin has no registration.
+pub fn irqUnregister(port: u32, pin: u32) Error!void {
+    try err.fromCode(c.ove_gpio_irq_unregister(port, pin));
+}
