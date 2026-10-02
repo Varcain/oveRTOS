@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -46,6 +48,8 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
@@ -66,6 +70,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
@@ -89,6 +95,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential clang
@@ -109,6 +117,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
@@ -129,6 +139,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
@@ -149,6 +161,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
@@ -172,6 +186,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
@@ -192,6 +208,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev
@@ -221,6 +239,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install Rust nightly with Miri
         uses: dtolnay/rust-toolchain@nightly
@@ -236,6 +256,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential xz-utils
@@ -259,6 +281,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential xz-utils
@@ -279,6 +303,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       # Needs every binding toolchain at once: g++ (C++), cmake+libclang
       # (Rust stub build + bindgen), and the Zig toolchain (fetched by the
@@ -314,6 +340,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -336,6 +364,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -378,6 +408,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -415,6 +447,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -454,6 +488,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -486,6 +522,8 @@ jobs:
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |

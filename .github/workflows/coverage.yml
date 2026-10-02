@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
@@ -33,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
@@ -51,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev lcov
@@ -81,6 +87,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -102,6 +110,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -122,6 +132,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -162,6 +174,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -188,6 +202,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -215,6 +231,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: |
@@ -270,6 +288,8 @@ jobs:
       - qemu-zephyr-coverage
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install lcov
         run: sudo apt-get update && sudo apt-get install -y lcov
