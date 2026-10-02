@@ -160,9 +160,10 @@ macro(ove_zephyr_add_common_includes)
     # this from the vendored dl/lvgl root, but Zephyr's module layout only exposes
     # lvgl/src.  Add the root here so the app sources stay engine-neutral.  Appended last
     # (lowest priority) so it can't shadow Zephyr's own lvgl.h wrapper; no-op if absent.
-    if(EXISTS "${ZEPHYR_BASE}/../modules/lib/gui/lvgl/lvgl.h")
-        target_include_directories(app PRIVATE
-            ${ZEPHYR_BASE}/../modules/lib/gui/lvgl)
+    # Take the root from Zephyr's module list: a patched build's ZEPHYR_BASE is a worktree
+    # under .ove-worktrees/, so it is not a sibling of the west modules/ directory.
+    if(DEFINED ZEPHYR_LVGL_MODULE_DIR AND EXISTS "${ZEPHYR_LVGL_MODULE_DIR}/lvgl.h")
+        target_include_directories(app PRIVATE ${ZEPHYR_LVGL_MODULE_DIR})
     endif()
 
     # ETL — header-only fixed-capacity containers for C++ apps.  Added
