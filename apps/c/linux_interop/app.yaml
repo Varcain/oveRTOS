@@ -1,6 +1,7 @@
 lang: c
 config_name: linux_interop
 description: "Linux personality interop demo — Full compatibility profile"
+allconfigs_skip: "embeds the Buildroot rootfs at CONFIG_OVE_BUILDROOT, built outside this tree"
 sources:
   - src/app.c
   - src/network_smoke.c

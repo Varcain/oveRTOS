@@ -11,12 +11,9 @@ permissions:
   contents: read
 
 # Builds every app/*.yaml config for each <board>.<rtos> pair using
-# `make allconfigs-<board>.<rtos>`. This includes the supported Linux
-# personality matrix on FreeRTOS, NuttX, and Zephyr:
-#   Minimal            linux_interop_minimal
-#   Full compatibility linux_interop
-#   Diagnostic         linux_interop_diagnostic
-#   Hardened           linux_interop_hardened
+# `make allconfigs-<board>.<rtos>`. Apps that set `allconfigs_skip` are
+# reported as skipped: the Linux personality apps (linux_interop{,_minimal,
+# _diagnostic,_hardened}) embed a Buildroot rootfs built outside this tree.
 # Splitting per board/rtos keeps disk usage bounded on GitHub-hosted runners.
 
 jobs:

@@ -1,6 +1,7 @@
 lang: c
 config_name: linux_interop_minimal
 description: "Linux personality interop demo — Minimal profile"
+allconfigs_skip: "embeds the Buildroot rootfs at CONFIG_OVE_BUILDROOT, built outside this tree"
 sources:
   - ../linux_interop/src/app.c
   - ../linux_interop/src/network_smoke.c

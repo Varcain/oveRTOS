@@ -34,13 +34,17 @@ class _TerminationRequested(Exception):
 
 
 def _discover_apps(ove_dir):
-    """Return sorted list of (config_name, incompatible_boards) tuples
-    discovered from app.yaml files.
+    """Return sorted list of (config_name, incompatible_boards, skip_reason)
+    tuples discovered from app.yaml files.
 
     `incompatible_boards` is a list of board directory names (e.g.
     `["host", "wasm"]`); empty when the app sets no such field. Used to
     skip board/rtos combos an app cannot satisfy (e.g. apps that need
     CONFIG_OVE_ASYNC on a board that has no irq backend).
+
+    `skip_reason` is the app's `allconfigs_skip` string, or None. It keeps
+    an app out of every matrix, for apps that need inputs built outside
+    this tree (e.g. a Buildroot rootfs).
     """
     import yaml
     apps_dir = os.path.join(ove_dir, "apps")
@@ -57,8 +61,11 @@ def _discover_apps(ove_dir):
         incompat = data.get("incompatible_boards") or []
         if not isinstance(incompat, list):
             incompat = []
-        found[name] = sorted(str(b) for b in incompat)
-    return sorted(found.items())
+        skip = data.get("allconfigs_skip")
+        found[name] = (sorted(str(b) for b in incompat),
+                       str(skip) if skip else None)
+    return sorted((name, incompat, skip)
+                  for name, (incompat, skip) in found.items())
 
 
 def _discover_defconfigs(app_dir):
@@ -184,20 +191,22 @@ def _cmd_allconfigs(args):
     results = []
     total = len(apps)
     spec_pair = f"{board}.{rtos}"
-    for i, (app, incompat) in enumerate(apps, 1):
+    for i, (app, incompat, app_skip) in enumerate(apps, 1):
         print(f"\n{'=' * 60}")
         # Entries are either bare board names (`host`, skip on any rtos)
         # or `<board>.<rtos>` (skip only that pair — used for board/rtos
         # combos that lack a C-side driver, e.g. STM32F7 ETH driver lives
         # in drivers/freertos so the NuttX/Zephyr combos won't link).
         skip_reason = None
-        if board in incompat:
-            skip_reason = board
+        if app_skip is not None:
+            skip_reason = app_skip
+        elif board in incompat:
+            skip_reason = f"incompatible_boards includes {board}"
         elif spec_pair in incompat:
-            skip_reason = spec_pair
+            skip_reason = f"incompatible_boards includes {spec_pair}"
         if skip_reason is not None:
             print(f"[{i}/{total}] Skipping {board}.{rtos}.{app}"
-                  f" (incompatible_boards includes {skip_reason})")
+                  f" ({skip_reason})")
             print(f"{'=' * 60}")
             results.append({"app": app, "ok": True, "skipped": True,
                             "seconds": 0.0})

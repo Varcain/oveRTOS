@@ -1,6 +1,7 @@
 lang: c
 config_name: linux_interop_hardened
 description: "Linux personality interop demo — Hardened profile"
+allconfigs_skip: "embeds the Buildroot rootfs at CONFIG_OVE_BUILDROOT, built outside this tree"
 sources:
   - ../linux_interop/src/app.c
   - ../linux_interop/src/network_smoke.c
