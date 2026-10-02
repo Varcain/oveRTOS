@@ -42,6 +42,9 @@ static void freertos_thread_wrapper(void *param)
 	struct ove_thread *s = (struct ove_thread *)param;
 	void (*entry)(void *) = s->entry;
 	void *arg = s->arg;
+	/* A thread that outranks its creator runs inside xTaskCreateStatic, before the
+	 * creator tags it: tag itself first, so ove_thread_get_self() works from entry. */
+	vTaskSetApplicationTaskTag(NULL, (TaskHookFunction_t)s);
 	entry(arg);
 	/* Dekker-style join handshake (paired with wait_for_worker_exit()):
 	 *   1. publish exited = 1

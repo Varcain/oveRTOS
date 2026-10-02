@@ -16,6 +16,7 @@ OVE_TEST_STACK(s_th_stack, 4096);
 
 static atomic_int g_flag;
 static atomic_intptr_t g_arg_val;
+static atomic_intptr_t g_self_seen;
 static atomic_int g_keep_running;
 
 /* Bounded wait for an atomic_int flag — the stdatomic analogue of the
@@ -57,6 +58,13 @@ static void entry_capture_arg(void *arg)
 {
 	atomic_store(&g_arg_val, (intptr_t)arg);
 	atomic_store(&g_flag, 1); /* signal "arg captured" for wait_for_atomic */
+}
+
+static void entry_record_self(void *arg)
+{
+	(void)arg;
+	atomic_store(&g_self_seen, (intptr_t)ove_thread_get_self());
+	atomic_store(&g_flag, 1);
 }
 
 static void entry_spin(void *arg)
@@ -136,6 +144,27 @@ static void test_get_self(void **state)
 	/* In main thread, stub may return NULL since main isn't a ove thread.
 	   Just verify it doesn't crash. */
 	ove_thread_get_self();
+}
+
+/* A thread that outranks its creator can start running inside the create call; it must
+ * already resolve itself there, or ove_thread_should_stop(ove_thread_get_self()) could
+ * never become true for it. */
+static void test_get_self_before_create_returns(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_self_seen, 0);
+	ove_thread_t h = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "t_self", entry_record_self, NULL,
+					   OVE_PRIO_HIGH, 4096, s_th_stack));
+#else
+	OVE_TEST_ASSERT_OK(
+		ove_thread_create(&h, "t_self", entry_record_self, NULL, OVE_PRIO_HIGH, 4096));
+#endif
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	assert_int_equal(atomic_load(&g_self_seen), (intptr_t)h);
+	ove_test_thread_destroy(h);
 }
 
 /* 7. set_priority no crash */
@@ -375,6 +404,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_yield),
 		cmocka_unit_test(test_start_scheduler),
 		cmocka_unit_test(test_get_self),
+		cmocka_unit_test(test_get_self_before_create_returns),
 		cmocka_unit_test_teardown(test_set_priority, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_get_state_running, teardown_stop_spin),
 		cmocka_unit_test(test_get_state_terminated),

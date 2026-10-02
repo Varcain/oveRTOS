@@ -29,12 +29,9 @@ OVE_TEST_STACK(s_stack_a, 2048);
 /* ── default state: should_stop is false ────────────────────────────── */
 
 struct flag_ctx {
-	/* Handle of the worker thread itself.  Filled by the parent before
-	 * spawn; the worker uses this instead of ove_thread_get_self() to
-	 * avoid a race on backends (e.g. FreeRTOS) where the per-thread
-	 * "self" lookup is populated by the parent AFTER xTaskCreate
-	 * returns — the worker can start running and call get_self() before
-	 * that completes, yielding NULL. */
+	/* Handle of the worker thread itself, filled by the parent before
+	 * spawn. (ove_thread_get_self() would also work from the worker:
+	 * test_thread.c covers a worker that runs before its create returns.) */
 	ove_thread_t self;
 	volatile int observed_false_before_request;
 	volatile int observed_true_after_request;
