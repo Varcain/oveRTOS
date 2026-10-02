@@ -66,16 +66,15 @@ seq.append(rf"printf '{FP_CASE[1]}; echo RC_{FP_CASE[0]}=$?\n'; sleep 5")
 # `mpufault` with no valid mode is a real exec that returns 2 without faulting,
 # which distinguishes "a new guest ran" from "the shell printed something".
 #
-# ONE sleeper. Concurrent-guest budgets differ per target — the STM32 (8 MB
-# SDRAM pools) holds ~5 beside init/getty/inetd, the an500 (-m 16) far fewer —
-# and this must leave room for the faulter AND the reuse probe on top of the
-# sibling. Asking for more turns a containment test into a resource test: the
-# faulter never starts, and "no fault was contained" looks the same as "the
-# fault escaped". One sibling is enough to prove a fault does not take its
-# neighbours with it.
-seq.append(r"printf 'sleep 30 &\n'; sleep 2")
+# The sibling is inetd, parked in accept() beside init and the shell: an extra
+# background sleeper would not fit the an500 FreeRTOS profile (LXP_NREG=4, the
+# remote-exec stage costs a region), and the faulter would never start — "no
+# fault was contained" would look the same as "the fault escaped". init respawns
+# inetd, so the same pid before and after the fault proves it was not taken down.
+seq.append(r"printf 'ps; echo PS_BEFORE\n'; sleep 3")
 seq.append(r"printf 'segv; echo RC_conc=$?\n'; sleep 5")
 seq.append(r"printf 'mpufault bogus; echo RC_reuse=$?\n'; sleep 5")
+seq.append(r"printf 'ps; echo PS_AFTER\n'; sleep 3")
 seq.append(r"printf 'uname -a\n'; sleep 3")
 seq.append(r"printf 'poweroff\n'; sleep 4")
 
@@ -132,6 +131,19 @@ if rc_of("conc") != 139:
 if rc_of("reuse") != 2:
     failures.append(f"concurrent: no guest could exec after the fault "
                     f"(exit {rc_of('reuse')}, want 2) — released capacity not reusable")
+
+
+def inetd_pid(before_marker):
+    """The inetd pid `ps` listed just before @p before_marker, or None."""
+    end = text.find(f"\n{before_marker}")
+    m = re.findall(r"^\s*(\d+)\s+\S+\s+\d+\s+\S+\s+\S*inetd", text[:end], re.M) if end >= 0 else []
+    return m[-1] if m else None
+
+
+sibling_before, sibling_after = inetd_pid("PS_BEFORE"), inetd_pid("PS_AFTER")
+if not sibling_before or sibling_before != sibling_after:
+    failures.append(f"concurrent: sibling inetd pid {sibling_before} before the fault, "
+                    f"{sibling_after} after — the fault took a sibling down")
 
 # The host must never fault, and the shell must outlive every case.
 if re.search(r"HardFault|Default_Handler|panic", text):
