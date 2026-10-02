@@ -189,9 +189,9 @@ void vApplicationTickHook(void)
 	if (callback)
 		callback();
 #if (configGENERATE_RUN_TIME_STATS == 1)
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	/* QEMU has no DWT, so its run-time-stat counter advances with SysTick.
 	 * Hardware builds use the wrap-stitched DWT counter instead. */
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	ove_runtime_counter_ms++;
 #endif
 #endif

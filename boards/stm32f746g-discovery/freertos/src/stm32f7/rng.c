@@ -32,8 +32,7 @@ static int g_last_word_valid;
  * 48 MHz from HSE(25 MHz) / PLLM(25) * PLLN(432) / PLLQ(9). */
 static int rng_clock_valid(void)
 {
-	if ((RCC->CR & RCC_CR_PLLRDY) == 0u ||
-	    (RCC->DCKCFGR2 & RCC_DCKCFGR2_CK48MSEL) != 0u)
+	if ((RCC->CR & RCC_CR_PLLRDY) == 0u || (RCC->DCKCFGR2 & RCC_DCKCFGR2_CK48MSEL) != 0u)
 		return 0;
 
 	uint32_t pll = RCC->PLLCFGR;

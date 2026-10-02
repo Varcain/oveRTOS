@@ -139,8 +139,7 @@ static inline void ove_console_write(const char *buf, unsigned int len)
 	(void)buf;
 	(void)len;
 }
-static inline int ove_console_set_ready_callback(ove_console_ready_fn callback,
-						  const void *context)
+static inline int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *context)
 {
 	(void)callback;
 	(void)context;

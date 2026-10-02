@@ -399,11 +399,9 @@ static void test_fs_adapter_async_completion(void **state)
 		ops->request_owner(owner);
 		__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
 		__atomic_store_n(&g_fs_ready_context, NULL, __ATOMIC_RELAXED);
-		assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
-				 LXP_ERR_WOULD_BLOCK);
+		assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_ERR_WOULD_BLOCK);
 		for (unsigned int i = 0;
-		     i < 100000u && __atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED) == 0u;
-		     i++)
+		     i < 100000u && __atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED) == 0u; i++)
 			ove_thread_yield();
 		assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
 		assert_ptr_equal(__atomic_load_n(&g_fs_ready_context, __ATOMIC_RELAXED),
@@ -414,11 +412,9 @@ static void test_fs_adapter_async_completion(void **state)
 	ops->request_owner(42u);
 	__atomic_store_n(&g_fs_kicks, 0u, __ATOMIC_RELAXED);
 	__atomic_store_n(&g_fs_ready_context, NULL, __ATOMIC_RELAXED);
-	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle),
-			 LXP_ERR_WOULD_BLOCK);
+	assert_int_equal(ops->file_open(path, LXP_FS_O_READ, &handle), LXP_ERR_WOULD_BLOCK);
 	for (unsigned int i = 0;
-	     i < 100000u && __atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED) == 0u;
-	     i++)
+	     i < 100000u && __atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED) == 0u; i++)
 		ove_thread_yield();
 	assert_int_equal(__atomic_load_n(&g_fs_kicks, __ATOMIC_RELAXED), 1u);
 	assert_ptr_equal(__atomic_load_n(&g_fs_ready_context, __ATOMIC_RELAXED),
@@ -1073,8 +1069,8 @@ static void test_rt_scope_reports_unavailable_when_disabled(void **state)
 static void test_error_translation_is_exhaustive(void **state)
 {
 	(void)state;
-#define CHECK_PAIR(ove, lxp)                                                                       \
-	assert_int_equal(lxp_err_from_ove(ove), lxp);                                              \
+#define CHECK_PAIR(ove, lxp)                          \
+	assert_int_equal(lxp_err_from_ove(ove), lxp); \
 	assert_int_equal(ove_err_from_lxp(lxp), ove);
 	LXP_OVE_ERR_PAIRS(CHECK_PAIR)
 #undef CHECK_PAIR

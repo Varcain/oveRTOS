@@ -159,7 +159,7 @@ typedef struct ove_flat {
 	uintptr_t interp_loadmap; /**< FDPIC dynamic: the interpreter (ld.so) loadmap → r8 at
 				   *   entry; 0 for static. Filled by the launcher, not the
 				   *   loader (which loads one object at a time). */
-	int region_exec;     /**< A @c copy_text load put the program's own text INTO @c region
+	int region_exec;	  /**< A @c copy_text load put the program's own text INTO @c region
 			      *   (a remote/RAM exec), so the engine must map the region EXECUTABLE
 			      *   (RWX — W^X-relaxed for this process). 0 for the normal XIP-text load. */
 } ove_flat_t;

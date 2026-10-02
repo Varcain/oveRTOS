@@ -67,8 +67,7 @@ void ove_run(void)
 	ove_thread_start_scheduler();
 }
 
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 static long app_semihost(unsigned long op, void *arg)
 {
 	register unsigned long r0 __asm__("r0") = op;
@@ -89,8 +88,7 @@ void ove_app_exit(unsigned int status)
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	*aircr = value;
 	__asm__ volatile("dsb 0xf" ::: "memory");
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || \
-	defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 	unsigned long block[2] = {0x20026u /* ADP_Stopped_ApplicationExit */, status};
 	(void)app_semihost(0x20 /* SYS_EXIT_EXTENDED */, block);
 #elif defined(CONFIG_OVE_RTOS_POSIX)

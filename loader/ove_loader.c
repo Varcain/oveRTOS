@@ -789,7 +789,9 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 				memcpy((uint8_t *)region, img + p_off, p_filesz);
 				seg_addr = (uint32_t)(uintptr_t)region;
 			} else {
-				seg_addr = (uint32_t)(uintptr_t)(img + p_off); /* shared in-place from the cpio */
+				seg_addr =
+					(uint32_t)(uintptr_t)(img +
+							      p_off); /* shared in-place from the cpio */
 			}
 		} else {
 			uint8_t *d = base + (p_vaddr - rw_lo);
@@ -853,7 +855,8 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	 * applying .rel.dyn here would double-bias R_ARM_RELATIVE. Only a STATIC exec relocates
 	 * here (nothing else would). Every address goes through fdpic_rt: the rel/symtab are read
 	 * from the in-place text, the relocated GOT slots written in the per-process RW region. */
-	for (uint32_t o = 0; !is_interp && !is_dynamic && rel0 && o + rel_ent <= rel_sz; o += rel_ent) {
+	for (uint32_t o = 0; !is_interp && !is_dynamic && rel0 && o + rel_ent <= rel_sz;
+	     o += rel_ent) {
 		const uint8_t *r = rel0 + o;
 		uint32_t r_offset = le32(r), r_info = le32(r + 4);
 		uint32_t r_type = r_info & 0xffu, r_sym = r_info >> 8;
@@ -869,7 +872,8 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 			 * STB_LOCAL symbol, mapped through the loadmap; got = the module GOT. An
 			 * UNDEFINED (weak EH) symbol → null {0,0} so the crt's guarded call skips it. */
 			const uint8_t *sym =
-				(const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, sym_v) + r_sym * 16u;
+				(const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, sym_v) +
+				r_sym * 16u;
 			uint32_t w0 = 0, w1 = 0;
 			if (sym_v && le16(sym + 14) != 0) { /* st_shndx != SHN_UNDEF */
 				uint32_t fnv = le32(sym + 4);
@@ -886,7 +890,8 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 			 * caller's "if (funcptr) call" guard skips it rather than dereferencing a
 			 * {0,0} descriptor and branching to 0. */
 			const uint8_t *sym =
-				(const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, sym_v) + r_sym * 16u;
+				(const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, sym_v) +
+				r_sym * 16u;
 			uint32_t descr = 0;
 			if (sym_v && le16(sym + 14) != 0) { /* defined (st_shndx != SHN_UNDEF) */
 				for (uint32_t p = 0; p + rel_ent <= rel_sz; p += rel_ent) {
@@ -919,8 +924,9 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	/* bytes consumed from the TRUE region base: the reserved+copied text (copy_text only) plus
 	 * the RW block + loadmap + descriptor pool. The launcher lays the stack out above this. */
 	prog->region_used = text_a + pool_off + pool_used;
-	prog->text_base = copy_text ? (uintptr_t)region	       /* copied into the region head */
-				    : (uintptr_t)(img + text_off); /* shared IN-PLACE from the cpio */
+	prog->text_base = copy_text
+				  ? (uintptr_t)region		 /* copied into the region head */
+				  : (uintptr_t)(img + text_off); /* shared IN-PLACE from the cpio */
 	prog->text_size = text_sz;
 	prog->data_base = (uintptr_t)fdpic_rt(lm, nload, data_v); /* RW block in the region */
 	prog->data_size = data_fsz;
@@ -934,7 +940,8 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	prog->phdr = copy_text ? ((uintptr_t)region + (e_phoff - text_off))
 			       : (uintptr_t)(img + e_phoff);
 	prog->phnum = e_phnum;
-	prog->region_exec = copy_text; /* the engine maps the region executable for a RAM-text exec */
+	prog->region_exec =
+		copy_text; /* the engine maps the region executable for a RAM-text exec */
 	prog->is_dynamic = is_dynamic; /* exec with DT_NEEDED → caller loads + enters ld.so */
 	prog->got = got_base;	       /* DT_PLTGOT base */
 	/* PT_DYNAMIC runtime addr — for an interpreter this is r9 at entry (uClibc-ng's FDPIC

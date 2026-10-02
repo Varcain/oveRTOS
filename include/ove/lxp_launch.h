@@ -33,7 +33,7 @@ typedef struct ove_lxp_guest_exit_info {
 	int ppid;
 	int status;
 	const char *comm; /**< Valid only for the duration of the callback. */
-	uint8_t reason;  /**< @c OVE_LXP_EXIT_REASON_* */
+	uint8_t reason;	  /**< @c OVE_LXP_EXIT_REASON_* */
 	uint8_t signal;
 	uint16_t _pad;
 	uint32_t detail;

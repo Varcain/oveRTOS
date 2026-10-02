@@ -262,7 +262,8 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 	for (struct pbuf *q = p; q != NULL; q = q->next) {
 		const uint8_t *s = (const uint8_t *)q->payload;
 		for (uint16_t i = 0; i < q->len; i++)
-			buf[off + i] = s[i]; /* byte-wise: Device dest allows only aligned accesses */
+			buf[off + i] =
+				s[i]; /* byte-wise: Device dest allows only aligned accesses */
 		off += q->len;
 	}
 	__DSB(); /* ensure the Device writes have drained before the DMA reads */

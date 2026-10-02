@@ -334,9 +334,9 @@ sys_thread_t sys_thread_new(const char *name, lwip_thread_fn thread, void *arg, 
 	(void)stacksize;
 	for (int i = 0; i < CONFIG_OVE_NET_LWIP_SYS_THREAD_POOL; i++) {
 		if (!s_thread_pool[i].in_use) {
-			s_thread_pool[i].handle = xTaskCreateStatic(
-				thread, name, THREAD_STACK_WORDS, arg, uprio,
-				s_thread_pool[i].stack, &s_thread_pool[i].tcb);
+			s_thread_pool[i].handle =
+				xTaskCreateStatic(thread, name, THREAD_STACK_WORDS, arg, uprio,
+						  s_thread_pool[i].stack, &s_thread_pool[i].tcb);
 			s_thread_pool[i].in_use = 1;
 			task = s_thread_pool[i].handle;
 			break;

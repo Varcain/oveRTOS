@@ -168,7 +168,8 @@ void ove_freertos_lxp_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc);
 
 FAULT_GPR void ove_freertos_lxp_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc)
 {
-	fault_puts("\n!!! HOST FAULT (privileged/host context - not a guest, cannot contain)\n!!! pc=0x");
+	fault_puts(
+		"\n!!! HOST FAULT (privileged/host context - not a guest, cannot contain)\n!!! pc=0x");
 	fault_puthex(pc);
 	fault_puts(" cfsr=0x");
 	fault_puthex(cfsr);
@@ -189,7 +190,8 @@ FAULT_GPR void ove_freertos_lxp_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_
  * reboots. */
 __attribute__((no_stack_protector)) void __stack_chk_fail(void)
 {
-	fault_puts("\n!!! STACK SMASH detected (host stack corrupted) - halting; watchdog will reset\n");
+	fault_puts(
+		"\n!!! STACK SMASH detected (host stack corrupted) - halting; watchdog will reset\n");
 	__disable_irq();
 	for (;;) {
 	}

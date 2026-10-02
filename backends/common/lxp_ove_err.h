@@ -19,53 +19,53 @@
 #include "ove/types.h"
 
 /* The error pairs, one per row: X(oveRTOS code, LXP code). */
-#define LXP_OVE_ERR_PAIRS(X)                                                                       \
-	X(OVE_OK, LXP_OK)                                                                          \
-	X(OVE_ERR_NOT_REGISTERED, LXP_ERR_NOT_REGISTERED)                                          \
-	X(OVE_ERR_INVALID_PARAM, LXP_ERR_INVALID_PARAM)                                            \
-	X(OVE_ERR_NO_MEMORY, LXP_ERR_NO_MEMORY)                                                    \
-	X(OVE_ERR_TIMEOUT, LXP_ERR_TIMEOUT)                                                        \
-	X(OVE_ERR_NOT_SUPPORTED, LXP_ERR_NOT_SUPPORTED)                                            \
-	X(OVE_ERR_QUEUE_FULL, LXP_ERR_QUEUE_FULL)                                                  \
-	X(OVE_ERR_NET_REFUSED, LXP_ERR_NET_REFUSED)                                                \
-	X(OVE_ERR_NET_UNREACHABLE, LXP_ERR_NET_UNREACHABLE)                                        \
-	X(OVE_ERR_NET_ADDR_IN_USE, LXP_ERR_NET_ADDR_IN_USE)                                        \
-	X(OVE_ERR_NET_RESET, LXP_ERR_NET_RESET)                                                    \
-	X(OVE_ERR_NET_DNS_FAIL, LXP_ERR_NET_DNS_FAIL)                                              \
-	X(OVE_ERR_NET_CLOSED, LXP_ERR_NET_CLOSED)                                                  \
-	X(OVE_ERR_WOULD_BLOCK, LXP_ERR_WOULD_BLOCK)                                                \
-	X(OVE_ERR_EOF, LXP_ERR_EOF)                                                                \
-	X(OVE_ERR_NOT_FOUND, LXP_ERR_NOT_FOUND)                                                    \
-	X(OVE_ERR_NET_ADDR_NOT_AVAILABLE, LXP_ERR_NET_ADDR_NOT_AVAILABLE)                          \
-	X(OVE_ERR_ALREADY_EXISTS, LXP_ERR_ALREADY_EXISTS)                                          \
-	X(OVE_ERR_NO_SPACE, LXP_ERR_NO_SPACE)                                                      \
-	X(OVE_ERR_NOT_DIR, LXP_ERR_NOT_DIR)                                                        \
-	X(OVE_ERR_IS_DIR, LXP_ERR_IS_DIR)                                                          \
-	X(OVE_ERR_NOT_EMPTY, LXP_ERR_NOT_EMPTY)                                                    \
-	X(OVE_ERR_READ_ONLY, LXP_ERR_READ_ONLY)                                                    \
-	X(OVE_ERR_IO, LXP_ERR_IO)                                                                  \
-	X(OVE_ERR_BUSY, LXP_ERR_BUSY)                                                              \
-	X(OVE_ERR_NAME_TOO_LONG, LXP_ERR_NAME_TOO_LONG)                                            \
-	X(OVE_ERR_BAD_HANDLE, LXP_ERR_BAD_HANDLE)                                                  \
-	X(OVE_ERR_PERMISSION, LXP_ERR_PERMISSION)                                                  \
+#define LXP_OVE_ERR_PAIRS(X)                                              \
+	X(OVE_OK, LXP_OK)                                                 \
+	X(OVE_ERR_NOT_REGISTERED, LXP_ERR_NOT_REGISTERED)                 \
+	X(OVE_ERR_INVALID_PARAM, LXP_ERR_INVALID_PARAM)                   \
+	X(OVE_ERR_NO_MEMORY, LXP_ERR_NO_MEMORY)                           \
+	X(OVE_ERR_TIMEOUT, LXP_ERR_TIMEOUT)                               \
+	X(OVE_ERR_NOT_SUPPORTED, LXP_ERR_NOT_SUPPORTED)                   \
+	X(OVE_ERR_QUEUE_FULL, LXP_ERR_QUEUE_FULL)                         \
+	X(OVE_ERR_NET_REFUSED, LXP_ERR_NET_REFUSED)                       \
+	X(OVE_ERR_NET_UNREACHABLE, LXP_ERR_NET_UNREACHABLE)               \
+	X(OVE_ERR_NET_ADDR_IN_USE, LXP_ERR_NET_ADDR_IN_USE)               \
+	X(OVE_ERR_NET_RESET, LXP_ERR_NET_RESET)                           \
+	X(OVE_ERR_NET_DNS_FAIL, LXP_ERR_NET_DNS_FAIL)                     \
+	X(OVE_ERR_NET_CLOSED, LXP_ERR_NET_CLOSED)                         \
+	X(OVE_ERR_WOULD_BLOCK, LXP_ERR_WOULD_BLOCK)                       \
+	X(OVE_ERR_EOF, LXP_ERR_EOF)                                       \
+	X(OVE_ERR_NOT_FOUND, LXP_ERR_NOT_FOUND)                           \
+	X(OVE_ERR_NET_ADDR_NOT_AVAILABLE, LXP_ERR_NET_ADDR_NOT_AVAILABLE) \
+	X(OVE_ERR_ALREADY_EXISTS, LXP_ERR_ALREADY_EXISTS)                 \
+	X(OVE_ERR_NO_SPACE, LXP_ERR_NO_SPACE)                             \
+	X(OVE_ERR_NOT_DIR, LXP_ERR_NOT_DIR)                               \
+	X(OVE_ERR_IS_DIR, LXP_ERR_IS_DIR)                                 \
+	X(OVE_ERR_NOT_EMPTY, LXP_ERR_NOT_EMPTY)                           \
+	X(OVE_ERR_READ_ONLY, LXP_ERR_READ_ONLY)                           \
+	X(OVE_ERR_IO, LXP_ERR_IO)                                         \
+	X(OVE_ERR_BUSY, LXP_ERR_BUSY)                                     \
+	X(OVE_ERR_NAME_TOO_LONG, LXP_ERR_NAME_TOO_LONG)                   \
+	X(OVE_ERR_BAD_HANDLE, LXP_ERR_BAD_HANDLE)                         \
+	X(OVE_ERR_PERMISSION, LXP_ERR_PERMISSION)                         \
 	X(OVE_ERR_CROSS_DEVICE, LXP_ERR_CROSS_DEVICE)
 
 /* oveRTOS codes LXP has no counterpart for, one per row: X(oveRTOS code, the LXP code
  * that reports it). They cross into LXP only. */
-#define LXP_OVE_ERR_FOLDS(X)                                                                       \
-	X(OVE_ERR_INVAL, LXP_ERR_INVALID_PARAM)                                                    \
-	X(OVE_ERR_QUEUE_EMPTY, LXP_ERR_WOULD_BLOCK)                                                \
-	X(OVE_ERR_ML_FAILED, LXP_ERR_IO)                                                           \
-	X(OVE_ERR_BUS_NACK, LXP_ERR_IO)                                                            \
-	X(OVE_ERR_BUS_BUSY, LXP_ERR_IO)                                                            \
+#define LXP_OVE_ERR_FOLDS(X)                        \
+	X(OVE_ERR_INVAL, LXP_ERR_INVALID_PARAM)     \
+	X(OVE_ERR_QUEUE_EMPTY, LXP_ERR_WOULD_BLOCK) \
+	X(OVE_ERR_ML_FAILED, LXP_ERR_IO)            \
+	X(OVE_ERR_BUS_NACK, LXP_ERR_IO)             \
+	X(OVE_ERR_BUS_BUSY, LXP_ERR_IO)             \
 	X(OVE_ERR_BUS_ERROR, LXP_ERR_IO)
 
 /* An oveRTOS result as the LXP contracts report it. */
 static inline int lxp_err_from_ove(int err)
 {
 	switch (err) {
-#define LXP_OVE_ERR_TO_LXP(ove, lxp)                                                               \
-	case ove:                                                                                  \
+#define LXP_OVE_ERR_TO_LXP(ove, lxp) \
+	case ove:                    \
 		return lxp;
 		LXP_OVE_ERR_PAIRS(LXP_OVE_ERR_TO_LXP)
 		LXP_OVE_ERR_FOLDS(LXP_OVE_ERR_TO_LXP)
@@ -79,8 +79,8 @@ static inline int lxp_err_from_ove(int err)
 static inline int ove_err_from_lxp(int err)
 {
 	switch (err) {
-#define LXP_OVE_ERR_TO_OVE(ove, lxp)                                                               \
-	case lxp:                                                                                  \
+#define LXP_OVE_ERR_TO_OVE(ove, lxp) \
+	case lxp:                    \
 		return ove;
 		LXP_OVE_ERR_PAIRS(LXP_OVE_ERR_TO_OVE)
 #undef LXP_OVE_ERR_TO_OVE

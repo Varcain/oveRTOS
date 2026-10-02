@@ -504,8 +504,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			out[i].stack_used = 0u;
 			out[i].valid_fields = 0u;
 
-			if (wrapper &&
-			    __atomic_load_n(&wrapper->exited, __ATOMIC_ACQUIRE) != 0u) {
+			if (wrapper && __atomic_load_n(&wrapper->exited, __ATOMIC_ACQUIRE) != 0u) {
 				out[i].state = OVE_THREAD_STATE_TERMINATED;
 			} else {
 				switch (task.eCurrentState) {

@@ -89,13 +89,15 @@ int ove_hal_dma2d_submit(const ove_dma2d_desc_t *op)
 	if (!is_r2m) {
 		DMA2D->FGMAR = (uint32_t)op->fg_addr;
 		DMA2D->FGOR = op->fg_offset;
-		DMA2D->FGPFCCR = (op->fg_cf & 0xfu) | (op->fg_alpha_mode << 16) | (op->fg_alpha << 24);
+		DMA2D->FGPFCCR = (op->fg_cf & 0xfu) | (op->fg_alpha_mode << 16) |
+				 (op->fg_alpha << 24);
 		DMA2D->FGCOLR = op->fg_color;
 	}
 	if (is_blend) {
 		DMA2D->BGMAR = (uint32_t)op->bg_addr;
 		DMA2D->BGOR = op->bg_offset;
-		DMA2D->BGPFCCR = (op->bg_cf & 0xfu) | (op->bg_alpha_mode << 16) | (op->bg_alpha << 24);
+		DMA2D->BGPFCCR = (op->bg_cf & 0xfu) | (op->bg_alpha_mode << 16) |
+				 (op->bg_alpha << 24);
 		DMA2D->BGCOLR = op->bg_color;
 	}
 
@@ -130,8 +132,8 @@ int ove_hal_dma2d_selftest(void)
 	d.w = 8u;
 	d.h = 8u;
 	d.out_addr = (uintptr_t)buf;
-	d.out_cf = 2u;		 /* RGB565 */
-	d.out_color = 0xF800u;	 /* red */
+	d.out_cf = 2u;	       /* RGB565 */
+	d.out_color = 0xF800u; /* red */
 	int r = ove_hal_dma2d_submit(&d);
 	if (r != OVE_OK)
 		return r;

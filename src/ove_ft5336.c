@@ -58,8 +58,8 @@ int ove_ft5336_init(void)
 	/* An address-only probe is not supported consistently by every RTOS I2C
 	 * backend. Reading and validating the documented ID proves both the bus
 	 * transaction and that the expected controller is present. */
-	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_CHIP_ID, &chip_id,
-			     sizeof(chip_id), I2C_TMO_NS) != OVE_OK ||
+	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_CHIP_ID, &chip_id, sizeof(chip_id),
+			     I2C_TMO_NS) != OVE_OK ||
 	    chip_id != FT5336_CHIP_ID) {
 		ove_i2c_deinit(g_ft_i2c);
 		g_ft_i2c = NULL;
@@ -90,8 +90,8 @@ int ove_ft5336_read(int *x, int *y, int *pressed)
 {
 	uint8_t status;
 	uint8_t buf[4]; /* P1_XH, P1_XL, P1_YH, P1_YL */
-	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_TD_STATUS, &status,
-			     sizeof(status), I2C_TMO_NS) != OVE_OK)
+	if (ove_i2c_reg_read(g_ft_i2c, FT5336_ADDR, FT5336_REG_TD_STATUS, &status, sizeof(status),
+			     I2C_TMO_NS) != OVE_OK)
 		return OVE_ERR_BUS_ERROR;
 
 	int touches = status & 0x0f;

@@ -12,33 +12,31 @@
 
 #include "lxp/arch/cortex_m_memory.h"
 
-#define OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER                         \
-	{                                                                    \
-		.model = LXP_CPU_MEM_UNCACHED,                                 \
-		.normal_attrs = LXP_CPU_MEM_ATTR_NORMAL_NC_NSH,                \
+#define OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER            \
+	{                                                       \
+		.model = LXP_CPU_MEM_UNCACHED,                  \
+		.normal_attrs = LXP_CPU_MEM_ATTR_NORMAL_NC_NSH, \
 	}
 
-#define OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER                        \
-	{                                                                    \
-		.model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,                      \
-		.normal_attrs = LXP_CPU_MEM_ATTR_NORMAL_WBWA_NSH,              \
-		.flags = LXP_CPU_MEMORY_DCACHE_ENABLED |                       \
-			 LXP_CPU_MEMORY_ICACHE_ENABLED,                        \
-		.dcache_line_size = 32u,                                       \
-		.icache_line_size = 32u,                                       \
-		.dcache_size = 4u * 1024u,                                     \
-		.icache_size = 4u * 1024u,                                     \
+#define OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER                                   \
+	{                                                                               \
+		.model = LXP_CPU_MEM_COHERENT_SAME_ATTRS,                               \
+		.normal_attrs = LXP_CPU_MEM_ATTR_NORMAL_WBWA_NSH,                       \
+		.flags = LXP_CPU_MEMORY_DCACHE_ENABLED | LXP_CPU_MEMORY_ICACHE_ENABLED, \
+		.dcache_line_size = 32u,                                                \
+		.icache_line_size = 32u,                                                \
+		.dcache_size = 4u * 1024u,                                              \
+		.icache_size = 4u * 1024u,                                              \
 	}
 
 #if defined(__arm__) || defined(__thumb__)
-static inline int ove_lxp_validate_uncached_memory_contract(
-	const lxp_cpu_memory_contract_t *declared,
-	const struct lxp_cortex_m_cache_geometry *geometry)
+static inline int
+ove_lxp_validate_uncached_memory_contract(const lxp_cpu_memory_contract_t *declared,
+					  const struct lxp_cortex_m_cache_geometry *geometry)
 {
 	(void)declared;
 	(void)geometry;
-	return (LXP_CORTEX_M_SCB_CCR &
-		(LXP_CORTEX_M_SCB_CCR_DC | LXP_CORTEX_M_SCB_CCR_IC)) == 0u
+	return (LXP_CORTEX_M_SCB_CCR & (LXP_CORTEX_M_SCB_CCR_DC | LXP_CORTEX_M_SCB_CCR_IC)) == 0u
 		       ? LXP_OK
 		       : LXP_ERR_INVALID_PARAM;
 }

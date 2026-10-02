@@ -15,8 +15,7 @@
 #include "lxp/ports/zephyr.h"
 #endif
 
-static void svc_metrics_copy(struct ove_lxp_svc_metrics *out,
-			     const lxp_rt_svc_metrics_t *source)
+static void svc_metrics_copy(struct ove_lxp_svc_metrics *out, const lxp_rt_svc_metrics_t *source)
 {
 	out->calls = source->calls;
 	out->min_cycles = source->min_cycles;
@@ -34,8 +33,7 @@ void ove_lxp_svc_metrics_snapshot(struct ove_lxp_svc_metrics *total)
 	svc_metrics_copy(total, &source);
 }
 
-void ove_lxp_svc_metrics_take(struct ove_lxp_svc_metrics *window,
-			      struct ove_lxp_svc_metrics *total)
+void ove_lxp_svc_metrics_take(struct ove_lxp_svc_metrics *window, struct ove_lxp_svc_metrics *total)
 {
 	lxp_rt_svc_metrics_t source_window;
 	lxp_rt_svc_metrics_t source_total;

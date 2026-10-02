@@ -33,12 +33,12 @@ extern "C" {
 /** Why the MCU last came out of reset. */
 typedef enum ove_reset_cause {
 	OVE_RESET_UNKNOWN = 0, /**< no latch, or a cause not distinguished here */
-	OVE_RESET_POWER_ON,	 /**< power-on / power-down reset (cold boot) */
-	OVE_RESET_PIN,	   /**< external reset pin (NRST) */
-	OVE_RESET_SOFTWARE,	 /**< software-requested reset (SYSRESETREQ) */
-	OVE_RESET_WATCHDOG,	 /**< a watchdog timed out — the host stopped feeding */
-	OVE_RESET_BROWNOUT,	 /**< brown-out detector tripped */
-	OVE_RESET_LOW_POWER, /**< illegal low-power / standby exit */
+	OVE_RESET_POWER_ON,    /**< power-on / power-down reset (cold boot) */
+	OVE_RESET_PIN,	       /**< external reset pin (NRST) */
+	OVE_RESET_SOFTWARE,    /**< software-requested reset (SYSRESETREQ) */
+	OVE_RESET_WATCHDOG,    /**< a watchdog timed out — the host stopped feeding */
+	OVE_RESET_BROWNOUT,    /**< brown-out detector tripped */
+	OVE_RESET_LOW_POWER,   /**< illegal low-power / standby exit */
 } ove_reset_cause_t;
 
 /** Human-readable name for @p c (never NULL). */

@@ -353,9 +353,9 @@ int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af
 		return OVE_ERR_INVALID_PARAM;
 	(void)af;
 	struct ove_socket *s = (struct ove_socket *)storage;
-	int stype = (type == OVE_SOCK_DGRAM)  ? SOCK_DGRAM
-		    : (type == OVE_SOCK_RAW)  ? SOCK_RAW /* needs CONFIG_NET_ICMP_SOCKET */
-					      : SOCK_STREAM;
+	int stype = (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM
+		    : (type == OVE_SOCK_RAW) ? SOCK_RAW /* needs CONFIG_NET_ICMP_SOCKET */
+					     : SOCK_STREAM;
 	connect_state_reset(s);
 	int r = psock_socket(AF_INET, stype, proto, PSOCK(s));
 	if (r < 0)
@@ -620,7 +620,8 @@ int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint6
 	int _held;
 	if (!net_op_begin(&_held)) {
 		if (revents)
-			*revents = 0; /* contended in handler: report not-ready, coordinator re-polls */
+			*revents =
+				0; /* contended in handler: report not-ready, coordinator re-polls */
 		return OVE_OK;
 	}
 	int r = psock_poll(PSOCK(sock), &fds, true);

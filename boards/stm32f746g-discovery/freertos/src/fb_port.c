@@ -22,7 +22,7 @@
 #include "board_desc.h"
 
 #include "stm32746g_discovery_lcd.h" /* BSP_LCD_*, LCD_FB_START_ADDRESS */
-#include "bsp.h"			     /* bsp_sdram_fixup */
+#include "bsp.h"		     /* bsp_sdram_fixup */
 
 #include <string.h>
 

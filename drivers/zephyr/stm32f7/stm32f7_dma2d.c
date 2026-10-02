@@ -107,13 +107,15 @@ int ove_hal_dma2d_submit(const ove_dma2d_desc_t *op)
 	if (!is_r2m) {
 		D2(D2_FGMAR) = (uint32_t)op->fg_addr;
 		D2(D2_FGOR) = op->fg_offset;
-		D2(D2_FGPFCCR) = (op->fg_cf & 0xfu) | (op->fg_alpha_mode << 16) | (op->fg_alpha << 24);
+		D2(D2_FGPFCCR) = (op->fg_cf & 0xfu) | (op->fg_alpha_mode << 16) |
+				 (op->fg_alpha << 24);
 		D2(D2_FGCOLR) = op->fg_color;
 	}
 	if (is_blend) {
 		D2(D2_BGMAR) = (uint32_t)op->bg_addr;
 		D2(D2_BGOR) = op->bg_offset;
-		D2(D2_BGPFCCR) = (op->bg_cf & 0xfu) | (op->bg_alpha_mode << 16) | (op->bg_alpha << 24);
+		D2(D2_BGPFCCR) = (op->bg_cf & 0xfu) | (op->bg_alpha_mode << 16) |
+				 (op->bg_alpha << 24);
 		D2(D2_BGCOLR) = op->bg_color;
 	}
 	D2(D2_IFCR) = 0x3fu; /* clear all interrupt flags */

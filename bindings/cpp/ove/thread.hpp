@@ -654,7 +654,7 @@ template <size_t StackSize = 0> class Thread
 	 */
 	[[nodiscard]] Result<struct ove_thread_stats> get_runtime_stats() const noexcept
 	{
-		struct ove_thread_stats stats{};
+		ove_thread_stats stats{};
 		const int rc = ove_thread_get_runtime_stats(handle_, &stats);
 		return from_rc(rc, stats);
 	}
@@ -804,7 +804,7 @@ struct MemStats {
 [[nodiscard]] inline Result<MemStats> get_mem_stats() noexcept
 {
 	MemStats stats{};
-	struct ove_mem_stats ms{};
+	ove_mem_stats ms{};
 	const int rc = ove_sys_get_mem_stats(&ms);
 	if (rc == OVE_OK) {
 		stats.total = ms.total;

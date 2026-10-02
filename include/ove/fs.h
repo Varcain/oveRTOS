@@ -391,8 +391,7 @@ static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
 	(void)mount_point;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_mount_volume(const struct ove_fs_volume *volume,
-				      const char *mount_point)
+static inline int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
 {
 	(void)volume;
 	(void)mount_point;

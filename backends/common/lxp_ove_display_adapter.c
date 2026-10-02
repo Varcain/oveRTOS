@@ -62,13 +62,25 @@ static int d_dma2d_init(void)
 static int d_dma2d_submit(const lxp_dma2d_op_t *op)
 {
 	ove_dma2d_desc_t d = {
-		.mode = op->mode, .w = op->w, .h = op->h,
-		.out_addr = op->out_addr, .out_offset = op->out_offset,
-		.out_cf = op->out_cf, .out_color = op->out_color,
-		.fg_addr = op->fg_addr, .fg_offset = op->fg_offset, .fg_cf = op->fg_cf,
-		.fg_color = op->fg_color, .fg_alpha_mode = op->fg_alpha_mode, .fg_alpha = op->fg_alpha,
-		.bg_addr = op->bg_addr, .bg_offset = op->bg_offset, .bg_cf = op->bg_cf,
-		.bg_color = op->bg_color, .bg_alpha_mode = op->bg_alpha_mode, .bg_alpha = op->bg_alpha,
+		.mode = op->mode,
+		.w = op->w,
+		.h = op->h,
+		.out_addr = op->out_addr,
+		.out_offset = op->out_offset,
+		.out_cf = op->out_cf,
+		.out_color = op->out_color,
+		.fg_addr = op->fg_addr,
+		.fg_offset = op->fg_offset,
+		.fg_cf = op->fg_cf,
+		.fg_color = op->fg_color,
+		.fg_alpha_mode = op->fg_alpha_mode,
+		.fg_alpha = op->fg_alpha,
+		.bg_addr = op->bg_addr,
+		.bg_offset = op->bg_offset,
+		.bg_cf = op->bg_cf,
+		.bg_color = op->bg_color,
+		.bg_alpha_mode = op->bg_alpha_mode,
+		.bg_alpha = op->bg_alpha,
 	};
 	return lxp_err_from_ove(ove_hal_dma2d_submit(&d));
 }

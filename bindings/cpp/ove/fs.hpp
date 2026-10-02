@@ -79,7 +79,7 @@ inline void unmount(const char *mount_point)
 /** @brief Query portable metadata for a path. */
 [[nodiscard]] inline Result<struct ove_fs_stat> stat(const char *path) noexcept
 {
-	struct ove_fs_stat value{};
+	struct ove_fs_stat value = {};
 	return from_rc(ove_fs_stat(path, &value), value);
 }
 

@@ -549,17 +549,17 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 		 * coordinator thread, and the coordinator's stack budget is tight. */
 		static uint8_t buf[20 + 512];
 		uint16_t tot = (uint16_t)(20u + len);
-		buf[0] = 0x45;			/* IPv4, IHL 5 */
-		buf[1] = 0;			/* DSCP/ECN */
-		buf[2] = (uint8_t)(tot >> 8);	/* total length */
+		buf[0] = 0x45;		      /* IPv4, IHL 5 */
+		buf[1] = 0;		      /* DSCP/ECN */
+		buf[2] = (uint8_t)(tot >> 8); /* total length */
 		buf[3] = (uint8_t)(tot & 0xff);
-		buf[4] = 0;			/* identification */
+		buf[4] = 0; /* identification */
 		buf[5] = 0;
-		buf[6] = 0;			/* flags / fragment offset */
+		buf[6] = 0; /* flags / fragment offset */
 		buf[7] = 0;
-		buf[8] = 64;			/* TTL */
-		buf[9] = (uint8_t)proto;	/* protocol (ICMP for ping) */
-		buf[10] = 0;			/* header checksum — filled by Zephyr */
+		buf[8] = 64;		 /* TTL */
+		buf[9] = (uint8_t)proto; /* protocol (ICMP for ping) */
+		buf[10] = 0;		 /* header checksum — filled by Zephyr */
 		buf[11] = 0;
 		if (src)
 			memcpy(&buf[12], src, 4);

@@ -24,18 +24,18 @@
 
 /* The guest storage: LXP_NREG program regions and dynamic pools and LXP_NSLOT
  * exec captures, with strides and counts taken from LXP's own constants. */
-#define LXP_OVE_PORT_STORAGE(programs, pools, captures)                                        \
-	.program_regions = (programs), .program_region_stride = LXP_PROG_REGION_SIZE,          \
-	.program_region_count = LXP_NREG, .dynamic_pools = (pools),                            \
-	.dynamic_pool_stride = LXP_DYN_POOL_SIZE, .dynamic_pool_count = LXP_NREG,              \
+#define LXP_OVE_PORT_STORAGE(programs, pools, captures)                               \
+	.program_regions = (programs), .program_region_stride = LXP_PROG_REGION_SIZE, \
+	.program_region_count = LXP_NREG, .dynamic_pools = (pools),                   \
+	.dynamic_pool_stride = LXP_DYN_POOL_SIZE, .dynamic_pool_count = LXP_NREG,     \
 	.exec_captures = (captures), .exec_capture_count = LXP_NSLOT
 
 /* oveRTOS time, memory statistics and thread reporting, plus the engine's
  * uname version string and memory-contract validator. */
-#define LXP_OVE_PORT_SERVICES(thread_list_fn, version, validator)                              \
-	.time_us = ove_time_get_us, .time_ns = ove_time_get_ns,                                \
-	.thread_list = (thread_list_fn), .mem_stats = lxp_ove_mem_stats_read,                  \
-	.system_version = (version), .validate_memory_contract = (validator)
+#define LXP_OVE_PORT_SERVICES(thread_list_fn, version, validator)                                \
+	.time_us = ove_time_get_us, .time_ns = ove_time_get_ns, .thread_list = (thread_list_fn), \
+	.mem_stats = lxp_ove_mem_stats_read, .system_version = (version),                        \
+	.validate_memory_contract = (validator)
 
 /* uname's version field: the engine's kernel version, then the oveRTOS and LXP
  * revisions. Linux's utsname field holds 65 bytes including the terminator. */

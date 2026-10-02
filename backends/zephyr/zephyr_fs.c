@@ -115,8 +115,7 @@ void ove_fs_unmount(const char *mount_point)
 int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
 {
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_sdmmc)
-	const struct device *dev =
-		DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_sdmmc));
+	const struct device *dev = DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_sdmmc));
 	struct stm32_sdmmc_metrics metrics;
 
 	if (out_metrics == NULL)
@@ -145,8 +144,7 @@ int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
 void ove_fs_media_metrics_reset(void)
 {
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_sdmmc)
-	const struct device *dev =
-		DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_sdmmc));
+	const struct device *dev = DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_sdmmc));
 
 	if (device_is_ready(dev))
 		stm32_sdmmc_reset_metrics(dev);

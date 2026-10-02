@@ -16,16 +16,14 @@ static uint32_t ccsidr(size_t line_size, size_t ways, size_t sets)
 	unsigned line_field = 0u;
 	for (size_t n = line_size; n > 16u; n >>= 1u)
 		line_field++;
-	return (uint32_t)line_field | ((uint32_t)(ways - 1u) << 3) |
-	       ((uint32_t)(sets - 1u) << 13);
+	return (uint32_t)line_field | ((uint32_t)(ways - 1u) << 3) | ((uint32_t)(sets - 1u) << 13);
 }
 
 static void test_stm32f746_cache_policy(void **state)
 {
 	(void)state;
 	struct lxp_cortex_m_cache_shape shape;
-	const lxp_cpu_memory_contract_t contract =
-		OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
+	const lxp_cpu_memory_contract_t contract = OVE_LXP_MEMORY_CONTRACT_STM32F746_INITIALIZER;
 
 	assert_int_equal(lxp_cortex_m_cache_shape_decode(ccsidr(32u, 4u, 32u), &shape), 0);
 	assert_int_equal(shape.line_size, contract.dcache_line_size);

@@ -150,7 +150,7 @@ extern void ove_backend_trace_task_blocking(void);
  * MPU_TYPE.DREGION = 16 and CPUID = 0x411fc272 (r1p2). The r0p0/r0p1 workaround stays OFF;
  * enabling it makes prvSetupMPU's configASSERT hang at boot. Our SVC vector is LXP's strong
  * SVC_Handler (not vPortSVCHandler) → configCHECK_HANDLER_INSTALLATION must be 0. */
-#define configUSE_MPU_WRAPPERS_V1                       1
+#define configUSE_MPU_WRAPPERS_V1 1
 /* 16, NOT 8: QEMU's mps2-an500 Cortex-M7 reports MPU_TYPE.DREGION=16, and the ARM_CM4_MPU port
  * SILENTLY SKIPS all MPU setup — the region programming AND the CTRL ENABLE|BACKGROUND(=PRIVDEFENA)
  * write — when configTOTAL_MPU_REGIONS != the hardware region count (port.c prvSetupMPU:
@@ -158,11 +158,11 @@ extern void ove_backend_trace_task_blocking(void);
  * scheduler start: prvRestoreContextOfFirstTask enables the MPU with no regions + PRIVDEFENA off, so
  * the first privileged instruction fetch is a MemManage IACCVIOL. The real STM32F746 M7 has 8 MPU
  * regions, so its own board config keeps 8. */
-#define configTOTAL_MPU_REGIONS                         16
-#define configENABLE_ERRATA_837070_WORKAROUND           0
-#define configCHECK_HANDLER_INSTALLATION                0
-#define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY     0
-#define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS      0
+#define configTOTAL_MPU_REGIONS 16
+#define configENABLE_ERRATA_837070_WORKAROUND 0
+#define configCHECK_HANDLER_INSTALLATION 0
+#define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY 0
+#define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS 0
 #endif /* CONFIG_OVE_LINUX */
 
 #endif /* FREERTOS_CONFIG_H */

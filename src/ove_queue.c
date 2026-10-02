@@ -23,8 +23,7 @@ int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 	size_t buffer_size = item_size * (size_t)max_items;
 	if (buffer_size > SIZE_MAX - sizeof(ove_queue_storage_t))
 		return OVE_ERR_INVALID_PARAM;
-	ove_queue_storage_t *storage =
-		OVE_BACKEND_MALLOC(sizeof(*storage) + buffer_size);
+	ove_queue_storage_t *storage = OVE_BACKEND_MALLOC(sizeof(*storage) + buffer_size);
 	if (!storage)
 		return OVE_ERR_NO_MEMORY;
 	void *buffer = storage + 1;
