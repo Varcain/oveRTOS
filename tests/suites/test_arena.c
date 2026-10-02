@@ -42,6 +42,10 @@ static void test_arena_init_rejects_bad(void **state)
 	assert_int_equal(ove_arena_init(NULL, s_buf, sizeof(s_buf)), OVE_ERR_INVALID_PARAM);
 	assert_int_equal(ove_arena_init(&a, NULL, sizeof(s_buf)), OVE_ERR_INVALID_PARAM);
 	assert_int_equal(ove_arena_init(&a, small, sizeof(small)), OVE_ERR_NO_MEMORY);
+	/* Too small even when alignment padding swallows the whole buffer: s_buf + 1 is 15
+	 * bytes short of the next OVE_ARENA_ALIGN boundary. */
+	assert_int_equal(ove_arena_init(&a, s_buf + 1, 8), OVE_ERR_NO_MEMORY);
+	assert_int_equal(ove_arena_init(&a, s_buf + 1, OVE_ARENA_ALIGN - 1), OVE_ERR_NO_MEMORY);
 }
 
 /* ── alloc ───────────────────────────────────────────────────────────── */

@@ -73,12 +73,11 @@ int ove_arena_init(ove_arena_t *arena, void *buf, size_t size)
 	uintptr_t raw = (uintptr_t)buf;
 	uintptr_t start = (raw + (OVE_ARENA_ALIGN - 1)) & ~(uintptr_t)(OVE_ARENA_ALIGN - 1);
 	size_t adjust = (size_t)(start - raw);
-	if (size <= adjust)
-		return OVE_ERR_INVALID_PARAM;
+	/* Too small for one block, including when the alignment padding takes it all. */
+	if (size <= adjust || size - adjust < ARENA_HDR + OVE_ARENA_ALIGN)
+		return OVE_ERR_NO_MEMORY;
 
 	size_t usable = size - adjust;
-	if (usable < ARENA_HDR + OVE_ARENA_ALIGN)
-		return OVE_ERR_NO_MEMORY;
 
 	arena->base = (uint8_t *)buf + adjust; /* == aligned `start`, via ptr arithmetic */
 	arena->size = usable;
