@@ -340,14 +340,20 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 /**
  * @brief Assertion macro used by static constructor macros on init failure.
  *
- * Defaults to @c assert().  Define @c OVE_STATIC_INIT_ASSERT before
- * including any oveRTOS header to override with a custom handler
- * (e.g. a board-specific panic routine).
+ * Defaults to @c assert() (which checks nothing under @c NDEBUG).  Define
+ * @c OVE_STATIC_INIT_ASSERT before including any oveRTOS header to override
+ * with a custom handler (e.g. a board-specific panic routine).
  */
 #include <assert.h>
 
 #ifndef OVE_STATIC_INIT_ASSERT
+#ifdef NDEBUG
+/* assert() expands to nothing under NDEBUG; still consume the condition, so a status
+ * kept only for this check is not an unused variable in release builds. */
+#define OVE_STATIC_INIT_ASSERT(cond) ((void)(cond))
+#else
 #define OVE_STATIC_INIT_ASSERT(cond) assert(cond)
+#endif
 #endif
 
 /**
