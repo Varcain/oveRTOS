@@ -78,9 +78,12 @@ done
 # the nearest ancestor holding a .config rather than assuming a fixed depth:
 # guessing wrong here disables the personality silently instead of failing.
 ove_ws_dir() {
-    local d
+    local d top
     d="$(dirname "$(realpath "$1")")"
-    while [ "${d}" != "/" ]; do
+    top="$(realpath "${OVE_DIR}")"
+    # Stop below the checkout: its .config only names the active workspace, so a
+    # unit-test ELF would otherwise run as a personality whenever that is a Linux app.
+    while [ "${d}" != "/" ] && [ "${d}" != "${top}" ]; do
         if [ -f "${d}/.config" ]; then
             printf '%s\n' "${d}"
             return 0
