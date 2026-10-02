@@ -323,6 +323,26 @@ int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t 
 	return ove_socket_open_ex(sock, storage, af, type, 0);
 }
 
+/* struct ove_socket.connect_state */
+enum {
+	CONNECT_IDLE,
+	CONNECT_DEFERRED, /* target stashed in the handler; the coordinator fires it */
+	CONNECT_INFLIGHT, /* psock_connect returned EINPROGRESS; not settled yet */
+};
+
+/* No connect pending, in flight or failed: a fresh socket, opened or accepted. */
+static void connect_state_reset(struct ove_socket *s)
+{
+	s->connect_state = CONNECT_IDLE;
+	s->connect_errno = 0;
+}
+
+/* Hold @p err (a positive errno) for ove_socket_get_error. */
+static void connect_failed(struct ove_socket *s, int err)
+{
+	s->connect_errno = (uint8_t)(err > 0 && err <= UINT8_MAX ? err : EIO);
+}
+
 int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
 		       ove_sock_type_t type, int proto)
 {
@@ -336,7 +356,7 @@ int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af
 	int stype = (type == OVE_SOCK_DGRAM)  ? SOCK_DGRAM
 		    : (type == OVE_SOCK_RAW)  ? SOCK_RAW /* needs CONFIG_NET_ICMP_SOCKET */
 					      : SOCK_STREAM;
-	s->connect_pending = 0;
+	connect_state_reset(s);
 	int r = psock_socket(AF_INET, stype, proto, PSOCK(s));
 	if (r < 0)
 		return psockerr(r);
@@ -397,15 +417,18 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 		 * psock_connect() there, where the wait is legal. */
 		memcpy(sock->caddr, addr->addr, 4);
 		sock->cport = addr->port;
-		sock->connect_pending = 1;
+		sock->connect_state = CONNECT_DEFERRED;
 		return OVE_ERR_TIMEOUT;
 	}
-	/* Thread context (the coordinator's own blocking connects: netfs / boot smoke). */
+	/* Thread context: the guest's connect, deferred to the coordinator, and the coordinator's
+	 * own connects (netfs / boot smoke). */
 	struct sockaddr_in sin;
 	sockaddr_to_nuttx(addr, &sin);
 	int r = psock_connect(PSOCK(sock), (struct sockaddr *)&sin, sizeof(sin));
 	if (r == 0)
 		return OVE_OK;
+	if (r == -EINPROGRESS)
+		sock->connect_state = CONNECT_INFLIGHT; /* settled by ove_socket_poll */
 	if (r == -EINPROGRESS || r == -EALREADY)
 		return OVE_ERR_TIMEOUT;
 	return psockerr(r);
@@ -447,6 +470,7 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 	net_op_end(_held);
 	if (r < 0)
 		return r == -EAGAIN ? OVE_ERR_TIMEOUT : psockerr(r);
+	connect_state_reset(cs); /* the storage may hold a closed socket's leftovers */
 	*client = cs;
 	return OVE_OK;
 }
@@ -563,16 +587,22 @@ int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint6
 	/* Fire a deferred connect (stashed by ove_socket_connect in the handler) now that we run in
 	 * the coordinator thread, where the connect's completion-wait is legal. Only in thread mode:
 	 * the guest may also poll() the connecting fd from the handler, which must NOT initiate. */
-	if (sock->connect_pending && !in_handler()) {
-		sock->connect_pending = 0;
+	if (sock->connect_state == CONNECT_DEFERRED && !in_handler()) {
+		sock->connect_state = CONNECT_IDLE;
 		struct sockaddr_in csin;
 		memset(&csin, 0, sizeof(csin));
 		csin.sin_family = AF_INET;
 		memcpy(&csin.sin_addr.s_addr, sock->caddr, 4);
 		csin.sin_port = htons(sock->cport);
-		(void)psock_connect(PSOCK(sock), (struct sockaddr *)&csin, sizeof(csin));
-		/* -EINPROGRESS expected; readiness is reported by the probe below (and subsequent
-		 * polls), and the module reads SO_ERROR via ove_socket_get_error to finalize. */
+		int cr = psock_connect(PSOCK(sock), (struct sockaddr *)&csin, sizeof(csin));
+		/* -EINPROGRESS is expected: readiness is reported by the probe below (and
+		 * subsequent polls), and the module reads SO_ERROR via ove_socket_get_error to
+		 * finalize. A connect that fails outright leaves nothing in SO_ERROR, so keep its
+		 * errno for ove_socket_get_error, or the module would take it for connected. */
+		if (cr == -EINPROGRESS)
+			sock->connect_state = CONNECT_INFLIGHT;
+		else if (cr < 0)
+			connect_failed(sock, -cr);
 	}
 	/* One-shot readiness probe on the raw socket (no fd). CRITICAL: cb == NULL so that if
 	 * the socket becomes ready between setup and teardown, poll_notify() sees a NULL cb and
@@ -597,6 +627,17 @@ int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint6
 	unsigned re = (r < 0) ? (unsigned)POLLERR : (unsigned)fds.revents;
 	if (r >= 0)
 		psock_poll(PSOCK(sock), &fds, false);
+	/* Settle an in-flight connect once it stops pending. A refused one leaves SO_ERROR clear
+	 * (NuttX's TCP monitor only drops the connected flag on the peer's reset), so a socket
+	 * that is ready yet has no peer did not connect: report it as refused. */
+	if (sock->connect_state == CONNECT_INFLIGHT && (re & (POLLOUT | POLLERR | POLLHUP))) {
+		struct sockaddr_in peer;
+		socklen_t peer_len = sizeof(peer);
+		sock->connect_state = CONNECT_IDLE;
+		if (psock_getpeername(PSOCK(sock), (struct sockaddr *)&peer, &peer_len) ==
+		    -ENOTCONN)
+			connect_failed(sock, ECONNREFUSED);
+	}
 	net_op_end(_held);
 
 	unsigned out = 0;
@@ -608,6 +649,8 @@ int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint6
 		out |= OVE_SOCK_POLLERR;
 	if (re & POLLHUP)
 		out |= OVE_SOCK_POLLHUP;
+	if (sock->connect_errno)
+		out |= OVE_SOCK_POLLERR;
 	if (revents)
 		*revents = out;
 	return OVE_OK;
@@ -660,6 +703,11 @@ int ove_socket_get_error(ove_socket_t sock)
 		return OVE_ERR_INVALID_PARAM;
 	int soerr = 0;
 	socklen_t sl = sizeof(soerr);
+	if (sock->connect_errno) {
+		int deferred = sock->connect_errno;
+		sock->connect_errno = 0;
+		return errno_to_ove(deferred);
+	}
 	if (!psock_ok(PSOCK(sock)))
 		return OVE_ERR_NET_CLOSED;
 	int r = psock_getsockopt(PSOCK(sock), SOL_SOCKET, SO_ERROR, &soerr, &sl);

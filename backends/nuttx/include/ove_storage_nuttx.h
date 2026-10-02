@@ -242,10 +242,15 @@ struct ove_socket {
 	 * the guest that opened it) must be able to drive it. Opaque here so this widely
 	 * included header needn't pull in nuttx/net/net.h; nuttx_net.c casts + size-asserts. */
 	uint32_t _psock[6];
-	/* Deferred-connect state: a TCP connect's ARP/SYN completion-wait blocks, which corrupts
-	 * the scheduler if run in the SVCall handler, so ove_socket_connect stashes the target here
-	 * and parks; ove_socket_poll initiates the real psock_connect from the coordinator thread. */
-	uint8_t connect_pending;
+	/* Connect state (nuttx_net.c): a TCP connect's ARP/SYN completion-wait blocks, which
+	 * corrupts the scheduler if run in the SVCall handler, so ove_socket_connect stashes the
+	 * target here and parks; ove_socket_poll initiates the real psock_connect from the
+	 * coordinator thread. A connect that returned EINPROGRESS stays in flight until a poll
+	 * settles it. */
+	uint8_t connect_state;
+	/* errno of a connect that failed after it was started (e.g. ECONNREFUSED), held until
+	 * ove_socket_get_error reports it; 0 when there is none. */
+	uint8_t connect_errno;
 	uint8_t caddr[4]; /* IPv4 target, network order */
 	uint16_t cport;	  /* target port, host order */
 };
