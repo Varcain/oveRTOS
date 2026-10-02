@@ -19,3 +19,8 @@ ove = "ove.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.ruff.lint]
+# Pin the rules: the lint installs the newest ruff, and ruff 0.16 widened its default set
+# (adding FURB, PLW, BLE, I and more), which failed the lint on code it had accepted.
+select = ["E4", "E7", "E9", "F"]
