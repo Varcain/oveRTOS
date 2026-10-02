@@ -43,7 +43,7 @@ static void wq_create_destroy_run(void *ctx)
 static void wq_submit_setup(void *ctx)
 {
 	(void)ctx;
-	ove_sem_init(&work_sem, &work_sem_storage, 0, 1);
+	bench_check(ove_sem_init(&work_sem, &work_sem_storage, 0, 1));
 	ove_workqueue_init(&bench_wq, &bench_wq_storage, "bench_wq", OVE_PRIO_NORMAL,
 			   sizeof(bench_wq_stack), bench_wq_stack);
 	ove_work_init_static(&bench_work, &bench_work_storage, work_handler);
@@ -54,7 +54,7 @@ static void wq_submit_run(void *ctx)
 	(void)ctx;
 	work_executed = 0;
 	ove_work_submit(bench_wq, bench_work);
-	ove_sem_take(work_sem, OVE_MS(1000));
+	bench_check(ove_sem_take(work_sem, OVE_MS(1000)));
 }
 
 static void wq_submit_teardown(void *ctx)

@@ -25,7 +25,7 @@ static volatile int throughput_done;
 static void queue_send_recv_setup(void *ctx)
 {
 	(void)ctx;
-	ove_queue_init(&bench_q, &bench_q_storage, bench_q_buf, sizeof(uint32_t), 16);
+	bench_check(ove_queue_init(&bench_q, &bench_q_storage, bench_q_buf, sizeof(uint32_t), 16));
 }
 
 static void queue_send_recv_run(void *ctx)
@@ -34,8 +34,8 @@ static void queue_send_recv_run(void *ctx)
 	uint32_t val = 42;
 	uint32_t buf;
 
-	ove_queue_send(bench_q, &val, OVE_WAIT_FOREVER);
-	ove_queue_receive(bench_q, &buf, OVE_WAIT_FOREVER);
+	bench_check(ove_queue_send(bench_q, &val, OVE_WAIT_FOREVER));
+	bench_check(ove_queue_receive(bench_q, &buf, OVE_WAIT_FOREVER));
 }
 
 static void queue_send_recv_teardown(void *ctx)
@@ -51,7 +51,7 @@ static void queue_create_destroy_run(void *ctx)
 	(void)ctx;
 	ove_queue_t q;
 
-	ove_queue_create(&q, sizeof(uint32_t), 8);
+	bench_check(ove_queue_create(&q, sizeof(uint32_t), 8));
 	ove_queue_destroy(q);
 }
 #endif
@@ -64,7 +64,7 @@ static void producer_thread(void *arg)
 	uint32_t val = 0;
 
 	while (!throughput_done) {
-		ove_queue_send(bench_q, &val, OVE_WAIT_FOREVER);
+		bench_check(ove_queue_send(bench_q, &val, OVE_WAIT_FOREVER));
 		val++;
 	}
 }
@@ -73,7 +73,8 @@ static void queue_throughput_setup(void *ctx)
 {
 	(void)ctx;
 	throughput_done = 0;
-	ove_queue_init(&bench_q, &bench_q_storage, throughput_q_buf, sizeof(uint32_t), 64);
+	bench_check(
+		ove_queue_init(&bench_q, &bench_q_storage, throughput_q_buf, sizeof(uint32_t), 64));
 	ove_thread_init(&producer_th, &producer_th_storage, "q_prod", producer_thread, NULL,
 			OVE_PRIO_NORMAL, sizeof(producer_th_stack), producer_th_stack);
 }
@@ -83,7 +84,7 @@ static void queue_throughput_run(void *ctx)
 	(void)ctx;
 	uint32_t buf;
 
-	ove_queue_receive(bench_q, &buf, OVE_WAIT_FOREVER);
+	bench_check(ove_queue_receive(bench_q, &buf, OVE_WAIT_FOREVER));
 }
 
 static void queue_throughput_teardown(void *ctx)
@@ -93,7 +94,7 @@ static void queue_throughput_teardown(void *ctx)
 	/* Drain queue so producer unblocks */
 	uint32_t buf;
 
-	ove_queue_receive(bench_q, &buf, OVE_MS(100));
+	bench_check(ove_queue_receive(bench_q, &buf, OVE_MS(100)));
 	ove_thread_sleep_ms(10);
 	ove_thread_deinit(producer_th);
 	ove_queue_deinit(bench_q);
@@ -106,7 +107,7 @@ static ove_queue_t mem_queue;
 static void queue_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_queue_create(&mem_queue, sizeof(uint32_t), 8);
+	bench_check(ove_queue_create(&mem_queue, sizeof(uint32_t), 8));
 }
 
 static void queue_memory_teardown(void *ctx)

@@ -106,6 +106,16 @@ typedef struct {
 /* Harness API */
 void bench_run_case(const bench_case_t *bc, bench_result_t *result);
 
+/* A benchmark exercises a primitive for its cost, not its result, but the oveRTOS calls
+ * that can fail are OVE_NODISCARD. bench_check() takes such a result: a failure is
+ * counted, and the footer reports the count, instead of branching in the measured path. */
+extern unsigned int g_bench_failures;
+static inline void bench_check(int rc)
+{
+	if (rc != OVE_OK)
+		g_bench_failures++;
+}
+
 /* Output API */
 void bench_print_header(const char *suite_name);
 void bench_print_result(const bench_case_t *bc, const bench_result_t *result);

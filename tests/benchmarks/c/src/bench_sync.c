@@ -40,13 +40,13 @@ static volatile uint32_t contention_count;
 static void mutex_lock_unlock_setup(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_init(&bench_mtx, &bench_mtx_storage);
+	bench_check(ove_mutex_init(&bench_mtx, &bench_mtx_storage));
 }
 
 static void mutex_lock_unlock_run(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER);
+	bench_check(ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER));
 	ove_mutex_unlock(bench_mtx);
 }
 
@@ -68,7 +68,7 @@ static void mutex_create_destroy_run(void *ctx)
 	(void)ctx;
 	ove_mutex_t m;
 
-	ove_mutex_create(&m);
+	bench_check(ove_mutex_create(&m));
 	ove_mutex_destroy(m);
 }
 #endif
@@ -80,7 +80,7 @@ static void contention_thread(void *arg)
 	(void)arg;
 
 	while (!contention_done) {
-		ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER);
+		bench_check(ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER));
 		contention_count++;
 		ove_mutex_unlock(bench_mtx);
 	}
@@ -91,7 +91,7 @@ static void mutex_contention_setup(void *ctx)
 	(void)ctx;
 	contention_done = 0;
 	contention_count = 0;
-	ove_mutex_init(&bench_mtx, &bench_mtx_storage);
+	bench_check(ove_mutex_init(&bench_mtx, &bench_mtx_storage));
 	ove_thread_init(&contention_th, &contention_th_storage, "contention", contention_thread,
 			NULL, OVE_PRIO_NORMAL, sizeof(contention_th_stack), contention_th_stack);
 }
@@ -99,7 +99,7 @@ static void mutex_contention_setup(void *ctx)
 static void mutex_contention_run(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER);
+	bench_check(ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER));
 	contention_count++;
 	ove_mutex_unlock(bench_mtx);
 }
@@ -125,7 +125,7 @@ static ove_mutex_t mem_mutex;
 static void mutex_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_create(&mem_mutex);
+	bench_check(ove_mutex_create(&mem_mutex));
 }
 
 static void mutex_memory_teardown(void *ctx)
@@ -140,13 +140,13 @@ static void mutex_memory_teardown(void *ctx)
 static void sem_take_give_setup(void *ctx)
 {
 	(void)ctx;
-	ove_sem_init(&bench_sem, &bench_sem_storage, 1, 1);
+	bench_check(ove_sem_init(&bench_sem, &bench_sem_storage, 1, 1));
 }
 
 static void sem_take_give_run(void *ctx)
 {
 	(void)ctx;
-	ove_sem_take(bench_sem, OVE_WAIT_FOREVER);
+	bench_check(ove_sem_take(bench_sem, OVE_WAIT_FOREVER));
 	ove_sem_give(bench_sem);
 }
 
@@ -164,7 +164,7 @@ static void sem_create_destroy_run(void *ctx)
 	(void)ctx;
 	ove_sem_t s;
 
-	ove_sem_create(&s, 0, 1);
+	bench_check(ove_sem_create(&s, 0, 1));
 	ove_sem_destroy(s);
 }
 
@@ -173,7 +173,7 @@ static ove_sem_t mem_sem;
 static void sem_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_sem_create(&mem_sem, 0, 1);
+	bench_check(ove_sem_create(&mem_sem, 0, 1));
 }
 
 static void sem_memory_teardown(void *ctx)
@@ -198,7 +198,7 @@ static void evt_signaler(void *arg)
 
 	while (!evt_done) {
 		ove_event_signal(bench_evt);
-		ove_event_wait(bench_evt_ack, OVE_WAIT_FOREVER);
+		bench_check(ove_event_wait(bench_evt_ack, OVE_WAIT_FOREVER));
 	}
 }
 
@@ -206,8 +206,8 @@ static void event_signal_wait_setup(void *ctx)
 {
 	(void)ctx;
 	evt_done = 0;
-	ove_event_init(&bench_evt, &bench_evt_storage);
-	ove_event_init(&bench_evt_ack, &bench_evt_ack_storage);
+	bench_check(ove_event_init(&bench_evt, &bench_evt_storage));
+	bench_check(ove_event_init(&bench_evt_ack, &bench_evt_ack_storage));
 	ove_thread_init(&evt_th, &evt_th_storage, "evt_sig", evt_signaler, NULL, OVE_PRIO_NORMAL,
 			sizeof(evt_th_stack), evt_th_stack);
 }
@@ -215,7 +215,7 @@ static void event_signal_wait_setup(void *ctx)
 static void event_signal_wait_run(void *ctx)
 {
 	(void)ctx;
-	ove_event_wait(bench_evt, OVE_WAIT_FOREVER);
+	bench_check(ove_event_wait(bench_evt, OVE_WAIT_FOREVER));
 	ove_event_signal(bench_evt_ack);
 }
 
@@ -237,7 +237,7 @@ static ove_event_t mem_event;
 static void event_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_event_create(&mem_event);
+	bench_check(ove_event_create(&mem_event));
 }
 
 static void event_memory_teardown(void *ctx)
@@ -278,8 +278,8 @@ static void condvar_signal_wait_setup(void *ctx)
 {
 	(void)ctx;
 	cv_done = 0;
-	ove_mutex_init(&bench_cv_mtx, &bench_cv_mtx_storage);
-	ove_condvar_init(&bench_cv, &bench_cv_storage);
+	bench_check(ove_mutex_init(&bench_cv_mtx, &bench_cv_mtx_storage));
+	bench_check(ove_condvar_init(&bench_cv, &bench_cv_storage));
 	ove_thread_init(&cv_th, &cv_th_storage, "cv_sig", cv_signaler, NULL, OVE_PRIO_NORMAL,
 			sizeof(cv_th_stack), cv_th_stack);
 }
@@ -287,8 +287,8 @@ static void condvar_signal_wait_setup(void *ctx)
 static void condvar_signal_wait_run(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_lock(bench_cv_mtx, OVE_WAIT_FOREVER);
-	ove_condvar_wait(bench_cv, bench_cv_mtx, OVE_MS(10));
+	bench_check(ove_mutex_lock(bench_cv_mtx, OVE_WAIT_FOREVER));
+	bench_check(ove_condvar_wait(bench_cv, bench_cv_mtx, OVE_MS(10)));
 	ove_mutex_unlock(bench_cv_mtx);
 }
 
@@ -310,7 +310,7 @@ static ove_condvar_t mem_condvar;
 static void condvar_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_condvar_create(&mem_condvar);
+	bench_check(ove_condvar_create(&mem_condvar));
 }
 
 static void condvar_memory_teardown(void *ctx)
@@ -325,13 +325,13 @@ static void condvar_memory_teardown(void *ctx)
 static void rmtx_lock_unlock_setup(void *ctx)
 {
 	(void)ctx;
-	ove_recursive_mutex_init(&bench_rmtx, &bench_rmtx_storage);
+	bench_check(ove_recursive_mutex_init(&bench_rmtx, &bench_rmtx_storage));
 }
 
 static void rmtx_lock_unlock_run(void *ctx)
 {
 	(void)ctx;
-	ove_recursive_mutex_lock(bench_rmtx, OVE_WAIT_FOREVER);
+	bench_check(ove_recursive_mutex_lock(bench_rmtx, OVE_WAIT_FOREVER));
 	ove_recursive_mutex_unlock(bench_rmtx);
 }
 

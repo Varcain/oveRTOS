@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+unsigned int g_bench_failures;
+
 #if defined(CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* Direct register access for cache / accelerator disable so the bench
  * harness compiles identically against FreeRTOS, NuttX, and Zephyr —

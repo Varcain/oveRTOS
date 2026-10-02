@@ -30,7 +30,8 @@ static void compute_mix_setup(void *ctx)
 {
 	(void)ctx;
 	uint32_t ck = bench_kernel_mix(1u);
-	OVE_LOG_INF("compute kernel checksum: 0x%08x (expect 0x%08x)%s", ck, BENCH_KERNEL_CHECKSUM,
+	OVE_LOG_INF("compute kernel checksum: 0x%08x (expect 0x%08x)%s", (unsigned int)ck,
+		    (unsigned int)BENCH_KERNEL_CHECKSUM,
 		    ck == BENCH_KERNEL_CHECKSUM ? "" : "  <-- MISMATCH, lbench comparison invalid");
 }
 

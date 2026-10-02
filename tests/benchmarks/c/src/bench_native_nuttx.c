@@ -555,7 +555,7 @@ static const bench_case_t native_nuttx_cases[] = {
 	},
 	/* IPC: queue (NuttX mq_*).  No native byte-stream primitive on
 	 * NuttX (CONFIG_PIPES is off in the bench defconfig); the
-	 * `stream/*` rows in the wrapper bench have no native peer and
+	 * `stream/...` rows in the wrapper bench have no native peer and
 	 * are intentionally absent — same situation as `eventgroup` /
 	 * `workqueue` for FreeRTOS. */
 	{

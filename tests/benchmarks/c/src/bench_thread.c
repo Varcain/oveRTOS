@@ -77,7 +77,7 @@ static void pong_thread(void *arg)
 	(void)arg;
 
 	while (!ctx_switch_done) {
-		ove_sem_take(ping_sem, OVE_WAIT_FOREVER);
+		bench_check(ove_sem_take(ping_sem, OVE_WAIT_FOREVER));
 		ove_sem_give(pong_sem);
 	}
 }
@@ -86,8 +86,8 @@ static void ctx_switch_setup(void *ctx)
 {
 	(void)ctx;
 	ctx_switch_done = 0;
-	ove_sem_init(&ping_sem, &ping_sem_storage, 0, 1);
-	ove_sem_init(&pong_sem, &pong_sem_storage, 0, 1);
+	bench_check(ove_sem_init(&ping_sem, &ping_sem_storage, 0, 1));
+	bench_check(ove_sem_init(&pong_sem, &pong_sem_storage, 0, 1));
 	ove_thread_init(&bench_th, &bench_th_storage, "pong", pong_thread, NULL, OVE_PRIO_NORMAL,
 			sizeof(bench_th_stack), bench_th_stack);
 }
@@ -97,7 +97,7 @@ static void ctx_switch_run(void *ctx)
 	(void)ctx;
 	/* One round-trip = 2 context switches */
 	ove_sem_give(ping_sem);
-	ove_sem_take(pong_sem, OVE_WAIT_FOREVER);
+	bench_check(ove_sem_take(pong_sem, OVE_WAIT_FOREVER));
 }
 
 static void ctx_switch_teardown(void *ctx)

@@ -63,6 +63,10 @@ void bench_print_result(const bench_case_t *bc, const bench_result_t *result)
 void bench_print_footer(void)
 {
 	OVE_LOG("%s\n", DIVIDER);
+	if (g_bench_failures)
+		OVE_LOG("WARNING: %u oveRTOS call(s) failed during the benchmarks; results are "
+			"suspect\n",
+			g_bench_failures);
 }
 
 /* ─── JSON output (machine-readable, fed to scripts/bench_compare.py) ─
