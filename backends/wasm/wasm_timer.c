@@ -134,24 +134,6 @@ static void ensure_manager_started(void)
 
 /* ── Public API ────────────────────────────────────────────────────── */
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot)
-{
-	if (!timer || !storage || !callback)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_timer *t = (struct ove_timer *)storage;
-	memset(t, 0, sizeof(*t));
-	t->callback = callback;
-	t->user_data = user_data;
-	t->period_us = (uint64_t)period_ms * 1000;
-	t->one_shot = one_shot;
-	t->created = 1;
-	*timer = t;
-
-	ensure_manager_started();
-	return OVE_OK;
-}
-
 /* Round a nanosecond period to the manager's microsecond resolution,
  * clamping a sub-microsecond non-zero period up to 1 us. */
 static uint64_t ns_to_period_us(uint64_t period_ns)
@@ -188,64 +170,6 @@ void ove_timer_deinit(ove_timer_t timer)
 		pthread_mutex_unlock(&mgr_lock);
 	}
 }
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot)
-{
-	if (!timer || !callback)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
-	if (!t)
-		return OVE_ERR_NO_MEMORY;
-	memset(t, 0, sizeof(*t));
-	t->callback = callback;
-	t->user_data = user_data;
-	t->period_us = (uint64_t)period_ms * 1000;
-	t->one_shot = one_shot;
-	t->created = 1;
-	*timer = t;
-
-	ensure_manager_started();
-	return OVE_OK;
-}
-
-int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
-			uint64_t period_ns, int one_shot)
-{
-	if (!timer || !callback)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
-	if (!t)
-		return OVE_ERR_NO_MEMORY;
-	memset(t, 0, sizeof(*t));
-	t->callback = callback;
-	t->user_data = user_data;
-	t->period_us = ns_to_period_us(period_ns);
-	t->one_shot = one_shot;
-	t->created = 1;
-	*timer = t;
-
-	ensure_manager_started();
-	return OVE_OK;
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-void ove_timer_destroy(ove_timer_t timer)
-{
-	struct ove_timer *t = timer;
-	if (t) {
-		if (t->created) {
-			pthread_mutex_lock(&mgr_lock);
-			if (t->armed)
-				list_remove(t);
-			pthread_mutex_unlock(&mgr_lock);
-		}
-		OVE_BACKEND_FREE(t);
-	}
-}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_timer_start(ove_timer_t timer)
 {
