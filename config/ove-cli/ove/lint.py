@@ -42,10 +42,13 @@ def _run(cmd, cwd=None):
 def _glob(root, *exts):
     """Walk root and yield files matching any of *exts."""
     for d, _dirs, files in os.walk(root):
-        # Skip generated / vendored trees
+        # Skip generated / vendored trees, and modules/ (git submodules such as lxp,
+        # which follow their own project's style and which CI's lint job does not
+        # check out).
         parts = set(d.split(os.sep))
         if parts & {".git", "output", "dl", ".venv", "target", "build",
-                    "zig-cache", ".zig-cache", "node_modules", "__pycache__"}:
+                    "zig-cache", ".zig-cache", "node_modules", "__pycache__",
+                    "modules"}:
             continue
         for f in files:
             if any(f.endswith(e) for e in exts):
