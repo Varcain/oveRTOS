@@ -716,3 +716,28 @@ int ove_socket_get_error(ove_socket_t sock)
 		return psockerr(r);
 	return soerr ? errno_to_ove(soerr) : OVE_OK;
 }
+
+/* ---------- DNS ---------- */
+
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
+{
+	(void)timeout_ns;
+	if (!hostname || !addr)
+		return OVE_ERR_INVALID_PARAM;
+
+	struct addrinfo hints, *res;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+
+	int rc = getaddrinfo(hostname, NULL, &hints, &res);
+	if (rc != 0)
+		return OVE_ERR_NET_DNS_FAIL;
+
+	memset(addr, 0, sizeof(*addr));
+	addr->family = OVE_AF_INET;
+	struct sockaddr_in *sin = (struct sockaddr_in *)res->ai_addr;
+	memcpy(addr->addr, &sin->sin_addr, 4);
+	freeaddrinfo(res);
+	return OVE_OK;
+}
