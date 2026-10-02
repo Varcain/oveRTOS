@@ -14,7 +14,7 @@
 int ove_hal_board_init(void)
 {
 	/* Configure LED pin(s) as output */
-#if OVE_LED_COUNT > 0
+#if defined(CONFIG_OVE_GPIO) && OVE_LED_COUNT > 0
 	{
 		unsigned int i;
 		for (i = 0; i < OVE_LED_COUNT; i++) {
