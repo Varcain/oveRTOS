@@ -68,7 +68,7 @@ static void sensor_thread(void *)
 
 		ove::this_thread::sleep_ms(50);
 		reading += 17;
-		OVE_LOG_INF("sensor: reading = %u", reading % 1000);
+		OVE_LOG_INF("sensor: reading = %u", (unsigned int)(reading % 1000));
 
 		(void)pm::domain_release(OVE_PM_DOMAIN_SENSOR);
 		ove::this_thread::sleep_ms(5000);
@@ -86,18 +86,19 @@ static void monitor_thread(void *)
 			OVE_LOG_INF("=== Power Stats ===");
 			OVE_LOG_INF("  active:  %u us (%u transitions)",
 				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_ACTIVE],
-				    stats->transition_count[OVE_PM_STATE_ACTIVE]);
+				    (unsigned int)stats->transition_count[OVE_PM_STATE_ACTIVE]);
 			OVE_LOG_INF("  idle:    %u us (%u transitions)",
 				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_IDLE],
-				    stats->transition_count[OVE_PM_STATE_IDLE]);
+				    (unsigned int)stats->transition_count[OVE_PM_STATE_IDLE]);
 			OVE_LOG_INF("  standby: %u us (%u transitions)",
 				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_STANDBY],
-				    stats->transition_count[OVE_PM_STATE_STANDBY]);
+				    (unsigned int)stats->transition_count[OVE_PM_STATE_STANDBY]);
 			OVE_LOG_INF("  deep:    %u us (%u transitions)",
 				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_DEEP_SLEEP],
-				    stats->transition_count[OVE_PM_STATE_DEEP_SLEEP]);
-			OVE_LOG_INF("  active%%: %u.%02u%%", stats->active_pct_x100 / 100,
-				    stats->active_pct_x100 % 100);
+				    (unsigned int)stats->transition_count[OVE_PM_STATE_DEEP_SLEEP]);
+			OVE_LOG_INF("  active%%: %u.%02u%%",
+				    (unsigned int)(stats->active_pct_x100 / 100),
+				    (unsigned int)(stats->active_pct_x100 % 100));
 		}
 
 		if (battery_pct > 5)
