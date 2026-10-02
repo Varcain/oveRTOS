@@ -21,8 +21,10 @@ const std = @import("std");
 const ove = @import("ove");
 
 // 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
-// deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel.
-const graphics_stack = 16384;
+// deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. Zephyr's
+// ove.Thread adds 128 B and rounds up to an aligned power of two, so ask for 128 B less to
+// keep its stack at 16 KB instead of 32 KB (a 64 KB block once aligned).
+const graphics_stack = 16 * 1024 - 128;
 const GraphicsThread = ove.Thread(graphics_stack);
 
 // FixedBufferAllocator over a static BSS buffer — zero-heap-compatible. It holds only the
