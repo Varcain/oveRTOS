@@ -29,6 +29,8 @@
 // requires nightly. Skipped to keep the crate stable-only.
 
 pub(crate) mod critical_section;
+#[cfg(any(has_spi, has_i2c))]
+mod dma_slot;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
 pub mod executor;

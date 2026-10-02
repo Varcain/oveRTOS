@@ -16,7 +16,7 @@ use ::core::task::Poll;
 use crate::bindings;
 use crate::error::{Error, Result};
 
-use super::spi::DmaSlot;
+use super::dma_slot::DmaSlot;
 
 unsafe extern "C" fn dma_complete_cb(result: ::core::ffi::c_int, user_data: *mut c_void) {
     // SAFETY: user_data points to a DmaSlot owned by the calling future.

@@ -18,54 +18,12 @@
 use ::core::cell::UnsafeCell;
 use ::core::ffi::c_void;
 use ::core::future::poll_fn;
-use ::core::sync::atomic::{AtomicI32, Ordering};
 use ::core::task::Poll;
-
-use embassy_sync::waitqueue::AtomicWaker;
 
 use crate::bindings;
 use crate::error::{Error, Result};
 
-/// Per-transfer slot — wakes the caller and stores the completion result.
-/// `UnsafeCell` rather than `Mutex` because we use atomics for the
-/// state field, and `AtomicWaker` is itself interior-mut-safe.
-pub struct DmaSlot {
-    waker: AtomicWaker,
-    result: AtomicI32,
-}
-
-impl DmaSlot {
-    /// Sentinel marking a transfer still in flight. `i32::MIN` is well
-    /// outside the negative-OVE-error range (which is -1 to -20-ish).
-    pub const PENDING: i32 = i32::MIN;
-
-    pub const fn new() -> Self {
-        Self {
-            waker: AtomicWaker::new(),
-            result: AtomicI32::new(Self::PENDING),
-        }
-    }
-
-    pub fn reset(&self) {
-        self.result.store(Self::PENDING, Ordering::Release);
-    }
-
-    pub fn result_store(&self, value: i32) {
-        self.result.store(value, Ordering::Release);
-    }
-
-    pub fn result_load(&self) -> i32 {
-        self.result.load(Ordering::Acquire)
-    }
-
-    pub fn register(&self, w: &::core::task::Waker) {
-        self.waker.register(w);
-    }
-
-    pub fn wake(&self) {
-        self.waker.wake();
-    }
-}
+use super::dma_slot::DmaSlot;
 
 unsafe extern "C" fn dma_complete_cb(result: ::core::ffi::c_int, user_data: *mut c_void) {
     // SAFETY: user_data is a `*const DmaSlot` we passed in below; the
