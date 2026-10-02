@@ -219,11 +219,8 @@ CONFIG_LV_Z_LVGL_MUTEX=y
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
-{% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
-CONFIG_LV_Z_MEM_POOL_SIZE=16384
-{% else %}
+# A static buffer in both heap modes, so zero-heap apps size it the same way.
 CONFIG_LV_Z_MEM_POOL_SIZE={{ config.get("CONFIG_ZEPHYR_LV_MEM_POOL_SIZE", 16384) }}
-{% endif %}
 CONFIG_LV_USE_OBSERVER=y
 CONFIG_LV_USE_FLEX=y
 # Perf monitor — mirror the native global LVGL config (include/ove/lv_conf_common.h sets
