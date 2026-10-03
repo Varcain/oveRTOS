@@ -1310,8 +1310,10 @@ static int storage_run_begin(unsigned int client)
 	rc = ove_event_init(&g_complete, &g_complete_storage);
 	if (rc != OVE_OK)
 		goto fail_event;
+	/* The queue carries request pointers, so its item size is a pointer's. */
 	rc = ove_queue_init(&g_request_queue, &g_request_queue_storage, g_request_queue_buffer,
-			    sizeof(g_request_queue_buffer[0]), 1);
+			    sizeof(g_request_queue_buffer[0]), // NOLINT(bugprone-sizeof-expression)
+			    1);
 	if (rc != OVE_OK)
 		goto fail_queue;
 	/*

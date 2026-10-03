@@ -44,8 +44,8 @@
 /* The opaque handle the module holds: a pool entry carrying the backend-sized
  * storage and the resulting ove_socket handle. */
 struct lxp_socket {
-	ove_socket_storage_t st;
 	ove_socket_t h;
+	ove_socket_storage_t st;
 	uint8_t used;
 };
 
@@ -333,7 +333,11 @@ static int a_get_error(lxp_socket_t s)
 static int a_netif_get_addr(lxp_netif_t nif, lxp_sockaddr_t *ip, lxp_sockaddr_t *gw,
 			    lxp_sockaddr_t *nm)
 {
-	ove_sockaddr_t oip = {0}, ogw = {0}, onm = {0};
+	ove_sockaddr_t oip, ogw, onm;
+
+	memset(&oip, 0, sizeof(oip));
+	memset(&ogw, 0, sizeof(ogw));
+	memset(&onm, 0, sizeof(onm));
 	int r = ove_netif_get_addr((ove_netif_t)nif, &oip, &ogw, &onm);
 	if (ip)
 		from_ove(&oip, ip);

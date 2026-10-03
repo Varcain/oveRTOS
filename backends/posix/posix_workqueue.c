@@ -201,6 +201,7 @@ int ove_work_cancel(ove_work_t work)
 		if (wq->queue[i] != w)
 			continue;
 		memmove(&wq->queue[i], &wq->queue[i + 1],
+			// NOLINTNEXTLINE(bugprone-sizeof-expression)
 			(size_t)(wq->count - i - 1) * sizeof(wq->queue[0]));
 		wq->count--;
 		__atomic_store_n(&w->wq, NULL, __ATOMIC_RELEASE);

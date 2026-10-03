@@ -92,7 +92,7 @@ void ove_app_exit(unsigned int status)
 	unsigned long block[2] = {0x20026u /* ADP_Stopped_ApplicationExit */, status};
 	(void)app_semihost(0x20 /* SYS_EXIT_EXTENDED */, block);
 #elif defined(CONFIG_OVE_RTOS_POSIX)
-	exit((int)status);
+	exit((int)status); // NOLINT(concurrency-mt-unsafe)
 #else
 	(void)status;
 #endif

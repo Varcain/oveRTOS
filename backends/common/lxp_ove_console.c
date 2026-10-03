@@ -166,6 +166,9 @@ void ove_lxp_console_printf(const char *format, ...)
 	char text[256];
 	va_list args;
 	va_start(args, format);
+	/* clang-tidy 18 loses track of va_start when it analyses this file after another in one
+	 * run, and then reports args as uninitialized. */
+	/* NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized) */
 	int length = vsnprintf(text, sizeof(text), format, args);
 	va_end(args);
 	if (length > 0)

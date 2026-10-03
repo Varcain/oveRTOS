@@ -166,7 +166,9 @@ int ove_lxp_host_init_cpio(ove_lxp_host_t *host, const ove_lxp_host_config_t *co
 
 		uint32_t waited_ms = 0u;
 		for (;;) {
-			ove_sockaddr_t address = {0};
+			ove_sockaddr_t address;
+
+			memset(&address, 0, sizeof(address));
 			if (ove_netif_get_addr(impl->netif, &address, NULL, NULL) == OVE_OK &&
 			    address_present(&address))
 				break;

@@ -13,7 +13,7 @@
 
 static const char *image_path(void)
 {
-	return getenv("OVE_BLOCK_IMAGE");
+	return getenv("OVE_BLOCK_IMAGE"); // NOLINT(concurrency-mt-unsafe)
 }
 
 static int g_media_present = -1;
