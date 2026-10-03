@@ -12,6 +12,9 @@
 
 #include "lxp/arch/cortex_m_memory.h"
 
+/* clang-format releases disagree on a brace initializer in a macro body (18.1.3 packs the
+ * fields like statements), so keep these out of the formatter. */
+/* clang-format off */
 #define OVE_LXP_MEMORY_CONTRACT_UNCACHED_INITIALIZER            \
 	{                                                       \
 		.model = LXP_CPU_MEM_UNCACHED,                  \
@@ -28,6 +31,7 @@
 		.dcache_size = 4u * 1024u,                                              \
 		.icache_size = 4u * 1024u,                                              \
 	}
+/* clang-format on */
 
 #if defined(__arm__) || defined(__thumb__)
 static inline int

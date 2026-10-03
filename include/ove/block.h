@@ -47,8 +47,12 @@ typedef struct ove_block {
 	uint8_t _reserved[3];
 } ove_block_t;
 
+/* clang-format releases disagree on a brace initializer in a macro body (18.1.3 breaks
+ * it up like a block), so keep it out of the formatter. */
+/* clang-format off */
 /** Static/caller-stack initializer required before the first open. */
 #define OVE_BLOCK_INITIALIZER {0}
+/* clang-format on */
 
 #ifdef CONFIG_OVE_BLOCK
 /** Query current geometry/presence without acquiring a transfer lease. */
