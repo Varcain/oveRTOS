@@ -104,6 +104,11 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Board directory names this app cannot be built for (e.g. apps that need CONFIG_OVE_ASYNC on a board with no irq backend). 'ove allconfigs' skips matching boards."
+    },
+    "allconfigs_skip": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reason this app is left out of every 'ove allconfigs' matrix, for apps that need inputs built outside this tree (e.g. a Buildroot rootfs). The app still builds with 'ove build'."
     }
   },
   "additionalProperties": false,
