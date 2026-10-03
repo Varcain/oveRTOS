@@ -9,3 +9,9 @@ defconfig:
   - CONFIG_OVE_LVGL=y
   - CONFIG_OVE_QUEUE=y
   - CONFIG_OVE_TIMER=y
+rtos_defconfig:
+  freertos:
+    # Sized for the F746: its internal SRAM also holds LVGL's 96 KB pool and the 20-line draw
+    # buffer, so the board's 128 KB heap leaves about 2 KB or less, at or under the build
+    # margin. Peak use on the real panel is under 15 KB.
+    - CONFIG_FREERTOS_TOTAL_HEAP_SIZE=126976
