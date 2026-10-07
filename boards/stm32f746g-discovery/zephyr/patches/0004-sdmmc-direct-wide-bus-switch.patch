@@ -1,0 +1,63 @@
+diff --git a/drivers/disk/sdmmc_stm32.c b/drivers/disk/sdmmc_stm32.c
+--- a/drivers/disk/sdmmc_stm32.c
++++ b/drivers/disk/sdmmc_stm32.c
+@@ -507,6 +507,34 @@
+ 
+ static bool stm32_sdmmc_card_present(struct stm32_sdmmc_priv *priv);
+ 
++#if !defined(CONFIG_SDMMC_STM32_EMMC)
++/* Switch an SD card to the 4-bit bus with ACMD6 directly; every SD memory card
++ * supports it. HAL_SD_ConfigWideBusOperation() first probes the SCR with a
++ * polling loop that stops as soon as RXACT is clear. At this board's 2 MHz
++ * transfer clock that probe returns an empty SCR, so the HAL reports that
++ * wide bus is not applicable and the disk fails to initialise. */
++static int stm32_sdmmc_enable_wide_bus(struct stm32_sdmmc_priv *priv)
++{
++	HandleTypeDef *hsd = &priv->hsd;
++	SDMMC_InitTypeDef init = hsd->Init;
++	uint32_t error;
++
++	error = SDMMC_CmdAppCommand(hsd->Instance, hsd->SdCard.RelCardAdd << 16U);
++	if (error == HAL_SD_ERROR_NONE) {
++		error = SDMMC_CmdBusWidth(hsd->Instance, 2U);
++	}
++	if (error != HAL_SD_ERROR_NONE) {
++		hsd->ErrorCode |= error;
++		return -EIO;
++	}
++
++	init.BusWide = SDMMC_BUS_WIDE_4B;
++	(void)SDMMC_Init(hsd->Instance, init);
++	hsd->Init.BusWide = SDMMC_BUS_WIDE_4B;
++	return 0;
++}
++#endif /* !CONFIG_SDMMC_STM32_EMMC */
++
+ static int stm32_sdmmc_access_init(struct disk_info *disk)
+ {
+ 	const struct device *dev = disk->dev;
+@@ -562,6 +590,10 @@
+ 		goto error;
+ 	}
+ 
++	/* Card identification leaves the card on the 1-bit bus, so a re-init must
++	 * not program the host with the width a previous init switched to. */
++	priv->hsd.Init.BusWide = SDMMC_BUS_WIDE_1B;
++
+ #ifdef CONFIG_SDMMC_STM32_EMMC
+ 	hal_ret = HAL_MMC_Init(&priv->hsd);
+ #else
+@@ -574,11 +606,11 @@
+ 	}
+ 
+ 	if (SDMMC_BUS_WIDTH != SDMMC_BUS_WIDE_1B) {
+-		priv->hsd.Init.BusWide = SDMMC_BUS_WIDTH;
+ #ifdef CONFIG_SDMMC_STM32_EMMC
++		priv->hsd.Init.BusWide = SDMMC_BUS_WIDTH;
+ 		hal_ret = HAL_MMC_ConfigWideBusOperation(&priv->hsd, priv->hsd.Init.BusWide);
+ #else
+-		hal_ret = HAL_SD_ConfigWideBusOperation(&priv->hsd, priv->hsd.Init.BusWide);
++		hal_ret = stm32_sdmmc_enable_wide_bus(priv) == 0 ? HAL_OK : HAL_ERROR;
+ #endif
+ 		if (hal_ret != HAL_OK) {
+ 			LOG_ERR("failed to configure wide bus operation (ErrorCode 0x%X)",

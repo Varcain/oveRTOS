@@ -80,6 +80,11 @@
 	 * non-responsive under sustained SQLite rewrites. Keep the proven-safe
 	 * clock together with the owned single-sector DMA policy. */
 	clk-div = <22>;
+	/* All four data lines at that clock: a 512-byte block takes about 1.0 ms
+	 * on the wire instead of 2.5 ms. The binding defaults to one line, and the
+	 * HAL cannot make the switch at 2 MHz, so the driver sends ACMD6 itself
+	 * (patches/0004-sdmmc-direct-wide-bus-switch.patch). */
+	bus-width = <4>;
 	/delete-property/ cd-gpios;
 };
 
