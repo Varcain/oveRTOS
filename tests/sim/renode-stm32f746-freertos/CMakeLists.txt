@@ -171,7 +171,9 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_bsp.c
     ${STUB_DIR}/stub_lvgl.c
     # stub_gpio removed — freertos_gpio.c + HAL_GPIO_* now drive the
-    # STM32_GPIOPort peripherals Renode models.
+    # STM32_GPIOPort peripherals Renode models.  test_gpio's hooks into
+    # stub_gpio are answered from the real EXTI state instead.
+    ${TESTS_ROOT}/backends/stm32f7/stm32f7_gpio_hooks.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_time.c
     ${STUB_DIR}/stub_console.c
@@ -292,6 +294,8 @@ target_link_options(ove_test_renode_stm32f746_freertos PRIVATE
     "LINKER:--wrap=free"
     "LINKER:--wrap=calloc"
     "LINKER:--wrap=realloc"
+    # test_gpio fault injection — see stm32f7_gpio_hooks.c.
+    "LINKER:--wrap=ove_hal_gpio_irq_hw_unregister"
 )
 
 set_target_properties(ove_test_renode_stm32f746_freertos PROPERTIES
