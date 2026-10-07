@@ -32,7 +32,6 @@
 #define CONFIG_OVE_BOARD 1
 #define CONFIG_OVE_GPIO 1
 #define CONFIG_OVE_LED 1
-#define CONFIG_OVE_FS 1
 #define CONFIG_OVE_LVGL 1
 #define CONFIG_OVE_I2C 1
 #define CONFIG_OVE_SPI 1
