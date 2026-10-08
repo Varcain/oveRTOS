@@ -178,7 +178,7 @@ For non-ARM targets you don't need QEMU at all — POSIX builds run as native pr
 
 ### POSIX build runs but the LVGL dashboard never opens
 
-The browser dashboard runs on `http://localhost:8000` by default; check that nothing else is bound to that port, and that your firewall isn't blocking localhost. Headless run:
+The browser dashboard runs on `http://localhost:8080` by default; check that nothing else is bound to that port, and that your firewall isn't blocking localhost. Headless run:
 
 ```bash
 make run HEADLESS=1
