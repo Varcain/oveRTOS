@@ -111,7 +111,7 @@ var frameCount = 0;
 var lastFpsTime = performance.now();
 var lastFpsCount = 0;
 
-/* Audio state (POSIX WebSocket mode) */
+/* Audio state */
 var audioCtx = null;
 var playbackNode = null;
 var captureStream = null;
@@ -552,7 +552,7 @@ if (typeof WinBox !== "undefined") {
         createDashboardWindow("events", WIN_DEFS.events.title);
 }
 
-/* ── WebSocket connection (POSIX mode only) ───────────────────────── */
+/* ── Firmware link (WebSocket, or the page's own link) ────────────── */
 var reconnectDelay = RECONNECT_BASE_MS;
 var reconnectAttempt = 0;
 
@@ -628,7 +628,7 @@ function ensureWindow(id) {
     }
 }
 
-/* ── Display rendering (POSIX mode) ───────────────────────────────── */
+/* ── Display rendering ────────────────────────────────────────────── */
 function handleFramebuffer(buf, off) {
     ensureWindow("display");
     if (!ctx || buf.byteLength - off < 8) return;
@@ -660,7 +660,7 @@ function handleFramebuffer(buf, off) {
     }
 }
 
-/* ── Audio handling (POSIX WebSocket mode) ────────────────────────── */
+/* ── Audio handling ───────────────────────────────────────────────── */
 
 /** Draw a float32 or int16 waveform on a canvas.
  *  Canvas elements and contexts are cached to avoid per-frame DOM lookups. */
@@ -3564,7 +3564,7 @@ function addEvent(type, msg) {
     }
 }
 
-/* ── Send pointer input to firmware (POSIX mode) ──────────────────── */
+/* ── Send pointer input to firmware ───────────────────────────────── */
 function sendInput(x, y, pressed) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     var buf = new ArrayBuffer(4 + 5);
