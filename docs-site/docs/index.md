@@ -86,8 +86,8 @@ The same producer-consumer example exists in every binding under [`apps/{c,cpp,r
 
 The example apps run in a browser, served as part of the docs site. Each demo is that example's FreeRTOS firmware for the QEMU MPS2-AN500, running in QEMU compiled to WebAssembly:
 
-- [C example](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"} · [C++ example](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"} · [Rust example](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"} · [Zig example](https://varcain.github.io/oveRTOS/example_zig_heap/){:target="_blank"}
-- [LVGL gallery (C++)](https://varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/){:target="_blank"}
+- [C example](demo:example_c_heap){:target="_blank"} · [C++ example](demo:example_cpp_heap){:target="_blank"} · [Rust example](demo:example_rust_heap){:target="_blank"} · [Zig example](demo:example_zig_heap){:target="_blank"}
+- [LVGL gallery (C++)](demo:lvgl_gallery_cpp_heap){:target="_blank"}
 - [Benchmarks](benchmarks/index.md) — same wrappers measured across all bindings
 
 ## When something goes wrong

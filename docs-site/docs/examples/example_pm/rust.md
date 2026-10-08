@@ -1,6 +1,6 @@
 # Power Management Example — Rust
 
-Source: `apps/rust/heap/example_pm/src/lib.rs` (also `apps/rust/zeroheap/example_pm/src/lib.rs`) | **[Browser demo](https://varcain.github.io/oveRTOS/example_pm_rust_heap/){:target="_blank"}**
+Source: `apps/rust/heap/example_pm/src/lib.rs` (also `apps/rust/zeroheap/example_pm/src/lib.rs`) | **[Browser demo](demo:example_pm_rust_heap){:target="_blank"}**
 
 Demonstrates the PM state machine with automatic idle transitions, peripheral power domain reference counting, wake source registration (GPIO button + UART), custom battery-aware power policy, transition notifications, and runtime power statistics.
 

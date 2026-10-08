@@ -6,10 +6,10 @@ Demonstrates the PM state machine with automatic idle transitions, peripheral po
 
 | Language | Source | Browser demo |
 |----------|--------|--------------|
-| [C](c.md) | `apps/c/heap/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_c_heap/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/heap/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_cpp_heap/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/heap/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_rust_heap/){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/heap/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_zig_heap/){:target="_blank"}** |
+| [C](c.md) | `apps/c/heap/example_pm/` | **[Run in browser](demo:example_pm_c_heap){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/heap/example_pm/` | **[Run in browser](demo:example_pm_cpp_heap){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/heap/example_pm/` | **[Run in browser](demo:example_pm_rust_heap){:target="_blank"}** |
+| [Zig](zig.md) | `apps/zig/heap/example_pm/` | **[Run in browser](demo:example_pm_zig_heap){:target="_blank"}** |
 
 Zero-heap variants live under `apps/<lang>/zeroheap/example_pm/`.
 
