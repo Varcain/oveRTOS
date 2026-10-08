@@ -134,6 +134,22 @@ extern void ove_backend_trace_task_blocking(void);
 #define traceTASK_DELAY_UNTIL(xTimeToWake) ove_backend_trace_task_blocking()
 #endif
 
+/* Maintain the bounded task registry behind ove_thread_list() (the dashboard's
+ * thread table).  The hooks run inside the kernel's task-list critical section
+ * and do constant bounded work; see config/templates/FreeRTOSConfig.h.j2. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void ove_backend_freertos_task_created(void *task, const char *name);
+void ove_backend_freertos_task_deleted(void *task);
+#ifdef __cplusplus
+}
+#endif
+#define traceTASK_CREATE(pxNewTCB)                            \
+	ove_backend_freertos_task_created((void *)(pxNewTCB), \
+					  (const char *)((pxNewTCB)->pcTaskName))
+#define traceTASK_DELETE(pxTCB) ove_backend_freertos_task_deleted((void *)(pxTCB))
+
 /* Map FreeRTOS port handlers to CMSIS names. The Linux personality seam owns the
  * SVC_Handler vector (to trap a loaded program's svc), so under CONFIG_OVE_LINUX
  * this alias is dropped: FreeRTOS's handler stays named vPortSVCHandler and the
