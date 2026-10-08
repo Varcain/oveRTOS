@@ -52,9 +52,21 @@ Downloaded dependencies (fetched by the build system into dl/):
     Licensed under the MIT License
     https://www.etlcpp.com/
 
+  QEMU (built for WebAssembly by `ove ensure-toolchain qemu-wasm`; the
+  browser bundles and the documentation site's demos redistribute that
+  binary, with a SOURCE.txt naming the exact source and build recipe)
+    Copyright (C) Fabrice Bellard and the QEMU Project developers
+    Licensed under the GNU General Public License, version 2
+    https://www.qemu.org/
+
 ================================================================================
 
 Vendored third-party files included in the repository:
+
+  sim/dashboard/coi-serviceworker.js
+    Copyright (C) Guido Zuidhof and contributors
+    Licensed under the MIT License
+    https://github.com/gzuidhof/coi-serviceworker
 
   boards/stm32f746g-discovery/freertos/src/heap_4.c
     Copyright (C) 2016 Real Time Engineers Ltd.
