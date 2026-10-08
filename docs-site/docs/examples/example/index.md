@@ -26,10 +26,10 @@ A periodic software timer fires every 200 ms to read the shared counter and upda
 
 | Language | Source | Browser demo |
 |----------|--------|--------------|
-| [C](c.md) | `apps/c/heap/example/src/app.c` | **[Run in browser](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/heap/example/src/app.cpp` | **[Run in browser](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/heap/example/src/lib.rs` | **[Run in browser](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/heap/example/src/main.zig` | **[Run in browser](https://varcain.github.io/oveRTOS/example_zig_heap/){:target="_blank"}** |
+| [C](c.md) | `apps/c/heap/example/src/app.c` | **[Run in browser](demo:example_c_heap){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/heap/example/src/app.cpp` | **[Run in browser](demo:example_cpp_heap){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/heap/example/src/lib.rs` | **[Run in browser](demo:example_rust_heap){:target="_blank"}** |
+| [Zig](zig.md) | `apps/zig/heap/example/src/main.zig` | **[Run in browser](demo:example_zig_heap){:target="_blank"}** |
 
 Zero-heap variants live alongside under `apps/<lang>/zeroheap/example/`.
 

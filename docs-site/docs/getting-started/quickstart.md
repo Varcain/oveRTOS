@@ -91,11 +91,11 @@ After loading a config, `make && make run` always rebuilds and launches. Run `ma
 
 If you'd rather watch the same example execute in your browser without installing anything, the public live demos run each app's FreeRTOS firmware in QEMU compiled to WebAssembly:
 
-- [C++ example (heap)](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}
-- [Rust example (heap)](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"}
-- [Zig example (heap)](https://varcain.github.io/oveRTOS/example_zig_heap/){:target="_blank"}
-- [C example (heap)](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}
-- [LVGL gallery (C++)](https://varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/){:target="_blank"}
+- [C++ example (heap)](demo:example_cpp_heap){:target="_blank"}
+- [Rust example (heap)](demo:example_rust_heap){:target="_blank"}
+- [Zig example (heap)](demo:example_zig_heap){:target="_blank"}
+- [C example (heap)](demo:example_c_heap){:target="_blank"}
+- [LVGL gallery (C++)](demo:lvgl_gallery_cpp_heap){:target="_blank"}
 
 This is the real kernel and the real firmware: what `make qemu.freertos.<app>` builds for the emulated Cortex-M7 board, compiled with optimisation rather than for debugging. Only the emulator moved into the page, and it runs slower than on your machine, because QEMU has no JIT in a browser.
 

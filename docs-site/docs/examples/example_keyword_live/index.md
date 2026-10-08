@@ -6,8 +6,8 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 
 | Language | Source | Browser demo |
 |----------|--------|--------------|
-| [C](c.md) | `apps/c/heap/example_keyword_live/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_keyword_live_heap/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/heap/example_keyword_live/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_keyword_live_cpp_heap/){:target="_blank"}** |
+| [C](c.md) | `apps/c/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_heap){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_cpp_heap){:target="_blank"}** |
 | [Rust](rust.md) | `apps/rust/heap/example_keyword_live/` | — |
 | [Zig](zig.md) | `apps/zig/heap/example_keyword_live/` | — |
 
