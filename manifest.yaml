@@ -33,6 +33,16 @@ tools:
     version: "1.16.1"
     url: "https://github.com/renode/renode/releases/download/v1.16.1/renode-1.16.1.linux-portable.tar.gz"
 
+  # QEMU compiled to WebAssembly — runs the qemu-mps2 firmware in a browser
+  # (docs-site demos).  Built on demand by `ove ensure-toolchain qemu-wasm`
+  # from the unmodified upstream release, using upstream's own Emscripten
+  # container recipe, into `output/tools/qemu-wasm/`.  Needs Docker or
+  # Podman; see config/scripts/build-qemu-wasm.sh.
+  qemu-wasm:
+    version: "11.1.1"
+    url: "https://download.qemu.org/qemu-11.1.1.tar.xz"
+    sha256: "079ffbff8a7111bbc89022107cbabf3bbfd614d5fc9d7cc675991196aca12482"
+
 rtos:
   freertos:
     stm32cubef7:

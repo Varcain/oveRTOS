@@ -215,6 +215,12 @@ def _checks():
                      "renode_*_portable", "renode"),
         version_cmd=["--version"],
         hint="run 'ove ensure-toolchain renode' to fetch"))
+    out.append(_check_downloaded_binary(
+        "qemu-wasm (built)",
+        os.path.join(ove_dir, "output", "tools", "qemu-wasm", "qemu-*",
+                     "qemu-system-arm.wasm"),
+        hint="run 'ove ensure-toolchain qemu-wasm' to build "
+             "(browser demos; needs docker or podman)"))
 
     # ── Manifest components (source tarballs / clones under dl/) ─────
     manifest = load_manifest(ove_dir)
