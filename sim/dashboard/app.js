@@ -558,9 +558,16 @@ var reconnectDelay = RECONNECT_BASE_MS;
 var reconnectAttempt = 0;
 
 function connect() {
-    var proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(proto + "//" + location.host + "/ws");
-    ws.binaryType = "arraybuffer";
+    if (typeof window.oveCreateLink === "function") {
+        /* The page runs the firmware itself (browser build) and supplies
+         * the link: an object with the WebSocket surface used here, that
+         * speaks the same frames the bridge sends. */
+        ws = window.oveCreateLink();
+    } else {
+        var proto = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(proto + "//" + location.host + "/ws");
+        ws.binaryType = "arraybuffer";
+    }
 
     ws.onopen = function () {
         reconnectDelay = RECONNECT_BASE_MS;
