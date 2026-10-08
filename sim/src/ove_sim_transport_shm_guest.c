@@ -16,7 +16,9 @@
  *   /dev/shm/ove-fb    — XRGB8888 framebuffer (fb_header + pixels)
  *   /dev/shm/ove-audio — PCM ring buffers (audio_shm_header + 2 rings)
  *
- * These files are pre-created by qemu-run.sh before the guest starts.
+ * Whoever starts the emulator creates these files before the guest runs:
+ * qemu-run.sh natively, sim/dashboard/qemu-wasm.js when QEMU itself runs
+ * in a browser (the files are then in its in-memory filesystem).
  */
 
 #include "ove/types.h"

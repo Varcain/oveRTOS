@@ -39,8 +39,8 @@ def _discover_apps(ove_dir):
 
     `incompatible_boards` is a list of board names as used in the spec
     (e.g. `["host", "web"]`); empty when the app sets no such field. Used to
-    skip board/rtos combos an app cannot satisfy (e.g. apps that need
-    CONFIG_OVE_ASYNC on a board that has no irq backend).
+    skip board/rtos combos an app cannot satisfy (e.g. networking apps on
+    the browser variant, which has no network peer).
 
     `skip_reason` is the app's `allconfigs_skip` string, or None. It keeps
     an app out of every matrix, for apps that need inputs built outside
