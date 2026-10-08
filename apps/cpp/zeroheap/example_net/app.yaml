@@ -5,6 +5,10 @@ sources:
   - src/app.cpp
 includes:
   - include
+incompatible_boards:
+  # The browser bundle has no network peer: the firmware's Ethernet frames
+  # have nowhere to go inside the page.
+  - web
 defconfig:
   - CONFIG_OVE_ZERO_HEAP=y
   - CONFIG_OVE_BSP=y

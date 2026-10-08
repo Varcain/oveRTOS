@@ -10,6 +10,8 @@ rust:
 incompatible_boards:
   - host
   - wasm
+  # No network peer inside the page.
+  - web
   - stm32f746.nuttx
   - stm32f746.zephyr
 defconfig:
