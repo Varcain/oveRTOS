@@ -17,6 +17,12 @@
  * web.json, next to the page, says what to run:
  *   { "firmware": "firmware.elf", "emulator": "qemu/",
  *     "machine": "mps2-an500", "args": [] }
+ *
+ * "emulator" is the directory of qemu-system-arm.js.  Its worker threads
+ * load that script again, and on a static host only scripts under the
+ * page's own directory get the isolation headers, so it has to sit below
+ * the page.  The large qemu-system-arm.wasm does not: an optional "wasm"
+ * URL lets many pages share one copy.
  */
 
 (function () {
@@ -146,6 +152,11 @@ async function boot(link) {
     setStatus("Starting emulator...", false);
     var module = await createQemu({
         arguments: args,
+        locateFile: function (path, prefix) {
+            if (cfg.wasm && /\.wasm$/.test(path))
+                return new URL(cfg.wasm, location.href).href;
+            return prefix + path;
+        },
         print: consoleLine,
         printErr: consoleLine,
         stdin: function () { return null; },
