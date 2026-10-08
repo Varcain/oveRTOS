@@ -172,6 +172,7 @@ NET_BRIDGE_PID=""
 AUDIO_PATH="/dev/shm/ove-audio"
 NET_PATH="/dev/shm/ove-net"
 SIM_PATH="/dev/shm/ove-sim"
+INPUT_PATH="/dev/shm/ove-input"
 NET_BRIDGE="${OVE_DIR}/config/scripts/qemu-net-bridge.py"
 cleanup() {
     if [ -n "${VIEWER_PID}" ]; then
@@ -183,7 +184,7 @@ cleanup() {
         kill "${NET_BRIDGE_PID}" 2>/dev/null || true
         wait "${NET_BRIDGE_PID}" 2>/dev/null || true
     fi
-    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${LOG_FIFO:-}"
+    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" "${LOG_FIFO:-}"
 }
 trap cleanup EXIT
 
@@ -200,6 +201,11 @@ if [ "${HEADLESS}" -eq 0 ]; then
     # Plugin events/commands SHM (header 64B + 2x 64KB rings)
     : > "${SIM_PATH}"
     truncate -s 131136 "${SIM_PATH}"
+
+    # Pointer state for the LVGL input device: "INPT" magic, then x, y and
+    # pressed, 16 bytes in all.  The bridge writes it, the firmware reads it.
+    printf 'INPT' > "${INPUT_PATH}"
+    truncate -s 16 "${INPUT_PATH}"
 
     QEMU_ARGS+=(
         -semihosting-config "enable=on,target=native,arg=${FB_PATH}"
