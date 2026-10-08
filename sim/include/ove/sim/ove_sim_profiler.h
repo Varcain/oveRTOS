@@ -55,8 +55,8 @@ extern "C" {
  * Event type: newly-interned symbols as a JSON payload of the form
  * @c [[pc_start,pc_end,"name"],...] compatible with the dashboard's
  * PROFILE_SUB_SYMBOLS handler. Emitted incrementally by backends that
- * symbolicate on target (e.g. WASM via emscripten_get_callstack);
- * POSIX never emits this (the bridge forwards a single upfront blob).
+ * symbolicate on target; none does at present. POSIX never emits this
+ * (the bridge forwards a single upfront blob).
  */
 #define OVE_SIM_PROFILER_EVT_SYMBOLS 22
 

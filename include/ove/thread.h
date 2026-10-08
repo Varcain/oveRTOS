@@ -283,7 +283,7 @@ int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes);
  *
  * Despite the name, this returns the stack still UNUSED at the deepest point reached — the
  * remaining headroom — computed from the untouched fill pattern (FreeRTOS
- * uxTaskGetStackHighWaterMark; Zephyr/WASM sentinel scan). For bytes USED, subtract this from the
+ * uxTaskGetStackHighWaterMark; Zephyr sentinel scan). For bytes USED, subtract this from the
  * stack size. All backends agree on this free-not-used meaning; only the historical name says
  * "usage".
  *

@@ -83,7 +83,7 @@ void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uin
 /**
  * @brief Return the current thread's stable handle, or 0 if none.
  *
- * Supplied by the thread backend (posix_thread.c, wasm_thread.c). Used by
+ * Supplied by the thread backend (posix_thread.c). Used by
  * @c OVE_TRACE_MARK_CURRENT to tag markers emitted from sync-primitive
  * code that doesn't otherwise have the thread pointer in scope.
  *

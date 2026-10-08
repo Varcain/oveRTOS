@@ -22,9 +22,6 @@
 #include "ove/sim/ove_sim_plugin.h"
 #include "ove/sim/ove_sim_transport.h"
 #include "ove_sim_audio_ring.h"
-#ifdef __EMSCRIPTEN__
-#include "ove_sim_wasm_audio.h"
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,11 +56,7 @@ static int audio_handle_cmd(void *ctx, const struct ove_sim_cmd *cmd)
 	struct sim_audio_ctx *a = (struct sim_audio_ctx *)ctx;
 
 	if (cmd->cmd_type == OVE_SIM_AUDIO_CMD_INJECT && cmd->data_len > 0) {
-#ifdef __EMSCRIPTEN__
-		ove_sim_ring_write_atomic(&a->input_ring, cmd->data, cmd->data_len);
-#else
 		ove_sim_ring_write(&a->input_ring, cmd->data, cmd->data_len);
-#endif
 	}
 	return OVE_OK;
 }
@@ -106,7 +99,7 @@ size_t ove_sim_audio_pull_input(void *samples, size_t len, const struct ove_sim_
 {
 	(void)fmt;
 
-	/* Try transport first (WASM / SHM guest). */
+	/* Try transport first (SHM guest). */
 	struct ove_sim_transport *t = ove_sim_get_transport();
 	size_t got = ove_sim_transport_pull_audio(t, samples, len);
 	if (got > 0) {
@@ -117,11 +110,7 @@ size_t ove_sim_audio_pull_input(void *samples, size_t len, const struct ove_sim_
 
 	/* Fallback: local input ring (filled by plugin CMD_INJECT from WS). */
 	struct sim_audio_ctx *a = &audio_ctx;
-#ifdef __EMSCRIPTEN__
-	uint32_t nr = ove_sim_ring_read_atomic(&a->input_ring, samples, (uint32_t)len);
-#else
 	uint32_t nr = ove_sim_ring_read(&a->input_ring, samples, (uint32_t)len);
-#endif
 	if (nr < len)
 		memset((uint8_t *)samples + nr, 0, len - nr);
 	return nr;
@@ -195,27 +184,10 @@ static void sim_sink_pump(void *arg)
 	if (period_ms < 1)
 		period_ms = 1;
 
-#ifdef __EMSCRIPTEN__
-	/* WASM: consumer-driven pacing.  Produce until the playback ring
-	 * is full enough, then yield and let the AudioContext consume.
-	 * This makes the browser's audio clock the timing master. */
-	struct ove_sim_audio_ring *pbr = &ove_wasm_audio.playback;
-	uint32_t target = pbr->size * 3 / 4;
-
-	while (sc->running) {
-		uint32_t avail = ove_sim_ring_avail_atomic(pbr);
-		if (avail < target) {
-			ove_audio_graph_process(sc->graph);
-		} else {
-			ove_thread_sleep_ms(1);
-		}
-	}
-#else
 	while (sc->running) {
 		ove_audio_graph_process(sc->graph);
 		ove_thread_sleep_ms(period_ms);
 	}
-#endif
 }
 
 static int sim_sink_start(void *ctx)

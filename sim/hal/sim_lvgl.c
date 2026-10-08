@@ -145,9 +145,9 @@ int ove_lvgl_init(void)
 					       &lv_font_montserrat_32);
 	lv_display_set_theme(disp, th);
 
-	/* Register mouse/touch input device.
-	 * WASM: JS forwards canvas events via ccall.
-	 * POSIX: dashboard sends input frames via WebSocket. */
+	/* Register mouse/touch input device.  The dashboard's pointer
+	 * arrives through ove_sim_input: shared memory on POSIX, a
+	 * semihosting read on QEMU. */
 	{
 		lv_indev_t *indev = lv_indev_create();
 		lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);

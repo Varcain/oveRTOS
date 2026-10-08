@@ -27,14 +27,13 @@
 /*
  * Public-API annotation macros.
  *
- * The skip-list (bindgen / Zig @cImport / Emscripten / clang-tidy lint)
+ * The skip-list (bindgen / Zig @cImport / clang-tidy lint)
  * mirrors heap_assert.h: those tools either don't grok the attribute
  * cleanly or never produce a binary the annotation could affect, so
  * expand to nothing there. Mirroring the existing pattern keeps the
  * tooling surface consistent.
  */
-#if defined(__BINDGEN__) || defined(__ZIG_CIMPORT__) || defined(__EMSCRIPTEN__) || \
-	defined(__OVE_LINT__)
+#if defined(__BINDGEN__) || defined(__ZIG_CIMPORT__) || defined(__OVE_LINT__)
 #define OVE_NONNULL(...)
 #define OVE_NODISCARD
 #define OVE_RETURNS_NONNULL
