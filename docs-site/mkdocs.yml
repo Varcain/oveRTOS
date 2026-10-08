@@ -15,7 +15,7 @@ theme:
 markdown_extensions:
   # `attr_list` enables the `{:attr="value"}` syntax appended to inline
   # markdown elements — used by example pages to add target="_blank" to
-  # external WASM-demo links so they open in a new tab instead of
+  # external browser-demo links so they open in a new tab instead of
   # navigating away from the docs.
   - attr_list
   # `md_in_html` lets Markdown be parsed inside HTML blocks — used by

@@ -16,7 +16,7 @@ First-class language bindings sit on top of a unified C application API: threads
 - **Application-grade modules** — sockets / TLS / HTTP / MQTT / HTTPD / SNTP, audio graph, TFLite Micro inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, UART / SPI / I2C / I2S.
 - **Two allocation modes** — heap (`_create()` / `_destroy()`) or zero-heap (`_init()` / `_deinit()` with caller storage, or `OVE_*_DEFINE_STATIC` for file-scope objects). The `_DEFINE_STATIC` macros compile identically in both modes.
 - **[Minimal abstraction overhead](https://varcain.github.io/oveRTOS/benchmarks/)** — compile-time backend dispatch, no vtables, no indirect calls. Per-op wrapper cost is benchmarked across every binding on every commit.
-- **POSIX + WebAssembly dev backends** — develop on Linux/macOS without hardware; demo the same firmware in a browser.
+- **Develop without hardware** — a POSIX backend for Linux/macOS, QEMU for the real kernels, and the QEMU firmware running in a browser for demos.
 
 ## Supported deployment targets
 
@@ -31,7 +31,7 @@ First-class language bindings sit on top of a unified C application API: threads
 | Backend | Use | Toolchain |
 |---------|-----|-----------|
 | POSIX | Develop and test on Linux / macOS without hardware | Host GCC/Clang |
-| WebAssembly | Same app rendered in a browser for live demos | Emscripten |
+| Browser | The QEMU Cortex-M7 firmware, run in QEMU compiled to WebAssembly, for live demos | ARM GCC (+ Docker or Podman to build the emulator once) |
 
 ## Quick start
 
@@ -454,10 +454,7 @@ The two modes share the same FFI. `ove_*_create` / `_destroy` go through the RTO
 
 ## Debugging
 
-Code-level debugging is available on both the QEMU and WASM targets:
-
-- **QEMU**: the browser dashboard includes a Debug window (Monaco source view, breakpoints, step/pause/continue, call stack, registers) driven by `arm-none-eabi-gdb` attached to QEMU's GDB stub.
-- **WASM**: build with `-DOVE_DEBUG=ON` to embed DWARF, install the [C/C++ DevTools Support (DWARF)](https://chromewebstore.google.com/detail/cc-devtools-support-dwarf/pdcpmagijalfljmkmjngeonclgbbannb) Chrome extension, then F12 → Sources panel and set breakpoints in your `.c` files. Optional `-DOVE_WASM_SAFE=ON` adds `SAFE_HEAP` / `ASSERTIONS` / stack-overflow-check for memory-bug hunting.
+Code-level debugging is available on the QEMU targets: the browser dashboard includes a Debug window (Monaco source view, breakpoints, step/pause/continue, call stack, registers) driven by `arm-none-eabi-gdb` attached to QEMU's GDB stub.
 
 Full workflow: [Debugging](docs-site/docs/getting-started/run.md#debugging).
 
@@ -523,7 +520,7 @@ oveRTOS/
 ├── include/ove/        # Public C API headers
 ├── src/                # Core framework implementation
 ├── backends/           # Backend implementations
-│   ├── freertos/  nuttx/  zephyr/  posix/  wasm/  common/
+│   ├── freertos/  nuttx/  zephyr/  posix/  common/
 ├── bindings/           # Language bindings
 │   ├── cpp/  rust/  zig/
 ├── apps/               # Example applications

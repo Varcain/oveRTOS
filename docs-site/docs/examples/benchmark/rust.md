@@ -1,6 +1,6 @@
 # Benchmark — Rust
 
-Source: `tests/benchmarks/rust/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark_rust/){:target="_blank"}**
+Source: `tests/benchmarks/rust/src/lib.rs` | *No browser demo — the benchmark times itself with the DWT cycle counter, which QEMU does not model*
 
 Measures latency, throughput, and memory usage of all RTOS abstractions.
 
@@ -15,9 +15,5 @@ See the [overview](index.md) for architecture details and the full API list.
 ```bash
 # Native POSIX
 make host.posix.benchmark_rust
-make configure && make download && make && make run
-
-# WASM (browser)
-make wasm.posix.benchmark_rust
 make configure && make download && make && make run
 ```

@@ -1,6 +1,6 @@
 # Networking Example — Rust
 
-Source: `apps/rust/heap/example_net/src/lib.rs` (also `apps/rust/zeroheap/example_net/src/lib.rs`) | **[WASM Demo](https://varcain.github.io/oveRTOS/example_net_rust_heap/){:target="_blank"}**
+Source: `apps/rust/heap/example_net/src/lib.rs` (also `apps/rust/zeroheap/example_net/src/lib.rs`) | *No browser demo — the browser bundle has no network peer*
 
 Exercises the full networking stack with a pass/fail test framework: netif configuration, DNS resolution, TCP/UDP sockets, HTTP client (GET/POST/PUT), SNTP time sync, MQTT pub/sub, and embedded HTTP server.
 
@@ -15,9 +15,5 @@ See the [overview](index.md) for architecture details and the full API list.
 ```bash
 # Native POSIX
 make host.posix.example_net_rust
-make configure && make download && make && make run
-
-# WASM (browser)
-make wasm.posix.example_net_rust
 make configure && make download && make && make run
 ```

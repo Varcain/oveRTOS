@@ -15,7 +15,7 @@ The behaviour depends on the selected board:
 | `qemu` (`qemu-mps2-an500`) | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
 | `host` | Executes the POSIX binary directly on the host; browser dashboard opens for display and audio |
 | `stm32f746` | `make run` is not used; use `make flash` to program hardware over ST-LINK |
-| `wasm` | Produces an HTML/WASM bundle; serve it over HTTP (COOP/COEP enabled) and open in a browser |
+| `web` (browser variant of `qemu-mps2-an500`) | Serves the browser bundle over HTTP (COOP/COEP enabled) and opens it; the firmware runs in QEMU compiled to WebAssembly |
 
 ### QEMU Emulated Targets
 
@@ -26,6 +26,18 @@ To run without an interactive display (useful in CI):
 ```bash
 make run HEADLESS=1
 ```
+
+### In a Web Browser
+
+`make web.<rtos>.<app>` configures the QEMU board's `web` variant. The build then also writes `serve/` — the dashboard, the firmware and QEMU compiled to WebAssembly — and `make run` serves it locally:
+
+```bash
+make web.freertos.example_c
+make
+make run   # http://localhost:8080
+```
+
+The emulator is built on first use (`ove ensure-toolchain qemu-wasm`, needs Docker or Podman). It runs QEMU's interpreter, several times slower than the native run above, so this variant builds the optimised firmware. See [Board Configurations](../build-system/boards.md) for what the bundle contains and how to host it.
 
 ### POSIX Native Targets
 
@@ -61,34 +73,9 @@ sudo dnf install openocd
 
 When running a `qemu` board under `make run`, the browser dashboard exposes a Debug window (Monaco source view, breakpoints, step controls, call stack, registers). It drives `arm-none-eabi-gdb` attached to QEMU's GDB stub via `config/scripts/ove-dashboard-bridge.py`. F5 / F6 / F10 map to continue / pause / step-over.
 
-### WASM (Chrome DevTools)
+### Browser bundle
 
-WASM debugging uses the browser's own debugger, not the dashboard. One-time setup:
-
-1. Build with debug symbols:
-
-   ```bash
-   emcmake cmake -DOVE_DEBUG=ON -B build boards/wasm/posix
-   emmake make -C build
-   ```
-
-   This adds `-g -gsource-map` on the Emscripten link line, embedding DWARF in `ove_wasm.wasm` and emitting `ove_wasm.wasm.map`.
-
-2. (Optional) Enable the runtime safety net — high-ROI for hunting memory bugs:
-
-   ```bash
-   emcmake cmake -DOVE_DEBUG=ON -DOVE_WASM_SAFE=ON -B build boards/wasm/posix
-   ```
-
-   `OVE_WASM_SAFE` turns on Emscripten's `SAFE_HEAP=1`, `ASSERTIONS=2`, and `STACK_OVERFLOW_CHECK=2`. Pays a significant runtime cost, so leave off for performance testing.
-
-3. Install the **[C/C++ DevTools Support (DWARF)](https://chromewebstore.google.com/detail/cc-devtools-support-dwarf/pdcpmagijalfljmkmjngeonclgbbannb)** Chrome extension once. Without it, DevTools still steps through the `.wasm` byte-by-byte, but locals appear as raw wasm indices rather than named C variables.
-
-4. Open the dashboard in Chrome/Chromium/Edge, press **F12**, switch to the **Sources** panel. Your project's `.c` files appear under the wasm module. Click a line to set a breakpoint, reload to hit it. Scope view shows named C locals with the extension installed.
-
-Firefox has a built-in WASM debugger that picks up `-g` automatically; named-local support is more limited than Chrome's.
-
-**In-dashboard controls on WASM**: the Debug window still shows the source browser and thread list, but the step/pause/breakpoint buttons are greyed out with a tooltip pointing to DevTools. The dashboard does not host its own debugger for WASM — the browser's is strictly more capable.
+The dashboard in a `web` bundle has no debugger: the firmware is the optimised build and the emulator runs inside the page, where there is no GDB to attach. Debug the same app on the native `qemu` board instead.
 
 ## Testing
 

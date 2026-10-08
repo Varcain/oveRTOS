@@ -1,6 +1,6 @@
 # Benchmark — Zig
 
-Source: `tests/benchmarks/zig/src/main.zig` | *WASM demo not available — Zig 0.16 still lacks wasm32-emscripten support*
+Source: `tests/benchmarks/zig/src/main.zig` | *No browser demo — the benchmark times itself with the DWT cycle counter, which QEMU does not model*
 
 Measures latency, throughput, and memory usage of all RTOS abstractions.
 

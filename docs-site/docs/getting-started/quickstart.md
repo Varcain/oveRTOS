@@ -89,7 +89,7 @@ After loading a config, `make && make run` always rebuilds and launches. Run `ma
 
 ## See it run before you build
 
-If you'd rather watch the same example execute in your browser without installing anything, the public live demos run the WASM build of each app:
+If you'd rather watch the same example execute in your browser without installing anything, the public live demos run each app's FreeRTOS firmware in QEMU compiled to WebAssembly:
 
 - [C++ example (heap)](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}
 - [Rust example (heap)](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"}
@@ -97,7 +97,7 @@ If you'd rather watch the same example execute in your browser without installin
 - [C example (heap)](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}
 - [LVGL gallery (C++)](https://varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/){:target="_blank"}
 
-The same `firmware.elf` would boot on a STM32F746G-DISCO; the dashboard is the simulation transport, not a fake.
+This is the real kernel and the real firmware image, the one `make qemu.freertos.<app>` builds for the emulated Cortex-M7 board; only the emulator moved into the page. It runs slower than on your machine, because QEMU has no JIT in a browser.
 
 ## Next steps
 

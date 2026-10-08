@@ -221,8 +221,8 @@ graph LR
 backend does not provide CPU accounting. Stack profiling follows the same
 explicit convention: `ove_thread_get_stack_headroom()` returns
 `OVE_ERR_NOT_SUPPORTED` instead of conflating unavailable data with a real
-zero-byte margin. FreeRTOS, Zephyr with stack initialization enabled, WASM,
-and heap-enabled POSIX builds provide the measurement. NuttX currently does
+zero-byte margin. FreeRTOS, Zephyr with stack initialization enabled, and
+heap-enabled POSIX builds provide the measurement. NuttX currently does
 not expose a safe high-water query for an oveRTOS-owned task handle.
 
 ```c
@@ -272,7 +272,7 @@ if (rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL) {
 The flags are deliberately granular. For example, FreeRTOS, NuttX, and
 Zephyr can report cumulative running time without pretending that
 `total - running` is exact blocked time; that remainder can also include time
-spent ready or suspended. Heap-enabled POSIX and WASM builds with state
+spent ready or suspended. Heap-enabled POSIX builds with state
 tracking provide all four state buckets. Snapshot stack scanning stays
 disabled in bounded scheduler-locked traversals, so a backend may know the
 allocation size without providing `stack_used`.

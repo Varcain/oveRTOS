@@ -1,6 +1,6 @@
 # Basic Example — Zig
 
-Source: `apps/zig/heap/example/src/main.zig` (also `apps/zig/zeroheap/example/src/main.zig`) | *WASM demo not available — Zig 0.16 still lacks wasm32-emscripten support*
+Source: `apps/zig/heap/example/src/main.zig` (also `apps/zig/zeroheap/example/src/main.zig`) | **[Browser demo](https://varcain.github.io/oveRTOS/example_zig_heap/){:target="_blank"}**
 
 The Zig example demonstrates the `ove` module with allocator-aware constructors, `comptime`-typed wrappers, exhaustive RTOS dispatch, narrow per-op error sets, and `std.log` integration.
 
@@ -40,7 +40,6 @@ const app_title = switch (ove.target.current_rtos) {
     .nuttx => "oveRTOS(NuttX) Zig Demo",
     .zephyr => "oveRTOS(Zephyr) Zig Demo",
     .posix => "oveRTOS(POSIX) Zig Demo",
-    .wasm => "oveRTOS(wasm) Zig Demo",
 };
 ```
 

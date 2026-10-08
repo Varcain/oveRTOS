@@ -1,6 +1,6 @@
 # Basic Example — C++
 
-Source: `apps/cpp/example/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}**
+Source: `apps/cpp/example/src/app.cpp` | **[Browser demo](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}**
 
 The C++ example demonstrates the `ove::` namespace wrappers with RAII semantics, template-based objects, `Result<T>` error handling, and the LVGL C++20 fluent builders.
 
@@ -150,6 +150,6 @@ No manual `_create()` / `_destroy()` — C++ constructors and destructors handle
 ## How to build
 
 ```bash
-make host.posix.example_cpp_heap   # or wasm.posix.example_cpp_heap
+make host.posix.example_cpp_heap   # or web.freertos.example_cpp_heap
 make configure && make download && make && make run
 ```

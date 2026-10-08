@@ -1,6 +1,6 @@
 # Benchmark — C
 
-Source: `tests/benchmarks/c/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark/){:target="_blank"}**
+Source: `tests/benchmarks/c/src/app.c` | *No browser demo — the benchmark times itself with the DWT cycle counter, which QEMU does not model*
 
 Measures latency, throughput, and memory usage of all RTOS abstractions.
 
@@ -15,9 +15,5 @@ See the [overview](index.md) for architecture details and the full API list.
 ```bash
 # Native POSIX
 make host.posix.benchmark
-make configure && make download && make && make run
-
-# WASM (browser)
-make wasm.posix.benchmark
 make configure && make download && make && make run
 ```

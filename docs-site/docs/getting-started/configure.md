@@ -106,16 +106,16 @@ and any storage-mode-specific tuning.
 | `host` | Host PC (POSIX native) |
 | `qemu` | QEMU MPS2-AN500 (Cortex-M7) |
 | `stm32f746` | STM32F746G-Discovery |
-| `wasm` | WebAssembly (Emscripten) |
+| `web` | The `qemu` board packaged for a web browser (firmware + QEMU compiled to WebAssembly) |
 
 **RTOSes:**
 
 | Name | Boards |
 |---|---|
-| `posix` | host, wasm |
-| `freertos` | qemu, stm32f746 |
-| `nuttx` | qemu, stm32f746 |
-| `zephyr` | qemu, stm32f746 |
+| `posix` | host |
+| `freertos` | qemu, web, stm32f746 |
+| `nuttx` | qemu, web, stm32f746 |
+| `zephyr` | qemu, web, stm32f746 |
 
 **Apps** — the third token of the dot-syntax target is the `config_name` field from each `app.yaml`. The values below are the heap-mode `config_name`s; each has a `_zh` zero-heap sibling (e.g. `example_c_zh`, `example_cpp_zh`).
 

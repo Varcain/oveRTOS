@@ -40,7 +40,7 @@ On embedded targets (`qemu.freertos.lvgl_gallery_cpp`, `stm32f746.freertos.lvgl_
 
 ## Live demo
 
-The C++ gallery builds to WebAssembly: [varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/](https://varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/){:target="_blank"}.
+The gallery runs in the browser, as its FreeRTOS firmware in QEMU compiled to WebAssembly: [C++](https://varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/){:target="_blank"} · [Rust](https://varcain.github.io/oveRTOS/lvgl_gallery_rust_heap/){:target="_blank"} · [Zig](https://varcain.github.io/oveRTOS/lvgl_gallery_zig_heap/){:target="_blank"}.
 
 ## Per-language walkthroughs
 
