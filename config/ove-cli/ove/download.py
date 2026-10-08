@@ -9,6 +9,7 @@
 Absorbs config/scripts/download.py into the ove CLI package.
 """
 
+import hashlib
 import logging
 import os
 import shutil
@@ -885,6 +886,111 @@ def download_renode(dl_dir, tools_dir, manifest=None):
     return launcher
 
 
+def _sha256_file(path):
+    """Return the hex SHA-256 of a file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _qemu_wasm_recipe(ove_dir):
+    """Paths of the files that define how the WebAssembly QEMU is built."""
+    return (os.path.join(ove_dir, "config", "scripts", "build-qemu-wasm.sh"),
+            os.path.join(ove_dir, "config", "qemu-wasm", "mps2.mak"))
+
+
+def qemu_wasm_dir(ove_dir, tools_dir, manifest=None):
+    """Return where the WebAssembly QEMU for this tree lives (built or not).
+
+    The directory name carries the QEMU version and a short hash of the
+    build recipe, so changing either one builds a new emulator instead of
+    reusing a stale binary.  Returns None without a tools.qemu-wasm entry.
+    """
+    version = get_component(manifest, "tools", "qemu-wasm", "version")
+    if not version:
+        return None
+    digest = hashlib.sha256()
+    for path in _qemu_wasm_recipe(ove_dir):
+        with open(path, "rb") as f:
+            digest.update(f.read())
+    return os.path.join(tools_dir, "qemu-wasm",
+                        f"qemu-{version}-{digest.hexdigest()[:8]}")
+
+
+def qemu_wasm_ready(emulator_dir):
+    """True when *emulator_dir* holds a complete WebAssembly QEMU."""
+    return bool(emulator_dir) and all(
+        os.path.isfile(os.path.join(emulator_dir, name))
+        for name in ("qemu-system-arm.js", "qemu-system-arm.wasm"))
+
+
+def build_qemu_wasm(ove_dir, dl_dir, tools_dir, manifest=None):
+    """Build the WebAssembly QEMU that runs qemu-mps2 firmware in a browser.
+
+    Layout:
+        <dl_dir>/qemu-<version>.tar.xz                  — cached tarball
+        <tools_dir>/qemu-wasm/qemu-<version>-<recipe>/  — the emulator:
+            qemu-system-arm.js, qemu-system-arm.wasm, SOURCE.txt
+        <tools_dir>/qemu-wasm/work/                     — source and build
+                                                          tree, removed
+                                                          after a good build
+
+    Returns the emulator directory on success.  Returns None when the
+    manifest has no tools.qemu-wasm entry, the download or its checksum
+    fails, or the build fails — it needs Docker or Podman and several
+    minutes (see config/scripts/build-qemu-wasm.sh).
+    """
+    version = get_component(manifest, "tools", "qemu-wasm", "version")
+    url = get_component(manifest, "tools", "qemu-wasm", "url")
+    sha256 = get_component(manifest, "tools", "qemu-wasm", "sha256")
+    if not version or not url:
+        logger.warning("QEMU-wasm: not in manifest (tools.qemu-wasm) — "
+                       "skipping")
+        return None
+
+    out_dir = qemu_wasm_dir(ove_dir, tools_dir, manifest)
+    if qemu_wasm_ready(out_dir):
+        logger.info(f"QEMU-wasm {version}: up to date")
+        return out_dir
+
+    os.makedirs(dl_dir, exist_ok=True)
+    tarball = os.path.join(dl_dir, url.rsplit("/", 1)[-1])
+    if not os.path.isfile(tarball):
+        logger.info(f"QEMU-wasm {version}: downloading from {url}")
+        try:
+            _retry(
+                lambda: urllib.request.urlretrieve(url, tarball,
+                                                   _download_progress),
+                "download qemu")
+            print()
+        except Exception as e:  # noqa: BLE001
+            print()
+            logger.warning(f"QEMU download failed: {e}")
+            if os.path.isfile(tarball):
+                os.unlink(tarball)
+            return None
+
+    if sha256 and _sha256_file(tarball) != sha256:
+        logger.error(f"QEMU-wasm: {tarball} does not match the manifest "
+                     "sha256 — delete it to download again")
+        return None
+
+    script = _qemu_wasm_recipe(ove_dir)[0]
+    work_dir = os.path.join(tools_dir, "qemu-wasm", "work")
+    logger.info(f"QEMU-wasm {version}: building (this takes several "
+                "minutes; the container image is cached afterwards)")
+    ret = subprocess.run([script, tarball, work_dir, out_dir])
+    if ret.returncode != 0 or not qemu_wasm_ready(out_dir):
+        logger.warning("QEMU-wasm build failed")
+        return None
+
+    shutil.rmtree(work_dir, ignore_errors=True)
+    logger.info(f"QEMU-wasm {version}: ready at {out_dir}")
+    return out_dir
+
+
 def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
     """Download TensorFlow Lite Micro sources for ML inference."""
     tflm_url = get_component(manifest, "libraries", "tflm", "url")
@@ -1123,8 +1229,9 @@ def cmd_ensure_toolchain(args):
 
     Workspace-independent — used by `make docs` to fetch a host Zig
     before .config exists, by Zephyr build/test paths to fetch the
-    Zephyr SDK, and by `make test-renode-*` to grab the Renode emulator
-    on demand.  Supported names: `zig`, `zephyr-sdk`, `renode`.
+    Zephyr SDK, by `make test-renode-*` to grab the Renode emulator on
+    demand, and to build the WebAssembly QEMU for the browser demos.
+    Supported names: `zig`, `zephyr-sdk`, `renode`, `qemu-wasm`.
     """
     ws = Workspace()
     manifest = load_manifest(ws.ove_dir)
@@ -1144,7 +1251,13 @@ def cmd_ensure_toolchain(args):
         os.makedirs(tools_dir, exist_ok=True)
         if download_renode(ws.dl_dir, tools_dir, manifest=manifest) is None:
             sys.exit(1)
+    elif args.name == "qemu-wasm":
+        tools_dir = os.path.join(ws.ove_dir, "output", "tools")
+        os.makedirs(tools_dir, exist_ok=True)
+        if build_qemu_wasm(ws.ove_dir, ws.dl_dir, tools_dir,
+                           manifest=manifest) is None:
+            sys.exit(1)
     else:
         logger.error(f"unknown toolchain: {args.name} "
-                     "(supported: zig, zephyr-sdk, renode)")
+                     "(supported: zig, zephyr-sdk, renode, qemu-wasm)")
         sys.exit(2)
