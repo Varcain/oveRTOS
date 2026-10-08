@@ -1041,6 +1041,146 @@ def _create_run_or_flash_script(ws, rtos=None):
 
 
 
+def _web_index_html(dashboard_dir):
+    """Return the dashboard page adapted to run the firmware in the page.
+
+    sim/dashboard/index.html is the page the local bridge serves.  Two
+    marked spots differ in the browser bundle: a static host cannot send
+    the cross-origin isolation headers, so coi-serviceworker.js takes the
+    place of the script that removes stale service workers; and
+    qemu-wasm.js is loaded ahead of app.js to provide the firmware link.
+    """
+    with open(os.path.join(dashboard_dir, "index.html")) as f:
+        html = f.read()
+    html, heads = re.subn(
+        r"<!-- ove:web-head .*?<!-- ove:web-head-end -->",
+        '<script src="coi-serviceworker.js"></script>', html, flags=re.S)
+    html, links = re.subn(
+        r"<!-- ove:web-link .*?-->",
+        '<script src="qemu-wasm.js"></script>', html, flags=re.S)
+    if heads != 1 or links != 1:
+        raise RuntimeError("sim/dashboard/index.html: the web bundle "
+                           "markers (ove:web-head, ove:web-link) are gone")
+    return html
+
+
+def _strip_firmware(ws, src, dest):
+    """Copy the firmware ELF without symbols and debug info.
+
+    The browser downloads this file; QEMU only needs the load segments.
+    Falls back to a plain copy when no objcopy is found.
+    """
+    path = ws.toolchain_env().get("PATH")
+    for name in ("arm-none-eabi-objcopy", "arm-zephyr-eabi-objcopy"):
+        objcopy = shutil.which(name, path=path)
+        if not objcopy:
+            continue
+        ret = subprocess.run([objcopy, "--strip-all", src, dest],
+                             capture_output=True, text=True)
+        if ret.returncode == 0:
+            return
+        logger.debug(f"{name} --strip-all failed: {ret.stderr.strip()}")
+    shutil.copy2(src, dest)
+
+
+def _assemble_web_bundle(ws):
+    """Package the firmware for a web browser into <workspace>/serve/.
+
+    serve/ holds the dashboard, the firmware, web.json naming what to run,
+    and qemu/, a link to the WebAssembly QEMU under output/tools/.  It
+    needs nothing else from the tree: copy it with the link dereferenced
+    to put it on a static host.  serve/run.sh serves it locally.
+    """
+    from .download import build_qemu_wasm
+    from .manifest import load_manifest
+
+    firmware = os.path.join(ws.images_dir, "firmware.elf")
+    if not os.path.isfile(firmware):
+        logger.error(f"web bundle: {firmware} not found")
+        sys.exit(1)
+
+    emulator = build_qemu_wasm(ws.ove_dir, ws.dl_dir,
+                               os.path.join(ws.output_dir, "tools"),
+                               manifest=load_manifest(ws.ove_dir))
+    if emulator is None:
+        logger.error("web bundle: the WebAssembly QEMU could not be built; "
+                     "see 'ove ensure-toolchain qemu-wasm'")
+        sys.exit(1)
+
+    serve_dir = os.path.join(ws.workspace_dir, "serve")
+    os.makedirs(serve_dir, exist_ok=True)
+
+    dash_dir = os.path.join(ws.ove_dir, "sim", "dashboard")
+    with open(os.path.join(serve_dir, "index.html"), "w") as f:
+        f.write(_web_index_html(dash_dir))
+    for name in ("app.js", "style.css", "coi-serviceworker.js",
+                 "qemu-wasm.js"):
+        shutil.copy2(os.path.join(dash_dir, name), serve_dir)
+
+    _strip_firmware(ws, firmware, os.path.join(serve_dir, "firmware.elf"))
+    atomic_symlink(emulator, os.path.join(serve_dir, "qemu"))
+    with open(os.path.join(serve_dir, "web.json"), "w") as f:
+        json.dump({"firmware": "firmware.elf", "emulator": "qemu/",
+                   "machine": "mps2-an500"}, f, indent=2)
+        f.write("\n")
+
+    _write_web_run_sh(os.path.join(serve_dir, "run.sh"))
+
+    # The workspace-level run script follows 'ove run': the browser.
+    run_script = os.path.join(ws.workspace_dir, "run")
+    with open(run_script, "w") as f:
+        f.write('#!/bin/bash\n')
+        f.write('set -e\n')
+        f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
+        f.write('exec "$DIR/serve/run.sh" "$@"\n')
+    os.chmod(run_script, 0o755)
+    logger.info(f"Web bundle: {serve_dir}/")
+
+
+def _write_web_run_sh(path):
+    """Generate serve/run.sh: a local server for the browser bundle.
+
+    The emulator's threads need a cross-origin isolated page.  This server
+    sends the headers for it; on a static host coi-serviceworker.js does.
+    """
+    content = '''#!/usr/bin/env bash
+# Auto-generated — serves this browser bundle with COOP/COEP headers.
+# Usage: ./run.sh [PORT]
+
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+PORT="${1:-8080}"
+
+echo "=== Serving the browser bundle at http://localhost:$PORT ==="
+echo "  Files:  $DIR"
+echo "  Press Ctrl+C to stop."
+
+# Open browser (best-effort, non-blocking)
+( sleep 1 && python3 -c "import webbrowser; webbrowser.open('http://localhost:$PORT')" ) 2>/dev/null &
+
+exec python3 -c "
+import functools, http.server, sys
+
+class H(http.server.SimpleHTTPRequestHandler):
+    extensions_map = dict(http.server.SimpleHTTPRequestHandler.extensions_map,
+                          **{'.wasm': 'application/wasm'})
+    def end_headers(self):
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
+        self.send_header('Cache-Control', 'no-cache')
+        super().end_headers()
+    def log_message(self, *a):
+        pass
+
+handler = functools.partial(H, directory=sys.argv[2])
+http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), handler).serve_forever()
+" "$PORT" "$DIR"
+'''
+    with open(path, "w") as f:
+        f.write(content)
+    os.chmod(path, 0o755)
+
+
 def _check_generated_current(ws):
     """Refuse to build when generated/ came from a different .config.
 
@@ -1123,6 +1263,8 @@ def build(ws):
     with ws.open_build_log(log_path):
         builder(ws)
     _link_compile_commands(ws)
+    if get_bool(ws.config, "CONFIG_OVE_SIM_WEB"):
+        _assemble_web_bundle(ws)
 
     # Record what was just built, after the artifacts exist so their hashes are
     # the ones 'ove flash' will check.

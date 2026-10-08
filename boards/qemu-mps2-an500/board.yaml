@@ -46,6 +46,11 @@ defconfig:
   - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
   - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
 
+# `make web.<rtos>.<app>`: this board packaged for a web browser.
+variants:
+  web:
+    - CONFIG_OVE_SIM_WEB=y
+
 rtos_defconfig:
   freertos:
     - CONFIG_OVE_RUST_TARGET="thumbv7em-none-eabihf"

@@ -10,7 +10,7 @@ import os
 import tempfile
 import unittest
 
-from ove.kconfig import _find_board_dir
+from ove.kconfig import _find_board_dir, _find_board_variant
 
 
 class FindBoardDirTest(unittest.TestCase):
@@ -43,6 +43,18 @@ class FindBoardDirTest(unittest.TestCase):
         self.assertEqual(self._resolve("qemu-mps2-an521"), "qemu-mps2-an521")
         self.assertEqual(self._resolve("stm32f746"), "stm32f746g-discovery")
         self.assertIsNone(self._resolve("wasm"))
+
+    def test_variant_name_resolves_to_its_board(self):
+        board = os.path.join(self.root, "boards", "qemu-mps2-an500")
+        with open(os.path.join(board, "board.yaml"), "w") as f:
+            f.write("variants:\n  web:\n    - CONFIG_OVE_SIM_WEB=y\n")
+
+        path, lines = _find_board_variant(self.root, "web")
+        self.assertEqual(path, board)
+        self.assertEqual(lines, ["CONFIG_OVE_SIM_WEB=y"])
+        # A variant is not a board: the plain lookup still misses it.
+        self.assertIsNone(self._resolve("web"))
+        self.assertEqual(_find_board_variant(self.root, "qemu"), (None, None))
 
 
 if __name__ == "__main__":

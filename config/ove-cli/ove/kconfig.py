@@ -243,6 +243,30 @@ def _find_board_dir(ove_dir, board_short):
     return None
 
 
+def _find_board_variant(ove_dir, name):
+    """Find the board that declares *name* under 'variants' in board.yaml.
+
+    A variant stands in for the board in a '<board>.<rtos>.<app>' spec:
+    'web.freertos.example_c' is qemu-mps2-an500 with the Kconfig lines of
+    its 'web' variant on top, configured into output/web/freertos/.
+
+    Returns (board_dir, lines), or (None, None) when no board has it.
+    """
+    boards_dir = os.path.join(ove_dir, "boards")
+    if not os.path.isdir(boards_dir):
+        return None, None
+
+    for entry in sorted(os.listdir(boards_dir)):
+        board_path = os.path.join(boards_dir, entry)
+        yaml_path = os.path.join(board_path, "board.yaml")
+        if not os.path.isfile(yaml_path):
+            continue
+        variants = (_load_yaml(yaml_path) or {}).get("variants")
+        if isinstance(variants, dict) and name in variants:
+            return board_path, list(variants[name] or [])
+    return None, None
+
+
 def _find_board_kconfig_symbol(ove_dir, board_dir_name):
     """Find the CONFIG_OVE_BOARD_* symbol for a board directory name."""
     hw_config = os.path.join(ove_dir, "config", "Config.in.hardware")
@@ -427,7 +451,9 @@ def cmd_defconfig_fragments(args):
     frag_dir = os.path.join(ove_dir, "config", "fragments")
 
     # ── Resolve board ──────────────────────────────────────────────
-    board_dir = _find_board_dir(ove_dir, board)
+    board_dir, variant_lines = _find_board_variant(ove_dir, board)
+    if not board_dir:
+        board_dir = _find_board_dir(ove_dir, board)
     if not board_dir:
         print(f"Error: board '{board}' not found in boards/")
         sys.exit(1)
@@ -471,7 +497,8 @@ def cmd_defconfig_fragments(args):
 
     # ── Build merged defconfig lines ───────────────────────────────
     # Layer 1: global fragment
-    # Layer 2: board (from board.yaml)
+    # Layer 2: board (from board.yaml), then its variant if the spec
+    #          named one
     # Layer 3: rtos fragment
     # Layer 4: board rtos-specific (from board.yaml rtos_defconfig)
     # Layer 5: app (from app.yaml)
@@ -515,6 +542,7 @@ def cmd_defconfig_fragments(args):
     if isinstance(board_defconfig, list):
         board_lines.extend(board_defconfig)
     _load_lines("board", board_lines)
+    _load_lines("variant", variant_lines)
 
     # 3. RTOS fragment
     rtos_path = os.path.join(frag_dir, "rtos", f"{rtos}.defconfig")
