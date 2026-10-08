@@ -510,7 +510,8 @@ Before pushing, run `make lint && make test`. CI's first job (`.github/workflows
 
 ```bash
 make docs          # Build complete documentation site (C, C++, Rust, Zig API + guides)
-make docs-serve    # Build and serve locally at http://localhost:8000
+make docs-demos    # Add the browser demos the pages link to
+make docs-serve    # Build both and serve locally at http://localhost:8000 (DEMOS=0: pages only)
 ```
 
 ## Project structure
