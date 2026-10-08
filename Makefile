@@ -76,6 +76,7 @@ menuconfig: $(VENV_STAMP)
 #   make qemu.freertos.example_c
 #   make stm32f746.zephyr.benchmark_rust
 #   make host.posix.example_net_cpp_zh
+#   make web.freertos.example_c      (the qemu board's browser variant)
 #
 # Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
 # Exclude paths (slashes) — `setup`'s recursive make passes the absolute
@@ -582,6 +583,7 @@ help:
 	@echo "    make qemu.freertos.example_c"
 	@echo "    make stm32f746.zephyr.benchmark_rust"
 	@echo "    make host.posix.example_net_zh"
+	@echo "    make web.freertos.example_c       (qemu, packaged for a browser)"
 	@echo ""
 	@echo "  Other:"
 	@echo "    menuconfig              - Interactive configuration (TUI)"
@@ -647,6 +649,7 @@ help:
 	@echo "  completion-bash|zsh|fish  - Emit shell completion script on stdout"
 	@echo "  ensure-toolchain-zig    - Install the zig toolchain"
 	@echo "  ensure-toolchain-zephyr-sdk - Install the Zephyr SDK"
+	@echo "  ensure-toolchain-qemu-wasm - Build QEMU for WebAssembly (web variant)"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  docs                    - Build complete documentation site"
