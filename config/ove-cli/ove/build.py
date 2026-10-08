@@ -728,235 +728,68 @@ def build_nuttx(ws):
 
 
 def build_posix(ws):
-    """Build POSIX native executable (or WASM) via CMake."""
-    is_wasm = get_bool(ws.config, "CONFIG_OVE_BOARD_WASM")
-
+    """Build POSIX native executable via CMake."""
     cmake = _find_cmake()
     env = ws.toolchain_env()
     board_dir = os.path.join(ws.board_dir, "posix")
     fw_build = os.path.join(ws.build_dir, "firmware")
     os.makedirs(fw_build, exist_ok=True)
 
-    if is_wasm:
-        logger.info("Building WASM/Emscripten target")
-
-        # Find emcmake: first try downloaded emsdk, then PATH.
-        # Resolve through the per-workspace symlink to the canonical
-        # `dl/emsdk-<hash>/` realpath. Emscripten's sanity check stamps
-        # the absolute emsdk path into the cache; passing the symlinked
-        # `<workspace>/dl/emsdk` makes every app look like a different
-        # SDK install ("(Emscripten: config changed, clearing cache)"),
-        # and the in-flight zig @cImport then races the cache wipe and
-        # fails with FileNotFound on the sysroot headers.
-        emsdk_link = os.path.join(ws.ws_dl_dir, "emsdk")
-        if os.path.exists(emsdk_link):
-            emsdk_dir = os.path.realpath(emsdk_link)
-        else:
-            emsdk_dir = os.path.realpath(os.path.join(ws.dl_dir, "emsdk"))
-        em_bin = os.path.join(emsdk_dir, "upstream", "emscripten")
-        emcmake = os.path.join(em_bin, "emcmake")
-        emmake = os.path.join(em_bin, "emmake")
-
-        if not os.path.isfile(emcmake):
-            # Fallback to PATH
-            emcmake = shutil.which("emcmake")
-            emmake = shutil.which("emmake")
-
-        if not emcmake or not os.path.isfile(emcmake):
-            logger.error("Emscripten SDK not found. Run 'ove download' first.")
-            sys.exit(1)
-
-        # Add emsdk paths to env so emcmake can find node, etc.
-        emsdk_node = os.path.join(emsdk_dir, "node")
-        node_dirs = [os.path.join(emsdk_node, d, "bin")
-                     for d in os.listdir(emsdk_node)
-                     if os.path.isdir(os.path.join(emsdk_node, d, "bin"))] \
-                    if os.path.isdir(emsdk_node) else []
-        extra_path = os.pathsep.join([em_bin, emsdk_dir] + node_dirs)
-        env["PATH"] = extra_path + os.pathsep + env.get("PATH", "")
-        env["EMSDK"] = emsdk_dir
-        env["EM_CONFIG"] = os.path.join(emsdk_dir, ".emscripten")
-        # Pin the emcc cache to the canonical SDK install rather than
-        # the workspace-local symlink, so concurrent allconfigs builds
-        # share one cache and don't race on per-app cache rebuilds.
-        env["EM_CACHE"] = os.path.join(emsdk_dir, "upstream", "emscripten", "cache")
-
-        if not emmake or not os.path.isfile(emmake):
-            emmake = os.path.join(em_bin, "emmake")
-
-        run([
-            emcmake, cmake,
-            f"-DOVE_DIR={ws.ove_dir}",
-            f"-DOVE_APP_DIR={ws.app_dir}",
-            f"-DOVE_GEN_DIR={ws.gen_dir}",
-            f"-DOVE_DL_DIR={ws.ws_dl_dir}",
-            board_dir,
-        ], env=env, cwd=fw_build, log_file=ws.build_log)
-        run([emmake, "make", f"-j{nproc()}"], env=env, cwd=fw_build,
-            log_file=ws.build_log)
-    else:
-        logger.info("Building POSIX native executable")
-        run([
-            cmake,
-            f"-DOVE_DIR={ws.ove_dir}",
-            f"-DOVE_APP_DIR={ws.app_dir}",
-            f"-DOVE_GEN_DIR={ws.gen_dir}",
-            f"-DOVE_DL_DIR={ws.ws_dl_dir}",
-            board_dir,
-        ], env=env, cwd=fw_build, log_file=ws.build_log)
-        run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-            log_file=ws.build_log)
+    logger.info("Building POSIX native executable")
+    run([
+        cmake,
+        f"-DOVE_DIR={ws.ove_dir}",
+        f"-DOVE_APP_DIR={ws.app_dir}",
+        f"-DOVE_GEN_DIR={ws.gen_dir}",
+        f"-DOVE_DL_DIR={ws.ws_dl_dir}",
+        board_dir,
+    ], env=env, cwd=fw_build, log_file=ws.build_log)
+    run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
+        log_file=ws.build_log)
 
     os.makedirs(ws.images_dir, exist_ok=True)
-    if is_wasm:
-        for name in ("ove_wasm.html", "ove_wasm.js", "ove_wasm.wasm",
-                      "ove_wasm.worker.js"):
-            src = os.path.join(fw_build, name)
-            if os.path.isfile(src):
-                shutil.copy2(src, ws.images_dir)
+    src = os.path.join(fw_build, "ove_posix")
+    if os.path.isfile(src):
+        shutil.copy2(src, ws.images_dir)
 
-        # Assemble serve directory with all assets needed to run
-        _assemble_wasm_serve(ws, fw_build)
-    else:
-        src = os.path.join(fw_build, "ove_posix")
-        if os.path.isfile(src):
-            shutil.copy2(src, ws.images_dir)
-
-        # Create run script — mirrors 'ove run' for POSIX: launch the
-        # dashboard bridge in the background, then run the binary.
-        run_script = os.path.join(ws.workspace_dir, "run")
-        ove_dir_q = shlex.quote(ws.ove_dir)
-        with open(run_script, "w") as f:
-            f.write('#!/bin/bash\n')
-            f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-            f.write(f'OVE_DIR={ove_dir_q}\n')
-            f.write('export OVE_DIR\n')
-            f.write('\n')
-            f.write('HEADLESS=0\n')
-            f.write('ARGS=()\n')
-            f.write('for arg in "$@"; do\n')
-            f.write('    case "$arg" in\n')
-            f.write('        --headless) HEADLESS=1 ;;\n')
-            f.write('        *) ARGS+=("$arg") ;;\n')
-            f.write('    esac\n')
-            f.write('done\n')
-            f.write('\n')
-            f.write('BRIDGE_PID=""\n')
-            f.write('cleanup() {\n')
-            f.write('    if [ -n "$BRIDGE_PID" ]; then\n')
-            f.write('        kill "$BRIDGE_PID" 2>/dev/null || true\n')
-            f.write('        wait "$BRIDGE_PID" 2>/dev/null || true\n')
-            f.write('    fi\n')
-            f.write('}\n')
-            f.write('trap cleanup EXIT\n')
-            f.write('\n')
-            f.write('if [ "$HEADLESS" != "1" ]; then\n')
-            f.write('    PYTHON="$OVE_DIR/.venv/bin/python3"\n')
-            f.write('    [ -x "$PYTHON" ] || PYTHON=python3\n')
-            f.write('    "$PYTHON" "$OVE_DIR/config/scripts/ove-dashboard-bridge.py" \\\n')
-            f.write('        --port 8080 --dashboard "$OVE_DIR/sim/dashboard" &\n')
-            f.write('    BRIDGE_PID=$!\n')
-            f.write('fi\n')
-            f.write('\n')
-            f.write('"$DIR/images/ove_posix" "${ARGS[@]}"\n')
-        os.chmod(run_script, 0o755)
-
-
-def _assemble_wasm_serve(ws, fw_build):
-    """Assemble the serve/ directory with build artifacts + dashboard assets."""
-    serve_dir = os.path.join(ws.workspace_dir, "serve")
-    os.makedirs(serve_dir, exist_ok=True)
-
-    # Copy build artifacts
-    shutil.copy2(os.path.join(fw_build, "ove_wasm.html"),
-                 os.path.join(serve_dir, "index.html"))
-    for name in ("ove_wasm.js", "ove_wasm.wasm", "ove_wasm.wasm.map",
-                 "ove_wasm.worker.js"):
-        src = os.path.join(fw_build, name)
-        if os.path.isfile(src):
-            shutil.copy2(src, serve_dir)
-
-    # Copy dashboard assets
-    dash_dir = os.path.join(ws.ove_dir, "sim", "dashboard")
-    for f in ("app.js", "style.css", "coi-serviceworker.js"):
-        src = os.path.join(dash_dir, f)
-        if os.path.isfile(src):
-            shutil.copy2(src, serve_dir)
-
-    # Generate run.sh inside serve/
-    _write_wasm_run_sh(os.path.join(serve_dir, "run.sh"), ws.ove_dir)
-
-    # Generate workspace-level run script (matches POSIX convention)
+    # Create run script — mirrors 'ove run' for POSIX: launch the
+    # dashboard bridge in the background, then run the binary.
     run_script = os.path.join(ws.workspace_dir, "run")
+    ove_dir_q = shlex.quote(ws.ove_dir)
     with open(run_script, "w") as f:
         f.write('#!/bin/bash\n')
-        f.write('set -e\n')
         f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-        f.write('exec "$DIR/serve/run.sh" "$@"\n')
+        f.write(f'OVE_DIR={ove_dir_q}\n')
+        f.write('export OVE_DIR\n')
+        f.write('\n')
+        f.write('HEADLESS=0\n')
+        f.write('ARGS=()\n')
+        f.write('for arg in "$@"; do\n')
+        f.write('    case "$arg" in\n')
+        f.write('        --headless) HEADLESS=1 ;;\n')
+        f.write('        *) ARGS+=("$arg") ;;\n')
+        f.write('    esac\n')
+        f.write('done\n')
+        f.write('\n')
+        f.write('BRIDGE_PID=""\n')
+        f.write('cleanup() {\n')
+        f.write('    if [ -n "$BRIDGE_PID" ]; then\n')
+        f.write('        kill "$BRIDGE_PID" 2>/dev/null || true\n')
+        f.write('        wait "$BRIDGE_PID" 2>/dev/null || true\n')
+        f.write('    fi\n')
+        f.write('}\n')
+        f.write('trap cleanup EXIT\n')
+        f.write('\n')
+        f.write('if [ "$HEADLESS" != "1" ]; then\n')
+        f.write('    PYTHON="$OVE_DIR/.venv/bin/python3"\n')
+        f.write('    [ -x "$PYTHON" ] || PYTHON=python3\n')
+        f.write('    "$PYTHON" "$OVE_DIR/config/scripts/ove-dashboard-bridge.py" \\\n')
+        f.write('        --port 8080 --dashboard "$OVE_DIR/sim/dashboard" &\n')
+        f.write('    BRIDGE_PID=$!\n')
+        f.write('fi\n')
+        f.write('\n')
+        f.write('"$DIR/images/ove_posix" "${ARGS[@]}"\n')
     os.chmod(run_script, 0o755)
-
-
-def _write_wasm_run_sh(path, ove_dir):
-    """Generate a self-contained run.sh that serves the WASM build.
-
-    Serves the serve/ directory (dashboard + wasm) with a fallback to
-    ove_dir — the repo root — so that DWARF-referenced source files
-    (paths like /apps/c/example/src/app.c) resolve in Chrome DevTools.
-    """
-    content = '''#!/usr/bin/env bash
-# Auto-generated — serves this WASM build with COOP/COEP headers.
-# Usage: ./run.sh [PORT]
-
-set -e
-DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="{repo}"
-PORT="${{1:-8080}}"
-
-echo "=== Serving WASM at http://localhost:$PORT ==="
-echo "  Files:  $DIR"
-echo "  Repo:   $REPO (source-map fallback)"
-echo "  Press Ctrl+C to stop."
-
-# Open browser (best-effort, non-blocking)
-( sleep 1 && python3 -c "import webbrowser; webbrowser.open('http://localhost:$PORT')" ) 2>/dev/null &
-
-python3 -c "
-import http.server, functools, sys, os, posixpath, urllib.parse
-
-SERVE_DIR = sys.argv[2]
-REPO_DIR  = sys.argv[3]
-
-class H(http.server.SimpleHTTPRequestHandler):
-    def end_headers(self):
-        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
-        self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
-        super().end_headers()
-    def log_message(self, *a):
-        pass
-    def translate_path(self, path):
-        # Strip query/fragment, normalize.
-        p = urllib.parse.urlparse(path).path
-        p = posixpath.normpath(urllib.parse.unquote(p)).lstrip('/')
-        primary = os.path.join(SERVE_DIR, p)
-        if os.path.exists(primary):
-            return primary
-        # Fallback to the repo root so DWARF-referenced .c/.h files
-        # load in Chrome DevTools.
-        fallback = os.path.join(REPO_DIR, p)
-        if os.path.exists(fallback):
-            return fallback
-        return primary
-
-s = http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])), H)
-try:
-    s.serve_forever()
-except KeyboardInterrupt:
-    print('\\\\nStopped.')
-" "$PORT" "$DIR" "$REPO"
-'''.format(repo=ove_dir)
-    with open(path, "w") as f:
-        f.write(content)
-    os.chmod(path, 0o755)
 
 
 def _write_build_id_header(ws):

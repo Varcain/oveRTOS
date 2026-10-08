@@ -53,4 +53,3 @@ rtos_defconfig:
 # Supported QEMU and STM32F746 engine combinations are documented in README.md.
 incompatible_boards:
   - host
-  - wasm

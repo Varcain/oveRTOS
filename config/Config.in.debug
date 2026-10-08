@@ -102,11 +102,7 @@ config OVE_PROFILER
       Periodically samples each runnable thread's PC + call stack and
       forwards the samples to the dashboard for flat top-N and
       flame-graph rendering. POSIX uses SIGRTMIN + glibc backtrace(3)
-      for cross-thread stack capture. WASM has no pthreads signals, so
-      the pump flags each RUNNING thread and the thread self-captures
-      via emscripten_get_callstack at its next yield point — threads
-      stuck in tight, yield-free loops never self-sample (surfaced in
-      the profiler panel header). FreeRTOS/Cortex-M samples from the
+      for cross-thread stack capture. FreeRTOS/Cortex-M samples from the
       SysTick tick hook and walks saved-{r7,lr} pairs out of the task
       stack. NuttX uses up_backtrace(tcb) driven from the sim-debug
       pump; requires CONFIG_SCHED_BACKTRACE=y in the NuttX defconfig.
@@ -117,17 +113,13 @@ config OVE_PROFILER
 config OVE_PROFILER_HZ
     int "Sampling frequency (Hz)"
     depends on OVE_PROFILER
-    default 100 if OVE_BOARD_WASM
     default 250
     range 10 1000
     help
       Per-thread sample rate. Higher values give finer resolution
       at the cost of overhead (one signal + backtrace per running
-      thread per tick on POSIX; one emscripten_get_callstack per
-      yield-point per tick on WASM). 250 Hz is a good default for
-      interactive workloads on POSIX; WASM defaults to 100 Hz
-      because samples are gated on yield points and higher rates
-      add cost without proportionally better resolution.
+      thread per tick on POSIX). 250 Hz is a good default for
+      interactive workloads.
 
 config OVE_PROFILER_MAX_DEPTH
     int "Maximum stack depth per sample"

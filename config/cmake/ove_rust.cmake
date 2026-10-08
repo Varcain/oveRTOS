@@ -28,15 +28,8 @@ function(ove_build_rust_crate TARGET)
         set(CARGO_CMD "cargo")
     endif()
 
-    # Defaults (overridden for WASM below)
-    set(RUST_WASM_BUILD_STD "")
-    set(RUST_NIGHTLY_FLAG "")
-
-    # Determine if this is a native (POSIX), WASM, or cross-compiled build
-    _ove_binding_resolve_target_kind(RUST_IS_NATIVE RUST_IS_WASM)
-    if(RUST_IS_WASM)
-        set(OVE_RUST_TARGET "wasm32-unknown-emscripten")
-    endif()
+    # Determine if this is a native (POSIX) or cross-compiled build
+    _ove_binding_resolve_native(RUST_IS_NATIVE)
 
     # Place Rust build artifacts in the CMake build dir, not next to sources
     set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/rust_target")
@@ -95,7 +88,7 @@ function(ove_build_rust_crate TARGET)
         "LV_CONF_PATH=${LV_CONF_DIR}"
     )
 
-    if(RUST_IS_NATIVE OR RUST_IS_WASM)
+    if(RUST_IS_NATIVE)
         list(APPEND CARGO_ENV_VARS "RUST_IS_NATIVE=1")
         set(RUST_FEATURE_ARGS "--features;std")
     else()
@@ -128,28 +121,7 @@ function(ove_build_rust_crate TARGET)
         endif()
     endif()
 
-    if(RUST_IS_WASM)
-        # WASM cross-compilation: use emcc as linker
-        # Find the Emscripten sysroot for bindgen to use correct headers
-        find_program(EMCC_PATH emcc)
-        if(EMCC_PATH)
-            get_filename_component(_EMCC_DIR "${EMCC_PATH}" DIRECTORY)
-            set(_EM_SYSROOT "${_EMCC_DIR}/cache/sysroot/include")
-        endif()
-        list(APPEND CARGO_ENV_VARS
-            "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER=emcc"
-            "CC_wasm32_unknown_emscripten=emcc"
-            "OVE_WASM_BUILD=1"
-            "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals"
-        )
-        # WASM+pthreads requires rebuilding core/alloc with atomics support.
-        # This needs nightly Rust for -Zbuild-std.
-        set(RUST_WASM_BUILD_STD "-Zbuild-std=std,panic_abort")
-        set(RUST_NIGHTLY_FLAG "+nightly")
-        if(EXISTS "${_EM_SYSROOT}")
-            list(APPEND CARGO_ENV_VARS "EMSCRIPTEN_SYSROOT=${_EM_SYSROOT}")
-        endif()
-    elseif(NOT RUST_IS_NATIVE)
+    if(NOT RUST_IS_NATIVE)
         # ARM cross-compilation: set linker and ARM sysroot for bindgen
         if(DEFINED CMAKE_C_COMPILER)
             set(RUST_LINKER "${CMAKE_C_COMPILER}")
@@ -211,20 +183,14 @@ function(ove_build_rust_crate TARGET)
     endif()
 
     # ── Generate storage type sizes for Rust bindings ──────────────────
-    # WASM uses heap mode (not zero-heap), so storage sizes are not
-    # needed — Rust uses opaque *mut c_void handles.
-    if(RUST_IS_WASM)
-        set(SIZES_ENV "")
-    else()
-        set(SIZES_C "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
-        set(SIZES_ENV "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")
-        message(STATUS "[ove-rust] Storage size probe configured: ${SIZES_ENV}")
-        _ove_binding_write_sizes_probe(${SIZES_C} "#include \"ove/storage.h\"\n")
-        _ove_binding_build_sizes_probe(_ove_sizes ${TARGET} ${SIZES_C})
-        _ove_binding_extract_sizes(${SIZES_ENV} _ove_sizes
-            "Extracting storage type sizes for Rust bindings")
-        list(APPEND CARGO_ENV_VARS "OVE_STORAGE_SIZES=${SIZES_ENV}")
-    endif()
+    set(SIZES_C "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
+    set(SIZES_ENV "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")
+    message(STATUS "[ove-rust] Storage size probe configured: ${SIZES_ENV}")
+    _ove_binding_write_sizes_probe(${SIZES_C} "#include \"ove/storage.h\"\n")
+    _ove_binding_build_sizes_probe(_ove_sizes ${TARGET} ${SIZES_C})
+    _ove_binding_extract_sizes(${SIZES_ENV} _ove_sizes
+        "Extracting storage type sizes for Rust bindings")
+    list(APPEND CARGO_ENV_VARS "OVE_STORAGE_SIZES=${SIZES_ENV}")
 
     # Collect all Rust source files for dependency tracking
     file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS "${APP_RUST_CRATE_DIR}/src/*.rs")
@@ -244,10 +210,9 @@ function(ove_build_rust_crate TARGET)
         OUTPUT ${RUST_LIB}
         COMMAND ${CMAKE_COMMAND} -E env
             ${CARGO_ENV_VARS}
-            ${CARGO_CMD} ${RUST_NIGHTLY_FLAG} build
+            ${CARGO_CMD} build
                 ${RUST_TARGET_ARGS}
                 ${RUST_FEATURE_ARGS}
-                ${RUST_WASM_BUILD_STD}
                 --release
                 --manifest-path ${APP_RUST_CRATE_DIR}/Cargo.toml
         WORKING_DIRECTORY ${APP_RUST_CRATE_DIR}

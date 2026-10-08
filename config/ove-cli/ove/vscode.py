@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import sys
 
-from .workspace import Workspace, get_bool
+from .workspace import Workspace
 
 
 # OpenOCD board.cfg lookup. Extend here when new hardware targets land;
@@ -46,8 +46,7 @@ def cmd_vscode(args):
 
     elf = _firmware_elf(ws)
     posix = _posix_bin(ws)
-    if ws.rtos != "posix" and not _is_wasm_board(ws) \
-            and not os.path.isfile(elf):
+    if ws.rtos != "posix" and not os.path.isfile(elf):
         logger.warning(
             f"{elf} not present — debug launches will fail until you run "
             f"'make build'. Generating configs anyway.")
@@ -164,10 +163,6 @@ def _is_qemu_board(ws):
         os.path.join(ws.board_dir, "qemu-run.sh"))
 
 
-def _is_wasm_board(ws):
-    return get_bool(ws.config, "CONFIG_OVE_BOARD_WASM")
-
-
 def _is_hardware_board(ws):
     rtos = ws.rtos
     if not rtos or not ws.board_dir:
@@ -269,9 +264,7 @@ def _build_extensions_json(ws):
         "ms-vscode.makefile-tools",
         "twxs.cmake",
     ]
-    if _is_wasm_board(ws):
-        pass
-    elif ws.rtos == "posix":
+    if ws.rtos == "posix":
         recommendations.append("vadimcn.vscode-lldb")
     else:
         recommendations.append("marus25.cortex-debug")
@@ -357,10 +350,7 @@ def _build_launch_json(ws):
     gdb = _resolve_gdb(ws)
     configurations = []
 
-    if _is_wasm_board(ws):
-        pass
-
-    elif ws.rtos == "posix":
+    if ws.rtos == "posix":
         configurations.append({
             "name": "Debug POSIX (CodeLLDB)",
             "type": "lldb",

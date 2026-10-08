@@ -27,4 +27,3 @@ rtos_defconfig:
     - CONFIG_FREERTOS_USE_TIME_SLICING=n
 incompatible_boards:
   - host
-  - wasm
