@@ -86,7 +86,7 @@ make
 make run        # serves the bundle and opens it
 ```
 
-The build writes `output/web/<rtos>/<app>/serve/`: the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way.
+The build writes `output/web/<rtos>/<app>/serve/`: the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way: `make docs-demos` builds every app's bundle and adds those that start to the built site.
 
 - The emulator is built once, on first use, by `ove ensure-toolchain qemu-wasm` into `output/tools/qemu-wasm/`. It is the unmodified upstream QEMU release pinned in `manifest.yaml`, built with upstream's own Emscripten container recipe, so it needs Docker or Podman.
 - QEMU has no JIT for a WebAssembly host and runs its interpreter instead, several times slower than the native `qemu-system-arm`. The variant therefore builds the optimised firmware rather than the debug build plain `qemu.<rtos>.<app>` uses. Simple UIs run at interactive rates; full-screen animation does not.

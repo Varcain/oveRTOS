@@ -431,7 +431,7 @@ ensure-toolchain-%: $(VENV_STAMP)
 
 # ── Documentation ────────────────────────────────────────────────────────────
 
-.PHONY: docs docs-serve docs-clean
+.PHONY: docs docs-demos docs-serve docs-clean
 
 docs: $(VENV_STAMP) ## Build complete documentation site
 	@echo "==> Generating Doxyfile.predefined from Kconfig..."
@@ -476,7 +476,15 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	cp -r output/docs/zig docs-site/site/api/zig
 	@echo "==> Documentation built: docs-site/site/"
 
-docs-serve: docs ## Build docs and start local preview server
+# The browser demos the pages link to: every app's `web` variant, added to
+# the built site.  Run after `docs`, which starts the site from scratch.
+docs-demos: $(VENV_STAMP) ## Build the browser demos into the docs site
+	@$(OVE) docs-demos
+
+# DEMOS=0 serves the pages alone (the demos need the WebAssembly QEMU, and
+# so Docker or Podman the first time).
+docs-serve: docs ## Build docs + browser demos and start local preview server
+	@$(if $(filter 0,$(DEMOS)),echo "==> Skipping the browser demos (DEMOS=0)",$(MAKE) docs-demos)
 	@echo "==> Serving docs at http://localhost:8000"
 	cd docs-site/site && python3 -m http.server 8000
 
@@ -653,7 +661,9 @@ help:
 	@echo ""
 	@echo "Documentation:"
 	@echo "  docs                    - Build complete documentation site"
-	@echo "  docs-serve              - Build docs and start local preview server"
+	@echo "  docs-demos              - Build the browser demos into the docs site"
+	@echo "  docs-serve              - Build docs + demos and start local preview server"
+	@echo "  docs-serve DEMOS=0      - Same, without the browser demos"
 	@echo "  docs-clean              - Remove generated documentation"
 	@echo ""
 	@echo "IDE:"
