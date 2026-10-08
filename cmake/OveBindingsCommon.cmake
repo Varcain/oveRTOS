@@ -12,9 +12,9 @@
 #   _ove_binding_resolve_board_dir(OUTVAR)
 #       Sets OUTVAR to OVE_BOARD_DIR if defined, else BOARD_DIR, else empty.
 #
-#   _ove_binding_resolve_target_kind(OUT_NATIVE OUT_WASM)
-#       Sets OUT_NATIVE / OUT_WASM to TRUE/FALSE based on CMAKE_SYSTEM_NAME
-#       and OVE_RTOS. Both can be FALSE (cross-compile to ARM).
+#   _ove_binding_resolve_native(OUT_NATIVE)
+#       Sets OUT_NATIVE to TRUE for a POSIX host build, FALSE when
+#       cross-compiling to ARM.
 #
 #   _ove_binding_arm_sysroot_include(OUTVAR)
 #       Resolves the ARM toolchain's <triple>/include directory from
@@ -60,16 +60,11 @@ function(_ove_binding_resolve_board_dir OUTVAR)
 endfunction()
 
 
-function(_ove_binding_resolve_target_kind OUT_NATIVE OUT_WASM)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-        set(${OUT_NATIVE} FALSE PARENT_SCOPE)
-        set(${OUT_WASM} TRUE PARENT_SCOPE)
-    elseif(OVE_RTOS STREQUAL "posix")
+function(_ove_binding_resolve_native OUT_NATIVE)
+    if(OVE_RTOS STREQUAL "posix")
         set(${OUT_NATIVE} TRUE PARENT_SCOPE)
-        set(${OUT_WASM} FALSE PARENT_SCOPE)
     else()
         set(${OUT_NATIVE} FALSE PARENT_SCOPE)
-        set(${OUT_WASM} FALSE PARENT_SCOPE)
     endif()
 endfunction()
 

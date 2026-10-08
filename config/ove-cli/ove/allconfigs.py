@@ -37,8 +37,8 @@ def _discover_apps(ove_dir):
     """Return sorted list of (config_name, incompatible_boards, skip_reason)
     tuples discovered from app.yaml files.
 
-    `incompatible_boards` is a list of board directory names (e.g.
-    `["host", "wasm"]`); empty when the app sets no such field. Used to
+    `incompatible_boards` is a list of board names as used in the spec
+    (e.g. `["host", "web"]`); empty when the app sets no such field. Used to
     skip board/rtos combos an app cannot satisfy (e.g. apps that need
     CONFIG_OVE_ASYNC on a board that has no irq backend).
 

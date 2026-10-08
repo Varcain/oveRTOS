@@ -44,8 +44,6 @@ def find_board_lv_conf(ws):
     if ws.rtos == "posix":
         candidates.append(os.path.join(
             ws.ove_dir, "boards", "host", "posix", "lv_conf.h"))
-        candidates.append(os.path.join(
-            ws.ove_dir, "boards", "wasm", "posix", "lv_conf.h"))
     board_dir = getattr(ws, "board_dir", None) or (
         os.path.join(ws.ove_dir, "boards", ws.board_name or "")
         if ws.board_name else None)

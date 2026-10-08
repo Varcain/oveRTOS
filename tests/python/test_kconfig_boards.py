@@ -42,7 +42,7 @@ class FindBoardDirTest(unittest.TestCase):
     def test_exact_and_prefix_names_resolve_to_boards(self):
         self.assertEqual(self._resolve("qemu-mps2-an521"), "qemu-mps2-an521")
         self.assertEqual(self._resolve("stm32f746"), "stm32f746g-discovery")
-        self.assertIsNone(self._resolve("wasm"))
+        self.assertIsNone(self._resolve("nosuchboard"))
 
     def test_variant_name_resolves_to_its_board(self):
         board = os.path.join(self.root, "boards", "qemu-mps2-an500")

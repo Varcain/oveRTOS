@@ -37,8 +37,8 @@ jobs:
         run: make allconfigs-host.posix
 
 
-  wasm:
-    name: WASM POSIX
+  web-freertos:
+    name: Web FreeRTOS
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -46,28 +46,30 @@ jobs:
           submodules: true
 
       - name: Install dependencies
-        # emsdk is downloaded into dl/ by `ove configure/download`; we
-        # only need the host tools here. xz-utils unpacks the toolchain
-        # tarballs the manifest pins.
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential libclang-dev xz-utils
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
+            libclang-dev xz-utils
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rust-src
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache emsdk
+      - name: Cache ARM toolchain
         uses: actions/cache@v4
         with:
-          path: |
-            dl/emsdk
-            dl/emsdk-*
-          key: emsdk-${{ hashFiles('manifest.yaml') }}
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build allconfigs-wasm.posix
-        run: make allconfigs-wasm.posix
+      # The browser bundle needs the emulator; building it takes a while
+      # and it only changes with the pinned QEMU version or the recipe.
+      - name: Cache the WebAssembly QEMU
+        uses: actions/cache@v4
+        with:
+          path: output/tools/qemu-wasm
+          key: qemu-wasm-${{ hashFiles('manifest.yaml', 'config/scripts/build-qemu-wasm.sh', 'config/qemu-wasm/mps2.mak') }}
+
+      - name: Build allconfigs-web.freertos
+        run: make allconfigs-web.freertos
 
 
   qemu-freertos:

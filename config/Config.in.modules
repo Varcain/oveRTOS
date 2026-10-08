@@ -1158,10 +1158,6 @@ config OVE_SIM_TRANSPORT_SHM
     bool
     default y if !OVE_RTOS_POSIX && OVE_SIM
 
-config OVE_SIM_TRANSPORT_WASM
-    bool
-    default y if OVE_BOARD_WASM && OVE_SIM
-
 config OVE_SIM_WEB
     bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
     depends on OVE_BOARD_QEMU_MPS2_AN500 && OVE_SIM

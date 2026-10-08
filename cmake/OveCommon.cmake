@@ -227,8 +227,8 @@ macro(ove_setup_project)
     # task stack, which needs the compiler to emit frame pointers. NuttX
     # uses up_backtrace(tcb), which internally relies on the same ARMv7-M
     # convention — keeping -fno-omit-frame-pointer here is insurance for
-    # the Cortex-M path and harmless on the POSIX/WASM targets (their
-    # profilers use libc backtrace / emscripten_get_callstack instead).
+    # the Cortex-M path and harmless on the POSIX target (its profiler
+    # uses libc backtrace instead).
     if(OVE_PROFILER AND (OVE_RTOS STREQUAL "freertos"
                         OR OVE_RTOS STREQUAL "nuttx"))
         add_compile_options(-fno-omit-frame-pointer)

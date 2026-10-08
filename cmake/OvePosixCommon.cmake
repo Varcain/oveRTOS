@@ -1,12 +1,11 @@
 # ============================================================================
-# OvePosixCommon.cmake — Shared build infrastructure for POSIX / WASM boards
+# OvePosixCommon.cmake — Build infrastructure for the POSIX host board
 # ============================================================================
 #
-# Used by boards/host/posix/ and boards/wasm/posix/.  Encapsulates path
-# resolution, LVGL library build, app source inclusion, TFLM integration,
-# and final link step.  Emscripten-specific link options, the choice of
-# sim framework sources, and the posix/wasm backend source list stay
-# board-local (they differ meaningfully between host and wasm).
+# Used by boards/host/posix/.  Encapsulates path resolution, LVGL library
+# build, app source inclusion, TFLM integration, and final link step.  The
+# choice of sim framework sources and the backend source list stay
+# board-local.
 #
 # Typical usage (boards/host/posix/CMakeLists.txt):
 #
@@ -61,7 +60,7 @@ endmacro()
 
 
 # ─── ove_posix_add_common_includes() ────────────────────────────────
-# Add the include directories shared between host and wasm builds.
+# Add the include directories every host build needs.
 # Boards can add more include directories after calling this.
 macro(ove_posix_add_common_includes)
     include_directories(
@@ -132,8 +131,7 @@ endmacro()
 # ─── ove_posix_link(TARGET <name> SOURCES <srcs> [EXTRA_LIBS <libs>]) ─
 # Create the final executable, apply the app language layer, and link
 # the common libraries (lvgl, optional ove_tflm/ove_mbedtls, plus any
-# EXTRA_LIBS supplied by the board — typically pthread/rt/m for host
-# and pthread/m for wasm).
+# EXTRA_LIBS supplied by the board — typically pthread/rt/m).
 macro(ove_posix_link)
     cmake_parse_arguments(_OVE_PL "" "TARGET" "SOURCES;EXTRA_LIBS" ${ARGN})
     if(NOT _OVE_PL_TARGET)

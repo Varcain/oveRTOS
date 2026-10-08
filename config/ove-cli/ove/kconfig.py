@@ -222,7 +222,7 @@ def _find_board_dir(ove_dir, board_short):
     """Find board directory matching a short name.
 
     Matches against directory basename or the 'name' field in board.yaml.
-    Short names like 'qemu', 'stm32f746', 'host', 'wasm' match via prefix.
+    Short names like 'qemu', 'stm32f746', 'host' match via prefix.
     Directories without a board.yaml hold files shared by several boards
     (e.g. boards/qemu-mps2/) and are never a match.
     """

@@ -41,8 +41,8 @@ function(ove_build_zig_lib TARGET)
     endif()
 
 
-    # ── Determine native vs cross vs WASM build ────────────────────────
-    _ove_binding_resolve_target_kind(ZIG_IS_NATIVE ZIG_IS_WASM)
+    # ── Determine native vs cross build ────────────────────────────────
+    _ove_binding_resolve_native(ZIG_IS_NATIVE)
 
     # ── Output directory ─────────────────────────────────────────────────
     set(ZIG_OUTPUT_DIR "${CMAKE_BINARY_DIR}/zig_output")
@@ -51,26 +51,7 @@ function(ove_build_zig_lib TARGET)
     # ── Resolve target triple ────────────────────────────────────────────
     set(ZIG_TARGET_ARGS "")
     set(ZIG_CPU_ARGS "")
-    if(ZIG_IS_WASM)
-        # The pinned Zig (see manifest.yaml: toolchains.zig) has broken
-        # emscripten OS support in std: std.posix references emscripten
-        # `system` fields that don't exist (IOV_MAX, getrandom, …) and
-        # the new 0.16 std.Io.Threaded backend transitively pulls those
-        # in even when our code doesn't touch posix directly.  Use
-        # wasm32-freestanding instead — our Zig code is a library that
-        # emcc links into the final executable, so we only need the
-        # wasm32 C ABI, not any Zig std OS services.  C-header
-        # discovery still goes through the emscripten sysroot below.
-        #
-        # The emscripten executable uses -sUSE_PTHREADS which makes
-        # wasm-ld link with --shared-memory. Static libraries linked
-        # into it must be built with the atomics and bulk-memory
-        # features, otherwise wasm-ld rejects them.
-        list(APPEND ZIG_TARGET_ARGS "-target" "wasm32-freestanding")
-        list(APPEND ZIG_CPU_ARGS
-            "-mcpu=baseline+atomics+bulk_memory"
-            "-fno-stack-check")
-    elseif(ZIG_IS_NATIVE)
+    if(ZIG_IS_NATIVE)
         list(APPEND ZIG_TARGET_ARGS "-target" "native-native")
         list(APPEND ZIG_CPU_ARGS "-fPIC" "-fno-stack-check")
     else()
@@ -136,23 +117,7 @@ function(ove_build_zig_lib TARGET)
     list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_GEN_DIR}")
 
     # Backend-specific includes
-    if(ZIG_IS_WASM)
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/wasm/include")
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
-        # Emscripten sysroot — provides stdio.h, stdlib.h, etc. so that
-        # @cImport (which transitively includes ove/log.h → stdio.h) can
-        # find the C standard library headers used by the final emcc link.
-        if(DEFINED OVE_DL_DIR AND EXISTS "${OVE_DL_DIR}/emsdk")
-            set(_EMSDK_SYSROOT "${OVE_DL_DIR}/emsdk/upstream/emscripten/cache/sysroot/include")
-            if(EXISTS "${_EMSDK_SYSROOT}")
-                list(APPEND ZIG_INCLUDE_ARGS "-I${_EMSDK_SYSROOT}")
-            endif()
-            set(_EMSDK_SYSTEM "${OVE_DL_DIR}/emsdk/upstream/emscripten/system/include")
-            if(EXISTS "${_EMSDK_SYSTEM}")
-                list(APPEND ZIG_INCLUDE_ARGS "-I${_EMSDK_SYSTEM}")
-            endif()
-        endif()
-    elseif(OVE_RTOS STREQUAL "posix")
+    if(OVE_RTOS STREQUAL "posix")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
     elseif(OVE_RTOS STREQUAL "freertos")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/freertos/include")
@@ -322,9 +287,9 @@ function(ove_build_zig_lib TARGET)
     # touches mbstate so the alias is purely a parse-time fix.  NuttX
     # provides its own libc with a real `wint_t` typedef, so the macro
     # is skipped there to avoid a `typedef _wint_t unsigned int` parse
-    # error.  Native (posix) and WASM builds also skip — their libc
+    # error.  Native (posix) builds also skip — their libc
     # paths already provide wint_t cleanly.
-    if(NOT ZIG_IS_NATIVE AND NOT ZIG_IS_WASM AND NOT OVE_RTOS STREQUAL "nuttx")
+    if(NOT ZIG_IS_NATIVE AND NOT OVE_RTOS STREQUAL "nuttx")
         list(APPEND ZIG_DEFINE_ARGS "-Dwint_t=unsigned int")
     endif()
 
