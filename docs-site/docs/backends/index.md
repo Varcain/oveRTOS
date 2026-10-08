@@ -15,33 +15,32 @@ A `backends/common/` directory contains utilities shared across all backends (`o
 | POSIX | `backends/posix/` | pthreads | Host-PC desktop development and CI |
 | Zephyr | `backends/zephyr/` | Zephyr RTOS | Zephyr-based embedded projects |
 | NuttX | `backends/nuttx/` | NuttX | NuttX-based embedded projects |
-| WASM | `backends/wasm/` | Emscripten | WebAssembly in-browser targets |
 
 ## Feature support matrix
 
 Each cell indicates whether the subsystem is implemented by that backend. All backends implement the full core and communication APIs.
 
-| Subsystem | FreeRTOS | POSIX | Zephyr | NuttX | WASM |
-|-----------|----------|-------|--------|-------|------|
-| Thread | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| Sync (mutex, semaphore, event, condvar) | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| Queue | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| Timer | Yes | Yes | Yes | Yes | Yes |
-| EventGroup | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| WorkQueue | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| Stream | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| Time (monotonic clock, delays) | Yes | Yes | Yes | Yes | Yes |
-| Console (UART) | Yes | Yes | Yes | Yes | Yes (browser console) |
-| Board init | Yes | Yes | Yes | Yes | Yes (via sim) |
-| GPIO | Yes | Yes (simulated) | Yes | Yes | Stub |
-| LED | Yes | Yes (simulated) | Yes | Yes | Stub |
-| Audio | Yes | Yes (simulated) | Yes | Yes | Yes (via sim) |
-| FS (VFS) | Yes | Yes | Yes | Yes | No |
-| NVS | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| Watchdog | Yes | Yes (simulated) | Yes | Yes | Yes (simulated) |
-| Shell | Yes | Yes | Yes | Yes | Yes (emscripten pthreads) |
-| PM (power management) | Yes | Yes (simulated) | Yes | Yes | Yes (via sim) |
-| LVGL display | Yes | Yes (sim dashboard) | Yes | Yes | Yes (HTML canvas) |
+| Subsystem | FreeRTOS | POSIX | Zephyr | NuttX |
+|-----------|----------|-------|--------|-------|
+| Thread | Yes | Yes | Yes | Yes |
+| Sync (mutex, semaphore, event, condvar) | Yes | Yes | Yes | Yes |
+| Queue | Yes | Yes | Yes | Yes |
+| Timer | Yes | Yes | Yes | Yes |
+| EventGroup | Yes | Yes | Yes | Yes |
+| WorkQueue | Yes | Yes | Yes | Yes |
+| Stream | Yes | Yes | Yes | Yes |
+| Time (monotonic clock, delays) | Yes | Yes | Yes | Yes |
+| Console (UART) | Yes | Yes | Yes | Yes |
+| Board init | Yes | Yes | Yes | Yes |
+| GPIO | Yes | Yes (simulated) | Yes | Yes |
+| LED | Yes | Yes (simulated) | Yes | Yes |
+| Audio | Yes | Yes (simulated) | Yes | Yes |
+| FS (VFS) | Yes | Yes | Yes | Yes |
+| NVS | Yes | Yes | Yes | Yes |
+| Watchdog | Yes | Yes (simulated) | Yes | Yes |
+| Shell | Yes | Yes | Yes | Yes |
+| PM (power management) | Yes | Yes (simulated) | Yes | Yes |
+| LVGL display | Yes | Yes (sim dashboard) | Yes | Yes |
 
 ## Backend file layout
 
@@ -118,7 +117,6 @@ Per-backend behaviour of `ove_pm_*`. The portable surface lives at [API → Powe
 | Zephyr | `pm_state_set()` integration | Subsystem-defined | `zephyr_pm.c` |
 | NuttX | `up_idle()` hook | Per-driver wake sources | `nuttx_pm.c` |
 | POSIX | `sleep()` simulation | Sim plugin events | `posix_pm.c` |
-| WASM | Sim-tick step | Browser events | `wasm_pm.c` |
 
 ### Power management policy
 
@@ -159,7 +157,6 @@ ove_pm_notify_register(my_notify, NULL);
 | Zephyr | Native Zephyr net stack | [Backend tuning → Networking pools](net-tuning.md) |
 | NuttX | Native NuttX networking | [Backend tuning → Networking pools](net-tuning.md) |
 | POSIX | Host BSD sockets | Host kernel responsibility |
-| WASM | Stubbed (HTTP/SNTP via emscripten fetch) | n/a |
 
 ## FreeRTOS backend notes
 
@@ -189,12 +186,6 @@ ove_pm_notify_register(my_notify, NULL);
 - Threads map to NuttX `pthread` or `task_create` depending on configuration.
 - Filesystem operations delegate to the NuttX VFS layer.
 
-## WASM backend notes
+## Running in a browser
 
-- Compiles to WebAssembly via Emscripten and runs in a web browser.
-- Threads use Emscripten's `pthread` emulation with `SharedArrayBuffer`.
-- Display renders via the sim dashboard into an HTML5 `<canvas>` element.
-- Audio uses the browser's Web Audio API through the sim framework.
-- Bus drivers (UART, SPI, I2C) are stubbed — hardware peripherals are not available in the browser.
-- HTTP and SNTP use Emscripten's native fetch/XHR support.
-- Networking sockets are stubbed (no raw TCP/UDP in browsers).
+There is no browser backend: a browser demo is the FreeRTOS, Zephyr or NuttX firmware for the emulated `qemu-mps2-an500`, run in QEMU compiled to WebAssembly. Everything above applies to it unchanged, because it is the same image the native QEMU runs. See the `web` variant in [Board Configurations](../build-system/boards.md).

@@ -4,12 +4,14 @@ Exercises the full networking stack with a pass/fail test framework: netif confi
 
 ## Language implementations
 
-| Language | Source | WASM Demo |
-|----------|--------|-----------|
-| [C](c.md) | `apps/c/heap/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_heap/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/heap/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_cpp_heap/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/heap/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_rust_heap/){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/heap/example_net/` | *Not yet available* |
+| Language | Source | Browser demo |
+|----------|--------|--------------|
+| [C](c.md) | `apps/c/heap/example_net/` | — |
+| [C++](cpp.md) | `apps/cpp/heap/example_net/` | — |
+| [Rust](rust.md) | `apps/rust/heap/example_net/` | — |
+| [Zig](zig.md) | `apps/zig/heap/example_net/` | — |
+
+There is no browser demo: the browser bundle has no network peer.
 
 Zero-heap variants live under `apps/<lang>/zeroheap/example_net/`.
 

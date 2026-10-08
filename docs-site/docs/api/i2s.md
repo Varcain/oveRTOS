@@ -89,7 +89,6 @@ for (;;) {
 | Zephyr | `i2s_configure()` + `i2s_write()` / `i2s_read()` with ping-pong buffers |
 | NuttX | Audio subsystem `/dev/audio*` with DMA ring buffers |
 | POSIX | Routed through the sim framework to the browser dashboard (Web Audio API) |
-| WASM | Browser Web Audio API output; input capture depends on `getUserMedia` permission |
 
 ## Kconfig Options
 

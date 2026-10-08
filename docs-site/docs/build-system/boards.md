@@ -1,6 +1,6 @@
 # Board Configurations
 
-oveRTOS ships with four reference board definitions — `stm32f746g-discovery`, `qemu-mps2-an500`, `host`, and `wasm`. Each board lives under `boards/<name>/` and supplies:
+oveRTOS ships with three reference board definitions — `stm32f746g-discovery`, `qemu-mps2-an500`, and `host`. Each board lives under `boards/<name>/` and supplies:
 
 - `board.yaml` — machine-readable hardware description (clocks, memory, peripherals)
 - A CMakeLists.txt (or equivalent) that selects the correct backend and passes hardware parameters to the build
@@ -76,6 +76,25 @@ boards/qemu-mps2-an500/qemu-run.sh ./firmware.elf
 
 The `cmake/` subdirectory contains toolchain files and CMake helpers for cross-compilation targeting this board.
 
+**In a web browser (`web` variant)**
+
+The same firmware also runs in a browser: `web` is a variant of this board that packages the image together with QEMU compiled to WebAssembly.
+
+```bash
+make web.freertos.example_c
+make
+make run        # serves the bundle and opens it
+```
+
+The build writes `output/web/<rtos>/<app>/serve/`: the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way.
+
+- The emulator is built once, on first use, by `ove ensure-toolchain qemu-wasm` into `output/tools/qemu-wasm/`. It is the unmodified upstream QEMU release pinned in `manifest.yaml`, built with upstream's own Emscripten container recipe, so it needs Docker or Podman.
+- QEMU has no JIT for a WebAssembly host and runs its interpreter instead, several times slower than the native `qemu-system-arm`. The variant therefore builds the optimised firmware rather than the debug build plain `qemu.<rtos>.<app>` uses. Simple UIs run at interactive rates; full-screen animation does not.
+- The page needs `SharedArrayBuffer`, so it must be cross-origin isolated. `serve/run.sh` sends the COOP/COEP headers; on a static host such as GitHub Pages the bundled `coi-serviceworker.js` supplies them.
+- The dashboard shows the display, console, audio, trace and thread panels and takes pointer, console and audio input. The profiler and the debugger are not available in the browser, and there is no network peer; use the native QEMU run for those.
+
+A variant is declared under `variants:` in `board.yaml`: a name that stands in for the board in `<board>.<rtos>.<app>` and adds Kconfig lines (`CONFIG_OVE_SIM_WEB=y` here).
+
 ---
 
 ## Host (`host`)
@@ -110,35 +129,3 @@ make run
 ```
 
 The produced binary runs directly on Linux / macOS, so it is straightforward to run oveRTOS applications in CI pipelines or debuggers without embedded hardware.
-
----
-
-## WASM (`wasm`)
-
-The WASM board compiles oveRTOS to WebAssembly via Emscripten and runs the firmware entirely in a web browser. LVGL renders into an HTML5 `<canvas>` element, and audio streams through the browser's Web Audio API.
-
-**Hardware summary**
-
-| Parameter | Value |
-|-----------|-------|
-| MCU family | POSIX (wasm32) |
-| Architecture | WebAssembly |
-| Flash / RAM | Browser process memory |
-| Display | 480 × 272 px, XRGB8888 (rendered in HTML canvas via sim dashboard) |
-| Audio | 44100 Hz, 16-bit, 1 channel (512-sample buffers) |
-| Console | Browser console |
-| GPIO ports | 8 virtual ports, 16 pins each |
-| LEDs | 4 virtual LEDs (port 0, pins 0–3, active-high) |
-
-**Backend**
-
-The board uses the WASM backend (`backends/wasm/`), compiled with Emscripten (version 3.1.51). Threads use Emscripten's `SharedArrayBuffer`-based pthread emulation. Bus drivers (UART, SPI, I2C, I2S) are stubbed. HTTP and SNTP use Emscripten's native fetch support.
-
-**Usage**
-
-The WASM board produces an HTML page (`shell.html`) that loads the compiled WebAssembly module. The sim dashboard provides display, audio, LED, and GPIO visualisation in the browser.
-
-**Requirements**
-
-- Emscripten toolchain (3.1.51+)
-- Browser with SharedArrayBuffer support (requires HTTPS or localhost with COOP/COEP headers)

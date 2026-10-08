@@ -2,7 +2,7 @@
 
 oveRTOS ships with six example applications, each available across C, C++, Rust, and Zig (with a handful of language-specific exceptions noted below). All examples compile and run identically across FreeRTOS, Zephyr, NuttX, and POSIX backends.
 
-Interactive WASM demos run directly in your browser — no toolchain needed.
+Interactive demos run directly in your browser — no toolchain needed.
 
 | Example | Description | APIs Demonstrated |
 |---------|-------------|-------------------|
@@ -22,15 +22,15 @@ Each example is implemented in all four languages using the same oveRTOS API:
 - **Rust** — `no_std` crate with `Result` error handling, safe abstractions over FFI
 - **Zig** — `@cImport` bindings, comptime feature detection, `defer` cleanup
 
-## WASM demos
+## Browser demos
 
-Most examples have browser-based WASM demos. Click the links on each example's page to try them live.
+Most examples run in the browser. Each demo is that example's FreeRTOS firmware for the emulated QEMU board, running in QEMU compiled to WebAssembly — the real kernel and the real image, a few times slower than on your machine. Click the links on each example's page to try them live.
 
-| Language | WASM-built demos |
-|----------|------------------|
-| C | Basic, Networking, Power Management, Keyword Detection |
-| C++ | Basic, Networking, Power Management, Keyword Detection, LVGL Gallery |
-| Rust | Basic, Networking |
-| Zig | None — Zig 0.16 still lacks `wasm32-emscripten` |
+| Language | Browser demos |
+|----------|---------------|
+| C | Basic, Power Management, Keyword Detection |
+| C++ | Basic, Power Management, Keyword Detection, LVGL Gallery |
+| Rust | Basic, Power Management, LVGL Gallery |
+| Zig | Basic, Power Management, LVGL Gallery |
 
-Source for every example exists in every language regardless of WASM-demo availability; see the per-example pages below.
+The networking example has no browser demo (there is no network peer inside the page), and neither has the benchmark (QEMU does not model the cycle counter it times itself with). Source for every example exists in every language regardless; see the per-example pages below.

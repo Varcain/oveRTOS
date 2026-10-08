@@ -1,6 +1,6 @@
 # Basic Example — C
 
-Source: `apps/c/heap/example/src/app.c` (heap mode) and `apps/c/zeroheap/example/src/app.c` (zero-heap mode) | **[WASM Demo](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}**
+Source: `apps/c/heap/example/src/app.c` (heap mode) and `apps/c/zeroheap/example/src/app.c` (zero-heap mode) | **[Browser demo](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}**
 
 The C example demonstrates a producer-consumer pattern with optional LVGL display output. Two sibling apps share the same logic but pick different allocation strategies. Heap mode uses `_create()` calls inside `ove_main()`; zero-heap mode uses `OVE_*_DEFINE_STATIC()` macros at file scope.
 
@@ -143,6 +143,6 @@ void ove_main(void)
 ## How to build
 
 ```bash
-make host.posix.example_c    # or wasm.posix.example_c
+make host.posix.example_c    # or web.freertos.example_c
 make configure && make download && make && make run
 ```

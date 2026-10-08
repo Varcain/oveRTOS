@@ -24,12 +24,12 @@ A periodic software timer fires every 200 ms to read the shared counter and upda
 
 ## Language implementations
 
-| Language | Source | WASM Demo |
-|----------|--------|-----------|
+| Language | Source | Browser demo |
+|----------|--------|--------------|
 | [C](c.md) | `apps/c/heap/example/src/app.c` | **[Run in browser](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}** |
 | [C++](cpp.md) | `apps/cpp/heap/example/src/app.cpp` | **[Run in browser](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}** |
 | [Rust](rust.md) | `apps/rust/heap/example/src/lib.rs` | **[Run in browser](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/heap/example/src/main.zig` | *Not yet available* |
+| [Zig](zig.md) | `apps/zig/heap/example/src/main.zig` | **[Run in browser](https://varcain.github.io/oveRTOS/example_zig_heap/){:target="_blank"}** |
 
 Zero-heap variants live alongside under `apps/<lang>/zeroheap/example/`.
 
@@ -52,8 +52,8 @@ Zero-heap variants live alongside under `apps/<lang>/zeroheap/example/`.
 make host.posix.example_c
 make configure && make && make run
 
-# WASM (browser)
-make wasm.posix.example_c
+# Browser (the FreeRTOS firmware in QEMU compiled to WebAssembly)
+make web.freertos.example_c
 make configure && make download && make && make run
 
 # STM32F746G-Discovery (FreeRTOS)

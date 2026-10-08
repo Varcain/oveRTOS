@@ -19,12 +19,14 @@ Each suite runs configurable iterations (default 1000) and reports min/max/avg/m
 
 ## Language implementations
 
-| Language | Source | WASM Demo |
-|----------|--------|-----------|
-| [C](c.md) | `tests/benchmarks/c/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark/){:target="_blank"}** |
-| [C++](cpp.md) | `tests/benchmarks/cpp/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark_cpp/){:target="_blank"}** |
-| [Rust](rust.md) | `tests/benchmarks/rust/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark_rust/){:target="_blank"}** |
-| [Zig](zig.md) | `tests/benchmarks/zig/` | *Not yet available* |
+| Language | Source | Browser demo |
+|----------|--------|--------------|
+| [C](c.md) | `tests/benchmarks/c/` | — |
+| [C++](cpp.md) | `tests/benchmarks/cpp/` | — |
+| [Rust](rust.md) | `tests/benchmarks/rust/` | — |
+| [Zig](zig.md) | `tests/benchmarks/zig/` | — |
+
+There is no browser demo: the benchmark times itself with the DWT cycle counter, which QEMU does not model.
 
 ## How to build
 

@@ -122,7 +122,7 @@ The user-level overlay that NuttX / Zephyr menuconfig writes when you tune kerne
 
 ### Sim / simulation framework
 
-The `sim/` directory: a plugin architecture and WebAssembly bridge that lets the POSIX backend stand in for hardware peripherals (display, audio, GPIO, network, watchdog, profiler). The browser dashboard at `localhost:8000` is the user-facing transport.
+The `sim/` directory: a plugin architecture that lets the POSIX backend and the QEMU boards stand in for hardware peripherals (display, audio, GPIO, network, watchdog, profiler). The browser dashboard at `localhost:8000` is the user-facing transport.
 
 ### Workspace
 

@@ -1,6 +1,6 @@
 # Simulation Framework
 
-The simulation framework provides virtual peripheral emulation for POSIX and WASM targets. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
+The simulation framework provides virtual peripheral emulation for the POSIX host and the QEMU boards. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
 
 Enabled by default for POSIX builds via `CONFIG_OVE_SIM`.
 
@@ -99,15 +99,16 @@ int id = ove_sim_plugin_register(&my_sensor_ops, &my_ctx, NULL, 0);
 
 ## Transport Layers
 
-The transport layer abstracts the communication channel between firmware and the dashboard. Three implementations are available:
+The transport layer abstracts the communication channel between firmware and the dashboard. Two implementations are available:
 
 | Transport | Config symbol | Use case | Mechanism |
 |-----------|---------------|----------|-----------|
 | Direct (in-process) | `OVE_SIM_TRANSPORT_DIRECT` | POSIX `host` builds | In-process ring buffers; dashboard served by an embedded WebSocket server |
 | Shared Memory | `OVE_SIM_TRANSPORT_SHM` | QEMU cross-process | `/dev/shm/ove-{sim,fb,audio}` via mmap; external bridge process serves the dashboard |
-| WASM | `OVE_SIM_TRANSPORT_WASM` | Browser (Emscripten) | `SharedArrayBuffer` between main thread and web workers; dashboard is the host page itself |
 
 All transports implement the same `struct ove_sim_transport_ops` vtable, so plugin code is transport-agnostic. The transport is selected automatically based on the board configuration.
+
+The browser bundle (`web` variant of the QEMU board) uses the shared-memory transport unchanged. The firmware's semihosting files live in the emulator's in-memory filesystem, inside the page, and `sim/dashboard/qemu-wasm.js` plays the part of the external bridge.
 
 ### Transport Operations
 
@@ -159,7 +160,7 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | `CONFIG_OVE_SIM` | bool | `y` if POSIX | Enable the simulation plugin framework |
 | `CONFIG_OVE_SIM_TRANSPORT_DIRECT` | bool | `y` if POSIX + SIM | In-process transport (POSIX builds) |
 | `CONFIG_OVE_SIM_TRANSPORT_SHM` | bool | `y` if !POSIX + SIM | Shared memory transport (QEMU builds) |
-| `CONFIG_OVE_SIM_TRANSPORT_WASM` | bool | `y` if WASM + SIM | WASM SharedArrayBuffer transport |
+| `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`) |
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` if SIM | Enable the browser-based dashboard |
 | `CONFIG_OVE_SIM_DASHBOARD_PORT` | int | `8080` | Dashboard HTTP port |
 
