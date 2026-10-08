@@ -54,7 +54,6 @@ const app_title = switch (ove.target.current_rtos) {
     .nuttx => "oveRTOS(NuttX) Zig Demo",
     .zephyr => "oveRTOS(Zephyr) Zig Demo",
     .posix => "oveRTOS(POSIX) Zig Demo",
-    .wasm => "oveRTOS(wasm) Zig Demo",
 };
 
 // ---------------------------------------------------------------------------

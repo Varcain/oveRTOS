@@ -108,7 +108,7 @@
 //!   for sub-microsecond critical sections, ISR-shared state, and
 //!   crossing `.await` points where a real [`sync::Mutex`] would
 //!   deadlock. Requires the `async` feature (the `ove_irq_*` substrate
-//!   lives in `irq.h` under `CONFIG_OVE_ASYNC`); not available on WASM.
+//!   lives in `irq.h` under `CONFIG_OVE_ASYNC`).
 //! - [`ove_macros::thread`] (`#[ove::thread(stack_size = N, name = "...")]`)
 //!   — attribute-macro form of static-storage thread spawn. The
 //!   decorated `fn name()` becomes a spawn helper that, on first call,
