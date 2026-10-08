@@ -97,7 +97,7 @@ If you'd rather watch the same example execute in your browser without installin
 - [C example (heap)](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}
 - [LVGL gallery (C++)](https://varcain.github.io/oveRTOS/lvgl_gallery_cpp_heap/){:target="_blank"}
 
-This is the real kernel and the real firmware image, the one `make qemu.freertos.<app>` builds for the emulated Cortex-M7 board; only the emulator moved into the page. It runs slower than on your machine, because QEMU has no JIT in a browser.
+This is the real kernel and the real firmware: what `make qemu.freertos.<app>` builds for the emulated Cortex-M7 board, compiled with optimisation rather than for debugging. Only the emulator moved into the page, and it runs slower than on your machine, because QEMU has no JIT in a browser.
 
 ## Next steps
 
