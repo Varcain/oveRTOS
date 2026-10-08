@@ -1,8 +1,10 @@
 /*
  * oveRTOS Simulation Dashboard
  *
- * Shared between POSIX (WebSocket) and WASM (Emscripten) modes.
- * Provides: event log, WinBox window management, audio waveform (POSIX).
+ * Talks to the firmware over one framed link: a WebSocket to the Python
+ * bridge (POSIX, native QEMU), or the in-page link to QEMU running in
+ * this page (qemu-wasm.js).
+ * Provides: event log, WinBox window management, display, audio.
  */
 
 "use strict";
@@ -92,7 +94,7 @@ function attachInputHandlers(cvs, onInput) {
     }, {passive: false});
 }
 
-/* ── DOM elements (may be null in WASM mode for missing panels) ───── */
+/* ── DOM elements (may be null when a panel is absent) ────────────── */
 var statusEl     = document.getElementById("status");
 var canvas       = document.getElementById("display-canvas");
 var ctx          = canvas ? canvas.getContext("2d") : null;
@@ -413,7 +415,6 @@ function saveLayout() {
 
 /**
  * Create a single WinBox window for a dashboard panel.
- * Called from shell.html (WASM) or auto-created (POSIX).
  */
 function createDashboardWindow(id, title) {
     if (typeof WinBox === "undefined") return;
@@ -541,11 +542,9 @@ window.addEventListener("resize", function () {
     }, 150);
 });
 
-/* ── POSIX mode: create all windows + connect WebSocket ───────────── */
-var isWasmMode = (typeof Module !== "undefined" && Module.onRuntimeInitialized);
-
-if (!isWasmMode && typeof WinBox !== "undefined") {
-    /* POSIX mode — events + console windows are always useful;
+/* ── Create the always-on windows ─────────────────────────────────── */
+if (typeof WinBox !== "undefined") {
+    /* Events + console windows are always useful;
        display/audio windows are created lazily when the first data
        frame arrives so that only features the firmware actually uses
        get a panel. */
@@ -612,11 +611,9 @@ function connect() {
     };
 }
 
-/* ── Lazy window creation (shared by POSIX + WASM modes) ─────────────
- * WASM mode used to early-return here because initWasmMode explicitly
- * created a fixed set of windows up front.  For threads/debug to appear
- * lazily on the first FRAME_THREAD / FRAME_FILE_LIST, the handler-driven
- * path needs to work here too.  The !wins[id] guard below already
+/* ── Lazy window creation ────────────────────────────────────────────
+ * Panels appear on the first frame that needs them (FRAME_FB,
+ * FRAME_THREAD, FRAME_FILE_LIST, ...).  The !wins[id] guard below
  * prevents double-creation. */
 function ensureWindow(id) {
     if (!WIN_DEFS[id]) return;
@@ -801,7 +798,7 @@ function refreshAudioDevices() {
 var playToggle = document.getElementById("audio-play-toggle");
 var measureStart = 0;
 var playbackState = null;  /* null | "measuring" | "playing" */
-if (playToggle && !isWasmMode) {
+if (playToggle) {
     playToggle.addEventListener("click", function () {
         if (playbackState) {
             if (playbackNode && typeof playbackNode.disconnect === "function")
@@ -1040,14 +1037,6 @@ if (fileBrowseBtn && fileInputEl) {
         var reader = new FileReader();
         reader.onload = function (ev) {
             var fwRate = audioSampleRate;
-            /* In WASM mode, audioSampleRate is never updated from FRAME_AUDIO.
-             * Read the actual rate from the playback ring header. */
-            if (typeof Module !== "undefined" && Module && Module.ccall) {
-                var _p = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
-                var _h = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-                var _sr = _h[(_p + 8) >> 2];
-                if (_sr > 0 && _sr <= 48000) fwRate = _sr;
-            }
             if (!fwRate || fwRate <= 0) fwRate = DEFAULT_SAMPLE_RATE;
             /* Temporary AudioContext for decoding. */
             var decodeCtx = new AudioContext();
@@ -1094,11 +1083,6 @@ if (filePlayBtn) {
         var chunkSamples = 1024;
         /* Use firmware's actual rate for injection pacing. */
         var fwRate = audioSampleRate;
-        if (typeof Module !== "undefined" && Module && Module.ccall) {
-            var _p = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
-            var _sr = (Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer))[(_p + 8) >> 2];
-            if (_sr > 0 && _sr <= 48000) fwRate = _sr;
-        }
         if (!fwRate || fwRate <= 0) fwRate = DEFAULT_SAMPLE_RATE;
         var intervalMs = Math.round(chunkSamples / fwRate * 1000);
 
@@ -1191,11 +1175,9 @@ if (recordToggle) {
 }
 
 /* Enumerate audio devices on load and device change. */
-if (!isWasmMode) {
-    refreshAudioDevices();
-    if (navigator.mediaDevices)
-        navigator.mediaDevices.addEventListener("devicechange", refreshAudioDevices);
-}
+refreshAudioDevices();
+if (navigator.mediaDevices)
+    navigator.mediaDevices.addEventListener("devicechange", refreshAudioDevices);
 
 /* ── Thread snapshot (FRAME_THREAD) ───────────────────────────────── */
 
@@ -2286,11 +2268,11 @@ function handleProfile(buf, off) {
     if (subType === PROFILE_SUB_SYMBOLS) {
         /* JSON array of [pc_start, pc_end, name].
          *
-         * Merge into the existing table rather than replacing it: POSIX
+         * Merge into the existing table rather than replacing it: the
          * bridge delivers one large upfront blob (merge is a no-op on an
-         * empty table), while WASM emits incremental batches as its
-         * on-target interner observes new frame names. Either way the
-         * net effect is an append-only sorted set keyed by pc_start. */
+         * empty table), and a target that symbolicates for itself may
+         * add batches later. Either way the net effect is an append-only
+         * sorted set keyed by pc_start. */
         var bytes = new Uint8Array(buf, off + 1, dv.byteLength - 1);
         try {
             var json = new TextDecoder().decode(bytes);
@@ -3096,10 +3078,8 @@ function handleFileList(buf, off) {
     } catch (e) { return; }
     if (!Array.isArray(json)) return;
     projectFiles = json;
-    /* Show the debug window for the file explorer even without GDB.
-     * WASM has no in-dashboard debugger — users go to DevTools — so
-     * skip the pane there. */
-    if (projectFiles.length > 0 && !isWasmMode) ensureWindow("debug");
+    /* Show the debug window for the file explorer even without GDB. */
+    if (projectFiles.length > 0) ensureWindow("debug");
     _renderFileExplorer();
 }
 
@@ -3597,7 +3577,7 @@ function sendInput(x, y, pressed) {
 }
 
 function attachCanvasInput() {
-    if (!canvas || isWasmMode) return;
+    if (!canvas) return;
     attachInputHandlers(canvas, sendInput);
 }
 
@@ -3612,33 +3592,12 @@ function sendCmd(pluginId, cmdType, data) {
     view.setUint32(12, data ? data.length : 0, true);
     if (data) new Uint8Array(buf, 16).set(data);
 
-    if (typeof Module !== "undefined" && Module && Module.HEAPU8) {
-        /* WASM: write audio inject directly to the capture ring,
-         * bypassing the command queue (avoids main-thread mutex). */
-        if (cmdType === 0 && data && data.length > 0) {
-            if (!sendCmd._capPtr)
-                sendCmd._capPtr = Module.ccall('ove_wasm_audio_get_capture_ptr', 'number');
-            var cp = sendCmd._capPtr;
-            var h32 = Module.HEAPU32;
-            var h8 = Module.HEAPU8;
-            var rs = h32[(cp + 16) >> 2] || 65536;
-            var mask = rs - 1;
-            var wp = Atomics.load(h32, cp >> 2);
-            var rp = Atomics.load(h32, (cp + 4) >> 2);
-            var free = rs - (wp - rp);
-            var n = Math.min(data.length, free);
-            var off = cp + RING_HDR;
-            for (var i = 0; i < n; i++)
-                h8[off + ((wp + i) & mask)] = data[i];
-            Atomics.store(h32, cp >> 2, wp + n);
-        }
-    } else if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(buf);
-    }
 }
 window.sendCmd = sendCmd;
 
-/* ── Console input (works in both POSIX and WASM mode) ────────────── */
+/* ── Console input ────────────────────────────────────────────────── */
 function initConsoleInput() {
     var conInput = document.getElementById("console-input");
     var conSend  = document.getElementById("console-send");
@@ -3646,17 +3605,11 @@ function initConsoleInput() {
 
     function sendConsoleText() {
         var text = conInput.value + "\n";
-        if (isWasmMode && typeof Module !== "undefined" && Module.ccall) {
-            for (var i = 0; i < text.length; i++)
-                Module.ccall('ove_wasm_console_push', null,
-                    ['number'], [text.charCodeAt(i)]);
-        } else {
-            /* Batch entire string into a single WebSocket message. */
-            var bytes = new Uint8Array(text.length);
-            for (var i = 0; i < text.length; i++)
-                bytes[i] = text.charCodeAt(i) & 0xFF;
-            sendCmd(0xFFFFFFFF, 0, bytes);  /* console sentinel */
-        }
+        /* Batch entire string into a single message. */
+        var bytes = new Uint8Array(text.length);
+        for (var i = 0; i < text.length; i++)
+            bytes[i] = text.charCodeAt(i) & 0xFF;
+        sendCmd(0xFFFFFFFF, 0, bytes);  /* console sentinel */
         conInput.value = "";
     }
     conSend.addEventListener("click", sendConsoleText);
@@ -3666,268 +3619,7 @@ function initConsoleInput() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   WASM mode initialization
-   Called from shell.html Module.onRuntimeInitialized.
-   All WASM-specific dashboard logic lives here, not in shell.html.
+   Init: set up console input and open the link
    ══════════════════════════════════════════════════════════════════════ */
-window.initWasmMode = function () {
-    statusEl.textContent = "Connected (WASM)";
-    statusEl.className = "status connected";
-
-    /* Create WinBox windows for panels enabled by compile-time config. */
-    if (window.createDashboardWindow) {
-        if (Module.ccall('ove_wasm_has_lvgl', 'number'))
-            window.createDashboardWindow('display', 'Display');
-        if (Module.ccall('ove_wasm_has_audio', 'number'))
-            window.createDashboardWindow('audio', 'Audio');
-        window.createDashboardWindow('events', 'Events');
-        /* No debug pane on WASM — code-level debugging is delegated to
-         * Chrome/Edge DevTools (F12), which is strictly more capable
-         * (named C locals, struct-aware memory).  Keeping the pane
-         * would only be a dead-button surface.
-         */
-    }
-
-    initConsoleInput();
-
-    /* ── Frame polling via shared framebuffer in WASM heap ──────── */
-    var lastSeq = 0;
-    var fCanvas = document.getElementById('display-canvas');
-    var fCtx = fCanvas ? fCanvas.getContext('2d') : null;
-    var fResEl = document.getElementById('display-resolution');
-    var fFpsEl = document.getElementById('display-fps');
-    var fFrames = 0;
-    var fLastFpsTime = performance.now();
-
-    function pollFrame() {
-        requestAnimationFrame(pollFrame);
-        var seq = Module.ccall('ove_wasm_fb_get_seq', 'number');
-        if (seq === lastSeq) return;
-        lastSeq = seq;
-
-        var w = Module.ccall('ove_wasm_fb_get_width', 'number');
-        var h = Module.ccall('ove_wasm_fb_get_height', 'number');
-        var size = Module.ccall('ove_wasm_fb_get_size', 'number');
-        if (w === 0 || h === 0 || size === 0) return;
-
-        if (fCanvas.width !== w || fCanvas.height !== h) {
-            fCanvas.width = w;
-            fCanvas.height = h;
-            if (fResEl) fResEl.textContent = w + 'x' + h;
-        }
-
-        var pxPtr = Module.ccall('ove_wasm_fb_get_pixels', 'number');
-        var src = new Uint8Array(Module.HEAPU8.buffer, pxPtr, size);
-        var imgData = fCtx.createImageData(w, h);
-        convertXRGBtoRGBA(src, imgData.data, w * h);
-        fCtx.putImageData(imgData, 0, 0);
-
-        fFrames++;
-        var now = performance.now();
-        if (now - fLastFpsTime >= 1000) {
-            if (fFpsEl) fFpsEl.textContent = fFrames + ' FPS';
-            fFrames = 0;
-            fLastFpsTime = now;
-        }
-    }
-    pollFrame();
-
-    /* ── Mouse/touch input forwarding to LVGL ──────────────────── */
-    if (fCanvas) {
-        attachInputHandlers(fCanvas, function (x, y, pressed) {
-            Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'], [x, y, pressed]);
-        });
-    }
-
-    /* ── WASM audio: playback via ScriptProcessorNode ──────────── */
-    var RING_SIZE = WS_AUDIO_RING_SIZE;
-
-    if (playToggle) {
-        playToggle.addEventListener('click', function() {
-            if (playbackNode && typeof playbackNode.disconnect === 'function') {
-                playbackNode.disconnect();
-                playbackNode = null;
-                if (audioCtx) { audioCtx.close(); audioCtx = null; }
-                this.textContent = 'Enable Playback';
-                return;
-            }
-
-            var pbPtr = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
-            var heap32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-            var sampleRate = heap32[(pbPtr + 8) >> 2] || DEFAULT_SAMPLE_RATE;
-
-            audioCtx = new AudioContext({ sampleRate: sampleRate });
-            if (audioCtx.setSinkId && outSelect && outSelect.value)
-                audioCtx.setSinkId(outSelect.value);
-
-            var wpOff = pbPtr;
-            var rpOff = pbPtr + 4;
-            var bufOff = pbPtr + RING_HDR;
-
-            var self = this;
-
-            /* Read samples from WASM heap ring buffer into a Float32Array.
-             * Used by both the ScriptProcessor callback and the waveform poller. */
-            function drainRing(output) {
-                var h32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-                var h8 = Module.HEAPU8;
-                var wp = Atomics.load(h32, wpOff >> 2);
-                var rp = Atomics.load(h32, rpOff >> 2);
-                var avail = wp - rp;
-                for (var i = 0; i < output.length; i++) {
-                    if (i * 2 < avail) {
-                        var bi = (rp + i * 2) & (RING_SIZE - 1);
-                        var lo = h8[bufOff + bi];
-                        var hi = h8[bufOff + ((bi + 1) & (RING_SIZE - 1))];
-                        var s = (hi << 8) | lo;
-                        if (s > 32767) s -= 65536;
-                        output[i] = s / 32768.0;
-                    } else {
-                        output[i] = 0;
-                    }
-                }
-                var consumed = Math.min(avail, output.length * 2);
-                Atomics.store(h32, rpOff >> 2, rp + consumed);
-            }
-
-            /* ScriptProcessorNode: simple, works everywhere. */
-            playbackNode = audioCtx.createScriptProcessor(1024, 0, 1);
-            playbackNode.onaudioprocess = function(e) {
-                var output = e.outputBuffer.getChannelData(0);
-                drainRing(output);
-                scheduleWaveDraw('waveform-output', output, '#e94560');
-            };
-            playbackNode.connect(audioCtx.destination);
-            self.textContent = 'Disable Playback';
-            if (audioInfoEl)
-                audioInfoEl.textContent = sampleRate + ' Hz / mono / 16bit';
-        });
-    }
-
-    /* ── WASM audio: capture via source selector ─────────────── */
-    /* Mic capture for WASM — writes directly to SharedArrayBuffer.
-     * Triggered by the shared audio-source-select dropdown. */
-    var wSourceSel = document.getElementById('audio-source-select');
-    if (wSourceSel) {
-        wSourceSel.addEventListener('change', function() {
-            stopAllInput();
-        });
-    }
-
-    /* Start WASM mic when source is "mic" and user clicks input area. */
-    var wInputSel = document.getElementById('audio-input-select');
-    if (wInputSel) {
-        wInputSel.addEventListener('change', function() {
-            if (!wSourceSel || wSourceSel.value !== 'mic') return;
-            stopMicCapture();
-            /* Restart mic with new device. */
-            var constraints = { audio: this.value
-                ? { deviceId: { exact: this.value } } : true };
-            navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
-                captureStream = stream;
-                var capPtr = Module.ccall('ove_wasm_audio_get_capture_ptr', 'number');
-                var tmpH32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-                var appRate = tmpH32[(capPtr + 8) >> 2] || DEFAULT_SAMPLE_RATE;
-                if (!audioCtx) audioCtx = new AudioContext({ sampleRate: appRate });
-
-                var wpOff = capPtr;
-                var rpOff = capPtr + 4;
-                var bufOff = capPtr + RING_HDR;
-
-                captureSource = audioCtx.createMediaStreamSource(stream);
-                captureNode = audioCtx.createScriptProcessor(1024, 1, 1);
-                captureNode.onaudioprocess = function(e) {
-                    var input = e.inputBuffer.getChannelData(0);
-                    var h32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-                    var h8 = Module.HEAPU8;
-                    var wp = Atomics.load(h32, wpOff >> 2);
-                    var rp = Atomics.load(h32, rpOff >> 2);
-                    var free = RING_SIZE - (wp - rp);
-                    var bytesToWrite = Math.min(input.length * 2, free);
-                    var samplesToWrite = bytesToWrite >> 1;
-                    for (var i = 0; i < samplesToWrite; i++) {
-                        var s = Math.max(-1, Math.min(1, input[i]));
-                        var val = (s < 0 ? s * 32768 : s * 32767) | 0;
-                        var bi = (wp + i * 2) & (RING_SIZE - 1);
-                        h8[bufOff + bi] = val & 0xFF;
-                        h8[bufOff + ((bi + 1) & (RING_SIZE - 1))] = (val >> 8) & 0xFF;
-                    }
-                    Atomics.store(h32, wpOff >> 2, wp + samplesToWrite * 2);
-                    scheduleWaveDraw('waveform-input', input, '#4ecca3');
-                };
-                captureSource.connect(captureNode);
-                captureNode.connect(audioCtx.destination);
-            }).catch(function(err) {
-                console.error('Mic access denied:', err);
-            });
-        });
-    }
-
-    /* Device enumeration (shared with POSIX path). */
-    refreshAudioDevices();
-    if (navigator.mediaDevices)
-        navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
-
-    /* ── Plugin event dispatch (threads panel, etc.) ────────────────
-     * Called from the WASM transport via MAIN_THREAD_ASYNC_EM_ASM.
-     * Buffer layout matches `struct ove_sim_event`:
-     *   [plugin_id:4][event_type:4][timestamp_ms:4][data_len:4][payload]
-     * Map event_type → FRAME_* handlers, mirroring what the Python
-     * bridge does on the QEMU/POSIX-host path. */
-    var SIM_DEBUG_EVT_THREADS      = 0;   /* OVE_SIM_DEBUG_EVT_THREADS */
-    var SIM_TRACE_EVT_STREAM       = 10;  /* OVE_SIM_TRACE_EVT_STREAM */
-    var SIM_TRACE_EVT_DESCRIPTORS  = 11;  /* OVE_SIM_TRACE_EVT_DESCRIPTORS */
-    var SIM_PROFILER_EVT_SAMPLES   = 20;  /* OVE_SIM_PROFILER_EVT_SAMPLES */
-    var SIM_PROFILER_EVT_CAPS      = 21;  /* OVE_SIM_PROFILER_EVT_CAPS */
-    var SIM_PROFILER_EVT_SYMBOLS   = 22;  /* OVE_SIM_PROFILER_EVT_SYMBOLS */
-
-    /*
-     * Synthesise the sub-type byte the POSIX bridge prepends before
-     * FRAME_PROFILE, so handleProfile can be called with the same
-     * layout it sees on the WebSocket path. The WASM transport delivers
-     * the raw plugin payload without a frame envelope.
-     */
-    function dispatchProfileEvent(arrayBuf, subType) {
-        var payloadLen = arrayBuf.byteLength - 16;
-        if (payloadLen < 0) return;
-        var combined = new Uint8Array(1 + payloadLen);
-        combined[0] = subType;
-        if (payloadLen > 0)
-            combined.set(new Uint8Array(arrayBuf, 16, payloadLen), 1);
-        handleProfile(combined.buffer, 0);
-    }
-
-    window.__ove_sim_event = function (arrayBuf) {
-        if (!arrayBuf || arrayBuf.byteLength < 16) return;
-        var hdr = new DataView(arrayBuf);
-        var eventType = hdr.getUint32(4, true);
-        var dataLen = hdr.getUint32(12, true);
-        if (16 + dataLen > arrayBuf.byteLength) return;
-
-        if (eventType === SIM_DEBUG_EVT_THREADS) {
-            handleThreadSnapshot(arrayBuf, 16);
-        } else if (eventType === SIM_TRACE_EVT_STREAM
-                   || eventType === SIM_TRACE_EVT_DESCRIPTORS) {
-            /* Trace plugin payload layout matches what the POSIX bridge
-             * delivers as FRAME_TRACE: [sub, ver, count16, dropped, ...].
-             * handleTrace starts reading from the offset we hand it. */
-            handleTrace(arrayBuf, 16);
-        } else if (eventType === SIM_PROFILER_EVT_SAMPLES) {
-            dispatchProfileEvent(arrayBuf, PROFILE_SUB_SAMPLES);
-        } else if (eventType === SIM_PROFILER_EVT_CAPS) {
-            dispatchProfileEvent(arrayBuf, PROFILE_SUB_CAPS);
-        } else if (eventType === SIM_PROFILER_EVT_SYMBOLS) {
-            dispatchProfileEvent(arrayBuf, PROFILE_SUB_SYMBOLS);
-        }
-    };
-};
-
-/* ══════════════════════════════════════════════════════════════════════
-   Init: detect mode and start
-   ══════════════════════════════════════════════════════════════════════ */
-if (!isWasmMode) {
-    /* POSIX mode: connect WebSocket, set up console input. */
-    initConsoleInput();
-    connect();
-}
+initConsoleInput();
+connect();
