@@ -26,8 +26,9 @@
 /* RGB565 color display */
 #define LV_COLOR_DEPTH 16
 
-/* Generous on QEMU (4MB RAM) */
-#define LV_MEM_SIZE (64 * 1024)
+/* Generous on QEMU (4MB RAM).  The sim display is XRGB8888, so opacity layers
+ * need ARGB8888 tiles: 64 KB wedges lvgl_benchmark at "Containers with opa_layer". */
+#define LV_MEM_SIZE (256 * 1024)
 
 /*=================
  * OPERATING SYSTEM
