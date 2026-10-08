@@ -6,6 +6,8 @@
     <title>oveRTOS Sim Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css"/>
     <link rel="stylesheet" href="style.css">
+    <!-- ove:web-head  The web bundle (firmware running in the page, see
+         qemu-wasm.js) replaces this block with coi-serviceworker.js. -->
     <script>
     /* Unregister any stale service worker from previous versions.
        The bridge server sends COOP/COEP headers directly. */
@@ -15,6 +17,7 @@
         });
     }
     </script>
+    <!-- ove:web-head-end -->
 </head>
 <body>
     <header>
@@ -235,6 +238,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/js/winbox.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+    <!-- ove:web-link  The web bundle loads qemu-wasm.js here. -->
     <script src="app.js"></script>
 </body>
 </html>

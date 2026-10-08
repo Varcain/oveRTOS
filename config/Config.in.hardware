@@ -16,7 +16,9 @@ config OVE_BOARD_QEMU_MPS2_AN500
     # profiler (all of which pull the sim display transport). Normal an500
     # builds keep the sim dashboard.
     select OVE_SIM if !OVE_LINUX
-    select OVE_DEBUG_BUILD
+    # Debug by default, for the dashboard's debugger.  The browser bundle
+    # runs under an interpreter and wants the optimised build instead.
+    imply OVE_DEBUG_BUILD if !OVE_SIM_WEB
     help
       ARM MPS2-AN500 board emulated by QEMU.
       Cortex-M7 @ 25 MHz, 4 MB Flash, 4 MB RAM.

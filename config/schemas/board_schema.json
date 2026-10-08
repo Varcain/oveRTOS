@@ -133,6 +133,14 @@
         "items": { "type": "string" }
       },
       "description": "Per-RTOS Kconfig overrides, keyed by RTOS name (freertos, zephyr, nuttx, posix)."
+    },
+    "variants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "description": "Named variants of the board. A variant's name stands in for the board in '<board>.<rtos>.<app>'; its Kconfig lines are applied on top of the board's own."
     }
   },
   "additionalProperties": false

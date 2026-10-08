@@ -1162,6 +1162,22 @@ config OVE_SIM_TRANSPORT_WASM
     bool
     default y if OVE_BOARD_WASM && OVE_SIM
 
+config OVE_SIM_WEB
+    bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
+    depends on OVE_BOARD_QEMU_MPS2_AN500 && OVE_SIM
+    help
+      Also package the firmware for a web browser.  'ove build' writes
+      serve/: the dashboard, this firmware and qemu-system-arm built
+      for WebAssembly ('ove ensure-toolchain qemu-wasm', needs Docker
+      or Podman).  The directory is self-contained and can be put on
+      any static host; 'ove run' serves it locally.
+
+      The firmware is the same image the native QEMU runs.  In the
+      browser QEMU has no JIT, so it runs several times slower: the
+      build defaults to optimised rather than debug.
+
+      'make web.<rtos>.<app>' selects this.
+
 config OVE_SIM_DASHBOARD
     bool "Web dashboard"
     default y if OVE_SIM
