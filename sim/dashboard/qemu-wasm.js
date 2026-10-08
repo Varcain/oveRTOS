@@ -10,9 +10,10 @@
  * window.oveCreateLink(), an object with the WebSocket surface app.js uses,
  * speaking the same frames.
  *
- * Covered: console log, framebuffer, pointer input, plugin events (threads,
- * trace) and plugin commands (console input included).
- * Not covered: audio, the sampling profiler and the debugger.
+ * Covered: console log, framebuffer, pointer input, audio in both
+ * directions, plugin events (threads, trace) and plugin commands (console
+ * input included).
+ * Not covered: the sampling profiler and the debugger.
  *
  * web.json, next to the page, says what to run:
  *   { "firmware": "firmware.elf", "emulator": "qemu/",
@@ -30,7 +31,9 @@
 
 /* ── Frame types (shared with app.js and ove-dashboard-bridge.py) ──── */
 var FRAME_FB     = 0x01;
+var FRAME_AUDIO  = 0x02;
 var FRAME_CMD    = 0x04;
+var FRAME_STATE  = 0x05;
 var FRAME_LOG    = 0x06;
 var FRAME_INPUT  = 0x07;
 var FRAME_THREAD = 0x0A;
@@ -66,10 +69,28 @@ var INPUT_PATH  = "/dev/shm/ove-input";
 var INPUT_MAGIC = 0x54504E49;          /* "INPT" */
 var INPUT_SIZE  = 16;
 
-var AUDIO_PATH = "/dev/shm/ove-audio";
-var AUDIO_FILE_SIZE = 2 * (32 + (1 << 16));
+/* ── Audio file: an output ring then an input ring, each a 32-byte
+ *    header followed by 64 KB of PCM (sim/src/ove_sim_audio_ring.h) ── */
+var AUDIO_PATH        = "/dev/shm/ove-audio";
+var AUDIO_RING_SIZE   = 1 << 16;
+var AUDIO_RING_HDR    = 32;
+var AUDIO_RING_TOTAL  = AUDIO_RING_HDR + AUDIO_RING_SIZE;
+var AUDIO_OUT_OFF     = 0;
+var AUDIO_IN_OFF      = AUDIO_RING_TOTAL;
+var AUDIO_FILE_SIZE   = 2 * AUDIO_RING_TOTAL;
+var RING_OFF_WPOS     = 0;
+var RING_OFF_RPOS     = 4;
+var RING_OFF_RATE     = 8;
+var RING_OFF_CHANNELS = 12;
+var RING_OFF_BITS     = 14;
+var RING_OFF_SIZE     = 16;
+var AUDIO_CHUNK_MAX   = 4096;          /* bytes per FRAME_AUDIO */
+var AUDIO_IN_MAX_LAG  = 16000;         /* 500 ms of 16 kHz mono 16-bit */
+var AUDIO_PLUGIN_ID   = 1;
+var CONSOLE_PLUGIN_ID = 0xFFFFFFFF;
 
 var EVENT_POLL_MS = 30;
+var AUDIO_POLL_MS = 10;
 
 var statusEl = document.getElementById("status");
 function setStatus(text, ok) {
@@ -86,6 +107,9 @@ function Link() {
     this._fs = null;
     this._sim = null;                  /* open stream on SIM_PATH */
     this._input = null;                /* open stream on INPUT_PATH */
+    this._audio = null;                /* open stream on AUDIO_PATH */
+    this._audioOutRpos = 0;
+    this._audioInWpos = 0;
     this._eventRpos = 0;
     this._fbPending = false;
     this._fbFrame = null;              /* reused FRAME_FB buffer */
@@ -183,11 +207,14 @@ async function boot(link) {
     link._fs = module.FS;
     link._sim = module.FS.open(SIM_PATH, "r+");
     link._input = module.FS.open(INPUT_PATH, "r+");
+    link._audio = module.FS.open(AUDIO_PATH, "r+");
 
     link.readyState = 1;               /* WebSocket.OPEN */
     if (link.onopen) link.onopen();
+    link._announceAudio();
 
     setInterval(function () { link._pollEvents(); }, EVENT_POLL_MS);
+    setInterval(function () { link._pollAudio(); }, AUDIO_POLL_MS);
     (function frameLoop() {
         link._pollFramebuffer();
         requestAnimationFrame(frameLoop);
@@ -246,6 +273,91 @@ Link.prototype._pollFramebuffer = function () {
     new Uint8Array(this._fbFrame, 12).set(
         f.bytes.subarray(FB_HDR_SIZE, FB_HDR_SIZE + len));
     this._emit(this._fbFrame);
+};
+
+/* ── Audio ─────────────────────────────────────────────────────────── */
+
+/* Tell the dashboard which plugin takes injected audio, as the bridge
+ * does when a client connects. */
+Link.prototype._announceAudio = function () {
+    var json = new TextEncoder().encode(
+        '{"type":"audio","sample_rate":16000,"channels":1,"bit_depth":16}');
+    var buf = new ArrayBuffer(8 + json.length);
+    var view = new DataView(buf);
+    view.setUint32(0, FRAME_STATE, true);
+    view.setUint32(4, AUDIO_PLUGIN_ID, true);
+    new Uint8Array(buf, 8).set(json);
+    this._emit(buf);
+};
+
+Link.prototype._writeU32 = function (stream, value, pos) {
+    var bytes = new Uint8Array(4);
+    new DataView(bytes.buffer).setUint32(0, value >>> 0, true);
+    this._fs.write(stream, bytes, 0, 4, pos);
+};
+
+/* Output ring: firmware -> dashboard, as FRAME_AUDIO chunks. */
+Link.prototype._pollAudio = function () {
+    var f = fileView(this._fs, AUDIO_PATH);
+    if (!f || f.size < AUDIO_OUT_OFF + AUDIO_RING_HDR) return;
+
+    var rate = f.view.getUint32(AUDIO_OUT_OFF + RING_OFF_RATE, true);
+    var channels = f.view.getUint16(AUDIO_OUT_OFF + RING_OFF_CHANNELS, true);
+    var bits = f.view.getUint16(AUDIO_OUT_OFF + RING_OFF_BITS, true);
+    var ringSize = f.view.getUint32(AUDIO_OUT_OFF + RING_OFF_SIZE, true);
+    if (!rate || !channels || !ringSize) return;   /* no audio yet */
+
+    var frameBytes = channels * (bits >> 3);
+    var bufOff = AUDIO_OUT_OFF + AUDIO_RING_HDR;
+    var mask = ringSize - 1;
+    var wpos = f.view.getUint32(AUDIO_OUT_OFF + RING_OFF_WPOS, true);
+
+    for (;;) {
+        var avail = (wpos - this._audioOutRpos) >>> 0;
+        if (avail > ringSize) {         /* lapped: keep the newer half */
+            this._audioOutRpos = (wpos - (ringSize >> 1)) >>> 0;
+            avail = ringSize >> 1;
+        }
+        var n = Math.min(avail, AUDIO_CHUNK_MAX);
+        n -= n % frameBytes;
+        if (n <= 0) break;
+
+        var frame = new ArrayBuffer(12 + n);
+        var hdr = new DataView(frame);
+        hdr.setUint32(0, FRAME_AUDIO, true);
+        hdr.setUint32(4, rate, true);
+        hdr.setUint16(8, channels, true);
+        hdr.setUint16(10, bits, true);
+        var pcm = new Uint8Array(frame, 12);
+        for (var i = 0; i < n; i++) {
+            var off = bufOff + ((this._audioOutRpos + i) & mask);
+            pcm[i] = off < f.size ? f.bytes[off] : 0;
+        }
+        this._audioOutRpos = (this._audioOutRpos + n) >>> 0;
+        this._emit(frame);
+    }
+    this._writeU32(this._audio, this._audioOutRpos, AUDIO_OUT_OFF + RING_OFF_RPOS);
+};
+
+/* Input ring: dashboard (microphone or file) -> firmware. */
+Link.prototype._audioInput = function (pcm) {
+    var f = fileView(this._fs, AUDIO_PATH);
+    if (!f || !pcm.length) return;
+
+    /* The firmware may be slower than real time: cap what is queued. */
+    var rposOff = AUDIO_IN_OFF + RING_OFF_RPOS;
+    var guestRpos = f.size >= rposOff + 4 ? f.view.getUint32(rposOff, true) : 0;
+    if (((this._audioInWpos - guestRpos) >>> 0) > AUDIO_IN_MAX_LAG)
+        this._audioInWpos = (guestRpos + (AUDIO_IN_MAX_LAG >> 1)) >>> 0;
+
+    var bufOff = AUDIO_IN_OFF + AUDIO_RING_HDR;
+    var pos = this._audioInWpos & (AUDIO_RING_SIZE - 1);
+    var first = Math.min(AUDIO_RING_SIZE - pos, pcm.length);
+    this._fs.write(this._audio, pcm, 0, first, bufOff + pos);
+    if (first < pcm.length)
+        this._fs.write(this._audio, pcm, first, pcm.length - first, bufOff);
+    this._audioInWpos = (this._audioInWpos + pcm.length) >>> 0;
+    this._writeU32(this._audio, this._audioInWpos, AUDIO_IN_OFF + RING_OFF_WPOS);
 };
 
 /* ── Plugin events: firmware -> dashboard ──────────────────────────── */
@@ -314,7 +426,18 @@ Link.prototype.send = function (buf) {
     if (type === FRAME_INPUT && buf.byteLength >= 9) {
         /* int16 x, int16 y, uint8 pressed — at offset 4 in both. */
         this._fs.write(this._input, new Uint8Array(buf, 4, 5), 0, 5, 4);
+    } else if (type === FRAME_AUDIO && buf.byteLength > 12) {
+        /* Microphone capture: an 8-byte format header, then PCM. */
+        this._audioInput(new Uint8Array(buf, 12));
     } else if (type === FRAME_CMD && buf.byteLength >= 16) {
+        var pluginId = view.getUint32(4, true);
+        var cmdType = view.getUint32(8, true);
+        if (pluginId !== CONSOLE_PLUGIN_ID && cmdType === 0 &&
+            buf.byteLength > 16) {
+            /* Audio injection goes straight into the input ring. */
+            this._audioInput(new Uint8Array(buf, 16));
+            return;
+        }
         /* [plugin_id][cmd_type][data_len][data] is already the layout of
          * struct ove_sim_cmd; the ring wants it behind a uint16 length. */
         this._sendCmd(new Uint8Array(buf, 4));
@@ -344,9 +467,7 @@ Link.prototype._sendCmd = function (cmd) {
     if (first < msg.length)
         this._fs.write(this._sim, msg, first, msg.length - first, SIM_CMD_RING_OFF);
 
-    var newWpos = new Uint8Array(4);
-    new DataView(newWpos.buffer).setUint32(0, (wpos + msg.length) >>> 0, true);
-    this._fs.write(this._sim, newWpos, 0, 4, SIM_OFF_CMD_WPOS);
+    this._writeU32(this._sim, wpos + msg.length, SIM_OFF_CMD_WPOS);
 };
 
 window.oveCreateLink = function () { return new Link(); };
