@@ -498,7 +498,9 @@ fn app_main() {
     ove::log::try_init();
     log::info!("LVGL gallery (Rust): init");
 
-    ove::thread!("graphics", graphics_entry, Priority::High, 4096).detach();
+    // 16 KB: the gallery's pages (charts, canvas, image transforms) recurse
+    // deep in LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display.
+    ove::thread!("graphics", graphics_entry, Priority::High, 16384).detach();
 
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));

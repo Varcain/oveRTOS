@@ -442,8 +442,10 @@ OVE_MAIN()
 {
 	OVE_LOG_INF("LVGL gallery (C++ heap mode): init");
 
-	auto gfx_thread = std::make_unique<ove::Thread<4096>>(graphics_thread, nullptr,
-							      OVE_PRIO_HIGH, "graphics");
+	/* 16 KB: the gallery's pages (charts, canvas, image transforms) recurse deep in
+	 * LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display. */
+	auto gfx_thread = std::make_unique<ove::Thread<16384>>(graphics_thread, nullptr,
+							       OVE_PRIO_HIGH, "graphics");
 	(void)gfx_thread;
 
 	int ret = ove_lvgl_init();

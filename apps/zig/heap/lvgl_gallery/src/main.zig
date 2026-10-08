@@ -350,12 +350,18 @@ fn graphicsEntry() void {
 // App entry
 // ---------------------------------------------------------------------------
 
-var graphics_thread: ?ove.Thread(4096) = null;
+// 16 KB: the gallery's pages (charts, canvas, image transforms) recurse deep in LVGL's
+// draw pipeline — 4 KB overflows on the 32-bit sim display. Zephyr's ove.Thread adds
+// 128 B and rounds up to an aligned power of two, so ask for 128 B less to keep its
+// stack at 16 KB instead of 32 KB.
+const graphics_stack = 16 * 1024 - 128;
+const GraphicsThread = ove.Thread(graphics_stack);
+var graphics_thread: ?GraphicsThread = null;
 
 fn appMain() void {
     std.log.info("LVGL gallery (Zig): init", .{});
 
-    graphics_thread = ove.Thread(4096).spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = GraphicsThread.spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to spawn graphics", .{});
         return;
     };

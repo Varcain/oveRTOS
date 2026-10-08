@@ -36,7 +36,9 @@ static void rebuild_page();
 
 /* ── Thread ───────────────────────────────────────────────────────── */
 
-static ove::Thread<4096> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
+/* 16 KB: the gallery's pages (charts, canvas, image transforms) recurse deep in
+ * LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display. */
+static ove::Thread<16384> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
 
 /* ── Timer-driven widget slots (set by page builder, null otherwise) */
 
