@@ -10,24 +10,21 @@
  * Pointer input state — bridges the browser dashboard's mouse/touch
  * events into LVGL's pointer indev.
  *
- * Three distinct paths converge here:
+ * The dashboard side writes click/touch events to /dev/shm/ove-input
+ * (a 16-byte struct stamped with magic "INPT"), and the firmware reads
+ * it one of two ways:
  *
- *  1. WASM: JavaScript calls ove_sim_input_set() directly via ccall
- *     (see sim/src/ove_sim_wasm_input.c). This writes to the static
- *     `g_input_*` globals, which are then read by ove_sim_input_get()
- *     when no file backs the pointer.
- *
- *  2. POSIX host: the dashboard bridge writes click/touch events to
- *     /dev/shm/ove-input (a 16-byte struct stamped with magic
- *     "INPT"). On the first ove_sim_input_get() call we try to open
+ *  1. POSIX host: on the first ove_sim_input_get() call we try to open
  *     and mmap that region; on success, subsequent gets read from the
- *     shm instead of the static globals. The shm is created by
+ *     shm. The shm is created by
  *     sim/src/ove_sim_transport_shm_local.c::local_open().
  *
- *  3. QEMU guest: the same file, read through semihosting on every
+ *  2. QEMU guest: the same file, read through semihosting on every
  *     get. Here the dashboard side creates it before the firmware
- *     starts (qemu-run.sh, or qemu-wasm.js in the browser); a headless
- *     run has no file and stays on the static globals.
+ *     starts (qemu-run.sh, or qemu-wasm.js in the browser).
+ *
+ * With no file (a headless run) the pointer reads as released at the
+ * origin.
  */
 
 #include "ove_sim_input.h"
@@ -40,16 +37,13 @@
 #include <string.h>
 #define OVE_SIM_INPUT_HAVE_MMAP 0
 #define OVE_SIM_INPUT_HAVE_SEMIHOSTING 1
-#elif !defined(__EMSCRIPTEN__)
+#else
 #include <fcntl.h>
 #include <stddef.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #define OVE_SIM_INPUT_HAVE_MMAP 1
-#define OVE_SIM_INPUT_HAVE_SEMIHOSTING 0
-#else
-#define OVE_SIM_INPUT_HAVE_MMAP 0
 #define OVE_SIM_INPUT_HAVE_SEMIHOSTING 0
 #endif
 
@@ -64,10 +58,6 @@
  *   offset 8: uint8_t  pressed
  *   offset 9: reserved
  */
-
-static volatile int16_t g_input_x;
-static volatile int16_t g_input_y;
-static volatile uint8_t g_input_pressed;
 
 #if OVE_SIM_INPUT_HAVE_MMAP
 static uint8_t *g_input_shm;
@@ -156,14 +146,7 @@ void ove_sim_input_get(int16_t *x, int16_t *y, uint8_t *pressed)
 		return;
 #endif
 
-	*x = g_input_x;
-	*y = g_input_y;
-	*pressed = g_input_pressed;
-}
-
-void ove_sim_input_set(int16_t x, int16_t y, uint8_t pressed)
-{
-	g_input_x = x;
-	g_input_y = y;
-	g_input_pressed = pressed;
+	*x = 0;
+	*y = 0;
+	*pressed = 0;
 }

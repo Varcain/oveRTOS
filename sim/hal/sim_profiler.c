@@ -102,7 +102,7 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
 	*p++ = OVE_SIM_PROFILER_VERSION;
 	/* Wire format: PCs are always serialised as 8 bytes regardless of
 	 * the target's native pointer size (see serialise_sample). Report 8
-	 * so the dashboard parses 64-bit slots — otherwise WASM (uintptr_t==4)
+	 * so the dashboard parses 64-bit slots — otherwise a 32-bit target
 	 * would report 4 and the batch gets dropped as "unsupported word size". */
 	*p++ = 8;
 	uint16_t count16 = (uint16_t)n;
@@ -131,8 +131,8 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
  * Drain any newly-interned symbol entries from the backend and emit
  * them as a JSON-payload event to the dashboard. Backends that
  * symbolicate host-side (POSIX via bridge/nm) return 0 unconditionally
- * and this is a no-op. WASM returns incremental `[[pc,pc+1,"name"],...]`
- * as it observes new frame names in emscripten_get_callstack output.
+ * and this is a no-op. A backend that symbolicates on target returns
+ * incremental `[[pc,pc+1,"name"],...]` as it interns new frame names.
  *
  * Buffer size trades off against emission frequency: 2 KiB fits ~30
  * symbols/batch worst-case and stays well below the bridge's per-event

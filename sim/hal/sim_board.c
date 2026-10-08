@@ -15,7 +15,7 @@
  *
  * Dashboard serving:
  *   POSIX / QEMU — external bridge (ove-dashboard-bridge.py)
- *   WASM         — Emscripten in-browser
+ *   QEMU in a browser — the page itself (sim/dashboard/qemu-wasm.js)
  */
 
 #include "ove/sim/ove_sim_plugin.h"
@@ -59,10 +59,7 @@ int ove_sim_board_init(void)
 	int ret;
 
 	/* 1. Create transport. */
-#if defined(__EMSCRIPTEN__)
-	extern int ove_sim_transport_wasm_create(struct ove_sim_transport * t);
-	ret = ove_sim_transport_wasm_create(&transport);
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	ret = ove_sim_transport_shm_guest_create(&transport);
 #else
 	extern int ove_sim_transport_shm_local_create(struct ove_sim_transport * t);
@@ -122,15 +119,6 @@ int ove_sim_board_init(void)
 	ret = ove_sim_debug_register();
 	if (ret < 0)
 		fprintf(stderr, "[sim] Debug plugin failed: %d\n", ret);
-
-#if defined(__EMSCRIPTEN__)
-	/* WASM: start a command pump thread that drains the JS→C command
-	 * queue and dispatches to plugins (audio inject, etc.). */
-	{
-		extern int ove_sim_wasm_cmd_pump_start(struct ove_sim_transport * t);
-		ove_sim_wasm_cmd_pump_start(&transport);
-	}
-#endif
 
 	printf("[sim] Simulation framework initialised (%d plugins)\n", ove_sim_plugin_count());
 	fflush(stdout);

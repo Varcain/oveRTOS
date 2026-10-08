@@ -87,7 +87,7 @@ void ove_irq_unlock(ove_irq_key_t key);
  *
  * @return @c true if the caller is in an ISR or equivalent
  *         interrupt-handling context, @c false otherwise.
- * @note On host-sim backends (POSIX, WASM) the simulator sets a
+ * @note On the host-sim backend (POSIX) the simulator sets a
  *       thread-local flag inside its ISR wrappers; outside those
  *       paths the function returns @c false.
  * @note Requires @c CONFIG_OVE_ASYNC.

@@ -21,7 +21,7 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if !defined(__EMSCRIPTEN__) && !defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+#if !defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 
 #include "ove/sim/ove_sim_transport.h"
 #include "ove/sim/ove_sim_shm.h"
@@ -446,4 +446,4 @@ int ove_sim_transport_shm_local_create(struct ove_sim_transport *t)
 	return OVE_OK;
 }
 
-#endif /* !__EMSCRIPTEN__ && !CONFIG_OVE_BOARD_QEMU_MPS2_AN500 */
+#endif /* !CONFIG_OVE_BOARD_QEMU_MPS2_AN500 */

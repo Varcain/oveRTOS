@@ -9,7 +9,7 @@
 /*
  * FreeRTOS trace backend.
  *
- * POSIX/WASM own the thread state and call ove_state_track_transition
+ * POSIX owns the thread state and calls ove_state_track_transition
  * directly at each state change. FreeRTOS owns state inside the kernel,
  * so we hook the kernel's trace macros:
  *

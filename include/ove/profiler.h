@@ -94,10 +94,10 @@ uint32_t ove_backend_profiler_get_max_hz(void);
  * @p out, compatible with the dashboard's existing
  * @c PROFILE_SUB_SYMBOLS parser.
  *
- * Used by backends that symbolicate on-target (e.g. WASM uses
- * @c emscripten_get_callstack and interns names to synthetic
- * pseudo-PCs).  POSIX returns 0 because symbolication is done host-side
- * by the bridge via @c nm on the ELF.
+ * For backends that symbolicate on-target, interning names to
+ * synthetic pseudo-PCs.  No current backend does: they all return 0
+ * because symbolication is done host-side by the bridge via @c nm on
+ * the ELF.
  *
  * @param[out] out     Buffer to receive the JSON fragment.
  * @param[in]  out_max Size of @p out in bytes.

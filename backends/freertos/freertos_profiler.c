@@ -17,7 +17,7 @@
  * onto its PSP. We read the stacked PC from there and push a sample.
  *
  * Cross-backend contract:
- *   sample_tick() is called from the sim-debug pump. On POSIX/WASM that
+ *   sample_tick() is called from the sim-debug pump. On POSIX that
  *   is where sampling is kicked off. On FreeRTOS sampling is ISR-driven,
  *   so sample_tick() is a no-op — the actual producer is
  *   ove_backend_profiler_on_tick(), invoked from freertos_hooks.c.

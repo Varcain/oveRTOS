@@ -61,12 +61,11 @@
  * | Zephyr   | ✅                 | `k_thread_create` over the caller's supervisor-only K_KERNEL_STACK_DEFINE buffer. |
  * | NuttX    | ✅ on target ports | `task_create_with_stack()` forwards it to the architecture; NuttX sim may substitute a larger host stack. NuttX still allocates the TCB and task group internally. |
  * | POSIX    | ⚠ Ignored          | Host-mode backend; `pthread_create` manages its own stack. |
- * | WASM     | ⚠ Ignored          | Host-mode backend; host pthreads manage stack. |
  *
  * **For strict zero-heap deployments**: FreeRTOS and Zephyr honor the
  * full storage-hygiene contract. NuttX honors caller stack storage but
- * still allocates its TCB and task group internally; POSIX and WASM are
- * host/sim backends with no zero-heap obligation.
+ * still allocates its TCB and task group internally; POSIX is a
+ * host/sim backend with no zero-heap obligation.
  *
  * @par Storage struct size stability
  *
@@ -292,11 +291,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
 #include "ove_storage_nuttx.h"
 #elif defined(CONFIG_OVE_RTOS_POSIX)
-#if defined(CONFIG_OVE_BOARD_WASM)
-#include "ove_storage_wasm.h"
-#else
 #include "ove_storage_posix.h"
-#endif
 #endif
 #endif /* __BINDGEN__ */
 

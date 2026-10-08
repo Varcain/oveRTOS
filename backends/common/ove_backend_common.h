@@ -202,7 +202,7 @@ static inline int ove_errno_to_ove(int e)
  * again on wake-up.  Drives the per-state time tracker so
  * `ove_thread_list` reports CPU% correctly.
  *
- * Implemented in the thread backend (posix_thread.c, wasm_thread.c),
+ * Implemented in the thread backend (posix_thread.c),
  * which owns the thread-local pointer to the current ove_thread.
  * Backends that don't track state compile this away to a no-op.
  */

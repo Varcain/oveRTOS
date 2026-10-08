@@ -9,9 +9,9 @@
 /*
  * Common PCM ring buffer for simulation audio.
  *
- * Shared struct layout and helpers used by all three sim transport
- * backends (WASM, POSIX, QEMU).  The JS AudioWorklet accesses the
- * same layout by byte offset.
+ * Shared struct layout and helpers used by both sim transport
+ * backends (POSIX, QEMU).  The dashboard bridge and the in-page QEMU
+ * link access the same layout by byte offset.
  *
  * Design:
  *   - SPSC (single producer, single consumer) — no lock needed
@@ -19,7 +19,6 @@
  *   - 32-byte header followed by PCM data
  *
  * Access modes:
- *   WASM:  direct memory with __atomic builtins (SharedArrayBuffer)
  *   POSIX: direct memory (in-process, mutex at transport level)
  *   QEMU:  semihosting file I/O using offset constants
  */
@@ -164,70 +163,6 @@ static inline uint32_t ove_sim_ring_read(struct ove_sim_audio_ring *r, void *dat
 	r->read_pos = rp + len;
 	return len;
 }
-
-/* ── Atomic variants (for WASM SharedArrayBuffer) ─────────────────── */
-
-#ifdef __EMSCRIPTEN__
-
-static inline uint32_t ove_sim_ring_avail_atomic(const struct ove_sim_audio_ring *r)
-{
-	uint32_t wp = __atomic_load_n(&r->write_pos, __ATOMIC_ACQUIRE);
-	uint32_t rp = __atomic_load_n(&r->read_pos, __ATOMIC_ACQUIRE);
-	return wp - rp;
-}
-
-static inline uint32_t ove_sim_ring_free_atomic(const struct ove_sim_audio_ring *r)
-{
-	return r->size - ove_sim_ring_avail_atomic(r);
-}
-
-static inline uint32_t ove_sim_ring_write_atomic(struct ove_sim_audio_ring *r, const void *data,
-						 uint32_t len)
-{
-	uint32_t free = ove_sim_ring_free_atomic(r);
-	if (len > free) {
-		len = free;
-		r->overruns++;
-	}
-	if (len == 0)
-		return 0;
-
-	uint32_t mask = ove_sim_ring_mask(r);
-	uint32_t wp = __atomic_load_n(&r->write_pos, __ATOMIC_ACQUIRE);
-	const uint8_t *src = (const uint8_t *)data;
-
-	for (uint32_t i = 0; i < len; i++)
-		r->buf[(wp + i) & mask] = src[i];
-
-	__atomic_store_n(&r->write_pos, wp + len, __ATOMIC_RELEASE);
-	return len;
-}
-
-static inline uint32_t ove_sim_ring_read_atomic(struct ove_sim_audio_ring *r, void *data,
-						uint32_t len)
-{
-	uint32_t wp = __atomic_load_n(&r->write_pos, __ATOMIC_ACQUIRE);
-	uint32_t rp = __atomic_load_n(&r->read_pos, __ATOMIC_ACQUIRE);
-	uint32_t avail = wp - rp;
-	if (len > avail) {
-		len = avail;
-		if (avail == 0)
-			r->underruns++;
-	}
-	if (len == 0)
-		return 0;
-
-	uint32_t mask = ove_sim_ring_mask(r);
-	uint8_t *dst = (uint8_t *)data;
-
-	for (uint32_t i = 0; i < len; i++)
-		dst[i] = r->buf[(rp + i) & mask];
-
-	__atomic_store_n(&r->read_pos, rp + len, __ATOMIC_RELEASE);
-	return len;
-}
-
-#endif /* __EMSCRIPTEN__ */
 
 #ifdef __cplusplus
 }

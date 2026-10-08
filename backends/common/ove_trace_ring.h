@@ -69,7 +69,7 @@ struct ove_trace_thread_desc {
 /**
  * ove_backend_trace_list_threads - enumerate live thread handles+names
  *
- * Implemented by the thread backend (posix_thread.c, wasm_thread.c).
+ * Implemented by the thread backend (posix_thread.c).
  * Returns the number of entries written to @out (bounded by @max).
  */
 size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max);

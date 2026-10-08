@@ -7,11 +7,10 @@
  */
 
 /*
- * Shared input state for the sim dashboard.
+ * Pointer input from the sim dashboard.
  *
- * Platform-agnostic: POSIX mode receives input via WebSocket frames,
- * WASM mode receives it via JS ccall.  Both write to the same global
- * state that the LVGL input device driver reads each tick.
+ * The dashboard side keeps the pointer in /dev/shm/ove-input; the LVGL
+ * input device driver reads it from there each tick.
  */
 
 #ifndef OVE_SIM_INPUT_H
@@ -27,13 +26,6 @@ extern "C" {
  * @brief Read the current pointer input state.
  */
 void ove_sim_input_get(int16_t *x, int16_t *y, uint8_t *pressed);
-
-/**
- * @brief Update the pointer input state.
- *
- * Called from the WS server thread (POSIX) or from JS via ccall (WASM).
- */
-void ove_sim_input_set(int16_t x, int16_t y, uint8_t pressed);
 
 #ifdef __cplusplus
 }
