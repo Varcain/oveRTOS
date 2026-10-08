@@ -57,8 +57,8 @@ use crate::error::{Error, Result};
 
 // Round-tripping `fn()` / `fn(StopToken)` through `*mut c_void`
 // requires the two to be the same size.  Holds on every target
-// oveRTOS supports today — ARM Cortex-M (32-bit thumb), x86_64,
-// RISC-V (32/64), and WebAssembly.  If a future port lands on a
+// oveRTOS supports today — ARM Cortex-M (32-bit thumb) and the 64-bit
+// hosts the POSIX backend runs on.  If a future port lands on a
 // target where function pointers are wider than data pointers (some
 // segmented or capability architectures), this assertion fires at
 // compile time so the silent corruption mode becomes a build failure.

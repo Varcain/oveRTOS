@@ -20,7 +20,7 @@
 #                              (called after add_executable(); delegates
 #                              to ove_rust.cmake / ove_zig.cmake)
 #     - Cross-binding scaffolding (sysroot resolution, sizes-probe lib,
-#       target-kind detection) shared by Rust and Zig integration
+#       host/cross detection) shared by Rust and Zig integration
 #                          →  cmake/OveBindingsCommon.cmake
 #     - Specific binding integration (cargo invocation, zig build glue,
 #       bindgen wiring)    →  config/cmake/ove_rust.cmake

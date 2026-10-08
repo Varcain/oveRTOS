@@ -103,7 +103,7 @@
     "incompatible_boards": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Board directory names this app cannot be built for (e.g. apps that need CONFIG_OVE_ASYNC on a board with no irq backend). 'ove allconfigs' skips matching boards."
+      "description": "Boards this app cannot be built for, named as in the '<board>.<rtos>.<app>' spec: a board ('host'), a board variant ('web'), or one '<board>.<rtos>' pair ('stm32f746.nuttx'). 'ove allconfigs' skips the matching combinations."
     },
     "allconfigs_skip": {
       "type": "string",
