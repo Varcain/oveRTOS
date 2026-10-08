@@ -47,7 +47,8 @@ output/
             ├── .config         # Expanded Kconfig
             ├── build/          # CMake build directory
             ├── generated/      # Generated config headers (ove_config.h, etc.)
-            └── images/         # Final binary images (.elf, .bin, .hex)
+            ├── images/         # Final binary images (.elf, .bin, .hex)
+            └── serve/          # `web` variant only: the browser bundle
 ```
 
 The workspace path is derived from the active configuration. The `.elf` file in `images/` is the primary build product for flashing or QEMU.

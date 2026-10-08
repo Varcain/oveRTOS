@@ -101,6 +101,7 @@ All optional. `make lint` skips any tool it cannot find rather than failing.
 | `zig (downloaded)` | Fetched by `make ensure-toolchain-zig` |
 | `zephyr-sdk (downloaded)` | Fetched by `make download` for Zephyr builds, or `make ensure-toolchain-zephyr-sdk` |
 | `renode (downloaded)` | Fetched by `make ensure-toolchain-renode` for `make test-renode-*` |
+| `qemu-wasm (built)` | QEMU compiled to WebAssembly, for the `web` board variant. Built by `make ensure-toolchain-qemu-wasm` (needs Docker or Podman), or on the first `web` build |
 
 ### Manifest source trees (under `dl/`)
 

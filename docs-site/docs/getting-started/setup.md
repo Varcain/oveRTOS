@@ -93,6 +93,10 @@ sudo dnf install qemu-system-arm
 
 Not needed for POSIX or hardware-flash workflows.
 
+### Docker or Podman (for the browser bundle)
+
+Required only for the `web` variant of the QEMU board (`make web.<rtos>.<app>`), which packages the firmware with QEMU compiled to WebAssembly. The emulator is built once, inside upstream QEMU's own build container, so either Docker or Podman must be installed and usable by your user. Nothing else in the tree needs a container runtime. See [Board Configurations](../build-system/boards.md).
+
 ### OpenOCD (for hardware flashing)
 
 Required only to flash the STM32F746G-Discovery (`make flash`):

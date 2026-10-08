@@ -5,7 +5,7 @@
 
 Write embedded RTOS applications in **C++**, **Rust**, or **Zig** — and run them unchanged on **FreeRTOS**, **Zephyr**, or **Apache NuttX**.
 
-First-class language bindings sit on top of a unified C application API: threads, synchronisation, queues, timers, networking (sockets / TLS / HTTP / MQTT / SNTP / HTTPD), audio graph, ML inference, LVGL, power management, NVS, filesystem, shell, watchdog, bus drivers. The binding picks the ergonomics; the kernel underneath is a configure-time choice with [minimal runtime overhead](https://varcain.github.io/oveRTOS/benchmarks/). Native POSIX and WebAssembly backends are available for development and browser-hosted demos.
+First-class language bindings sit on top of a unified C application API: threads, synchronisation, queues, timers, networking (sockets / TLS / HTTP / MQTT / SNTP / HTTPD), audio graph, ML inference, LVGL, power management, NVS, filesystem, shell, watchdog, bus drivers. The binding picks the ergonomics; the kernel underneath is a configure-time choice with [minimal runtime overhead](https://varcain.github.io/oveRTOS/benchmarks/). A native POSIX backend is available for development, and the QEMU firmware also runs in a browser for demos.
 
 > **New here?** → [**Quickstart in 5 minutes**](https://varcain.github.io/oveRTOS/getting-started/quickstart/). Hit a wall? → run `make doctor` or browse the [Troubleshooting page](https://varcain.github.io/oveRTOS/getting-started/troubleshooting/). Building an app outside the tree? → [`ove app new`](https://varcain.github.io/oveRTOS/build-system/external-apps/) stamps a working skeleton.
 
@@ -26,9 +26,9 @@ First-class language bindings sit on top of a unified C application API: threads
 | Apache NuttX | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
 | Zephyr | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
 
-## Development & demo backends
+## Development & demo targets
 
-| Backend | Use | Toolchain |
+| Target | Use | Toolchain |
 |---------|-----|-----------|
 | POSIX | Develop and test on Linux / macOS without hardware | Host GCC/Clang |
 | Browser | The QEMU Cortex-M7 firmware, run in QEMU compiled to WebAssembly, for live demos | ARM GCC (+ Docker or Podman to build the emulator once) |
