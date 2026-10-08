@@ -24,7 +24,8 @@ import sys
 _SUBCOMMANDS = [
     "defconfig", "defconfig-fragments", "menuconfig", "rtos-menuconfig",
     "savedefconfig", "download", "ensure-toolchain", "configure", "build",
-    "allconfigs", "alldefconfigs", "run", "flash", "test", "clean",
+    "allconfigs", "alldefconfigs", "docs-demos", "run", "flash", "test",
+    "clean",
     "manifest", "doctor", "board", "completion", "vscode", "app",
 ]
 
