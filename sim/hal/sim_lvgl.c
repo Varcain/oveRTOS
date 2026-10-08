@@ -64,21 +64,19 @@ static uint32_t hires_tick_cb(void)
 
 static void sim_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-	uint16_t x1 = (uint16_t)area->x1;
-	uint16_t y1 = (uint16_t)area->y1;
-	uint16_t x2 = (uint16_t)area->x2;
-	uint16_t y2 = (uint16_t)area->y2;
+	(void)area;
+	(void)px_map;
 
-	uint32_t w = (uint32_t)(x2 - x1 + 1);
-	uint32_t h = (uint32_t)(y2 - y1 + 1);
-	/* XRGB8888: 4 bytes per pixel. */
-	size_t fb_len = w * h * 4;
-
-	/* Deliver framebuffer via the transport (platform-agnostic).
+	/* Direct mode redraws only the invalidated areas, in place, and calls
+	 * this once per area.  The dashboard takes whole frames, so deliver
+	 * the framebuffer once, after the last area of the refresh.
 	 * The transport handles delivery (WS mailbox, shared FB, or
 	 * semihosting file) — no need for a separate plugin event. */
-	struct ove_sim_transport *t = ove_sim_get_transport();
-	ove_sim_transport_flush_display(t, px_map, fb_len, x1, y1, x2, y2);
+	if (lv_display_flush_is_last(disp)) {
+		struct ove_sim_transport *t = ove_sim_get_transport();
+		ove_sim_transport_flush_display(t, fb_buf1, sizeof(fb_buf1), 0, 0,
+						OVE_DISPLAY_WIDTH - 1, OVE_DISPLAY_HEIGHT - 1);
+	}
 
 	lv_display_flush_ready(disp);
 }
@@ -131,9 +129,14 @@ int ove_lvgl_init(void)
 	 * Single-buffer is correct here: the sim transport writes each
 	 * frame to a shared file, so there is no hardware double-buffer
 	 * to overlap with.  Double-buffering would cause the dashboard
-	 * to flicker between two out-of-sync frames. */
+	 * to flicker between two out-of-sync frames.
+	 *
+	 * Direct mode: the framebuffer persists between refreshes, so LVGL
+	 * only redraws what was invalidated.  Full mode redrew the whole
+	 * screen for every change, which is most of the cost of a typical
+	 * UI when the firmware runs under an emulator. */
 	lv_display_set_color_format(disp, LV_COLOR_FORMAT_XRGB8888);
-	lv_display_set_buffers(disp, fb_buf1, NULL, sizeof(fb_buf1), LV_DISPLAY_RENDER_MODE_FULL);
+	lv_display_set_buffers(disp, fb_buf1, NULL, sizeof(fb_buf1), LV_DISPLAY_RENDER_MODE_DIRECT);
 	lv_display_set_flush_cb(disp, sim_flush_cb);
 
 	/* Set a theme. */
