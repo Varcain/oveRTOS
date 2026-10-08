@@ -394,7 +394,7 @@ unsafe extern "C" {
     pub fn ove_irq_unlock(key: ove_irq_key_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by higher-level bindings (Rust async runtime) to dispatch\n between the thread-context and ISR-context variants of a wake\n primitive (e.g. @c ove_event_signal vs @c ove_event_signal_from_isr).\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On host-sim backends (POSIX, WASM) the simulator sets a\n       thread-local flag inside its ISR wrappers; outside those\n       paths the function returns @c false.\n @note Requires @c CONFIG_OVE_ASYNC."]
+    #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by higher-level bindings (Rust async runtime) to dispatch\n between the thread-context and ISR-context variants of a wake\n primitive (e.g. @c ove_event_signal vs @c ove_event_signal_from_isr).\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On the host-sim backend (POSIX) the simulator sets a\n       thread-local flag inside its ISR wrappers; outside those\n       paths the function returns @c false.\n @note Requires @c CONFIG_OVE_ASYNC."]
     pub fn ove_is_in_isr() -> bool;
 }
 #[doc = " Notification that the console RX path published one or more bytes. The\n callback may run in interrupt context and must therefore be ISR-safe."]
@@ -879,7 +879,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).\n\n Despite the name, this returns the stack still UNUSED at the deepest point reached — the\n remaining headroom — computed from the untouched fill pattern (FreeRTOS\n uxTaskGetStackHighWaterMark; Zephyr/WASM sentinel scan). For bytes USED, subtract this from the\n stack size. All backends agree on this free-not-used meaning; only the historical name says\n \"usage\".\n\n @param[in] handle  Thread to inspect.\n This compatibility API cannot distinguish unsupported profiling from a\n genuinely exhausted stack. New code should use\n @ref ove_thread_get_stack_headroom instead.\n\n @return Bytes of stack still free at the historical peak usage, or 0 on\n         error or when the backend does not support stack profiling."]
+    #[doc = " @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).\n\n Despite the name, this returns the stack still UNUSED at the deepest point reached — the\n remaining headroom — computed from the untouched fill pattern (FreeRTOS\n uxTaskGetStackHighWaterMark; Zephyr sentinel scan). For bytes USED, subtract this from the\n stack size. All backends agree on this free-not-used meaning; only the historical name says\n \"usage\".\n\n @param[in] handle  Thread to inspect.\n This compatibility API cannot distinguish unsupported profiling from a\n genuinely exhausted stack. New code should use\n @ref ove_thread_get_stack_headroom instead.\n\n @return Bytes of stack still free at the historical peak usage, or 0 on\n         error or when the backend does not support stack profiling."]
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
 }
 unsafe extern "C" {

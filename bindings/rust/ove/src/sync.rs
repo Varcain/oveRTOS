@@ -1085,15 +1085,14 @@ crate::ove_handle_impl!(CondVar, ove_condvar_destroy, ove_condvar_deinit);
 //   can't hold a real mutex across an `.await`.
 //
 // Requires the async substrate (`CONFIG_OVE_ASYNC=y`) — `ove_irq_lock`
-// lives in `include/ove/irq.h` under that gate. Not available on WASM
-// (no interrupt model). Consumers that need to be portable across
-// builds with `CONFIG_OVE_ASYNC=n` should gate with
-// `#[cfg(all(has_async, not(board_wasm)))]`.
+// lives in `include/ove/irq.h` under that gate. Consumers that need to
+// be portable across builds with `CONFIG_OVE_ASYNC=n` should gate with
+// `#[cfg(has_async)]`.
 
-#[cfg(all(has_async, not(board_wasm)))]
+#[cfg(has_async)]
 pub use spin_mutex::{SpinMutex, SpinMutexGuard};
 
-#[cfg(all(has_async, not(board_wasm)))]
+#[cfg(has_async)]
 mod spin_mutex {
     use ::core::cell::UnsafeCell;
     use ::core::ops::{Deref, DerefMut};
