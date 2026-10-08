@@ -45,135 +45,121 @@ jobs:
       - name: Build documentation
         run: make docs
 
-      # ── WASM live demo ──────────────────────────────────────
-      - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: '3.1.51'
-
-      # Rust+WASM uses `-Zbuild-std=std,panic_abort` (see ove_rust.cmake)
-      # to rebuild std with +atomics for emscripten pthreads. That needs
-      # nightly Rust *with rust-src* — without rust-src, cargo bails on
-      # "Cargo.lock does not exist, unable to build with the standard
-      # library" and every Rust example silently 404s on the deployed
-      # site. wasm32-unknown-emscripten ships as an unstable target so
-      # the install must come from the nightly channel.
-      - name: Setup Rust (nightly + rust-src, for WASM)
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rust-src
-          targets: wasm32-unknown-emscripten
-
-      - name: Setup Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: '0.16.0'
-
-      - name: Build and deploy WASM examples
+      # ── Live demos ──────────────────────────────────────────
+      # The example apps run in the browser as the real FreeRTOS firmware
+      # for the QEMU MPS2-AN500, inside QEMU compiled to WebAssembly.
+      - name: Install demo build dependencies
         run: |
-          COMMON="sim/dashboard/app.js sim/dashboard/style.css sim/dashboard/coi-serviceworker.js"
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
+            libclang-dev xz-utils qemu-system-arm
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      # Building the emulator takes a while (a container image with its
+      # dependencies, then QEMU itself); it only changes with the pinned
+      # QEMU version or the build recipe.
+      - name: Cache the WebAssembly QEMU
+        uses: actions/cache@v4
+        with:
+          path: output/tools/qemu-wasm
+          key: qemu-wasm-${{ hashFiles('manifest.yaml', 'config/scripts/build-qemu-wasm.sh', 'config/qemu-wasm/mps2.mak') }}
+
+      - name: Build the WebAssembly QEMU
+        run: .venv/bin/ove ensure-toolchain qemu-wasm
+
+      - name: Build and deploy the browser demos
+        run: |
+          # Every app that supports the 'web' variant; an app that fails
+          # to build only drops its own demo.
+          make allconfigs-web.freertos || true
+
+          EMULATOR=$(ls -d output/tools/qemu-wasm/qemu-*/ | head -1)
+          mkdir -p docs-site/site/qemu
+          cp "$EMULATOR/qemu-system-arm.wasm" "$EMULATOR/SOURCE.txt" docs-site/site/qemu/
+
           BUILT=""
-          FAILED=""
-
-          # Discover apps from app.yaml config_name fields.  Recursive
-          # find — the heap/zh split puts app.yaml at depth 4
-          # (apps/<lang>/<heap|zeroheap>/<name>/app.yaml), and pre-split
-          # apps still live at depth 3 (apps/<lang>/<name>/app.yaml), so
-          # walking the whole tree is the only glob-stable form.
-          APPS=$(find apps -name app.yaml -print0 2>/dev/null \
-                 | xargs -0 grep -h 'config_name:' 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-
-          for name in $APPS; do
-            # Skip Zig — Zig 0.16 still doesn't support wasm32-emscripten
-            # (std.posix lacks emscripten `system` fields and std.Io.Threaded
-            # pulls them in transitively; see config/cmake/ove_zig.cmake).
-            case "$name" in *_zig) echo "Skipping $name (Zig wasm32-emscripten not supported in Zig 0.16)"; continue;; esac
-            echo ""
-            echo "========================================="
-            echo "Building: $name"
-            echo "========================================="
-
-            BUILD_DIR="output/wasm/posix/${name}/build/firmware"
-
-            # Clean this workspace's build
-            rm -rf "$BUILD_DIR"
-
-            # Configure via fragments + build (don't fail the whole job)
-            if make "wasm.posix.${name}" && \
-               make; then
-              # Copy artifacts from the known build directory
-              if [ -f "$BUILD_DIR/ove_wasm.wasm" ]; then
-                mkdir -p "docs-site/site/$name"
-                cp "$BUILD_DIR/ove_wasm.html" "docs-site/site/$name/index.html"
-                cp "$BUILD_DIR/ove_wasm.js" "docs-site/site/$name/"
-                cp "$BUILD_DIR/ove_wasm.wasm" "docs-site/site/$name/"
-                cp "$BUILD_DIR/ove_wasm.worker.js" "docs-site/site/$name/" 2>/dev/null || true
-                for f in $COMMON; do cp "$f" "docs-site/site/$name/"; done
-                BUILT="$BUILT $name"
-                echo "✓ $name built successfully"
-              else
-                FAILED="$FAILED $name"
-                echo "✗ $name: build output not found"
-              fi
-            else
-              FAILED="$FAILED $name"
-              echo "✗ $name: build failed (continuing)"
+          BROKEN=""
+          for serve in output/web/freertos/*/serve; do
+            [ -f "$serve/firmware.elf" ] || continue
+            name=$(basename "$(dirname "$serve")")
+            # Only publish a demo whose firmware comes up under the native
+            # QEMU: a page for an app that faults at start-up helps no one.
+            if ! config/scripts/qemu-smoke.sh "$(dirname "$serve")/images/firmware.elf"; then
+              BROKEN="$BROKEN $name"
+              continue
             fi
+            dest="docs-site/site/$name"
+            mkdir -p "$dest/qemu"
+            for f in index.html app.js style.css coi-serviceworker.js qemu-wasm.js firmware.elf; do
+              cp "$serve/$f" "$dest/"
+            done
+            # The emulator's script has to sit below the page (its worker
+            # threads reload it, and the service worker only isolates the
+            # page's own directory); the 26 MB binary is shared.
+            cp "$EMULATOR/qemu-system-arm.js" "$dest/qemu/"
+            printf '%s\n' '{ "firmware": "firmware.elf", "emulator": "qemu/", "wasm": "../qemu/qemu-system-arm.wasm", "machine": "mps2-an500" }' > "$dest/web.json"
+            BUILT="$BUILT $name"
           done
 
           echo ""
           echo "========================================="
-          echo "Summary:"
-          echo "  Built:  $BUILT"
-          echo "  Failed: ${FAILED:-none}"
+          echo "Deployed demos:$BUILT"
+          echo "Not deployed (failed the smoke run):${BROKEN:- none}"
           echo "========================================="
 
-          # Generate gallery index page
-          cat > docs-site/site/examples.html << 'GALLERY_EOF'
-          <!DOCTYPE html>
+          # Gallery index page, from each deployed app's app.yaml.
+          .venv/bin/python - $BUILT > docs-site/site/examples.html << 'GALLERY_EOF'
+          import glob
+          import html
+          import sys
+
+          import yaml
+
+          apps = {}
+          for path in glob.glob("apps/**/app.yaml", recursive=True):
+              with open(path) as f:
+                  app = yaml.safe_load(f)
+              apps[app["config_name"]] = app
+
+          LANGS = {"c": "C", "cpp": "C++", "rust": "Rust", "zig": "Zig"}
+          cards = []
+          for name in sorted(sys.argv[1:]):
+              app = apps.get(name, {})
+              title = html.escape(app.get("description", name))
+              lang = LANGS.get(app.get("lang", "c"), "C")
+              cards.append(f'<a class="card" href="{name}/"><h3>{title}</h3>'
+                           f"<p>{lang} &middot; <code>{name}</code></p></a>")
+
+          print(f"""<!DOCTYPE html>
           <html>
           <head>
             <meta charset="UTF-8">
-            <title>oveRTOS WASM Examples</title>
+            <title>oveRTOS Browser Examples</title>
             <style>
-              body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
-              h1 { color: #333; }
-              .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
-              .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-decoration: none; color: #333; }
-              .card:hover { border-color: #4ecca3; background: #f8f8f8; }
-              .card h3 { margin: 0 0 8px 0; }
-              .card p { margin: 0; font-size: 14px; color: #666; }
+              body {{ font-family: sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; }}
+              h1 {{ color: #333; }}
+              .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }}
+              .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-decoration: none; color: #333; }}
+              .card:hover {{ border-color: #4ecca3; background: #f8f8f8; }}
+              .card h3 {{ margin: 0 0 8px 0; font-size: 16px; }}
+              .card p {{ margin: 0; font-size: 14px; color: #666; }}
             </style>
           </head>
           <body>
-            <h1>oveRTOS WASM Examples</h1>
-            <p>Interactive demos running entirely in the browser via WebAssembly.</p>
-            <div class="grid" id="apps"></div>
-            <script>
-          GALLERY_EOF
-
-          # Add links for each built app
-          echo "      var apps = [" >> docs-site/site/examples.html
-          for name in $BUILT; do
-            lang=$(echo "$name" | grep -oE '(cpp|rust|zig)$' || echo "c")
-            app=$(echo "$name" | sed "s/_${lang}$//" | sed 's/_c$//')
-            echo "        {name:'$name', app:'$app', lang:'$lang'}," >> docs-site/site/examples.html
-          done
-          cat >> docs-site/site/examples.html << 'GALLERY_EOF2'
-              ];
-              var grid = document.getElementById('apps');
-              apps.forEach(function(a) {
-                var card = document.createElement('a');
-                card.className = 'card';
-                card.href = a.name + '/';
-                card.innerHTML = '<h3>' + a.app + '</h3><p>' + a.lang.toUpperCase() + '</p>';
-                grid.appendChild(card);
-              });
-            </script>
+            <h1>oveRTOS Browser Examples</h1>
+            <p>Each demo is the FreeRTOS firmware of that example for the QEMU
+            MPS2-AN500, running in QEMU compiled to WebAssembly.</p>
+            <div class="grid">
+            {chr(10).join(cards)}
+            </div>
           </body>
-          </html>
-          GALLERY_EOF2
+          </html>""")
+          GALLERY_EOF
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
