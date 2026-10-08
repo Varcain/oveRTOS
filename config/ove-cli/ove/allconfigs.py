@@ -168,26 +168,24 @@ def _run_defconfig(ove_dir, app_dir, defconfig_path, ove_bin):
         {"OVE_EXTERNAL_APPS": os.pathsep.join(external_apps)})
 
 
-def _cmd_allconfigs(args):
-    spec = args.spec
-    if "." not in spec:
-        logger.error("usage: ove allconfigs <board>.<rtos>")
-        sys.exit(2)
-    board, rtos = spec.split(".", 1)
-    if not board or not rtos:
-        logger.error("usage: ove allconfigs <board>.<rtos>")
-        sys.exit(2)
+def _ove_bin(ws):
+    """The venv's own ove, so child stages run this checkout's CLI."""
+    ove_bin = os.path.join(ws.venv_dir, "bin", "ove")
+    return ove_bin if os.path.isfile(ove_bin) else "ove"
 
-    ws = Workspace()
+
+def build_matrix(ws, board, rtos):
+    """Build every app for <board>.<rtos>, each in its own workspace.
+
+    Returns one result per discovered app, in build order:
+    {"app", "ok", "skipped", "seconds"}.
+    """
     apps = _discover_apps(ws.ove_dir)
     if not apps:
         logger.error("no app.yaml files found under apps/")
         sys.exit(1)
 
-    ove_bin = os.path.join(ws.venv_dir, "bin", "ove")
-    if not os.path.isfile(ove_bin):
-        ove_bin = "ove"
-
+    ove_bin = _ove_bin(ws)
     results = []
     total = len(apps)
     spec_pair = f"{board}.{rtos}"
@@ -219,10 +217,24 @@ def _cmd_allconfigs(args):
                         "seconds": round(elapsed, 1)})
         status = "OK" if ok else "FAILED"
         print(f"[{i}/{total}] {board}.{rtos}.{app}: {status} ({elapsed:.1f}s)")
+    return results
+
+
+def _cmd_allconfigs(args):
+    spec = args.spec
+    if "." not in spec:
+        logger.error("usage: ove allconfigs <board>.<rtos>")
+        sys.exit(2)
+    board, rtos = spec.split(".", 1)
+    if not board or not rtos:
+        logger.error("usage: ove allconfigs <board>.<rtos>")
+        sys.exit(2)
+
+    results = build_matrix(Workspace(), board, rtos)
 
     failed = [r["app"] for r in results if not r["ok"]]
     print(f"\n{'=' * 60}")
-    print(f"allconfigs-{board}.{rtos}: {total} configurations processed")
+    print(f"allconfigs-{board}.{rtos}: {len(results)} configurations processed")
     if args.json:
         json.dump({"board": board, "rtos": rtos, "results": results,
                    "failed": failed}, sys.stdout, indent=2)
@@ -249,9 +261,7 @@ def _cmd_alldefconfigs(args):
         logger.error(f"no saved defconfigs found under {app_dir}/defconfigs")
         sys.exit(1)
 
-    ove_bin = os.path.join(ws.venv_dir, "bin", "ove")
-    if not os.path.isfile(ove_bin):
-        ove_bin = "ove"
+    ove_bin = _ove_bin(ws)
 
     results = []
     total = len(defconfigs)

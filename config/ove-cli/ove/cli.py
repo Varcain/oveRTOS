@@ -87,6 +87,10 @@ def main():
     from .allconfigs import add_subcommands as _add_allconfigs
     _add_allconfigs(sub)
 
+    # ── docs-demos ─────────────────────────────────────────────────────
+    from .docs_demos import add_subcommands as _add_docs_demos
+    _add_docs_demos(sub)
+
     # ── run ────────────────────────────────────────────────────────────
     p = sub.add_parser("run", help="Run firmware (QEMU or native)")
     p.add_argument("--headless", action="store_true",
@@ -290,6 +294,10 @@ def main():
     elif args.command == "alldefconfigs":
         from .allconfigs import cmd_alldefconfigs
         cmd_alldefconfigs(args)
+
+    elif args.command == "docs-demos":
+        from .docs_demos import cmd_docs_demos
+        cmd_docs_demos(args)
 
     elif args.command == "run":
         from .run import cmd_run
