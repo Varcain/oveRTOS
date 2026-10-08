@@ -10,12 +10,12 @@
  * Pointer input state — bridges the browser dashboard's mouse/touch
  * events into LVGL's pointer indev.
  *
- * Two distinct paths converge here:
+ * Three distinct paths converge here:
  *
  *  1. WASM: JavaScript calls ove_sim_input_set() directly via ccall
  *     (see sim/src/ove_sim_wasm_input.c). This writes to the static
  *     `g_input_*` globals, which are then read by ove_sim_input_get()
- *     when mmap is unavailable.
+ *     when no file backs the pointer.
  *
  *  2. POSIX host: the dashboard bridge writes click/touch events to
  *     /dev/shm/ove-input (a 16-byte struct stamped with magic
@@ -23,6 +23,11 @@
  *     and mmap that region; on success, subsequent gets read from the
  *     shm instead of the static globals. The shm is created by
  *     sim/src/ove_sim_transport_shm_local.c::local_open().
+ *
+ *  3. QEMU guest: the same file, read through semihosting on every
+ *     get. Here the dashboard side creates it before the firmware
+ *     starts (qemu-run.sh, or qemu-wasm.js in the browser); a headless
+ *     run has no file and stays on the static globals.
  */
 
 #include "ove_sim_input.h"
@@ -30,22 +35,29 @@
 
 #include <stdint.h>
 
-#if !defined(__EMSCRIPTEN__) && !defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+#include "semihosting.h"
+#include <string.h>
+#define OVE_SIM_INPUT_HAVE_MMAP 0
+#define OVE_SIM_INPUT_HAVE_SEMIHOSTING 1
+#elif !defined(__EMSCRIPTEN__)
 #include <fcntl.h>
 #include <stddef.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #define OVE_SIM_INPUT_HAVE_MMAP 1
+#define OVE_SIM_INPUT_HAVE_SEMIHOSTING 0
 #else
 #define OVE_SIM_INPUT_HAVE_MMAP 0
+#define OVE_SIM_INPUT_HAVE_SEMIHOSTING 0
 #endif
 
 #define INPUT_PATH "/dev/shm/ove-input"
 #define INPUT_MAGIC 0x54504E49u /* "INPT" */
 #define INPUT_SHM_SIZE 16
 
-/* Layout at mmap base:
+/* Layout of the file:
  *   offset 0: uint32_t magic
  *   offset 4: int16_t  x
  *   offset 6: int16_t  y
@@ -60,6 +72,40 @@ static volatile uint8_t g_input_pressed;
 #if OVE_SIM_INPUT_HAVE_MMAP
 static uint8_t *g_input_shm;
 static int g_input_shm_tried;
+#endif
+
+#if OVE_SIM_INPUT_HAVE_SEMIHOSTING
+static int g_input_fd = -1;
+static int g_input_fd_tried;
+
+/* Read the pointer file through semihosting.  Returns 0 when there is no
+ * usable file, which the first failed open makes permanent. */
+static int semihosting_get(int16_t *x, int16_t *y, uint8_t *pressed)
+{
+	uint8_t raw[INPUT_SHM_SIZE];
+	uint32_t magic;
+
+	if (g_input_fd < 0) {
+		if (g_input_fd_tried)
+			return 0;
+		g_input_fd_tried = 1;
+		g_input_fd = sh_open(INPUT_PATH, 1); /* rb */
+		if (g_input_fd < 0)
+			return 0;
+	}
+
+	sh_seek(g_input_fd, 0);
+	if (sh_read(g_input_fd, raw, sizeof(raw)) != 0)
+		return 0;
+	memcpy(&magic, raw, sizeof(magic));
+	if (magic != INPUT_MAGIC)
+		return 0;
+
+	memcpy(x, raw + 4, sizeof(*x));
+	memcpy(y, raw + 6, sizeof(*y));
+	*pressed = raw[8];
+	return 1;
+}
 #endif
 
 static void try_attach_shm(void)
@@ -103,6 +149,11 @@ void ove_sim_input_get(int16_t *x, int16_t *y, uint8_t *pressed)
 		*pressed = sp;
 		return;
 	}
+#endif
+
+#if OVE_SIM_INPUT_HAVE_SEMIHOSTING
+	if (semihosting_get(x, y, pressed))
+		return;
 #endif
 
 	*x = g_input_x;
