@@ -20,6 +20,7 @@
 #include "ff.h"
 #endif
 
+#include "ove/ring.h"
 #include "ove/thread_state_stats.h"
 
 /* The STM32 FreeRTOS-MPU coordinator sees guest SDRAM through privileged
@@ -229,12 +230,8 @@ struct ove_stream {
 	 * section guards the ring (mutual exclusion vs. the *_from_isr ops) and
 	 * two counting semaphores provide the blocking wait/wake. Sem counts are
 	 * hints — every waiter re-checks the ring after waking. */
-	unsigned char *buffer;
-	size_t size;
+	struct ove_ring ring;
 	size_t trigger;
-	size_t head;
-	size_t tail;
-	size_t count;
 	SemaphoreHandle_t data_sem;  /* given when bytes arrive */
 	SemaphoreHandle_t space_sem; /* given when space frees */
 	StaticSemaphore_t data_sem_buf;

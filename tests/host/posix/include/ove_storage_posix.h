@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
+#include "ove/ring.h"
 #include "ove/thread_state_stats.h"
 #include <time.h>
 #include <dirent.h>
@@ -187,12 +188,8 @@ typedef struct ove_work ove_work_storage_t;
 /* ── Stream ───────────────────────────────────────────────────────── */
 
 struct ove_stream {
-	uint8_t *buffer;
-	size_t size;
+	struct ove_ring ring;
 	size_t trigger;
-	size_t head;
-	size_t tail;
-	size_t count;
 	pthread_mutex_t lock;
 	pthread_cond_t data_avail;
 	pthread_cond_t space_avail;

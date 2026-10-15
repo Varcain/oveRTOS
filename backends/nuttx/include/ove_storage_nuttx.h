@@ -16,6 +16,7 @@
 #include <semaphore.h>
 #include <nuttx/mutex.h>
 #include <nuttx/wdog.h>
+#include "ove/ring.h"
 #include <nuttx/wqueue.h>
 #include <signal.h>
 #include <time.h>
@@ -171,12 +172,8 @@ typedef struct ove_work ove_work_storage_t;
 /* ── Stream ───────────────────────────────────────────────────────── */
 
 struct ove_stream {
-	unsigned char *buffer;
-	size_t size;
+	struct ove_ring ring;
 	size_t trigger;
-	size_t head;
-	size_t tail;
-	size_t count;
 	ove_notify_cb notify_cb;
 	void *notify_ud;
 	pthread_mutex_t lock;

@@ -13,6 +13,7 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/sys/atomic.h>
 
+#include "ove/ring.h"
 #include "ove/thread_state_stats.h"
 
 #ifdef __cplusplus
@@ -138,12 +139,8 @@ typedef struct ove_work ove_work_storage_t;
 /* ── Stream ───────────────────────────────────────────────────────── */
 
 struct ove_stream {
-	unsigned char *buffer;
-	size_t size;
+	struct ove_ring ring;
 	size_t trigger;
-	size_t head;
-	size_t tail;
-	size_t count;
 	/* k_pipe has no "wake when >= trigger bytes" mode, so the stream is a
 	 * plain ring guarded by a spinlock (usable from both thread and ISR
 	 * context, unlike k_mutex) with two counting semaphores for blocking. */
