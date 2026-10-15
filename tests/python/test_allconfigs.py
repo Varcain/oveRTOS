@@ -45,7 +45,7 @@ class WorkspaceConfigTest(unittest.TestCase):
         os.makedirs(os.path.join(self.root, "output", "active"))
         active_config = os.path.join(self.root, "output", "active", ".config")
         with open(active_config, "w") as f:
-            f.write("CONFIG_OVE_RTOS_POSIX=y\n")
+            f.write("CONFIG_OVE_RTOS_FREERTOS=y\n")
         os.symlink(active_config, os.path.join(self.root, ".config"))
         os.symlink("active", os.path.join(self.root, "output", "current"))
 
@@ -85,7 +85,7 @@ class WorkspaceConfigTest(unittest.TestCase):
 
         workspace, config = _write_workspace_config(
             _Config('CONFIG_OVE_BOARD_NAME="board"\n'
-                    'CONFIG_OVE_RTOS_POSIX=y\n'
+                    'CONFIG_OVE_RTOS_FREERTOS=y\n'
                     'CONFIG_OVE_APP_NAME="app"\n'), self.root,
             "board", "rtos", "app", external)
 
@@ -113,7 +113,7 @@ class WorkspaceConfigTest(unittest.TestCase):
             self.assertEqual(
                 _savedefconfig_destination(ws),
                 os.path.join(external, "defconfigs",
-                             "board_posix_app_defconfig"))
+                             "board_freertos_app_defconfig"))
 
     def test_workspace_app_advertisement_preserves_other_external_apps(self):
         ws = SimpleNamespace(is_external_app=True, app_dir="/apps/current")
@@ -164,9 +164,9 @@ class WorkspaceConfigTest(unittest.TestCase):
 
     def test_saved_defconfig_identity_adds_suffix(self):
         self.assertEqual(
-            parse_defconfig_name("host_posix_example_c"),
-            ("host_posix_example_c_defconfig",
-             "host", "posix", "example_c"))
+            parse_defconfig_name("qemu_freertos_example_c"),
+            ("qemu_freertos_example_c_defconfig",
+             "qemu", "freertos", "example_c"))
 
     def test_invalid_saved_defconfig_identity_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "cannot parse"):
@@ -235,7 +235,7 @@ class WorkspaceConfigTest(unittest.TestCase):
 
         external = os.path.join(self.root, "external")
         path = os.path.join(
-            external, "defconfigs", "host_posix_my_app_defconfig")
+            external, "defconfigs", "qemu_freertos_my_app_defconfig")
         with mock.patch.dict(os.environ,
                              {"OVE_WORKSPACE_DIR": "/stale"}, clear=True), \
                 mock.patch.object(allconfigs, "_run_command",
@@ -246,12 +246,12 @@ class WorkspaceConfigTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(
             calls[0][0],
-            ["ove", "defconfig", "host_posix_my_app_defconfig",
+            ["ove", "defconfig", "qemu_freertos_my_app_defconfig",
              "--no-activate"])
         self.assertNotIn(WORKSPACE_DIR_ENV, calls[0][1])
         self.assertEqual(calls[0][1]["OVE_EXTERNAL_APPS"], external)
         expected = os.path.join(
-            external, "output", "host", "posix", "my_app")
+            external, "output", "qemu", "freertos", "my_app")
         self.assertEqual(
             [call[1][WORKSPACE_DIR_ENV] for call in calls[1:]],
             [expected, expected, expected])
@@ -262,7 +262,7 @@ class WorkspaceConfigTest(unittest.TestCase):
         second = os.path.join(external, "defconfigs", "two")
         os.makedirs(first)
         os.makedirs(second)
-        name = "host_posix_my_app_defconfig"
+        name = "qemu_freertos_my_app_defconfig"
         for directory in (first, second):
             with open(os.path.join(directory, name), "w") as f:
                 f.write("CONFIG_TEST=y\n")
@@ -276,8 +276,8 @@ class WorkspaceConfigTest(unittest.TestCase):
         os.makedirs(configs)
         with open(os.path.join(external, "app.yaml"), "w") as f:
             f.write("lang: c\n")
-        for name in ("host_posix_first_defconfig",
-                     "host_posix_second_defconfig"):
+        for name in ("qemu_freertos_first_defconfig",
+                     "qemu_freertos_second_defconfig"):
             with open(os.path.join(configs, name), "w") as f:
                 f.write("CONFIG_TEST=y\n")
 

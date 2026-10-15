@@ -77,10 +77,10 @@ config OVE_TRACE_MARKERS
       aligned with known sem_take/sem_give sites.
 
       Performance note: each marker is two wrapper calls plus a
-      CAS ring push (~100 ns) around every sync op. On POSIX this
-      roughly doubles-to-triples the cost of cheap uncontended
+      CAS ring push (~100 ns) around every sync op. On a fast host
+      this roughly doubled-to-tripled the cost of cheap uncontended
       primitives (mutex_lock_unlock 70->175 ns, sem_take_give
-      71->210 ns measured on apps/c/benchmark). Workloads with
+      71->210 ns in the C benchmark). Workloads with
       tight sync-primitive loops should leave this disabled;
       state transitions are still captured via OVE_TRACE_STREAM.
 
@@ -96,13 +96,12 @@ config OVE_TRACE_RING_SIZE
 
 config OVE_PROFILER
     bool "Sampling profiler"
-    depends on OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX || OVE_RTOS_ZEPHYR)
-    default y if OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX || OVE_RTOS_ZEPHYR)
+    depends on OVE_SIM
+    default y
     help
       Periodically samples each runnable thread's PC + call stack and
       forwards the samples to the dashboard for flat top-N and
-      flame-graph rendering. POSIX uses SIGRTMIN + glibc backtrace(3)
-      for cross-thread stack capture. FreeRTOS/Cortex-M samples from the
+      flame-graph rendering. FreeRTOS/Cortex-M samples from the
       SysTick tick hook and walks saved-{r7,lr} pairs out of the task
       stack. NuttX uses up_backtrace(tcb) driven from the sim-debug
       pump; requires CONFIG_SCHED_BACKTRACE=y in the NuttX defconfig.
@@ -117,8 +116,8 @@ config OVE_PROFILER_HZ
     range 10 1000
     help
       Per-thread sample rate. Higher values give finer resolution
-      at the cost of overhead (one signal + backtrace per running
-      thread per tick on POSIX). 250 Hz is a good default for
+      at the cost of overhead (one stack walk per running thread per
+      tick). 250 Hz is a good default for
       interactive workloads.
 
 config OVE_PROFILER_MAX_DEPTH

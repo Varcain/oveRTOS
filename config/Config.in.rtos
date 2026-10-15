@@ -18,12 +18,6 @@ config OVE_RTOS_NUTTX
     help
       Use the Apache NuttX RTOS.
 
-config OVE_RTOS_POSIX
-    bool "POSIX (native host)"
-    help
-      Run natively on Linux/macOS using POSIX threads for
-      display, input, and audio. No cross-compilation needed.
-
 endchoice
 
 # ==========================================================================
@@ -277,39 +271,6 @@ menu "NuttX"
 
         comment "--- For advanced NuttX kernel config, run: make nuttx-menuconfig ---"
     endmenu
-endmenu
-
-# ==========================================================================
-# POSIX
-# ==========================================================================
-menu "POSIX"
-    visible if OVE_RTOS_POSIX
-
-    config POSIX_DISPLAY_WIDTH
-        int "Window width (pixels)"
-        default 480
-
-    config POSIX_DISPLAY_HEIGHT
-        int "Window height (pixels)"
-        default 272
-
-    config POSIX_DISPLAY_ZOOM
-        int "Display zoom factor (percent)"
-        default 100
-
-    config POSIX_AUDIO_SAMPLE_RATE
-        int "Audio sample rate (Hz)"
-        default 44100
-
-    config POSIX_AUDIO_CHANNELS
-        int "Audio channels"
-        default 1
-
-    config POSIX_AUDIO_FRAMES_PER_BUFFER
-        int "Frames per audio buffer"
-        default 512
-
-    comment "LVGL version is controlled by manifest.yaml"
 endmenu
 
 endmenu

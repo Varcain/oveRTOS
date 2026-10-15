@@ -198,9 +198,8 @@ def _find_compile_db(ove_dir):
          `make test-stub`. Flags are plain host GCC/clang, no cross-compile
          noise clang-tidy has to dodge.
       2. `output/tests/cpp` — host C++ tests.
-      3. `output/host/posix/*` — host POSIX app builds.
-      4. Fall back to the active workspace symlink `output/compile_commands.json`.
-      5. Most recently modified build otherwise.
+      3. Fall back to the active workspace symlink `output/compile_commands.json`.
+      4. Most recently modified build otherwise.
 
     Returns the absolute build directory containing compile_commands.json,
     or None if nothing is configured.  ARM/cross-target builds still work
@@ -215,7 +214,6 @@ def _find_compile_db(ove_dir):
     preferred = (
         os.path.join("tests", "stub"),
         os.path.join("tests", "cpp"),
-        os.path.join("host", "posix"),
     )
 
     buckets = {p: [] for p in preferred}

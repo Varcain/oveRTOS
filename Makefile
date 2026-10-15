@@ -75,7 +75,7 @@ menuconfig: $(VENV_STAMP)
 # Examples:
 #   make qemu.freertos.example_c
 #   make stm32f746.zephyr.benchmark_rust
-#   make host.posix.example_net_cpp_zh
+#   make qemu.nuttx.example_net_cpp_zh
 #   make web.freertos.example_c      (the qemu board's browser variant)
 #
 # Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
@@ -127,8 +127,7 @@ all: $(VENV_STAMP)
 	@$(OVE) build $(if $(filter 1,$(JSON)),--json) $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 # Build all app configurations for a given board.rtos pair.
-# Usage: make allconfigs-host.posix
-#        make allconfigs-qemu.freertos
+# Usage: make allconfigs-qemu.freertos
 #        make allconfigs-stm32f746.zephyr
 .PHONY: allconfigs-%
 allconfigs-%: $(VENV_STAMP)
@@ -137,7 +136,7 @@ allconfigs-%: $(VENV_STAMP)
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
 	@BOARDS=$$(find $(OVE_DIR)/boards -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | sort); \
-	RTOSES="freertos nuttx zephyr posix"; \
+	RTOSES="freertos nuttx zephyr"; \
 	for board in $$BOARDS; do \
 		for rtos in $$RTOSES; do \
 			echo ""; \
@@ -169,8 +168,6 @@ test: $(VENV_STAMP)
 # of the benchmark app for the given platform, run each, and emit a
 # cross-binding comparison report.  See `ove benchmarks --help`.
 #
-#   posix                  — runs locally, writes report to
-#                            output/host/posix/_benchmarks/report.md
 #   stm32f746g-discovery   — flashes via openocd and tails the
 #                            picocom-written serial log
 #                            ($OVE_SERIAL_LOG, default /tmp/serial.log).
@@ -590,7 +587,7 @@ help:
 	@echo "  Examples:"
 	@echo "    make qemu.freertos.example_c"
 	@echo "    make stm32f746.zephyr.benchmark_rust"
-	@echo "    make host.posix.example_net_zh"
+	@echo "    make qemu.nuttx.example_net_zh"
 	@echo "    make web.freertos.example_c       (qemu, packaged for a browser)"
 	@echo ""
 	@echo "  Other:"
@@ -608,7 +605,7 @@ help:
 	@echo "  alldefconfigs           - Build every configuration (all boards/RTOSes)"
 	@echo "  setup                   - (Re)create Python venv and install CLI"
 	@echo "  flash                   - Flash firmware to target board"
-	@echo "  run                     - Run firmware (QEMU or POSIX)"
+	@echo "  run                     - Run firmware (QEMU, or serve a web bundle)"
 	@echo "  run HEADLESS=1          - Run firmware without display viewer"
 	@echo "  run EXTRA=\"<args>\"      - Forward extra args to runner (e.g. QEMU flags)"
 	@echo ""

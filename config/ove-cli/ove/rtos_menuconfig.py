@@ -413,7 +413,7 @@ def cmd_rtos_menuconfig(args):
     # Check explicit RTOS argument before requiring config
     explicit_rtos = getattr(args, "rtos", None)
 
-    if explicit_rtos in ("freertos", "posix"):
+    if explicit_rtos == "freertos":
         print(f"Note: {explicit_rtos} does not have native menuconfig.")
         print("Use 'make menuconfig' to configure via oveRTOS.")
         sys.exit(0)
@@ -431,7 +431,7 @@ def cmd_rtos_menuconfig(args):
         print("error: no RTOS selected in .config")
         sys.exit(1)
 
-    if rtos in ("freertos", "posix"):
+    if rtos == "freertos":
         print(f"Note: {rtos} does not have native menuconfig.")
         print("Use 'make menuconfig' to configure via oveRTOS.")
         sys.exit(0)

@@ -232,7 +232,7 @@ def cmd_app_new(args) -> None:
     print()
     print("  Next steps:")
     print(f"    cd {dst}")
-    print(f"    make host.posix.{config_name}")
+    print(f"    make qemu.freertos.{config_name}")
     print("    make")
     print("    make run")
     print()

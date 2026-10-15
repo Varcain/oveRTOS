@@ -28,41 +28,31 @@ function(ove_build_rust_crate TARGET)
         set(CARGO_CMD "cargo")
     endif()
 
-    # Determine if this is a native (POSIX) or cross-compiled build
-    _ove_binding_resolve_native(RUST_IS_NATIVE)
-
     # Place Rust build artifacts in the CMake build dir, not next to sources
     set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/rust_target")
 
     # Resolve Rust target
-    if(RUST_IS_NATIVE)
-        # Native build: use host default target (no --target flag needed)
-        # Output goes to rust_target/release/ instead of rust_target/<triple>/release/
-        set(RUST_LIB_DIR "${CARGO_TARGET_DIR}/release")
-        set(RUST_TARGET_ARGS "")
-    else()
-        if(NOT DEFINED OVE_RUST_TARGET)
-            set(OVE_RUST_TARGET "thumbv7em-none-eabihf")
-        endif()
-        _ove_binding_align_arm_float_target(
-            OVE_RUST_TARGET "${OVE_RUST_TARGET}")
-        # Align float ABI with the RTOS kernel. Zephyr on QEMU and NuttX
-        # with CONFIG_ARCH_FPU disabled both use soft float; linking a
-        # hard-float Rust staticlib against them raises ld's "uses VFP
-        # register arguments" error.
-        if(OVE_RUST_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
-            if(NOT CONFIG_FPU OR NOT CONFIG_FP_HARDABI)
-                string(REGEX REPLACE "eabihf$" "eabi" OVE_RUST_TARGET "${OVE_RUST_TARGET}")
-            endif()
-        endif()
-        if(OVE_RUST_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
-            if(NOT CONFIG_ARCH_FPU)
-                string(REGEX REPLACE "eabihf$" "eabi" OVE_RUST_TARGET "${OVE_RUST_TARGET}")
-            endif()
-        endif()
-        set(RUST_LIB_DIR "${CARGO_TARGET_DIR}/${OVE_RUST_TARGET}/release")
-        set(RUST_TARGET_ARGS "--target;${OVE_RUST_TARGET}")
+    if(NOT DEFINED OVE_RUST_TARGET)
+        set(OVE_RUST_TARGET "thumbv7em-none-eabihf")
     endif()
+    _ove_binding_align_arm_float_target(
+        OVE_RUST_TARGET "${OVE_RUST_TARGET}")
+    # Align float ABI with the RTOS kernel. Zephyr on QEMU and NuttX
+    # with CONFIG_ARCH_FPU disabled both use soft float; linking a
+    # hard-float Rust staticlib against them raises ld's "uses VFP
+    # register arguments" error.
+    if(OVE_RUST_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
+        if(NOT CONFIG_FPU OR NOT CONFIG_FP_HARDABI)
+            string(REGEX REPLACE "eabihf$" "eabi" OVE_RUST_TARGET "${OVE_RUST_TARGET}")
+        endif()
+    endif()
+    if(OVE_RUST_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
+        if(NOT CONFIG_ARCH_FPU)
+            string(REGEX REPLACE "eabihf$" "eabi" OVE_RUST_TARGET "${OVE_RUST_TARGET}")
+        endif()
+    endif()
+    set(RUST_LIB_DIR "${CARGO_TARGET_DIR}/${OVE_RUST_TARGET}/release")
+    set(RUST_TARGET_ARGS "--target;${OVE_RUST_TARGET}")
 
     set(RUST_LIB "${RUST_LIB_DIR}/lib${APP_RUST_LIB_NAME}.a")
 
@@ -88,98 +78,91 @@ function(ove_build_rust_crate TARGET)
         "LV_CONF_PATH=${LV_CONF_DIR}"
     )
 
-    if(RUST_IS_NATIVE)
-        list(APPEND CARGO_ENV_VARS "RUST_IS_NATIVE=1")
-        set(RUST_FEATURE_ARGS "--features;std")
-    else()
-        set(RUST_FEATURE_ARGS "")
+    set(RUST_FEATURE_ARGS "")
 
-        # NuttX generated headers for bindgen (CMake binary dir)
-        if(OVE_RTOS STREQUAL "nuttx")
-            list(APPEND CARGO_ENV_VARS
-                "NUTTX_INCLUDE_DIR=${CMAKE_BINARY_DIR}/include"
-            )
-        endif()
-
-        # CMSIS-DSP include paths for bindgen (ARM cross-compilation only)
-        if(OVE_RTOS STREQUAL "freertos" AND DEFINED OVE_STM32CUBE_PATH)
-            set(_CMSIS_DSP_INC "${OVE_STM32CUBE_PATH}/Drivers/CMSIS/DSP/Include")
-            set(_CMSIS_CORE_INC "${OVE_STM32CUBE_PATH}/Drivers/CMSIS/Include")
-        elseif(OVE_RTOS STREQUAL "zephyr" AND DEFINED ZEPHYR_BASE)
-            set(_CMSIS_DSP_INC "${ZEPHYR_BASE}/../modules/lib/cmsis-dsp/Include")
-            set(_CMSIS_CORE_INC "${ZEPHYR_BASE}/../modules/hal/cmsis/CMSIS/Core/Include")
-        elseif(OVE_RTOS STREQUAL "nuttx")
-            set(_CMSIS_DSP_INC "${OVE_DL_DIR}/CMSIS-DSP/Include")
-            set(_CMSIS_CORE_INC "${OVE_DL_DIR}/CMSIS_5/CMSIS/Core/Include")
-        endif()
-
-        if(DEFINED _CMSIS_DSP_INC AND EXISTS "${_CMSIS_DSP_INC}/arm_math.h")
-            list(APPEND CARGO_ENV_VARS
-                "CMSIS_DSP_INCLUDE=${_CMSIS_DSP_INC}"
-                "CMSIS_CORE_INCLUDE=${_CMSIS_CORE_INC}"
-            )
-        endif()
+    # NuttX generated headers for bindgen (CMake binary dir)
+    if(OVE_RTOS STREQUAL "nuttx")
+        list(APPEND CARGO_ENV_VARS
+            "NUTTX_INCLUDE_DIR=${CMAKE_BINARY_DIR}/include"
+        )
     endif()
 
-    if(NOT RUST_IS_NATIVE)
-        # ARM cross-compilation: set linker and ARM sysroot for bindgen
-        if(DEFINED CMAKE_C_COMPILER)
-            set(RUST_LINKER "${CMAKE_C_COMPILER}")
-        else()
-            set(RUST_LINKER "arm-none-eabi-gcc")
-        endif()
+    # CMSIS-DSP include paths for bindgen (ARM cross-compilation only)
+    if(OVE_RTOS STREQUAL "freertos" AND DEFINED OVE_STM32CUBE_PATH)
+        set(_CMSIS_DSP_INC "${OVE_STM32CUBE_PATH}/Drivers/CMSIS/DSP/Include")
+        set(_CMSIS_CORE_INC "${OVE_STM32CUBE_PATH}/Drivers/CMSIS/Include")
+    elseif(OVE_RTOS STREQUAL "zephyr" AND DEFINED ZEPHYR_BASE)
+        set(_CMSIS_DSP_INC "${ZEPHYR_BASE}/../modules/lib/cmsis-dsp/Include")
+        set(_CMSIS_CORE_INC "${ZEPHYR_BASE}/../modules/hal/cmsis/CMSIS/Core/Include")
+    elseif(OVE_RTOS STREQUAL "nuttx")
+        set(_CMSIS_DSP_INC "${OVE_DL_DIR}/CMSIS-DSP/Include")
+        set(_CMSIS_CORE_INC "${OVE_DL_DIR}/CMSIS_5/CMSIS/Core/Include")
+    endif()
 
-        string(REPLACE "-" "_" RUST_TARGET_UPPER "${OVE_RUST_TARGET}")
-        string(TOUPPER "${RUST_TARGET_UPPER}" RUST_TARGET_UPPER)
-
+    if(DEFINED _CMSIS_DSP_INC AND EXISTS "${_CMSIS_DSP_INC}/arm_math.h")
         list(APPEND CARGO_ENV_VARS
-            "CARGO_TARGET_${RUST_TARGET_UPPER}_LINKER=${RUST_LINKER}"
+            "CMSIS_DSP_INCLUDE=${_CMSIS_DSP_INC}"
+            "CMSIS_CORE_INCLUDE=${_CMSIS_CORE_INC}"
         )
+    endif()
 
-        # Resolve ARM sysroot include path for bindgen
-        _ove_binding_arm_sysroot_include(ARM_SYSROOT_INCLUDE)
-        if(ARM_SYSROOT_INCLUDE)
-            list(APPEND CARGO_ENV_VARS "ARM_SYSROOT_INCLUDE=${ARM_SYSROOT_INCLUDE}")
-        endif()
+    # ARM cross-compilation: set linker and ARM sysroot for bindgen
+    if(DEFINED CMAKE_C_COMPILER)
+        set(RUST_LINKER "${CMAKE_C_COMPILER}")
+    else()
+        set(RUST_LINKER "arm-none-eabi-gcc")
+    endif()
 
-        # Map MCU to rustc target-cpu so codegen tunes for the exact
-        # pipeline (Cortex-M7 dual-issue, M4 DSP) rather than the generic
-        # thumbv7em baseline.  Mirrors the Zig path's -mcpu mapping; only
-        # target-cpu is set (not target-feature) — feature-set mismatches
-        # against the C side silently kill LLVM's inliner under cross-LTO,
-        # so we let the triple imply features and pin only the model.
-        set(_RUST_FLAGS "")
-        if(DEFINED OVE_MCU)
-            string(TOLOWER "${OVE_MCU}" _MCU_LOWER)
-            set(_RUST_CPU "")
-            if(_MCU_LOWER MATCHES "stm32f7" OR _MCU_LOWER MATCHES "stm32h7"
-               OR _MCU_LOWER MATCHES "cortex.m7" OR _MCU_LOWER MATCHES "cmsdk_cm7")
-                set(_RUST_CPU "cortex-m7")
-            elseif(_MCU_LOWER MATCHES "stm32f4" OR _MCU_LOWER MATCHES "cortex.m4"
-                   OR _MCU_LOWER MATCHES "cmsdk_cm4")
-                set(_RUST_CPU "cortex-m4")
-            elseif(_MCU_LOWER MATCHES "stm32f3" OR _MCU_LOWER MATCHES "cortex.m3"
-                   OR _MCU_LOWER MATCHES "cmsdk_cm3")
-                set(_RUST_CPU "cortex-m3")
-            endif()
-            if(_RUST_CPU)
-                set(_RUST_FLAGS "-Ctarget-cpu=${_RUST_CPU}")
-            endif()
+    string(REPLACE "-" "_" RUST_TARGET_UPPER "${OVE_RUST_TARGET}")
+    string(TOUPPER "${RUST_TARGET_UPPER}" RUST_TARGET_UPPER)
+
+    list(APPEND CARGO_ENV_VARS
+        "CARGO_TARGET_${RUST_TARGET_UPPER}_LINKER=${RUST_LINKER}"
+    )
+
+    # Resolve ARM sysroot include path for bindgen
+    _ove_binding_arm_sysroot_include(ARM_SYSROOT_INCLUDE)
+    if(ARM_SYSROOT_INCLUDE)
+        list(APPEND CARGO_ENV_VARS "ARM_SYSROOT_INCLUDE=${ARM_SYSROOT_INCLUDE}")
+    endif()
+
+    # Map MCU to rustc target-cpu so codegen tunes for the exact
+    # pipeline (Cortex-M7 dual-issue, M4 DSP) rather than the generic
+    # thumbv7em baseline.  Mirrors the Zig path's -mcpu mapping; only
+    # target-cpu is set (not target-feature) — feature-set mismatches
+    # against the C side silently kill LLVM's inliner under cross-LTO,
+    # so we let the triple imply features and pin only the model.
+    set(_RUST_FLAGS "")
+    if(DEFINED OVE_MCU)
+        string(TOLOWER "${OVE_MCU}" _MCU_LOWER)
+        set(_RUST_CPU "")
+        if(_MCU_LOWER MATCHES "stm32f7" OR _MCU_LOWER MATCHES "stm32h7"
+           OR _MCU_LOWER MATCHES "cortex.m7" OR _MCU_LOWER MATCHES "cmsdk_cm7")
+            set(_RUST_CPU "cortex-m7")
+        elseif(_MCU_LOWER MATCHES "stm32f4" OR _MCU_LOWER MATCHES "cortex.m4"
+               OR _MCU_LOWER MATCHES "cmsdk_cm4")
+            set(_RUST_CPU "cortex-m4")
+        elseif(_MCU_LOWER MATCHES "stm32f3" OR _MCU_LOWER MATCHES "cortex.m3"
+               OR _MCU_LOWER MATCHES "cmsdk_cm3")
+            set(_RUST_CPU "cortex-m3")
         endif()
-        # Cross-language LTO opt-in (paired with OveCommon.cmake's
-        # -flto=thin on the C side).  rustc emits LLVM bitcode in the
-        # staticlib so the final linker can inline across the FFI
-        # boundary.  Requires a bitcode-aware linker — lld is the path
-        # of least resistance; arm-none-eabi-gcc needs the gold plugin
-        # which is not the default install.  The CMake option is
-        # declared in cmake/OveCommon.cmake so it is visible at the
-        # board level too.
-        if(OVE_CROSS_LTO)
-            string(STRIP "${_RUST_FLAGS} -Clinker-plugin-lto" _RUST_FLAGS)
+        if(_RUST_CPU)
+            set(_RUST_FLAGS "-Ctarget-cpu=${_RUST_CPU}")
         endif()
-        if(_RUST_FLAGS)
-            list(APPEND CARGO_ENV_VARS "RUSTFLAGS=${_RUST_FLAGS}")
-        endif()
+    endif()
+    # Cross-language LTO opt-in (paired with OveCommon.cmake's
+    # -flto=thin on the C side).  rustc emits LLVM bitcode in the
+    # staticlib so the final linker can inline across the FFI
+    # boundary.  Requires a bitcode-aware linker — lld is the path
+    # of least resistance; arm-none-eabi-gcc needs the gold plugin
+    # which is not the default install.  The CMake option is
+    # declared in cmake/OveCommon.cmake so it is visible at the
+    # board level too.
+    if(OVE_CROSS_LTO)
+        string(STRIP "${_RUST_FLAGS} -Clinker-plugin-lto" _RUST_FLAGS)
+    endif()
+    if(_RUST_FLAGS)
+        list(APPEND CARGO_ENV_VARS "RUSTFLAGS=${_RUST_FLAGS}")
     endif()
 
     # ── Generate storage type sizes for Rust bindings ──────────────────

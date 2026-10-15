@@ -14,7 +14,7 @@ from .utils import atomic_symlink
 from .workspace import Workspace, find_ove_dir, write_app_path
 
 
-_VALID_RTOSES = ("freertos", "nuttx", "zephyr", "posix")
+_VALID_RTOSES = ("freertos", "nuttx", "zephyr")
 
 
 def _advertise_workspace_app(ws):
@@ -443,7 +443,7 @@ def cmd_defconfig_fragments(args):
 
     board, rtos, app = parts
 
-    valid_rtos = ("freertos", "nuttx", "zephyr", "posix")
+    valid_rtos = _VALID_RTOSES
     if rtos not in valid_rtos:
         print(f"Error: unknown RTOS '{rtos}'. Valid: {', '.join(valid_rtos)}")
         sys.exit(1)

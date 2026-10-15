@@ -12,10 +12,6 @@
 #   _ove_binding_resolve_board_dir(OUTVAR)
 #       Sets OUTVAR to OVE_BOARD_DIR if defined, else BOARD_DIR, else empty.
 #
-#   _ove_binding_resolve_native(OUT_NATIVE)
-#       Sets OUT_NATIVE to TRUE for a POSIX host build, FALSE when
-#       cross-compiling to ARM.
-#
 #   _ove_binding_arm_sysroot_include(OUTVAR)
 #       Resolves the ARM toolchain's <triple>/include directory from
 #       CMAKE_C_COMPILER. Sets OUTVAR to "" if not resolvable.
@@ -60,13 +56,6 @@ function(_ove_binding_resolve_board_dir OUTVAR)
 endfunction()
 
 
-function(_ove_binding_resolve_native OUT_NATIVE)
-    if(OVE_RTOS STREQUAL "posix")
-        set(${OUT_NATIVE} TRUE PARENT_SCOPE)
-    else()
-        set(${OUT_NATIVE} FALSE PARENT_SCOPE)
-    endif()
-endfunction()
 
 
 function(_ove_binding_arm_sysroot_include OUTVAR)

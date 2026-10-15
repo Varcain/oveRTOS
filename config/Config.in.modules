@@ -39,9 +39,8 @@ config OVE_PROTECTED
     default n
     help
       Run untrusted/loaded code so a memory-protection fault is trapped and
-      contained instead of taking down the system. The POSIX host backend uses
-      the process MMU + signals; target backends add the unprivileged-task /
-      MPU model.
+      contained instead of taking down the system. Target backends use the
+      unprivileged-task / MPU model.
 
 config OVE_LINUX
     bool "Linux personality (syscall surface for loaded programs)"
@@ -1142,21 +1141,13 @@ menu "Simulation"
 
 config OVE_SIM
     bool "Simulation plugin framework"
-    default y if OVE_RTOS_POSIX
     help
       Enable the simulation plugin framework. Replaces bare-stub
       HAL implementations with plugin-aware versions that support
       virtual peripherals, sensor injection, and host-side
       web dashboard visualization.
-      Enabled by default for POSIX builds (browser-based dashboard).
-
-config OVE_SIM_TRANSPORT_DIRECT
-    bool
-    default y if OVE_RTOS_POSIX && OVE_SIM
-
-config OVE_SIM_TRANSPORT_SHM
-    bool
-    default y if !OVE_RTOS_POSIX && OVE_SIM
+      The QEMU MPS2-AN500 board selects it (except for the headless
+      Linux personality).
 
 config OVE_SIM_WEB
     bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
@@ -1216,7 +1207,6 @@ config OVE_ZERO_HEAP
                     nuttx_heap_lock.c for the trap and
                     config/templates/nuttx_defconfig.j2 for the sizing
                     knobs).
-        - POSIX:    sim only; pthread implies malloc'd stacks.
 
 if OVE_ZERO_HEAP
 
