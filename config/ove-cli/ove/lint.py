@@ -363,6 +363,8 @@ _GCC_ONLY_PREFIXES = (
     # clang doesn't accept.  Stripping it has no effect on diagnostics
     # since coverage instrumentation is irrelevant to clang-tidy.
     "-fprofile-abs-path",
+    # The STM32 FreeRTOS hard-float build passes it; clang rejects it.
+    "-fsingle-precision-constant",
 )
 
 
@@ -401,6 +403,20 @@ def _demote_thirdparty_includes(args):
     return out
 
 
+def _pin_float_abi(args):
+    """Spell out GCC's float ABI for clang.
+
+    The arm-none-eabi and Zephyr GCC toolchains default to -mfloat-abi=soft,
+    but clang with --target=arm-none-eabi and an FPU-capable -mcpu does not
+    define __SOFTFP__, so CMSIS headers decide FPU code is being generated
+    for a device without an FPU and #error out.  Make the default explicit
+    when a command leaves the ABI unset.
+    """
+    if any(a.startswith("-mfloat-abi=") for a in args):
+        return args
+    return list(args) + ["-mfloat-abi=soft"]
+
+
 def _clang_tidy_backends(ove_dir, check):
     """Run clang-tidy against each RTOS backend's C code via cross-compile
     compile_commands.json artefacts.
@@ -430,6 +446,7 @@ def _clang_tidy_backends(ove_dir, check):
 
     # Predictable build-output locations (per ove configure conventions):
     #   - Firmware app builds:  output/<board>/<rtos>/<app>/build/firmware/
+    #                           (NuttX: .../build/nuttx-cmake/)
     #   - QEMU/Renode test:     output/tests/{qemu,renode-stm32f746}-<rtos>*/build/
     #   - Plain test build:     output/tests/<rtos>/build/
     # Order matters — prefer app builds (full surface) over test builds
@@ -437,6 +454,9 @@ def _clang_tidy_backends(ove_dir, check):
     candidate_globs = [
         os.path.join(ove_dir, "output", "*", "*", "*", "build",
                      "firmware", "compile_commands.json"),
+        # NuttX app builds generate theirs inside the NuttX CMake tree.
+        os.path.join(ove_dir, "output", "*", "*", "*", "build",
+                     "nuttx-cmake", "compile_commands.json"),
         os.path.join(ove_dir, "output", "tests", "*", "build",
                      "compile_commands.json"),
         os.path.join(ove_dir, "output", "tests", "*",
@@ -517,15 +537,19 @@ def _clang_tidy_backends(ove_dir, check):
             src_abs = os.path.abspath(src)
             if not src_abs.startswith(backend_root + os.sep):
                 continue
+            # A database older than the tree can name a deleted file.
+            if not os.path.isfile(src_abs):
+                continue
             seen.add(src)
             new_entry = dict(e)
             if "arguments" in e and e["arguments"]:
-                new_entry["arguments"] = _demote_thirdparty_includes(
-                    _strip_gcc_only(e["arguments"]))
+                new_entry["arguments"] = _pin_float_abi(
+                    _demote_thirdparty_includes(
+                        _strip_gcc_only(e["arguments"])))
             elif "command" in e and e["command"]:
                 tokens = shlex.split(e["command"])
-                new_entry["command"] = shlex.join(
-                    _demote_thirdparty_includes(_strip_gcc_only(tokens)))
+                new_entry["command"] = shlex.join(_pin_float_abi(
+                    _demote_thirdparty_includes(_strip_gcc_only(tokens))))
             filtered.append(new_entry)
 
         if not filtered:
