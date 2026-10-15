@@ -66,3 +66,7 @@ CONFIG_SCHED_WAITPID=y
 
 # setjmp/longjmp needed by cmocka test framework
 CONFIG_ARCH_SETJMP_H=y
+
+# ove_thread_list() reports task names (test_thread_list_identity looks one up);
+# the stock stm32f746g-disco configs leave names out. Same as the product template.
+CONFIG_TASK_NAME_SIZE=31
