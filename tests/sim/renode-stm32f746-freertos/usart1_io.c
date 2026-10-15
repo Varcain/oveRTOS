@@ -12,7 +12,7 @@
  * instead — Renode 1.16's CPU semihosting handler captures stdout via
  * the SemihostingUart we attach in test.resc, so no real UART is
  * needed there.  On real silicon there's no semihosting; we re-target
- * newlib's `_write` to the Discovery's USART1 (the on-board ST-Link
+ * libc's `_write` to the Discovery's USART1 (the on-board ST-Link
  * VCP), which the HW runner reads via pyserial at 115200 8N1.
  *
  * This file deliberately does NOT depend on FreeRTOS — `_write` may
@@ -28,6 +28,8 @@
 #include "stm32f7xx_hal.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -71,7 +73,7 @@ static void usart1_console_init(void)
 	s_console_ready = 1;
 }
 
-/* Override newlib's `_write`.  CR is injected before LF to match the
+/* Provide libc's `_write`.  CR is injected before LF to match the
  * production board's behaviour and to keep raw `screen`/`minicom`
  * sessions readable. */
 int _write(int fd, const char *buf, int len)
@@ -88,6 +90,76 @@ int _write(int fd, const char *buf, int len)
 		HAL_UART_Transmit(&s_console_uart, (uint8_t *)&buf[i], 1, 1000);
 	}
 	return len;
+}
+
+/*
+ * Picolibc tinystdio: <stdio.h> declares stdin/stdout/stderr as
+ * `FILE *const` and leaves their storage to the application, and libc's
+ * fopen/fdopen/exit paths reach the POSIX calls below (by their plain
+ * names: this toolchain's picolibc has no underscore aliases for them). Same shape as the production
+ * board's syscalls.c: one shared FILE writing through _write().
+ */
+static int usart1_putc(char c, FILE *stream)
+{
+	(void)stream;
+	(void)_write(1, &c, 1);
+	return (unsigned char)c;
+}
+
+static int usart1_getc(FILE *stream)
+{
+	(void)stream;
+	return _FDEV_EOF;
+}
+
+static FILE s_stdio = FDEV_SETUP_STREAM(usart1_putc, usart1_getc, NULL, _FDEV_SETUP_RW);
+
+FILE *const stdin = &s_stdio;
+FILE *const stdout = &s_stdio;
+FILE *const stderr = &s_stdio;
+
+void _exit(int status);
+
+int open(const char *path, int flags, ...)
+{
+	(void)path;
+	(void)flags;
+	errno = ENOSYS;
+	return -1;
+}
+
+int close(int fd)
+{
+	(void)fd;
+	return 0;
+}
+
+ssize_t read(int fd, void *buf, size_t len)
+{
+	(void)fd;
+	(void)buf;
+	(void)len;
+	return 0;
+}
+
+ssize_t write(int fd, const void *buf, size_t len)
+{
+	return _write(fd, buf, (int)len);
+}
+
+off_t lseek(int fd, off_t off, int whence)
+{
+	(void)fd;
+	(void)off;
+	(void)whence;
+	return 0;
+}
+
+void _exit(int status)
+{
+	(void)status;
+	for (;;) {
+	}
 }
 
 /* `_sbrk` — intentionally not provided.  Libc malloc is wrapped onto
