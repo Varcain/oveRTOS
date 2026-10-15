@@ -77,7 +77,7 @@ void bench_print_footer(void)
  * same stdout stream:
  *
  *   ###BENCH_JSON_BEGIN
- *   {"rtos":"posix","binding":"c","suite":"sync", ...}
+ *   {"rtos":"freertos","binding":"c","suite":"sync", ...}
  *   ###BENCH_JSON_END
  *
  * The ASCII path remains canonical for human use; JSON is only emitted
