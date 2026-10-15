@@ -26,7 +26,7 @@ int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	char path[32];
 
-	snprintf(path, sizeof(path), "/dev/i2c%u", cfg->instance);
+	(void)snprintf(path, sizeof(path), "/dev/i2c%u", cfg->instance);
 
 	int fd = open(path, O_RDWR);
 	if (fd < 0)

@@ -462,7 +462,9 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	struct dirent *ent;
 
 	errno = 0;
-	ent = readdir(d->dp);
+	/* Each ove_dir owns its DIR*, so readdir() is safe per stream;
+	 * readdir_r is deprecated. */
+	ent = readdir(d->dp); // NOLINT(concurrency-mt-unsafe)
 	if (ent == NULL) {
 		entry->name[0] = '\0';
 		return (errno == 0) ? OVE_ERR_EOF : ove_errno_to_ove(errno);

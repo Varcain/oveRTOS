@@ -521,8 +521,8 @@ struct _nuttx_list_snapshot {
  * counters on this 32-bit core. */
 #define OVE_NX_RUNTIME_MAX 32
 static struct {
+	uint64_t cycles; /* first: no padding before it on a 32-bit core */
 	pid_t pid;
-	uint64_t cycles;
 	bool used;
 } g_nx_runtime[OVE_NX_RUNTIME_MAX];
 static pid_t g_nx_runtime_current = -1;
