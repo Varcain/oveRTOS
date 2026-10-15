@@ -75,11 +75,11 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	int res = fs_mount(&mp);
 	if (res != 0) {
 		ove_media_fs_release();
-		OVE_LOG_ERR("fs_mount failed: %d\n", res);
+		OVE_LOG_ERR("fs_mount failed: %d", res);
 		return ove_errno_to_ove(-res);
 	}
 	volume_mounted = 1;
-	OVE_LOG_DBG("SD card mounted at /SD:\n");
+	OVE_LOG_DBG("SD card mounted at /SD:");
 	return OVE_OK;
 }
 
@@ -200,7 +200,7 @@ int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *
 
 	int res = fs_open(&f->file, fullpath, zflags_from(flags));
 	if (res != 0) {
-		OVE_LOG_ERR("fs_open(%s) failed: %d\n", fullpath, res);
+		OVE_LOG_ERR("fs_open(%s) failed: %d", fullpath, res);
 		return ove_errno_to_ove(-res);
 	}
 	f->position = 0;
@@ -371,7 +371,7 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *
 
 	int res = fs_opendir(&d->dir, fullpath);
 	if (res != 0) {
-		OVE_LOG_ERR("fs_opendir(%s) failed: %d\n", fullpath, res);
+		OVE_LOG_ERR("fs_opendir(%s) failed: %d", fullpath, res);
 		return ove_errno_to_ove(-res);
 	}
 
