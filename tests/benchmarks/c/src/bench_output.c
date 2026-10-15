@@ -12,7 +12,7 @@
 
 /*
  * Tag identifying the binding under test.  Defined per-binding in the
- * build (see boards/host/posix/CMakeLists.txt for benchmark apps); the
+ * build (each board's CMakeLists.txt sets it for benchmark apps); the
  * default keeps human-readable output meaningful when no binding tag is
  * provided.  Used in the JSON envelope for cross-binding comparison.
  */

@@ -17,26 +17,6 @@ permissions:
 # Splitting per board/rtos keeps disk usage bounded on GitHub-hosted runners.
 
 jobs:
-  host:
-    name: Host POSIX
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential libclang-dev xz-utils
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build allconfigs-host.posix
-        run: make allconfigs-host.posix
-
-
   web-freertos:
     name: Web FreeRTOS
     runs-on: ubuntu-latest

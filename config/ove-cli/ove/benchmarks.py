@@ -9,16 +9,17 @@
 Drives the full benchmark pipeline for one platform across all four
 binding crates (C, C++, Rust, Zig):
   1. Configure + build each `<board>.<rtos>.benchmark{,_cpp,_rust,_zig}`.
-  2. Run the binary (POSIX: spawn locally; STM32: flash via openocd, tail
-     the serial log written by an out-of-band picocom session).
+  2. Run the binary: flash via openocd and tail the serial log written
+     by an out-of-band picocom session.
   3. Capture each run's stdout to a per-binding log under
      `output/<board>/<rtos>/_benchmarks/<binding>.log`.
   4. Run `scripts/bench_compare.py` to emit `report.md` next to those
      logs (cross-binding comparison + within-run wrapper-vs-native).
 
 Supported platforms:
-  - posix                     → board=host,     rtos=posix
-  - stm32f746g-discovery      → board=stm32f746, rtos=freertos
+  - stm32f746g-discovery        → board=stm32f746, rtos=freertos
+  - stm32f746g-discovery-nuttx  → board=stm32f746, rtos=nuttx
+  - stm32f746g-discovery-zephyr → board=stm32f746, rtos=zephyr
 
 Serial capture for STM32 reads `$OVE_SERIAL_LOG` (default
 `/tmp/serial.log`) — pre-existing picocom session is expected to be
@@ -40,12 +41,6 @@ OVE_DIR = find_ove_dir()
 
 # Logical platform name -> (make-prefix, board-dir, rtos-dir, runner)
 _PLATFORMS = {
-    "posix": {
-        "make_prefix": "host.posix",
-        "board": "host",
-        "rtos": "posix",
-        "runner": "posix",
-    },
     "stm32f746g-discovery": {
         "make_prefix": "stm32f746.freertos",
         "board": "stm32f746",
@@ -85,9 +80,8 @@ _BINDINGS_ZH = [
 # Per-binding wall-clock cap on a single bench run.  STM32 was 180 s
 # but the long-running suites (8 suites × 1000 iterations each + the
 # native_<rtos> tail with another 14 cases) need ~9-10 min on Zig and
-# Rust.  Bumped to 720 s with margin.  POSIX runs are short.
+# Rust.  Bumped to 720 s with margin.
 _RUN_TIMEOUT_S = {
-    "posix": 90,
     "stm32_flash_serial": 720,
 }
 
@@ -121,50 +115,7 @@ def _build_one(make_prefix, app):
 def _firmware_paths(board, rtos, app):
     """Return (workspace_dir, image_path) for an already-built bench."""
     ws = os.path.join(OVE_DIR, "output", board, rtos, app)
-    if rtos == "posix":
-        image = os.path.join(ws, "images", "ove_posix")
-    else:
-        image = os.path.join(ws, "images", "firmware.elf")
-    return ws, image
-
-
-def _run_posix(image, log_path, timeout):
-    """Spawn the POSIX bench binary, capture stdout, exit as soon as the
-    bench prints its completion marker (the binary keeps the sim
-    dashboard loop running indefinitely after the bench thread exits)."""
-    logger.info(f"running {image} → {log_path}")
-    deadline = time.time() + timeout
-    proc = subprocess.Popen(
-        [image],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=0,
-    )
-    saw_complete = False
-    try:
-        with open(log_path, "wb") as f:
-            assert proc.stdout is not None
-            while time.time() < deadline:
-                line = proc.stdout.readline()
-                if not line:
-                    break
-                f.write(line)
-                f.flush()
-                if b"=== Benchmark complete ===" in line:
-                    saw_complete = True
-                    break
-    finally:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
-    if not saw_complete:
-        logger.warning(f"bench did not print completion marker before "
-                       f"timeout ({timeout}s)")
+    return ws, os.path.join(ws, "images", "firmware.elf")
 
 
 def _serial_log_size(serial_log):
@@ -256,12 +207,10 @@ def _generate_report(out_dir, log_paths, runner=None, mode="heap",
                      rtos=None):
     """Run scripts/bench_compare.py against the per-binding logs.
 
-    `--page-mode {heap,zeroheap}` is passed for STM32 runs so the
-    generated report.md drops directly into the per-RTOS docs-site page
-    without manual header fixups.  POSIX runs keep the generic header
-    (cross-RTOS, not currently surfaced in the docs site).  Writes
-    report.md both to out_dir (debug artifact for this run) and, on
-    STM32 runs, to docs-site/docs/benchmarks/<rtos>-<mode>.md (the
+    `--page-mode {heap,zeroheap}` is passed so the generated report.md
+    drops directly into the per-RTOS docs-site page without manual header
+    fixups.  Writes report.md both to out_dir (debug artifact for this
+    run) and to docs-site/docs/benchmarks/<rtos>-<mode>.md (the
     published location)."""
     script = os.path.join(OVE_DIR, "scripts", "bench_compare.py")
     report = os.path.join(out_dir, "report.md")
@@ -314,9 +263,7 @@ def cmd_benchmarks(args):
             raise RuntimeError(f"firmware not found at {image} "
                                f"(build={p['make_prefix']}.{app})")
         timeout = _RUN_TIMEOUT_S[p["runner"]]
-        if p["runner"] == "posix":
-            _run_posix(image, log_path, timeout)
-        elif p["runner"] == "stm32_flash_serial":
+        if p["runner"] == "stm32_flash_serial":
             _run_stm32(image, app, log_path, timeout, binding,
                        rtos=p["rtos"])
         else:

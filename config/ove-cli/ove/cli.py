@@ -119,11 +119,10 @@ def main():
         help="Build + run the benchmark suite across all bindings on a "
              "platform, then write a comparison report")
     p.add_argument("platform",
-                   choices=["posix",
-                            "stm32f746g-discovery",
+                   choices=["stm32f746g-discovery",
                             "stm32f746g-discovery-nuttx",
                             "stm32f746g-discovery-zephyr"],
-                   help="Target platform — 'posix' runs locally; "
+                   help="Target platform — "
                         "'stm32f746g-discovery' flashes the FreeRTOS "
                         "build, '*-nuttx' the NuttX build, '*-zephyr' "
                         "the Zephyr build.  All STM32 paths flash via "

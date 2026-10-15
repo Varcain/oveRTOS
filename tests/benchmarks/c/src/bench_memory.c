@@ -30,15 +30,6 @@ int32_t bench_get_free_heap(void)
 	return (int32_t)mi.fordblks;
 }
 
-#elif defined(CONFIG_OVE_RTOS_POSIX)
-#include <malloc.h>
-
-int32_t bench_get_free_heap(void)
-{
-	struct mallinfo2 mi = mallinfo2();
-	return (int32_t)mi.fordblks;
-}
-
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_heap.h>
