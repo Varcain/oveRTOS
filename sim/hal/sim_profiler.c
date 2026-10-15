@@ -9,7 +9,7 @@
 /*
  * Profiler simulation plugin.
  *
- * Drains the sample ring populated by the POSIX sampler backend and
+ * Drains the sample ring populated by the RTOS sampler backend and
  * emits batches to the dashboard. Draining is driven by the
  * consolidated sim-debug pump via ove_sim_profiler_tick(). Sampling
  * itself is armed once at init via ove_backend_profiler_start().

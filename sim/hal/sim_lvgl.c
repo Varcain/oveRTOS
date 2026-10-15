@@ -7,7 +7,7 @@
  */
 
 /*
- * Sim LVGL backend -- replaces posix_lvgl.c when CONFIG_OVE_SIM=y.
+ * Sim LVGL backend, used when CONFIG_OVE_SIM=y.
  *
  * This
  * backend creates a memory-only LVGL display that flushes framebuffer
@@ -146,8 +146,8 @@ int ove_lvgl_init(void)
 	lv_display_set_theme(disp, th);
 
 	/* Register mouse/touch input device.  The dashboard's pointer
-	 * arrives through ove_sim_input: shared memory on POSIX, a
-	 * semihosting read on QEMU. */
+	 * arrives through ove_sim_input, a semihosting read of the
+	 * dashboard's pointer file. */
 	{
 		lv_indev_t *indev = lv_indev_create();
 		lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);

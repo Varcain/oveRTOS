@@ -256,7 +256,7 @@ static const struct ove_audio_node_ops sim_sink_ops = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   Device Node Factories (replace sim factories in posix_audio.c)
+   Device Node Factories
    ═══════════════════════════════════════════════════════════════════ */
 
 static struct ove_sim_audio_fmt fmt_from_ove(const struct ove_audio_fmt *f)

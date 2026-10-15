@@ -12,8 +12,8 @@
  *
  * Plugins implement virtual peripherals (display, audio, LEDs, sensors,
  * bus devices) that are registered at startup and driven by the sim HAL.
- * The same plugin code works in both POSIX (in-process) and QEMU
- * (cross-process via shared memory) simulation modes.
+ * The plugins run in the QEMU guest and reach the dashboard through
+ * shared-memory files (semihosting).
  *
  * @note Follows the vtable pattern established by @ref ove_audio_node_ops.
  * @{

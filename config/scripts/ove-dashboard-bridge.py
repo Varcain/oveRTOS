@@ -10,10 +10,11 @@
 oveRTOS dashboard bridge — shared-memory to WebSocket.
 
 Reads the framebuffer from /dev/shm/ove-fb and audio ring from
-/dev/shm/ove-audio (written by firmware via mmap or semihosting),
+/dev/shm/ove-audio (written by the QEMU guest through semihosting),
 and streams them to the browser dashboard over WebSocket.
 
-Used by both host POSIX simulation and QEMU emulation.
+Started by qemu-run.sh for native QEMU runs.  In the browser the page
+does this job itself (sim/dashboard/qemu-wasm.js).
 
 Architecture:
   - Single server thread: accept, poll, read, write (no blocking).
@@ -43,8 +44,8 @@ FB_HEADER_SIZE = 16
 
 AUDIO_PATH = "/dev/shm/ove-audio"
 
-# Pointer input — 16-byte struct the firmware creates in
-# ove_sim_transport_shm_local.c::local_open(). We mmap it lazily on
+# Pointer input — 16-byte struct qemu-run.sh creates before the firmware
+# starts (the guest reads it through semihosting). We mmap it lazily on
 # the first FRAME_INPUT event and write click coordinates into it.
 INPUT_PATH = "/dev/shm/ove-input"
 INPUT_MAGIC = 0x54504E49  # "INPT"
@@ -769,7 +770,7 @@ def sim_cmd_send(plugin_id, cmd_type, data):
 
     The firmware's sim-debug pump drains this ring each tick and
     dispatches to plugins. Writing into the ring mirrors the layout
-    used by ove_sim_transport_shm_local's local_recv_cmd:
+    sim/src/ove_sim_transport_shm_guest.c reads:
       [uint16 length][ove_sim_cmd header + data]
     """
     if not os.path.exists(SIM_SHM_PATH):
@@ -1186,61 +1187,6 @@ def _trace_dump_descriptors(payload):
     sys.stderr.flush()
 
 
-def _is_pie_elf(elf_path):
-    """Best-effort: ELF Type = DYN means PIE (or shared library)."""
-    try:
-        out = subprocess.check_output(
-            ["readelf", "-h", elf_path],
-            stderr=subprocess.DEVNULL).decode("utf-8", "replace")
-        for line in out.splitlines():
-            if "Type:" in line:
-                return "DYN" in line
-    except Exception:
-        pass
-    return False
-
-
-def _enumerate_text_segments(pid):
-    """Parse /proc/<pid>/maps and return a dict of
-    { realpath: (load_base, pc_start, pc_end) } for every unique
-    executable file-backed mapping. load_base = (start - file_offset)
-    so nm addresses add directly onto it. pc_start/pc_end bound the
-    mapping in runtime address space — used downstream to stop
-    range-extension from leaking across mappings. Returns {} on
-    failure."""
-    if not pid:
-        return {}
-    result = {}
-    try:
-        with open(f"/proc/{pid}/maps") as f:
-            for line in f:
-                parts = line.split(maxsplit=5)
-                if len(parts) < 6:
-                    continue
-                perms = parts[1]
-                if "x" not in perms:
-                    continue
-                path = parts[5].strip()
-                if not path or path.startswith("["):
-                    continue      # anon / [vdso] / [vsyscall] / etc.
-                if not os.path.isfile(path):
-                    continue
-                real = os.path.realpath(path)
-                if real in result:
-                    continue     # first text mapping wins
-                try:
-                    start_s, end_s = parts[0].split("-")
-                    start = int(start_s, 16)
-                    end = int(end_s, 16)
-                    off = int(parts[2], 16)
-                except ValueError:
-                    continue
-                result[real] = (start - off, start, end)
-    except OSError:
-        return {}
-    return result
-
-
 def _nm_symbols(path, base, want_dynamic, nm_bin="nm"):
     """Run nm and return a list of (addr, size, name) tuples already
     shifted by @base. On shared libraries, static symbols are stripped
@@ -1277,58 +1223,39 @@ def _nm_symbols(path, base, want_dynamic, nm_bin="nm"):
     return syms
 
 
-def build_profiler_symbols(elf_path, pid=None, nm_bin="nm"):
-    """Build a PROFILE_SUB_SYMBOLS WebSocket frame covering the main ELF
-    *and* every shared library mapped into the process.
+def build_profiler_symbols(elf_path, nm_bin="nm"):
+    """Build a PROFILE_SUB_SYMBOLS WebSocket frame for the firmware ELF.
 
     Payload after the 5-byte outer header is a UTF-8 JSON array of
-    [pc_start, pc_end, name] triples sorted by pc_start. Without shared
-    libs included, samples that land in libc/libpthread/ld-linux show
-    up as raw 0x7f… addresses in the dashboard.
+    [pc_start, pc_end, name] triples sorted by pc_start.
 
-    @nm_bin is forwarded to _nm_symbols so cross-compiled firmware (QEMU
-    FreeRTOS) can be indexed with arm-none-eabi-nm; the ARM ELF doesn't
-    have shared-library segments, so the main-ELF fallback path covers it.
+    @nm_bin is forwarded to _nm_symbols so the ARM firmware can be
+    indexed with arm-none-eabi-nm.
     """
     global _profiler_symbol_frame
     if not elf_path or not os.path.isfile(elf_path):
         return
 
-    segs = _enumerate_text_segments(pid)  # dict path -> (base, pc_start, pc_end)
     real_main = os.path.realpath(elf_path)
+    # The firmware is one statically linked image: path -> (base, pc_start, pc_end).
+    segs = {real_main: (0, 0, 0)}
 
-    # Fall back to nm-only on the main ELF if /proc/maps was unreadable
-    # (no pid — QEMU mode — or an unreadable /proc entry).
-    if not segs:
-        segs = {real_main: (0, 0, 0)}
-
-    # Per-mapping extension cap: never inflate a single symbol past this
-    # size, so e.g. the last named symbol in libc before a big stripped
-    # internal region can't swallow everything up to the mapping end.
+    # Extension cap: never inflate a single symbol past this size, so the
+    # last named symbol before a large unnamed region can't swallow it.
     MAX_SYM_EXTEND = 0x10000   # 64 KiB
 
     entries = []
     for path, (base, pc_start, pc_end) in segs.items():
-        is_main = (path == real_main)
-        # Shared libs: .symtab (-T) is usually stripped → use -D.
-        # The main ELF often has both; prefer -T for completeness, but
-        # fall back to -D if nothing came out (e.g. stripped builds).
+        # Prefer the static symbol table; fall back to -D if nothing came
+        # out (e.g. a stripped build).
         syms = _nm_symbols(path, base, want_dynamic=False, nm_bin=nm_bin)
         if not syms:
             syms = _nm_symbols(path, base, want_dynamic=True, nm_bin=nm_bin)
-        elif not is_main:
-            # Always augment shared libs with dynamic symbols — static
-            # nm on many distro libs returns nothing even if the file
-            # isn't stripped.
-            syms += _nm_symbols(path, base, want_dynamic=True, nm_bin=nm_bin)
         if not syms:
             continue
 
-        # Per-mapping sort + dedup + gap-fill. Extending each symbol's
-        # end to the next within the same mapping covers nm holes
-        # (trampolines, PLT stubs, padding) without leaking across
-        # mappings — which would happen if we sorted globally and
-        # let `data_start` extend into libc's ASLR space.
+        # Sort + dedup + gap-fill. Extending each symbol's end to the
+        # next covers nm holes (veneers, padding).
         syms.sort(key=lambda s: s[0])
         mapping_end_cap = pc_end if pc_end else (
             syms[-1][0] + MAX_SYM_EXTEND)
@@ -1784,11 +1711,10 @@ DBG_RESP_SOURCE     = 0x0C
 class GdbController:
     """Drives a GDB/MI subprocess to debug the target."""
 
-    def __init__(self, toolchain, elf_path, gdb_port=None, attach_pid=None):
+    def __init__(self, toolchain, elf_path, gdb_port):
         self.toolchain = toolchain
         self.elf_path = elf_path
         self.gdb_port = gdb_port
-        self.attach_pid = attach_pid
         self.proc = None
         self._token = 0
         self._lock = threading.Lock()
@@ -1814,19 +1740,9 @@ class GdbController:
         # Wait for GDB startup
         time.sleep(0.3)
 
-        if self.gdb_port:
-            self._send_mi_sync(
-                f"-target-select remote localhost:{self.gdb_port}")
-        elif self.attach_pid:
-            self._send_mi_sync(f"-target-attach {self.attach_pid}")
+        self._send_mi_sync(
+            f"-target-select remote localhost:{self.gdb_port}")
 
-        # Don't stop/report the real-time signals the sampling profiler
-        # uses internally (SIGRTMIN..SIGRTMAX). Without this, every sample
-        # pauses the inferior and floods the event stream. SIGRTMIN is
-        # 34 on glibc/Linux; covering 34..64 is safe for any backend.
-        for sig in range(34, 65):
-            self._send_mi_sync(
-                f'-interpreter-exec console "handle SIG{sig} nostop noprint pass"')
 
         # Fetch register names once (architecture-specific).
         result = self._send_mi_sync("-data-list-register-names")
@@ -2307,7 +2223,7 @@ def _mi_parse_kv(s):
     return result
 
 
-# Global GDB controller instance (set in main if --gdb-port/--gdb-attach)
+# Global GDB controller instance (set in main if --gdb-port)
 gdb_controller = [None]
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -2332,8 +2248,6 @@ def main():
                         help="File descriptor to read console log from")
     parser.add_argument("--gdb-port", type=int, default=0,
                         help="GDB remote port (QEMU gdbserver)")
-    parser.add_argument("--gdb-attach", type=int, default=0,
-                        help="PID to attach GDB to (POSIX mode)")
     parser.add_argument("--gdb-toolchain", type=str, default="gdb",
                         help="GDB binary name (e.g. arm-none-eabi-gdb)")
     parser.add_argument("--elf-path", type=str, default=None,
@@ -2358,10 +2272,8 @@ def main():
     if args.build_dir:
         build_project_file_list(args.build_dir, ove_dir)
 
-    # Build profiler symbol map from the ELF. For POSIX (native nm on a
-    # PIE binary) we need the runtime load base; read it from the attached
-    # PID's /proc/<pid>/maps. For QEMU FreeRTOS firmware the ELF is ARM
-    # and system nm may not handle the architecture on every host — when
+    # Build profiler symbol map from the ELF. The firmware is ARM and
+    # system nm may not handle the architecture on every host — when
     # --gdb-toolchain points at arm-none-eabi-gdb, derive the matching
     # arm-none-eabi-nm alongside it and feed it to build_profiler_symbols.
     if args.elf_path:
@@ -2375,16 +2287,10 @@ def main():
             od_candidate = gdb[:-len("-gdb")] + "-objdump"
             if os.path.isfile(od_candidate):
                 objdump_bin = od_candidate
-        build_profiler_symbols(
-            args.elf_path,
-            pid=args.gdb_attach if args.gdb_attach else None,
-            nm_bin=nm_bin)
+        build_profiler_symbols(args.elf_path, nm_bin=nm_bin)
         # CFG validator: reject phantom frames left over from stale
-        # saved-{r7,lr} pairs in functions with large local frames. Only
-        # meaningful for the stack-scan unwinder on QEMU/FreeRTOS — POSIX
-        # uses backtrace(3) (DWARF-based, phantom-free) and disassembling
-        # libc-linked host binaries would cost startup time for zero gain.
-        # Gated on a cross-toolchain objdump actually resolving.
+        # saved-{r7,lr} pairs in functions with large local frames, for the
+        # stack-scan unwinder. Gated on a cross-toolchain objdump resolving.
         if objdump_bin:
             _build_profiler_cfg(args.elf_path, objdump_bin=objdump_bin)
 
@@ -2396,34 +2302,23 @@ def main():
                          daemon=True).start()
 
     # Start GDB controller if configured.
-    if args.gdb_port or args.gdb_attach:
+    if args.gdb_port:
         gdb = GdbController(
             toolchain=args.gdb_toolchain,
             elf_path=args.elf_path,
-            gdb_port=args.gdb_port if args.gdb_port else None,
-            attach_pid=args.gdb_attach if args.gdb_attach else None,
+            gdb_port=args.gdb_port,
         )
         gdb_controller[0] = gdb
         # Start GDB in a thread — connection may take a moment.
         def _start_gdb():
-            # Wait for target: QEMU needs time to start gdbserver;
-            # local attach is immediate.
-            if args.gdb_port:
-                time.sleep(1)
-            else:
-                time.sleep(0.2)
+            # Wait for target: QEMU needs time to start its gdbserver.
+            time.sleep(1)
             try:
                 gdb.start()
                 print(f"GDB connected ({args.gdb_toolchain})", flush=True)
-            except Exception as e:
-                msg = str(e)
-                if "ptrace" in msg.lower() or "Operation not permitted" in msg:
-                    print("GDB attach failed: ptrace not permitted. "
-                          "Run: sudo sysctl kernel.yama.ptrace_scope=0",
-                          flush=True)
-                else:
-                    print("GDB connection failed:", flush=True)
-                    traceback.print_exc()
+            except Exception:
+                print("GDB connection failed:", flush=True)
+                traceback.print_exc()
         threading.Thread(target=_start_gdb, daemon=True).start()
 
     try:

@@ -2,7 +2,7 @@
  * oveRTOS Simulation Dashboard
  *
  * Talks to the firmware over one framed link: a WebSocket to the Python
- * bridge (POSIX, native QEMU), or the in-page link to QEMU running in
+ * bridge (native QEMU), or the in-page link to QEMU running in
  * this page (qemu-wasm.js).
  * Provides: event log, WinBox window management, display, audio.
  */
@@ -2321,7 +2321,7 @@ function handleProfile(buf, off) {
     profilerDropped += dropped;
 
     if (wordSize !== 8) {
-        /* 32-bit support would add a branch below; POSIX x86_64 is 8. */
+        /* sim_profiler.c widens every PC to 64 bits on all targets. */
         console.warn("profiler: unsupported word size", wordSize);
         return;
     }

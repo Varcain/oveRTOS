@@ -11,41 +11,20 @@
  * events into LVGL's pointer indev.
  *
  * The dashboard side writes click/touch events to /dev/shm/ove-input
- * (a 16-byte struct stamped with magic "INPT"), and the firmware reads
- * it one of two ways:
- *
- *  1. POSIX host: on the first ove_sim_input_get() call we try to open
- *     and mmap that region; on success, subsequent gets read from the
- *     shm. The shm is created by
- *     sim/src/ove_sim_transport_shm_local.c::local_open().
- *
- *  2. QEMU guest: the same file, read through semihosting on every
- *     get. Here the dashboard side creates it before the firmware
- *     starts (qemu-run.sh, or qemu-wasm.js in the browser).
+ * (a 16-byte struct stamped with magic "INPT"), and the QEMU guest reads
+ * it through semihosting on every get. The dashboard side creates the
+ * file before the firmware starts (qemu-run.sh, or qemu-wasm.js in the
+ * browser).
  *
  * With no file (a headless run) the pointer reads as released at the
  * origin.
  */
 
 #include "ove_sim_input.h"
-#include "ove_config.h"
+#include "semihosting.h"
 
 #include <stdint.h>
-
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-#include "semihosting.h"
 #include <string.h>
-#define OVE_SIM_INPUT_HAVE_MMAP 0
-#define OVE_SIM_INPUT_HAVE_SEMIHOSTING 1
-#else
-#include <fcntl.h>
-#include <stddef.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#define OVE_SIM_INPUT_HAVE_MMAP 1
-#define OVE_SIM_INPUT_HAVE_SEMIHOSTING 0
-#endif
 
 #define INPUT_PATH "/dev/shm/ove-input"
 #define INPUT_MAGIC 0x54504E49u /* "INPT" */
@@ -59,12 +38,6 @@
  *   offset 9: reserved
  */
 
-#if OVE_SIM_INPUT_HAVE_MMAP
-static uint8_t *g_input_shm;
-static int g_input_shm_tried;
-#endif
-
-#if OVE_SIM_INPUT_HAVE_SEMIHOSTING
 static int g_input_fd = -1;
 static int g_input_fd_tried;
 
@@ -96,55 +69,11 @@ static int semihosting_get(int16_t *x, int16_t *y, uint8_t *pressed)
 	*pressed = raw[8];
 	return 1;
 }
-#endif
-
-static void try_attach_shm(void)
-{
-#if OVE_SIM_INPUT_HAVE_MMAP
-	if (g_input_shm || g_input_shm_tried)
-		return;
-	g_input_shm_tried = 1;
-
-	int fd = open(INPUT_PATH, O_RDWR);
-	if (fd < 0)
-		return;
-	void *base = mmap(NULL, INPUT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	close(fd);
-	if (base == MAP_FAILED)
-		return;
-
-	uint32_t magic = 0;
-	memcpy(&magic, base, sizeof(magic));
-	if (magic != INPUT_MAGIC) {
-		munmap(base, INPUT_SHM_SIZE);
-		return;
-	}
-	g_input_shm = (uint8_t *)base;
-#endif
-}
 
 void ove_sim_input_get(int16_t *x, int16_t *y, uint8_t *pressed)
 {
-	try_attach_shm();
-
-#if OVE_SIM_INPUT_HAVE_MMAP
-	if (g_input_shm) {
-		int16_t sx, sy;
-		uint8_t sp;
-		memcpy(&sx, g_input_shm + 4, sizeof(sx));
-		memcpy(&sy, g_input_shm + 6, sizeof(sy));
-		memcpy(&sp, g_input_shm + 8, sizeof(sp));
-		*x = sx;
-		*y = sy;
-		*pressed = sp;
-		return;
-	}
-#endif
-
-#if OVE_SIM_INPUT_HAVE_SEMIHOSTING
 	if (semihosting_get(x, y, pressed))
 		return;
-#endif
 
 	*x = 0;
 	*y = 0;

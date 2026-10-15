@@ -295,8 +295,7 @@ int ove_sim_debug_register(void)
 	 * Stack sized for the worst-case drain-path frame. sim_profiler_tick
 	 * holds batch[24] (~2 KB) while calling emit_batch, which itself
 	 * stack-allocates payload + ev_buf (~7 KB wire-size × 2). 16 KB
-	 * leaves a generous margin; POSIX's default pthread stack handled
-	 * this silently, FreeRTOS honours the request literally. */
+	 * leaves a generous margin; FreeRTOS honours the request literally. */
 #ifdef OVE_HEAP_THREAD
 	int ret = ove_thread_create(&debug_thread_handle, "sim_debug", debug_thread_fn, &debug_ctx,
 				    OVE_PRIO_LOW, 16384);
