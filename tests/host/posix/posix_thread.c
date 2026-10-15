@@ -8,6 +8,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "ove_thread_registry.h"
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "posix_sleep.h"
@@ -116,29 +117,32 @@ static void _snapshot_final_stack_headroom(struct ove_thread *t)
 	t->stack_headroom_valid = 1;
 }
 
-/* Simple linked list of all live threads for ove_thread_list(). */
-static struct ove_thread *thread_list_head;
+/* The shared registry of live threads (ove_thread_registry.h), for
+ * ove_thread_list(). */
+struct ove_thread *ove_backend_thread_registry_head;
 static pthread_mutex_t thread_list_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void ove_backend_thread_registry_lock(void)
+{
+	pthread_mutex_lock(&thread_list_lock);
+}
+
+void ove_backend_thread_registry_unlock(void)
+{
+	pthread_mutex_unlock(&thread_list_lock);
+}
 
 static void _register_thread(struct ove_thread *t)
 {
 	pthread_mutex_lock(&thread_list_lock);
-	t->next = thread_list_head;
-	thread_list_head = t;
+	ove_thread_registry_add(t);
 	pthread_mutex_unlock(&thread_list_lock);
 }
 
 static void _unregister_thread(struct ove_thread *t)
 {
 	pthread_mutex_lock(&thread_list_lock);
-	struct ove_thread **pp = &thread_list_head;
-	while (*pp) {
-		if (*pp == t) {
-			*pp = t->next;
-			break;
-		}
-		pp = &(*pp)->next;
-	}
+	ove_thread_registry_remove(t);
 	pthread_mutex_unlock(&thread_list_lock);
 }
 
@@ -408,7 +412,8 @@ size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t 
 {
 	size_t count = 0;
 	pthread_mutex_lock(&thread_list_lock);
-	for (struct ove_thread *t = thread_list_head; t && count < max; t = t->next) {
+	for (struct ove_thread *t = ove_backend_thread_registry_head; t && count < max;
+	     t = t->next) {
 		out[count].tid = (uint32_t)(uintptr_t)t;
 		out[count].name = t->name ? t->name : "?";
 		count++;
@@ -438,7 +443,8 @@ size_t ove_backend_profiler_snapshot_running(pthread_t *out, size_t max)
 	 */
 	size_t count = 0;
 	pthread_mutex_lock(&thread_list_lock);
-	for (struct ove_thread *t = thread_list_head; t && count < max; t = t->next) {
+	for (struct ove_thread *t = ove_backend_thread_registry_head; t && count < max;
+	     t = t->next) {
 		if (!__atomic_load_n(&t->started, __ATOMIC_ACQUIRE))
 			continue;
 		int s = __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
@@ -626,7 +632,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	int refresh = (delta_wall >= 100000000ULL); /* 100 ms */
 
 	size_t count = 0;
-	struct ove_thread *t = thread_list_head;
+	struct ove_thread *t = ove_backend_thread_registry_head;
 	while (t && count < max_count) {
 		uint64_t cpu_ns = _thread_cpu_ns(t->tid);
 		if (refresh) {

@@ -11,6 +11,7 @@
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "ove_backend_common.h"
+#include "ove_thread_registry.h"
 #include "ove_nuttx_priority.h"
 #include "ove_nuttx_runtime.h"
 #include <nuttx/arch.h>
@@ -70,18 +71,19 @@ static void tls_set_current(struct ove_thread *t)
 }
 
 /* ── Thread registry (intrusive list) ─────────────────────────────────
- * Used by nuttx_trace.c for descriptor enumeration and by the profiler
- * for target enumeration. Lock is a lightweight nxmutex (kernel) so it
- * can be taken from any task context. */
-struct ove_thread *ove_nuttx_thread_list_head;
+ * The shared registry (backends/common/ove_thread_registry.h), used for
+ * trace descriptor enumeration and by the profiler for target enumeration.
+ * Lock is a lightweight nxmutex (kernel) so it can be taken from any task
+ * context. */
+struct ove_thread *ove_backend_thread_registry_head;
 static mutex_t thread_list_lock = NXMUTEX_INITIALIZER;
 
-void ove_nuttx_thread_list_lock(void)
+void ove_backend_thread_registry_lock(void)
 {
 	nxmutex_lock(&thread_list_lock);
 }
 
-void ove_nuttx_thread_list_unlock(void)
+void ove_backend_thread_registry_unlock(void)
 {
 	nxmutex_unlock(&thread_list_lock);
 }
@@ -94,22 +96,14 @@ struct ove_thread *ove_nuttx_current_thread(void)
 static void _register_thread(struct ove_thread *t)
 {
 	nxmutex_lock(&thread_list_lock);
-	t->next = ove_nuttx_thread_list_head;
-	ove_nuttx_thread_list_head = t;
+	ove_thread_registry_add(t);
 	nxmutex_unlock(&thread_list_lock);
 }
 
 static void _unregister_thread(struct ove_thread *t)
 {
 	nxmutex_lock(&thread_list_lock);
-	struct ove_thread **pp = &ove_nuttx_thread_list_head;
-	while (*pp) {
-		if (*pp == t) {
-			*pp = t->next;
-			break;
-		}
-		pp = &(*pp)->next;
-	}
+	ove_thread_registry_remove(t);
 	nxmutex_unlock(&thread_list_lock);
 }
 

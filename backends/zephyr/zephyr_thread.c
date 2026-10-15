@@ -11,6 +11,7 @@
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "ove_backend_common.h"
+#include "ove_thread_registry.h"
 #include "ove_zephyr_priority.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_heap.h>
@@ -47,20 +48,21 @@ static uint32_t runtime_percent(uint64_t part, uint64_t total)
 	} while (0)
 
 /* ── Thread registry (intrusive list) ─────────────────────────────────
- * Used by zephyr_trace.c for descriptor enumeration. The profiler is
+ * The shared registry (backends/common/ove_thread_registry.h), used for trace
+ * descriptor enumeration. The profiler is
  * ISR-driven (SysTick-style) and identifies targets via k_thread_custom_data
  * — no enumeration needed from there — so the registry exists mainly for
  * the trace swimlane. Lock is a k_mutex so it's safe from any task context
  * but not ISR; trace enumeration runs off the sim_debug pump thread.
  *
  * Gated on CONFIG_OVE_TRACE_STREAM — the same guard the sole consumer,
- * ove_backend_trace_list_threads() in zephyr_trace.c, compiles under. With
+ * ove_backend_trace_list_threads() in ove_thread_registry.c, compiles under. With
  * trace off the registry is pure overhead (a global k_mutex taken twice on
  * every thread create/destroy), so it and _register/_unregister compile to
  * nothing. struct ove_thread keeps its `next` field either way so the
  * storage size (size probes / test_storage_bounds) is unchanged. */
 #ifdef CONFIG_OVE_TRACE_STREAM
-struct ove_thread *ove_zephyr_thread_list_head;
+struct ove_thread *ove_backend_thread_registry_head;
 static struct k_mutex thread_list_lock;
 static bool thread_list_lock_initialised;
 
@@ -72,13 +74,13 @@ static void ensure_list_lock(void)
 	}
 }
 
-void ove_zephyr_thread_list_lock(void)
+void ove_backend_thread_registry_lock(void)
 {
 	ensure_list_lock();
 	k_mutex_lock(&thread_list_lock, K_FOREVER);
 }
 
-void ove_zephyr_thread_list_unlock(void)
+void ove_backend_thread_registry_unlock(void)
 {
 	k_mutex_unlock(&thread_list_lock);
 }
@@ -94,24 +96,16 @@ struct ove_thread *ove_zephyr_current_thread(void)
 #ifdef CONFIG_OVE_TRACE_STREAM
 static void _register_thread(struct ove_thread *t)
 {
-	ove_zephyr_thread_list_lock();
-	t->next = ove_zephyr_thread_list_head;
-	ove_zephyr_thread_list_head = t;
-	ove_zephyr_thread_list_unlock();
+	ove_backend_thread_registry_lock();
+	ove_thread_registry_add(t);
+	ove_backend_thread_registry_unlock();
 }
 
 static void _unregister_thread(struct ove_thread *t)
 {
-	ove_zephyr_thread_list_lock();
-	struct ove_thread **pp = &ove_zephyr_thread_list_head;
-	while (*pp) {
-		if (*pp == t) {
-			*pp = t->next;
-			break;
-		}
-		pp = &(*pp)->next;
-	}
-	ove_zephyr_thread_list_unlock();
+	ove_backend_thread_registry_lock();
+	ove_thread_registry_remove(t);
+	ove_backend_thread_registry_unlock();
 }
 #else
 /* Trace off: the registry is compiled out (see comment above); these
