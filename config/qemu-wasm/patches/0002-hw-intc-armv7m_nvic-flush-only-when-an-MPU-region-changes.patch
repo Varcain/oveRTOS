@@ -1,0 +1,56 @@
+From: oveRTOS
+Subject: [PATCH] hw/intc/armv7m_nvic: flush the TLB only when a v7-M MPU region changes
+
+Every write to MPU_RBAR or MPU_RASR (and their aliases) flushed the whole
+TLB.  A guest that reprograms the MPU on each context switch writes every
+configurable region each time, most of them with the values already in
+place, and many while the MPU is disabled around the update.  In a browser
+profile of an MPU-isolating FreeRTOS guest running top, these flushes and
+the TLB refills after them took about a fifth of the vCPU thread.
+
+Cached translations depend on the region registers only while the MPU is
+enabled, and enabling it through MPU_CTRL flushes already, so skip the
+flush when the MPU is disabled or the value is unchanged.  PMSAv8 is left
+as it was.
+
+---
+--- a/hw/intc/armv7m_nvic.c
++++ b/hw/intc/armv7m_nvic.c
+@@ -1939,8 +1939,17 @@
+             return;
+         }
+ 
+-        cpu->env.pmsav7.drbar[region] = value & ~0x1f;
+-        tlb_flush(CPU(cpu));
++        /*
++         * Cached translations depend on region registers only while the
++         * MPU is enabled (enabling it flushes), and an unchanged value
++         * changes nothing.
++         */
++        if (cpu->env.pmsav7.drbar[region] != (value & ~0x1f)) {
++            cpu->env.pmsav7.drbar[region] = value & ~0x1f;
++            if (cpu->env.v7m.mpu_ctrl[attrs.secure] & R_V7M_MPU_CTRL_ENABLE_MASK) {
++                tlb_flush(CPU(cpu));
++            }
++        }
+         break;
+     }
+     case 0xda0: /* MPU_RASR (v7M), MPU_RLAR (v8M) */
+@@ -1973,9 +1982,14 @@
+             return;
+         }
+ 
+-        cpu->env.pmsav7.drsr[region] = value & 0xff3f;
+-        cpu->env.pmsav7.dracr[region] = (value >> 16) & 0x173f;
+-        tlb_flush(CPU(cpu));
++        if (cpu->env.pmsav7.drsr[region] != (value & 0xff3f) ||
++            cpu->env.pmsav7.dracr[region] != ((value >> 16) & 0x173f)) {
++            cpu->env.pmsav7.drsr[region] = value & 0xff3f;
++            cpu->env.pmsav7.dracr[region] = (value >> 16) & 0x173f;
++            if (cpu->env.v7m.mpu_ctrl[attrs.secure] & R_V7M_MPU_CTRL_ENABLE_MASK) {
++                tlb_flush(CPU(cpu));
++            }
++        }
+         break;
+     }
+     case 0xdc0: /* MPU_MAIR0 */
