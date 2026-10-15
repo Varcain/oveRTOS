@@ -1174,11 +1174,6 @@ config OVE_SIM_DASHBOARD
       a local WebSocket server. Displays framebuffer, audio,
       LED states, GPIO matrix, and sensor controls.
 
-config OVE_SIM_DASHBOARD_PORT
-    int "Dashboard HTTP port"
-    default 8080
-    depends on OVE_SIM_DASHBOARD
-
 endmenu
 
 comment "Heap policy"
