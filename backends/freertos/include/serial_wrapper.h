@@ -9,6 +9,13 @@
 #ifndef INC_SERIAL_WRAPPER_H_
 #define INC_SERIAL_WRAPPER_H_
 
+/*
+ * Console UART each FreeRTOS board provides; freertos_console.c is built on it.
+ * serial_write() translates "\n" to "\r\n" and bounds its wait, and the RX
+ * interrupt queues bytes and calls the ready callback. serial_safe_write() is
+ * for fault and hook context: no FreeRTOS calls.
+ */
+
 #include "ove/console.h"
 
 void serial_init(void);

@@ -60,39 +60,39 @@ __isr_vector:
     .long   PendSV_Handler
     .long   SysTick_Handler
 
-    /* External Interrupts (IRQ 0..31) */
-    .long   Default_Handler         /*  0: UART0 */
-    .long   Default_Handler         /*  1: UART1 */
-    .long   Default_Handler         /*  2: TIMER0 */
-    .long   Default_Handler         /*  3: TIMER1 */
-    .long   Default_Handler         /*  4: DUALTIMER */
-    .long   Default_Handler         /*  5: SPI */
-    .long   Default_Handler         /*  6: UARTOVF */
-    .long   Default_Handler         /*  7: ETHERNET */
-    .long   Default_Handler         /*  8: I2S */
-    .long   Default_Handler         /*  9: TSC */
-    .long   Default_Handler         /* 10: PORT0_ALL */
-    .long   Default_Handler         /* 11: PORT1_ALL */
-    .long   Default_Handler         /* 12: DMA_ERROR */
-    .long   Default_Handler         /* 13: DMA_TC */
-    .long   Default_Handler         /* 14: DMA_COMB */
-    .long   Default_Handler         /* 15: PORT0_0 */
-    .long   Default_Handler         /* 16: PORT0_1 */
-    .long   Default_Handler         /* 17: PORT0_2 */
-    .long   Default_Handler         /* 18: PORT0_3 */
-    .long   Default_Handler         /* 19: PORT0_4 */
-    .long   Default_Handler         /* 20: PORT0_5 */
-    .long   Default_Handler         /* 21: PORT0_6 */
-    .long   Default_Handler         /* 22: PORT0_7 */
-    .long   Default_Handler         /* 23: PORT0_8 */
-    .long   Default_Handler         /* 24: PORT0_9 */
-    .long   Default_Handler         /* 25: PORT0_10 */
-    .long   Default_Handler         /* 26: PORT0_11 */
-    .long   Default_Handler         /* 27: PORT0_12 */
-    .long   Default_Handler         /* 28: PORT0_13 */
-    .long   Default_Handler         /* 29: PORT0_14 */
-    .long   Default_Handler         /* 30: PORT0_15 */
-    .long   Default_Handler         /* 31: SysTick_combined */
+    /* External interrupts (IRQ 0..31), as QEMU wires the AN500 */
+    .long   UART0RX_IRQHandler      /*  0: UART0 RX */
+    .long   Default_Handler         /*  1: UART0 TX */
+    .long   Default_Handler         /*  2: UART1 RX */
+    .long   Default_Handler         /*  3: UART1 TX */
+    .long   Default_Handler         /*  4: UART2 RX */
+    .long   Default_Handler         /*  5: UART2 TX */
+    .long   Default_Handler         /*  6: (not wired) */
+    .long   Default_Handler         /*  7: (not wired) */
+    .long   Default_Handler         /*  8: TIMER0 */
+    .long   Default_Handler         /*  9: TIMER1 */
+    .long   Default_Handler         /* 10: DUALTIMER */
+    .long   Default_Handler         /* 11: SPI0/1 */
+    .long   Default_Handler         /* 12: UART0-2 overflow */
+    .long   Default_Handler         /* 13: Ethernet */
+    .long   Default_Handler         /* 14: (not wired) */
+    .long   Default_Handler         /* 15: (not wired) */
+    .long   Default_Handler         /* 16: (not wired) */
+    .long   Default_Handler         /* 17: (not wired) */
+    .long   Default_Handler         /* 18: UART3 RX */
+    .long   Default_Handler         /* 19: UART3 TX */
+    .long   Default_Handler         /* 20: UART4 RX */
+    .long   Default_Handler         /* 21: UART4 TX */
+    .long   Default_Handler         /* 22: ADC SPI */
+    .long   Default_Handler         /* 23: (not wired) */
+    .long   Default_Handler         /* 24: Shield SPI */
+    .long   Default_Handler         /* 25: (not wired) */
+    .long   Default_Handler         /* 26: (not wired) */
+    .long   Default_Handler         /* 27: (not wired) */
+    .long   Default_Handler         /* 28: (not wired) */
+    .long   Default_Handler         /* 29: (not wired) */
+    .long   Default_Handler         /* 30: (not wired) */
+    .long   Default_Handler         /* 31: (not wired) */
 
     .size   __isr_vector, . - __isr_vector
 
@@ -167,6 +167,7 @@ Reset_Handler:
     def_irq_handler DebugMon_Handler
     def_irq_handler PendSV_Handler
     def_irq_handler SysTick_Handler
+    def_irq_handler UART0RX_IRQHandler
     def_irq_handler Default_Handler
 
     .end

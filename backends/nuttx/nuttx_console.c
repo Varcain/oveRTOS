@@ -14,8 +14,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* NuttX owns USART1 RX through its IRQ-filled /dev/console FIFO. The first
+/* NuttX owns console RX through its IRQ-filled /dev/console FIFO. The first
  * non-blocking read claims a separate raw descriptor so personality input does
  * not race the one-byte hardware RDR or inherit canonical/echo processing. */
 static int g_console_rfd = -1;
@@ -39,6 +38,7 @@ static void console_nonblocking_init(void)
 #endif
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #define OVE_NX_USART1 0x40011000u
 #define OVE_NX_U1_ISR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x1Cu))
 #define OVE_NX_U1_TDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x28u))
@@ -56,13 +56,9 @@ int ove_console_getchar(void)
 
 int ove_console_try_getchar(void)
 {
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	console_nonblocking_init();
 	unsigned char c;
 	return g_console_rfd >= 0 && read(g_console_rfd, &c, 1) == 1 ? (int)c : -1;
-#else
-	return -1;
-#endif
 }
 
 void ove_console_putchar(int c)

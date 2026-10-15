@@ -174,7 +174,7 @@ clock is fake — these failure modes are invisible there.
 Samples `DWT->CYCCNT`, runs 10 000 NOPs, asserts `delta > 5000`
 cycles.  `freertos_time.c::ove_time_delay_us` busy-waits on
 `DWT->CYCCNT` in production.  Renode 1.16 leaves the counter stuck
-at 0 — the Renode test target deliberately swaps in `stub_time.c`,
+at 0 — the Renode test target deliberately swaps in `freertos_time_systick.c`,
 leaving DWT untested.  This closes that gap.
 
 ## Pin map for read-after-write tests

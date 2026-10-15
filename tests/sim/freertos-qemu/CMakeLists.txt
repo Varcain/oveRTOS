@@ -130,7 +130,7 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_lvgl.c
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
-    ${STUB_DIR}/stub_time.c
+    ${FREERTOS_BACKEND}/freertos_time_systick.c
     ${STUB_DIR}/stub_console.c
     ${STUB_DIR}/stub_watchdog.c
     ${OVE_ROOT}/backends/common/ove_shell.c

@@ -157,7 +157,7 @@ Concrete bugs Renode caught (or would catch) that QEMU misses:
   is fake — PLL miscompute is invisible).
 - DWT cycle counter advancing (Renode 1.16 leaves `DWT->CYCCNT`
   stuck at 0; oveRTOS's Renode-FreeRTOS firmware swaps in
-  `stub_time.c` for this reason).
+  `freertos_time_systick.c` for this reason).
 - IWDG actually resetting the MCU.
 - SD card protocol — Renode's `STM32FSDMMC` rejects several
   registers `BSP_SD_Init` writes; FS/NVS coverage on FatFS is

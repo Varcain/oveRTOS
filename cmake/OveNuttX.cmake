@@ -141,32 +141,6 @@ macro(ove_nuttx_exclude_backends)
 endmacro()
 
 
-# ─── ove_nuttx_add_stub_backends(MOD ...) ──────────────────────────
-# Replace backend implementations with stubs and remove real backends.
-macro(ove_nuttx_add_stub_backends)
-    set(_stub_dir "${OVE_DIR}/tests/backends/stub")
-    foreach(_mod ${ARGN})
-        string(TOUPPER "${_mod}" _MOD_UPPER)
-        string(TOLOWER "${_mod}" _mod_lower)
-
-        set(_add_stub FALSE)
-        if("${_MOD_UPPER}" STREQUAL "BSP" OR "${_MOD_UPPER}" STREQUAL "GPIO")
-            set(_add_stub TRUE)
-        elseif(OVE_${_MOD_UPPER})
-            set(_add_stub TRUE)
-        endif()
-
-        if(_add_stub)
-            if(EXISTS "${_stub_dir}/stub_${_mod_lower}.c")
-                list(APPEND _OVE_NX_EXTRA_SOURCES
-                     "${_stub_dir}/stub_${_mod_lower}.c")
-            endif()
-            _ove_filter_backend_list(_OVE_NX_BACKEND_SRC ${_mod})
-        endif()
-    endforeach()
-endmacro()
-
-
 # ─── ove_nuttx_add_sources(src ...) ────────────────────────────────
 # Add extra source files to the accumulator.
 macro(ove_nuttx_add_sources)
