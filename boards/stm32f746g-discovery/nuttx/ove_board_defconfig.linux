@@ -57,11 +57,6 @@ CONFIG_STM32F7_I2CTIMEOTICKS=25
 # CONFIG_STM32F7_DTCMEXCLUDE is not set
 CONFIG_MM_REGIONS=3
 
-# The NuttX console backend reads RX through NuttX's IRQ-filled serial buffer and puts its
-# non-blocking descriptor in raw mode so NuttX does not also echo each keystroke (the guest shell
-# owns echo) or line-buffer to a newline. tcsetattr/TCSETS need termios.
-CONFIG_SERIAL_TERMIOS=y
-
 # Inter-program isolation: LXP's NuttX port note driver hooks EVERY
 # context switch — including round-robin preemption between same-priority program tasks, which the
 # syscall path cannot see — to reprogram the MPU to the incoming program's OWN region. That

@@ -133,7 +133,9 @@ int ove_shell_register_cmd(const struct ove_shell_cmd *cmd)
 void ove_shell_process_char(int c)
 {
 	if (c == '\n' || c == '\r') {
-		ove_console_putchar('\n');
+		/* The text path: unlike putchar it ends the line as the console
+		 * needs (CRLF on a serial port). */
+		ove_console_write("\n", 1);
 		line_buf[line_pos] = '\0';
 		shell_execute(line_buf);
 		line_pos = 0;
