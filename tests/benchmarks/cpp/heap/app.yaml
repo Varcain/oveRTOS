@@ -5,7 +5,6 @@ sources:
   - ../../c/src/bench_harness.c
   - ../../c/src/bench_output.c
   - ../../c/src/bench_memory.c
-  - ../../c/src/bench_native_posix.c
   - ../../c/src/bench_native_freertos.c
   - ../../c/src/bench_native_nuttx.c
   - ../../c/src/bench_native_zephyr.c

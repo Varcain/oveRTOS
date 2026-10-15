@@ -13,7 +13,7 @@ Reads benchmark stdout dumps that contain JSON envelopes
 CONFIG_OVE_BENCHMARK_OUTPUT_JSON=y) and produces a Markdown table
 joining cases across the C / C++ / Rust / Zig bindings.
 
-When a `native_posix` (or other native_*) suite is present, its rows
+When a `native_<rtos>` suite (e.g. `native_freertos`) is present, its rows
 are emitted alongside the wrapper rows so the reader can see at a
 glance "wrapper vs raw API: ±X ns".
 
@@ -105,13 +105,6 @@ _PAGE_RTOS_META = {
         "long":       "Zephyr RTOS",
         "native_src": "bench_native_zephyr.c",
         "native_apis": "`k_mutex_*`, `k_sem_*`, `k_msgq_*`",
-    },
-    "POSIX": {
-        "display":    "POSIX",
-        "key":        "posix",
-        "long":       "POSIX (host)",
-        "native_src": "bench_native_posix.c",
-        "native_apis": "raw pthread/sem APIs",
     },
 }
 
@@ -327,7 +320,7 @@ def build_report(by_rtos, threshold_pct, page_mode=None):
         #
         # Categories: threading, mutex, semaphore, condvar/event, IPC.
         # Native baseline suite name is detected per binding (one of
-        # native_posix / native_freertos / native_nuttx / native_zephyr).
+        # native_freertos / native_nuttx / native_zephyr).
         # All share identical case-name suffixes so a single template
         # works for every backend.  Cases without a meaningful raw
         # equivalent (event groups, workqueues) are absent.
@@ -350,7 +343,7 @@ def build_report(by_rtos, threshold_pct, page_mode=None):
             ("Stream send+recv 64B",        ("stream", "send_recv_64B"),                  "stream_send_recv_64B"),
         ]
         # Detect which native suite is present per binding (one of
-        # native_posix, native_freertos) and build the concrete pair
+        # native_freertos, native_zephyr) and build the concrete pair
         # list.  All bindings in a single RTOS report share the same
         # native suite name, so we resolve it from any binding's keys.
         native_suite = None
@@ -407,7 +400,6 @@ def build_report(by_rtos, threshold_pct, page_mode=None):
 
         if wn_rows:
             native_label = {
-                "native_posix":    "pthread",
                 "native_freertos": "FreeRTOS API",
                 "native_nuttx":    "NuttX API",
                 "native_zephyr":   "Zephyr API",

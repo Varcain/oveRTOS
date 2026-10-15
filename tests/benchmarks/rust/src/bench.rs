@@ -121,18 +121,13 @@ unsafe extern "C" {
     pub fn bench_print_result(bc: *const CBenchCase, result: *const BenchResult);
     pub fn bench_print_footer();
 
-    /// Native pthread baseline suite — defined in
-    /// `tests/benchmarks/c/src/bench_native_posix.c`.  Re-exported here so
-    /// safe Rust apps with `#![deny(unsafe_code)]` can include it in
-    /// their suite list via [`native_posix_suite`] without writing
-    /// their own `unsafe extern` blocks.
-    static bench_suite_native_posix: CBenchSuite;
-
     /// Native FreeRTOS baseline suite — defined in
-    /// `tests/benchmarks/c/src/bench_native_freertos.c`.  Same accessor
-    /// pattern as `native_posix_suite`; both are always linked, but
-    /// each suite's `is_enabled` returns 0 on the wrong backend so
-    /// only the active baseline runs.
+    /// `tests/benchmarks/c/src/bench_native_freertos.c`.  Re-exported here
+    /// so safe Rust apps with `#![deny(unsafe_code)]` can include it in
+    /// their suite list via [`native_freertos_suite`] without writing
+    /// their own `unsafe extern` blocks.  Every native suite is always
+    /// linked, but each suite's `is_enabled` returns 0 on the wrong
+    /// backend so only the active baseline runs.
     static bench_suite_native_freertos: CBenchSuite;
 
     /// Native NuttX baseline suite — defined in
@@ -160,30 +155,24 @@ unsafe extern "C" {
 /// (tests/benchmarks/c/src/app.c MAX_CASES_PER_SUITE).
 const MAX_CASES_PER_SUITE: usize = 32;
 
-/// Safe accessor for the native pthread baseline suite. Returns a
-/// reference to the C-defined `bench_suite_native_posix` symbol.
-pub fn native_posix_suite() -> &'static CBenchSuite {
-    // SAFETY: `bench_suite_native_posix` is a `'static` C-side const
+/// Safe accessor for the native FreeRTOS baseline suite. Returns a
+/// reference to the C-defined `bench_suite_native_freertos` symbol.
+pub fn native_freertos_suite() -> &'static CBenchSuite {
+    // SAFETY: `bench_suite_native_freertos` is a `'static` C-side const
     // CBenchSuite — it has no interior mutability and outlives the
     // program. The address is fixed at link time.
-    unsafe { &bench_suite_native_posix }
-}
-
-/// Safe accessor for the native FreeRTOS baseline suite.
-pub fn native_freertos_suite() -> &'static CBenchSuite {
-    // SAFETY: same as `native_posix_suite` — link-time-fixed const.
     unsafe { &bench_suite_native_freertos }
 }
 
 /// Safe accessor for the native NuttX baseline suite.
 pub fn native_nuttx_suite() -> &'static CBenchSuite {
-    // SAFETY: same as `native_posix_suite` — link-time-fixed const.
+    // SAFETY: same as `native_freertos_suite` — link-time-fixed const.
     unsafe { &bench_suite_native_nuttx }
 }
 
 /// Safe accessor for the native Zephyr baseline suite.
 pub fn native_zephyr_suite() -> &'static CBenchSuite {
-    // SAFETY: same as `native_posix_suite` — link-time-fixed const.
+    // SAFETY: same as `native_freertos_suite` — link-time-fixed const.
     unsafe { &bench_suite_native_zephyr }
 }
 

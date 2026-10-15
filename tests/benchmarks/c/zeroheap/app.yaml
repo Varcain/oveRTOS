@@ -15,7 +15,6 @@ sources:
   - ../src/bench_eventgroup.c
   - ../src/bench_workqueue.c
   - ../src/bench_stream.c
-  - ../src/bench_native_posix.c
   - ../src/bench_native_freertos.c
   - ../src/bench_native_nuttx.c
   - ../src/bench_native_zephyr.c

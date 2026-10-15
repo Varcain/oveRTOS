@@ -20,13 +20,13 @@ violations (forbidden patterns, unexpected callees, instruction counts
 beyond the max).
 
 Usage:
-  dump_hotpaths.py --elf <elf> --binding <c|cpp|rust|zig> [--target <name>]
+  dump_hotpaths.py --elf <elf> --binding <c|cpp|rust|zig> --target <name>
                    [--config tests/audit/hotpath_expected.yaml]
                    [--output-dir output/audit/disasm]
                    [--objdump <objdump>] [--cppfilt <c++filt>]
 
 The config schema:
-  <target_key>:                     # e.g. host_posix_benchmark_cpp
+  <target_key>:                     # e.g. stm32f746_freertos_benchmark_cpp
     symbols:
       - name: <human label>          # printed in the report
         pattern: <regex>             # matched against nm output (mangled)
@@ -323,8 +323,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--elf", required=True)
     p.add_argument("--binding", required=True, choices=("c", "cpp", "rust", "zig"))
-    p.add_argument("--target", default=None,
-                   help="config key (default: derived from --binding)")
+    p.add_argument("--target", required=True,
+                   help="config key, e.g. stm32f746_freertos_benchmark_c")
     p.add_argument("--config", default="tests/audit/hotpath_expected.yaml")
     p.add_argument("--output-dir", default="output/audit/disasm",
                    help="directory for per-symbol .S dumps")
@@ -347,7 +347,7 @@ def main():
         print(f"ELF not found: {elf}", file=sys.stderr)
         sys.exit(2)
 
-    target_key = args.target or f"host_posix_benchmark_{args.binding}"
+    target_key = args.target
     full_config = load_config(args.config)
     # A missing/renamed/typo'd target key (or a missing config file, which
     # load_config returns as {}) must FAIL, not silently pass: with an empty
