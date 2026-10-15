@@ -28,7 +28,8 @@ config OVE_BOARD_QEMU_MPS2_AN500
 config OVE_BOARD_QEMU_MPS2_AN521
     bool "QEMU MPS2-AN521 (Cortex-M33, USERSPACE)"
     depends on OVE_RTOS_ZEPHYR
-    select OVE_DEBUG_BUILD
+    # Debug by default, as the an500; the browser bundle is optimised.
+    imply OVE_DEBUG_BUILD if !OVE_SIM_WEB
     help
       ARM MPS2-AN521 board emulated by QEMU.
       Cortex-M33 @ 25 MHz, 4 MB Flash, 4 MB RAM, MPU + CONFIG_USERSPACE.

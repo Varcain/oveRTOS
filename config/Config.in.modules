@@ -1166,7 +1166,8 @@ config OVE_SIM
 
 config OVE_SIM_WEB
     bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
-    depends on OVE_BOARD_QEMU_MPS2_AN500 && OVE_SIM
+    depends on (OVE_BOARD_QEMU_MPS2_AN500 && OVE_SIM) || \
+               (OVE_LINUX && (OVE_BOARD_QEMU_MPS2_AN500 || OVE_BOARD_QEMU_MPS2_AN521))
     help
       Also package the firmware for a web browser.  'ove build' writes
       serve/: the dashboard, this firmware and qemu-system-arm built
@@ -1174,11 +1175,16 @@ config OVE_SIM_WEB
       or Podman).  The directory is self-contained and can be put on
       any static host; 'ove run' serves it locally.
 
+      A Linux personality build gets a terminal on the guest console
+      instead of the dashboard, and the bundle carries its rootfs.
+
       The firmware is the same image the native QEMU runs.  In the
       browser QEMU has no JIT, so it runs several times slower: the
       build defaults to optimised rather than debug.
 
-      'make web.<rtos>.<app>' selects this.
+      'make web.<rtos>.<app>' selects this on the an500, and
+      'make web-an521.zephyr.<app>' on the an521 (the Zephyr Linux
+      personality).
 
 config OVE_SIM_DASHBOARD
     bool "Web dashboard"

@@ -155,7 +155,7 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `CONFIG_OVE_SIM` | bool | selected by the an500 | Enable the simulation plugin framework |
-| `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`) |
+| `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`; `web-an521.zephyr.<app>` for Zephyr's Linux personality) |
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` if SIM | Enable the browser-based dashboard |
 
 ## Headers

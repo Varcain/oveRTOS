@@ -34,6 +34,12 @@ defconfig:
   - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
   - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
 
+# `make web-an521.zephyr.<app>`: this board packaged for a web browser. The
+# an500 has the plain `web` variant.
+variants:
+  web-an521:
+    - CONFIG_OVE_SIM_WEB=y
+
 rtos_defconfig:
   zephyr:
     - CONFIG_OVE_RUST_TARGET="thumbv8m.main-none-eabi"

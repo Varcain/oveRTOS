@@ -56,6 +56,15 @@ class FindBoardDirTest(unittest.TestCase):
         self.assertIsNone(self._resolve("web"))
         self.assertEqual(_find_board_variant(self.root, "qemu"), (None, None))
 
+    def test_tree_browser_variants_name_distinct_boards(self):
+        # Both QEMU boards have a browser variant; a shared name would
+        # resolve to the an500 alone and drop the an521's USERSPACE.
+        tree = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        for name, board in (("web", "qemu-mps2-an500"), ("web-an521", "qemu-mps2-an521")):
+            path, lines = _find_board_variant(tree, name)
+            self.assertEqual(os.path.basename(path), board)
+            self.assertIn("CONFIG_OVE_SIM_WEB=y", lines)
+
 
 if __name__ == "__main__":
     unittest.main()

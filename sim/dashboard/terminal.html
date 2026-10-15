@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>oveRTOS Linux Personality</title>
+    <!-- The emulator's threads need a cross-origin isolated page; on a
+         static host this worker adds the headers and reloads once. -->
+    <script src="coi-serviceworker.js"></script>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --border: #0f3460;
+            --text: #e0e0e0;
+            --accent: #e94560;
+            --green: #4ecca3;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 16px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+        }
+        h1 { font-size: 15px; font-weight: normal; }
+        .hint { font-size: 12px; opacity: 0.7; }
+        .status { font-size: 12px; color: var(--accent); white-space: nowrap; }
+        .status.running { color: var(--green); }
+        #screen {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 16px;
+            font-size: 13px;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-all;
+            outline: none;
+        }
+        #screen .cursor { background: var(--text); color: var(--bg); }
+        #screen:not(:focus) .cursor { background: none; outline: 1px solid var(--text); }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>oveRTOS Linux personality</h1>
+            <div class="hint">Click the terminal and type. Log in as root, password root.</div>
+        </div>
+        <div id="status" class="status">Loading...</div>
+    </header>
+    <pre id="screen" tabindex="0"></pre>
+    <script src="terminal.js"></script>
+</body>
+</html>

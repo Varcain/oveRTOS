@@ -65,6 +65,18 @@ Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the
 shell: `uname -a`, `ls -l /`, `ps`, `top`, `cat`, a pipe (`seq 5 | wc -l`), a
 background job, `vi`, then `poweroff`.
 
+In a web browser, the same build runs in QEMU compiled to WebAssembly, with a
+terminal on the guest console:
+
+```bash
+make web.freertos.linux_interop_minimal         # an500; also nuttx
+make web-an521.zephyr.linux_interop_minimal     # an521, Zephyr
+make && make run                                # http://localhost:8080
+```
+
+The bundle carries the rootfs and needs nothing else to run, so `serve/` can be
+put on a static host. See [Board Configurations](../build-system/boards.md).
+
 The guest userspace is stock Buildroot (`../buildroot`, `output`). Add your
 own guest programs as FDPIC binaries under `board/overtos/progs/` (see
 `post-build.sh`) — that is how the test programs (`dbgdemo`, `lbench`) are built.
