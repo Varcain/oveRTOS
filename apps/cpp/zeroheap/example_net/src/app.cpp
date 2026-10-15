@@ -69,8 +69,7 @@ static void test_netif_init()
 			   .static_ip(ove::Address::ipv4(172, 1, 1, 2, 0),
 				      ove::Address::ipv4(255, 255, 255, 0, 0),
 				      ove::Address::ipv4(172, 1, 1, 1, 0))
-			   .dns(ove::Address::ipv4(8, 8, 8, 8, 0))
-		;
+			   .dns(ove::Address::ipv4(8, 8, 8, 8, 0));
 
 	auto up_r = netif.up(cfg);
 	if (!up_r) {
