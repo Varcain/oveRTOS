@@ -849,13 +849,24 @@ def _strip_firmware(ws, src, dest):
     shutil.copy2(src, dest)
 
 
+# QEMU machine options of the boards a browser bundle can run, as their
+# qemu-run.sh passes them.
+_WEB_MACHINES = {
+    "qemu-mps2-an500": ["-machine", "mps2-an500"],
+    "qemu-mps2-an521": ["-cpu", "cortex-m33", "-machine", "mps2-an521"],
+}
+
+
 def _assemble_web_bundle(ws):
     """Package the firmware for a web browser into <workspace>/serve/.
 
-    serve/ holds the dashboard, the firmware, web.json naming what to run,
-    and qemu/, a link to the WebAssembly QEMU under output/tools/.  It
-    needs nothing else from the tree: copy it with the link dereferenced
-    to put it on a static host.  serve/run.sh serves it locally.
+    serve/ holds the page, the firmware, web.json naming what to run, and
+    qemu/, a link to the WebAssembly QEMU under output/tools/.  It needs
+    nothing else from the tree: copy it with the link dereferenced to put it
+    on a static host.  serve/run.sh serves it locally.
+
+    A Linux personality build gets a terminal on the guest console and its
+    rootfs instead of the dashboard, which needs the sim framework.
     """
     from .download import build_qemu_wasm
     from .manifest import load_manifest
@@ -863,6 +874,10 @@ def _assemble_web_bundle(ws):
     firmware = os.path.join(ws.images_dir, "firmware.elf")
     if not os.path.isfile(firmware):
         logger.error(f"web bundle: {firmware} not found")
+        sys.exit(1)
+    machine = _WEB_MACHINES.get(ws.board_name)
+    if machine is None:
+        logger.error(f"web bundle: no QEMU machine known for {ws.board_name}")
         sys.exit(1)
 
     emulator = build_qemu_wasm(ws.ove_dir, ws.dl_dir,
@@ -877,17 +892,24 @@ def _assemble_web_bundle(ws):
     os.makedirs(serve_dir, exist_ok=True)
 
     dash_dir = os.path.join(ws.ove_dir, "sim", "dashboard")
-    with open(os.path.join(serve_dir, "index.html"), "w") as f:
-        f.write(_web_index_html(dash_dir))
-    for name in ("app.js", "style.css", "coi-serviceworker.js",
-                 "qemu-wasm.js"):
+    if get_bool(ws.config, "CONFIG_OVE_LINUX"):
+        shutil.copy2(os.path.join(dash_dir, "terminal.html"),
+                     os.path.join(serve_dir, "index.html"))
+        pages = ("terminal.js", "coi-serviceworker.js")
+        web = _personality_web_config(ws, machine, serve_dir)
+    else:
+        with open(os.path.join(serve_dir, "index.html"), "w") as f:
+            f.write(_web_index_html(dash_dir))
+        pages = ("app.js", "style.css", "coi-serviceworker.js", "qemu-wasm.js")
+        web = {"firmware": "firmware.elf", "emulator": "qemu/",
+               "machine": machine[-1]}
+    for name in pages:
         shutil.copy2(os.path.join(dash_dir, name), serve_dir)
 
     _strip_firmware(ws, firmware, os.path.join(serve_dir, "firmware.elf"))
     atomic_symlink(emulator, os.path.join(serve_dir, "qemu"))
     with open(os.path.join(serve_dir, "web.json"), "w") as f:
-        json.dump({"firmware": "firmware.elf", "emulator": "qemu/",
-                   "machine": "mps2-an500"}, f, indent=2)
+        json.dump(web, f, indent=2)
         f.write("\n")
 
     _write_web_run_sh(os.path.join(serve_dir, "run.sh"))
@@ -901,6 +923,57 @@ def _assemble_web_bundle(ws):
         f.write('exec "$DIR/serve/run.sh" "$@"\n')
     os.chmod(run_script, 0o755)
     logger.info(f"Web bundle: {serve_dir}/")
+
+
+def _personality_web_config(ws, machine, serve_dir):
+    """Stage a Linux personality build's rootfs; return its web.json.
+
+    The page runs QEMU with the arguments the board's qemu-run.sh uses for
+    a personality build: the guest console on UART1 (stdio), the rootfs
+    loaded raw into its window, and the image fit-rootfs.py picks for that
+    window.
+    """
+    from .workspace import get_str
+
+    br = get_str(ws.config, "CONFIG_OVE_BUILDROOT") or "../buildroot"
+    out = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_OUTPUT") or "output"
+    if not os.path.isabs(br):
+        br = os.path.join(ws.ove_dir, br)
+    rootfs = os.path.normpath(os.path.join(br, out, "images", "rootfs.cpio"))
+    base = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_BASE")
+    size = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_SIZE")
+    if not os.path.isfile(rootfs):
+        logger.error(f"web bundle: {rootfs} not found (build Buildroot first)")
+        sys.exit(1)
+    if not base or not size:
+        logger.error("web bundle: the rootfs window is not configured")
+        sys.exit(1)
+    base, size = int(base, 0), int(size, 0)
+
+    fit = subprocess.run(
+        [sys.executable, os.path.join(ws.ove_dir, "boards", "qemu-mps2",
+                                      "fit-rootfs.py"),
+         rootfs, str(size),
+         os.path.join(ws.build_dir, "rootfs-fit.cpio")],
+        capture_output=True, text=True)
+    if fit.returncode != 0:
+        logger.error(f"web bundle: {fit.stderr.strip()}")
+        sys.exit(1)
+    shutil.copy2(fit.stdout.strip(), os.path.join(serve_dir, "rootfs.cpio"))
+
+    args = machine + [
+        "-m", "16",
+        # UART1 is the guest console; UART0, the engine's, is discarded.
+        "-semihosting-config", "enable=on,chardev=c0", "-chardev", "null,id=c0",
+        "-serial", "none", "-serial", "stdio", "-monitor", "none",
+        "-display", "none",
+        "-kernel", "/firmware.elf",
+        "-device", f"loader,file=/rootfs.cpio,addr={base:#x},force-raw=on",
+        # The default translation cache would take hundreds of megabytes.
+        "-accel", "tcg,tb-size=32",
+    ]
+    return {"firmware": "firmware.elf", "emulator": "qemu/",
+            "files": {"rootfs.cpio": "/rootfs.cpio"}, "args": args}
 
 
 def _write_web_run_sh(path):

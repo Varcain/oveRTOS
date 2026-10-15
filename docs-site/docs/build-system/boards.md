@@ -109,5 +109,12 @@ The build writes `output/web/<rtos>/<app>/serve/`: the sim dashboard, the firmwa
 - The page needs `SharedArrayBuffer`, so it must be cross-origin isolated. `serve/run.sh` sends the COOP/COEP headers; on a static host such as GitHub Pages the bundled `coi-serviceworker.js` supplies them.
 - The dashboard shows the display, console, audio, trace and thread panels and takes pointer, console and audio input. The profiler and the debugger are not available in the browser, and there is no network peer; use the native QEMU run for those.
 
+A Linux personality build (`CONFIG_OVE_LINUX`) has no sim framework, so its bundle has a terminal on the guest console instead of the dashboard (`sim/dashboard/terminal.html`), and carries the rootfs image `qemu-run.sh` would load. Zephyr's personality needs the Cortex-M33 board, whose browser variant is `web-an521`:
+
+```bash
+make web.freertos.linux_interop_minimal       # FreeRTOS or NuttX, on the an500
+make web-an521.zephyr.linux_interop_minimal   # Zephyr, on the an521
+```
+
 A variant is declared under `variants:` in `board.yaml`: a name that stands in for the board in `<board>.<rtos>.<app>` and adds Kconfig lines (`CONFIG_OVE_SIM_WEB=y` here).
 

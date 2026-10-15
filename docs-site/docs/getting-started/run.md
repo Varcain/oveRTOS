@@ -14,7 +14,7 @@ The behaviour depends on the selected board:
 |---|---|
 | `qemu` (`qemu-mps2-an500`) | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); the console is the board's UART0 on the terminal |
 | `stm32f746` | `make run` is not used; use `make flash` to program hardware over ST-LINK |
-| `web` (browser variant of `qemu-mps2-an500`) | Serves the browser bundle over HTTP (COOP/COEP enabled) and opens it; the firmware runs in QEMU compiled to WebAssembly |
+| `web` / `web-an521` (browser variants of `qemu-mps2-an500` / `qemu-mps2-an521`) | Serves the browser bundle over HTTP (COOP/COEP enabled) and opens it; the firmware runs in QEMU compiled to WebAssembly |
 
 ### QEMU Emulated Targets
 
@@ -35,6 +35,8 @@ make web.freertos.example_c
 make
 make run   # http://localhost:8080
 ```
+
+A Linux personality app gets a terminal on its console instead of the dashboard; Zephyr's runs on the an521, so it is `make web-an521.zephyr.<app>`.
 
 The emulator is built on first use (`ove ensure-toolchain qemu-wasm`, needs Docker or Podman). It runs QEMU's interpreter, several times slower than the native run above, so this variant builds the optimised firmware. See [Board Configurations](../build-system/boards.md) for what the bundle contains and how to host it.
 
