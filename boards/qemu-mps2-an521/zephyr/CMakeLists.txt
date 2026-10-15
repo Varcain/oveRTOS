@@ -40,7 +40,5 @@ ove_zephyr_add_profiler_flags()
 # unlike hardware targets, this board deliberately does not embed the CPIO.
 if(OVE_LINUX)
     target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
-    ove_zephyr_add_common_includes(EXTRA ${OVE_DIR}/tests/ontarget)
-else()
-    ove_zephyr_add_common_includes()
 endif()
+ove_zephyr_add_common_includes()
