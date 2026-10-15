@@ -1,0 +1,101 @@
+fs/fat: match a lower case name against its short entry too
+
+With CONFIG_FAT_LFN and without CONFIG_FAT_LCNAMES, a path segment with
+lower case characters is parsed as a long file name, and only long name
+entries are searched for it.  FatFs, Linux and Windows store an all lower
+case name that fits 8.3 as a single short entry with the NT case flags and
+no long name entries.  NuttX therefore cannot open "nvs" on a card where
+another system created it: the lookup fails, and creating it again either
+fails with ENOTDIR deeper in the path or makes a duplicate.
+
+FAT names match case-insensitively.  When the long name search finds
+nothing and the name fits 8.3, search for the upper case short name from
+the same directory position.  Names NuttX itself wrote keep their long name
+entries, so this does not change what it creates.
+
+--- a/fs/fat/fs_fat32dirent.c
++++ b/fs/fat/fs_fat32dirent.c
+@@ -2523,6 +2523,59 @@ static int fat_putsfdirentry(FAR struct fat_mountpt_s *fs,
+  * Public Functions
+  ****************************************************************************/
+ 
++/****************************************************************************
++ * Name: fat_findsfnalias
++ *
++ * Description:
++ *   A path segment with lower case characters is parsed as a long file name
++ *   unless CONFIG_FAT_LCNAMES is enabled.  Other FAT implementations (FatFs,
++ *   Linux, Windows) store such a name, when it fits 8.3, as a single short
++ *   name entry with the NT case flags and no long name entries, so the long
++ *   name search does not find it.  FAT names match case-insensitively:
++ *   search for the upper case short name as well.
++ *
++ *   On entry, dirinfo describes the directory position before the long name
++ *   search.  On success, dirinfo describes the short name entry found.
++ *
++ ****************************************************************************/
++
++#ifdef CONFIG_FAT_LFN
++static int fat_findsfnalias(FAR struct fat_mountpt_s *fs,
++                            FAR struct fat_dirinfo_s *dirinfo)
++{
++  char upper[8 + 1 + 3 + 1];
++  FAR const char *name = upper;
++  char terminator;
++  int ret;
++  int i;
++
++  for (i = 0; dirinfo->fd_lfname[i] != '\0'; i++)
++    {
++      if (i >= sizeof(upper) - 1 || dirinfo->fd_lfname[i] > 0x7f)
++        {
++          return -ENOENT;
++        }
++
++      upper[i] = toupper((int)dirinfo->fd_lfname[i]);
++    }
++
++  upper[i] = '\0';
++
++  if (fat_parsesfname(&name, dirinfo, &terminator) < 0)
++    {
++      return -ENOENT;
++    }
++
++  ret = fat_findsfnentry(fs, dirinfo);
++  if (ret == OK)
++    {
++      dirinfo->fd_lfname[0] = '\0';
++    }
++
++  return ret;
++}
++#endif
++
+ /****************************************************************************
+  * Name: fat_finddirentry
+  *
+@@ -2622,7 +2675,23 @@ int fat_finddirentry(FAR struct fat_mountpt_s *fs,
+            * in the cache.
+            */
+ 
++          struct fat_dirinfo_s start;
++
++          memcpy(&start, dirinfo, sizeof(struct fat_dirinfo_s));
+           ret = fat_findlfnentry(fs, dirinfo);
++          if (ret == -ENOENT)
++            {
++              memcpy(dirinfo, &start, sizeof(struct fat_dirinfo_s));
++              ret = fat_findsfnalias(fs, dirinfo);
++              if (ret == -ENOENT)
++                {
++                  /* Not found either way: leave the long name state for
++                   * the caller, which may create the entry.
++                   */
++
++                  memcpy(dirinfo, &start, sizeof(struct fat_dirinfo_s));
++                }
++            }
+         }
+       else
+ #endif
