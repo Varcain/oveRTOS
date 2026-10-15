@@ -812,7 +812,9 @@ if (playToggle) {
         }
 
         if (typeof SharedArrayBuffer === "undefined") {
-            alert("SharedArrayBuffer not available. Try reloading — the service worker needs one reload to activate.");
+            alert(window.oveCreateLink
+                ? "SharedArrayBuffer not available. Try reloading — the service worker needs one reload to activate."
+                : "SharedArrayBuffer not available: the page is not cross-origin isolated (COOP/COEP headers missing).");
             return;
         }
 

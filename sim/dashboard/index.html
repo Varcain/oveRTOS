@@ -9,8 +9,8 @@
     <!-- ove:web-head  The web bundle (firmware running in the page, see
          qemu-wasm.js) replaces this block with coi-serviceworker.js. -->
     <script>
-    /* Unregister any stale service worker from previous versions.
-       The bridge server sends COOP/COEP headers directly. */
+    /* Unregister any service worker a web bundle served from this origin
+       left behind. The bridge server sends COOP/COEP headers directly. */
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(regs) {
             regs.forEach(function(r) { r.unregister(); });
