@@ -2872,6 +2872,25 @@ def _save_terminal():
         return None
 
 
+def _save_active_workspace(ove_dir):
+    """Record the active-workspace links: <ove>/.config and output/current.
+
+    The Linux personality targets configure and build through the active
+    workspace, so they repoint both links at their own; _restore puts the
+    user's back afterwards.
+    """
+    links = (os.path.join(ove_dir, ".config"),
+             os.path.join(ove_dir, "output", "current"))
+    return {p: os.readlink(p) for p in links if os.path.islink(p)}
+
+
+def _restore_active_workspace(saved):
+    for link, target in saved.items():
+        if not os.path.islink(link) or os.readlink(link) != target:
+            atomic_symlink(target, link)
+            logger.info(f"Restored {link} -> {target}")
+
+
 def _restore_terminal(state):
     """Restore terminal settings saved by _save_terminal."""
     if state is None:
@@ -2889,6 +2908,7 @@ def cmd_test(args):
     ove_dir = find_ove_dir()
     output_dir = os.path.join(ove_dir, "output")
     term_state = _save_terminal()
+    active_workspace = _save_active_workspace(ove_dir)
 
     names = args.names if args.names else SIM_TESTS
 
@@ -2933,6 +2953,7 @@ def cmd_test(args):
                     any_failed = True
     finally:
         _restore_terminal(term_state)
+        _restore_active_workspace(active_workspace)
 
     # Print summary table
     if results:
