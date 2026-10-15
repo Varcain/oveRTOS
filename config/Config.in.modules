@@ -526,7 +526,7 @@ config OVE_SYNC
 config OVE_AUDIO
     bool "Audio subsystem"
     default n
-    select OVE_I2S if OVE_RTOS_FREERTOS && !OVE_BOARD_QEMU_MPS2_AN500
+    select OVE_I2S if OVE_RTOS_FREERTOS && OVE_BOARD_STM32F746G_DISCO
 
 config OVE_AUDIO_NODE_CONVERTER
     bool "Audio format converter node"
@@ -764,12 +764,17 @@ config OVE_FB
 
 config OVE_I2S
     bool "I2S / SAI audio bus"
+    # The only driver is the STM32F7 SAI one under FreeRTOS; NuttX and Zephyr
+    # audio uses their native drivers. Elsewhere ove/i2s.h reports
+    # OVE_ERR_NOT_SUPPORTED.
+    depends on OVE_RTOS_FREERTOS && OVE_BOARD_STM32F746G_DISCO
     default n
     help
       I2S audio bus driver with DMA double-buffered streaming,
       half-buffer completion callbacks, and configurable sample
       rate, bit depth, and channel count. Codec initialisation
-      is board-specific and not part of this driver.
+      is board-specific and not part of this driver. Available on
+      the STM32F746G-Discovery under FreeRTOS.
 
 endmenu
 

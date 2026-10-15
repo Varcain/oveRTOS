@@ -214,7 +214,7 @@ set(OVE_BACKEND_SOURCES
 {% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "NET", "PM",
-               "UART", "SPI", "I2C", "I2S"] %}
+               "UART", "SPI", "I2C"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_{{ mod|lower }}.c
 {% endif %}
@@ -237,7 +237,7 @@ set(OVE_BACKEND_SOURCES
 {% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NET", "PM",
-               "UART", "SPI", "I2C", "I2S"] %}
+               "UART", "SPI", "I2C"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_{{ mod|lower }}.c
 {% endif %}

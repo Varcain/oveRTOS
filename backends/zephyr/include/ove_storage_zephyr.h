@@ -366,29 +366,6 @@ struct ove_spi {
 typedef struct ove_spi ove_spi_storage_t;
 #endif /* CONFIG_OVE_SPI */
 
-#ifdef CONFIG_OVE_I2S
-struct ove_i2s {
-	unsigned int instance;
-	uint32_t sample_rate;
-	uint8_t bit_depth;
-	uint8_t channels;
-	uint8_t direction;
-	size_t dma_buf_samples;
-	size_t half_buf_bytes;
-	void *tx_dma_buf;
-	void *rx_dma_buf;
-	volatile uint8_t rx_completed_half;
-	volatile uint8_t tx_completed_half;
-	void (*rx_cb)(struct ove_i2s *, void *);
-	void *rx_cb_user_data;
-	void (*tx_cb)(struct ove_i2s *, void *);
-	void *tx_cb_user_data;
-	const struct device *dev;
-};
-
-typedef struct ove_i2s ove_i2s_storage_t;
-#endif /* CONFIG_OVE_I2S */
-
 #ifdef CONFIG_OVE_I2C
 struct ove_i2c {
 	unsigned int instance;

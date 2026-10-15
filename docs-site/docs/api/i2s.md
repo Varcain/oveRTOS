@@ -86,14 +86,13 @@ for (;;) {
 | Backend | Implementation |
 |---|---|
 | FreeRTOS/STM32 | HAL SAI / I2S with `HAL_SAI_Transmit/Receive_DMA` and half/full-complete ISR hooks |
-| Zephyr | `i2s_configure()` + `i2s_write()` / `i2s_read()` with ping-pong buffers |
-| NuttX | Audio subsystem `/dev/audio*` with DMA ring buffers |
+| Zephyr, NuttX, QEMU | None: `CONFIG_OVE_I2S` is not available, and every `ove_i2s_*` call returns `OVE_ERR_NOT_SUPPORTED`. Audio on these goes through the RTOS's own drivers (see [audio](audio.md)). |
 
 ## Kconfig Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `CONFIG_OVE_I2S` | `n` | Enable the I2S / SAI driver |
+| `CONFIG_OVE_I2S` | `n` | Enable the I2S / SAI driver (FreeRTOS on the STM32F746G-Discovery; `CONFIG_OVE_AUDIO` selects it there) |
 
 `ove_i2s` is the low-level transport used by the higher-level
 [audio graph engine](audio.md) when the graph is connected to I2S device
