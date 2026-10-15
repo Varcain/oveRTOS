@@ -21,6 +21,10 @@
 #include "framework/semihosting_exit.h"
 
 #include "stm32f7xx_hal.h"
+#ifdef OVE_HW
+#include "stm32746g_discovery_sdram.h"
+extern SDRAM_HandleTypeDef sdramHandle; /* stm32746g_discovery_sdram.c */
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -182,6 +186,24 @@ void SysTick_Handler(void)
 static StaticTask_t runner_tcb;
 static StackType_t runner_stack[configMINIMAL_STACK_SIZE * 8];
 
+#ifdef OVE_HW
+/* The zero-heap image keeps cmocka's malloc heap in the external SDRAM.
+ * Renode models it as always present; on silicon the FMC must be brought
+ * up first, as the production board's bsp_init does. This image runs on
+ * the 16 MHz HSI rather than the board's 216 MHz, so the BSP's refresh
+ * count (for a 100 MHz SDRAM clock) is reprogrammed for the real one:
+ * 15.62 us per row, less the 20-cycle margin the reference manual asks. */
+static void hw_sdram_init(void)
+{
+	(void)BSP_SDRAM_Init();
+	/* One read-pipe cycle, as on the production board (bsp_sdram_fixup). */
+	MODIFY_REG(FMC_Bank5_6->SDCR[0], FMC_SDCR1_RPIPE, FMC_SDCR1_RPIPE_0);
+	uint32_t sdclk_hz = HAL_RCC_GetHCLKFreq() / 2u;
+	uint32_t count = (uint32_t)(((uint64_t)sdclk_hz * 15620u) / 1000000000u) - 20u;
+	(void)HAL_SDRAM_ProgramRefreshRate(&sdramHandle, count);
+}
+#endif
+
 int main(void)
 {
 	/* HAL_Init configures SysTick via HAL_InitTick and installs the
@@ -190,6 +212,9 @@ int main(void)
 	 * would hang spinning on HSI ready bits — we stick with HAL_Init
 	 * only and let FreeRTOS's TICK_RATE_HZ drive the scheduler. */
 	HAL_Init();
+#ifdef OVE_HW
+	hw_sdram_init();
+#endif
 
 	/* Enable every GPIO port clock so freertos_gpio.c's HAL_GPIO_Init /
 	 * HAL_GPIO_WritePin calls reach the STM32_GPIOPort peripherals
@@ -228,6 +253,9 @@ int main(void)
 	 * replicate the sequence here because the Renode target builds
 	 * without the board-specific bsp. */
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	/* Cortex-M7: the DWT ignores writes until its lock is opened (as in
+	 * freertos_time.c); Renode does not model the lock. */
+	*((volatile uint32_t *)0xE0001FB0u) = 0xC5ACCE55u;
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
@@ -236,6 +264,3 @@ int main(void)
 	vTaskStartScheduler();
 	return 0;
 }
-	/* Cortex-M7: the DWT ignores writes until its lock is opened (as in
-	 * freertos_time.c); Renode does not model the lock. */
-	*((volatile uint32_t *)0xE0001FB0u) = 0xC5ACCE55u;

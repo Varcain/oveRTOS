@@ -294,7 +294,10 @@ list(REMOVE_ITEM FREERTOS_BACKEND_SOURCES ${FREERTOS_BACKEND}/lwip_sys_arch.c)
 #   ON  → usart1_io.c   (HAL_UART_Transmit on PA9/PB7 USART1)
 #   OFF → semihosting_io.c (Renode SemihostingUart via SYS_WRITEC)
 if(OVE_HW)
-    set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/usart1_io.c)
+    # Silicon also needs the board's SDRAM driver: this image's heap is in
+    # external SDRAM, which only Renode provides without FMC setup.
+    set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/usart1_io.c
+        ${STM32CUBE_PATH}/Drivers/BSP/STM32746G-Discovery/stm32746g_discovery_sdram.c)
 else()
     set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/semihosting_io.c)
 endif()
@@ -354,8 +357,9 @@ target_include_directories(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     ${OVE_ROOT}/backends/common
     # Test framework
     ${TESTS_ROOT}
-    # STM32 HAL + CMSIS
+    # STM32 HAL + CMSIS (+ the Discovery BSP for the silicon SDRAM bring-up)
     ${STM32_HAL_DIR}/Inc
+    ${STM32CUBE_PATH}/Drivers/BSP/STM32746G-Discovery
     ${STM32_CMSIS_DIR}/Include
     ${CMSIS_CORE_DIR}
     # stm32f7xx_hal_conf.h (picks which HAL modules are compiled in)
