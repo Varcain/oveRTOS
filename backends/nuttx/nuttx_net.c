@@ -403,11 +403,46 @@ void ove_socket_destroy(ove_socket_t sock)
 }
 #endif
 
+/* A blocking psock_connect waits out NuttX's whole SYN retry schedule, tens of seconds, when
+ * nothing answers. Honour the caller's timeout instead: connect non-blocking, then let
+ * ove_socket_poll settle the attempt until the deadline. */
+static int connect_bounded(ove_socket_t sock, const struct sockaddr_in *sin, uint64_t timeout_ns)
+{
+	int on = 1;
+	int off = 0;
+	int r = psock_ioctl(PSOCK(sock), FIONBIO, &on);
+	if (r < 0)
+		return psockerr(r);
+	r = psock_connect(PSOCK(sock), (const struct sockaddr *)sin, sizeof(*sin));
+	int ret;
+	if (r == 0) {
+		ret = OVE_OK;
+	} else if (r != -EINPROGRESS) {
+		ret = psockerr(r);
+	} else {
+		sock->connect_state = CONNECT_INFLIGHT;
+		uint64_t deadline = ove_time_now_steady_ns() + timeout_ns;
+		ret = OVE_ERR_TIMEOUT;
+		for (;;) {
+			unsigned re = 0;
+			(void)ove_socket_poll(sock, OVE_SOCK_POLLOUT, &re, 0);
+			if (sock->connect_state != CONNECT_INFLIGHT) {
+				ret = ove_socket_get_error(sock);
+				break;
+			}
+			if (ove_time_now_steady_ns() >= deadline)
+				break; /* still pending: the caller closes the socket */
+			usleep(10000);
+		}
+	}
+	(void)psock_ioctl(PSOCK(sock), FIONBIO, &off);
+	return ret;
+}
+
 int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
 	if (!psock_ok(PSOCK(sock)))
 		return OVE_ERR_NET_CLOSED;
 	if (in_handler()) {
@@ -426,14 +461,19 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 	 * own connects (netfs / boot smoke). */
 	struct sockaddr_in sin;
 	sockaddr_to_nuttx(addr, &sin);
-	int r = psock_connect(PSOCK(sock), (struct sockaddr *)&sin, sizeof(sin));
-	if (r == 0)
-		return OVE_OK;
-	if (r == -EINPROGRESS)
-		sock->connect_state = CONNECT_INFLIGHT; /* settled by ove_socket_poll */
-	if (r == -EINPROGRESS || r == -EALREADY)
-		return OVE_ERR_TIMEOUT;
-	return psockerr(r);
+	FAR struct socket_conn_s *conn = PSOCK(sock)->s_conn;
+	bool caller_nonblock = conn != NULL && _SS_ISNONBLOCK(conn->s_flags);
+	if (timeout_ns == OVE_WAIT_FOREVER || caller_nonblock) {
+		int r = psock_connect(PSOCK(sock), (struct sockaddr *)&sin, sizeof(sin));
+		if (r == 0)
+			return OVE_OK;
+		if (r == -EINPROGRESS)
+			sock->connect_state = CONNECT_INFLIGHT; /* settled by ove_socket_poll */
+		if (r == -EINPROGRESS || r == -EALREADY)
+			return OVE_ERR_TIMEOUT;
+		return psockerr(r);
+	}
+	return connect_bounded(sock, &sin, timeout_ns);
 }
 
 int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
