@@ -37,8 +37,8 @@ pub fn init() -> Result<()> {
 
 /// Read a value from NVS into `buf`. `key` must be `\0`-terminated.
 ///
-/// Returns the number of bytes actually read, which may be less than `buf.len()`
-/// if the stored value is shorter.
+/// Returns the stored length of the value. When it exceeds `buf.len()` the
+/// value was truncated to fit; only `buf.len()` bytes were copied.
 ///
 /// # Errors
 /// Returns [`Error::NotFound`] if the key does not exist, or another error

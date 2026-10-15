@@ -41,7 +41,7 @@ ove_add_backend_sources()
 # machine gets its own drivers. qemu_board.c is the BOARD backend, and the
 # console stays freertos_console.c on the board's serial_wrapper.h UART.
 # OVE_FS cannot be enabled here (no storage device; see Config.in.modules).
-ove_exclude_backends(BOARD GPIO TIME NVS WATCHDOG)
+ove_exclude_backends(BOARD GPIO TIME WATCHDOG)
 if(OVE_CONSOLE)
     ove_add_board_sources(qemu_serial.c)
 endif()
@@ -52,7 +52,7 @@ if(OVE_GPIO)
     ove_add_board_sources(../qemu_gpio.c)
 endif()
 if(OVE_NVS)
-    ove_add_board_sources(qemu_nvs.c)
+    ove_add_board_sources(../qemu_nvs.c)
 endif()
 if(OVE_WATCHDOG)
     ove_add_board_sources(qemu_watchdog.c)

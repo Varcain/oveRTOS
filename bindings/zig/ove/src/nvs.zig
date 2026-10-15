@@ -29,8 +29,9 @@ pub fn deinit() void {
 
 /// Read the value associated with `key` into `buf`.
 ///
-/// Returns the number of bytes actually written into `buf` on success.
-/// Returns `Error.NotRegistered` if the key does not exist, or another
+/// Returns the stored length of the value on success; when it exceeds
+/// `buf.len` the value was truncated to fit and only `buf.len` bytes were
+/// copied. Returns `Error.NotFound` if the key does not exist, or another
 /// `Error` variant for I/O failures.
 pub fn read(key: [*:0]const u8, buf: []u8) Error!usize {
     var out_len: usize = 0;
@@ -45,10 +46,10 @@ pub fn write(key: [*:0]const u8, data: []const u8) Error!void {
     try err.fromCode(c.ove_nvs_write(key, data.ptr, data.len));
 }
 
-/// Delete the value stored under `key`.
+/// Delete the value stored under `key`. Erasing a key that is not stored
+/// succeeds.
 ///
-/// Returns `Error.NotRegistered` if the key does not exist, or another
-/// `Error` variant for I/O failures.
+/// Returns an `Error` variant for I/O failures.
 pub fn erase(key: [*:0]const u8) Error!void {
     try err.fromCode(c.ove_nvs_erase(key));
 }

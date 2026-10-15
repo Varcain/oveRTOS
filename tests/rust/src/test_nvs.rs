@@ -52,7 +52,7 @@ fn test_erase() {
 fn test_erase_nonexistent() {
     ove::nvs::init().unwrap();
     let result = ove::nvs::erase(b"nope\0");
-    assert!(result.is_err(), "erasing missing key should fail");
+    assert!(result.is_ok(), "erasing a missing key is a no-op");
 }
 
 fn test_binary_data() {

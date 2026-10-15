@@ -18,7 +18,9 @@
  * backend.
  *
  * The subsystem must be initialised once with @ref ove_nvs_init before any
- * read, write, or erase operations are performed.
+ * read, write, or erase operations are performed. On FreeRTOS and NuttX each
+ * key is a file in /nvs on the volume mounted with @ref ove_fs_mount, which
+ * must happen first; Zephyr uses its NVS flash partition.
  *
  * @note Requires @c CONFIG_OVE_NVS.
  * @{

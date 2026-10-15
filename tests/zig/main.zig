@@ -1343,7 +1343,8 @@ fn testNvsErase() !void {
 
 fn testNvsEraseNonexistent() !void {
     try ove.nvs.init();
-    try expectError(ove.nvs.erase("never_existed_xyz"));
+    // Erasing a key that is not stored has no effect.
+    try ove.nvs.erase("never_existed_xyz");
 }
 
 fn testNvsBinaryData() !void {

@@ -14,9 +14,9 @@ defconfig:
 
 NVS storage backing differs by RTOS and board:
 
-- **FreeRTOS / STM32**: internal flash sector
-- **NuttX**: a `littlefs` mount
-- **Zephyr**: the Zephyr `nvs` subsystem
+- **FreeRTOS and NuttX**: one file per key in `/nvs` on the volume the application mounts with `ove_fs_mount()` (`CONFIG_OVE_NVS` turns on `CONFIG_OVE_FS`). Mount before the first read or write; on NuttX's default SD mount the directory is `/mnt/sd/nvs`.
+- **Zephyr**: the Zephyr `nvs` subsystem on a flash partition.
+- **QEMU MPS2-AN500** (no storage device): a RAM table that lasts until QEMU exits.
 
 The API is identical across all of them.
 
@@ -31,12 +31,13 @@ The API is identical across all of them.
 
 void ove_main(void)
 {
+    ove_fs_mount(NULL, NULL);   /* FreeRTOS / NuttX: the SD card */
     ove_nvs_init();
 
     uint32_t boots = 0;
-    size_t len = sizeof(boots);
+    size_t len = 0;
 
-    int rc = ove_nvs_get(KEY_BOOT_COUNT, &boots, &len);
+    int rc = ove_nvs_read(KEY_BOOT_COUNT, &boots, sizeof(boots), &len);
     if (rc == OVE_OK && len == sizeof(boots)) {
         OVE_LOG_INF("boot #%u (resumed)", boots);
     } else {
@@ -45,7 +46,7 @@ void ove_main(void)
     }
 
     boots++;
-    if (ove_nvs_set(KEY_BOOT_COUNT, &boots, sizeof(boots)) != OVE_OK) {
+    if (ove_nvs_write(KEY_BOOT_COUNT, &boots, sizeof(boots)) != OVE_OK) {
         OVE_LOG_ERR("failed to persist boot count");
     }
 
@@ -72,41 +73,26 @@ static calib_t defaults = { .offset_mv = 0, .gain = 1.0f,
 
 static void load_calib(calib_t *out)
 {
-    size_t len = sizeof(*out);
-    int rc = ove_nvs_get(KEY_CALIB, out, &len);
+    size_t len = 0;
+    int rc = ove_nvs_read(KEY_CALIB, out, sizeof(*out), &len);
 
     /* Version mismatch or missing — fall back to defaults and rewrite. */
     if (rc != OVE_OK || len != sizeof(*out) || out->version != CALIB_VERSION) {
         OVE_LOG_WRN("calibration missing or stale, using defaults");
         *out = defaults;
-        ove_nvs_set(KEY_CALIB, out, sizeof(*out));
+        ove_nvs_write(KEY_CALIB, out, sizeof(*out));
     }
 }
 ```
 
-The `version` field is the migration handle: when you change the struct layout, bump the constant and the old entry triggers the fallback rewrite path.
+The `version` field is the migration handle: when you change the struct layout, bump the constant and the old entry triggers the fallback rewrite path. `len` is the stored size even when it exceeds the buffer, so a value written by an older, larger layout is caught too; `ove_nvs_read(key, NULL, 0, &len)` asks for the size alone.
 
 ## What NOT to store in NVS
 
-- **Frequently-changing data** — `ove_nvs_set` writes to flash, which has a wear budget (typically 10⁵ erase cycles). Use NVS for occasional writes, not 100 Hz log lines.
-- **Large blobs** — backing storage is small (typically tens of KB). For arbitrary files, mount `ove_fs` instead.
-- **Secrets** — internal flash is readable with a debug probe. Encrypt before storing if confidentiality matters.
-
-## Listing keys
-
-For debugging:
-
-```c
-ove_nvs_iter_t it;
-ove_nvs_iter_open(&it);
-const char *key;
-while ((key = ove_nvs_iter_next(&it)) != NULL) {
-    OVE_LOG_INF("key: %s", key);
-}
-ove_nvs_iter_close(&it);
-```
+- **Frequently-changing data** — every `ove_nvs_write` rewrites flash or an SD-card file, and both wear out. Use NVS for occasional writes, not 100 Hz log lines.
+- **Large blobs** — Zephyr's NVS partition is small (typically tens of KB). For arbitrary files, use `ove_fs` directly.
+- **Secrets** — flash and SD cards are readable with a debug probe or a card reader. Encrypt before storing if confidentiality matters.
 
 ## Where else in the tree
 
 - [API: Non-Volatile Storage](../api/nvs.md) — full API surface
-- [`apps/c/heap/example_pm/`](https://github.com/Varcain/oveRTOS/tree/main/apps/c/heap/example_pm) — power-management example uses NVS to remember battery state.

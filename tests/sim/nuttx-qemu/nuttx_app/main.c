@@ -11,9 +11,9 @@
 #include "framework/semihosting_exit.h"
 #endif
 #include <stdio.h>
+#include <sys/mount.h>
 
 #ifdef OVE_COVERAGE
-#include <sys/mount.h>
 extern void __gcov_dump(void);
 #endif
 
@@ -36,6 +36,14 @@ int main(int argc, char *argv[])
 	 * the host / are written under /host/... */
 	if (mount(NULL, "/host", "hostfs", 0, "fs=/") != 0) {
 		printf("WARN: hostfs mount failed; gcda will not be captured\n");
+	}
+#endif
+
+#ifndef CONFIG_ARCH_SIM
+	/* tmpfs at /tmp: the file-backed NVS suite keeps its keys there. The
+	 * NuttX sim already has one. */
+	if (mount(NULL, "/tmp", "tmpfs", 0, NULL) != 0) {
+		printf("WARN: tmpfs mount at /tmp failed\n");
 	}
 #endif
 

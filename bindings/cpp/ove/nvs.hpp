@@ -53,7 +53,8 @@ inline void deinit()
  * @param[in]  key The null-terminated key string.
  * @param[out] buf Buffer to receive the stored value.
  * @param[in]  len Size of `buf` in bytes.
- * @return On success, the number of bytes actually read.  On
+ * @return On success, the stored length of the value, which exceeds
+ *         `len` when the value was truncated to fit `buf`.  On
  *         failure, an `unexpected` @ref Error (`Error::NotFound`,
  *         …).
  */

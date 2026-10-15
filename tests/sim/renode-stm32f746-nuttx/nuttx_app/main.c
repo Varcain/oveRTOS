@@ -8,6 +8,7 @@
 
 #include "framework/ove_test.h"
 #include <stdio.h>
+#include <sys/mount.h>
 
 void ove_main(void)
 {
@@ -19,6 +20,11 @@ int main(int argc, char *argv[])
 
 	(void)argc;
 	(void)argv;
+
+	/* tmpfs at /tmp: the file-backed NVS suite keeps its keys there. */
+	if (mount(NULL, "/tmp", "tmpfs", 0, NULL) != 0) {
+		printf("WARN: tmpfs mount at /tmp failed\n");
+	}
 
 #define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
