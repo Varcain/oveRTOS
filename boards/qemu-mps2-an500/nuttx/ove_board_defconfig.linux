@@ -42,3 +42,10 @@ CONFIG_SCHED_INSTRUMENTATION_SWITCH=y
 # leaves the upper 8M for the guest pool. 4M here is more heap than the 2M it replaces.
 CONFIG_RAM_START=0x20000000
 CONFIG_RAM_SIZE=4194304
+
+# Guest entropy: QEMU has no TRNG, and the personality's AT_RANDOM seed and
+# guest getrandom(2) fail closed without a random device. NuttX's xorshift128
+# /dev/urandom is deterministic and not cryptographic, like the FreeRTOS QEMU
+# fallback: this is a development target.
+CONFIG_DEV_URANDOM=y
+CONFIG_DEV_URANDOM_XORSHIFT128=y
