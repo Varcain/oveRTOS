@@ -236,3 +236,6 @@ int main(void)
 	vTaskStartScheduler();
 	return 0;
 }
+	/* Cortex-M7: the DWT ignores writes until its lock is opened (as in
+	 * freertos_time.c); Renode does not model the lock. */
+	*((volatile uint32_t *)0xE0001FB0u) = 0xC5ACCE55u;

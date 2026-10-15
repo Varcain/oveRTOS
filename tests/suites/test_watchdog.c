@@ -23,6 +23,10 @@ static void test_watchdog_create_destroy(void **state)
 	ove_watchdog_destroy(wd);
 }
 
+/* On silicon the STM32 IWDG cannot be stopped once started, so a dog these
+ * tests arm would reset the board a few suites later and restart the run.
+ * test_hw_stm32f746.c checks the real watchdog (start and reset) instead. */
+#ifndef OVE_HW
 static void test_watchdog_start(void **state)
 {
 	(void)state;
@@ -61,6 +65,8 @@ static void test_watchdog_stop(void **state)
 	ove_watchdog_destroy(wd);
 }
 
+#endif /* !OVE_HW */
+
 static void test_watchdog_destroy_null(void **state)
 {
 	(void)state;
@@ -81,9 +87,11 @@ int test_watchdog_run(void)
 #else
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_watchdog_create_destroy),
+#ifndef OVE_HW
 		cmocka_unit_test(test_watchdog_start),
 		cmocka_unit_test(test_watchdog_feed),
 		cmocka_unit_test(test_watchdog_stop),
+#endif
 		cmocka_unit_test(test_watchdog_destroy_null),
 	};
 #endif

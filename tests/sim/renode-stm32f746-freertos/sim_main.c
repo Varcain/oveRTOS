@@ -186,6 +186,9 @@ int main(void)
 
 	/* Enable the DWT cycle counter for freertos_time.c::ove_time_delay_us. */
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	/* Cortex-M7: the DWT ignores writes until its lock is opened (as in
+	 * freertos_time.c); Renode does not model the lock. */
+	*((volatile uint32_t *)0xE0001FB0u) = 0xC5ACCE55u;
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
