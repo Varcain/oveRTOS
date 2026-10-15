@@ -24,8 +24,8 @@ struct OveCriticalSection;
 unsafe impl Impl for OveCriticalSection {
     unsafe fn acquire() -> RawRestoreState {
         // SAFETY: ove_irq_lock is safe to call from any context per the
-        // C-side contract (it nests via depth counter on POSIX, real
-        // IRQ-disable on embedded backends). Returns an opaque cookie
+        // C-side contract (it nests via a depth counter on the host test
+        // backend, real IRQ-disable on embedded backends). Returns an opaque cookie
         // which we re-interpret as RawRestoreState; the
         // `restore-state-u64` feature in Cargo.toml pins this to u64
         // matching ove_irq_key_t.

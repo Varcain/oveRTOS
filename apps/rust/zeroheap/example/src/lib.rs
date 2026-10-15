@@ -44,9 +44,7 @@ const APP_TITLE: &[u8] = b"oveRTOS(FreeRTOS) Rust Demo\0";
 const APP_TITLE: &[u8] = b"oveRTOS(NuttX) Rust Demo\0";
 #[cfg(rtos_zephyr)]
 const APP_TITLE: &[u8] = b"oveRTOS(Zephyr) Rust Demo\0";
-#[cfg(rtos_posix)]
-const APP_TITLE: &[u8] = b"oveRTOS(POSIX) Rust Demo\0";
-#[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr, rtos_posix)))]
+#[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr)))]
 const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
 
 // `ove::shared!` is `static <NAME>: InitCell<T> = InitCell::new();`.

@@ -124,8 +124,6 @@ static constexpr const char *APP_TITLE =
 	"oveRTOS(NuttX) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 	"oveRTOS(Zephyr) C++ Demo";
-#elif defined(CONFIG_OVE_RTOS_POSIX)
-	"oveRTOS(POSIX) C++ Demo";
 #else
 	"oveRTOS C++ Demo";
 #endif

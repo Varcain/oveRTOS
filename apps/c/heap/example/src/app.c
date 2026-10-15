@@ -152,8 +152,6 @@ static void graphics_thread(void *arg)
 #define APP_TITLE "oveRTOS(NuttX) C Demo"
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 #define APP_TITLE "oveRTOS(Zephyr) C Demo"
-#elif defined(CONFIG_OVE_RTOS_POSIX)
-#define APP_TITLE "oveRTOS(POSIX) C Demo"
 #else
 #define APP_TITLE "oveRTOS C Demo"
 #endif
@@ -266,7 +264,7 @@ void ove_main(void)
 
 	ove_run();
 
-	/* Cleanup path — only reached when the scheduler returns (POSIX). */
+	/* Cleanup path — only reached if the scheduler returns. */
 	OVE_LOG_INF("C example (heap mode): shutdown");
 
 	ove_timer_stop(ui_timer);

@@ -66,12 +66,10 @@ static void test_netif_init()
 
 	TEST("netif_up (static IP)");
 	auto cfg = ove::NetIfConfig{}
-#ifndef CONFIG_OVE_RTOS_POSIX
 			   .static_ip(ove::Address::ipv4(172, 1, 1, 2, 0),
 				      ove::Address::ipv4(255, 255, 255, 0, 0),
 				      ove::Address::ipv4(172, 1, 1, 1, 0))
 			   .dns(ove::Address::ipv4(8, 8, 8, 8, 0))
-#endif
 		;
 
 	auto up_r = netif.up(cfg);
@@ -81,10 +79,8 @@ static void test_netif_init()
 	}
 	PASS("netif_up (static IP)");
 
-#ifndef CONFIG_OVE_RTOS_POSIX
 	OVE_LOG_INF("  Waiting for link...");
 	ove::this_thread::sleep_ms(3000);
-#endif
 
 	TEST("netif_get_addr");
 	ove::Address ip, gw, nm;

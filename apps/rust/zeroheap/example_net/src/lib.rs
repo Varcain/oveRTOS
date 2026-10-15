@@ -87,7 +87,6 @@ fn test_netif_init() {
     };
 
     test("netif_up (static IP)");
-    #[cfg(not(rtos_posix))]
     let cfg = {
         ove::net::NetIfConfig::new()
             .static_ip(
@@ -97,8 +96,6 @@ fn test_netif_init() {
             )
             .dns(ove::net::Address::ipv4(8, 8, 8, 8, 0))
     };
-    #[cfg(rtos_posix)]
-    let cfg = ove::net::NetIfConfig::new();
 
     match netif.up(&cfg) {
         Ok(()) => pass("netif_up (static IP)"),
@@ -108,7 +105,6 @@ fn test_netif_init() {
         }
     }
 
-    #[cfg(not(rtos_posix))]
     {
         log::info!("  Waiting for link...");
         Thread::sleep_ms(3000);

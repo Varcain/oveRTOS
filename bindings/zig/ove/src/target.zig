@@ -17,7 +17,7 @@
 //!     .freertos => "FreeRTOS",
 //!     .nuttx => "NuttX",
 //!     .zephyr => "Zephyr",
-//!     .posix => "POSIX",
+//!     .posix => "host test backend",
 //! };
 //! ```
 
@@ -28,6 +28,7 @@ pub const Rtos = enum {
     freertos,
     nuttx,
     zephyr,
+    /// The host test backend (tests/host/posix); not an application target.
     posix,
 };
 

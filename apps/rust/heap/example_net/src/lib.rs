@@ -16,8 +16,7 @@
 //!   7. MQTT connect, subscribe, publish QoS0/1, receive, disconnect
 //!   8. Embedded HTTP server (web dashboard)
 //!
-//! On POSIX the netif init is a no-op (host networking).
-//! On FreeRTOS/lwIP the static IP config drives real hardware.
+//! The static IP config drives the QEMU or hardware network interface.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -92,7 +91,6 @@ fn test_netif_init() {
     };
 
     test("netif_up (static IP)");
-    #[cfg(not(rtos_posix))]
     let cfg = {
         ove::net::NetIfConfig::new()
             .static_ip(
@@ -102,8 +100,6 @@ fn test_netif_init() {
             )
             .dns(ove::net::Address::ipv4(8, 8, 8, 8, 0))
     };
-    #[cfg(rtos_posix)]
-    let cfg = ove::net::NetIfConfig::new();
 
     match netif.up(&cfg) {
         Ok(()) => pass("netif_up (static IP)"),
@@ -114,7 +110,6 @@ fn test_netif_init() {
     }
 
     // Give the link time to come up on hardware
-    #[cfg(not(rtos_posix))]
     {
         log::info!("  Waiting for link...");
         Thread::sleep_ms(3000);

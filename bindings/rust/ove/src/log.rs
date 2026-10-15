@@ -37,9 +37,9 @@
 //! `OveLogger` is `Sync` because every `Log::log` call owns a fresh
 //! stack buffer — there is no shared mutable state.  The underlying
 //! `ove_console_write` is the same primitive the C `OVE_LOG_*` macros
-//! call, so per-line atomicity is governed by the backend (POSIX writes
-//! to stderr atomically up to PIPE_BUF; FreeRTOS/Zephyr serialise via
-//! their console mutex).
+//! call, so per-line atomicity is governed by the backend (FreeRTOS/Zephyr
+//! serialise via their console mutex; the host test backend writes to
+//! stderr atomically up to PIPE_BUF).
 
 use crate::FmtBuf;
 use crate::bindings;

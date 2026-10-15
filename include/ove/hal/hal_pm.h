@@ -111,7 +111,7 @@ void ove_hal_pm_idle_hook(void);
  * Called by ove_pm_init() once the portable state has been set up.
  * Backends that drive ove_pm_idle_process() from a kernel idle hook
  * (e.g. FreeRTOS vApplicationIdleHook) can leave this as a no-op;
- * backends without an auto-fired idle hook (NuttX, Zephyr, POSIX) use
+ * backends without an auto-fired idle hook (NuttX, Zephyr) use
  * it to spawn a low-priority polling thread.
  *
  * @return OVE_OK on success, negative error code on failure.

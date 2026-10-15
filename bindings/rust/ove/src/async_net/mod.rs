@@ -73,7 +73,7 @@
 //! / [`crate::Error`] types so utility code can be reused. The split is at the
 //! socket / TCP/IP layer:
 //!
-//! | Aspect                | [`crate::net`] (blocking, lwIP/Zephyr/NuttX/POSIX) | [`crate::async_net`] (embassy-net)            |
+//! | Aspect                | [`crate::net`] (blocking, lwIP/Zephyr/NuttX)       | [`crate::async_net`] (embassy-net)            |
 //! |-----------------------|----------------------------------------------------|------------------------------------------------|
 //! | Concurrency model     | One thread per socket loop                         | Many tasks on one executor                     |
 //! | RAM footprint         | ~30-50 KB lwIP heap + per-thread stacks            | ~3 KB `StackResources<3>` + smoltcp socket bufs |

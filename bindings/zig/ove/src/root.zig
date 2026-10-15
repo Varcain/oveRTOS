@@ -352,7 +352,7 @@ pub fn startScheduler() void {
 /// when it unwinds; a thread that kept a pointer into them then
 /// references freed memory.  Same rule Zig enforces when you try to
 /// return a pointer to a local.  On FreeRTOS the failure is immediate
-/// (the scheduler reclaims the main stack); on POSIX/NuttX/Zephyr the
+/// (the scheduler reclaims the main stack); on NuttX/Zephyr the
 /// UB is latent.
 pub fn exportMain(comptime entry: fn () void) void {
     const S = struct {

@@ -37,8 +37,9 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 //
 // `MutexGuard` / `RecursiveMutexGuard` must be `!Send` so a guard cannot be
-// sent to another thread and unlocked there — backend-defined UB (POSIX
-// returns `EPERM`, FreeRTOS asserts in debug / silently releases in release).
+// sent to another thread and unlocked there — backend-defined UB (FreeRTOS
+// asserts in debug / silently releases in release; pthread mutexes return
+// `EPERM`).
 //
 // `std::sync::MutexGuard` declares `impl !Send for MutexGuard {}` using the
 // nightly-only `negative_impls` feature.  On stable, the canonical workaround
@@ -1110,8 +1111,7 @@ mod spin_mutex {
     /// Maps to `ove_irq_lock` / `ove_irq_unlock` on the C side, which
     /// is itself a thin wrapper over the host RTOS's
     /// interrupt-disable primitive (`taskENTER_CRITICAL` on FreeRTOS,
-    /// `irq_lock()` on Zephyr, `enter_critical_section()` on NuttX,
-    /// `pthread_sigmask` on POSIX).
+    /// `irq_lock()` on Zephyr, `enter_critical_section()` on NuttX).
     pub struct SpinMutex<T: ?Sized> {
         // UnsafeCell — `lock()` hands out `&mut T` while interrupts
         // are disabled, which is sound because the disable masks out

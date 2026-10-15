@@ -38,5 +38,3 @@ defconfig:
 rtos_defconfig:
   freertos:
     - CONFIG_FREERTOS_USE_TIME_SLICING=n
-incompatible_boards:
-  - host

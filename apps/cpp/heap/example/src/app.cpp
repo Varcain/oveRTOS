@@ -117,8 +117,6 @@ static constexpr const char *APP_TITLE =
 	"oveRTOS(NuttX) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 	"oveRTOS(Zephyr) C++ Demo";
-#elif defined(CONFIG_OVE_RTOS_POSIX)
-	"oveRTOS(POSIX) C++ Demo";
 #else
 	"oveRTOS C++ Demo";
 #endif
@@ -224,7 +222,7 @@ OVE_MAIN()
 
 	ove::run();
 
-	/* unique_ptrs go out of scope here on platforms where ove::run()
-	 * returns (POSIX); on bare-metal targets it never returns. */
+	/* unique_ptrs would go out of scope here if ove::run() returned;
+	 * on the RTOS targets it never does. */
 	OVE_LOG_INF("C++ example (heap mode): shutdown");
 }

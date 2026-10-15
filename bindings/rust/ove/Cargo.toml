@@ -73,8 +73,8 @@ async-net-stm32f7-eth = ["async-net"]
 # selected; our `__pender` symbol replaces the upstream one.
 #
 # Our `critical-section::Impl` is backed by `ove_irq_lock` /
-# `ove_irq_unlock` on every target (POSIX falls through to a pthread
-# mutex via `ove_irq_lock`'s POSIX impl). `restore-state-u64` matches
+# `ove_irq_unlock` on every target (the host test backend uses a
+# recursive pthread mutex with a nesting depth). `restore-state-u64` matches
 # `ove_irq_key_t`.
 async = [
     "dep:embassy-executor",

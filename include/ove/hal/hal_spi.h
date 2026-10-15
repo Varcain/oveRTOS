@@ -68,7 +68,7 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
  * deasserts CS, clears the busy flag, and invokes the user callback.
  *
  * Backends without native DMA support may implement this via a
- * worker thread (POSIX/NuttX), Zephyr signal API, or return
+ * worker thread (NuttX), Zephyr signal API, or return
  * @c OVE_ERR_NOT_SUPPORTED in zero-heap modes that cannot allocate
  * the worker resources.
  *

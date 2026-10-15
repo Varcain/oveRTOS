@@ -126,7 +126,7 @@ macro_rules! model_data {
 // `static`/`InitCell`/`InitMut` cells.  A stack-local value in
 // `app_main` is dropped when the function unwinds; a thread that
 // captured a reference into it dangles.  On FreeRTOS the failure is
-// immediate (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr
+// immediate (scheduler reclaims the main stack); on NuttX/Zephyr
 // the UB is latent.
 
 // ---------------------------------------------------------------------------
@@ -442,7 +442,7 @@ macro_rules! workqueue {
         #[cfg(all(zero_heap, not(rtos_zephyr)))]
         {
             static mut _S: $crate::ffi::ove_workqueue_storage_t = unsafe { core::mem::zeroed() };
-            // 8-byte align (ARM AAPCS) is sufficient on FreeRTOS/NuttX/POSIX.
+            // 8-byte align (ARM AAPCS) is sufficient on FreeRTOS/NuttX.
             #[repr(C, align(8))]
             struct AlignedStack([u8; $stack]);
             static mut _STACK: AlignedStack = AlignedStack([0u8; $stack]);

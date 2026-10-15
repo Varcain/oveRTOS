@@ -51,5 +51,3 @@ rtos_defconfig:
     - CONFIG_OVE_ZEPHYR_NET_BUF_RX_COUNT=12
     - CONFIG_OVE_ZEPHYR_NET_BUF_TX_COUNT=12
 # Supported QEMU and STM32F746 engine combinations are documented in README.md.
-incompatible_boards:
-  - host

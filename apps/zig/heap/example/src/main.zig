@@ -53,7 +53,7 @@ const app_title = switch (ove.target.current_rtos) {
     .freertos => "oveRTOS(FreeRTOS) Zig Demo",
     .nuttx => "oveRTOS(NuttX) Zig Demo",
     .zephyr => "oveRTOS(Zephyr) Zig Demo",
-    .posix => "oveRTOS(POSIX) Zig Demo",
+    .posix => @compileError("POSIX is the host test backend, not an app target"),
 };
 
 // ---------------------------------------------------------------------------

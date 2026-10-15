@@ -1038,7 +1038,7 @@ class CondVar
 	 * arm-gnu-toolchain's libstdc++ ships with `--enable-threads=single`,
 	 * so neither `std::condition_variable` nor `std::cv_status` are
 	 * declared.  Using `Result<void>` keeps the API uniform across
-	 * POSIX, FreeRTOS, NuttX and Zephyr.)
+	 * FreeRTOS, NuttX and Zephyr.)
 	 *
 	 * @param[in] mtx The mutex (locked by the calling thread).  The
 	 *                kernel releases it while blocking and re-acquires

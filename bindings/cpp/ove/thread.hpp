@@ -277,7 +277,7 @@ namespace detail
  * The user's function pointer is passed verbatim through `ctx` via
  * reinterpret_cast — guarded by a compile-time size check on every
  * supported target (function pointer and data pointer share width on
- * POSIX, ARM Cortex-M, and Xtensa).
+ * ARM Cortex-M, Xtensa and the 64-bit hosts the test suites run on).
  *
  * Token construction uses `ove_thread_get_self()` after a brief poll
  * loop: on some backends (notably FreeRTOS) the task-tag lookup that

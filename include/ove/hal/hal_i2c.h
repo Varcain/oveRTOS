@@ -79,9 +79,9 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 /**
  * @brief Combined write-then-read with repeated start.
  *
- * Called under the bus mutex.  All four backends support this
+ * Called under the bus mutex.  Every backend supports this
  * atomically (STM32 HAL_I2C_Mem_Read, Zephyr i2c_write_read,
- * NuttX I2C_TRANSFER, POSIX I2C_RDWR).
+ * NuttX I2C_TRANSFER).
  *
  * @param[in]  i2c        I2C handle.
  * @param[in]  addr       7-bit device address.

@@ -12,8 +12,8 @@
 //!
 //! - [`Executor`] — wraps `embassy_executor::raw::Executor` and blocks
 //!   on `ove_event_wait` between polls. Yields cleanly to the
-//!   underlying RTOS scheduler on FreeRTOS / Zephyr / NuttX; on POSIX
-//!   blocks on a pthread condvar. Replaces the upstream `__pender`
+//!   underlying RTOS scheduler on FreeRTOS / Zephyr / NuttX; on the host
+//!   test backend blocks on a pthread condvar. Replaces the upstream `__pender`
 //!   symbol with one that signals an `ove_event` via the right
 //!   thread-vs-ISR variant.
 //! - `critical_section::Impl` backed by `ove_irq_lock` /

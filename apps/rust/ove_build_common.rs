@@ -37,7 +37,7 @@ fn ove_detect_config() {
         }
     }
 
-    let rtos_backends = ["FREERTOS", "ZEPHYR", "NUTTX", "POSIX"];
+    let rtos_backends = ["FREERTOS", "ZEPHYR", "NUTTX"];
     for r in &rtos_backends {
         let cfg_name = format!("rtos_{}", r.to_lowercase());
         println!("cargo:rustc-check-cfg=cfg({})", cfg_name);

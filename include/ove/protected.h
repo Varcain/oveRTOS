@@ -23,8 +23,8 @@
  * Enforcement is per-backend:
  * - On target (Cortex-M) the task runs unprivileged with an MPU region table;
  *   a violation traps to the kernel fault handler.
- * - On a POSIX host the process MMU enforces protection and a @c SIGSEGV /
- *   @c SIGBUS handler converts a violation into a contained fault.
+ * - On the host test backend the process MMU enforces protection and a
+ *   @c SIGSEGV / @c SIGBUS handler converts a violation into a contained fault.
  *
  * Phase-0 scope: **fault containment** (a violation is caught, the supervisor
  * survives). Per-region MPU grants / the unprivileged-task model are layered
