@@ -8,7 +8,8 @@
 
 /*
  * QEMU MPS2-AN500 FreeRTOS entry point.
- * Semihosting provides printf/exit — no UART or HAL needed.
+ * The ove console is CMSDK UART0 (qemu_serial.c); semihosting carries
+ * printf, the fault diagnostics below, exit and the sim transport.
  *
  * Shared FreeRTOS hooks (static-allocation task memory, default stack
  * overflow hook) live in backends/freertos/freertos_hooks.c.  Default

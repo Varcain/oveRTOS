@@ -113,6 +113,7 @@ function Link() {
     this._eventRpos = 0;
     this._fbPending = false;
     this._fbFrame = null;              /* reused FRAME_FB buffer */
+    this._stdin = [];                  /* console bytes for the firmware's UART */
 
     var self = this;
     boot(self).catch(function (e) {
@@ -169,8 +170,16 @@ async function boot(link) {
     function consoleLine(text) {
         /* Emscripten stubs for syscalls QEMU probes but does not need. */
         if (text.indexOf("warning: unsupported syscall") === 0) return;
+        /* The console UART sends CRLF; Emscripten splits lines on LF. */
+        text = text.replace(/\r+$/, "");
         if (text === "") return;
         link._log(text);
+    }
+
+    /* QEMU's stdio chardev is the firmware's console UART. A byte read
+     * returns undefined (EAGAIN) while nothing is queued. */
+    function stdinByte() {
+        return link._stdin.length ? link._stdin.shift() : undefined;
     }
 
     setStatus("Starting emulator...", false);
@@ -183,8 +192,14 @@ async function boot(link) {
         },
         print: consoleLine,
         printErr: consoleLine,
-        stdin: function () { return null; },
         preRun: [function (m) {
+            /* Open stdio now so stdin gets a readiness op: without one
+             * Emscripten reports it always readable and QEMU busy-reads it.
+             * stdout and stderr keep the line-buffered print path. */
+            m.FS.init(stdinByte);
+            m.FS.getStream(0).stream_ops.poll = function () {
+                return link._stdin.length ? 1 : 0;   /* POLLIN */
+            };
             m.FS.writeFile("/firmware.elf", firmware);
             /* The files qemu-run.sh creates before a native run. */
             m.FS.writeFile(FB_PATH, new Uint8Array(FB_FILE_SIZE));
@@ -432,8 +447,14 @@ Link.prototype.send = function (buf) {
     } else if (type === FRAME_CMD && buf.byteLength >= 16) {
         var pluginId = view.getUint32(4, true);
         var cmdType = view.getUint32(8, true);
-        if (pluginId !== CONSOLE_PLUGIN_ID && cmdType === 0 &&
-            buf.byteLength > 16) {
+        if (pluginId === CONSOLE_PLUGIN_ID) {
+            /* Console text goes to the firmware's UART, as typing into a
+             * native QEMU terminal does. */
+            var text = new Uint8Array(buf, 16);
+            for (var i = 0; i < text.length; i++) this._stdin.push(text[i]);
+            return;
+        }
+        if (cmdType === 0 && buf.byteLength > 16) {
             /* Audio injection goes straight into the input ring. */
             this._audioInput(new Uint8Array(buf, 16));
             return;

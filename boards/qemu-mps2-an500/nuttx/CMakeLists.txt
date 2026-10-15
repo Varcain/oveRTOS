@@ -35,20 +35,23 @@ ove_nuttx_setup()
 # oveRTOS backend sources (from generated config)
 ove_nuttx_add_backend_sources()
 
-# Stub backends for hardware-dependent modules not available on QEMU
-ove_nuttx_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG NVS FS)
-
-# BOARD backend excluded — qemu_board.c is provided via sim framework
-ove_nuttx_exclude_backends(BOARD)
+# The NuttX backends for console, time, filesystem, NVS and watchdog run
+# unchanged on this machine; a module whose device QEMU lacks reports that at
+# run time. GPIO is the board's RAM bank (QEMU emulates no AN500 GPIO), and
+# qemu_board.c is the BOARD backend.
+ove_nuttx_exclude_backends(BOARD GPIO)
+ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_board.c)
+if(OVE_GPIO)
+    ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_gpio.c)
+endif()
 
 if(OVE_LINUX)
     # Linux personality build is headless: no sim display/audio framework. It
-    # only needs the embedded rootfs CPIO fixture on the include path; stub the
-    # hardware modules it doesn't use.
+    # only needs the embedded rootfs CPIO fixture on the include path.
     ove_nuttx_exclude_backends(LVGL AUDIO)
     include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
     ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
-    ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+    ove_nuttx_add_include_dirs(${OVE_LNX_GENDIR})
 else()
 
 # ── Sim framework (replaces NuttX display/audio backends) ────────
@@ -59,7 +62,6 @@ set(QEMU_SRC_DIR "${OVE_BOARD_BASE}/src")
 ove_nuttx_exclude_backends(LVGL AUDIO)
 
 set(SIM_QEMU_SOURCES
-    ${OVE_BOARD_BASE}/qemu_board.c
     ${SIM_DIR}/hal/sim_board.c
     ${SIM_DIR}/hal/sim_display.c
     ${SIM_DIR}/hal/sim_debug.c

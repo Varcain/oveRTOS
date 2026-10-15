@@ -37,21 +37,33 @@ endif()
 # oveRTOS backend sources (from generated config)
 ove_add_backend_sources()
 
-# Stub backends for hardware-dependent modules not available on QEMU
-ove_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG NVS FS)
+# The FreeRTOS backends for these modules drive STM32 peripherals; this
+# machine gets its own drivers. qemu_board.c is the BOARD backend, and the
+# console stays freertos_console.c on the board's serial_wrapper.h UART.
+# OVE_FS cannot be enabled here (no storage device; see Config.in.modules).
+ove_exclude_backends(BOARD GPIO TIME NVS WATCHDOG)
+if(OVE_CONSOLE)
+    ove_add_board_sources(qemu_serial.c)
+endif()
+if(OVE_TIME)
+    ove_add_board_sources(${OVE_DIR}/backends/freertos/freertos_time_systick.c)
+endif()
+if(OVE_GPIO)
+    ove_add_board_sources(../qemu_gpio.c)
+endif()
+if(OVE_NVS)
+    ove_add_board_sources(qemu_nvs.c)
+endif()
+if(OVE_WATCHDOG)
+    ove_add_board_sources(qemu_watchdog.c)
+endif()
 
-# BOARD backend excluded — qemu_board.c provides the implementation directly
-ove_exclude_backends(BOARD)
-
-# The Linux personality build is headless (no sim display/audio); it only needs
-# the embedded rootfs CPIO fixture on the include path. Everything below is the
-# sim framework, used by the normal (non-personality) an500 builds.
+# The Linux personality build is headless (no sim display/audio). Everything
+# below is the sim framework, used by the normal (non-personality) an500 builds.
 if(OVE_LINUX)
     # The rootfs cpio is XIP'd from PSRAM @ 0x60000000, where QEMU's `-device loader` places it
     # at reset (see qemu-run.sh) — it is NOT embedded in the ELF (which would overflow the 4 MB
     # FLASH), so no cpio fixture is generated here. This mirrors the STM32 QSPI-NOR path.
-    ove_add_include_directories(${OVE_DIR}/tests/ontarget)
-    ove_add_stub_backends(AUDIO)
     # /dev/fb0 framebuffer backend: a RAM RGB565 panel pushed to /dev/shm/ove-fb.
     if(OVE_FB)
         ove_add_board_sources(../src/qemu_fb.c)
@@ -84,8 +96,6 @@ endif()
 if(OVE_AUDIO)
     list(APPEND SIM_QEMU_SOURCES ${OVE_BOARD_DIR}/src/qemu_audio.c)
     ove_exclude_backends(AUDIO)
-else()
-    ove_add_stub_backends(AUDIO)
 endif()
 ove_add_board_sources(${SIM_QEMU_SOURCES})
 

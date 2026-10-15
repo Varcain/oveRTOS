@@ -142,8 +142,9 @@ set(FREERTOS_BACKEND_SOURCES
     # Async runtime substrate (CONFIG_OVE_ASYNC).
     ${FREERTOS_BACKEND}/freertos_irq.c
     # freertos_time.c is intentionally NOT linked — its ove_time_delay_us
-    # spins on DWT->CYCCNT which Renode 1.16 doesn't advance.  stub_time
-    # has an API-equivalent implementation built on FreeRTOS ticks.
+    # spins on DWT->CYCCNT which Renode 1.16 doesn't advance.  The SysTick
+    # time backend is the API-equivalent one built on FreeRTOS ticks.
+    ${FREERTOS_BACKEND}/freertos_time_systick.c
     # freertos_board / nvs / lvgl deferred — see zero-heap CMakeLists.
 )
 
@@ -175,7 +176,6 @@ set(STUB_SOURCES
     # stub_gpio are answered from the real EXTI state instead.
     ${TESTS_ROOT}/backends/stm32f7/stm32f7_gpio_hooks.c
     ${STUB_DIR}/stub_board.c
-    ${STUB_DIR}/stub_time.c
     ${STUB_DIR}/stub_console.c
     ${STUB_DIR}/stub_nvs.c
 )

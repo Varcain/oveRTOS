@@ -56,7 +56,7 @@ The MPS2 AN500 model emulates a Cortex-M7 SoC on the QEMU machine. It is the pri
 | Flash | 4096 KB |
 | RAM | 4096 KB |
 | Display | 480 × 272 px, RGB565 |
-| Console | Semihosting or UART (no physical TX/RX pins) |
+| Console | CMSDK UART0 on QEMU's stdio (the Linux personality guest uses UART1) |
 | GPIO ports | 8 ports, 16 pins each |
 | LEDs | None |
 | Watchdog timeout | 5000 ms |
@@ -67,7 +67,20 @@ The board directory contains subdirectories for `freertos`, `nuttx`, and `zephyr
 
 **Running under QEMU**
 
-The board directory includes a `qemu-run.sh` helper that launches the correct QEMU invocation with the MPS2 machine type, memory map, and semihosting for console output. A `qemu_board.c` file provides the board-specific QEMU peripheral shims.
+The board directory includes a `qemu-run.sh` helper that launches the correct QEMU invocation with the MPS2 machine type and memory map; the console UART is on its stdio, and the sim display, audio and input files go over semihosting.
+
+**What the emulated machine provides**
+
+QEMU emulates no AN500 GPIO, storage or STM32 peripherals, so the board supplies its own drivers where the RTOS backend expects that hardware:
+
+| Module | FreeRTOS | NuttX |
+|--------|----------|-------|
+| Console | `freertos_console.c` over the board's UART0 driver (`qemu_serial.c`) | NuttX `/dev/console` (UART0) |
+| Time | `freertos_time_systick.c` (QEMU has no DWT cycle counter) | NuttX clock |
+| GPIO | `qemu_gpio.c`: a RAM bank of the 8 × 16 pins in `board.yaml`; pins read back what was written, and no pin interrupt ever fires | same |
+| NVS | `qemu_nvs.c`: kept in RAM until QEMU exits | NuttX backend (needs a mounted filesystem) |
+| Filesystem | not available: `OVE_FS` cannot be enabled, and `ove_fs_*` return `OVE_ERR_NOT_SUPPORTED` | NuttX backend |
+| Watchdog | `qemu_watchdog.c`: every call returns `OVE_ERR_NOT_SUPPORTED` | NuttX backend (`OVE_ERR_NOT_SUPPORTED` without `/dev/watchdog0`) |
 
 ```bash
 # After building:

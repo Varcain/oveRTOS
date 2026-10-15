@@ -6,7 +6,7 @@
 #
 #   THIS FILE owns the FIRMWARE-LEVEL CMake build pipeline:
 #     - Project bootstrap (paths, includes, generated-config wiring)
-#     - Source / include / flag accumulation (board, app, backend, stub)
+#     - Source / include / flag accumulation (board, app, backend)
 #     - Vendored library integration: LVGL, TFLM, STM32Cube HAL/BSP,
 #       CMSIS-DSP, FatFS, cpu_utils
 #     - Final-link orchestration
@@ -37,7 +37,7 @@
 #   ove_setup_project()
 #   ove_add_board_sources(main.c startup.s)
 #   ove_add_backend_sources()
-#   ove_add_stub_backends(BSP GPIO CONSOLE TIME)
+#   ove_exclude_backends(BOARD)
 #   ove_build_lvgl()
 #   ove_link_firmware(linker_script.ld)
 
@@ -283,7 +283,6 @@ macro(ove_setup_project)
     set(_OVE_BOARD_SOURCES "")
     set(_OVE_BACKEND_SRC "")
     set(_OVE_FREERTOS_SOURCES "")
-    set(_OVE_STUB_SOURCES "")
     set(_OVE_EXTRA_SOURCES "")
     set(_OVE_LINK_LIBS "")
 endmacro()
@@ -408,41 +407,9 @@ macro(ove_add_backend_sources)
 endmacro()
 
 
-# ─── ove_add_stub_backends(MOD1 [MOD2 ...]) ─────────────────────────
-# Add stub backend implementations for the listed modules, and remove the
-# corresponding real backend sources from _OVE_BACKEND_SRC.
-# BSP and GPIO stubs are always added; others are conditional on config.
-macro(ove_add_stub_backends)
-    set(_stub_dir "${OVE_DIR}/tests/backends/stub")
-    foreach(_mod ${ARGN})
-        string(TOUPPER "${_mod}" _MOD_UPPER)
-        string(TOLOWER "${_mod}" _mod_lower)
-
-        set(_add_stub FALSE)
-        if("${_MOD_UPPER}" STREQUAL "BSP" OR "${_MOD_UPPER}" STREQUAL "GPIO")
-            set(_add_stub TRUE)
-        elseif(OVE_${_MOD_UPPER})
-            set(_add_stub TRUE)
-        endif()
-
-        if(_add_stub)
-            if(EXISTS "${_stub_dir}/stub_${_mod_lower}.c")
-                list(APPEND _OVE_STUB_SOURCES "${_stub_dir}/stub_${_mod_lower}.c")
-            endif()
-            if("${_MOD_UPPER}" STREQUAL "TIME")
-                set_source_files_properties(
-                    "${_stub_dir}/stub_time.c" PROPERTIES
-                    COMPILE_DEFINITIONS OVE_QEMU_ARM)
-            endif()
-            _ove_filter_backend_list(_OVE_BACKEND_SRC ${_mod})
-        endif()
-    endforeach()
-endmacro()
-
-
 # ─── ove_exclude_backends(MOD1 [MOD2 ...]) ──────────────────────────
-# Remove backend sources for listed modules WITHOUT adding stubs.
-# Use this when the board provides its own implementation (e.g. qemu_board.c).
+# Remove backend sources for listed modules. Use this when the board provides
+# its own implementation (e.g. qemu_board.c).
 macro(ove_exclude_backends)
     _ove_filter_backend_list(_OVE_BACKEND_SRC ${ARGN})
 endmacro()
@@ -684,7 +651,6 @@ macro(ove_link_firmware)
         ${_OVE_BOARD_SOURCES}
         ${_OVE_BACKEND_SRC}
         ${_OVE_FREERTOS_SOURCES}
-        ${_OVE_STUB_SOURCES}
         ${_OVE_EXTRA_SOURCES}
     )
 

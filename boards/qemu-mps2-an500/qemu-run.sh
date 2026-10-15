@@ -67,11 +67,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# ── Linux personality build: headless, interactive semihosting console ───────
-# The personality is no-sim; route SYS_READC/SYS_WRITEC to a dedicated stdio
-# chardev (serial/monitor/display off) so the shell can read keystrokes —
-# `target=native` + `-nographic` (the sim path below) does NOT route stdin to
-# semihosting. Detected via CONFIG_OVE_LINUX in the workspace .config.
+# ── Linux personality build: headless, interactive UART console ──────────────
+# The personality is no-sim: the guest console is CMSDK UART1 on stdio, and
+# semihosting goes to a null chardev (see PERS_ARGS below). Detected via
+# CONFIG_OVE_LINUX in the workspace .config.
 # Locate the workspace holding this ELF. It sits under <ws>/images/, under
 # <ws>/images/<abi-variant>/ when the float ABI is recorded only in .config, or
 # under <ws>/build/... when a test runs a freshly built ELF in place. Walk up to

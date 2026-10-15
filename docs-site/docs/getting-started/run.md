@@ -12,13 +12,13 @@ The behaviour depends on the selected board:
 
 | Board | Behaviour |
 |---|---|
-| `qemu` (`qemu-mps2-an500`) | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
+| `qemu` (`qemu-mps2-an500`) | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); the console is the board's UART0 on the terminal |
 | `stm32f746` | `make run` is not used; use `make flash` to program hardware over ST-LINK |
 | `web` (browser variant of `qemu-mps2-an500`) | Serves the browser bundle over HTTP (COOP/COEP enabled) and opens it; the firmware runs in QEMU compiled to WebAssembly |
 
 ### QEMU Emulated Targets
 
-When the board is `qemu` (`qemu-mps2-an500`), `make run` invokes QEMU with the generated `.elf` image. Console output is routed via ARM semihosting and appears in the terminal. No physical hardware is required.
+When the board is `qemu` (`qemu-mps2-an500`), `make run` invokes QEMU with the generated `.elf` image. The console is the emulated CMSDK UART0, connected to the terminal: output appears there and typed input reaches `ove_console`. In the browser bundle the dashboard's console box feeds the same UART. No physical hardware is required.
 
 To run without an interactive display (useful in CI):
 

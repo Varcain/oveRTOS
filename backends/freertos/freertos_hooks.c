@@ -174,8 +174,8 @@ __attribute__((weak)) void ove_backend_profiler_on_tick(void)
 #endif
 
 /* Advances the 64-bit wrap-stitched nanosecond clock. The strong version lives in
- * freertos_time.c (real HW, with the DWT cycle counter); a weak no-op here keeps the
- * QEMU/stub-time build — which substitutes stub_time.c for freertos_time.c — linking. */
+ * freertos_time.c (real HW, with the DWT cycle counter); a weak no-op here keeps
+ * builds on freertos_time_systick.c (QEMU, Renode) linking. */
 __attribute__((weak)) void ove_freertos_time_tick(void)
 {
 }

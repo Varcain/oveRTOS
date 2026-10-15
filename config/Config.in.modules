@@ -560,6 +560,9 @@ config OVE_AUDIO_NODE_CHANNEL_MAP
 
 config OVE_FS
     bool "File system"
+    # The FreeRTOS backend is FatFs on the STM32 SD card; the AN500 has no
+    # storage device for it, so there the fs.h calls report NOT_SUPPORTED.
+    depends on !(OVE_RTOS_FREERTOS && OVE_BOARD_QEMU_MPS2_AN500)
     default n
 
 config OVE_FS_MAX_OPEN_FILES

@@ -182,7 +182,7 @@ set(FREERTOS_BACKEND_SOURCES
     # SDMMC model matures or we ship a slim diskio that bypasses BSP_SD.
     # freertos_time.c is NOT linked in: its ove_time_delay_us busy-waits
     # on DWT->CYCCNT, which Renode 1.16's Cortex-M model doesn't advance.
-    # stub_time.c provides functionally-equivalent ove_time_get_us /
+    # freertos_time_systick.c provides functionally-equivalent ove_time_get_us /
     # _get_ns (FreeRTOS tick count — same rate as HAL_GetTick) and a
     # scheduler-friendly delay_us built on vTaskDelay, so API-level
     # coverage is preserved.
@@ -239,7 +239,7 @@ set(STUB_SOURCES
     # stub_gpio are answered from the real EXTI state instead.
     ${TESTS_ROOT}/backends/stm32f7/stm32f7_gpio_hooks.c
     ${STUB_DIR}/stub_board.c
-    ${STUB_DIR}/stub_time.c
+    ${FREERTOS_BACKEND}/freertos_time_systick.c
     ${STUB_DIR}/stub_console.c
     ${STUB_DIR}/stub_nvs.c
 )
@@ -322,10 +322,9 @@ target_compile_definitions(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     # skip the post-summary semihosting_exit() trap (which on real
     # silicon would raise a HardFault and panic).
     $<$<BOOL:${OVE_HW}>:OVE_HW>
-    # OVE_QEMU_ARM unlocks the bare-metal ARM branch of stub_time.c
-    # (FreeRTOS tick-count-based time) and matches how the QEMU sim
-    # composes the same stubs.  The name is legacy; the branch is really
-    # "bare-metal ARM with FreeRTOS and semihosting", which also fits us.
+    # OVE_QEMU_ARM selects the bare-metal ARM branches of the stubs and
+    # suites and matches how the QEMU sim composes the same stubs.  The
+    # name is legacy; it means "bare-metal ARM with semihosting".
     OVE_QEMU_ARM
     STM32F746xx
     USE_HAL_DRIVER
@@ -361,7 +360,7 @@ target_include_directories(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     ${CMSIS_CORE_DIR}
     # stm32f7xx_hal_conf.h (picks which HAL modules are compiled in)
     ${OVE_ROOT}/drivers/freertos/stm32f7
-    # STM32F7 syscalls needs main.h / serial_wrapper.h from the board
+    # STM32F7 syscalls needs main.h from the board
     ${BOARD_DIR}/freertos/inc
     # lwIP headers — needed by freertos_net.c + stm32f7_eth.c
     ${LWIP_PATH}/src/include
