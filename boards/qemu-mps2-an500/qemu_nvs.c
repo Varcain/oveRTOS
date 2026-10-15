@@ -7,9 +7,9 @@
  */
 
 /*
- * NVS for QEMU MPS2-AN500 on FreeRTOS: a key-value table in RAM. The FreeRTOS
- * build has no filesystem on this machine, so values last until the
- * emulator exits, not across runs.
+ * NVS for QEMU MPS2-AN500, shared by every engine: a key-value table in RAM.
+ * The machine has no storage device, so values last until the emulator
+ * exits, not across runs.
  */
 
 #include "ove/nvs.h"
@@ -41,18 +41,16 @@ static struct nvs_entry *nvs_find(const char *key)
 
 int ove_nvs_init(void)
 {
-	memset(nvs_store, 0, sizeof(nvs_store));
 	return OVE_OK;
 }
 
 void ove_nvs_deinit(void)
 {
-	memset(nvs_store, 0, sizeof(nvs_store));
 }
 
 int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 {
-	if (!key || !buf) {
+	if (!key || (!buf && buf_len)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	struct nvs_entry *e = nvs_find(key);
@@ -60,7 +58,9 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 		return OVE_ERR_NOT_FOUND;
 	}
 	size_t copy = e->len < buf_len ? e->len : buf_len;
-	memcpy(buf, e->value, copy);
+	if (copy) {
+		memcpy(buf, e->value, copy);
+	}
 	if (out_len) {
 		*out_len = e->len;
 	}
@@ -69,7 +69,7 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 
 int ove_nvs_write(const char *key, const void *data, size_t len)
 {
-	if (!key || !data || len > NVS_MAX_VAL_LEN) {
+	if (!key || (!data && len) || len > NVS_MAX_VAL_LEN) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	struct nvs_entry *e = nvs_find(key);
@@ -87,7 +87,9 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 		e->key[NVS_MAX_KEY_LEN - 1] = '\0';
 		e->used = 1;
 	}
-	memcpy(e->value, data, len);
+	if (len) {
+		memcpy(e->value, data, len);
+	}
 	e->len = len;
 	return OVE_OK;
 }

@@ -35,14 +35,17 @@ ove_nuttx_setup()
 # oveRTOS backend sources (from generated config)
 ove_nuttx_add_backend_sources()
 
-# The NuttX backends for console, time, filesystem, NVS and watchdog run
+# The NuttX backends for console, time, filesystem and watchdog run
 # unchanged on this machine; a module whose device QEMU lacks reports that at
-# run time. GPIO is the board's RAM bank (QEMU emulates no AN500 GPIO), and
-# qemu_board.c is the BOARD backend.
+# run time. GPIO and NVS are the board's RAM bank and table (QEMU emulates no
+# AN500 GPIO and no storage), and qemu_board.c is the BOARD backend.
 ove_nuttx_exclude_backends(BOARD GPIO)
 ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_board.c)
 if(OVE_GPIO)
     ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_gpio.c)
+endif()
+if(OVE_NVS)
+    ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_nvs.c)
 endif()
 
 if(OVE_LINUX)

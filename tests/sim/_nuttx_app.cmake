@@ -89,7 +89,6 @@ set(_srcs
   ${_stub_dir}/stub_gpio.c
   ${_stub_dir}/stub_board.c
   ${_stub_dir}/stub_watchdog.c
-  ${_stub_dir}/stub_nvs.c
   ${_stub_dir}/stub_fs.c
 
   # Test suites.
@@ -141,6 +140,15 @@ if(_OVE_ZERO_HEAP)
   list(APPEND _srcs ${OVE_DIR}/backends/common/ove_heap_lock.c)
 endif()
 
+# NVS: the heap variants run the product's file NVS over stub_fs (plain POSIX
+# on NuttX) in tmpfs. stub_fs has no zero-heap ove_fs_open, so the zero-heap
+# variants keep the RAM stub.
+if(_OVE_ZERO_HEAP)
+  list(APPEND _srcs ${_stub_dir}/stub_nvs.c)
+else()
+  list(APPEND _srcs ${OVE_DIR}/backends/common/ove_nvs_fs.c)
+endif()
+
 set(_compile_flags
   -Wno-unused-parameter
   -Wno-missing-field-initializers
@@ -149,6 +157,8 @@ set(_definitions "")
 
 if(_OVE_ZERO_HEAP)
   list(APPEND _definitions CONFIG_OVE_ZERO_HEAP=1)
+else()
+  list(APPEND _definitions [[OVE_NVS_FS_DIR="/tmp/ove-nvs"]])
 endif()
 
 # Coverage — opted in via -DOVE_COVERAGE=ON. Only the app-side .c files

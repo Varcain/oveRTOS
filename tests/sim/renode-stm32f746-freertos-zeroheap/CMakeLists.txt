@@ -189,7 +189,7 @@ set(FREERTOS_BACKEND_SOURCES
     #
     # Not swapped:
     # - freertos_board.c    depends on bsp.h + lv_port_disp.h (board BSP + LVGL)
-    # - freertos_nvs.c      depends on ove_fs.h (FatFS + SDMMC driver)
+    # - ove_nvs_fs.c        depends on ove_fs.h (FatFS + SDMMC driver)
     # - freertos_lvgl.c     depends on lvgl.h + LCD port driver
     # All three pull in infrastructure outside this target's scope;
     # revisit if/when a board-agnostic BSP / FS / LVGL layer appears.

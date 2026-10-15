@@ -61,14 +61,13 @@ backends/freertos/
     freertos_led.c        (via freertos_board.c)
     freertos_audio.c
     freertos_fs.c
-    freertos_nvs.c
     freertos_watchdog.c
     freertos_lvgl.c
     freertos_heap_stubs.c
     include/              (backend-private headers)
 ```
 
-The Zephyr and NuttX backends follow the same layout with their respective prefix.
+The Zephyr and NuttX backends follow the same layout with their respective prefix. Code that is the same on every engine lives in `backends/common/` instead: the shell (`ove_shell.c`), and NVS on FreeRTOS and NuttX (`ove_nvs_fs.c`, one file per key under `/nvs` on the volume mounted with `ove_fs_mount()`). Zephyr keeps its native flash NVS.
 
 ## Selecting a backend
 
