@@ -10,7 +10,7 @@ oveRTOS exposes **two** TCP/IP stacks via separate Kconfig options. Pick one per
 
 | | `CONFIG_OVE_NET` (blocking) | `CONFIG_OVE_ASYNC_NET` (async, Rust-only) |
 |---|---|---|
-| TCP/IP stack | lwIP (FreeRTOS) / Zephyr net / NuttX net / POSIX | smoltcp via embassy-net |
+| TCP/IP stack | lwIP (FreeRTOS) / Zephyr net / NuttX net | smoltcp via embassy-net |
 | Language | C, C++, Rust, Zig | Rust only |
 | API style | Blocking BSD sockets | `embassy_net::TcpSocket`, async/await |
 | TLS | mbedTLS in-tree (`net_tls`) | `embedded-tls` (crates.io) |
@@ -38,7 +38,7 @@ graph TD
     SNTP["SNTP Client<br/><small>ove/net_sntp.h</small>"]
     TLS["TLS (mbedTLS)<br/><small>ove/net_tls.h</small>"]
     SOCK["Sockets + DNS<br/><small>ove/net.h</small>"]
-    BACK["Backend<br/><small>lwIP · Zephyr zsock · NuttX · POSIX</small>"]
+    BACK["Backend<br/><small>lwIP · Zephyr zsock · NuttX</small>"]
 
     APP --> HTTP
     APP --> MQTT

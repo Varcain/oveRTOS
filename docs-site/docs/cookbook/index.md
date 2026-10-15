@@ -2,7 +2,7 @@
 
 Pattern recipes for common oveRTOS app shapes. Each page is a focused walkthrough of *how to combine modules* — the API reference tells you what each function does; the cookbook tells you what to assemble.
 
-Every recipe is short (one page), runnable, and constrained to either the POSIX host or QEMU/FreeRTOS so the code in the docs can be copied directly into an app and built. Recipes link to the in-tree example apps for the full producer/consumer shape.
+Every recipe is short (one page), runnable, and constrained to QEMU/FreeRTOS so the code in the docs can be copied directly into an app and built. Recipes link to the in-tree example apps for the full producer/consumer shape.
 
 ## Recipes
 
@@ -32,7 +32,7 @@ Every recipe is short (one page), runnable, and constrained to either the POSIX 
 4. Build and run:
 
    ```bash
-   make host.posix.my_app && make && make run
+   make qemu.freertos.my_app && make && make run
    ```
 
    Or `make qemu.freertos.my_app` if the recipe targets QEMU.
@@ -41,7 +41,7 @@ Every recipe is short (one page), runnable, and constrained to either the POSIX 
 
 - Code is C unless the pattern is meaningfully different in the language binding (rare).
 - Error checking is shown but kept brief — production apps should still log and recover; the recipes optimise for *clarity*, not robustness.
-- Where a recipe needs hardware-only modules (real I2C, real UART), the code uses the POSIX simulation transport via `sim/` so it still runs as a host process.
+- Where a recipe needs hardware-only modules (real I2C, real UART), it says so; the simulation dashboard (`sim/`) stands in for the display, audio, GPIO and LEDs under QEMU.
 
 ## Want more recipes?
 

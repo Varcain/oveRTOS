@@ -143,6 +143,6 @@ void ove_main(void)
 ## How to build
 
 ```bash
-make host.posix.example_c    # or web.freertos.example_c
+make qemu.freertos.example_c # or web.freertos.example_c
 make configure && make download && make && make run
 ```

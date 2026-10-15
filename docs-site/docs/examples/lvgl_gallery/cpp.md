@@ -7,7 +7,7 @@ The C++ port uses `ove::lvgl::*` typed wrappers for every widget and the fluent 
 ## Build
 
 ```bash
-make host.posix.lvgl_gallery_cpp
+make qemu.freertos.lvgl_gallery_cpp
 make && make run
 ```
 

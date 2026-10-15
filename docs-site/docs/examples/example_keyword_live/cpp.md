@@ -13,8 +13,8 @@ See the [overview](index.md) for architecture details and the full API list.
 ## How to build
 
 ```bash
-# Native POSIX
-make host.posix.example_keyword_live_cpp
+# QEMU + FreeRTOS (with the dashboard)
+make qemu.freertos.example_keyword_live_cpp
 make configure && make download && make && make run
 
 # Browser (the FreeRTOS firmware in QEMU compiled to WebAssembly)

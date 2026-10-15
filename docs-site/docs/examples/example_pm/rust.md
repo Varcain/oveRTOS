@@ -13,8 +13,8 @@ See the [overview](index.md) for architecture details and the full API list.
 ## How to build
 
 ```bash
-# Native POSIX
-make host.posix.example_pm_rust         # heap mode
-make host.posix.example_pm_rust_zh      # zero-heap mode
+# QEMU + FreeRTOS (with the dashboard)
+make qemu.freertos.example_pm_rust      # heap mode
+make qemu.freertos.example_pm_rust_zh   # zero-heap mode
 make configure && make download && make && make run
 ```

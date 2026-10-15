@@ -17,7 +17,6 @@ NVS storage backing differs by RTOS and board:
 - **FreeRTOS / STM32**: internal flash sector
 - **NuttX**: a `littlefs` mount
 - **Zephyr**: the Zephyr `nvs` subsystem
-- **POSIX**: a file under `output/<board>/<rtos>/<app>/nvs.bin`
 
 The API is identical across all of them.
 

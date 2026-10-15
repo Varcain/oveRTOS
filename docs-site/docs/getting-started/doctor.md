@@ -18,7 +18,7 @@ Exit code is `0` on green/yellow (`OK` and `WARN`), `1` on red (`FAIL`).
 
 ## What it checks
 
-The checks fall into five groups. A `FAIL` blocks building; a `WARN` is a tool you may need *if* you target the matching path (e.g., no ARM toolchain is fine for a POSIX-only workflow).
+The checks fall into five groups. A `FAIL` blocks building; a `WARN` is a tool you may need *if* you target the matching path (e.g., no OpenOCD is fine if you never flash hardware).
 
 ### Python
 
@@ -50,8 +50,8 @@ rm -rf .venv && make setup
 
 | Check | Required for | Notes |
 |---|---|---|
-| `gcc` | POSIX backend | Or `clang` |
-| `clang` | POSIX backend | Or `gcc` |
+| `gcc` | Host test suites | Or `clang` |
+| `clang` | Host test suites | Or `gcc` |
 | `arm-none-eabi-gcc` | Embedded targets | PATH binary *or* downloaded — see below |
 
 `make doctor` also probes the **downloaded** ARM toolchain:

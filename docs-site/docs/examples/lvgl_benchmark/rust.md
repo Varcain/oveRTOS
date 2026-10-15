@@ -7,7 +7,6 @@ The Rust port uses the `ove::lvgl` module's safe wrappers (`Object`, `Label`, `B
 ## Build
 
 ```bash
-make host.posix.lvgl_benchmark_rust
 make qemu.freertos.lvgl_benchmark_rust
 make && make run
 ```

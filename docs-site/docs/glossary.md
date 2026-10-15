@@ -10,7 +10,7 @@ The manifest at the root of every app (in-tree or external). Declares the langua
 
 ### Backend
 
-The concrete RTOS implementation behind the portable `ove_*` API. oveRTOS ships four: **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX**. The active backend is selected at configure time via `CONFIG_OVE_RTOS_*` and resolves to direct calls at compile time — no runtime dispatch.
+The concrete RTOS implementation behind the portable `ove_*` API. oveRTOS ships three: **FreeRTOS**, **Apache NuttX** and **Zephyr**. A POSIX backend under `tests/host/posix/` exists only to run the host test suites. The active backend is selected at configure time via `CONFIG_OVE_RTOS_*` and resolves to direct calls at compile time — no runtime dispatch.
 
 ### Binding
 
@@ -26,7 +26,7 @@ A hardware target descriptor under `boards/<name>/`. Pairs a `board.yaml` (metad
 
 ### `config_name`
 
-A field in `app.yaml`. Becomes the third token of the dot-syntax target (`make host.posix.<config_name>`). Conventionally `<base>_<lang>_<mode>` (e.g. `example_rust_heap`).
+A field in `app.yaml`. Becomes the third token of the dot-syntax target (`make qemu.freertos.<config_name>`). Conventionally `<base>_<lang>_<mode>` (e.g. `example_rust_heap`).
 
 ### Defconfig
 
@@ -122,7 +122,7 @@ The user-level overlay that NuttX / Zephyr menuconfig writes when you tune kerne
 
 ### Sim / simulation framework
 
-The `sim/` directory: a plugin architecture that lets the POSIX backend and the QEMU boards stand in for hardware peripherals (display, audio, GPIO, network, watchdog, profiler). The browser dashboard at `localhost:8080` is the user-facing transport.
+The `sim/` directory: a plugin architecture that lets the QEMU board stand in for hardware peripherals (display, audio, GPIO, input, trace, profiler). The browser dashboard (`localhost:8081` for native QEMU runs, or the page itself in a browser bundle) is the user-facing transport.
 
 ### Workspace
 

@@ -49,7 +49,7 @@ If your app demonstrates a useful pattern that newcomers would benefit from, ope
 
 Sample apps are held to higher conventions than your own external apps:
 
-- Builds on **every** backend the language supports (FreeRTOS, NuttX, Zephyr, POSIX).
+- Builds on **every** backend the language supports (FreeRTOS, NuttX, Zephyr).
 - Both heap and zero-heap variants under `apps/{lang}/heap/<name>/` and `apps/{lang}/zeroheap/<name>/`.
 - Listed in the `make help` output automatically via `appgen`.
 - Wired into `make alldefconfigs` so CI catches regressions across the matrix.
@@ -65,7 +65,6 @@ Before opening a PR:
 make lint
 
 # Build your app on every backend you target
-make host.posix.<your_app>     && make
 make qemu.freertos.<your_app>  && make
 make qemu.nuttx.<your_app>     && make
 make qemu.zephyr.<your_app>    && make

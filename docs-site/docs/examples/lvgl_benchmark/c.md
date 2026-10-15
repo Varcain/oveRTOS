@@ -7,7 +7,6 @@ The C port calls the LVGL C API directly through `<ove/lvgl.h>` — `ove_lvgl_lo
 ## Build
 
 ```bash
-make host.posix.lvgl_benchmark      # POSIX host + browser dashboard
 make qemu.freertos.lvgl_benchmark   # QEMU + FreeRTOS
 make                                 # build
 make run                             # run

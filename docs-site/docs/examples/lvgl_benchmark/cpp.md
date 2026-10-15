@@ -7,7 +7,6 @@ The C++ port uses oveRTOS's typed LVGL wrappers (`ove::lvgl::*`) for widget cons
 ## Build
 
 ```bash
-make host.posix.lvgl_benchmark_cpp
 make qemu.freertos.lvgl_benchmark_cpp
 make && make run
 ```

@@ -31,8 +31,8 @@ There is no browser demo: the benchmark times itself with the DWT cycle counter,
 ## How to build
 
 ```bash
-make host.posix.benchmark     # C
-make host.posix.benchmark_cpp # C++
+make qemu.freertos.benchmark  # C
+make qemu.freertos.benchmark_cpp # C++
 make configure && make download && make && make run
 ```
 

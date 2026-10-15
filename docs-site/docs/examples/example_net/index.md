@@ -26,7 +26,7 @@ ove_netif_*, ove_socket_*, ove_dns_resolve, ove_http_*, ove_sntp_*, ove_mqtt_*, 
 ## How to build
 
 ```bash
-make host.posix.example_net      # C
-make host.posix.example_net_cpp  # C++
+make qemu.freertos.example_net   # C
+make qemu.freertos.example_net_cpp  # C++
 make configure && make download && make && make run
 ```

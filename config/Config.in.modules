@@ -801,7 +801,7 @@ config OVE_NET
     default n
     help
       BSD-like socket API with DNS resolution. Each backend uses
-      its native TCP/IP stack (POSIX sockets, lwIP, Zephyr net,
+      its native TCP/IP stack (lwIP on FreeRTOS, Zephyr net,
       NuttX sockets).
 
 config OVE_NET_MAC_FROM_UID

@@ -129,7 +129,7 @@ fn app_main() {
 
 ## Compile-time RTOS detection
 
-`build.rs` emits `rtos_freertos`, `rtos_nuttx`, `rtos_zephyr`, `rtos_posix` as `cfg` flags based on the substrate's `ove_config.h`:
+`build.rs` emits `rtos_freertos`, `rtos_nuttx`, `rtos_zephyr` as `cfg` flags based on the substrate's `ove_config.h`:
 
 ```rust
 #[cfg(rtos_freertos)]
@@ -138,8 +138,8 @@ const APP_TITLE: &[u8] = b"oveRTOS(FreeRTOS) Rust Demo\0";
 const APP_TITLE: &[u8] = b"oveRTOS(NuttX) Rust Demo\0";
 #[cfg(rtos_zephyr)]
 const APP_TITLE: &[u8] = b"oveRTOS(Zephyr) Rust Demo\0";
-#[cfg(rtos_posix)]
-const APP_TITLE: &[u8] = b"oveRTOS(POSIX) Rust Demo\0";
+#[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr)))]
+const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
 ```
 
 ## Logging
@@ -192,7 +192,7 @@ handle.request_stop();
 ## How to build
 
 ```bash
-make host.posix.example_rust            # heap mode on POSIX
-make host.posix.example_rust_zh         # zero-heap mode on POSIX
+make qemu.freertos.example_rust         # heap mode
+make qemu.freertos.example_rust_zh      # zero-heap mode
 make configure && make download && make && make run
 ```

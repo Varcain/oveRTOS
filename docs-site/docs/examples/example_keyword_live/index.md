@@ -26,7 +26,7 @@ ove_audio_graph_*, ove_audio_device_source/sink, ove_model_init, ove_model_invok
 ## How to build
 
 ```bash
-make host.posix.example_keyword_live      # C
-make host.posix.example_keyword_live_cpp  # C++
+make qemu.freertos.example_keyword_live   # C
+make qemu.freertos.example_keyword_live_cpp  # C++
 make configure && make download && make && make run
 ```

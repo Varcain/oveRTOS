@@ -24,7 +24,7 @@ ove_pm_init, ove_pm_set_state, ove_pm_activity, ove_pm_wake_register, ove_pm_dom
 ## How to build
 
 ```bash
-make host.posix.example_pm_c      # C
-make host.posix.example_pm_cpp  # C++
+make qemu.freertos.example_pm_c   # C
+make qemu.freertos.example_pm_cpp  # C++
 make configure && make download && make && make run
 ```

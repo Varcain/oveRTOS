@@ -29,7 +29,7 @@ Two configurations are benchmarked separately:
 - **Build flags**: `-O2 -fno-omit-frame-pointer` (frame pointers kept for the trace-view backtrace walker; benchmarks don't unwind during measurement).
 - **Iterations**: 1000 per latency case, 100 per long-running case (e.g. `delay_1ms`), 500 per context-switch / event-signal case. Settled by the calibrate-then-lock procedure below.
 - **Warmup**: 100 iterations dropped before measurement starts.
-- **Timing**: on ARMv7-M targets the harness reads the DWT cycle counter (`DWT->CYCCNT` at `0xE0001004`) directly via a single volatile load — uniform across FreeRTOS / NuttX / Zephyr, so no per-RTOS counter-read overhead leaks into the per-call deltas. Per-measurement floor ≈ 50 ns (two LDRs at 216 MHz). On non-ARM targets (POSIX, sim) the harness falls back to `ove_time_get_ns`. Source: `tests/benchmarks/c/include/bench_cyccnt.h`.
+- **Timing**: on ARMv7-M targets the harness reads the DWT cycle counter (`DWT->CYCCNT` at `0xE0001004`) directly via a single volatile load — uniform across FreeRTOS / NuttX / Zephyr, so no per-RTOS counter-read overhead leaks into the per-call deltas. Per-measurement floor ≈ 50 ns (two LDRs at 216 MHz). Elsewhere the harness falls back to `ove_time_get_ns`. Source: `tests/benchmarks/c/include/bench_cyccnt.h`.
 - **Statistics**: min, p50, p95, p99, max, trimmed mean (top 1% dropped), per-op nanoseconds, Welford running stddev; ops/sec computed from the trimmed mean.
 - **Hot-path audit**: every reported binding has its hot-path disassembly audited against the allowed-callee list at `tests/audit/hotpath_expected.yaml` — any unexpected callee (alloc, exception unwind, trampoline that wasn't inlined) fails the build before a number reaches a report.
 

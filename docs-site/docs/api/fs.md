@@ -1,6 +1,6 @@
 # Filesystem
 
-The oveRTOS filesystem module provides a VFS abstraction that maps POSIX-like file and directory operations onto the underlying RTOS storage backend. Volumes are mounted by path prefix and all subsequent operations use absolute path strings. The same application code runs unchanged across FatFS (SD card), LittleFS, NuttX VFS, and POSIX host filesystem.
+The oveRTOS filesystem module provides a VFS abstraction that maps POSIX-like file and directory operations onto the underlying RTOS storage backend. Volumes are mounted by path prefix and all subsequent operations use absolute path strings. The same application code runs unchanged across FatFS (SD card), LittleFS and the NuttX VFS.
 
 ## Architecture
 
@@ -14,21 +14,18 @@ graph TD
         FATFS["FatFS<br/><small>SD card / eMMC</small>"]
         LITTLEFS["LittleFS<br/><small>NOR/NAND flash</small>"]
         NUTTX["NuttX VFS<br/><small>/dev/mmcsd / mtdblock</small>"]
-        POSIX["POSIX<br/><small>Host development</small>"]
     end
 
     subgraph Hardware
         SPI["SPI / SDIO<br/><small>FreeRTOS / Zephyr</small>"]
         FLASH["SPI Flash<br/><small>FreeRTOS / Zephyr</small>"]
         HW_NUTTX["NuttX block driver"]
-        HOSTFS["Host Filesystem"]
     end
 
     APP --> API --> CFG
     CFG --> FATFS --> SPI
     CFG --> LITTLEFS --> FLASH
     CFG --> NUTTX --> HW_NUTTX
-    CFG --> POSIX --> HOSTFS
 
     style APP fill:#4a9,stroke:#333,color:#fff
     style API fill:#48b,stroke:#333,color:#fff

@@ -28,7 +28,7 @@ under [Build System → Simulation](../build-system/sim.md):
 
 ## The Stub layer
 
-The Stub layer is a POSIX build of the common CMocka suites — same test sources, no kernel, no QEMU. It runs in ~2 s on a developer laptop. Sources live under `tests/suites/`; the harness driver is `tests/stub_main.c` and the CMake glue is `tests/cmake/`. Run it with:
+The Stub layer builds the common CMocka suites against the host test backend (`tests/host/posix/`, pthreads) — same test sources, no kernel, no QEMU. It runs in ~2 s on a developer laptop. Sources live under `tests/suites/`; the harness driver is `tests/stub_main.c` and the CMake glue is `tests/cmake/`. Run it with:
 
 ```bash
 make test-stub
@@ -50,7 +50,7 @@ line on backends that can't run them, keeping suite counts comparable.
 
 Every target follows a predictable shape:
 
-- `test-stub` — POSIX
+- `test-stub` — host test backend (`tests/host/posix/`)
 - `test-qemu-<rtos>{,-zeroheap}` — QEMU MPS2-AN500
 - `test-renode-stm32f746-<rtos>{,-zeroheap}` — Renode
 - `test-hw-stm32f746-<rtos>{,-zeroheap}` — real Discovery board (manual)

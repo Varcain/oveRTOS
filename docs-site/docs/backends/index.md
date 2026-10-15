@@ -3,7 +3,7 @@
 !!! note "Audience"
     This page is for **oveRTOS developers** — porting to a new RTOS, hacking on existing backends, or sizing the kernel layer. App developers can skip to [API Reference](../api/index.md).
 
-oveRTOS uses a backend to map its portable API onto a specific RTOS or threading environment. Each backend lives under `backends/<name>/` and provides one implementation file per subsystem (e.g. `freertos_thread.c`, `posix_sync.c`).
+oveRTOS uses a backend to map its portable API onto a specific RTOS or threading environment. Each backend lives under `backends/<name>/` and provides one implementation file per subsystem (e.g. `freertos_thread.c`, `zephyr_sync.c`).
 
 A `backends/common/` directory contains utilities shared across all backends (`ove_backend_common.h`).
 
@@ -12,7 +12,6 @@ A `backends/common/` directory contains utilities shared across all backends (`o
 | Backend | Directory | RTOS | Primary use |
 |---------|-----------|------|-------------|
 | FreeRTOS | `backends/freertos/` | FreeRTOS | Embedded hardware targets (Cortex-M) |
-| POSIX | `backends/posix/` | pthreads | Host-PC desktop development and CI |
 | Zephyr | `backends/zephyr/` | Zephyr RTOS | Zephyr-based embedded projects |
 | NuttX | `backends/nuttx/` | NuttX | NuttX-based embedded projects |
 
@@ -20,27 +19,27 @@ A `backends/common/` directory contains utilities shared across all backends (`o
 
 Each cell indicates whether the subsystem is implemented by that backend. All backends implement the full core and communication APIs.
 
-| Subsystem | FreeRTOS | POSIX | Zephyr | NuttX |
-|-----------|----------|-------|--------|-------|
-| Thread | Yes | Yes | Yes | Yes |
-| Sync (mutex, semaphore, event, condvar) | Yes | Yes | Yes | Yes |
-| Queue | Yes | Yes | Yes | Yes |
-| Timer | Yes | Yes | Yes | Yes |
-| EventGroup | Yes | Yes | Yes | Yes |
-| WorkQueue | Yes | Yes | Yes | Yes |
-| Stream | Yes | Yes | Yes | Yes |
-| Time (monotonic clock, delays) | Yes | Yes | Yes | Yes |
-| Console (UART) | Yes | Yes | Yes | Yes |
-| Board init | Yes | Yes | Yes | Yes |
-| GPIO | Yes | Yes (simulated) | Yes | Yes |
-| LED | Yes | Yes (simulated) | Yes | Yes |
-| Audio | Yes | Yes (simulated) | Yes | Yes |
-| FS (VFS) | Yes | Yes | Yes | Yes |
-| NVS | Yes | Yes | Yes | Yes |
-| Watchdog | Yes | Yes (simulated) | Yes | Yes |
-| Shell | Yes | Yes | Yes | Yes |
-| PM (power management) | Yes | Yes (simulated) | Yes | Yes |
-| LVGL display | Yes | Yes (sim dashboard) | Yes | Yes |
+| Subsystem | FreeRTOS | Zephyr | NuttX |
+|-----------|----------|--------|-------|
+| Thread | Yes | Yes | Yes |
+| Sync (mutex, semaphore, event, condvar) | Yes | Yes | Yes |
+| Queue | Yes | Yes | Yes |
+| Timer | Yes | Yes | Yes |
+| EventGroup | Yes | Yes | Yes |
+| WorkQueue | Yes | Yes | Yes |
+| Stream | Yes | Yes | Yes |
+| Time (monotonic clock, delays) | Yes | Yes | Yes |
+| Console (UART) | Yes | Yes | Yes |
+| Board init | Yes | Yes | Yes |
+| GPIO | Yes | Yes | Yes |
+| LED | Yes | Yes | Yes |
+| Audio | Yes | Yes | Yes |
+| FS (VFS) | Yes | Yes | Yes |
+| NVS | Yes | Yes | Yes |
+| Watchdog | Yes | Yes | Yes |
+| Shell | Yes | Yes | Yes |
+| PM (power management) | Yes | Yes | Yes |
+| LVGL display | Yes | Yes | Yes |
 
 ## Backend file layout
 
@@ -70,7 +69,7 @@ backends/freertos/
     include/              (backend-private headers)
 ```
 
-The POSIX, Zephyr, and NuttX backends follow the same layout with their respective prefix.
+The Zephyr and NuttX backends follow the same layout with their respective prefix.
 
 ## Selecting a backend
 
@@ -87,7 +86,6 @@ What each `ove_*` peripheral wrapper resolves to per backend. These are useful w
 | FreeRTOS/STM32 | `HAL_UART_Init()`, RXNE interrupt, `HAL_UART_Transmit()` |
 | Zephyr | `uart_configure()`, IRQ callback via `uart_irq_rx_ready()` |
 | NuttX | `/dev/ttyS*`, termios, RX polling thread |
-| POSIX | `/dev/ttyUSB*` or `/dev/ttyACM*`, termios, RX polling thread |
 
 ### SPI (`ove/spi.h`)
 
@@ -96,7 +94,6 @@ What each `ove_*` peripheral wrapper resolves to per backend. These are useful w
 | FreeRTOS/STM32 | `HAL_SPI_TransmitReceive()` / `Transmit()` / `Receive()` |
 | Zephyr | `spi_transceive()` with `spi_buf_set` |
 | NuttX | `/dev/spi*`, `SPIIOC_TRANSFER` ioctl |
-| POSIX | `/dev/spidev*`, `SPI_IOC_MESSAGE` ioctl |
 
 ### I²C (`ove/i2c.h`)
 
@@ -105,7 +102,6 @@ What each `ove_*` peripheral wrapper resolves to per backend. These are useful w
 | FreeRTOS/STM32 | `HAL_I2C_Master_Transmit/Receive()`, `HAL_I2C_Mem_Read()` |
 | Zephyr | `i2c_write()`, `i2c_read()`, `i2c_write_read()` |
 | NuttX | `/dev/i2c*`, `I2CIOC_TRANSFER` ioctl |
-| POSIX | `/dev/i2c-*`, `I2C_RDWR` ioctl |
 
 ## Power management
 
@@ -116,7 +112,6 @@ Per-backend behaviour of `ove_pm_*`. The portable surface lives at [API → Powe
 | FreeRTOS / STM32 | `__WFI()` from the idle hook | EXTI, RTC alarm, UART, USART RXNE | `freertos_pm.c` |
 | Zephyr | `pm_state_set()` integration | Subsystem-defined | `zephyr_pm.c` |
 | NuttX | `up_idle()` hook | Per-driver wake sources | `nuttx_pm.c` |
-| POSIX | `sleep()` simulation | Sim plugin events | `posix_pm.c` |
 
 ### Power management policy
 
@@ -156,7 +151,6 @@ ove_pm_notify_register(my_notify, NULL);
 | FreeRTOS | lwIP | [Backend tuning → Networking pools](net-tuning.md) |
 | Zephyr | Native Zephyr net stack | [Backend tuning → Networking pools](net-tuning.md) |
 | NuttX | Native NuttX networking | [Backend tuning → Networking pools](net-tuning.md) |
-| POSIX | Host BSD sockets | Host kernel responsibility |
 
 ## FreeRTOS backend notes
 
@@ -167,13 +161,9 @@ ove_pm_notify_register(my_notify, NULL);
 - **CI-runnable STM32 fidelity**: the `make test-renode-stm32f746-…` targets build the same HAL + RTOS port that ships on real Discovery hardware and run the full CMocka suite under Renode's `stm32f7_discovery-bb` emulation on every PR — covers FreeRTOS / Zephyr / NuttX × heap / zero-heap. The complementary `make test-hw-stm32f746-…` matrix flashes that same firmware onto an actual STM32F746G-Discovery via OpenOCD and reads back USART1 (manual-only — set `OVE_HW_SERIAL_PORT=/dev/ttyACMx`). See [Testing → Renode](../testing/renode.md) and [Testing → Hardware-in-the-loop](../testing/hw.md).
 - **`ove_main()` locals are UB after `ove_run()`** (technical detail): `vTaskStartScheduler()` resets MSP to the initial stack top (see `prvPortStartFirstTask` in the Cortex-M port) and the first interrupt overwrites the region that held those locals. App developers see this rule in [Troubleshooting → ove_main locals](../getting-started/troubleshooting.md#ove_main-locals-are-ub-after-ove_run); this note is the why for the porting reader.
 
-## POSIX backend notes
+## Host test backend
 
-- Maps oveRTOS threads onto `pthread_t` with a scheduling policy derived from the priority level.
-- Binary events use a `pthread_cond_t` + `pthread_mutex_t` pair.
-- Time functions use `clock_gettime(CLOCK_MONOTONIC)`.
-- GPIO and LED are simulated in memory; audio is routed through the sim framework to the browser dashboard.
-- The scheduler "start" call on POSIX simply waits for all spawned threads to finish, which allows the application to return cleanly from `main`.
+`tests/host/posix/` maps the portable API onto pthreads, `clock_gettime(CLOCK_MONOTONIC)` and host files and sockets so the stub, C++, Rust and Zig test suites, the sanitizers and coverage run natively. It is not an application target: apps run on FreeRTOS, Zephyr or NuttX, natively under QEMU or in a browser. See [Testing](../testing/index.md).
 
 ## Zephyr backend notes
 

@@ -1,6 +1,6 @@
 # ML Inference
 
-The oveRTOS inference module provides a portable C API for loading pre-trained `.tflite` FlatBuffer models and running inference via LiteRT (formerly TensorFlow Lite Micro). The same model binary runs unchanged across all four oveRTOS backends — FreeRTOS, Zephyr, NuttX, and POSIX. Models are typically compiled into flash as `const` C arrays using `xxd` or `flatc`.
+The oveRTOS inference module provides a portable C API for loading pre-trained `.tflite` FlatBuffer models and running inference via LiteRT (formerly TensorFlow Lite Micro). The same model binary runs unchanged across every oveRTOS backend — FreeRTOS, Zephyr and NuttX. Models are typically compiled into flash as `const` C arrays using `xxd` or `flatc`.
 
 ## Pipeline
 

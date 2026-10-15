@@ -10,7 +10,7 @@ Install the tools you need for the binding(s) and deployment target(s) you'll wo
 | python3-venv | — | Required to create the `.venv` environment |
 | CMake | 3.20+ | Used by Zephyr and NuttX build systems |
 | Git | — | Source checkout and RTOS source downloads |
-| A native C/C++ compiler | gcc or clang | Builds the POSIX backend, the C and C++ bindings, and the framework's own tooling |
+| A native C/C++ compiler | gcc or clang | Builds the host test suites (stub, C++, Rust and Zig binding tests) and the framework's own tooling |
 
 On Debian/Ubuntu:
 
@@ -91,7 +91,7 @@ sudo apt install qemu-system-arm
 sudo dnf install qemu-system-arm
 ```
 
-Not needed for POSIX or hardware-flash workflows.
+Not needed for hardware-flash workflows.
 
 ### Docker or Podman (for the browser bundle)
 

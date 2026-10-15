@@ -1,6 +1,6 @@
 # Board Configurations
 
-oveRTOS ships with three reference board definitions — `stm32f746g-discovery`, `qemu-mps2-an500`, and `host`. Each board lives under `boards/<name>/` and supplies:
+oveRTOS ships with two reference board definitions, `stm32f746g-discovery` and `qemu-mps2-an500`, plus `qemu-mps2-an521`, the Cortex-M33 board that Zephyr's Linux personality runs on. Each board lives under `boards/<name>/` and supplies:
 
 - `board.yaml` — machine-readable hardware description (clocks, memory, peripherals)
 - A CMakeLists.txt (or equivalent) that selects the correct backend and passes hardware parameters to the build
@@ -95,37 +95,3 @@ The build writes `output/web/<rtos>/<app>/serve/`: the sim dashboard, the firmwa
 
 A variant is declared under `variants:` in `board.yaml`: a name that stands in for the board in `<board>.<rtos>.<app>` and adds Kconfig lines (`CONFIG_OVE_SIM_WEB=y` here).
 
----
-
-## Host (`host`)
-
-The `host` board uses the POSIX backend and compiles oveRTOS as a native Linux or macOS process. It is intended for rapid development iteration and unit testing on a desktop machine.
-
-**Hardware summary**
-
-| Parameter | Value |
-|-----------|-------|
-| MCU family | POSIX |
-| Architecture | x86_64 |
-| Flash / RAM | Host OS process memory |
-| Display | 480 × 272 px, RGB565 (rendered via sim dashboard in browser) |
-| Audio | 44100 Hz, 16-bit, 1 channel (512-sample buffers) |
-| Console | Standard I/O |
-| GPIO ports | 8 virtual ports, 16 pins each |
-| LEDs | 8 virtual LEDs (port 0, pins 0–7, active-high) |
-
-**Backend**
-
-The board directory contains a single `posix` subdirectory. The POSIX backend maps oveRTOS threads to `pthread_t`, mutexes to `pthread_mutex_t`, semaphores to POSIX semaphores, and timers to `timer_create` or equivalent.
-
-**Usage**
-
-Build for the `host` board by loading a POSIX configuration and running make:
-
-```bash
-make host.posix.example_c
-make
-make run
-```
-
-The produced binary runs directly on Linux / macOS, so it is straightforward to run oveRTOS applications in CI pipelines or debuggers without embedded hardware.

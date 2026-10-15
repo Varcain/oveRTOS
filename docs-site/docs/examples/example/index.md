@@ -48,8 +48,8 @@ Zero-heap variants live alongside under `apps/<lang>/zeroheap/example/`.
 ## How to build
 
 ```bash
-# Native POSIX (with display)
-make host.posix.example_c
+# QEMU + FreeRTOS (with the dashboard)
+make qemu.freertos.example_c
 make configure && make && make run
 
 # Browser (the FreeRTOS firmware in QEMU compiled to WebAssembly)
