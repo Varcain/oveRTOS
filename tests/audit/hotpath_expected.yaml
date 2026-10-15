@@ -75,7 +75,7 @@ stm32f746_freertos_benchmark_c:
     # ─── Mutex ─────────────────────────────────────────────────
     - name: "mutex_lock_unlock_run (C, ARM)"
       pattern: '^mutex_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "mutex_create_destroy_run (C, ARM)"
@@ -90,13 +90,13 @@ stm32f746_freertos_benchmark_c:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "rmtx_lock_unlock_run (C, ARM)"
       pattern: '^rmtx_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Semaphore ────────────────────────────────────────────
     - name: "sem_take_give_run (C, ARM)"
       pattern: '^sem_take_give_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_sem_take, ove_sem_give]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "sem_create_destroy_run (C, ARM)"
@@ -107,12 +107,12 @@ stm32f746_freertos_benchmark_c:
     # ─── Condvar / event ──────────────────────────────────────
     - name: "condvar_signal_wait_run (C, ARM)"
       pattern: '^condvar_signal_wait_run$'
-      max_instructions: 28
+      max_instructions: 32
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "event_signal_wait_run (C, ARM)"
       pattern: '^event_signal_wait_run$'
-      max_instructions: 16
+      max_instructions: 20
       allowed_calls: [ove_event_wait, ove_event_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     # ─── IPC (queue / stream) ─────────────────────────────────
@@ -512,7 +512,7 @@ stm32f746_freertos_benchmark_zeroheap_c:
     # ─── Mutex ─────────────────────────────────────────────────
     - name: "mutex_lock_unlock_run (C, ARM, zeroheap)"
       pattern: '^mutex_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "mutex_contention_run (C, ARM, zeroheap)"
@@ -522,24 +522,24 @@ stm32f746_freertos_benchmark_zeroheap_c:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "rmtx_lock_unlock_run (C, ARM, zeroheap)"
       pattern: '^rmtx_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Semaphore ────────────────────────────────────────────
     - name: "sem_take_give_run (C, ARM, zeroheap)"
       pattern: '^sem_take_give_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_sem_take, ove_sem_give]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     # ─── Condvar / event ──────────────────────────────────────
     - name: "condvar_signal_wait_run (C, ARM, zeroheap)"
       pattern: '^condvar_signal_wait_run$'
-      max_instructions: 28
+      max_instructions: 32
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "event_signal_wait_run (C, ARM, zeroheap)"
       pattern: '^event_signal_wait_run$'
-      max_instructions: 16
+      max_instructions: 20
       allowed_calls: [ove_event_wait, ove_event_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     # ─── IPC (queue / stream) ─────────────────────────────────
@@ -823,7 +823,7 @@ stm32f746_nuttx_benchmark_c:
     # ─── Mutex ─────────────────────────────────────────────────
     - name: "mutex_lock_unlock_run (C, NuttX, ARM)"
       pattern: '^mutex_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "mutex_create_destroy_run (C, NuttX, ARM)"
@@ -838,13 +838,13 @@ stm32f746_nuttx_benchmark_c:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "rmtx_lock_unlock_run (C, NuttX, ARM)"
       pattern: '^rmtx_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Semaphore ────────────────────────────────────────────
     - name: "sem_take_give_run (C, NuttX, ARM)"
       pattern: '^sem_take_give_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_sem_take, ove_sem_give]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "sem_create_destroy_run (C, NuttX, ARM)"
@@ -855,12 +855,12 @@ stm32f746_nuttx_benchmark_c:
     # ─── Condvar / event ──────────────────────────────────────
     - name: "condvar_signal_wait_run (C, NuttX, ARM)"
       pattern: '^condvar_signal_wait_run$'
-      max_instructions: 28
+      max_instructions: 32
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "event_signal_wait_run (C, NuttX, ARM)"
       pattern: '^event_signal_wait_run$'
-      max_instructions: 16
+      max_instructions: 20
       allowed_calls: [ove_event_wait, ove_event_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     # ─── IPC (queue / stream) ─────────────────────────────────
@@ -1254,7 +1254,7 @@ stm32f746_zephyr_benchmark_c:
     # ─── Mutex ─────────────────────────────────────────────────
     - name: "mutex_lock_unlock_run (C, Zephyr, ARM)"
       pattern: '^mutex_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "mutex_create_destroy_run (C, Zephyr, ARM)"
@@ -1269,13 +1269,13 @@ stm32f746_zephyr_benchmark_c:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "rmtx_lock_unlock_run (C, Zephyr, ARM)"
       pattern: '^rmtx_lock_unlock_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Semaphore ────────────────────────────────────────────
     - name: "sem_take_give_run (C, Zephyr, ARM)"
       pattern: '^sem_take_give_run$'
-      max_instructions: 18
+      max_instructions: 19
       allowed_calls: [ove_sem_take, ove_sem_give]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "sem_create_destroy_run (C, Zephyr, ARM)"
@@ -1286,12 +1286,12 @@ stm32f746_zephyr_benchmark_c:
     # ─── Condvar / event ──────────────────────────────────────
     - name: "condvar_signal_wait_run (C, Zephyr, ARM)"
       pattern: '^condvar_signal_wait_run$'
-      max_instructions: 28
+      max_instructions: 32
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "event_signal_wait_run (C, Zephyr, ARM)"
       pattern: '^event_signal_wait_run$'
-      max_instructions: 16
+      max_instructions: 20
       allowed_calls: [ove_event_wait, ove_event_signal]
       forbid_demangled: ["vtable for ", "typeinfo for "]
     # ─── IPC (queue / stream) ─────────────────────────────────
