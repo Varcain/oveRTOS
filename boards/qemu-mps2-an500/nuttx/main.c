@@ -15,6 +15,9 @@
 #ifndef CONFIG_OVE_LINUX
 extern int ove_sim_board_init(void);
 #endif
+#ifdef CONFIG_OVE_NET
+extern int qemu_netdev_init(void);
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -23,6 +26,9 @@ int main(int argc, char *argv[])
 
 #ifndef CONFIG_OVE_LINUX
 	ove_sim_board_init(); /* sim display/audio transport; personality is headless */
+#endif
+#ifdef CONFIG_OVE_NET
+	(void)qemu_netdev_init(); /* eth0 must exist before the app configures it */
 #endif
 	ove_app_run();
 	return 0;

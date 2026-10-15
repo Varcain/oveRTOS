@@ -81,6 +81,9 @@ QEMU emulates no AN500 GPIO, storage or STM32 peripherals, so the board supplies
 | NVS | `backends/common/ove_nvs_ram.c`: kept in RAM until QEMU exits | same |
 | Filesystem | not available: `OVE_FS` cannot be enabled, and `ove_fs_*` return `OVE_ERR_NOT_SUPPORTED` | NuttX backend |
 | Watchdog | `qemu_watchdog.c`: QEMU's CMSDK APB watchdog; an unfed dog resets the machine `timeout_ms` after the last feed | NuttX backend (`OVE_ERR_NOT_SUPPORTED` without `/dev/watchdog0`) |
+| Network | `qemu_net.c`: lwIP netif over the frame rings in `/dev/shm/ove-net` | `qemu_netdev.c`: `eth0` over the same rings |
+
+QEMU's LAN9118 is not used. `qemu-run.sh` creates the ring file, and `config/scripts/qemu-net-bridge.py` connects it to the `tap-ove` interface that `sudo config/scripts/qemu-net-setup.sh` sets up. Without the TAP the interface still comes up, without a carrier, and network configuration succeeds.
 
 ```bash
 # After building:

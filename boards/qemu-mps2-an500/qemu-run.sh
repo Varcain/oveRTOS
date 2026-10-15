@@ -141,7 +141,25 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         SAVED_TTY="$(stty -g 2>/dev/null || true)"
         stty -icanon -echo -icrnl min 1 time 0 2>/dev/null || true
     fi
-    pers_restore() { [ -n "${SAVED_TTY}" ] && stty "${SAVED_TTY}" 2>/dev/null || true; }
+    # Guest networking over the same frame rings as the native builds: create
+    # the ring file and, where TUN exists, the bridge to the TAP device that
+    # config/scripts/qemu-net-setup.sh sets up (it reports and exits without one).
+    PERS_NET_PATH="/dev/shm/ove-net"
+    PERS_NET_PID=""
+    if [ "${NO_NET}" -eq 0 ]; then
+        : > "${PERS_NET_PATH}"
+        truncate -s 131136 "${PERS_NET_PATH}"  # 64B hdr + 2x 64KB rings
+        if [ -e /dev/net/tun ]; then
+            "${VENV_PYTHON}" "${OVE_DIR}/config/scripts/qemu-net-bridge.py" &
+            PERS_NET_PID=$!
+        fi
+    fi
+    pers_restore() {
+        [ -n "${SAVED_TTY}" ] && stty "${SAVED_TTY}" 2>/dev/null
+        [ -n "${PERS_NET_PID}" ] && kill "${PERS_NET_PID}" 2>/dev/null
+        [ "${NO_NET}" -eq 0 ] && rm -f "${PERS_NET_PATH}"
+        true
+    }
     trap pers_restore EXIT INT TERM
     if [ -n "${QEMU_TIMEOUT}" ]; then
         timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${PERS_ARGS[@]}" "${EXTRA_ARGS[@]}"
