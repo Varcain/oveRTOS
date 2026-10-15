@@ -39,20 +39,37 @@ def _run(cmd, cwd=None):
         return 127, ""
 
 
+def _git_ignored(root):
+    """Paths under root that git ignores (.gitignore, .git/info/exclude),
+    or an empty set when root is not a git checkout."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "--others", "--ignored",
+             "--exclude-standard", "--directory"],
+            capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return set()
+    return {os.path.normpath(os.path.join(root, p)) for p in out.splitlines()}
+
+
 def _glob(root, *exts):
-    """Walk root and yield files matching any of *exts."""
-    for d, _dirs, files in os.walk(root):
-        # Skip generated / vendored trees, and modules/ (git submodules such as lxp,
-        # which follow their own project's style and which CI's lint job does not
-        # check out).
-        parts = set(d.split(os.sep))
-        if parts & {".git", "output", "dl", ".venv", "target", "build",
-                    "zig-cache", ".zig-cache", "node_modules", "__pycache__",
-                    "modules"}:
-            continue
+    """Walk root and yield files matching any of *exts, skipping what git
+    ignores."""
+    # Generated / vendored trees, and modules/ (git submodules such as lxp,
+    # which follow their own project's style and which CI's lint job does not
+    # check out).
+    skip = {".git", "output", "dl", ".venv", "target", "build", "zig-cache",
+            ".zig-cache", "node_modules", "__pycache__", "modules"}
+    ignored = _git_ignored(root)
+    for d, dirs, files in os.walk(root):
+        # Prune in place so os.walk never descends into skipped trees.
+        dirs[:] = [n for n in dirs if n not in skip and
+                   os.path.normpath(os.path.join(d, n)) not in ignored]
         for f in files:
-            if any(f.endswith(e) for e in exts):
-                yield os.path.join(d, f)
+            path = os.path.join(d, f)
+            if any(f.endswith(e) for e in exts) and \
+                    os.path.normpath(path) not in ignored:
+                yield path
 
 
 def _external_app_roots():
