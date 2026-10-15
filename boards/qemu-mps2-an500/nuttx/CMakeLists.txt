@@ -36,7 +36,7 @@ ove_nuttx_setup()
 ove_nuttx_add_backend_sources()
 
 # Stub backends for hardware-dependent modules not available on QEMU
-ove_nuttx_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG SHELL NVS FS)
+ove_nuttx_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG NVS FS)
 
 # BOARD backend excluded — qemu_board.c is provided via sim framework
 ove_nuttx_exclude_backends(BOARD)

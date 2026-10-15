@@ -430,6 +430,9 @@ unsafe extern "C" {
     #[doc = " @brief Feed a log line into the httpd log ring buffer.\n\n Call from the log output hook to capture lines for GET /api/log."]
     pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
 }
+unsafe extern "C" {
+    pub fn ove_shell_log_tee(data: *const core::ffi::c_char, len: usize);
+}
 #[doc = " @brief Thread entry-point function prototype.\n\n @param[in] arg  Caller-supplied context pointer passed at creation time."]
 pub type ove_thread_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
 #[doc = "< @brief Currently executing on the CPU."]
@@ -2707,7 +2710,7 @@ unsafe extern "C" {
     pub fn ove_shell_process_line(line: *const core::ffi::c_char);
 }
 unsafe extern "C" {
-    #[doc = " @brief Set a hook to capture shell output.\n\n When set, shell command output (normally printed to console) is\n also forwarded to this hook.  Pass NULL to remove.\n\n @param[in] hook Output hook function (or NULL)."]
+    #[doc = " @brief Set a hook to capture shell output.\n\n When set, each OVE_LOG_* line a command handler emits from its own\n thread while it runs (newline included) is passed to this hook as well\n as to the console.  Pass NULL to remove.\n\n @param[in] hook Output hook function (or NULL)."]
     pub fn ove_shell_set_output_hook(hook: ove_shell_output_hook_t);
 }
 unsafe extern "C" {

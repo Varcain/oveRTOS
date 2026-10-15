@@ -30,6 +30,53 @@ static void test_argv_handler(int argc, const char *argv[])
 	}
 }
 
+static char s_hook_buf[128];
+static size_t s_hook_len;
+static int s_hook_calls;
+static int s_first_calls;
+static int s_second_calls;
+
+static void capture_hook(const char *data, size_t len)
+{
+	size_t room = sizeof(s_hook_buf) - 1 - s_hook_len;
+	size_t n = len < room ? len : room;
+	memcpy(s_hook_buf + s_hook_len, data, n);
+	s_hook_len += n;
+	s_hook_buf[s_hook_len] = '\0';
+	s_hook_calls++;
+	/* A hook that logs must not be fed its own output. */
+	ove_shell_log_tee("echo\n", 5);
+}
+
+static void reset_hook_capture(void)
+{
+	memset(s_hook_buf, 0, sizeof(s_hook_buf));
+	s_hook_len = 0;
+	s_hook_calls = 0;
+}
+
+/* Emits a line the way OVE_LOG_* does (the host tests compile the log
+ * macros out, so call the tee they use directly). */
+static void test_output_handler(int argc, const char *argv[])
+{
+	(void)argc;
+	ove_shell_log_tee(argv[1], strlen(argv[1]));
+}
+
+static void test_first_handler(int argc, const char *argv[])
+{
+	(void)argc;
+	(void)argv;
+	s_first_calls++;
+}
+
+static void test_second_handler(int argc, const char *argv[])
+{
+	(void)argc;
+	(void)argv;
+	s_second_calls++;
+}
+
 /* ── tests ───────────────────────────────────────────────────────────── */
 
 static void test_shell_init(void **state)
@@ -79,11 +126,7 @@ static void test_shell_complete_command(void **state)
 
 	ove_shell_init();
 
-	/* Use a non-`help` name — the real freertos_shell backend
-     * pre-registers `help` itself, and overriding it isn't part of the
-     * API contract.  Stub backends happen to allow re-registration
-     * because they start empty, so this collision was previously
-     * latent. */
+	/* Use a non-`help` name — the shell pre-registers `help` itself. */
 	struct ove_shell_cmd cmd = {
 		.name = "ovetestcmd",
 		.help = "test command",
@@ -135,6 +178,74 @@ static void test_shell_argv_parsing(void **state)
 	assert_string_equal(s_argv_received[2], "arg2");
 }
 
+static void test_shell_output_hook(void **state)
+{
+	(void)state;
+	ove_shell_init();
+	struct ove_shell_cmd cmd = {
+		.name = "oveout",
+		.help = "emit output",
+		.handler = test_output_handler,
+	};
+	assert_int_equal(ove_shell_register_cmd(&cmd), OVE_OK);
+
+	reset_hook_capture();
+	ove_shell_set_output_hook(capture_hook);
+	ove_shell_process_line("oveout hello");
+	assert_int_equal(s_hook_calls, 1);
+	assert_string_equal(s_hook_buf, "hello");
+
+	/* Output outside a running command is not shell output. */
+	ove_shell_log_tee("idle", 4);
+	assert_int_equal(s_hook_calls, 1);
+
+	ove_shell_set_output_hook(NULL);
+	ove_shell_process_line("oveout again");
+	assert_int_equal(s_hook_calls, 1);
+}
+
+static void test_shell_process_line_terminates(void **state)
+{
+	(void)state;
+	ove_shell_init();
+	struct ove_shell_cmd cmd = {
+		.name = "cmd",
+		.help = "test argv",
+		.handler = test_argv_handler,
+	};
+	ove_shell_register_cmd(&cmd);
+
+	/* A shorter line after a longer one must not inherit its tail. */
+	ove_shell_process_line("cmd aaaa bbbb");
+	assert_int_equal(s_argc_received, 3);
+	ove_shell_process_line("cmd x");
+	assert_int_equal(s_argc_received, 2);
+	assert_string_equal(s_argv_received[1], "x");
+}
+
+static void test_shell_reregister_replaces(void **state)
+{
+	(void)state;
+	ove_shell_init();
+	struct ove_shell_cmd first = {
+		.name = "ovedup",
+		.help = "first",
+		.handler = test_first_handler,
+	};
+	struct ove_shell_cmd second = {
+		.name = "ovedup",
+		.help = "second",
+		.handler = test_second_handler,
+	};
+	s_first_calls = 0;
+	s_second_calls = 0;
+	assert_int_equal(ove_shell_register_cmd(&first), OVE_OK);
+	assert_int_equal(ove_shell_register_cmd(&second), OVE_OK);
+	ove_shell_process_line("ovedup");
+	assert_int_equal(s_first_calls, 0);
+	assert_int_equal(s_second_calls, 1);
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_shell_run(void)
@@ -146,6 +257,9 @@ int test_shell_run(void)
 		cmocka_unit_test(test_shell_complete_command),
 		cmocka_unit_test(test_shell_register_null),
 		cmocka_unit_test(test_shell_argv_parsing),
+		cmocka_unit_test(test_shell_output_hook),
+		cmocka_unit_test(test_shell_process_line_terminates),
+		cmocka_unit_test(test_shell_reregister_replaces),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

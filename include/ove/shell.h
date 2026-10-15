@@ -134,8 +134,9 @@ void ove_shell_process_line(const char *line);
 /**
  * @brief Set a hook to capture shell output.
  *
- * When set, shell command output (normally printed to console) is
- * also forwarded to this hook.  Pass NULL to remove.
+ * When set, each OVE_LOG_* line a command handler emits from its own
+ * thread while it runs (newline included) is passed to this hook as well
+ * as to the console.  Pass NULL to remove.
  *
  * @param[in] hook Output hook function (or NULL).
  */

@@ -164,9 +164,8 @@ set(FREERTOS_BACKEND_SOURCES
     # Real HAL-backed drivers — exercised against Renode's modelled
     # STM32 peripherals instead of tests/backends/stub/* surrogates.
     ${FREERTOS_BACKEND}/freertos_gpio.c
-    # freertos_shell.c is pure logic (no HAL dependency) — swapping it
-    # in exercises the real ove_shell_* API implementation.
-    ${FREERTOS_BACKEND}/freertos_shell.c
+    # The shared shell is pure logic (no HAL dependency).
+    ${OVE_ROOT}/backends/common/ove_shell.c
     # Networking — full lwIP stack on top of stm32f7_eth.c (added in
     # STM32F7_DRIVER_SOURCES below).  Renode's SynopsysEthernetMAC +
     # EthernetPhysicalLayer back the wire; the test only verifies
@@ -242,7 +241,6 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_time.c
     ${STUB_DIR}/stub_console.c
-    # stub_shell removed — freertos_shell.c backs ove_shell_* directly.
     ${STUB_DIR}/stub_nvs.c
 )
 

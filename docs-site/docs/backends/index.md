@@ -63,7 +63,6 @@ backends/freertos/
     freertos_fs.c
     freertos_nvs.c
     freertos_watchdog.c
-    freertos_shell.c
     freertos_lvgl.c
     freertos_heap_stubs.c
     include/              (backend-private headers)

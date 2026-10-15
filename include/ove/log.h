@@ -75,6 +75,14 @@ void ove_httpd_log_append(const char *line);
  * macro needs no separate hook. */
 #define _OVE_LOG_SIM_HOOK(buf, len) ((void)0)
 
+#ifdef CONFIG_OVE_SHELL
+/* Passes a running shell command's log lines to the shell output hook. */
+void ove_shell_log_tee(const char *data, size_t len);
+#define _OVE_LOG_SHELL_HOOK(buf, len) ove_shell_log_tee(buf, len)
+#else
+#define _OVE_LOG_SHELL_HOOK(buf, len) ((void)0)
+#endif
+
 #define _OVE_LOG_OUTPUT(prefix, fmt, ...)                                                        \
 	do {                                                                                     \
 		char _ove_log_buf[256];                                                          \
@@ -84,6 +92,7 @@ void ove_httpd_log_append(const char *line);
 			_ove_log_buf[_ove_log_len] = '\n';                                       \
 			_ove_log_buf[_ove_log_len + 1] = '\0';                                   \
 			ove_console_write(_ove_log_buf, (unsigned int)(_ove_log_len + 1));       \
+			_OVE_LOG_SHELL_HOOK(_ove_log_buf, (size_t)(_ove_log_len + 1));           \
 			_ove_log_buf[_ove_log_len] = '\0';                                       \
 			_OVE_LOG_HTTPD_HOOK(_ove_log_buf);                                       \
 			_OVE_LOG_SIM_HOOK(_ove_log_buf, (unsigned int)_ove_log_len);             \

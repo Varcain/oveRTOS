@@ -6,9 +6,15 @@
  * This file is part of oveRTOS.
  */
 
+/*
+ * The command shell, shared by every backend: line editing, tokenizing and
+ * dispatch over ove_console and OVE_LOG, with no RTOS-specific code.
+ */
+
 #include "ove/shell.h"
+#include "ove/console.h"
 #include "ove/log.h"
-#include "ove_backend_common.h"
+#include "ove/thread.h"
 #include <string.h>
 
 #define SHELL_LINE_MAX 128
@@ -18,6 +24,12 @@ static struct ove_shell_cmd cmd_table[SHELL_CMD_MAX];
 static unsigned int cmd_count;
 static char line_buf[SHELL_LINE_MAX];
 static unsigned int line_pos;
+
+static ove_shell_output_hook_t s_output_hook;
+/* Set while a command handler runs; its log lines also go to the hook. */
+static ove_thread_t s_exec_thread;
+static int s_executing;
+static int s_in_hook;
 
 static void shell_help(int argc, const char *argv[])
 {
@@ -32,6 +44,19 @@ static void shell_help(int argc, const char *argv[])
 	}
 }
 
+static int is_blank(char c)
+{
+	return c == ' ' || c == '\t';
+}
+
+static void run_handler(const struct ove_shell_cmd *cmd, int argc, const char *argv[])
+{
+	s_exec_thread = ove_thread_get_self();
+	s_executing = 1;
+	cmd->handler(argc, argv);
+	s_executing = 0;
+}
+
 static void shell_execute(char *line)
 {
 	const char *argv[OVE_SHELL_MAX_ARGS];
@@ -40,14 +65,14 @@ static void shell_execute(char *line)
 	unsigned int i;
 
 	while (*p != '\0' && argc < OVE_SHELL_MAX_ARGS) {
-		while (*p == ' ') {
+		while (is_blank(*p)) {
 			p++;
 		}
 		if (*p == '\0') {
 			break;
 		}
 		argv[argc++] = p;
-		while (*p != '\0' && *p != ' ') {
+		while (*p != '\0' && !is_blank(*p)) {
 			p++;
 		}
 		if (*p != '\0') {
@@ -61,15 +86,13 @@ static void shell_execute(char *line)
 
 	for (i = 0; i < cmd_count; i++) {
 		if (strcmp(argv[0], cmd_table[i].name) == 0) {
-			cmd_table[i].handler(argc, argv);
+			run_handler(&cmd_table[i], argc, argv);
 			return;
 		}
 	}
 
 	OVE_LOG_WRN("Unknown command: %s\n", argv[0]);
 }
-
-int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
 
 int ove_shell_init(void)
 {
@@ -128,19 +151,12 @@ void ove_shell_process_char(int c)
 	}
 }
 
-static ove_shell_output_hook_t s_output_hook;
-
-void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
-{
-	s_output_hook = hook;
-}
-
 void ove_shell_process_line(const char *line)
 {
 	if (!line)
 		return;
 
-	/* Copy into the line buffer and execute */
+	/* shell_execute() walks a C string, so terminate the copy. */
 	size_t len = strlen(line);
 	if (len >= SHELL_LINE_MAX)
 		len = SHELL_LINE_MAX - 1;
@@ -149,4 +165,22 @@ void ove_shell_process_line(const char *line)
 	line_pos = (unsigned int)len;
 	shell_execute(line_buf);
 	line_pos = 0;
+}
+
+void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
+{
+	s_output_hook = hook;
+}
+
+void ove_shell_log_tee(const char *data, size_t len)
+{
+	ove_shell_output_hook_t hook = s_output_hook;
+
+	/* Only the running command's own lines; a hook that logs must not
+	 * feed itself. */
+	if (!hook || !s_executing || s_in_hook || ove_thread_get_self() != s_exec_thread)
+		return;
+	s_in_hook = 1;
+	hook(data, len);
+	s_in_hook = 0;
 }

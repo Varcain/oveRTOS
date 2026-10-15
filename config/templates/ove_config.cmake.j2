@@ -195,7 +195,7 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET", "PM"] %}
+               "WATCHDOG", "NVS", "NET", "PM"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/freertos/freertos_{{ mod|lower }}.c
 {% endif %}
@@ -213,7 +213,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
+               "WATCHDOG", "NVS", "NET", "PM",
                "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_{{ mod|lower }}.c
@@ -236,7 +236,7 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
+               "WATCHDOG", "NVS", "NET", "PM",
                "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_{{ mod|lower }}.c
@@ -253,6 +253,11 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% endif %}
 )
+
+# Command shell (platform-independent)
+{% if config.get("CONFIG_OVE_SHELL") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_shell.c")
+{% endif %}
 
 # Common audio graph engine sources (platform-independent)
 {% if config.get("CONFIG_OVE_AUDIO") == True %}
