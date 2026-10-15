@@ -33,7 +33,7 @@ CONFIG_DISABLE_POSIX_TIMERS=n
 # Memory
 CONFIG_STACK_COLORATION=y
 
-# File system support (for posix_fs/posix_nvs stubs)
+# File system support (for stub_fs and the file NVS)
 CONFIG_FS_TMPFS=y
 
 # Disable verbose debug logging

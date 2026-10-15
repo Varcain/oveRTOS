@@ -78,7 +78,7 @@ set(CORE_SOURCES
 set(STUB_SOURCES
     ${STUB_DIR}/stub_console.c
     ${STUB_DIR}/stub_watchdog.c
-    ${STUB_DIR}/stub_nvs.c
+    ${OVE_ROOT}/backends/common/ove_nvs_ram.c
     ${STUB_DIR}/stub_fs.c
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c

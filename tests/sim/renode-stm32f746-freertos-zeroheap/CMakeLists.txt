@@ -178,7 +178,7 @@ set(FREERTOS_BACKEND_SOURCES
     # full register-write set STM32CubeF7's BSP_SD emits during HAL_SD_Init
     # (notably DTEN/DBLOCKSIZE writes flag as "Unhandled bits"), so
     # f_open against an SdCardFromFile-attached image hangs in the
-    # data-transfer state.  Stay on stub_nvs.c until either Renode's
+    # data-transfer state.  Stay on the RAM NVS (ove_nvs_ram.c) until Renode's
     # SDMMC model matures or we ship a slim diskio that bypasses BSP_SD.
     # freertos_time.c is NOT linked in: its ove_time_delay_us busy-waits
     # on DWT->CYCCNT, which Renode 1.16's Cortex-M model doesn't advance.
@@ -241,7 +241,7 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_board.c
     ${FREERTOS_BACKEND}/freertos_time_systick.c
     ${STUB_DIR}/stub_console.c
-    ${STUB_DIR}/stub_nvs.c
+    ${OVE_ROOT}/backends/common/ove_nvs_ram.c
 )
 
 # --- Test suites ---

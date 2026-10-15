@@ -134,7 +134,7 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_console.c
     ${STUB_DIR}/stub_watchdog.c
     ${OVE_ROOT}/backends/common/ove_shell.c
-    ${STUB_DIR}/stub_nvs.c
+    ${OVE_ROOT}/backends/common/ove_nvs_ram.c
 )
 
 # --- Test suites (list sourced from cmake/OveTest.cmake) ---

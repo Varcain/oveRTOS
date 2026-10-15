@@ -44,7 +44,7 @@ CONFIG_SERIAL=y
 CONFIG_UART0_SERIAL_CONSOLE=y
 CONFIG_UART0_BAUD=115200
 
-# File system support (for posix_fs/posix_nvs stubs)
+# File system support (for stub_fs and the file NVS)
 CONFIG_FS_TMPFS=y
 
 # Disable verbose debug logging (base mps2-an500:nsh enables DEBUG_SCHED_INFO

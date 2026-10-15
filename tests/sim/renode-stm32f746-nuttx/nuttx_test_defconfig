@@ -56,7 +56,7 @@ CONFIG_MM_REGIONS=1
 # models USART1 as STM32F7_USART, so the test.resc taps that into a
 # file backend.  Don't override UART selection here.
 
-# File system support (for posix_fs/posix_nvs stubs)
+# File system support (for stub_fs and the file NVS)
 CONFIG_FS_TMPFS=y
 
 # Disable verbose debug logging (base mps2-an500:nsh enables DEBUG_SCHED_INFO
