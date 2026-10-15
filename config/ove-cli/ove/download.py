@@ -489,20 +489,6 @@ def download_nuttx(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
     return ok
 
 
-def download_posix(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
-    """Download LVGL sources for POSIX backend."""
-    ok = True
-    lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
-    lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
-    dest, link, global_link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
-    ok = git_clone(lvgl_url, lvgl_tag, dest, "LVGL") and ok
-    if os.path.isdir(dest):
-        update_symlink(link, dest)
-        if global_link:
-            update_symlink(global_link, dest)
-    return ok
-
-
 def ensure_rust_target(config, dl_dir):
     """Ensure Rust toolchain and target are available."""
     target = get_str(config, "CONFIG_OVE_RUST_TARGET",
@@ -1090,9 +1076,6 @@ def download_all(ws):
     elif get_bool(config, "CONFIG_OVE_RTOS_NUTTX"):
         ok = download_nuttx(config, ws.dl_dir, ws.build_dir,
                             ws.ws_dl_dir, manifest=manifest) and ok
-    elif get_bool(config, "CONFIG_OVE_RTOS_POSIX"):
-        ok = download_posix(config, ws.dl_dir, ws.build_dir,
-                            ws.ws_dl_dir, manifest=manifest) and ok
 
     if get_bool(config, "CONFIG_OVE_INFER"):
         ok = download_tflm(config, ws.dl_dir, ws.ws_dl_dir,
@@ -1168,8 +1151,6 @@ def cmd_download(args):
         elif get_bool(ws.config, "CONFIG_OVE_RTOS_NUTTX"):
             wanted += ["nuttx", "nuttx-apps", "lvgl",
                        "CMSIS_5", "CMSIS-DSP"]
-        elif get_bool(ws.config, "CONFIG_OVE_RTOS_POSIX"):
-            wanted += ["lvgl"]
         if get_bool(ws.config, "CONFIG_OVE_INFER"):
             wanted.append("tflite-micro")
         if get_bool(ws.config, "CONFIG_OVE_NET"):

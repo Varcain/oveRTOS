@@ -2008,7 +2008,7 @@ def cmd_list(args):
 
         # Detect RTOS subdirectories
         rtos_list = []
-        for rtos in ["freertos", "zephyr", "nuttx", "posix"]:
+        for rtos in ["freertos", "zephyr", "nuttx"]:
             if os.path.isdir(os.path.join(board_path, rtos)):
                 rtos_list.append(rtos)
 

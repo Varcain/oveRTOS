@@ -41,9 +41,6 @@ function(ove_build_zig_lib TARGET)
     endif()
 
 
-    # ── Determine native vs cross build ────────────────────────────────
-    _ove_binding_resolve_native(ZIG_IS_NATIVE)
-
     # ── Output directory ─────────────────────────────────────────────────
     set(ZIG_OUTPUT_DIR "${CMAKE_BINARY_DIR}/zig_output")
     set(ZIG_LIB "${ZIG_OUTPUT_DIR}/lib${APP_ZIG_LIB_NAME}.a")
@@ -51,62 +48,57 @@ function(ove_build_zig_lib TARGET)
     # ── Resolve target triple ────────────────────────────────────────────
     set(ZIG_TARGET_ARGS "")
     set(ZIG_CPU_ARGS "")
-    if(ZIG_IS_NATIVE)
-        list(APPEND ZIG_TARGET_ARGS "-target" "native-native")
-        list(APPEND ZIG_CPU_ARGS "-fPIC" "-fno-stack-check")
-    else()
-        if(NOT DEFINED OVE_ZIG_TARGET)
-            set(OVE_ZIG_TARGET "thumb-freestanding-eabihf")
+    if(NOT DEFINED OVE_ZIG_TARGET)
+        set(OVE_ZIG_TARGET "thumb-freestanding-eabihf")
+    endif()
+    _ove_binding_align_arm_float_target(
+        OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
+    # Detect float ABI: Zephyr on QEMU uses soft float (nofp)
+    if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
+        # Check if Zephyr is actually using hard float
+        if(NOT CONFIG_FPU OR NOT CONFIG_FP_HARDABI)
+            string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
         endif()
-        _ove_binding_align_arm_float_target(
-            OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
-        # Detect float ABI: Zephyr on QEMU uses soft float (nofp)
-        if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
-            # Check if Zephyr is actually using hard float
-            if(NOT CONFIG_FPU OR NOT CONFIG_FP_HARDABI)
-                string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
-            endif()
+    endif()
+    # NuttX: align with CONFIG_ARCH_FPU (soft float unless the kernel
+    # opts in). Mismatched ABIs cause ld "uses VFP register arguments"
+    # errors against the soft-float NuttX libraries.
+    if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
+        if(NOT CONFIG_ARCH_FPU)
+            string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
         endif()
-        # NuttX: align with CONFIG_ARCH_FPU (soft float unless the kernel
-        # opts in). Mismatched ABIs cause ld "uses VFP register arguments"
-        # errors against the soft-float NuttX libraries.
-        if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
-            if(NOT CONFIG_ARCH_FPU)
-                string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
-            endif()
-        endif()
-        list(APPEND ZIG_TARGET_ARGS "-target" "${OVE_ZIG_TARGET}")
+    endif()
+    list(APPEND ZIG_TARGET_ARGS "-target" "${OVE_ZIG_TARGET}")
 
-        # Map MCU to Zig CPU model
-        if(DEFINED OVE_MCU)
-            string(TOLOWER "${OVE_MCU}" _MCU_LOWER)
-            if(_MCU_LOWER MATCHES "stm32f7" OR _MCU_LOWER MATCHES "cortex.m7" OR _MCU_LOWER MATCHES "cmsdk_cm7")
-                list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m7")
-            elseif(_MCU_LOWER MATCHES "stm32f4" OR _MCU_LOWER MATCHES "cortex.m4" OR _MCU_LOWER MATCHES "cmsdk_cm4")
-                list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m4")
-            elseif(_MCU_LOWER MATCHES "stm32h7")
-                list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m7")
-            endif()
+    # Map MCU to Zig CPU model
+    if(DEFINED OVE_MCU)
+        string(TOLOWER "${OVE_MCU}" _MCU_LOWER)
+        if(_MCU_LOWER MATCHES "stm32f7" OR _MCU_LOWER MATCHES "cortex.m7" OR _MCU_LOWER MATCHES "cmsdk_cm7")
+            list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m7")
+        elseif(_MCU_LOWER MATCHES "stm32f4" OR _MCU_LOWER MATCHES "cortex.m4" OR _MCU_LOWER MATCHES "cmsdk_cm4")
+            list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m4")
+        elseif(_MCU_LOWER MATCHES "stm32h7")
+            list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m7")
         endif()
+    endif()
 
-        # ARM cross-build profile tightening (mirrors the Rust binding's
-        # [profile.release] lto=fat / panic=abort posture).  -fno-stack-check
-        # removes per-frame `bl __zig_probe_stack` probes that have no
-        # meaning on bare-metal Cortex-M; -fsingle-threaded folds out
-        # thread-local-state branches in Zig's stdlib (Cortex-M targets
-        # are single-core); -fstrip removes symbols from the staticlib
-        # output (debuginfo flows via the link map / .elf separately).
-        list(APPEND ZIG_CPU_ARGS
-            "-fno-stack-check"
-            "-fsingle-threaded")
+    # ARM cross-build profile tightening (mirrors the Rust binding's
+    # [profile.release] lto=fat / panic=abort posture).  -fno-stack-check
+    # removes per-frame `bl __zig_probe_stack` probes that have no
+    # meaning on bare-metal Cortex-M; -fsingle-threaded folds out
+    # thread-local-state branches in Zig's stdlib (Cortex-M targets
+    # are single-core); -fstrip removes symbols from the staticlib
+    # output (debuginfo flows via the link map / .elf separately).
+    list(APPEND ZIG_CPU_ARGS
+        "-fno-stack-check"
+        "-fsingle-threaded")
 
-        # Cross-language LTO opt-in (paired with cmake/OveCommon.cmake's
-        # -flto=thin on the C side).  Default OFF — declared as a CMake
-        # option in OveCommon.cmake; enabling requires a bitcode-aware
-        # linker that matches Zig's bundled lld output.
-        if(OVE_CROSS_LTO)
-            list(APPEND ZIG_CPU_ARGS "-flto")
-        endif()
+    # Cross-language LTO opt-in (paired with cmake/OveCommon.cmake's
+    # -flto=thin on the C side).  Default OFF — declared as a CMake
+    # option in OveCommon.cmake; enabling requires a bitcode-aware
+    # linker that matches Zig's bundled lld output.
+    if(OVE_CROSS_LTO)
+        list(APPEND ZIG_CPU_ARGS "-flto")
     endif()
 
     # ── Collect include paths ────────────────────────────────────────────
@@ -117,9 +109,7 @@ function(ove_build_zig_lib TARGET)
     list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_GEN_DIR}")
 
     # Backend-specific includes
-    if(OVE_RTOS STREQUAL "posix")
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
-    elseif(OVE_RTOS STREQUAL "freertos")
+    if(OVE_RTOS STREQUAL "freertos")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/freertos/include")
         if(DEFINED FREERTOS_INCLUDE_DIR)
             list(APPEND ZIG_INCLUDE_ARGS "-I${FREERTOS_INCLUDE_DIR}")
@@ -164,32 +154,13 @@ function(ove_build_zig_lib TARGET)
     # NuttX provides its own libc, so skip the ARM newlib sysroot for NuttX
     # to avoid header conflicts (newlib's stdio.h requires types NuttX doesn't
     # define in the same way).
-    if(NOT ZIG_IS_NATIVE AND NOT OVE_RTOS STREQUAL "nuttx")
+    if(NOT OVE_RTOS STREQUAL "nuttx")
         _ove_binding_arm_sysroot_include(_ARM_SYSROOT)
         if(_ARM_SYSROOT AND EXISTS "${_ARM_SYSROOT}")
             list(APPEND ZIG_INCLUDE_ARGS "-I${_ARM_SYSROOT}")
         endif()
     endif()
 
-    # Native host system includes (Zig's @cImport doesn't inherit GCC paths)
-    if(ZIG_IS_NATIVE AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-        if(EXISTS "/usr/include")
-            list(APPEND ZIG_INCLUDE_ARGS "-I/usr/include")
-        endif()
-        execute_process(
-            COMMAND ${CMAKE_C_COMPILER} -print-multiarch
-            OUTPUT_VARIABLE _MULTIARCH
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-            RESULT_VARIABLE _MULTIARCH_RES
-        )
-        if(_MULTIARCH_RES EQUAL 0 AND _MULTIARCH)
-            set(_MULTIARCH_INC "/usr/include/${_MULTIARCH}")
-            if(EXISTS "${_MULTIARCH_INC}")
-                list(APPEND ZIG_INCLUDE_ARGS "-I${_MULTIARCH_INC}")
-            endif()
-        endif()
-    endif()
 
     # ── Inherit include directories from the CMake target ───────────────
     # The board CMakeLists.txt sets include_directories() globally.
@@ -287,9 +258,8 @@ function(ove_build_zig_lib TARGET)
     # touches mbstate so the alias is purely a parse-time fix.  NuttX
     # provides its own libc with a real `wint_t` typedef, so the macro
     # is skipped there to avoid a `typedef _wint_t unsigned int` parse
-    # error.  Native (posix) builds also skip — their libc
-    # paths already provide wint_t cleanly.
-    if(NOT ZIG_IS_NATIVE AND NOT OVE_RTOS STREQUAL "nuttx")
+    # error.
+    if(NOT OVE_RTOS STREQUAL "nuttx")
         list(APPEND ZIG_DEFINE_ARGS "-Dwint_t=unsigned int")
     endif()
 

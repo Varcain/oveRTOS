@@ -66,7 +66,7 @@ fn main() {
         }
         // board_<name> cfgs (for board-specific gates); doc-only
         // build registers them as known cfgs without setting any.
-        for b in &["qemu_mps2", "stm32f746g_disco", "host_posix"] {
+        for b in &["qemu_mps2", "stm32f746g_disco"] {
             println!("cargo:rustc-check-cfg=cfg(board_{b})");
         }
         // config_ove_<name> cfgs (G3 generic Kconfig surface); doc-only
@@ -162,7 +162,6 @@ fn main() {
         let boards = [
             ("QEMU_MPS2_AN500", "qemu_mps2"),
             ("STM32F746G_DISCO", "stm32f746g_disco"),
-            ("HOST_POSIX", "host_posix"),
         ];
         for (cfg_token, rust_cfg) in &boards {
             let cfg_name = format!("board_{rust_cfg}");

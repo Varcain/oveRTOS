@@ -50,7 +50,6 @@ fn ove_detect_config() {
     let boards = [
         ("QEMU_MPS2_AN500", "qemu_mps2"),
         ("STM32F746G_DISCO", "stm32f746g_disco"),
-        ("HOST_POSIX", "host_posix"),
     ];
     for (cfg_token, rust_cfg) in &boards {
         let cfg_name = format!("board_{}", rust_cfg);

@@ -35,14 +35,6 @@ config OVE_BOARD_QEMU_MPS2_AN521
       The substrate for the Linux personality: runs a loaded program
       unprivileged and traps its svc. Console + exit via semihosting.
 
-
-config OVE_BOARD_HOST_PC
-    bool "Host PC (native)"
-    depends on OVE_RTOS_POSIX
-    select OVE_DEBUG_BUILD
-    help
-      Native host development. Uses browser dashboard for display and audio.
-
 endchoice
 
 config OVE_BOARD_NAME
@@ -50,27 +42,23 @@ config OVE_BOARD_NAME
     default "stm32f746g-discovery" if OVE_BOARD_STM32F746G_DISCO
     default "qemu-mps2-an500" if OVE_BOARD_QEMU_MPS2_AN500
     default "qemu-mps2-an521" if OVE_BOARD_QEMU_MPS2_AN521
-    default "host" if OVE_BOARD_HOST_PC
 
 config OVE_FLASH_SIZE
     int
     default 1048576 if OVE_BOARD_STM32F746G_DISCO
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN521
-    default 0 if OVE_BOARD_HOST_PC
 
 config OVE_RAM_SIZE
     int
     default 327680 if OVE_BOARD_STM32F746G_DISCO
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN521
-    default 0 if OVE_BOARD_HOST_PC
 
 config OVE_MCU
     string
     default "STM32F746xx" if OVE_BOARD_STM32F746G_DISCO
     default "CMSDK_CM7" if OVE_BOARD_QEMU_MPS2_AN500
     default "CMSDK_CM33" if OVE_BOARD_QEMU_MPS2_AN521
-    default "host" if OVE_BOARD_HOST_PC
 
 endmenu

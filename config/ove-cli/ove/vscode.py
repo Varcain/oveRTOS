@@ -45,15 +45,10 @@ def cmd_vscode(args):
     os.makedirs(vscode_dir, exist_ok=True)
 
     elf = _firmware_elf(ws)
-    posix = _posix_bin(ws)
-    if ws.rtos != "posix" and not os.path.isfile(elf):
+    if not os.path.isfile(elf):
         logger.warning(
             f"{elf} not present — debug launches will fail until you run "
             f"'make build'. Generating configs anyway.")
-    elif ws.rtos == "posix" and not os.path.isfile(posix):
-        logger.warning(
-            f"{posix} not present — POSIX debug/run launches will fail "
-            f"until 'make build'. Generating configs anyway.")
 
     overwritten = []
     _write_json(os.path.join(vscode_dir, "settings.json"),
@@ -152,10 +147,6 @@ def _resolve_gdb(ws):
 
 def _firmware_elf(ws):
     return os.path.join(ws.images_dir, "firmware.elf")
-
-
-def _posix_bin(ws):
-    return os.path.join(ws.images_dir, "ove_posix")
 
 
 def _is_qemu_board(ws):
@@ -264,10 +255,7 @@ def _build_extensions_json(ws):
         "ms-vscode.makefile-tools",
         "twxs.cmake",
     ]
-    if ws.rtos == "posix":
-        recommendations.append("vadimcn.vscode-lldb")
-    else:
-        recommendations.append("marus25.cortex-debug")
+    recommendations.append("marus25.cortex-debug")
 
     if ws.app_lang == "rust":
         recommendations.append("rust-lang.rust-analyzer")
@@ -346,34 +334,10 @@ def _build_tasks_json(ws):
 
 def _build_launch_json(ws):
     elf = _firmware_elf(ws)
-    posix = _posix_bin(ws)
     gdb = _resolve_gdb(ws)
     configurations = []
 
-    if ws.rtos == "posix":
-        configurations.append({
-            "name": "Debug POSIX (CodeLLDB)",
-            "type": "lldb",
-            "request": "launch",
-            "program": posix,
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "env": {"OVE_DIR": ws.ove_dir},
-            "preLaunchTask": "ove: build",
-        })
-        configurations.append({
-            "name": "Debug POSIX (gdb)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": posix,
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "environment": [{"name": "OVE_DIR", "value": ws.ove_dir}],
-            "MIMode": "gdb",
-            "preLaunchTask": "ove: build",
-        })
-
-    elif _is_qemu_board(ws):
+    if _is_qemu_board(ws):
         configurations.append({
             "name": "Debug QEMU (cortex-debug, attach)",
             "cwd": "${workspaceFolder}",

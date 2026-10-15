@@ -41,15 +41,13 @@ def find_board_lv_conf(ws):
     candidate locations that `config/cmake/ove_rust.cmake` uses.
     """
     candidates = []
-    if ws.rtos == "posix":
-        candidates.append(os.path.join(
-            ws.ove_dir, "boards", "host", "posix", "lv_conf.h"))
     board_dir = getattr(ws, "board_dir", None) or (
         os.path.join(ws.ove_dir, "boards", ws.board_name or "")
         if ws.board_name else None)
     if board_dir:
-        rtos = ws.rtos or "posix"
-        for sub in (rtos, f"{rtos}/inc", "inc", "freertos/inc"):
+        rtos = ws.rtos
+        subs = (rtos, f"{rtos}/inc") if rtos else ()
+        for sub in subs + ("inc", "freertos/inc"):
             candidates.append(os.path.join(board_dir, sub, "lv_conf.h"))
         candidates.append(os.path.join(board_dir, "lv_conf.h"))
 
@@ -219,7 +217,7 @@ def generate_app_sources(ws):
     platform_sources = app.pop("platform_sources", None)
     board_sources = app.pop("board_sources", None)
     if platform_sources or board_sources:
-        rtos = ws.rtos or "posix"
+        rtos = ws.rtos or ""
         board = ws.board_name or ""
         # Board-specific sources take priority over platform-specific
         if board_sources and board in board_sources:

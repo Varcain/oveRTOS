@@ -167,7 +167,7 @@ class Workspace:
     @property
     def rtos(self):
         """Detect RTOS from .config."""
-        for name in ("FREERTOS", "ZEPHYR", "NUTTX", "POSIX"):
+        for name in ("FREERTOS", "ZEPHYR", "NUTTX"):
             if get_bool(self.config, f"CONFIG_OVE_RTOS_{name}"):
                 return name.lower()
         return None

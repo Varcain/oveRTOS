@@ -38,7 +38,7 @@ def _discover_apps(ove_dir):
     tuples discovered from app.yaml files.
 
     `incompatible_boards` is a list of board names as used in the spec
-    (e.g. `["host", "web"]`); empty when the app sets no such field. Used to
+    (e.g. `["web"]`); empty when the app sets no such field. Used to
     skip board/rtos combos an app cannot satisfy (e.g. networking apps on
     the browser variant, which has no network peer).
 
@@ -322,7 +322,7 @@ def cmd_alldefconfigs(args):
 def add_subcommands(sub):
     p = sub.add_parser("allconfigs",
                        help="Build every app for <board>.<rtos>")
-    p.add_argument("spec", help="board.rtos (e.g. host.posix)")
+    p.add_argument("spec", help="board.rtos (e.g. qemu.freertos)")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON summary in addition to text")
 

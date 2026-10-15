@@ -227,8 +227,7 @@ macro(ove_setup_project)
     # task stack, which needs the compiler to emit frame pointers. NuttX
     # uses up_backtrace(tcb), which internally relies on the same ARMv7-M
     # convention — keeping -fno-omit-frame-pointer here is insurance for
-    # the Cortex-M path and harmless on the POSIX target (its profiler
-    # uses libc backtrace instead).
+    # the Cortex-M path.
     if(OVE_PROFILER AND (OVE_RTOS STREQUAL "freertos"
                         OR OVE_RTOS STREQUAL "nuttx"))
         add_compile_options(-fno-omit-frame-pointer)
@@ -253,11 +252,9 @@ macro(ove_setup_project)
         include_directories(${OVE_DIR}/backends/zephyr/include)
     elseif(OVE_RTOS STREQUAL "nuttx")
         include_directories(${OVE_DIR}/backends/nuttx/include)
-    elseif(OVE_RTOS STREQUAL "posix")
-        include_directories(${OVE_DIR}/backends/posix/include)
     else()
         message(FATAL_ERROR
-            "OveCommon: unknown OVE_RTOS '${OVE_RTOS}' (expected freertos|zephyr|nuttx|posix)")
+            "OveCommon: unknown OVE_RTOS '${OVE_RTOS}' (expected freertos|zephyr|nuttx)")
     endif()
 
     # Common include directories

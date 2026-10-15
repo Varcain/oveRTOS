@@ -5,17 +5,16 @@ An external oveRTOS application (C++).
 ## Build
 
 ```bash
-make host.posix.{{CONFIG_NAME}}     # POSIX host
 make qemu.freertos.{{CONFIG_NAME}}  # QEMU + FreeRTOS
 
 make            # download, configure, build
-make run        # launch (POSIX) or boot in QEMU
+make run        # boot in QEMU
 ```
 
 `OVE_DIR` is set in `Makefile`. Override per invocation:
 
 ```bash
-make OVE_DIR=/other/path/to/oveRTOS host.posix.{{CONFIG_NAME}} && make
+make OVE_DIR=/other/path/to/oveRTOS qemu.freertos.{{CONFIG_NAME}} && make
 ```
 
 ## Layout

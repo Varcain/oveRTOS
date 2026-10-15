@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -31,7 +30,6 @@ def _preflight_check(ws):
         "freertos": ["FreeRTOS-Kernel", "STM32CubeF7"],
         "nuttx": ["nuttx"],
         "zephyr": ["zephyr-workspace"],
-        "posix": [],
     }
     candidates = rtos_dir_map.get(rtos, [])
     if candidates:
@@ -727,71 +725,6 @@ def build_nuttx(ws):
     _create_run_or_flash_script(ws, rtos="nuttx")
 
 
-def build_posix(ws):
-    """Build POSIX native executable via CMake."""
-    cmake = _find_cmake()
-    env = ws.toolchain_env()
-    board_dir = os.path.join(ws.board_dir, "posix")
-    fw_build = os.path.join(ws.build_dir, "firmware")
-    os.makedirs(fw_build, exist_ok=True)
-
-    logger.info("Building POSIX native executable")
-    run([
-        cmake,
-        f"-DOVE_DIR={ws.ove_dir}",
-        f"-DOVE_APP_DIR={ws.app_dir}",
-        f"-DOVE_GEN_DIR={ws.gen_dir}",
-        f"-DOVE_DL_DIR={ws.ws_dl_dir}",
-        board_dir,
-    ], env=env, cwd=fw_build, log_file=ws.build_log)
-    run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-        log_file=ws.build_log)
-
-    os.makedirs(ws.images_dir, exist_ok=True)
-    src = os.path.join(fw_build, "ove_posix")
-    if os.path.isfile(src):
-        shutil.copy2(src, ws.images_dir)
-
-    # Create run script — mirrors 'ove run' for POSIX: launch the
-    # dashboard bridge in the background, then run the binary.
-    run_script = os.path.join(ws.workspace_dir, "run")
-    ove_dir_q = shlex.quote(ws.ove_dir)
-    with open(run_script, "w") as f:
-        f.write('#!/bin/bash\n')
-        f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-        f.write(f'OVE_DIR={ove_dir_q}\n')
-        f.write('export OVE_DIR\n')
-        f.write('\n')
-        f.write('HEADLESS=0\n')
-        f.write('ARGS=()\n')
-        f.write('for arg in "$@"; do\n')
-        f.write('    case "$arg" in\n')
-        f.write('        --headless) HEADLESS=1 ;;\n')
-        f.write('        *) ARGS+=("$arg") ;;\n')
-        f.write('    esac\n')
-        f.write('done\n')
-        f.write('\n')
-        f.write('BRIDGE_PID=""\n')
-        f.write('cleanup() {\n')
-        f.write('    if [ -n "$BRIDGE_PID" ]; then\n')
-        f.write('        kill "$BRIDGE_PID" 2>/dev/null || true\n')
-        f.write('        wait "$BRIDGE_PID" 2>/dev/null || true\n')
-        f.write('    fi\n')
-        f.write('}\n')
-        f.write('trap cleanup EXIT\n')
-        f.write('\n')
-        f.write('if [ "$HEADLESS" != "1" ]; then\n')
-        f.write('    PYTHON="$OVE_DIR/.venv/bin/python3"\n')
-        f.write('    [ -x "$PYTHON" ] || PYTHON=python3\n')
-        f.write('    "$PYTHON" "$OVE_DIR/config/scripts/ove-dashboard-bridge.py" \\\n')
-        f.write('        --port 8080 --dashboard "$OVE_DIR/sim/dashboard" &\n')
-        f.write('    BRIDGE_PID=$!\n')
-        f.write('fi\n')
-        f.write('\n')
-        f.write('"$DIR/images/ove_posix" "${ARGS[@]}"\n')
-    os.chmod(run_script, 0o755)
-
-
 def _write_build_id_header(ws):
     """Generate the build ID header the firmware prints at boot.
 
@@ -1079,7 +1012,6 @@ def build(ws):
         "freertos": build_freertos,
         "zephyr": build_zephyr,
         "nuttx": build_nuttx,
-        "posix": build_posix,
     }
 
     builder = dispatch.get(rtos)
