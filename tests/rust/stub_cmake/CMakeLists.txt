@@ -13,7 +13,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(OVE_INCLUDE ${OVE_ROOT}/include)
 set(OVE_SRC ${OVE_ROOT}/src)
-set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
+set(POSIX_CORE_DIR ${OVE_ROOT}/tests/host/posix)
 set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/stub)
 
 # Include test helper (provides ove_config.h location)

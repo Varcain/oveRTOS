@@ -254,16 +254,17 @@ fn main() {
     let backend_include = {
         let config_path = format!("{ove_gen_dir}/ove_config.h");
         let config = std::fs::read_to_string(&config_path).unwrap_or_default();
+        // POSIX is the host test backend; it lives with the tests.
         let backends = [
-            ("FREERTOS", "freertos"),
-            ("ZEPHYR", "zephyr"),
-            ("NUTTX", "nuttx"),
-            ("POSIX", "posix"),
+            ("FREERTOS", "backends/freertos"),
+            ("ZEPHYR", "backends/zephyr"),
+            ("NUTTX", "backends/nuttx"),
+            ("POSIX", "tests/host/posix"),
         ];
         backends.iter().find_map(|(define, dir)| {
             let needle = format!("#define CONFIG_OVE_RTOS_{define} 1");
             if config.contains(&needle) {
-                Some(format!("{ove_dir}/backends/{dir}/include"))
+                Some(format!("{ove_dir}/{dir}/include"))
             } else {
                 None
             }

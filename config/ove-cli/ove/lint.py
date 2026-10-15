@@ -307,6 +307,8 @@ def _clang_tidy(ove_dir, check):
         os.path.abspath(os.path.join(ove_dir, "src")),
         os.path.abspath(os.path.join(ove_dir, "include")),
         os.path.abspath(os.path.join(ove_dir, "backends")),
+        # The host test backend the stub/C++ suites link.
+        os.path.abspath(os.path.join(ove_dir, "tests", "host", "posix")),
         os.path.abspath(os.path.join(ove_dir, "bindings", "cpp")),
         os.path.abspath(os.path.join(ove_dir, "apps")),
         os.path.abspath(os.path.join(ove_dir, "overtos_apps")),
