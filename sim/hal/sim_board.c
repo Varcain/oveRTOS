@@ -14,7 +14,7 @@
  * CONFIG_OVE_SIM is enabled.
  *
  * Dashboard serving:
- *   POSIX / QEMU — external bridge (ove-dashboard-bridge.py)
+ *   native QEMU — external bridge (ove-dashboard-bridge.py)
  *   QEMU in a browser — the page itself (sim/dashboard/qemu-wasm.js)
  */
 
@@ -59,12 +59,7 @@ int ove_sim_board_init(void)
 	int ret;
 
 	/* 1. Create transport. */
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	ret = ove_sim_transport_shm_guest_create(&transport);
-#else
-	extern int ove_sim_transport_shm_local_create(struct ove_sim_transport * t);
-	ret = ove_sim_transport_shm_local_create(&transport);
-#endif
 	if (ret != OVE_OK) {
 		fprintf(stderr, "[sim] Failed to create transport: %d\n", ret);
 		return ret;
