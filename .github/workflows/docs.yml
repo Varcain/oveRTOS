@@ -67,7 +67,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: output/tools/qemu-wasm
-          key: qemu-wasm-${{ hashFiles('manifest.yaml', 'config/scripts/build-qemu-wasm.sh', 'config/qemu-wasm/mps2.mak') }}
+          key: qemu-wasm-${{ hashFiles('manifest.yaml', 'config/scripts/build-qemu-wasm.sh', 'config/qemu-wasm/**') }}
 
       - name: Build the WebAssembly QEMU
         run: .venv/bin/ove ensure-toolchain qemu-wasm

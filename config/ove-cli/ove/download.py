@@ -9,6 +9,7 @@
 Absorbs config/scripts/download.py into the ove CLI package.
 """
 
+import glob
 import hashlib
 import logging
 import os
@@ -896,9 +897,15 @@ def _sha256_file(path):
 
 
 def _qemu_wasm_recipe(ove_dir):
-    """Paths of the files that define how the WebAssembly QEMU is built."""
+    """Paths of the files that define how the WebAssembly QEMU is built.
+
+    The build script comes first; the device list and the patches follow,
+    so a changed patch set builds a new emulator too.
+    """
+    recipe_dir = os.path.join(ove_dir, "config", "qemu-wasm")
+    patches = sorted(glob.glob(os.path.join(recipe_dir, "patches", "*.patch")))
     return (os.path.join(ove_dir, "config", "scripts", "build-qemu-wasm.sh"),
-            os.path.join(ove_dir, "config", "qemu-wasm", "mps2.mak"))
+            os.path.join(recipe_dir, "mps2.mak"), *patches)
 
 
 def qemu_wasm_dir(ove_dir, tools_dir, manifest=None):

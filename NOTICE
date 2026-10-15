@@ -54,7 +54,8 @@ Downloaded dependencies (fetched by the build system into dl/):
 
   QEMU (built for WebAssembly by `ove ensure-toolchain qemu-wasm`; the
   browser bundles and the documentation site's demos redistribute that
-  binary, with a SOURCE.txt naming the exact source and build recipe)
+  binary, with a SOURCE.txt naming the exact source and build recipe and
+  carrying the oveRTOS patches applied to it)
     Copyright (C) Fabrice Bellard and the QEMU Project developers
     Licensed under the GNU General Public License, version 2
     https://www.qemu.org/

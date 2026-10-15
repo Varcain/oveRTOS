@@ -4,9 +4,9 @@
 # This is the emulator behind the browser demos: it runs the same
 # qemu-mps2-an500 firmware as the native qemu-system-arm.  The build
 # follows upstream's own recipe (the emsdk-wasm64-cross container and the
-# build-wasm64-32bit CI job) on an unmodified release tarball; the only
-# additions are the device list in config/qemu-wasm/mps2.mak and
-# --disable-debug-info.
+# build-wasm64-32bit CI job) on the release tarball, plus the device list
+# in config/qemu-wasm/mps2.mak, --disable-debug-info, and the patches in
+# config/qemu-wasm/patches/ (applied in name order; each one says why).
 #
 # The WebAssembly host has no JIT backend upstream, so QEMU runs its TCG
 # interpreter (--enable-tcg-interpreter is mandatory).
@@ -27,6 +27,8 @@ OUT="${3:?Usage: $0 <qemu-X.Y.Z.tar.xz> <work-dir> <out-dir>}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEVICES="${SCRIPT_DIR}/../qemu-wasm/mps2.mak"
+PATCHES=("${SCRIPT_DIR}"/../qemu-wasm/patches/*.patch)
+[ -e "${PATCHES[0]}" ] || PATCHES=()
 
 ENGINE="${OVE_CONTAINER_ENGINE:-}"
 if [ -z "${ENGINE}" ]; then
@@ -51,12 +53,16 @@ OUT="$(cd "${OUT}" && pwd)"
 SRC="${WORK}/src"
 BUILD="${WORK}/build"
 
-if [ ! -f "${SRC}/configure" ]; then
-    echo "[qemu-wasm] extracting $(basename "${TARBALL}")"
-    rm -rf "${SRC}"
-    mkdir -p "${SRC}"
-    tar xf "${TARBALL}" -C "${SRC}" --strip-components=1
-fi
+# Always start from the pristine release, so the patch set applies cleanly
+# and the build tree never mixes in an earlier recipe.
+echo "[qemu-wasm] extracting $(basename "${TARBALL}")"
+rm -rf "${SRC}" "${WORK}/build"
+mkdir -p "${SRC}"
+tar xf "${TARBALL}" -C "${SRC}" --strip-components=1
+for p in "${PATCHES[@]}"; do
+    echo "[qemu-wasm] applying $(basename "${p}")"
+    patch -d "${SRC}" -p1 --forward --quiet < "${p}"
+done
 cp "${DEVICES}" "${SRC}/configs/devices/arm-softmmu/ove-mps2.mak"
 
 # The container image holds emsdk plus QEMU's dependencies (glib, pixman,
@@ -85,10 +91,11 @@ cat > "${OUT}/SOURCE.txt" <<SOURCE_EOF
 qemu-system-arm.js and qemu-system-arm.wasm are QEMU ${VERSION}, licensed
 under the GNU GPL version 2 (https://www.qemu.org/).
 
-Built from the unmodified upstream release
+Built from the upstream release
   https://download.qemu.org/$(basename "${TARBALL}")
   sha256 $(sha256sum "${TARBALL}" | cut -d' ' -f1)
-with Emscripten, using upstream's tests/docker/dockerfiles/emsdk-wasm64-cross.docker
+with the patches listed at the end of this file applied, and compiled with
+Emscripten using upstream's tests/docker/dockerfiles/emsdk-wasm64-cross.docker
 and
 
   emconfigure ./configure ${CONFIGURE_ARGS}
@@ -97,6 +104,10 @@ where configs/devices/arm-softmmu/ove-mps2.mak is:
 
 $(sed 's/^/  /' "${DEVICES}")
 SOURCE_EOF
+for p in "${PATCHES[@]}"; do
+    printf '\n==> patch %s\n\n' "$(basename "${p}")" >> "${OUT}/SOURCE.txt"
+    cat "${p}" >> "${OUT}/SOURCE.txt"
+done
 
 echo "[qemu-wasm] done: ${OUT}"
 ls -l "${OUT}"
