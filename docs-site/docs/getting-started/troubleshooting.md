@@ -89,7 +89,7 @@ echo $TERM
 
 You can also skip menuconfig entirely and stay on the dot-syntax (`make <board>.<rtos>.<app>`) flow.
 
-### `make host.posix.example_c` reports "no matching defconfig fragment"
+### `make qemu.freertos.example_c` reports "no matching defconfig fragment"
 
 The fragment composer didn't find one of the three pieces. Check what's actually available:
 
@@ -174,11 +174,11 @@ sudo apt install qemu-system-arm
 sudo dnf install qemu-system-arm
 ```
 
-For non-ARM targets you don't need QEMU at all — POSIX builds run as native processes.
+Only hardware-flash workflows (`make flash`) run without it.
 
-### POSIX build runs but the LVGL dashboard never opens
+### QEMU build runs but the LVGL dashboard never opens
 
-The browser dashboard runs on `http://localhost:8080` by default; check that nothing else is bound to that port, and that your firewall isn't blocking localhost. Headless run:
+The browser dashboard runs on `http://localhost:8081` for native QEMU runs; check that nothing else is bound to that port, and that your firewall isn't blocking localhost. Headless run:
 
 ```bash
 make run HEADLESS=1
@@ -188,7 +188,7 @@ The app still writes log lines to stdout in headless mode.
 
 ### WSL2: audio playback is choppy or out of sync
 
-Known issue — WSL2's clock and the host's audio clock drift, so the browser-side PCM playback occasionally underruns. The cleanest fix is to switch the simulator's audio transport to native POSIX miniaudio (see project notes). For everyday development, expect a small amount of glitching; correctness of the audio graph is unaffected.
+Known issue — WSL2's clock and the host's audio clock drift, so the browser-side PCM playback occasionally underruns. For everyday development, expect a small amount of glitching; correctness of the audio graph is unaffected.
 
 ### Renode targets fail with "JVM not found"
 
@@ -204,7 +204,7 @@ For Ubuntu where the portable build still complains, install a JRE: `sudo apt in
 
 ### `make flash` reports "openocd: command not found"
 
-OpenOCD is optional (not needed for QEMU or POSIX), but required to flash the STM32F746G-Discovery.
+OpenOCD is optional (not needed for QEMU or the browser bundle), but required to flash the STM32F746G-Discovery.
 
 ```bash
 sudo apt install openocd
@@ -234,7 +234,7 @@ Only needed for hardware-in-the-loop tests. Install it inside the venv:
 .venv/bin/pip install 'pyserial>=3.5'
 ```
 
-`make doctor` flags this as `WARN`, not `FAIL`, because nothing under POSIX or QEMU needs it.
+`make doctor` flags this as `WARN`, not `FAIL`, because nothing under QEMU needs it.
 
 ### Renode tests time out on first run
 
@@ -244,9 +244,9 @@ The first run downloads ~150 MB of Renode binaries; subsequent runs reuse `outpu
 
 ### `ove_main` locals are UB after `ove_run()`
 
-**Symptom** — a worker thread reads garbage from a variable that `ove_main()` declared and "passed in"; the bug shows up most loudly on FreeRTOS (often as a hard fault on the first context switch) and may stay hidden on POSIX or Zephyr until you change a build flag.
+**Symptom** — a worker thread reads garbage from a variable that `ove_main()` declared and "passed in"; the bug shows up most loudly on FreeRTOS (often as a hard fault on the first context switch) and may stay hidden on Zephyr or NuttX until you change a build flag.
 
-**Why** — `ove_main()` runs on a temporary bootstrap stack. Any object in its automatic storage (plain locals, including arrays and structs) becomes dangling once `ove_main()` returns. `ove_run()` calls into `vTaskStartScheduler()`, which on Cortex-M resets MSP to the initial stack top — the first interrupt then overwrites the region that used to hold those locals. On POSIX / Zephyr the hosting thread never unwinds, so the memory happens to survive, which masks the same UB.
+**Why** — `ove_main()` runs on a temporary bootstrap stack. Any object in its automatic storage (plain locals, including arrays and structs) becomes dangling once `ove_main()` returns. `ove_run()` calls into `vTaskStartScheduler()`, which on Cortex-M resets MSP to the initial stack top — the first interrupt then overwrites the region that used to hold those locals. On Zephyr and NuttX the hosting thread never unwinds, so the memory happens to survive, which masks the same UB.
 
 **Fix** — give long-lived state `static` storage:
 

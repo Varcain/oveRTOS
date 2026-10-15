@@ -27,7 +27,6 @@ Under `RTOS Selection > RTOS backend`, choose one of:
 | `FreeRTOS` | FreeRTOS via STM32CubeF7 SDK |
 | `Zephyr RTOS` | Zephyr Project via West |
 | `Apache NuttX` | Apache NuttX RTOS |
-| `POSIX (native host)` | pthreads + sim dashboard, no cross-compilation |
 
 ### Enabling and Disabling Modules
 
@@ -84,14 +83,14 @@ For example:
 ```bash
 make qemu.freertos.example_c
 make stm32f746.zephyr.example_cpp
-make host.posix.example_rust
+make qemu.nuttx.example_rust
 ```
 
 Zero-heap variants are separate apps with the `_zh` suffix:
 
 ```bash
-make host.posix.example_c_zh
-make qemu.freertos.example_cpp_zh
+make qemu.freertos.example_c_zh
+make qemu.zephyr.example_cpp_zh
 ```
 
 Each `_zh` app has its own `app.yaml` with `CONFIG_OVE_ZERO_HEAP=y`
@@ -103,7 +102,6 @@ and any storage-mode-specific tuning.
 
 | Short name | Board |
 |---|---|
-| `host` | Host PC (POSIX native) |
 | `qemu` | QEMU MPS2-AN500 (Cortex-M7) |
 | `stm32f746` | STM32F746G-Discovery |
 | `web` | The `qemu` board packaged for a web browser (firmware + QEMU compiled to WebAssembly) |
@@ -112,7 +110,6 @@ and any storage-mode-specific tuning.
 
 | Name | Boards |
 |---|---|
-| `posix` | host |
 | `freertos` | qemu, web, stm32f746 |
 | `nuttx` | qemu, web, stm32f746 |
 | `zephyr` | qemu, web, stm32f746 |
@@ -134,7 +131,6 @@ and any storage-mode-specific tuning.
 Build all apps for a specific board/RTOS pair:
 
 ```bash
-make allconfigs-host.posix
 make allconfigs-qemu.freertos
 make allconfigs-stm32f746.zephyr
 ```

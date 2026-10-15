@@ -24,15 +24,15 @@ The list tracks what's wrapped in `bindings/cpp/ove/lvgl.hpp` — if a widget is
 
 ```bash
 # C++ port
-make host.posix.lvgl_gallery_cpp
+make qemu.freertos.lvgl_gallery_cpp
 make && make run
 
 # Rust port
-make host.posix.lvgl_gallery_rust
+make qemu.freertos.lvgl_gallery_rust
 make && make run
 
 # Zig port
-make host.posix.lvgl_gallery_zig
+make qemu.freertos.lvgl_gallery_zig
 make && make run
 ```
 

@@ -13,7 +13,7 @@ See the [overview](index.md) for architecture details and the full API list.
 ## How to build
 
 ```bash
-# Native POSIX
-make host.posix.example_net_rust
+# QEMU + FreeRTOS (with the dashboard)
+make qemu.freertos.example_net_rust
 make configure && make download && make && make run
 ```

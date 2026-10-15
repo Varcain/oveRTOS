@@ -40,21 +40,11 @@ equivalent operations*.  For IPC primitives (queue, stream, event
 group, workqueue) that's not always true; this section calls out
 the gaps so the deltas don't get misread.
 
-### POSIX
-
-oveRTOS queue and stream are user-space ring buffers; the closest
-standard POSIX IPC primitive is `pipe()`, which goes through the
-kernel.  Large negative Δ on `Queue *` / `Stream *` rows therefore
-reflects oveRTOS staying in user space, *not* a wrapper-layer effect.
-Event groups and workqueues have no native POSIX equivalent and are
-intentionally absent from the table.
-
 ### FreeRTOS
 
 Both oveRTOS queue and the FreeRTOS `xQueue*` / `xStreamBuffer*`
 baselines run in-kernel on Cortex-M, so wrapper-vs-native Δ on
-`Queue *` / `Stream *` rows reflects pure binding overhead (no
-user-space-vs-kernel asymmetry like on POSIX).  Event groups
+`Queue *` / `Stream *` rows reflects pure binding overhead.  Event groups
 (FreeRTOS `xEventGroup*` mirrors oveRTOS event 1:1, uninformative)
 and workqueues (no FreeRTOS primitive) are intentionally absent.
 

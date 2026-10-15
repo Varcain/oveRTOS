@@ -88,7 +88,6 @@ for (;;) {
 | FreeRTOS/STM32 | HAL SAI / I2S with `HAL_SAI_Transmit/Receive_DMA` and half/full-complete ISR hooks |
 | Zephyr | `i2s_configure()` + `i2s_write()` / `i2s_read()` with ping-pong buffers |
 | NuttX | Audio subsystem `/dev/audio*` with DMA ring buffers |
-| POSIX | Routed through the sim framework to the browser dashboard (Web Audio API) |
 
 ## Kconfig Options
 

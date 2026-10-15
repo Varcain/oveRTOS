@@ -1,6 +1,6 @@
 # oveRTOS Documentation
 
-oveRTOS lets you **write embedded RTOS applications in C++, Rust, or Zig** and **run them unchanged on FreeRTOS, Zephyr, or Apache NuttX**. First-class language bindings sit on top of a unified application API — threads, synchronisation, networking (sockets/TLS/HTTP/MQTT), audio graph, ML inference, LVGL, power management — and the kernel underneath is a configure-time choice with [minimal runtime overhead](benchmarks/index.md). The pure C surface that the bindings target is available directly when you want it, but the higher-level bindings are the recommended path for application code. A POSIX backend runs the same source as a native Linux/macOS process, and the QEMU firmware also runs in a browser for live demos.
+oveRTOS lets you **write embedded RTOS applications in C++, Rust, or Zig** and **run them unchanged on FreeRTOS, Zephyr, or Apache NuttX**. First-class language bindings sit on top of a unified application API — threads, synchronisation, networking (sockets/TLS/HTTP/MQTT), audio graph, ML inference, LVGL, power management — and the kernel underneath is a configure-time choice with [minimal runtime overhead](benchmarks/index.md). The pure C surface that the bindings target is available directly when you want it, but the higher-level bindings are the recommended path for application code. Without hardware, the same firmware runs under QEMU on your machine, and in a browser for live demos.
 
 !!! tip "First time here?"
     Run through the [**Quickstart**](getting-started/quickstart.md) — three commands take you from a fresh clone to a running app in five minutes. No hardware required.
@@ -13,7 +13,7 @@ oveRTOS lets you **write embedded RTOS applications in C++, Rust, or Zig** and *
 
     ---
 
-    `git clone` → `make setup` → `make doctor` → `make host.posix.example_cpp` → `make run`. The fastest path to a running oveRTOS app on your machine — pick C++, Rust, Zig, or C.
+    `git clone` → `make setup` → `make doctor` → `make qemu.freertos.example_cpp` → `make run`. The fastest path to a running oveRTOS app on your machine — pick C++, Rust, Zig, or C.
 
     [Start here →](getting-started/quickstart.md)
 
@@ -64,7 +64,7 @@ oveRTOS lets you **write embedded RTOS applications in C++, Rust, or Zig** and *
 - **Modern-language application development** — C++ (RAII + typed containers), Rust (`no_std` + `alloc`), Zig (`comptime`-generic); the underlying C surface is available when you need it
 - **Cross-RTOS portability** — same source on **FreeRTOS**, **Zephyr**, and **Apache NuttX**; backend chosen at configure time, no runtime indirection
 - **Application-grade modules** — sockets / TLS / HTTP / MQTT / HTTPD / SNTP, audio graph engine, TFLite Micro inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, bus drivers
-- **Develop without hardware** — a POSIX backend for Linux/macOS, QEMU for the real kernels, and the QEMU firmware in a browser for demos
+- **Develop without hardware** — QEMU runs the real kernels on your machine with the simulation dashboard, and the same firmware runs in a browser for demos
 - **Two heap modes** — heap mode (`_create` / `_destroy`) and zero-heap mode (caller-supplied static storage via `_init` / `_deinit` or `OVE_*_DEFINE_STATIC`); both modes share the same source on every binding
 - **Minimal abstraction overhead** — compile-time backend dispatch, no vtables, no indirect calls; per-binding wrapper cost is [measured on every commit](benchmarks/index.md)
 - **Unified Kconfig** — `make menuconfig` selects binding, kernel, board, and modules from a single `.config`

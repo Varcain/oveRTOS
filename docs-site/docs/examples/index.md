@@ -1,6 +1,6 @@
 # Examples
 
-oveRTOS ships with six example applications, each available across C, C++, Rust, and Zig (with a handful of language-specific exceptions noted below). All examples compile and run identically across FreeRTOS, Zephyr, NuttX, and POSIX backends.
+oveRTOS ships with six example applications, each available across C, C++, Rust, and Zig (with a handful of language-specific exceptions noted below). All examples compile and run identically across the FreeRTOS, Zephyr, and NuttX backends.
 
 Interactive demos run directly in your browser — no toolchain needed.
 

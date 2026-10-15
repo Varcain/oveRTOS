@@ -1,6 +1,6 @@
 # Thread Management
 
-oveRTOS threads are portable wrappers around the native thread primitive of each supported backend: FreeRTOS tasks, Zephyr threads, NuttX pthreads, and POSIX pthreads. The same `ove/thread.h` API compiles unchanged for all four backends — priority mapping, state reporting, and stack profiling are translated at compile time with no runtime indirection.
+oveRTOS threads are portable wrappers around the native thread primitive of each supported backend: FreeRTOS tasks, Zephyr threads and NuttX pthreads (and pthreads on the host test backend). The same `ove/thread.h` API compiles unchanged for every backend — priority mapping, state reporting, and stack profiling are translated at compile time with no runtime indirection.
 
 !!! warning "`ove_main()` locals are UB after `ove_run()`"
     Anything in `ove_main()`'s automatic storage becomes dangling once the scheduler starts. Pass long-lived state to workers via `static` locals, file-scope variables, or heap allocation. See [Troubleshooting → `ove_main` locals](../getting-started/troubleshooting.md#ove_main-locals-are-ub-after-ove_run) for the full rule.
@@ -222,7 +222,7 @@ backend does not provide CPU accounting. Stack profiling follows the same
 explicit convention: `ove_thread_get_stack_headroom()` returns
 `OVE_ERR_NOT_SUPPORTED` instead of conflating unavailable data with a real
 zero-byte margin. FreeRTOS, Zephyr with stack initialization enabled, and
-heap-enabled POSIX builds provide the measurement. NuttX currently does
+the heap-enabled host test backend provide the measurement. NuttX currently does
 not expose a safe high-water query for an oveRTOS-owned task handle.
 
 ```c
@@ -272,12 +272,12 @@ if (rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL) {
 The flags are deliberately granular. For example, FreeRTOS, NuttX, and
 Zephyr can report cumulative running time without pretending that
 `total - running` is exact blocked time; that remainder can also include time
-spent ready or suspended. Heap-enabled POSIX builds with state
-tracking provide all four state buckets. Snapshot stack scanning stays
+spent ready or suspended. The heap-enabled host test backend with state
+tracking provides all four state buckets. Snapshot stack scanning stays
 disabled in bounded scheduler-locked traversals, so a backend may know the
 allocation size without providing `stack_used`.
 
-The POSIX simulator never scans another pthread's live stack: doing so would
+The host test backend never scans another pthread's live stack: doing so would
 race ordinary stack writes. It publishes a final coloration snapshot when the
 thread reaches `TERMINATED`; live external stack-headroom queries therefore
 return `OVE_ERR_NOT_SUPPORTED`, and live enumeration reports `stack_size`

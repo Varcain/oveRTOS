@@ -13,7 +13,7 @@ See the [overview](index.md) for architecture details and the full API list.
 ## How to build
 
 ```bash
-# Native POSIX
-make host.posix.benchmark
+# QEMU + FreeRTOS (with the dashboard)
+make qemu.freertos.benchmark
 make configure && make download && make && make run
 ```

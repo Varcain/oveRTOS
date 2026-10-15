@@ -7,7 +7,6 @@ The Zig port uses `ove.lvgl` for widget construction. Scene tables are `comptime
 ## Build
 
 ```bash
-make host.posix.lvgl_benchmark_zig
 make qemu.freertos.lvgl_benchmark_zig
 make && make run
 ```

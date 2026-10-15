@@ -13,7 +13,6 @@ The behaviour depends on the selected board:
 | Board | Behaviour |
 |---|---|
 | `qemu` (`qemu-mps2-an500`) | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
-| `host` | Executes the POSIX binary directly on the host; browser dashboard opens for display and audio |
 | `stm32f746` | `make run` is not used; use `make flash` to program hardware over ST-LINK |
 | `web` (browser variant of `qemu-mps2-an500`) | Serves the browser bundle over HTTP (COOP/COEP enabled) and opens it; the firmware runs in QEMU compiled to WebAssembly |
 
@@ -38,14 +37,6 @@ make run   # http://localhost:8080
 ```
 
 The emulator is built on first use (`ove ensure-toolchain qemu-wasm`, needs Docker or Podman). It runs QEMU's interpreter, several times slower than the native run above, so this variant builds the optimised firmware. See [Board Configurations](../build-system/boards.md) for what the bundle contains and how to host it.
-
-### POSIX Native Targets
-
-When the board is `host`, the compiled binary runs directly as a Linux or macOS process. The sim framework launches a browser-based dashboard that visualises the board display, LEDs, GPIO, and audio. Audio output plays through the browser's Web Audio API.
-
-```bash
-make run   # starts the browser dashboard
-```
 
 ## Flashing to Hardware
 

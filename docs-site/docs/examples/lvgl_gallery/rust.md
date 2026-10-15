@@ -7,7 +7,7 @@ The Rust port uses `ove::lvgl::*` safe wrappers and `ove::lvgl::lock()` for the 
 ## Build
 
 ```bash
-make host.posix.lvgl_gallery_rust
+make qemu.freertos.lvgl_gallery_rust
 make && make run
 ```
 

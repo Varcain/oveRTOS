@@ -7,7 +7,7 @@ The Zig port uses `ove.lvgl` typed wrappers and `defer guard.deinit()` for the b
 ## Build
 
 ```bash
-make host.posix.lvgl_gallery_zig
+make qemu.freertos.lvgl_gallery_zig
 make && make run
 ```
 

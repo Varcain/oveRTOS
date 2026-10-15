@@ -11,7 +11,6 @@ graph LR
     BE --> FreeRTOS["FreeRTOS<br/><small>LittleFS / flash</small>"]
     BE --> Zephyr["Zephyr<br/><small>NVS subsystem</small>"]
     BE --> NuttX["NuttX<br/><small>/dev/config</small>"]
-    BE --> POSIX["POSIX<br/><small>~/.ove-nvs/ files</small>"]
 
     style API fill:#48b,stroke:#333,color:#fff
 ```

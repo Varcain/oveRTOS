@@ -39,7 +39,7 @@ const app_title = switch (ove.target.current_rtos) {
     .freertos => "oveRTOS(FreeRTOS) Zig Demo",
     .nuttx => "oveRTOS(NuttX) Zig Demo",
     .zephyr => "oveRTOS(Zephyr) Zig Demo",
-    .posix => "oveRTOS(POSIX) Zig Demo",
+    .posix => @compileError("POSIX is the host test backend, not an app target"),
 };
 ```
 
@@ -201,7 +201,7 @@ try std.fmt.format(w, "value = {d}\n", .{42});
 ## How to build
 
 ```bash
-make host.posix.example_zig         # heap mode
-make host.posix.example_zig_zh      # zero-heap mode
+make qemu.freertos.example_zig      # heap mode
+make qemu.freertos.example_zig_zh   # zero-heap mode
 make configure && make download && make && make run
 ```

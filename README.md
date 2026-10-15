@@ -5,7 +5,7 @@
 
 Write embedded RTOS applications in **C++**, **Rust**, or **Zig** — and run them unchanged on **FreeRTOS**, **Zephyr**, or **Apache NuttX**.
 
-First-class language bindings sit on top of a unified C application API: threads, synchronisation, queues, timers, networking (sockets / TLS / HTTP / MQTT / SNTP / HTTPD), audio graph, ML inference, LVGL, power management, NVS, filesystem, shell, watchdog, bus drivers. The binding picks the ergonomics; the kernel underneath is a configure-time choice with [minimal runtime overhead](https://varcain.github.io/oveRTOS/benchmarks/). A native POSIX backend is available for development, and the QEMU firmware also runs in a browser for demos.
+First-class language bindings sit on top of a unified C application API: threads, synchronisation, queues, timers, networking (sockets / TLS / HTTP / MQTT / SNTP / HTTPD), audio graph, ML inference, LVGL, power management, NVS, filesystem, shell, watchdog, bus drivers. The binding picks the ergonomics; the kernel underneath is a configure-time choice with [minimal runtime overhead](https://varcain.github.io/oveRTOS/benchmarks/). Without hardware, the same firmware runs under QEMU on your machine, and in a browser for demos.
 
 > **New here?** → [**Quickstart in 5 minutes**](https://varcain.github.io/oveRTOS/getting-started/quickstart/). Hit a wall? → run `make doctor` or browse the [Troubleshooting page](https://varcain.github.io/oveRTOS/getting-started/troubleshooting/). Building an app outside the tree? → [`ove app new`](https://varcain.github.io/oveRTOS/build-system/external-apps/) stamps a working skeleton.
 
@@ -16,7 +16,7 @@ First-class language bindings sit on top of a unified C application API: threads
 - **Application-grade modules** — sockets / TLS / HTTP / MQTT / HTTPD / SNTP, audio graph, TFLite Micro inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, UART / SPI / I2C / I2S.
 - **Two allocation modes** — heap (`_create()` / `_destroy()`) or zero-heap (`_init()` / `_deinit()` with caller storage, or `OVE_*_DEFINE_STATIC` for file-scope objects). The `_DEFINE_STATIC` macros compile identically in both modes.
 - **[Minimal abstraction overhead](https://varcain.github.io/oveRTOS/benchmarks/)** — compile-time backend dispatch, no vtables, no indirect calls. Per-op wrapper cost is benchmarked across every binding on every commit.
-- **Develop without hardware** — a POSIX backend for Linux/macOS, QEMU for the real kernels, and the QEMU firmware running in a browser for demos.
+- **Develop without hardware** — QEMU runs the real kernels on your machine, with the simulation dashboard for display, audio and logs, and the same firmware runs in a browser for demos.
 
 ## Supported deployment targets
 
@@ -30,17 +30,17 @@ First-class language bindings sit on top of a unified C application API: threads
 
 | Target | Use | Toolchain |
 |---------|-----|-----------|
-| POSIX | Develop and test on Linux / macOS without hardware | Host GCC/Clang |
+| QEMU | Run the FreeRTOS, NuttX or Zephyr firmware on your machine, with the simulation dashboard | ARM GCC (downloaded) + `qemu-system-arm` |
 | Browser | The QEMU Cortex-M7 firmware, run in QEMU compiled to WebAssembly, for live demos | ARM GCC (+ Docker or Podman to build the emulator once) |
 
 ## Quick start
 
-Prereqs: Python 3 + `venv`, CMake, a host C/C++ compiler. ARM-GCC and QEMU are downloaded automatically when an embedded target is selected.
+Prereqs: Python 3 + `venv`, CMake, a host C/C++ compiler (for the test suites), and QEMU (`qemu-system-arm`). The ARM toolchain is downloaded automatically.
 
 ```bash
-make host.posix.example_cpp   # load <board>.<rtos>.<app> config
-make                          # download + configure + build
-make run                      # launch
+make qemu.freertos.example_cpp   # load <board>.<rtos>.<app> config
+make                             # download + configure + build
+make run                         # boot it in QEMU, with the dashboard
 ```
 
 Swap the third token for another language: `example_c`, `example_rust`, `example_zig`. Append `_zh` for the zero-heap variant. The dot-syntax extends to any `<board>.<rtos>.<app>` combination — `make help` enumerates everything from the live tree, or run `make menuconfig` for an interactive picker. See [Getting Started → Configure](https://varcain.github.io/oveRTOS/getting-started/configure/) for the full grammar.
@@ -54,9 +54,9 @@ Swap the third token for another language: `example_c`, `example_rust`, `example
  ├──────────────────────────────────────────────┤
  │           oveRTOS Portable API               │
  │  thread | sync | queue | timer | gpio | ...  │
- ├────────┬────────┬─────────┬──────────────────┤
- │FreeRTOS│ NuttX  │ Zephyr  │      POSIX       │
- └────────┴────────┴─────────┴──────────────────┘
+ ├───────────────┬───────────────┬──────────────┤
+ │   FreeRTOS    │     NuttX     │    Zephyr    │
+ └───────────────┴───────────────┴──────────────┘
 ```
 
 The backend is selected at configure time via Kconfig. All API calls resolve directly to backend-specific implementations at compile time — there is no runtime dispatch.
@@ -469,7 +469,7 @@ make test-all          # Everything (sim + QEMU + Renode; HW excluded)
 Individual targets:
 
 ```bash
-make test-stub                              # Stub backend API tests (POSIX, ~2 s)
+make test-stub                              # API tests on the host test backend (~2 s)
 make test-cpp                               # C++ binding tests
 make test-rust                              # Rust binding tests
 make test-zig                               # Zig binding tests
@@ -521,7 +521,7 @@ oveRTOS/
 ├── include/ove/        # Public C API headers
 ├── src/                # Core framework implementation
 ├── backends/           # Backend implementations
-│   ├── freertos/  nuttx/  zephyr/  posix/  common/
+│   ├── freertos/  nuttx/  zephyr/  common/
 ├── bindings/           # Language bindings
 │   ├── cpp/  rust/  zig/
 ├── apps/               # Example applications
@@ -534,7 +534,7 @@ oveRTOS/
 ├── boards/             # Board definitions
 ├── config/             # Kconfig definitions and the `ove` CLI
 │   └── fragments/      # Config fragments (board, RTOS, app)
-├── tests/              # Test suites + benchmark harnesses
+├── tests/              # Test suites, the host (POSIX) test backend, benchmark harnesses
 └── docs-site/          # MkDocs documentation site
 ```
 

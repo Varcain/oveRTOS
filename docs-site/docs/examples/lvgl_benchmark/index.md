@@ -40,8 +40,8 @@ The scene set tracks the upstream LVGL benchmark verbatim so numbers are directl
 ## Running it
 
 ```bash
-# Host (POSIX) — opens the browser dashboard
-make host.posix.lvgl_benchmark
+# Browser — the FreeRTOS firmware in QEMU compiled to WebAssembly
+make web.freertos.lvgl_benchmark
 make && make run
 
 # QEMU + FreeRTOS — runs in the QEMU framebuffer
@@ -73,5 +73,5 @@ The benchmark is the easiest place to see:
 ## Performance notes
 
 - The same scene on the same board produces near-identical numbers across language ports — the bindings compile down to identical LVGL calls. Spot-checks for any divergence > 5 % usually indicate a binding bug.
-- The POSIX backend on a developer laptop yields wildly higher numbers than embedded targets; treat host runs as a regression baseline only.
+- QEMU and the browser build interpret the firmware, so their numbers track the emulator, not the hardware; treat them as a regression baseline only.
 - For headline numbers on STM32F746G-DISCO, see [Benchmarks → per-binding](../../benchmarks/per-binding.md).

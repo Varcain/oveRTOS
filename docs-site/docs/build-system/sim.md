@@ -1,8 +1,8 @@
 # Simulation Framework
 
-The simulation framework provides virtual peripheral emulation for the POSIX host and the QEMU boards. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
+The simulation framework provides virtual peripheral emulation for the QEMU MPS2-AN500 board. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
 
-Enabled by default for POSIX builds via `CONFIG_OVE_SIM`.
+The an500 board selects `CONFIG_OVE_SIM` (except for the headless Linux personality build).
 
 ## Architecture
 
@@ -99,16 +99,15 @@ int id = ove_sim_plugin_register(&my_sensor_ops, &my_ctx, NULL, 0);
 
 ## Transport Layers
 
-The transport layer abstracts the communication channel between firmware and the dashboard. Both implementations speak one protocol over files under `/dev/shm`: `ove-sim` (plugin events and commands), `ove-fb` (framebuffer), `ove-audio` (PCM rings) and `ove-input` (pointer state).
+The transport layer abstracts the communication channel between firmware and the dashboard. It speaks one protocol over files under `/dev/shm`: `ove-sim` (plugin events and commands), `ove-fb` (framebuffer), `ove-audio` (PCM rings) and `ove-input` (pointer state).
 
 | Transport | Source | Used by | Mechanism |
 |-----------|--------|---------|-----------|
-| Shared memory, local | `sim/src/ove_sim_transport_shm_local.c` | POSIX `host` builds | The firmware process creates the files and maps them with `mmap` |
 | Shared memory, guest | `sim/src/ove_sim_transport_shm_guest.c` | QEMU boards | The guest reads and writes the same files through ARM semihosting file I/O; `qemu-run.sh` creates them before the firmware starts |
 
 On the other end, the bridge process (`config/scripts/ove-dashboard-bridge.py`) maps the files and serves the dashboard over HTTP and WebSocket.
 
-Both transports implement the same `struct ove_sim_transport_ops` vtable, so plugin code is transport-agnostic. The transport is selected automatically based on the board configuration.
+The transport implements `struct ove_sim_transport_ops`, so plugin code is transport-agnostic. In the browser the page itself plays the bridge's part (`sim/dashboard/qemu-wasm.js`), reading the same files from Emscripten's in-memory filesystem.
 
 The browser bundle (`web` variant of the QEMU board) uses the guest transport unchanged. The firmware's semihosting files live in the emulator's in-memory filesystem, inside the page, and `sim/dashboard/qemu-wasm.js` plays the part of the bridge, feeding the dashboard the same frames.
 
@@ -131,13 +130,11 @@ The browser-based dashboard (`sim/dashboard/`) provides real-time visualisation:
 - **LED / GPIO panel** — shows LED states and GPIO pin values; allows toggling inputs from the browser
 - **Console log** — displays firmware serial output
 
-The dashboard is served automatically when running a POSIX or QEMU build:
+The dashboard is served automatically when running a QEMU build:
 
 ```bash
-make run   # opens http://localhost:8080 in the browser
+make run   # serves the dashboard on http://localhost:8081
 ```
-
-The port is configurable via `CONFIG_OVE_SIM_DASHBOARD_PORT` (default: 8080).
 
 ## Sim HAL Modules
 
@@ -149,22 +146,17 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | `sim_audio.c` | Audio graph device nodes → audio plugin |
 | `sim_lvgl.c` | LVGL tick and input driver |
 | `sim_board.c` | Board init and plugin registration |
-| `sim_net.c` | Network simulation |
-| `sim_tls.c` | TLS simulation |
-| `sim_pm.c` | Power management simulation |
-| `sim_watchdog.c` | Watchdog simulation |
-| `sim_console.c` | Console I/O routing |
+| `sim_debug.c` | Thread and memory snapshots for the dashboard |
+| `sim_trace.c` | Thread-state trace stream |
+| `sim_profiler.c` | Sampling-profiler batches |
 
 ## Kconfig Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `CONFIG_OVE_SIM` | bool | `y` if POSIX | Enable the simulation plugin framework |
-| `CONFIG_OVE_SIM_TRANSPORT_DIRECT` | bool | `y` if POSIX + SIM | Set on POSIX builds (local shared-memory transport) |
-| `CONFIG_OVE_SIM_TRANSPORT_SHM` | bool | `y` if !POSIX + SIM | Set on QEMU builds (guest shared-memory transport) |
+| `CONFIG_OVE_SIM` | bool | selected by the an500 | Enable the simulation plugin framework |
 | `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`) |
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` if SIM | Enable the browser-based dashboard |
-| `CONFIG_OVE_SIM_DASHBOARD_PORT` | int | `8080` | Dashboard HTTP port |
 
 ## Headers
 

@@ -75,8 +75,6 @@ void ove_main(void)
 
 ## On targets without PM hardware
 
-The POSIX backend treats `ove_pm_state_set(OVE_PM_SLEEP)` as `ove_thread_sleep_ms(INT32_MAX)` and listens for the wake-source pin via the simulator's GPIO transport (`sim/hal/sim_pm.c`). You can run this recipe on the host and trigger the wake by clicking the simulated button in the browser dashboard.
-
 QEMU's mps2-an500 has no real sleep; the call returns immediately and `ove_pm_last_wake_reason()` reports `OVE_PM_WAKE_IMMEDIATE` so you can develop the wake-handling code in the emulator before flashing.
 
 ## Wake sources

@@ -46,8 +46,6 @@ a 2048-byte derived receive window.
 | `CONFIG_OVE_NUTTX_IOB_NBUFFERS` | 24 | I/O buffer count |
 | `CONFIG_OVE_NUTTX_IOB_BUFSIZE` | 196 | Bytes per IOB |
 
-POSIX uses host BSD sockets directly; pool sizing is the host kernel's responsibility, and zero-heap mode on POSIX is a smoke test of the binding control flow only.
-
 ## Sizing example
 
 For a device serving ~5 concurrent HTTPS sessions plus MQTT and a small HTTPD:

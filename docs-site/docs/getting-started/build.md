@@ -63,8 +63,6 @@ The compiler is selected according to the `Toolchain` Kconfig menu:
 - **System** — uses `arm-none-eabi-gcc` found on `PATH`
 - **Custom** — absolute path configured via `OVE_TOOLCHAIN_CUSTOM_PATH`
 
-The POSIX/host backend compiles with the host's native GCC or Clang and requires no cross-compiler.
-
 ### FreeRTOS floating-point ABI
 
 `Toolchain > ARM floating-point calling convention` selects one complete
@@ -90,7 +88,6 @@ this host FreeRTOS setting.
 Build all apps for a specific board/RTOS pair:
 
 ```bash
-make allconfigs-host.posix
 make allconfigs-qemu.freertos
 make allconfigs-stm32f746.zephyr
 ```
