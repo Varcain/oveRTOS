@@ -21,7 +21,9 @@
  *
  *   - ove_state_stats_now_us()             monotonic time source
  *   - ove_backend_thread_current_handle()  current-task handle for markers
- *   - ove_backend_trace_list_threads()     descriptor enumeration
+ *
+ * Descriptor enumeration walks the shared thread registry
+ * (backends/common/ove_thread_registry.c).
  */
 
 #include "ove_config.h"
@@ -56,34 +58,9 @@ uint64_t ove_state_stats_now_us(void)
  * any non-oveRTOS system threads (whose custom_data slot is never set). */
 extern struct ove_thread *ove_zephyr_current_thread(void);
 
-/* Thread registry lives in zephyr_thread.c. Descriptor enumeration
- * walks it directly rather than k_thread_foreach_unlocked, so the
- * swimlane only shows threads that can actually emit state records —
- * Zephyr idle/system threads never emit, so listing them would create
- * empty rows. */
-extern struct ove_thread *ove_zephyr_thread_list_head;
-extern void ove_zephyr_thread_list_lock(void);
-extern void ove_zephyr_thread_list_unlock(void);
-
 uintptr_t ove_backend_thread_current_handle(void)
 {
 	return (uintptr_t)ove_zephyr_current_thread();
-}
-
-size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max)
-{
-	if (!out || max == 0)
-		return 0;
-
-	size_t count = 0;
-	ove_zephyr_thread_list_lock();
-	for (struct ove_thread *t = ove_zephyr_thread_list_head; t && count < max; t = t->next) {
-		out[count].tid = (uint32_t)(uintptr_t)t;
-		out[count].name = t->name ? t->name : "?";
-		count++;
-	}
-	ove_zephyr_thread_list_unlock();
-	return count;
 }
 
 #endif /* CONFIG_OVE_TRACE_STREAM */

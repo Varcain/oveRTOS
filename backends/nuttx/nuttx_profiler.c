@@ -50,18 +50,16 @@
 #include "ove/trace.h" /* ove_backend_thread_current_handle */
 #include "ove/types.h"
 #include "ove_profiler_ring.h"
+#include "ove_thread_registry.h"
 
 #ifndef CONFIG_OVE_PROFILER_HZ
 #define CONFIG_OVE_PROFILER_HZ 250
 #endif
 
-/* Thread backend exports the registry + locks — same accessors used by
- * nuttx_trace.c. We iterate under the list lock to snapshot PIDs into a
+/* The shared thread registry (ove_thread_registry.h) — the same one trace
+ * enumeration walks. We iterate under the list lock to snapshot PIDs into a
  * small stack array, then release the lock before calling up_backtrace so
  * the unwinder can freely acquire scheduler locks. */
-extern struct ove_thread *ove_nuttx_thread_list_head;
-extern void ove_nuttx_thread_list_lock(void);
-extern void ove_nuttx_thread_list_unlock(void);
 extern struct ove_thread *ove_nuttx_current_thread(void);
 
 #define PROFILER_MAX_THREADS 32
@@ -82,8 +80,8 @@ struct snap_entry {
 static size_t snapshot_runnable(struct snap_entry *out, size_t max, struct ove_thread *skip)
 {
 	size_t n = 0;
-	ove_nuttx_thread_list_lock();
-	for (struct ove_thread *t = ove_nuttx_thread_list_head; t && n < max; t = t->next) {
+	ove_backend_thread_registry_lock();
+	for (struct ove_thread *t = ove_backend_thread_registry_head; t && n < max; t = t->next) {
 		if (t == skip || !t->started)
 			continue;
 		int s = t->state;
@@ -98,7 +96,7 @@ static size_t snapshot_runnable(struct snap_entry *out, size_t max, struct ove_t
 		out[n].state = s;
 		n++;
 	}
-	ove_nuttx_thread_list_unlock();
+	ove_backend_thread_registry_unlock();
 	return n;
 }
 
