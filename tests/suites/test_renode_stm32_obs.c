@@ -199,8 +199,11 @@ int test_renode_stm32_obs_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_led_set_observable_in_odr),
 		cmocka_unit_test(test_gpio_set_observable_in_odr),
-		cmocka_unit_test(test_disabling_exti_line_preserves_shared_vector_peer),
 #ifndef OVE_HW
+		/* PA5/PA6 are unpulled header pins on the Discovery board: on
+		 * silicon they float, and their armed rising edges storm the
+		 * shared EXTI9_5 vector so the test thread never runs again. */
+		cmocka_unit_test(test_disabling_exti_line_preserves_shared_vector_peer),
 		/* test_external_irq_trigger needs a host-side stimulus
 		 * (`sysbus.gpioPortA OnGPIO 0 true` in test.resc) — there's
 		 * no equivalent injection on real silicon, so skip on HW. */
