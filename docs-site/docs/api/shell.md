@@ -33,7 +33,7 @@ Characters arrive one at a time from `ove_console_getchar()` or directly from an
 | `ove_shell_register_cmd` | `(const struct ove_shell_cmd *cmd) → int` | Add a command to the dispatch table; the descriptor must remain valid for the system lifetime. |
 | `ove_shell_process_char` | `(char c) → void` | Feed one raw character into the shell; call from console RX task or ISR. |
 | `ove_shell_process_line` | `(const char *line) → void` | Process a complete already-buffered input line through the shell (useful for piping non-UART input like HTTP). |
-| `ove_shell_set_output_hook` | `(ove_shell_output_hook_t hook) → void` | Install a hook called with every shell output chunk — used to forward shell responses to alternate sinks (e.g. an HTTP client). Pass `NULL` to clear. |
+| `ove_shell_set_output_hook` | `(ove_shell_output_hook_t hook) → void` | Install a hook that also receives each `OVE_LOG_*` line a command handler emits from its own thread while it runs, newline included — the httpd web terminal uses it to send command output to the browser. Pass `NULL` to clear. |
 
 Output-hook prototype:
 

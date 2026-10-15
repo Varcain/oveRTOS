@@ -59,7 +59,7 @@ set(ZEPHYR_BACKEND_SOURCES
     ${ZEPHYR_BACKEND}/zephyr_eventgroup.c
     ${ZEPHYR_BACKEND}/zephyr_workqueue.c
     ${ZEPHYR_BACKEND}/zephyr_stream.c
-    ${ZEPHYR_BACKEND}/zephyr_shell.c
+    ${OVE_ROOT}/backends/common/ove_shell.c
     # Async runtime substrate (CONFIG_OVE_ASYNC).
     ${ZEPHYR_BACKEND}/zephyr_irq.c
 )

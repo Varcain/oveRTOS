@@ -132,7 +132,7 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_time.c
     ${STUB_DIR}/stub_console.c
     ${STUB_DIR}/stub_watchdog.c
-    ${STUB_DIR}/stub_shell.c
+    ${OVE_ROOT}/backends/common/ove_shell.c
     ${STUB_DIR}/stub_nvs.c
 )
 

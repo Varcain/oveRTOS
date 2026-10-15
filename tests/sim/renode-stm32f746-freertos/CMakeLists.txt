@@ -130,7 +130,7 @@ set(FREERTOS_BACKEND_SOURCES
     ${OVE_SRC}/ove_workqueue.c
     ${FREERTOS_BACKEND}/freertos_watchdog.c
     ${FREERTOS_BACKEND}/freertos_gpio.c
-    ${FREERTOS_BACKEND}/freertos_shell.c
+    ${OVE_ROOT}/backends/common/ove_shell.c
     # Unified-heap wrapper: routes libc malloc/free/calloc/realloc
     # through pvPortMalloc/vPortFree so cmocka + libc + ove_*_create all
     # share the single FreeRTOS heap_4 ucHeap pool.
@@ -177,7 +177,6 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_time.c
     ${STUB_DIR}/stub_console.c
-    # stub_shell removed — freertos_shell.c backs ove_shell_* directly.
     ${STUB_DIR}/stub_nvs.c
 )
 

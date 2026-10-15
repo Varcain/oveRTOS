@@ -37,7 +37,7 @@ add_library(ove_stub STATIC
     ${OVE_SRC}/ove_stream.c
     ${POSIX_CORE_DIR}/posix_watchdog.c
     ${POSIX_CORE_DIR}/posix_nvs.c
-    ${POSIX_CORE_DIR}/posix_shell.c
+    ${OVE_ROOT}/backends/common/ove_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
     ${OVE_SRC}/ove_fs.c
     ${OVE_SRC}/ove_media.c
