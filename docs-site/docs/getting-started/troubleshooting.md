@@ -178,7 +178,7 @@ Only hardware-flash workflows (`make flash`) run without it.
 
 ### QEMU build runs but the LVGL dashboard never opens
 
-The browser dashboard runs on `http://localhost:8081` for native QEMU runs; check that nothing else is bound to that port, and that your firewall isn't blocking localhost. Headless run:
+The browser dashboard runs on `http://localhost:8081` for native QEMU runs. If another program already holds that port, `make run` stops with a message naming it; set `OVE_DASHBOARD_PORT=<port>` to use a different one. Also check that your firewall isn't blocking localhost. Headless run:
 
 ```bash
 make run HEADLESS=1

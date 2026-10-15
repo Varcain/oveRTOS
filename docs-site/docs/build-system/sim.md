@@ -133,7 +133,7 @@ The browser-based dashboard (`sim/dashboard/`) provides real-time visualisation:
 The dashboard is served automatically when running a QEMU build:
 
 ```bash
-make run   # serves the dashboard on http://localhost:8081
+make run   # serves the dashboard on http://localhost:8081 (OVE_DASHBOARD_PORT=<n> for another port)
 ```
 
 ## Sim HAL Modules
