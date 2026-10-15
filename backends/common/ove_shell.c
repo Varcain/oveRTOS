@@ -37,9 +37,9 @@ static void shell_help(int argc, const char *argv[])
 	(void)argc;
 	(void)argv;
 
-	OVE_LOG_INF("Commands:\n");
+	OVE_LOG_INF("Commands:");
 	for (i = 0; i < cmd_count; i++) {
-		OVE_LOG_INF("  %-12s %s\n", cmd_table[i].name,
+		OVE_LOG_INF("  %-12s %s", cmd_table[i].name,
 			    cmd_table[i].help ? cmd_table[i].help : "");
 	}
 }
@@ -91,7 +91,7 @@ static void shell_execute(char *line)
 		}
 	}
 
-	OVE_LOG_WRN("Unknown command: %s\n", argv[0]);
+	OVE_LOG_WRN("Unknown command: %s", argv[0]);
 }
 
 int ove_shell_init(void)
@@ -137,7 +137,7 @@ void ove_shell_process_char(int c)
 		line_buf[line_pos] = '\0';
 		shell_execute(line_buf);
 		line_pos = 0;
-		OVE_LOG_INF("> ");
+		ove_console_write("> ", 2);
 	} else if (c == '\b' || c == 127) {
 		if (line_pos > 0) {
 			line_pos--;
