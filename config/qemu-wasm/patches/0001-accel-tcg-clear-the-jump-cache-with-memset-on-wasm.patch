@@ -1,0 +1,37 @@
+From: oveRTOS
+Subject: [PATCH] accel/tcg: clear the jump cache with memset on wasm hosts
+
+tcg_flush_jmp_cache() clears its 4096 entries with one qatomic_set() each.
+On a WebAssembly host every atomic store is a sequentially consistent
+fence, so a single flush costs tens of microseconds.  A v7-M guest that
+reprograms the MPU on every context switch (each MPU_RBAR/MPU_RASR write
+flushes the TLB, and with it this cache) spends most of its time here:
+in a browser profile of an MPU-isolating FreeRTOS guest, 64% of the vCPU
+thread.
+
+The flush runs on the vCPU that owns the cache, or with all vCPUs
+stopped, and a concurrent invalidation only ever stores NULL, so a plain
+memset() is equivalent.  Limit it to Emscripten builds.
+
+---
+--- a/accel/tcg/translate-all.c
++++ b/accel/tcg/translate-all.c
+@@ -632,7 +632,18 @@
+         return;
+     }
+ 
++#ifdef EMSCRIPTEN
++    /*
++     * Every wasm atomic store is a full fence, which makes the loop below
++     * cost tens of microseconds; guests that reprogram the v7-M MPU on each
++     * context switch flush thousands of times a second.  The flush runs on
++     * the owning vCPU or with all vCPUs stopped, and a concurrent
++     * invalidation only ever stores NULL, so a plain clear is equivalent.
++     */
++    memset(jc->array, 0, sizeof(jc->array));
++#else
+     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
+         qatomic_set(&jc->array[i].tb, NULL);
+     }
++#endif
+ }
