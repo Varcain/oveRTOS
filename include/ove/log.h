@@ -19,8 +19,9 @@
  * generate no code.
  *
  * Each macro formats a message with @c snprintf into a 256-byte stack buffer
- * and writes it through @ref ove_console_write. A trailing newline is
- * appended automatically.
+ * and writes it through @ref ove_console_write; longer messages are
+ * truncated. A trailing newline is appended automatically, so format strings
+ * should not end in one.
  *
  * @note Logging output requires @c CONFIG_OVE_CONSOLE.
  * @{
@@ -88,6 +89,9 @@ void ove_shell_log_tee(const char *data, size_t len);
 		char _ove_log_buf[256];                                                          \
 		int _ove_log_len =                                                               \
 			snprintf(_ove_log_buf, sizeof(_ove_log_buf), prefix fmt, ##__VA_ARGS__); \
+		/* snprintf returns the untruncated length: keep room for "\n\0". */             \
+		if (_ove_log_len > (int)sizeof(_ove_log_buf) - 2)                                \
+			_ove_log_len = (int)sizeof(_ove_log_buf) - 2;                            \
 		if (_ove_log_len > 0) {                                                          \
 			_ove_log_buf[_ove_log_len] = '\n';                                       \
 			_ove_log_buf[_ove_log_len + 1] = '\0';                                   \
@@ -182,6 +186,8 @@ void ove_shell_log_tee(const char *data, size_t len);
 		char _ove_log_buf[256];                                                   \
 		int _ove_log_len =                                                        \
 			snprintf(_ove_log_buf, sizeof(_ove_log_buf), fmt, ##__VA_ARGS__); \
+		if (_ove_log_len > (int)sizeof(_ove_log_buf) - 1)                         \
+			_ove_log_len = (int)sizeof(_ove_log_buf) - 1;                     \
 		if (_ove_log_len > 0) {                                                   \
 			ove_console_write(_ove_log_buf, (unsigned int)_ove_log_len);      \
 		}                                                                         \

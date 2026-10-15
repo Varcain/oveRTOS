@@ -37,6 +37,19 @@ static void test_console_write(void **state)
 	ove_console_write(msg, strlen(msg));
 }
 
+static void test_log_long_message_truncates(void **state)
+{
+	(void)state;
+	ove_console_init();
+	/* Longer than the 256-byte log buffer: the macros must truncate, not
+	 * write or read past it (the sanitizer builds catch either). */
+	char long_msg[400];
+	memset(long_msg, 'x', sizeof(long_msg) - 1);
+	long_msg[sizeof(long_msg) - 1] = '\0';
+	OVE_LOG_INF("%s", long_msg);
+	OVE_LOG("%s\n", long_msg);
+}
+
 static void test_console_getchar_from_empty_stdin(void **state)
 {
 	(void)state;
@@ -107,6 +120,7 @@ int test_console_run(void)
 		cmocka_unit_test(test_console_init),
 		cmocka_unit_test(test_console_put_char),
 		cmocka_unit_test(test_console_write),
+		cmocka_unit_test(test_log_long_message_truncates),
 		cmocka_unit_test(test_console_getchar_from_empty_stdin),
 		cmocka_unit_test(test_console_try_getchar_from_empty_stdin),
 		cmocka_unit_test(test_console_init_multiple),
