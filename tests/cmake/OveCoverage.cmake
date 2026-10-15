@@ -83,7 +83,10 @@ function(ove_test_coverage_report name)
                 # saw more covered lines than exist in source (corrupt/
                 # mismatched .gcda) — letting it through can silently inflate
                 # the coverage number, so surface it as an error instead.
-                --ignore-errors mismatch,gcov,source
+                # `inconsistent`: the heap and zero-heap twins compile the
+                # same suite source through different #if branches, so one
+                # function name starts on two lines; lcov 2.x rejects that.
+                --ignore-errors mismatch,gcov,source,inconsistent
         COMMAND ${LCOV_BIN} --extract ${cov_dir}/coverage.info
                 ${ove_extract_patterns}
                 --rc branch_coverage=1
