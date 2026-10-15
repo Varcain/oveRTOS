@@ -183,7 +183,16 @@ cleanup() {
         kill "${NET_BRIDGE_PID}" 2>/dev/null || true
         wait "${NET_BRIDGE_PID}" 2>/dev/null || true
     fi
+    if [ -n "${UART_IN_PID:-}" ]; then
+        kill "${UART_IN_PID}" 2>/dev/null || true
+    fi
+    if [ -n "${SAVED_TTY:-}" ]; then
+        stty "${SAVED_TTY}" 2>/dev/null || true
+    fi
     rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" "${LOG_FIFO:-}"
+    if [ -n "${UART_PIPE:-}" ]; then
+        rm -f "${UART_PIPE}.in" "${UART_PIPE}.out"
+    fi
     if [ -n "${BRIDGE_PIDFILE:-}" ] && [ "$(cat "${BRIDGE_PIDFILE}" 2>/dev/null)" = "${VIEWER_PID}" ]; then
         rm -f "${BRIDGE_PIDFILE}"
     fi
@@ -243,6 +252,19 @@ if [ "${HEADLESS}" -eq 0 ]; then
     LOG_FIFO=$(mktemp -u -t ove-log.XXXXXX)
     mkfifo "${LOG_FIFO}"
 
+    # The console UART on a pipe pair instead of QEMU's stdio, so the
+    # dashboard's console box can type into it as well as the terminal:
+    # <pipe>.out is copied into the same log tee, and the terminal and the
+    # bridge both write <pipe>.in.
+    UART_PIPE=$(mktemp -u -t ove-uart.XXXXXX)
+    mkfifo "${UART_PIPE}.in" "${UART_PIPE}.out"
+    UART_ARGS=()
+    for a in "${QEMU_ARGS[@]}"; do
+        [ "${a}" = "-nographic" ] || UART_ARGS+=( "${a}" )
+    done
+    QEMU_ARGS=( "${UART_ARGS[@]}" -display none
+                -chardev "pipe,id=uart0,path=${UART_PIPE}" -serial chardev:uart0 )
+
     # Derive CMake build dir from the workspace for source file indexing:
     #   FreeRTOS: .../build/firmware/
     #   Zephyr:   .../build/firmware/
@@ -257,7 +279,8 @@ if [ "${HEADLESS}" -eq 0 ]; then
         BUILD_DIR="${WS_DIR}/build"
     fi
 
-    VIEWER_ARGS=( --port ${DASHBOARD_PORT} --log-fd 0 --build-dir "${BUILD_DIR}" )
+    VIEWER_ARGS=( --port ${DASHBOARD_PORT} --log-fd 0 --build-dir "${BUILD_DIR}"
+                  --console-fifo "${UART_PIPE}.in" )
     if [ "${NO_GDB}" -eq 0 ]; then
         VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
     fi
@@ -265,6 +288,17 @@ if [ "${HEADLESS}" -eq 0 ]; then
     "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" &
     VIEWER_PID=$!
     echo "${VIEWER_PID}" > "${BRIDGE_PIDFILE}"
+
+    # Terminal keystrokes go to the UART unbuffered and without a local echo
+    # (the firmware's shell echoes); ^C still stops the run.
+    if [ -t 0 ]; then
+        SAVED_TTY="$(stty -g 2>/dev/null || true)"
+        stty -icanon -echo -icrnl min 1 time 0 2>/dev/null || true
+    fi
+    # A background job's default stdin is /dev/null: hand it ours explicitly.
+    exec 3<&0
+    cat <&3 > "${UART_PIPE}.in" &
+    UART_IN_PID=$!
 
     # Wait for the dashboard HTTP server to be ready before starting QEMU.
     for i in $(seq 1 30); do
@@ -287,9 +321,19 @@ if [ "${NO_NET}" -eq 0 ] && [ -e /dev/net/tun ]; then
     NET_BRIDGE_PID=$!
 fi
 
+# Run QEMU with the console UART's output copied into this stdout too.
+run_with_uart() {
+    cat "${UART_PIPE}.out" &
+    local uart_out=$!
+    "$@"
+    local rc=$?
+    kill "${uart_out}" 2>/dev/null || true
+    return ${rc}
+}
+
 if [ -n "${QEMU_TIMEOUT}" ]; then
     if [ -n "${LOG_FIFO:-}" ]; then
-        timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
+        run_with_uart timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
         QEMU_EXIT=${PIPESTATUS[0]}
     else
         timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
@@ -300,7 +344,7 @@ if [ -n "${QEMU_TIMEOUT}" ]; then
     fi
 else
     if [ -n "${LOG_FIFO:-}" ]; then
-        qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
+        run_with_uart qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
         QEMU_EXIT=${PIPESTATUS[0]}
     else
         qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
