@@ -177,7 +177,7 @@ set(STUB_SOURCES
     ${TESTS_ROOT}/backends/stm32f7/stm32f7_gpio_hooks.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_console.c
-    ${STUB_DIR}/stub_nvs.c
+    ${OVE_ROOT}/backends/common/ove_nvs_ram.c
 )
 
 ove_test_common_suite_sources(SUITE_SOURCES ${SUITE_DIR})

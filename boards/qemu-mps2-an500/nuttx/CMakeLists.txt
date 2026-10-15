@@ -45,7 +45,7 @@ if(OVE_GPIO)
     ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_gpio.c)
 endif()
 if(OVE_NVS)
-    ove_nuttx_add_sources(${OVE_DIR}/boards/qemu-mps2-an500/qemu_nvs.c)
+    ove_nuttx_add_sources(${OVE_DIR}/backends/common/ove_nvs_ram.c)
 endif()
 
 if(OVE_LINUX)

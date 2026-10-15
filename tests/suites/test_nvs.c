@@ -213,6 +213,39 @@ static void test_nvs_erase_missing(void **state)
 	ove_nvs_deinit();
 }
 
+static void test_nvs_long_keys_stay_distinct(void **state)
+{
+	(void)state;
+	ove_nvs_init();
+
+	/* Two keys that differ only past character 63: a backend must keep
+	 * them apart or refuse them, never let one overwrite the other. */
+	char key_a[80];
+	char key_b[80];
+	memset(key_a, 'k', sizeof(key_a) - 2);
+	key_a[sizeof(key_a) - 2] = 'a';
+	key_a[sizeof(key_a) - 1] = '\0';
+	memcpy(key_b, key_a, sizeof(key_b));
+	key_b[sizeof(key_b) - 2] = 'b';
+
+	uint32_t a = 1, b = 2;
+	int rc_a = ove_nvs_write(key_a, &a, sizeof(a));
+	int rc_b = ove_nvs_write(key_b, &b, sizeof(b));
+	if (rc_a == OVE_OK && rc_b == OVE_OK) {
+		uint32_t out = 0;
+		size_t len = 0;
+		assert_int_equal(ove_nvs_read(key_a, &out, sizeof(out), &len), OVE_OK);
+		assert_int_equal(out, 1);
+		(void)ove_nvs_erase(key_a);
+		(void)ove_nvs_erase(key_b);
+	} else {
+		assert_int_equal(rc_a, OVE_ERR_INVALID_PARAM);
+		assert_int_equal(rc_b, OVE_ERR_INVALID_PARAM);
+	}
+
+	ove_nvs_deinit();
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_nvs_run(void)
@@ -229,6 +262,7 @@ int test_nvs_run(void)
 		cmocka_unit_test(test_nvs_overwrite_shorter),
 		cmocka_unit_test(test_nvs_size_query),
 		cmocka_unit_test(test_nvs_erase_missing),
+		cmocka_unit_test(test_nvs_long_keys_stay_distinct),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

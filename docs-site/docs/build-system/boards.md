@@ -78,7 +78,7 @@ QEMU emulates no AN500 GPIO, storage or STM32 peripherals, so the board supplies
 | Console | `freertos_console.c` over the board's UART0 driver (`qemu_serial.c`) | NuttX `/dev/console` (UART0) |
 | Time | `freertos_time_systick.c` (QEMU has no DWT cycle counter) | NuttX clock |
 | GPIO | `qemu_gpio.c`: a RAM bank of the 8 × 16 pins in `board.yaml`; pins read back what was written, and no pin interrupt ever fires | same |
-| NVS | `qemu_nvs.c`: kept in RAM until QEMU exits | same |
+| NVS | `backends/common/ove_nvs_ram.c`: kept in RAM until QEMU exits | same |
 | Filesystem | not available: `OVE_FS` cannot be enabled, and `ove_fs_*` return `OVE_ERR_NOT_SUPPORTED` | NuttX backend |
 | Watchdog | `qemu_watchdog.c`: every call returns `OVE_ERR_NOT_SUPPORTED` | NuttX backend (`OVE_ERR_NOT_SUPPORTED` without `/dev/watchdog0`) |
 

@@ -61,7 +61,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_stream.c
     ${OVE_SRC}/ove_stream.c
     ${POSIX_CORE_DIR}/posix_watchdog.c
-    ${POSIX_CORE_DIR}/posix_nvs.c
+    ${OVE_ROOT}/backends/common/ove_nvs_ram.c
     ${OVE_ROOT}/backends/common/ove_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
     ${OVE_SRC}/ove_fs.c
