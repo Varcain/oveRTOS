@@ -80,7 +80,7 @@ QEMU emulates no AN500 GPIO, storage or STM32 peripherals, so the board supplies
 | GPIO | `qemu_gpio.c`: a RAM bank of the 8 × 16 pins in `board.yaml`; pins read back what was written, and no pin interrupt ever fires | same |
 | NVS | `backends/common/ove_nvs_ram.c`: kept in RAM until QEMU exits | same |
 | Filesystem | not available: `OVE_FS` cannot be enabled, and `ove_fs_*` return `OVE_ERR_NOT_SUPPORTED` | NuttX backend |
-| Watchdog | `qemu_watchdog.c`: every call returns `OVE_ERR_NOT_SUPPORTED` | NuttX backend (`OVE_ERR_NOT_SUPPORTED` without `/dev/watchdog0`) |
+| Watchdog | `qemu_watchdog.c`: QEMU's CMSDK APB watchdog; an unfed dog resets the machine `timeout_ms` after the last feed | NuttX backend (`OVE_ERR_NOT_SUPPORTED` without `/dev/watchdog0`) |
 
 ```bash
 # After building:
