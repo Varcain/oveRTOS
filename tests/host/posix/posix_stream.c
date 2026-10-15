@@ -29,8 +29,7 @@ int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *b
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_stream *s = (struct ove_stream *)storage;
 	memset(s, 0, sizeof(*s));
-	s->buffer = buffer;
-	s->size = size;
+	ove_ring_setup(&s->ring, buffer, size);
 	s->trigger = trigger > 0 ? trigger : 1;
 	pthread_mutex_init(&s->lock, NULL);
 	pthread_cond_init(&s->data_avail, NULL);
@@ -67,7 +66,7 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 	}
 
 	while (sent < len) {
-		while (s->count >= s->size) {
+		while (s->ring.count >= s->ring.size) {
 			if (timeout_ns == 0) {
 				goto done;
 			}
@@ -81,10 +80,8 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 				goto done;
 			}
 		}
-		s->buffer[s->head] = src[sent++];
-		s->head = (s->head + 1) % s->size;
-		s->count++;
-		if (s->count >= s->trigger) {
+		sent += ove_ring_write(&s->ring, src + sent, len - sent);
+		if (s->ring.count >= s->trigger) {
 			pthread_cond_signal(&s->data_avail);
 		}
 	}
@@ -122,7 +119,7 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 	}
 
 	/* Wait for at least trigger bytes */
-	while (s->count < s->trigger) {
+	while (s->ring.count < s->trigger) {
 		if (timeout_ns == 0) {
 			goto done;
 		}
@@ -137,11 +134,7 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 		}
 	}
 
-	while (received < len && s->count > 0) {
-		dst[received++] = s->buffer[s->tail];
-		s->tail = (s->tail + 1) % s->size;
-		s->count--;
-	}
+	received = ove_ring_read(&s->ring, dst, len);
 	pthread_cond_signal(&s->space_avail);
 done:
 	pthread_mutex_unlock(&s->lock);
@@ -168,9 +161,7 @@ int ove_stream_reset(ove_stream_t stream)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	pthread_mutex_lock(&s->lock);
-	s->head = 0;
-	s->tail = 0;
-	s->count = 0;
+	ove_ring_clear(&s->ring);
 	pthread_mutex_unlock(&s->lock);
 	return OVE_OK;
 }
@@ -182,7 +173,7 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 		return 0;
 	}
 	pthread_mutex_lock(&s->lock);
-	size_t avail = s->count;
+	size_t avail = s->ring.count;
 	pthread_mutex_unlock(&s->lock);
 	return avail;
 }

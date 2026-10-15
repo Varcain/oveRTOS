@@ -9,7 +9,6 @@
 #include "ove/stream.h"
 #include "ove/storage.h"
 #include <pthread.h>
-#include <string.h>
 #include <time.h>
 #include <errno.h>
 static void ns_to_abstime(uint64_t ns, struct timespec *ts)
@@ -40,12 +39,8 @@ int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *b
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	storage->buffer = (unsigned char *)buffer;
-	storage->size = size;
+	ove_ring_setup(&storage->ring, (unsigned char *)buffer, size);
 	storage->trigger = (trigger > 0) ? trigger : 1; /* 0 is treated as 1 */
-	storage->head = 0;
-	storage->tail = 0;
-	storage->count = 0;
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
 	pthread_mutex_init(&storage->lock, NULL);
@@ -84,7 +79,7 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 	pthread_mutex_lock(&ns->lock);
 
 	while (written < len) {
-		while (ns->count >= ns->size) {
+		while (ns->ring.count >= ns->ring.size) {
 			if (timeout_ns == OVE_WAIT_FOREVER) {
 				pthread_cond_wait(&ns->not_full, &ns->lock);
 			} else {
@@ -97,22 +92,7 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 			}
 		}
 
-		size_t avail = ns->size - ns->count;
-		size_t chunk = len - written;
-		if (chunk > avail)
-			chunk = avail;
-
-		size_t contig = ns->size - ns->head;
-		if (contig < chunk) {
-			memcpy(ns->buffer + ns->head, src + written, contig);
-			memcpy(ns->buffer, src + written + contig, chunk - contig);
-		} else {
-			memcpy(ns->buffer + ns->head, src + written, chunk);
-		}
-
-		ns->head = (ns->head + chunk) % ns->size;
-		ns->count += chunk;
-		written += chunk;
+		written += ove_ring_write(&ns->ring, src + written, len - written);
 	}
 
 out:;
@@ -155,7 +135,7 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 		 * bytes are present; once draining has started (read_bytes > 0)
 		 * any single byte suffices, returning what is available. */
 		size_t min_avail = (read_bytes == 0) ? ns->trigger : 1;
-		while (ns->count < min_avail) {
+		while (ns->ring.count < min_avail) {
 			if (read_bytes > 0) {
 				goto out;
 			}
@@ -172,22 +152,7 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 			}
 		}
 
-		size_t avail = ns->count;
-		size_t chunk = len - read_bytes;
-		if (chunk > avail)
-			chunk = avail;
-
-		size_t contig = ns->size - ns->tail;
-		if (contig < chunk) {
-			memcpy(dst + read_bytes, ns->buffer + ns->tail, contig);
-			memcpy(dst + read_bytes + contig, ns->buffer, chunk - contig);
-		} else {
-			memcpy(dst + read_bytes, ns->buffer + ns->tail, chunk);
-		}
-
-		ns->tail = (ns->tail + chunk) % ns->size;
-		ns->count -= chunk;
-		read_bytes += chunk;
+		read_bytes += ove_ring_read(&ns->ring, dst + read_bytes, len - read_bytes);
 	}
 
 out:
@@ -207,29 +172,10 @@ out:
 int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)
 {
 	struct ove_stream *ns = stream;
-	const unsigned char *src = (const unsigned char *)data;
-	size_t written = 0;
 
 	pthread_mutex_lock(&ns->lock);
 
-	while (written < len && ns->count < ns->size) {
-		size_t avail = ns->size - ns->count;
-		size_t chunk = len - written;
-		if (chunk > avail)
-			chunk = avail;
-
-		size_t contig = ns->size - ns->head;
-		if (contig < chunk) {
-			memcpy(ns->buffer + ns->head, src + written, contig);
-			memcpy(ns->buffer, src + written + contig, chunk - contig);
-		} else {
-			memcpy(ns->buffer + ns->head, src + written, chunk);
-		}
-
-		ns->head = (ns->head + chunk) % ns->size;
-		ns->count += chunk;
-		written += chunk;
-	}
+	size_t written = ove_ring_write(&ns->ring, (const unsigned char *)data, len);
 
 	ove_notify_cb notify_cb = (written > 0) ? ns->notify_cb : NULL;
 	void *notify_ud = ns->notify_ud;
@@ -253,29 +199,10 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
 int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)
 {
 	struct ove_stream *ns = stream;
-	unsigned char *dst = (unsigned char *)buf;
-	size_t read_bytes = 0;
 
 	pthread_mutex_lock(&ns->lock);
 
-	while (read_bytes < len && ns->count > 0) {
-		size_t avail = ns->count;
-		size_t chunk = len - read_bytes;
-		if (chunk > avail)
-			chunk = avail;
-
-		size_t contig = ns->size - ns->tail;
-		if (contig < chunk) {
-			memcpy(dst + read_bytes, ns->buffer + ns->tail, contig);
-			memcpy(dst + read_bytes + contig, ns->buffer, chunk - contig);
-		} else {
-			memcpy(dst + read_bytes, ns->buffer + ns->tail, chunk);
-		}
-
-		ns->tail = (ns->tail + chunk) % ns->size;
-		ns->count -= chunk;
-		read_bytes += chunk;
-	}
+	size_t read_bytes = ove_ring_read(&ns->ring, (unsigned char *)buf, len);
 
 	if (read_bytes > 0) {
 		pthread_cond_signal(&ns->not_full);
@@ -295,9 +222,7 @@ int ove_stream_reset(ove_stream_t stream)
 	struct ove_stream *ns = stream;
 
 	pthread_mutex_lock(&ns->lock);
-	ns->head = 0;
-	ns->tail = 0;
-	ns->count = 0;
+	ove_ring_clear(&ns->ring);
 	pthread_cond_signal(&ns->not_full);
 	pthread_mutex_unlock(&ns->lock);
 
@@ -310,7 +235,7 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 	size_t count;
 
 	pthread_mutex_lock(&ns->lock);
-	count = ns->count;
+	count = ns->ring.count;
 	pthread_mutex_unlock(&ns->lock);
 
 	return count;
