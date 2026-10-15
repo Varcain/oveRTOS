@@ -268,9 +268,11 @@ void ove_netif_destroy(ove_netif_t netif)
  * fd-table-independent, so any task can operate on it; the guest keeps its own Linux-fd
  * namespace at the module (lxp) layer. psock_* return 0/positive on success, a NEGATED
  * errno on failure, and self-serialize on net_lock (no external locking needed). */
-#define PSOCK(s) ((FAR struct socket *)((void *)(s)->_psock))
+#define PSOCK(s) ((FAR struct socket *)(s)->_psock)
 _Static_assert(sizeof(struct socket) <= sizeof(((struct ove_socket *)0)->_psock),
 	       "struct socket does not fit ove_socket._psock");
+_Static_assert(_Alignof(struct socket) <= _Alignof(uint32_t),
+	       "struct socket needs more alignment than ove_socket._psock");
 
 static int psockerr(int r)
 {
