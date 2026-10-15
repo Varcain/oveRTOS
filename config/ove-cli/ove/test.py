@@ -583,6 +583,17 @@ def test_cpp_tsan(ove_dir, output_dir):
         [os.path.join(build, "ove_test_cpp")], "cpp-tsan", env=env)
 
 
+def _llvm_major(cmd, pattern):
+    """LLVM major version a tool reports, or None if it can't be read."""
+    try:
+        out = subprocess.check_output(cmd, text=True,
+                                      stderr=subprocess.STDOUT)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    m = re.search(pattern, out)
+    return int(m.group(1)) if m else None
+
+
 def _rust_test_env(ove_dir, output_dir, target_dir, *, zero_heap=False):
     """Return (rust_dir, env) set up to build tests/rust/ against the
     rust_stub CMake library. test_rust, test_rust_coverage and
@@ -735,6 +746,18 @@ def test_rust_coverage(ove_dir, output_dir):
         logger.error("llvm-profdata/llvm-cov not found — install with "
                      "`rustup component add llvm-tools-preview`")
         return result
+    if not rust_bin:
+        rustc_llvm = _llvm_major(["rustc", "-vV"], r"LLVM version: (\d+)")
+        tool_llvm = _llvm_major([llvm_profdata, "--version"],
+                                r"LLVM version (\d+)")
+        if rustc_llvm and tool_llvm and rustc_llvm != tool_llvm:
+            logger.error(f"{llvm_profdata} is LLVM {tool_llvm} but rustc "
+                         f"uses LLVM {rustc_llvm}, so it cannot read the "
+                         "profiles — install the matching tools with "
+                         "`rustup component add llvm-tools-preview`")
+            result.failed += 1
+            result.failed_names.append("rust-coverage (llvm-tools)")
+            return result
 
     profdata = os.path.join(cov_dir, "coverage.profdata")
     import glob
