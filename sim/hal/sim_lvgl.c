@@ -42,8 +42,11 @@ static ove_mutex_storage_t lvgl_mutex_storage;
  * allocator to ask (Zephyr's k_malloc / picolibc malloc is unavailable when
  * CONFIG_HEAP_MEM_POOL_SIZE=0, and the FreeRTOS / NuttX equivalents trap),
  * and on heap builds its 522 KB does not fit the kernel heap of the emulated
- * boards (256 KB on QEMU FreeRTOS, where malloc is that heap). */
-static uint8_t fb_buf1[OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * 4];
+ * boards (256 KB on QEMU FreeRTOS, where malloc is that heap). LVGL draws
+ * into it with word and doubleword stores, so it needs LVGL's draw-buffer
+ * alignment: a byte array can land on an odd address (it did on Zephyr). */
+static uint8_t fb_buf1[OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * 4]
+	__attribute__((aligned(LV_DRAW_BUF_ALIGN)));
 
 /* ── High-resolution tick source ──────────────────────────────────── */
 
