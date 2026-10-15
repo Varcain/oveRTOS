@@ -75,10 +75,9 @@ static uint32_t plane_span(uint32_t w, uint32_t h, uint32_t off, uint32_t cf)
 static int plane_is_nocache_framebuffer(uintptr_t addr, uint32_t w, uint32_t h, uint32_t off,
 					uint32_t cf)
 {
-#if defined(CONFIG_STM32F7_LTDC_FB_BASE)
+#if defined(CONFIG_STM32F7_LTDC_FB_BASE) && defined(CONFIG_STM32F7_LTDC_FB_SIZE)
 	const uintptr_t fb_start = (uintptr_t)CONFIG_STM32F7_LTDC_FB_BASE;
-	const uintptr_t fb_end =
-		fb_start + (uintptr_t)CONFIG_POSIX_DISPLAY_WIDTH * CONFIG_POSIX_DISPLAY_HEIGHT * 2u;
+	const uintptr_t fb_end = fb_start + (uintptr_t)CONFIG_STM32F7_LTDC_FB_SIZE;
 	uint32_t span = plane_span(w, h, off, cf);
 	return addr >= fb_start && addr < fb_end && span <= fb_end - addr;
 #else
