@@ -184,6 +184,9 @@ cleanup() {
         wait "${NET_BRIDGE_PID}" 2>/dev/null || true
     fi
     rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" "${LOG_FIFO:-}"
+    if [ -n "${BRIDGE_PIDFILE:-}" ] && [ "$(cat "${BRIDGE_PIDFILE}" 2>/dev/null)" = "${VIEWER_PID}" ]; then
+        rm -f "${BRIDGE_PIDFILE}"
+    fi
 }
 trap cleanup EXIT
 
@@ -215,12 +218,25 @@ if [ "${HEADLESS}" -eq 0 ]; then
         QEMU_ARGS+=( -gdb "tcp::${GDB_PORT}" )
     fi
 
-    # Kill any stale dashboard bridge on the same port.
-    DASHBOARD_PORT=8081
-    STALE_PID=$(lsof -ti tcp:${DASHBOARD_PORT} 2>/dev/null || true)
-    if [ -n "${STALE_PID}" ]; then
-        kill ${STALE_PID} 2>/dev/null || true
-        sleep 0.3
+    # Dashboard port: 8081 unless OVE_DASHBOARD_PORT says otherwise. Stop only
+    # a bridge this script started earlier (recorded in a pid file); a port
+    # held by anything else is somebody else's and is left alone.
+    DASHBOARD_PORT="${OVE_DASHBOARD_PORT:-8081}"
+    BRIDGE_PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/ove-dashboard-bridge-${DASHBOARD_PORT}.pid"
+    if [ -f "${BRIDGE_PIDFILE}" ]; then
+        OLD_PID="$(cat "${BRIDGE_PIDFILE}" 2>/dev/null || true)"
+        if [ -n "${OLD_PID}" ] && ps -p "${OLD_PID}" -o args= 2>/dev/null | grep -q ove-dashboard-bridge; then
+            kill "${OLD_PID}" 2>/dev/null || true
+            sleep 0.3
+        fi
+        rm -f "${BRIDGE_PIDFILE}"
+    fi
+    PORT_OWNER=$(lsof -ti tcp:${DASHBOARD_PORT} -sTCP:LISTEN 2>/dev/null | head -1 || true)
+    if [ -n "${PORT_OWNER}" ]; then
+        echo "ERROR: dashboard port ${DASHBOARD_PORT} is in use by pid ${PORT_OWNER}" \
+             "($(ps -p "${PORT_OWNER}" -o comm= 2>/dev/null || echo unknown))." >&2
+        echo "       Set OVE_DASHBOARD_PORT=<port> to use another one, or stop that process." >&2
+        exit 1
     fi
 
     # Named pipe: QEMU stdout → tee → terminal + bridge log.
@@ -248,6 +264,7 @@ if [ "${HEADLESS}" -eq 0 ]; then
 
     "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" &
     VIEWER_PID=$!
+    echo "${VIEWER_PID}" > "${BRIDGE_PIDFILE}"
 
     # Wait for the dashboard HTTP server to be ready before starting QEMU.
     for i in $(seq 1 30); do
