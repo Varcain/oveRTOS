@@ -851,7 +851,7 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
     include_args = zh_include + [
         "-I" + os.path.join(ove_dir, "include"),
         "-I" + os.path.join(ove_dir, "tests"),
-        "-I" + os.path.join(ove_dir, "backends", "posix", "include"),
+        "-I" + os.path.join(ove_dir, "tests", "host", "posix", "include"),
         "-I" + os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
         "-I" + os.path.join(ove_dir, "tests", "backends", "stub"),
         "-I" + os.path.join(ove_dir, "tests", "host"),
@@ -2636,7 +2636,7 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
     ok, _ = _compile_probe("cpp", [
         "g++", "-std=c++20", "-fsyntax-only", "-DCONFIG_OVE_LVGL=1",
         _inc("bindings", "cpp"), _inc("include"), "-I" + gen_dir,
-        _inc("dl"), "-I" + host_lv_conf, _inc("backends", "posix", "include"),
+        _inc("dl"), "-I" + host_lv_conf, _inc("tests", "host", "posix", "include"),
         probe_cpp,
     ])
     res.passed += ok
@@ -2682,7 +2682,7 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
         "-Mroot=" + zig_probe,
         "-Move=" + os.path.join(ove_dir, "bindings", "zig", "ove", "src",
                                 "root.zig"),
-        _inc("include"), _inc("backends", "posix", "include"),
+        _inc("include"), _inc("tests", "host", "posix", "include"),
         _inc("dl", "lvgl"), _inc("dl"), "-I" + host_lv_conf, "-I" + gen_dir,
         "-lc",  # add libc include paths so @cImport finds <stdio.h> etc.
         "-femit-bin=" + zig_obj,

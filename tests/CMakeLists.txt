@@ -46,7 +46,7 @@ ove_test_validate_suite_membership(${CMAKE_CURRENT_SOURCE_DIR}/suites)
 ove_test_validate_suites_inc_parity(${CMAKE_CURRENT_SOURCE_DIR}/framework/suites.inc)
 
 # Stub backend sources (direct-linked, no dispatcher layer)
-set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
+set(POSIX_CORE_DIR ${OVE_ROOT}/tests/host/posix)
 set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/backends/stub)
 set(STUB_SOURCES
     # Core POSIX (shared with real backend)

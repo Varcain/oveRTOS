@@ -41,7 +41,7 @@ ALLOWLIST = {
     "backends/freertos/freertos_fs.c": {"ove_file", "ove_dir"},
     "backends/nuttx/nuttx_fs.c":       {"ove_file", "ove_dir"},
     "backends/zephyr/zephyr_fs.c":     {"ove_file", "ove_dir"},
-    "backends/posix/posix_fs.c":       {"ove_file", "ove_dir"},
+    "tests/host/posix/posix_fs.c":     {"ove_file", "ove_dir"},
 }
 
 # A top-level struct definition: `struct ove_<name> {` at the start of a
@@ -53,7 +53,7 @@ _STRUCT_RE = re.compile(
 )
 
 BACKEND_DIRS = ("backends/freertos", "backends/nuttx", "backends/zephyr",
-                "backends/posix")
+                "tests/host/posix")
 
 
 def _scan_file(path: str, ove_dir: str):

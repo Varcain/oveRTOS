@@ -42,7 +42,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/OveTest.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/OveCoverage.cmake)
 
 # Stub backend sources (same as C tests)
-set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
+set(POSIX_CORE_DIR ${OVE_ROOT}/tests/host/posix)
 set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../backends/stub)
 set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_thread.c

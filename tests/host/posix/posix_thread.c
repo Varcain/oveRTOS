@@ -33,7 +33,7 @@ uint64_t ove_state_stats_now_us(void)
  *
  * The store is a release: t->state is read by the destroying / enumerating
  * thread on a different CPU than the worker that writes it (TSan caught
- * exactly this — backends/posix/posix_thread.c:295 destroy-path read of
+ * exactly this — tests/host/posix/posix_thread.c:295 destroy-path read of
  * t->state racing with worker's SET_STATE writes at TASK_RUNNING /
  * TASK_TERMINATED).  The companion reads use __atomic_load_n with acquire
  * ordering so the post-state visibility on the reader side is well-defined
