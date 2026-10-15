@@ -55,7 +55,7 @@ inline void run()
  *       becomes dangling — the standard C++ rule for "don't return a
  *       pointer to a local", applied to workers instead of callers.
  *       On FreeRTOS the failure is immediate because the scheduler
- *       reclaims the main stack when it starts; on POSIX and others
+ *       reclaims the main stack when it starts; on NuttX and Zephyr
  *       it is latent but still UB.
  */
 #define OVE_MAIN()                     \

@@ -18,8 +18,7 @@
  *   6. MQTT connect, subscribe, publish QoS0/1, receive, disconnect
  *   7. Embedded HTTP server (web dashboard)
  *
- * On POSIX the netif init is a no-op (host networking).
- * On FreeRTOS/lwIP the static IP config drives real hardware.
+ * The static IP config drives the QEMU or hardware network interface.
  */
 
 #include "ove/ove.h"
@@ -61,14 +60,12 @@ static void test_netif_init(void)
 
 	TEST("netif_up (static IP)");
 	ove_netif_config_t cfg = {0};
-#ifndef CONFIG_OVE_RTOS_POSIX
 	/* Embedded: static IP 172.1.1.2/24, gw 172.1.1.1, DNS 8.8.8.8 */
 	cfg.use_dhcp = 0;
 	ove_sockaddr_ipv4(&cfg.static_ip, 172, 1, 1, 2, 0);
 	ove_sockaddr_ipv4(&cfg.gateway, 172, 1, 1, 1, 0);
 	ove_sockaddr_ipv4(&cfg.netmask, 255, 255, 255, 0, 0);
 	ove_sockaddr_ipv4(&cfg.dns, 8, 8, 8, 8, 0);
-#endif
 	ret = ove_netif_up(netif, &cfg);
 	if (ret != OVE_OK) {
 		FAIL("netif_up", ret);
@@ -77,10 +74,8 @@ static void test_netif_init(void)
 	PASS("netif_up (static IP)");
 
 	/* Give the link time to come up on hardware */
-#ifndef CONFIG_OVE_RTOS_POSIX
 	OVE_LOG_INF("  Waiting for link...");
 	ove_thread_sleep_ms(3000);
-#endif
 
 	/* Query actual interface addresses */
 	TEST("netif_get_addr");
@@ -596,7 +591,7 @@ void ove_main(void)
 	OVE_LOG_INF("Networking example (heap mode): ready");
 	ove_run();
 
-	/* On POSIX, ove_run() returns — keep alive for the httpd server */
+	/* Keep the httpd server alive should ove_run() ever return. */
 	while (1) {
 		ove_thread_sleep_ms(1000);
 	}

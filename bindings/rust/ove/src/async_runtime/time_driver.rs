@@ -14,8 +14,8 @@
 //!
 //! Resolution floor (the smallest interval `Timer::after_micros(N)`
 //! actually waits) is backend-dependent and documented on
-//! `ove_timer_init_ns`. On POSIX it is the OS timer slice (sub-µs on
-//! Linux); on FreeRTOS it is one tick (typically 1 ms).
+//! `ove_timer_init_ns`. On FreeRTOS it is one tick (typically 1 ms); on
+//! the host test backend the OS timer slice (sub-µs on Linux).
 
 use core::cell::RefCell;
 use core::ptr;
@@ -42,8 +42,8 @@ unsafe impl Sync for AlarmTimer {}
 pub(crate) struct OveTimeDriver {
     /// Sorted wake queue keyed by absolute µs deadlines. Lives under
     /// a critical-section mutex so the alarm callback (running in a
-    /// SIGEV_THREAD on POSIX, workqueue on Zephyr, timer-task on
-    /// FreeRTOS) can drain expired wakers concurrently with user code
+    /// workqueue on Zephyr, timer-task on FreeRTOS, SIGEV_THREAD on the
+    /// host test backend) can drain expired wakers concurrently with user code
     /// registering new ones.
     queue: CsMutex<RefCell<Queue>>,
     /// Single re-armable one-shot alarm. Initialised lazily by
@@ -192,7 +192,7 @@ impl OveTimeDriver {
 /// Callback invoked by the C-side timer when the alarm fires.
 ///
 /// The callback context depends on the backend:
-///  - POSIX: SIGEV_THREAD pthread (one per firing); bracketed by
+///  - host test backend: SIGEV_THREAD pthread (one per firing); bracketed by
 ///           `posix_irq_enter_isr` so `ove_is_in_isr()` returns true
 ///           inside this function, matching the embedded model.
 ///  - Zephyr: system workqueue thread (non-ISR).

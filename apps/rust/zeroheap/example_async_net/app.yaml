@@ -3,12 +3,10 @@ config_name: example_async_net_rust_zh
 description: "Rust async networking (embassy-net) demo on oveRTOS — zero-heap mode"
 rust:
   lib_name: example_async_net_zh
-# embassy-net needs a board-specific driver. The host has no NetDriver,
-# so this app does not compile there. The STM32F7 ETH C driver
+# embassy-net needs a board-specific driver. The STM32F7 ETH C driver
 # (drivers/freertos/stm32f7/stm32f7_eth_async.c) is FreeRTOS-only, so
 # STM32F7 NuttX/Zephyr can't link this app either.
 incompatible_boards:
-  - host
   # No network peer inside the page.
   - web
   - stm32f746.nuttx

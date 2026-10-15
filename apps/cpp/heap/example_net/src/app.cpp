@@ -20,8 +20,7 @@
  *   8. Results summary
  *   9. Embedded HTTP server (web dashboard)
  *
- * On POSIX the netif init is a no-op (host networking).
- * On FreeRTOS/lwIP the static IP config drives real hardware.
+ * The static IP config drives the QEMU or hardware network interface.
  */
 
 #include <ove/ove.hpp>
@@ -68,12 +67,10 @@ static void test_netif_init()
 
 	TEST("netif_up (static IP)");
 	auto cfg = ove::NetIfConfig{}
-#ifndef CONFIG_OVE_RTOS_POSIX
 			   .static_ip(ove::Address::ipv4(172, 1, 1, 2, 0),
 				      ove::Address::ipv4(255, 255, 255, 0, 0),
 				      ove::Address::ipv4(172, 1, 1, 1, 0))
 			   .dns(ove::Address::ipv4(8, 8, 8, 8, 0))
-#endif
 		;
 
 	auto up_r = netif.up(cfg);
@@ -84,10 +81,8 @@ static void test_netif_init()
 	PASS("netif_up (static IP)");
 
 	/* Give the link time to come up on hardware */
-#ifndef CONFIG_OVE_RTOS_POSIX
 	OVE_LOG_INF("  Waiting for link...");
 	ove::this_thread::sleep_ms(3000);
-#endif
 
 	/* Query actual interface addresses */
 	TEST("netif_get_addr");
@@ -515,7 +510,7 @@ OVE_MAIN()
 	OVE_LOG_INF("C++ networking example (heap mode): ready");
 	ove::run();
 
-	/* On POSIX, ove::run() returns — keep alive for the httpd server */
+	/* Keep the httpd server alive should ove::run() ever return. */
 	while (true) {
 		ove::this_thread::sleep_ms(1000);
 	}

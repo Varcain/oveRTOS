@@ -731,8 +731,8 @@ fn main() {
         }
     }
 
-    // Native/POSIX parses the headers for the host and keeps bindgen's
-    // std-compatible types; everything else is a freestanding ARM target.
+    // Native (the host test suites) parses the headers for the host and keeps
+    // bindgen's std-compatible types; everything else is a freestanding ARM target.
     if !is_native {
         builder = builder
             .clang_arg("-DARM_MATH_CM7")

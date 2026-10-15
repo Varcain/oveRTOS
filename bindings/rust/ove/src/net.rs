@@ -17,7 +17,6 @@
 //! | FreeRTOS | lwIP (vendored) | Bare-metal target; sockets in oveRTOS heap |
 //! | Zephyr   | Zephyr `net`  | Uses Zephyr's POSIX `sockets` shim |
 //! | NuttX    | NuttX net     | Native socket layer |
-//! | POSIX    | host kernel   | Native `socket(2)` via libc |
 //!
 //! ## When to pick `ove::net` (blocking) vs [`crate::async_net`]
 //!
@@ -39,7 +38,7 @@
 //!   [`crate::net_httpd`] sister modules wrap mbedTLS + battle-tested
 //!   C clients that are part of oveRTOS itself.
 //! - You're on a backend where the **native socket layer is mature**
-//!   (Zephyr/NuttX/POSIX). The HAL is doing the heavy lifting; the
+//!   (Zephyr/NuttX). The HAL is doing the heavy lifting; the
 //!   Rust wrapper is just type-safe glue.
 //! - You're **interoperating with existing C code** that already
 //!   opens sockets, calls DNS, etc.

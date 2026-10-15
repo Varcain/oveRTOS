@@ -45,7 +45,8 @@ extern "C" {
  *  - FreeRTOS: 0 (the FreeRTOS @c taskENTER_CRITICAL macros are
  *              symmetric and don't return a value).
  *  - NuttX:   @c irqstate_t (typically @c uint32_t).
- *  - POSIX:   @c uint64_t (a TLS nesting depth — no real ISR-mask).
+ *  - host test backend: @c uint64_t (a TLS nesting depth — no real
+ *    ISR-mask).
  *
  * The C ABI commits to @c uint64_t so the Rust binding's
  * `critical-section::Impl::RawRestoreState` can be a single fixed
@@ -87,8 +88,8 @@ void ove_irq_unlock(ove_irq_key_t key);
  *
  * @return @c true if the caller is in an ISR or equivalent
  *         interrupt-handling context, @c false otherwise.
- * @note On the host-sim backend (POSIX) the simulator sets a
- *       thread-local flag inside its ISR wrappers; outside those
+ * @note On the host test backend the ISR wrappers set a
+ *       thread-local flag; outside those
  *       paths the function returns @c false.
  * @note Requires @c CONFIG_OVE_ASYNC.
  */

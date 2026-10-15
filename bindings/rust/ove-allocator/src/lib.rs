@@ -6,7 +6,7 @@
 
 //! libc-malloc-backed `#[global_allocator]` for oveRTOS no_std heap apps.
 //!
-//! All four oveRTOS RTOS backends (FreeRTOS, NuttX, Zephyr, POSIX) ship
+//! Every oveRTOS RTOS backend (FreeRTOS, NuttX, Zephyr) ships
 //! a libc that exposes `malloc` / `free` / `realloc` and routes them to
 //! the kernel heap.  This crate registers a `GlobalAlloc` shim that
 //! forwards to those symbols, so a `no_std` heap-mode Rust binary can

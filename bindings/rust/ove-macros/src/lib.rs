@@ -127,7 +127,7 @@ fn expand_async(input: ItemFn) -> TokenStream {
         #user_vis #user_sig #user_block
 
         // The async executor must run after vTaskStartScheduler (FreeRTOS)
-        // / pthread_create (POSIX) / k_thread_create (Zephyr) so the
+        // / k_thread_create (Zephyr) / pthread_create (host tests) so the
         // backend's timer service task, ISR plumbing, and waitqueues are
         // alive — otherwise our ove_timer callback never fires and the
         // executor stalls forever.  Spawn the executor on an ove::Thread,

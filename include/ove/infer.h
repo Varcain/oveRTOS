@@ -14,7 +14,7 @@
  *
  * Provides a C API for loading pre-trained @c .tflite FlatBuffer models
  * and running inference on them.  The same model binary runs unchanged
- * across all four oveRTOS backends (FreeRTOS, Zephyr, NuttX, POSIX).
+ * across every oveRTOS backend (FreeRTOS, Zephyr, NuttX).
  *
  * Two allocation strategies are available:
  *  - @c _create() / @c _destroy() — heap-allocated, including the tensor arena.

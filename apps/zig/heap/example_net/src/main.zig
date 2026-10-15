@@ -16,8 +16,7 @@
 //!   7. MQTT connect, subscribe, publish QoS0/1, receive, disconnect
 //!   8. Embedded HTTP server (web dashboard)
 //!
-//! On POSIX the netif init is a no-op (host networking).
-//! On FreeRTOS/lwIP the static IP config drives real hardware.
+//! The static IP config drives the QEMU or hardware network interface.
 
 const std = @import("std");
 const ove = @import("ove");
@@ -32,8 +31,6 @@ pub const std_options: std.Options = .{
 };
 const net = ove.net;
 const Address = ove.Address;
-
-const is_posix = @hasDecl(ove.ffi, "CONFIG_OVE_RTOS_POSIX");
 
 // -- Test tracking ----------------------------------------------------------
 
@@ -88,15 +85,12 @@ fn testNetifInit() void {
     passCase("netif_init");
 
     testCase("netif_up (static IP)");
-    var cfg = net.NetIfConfig.init();
-    if (!is_posix) {
-        // Embedded: static IP 172.1.1.2/24, gw 172.1.1.1, DNS 8.8.8.8
-        cfg = cfg.staticIp(
-            Address.ipv4(172, 1, 1, 2, 0),
-            Address.ipv4(255, 255, 255, 0, 0),
-            Address.ipv4(172, 1, 1, 1, 0),
-        ).dns(Address.ipv4(8, 8, 8, 8, 0));
-    }
+    // Embedded: static IP 172.1.1.2/24, gw 172.1.1.1, DNS 8.8.8.8
+    const cfg = net.NetIfConfig.init().staticIp(
+        Address.ipv4(172, 1, 1, 2, 0),
+        Address.ipv4(255, 255, 255, 0, 0),
+        Address.ipv4(172, 1, 1, 1, 0),
+    ).dns(Address.ipv4(8, 8, 8, 8, 0));
     netif.up(cfg) catch |e| {
         failCase("netif_up", errCode(e));
         return;
@@ -104,10 +98,8 @@ fn testNetifInit() void {
     passCase("netif_up (static IP)");
 
     // Give the link time to come up on hardware
-    if (!is_posix) {
-        std.log.info("  Waiting for link...", .{});
-        ove.thread.sleepMs(3000);
-    }
+    std.log.info("  Waiting for link...", .{});
+    ove.thread.sleepMs(3000);
 
     // Query actual interface addresses
     testCase("netif_get_addr");
@@ -525,7 +517,7 @@ fn appMain() void {
     std.log.info("Zig networking example (heap mode): ready", .{});
     ove.run();
 
-    // On POSIX, ove_run() returns -- keep alive for the httpd server
+    // Keep the httpd server alive should ove_run() ever return.
     while (true) ove.thread.sleepMs(1000);
 }
 

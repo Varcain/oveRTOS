@@ -36,10 +36,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-// Pull in the libc-malloc-backed `#[global_allocator]`.  On std (POSIX
-// host) builds this is a no-op (`no_install`); on bare-metal targets it
-// installs a `GlobalAlloc` shim wrapping libc malloc/free that routes
-// to the kernel heap.
+// Pull in the libc-malloc-backed `#[global_allocator]`: a `GlobalAlloc`
+// shim wrapping libc malloc/free that routes to the kernel heap.
 use ove_allocator as _;
 
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -59,9 +57,7 @@ const APP_TITLE: &[u8] = b"oveRTOS(FreeRTOS) Rust Demo\0";
 const APP_TITLE: &[u8] = b"oveRTOS(NuttX) Rust Demo\0";
 #[cfg(rtos_zephyr)]
 const APP_TITLE: &[u8] = b"oveRTOS(Zephyr) Rust Demo\0";
-#[cfg(rtos_posix)]
-const APP_TITLE: &[u8] = b"oveRTOS(POSIX) Rust Demo\0";
-#[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr, rtos_posix)))]
+#[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr)))]
 const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
 
 // LVGL widgets and the timer cannot be captured into closures spawned

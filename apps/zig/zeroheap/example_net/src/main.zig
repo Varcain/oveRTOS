@@ -29,8 +29,6 @@ pub const std_options: std.Options = .{
 const net = ove.net;
 const Address = ove.Address;
 
-const is_posix = @hasDecl(ove.ffi, "CONFIG_OVE_RTOS_POSIX");
-
 // -- Test tracking ----------------------------------------------------------
 
 var pass_count: u32 = 0;
@@ -92,24 +90,19 @@ fn testNetifInit() void {
     passCase("netif_init");
 
     testCase("netif_up (static IP)");
-    var cfg = net.NetIfConfig.init();
-    if (!is_posix) {
-        cfg = cfg.staticIp(
-            Address.ipv4(172, 1, 1, 2, 0),
-            Address.ipv4(255, 255, 255, 0, 0),
-            Address.ipv4(172, 1, 1, 1, 0),
-        ).dns(Address.ipv4(8, 8, 8, 8, 0));
-    }
+    const cfg = net.NetIfConfig.init().staticIp(
+        Address.ipv4(172, 1, 1, 2, 0),
+        Address.ipv4(255, 255, 255, 0, 0),
+        Address.ipv4(172, 1, 1, 1, 0),
+    ).dns(Address.ipv4(8, 8, 8, 8, 0));
     netif.up(cfg) catch |e| {
         failCase("netif_up", errCode(e));
         return;
     };
     passCase("netif_up (static IP)");
 
-    if (!is_posix) {
-        std.log.info("  Waiting for link...", .{});
-        ove.thread.sleepMs(3000);
-    }
+    std.log.info("  Waiting for link...", .{});
+    ove.thread.sleepMs(3000);
 
     testCase("netif_get_addr");
     if (netif.getAddr()) |info| {

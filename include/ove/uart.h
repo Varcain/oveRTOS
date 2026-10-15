@@ -120,7 +120,7 @@ void ove_uart_destroy(ove_uart_t uart);
  * remainder; @c OVE_OK alone does not guarantee a full write.
  *
  * @note @p timeout_ns is best-effort and is currently ignored by several
- *       backends (the posix/zephyr/freertos TX paths transmit synchronously);
+ *       backends (the zephyr/freertos TX paths transmit synchronously);
  *       do not rely on it to bound a write.
  *
  * @param[in]  uart          UART handle.

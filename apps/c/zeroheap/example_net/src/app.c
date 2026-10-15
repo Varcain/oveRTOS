@@ -51,13 +51,11 @@ static void test_netif_up(void)
 
 	TEST("netif_up (static IP)");
 	ove_netif_config_t cfg = {0};
-#ifndef CONFIG_OVE_RTOS_POSIX
 	cfg.use_dhcp = 0;
 	ove_sockaddr_ipv4(&cfg.static_ip, 172, 1, 1, 2, 0);
 	ove_sockaddr_ipv4(&cfg.gateway, 172, 1, 1, 1, 0);
 	ove_sockaddr_ipv4(&cfg.netmask, 255, 255, 255, 0, 0);
 	ove_sockaddr_ipv4(&cfg.dns, 8, 8, 8, 8, 0);
-#endif
 	int ret = ove_netif_up(g_netif, &cfg);
 	if (ret != OVE_OK) {
 		FAIL("netif_up", ret);
@@ -65,10 +63,8 @@ static void test_netif_up(void)
 	}
 	PASS("netif_up (static IP)");
 
-#ifndef CONFIG_OVE_RTOS_POSIX
 	OVE_LOG_INF("  Waiting for link...");
 	ove_thread_sleep_ms(3000);
-#endif
 
 	TEST("netif_get_addr");
 	ove_sockaddr_t ip_addr, gw_addr, nm_addr;

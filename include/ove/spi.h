@@ -195,7 +195,7 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
  * Completion context is backend-dependent:
  *  - STM32F7 + FreeRTOS: DMA TC ISR (callable from interrupt context).
  *  - Zephyr: poll signal handler (typically a system workqueue thread).
- *  - NuttX / POSIX: a worker thread that runs the blocking transfer
+ *  - NuttX: a worker thread that runs the blocking transfer
  *    and invokes @p cb on return.  No real DMA — provides the async
  *    surface for testing.
  *

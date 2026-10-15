@@ -39,8 +39,8 @@ extern "C" {
 #ifdef CONFIG_OVE_PROFILER
 
 /**
- * @brief Arm the backend sampling mechanism (install signal handler on
- *        POSIX, etc.).
+ * @brief Arm the backend sampling mechanism (a tick hook or timer,
+ *        depending on the RTOS).
  *
  * Idempotent.  Does not spawn any thread — the consolidated sim-debug
  * pump drives sampling by calling @ref ove_backend_profiler_sample_tick

@@ -213,7 +213,7 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns);
  *
  * Same backend completion-context contract as
  * @ref ove_spi_transfer_async (ISR on STM32 + FreeRTOS DMA, thread on
- * Zephyr signal / NuttX-POSIX worker fallback).
+ * Zephyr signal / NuttX worker fallback).
  *
  * @param[in] i2c        I2C handle.
  * @param[in] addr       7-bit device address.

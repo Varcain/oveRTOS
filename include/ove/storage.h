@@ -60,12 +60,12 @@
  * | FreeRTOS | ✅                 | `xTaskCreateStatic` consumes it directly. |
  * | Zephyr   | ✅                 | `k_thread_create` over the caller's supervisor-only K_KERNEL_STACK_DEFINE buffer. |
  * | NuttX    | ✅ on target ports | `task_create_with_stack()` forwards it to the architecture; NuttX sim may substitute a larger host stack. NuttX still allocates the TCB and task group internally. |
- * | POSIX    | ⚠ Ignored          | Host-mode backend; `pthread_create` manages its own stack. |
+ * | host tests | ⚠ Ignored        | The POSIX test backend; `pthread_create` manages its own stack. |
  *
  * **For strict zero-heap deployments**: FreeRTOS and Zephyr honor the
  * full storage-hygiene contract. NuttX honors caller stack storage but
- * still allocates its TCB and task group internally; POSIX is a
- * host/sim backend with no zero-heap obligation.
+ * still allocates its TCB and task group internally; the POSIX host test
+ * backend has no zero-heap obligation.
  *
  * @par Storage struct size stability
  *

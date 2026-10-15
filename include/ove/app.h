@@ -43,7 +43,7 @@ extern "C" {
  *       same rule that applies whenever a function hands out a pointer
  *       to a local, it's just more visible here because workers
  *       outlive the scope.  On FreeRTOS the failure is immediate
- *       (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr it
+ *       (scheduler reclaims the main stack); on NuttX/Zephyr it
  *       is latent but still UB.
  *
  * @see ove_run, ove_app_run
