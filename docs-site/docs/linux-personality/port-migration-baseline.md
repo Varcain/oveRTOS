@@ -643,7 +643,7 @@ Zephyr's smaller flash span is the removed excess kobject reserve:
 
 The generic `ove_thread_info` record still contained an `lxp_slot` member even
 though no RTOS backend could populate it: FreeRTOS, NuttX, Zephyr, POSIX, and
-WASM all wrote `-1`. The private LXP adapter already resolved each opaque native
+WASM (the Emscripten target, since removed) all wrote `-1`. The private LXP adapter already resolved each opaque native
 thread identity through the run-scoped slot lookup and wrote the result into
 LXP's own `lxp_thread_info`. The public member was therefore redundant
 personality state in an otherwise engine-neutral API.
