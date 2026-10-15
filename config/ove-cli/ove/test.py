@@ -621,8 +621,7 @@ def _rust_test_env(ove_dir, output_dir, target_dir, *, zero_heap=False):
         "STUB_LIB_DIR": stub_build,
         "OVE_STORAGE_SIZES": os.path.join(stub_build,
                                                "ove_storage_sizes.env"),
-        "LV_CONF_PATH": os.path.join(ove_dir, "boards", "host",
-                                      "posix"),
+        "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
         "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends",
                                            "stub", "lvgl"),
         "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends",
@@ -855,7 +854,7 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
         "-I" + os.path.join(ove_dir, "backends", "posix", "include"),
         "-I" + os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
         "-I" + os.path.join(ove_dir, "tests", "backends", "stub"),
-        "-I" + os.path.join(ove_dir, "boards", "host", "posix"),
+        "-I" + os.path.join(ove_dir, "tests", "host"),
     ]
 
     logger.info("Building Zig tests%s",
@@ -2604,7 +2603,7 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
         res.skipped = 3
         return res
 
-    host_lv_conf = os.path.join(ove_dir, "boards", "host", "posix")
+    host_lv_conf = os.path.join(ove_dir, "tests", "host")
     # tests/ove_config.h carries CONFIG_OVE_LVGL=1 + the host-stub backend,
     # so it is a complete host config for a compile-only check.
     gen_dir = os.path.join(ove_dir, "tests")
