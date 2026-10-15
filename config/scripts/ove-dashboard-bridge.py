@@ -384,7 +384,14 @@ def serve(port, dashboard_dir):
                             # Audio-inject short-circuit: cmd_type 0 with
                             # a real plugin ID (skip console sentinel)
                             # writes PCM directly into the audio ring.
-                            if (plugin_id != 0xFFFFFFFF
+                            if plugin_id == 0xFFFFFFFF and console_fd[0] is not None:
+                                # Console text: straight to the firmware's
+                                # UART, as typing in the terminal does.
+                                try:
+                                    os.write(console_fd[0], pcm)
+                                except OSError:
+                                    pass
+                            elif (plugin_id != 0xFFFFFFFF
                                     and cmd_type == 0 and pcm):
                                 audio_input_write(pcm)
                             else:
@@ -2226,6 +2233,10 @@ def _mi_parse_kv(s):
 # Global GDB controller instance (set in main if --gdb-port)
 gdb_controller = [None]
 
+# Write end of the firmware console UART's input FIFO (set in main if
+# --console-fifo).
+console_fd = [None]
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -2246,6 +2257,9 @@ def main():
                         help="Path to dashboard static files")
     parser.add_argument("--log-fd", type=int, default=-1,
                         help="File descriptor to read console log from")
+    parser.add_argument("--console-fifo", type=str, default=None,
+                        help="FIFO feeding the firmware's console UART; "
+                             "dashboard console input is written to it")
     parser.add_argument("--gdb-port", type=int, default=0,
                         help="GDB remote port (QEMU gdbserver)")
     parser.add_argument("--gdb-toolchain", type=str, default="gdb",
@@ -2255,6 +2269,10 @@ def main():
     parser.add_argument("--build-dir", type=str, default=None,
                         help="CMake build dir (for source file list)")
     args = parser.parse_args()
+
+    if args.console_fifo:
+        # O_RDWR: opening a FIFO write-only would block until QEMU opens it.
+        console_fd[0] = os.open(args.console_fifo, os.O_RDWR)
 
     ove_dir = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))
