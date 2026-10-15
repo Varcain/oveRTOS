@@ -709,8 +709,8 @@ static mutex_t g_nx_list_lock = NXMUTEX_INITIALIZER;
 
 #if !defined(CONFIG_ARCH_PERF_EVENTS)
 static struct {
+	uint64_t cum_us; /* first: 16 bytes an entry instead of 24 */
 	pid_t pid;
-	uint64_t cum_us;
 	bool used;
 	bool seen;
 } g_nx_cpuint[OVE_NX_CPUINT_MAX];
