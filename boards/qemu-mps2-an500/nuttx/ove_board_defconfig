@@ -1,6 +1,14 @@
 # oveRTOS board-specific NuttX config for qemu-mps2-an500.
 # Applied on top of the NuttX board base config (mps2-an500:nsh).
 
+# Kernel RAM lives in SSRAM2&3 (0x20000000, 4M — QEMU mps.ssram23), not the 16M
+# PSRAM block at 0x60000000: board patch 0001 links .data/.bss there and patch
+# 0003 ends the heap with it. These say the same, and main.c checks them against
+# board.yaml's ram_start/ram_kb. The PSRAM block stays free; the Linux
+# personality stages its rootfs and guest pool there.
+CONFIG_RAM_START=0x20000000
+CONFIG_RAM_SIZE=4194304
+
 # MPS2-AN500 has no on-chip MAC and no on-board ethernet driver wired in.
 # Networking apps rely on loopback only, so tell NuttX to skip the call
 # to arm_netinitialize() from up_initialize() — otherwise the link fails

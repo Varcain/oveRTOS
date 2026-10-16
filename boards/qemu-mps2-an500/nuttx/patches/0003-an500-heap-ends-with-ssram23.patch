@@ -1,0 +1,30 @@
+From: oveRTOS <noreply@invalid>
+Subject: [PATCH] mps2-an500: end the heap with SSRAM2&3, not PSRAM
+
+Patch 0001 links kernel RAM into SSRAM2&3 at 0x20000000. The idle stack
+then lies above the 4 MB code SSRAM, so up_allocate_heap() takes the
+"external region" branch and runs the heap on to PRIMARY_RAM_END, the end
+of the 16 MB PSRAM: 0x2003c468-0x60fffff8, across unmapped space and the
+peripherals, with its end node in the PSRAM the Linux personality uses
+for the guest pool. Make SSRAM2&3 the primary RAM so the heap ends at
+0x20400000.
+
+diff --git a/arch/arm/src/mps/hardware/mps_memorymap.h b/arch/arm/src/mps/hardware/mps_memorymap.h
+index 6bd9c83..04038b3 100644
+--- a/arch/arm/src/mps/hardware/mps_memorymap.h
++++ b/arch/arm/src/mps/hardware/mps_memorymap.h
+@@ -164,8 +164,12 @@
+ #define MPS_PSRAM_START    0x60000000
+ #define MPS_PSRAM_SIZE     0x01000000
+ 
+-#define PRIMARY_RAM_START  MPS_PSRAM_START
+-#define PRIMARY_RAM_SIZE   MPS_PSRAM_SIZE
++/* Kernel RAM is linked into SSRAM23 (see this board's flash.ld), and the heap
++ * must end with it rather than run on to the end of PSRAM.
++ */
++
++#define PRIMARY_RAM_START  MPS_SRAM2_START
++#define PRIMARY_RAM_SIZE   MPS_SRAM2_SIZE
+ 
+ #if CONFIG_MM_REGIONS > 1
+ #define REGION1_RAM_START  MPS_SRAM2_START
