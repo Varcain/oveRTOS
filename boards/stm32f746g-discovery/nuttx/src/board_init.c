@@ -143,7 +143,7 @@ static void sdram_rpipe_fix(void)
  * referenced; ove_board_init references ove_hal_board_init (below), pulling this whole object, so
  * these strong ove_hal_fb_* win over the weak ove_fb.c stubs.  A standalone fb_port.c would not be
  * pulled (its only symbols are the weak-overridden ove_hal_fb_*, already resolved by ove_fb.c). */
-#define FB_BASE 0xC0000000u
+#define FB_BASE OVE_MEMORY_SDRAM_START
 
 #include <arch/board/board.h> /* BOARD_LTDC_WIDTH / BOARD_LTDC_HEIGHT */
 #ifndef OVE_DISPLAY_FORMAT_RGB565
@@ -151,6 +151,8 @@ static void sdram_rpipe_fix(void)
 #endif
 _Static_assert(BOARD_LTDC_WIDTH == OVE_DISPLAY_WIDTH && BOARD_LTDC_HEIGHT == OVE_DISPLAY_HEIGHT,
 	       "board.yaml display size differs from NuttX's board.h LTDC panel");
+_Static_assert(CONFIG_STM32F7_LTDC_FB_BASE == OVE_MEMORY_SDRAM_START,
+	       "NuttX's LTDC framebuffer must sit at the start of board.yaml's SDRAM");
 
 int ove_hal_fb_init(void)
 {

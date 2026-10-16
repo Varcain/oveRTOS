@@ -47,6 +47,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include <string.h>
 #include "ff_gen_drv.h"
+#include "board_desc.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -208,7 +209,8 @@ static int sd_dma_direct(const void *buff)
 	if ((addr & (SD_DMA_CACHE_LINE_SIZE - 1u)) != 0u)
 		return 0;
 	return (addr >= 0x20010000u && addr < 0x20050000u) ||
-	       (addr >= 0xC0000000u && addr < 0xC0800000u);
+	       (addr >= OVE_MEMORY_SDRAM_START &&
+		addr < OVE_MEMORY_SDRAM_START + OVE_MEMORY_SDRAM_KB * 1024u);
 }
 
 static UINT sd_chunk(UINT count, int direct)

@@ -76,7 +76,7 @@ MEMORY
 
     /* External SDRAM (8 MB) minus a 2 KB tail reserved for the ETH TX bounce buffer, so the
      * framebuffer + guest pools (.sdram_bss) can never grow into it (a linker overflow is caught
-     * instead of a silent overlap). */
+     * instead of a silent overlap). Base and size are board.yaml's memory.sdram_*. */
     SDRAM (xrw)     : ORIGIN = 0xC0000000, LENGTH = 8M - 0x800
     /* ETH TX bounce buffer: SDRAM, above the guest pools, covered by NO MPU region → the ARM
      * background map types it DEVICE (non-cacheable) in every task context, and the ETH DMA reaches

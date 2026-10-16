@@ -61,8 +61,12 @@
     "memory": {
       "type": "object",
       "properties": {
+        "flash_start": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
         "flash_kb":    { "type": "integer", "minimum": 0 },
-        "ram_kb":      { "type": "integer", "minimum": 0 },
+        "ram_start":   { "type": "string", "pattern": "^0x[0-9a-fA-F]+$",
+                         "description": "Start of on-chip RAM, TCM included" },
+        "ram_kb":      { "type": "integer", "minimum": 0,
+                         "description": "Total on-chip RAM, TCM included" },
         "sdram_kb":    { "type": "integer", "minimum": 0 },
         "sdram_start": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" }
       },
