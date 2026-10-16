@@ -261,6 +261,15 @@ void bsp_toggleLed(unsigned int led)
   *   PLL_P                          = 2
   *   PLL_Q                          = 9
   */
+#define BSP_PLL_M 25u
+#define BSP_PLL_N 432u
+#define BSP_PLL_P_DIV 2u
+_Static_assert(BSP_PLL_P_DIV == RCC_PLLP_DIV2, "BSP_PLL_P_DIV must match the PLLP setting below");
+_Static_assert(HSE_VALUE == OVE_CLOCK_HSE_FREQ_MHZ * 1000000u,
+	       "board.yaml HSE differs from the HAL's HSE_VALUE");
+_Static_assert(HSE_VALUE / BSP_PLL_M * BSP_PLL_N / BSP_PLL_P_DIV == OVE_CLOCK_SYSCLK_MHZ * 1000000u,
+	       "board.yaml sysclk differs from the PLL configuration");
+
 static void SystemClock_Config(void)
 {
 	RCC_ClkInitTypeDef RCC_ClkInitStruct;
@@ -271,8 +280,8 @@ static void SystemClock_Config(void)
 	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
 	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
 	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-	RCC_OscInitStruct.PLL.PLLM = 25;
-	RCC_OscInitStruct.PLL.PLLN = 432;
+	RCC_OscInitStruct.PLL.PLLM = BSP_PLL_M;
+	RCC_OscInitStruct.PLL.PLLN = BSP_PLL_N;
 	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
 	RCC_OscInitStruct.PLL.PLLQ = 9;
 

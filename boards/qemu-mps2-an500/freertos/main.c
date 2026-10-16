@@ -22,8 +22,12 @@
 #include "ove/ove.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "board_desc.h"
 
 #include <stdio.h>
+
+_Static_assert(configCPU_CLOCK_HZ == OVE_CLOCK_SYSCLK_MHZ * 1000000ul,
+	       "board.yaml sysclk differs from configCPU_CLOCK_HZ");
 
 extern void xPortSysTickHandler(void);
 extern int ove_sim_board_init(void);
