@@ -1,0 +1,42 @@
+From: oveRTOS <noreply@invalid>
+Subject: [PATCH] stm32f746g-disco: make the user LED driver build
+
+Without CONFIG_ARCH_LEDS the board builds stm32_userleds.c, which has not
+compiled: it never includes board.h for BOARD_NLEDS, and it names a
+BOARD_STATUS_LED this board does not define. It also drove LD1 inverted;
+LD1 is active-high. Use BOARD_LD1 / BOARD_LED1_BIT from board.h.
+
+diff --git a/boards/arm/stm32f7/stm32f746g-disco/src/stm32_userleds.c b/boards/arm/stm32f7/stm32f746g-disco/src/stm32_userleds.c
+index d5ac2f4..08da834 100644
+--- a/boards/arm/stm32f7/stm32f746g-disco/src/stm32_userleds.c
++++ b/boards/arm/stm32f7/stm32f746g-disco/src/stm32_userleds.c
+@@ -29,6 +29,8 @@
+ #include <stdbool.h>
+ #include <debug.h>
+ 
++#include <arch/board/board.h>
++
+ #include "stm32_gpio.h"
+ #include "stm32f746g-disco.h"
+ 
+@@ -67,9 +69,9 @@ uint32_t board_userled_initialize(void)
+ 
+ void board_userled(int led, bool ledon)
+ {
+-  if (led == BOARD_STATUS_LED)
++  if (led == BOARD_LD1)
+     {
+-      stm32_gpiowrite(GPIO_LD1, !ledon);
++      stm32_gpiowrite(GPIO_LD1, ledon);
+     }
+ }
+ 
+@@ -86,7 +88,7 @@ void board_userled(int led, bool ledon)
+ 
+ void board_userled_all(uint32_t ledset)
+ {
+-  stm32_gpiowrite(GPIO_LD1, (ledset & BOARD_STATUS_LED_BIT) != 0);
++  stm32_gpiowrite(GPIO_LD1, (ledset & BOARD_LED1_BIT) != 0);
+ }
+ 
+ #endif /* !CONFIG_ARCH_LEDS */
