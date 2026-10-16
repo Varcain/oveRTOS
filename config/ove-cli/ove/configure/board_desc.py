@@ -47,8 +47,7 @@ def _generate_board_desc_header(board):
     if "clock" in board:
         clk = board["clock"]
         lines.append("/* Clock configuration */")
-        for key in ["hse_freq_mhz", "sysclk_mhz", "ahb_div", "apb1_div",
-                     "apb2_div"]:
+        for key in ["hse_freq_mhz", "sysclk_mhz"]:
             if key in clk:
                 lines.append(
                     f"#define OVE_CLOCK_{key.upper()} {clk[key]}")
@@ -57,7 +56,7 @@ def _generate_board_desc_header(board):
     if "memory" in board:
         mem = board["memory"]
         lines.append("/* Memory layout */")
-        for key in ["flash_kb", "ram_kb", "dtcm_kb", "sdram_kb"]:
+        for key in ["flash_kb", "ram_kb", "sdram_kb"]:
             if key in mem:
                 lines.append(
                     f"#define OVE_MEMORY_{key.upper()} {mem[key]}")
@@ -134,36 +133,11 @@ def _generate_board_desc_header(board):
             if "baud" in con:
                 lines.append(
                     f"#define OVE_SERIAL_CONSOLE_BAUD {con['baud']}")
-            if "tx_pin" in con:
-                lines.append(
-                    f'#define OVE_SERIAL_CONSOLE_TX_PIN '
-                    f'"{_c_str(con["tx_pin"])}"')
-            if "rx_pin" in con:
-                lines.append(
-                    f'#define OVE_SERIAL_CONSOLE_RX_PIN '
-                    f'"{_c_str(con["rx_pin"])}"')
             if "rx_buffer_size" in con:
                 lines.append(
                     f"#define OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE "
                     f"{con['rx_buffer_size']}")
             lines.append("")
-
-    if "sdcard" in board:
-        sd = board["sdcard"]
-        lines.append("/* SD card configuration */")
-        if "interface" in sd:
-            lines.append(
-                f'#define OVE_SDCARD_INTERFACE '
-                f'"{_c_str(sd["interface"])}"')
-        lines.append("")
-
-    if "watchdog" in board:
-        wd = board["watchdog"]
-        lines.append("/* Watchdog configuration */")
-        if "timeout_ms" in wd:
-            lines.append(
-                f"#define OVE_WATCHDOG_TIMEOUT_MS {wd['timeout_ms']}")
-        lines.append("")
 
     # Runtime descriptor struct
     lines.append("/* Runtime board descriptor */")

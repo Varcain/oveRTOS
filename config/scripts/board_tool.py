@@ -641,8 +641,8 @@ def _extract_board_yaml_from_dts(tree, zephyr_board_name):
                                 memory["flash_kb"] = size // 1024
     if memory:
         data["memory"] = memory
-    warnings.append("clock.sysclk_mhz, clock.ahb_div, clock.apb1_div, clock.apb2_div need manual review (PLL config too complex for DTS extraction)")
-    warnings.append("memory.dtcm_kb, memory.sdram_kb may need manual entry (secondary memory regions not always in base DTS)")
+    warnings.append("clock.sysclk_mhz needs manual review (PLL config too complex for DTS extraction)")
+    warnings.append("memory.sdram_kb may need manual entry (secondary memory regions not always in base DTS)")
 
     # --- serial console ---
     chosen = children.get("chosen", {})
@@ -664,7 +664,6 @@ def _extract_board_yaml_from_dts(tree, zephyr_board_name):
                 baud = baud[0] if baud else None
             if isinstance(baud, int):
                 data["serial"] = {"console": {"baud": baud}}
-    warnings.append("serial.console.tx_pin, serial.console.rx_pin need manual review (pinctrl encoding is SoC-specific)")
 
     # --- LEDs ---
     leds_node = None
@@ -736,7 +735,7 @@ def _extract_board_yaml_from_dts(tree, zephyr_board_name):
     # --- SDMMC ---
     for name, node in (list(soc.get("_children", {}).items()) if soc else []):
         if "sdmmc" in name.lower() or "mmc" in name.lower():
-            data["sdcard"] = {"interface": name.split("@")[0].upper().replace("-", "")}
+            data["sdcard"] = {}
             break
 
     # --- Clock (HSE) ---
@@ -1136,10 +1135,8 @@ def _nuttx_starter_defconfig(data):
         "# ove_board_defconfig.<feature> is applied only when",
         "# CONFIG_OVE_<FEATURE> is set (e.g. ove_board_defconfig.fs for OVE_FS).",
     ]
-    sdcard = data.get("sdcard", {})
-    if sdcard:
-        iface = sdcard.get("interface", "SD card")
-        lines += ["", f"# TODO: enable the {iface} controller and CONFIG_MMCSD in ove_board_defconfig.fs."]
+    if "sdcard" in data:
+        lines += ["", "# TODO: enable the SD card controller and CONFIG_MMCSD in ove_board_defconfig.fs."]
     return lines
 
 

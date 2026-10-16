@@ -144,3 +144,18 @@ class LookupTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UndefinedSymbolTest(unittest.TestCase):
+    def test_only_unknown_symbols_are_reported(self):
+        from ove.kconfig import _undefined_symbols
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "Config.in")
+            with open(path, "w") as f:
+                f.write(_KCONFIG_CONTEXT + "config USES_GHOST\n    bool\n    depends on GHOST\n")
+            kconf = kconfiglib.Kconfig(path, warn=False)
+        lines = ["CONFIG_OVE_LINUX=y", "# CONFIG_OVE_SIM_WEB is not set",
+                 "CONFIG_NO_SUCH=y", "# CONFIG_GHOST is not set", "# a comment"]
+        # GHOST is referenced by a dependency but defined nowhere.
+        self.assertEqual(_undefined_symbols(kconf, lines), ["NO_SUCH", "GHOST"])

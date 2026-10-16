@@ -30,7 +30,6 @@ The ST STM32F746G-DISCO discovery kit is the primary hardware target and the ref
 | SD card | SDMMC1 |
 | GPIO ports | 9 ports, 16 pins each |
 | LEDs | 1 (port 8, pin 1, active-high) |
-| Watchdog timeout | 5000 ms |
 
 **Backends available**
 
@@ -59,7 +58,6 @@ The MPS2 AN500 model emulates a Cortex-M7 SoC on the QEMU machine. It is the pri
 | Console | CMSDK UART0 on QEMU's stdio (the Linux personality guest uses UART1) |
 | GPIO ports | 8 ports, 16 pins each |
 | LEDs | None |
-| Watchdog timeout | 5000 ms |
 
 **Backends available**
 

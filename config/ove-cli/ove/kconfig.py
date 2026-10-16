@@ -7,6 +7,8 @@
 """Kconfig operations: menuconfig, defconfig, savedefconfig."""
 
 import os
+import re
+import shutil
 import sys
 
 from .appgen import generate_app_kconfig
@@ -403,6 +405,16 @@ def _find_app_yaml(ove_dir, app_name):
     return None
 
 
+_CONFIG_LINE = re.compile(r"^(?:#\s*)?CONFIG_([A-Za-z0-9_]+)(?:=| is not set)")
+
+
+def _undefined_symbols(kconf, lines):
+    """Return the symbols *lines* assign that no Kconfig file defines."""
+    names = [m.group(1) for m in (_CONFIG_LINE.match(str(line).strip()) for line in lines) if m]
+    return [name for name in names
+            if name not in kconf.syms or not kconf.syms[name].nodes]
+
+
 def _write_temp_defconfig(lines, path):
     """Write config lines to a temporary defconfig file."""
     with open(path, "w") as f:
@@ -503,9 +515,20 @@ def cmd_defconfig_fragments(args):
             print(f"  [{label}] {rel}")
             kconf.load_config(path, replace=False)
 
-    def _load_lines(label, lines):
+    def _load_lines(label, lines, strict=False):
         if not lines:
             return
+        # kconfiglib drops an assignment to an unknown symbol silently, so a
+        # misspelt or stale line would have no effect. Board lines must be
+        # exact; app lines only warn.
+        undefined = _undefined_symbols(kconf, lines)
+        if undefined:
+            message = f"[{label}] no such Kconfig symbol: {', '.join(undefined)}"
+            if strict:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                print(f"Error: {message}")
+                sys.exit(1)
+            print(f"Warning: {message}")
         tmp = os.path.join(tmp_dir, f"{label}.defconfig")
         _write_temp_defconfig(lines, tmp)
         print(f"  [{label}] {len(lines)} configs from yaml")
@@ -522,8 +545,8 @@ def cmd_defconfig_fragments(args):
     board_defconfig = board_yaml.get("defconfig", [])
     if isinstance(board_defconfig, list):
         board_lines.extend(board_defconfig)
-    _load_lines("board", board_lines)
-    _load_lines("variant", variant_lines)
+    _load_lines("board", board_lines, strict=True)
+    _load_lines("variant", variant_lines, strict=True)
 
     # 3. RTOS fragment
     rtos_path = os.path.join(frag_dir, "rtos", f"{rtos}.defconfig")
@@ -534,7 +557,7 @@ def cmd_defconfig_fragments(args):
     if isinstance(rtos_defconfig, dict):
         rtos_lines = rtos_defconfig.get(rtos, [])
         if rtos_lines:
-            _load_lines("board+rtos", rtos_lines)
+            _load_lines("board+rtos", rtos_lines, strict=True)
 
     # 5. App selection + app.yaml defconfig
     app_lines = [f"CONFIG_{app_symbol}=y"]
@@ -553,7 +576,6 @@ def cmd_defconfig_fragments(args):
             _load_lines("app+rtos", app_rtos_lines)
 
     # Clean up temp files
-    import shutil
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     activate = not getattr(args, "no_activate", False)
