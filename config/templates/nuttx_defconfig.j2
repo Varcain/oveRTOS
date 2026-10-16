@@ -151,6 +151,12 @@ CONFIG_{{ console.instance }}_BAUD={{ console.baud }}
 CONFIG_{{ console.instance }}_RXBUFSIZE={{ console.rx_buffer_size }}
 {% endif %}
 
+{% set display = board.get("display", {}) %}
+{% if board.get("board", {}).get("mcu_family") == "stm32f7" and display %}
+# LTDC framebuffer size, from board.yaml (RGB565: 2 bytes per pixel)
+CONFIG_STM32F7_LTDC_FB_SIZE={{ display.width * display.height * {"RGB565": 2}[display.color_format] }}
+{% endif %}
+
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
 # Suppress verbose scheduler debug logging on QEMU
 # (mps2-an500:nsh base enables DEBUG_SCHED_INFO which floods console)

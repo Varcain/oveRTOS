@@ -355,6 +355,7 @@ CONFIG_STM32_MEMMAP=y
 # The ove-linux-fb.overlay re-enables the display nodes and applies display-active FMC timing.
 CONFIG_DISPLAY=y
 CONFIG_STM32_LTDC=y
+# board.yaml display.color_format; fb_port.c rejects any other format.
 CONFIG_STM32_LTDC_RGB565=y
 CONFIG_STM32_LTDC_FB_NUM=1
 {% endif %}

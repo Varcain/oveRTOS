@@ -29,6 +29,9 @@
 
 #define FB_W OVE_DISPLAY_WIDTH
 #define FB_H OVE_DISPLAY_HEIGHT
+#ifndef OVE_DISPLAY_FORMAT_RGB565
+#error "this framebuffer backend drives RGB565 only (board.yaml display.color_format)"
+#endif
 
 static const struct device *const g_disp = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 

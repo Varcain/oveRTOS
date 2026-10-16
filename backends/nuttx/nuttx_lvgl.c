@@ -39,7 +39,14 @@ extern void lv_port_disp_qemu_init(void);
 
 #define FB_HOR_RES OVE_DISPLAY_WIDTH
 #define FB_VER_RES OVE_DISPLAY_HEIGHT
-#define FB_BPP 2
+#define FB_BPP OVE_DISPLAY_BPP
+#ifndef OVE_DISPLAY_FORMAT_RGB565
+#error "this framebuffer backend drives RGB565 only (board.yaml display.color_format)"
+#endif
+
+#include <arch/board/board.h> /* BOARD_LTDC_WIDTH / BOARD_LTDC_HEIGHT */
+_Static_assert(BOARD_LTDC_WIDTH == OVE_DISPLAY_WIDTH && BOARD_LTDC_HEIGHT == OVE_DISPLAY_HEIGHT,
+	       "board.yaml display size differs from NuttX's board.h LTDC panel");
 #define FB_DRAW_LINES 10
 #define FB_START_ADDR ((uint8_t *)OVE_MEMORY_SDRAM_START)
 

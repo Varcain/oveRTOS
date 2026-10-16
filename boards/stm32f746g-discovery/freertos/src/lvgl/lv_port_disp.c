@@ -13,7 +13,12 @@
 
 #define DISP_HOR_RES OVE_DISPLAY_WIDTH
 #define DISP_VER_RES OVE_DISPLAY_HEIGHT
-#define BYTES_PER_PIXEL 2
+#define BYTES_PER_PIXEL OVE_DISPLAY_BPP
+#ifndef OVE_DISPLAY_FORMAT_RGB565
+#error "this framebuffer backend drives RGB565 only (board.yaml display.color_format)"
+#endif
+_Static_assert(RK043FN48H_WIDTH == OVE_DISPLAY_WIDTH && RK043FN48H_HEIGHT == OVE_DISPLAY_HEIGHT,
+	       "board.yaml display size differs from the RK043FN48H panel the BSP drives");
 
 /* Partial draw buffer in internal SRAM (20 lines = 19200 bytes).  Swept on real
  * silicon: 20 lines is the largest that fits SRAM alongside the 96 KB LV_MEM, and

@@ -145,6 +145,13 @@ static void sdram_rpipe_fix(void)
  * pulled (its only symbols are the weak-overridden ove_hal_fb_*, already resolved by ove_fb.c). */
 #define FB_BASE 0xC0000000u
 
+#include <arch/board/board.h> /* BOARD_LTDC_WIDTH / BOARD_LTDC_HEIGHT */
+#ifndef OVE_DISPLAY_FORMAT_RGB565
+#error "this framebuffer backend drives RGB565 only (board.yaml display.color_format)"
+#endif
+_Static_assert(BOARD_LTDC_WIDTH == OVE_DISPLAY_WIDTH && BOARD_LTDC_HEIGHT == OVE_DISPLAY_HEIGHT,
+	       "board.yaml display size differs from NuttX's board.h LTDC panel");
+
 int ove_hal_fb_init(void)
 {
 	return OVE_OK; /* NuttX started LTDC scanout of FB_BASE at board_late_initialize */
@@ -159,9 +166,9 @@ int ove_hal_fb_get_info(struct ove_fb_info *info)
 {
 	info->width = OVE_DISPLAY_WIDTH;
 	info->height = OVE_DISPLAY_HEIGHT;
-	info->stride_bytes = OVE_DISPLAY_WIDTH * 2;
+	info->stride_bytes = OVE_DISPLAY_WIDTH * OVE_DISPLAY_BPP;
 	info->fmt = OVE_FB_FMT_RGB565;
-	info->smem_len = (uint32_t)OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * 2u;
+	info->smem_len = (uint32_t)OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * OVE_DISPLAY_BPP;
 	return OVE_OK;
 }
 

@@ -118,7 +118,7 @@
       "properties": {
         "width":        { "type": "integer", "minimum": 1 },
         "height":       { "type": "integer", "minimum": 1 },
-        "color_format": { "type": "string" }
+        "color_format": { "enum": ["RGB565"] }
       },
       "additionalProperties": false
     },

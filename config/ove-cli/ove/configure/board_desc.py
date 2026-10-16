@@ -21,6 +21,10 @@ except ImportError:
     jsonschema = None
 
 
+# Bytes per pixel of each board.yaml display.color_format.
+DISPLAY_BPP = {"RGB565": 2}
+
+
 def _c_str(s):
     """Escape a string for use in a C string literal."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
@@ -120,9 +124,11 @@ def _generate_board_desc_header(board):
         if "height" in disp:
             lines.append(f"#define OVE_DISPLAY_HEIGHT {disp['height']}")
         if "color_format" in disp:
+            fmt = disp["color_format"]
             lines.append(
-                f'#define OVE_DISPLAY_COLOR_FORMAT '
-                f'"{_c_str(disp["color_format"])}"')
+                f'#define OVE_DISPLAY_COLOR_FORMAT "{_c_str(fmt)}"')
+            lines.append(f"#define OVE_DISPLAY_FORMAT_{fmt} 1")
+            lines.append(f"#define OVE_DISPLAY_BPP {DISPLAY_BPP[fmt]}")
         lines.append("")
 
     if "serial" in board:

@@ -340,7 +340,8 @@ SECTIONS
      * LCD_FB_START_ADDRESS = 0xC0000000.  Without the reservation,
      * variables tagged with .sdram_bss could overlap pixel memory
      * and corrupt the display.  Size: 480 x 272 RGB565 = 261120 B
-     * rounded to 32-byte cache lines.
+     * rounded to 32-byte cache lines; keep it in step with board.yaml's
+     * display (fb_port.c and lv_port_disp.c assert the panel matches).
      */
     .lcd_framebuffer (NOLOAD) : ALIGN(32) {
         *(.lcd_framebuffer)

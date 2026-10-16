@@ -185,14 +185,36 @@ class ConsoleTest(unittest.TestCase):
                       _generate_board_desc_header(board))
 
     def test_nuttx_defconfig_takes_the_console_from_board_yaml(self):
-        from jinja2 import Environment, FileSystemLoader
-
-        env = Environment(loader=FileSystemLoader(os.path.join(TREE, "config", "templates")),
-                          trim_blocks=True, lstrip_blocks=True)
-        env.globals.update(config={}, get_bool=lambda k, d=False: d,
-                           get_int=lambda k, d=0: d, get_str=lambda k, d="": d)
-        env.globals["board"] = {"serial": {"console": {
-            "instance": "USART1", "baud": 115200, "rx_buffer_size": 1024}}}
-        text = env.get_template("nuttx_defconfig.j2").render()
+        text = _render_nuttx_defconfig({"serial": {"console": {
+            "instance": "USART1", "baud": 115200, "rx_buffer_size": 1024}}})
         self.assertIn("CONFIG_USART1_BAUD=115200\n", text)
         self.assertIn("CONFIG_USART1_RXBUFSIZE=1024\n", text)
+
+
+def _render_nuttx_defconfig(board):
+    from jinja2 import Environment, FileSystemLoader
+
+    env = Environment(loader=FileSystemLoader(os.path.join(TREE, "config", "templates")),
+                      trim_blocks=True, lstrip_blocks=True)
+    env.globals.update(config={}, get_bool=lambda k, d=False: d,
+                       get_int=lambda k, d=0: d, get_str=lambda k, d="": d, board=board)
+    return env.get_template("nuttx_defconfig.j2").render()
+
+
+DISPLAY = {"width": 480, "height": 272, "color_format": "RGB565"}
+
+
+class DisplayTest(unittest.TestCase):
+    def test_board_desc_names_the_pixel_format(self):
+        from ove.configure.board_desc import _generate_board_desc_header
+
+        header = _generate_board_desc_header({
+            "board": {"name": "b", "mcu_family": "f", "mcu": "m"}, "display": DISPLAY})
+        self.assertIn("#define OVE_DISPLAY_FORMAT_RGB565 1", header)
+        self.assertIn("#define OVE_DISPLAY_BPP 2", header)
+
+    def test_stm32f7_ltdc_framebuffer_size_comes_from_board_yaml(self):
+        text = _render_nuttx_defconfig({"board": {"mcu_family": "stm32f7"}, "display": DISPLAY})
+        self.assertIn("CONFIG_STM32F7_LTDC_FB_SIZE=261120\n", text)
+        self.assertNotIn("LTDC_FB_SIZE", _render_nuttx_defconfig(
+            {"board": {"mcu_family": "arm"}, "display": DISPLAY}))

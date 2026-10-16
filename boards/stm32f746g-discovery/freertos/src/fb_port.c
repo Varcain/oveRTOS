@@ -28,6 +28,11 @@
 
 #define FB_W OVE_DISPLAY_WIDTH
 #define FB_H OVE_DISPLAY_HEIGHT
+#ifndef OVE_DISPLAY_FORMAT_RGB565
+#error "this framebuffer backend drives RGB565 only (board.yaml display.color_format)"
+#endif
+_Static_assert(RK043FN48H_WIDTH == OVE_DISPLAY_WIDTH && RK043FN48H_HEIGHT == OVE_DISPLAY_HEIGHT,
+	       "board.yaml display size differs from the RK043FN48H panel the BSP drives");
 
 int ove_hal_fb_init(void)
 {

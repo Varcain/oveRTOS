@@ -79,8 +79,8 @@ struct shmem_display_data {
 	uint16_t framebuffer[]; /* flexible array — sized at init */
 };
 
-/* Static framebuffer (480*272*2 = 261120 bytes) */
-static uint16_t fb_pixels[480 * 272];
+/* Static RGB565 framebuffer, sized from the devicetree node. */
+static uint16_t fb_pixels[DT_INST_PROP(0, width) * DT_INST_PROP(0, height)];
 static struct shmem_display_data display_data;
 
 static int shmem_display_init(const struct device *dev)
