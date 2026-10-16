@@ -50,11 +50,16 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define SD_DMA_BUFFER_SIZE 512u
+/* Sectors per bounce transfer. A multiblock command lets the card program a
+ * whole SQLite page (8 sectors) behind one busy period instead of eight. */
+#define SD_DMA_BOUNCE_SECTORS 8u
+#define SD_DMA_BUFFER_SIZE (SD_DMA_BOUNCE_SECTORS * 512u)
+/* Largest direct transfer: a DMA2 stream counts at most 65535 words. */
+#define SD_DMA_DIRECT_SECTORS 128u
 #define SD_DMA_CACHE_LINE_SIZE 32u
 #define SD_DMA_TIMEOUT_MS 5000u
 
-_Static_assert(_MAX_SS == SD_DMA_BUFFER_SIZE, "STM32 SD DMA bounce buffer must hold one sector");
+_Static_assert(_MAX_SS == 512u, "STM32 SD DMA transfers whole 512-byte sectors");
 _Static_assert((SD_DMA_BUFFER_SIZE % SD_DMA_CACHE_LINE_SIZE) == 0u,
 	       "SD DMA buffer must span complete M7 cache lines");
 
@@ -67,11 +72,12 @@ enum sd_dma_result {
 };
 
 /* FatFs passes both its internal sector window and caller-owned buffers to the
- * disk layer. Their cache-line alignment and neighbouring ownership are not
- * guaranteed, so cache maintenance on those addresses could discard unrelated
- * dirty data. Keep DMA ownership in one aligned, whole-cache-line bounce sector
- * and copy at the CPU boundary instead. The disk API is already serialized by
- * FatFs/the native FS server, hence one buffer and one waiter are sufficient. */
+ * disk layer. A buffer that starts on a cache line in SRAM or SDRAM is DMAed in
+ * place: every line it covers belongs to it, since transfers are whole 512-byte
+ * sectors. Any other buffer goes through this aligned bounce buffer, because
+ * cache maintenance on a partial line could discard unrelated dirty data. The
+ * disk API is already serialized by FatFs/the native FS server, hence one
+ * buffer and one waiter are sufficient. */
 static uint32_t g_dma_buffer[SD_DMA_BUFFER_SIZE / sizeof(uint32_t)]
 	__attribute__((aligned(SD_DMA_CACHE_LINE_SIZE)));
 static volatile TaskHandle_t g_dma_waiter;
@@ -192,6 +198,26 @@ static DRESULT sd_wait_card_ready(void)
 	return RES_OK;
 }
 
+/* Whether a transfer can DMA straight to or from the caller's buffer: it starts
+ * on a cache line in SRAM1/SRAM2 or SDRAM, the memories the SD DMA stream and
+ * the cache maintenance below cover. */
+static int sd_dma_direct(const void *buff)
+{
+	uintptr_t addr = (uintptr_t)buff;
+
+	if ((addr & (SD_DMA_CACHE_LINE_SIZE - 1u)) != 0u)
+		return 0;
+	return (addr >= 0x20010000u && addr < 0x20050000u) ||
+	       (addr >= 0xC0000000u && addr < 0xC0800000u);
+}
+
+static UINT sd_chunk(UINT count, int direct)
+{
+	UINT max = direct ? SD_DMA_DIRECT_SECTORS : SD_DMA_BOUNCE_SECTORS;
+
+	return count < max ? count : max;
+}
+
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -237,15 +263,20 @@ DSTATUS SD_status(BYTE lun)
   */
 DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 {
-	UINT i;
 	DRESULT res = RES_OK;
 
-	for (i = 0; i < count; i++) {
+	while (count > 0u && res == RES_OK) {
+		int direct = sd_dma_direct(buff);
+		UINT n = sd_chunk(count, direct);
+		uint32_t *dst = direct ? (uint32_t *)buff : g_dma_buffer;
+		size_t bytes = (size_t)n * _MAX_SS;
+
 		/* Clean first so no pre-DMA dirty line can later overwrite received
-		 * bytes, then invalidate after completion before the CPU copies them. */
-		SCB_CleanInvalidateDCache_by_Addr(g_dma_buffer, sizeof(g_dma_buffer));
+		 * bytes; invalidate again after completion, since the core may have
+		 * refilled lines speculatively while the DMA ran. */
+		SCB_CleanInvalidateDCache_by_Addr(dst, (int32_t)bytes);
 		sd_dma_begin();
-		if (BSP_SD_ReadBlocks_DMA(g_dma_buffer, (uint32_t)(sector + i), 1u) != MSD_OK) {
+		if (BSP_SD_ReadBlocks_DMA(dst, (uint32_t)sector, n) != MSD_OK) {
 			g_dma_waiter = NULL;
 			__DMB();
 			res = RES_ERROR;
@@ -253,12 +284,14 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 			res = sd_dma_wait();
 		}
 		if (res == RES_OK) {
-			SCB_InvalidateDCache_by_Addr(g_dma_buffer, sizeof(g_dma_buffer));
-			memcpy(buff + i * _MAX_SS, g_dma_buffer, _MAX_SS);
+			SCB_InvalidateDCache_by_Addr(dst, (int32_t)bytes);
+			if (!direct)
+				memcpy(buff, g_dma_buffer, bytes);
 			res = sd_wait_card_ready();
 		}
-		if (res != RES_OK)
-			break;
+		buff += bytes;
+		sector += n;
+		count -= n;
 	}
 
 	return res;
@@ -275,14 +308,19 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 #if _USE_WRITE == 1
 DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 {
-	UINT i;
 	DRESULT res = RES_OK;
 
-	for (i = 0; i < count; i++) {
-		memcpy(g_dma_buffer, buff + i * _MAX_SS, _MAX_SS);
-		SCB_CleanDCache_by_Addr(g_dma_buffer, sizeof(g_dma_buffer));
+	while (count > 0u && res == RES_OK) {
+		int direct = sd_dma_direct(buff);
+		UINT n = sd_chunk(count, direct);
+		uint32_t *src = direct ? (uint32_t *)(uintptr_t)buff : g_dma_buffer;
+		size_t bytes = (size_t)n * _MAX_SS;
+
+		if (!direct)
+			memcpy(g_dma_buffer, buff, bytes);
+		SCB_CleanDCache_by_Addr(src, (int32_t)bytes);
 		sd_dma_begin();
-		if (BSP_SD_WriteBlocks_DMA(g_dma_buffer, (uint32_t)(sector + i), 1u) != MSD_OK) {
+		if (BSP_SD_WriteBlocks_DMA(src, (uint32_t)sector, n) != MSD_OK) {
 			g_dma_waiter = NULL;
 			__DMB();
 			res = RES_ERROR;
@@ -291,8 +329,9 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 		}
 		if (res == RES_OK)
 			res = sd_wait_card_ready();
-		if (res != RES_OK)
-			break;
+		buff += bytes;
+		sector += n;
+		count -= n;
 	}
 
 	return res;
