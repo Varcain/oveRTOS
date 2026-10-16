@@ -48,6 +48,15 @@ endif()
 
 ove_zephyr_include_app_sources()
 
+if(OVE_LINUX AND CONFIG_NETWORKING)
+    # Internal SRAM is nearly full, while DTCM has room and is not cached. The
+    # network packet slabs and buffer pools are touched only by the CPU (the
+    # Ethernet DMA uses the driver's own DTCM buffers), so keep them there. The
+    # RX pool sizes the TCP receive window (a third of it), which bounds
+    # download throughput at one window per round trip.
+    zephyr_code_relocate(FILES ${ZEPHYR_BASE}/subsys/net/ip/net_pkt.c LOCATION DTCM_NOINIT)
+endif()
+
 if(OVE_LINUX)
     # The seam traps the program's svc by interposing the kernel-oops handler at link time, and
     # the host bootstrap embeds a rootfs CPIO fixture (generated at build time, not committed).
