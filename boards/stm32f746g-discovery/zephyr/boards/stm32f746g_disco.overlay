@@ -6,20 +6,6 @@
  * This file is part of oveRTOS.
  */
 
-/ {
-	leds {
-		compatible = "gpio-leds";
-		led_0: led_0 {
-			gpios = <&gpioi 1 GPIO_ACTIVE_HIGH>;
-		};
-	};
-};
-
-/* Display: 480x272 */
-/* TODO: Add display panel node with appropriate compatible */
-
-/* TODO: SAI/I2S peripheral config */
-
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
 #include <dt-bindings/clock/stm32f7_sai_clock.h>
 

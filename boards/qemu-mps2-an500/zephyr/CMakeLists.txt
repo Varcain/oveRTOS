@@ -31,6 +31,13 @@ if(OVE_LVGL)
     list(FILTER OVE_BACKEND_SOURCES EXCLUDE REGEX "_lvgl\\.c$")
 endif()
 
+# GPIO is the board's RAM bank, as on the other engines: Zephyr's backend
+# drives STM32 ports, which the MPS2 devicetree does not have.
+if(OVE_GPIO)
+    list(FILTER OVE_BACKEND_SOURCES EXCLUDE REGEX "zephyr_gpio\\.c$")
+    list(APPEND OVE_BACKEND_SOURCES ${OVE_DIR}/boards/qemu-mps2/qemu_gpio.c)
+endif()
+
 set(SIM_QEMU_SOURCES
     ${OVE_DIR}/sim/src/ove_sim_registry.c
     ${OVE_DIR}/sim/src/ove_sim_input.c

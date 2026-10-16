@@ -10,6 +10,11 @@
 #include "ove_backend_common.h"
 #include <stdatomic.h>
 #include <zephyr/drivers/gpio.h>
+#include "board_desc.h"
+
+/* port_to_dev() covers ports gpioa-gpioi of 16 pins: board.yaml's gpio must fit. */
+BUILD_ASSERT(OVE_GPIO_PORT_COUNT <= 9 && OVE_GPIO_PINS_PER_PORT <= 16,
+	     "board.yaml gpio exceeds the STM32 ports this backend maps");
 
 #define GPIO_IRQ_MAX 8
 #define GPIO_IRQ_FREE 0

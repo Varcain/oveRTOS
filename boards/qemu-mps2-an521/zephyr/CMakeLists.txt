@@ -27,6 +27,13 @@ endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_firmware)
 
+# GPIO is the board's RAM bank, as on the other engines: Zephyr's backend
+# drives STM32 ports, which the MPS2 devicetree does not have.
+if(OVE_GPIO)
+    list(FILTER OVE_BACKEND_SOURCES EXCLUDE REGEX "zephyr_gpio\\.c$")
+    list(APPEND OVE_BACKEND_SOURCES ${OVE_DIR}/boards/qemu-mps2/qemu_gpio.c)
+endif()
+
 target_sources(app PRIVATE
     ${OVE_BOARD_DIR}/main.c
     ${OVE_BACKEND_SOURCES}
