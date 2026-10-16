@@ -62,8 +62,6 @@
 
 /* Serial console configuration */
 #define OVE_SERIAL_CONSOLE_BAUD 115200
-#define OVE_SERIAL_CONSOLE_TX_PIN "none"
-#define OVE_SERIAL_CONSOLE_RX_PIN "none"
 #define OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE 1024
 
 /* Audio I2S configuration */

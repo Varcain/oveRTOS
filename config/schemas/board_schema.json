@@ -54,10 +54,7 @@
       "type": "object",
       "properties": {
         "hse_freq_mhz": { "type": "integer", "minimum": 1 },
-        "sysclk_mhz":   { "type": "integer", "minimum": 1 },
-        "ahb_div":       { "type": "integer", "minimum": 1 },
-        "apb1_div":      { "type": "integer", "minimum": 1 },
-        "apb2_div":      { "type": "integer", "minimum": 1 }
+        "sysclk_mhz":   { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },
@@ -66,7 +63,6 @@
       "properties": {
         "flash_kb":    { "type": "integer", "minimum": 0 },
         "ram_kb":      { "type": "integer", "minimum": 0 },
-        "dtcm_kb":     { "type": "integer", "minimum": 0 },
         "sdram_kb":    { "type": "integer", "minimum": 0 },
         "sdram_start": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" }
       },
@@ -133,8 +129,6 @@
           "type": "object",
           "properties": {
             "baud":           { "type": "integer", "minimum": 1 },
-            "tx_pin":         { "type": "string" },
-            "rx_pin":         { "type": "string" },
             "rx_buffer_size": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": false
@@ -144,16 +138,7 @@
     },
     "sdcard": {
       "type": "object",
-      "properties": {
-        "interface": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "watchdog": {
-      "type": "object",
-      "properties": {
-        "timeout_ms": { "type": "integer", "minimum": 1 }
-      },
+      "description": "Present when the board has an SD card slot.",
       "additionalProperties": false
     },
     "defconfig": {

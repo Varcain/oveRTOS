@@ -28,9 +28,6 @@ rtos:
 clock:
   hse_freq_mhz: 25
   sysclk_mhz: 25
-  ahb_div: 1
-  apb1_div: 1
-  apb2_div: 1
 
 memory:
   flash_kb: 4096
@@ -57,16 +54,7 @@ audio:
 serial:
   console:
     baud: 115200
-    tx_pin: none
-    rx_pin: none
     rx_buffer_size: 1024
-
-watchdog:
-  timeout_ms: 5000
-
-defconfig:
-  - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
-  - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
 
 # `make web.<rtos>.<app>`: this board packaged for a web browser.
 variants:

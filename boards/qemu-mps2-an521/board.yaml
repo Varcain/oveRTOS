@@ -19,9 +19,6 @@ rtos:
 clock:
   hse_freq_mhz: 25
   sysclk_mhz: 25
-  ahb_div: 1
-  apb1_div: 1
-  apb2_div: 1
 
 memory:
   flash_kb: 4096
@@ -36,16 +33,7 @@ leds: []
 serial:
   console:
     baud: 115200
-    tx_pin: none
-    rx_pin: none
     rx_buffer_size: 1024
-
-watchdog:
-  timeout_ms: 5000
-
-defconfig:
-  - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
-  - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
 
 # `make web-an521.zephyr.<app>`: this board packaged for a web browser. The
 # an500 has the plain `web` variant.
@@ -59,7 +47,6 @@ rtos_defconfig:
     - CONFIG_ZEPHYR_HEAP_MEM_POOL_SIZE=1572864
     # No display/audio/DSP on this board — it targets the Linux personality
     # (a Cortex-M33 USERSPACE substrate), not LVGL/audio demos.
-    - "# CONFIG_ZEPHYR_FPU is not set"
     - "# CONFIG_ZEPHYR_I2S is not set"
     - "# CONFIG_ZEPHYR_CMSIS_DSP is not set"
     - "# CONFIG_ZEPHYR_SD_FILESYSTEM is not set"

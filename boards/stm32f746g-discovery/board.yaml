@@ -18,14 +18,10 @@ rtos:
 clock:
   hse_freq_mhz: 25
   sysclk_mhz: 216
-  ahb_div: 1
-  apb1_div: 4
-  apb2_div: 2
 
 memory:
   flash_kb: 1024
   ram_kb: 320
-  dtcm_kb: 64
   sdram_kb: 8192
   sdram_start: "0xC0000000"
 
@@ -56,19 +52,9 @@ display:
 serial:
   console:
     baud: 115200
-    tx_pin: PA9
-    rx_pin: PB7
     rx_buffer_size: 1024
 
-sdcard:
-  interface: SDMMC1
-
-watchdog:
-  timeout_ms: 5000
-
-defconfig:
-  - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
-  - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
+sdcard: {}
 
 rtos_defconfig:
   freertos:
