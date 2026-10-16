@@ -82,6 +82,10 @@ def _preflight_check(ws):
 _PATCH_STATE_VERSION = 1
 _PATCH_STATE_FILE = ".ove_patch_state.json"
 
+# A rootfs.cpio for a Linux personality web bundle in place of the Buildroot
+# output the workspace configures.
+LINUX_ROOTFS_ENV = "OVE_LINUX_ROOTFS"
+
 
 def _collect_patch_series(layers):
     """Return the complete ordered patch series for ``(label, dir)`` layers."""
@@ -931,15 +935,19 @@ def _personality_web_config(ws, machine, serve_dir):
     The page runs QEMU with the arguments the board's qemu-run.sh uses for
     a personality build: the guest console on UART1 (stdio), the rootfs
     loaded raw into its window, and the image fit-rootfs.py picks for that
-    window.
+    window.  The rootfs is the configured Buildroot output's, or the file
+    OVE_LINUX_ROOTFS names (the docs demos use a published image).
     """
     from .workspace import get_str
 
-    br = get_str(ws.config, "CONFIG_OVE_BUILDROOT") or "../buildroot"
-    out = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_OUTPUT") or "output"
-    if not os.path.isabs(br):
-        br = os.path.join(ws.ove_dir, br)
-    rootfs = os.path.normpath(os.path.join(br, out, "images", "rootfs.cpio"))
+    rootfs = os.environ.get(LINUX_ROOTFS_ENV)
+    if not rootfs:
+        br = get_str(ws.config, "CONFIG_OVE_BUILDROOT") or "../buildroot"
+        out = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_OUTPUT") or "output"
+        if not os.path.isabs(br):
+            br = os.path.join(ws.ove_dir, br)
+        rootfs = os.path.normpath(
+            os.path.join(br, out, "images", "rootfs.cpio"))
     base = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_BASE")
     size = get_str(ws.config, "CONFIG_OVE_LINUX_ROOTFS_SIZE")
     if not os.path.isfile(rootfs):

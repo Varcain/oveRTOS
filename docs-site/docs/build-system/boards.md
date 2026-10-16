@@ -116,5 +116,7 @@ make web.freertos.linux_interop_minimal       # FreeRTOS or NuttX, on the an500
 make web-an521.zephyr.linux_interop_minimal   # Zephyr, on the an521
 ```
 
+`make docs-demos` adds these three to the site as `linux-<rtos>/`, booting each under the native QEMU first and keeping those that reach the login prompt. Their rootfs is the local Buildroot output when there is one; otherwise the docs build downloads the copy `manifest.yaml` pins under `tools.linux-rootfs` (a URL and its SHA-256) and leaves the demos out while no URL is set. `OVE_LINUX_ROOTFS=<rootfs.cpio>` makes any personality web build bundle that file instead.
+
 A variant is declared under `variants:` in `board.yaml`: a name that stands in for the board in `<board>.<rtos>.<app>` and adds Kconfig lines (`CONFIG_OVE_SIM_WEB=y` here).
 
