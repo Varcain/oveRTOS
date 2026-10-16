@@ -13,6 +13,14 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/toolchain.h>
 
+/* Zephyr's clock comes from its board and devicetree; board.yaml must agree. */
+BUILD_ASSERT(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC == OVE_CLOCK_SYSCLK_MHZ * 1000000,
+	     "board.yaml sysclk differs from CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC");
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(clk_hse), okay)
+BUILD_ASSERT(DT_PROP(DT_NODELABEL(clk_hse), clock_frequency) == OVE_CLOCK_HSE_FREQ_MHZ * 1000000,
+	     "board.yaml HSE differs from the devicetree clk_hse");
+#endif
+
 /* The devicetree places memory on Zephyr; board.yaml must agree. */
 BUILD_ASSERT(DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) == OVE_MEMORY_FLASH_START &&
 		     DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) == OVE_MEMORY_FLASH_KB * 1024u,

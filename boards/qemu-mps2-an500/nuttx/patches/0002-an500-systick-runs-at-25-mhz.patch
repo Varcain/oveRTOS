@@ -1,0 +1,19 @@
+From: oveRTOS <noreply@invalid>
+Subject: [PATCH] mps2-an500: SysTick runs at the 25 MHz system clock
+
+mps_timer.c programs SysTick from the core clock with MPS_SYSTICK_CLOCK,
+which this board gives as 32 MHz. The AN500 system clock is 25 MHz, and
+so is QEMU's mps2-an500, so every tick lasted 12.8 ms instead of 10 ms
+and all kernel time ran 1.28x slow: a guest `sleep 20` took 25.6 s.
+
+--- a/boards/arm/mps/mps2-an500/include/board.h
++++ b/boards/arm/mps/mps2-an500/include/board.h
+@@ -33,7 +33,7 @@
+  * Pre-processor Definitions
+  ****************************************************************************/
+ 
+-#define MPS_SYSTICK_CLOCK   (32 * 1000 * 1000)
++#define MPS_SYSTICK_CLOCK   (25 * 1000 * 1000)
+ 
+ /****************************************************************************
+  * Public Data

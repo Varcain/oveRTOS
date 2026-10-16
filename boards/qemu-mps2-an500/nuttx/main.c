@@ -11,6 +11,13 @@
  */
 
 #include "ove/ove.h"
+#include "board_desc.h"
+
+#include <arch/board/board.h>
+
+/* SysTick runs from the system clock (board patch 0002). */
+_Static_assert(MPS_SYSTICK_CLOCK == OVE_CLOCK_SYSCLK_MHZ * 1000 * 1000,
+	       "board.yaml sysclk differs from NuttX's MPS_SYSTICK_CLOCK");
 
 #ifndef CONFIG_OVE_LINUX
 extern int ove_sim_board_init(void);

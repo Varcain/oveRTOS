@@ -26,7 +26,6 @@ rtos:
     board: mps2/an500
 
 clock:
-  hse_freq_mhz: 25
   sysclk_mhz: 25
 
 memory:
