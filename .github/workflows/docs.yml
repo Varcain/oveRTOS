@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
 
       - name: Install Doxygen
         run: sudo apt-get install -y doxygen
@@ -47,12 +49,15 @@ jobs:
 
       # ── Live demos ──────────────────────────────────────────
       # The example apps run in the browser as the real FreeRTOS firmware
-      # for the QEMU MPS2-AN500, inside QEMU compiled to WebAssembly.
+      # for the QEMU MPS2-AN500, inside QEMU compiled to WebAssembly.  The
+      # Linux personality demos add a NuttX and a Zephyr build, and run
+      # when manifest.yaml pins a published rootfs (tools.linux-rootfs).
       - name: Install demo build dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
             cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
-            libclang-dev xz-utils qemu-system-arm
+            libclang-dev xz-utils qemu-system-arm gperf genromfs xxd \
+            python3-venv device-tree-compiler ccache wget file
 
       - name: Cache ARM toolchain
         uses: actions/cache@v4
@@ -71,6 +76,25 @@ jobs:
 
       - name: Build the WebAssembly QEMU
         run: .venv/bin/ove ensure-toolchain qemu-wasm
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          HASH=$(python3 scripts/manifest_query.py --hash rtos.zephyr.version)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-docs-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
 
       # Every app that supports the 'web' variant whose firmware starts;
       # the same step 'make docs-serve' runs for a local preview.

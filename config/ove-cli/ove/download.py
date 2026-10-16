@@ -882,6 +882,49 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
+def download_linux_rootfs(manifest, dl_dir):
+    """Fetch the published rootfs the Linux personality browser demos boot.
+
+    The rootfs is built with Buildroot outside this tree; a docs build that
+    has no Buildroot output takes the image manifest.yaml pins instead
+    (tools.linux-rootfs: url + sha256), cached as
+    <dl_dir>/linux-rootfs-<sha256 prefix>.cpio.
+
+    Returns the path, or None when the manifest names no URL or the
+    download fails or does not match its checksum.
+    """
+    url = get_component(manifest, "tools", "linux-rootfs", "url")
+    sha256 = get_component(manifest, "tools", "linux-rootfs", "sha256")
+    if not url or not sha256:
+        return None
+    path = os.path.join(dl_dir, f"linux-rootfs-{sha256[:12]}.cpio")
+    if os.path.isfile(path) and _sha256_file(path) == sha256:
+        return path
+
+    os.makedirs(dl_dir, exist_ok=True)
+    partial = path + ".part"
+    logger.info(f"Linux rootfs: downloading from {url}")
+    try:
+        _retry(lambda: urllib.request.urlretrieve(url, partial,
+                                                  _download_progress),
+               "download the Linux rootfs")
+        print()
+    except Exception as e:  # noqa: BLE001
+        print()
+        logger.warning(f"Linux rootfs download failed: {e}")
+        if os.path.isfile(partial):
+            os.unlink(partial)
+        return None
+    actual = _sha256_file(partial)
+    if actual != sha256:
+        logger.warning(f"Linux rootfs: checksum mismatch (got {actual}, "
+                       f"manifest.yaml pins {sha256})")
+        os.unlink(partial)
+        return None
+    os.replace(partial, path)
+    return path
+
+
 def _qemu_wasm_recipe(ove_dir):
     """Paths of the files that define how the WebAssembly QEMU is built.
 

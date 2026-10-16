@@ -75,7 +75,9 @@ make && make run                                # http://localhost:8080
 ```
 
 The bundle carries the rootfs and needs nothing else to run, so `serve/` can be
-put on a static host. See [Board Configurations](../build-system/boards.md).
+put on a static host. Set `OVE_LINUX_ROOTFS=<rootfs.cpio>` to bundle another
+image than the Buildroot output. See
+[Board Configurations](../build-system/boards.md).
 
 The guest userspace is stock Buildroot (`../buildroot`, `output`). Add your
 own guest programs as FDPIC binaries under `board/overtos/progs/` (see
