@@ -1,0 +1,63 @@
+fs/fat: honour the NT case flags when listing a short name
+
+Without CONFIG_FAT_LCNAMES the case flags of a short name entry are
+ignored on read, so an all lower case 8.3 name that FatFs, Linux or
+Windows wrote ("nvs", with FATNTRES_LCNAME set and no long name
+entries) is listed as "NVS", while opening it by either name works.
+
+Apply the flags whenever a short name is turned into a directory entry
+name.  Without CONFIG_FAT_LCNAMES NuttX writes the flags as zero, so
+the names it creates itself are listed as before; only the read side
+changes, and lookups, which compare the raw 8.3 bytes, are unaffected.
+
+--- a/fs/fat/fs_fat32dirent.c
++++ b/fs/fat/fs_fat32dirent.c
+@@ -1812,17 +1812,17 @@ static inline int fat_allocatelfnentry(FAR struct fat_mountpt_s *fs,
+ static inline int fat_getsfname(FAR uint8_t *direntry, FAR char *buffer,
+                                 unsigned int buflen)
+ {
+-#ifdef CONFIG_FAT_LCNAMES
+   uint8_t ntflags;
+-#endif
+   int  ch;
+   int  ndx;
+ 
+-  /* Check if we will be doing upper to lower case conversions */
++  /* Check if we will be doing upper to lower case conversions.  The NT
++   * case flags are honoured even without CONFIG_FAT_LCNAMES: FatFs, Linux
++   * and Windows set them on the short entries of all lower case 8.3 names,
++   * and NuttX itself writes them as zero when CONFIG_FAT_LCNAMES is off.
++   */
+ 
+-#ifdef CONFIG_FAT_LCNAMES
+   ntflags = DIR_GETNTRES(direntry);
+-#endif
+ 
+   /* Reserve a byte for the NUL terminator */
+ 
+@@ -1858,12 +1858,10 @@ static inline int fat_getsfname(FAR uint8_t *direntry, FAR char *buffer,
+        * of the (whole) filename.
+        */
+ 
+-#ifdef CONFIG_FAT_LCNAMES
+       if (ntflags & FATNTRES_LCNAME && isupper(ch))
+         {
+           ch = tolower(ch);
+         }
+-#endif
+ 
+       /* Copy the next character into the filename */
+ 
+@@ -1899,12 +1897,10 @@ static inline int fat_getsfname(FAR uint8_t *direntry, FAR char *buffer,
+            * of the (whole) filename.
+            */
+ 
+-#ifdef CONFIG_FAT_LCNAMES
+           if (ntflags & FATNTRES_LCEXT && isupper(ch))
+             {
+               ch = tolower(ch);
+             }
+-#endif
+ 
+           /* Copy the next character into the filename */
+ 
