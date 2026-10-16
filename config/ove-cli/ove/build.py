@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
-from .constants import NUTTX_BOARD_CONFIGS, ZEPHYR_BOARD_MAPPINGS
+from .board_yaml import nuttx_board_config, rtos_entry, zephyr_board as yaml_zephyr_board
 from .workspace import Workspace, get_bool
 
 logger = logging.getLogger("ove")
@@ -76,6 +76,11 @@ def _preflight_check(ws):
         logger.error(
             f"Board '{ws.board_name}' does not support RTOS '{rtos}' "
             f"(missing {board_rtos_dir})")
+        sys.exit(1)
+    if rtos_entry(ws.board_dir, rtos) is None:
+        logger.error(
+            f"Board '{ws.board_name}' does not support RTOS '{rtos}' "
+            f"(no rtos.{rtos} in its board.yaml)")
         sys.exit(1)
 
 
@@ -291,27 +296,6 @@ def discard_all_patch_worktrees(dl_dir):
         run(["git", "worktree", "prune"], cwd=source)
 
 
-def _fallback_rtos_mapping(ws, rtos):
-    """Fall back to board.yaml _meta for RTOS board mapping."""
-    import yaml
-    yaml_path = os.path.join(ws.board_dir, "board.yaml")
-    if not os.path.isfile(yaml_path):
-        return None
-    try:
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f) or {}
-    except Exception:
-        return None
-    meta = data.get("_meta", {})
-    if rtos == "nuttx":
-        board = meta.get("nuttx_board")
-        config = meta.get("nuttx_config", "nsh")
-        return f"{board}:{config}" if board else None
-    elif rtos == "zephyr":
-        return meta.get("zephyr_board")
-    return None
-
-
 def _find_cmake():
     """Find cmake executable."""
     cmake = shutil.which("cmake")
@@ -490,11 +474,9 @@ def build_zephyr(ws):
     conf_file = ensure_rtos_config_applied(ws, "zephyr")
 
     # Map oveRTOS board name to Zephyr board identifier
-    zephyr_board = ZEPHYR_BOARD_MAPPINGS.get(ws.board_name)
+    zephyr_board = yaml_zephyr_board(ws.board_dir)
     if not zephyr_board:
-        zephyr_board = _fallback_rtos_mapping(ws, "zephyr")
-    if not zephyr_board:
-        logger.error(f"no Zephyr board mapping for '{ws.board_name}'")
+        logger.error(f"no rtos.zephyr.board in {ws.board_name}/board.yaml")
         sys.exit(1)
 
     logger.info("Building Zephyr firmware")
@@ -658,9 +640,10 @@ def build_nuttx(ws):
     os.makedirs(cmake_build, exist_ok=True)
 
     # NuttX board config mapping (e.g. "mps2-an500:nsh")
-    nuttx_board_cfg = NUTTX_BOARD_CONFIGS.get(ws.board_name)
+    nuttx_board_cfg = nuttx_board_config(ws.board_dir)
     if not nuttx_board_cfg:
-        nuttx_board_cfg = _fallback_rtos_mapping(ws, "nuttx") or "mps2-an500:nsh"
+        logger.error(f"no rtos.nuttx in {ws.board_name}/board.yaml")
+        sys.exit(1)
 
     # Apply oveRTOS defconfig overlays to the board's defconfig in the
     # copied source tree.  NuttX CMake reads this defconfig directly and

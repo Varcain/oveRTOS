@@ -3,7 +3,7 @@
   "title": "oveRTOS Board Descriptor",
   "description": "Describes hardware wiring for a oveRTOS-supported board.",
   "type": "object",
-  "required": ["board"],
+  "required": ["board", "rtos"],
   "properties": {
     "board": {
       "type": "object",
@@ -12,6 +12,35 @@
         "name":       { "type": "string" },
         "mcu_family": { "type": "string" },
         "mcu":        { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "rtos": {
+      "type": "object",
+      "description": "The engines the board supports, each with the upstream board it builds. An engine missing here is unsupported.",
+      "minProperties": 1,
+      "properties": {
+        "freertos": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "nuttx": {
+          "type": "object",
+          "required": ["board", "config"],
+          "properties": {
+            "board":  { "type": "string", "description": "NuttX board directory, e.g. stm32f746g-disco" },
+            "config": { "type": "string", "description": "NuttX board config, e.g. nsh" }
+          },
+          "additionalProperties": false
+        },
+        "zephyr": {
+          "type": "object",
+          "required": ["board"],
+          "properties": {
+            "board": { "type": "string", "description": "Zephyr board target (west -b), e.g. mps2/an521/cpu0" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
