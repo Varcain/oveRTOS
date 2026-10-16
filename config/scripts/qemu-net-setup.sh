@@ -29,8 +29,11 @@ REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
 
 teardown() {
     echo "=== Tearing down QEMU network ==="
-    # Remove NAT rule (best-effort)
+    # Remove NAT and forwarding rules (best-effort)
     iptables -t nat -D POSTROUTING -s "${TAP_SUBNET}" -j MASQUERADE 2>/dev/null || true
+    iptables -D FORWARD -i "${TAP_DEV}" -j ACCEPT 2>/dev/null || true
+    iptables -D FORWARD -o "${TAP_DEV}" -m conntrack --ctstate RELATED,ESTABLISHED \
+        -j ACCEPT 2>/dev/null || true
     # Remove TAP interface
     if ip link show "${TAP_DEV}" &>/dev/null; then
         ip link delete "${TAP_DEV}"
@@ -53,6 +56,9 @@ status() {
     echo ""
     echo "NAT rule:"
     iptables -t nat -L POSTROUTING -n 2>/dev/null | grep "${TAP_SUBNET}" || echo "  (none)"
+    echo ""
+    echo "Forwarding rules:"
+    iptables -S FORWARD 2>/dev/null | grep -- "${TAP_DEV}" || echo "  (none)"
     echo ""
     echo "IP forwarding: $(cat /proc/sys/net/ipv4/ip_forward)"
 }
@@ -84,6 +90,17 @@ setup() {
         iptables -t nat -A POSTROUTING -s "${TAP_SUBNET}" -j MASQUERADE
     fi
     echo "NAT: ${TAP_SUBNET} -> masquerade"
+
+    # Let the guest's traffic through the FORWARD chain. Docker and ufw set its
+    # policy to DROP, which would otherwise leave the guest reaching only this host.
+    if ! iptables -C FORWARD -i "${TAP_DEV}" -j ACCEPT 2>/dev/null; then
+        iptables -I FORWARD -i "${TAP_DEV}" -j ACCEPT
+    fi
+    if ! iptables -C FORWARD -o "${TAP_DEV}" -m conntrack --ctstate RELATED,ESTABLISHED \
+            -j ACCEPT 2>/dev/null; then
+        iptables -I FORWARD -o "${TAP_DEV}" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    fi
+    echo "Forwarding: ${TAP_DEV} out, replies back in"
 
     echo ""
     echo "=== Setup complete ==="
