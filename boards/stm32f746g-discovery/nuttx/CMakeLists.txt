@@ -72,6 +72,12 @@ if(OVE_QSPI)
     ove_nuttx_add_sources(${CMAKE_CURRENT_LIST_DIR}/src/board_init.c)
 endif()
 
+# GPIO on NuttX's STM32F7 driver; the generic NuttX GPIO backend is a stub.
+if(OVE_GPIO)
+    ove_nuttx_exclude_backends(GPIO)
+    ove_nuttx_add_sources(${CMAKE_CURRENT_LIST_DIR}/src/gpio.c)
+endif()
+
 if(OVE_LINUX_RT_SCOPE)
     ove_nuttx_add_sources(${OVE_DIR}/boards/stm32f746g-discovery/common/rt_scope.c)
 endif()

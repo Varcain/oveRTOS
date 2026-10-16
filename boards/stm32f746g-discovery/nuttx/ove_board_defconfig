@@ -1,5 +1,8 @@
-CONFIG_USERLED=y
-CONFIG_USERLED_LOWER=y
+# LD1 (PI1) is board.yaml's LED, driven through the ove GPIO HAL (src/gpio.c),
+# so neither NuttX's OS-state LED driver nor its /dev/userleds may claim it.
+# (Without ARCH_LEDS the board still compiles stm32_userleds.c; patch 0015.)
+# CONFIG_ARCH_LEDS is not set
+# CONFIG_USERLED is not set
 CONFIG_WATCHDOG=y
 
 # LTDC framebuffer (base and size come from board.yaml)
