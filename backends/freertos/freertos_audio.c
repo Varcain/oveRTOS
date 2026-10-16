@@ -9,6 +9,7 @@
 #include "ove/types.h"
 #include "ove/audio_device.h"
 #include "ove_backend_common.h"
+#include "board_desc.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -320,6 +321,9 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 
 #ifdef CONFIG_OVE_I2S
 	if (cfg->transport == OVE_AUDIO_TRANSPORT_I2S) {
+		/* The DMA buffers below hold board.yaml's buffer_samples frames. */
+		if (g->frames_per_period > OVE_AUDIO_I2S_BUFFER_SAMPLES)
+			return OVE_ERR_INVALID_PARAM;
 		struct i2s_sink_ctx *ctx = &g_sink_ctx;
 		memset(ctx, 0, sizeof(*ctx));
 		ctx->fmt = cfg->fmt;
@@ -353,9 +357,12 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 		/* DMA buffers MUST be in non-cacheable memory (DTCM on Cortex-M7).
 		 * Heap is in cached SRAM — cannot use ove_i2s_create() here.
 		 * Board linker script places .RxBUF / .TxBUF in DTCM.
-		 * 8192 bytes = frames_per_period(512) × 4 slots × 2 bytes × 2 halves. */
-		static uint8_t tx_dma[8192] __attribute__((section(".TxBUF"), aligned(32)));
-		static uint8_t rx_dma[8192] __attribute__((section(".RxBUF"), aligned(32)));
+		 * Size = buffer_samples frames × 4 slots × 2 bytes × 2 halves. */
+#define I2S_DMA_BYTES (OVE_AUDIO_I2S_BUFFER_SAMPLES * 4u * 2u * 2u)
+		static uint8_t tx_dma[I2S_DMA_BYTES]
+			__attribute__((section(".TxBUF"), aligned(32)));
+		static uint8_t rx_dma[I2S_DMA_BYTES]
+			__attribute__((section(".RxBUF"), aligned(32)));
 #ifndef CONFIG_OVE_ZERO_HEAP
 		static ove_i2s_storage_t i2s_stor;
 		int ret = ove_i2s_init(&ctx->i2s, &i2s_stor, tx_dma, rx_dma, &i2s_cfg);

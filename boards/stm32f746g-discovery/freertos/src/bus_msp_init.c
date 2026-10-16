@@ -193,6 +193,11 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
 
 #include "ove/i2s.h"
 #include "stm32746g_discovery_audio.h"
+#include "board_desc.h"
+
+/* The BSP addresses the codec by its 8-bit I2C write address. */
+_Static_assert((AUDIO_I2C_ADDRESS >> 1) == OVE_AUDIO_CODEC_I2C_ADDR,
+	       "board.yaml audio.codec.i2c_addr differs from the BSP's AUDIO_I2C_ADDRESS");
 
 /* Access the I2S handle for DMA IRQ forwarding */
 extern ove_i2s_t g_i2s_instance;

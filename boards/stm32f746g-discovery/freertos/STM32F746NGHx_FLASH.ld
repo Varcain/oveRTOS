@@ -67,6 +67,7 @@ MEMORY
      * stay coherent with D-cache ON and need no cache maintenance (ST
      * AN4839).  Empty (reclaimed as slack) in non-Ethernet builds. */
     ETH_DESC (xrw)  : ORIGIN = 0x20000000, LENGTH = 0x140      /* ETH DMA descriptors (uncached DTCM) */
+    /* I2S DMA buffers: board.yaml's buffer_samples (512) frames x 4 slots x 2 B x 2 halves. */
     Memory3 (xrw)   : ORIGIN = 0x20000140, LENGTH = 0x2000     /* I2S RX DMA buf (8 KB) */
     Memory4 (xrw)   : ORIGIN = 0x20002140, LENGTH = 0x2000     /* I2S TX DMA buf (8 KB) */
     DSP_DTCM (xrw)  : ORIGIN = 0x20004140, LENGTH = 0xBEC0     /* 47.7 KB — DSP    */
