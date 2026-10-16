@@ -45,8 +45,9 @@ rtos_defconfig:
     # Wake socket waiters as soon as lwIP has their data.
     - CONFIG_OVE_NET_RX_READY_NOTIFY=y
   zephyr:
-    # Four full-frame RX slots, with room for concurrent ACK/ARP traffic.
+    # 36 x 512-byte RX buffers (in DTCM on the STM32F746G-DISCO): Zephyr's TCP
+    # advertises a third of the pool, a 6 KiB receive window.
     - CONFIG_OVE_ZEPHYR_NET_BUF_DATA_SIZE=512
-    - CONFIG_OVE_ZEPHYR_NET_BUF_RX_COUNT=12
+    - CONFIG_OVE_ZEPHYR_NET_BUF_RX_COUNT=36
     - CONFIG_OVE_ZEPHYR_NET_BUF_TX_COUNT=12
 # Supported QEMU and STM32F746 engine combinations are documented in README.md.
