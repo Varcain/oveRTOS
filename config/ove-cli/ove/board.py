@@ -4,7 +4,7 @@
 #
 # This file is part of oveRTOS.
 
-"""Board import/sync — thin wrapper around config/scripts/board_tool.py.
+"""Board import — thin wrapper around config/scripts/board_tool.py.
 
 The board_tool.py is 1600+ lines and handles complex RTOS-specific import
 logic. Rather than duplicating it, we delegate to it.
@@ -110,31 +110,6 @@ def cmd_board(args):
             print("Error: --name required for register")
             sys.exit(1)
         _board_tool(ove_dir, ["register", "--board", args.name])
-
-    elif args.board_action == "sync":
-        cmd = ["sync"]
-        if args.name:
-            cmd.extend(["--board", args.name])
-        else:
-            # Sync all boards
-            boards_dir = os.path.join(ove_dir, "boards")
-            for entry in sorted(os.listdir(boards_dir)):
-                yaml_path = os.path.join(boards_dir, entry, "board.yaml")
-                if os.path.isfile(yaml_path):
-                    sync_cmd = ["sync", "--board", entry]
-                    if args.rtos:
-                        sync_cmd.extend(["--rtos", args.rtos])
-                    else:
-                        sync_cmd.extend(["--rtos", "all"])
-                    print(f"Syncing {entry}...")
-                    _board_tool(ove_dir, sync_cmd)
-            return
-
-        if args.rtos:
-            cmd.extend(["--rtos", args.rtos])
-        else:
-            cmd.extend(["--rtos", "all"])
-        _board_tool(ove_dir, cmd)
 
     else:
         print(f"Error: unknown board action '{args.board_action}'")
