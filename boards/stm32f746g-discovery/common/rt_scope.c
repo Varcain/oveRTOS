@@ -82,7 +82,10 @@
 #define RT_SCOPE_REFERENCE_HIGH_TICKS (50u * OVE_RT_SCOPE_TICKS_PER_US)
 #define RT_SCOPE_TIM5_PRESCALER 107u
 #define RT_SCOPE_STACK_SIZE 1024u
-#define RT_SCOPE_REPORT_STACK_SIZE 1024u
+/* The reporter formats its lines on its own stack (about 700 bytes of frames) and
+ * is preempted inside the console write, which stacks the full FPU context. On
+ * NuttX the TLS block comes off the top too. 1024 bytes overflowed on NuttX. */
+#define RT_SCOPE_REPORT_STACK_SIZE 2048u
 
 #if !defined(CONFIG_OVE_RTOS_NUTTX)
 OVE_THREAD_STACK_DEFINE_STATIC_(g_response_stack, RT_SCOPE_STACK_SIZE);
