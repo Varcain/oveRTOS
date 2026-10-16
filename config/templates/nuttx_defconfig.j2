@@ -153,7 +153,10 @@ CONFIG_{{ console.instance }}_RXBUFSIZE={{ console.rx_buffer_size }}
 
 {% set display = board.get("display", {}) %}
 {% if board.get("board", {}).get("mcu_family") == "stm32f7" and display %}
-# LTDC framebuffer size, from board.yaml (RGB565: 2 bytes per pixel)
+# LTDC framebuffer at the start of SDRAM, from board.yaml (RGB565: 2 bytes per pixel)
+{% if board.get("memory", {}).get("sdram_start") %}
+CONFIG_STM32F7_LTDC_FB_BASE={{ board.memory.sdram_start }}
+{% endif %}
 CONFIG_STM32F7_LTDC_FB_SIZE={{ display.width * display.height * {"RGB565": 2}[display.color_format] }}
 {% endif %}
 

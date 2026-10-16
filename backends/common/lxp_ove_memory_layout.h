@@ -16,11 +16,7 @@
 
 #include "ove_config.h"
 
-/* board_desc.h defines the board descriptor object, so include it only where its
- * memory and display facts are used. */
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "board_desc.h"
-#endif
 
 #if !defined(CONFIG_OVE_LINUX)
 #error "lxp_ove_memory_layout.h is only valid for Linux-personality builds"
@@ -70,18 +66,16 @@
 #endif
 #endif
 
-/* Where the NuttX port's guests may execute from (its MPU code region) and the
- * window every native task control block must lie in. */
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#define OVE_LXP_CODE_BASE ((uintptr_t)0x08000000u) /* internal flash */
+/* Where the NuttX port's guests may execute from (its MPU code region: the
+ * board's flash) and the window every native task control block must lie in
+ * (its on-chip RAM). */
+#if defined(OVE_MEMORY_FLASH_START) && defined(OVE_MEMORY_FLASH_KB)
+#define OVE_LXP_CODE_BASE ((uintptr_t)OVE_MEMORY_FLASH_START)
 #define OVE_LXP_CODE_SIZE ((size_t)OVE_MEMORY_FLASH_KB * 1024u)
-#define OVE_LXP_TRUSTED_TCB_BASE ((uintptr_t)0x20000000u)
-#define OVE_LXP_TRUSTED_TCB_END ((uintptr_t)0x20080000u)
-#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-#define OVE_LXP_CODE_BASE ((uintptr_t)0x00000000u)
-#define OVE_LXP_CODE_SIZE ((size_t)2u * 1024u * 1024u)
-#define OVE_LXP_TRUSTED_TCB_BASE ((uintptr_t)0x20000000u)
-#define OVE_LXP_TRUSTED_TCB_END ((uintptr_t)0x20400000u)
+#endif
+#if defined(OVE_MEMORY_RAM_START) && defined(OVE_MEMORY_RAM_KB)
+#define OVE_LXP_TRUSTED_TCB_BASE ((uintptr_t)OVE_MEMORY_RAM_START)
+#define OVE_LXP_TRUSTED_TCB_END (OVE_LXP_TRUSTED_TCB_BASE + (uintptr_t)OVE_MEMORY_RAM_KB * 1024u)
 #endif
 
 #endif /* LXP_OVE_MEMORY_LAYOUT_H */

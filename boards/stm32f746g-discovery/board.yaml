@@ -20,6 +20,8 @@ clock:
   sysclk_mhz: 216
 
 memory:
+  flash_start: "0x08000000"
+  ram_start: "0x20000000"
   flash_kb: 1024
   ram_kb: 320
   sdram_kb: 8192

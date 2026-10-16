@@ -204,6 +204,19 @@ def _render_nuttx_defconfig(board):
 DISPLAY = {"width": 480, "height": 272, "color_format": "RGB565"}
 
 
+class MemoryTest(unittest.TestCase):
+    def test_board_desc_places_flash_and_ram(self):
+        from ove.configure.board_desc import _generate_board_desc_header
+
+        header = _generate_board_desc_header({
+            "board": {"name": "b", "mcu_family": "f", "mcu": "m"},
+            "memory": {"flash_start": "0x08000000", "flash_kb": 1024,
+                       "ram_start": "0x20000000", "ram_kb": 320}})
+        for line in ("#define OVE_MEMORY_FLASH_START 0x08000000", "#define OVE_MEMORY_FLASH_KB 1024",
+                     "#define OVE_MEMORY_RAM_START 0x20000000", "#define OVE_MEMORY_RAM_KB 320"):
+            self.assertIn(line, header)
+
+
 class DisplayTest(unittest.TestCase):
     def test_board_desc_names_the_pixel_format(self):
         from ove.configure.board_desc import _generate_board_desc_header
@@ -213,8 +226,10 @@ class DisplayTest(unittest.TestCase):
         self.assertIn("#define OVE_DISPLAY_FORMAT_RGB565 1", header)
         self.assertIn("#define OVE_DISPLAY_BPP 2", header)
 
-    def test_stm32f7_ltdc_framebuffer_size_comes_from_board_yaml(self):
-        text = _render_nuttx_defconfig({"board": {"mcu_family": "stm32f7"}, "display": DISPLAY})
+    def test_stm32f7_ltdc_framebuffer_comes_from_board_yaml(self):
+        text = _render_nuttx_defconfig({"board": {"mcu_family": "stm32f7"}, "display": DISPLAY,
+                                        "memory": {"sdram_start": "0xC0000000"}})
+        self.assertIn("CONFIG_STM32F7_LTDC_FB_BASE=0xC0000000\n", text)
         self.assertIn("CONFIG_STM32F7_LTDC_FB_SIZE=261120\n", text)
         self.assertNotIn("LTDC_FB_SIZE", _render_nuttx_defconfig(
             {"board": {"mcu_family": "arm"}, "display": DISPLAY}))

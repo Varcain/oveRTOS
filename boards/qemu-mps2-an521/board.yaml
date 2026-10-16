@@ -21,6 +21,8 @@ clock:
   sysclk_mhz: 25
 
 memory:
+  flash_start: "0x10000000"
+  ram_start: "0x38000000"
   flash_kb: 4096
   ram_kb: 4096
 

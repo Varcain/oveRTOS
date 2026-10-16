@@ -13,6 +13,16 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/toolchain.h>
 
+/* The devicetree places memory on Zephyr; board.yaml must agree. */
+BUILD_ASSERT(DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) == OVE_MEMORY_FLASH_START &&
+		     DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) == OVE_MEMORY_FLASH_KB * 1024u,
+	     "board.yaml flash differs from the devicetree zephyr,flash");
+#if DT_NODE_EXISTS(DT_NODELABEL(sdram1))
+BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(sdram1)) == OVE_MEMORY_SDRAM_START &&
+		     DT_REG_SIZE(DT_NODELABEL(sdram1)) == OVE_MEMORY_SDRAM_KB * 1024u,
+	     "board.yaml SDRAM differs from the devicetree sdram1 node");
+#endif
+
 #if DT_HAS_CHOSEN(zephyr_display)
 /* The devicetree describes the display on Zephyr; board.yaml must agree. */
 BUILD_ASSERT(DT_PROP(DT_CHOSEN(zephyr_display), width) == OVE_DISPLAY_WIDTH &&

@@ -11,6 +11,7 @@
 #include "ove_config.h"
 
 #include "bsp.h"
+#include "board_desc.h"
 #include "stm32f7xx_hal.h"
 #include "stm32746g_discovery_sdram.h" /* BSP_SDRAM_Init — bring up the FMC + external SDRAM */
 #include "stm32f7_init.h"
@@ -201,8 +202,8 @@ void bsp_sdram_fixup(void)
  * personality relies on the region pool living there.  Returns 0 on success, -1 on mismatch. */
 static int sdram_selftest(void)
 {
-	volatile uint32_t *sdram = (volatile uint32_t *)0xC0000000u;
-	const uint32_t span = 8u * 1024u * 1024u;
+	volatile uint32_t *sdram = (volatile uint32_t *)OVE_MEMORY_SDRAM_START;
+	const uint32_t span = OVE_MEMORY_SDRAM_KB * 1024u;
 	const uint32_t stride = 0x10000u; /* 64 KB */
 	for (uint32_t off = 0; off < span; off += stride)
 		sdram[off / 4u] = 0xA5A50000u ^ off;
@@ -220,7 +221,9 @@ static void MPU_Config_SDRAM(void)
 
 	mpu.Enable = MPU_REGION_ENABLE;
 	mpu.Number = MPU_REGION_NUMBER0;
-	mpu.BaseAddress = 0xC0000000;
+	_Static_assert(OVE_MEMORY_SDRAM_KB == 8u * 1024u,
+		       "MPU_REGION_SIZE_8MB below must cover board.yaml's SDRAM");
+	mpu.BaseAddress = OVE_MEMORY_SDRAM_START;
 	mpu.Size = MPU_REGION_SIZE_8MB;
 	mpu.SubRegionDisable = 0x00;
 	/* Temporary pre-scheduler view: Normal, non-cacheable, non-shareable. It lets board init and

@@ -64,9 +64,10 @@ def _generate_board_desc_header(board):
             if key in mem:
                 lines.append(
                     f"#define OVE_MEMORY_{key.upper()} {mem[key]}")
-        if "sdram_start" in mem:
-            lines.append(
-                f"#define OVE_MEMORY_SDRAM_START {mem['sdram_start']}")
+        for key in ["flash_start", "ram_start", "sdram_start"]:
+            if key in mem:
+                lines.append(
+                    f"#define OVE_MEMORY_{key.upper()} {mem[key]}")
         lines.append("")
 
     gpio = board.get("gpio", {})

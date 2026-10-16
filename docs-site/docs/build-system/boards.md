@@ -22,7 +22,7 @@ The ST STM32F746G-DISCO discovery kit is the primary hardware target and the ref
 | MCU | STM32F746xx |
 | CPU frequency | 216 MHz |
 | Flash | 1024 KB |
-| Internal RAM | 320 KB + 64 KB DTCM |
+| Internal RAM | 320 KB, including the 64 KB DTCM |
 | External SDRAM | 8192 KB @ 0xC0000000 |
 | Display | 480 × 272 px, RGB565 |
 | Audio codec | WM8994 via I2C @ 0x1A, 44100 Hz, 16-bit stereo |

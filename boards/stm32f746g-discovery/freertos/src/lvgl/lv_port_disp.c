@@ -19,6 +19,8 @@
 #endif
 _Static_assert(RK043FN48H_WIDTH == OVE_DISPLAY_WIDTH && RK043FN48H_HEIGHT == OVE_DISPLAY_HEIGHT,
 	       "board.yaml display size differs from the RK043FN48H panel the BSP drives");
+_Static_assert(LCD_FB_START_ADDRESS == OVE_MEMORY_SDRAM_START,
+	       "the BSP framebuffer must sit at the start of board.yaml's SDRAM");
 
 /* Partial draw buffer in internal SRAM (20 lines = 19200 bytes).  Swept on real
  * silicon: 20 lines is the largest that fits SRAM alongside the 96 KB LV_MEM, and
