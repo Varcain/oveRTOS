@@ -1089,3 +1089,37 @@ SQLite transaction with `integrity_check=ok`, and retained zero RT-scope
 misses, late finishes, and IRQ overruns. This follow-up changes source
 preparation only; it introduces no RTOS or personality runtime logic. The
 implementation commits are `dd9bc72d`, `bbedddb0`, and `9e727475`.
+
+## Iteration 26: the Iteration 24 storage regression was a QSPI hang (2026-10-16)
+
+The Iteration 24 failure was not in the SD path. A later hammer run on Zephyr
+stopped at the same point, after the pre-test RT snapshot, with the MCU
+unreachable through ST-Link, and it reproduced reliably with lvmusic and SQLite
+running together. Polling the bus over SWD without halting the core showed that
+QUADSPI register reads stall first. The cause is a read of the memory-mapped
+QSPI window above the 16 MiB flash, beyond the controller's FSIZE: such a read
+never completes, and every bus master stalls behind it. The Cortex-M7 reads
+Normal memory speculatively, and privileged code sees the window above the
+flash as Normal through the default memory map. ST documents the behaviour
+and recommends an MPU guard that makes the unused window no-access; Zephyr's
+SoC devicetree has one, but the Linux overlay deletes it to free an MPU region
+for the program's memory domain.
+
+Whether a speculative load lands there depends on code and data layout. A 1 KiB
+shift of Zephyr's RAM layout froze six runs out of six and the previous layout
+passed, which is why changing the multiblock policy appeared to fix the
+regression in Iteration 24. The fix sets FSIZE to the whole 256 MiB window on
+all three engines (`0d8b6a48`), so such a read wraps to flash data and
+completes. With it, Zephyr's SD card runs at 24 MHz with multiblock transfers
+again (`97ba6786`) and SQLite throughput rises by 52 to 74 percent. Zephyr's
+QSPI driver had also been programming the chip-select high time into the wrong
+bits of the DCR, so the six-cycle setting meant to make 108 MHz reads safe never
+took effect (`8a051ddb`). NuttX keeps its SD settings (`617f2c72`, `1fc3ec01`): their
+failures were reported I/O errors, which this hang does not produce.
+
+The final hardware hammer of this configuration (three engines x shell, Lua and
+MicroPython x 300 s, `ove-97ba678`) passed 9/9 with zero RT misses and zero media
+errors. QUADSPI DCR and CCR read the same on every engine (0x001b0500 and
+0x0f282deb: 108 MHz quad I/O reads with 10 dummy cycles, half-cycle sample shift,
+six-cycle chip-select high, clock mode 0, FSIZE covering 256 MiB), and Zephyr's
+SQLite transactions rose from 94/113/114 to 139/198/190, level with NuttX.
