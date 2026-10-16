@@ -2,6 +2,20 @@ board:
   name: qemu-mps2-an500
   mcu_family: arm
   mcu: CMSDK_CM7
+  symbol: OVE_BOARD_QEMU_MPS2_AN500
+  title: QEMU MPS2-AN500 (Cortex-M7)
+  description: |
+    ARM MPS2-AN500 board emulated by QEMU (Cortex-M7).
+    Uses semihosting for I/O and sim dashboard for display
+    (the Linux personality build is headless — semihosting console only).
+  kconfig: |
+    # The Linux personality is headless: no sim framework, trace stream, or
+    # profiler (all of which pull the sim display transport). Normal an500
+    # builds keep the sim dashboard.
+    select OVE_SIM if !OVE_LINUX
+    # Debug by default, for the dashboard's debugger.  The browser bundle
+    # runs under an interpreter and wants the optimised build instead.
+    imply OVE_DEBUG_BUILD if !OVE_SIM_WEB
 
 rtos:
   freertos: {}

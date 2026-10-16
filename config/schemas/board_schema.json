@@ -7,11 +7,17 @@
   "properties": {
     "board": {
       "type": "object",
-      "required": ["name", "mcu_family", "mcu"],
+      "required": ["name", "mcu_family", "mcu", "symbol", "title"],
       "properties": {
-        "name":       { "type": "string" },
-        "mcu_family": { "type": "string" },
-        "mcu":        { "type": "string" }
+        "name":        { "type": "string" },
+        "mcu_family":  { "type": "string" },
+        "mcu":         { "type": "string" },
+        "symbol":      { "type": "string", "pattern": "^OVE_BOARD_[A-Z0-9_]+$",
+                         "description": "Kconfig symbol selecting the board" },
+        "title":       { "type": "string", "description": "Board menu prompt" },
+        "description": { "type": "string", "description": "Kconfig help text; the MCU, clock, flash and RAM are appended" },
+        "default":     { "type": "boolean", "description": "The board the Kconfig choice selects by default" },
+        "kconfig":     { "type": "string", "description": "Kconfig attribute lines (select, imply, ...) added to the board symbol" }
       },
       "additionalProperties": false
     },

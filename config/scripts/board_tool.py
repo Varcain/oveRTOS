@@ -1221,128 +1221,6 @@ def _show_diff(old_data, new_data):
 # Post-import registration hooks
 # ---------------------------------------------------------------------------
 
-def _register_kconfig(ove_name, board_yaml_data):
-    """Auto-register a board in Config.in.hardware (idempotent)."""
-    kconfig_path = os.path.join(ove_dir(), "config", "Config.in.hardware")
-    if not os.path.isfile(kconfig_path):
-        print(f"  Warning: {kconfig_path} not found, skipping Kconfig registration")
-        return
-
-    board = board_yaml_data.get("board", {})
-    memory = board_yaml_data.get("memory", {})
-    clock = board_yaml_data.get("clock", {})
-
-    # Derive Kconfig symbol: OVE_BOARD_ + name uppercased with - → _
-    symbol = "OVE_BOARD_" + ove_name.upper().replace("-", "_")
-
-    with open(kconfig_path, "r") as f:
-        lines = f.readlines()
-
-    # Check if symbol already exists or board name already mapped
-    for line in lines:
-        if line.strip().startswith(f"config {symbol}"):
-            print(f"  Kconfig: {symbol} already registered, skipping")
-            return
-        if f'default "{ove_name}"' in line:
-            print(f"  Kconfig: {ove_name} already mapped in defaults, skipping")
-            return
-
-    mcu_family = board.get("mcu_family", "unknown")
-    mcu = board.get("mcu", "unknown")
-    flash_kb = memory.get("flash_kb", 0)
-    ram_kb = memory.get("ram_kb", 0)
-    sysclk = clock.get("sysclk_mhz", "")
-
-    flash_bytes = flash_kb * 1024
-    ram_bytes = ram_kb * 1024
-
-    # Build the choice entry block (two-line help matching existing style)
-    pretty_name = ove_name.upper()
-    help_line1 = f"{pretty_name} board ({mcu_family.upper()} family)."
-    spec_parts = []
-    if sysclk:
-        spec_parts.append(f"@ {sysclk} MHz")
-    if flash_kb:
-        if flash_kb >= 1024:
-            spec_parts.append(f"{flash_kb // 1024} MB Flash")
-        else:
-            spec_parts.append(f"{flash_kb} KB Flash")
-    if ram_kb:
-        if ram_kb >= 1024:
-            spec_parts.append(f"{ram_kb // 1024} MB RAM")
-        else:
-            spec_parts.append(f"{ram_kb} KB RAM")
-    help_line2 = f"MCU {mcu}" + (", " + ", ".join(spec_parts) if spec_parts else "") + "."
-
-    choice_entry = (
-        f"\nconfig {symbol}\n"
-        f'    bool "{pretty_name}"\n'
-        f"    help\n"
-        f"      {help_line1}\n"
-        f"      {help_line2}\n"
-    )
-
-    # Insert choice entry before 'endchoice'
-    # Insert defaults after last default in each section
-    new_lines = []
-    in_section = None  # track which config section we're in
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-
-        # Insert choice block before endchoice
-        if stripped == "endchoice":
-            new_lines.append(choice_entry)
-            new_lines.append(line)
-            continue
-
-        # Track which config section we're in
-        if stripped.startswith("config OVE_BOARD_NAME"):
-            in_section = "BOARD_NAME"
-        elif stripped.startswith("config OVE_FLASH_SIZE"):
-            in_section = "FLASH_SIZE"
-        elif stripped.startswith("config OVE_RAM_SIZE"):
-            in_section = "RAM_SIZE"
-        elif stripped.startswith("config OVE_MCU"):
-            in_section = "MCU"
-        elif stripped.startswith("config ") or stripped.startswith("endmenu"):
-            in_section = None
-
-        new_lines.append(line)
-
-        # After the last 'default ...' in each section, insert our default
-        if in_section and stripped.strip().startswith("default "):
-            # Peek ahead: if the next non-empty line is NOT a default, insert ours
-            next_is_default = False
-            for j in range(i + 1, len(lines)):
-                next_stripped = lines[j].strip()
-                if not next_stripped:
-                    continue
-                if next_stripped.startswith("default "):
-                    next_is_default = True
-                break
-            if not next_is_default:
-                if in_section == "BOARD_NAME":
-                    new_lines.append(
-                        f'    default "{ove_name}" if {symbol}\n'
-                    )
-                elif in_section == "FLASH_SIZE":
-                    new_lines.append(
-                        f"    default {flash_bytes} if {symbol}\n"
-                    )
-                elif in_section == "RAM_SIZE":
-                    new_lines.append(
-                        f"    default {ram_bytes} if {symbol}\n"
-                    )
-                elif in_section == "MCU":
-                    new_lines.append(
-                        f'    default "{mcu}" if {symbol}\n'
-                    )
-
-    with open(kconfig_path, "w") as f:
-        f.writelines(new_lines)
-    print(f"  Kconfig: registered {symbol}")
-
-
 def _generate_defconfig(ove_name, board_yaml_data, rtos):
     """Auto-generate a minimal example defconfig for the board."""
     board = board_yaml_data.get("board", {})
@@ -1501,7 +1379,6 @@ def _generate_flash_scripts(board_dir, rtos, mcu_family, ove_name,
 def _post_import_register(ove_name, board_yaml_data, rtos):
     """Run all post-import registration hooks."""
     print(f"\n--- Post-import registration for {ove_name} ({rtos}) ---")
-    _register_kconfig(ove_name, board_yaml_data)
     _generate_defconfig(ove_name, board_yaml_data, rtos)
     board_dir = os.path.join(boards_dir(), ove_name)
     board = board_yaml_data.get("board", {})
@@ -1509,6 +1386,13 @@ def _post_import_register(ove_name, board_yaml_data, rtos):
     mcu = board.get("mcu", "")
     _generate_flash_scripts(board_dir, rtos, mcu_family, ove_name, mcu=mcu)
     print("--- Registration complete ---\n")
+
+
+def _set_board_identity(board_yaml, ove_name):
+    """Give an imported board its Kconfig symbol and menu title, unless set."""
+    board = board_yaml.data["board"]
+    board.setdefault("symbol", "OVE_BOARD_" + ove_name.upper().replace("-", "_"))
+    board.setdefault("title", ove_name.upper())
 
 
 # ---------------------------------------------------------------------------
@@ -1576,6 +1460,7 @@ def _import_zephyr(args):
             return
     else:
         board_yaml = BoardYaml(data=data)
+    _set_board_identity(board_yaml, ove_name)
     board_yaml.data.setdefault("rtos", {})["zephyr"] = {"board": board_name}
 
     # Validate (strip _meta)
@@ -1660,6 +1545,7 @@ def _import_nuttx(args):
             return
     else:
         board_yaml = BoardYaml(data=data)
+    _set_board_identity(board_yaml, ove_name)
     board_yaml.data.setdefault("rtos", {})["nuttx"] = {
         "board": board_name, "config": config_variant}
 

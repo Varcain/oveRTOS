@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
+from .appgen import generate_app_kconfig
 from .board_yaml import nuttx_board_config, zephyr_board
+from .boardgen import generate_board_kconfig
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
 
@@ -2767,6 +2769,8 @@ def test_lxp_memory_layout_config(ove_dir, output_dir):
              "OVE_LINUX_GUEST_POOL_BASE", "OVE_LINUX_GUEST_POOL_SIZE")
     result = TestResults(suite="lxp-layout-config")
     os.environ["srctree"] = ove_dir
+    generate_app_kconfig(ove_dir)
+    generate_board_kconfig(ove_dir)
 
     for label, rtos, board, qspi, expected in cases:
         kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"),

@@ -2,6 +2,10 @@ board:
   name: stm32f746g-discovery
   mcu_family: stm32f7
   mcu: STM32F746xx
+  symbol: OVE_BOARD_STM32F746G_DISCO
+  title: STM32F746G-DISCO
+  description: STMicroelectronics STM32F746G Discovery board (Cortex-M7).
+  default: true
 
 rtos:
   freertos: {}
