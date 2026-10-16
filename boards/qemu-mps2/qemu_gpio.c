@@ -7,10 +7,10 @@
  */
 
 /*
- * GPIO for QEMU MPS2-AN500, shared by every engine. QEMU does not emulate the
- * AN500 GPIO blocks, so the ports board.yaml declares are a RAM bank: a pin
- * reads back the last value written. Nothing drives an input, so a
- * registered pin interrupt never fires.
+ * GPIO for the QEMU MPS2 boards (AN500, AN521), shared by every engine. The
+ * ports board.yaml declares are a RAM bank, so GPIO behaves the same on each
+ * engine: a pin reads back the last value written. Nothing drives an input,
+ * so a registered pin interrupt never fires.
  */
 
 #include "ove/hal/hal_gpio.h"

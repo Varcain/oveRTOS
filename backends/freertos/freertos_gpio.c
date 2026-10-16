@@ -9,6 +9,11 @@
 #include "ove/hal/hal_gpio.h"
 #include "ove_backend_common.h"
 #include "stm32f7xx_hal.h"
+#include "board_desc.h"
+
+/* port_to_gpio() covers ports A-I of 16 pins: board.yaml's gpio must fit. */
+_Static_assert(OVE_GPIO_PORT_COUNT <= 9 && OVE_GPIO_PINS_PER_PORT <= 16,
+	       "board.yaml gpio exceeds the STM32 ports this backend maps");
 
 static uint32_t gpio_irq_lock(void)
 {
