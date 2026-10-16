@@ -514,10 +514,6 @@ board-import-nuttx: $(VENV_STAMP)
 	@$(OVE) board import --rtos nuttx --name $(BOARD) \
 		$(if $(OVE_NAME),--ove-name $(OVE_NAME))
 
-.PHONY: board-sync
-board-sync: $(VENV_STAMP)
-	@$(OVE) board sync $(if $(BOARD),--name $(BOARD)) $(if $(RTOS),--rtos $(RTOS))
-
 .PHONY: board-register
 board-register: $(VENV_STAMP)
 	@if [ -z "$(BOARD)" ]; then \
@@ -671,7 +667,6 @@ help:
 	@echo "  board-import-zephyr BOARD=<name>  - Import board from Zephyr"
 	@echo "  board-import-nuttx  BOARD=<name>  - Import board from NuttX"
 	@echo "  board-register BOARD=<name>       - Re-run post-import registration"
-	@echo "  board-sync [BOARD=<name>]         - Sync board.yaml to RTOS configs"
 	@echo "  board-list                        - List all boards"
 	@echo ""
 	@echo "Clean:"

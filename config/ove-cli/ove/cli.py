@@ -185,7 +185,7 @@ def main():
                    help="Run all stages even if earlier ones fail")
 
     # ── board ──────────────────────────────────────────────────────────
-    p = sub.add_parser("board", help="Board import/sync tools")
+    p = sub.add_parser("board", help="Board import tools")
     board_sub = p.add_subparsers(dest="board_action")
     board_sub.add_parser("list", help="List all boards")
     p_import = board_sub.add_parser("import", help="Import board from RTOS")
@@ -196,9 +196,6 @@ def main():
     p_register = board_sub.add_parser("register",
                                       help="Re-run post-import registration")
     p_register.add_argument("--name", required=True, help="Board name")
-    p_sync = board_sub.add_parser("sync", help="Sync board.yaml to RTOS configs")
-    p_sync.add_argument("--name", help="Board name (omit for all)")
-    p_sync.add_argument("--rtos", help="RTOS to sync (omit for all)")
 
     # ── vscode ────────────────────────────────────────────────────────
     p = sub.add_parser("vscode",
