@@ -6,7 +6,9 @@
 
 """board.yaml: schema, declared engines, upstream boards, generated Kconfig."""
 
+import contextlib
 import glob
+import io
 import json
 import os
 import tempfile
@@ -159,3 +161,38 @@ class UndefinedSymbolTest(unittest.TestCase):
                  "CONFIG_NO_SUCH=y", "# CONFIG_GHOST is not set", "# a comment"]
         # GHOST is referenced by a dependency but defined nowhere.
         self.assertEqual(_undefined_symbols(kconf, lines), ["NO_SUCH", "GHOST"])
+
+
+class ConsoleTest(unittest.TestCase):
+    def test_nuttx_boards_name_their_console_uart(self):
+        for board in _boards():
+            if rtos_entry(board, "nuttx") is None:
+                continue
+            with self.subTest(board=os.path.basename(board)):
+                with open(os.path.join(board, "board.yaml")) as f:
+                    console = yaml.safe_load(f)["serial"]["console"]
+                self.assertIn("instance", console)
+
+    def test_rx_buffer_must_be_a_power_of_two(self):
+        from ove.configure.board_desc import _generate_board_desc_header
+
+        board = {"board": {"name": "b", "mcu_family": "f", "mcu": "m"},
+                 "serial": {"console": {"rx_buffer_size": 1000}}}
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+            _generate_board_desc_header(board)
+        board["serial"]["console"]["rx_buffer_size"] = 1024
+        self.assertIn("OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE 1024",
+                      _generate_board_desc_header(board))
+
+    def test_nuttx_defconfig_takes_the_console_from_board_yaml(self):
+        from jinja2 import Environment, FileSystemLoader
+
+        env = Environment(loader=FileSystemLoader(os.path.join(TREE, "config", "templates")),
+                          trim_blocks=True, lstrip_blocks=True)
+        env.globals.update(config={}, get_bool=lambda k, d=False: d,
+                           get_int=lambda k, d=0: d, get_str=lambda k, d="": d)
+        env.globals["board"] = {"serial": {"console": {
+            "instance": "USART1", "baud": 115200, "rx_buffer_size": 1024}}}
+        text = env.get_template("nuttx_defconfig.j2").render()
+        self.assertIn("CONFIG_USART1_BAUD=115200\n", text)
+        self.assertIn("CONFIG_USART1_RXBUFSIZE=1024\n", text)

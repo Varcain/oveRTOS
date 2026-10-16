@@ -128,6 +128,7 @@
         "console": {
           "type": "object",
           "properties": {
+            "instance":       { "type": "string", "description": "Console UART as NuttX names it, e.g. USART1, CMSDK_UART0" },
             "baud":           { "type": "integer", "minimum": 1 },
             "rx_buffer_size": { "type": "integer", "minimum": 1 }
           },
