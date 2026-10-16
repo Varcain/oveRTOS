@@ -55,8 +55,14 @@
  * Free an MPU region for the program's memory domain. This M7 has only 8 PMSAv7 regions; the Linux
  * program needs three domain partitions (libc TLS + image + dynamic arena) plus its K_USER stack.
  * The STM32 seam deliberately omits Zephyr's unused malloc partition. These do not fit alongside
- * the full static set and stack guard. Delete the board's placeholder QSPI memory-region because
- * it duplicates &ext_memory below; the rootfs still needs one static RO+X mapping at 0x90000000.
+ * the full static set and stack guard, so delete the SoC's QSPI placeholder region; the rootfs
+ * still needs one static RO+X mapping at 0x90000000 (&ext_memory below).
+ *
+ * The placeholder is not a duplicate: it maps the whole 256 MiB window Strongly-ordered and
+ * no-access, ST's documented guard against Cortex-M7 speculative reads of the window above the
+ * 16 MiB flash, which never complete and stall every bus master (upstream Zephyr PR #57467, ST
+ * AN4838 and AN4760, and ST support on the ST community). Board patch 0005 replaces the guard by
+ * setting the QUADSPI FSIZE to the whole window, so such a read wraps to flash data instead.
  */
 /delete-node/ &quadspi_memory;
 

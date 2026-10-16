@@ -162,6 +162,13 @@ static void bsp_qspi_init(void)
 	 * so this clock directly gates render throughput: 108 MHz vs the earlier conservative 54 MHz
 	 * lifts lvbench 16->22 FPS, validated 5/5 clean runs on silicon. */
 	MODIFY_REG(QUADSPI->CR, QUADSPI_CR_PRESCALER, (1u << QUADSPI_CR_PRESCALER_Pos));
+	/* Let the memory-mapped window answer across its whole 256 MiB (FSIZE = 27). A read above
+	 * the 16 MiB device, beyond FSIZE, leaves the QUADSPI waiting forever and stalls every bus
+	 * master; the M7 reads Normal memory speculatively, and the privileged default map makes
+	 * the whole window Normal (ST AN4838/AN4760; ST support on the ST community). ST's guard is
+	 * an MPU region making the window no-access, but every MPU region is in use, so instead
+	 * the window answers: above the device the 24-bit address wraps to flash data. */
+	MODIFY_REG(QUADSPI->DCR, QUADSPI_DCR_FSIZE, (27u << QUADSPI_DCR_FSIZE_Pos));
 	if (BSP_QSPI_EnableMemoryMappedMode() != QSPI_OK)
 		for (;;) { /* memory-mapped enable failed — halt (GDB-findable) */
 		}

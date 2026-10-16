@@ -1,0 +1,47 @@
+drivers/flash: let the QSPI memory-mapped window cover its 256 MiB
+
+With FSIZE set to the device size (16 MiB on the N25Q128A), a read of the
+memory-mapped window above the flash leaves the QUADSPI waiting forever,
+and every bus master stalls with it: the CPU, the DMA controllers and the
+debug port. The Cortex-M7 reads Normal memory speculatively, and privileged
+code sees the window above the flash as Normal executable memory through
+the default memory map, so a speculative load through a wild pointer is
+enough. On the STM32F746G-DISCO this froze the board under sustained XIP
+plus SD and DMA2D traffic, depending on code and data layout.
+
+ST documents the cause (ST support on the ST community: "The M7 core can do
+a speculative reads to memories. Unfortunately it can also read the area of
+QSPI where is no memory. Result is that the read from this area is not
+possible to finish."; AN4838 and AN4760) and recommends an MPU guard: the
+unused window no-access or Strongly-ordered. Zephyr's stm32f7.dtsi has that
+guard (quadspi_memory, PR #57467), but this board deletes it, because all
+eight MPU regions are needed: four static ones and four for the Linux
+program's memory domain and stack.
+
+Instead, in memory-mapped mode, set FSIZE to the window's 256 MiB. Above
+the device the 24-bit address wraps, so such a read completes and returns
+flash data. This is not an ST-documented workaround: it removes the hang
+but lets a stray privileged read return wrapped flash data where the MPU
+guard would fault it. The flash API keeps the real device size.
+
+diff --git a/drivers/flash/flash_stm32_qspi.c b/drivers/flash/flash_stm32_qspi.c
+index dccc584d2b2..ec4fe7706e8 100644
+--- a/drivers/flash/flash_stm32_qspi.c
++++ b/drivers/flash/flash_stm32_qspi.c
+@@ -1621,6 +1621,16 @@ static int flash_stm32_qspi_init(const struct device *dev)
+ 	dev_data->hqspi.Init.ClockPrescaler = prescaler;
+ 	/* Give a bit position from 0 to 31 to the HAL init minus 1 for the DCR1 reg */
+ 	dev_data->hqspi.Init.FlashSize = find_lsb_set(dev_cfg->flash_size) - 2;
++#ifdef CONFIG_STM32_MEMMAP
++	/* Let the memory-mapped window answer across its whole 256 MiB. The
++	 * Cortex-M7 may read Normal memory speculatively, and privileged code sees
++	 * the QSPI window above the flash as Normal through the default memory
++	 * map; a read there, beyond FSIZE, leaves the QUADSPI waiting forever and
++	 * stalls every bus master with it. Above the device the 24-bit address
++	 * wraps, so such a read returns flash data instead.
++	 */
++	dev_data->hqspi.Init.FlashSize = 27U;
++#endif
+ 	dev_data->hqspi.Init.ChipSelectHighTime = dev_cfg->cs_high_time - 1;
+ #if STM32_QSPI_DOUBLE_FLASH
+ 	dev_data->hqspi.Init.DualFlash = QSPI_DUALFLASH_ENABLE;
