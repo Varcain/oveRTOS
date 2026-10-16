@@ -42,9 +42,8 @@ rtos_defconfig:
   freertos:
     # LXP owns guest rotation; do not time-slice unrelated host work.
     - CONFIG_FREERTOS_USE_TIME_SLICING=n
-    # Wake socket waiters and bound saturated RX work.
+    # Wake socket waiters as soon as lwIP has their data.
     - CONFIG_OVE_NET_RX_READY_NOTIFY=y
-    - CONFIG_OVE_NET_RX_FAIR_SCHEDULING=y
   zephyr:
     # Four full-frame RX slots, with room for concurrent ACK/ARP traffic.
     - CONFIG_OVE_ZEPHYR_NET_BUF_DATA_SIZE=512
