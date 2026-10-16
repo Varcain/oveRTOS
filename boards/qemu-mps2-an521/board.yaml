@@ -3,6 +3,10 @@ board:
   mcu_family: arm
   mcu: CMSDK_CM33
 
+rtos:
+  zephyr:
+    board: mps2/an521/cpu0
+
 clock:
   hse_freq_mhz: 25
   sysclk_mhz: 25

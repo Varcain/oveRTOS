@@ -3,6 +3,14 @@ board:
   mcu_family: stm32f7
   mcu: STM32F746xx
 
+rtos:
+  freertos: {}
+  nuttx:
+    board: stm32f746g-disco
+    config: nsh
+  zephyr:
+    board: stm32f746g_disco
+
 clock:
   hse_freq_mhz: 25
   sysclk_mhz: 216

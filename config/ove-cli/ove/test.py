@@ -17,10 +17,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
+from .board_yaml import nuttx_board_config, zephyr_board
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
+
+
+def _board_dir(ove_dir, board):
+    return os.path.join(ove_dir, "boards", board)
 
 
 @dataclass
@@ -1667,7 +1672,7 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
         nuttx_src=nuttx_src,
         apps_build=apps_build,
         build_dir=build_dir,
-        board_config="stm32f746g-disco:nsh",
+        board_config=nuttx_board_config(_board_dir(ove_dir, "stm32f746g-discovery")),
         defconfig_overlays=overlays,
         coverage=False,
         variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
@@ -1726,7 +1731,7 @@ def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label,
     env = _zephyr_sdk_build_env(ove_dir)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
     cmd = [west, "build",
-           "-b", "stm32f746g_disco",
+           "-b", zephyr_board(_board_dir(ove_dir, "stm32f746g-discovery")),
            "-d", build,
            os.path.join(ove_dir, "tests", "sim", src_subdir)]
     if extra_cmake:
@@ -2027,14 +2032,17 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
 def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
-                    board_config="mps2-an500:nsh"):
+                    board_config=None):
     """Build and run a NuttX QEMU ARM test variant via CMake.
 
     `app_subdir` is the tests/sim/<dir>/ holding nuttx_app/ and
     nuttx_test_defconfig (e.g. "nuttx-qemu" or "nuttx-qemu-zeroheap").
-    `board_config` selects the NuttX base config — "mps2-an500:nsh" (flat) by
-    default, or "mps2-an500:knsh" for the CONFIG_BUILD_PROTECTED variant.
+    `board_config` selects the NuttX base config — the an500's board.yaml one
+    (mps2-an500:nsh, flat) by default, or "mps2-an500:knsh" for the
+    CONFIG_BUILD_PROTECTED variant.
     """
+    if board_config is None:
+        board_config = nuttx_board_config(_board_dir(ove_dir, "qemu-mps2-an500"))
     tc_dir = _ensure_arm_toolchain(ove_dir)
     build_base = os.path.join(output_dir, "tests", label)
     apps_build = os.path.join(build_base, "nuttx-apps")
@@ -2084,10 +2092,11 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
 
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
 def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
-                     extra_conf=None, board="mps2/an500", run_via_west=False):
+                     extra_conf=None, board=None, run_via_west=False):
     """Build and run a Zephyr QEMU ARM test variant.
 
-    `board` selects the Zephyr board (default the Cortex-M7 mps2/an500). Boards
+    `board` selects the Zephyr board (default the an500's board.yaml one, the
+    Cortex-M7 mps2/an500). Boards
     the oveRTOS an500 qemu-run.sh can't host (e.g. mps2/an521/cpu0, the Cortex-M33
     USERSPACE target) set `run_via_west=True` to run through Zephyr's own QEMU
     integration (`west build -t run`) instead.
@@ -2099,6 +2108,8 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     mislead lcov.
     """
     import hashlib
+    if board is None:
+        board = zephyr_board(_board_dir(ove_dir, "qemu-mps2-an500"))
     dl_dir = os.path.join(ove_dir, "dl")
     build = os.path.join(output_dir, "tests", label)
     west = os.path.join(ove_dir, ".venv", "bin", "west")

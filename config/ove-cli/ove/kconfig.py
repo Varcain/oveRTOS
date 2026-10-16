@@ -330,6 +330,7 @@ def _load_yaml_simple(path):
                     result[current_key] = current_dict
                 key, _, val = stripped.partition(':')
                 current_key = key.strip()
+                current_dict_key = None
                 val = val.strip()
                 if val:
                     result[current_key] = val
@@ -343,8 +344,6 @@ def _load_yaml_simple(path):
                 val = stripped.lstrip()[2:].strip()
                 if val.startswith('"') and val.endswith('"'):
                     val = val[1:-1]
-                if current_list is None:
-                    current_list = []
                 if current_dict_key is not None:
                     if current_dict is None:
                         current_dict = {}
@@ -352,6 +351,8 @@ def _load_yaml_simple(path):
                         current_dict[current_dict_key] = []
                     current_dict[current_dict_key].append(val)
                 else:
+                    if current_list is None:
+                        current_list = []
                     current_list.append(val)
             elif indent > 0 and ':' in stripped and not stripped.lstrip().startswith('- '):
                 key, _, val = stripped.partition(':')

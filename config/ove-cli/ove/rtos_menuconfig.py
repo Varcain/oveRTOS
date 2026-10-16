@@ -11,7 +11,7 @@ import shutil
 import sys
 
 from .configure import configure_all
-from .constants import NUTTX_BOARD_CONFIGS, ZEPHYR_BOARD_MAPPINGS
+from .board_yaml import nuttx_board_config, zephyr_board as yaml_zephyr_board
 from .utils import apply_defconfig_overlay, diff_configs, hash_file, run
 from .workspace import Workspace
 
@@ -233,10 +233,10 @@ def _run_nuttx_menuconfig(ws, env):
 
     # Resolve NuttX board config
     from .build import _find_nuttx_defconfig, _find_cmake
-    nuttx_board_cfg = NUTTX_BOARD_CONFIGS.get(ws.board_name)
+    nuttx_board_cfg = nuttx_board_config(ws.board_dir)
     if not nuttx_board_cfg:
-        from .build import _fallback_rtos_mapping
-        nuttx_board_cfg = _fallback_rtos_mapping(ws, "nuttx") or "mps2-an500:nsh"
+        print(f"error: no rtos.nuttx in {ws.board_name}/board.yaml")
+        sys.exit(1)
 
     # Layers 1-3: merge into board defconfig
     merged = merge_rtos_config_layers(ws, "nuttx")
@@ -336,9 +336,9 @@ def _run_zephyr_menuconfig(ws, env):
     if os.path.isdir(zephyr_ws):
         env["ZEPHYR_BASE"] = zephyr_ws
 
-    zephyr_board = ZEPHYR_BOARD_MAPPINGS.get(ws.board_name)
+    zephyr_board = yaml_zephyr_board(ws.board_dir)
     if not zephyr_board:
-        print(f"error: no Zephyr board mapping for '{ws.board_name}'")
+        print(f"error: no rtos.zephyr.board in {ws.board_name}/board.yaml")
         sys.exit(1)
 
     # Layers 1-3: merge into gen_dir/merged_prj.conf (NO user layer yet)

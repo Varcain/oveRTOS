@@ -2,7 +2,7 @@
 
 oveRTOS ships with two reference board definitions, `stm32f746g-discovery` and `qemu-mps2-an500`, plus `qemu-mps2-an521`, the Cortex-M33 board that Zephyr's Linux personality runs on. Each board lives under `boards/<name>/` and supplies:
 
-- `board.yaml` — machine-readable hardware description (clocks, memory, peripherals)
+- `board.yaml` — machine-readable hardware description (clocks, memory, peripherals), plus under `rtos:` the engines the board supports and the upstream NuttX/Zephyr board each one builds
 - A CMakeLists.txt (or equivalent) that selects the correct backend and passes hardware parameters to the build
 - Board-specific source files (clock init, peripheral configuration)
 

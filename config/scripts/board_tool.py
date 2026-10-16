@@ -1154,6 +1154,10 @@ def _resolve_conflict(existing_yaml_path, new_data, args):
     """
     existing = BoardYaml.load(existing_yaml_path)
     new_board = BoardYaml(data=new_data)
+    # Overwriting replaces the hardware description; the engines imported
+    # so far stay supported.
+    if "rtos" in existing.data:
+        new_board.data["rtos"] = copy.deepcopy(existing.data["rtos"])
 
     non_interactive = getattr(args, "non_interactive", False)
     overwrite = getattr(args, "overwrite", False)
@@ -1339,73 +1343,6 @@ def _register_kconfig(ove_name, board_yaml_data):
     print(f"  Kconfig: registered {symbol}")
 
 
-def _register_constants(ove_name, board_yaml_data, rtos):
-    """Auto-register RTOS board mapping in constants.py (idempotent)."""
-    constants_path = os.path.join(
-        ove_dir(), "config", "ove-cli", "ove", "constants.py"
-    )
-    if not os.path.isfile(constants_path):
-        print(f"  Warning: {constants_path} not found, skipping constants registration")
-        return
-
-    meta = board_yaml_data.get("_meta", {})
-
-    with open(constants_path, "r") as f:
-        content = f.read()
-
-    if rtos == "nuttx":
-        nuttx_board = meta.get("nuttx_board", "")
-        nuttx_config = meta.get("nuttx_config", "nsh")
-        if not nuttx_board:
-            print("  Constants: no nuttx_board in _meta, skipping NuttX mapping")
-            return
-        entry = f'    "{ove_name}": "{nuttx_board}:{nuttx_config}",'
-        dict_name = "NUTTX_BOARD_CONFIGS"
-    elif rtos == "zephyr":
-        zephyr_board = meta.get("zephyr_board", "")
-        if not zephyr_board:
-            print("  Constants: no zephyr_board in _meta, skipping Zephyr mapping")
-            return
-        entry = f'    "{ove_name}": "{zephyr_board}",'
-        dict_name = "ZEPHYR_BOARD_MAPPINGS"
-    else:
-        return
-
-    # Check if already present
-    if f'"{ove_name}"' in content and dict_name in content:
-        # More precise check: is it in the right dict?
-        in_dict = False
-        for line in content.splitlines():
-            if dict_name in line:
-                in_dict = True
-            if in_dict and f'"{ove_name}"' in line:
-                print(f"  Constants: {ove_name} already in {dict_name}, skipping")
-                return
-            if in_dict and line.strip() == "}":
-                in_dict = False
-
-    # Find closing } of the target dict and insert before it
-    lines = content.splitlines(True)
-    new_lines = []
-    in_target_dict = False
-    inserted = False
-    for line in lines:
-        if dict_name in line and "=" in line:
-            in_target_dict = True
-        if in_target_dict and not inserted and line.strip() == "}":
-            new_lines.append(entry + "\n")
-            inserted = True
-            in_target_dict = False
-        new_lines.append(line)
-
-    if inserted:
-        with open(constants_path, "w") as f:
-            f.writelines(new_lines)
-        print(f"  Constants: registered {ove_name} in {dict_name}")
-    else:
-        print(f"  Warning: could not find {dict_name} closing brace in constants.py")
-
-
 def _generate_defconfig(ove_name, board_yaml_data, rtos):
     """Auto-generate a minimal example defconfig for the board."""
     board = board_yaml_data.get("board", {})
@@ -1565,7 +1502,6 @@ def _post_import_register(ove_name, board_yaml_data, rtos):
     """Run all post-import registration hooks."""
     print(f"\n--- Post-import registration for {ove_name} ({rtos}) ---")
     _register_kconfig(ove_name, board_yaml_data)
-    _register_constants(ove_name, board_yaml_data, rtos)
     _generate_defconfig(ove_name, board_yaml_data, rtos)
     board_dir = os.path.join(boards_dir(), ove_name)
     board = board_yaml_data.get("board", {})
@@ -1640,6 +1576,7 @@ def _import_zephyr(args):
             return
     else:
         board_yaml = BoardYaml(data=data)
+    board_yaml.data.setdefault("rtos", {})["zephyr"] = {"board": board_name}
 
     # Validate (strip _meta)
     board_yaml.validate()
@@ -1667,12 +1604,9 @@ def _import_zephyr(args):
     _write_starter(starter + ".conf", _zephyr_starter_conf(board_yaml.data))
     _write_starter(starter + ".overlay", _zephyr_starter_overlay(board_yaml.data))
 
-    # Post-import registration — use saved board.yaml data (may differ from
-    # extracted data if user kept existing), but merge in new _meta so RTOS
-    # mapping info (zephyr_board) is available for constants registration.
-    reg_data = board_yaml.data
-    reg_data.setdefault("_meta", {}).update(data.get("_meta", {}))
-    _post_import_register(ove_name, reg_data, "zephyr")
+    # Post-import registration — use the saved board.yaml data, which may
+    # differ from the extracted data if the user kept the existing file.
+    _post_import_register(ove_name, board_yaml.data, "zephyr")
 
     # Print warnings
     if warnings:
@@ -1726,6 +1660,8 @@ def _import_nuttx(args):
             return
     else:
         board_yaml = BoardYaml(data=data)
+    board_yaml.data.setdefault("rtos", {})["nuttx"] = {
+        "board": board_name, "config": config_variant}
 
     # Validate
     board_yaml.validate()
@@ -1747,10 +1683,8 @@ def _import_nuttx(args):
     _write_starter(os.path.join(nuttx_scaffold_dir, "ove_board_defconfig"),
                    _nuttx_starter_defconfig(board_yaml.data))
 
-    # Post-import registration — use saved board.yaml data with merged _meta
-    reg_data = board_yaml.data
-    reg_data.setdefault("_meta", {}).update(data.get("_meta", {}))
-    _post_import_register(ove_name, reg_data, "nuttx")
+    # Post-import registration — use the saved board.yaml data.
+    _post_import_register(ove_name, board_yaml.data, "nuttx")
 
     # Print warnings
     if warnings:
