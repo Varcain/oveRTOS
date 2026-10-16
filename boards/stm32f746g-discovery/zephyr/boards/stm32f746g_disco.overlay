@@ -75,15 +75,14 @@
 &sdmmc1 {
 	dmas = <&dma2 6 4 0x30000 0x00>, <&dma2 3 4 0x30000 0x00>;
 	dma-names = "tx", "rx";
-	/* 48 MHz / (22 + 2) = 2 MHz. Faster clocks and multiblock transfers can
-	 * survive short probes but intermittently leave this board's F7 SDMMC path
-	 * non-responsive under sustained SQLite rewrites. Keep the proven-safe
-	 * clock together with the owned single-sector DMA policy. */
-	clk-div = <22>;
-	/* All four data lines at that clock: a 512-byte block takes about 1.0 ms
-	 * on the wire instead of 2.5 ms. The binding defaults to one line, and the
-	 * HAL cannot make the switch at 2 MHz, so the driver sends ACMD6 itself
-	 * (patches/0004-sdmmc-direct-wide-bus-switch.patch). */
+	/* 48 MHz / (0 + 2) = 24 MHz, as on FreeRTOS. A 2 MHz clock and
+	 * single-sector transfers were used while the board froze under
+	 * sustained SQLite rewrites; that freeze was a speculative read of the
+	 * QSPI window beyond the flash (board patch 0005), not the SD path. */
+	clk-div = <0>;
+	/* All four data lines. The binding defaults to one line, and the HAL's
+	 * own switch probes the SCR with a loop that fails at low clocks, so the
+	 * driver sends ACMD6 itself (patches/0004-sdmmc-direct-wide-bus-switch.patch). */
 	bus-width = <4>;
 	/delete-property/ cd-gpios;
 };
