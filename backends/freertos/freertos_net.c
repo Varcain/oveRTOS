@@ -86,8 +86,7 @@ static volatile int s_tcpip_ready;
 
 #if defined(CONFIG_OVE_NET_RX_FAIR_SCHEDULING)
 /*
- * Limit bulk traffic to roughly one full-size frame per 8 ms (~1.5 Mbit/s), the
- * throughput class measured with NuttX under the same saturating userspace load.
+ * Limit bulk traffic to roughly one full-size frame per 8 ms (~1.5 Mbit/s).
  * Keep three credits so an idle link can pass a short TCP/ARP burst immediately
  * instead of inserting 8 ms between every frame. One credit is charged per frame
  * and refilled every 8 ms; the 1 ms empty poll keeps sparse-traffic latency low.
@@ -97,6 +96,28 @@ static volatile int s_tcpip_ready;
 #endif
 
 /* Polling task for the Ethernet RX path */
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+static void rx_ready_publish(void *ctx)
+{
+	(void)ctx;
+	ove_net_ready_publish();
+}
+#endif
+
+/* Report that frames were handed to lwIP. tcpip_input only queued them: lwIP
+ * hands their data to the sockets when tcpip_thread processes them. Publish
+ * from that thread, behind the frames in its FIFO mailbox, so a subscriber's
+ * recheck finds the data. Publishing before then made the recheck miss it, and
+ * a reader with a full TCP window slept until its retry timeout. If the
+ * mailbox is full, publish now; a later frame publishes again. */
+static void rx_frames_queued(void)
+{
+#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
+	if (tcpip_try_callback(rx_ready_publish, NULL) != ERR_OK)
+		ove_net_ready_publish();
+#endif
+}
+
 static void eth_rx_task(void *arg)
 {
 	(void)arg;
@@ -150,13 +171,7 @@ static void eth_rx_task(void *arg)
 				used = budget;
 			tokens -= used;
 			backlog = used == budget;
-
-#if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
-			/* tcpip_input queued these frames before publication. A subscriber
-			 * may now recheck socket state without the network backend knowing
-			 * which scheduler or protocol layer consumes that readiness. */
-			ove_net_ready_publish();
-#endif
+			rx_frames_queued();
 		} else
 			backlog = 0;
 
@@ -165,7 +180,8 @@ static void eth_rx_task(void *arg)
 	}
 #else
 	for (;;) {
-		(void)ethernetif_input(&s_netif, 0);
+		if (ethernetif_input(&s_netif, 0) > 0)
+			rx_frames_queued();
 		vTaskDelay(pdMS_TO_TICKS(1u));
 	}
 #endif
