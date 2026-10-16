@@ -1,0 +1,27 @@
+drivers/flash: program the QSPI chip-select high time in its DCR field
+
+The HAL ORs QSPI_InitTypeDef.ChipSelectHighTime into QUADSPI_DCR as is
+and expects one of the shifted QSPI_CS_HIGH_TIME_* values. The driver
+passed the bare cycle count minus one, so CSHT always stayed at one
+cycle and the low bits landed in CKMODE: cs-high-time = <6> programmed
+DCR 0x...0001, chip select high for 1 cycle (9 ns at 108 MHz, under the
+N25Q128A's deselect time) and clock mode 3, where 6 cycles in mode 0
+were asked for. Shift the value into the CSHT field.
+
+diff --git a/drivers/flash/flash_stm32_qspi.c b/drivers/flash/flash_stm32_qspi.c
+index ec4fe7706e8..0e9610c0cbc 100644
+--- a/drivers/flash/flash_stm32_qspi.c
++++ b/drivers/flash/flash_stm32_qspi.c
+@@ -1631,7 +1631,11 @@ static int flash_stm32_qspi_init(const struct device *dev)
+ 	 */
+ 	dev_data->hqspi.Init.FlashSize = 27U;
+ #endif
+-	dev_data->hqspi.Init.ChipSelectHighTime = dev_cfg->cs_high_time - 1;
++	/* The HAL ORs this field into DCR as is: it takes the shifted CSHT
++	 * value (QSPI_CS_HIGH_TIME_*), not a cycle count.
++	 */
++	dev_data->hqspi.Init.ChipSelectHighTime = (dev_cfg->cs_high_time - 1)
++						  << QUADSPI_DCR_CSHT_Pos;
+ #if STM32_QSPI_DOUBLE_FLASH
+ 	dev_data->hqspi.Init.DualFlash = QSPI_DUALFLASH_ENABLE;
+ 
