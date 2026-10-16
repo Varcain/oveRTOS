@@ -4,7 +4,7 @@
 #
 # This file is part of oveRTOS.
 
-"""board.yaml: schema, declared engines, and the upstream board lookup."""
+"""board.yaml: schema, declared engines, upstream boards, generated Kconfig."""
 
 import glob
 import json
@@ -13,8 +13,10 @@ import tempfile
 import unittest
 
 import jsonschema
+import kconfiglib
 import yaml
 from ove.board_yaml import nuttx_board_config, rtos_entry, zephyr_board
+from ove.boardgen import board_kconfig, load_boards
 
 TREE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RTOSES = ("freertos", "nuttx", "zephyr")
@@ -41,6 +43,73 @@ class TreeBoardsTest(unittest.TestCase):
                 with self.subTest(board=os.path.basename(board), rtos=rtos):
                     self.assertEqual(rtos_entry(board, rtos) is not None,
                                      os.path.isdir(os.path.join(board, rtos)))
+
+    def test_board_identity_is_unique(self):
+        boards = load_boards(TREE)
+        for name, data in boards:
+            # OVE_BOARD_NAME is the board directory the build uses.
+            self.assertEqual(data["board"]["name"], name)
+        symbols = [data["board"]["symbol"] for _, data in boards]
+        self.assertEqual(len(symbols), len(set(symbols)))
+        self.assertLessEqual(sum(data["board"].get("default", False) for _, data in boards), 1)
+
+
+# The symbols the generated board Kconfig refers to, as Config.in defines them.
+_KCONFIG_CONTEXT = """
+choice
+    prompt "RTOS"
+config OVE_RTOS_FREERTOS
+    bool "FreeRTOS"
+config OVE_RTOS_ZEPHYR
+    bool "Zephyr"
+config OVE_RTOS_NUTTX
+    bool "NuttX"
+endchoice
+config OVE_LINUX
+    bool "Linux"
+config OVE_SIM
+    bool
+config OVE_SIM_WEB
+    bool "Web"
+config OVE_DEBUG_BUILD
+    bool "Debug"
+"""
+
+
+class BoardKconfigTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        path = os.path.join(self.temp.name, "Config.in")
+        with open(path, "w") as f:
+            f.write(_KCONFIG_CONTEXT + board_kconfig(load_boards(TREE)))
+        self.kconf = kconfiglib.Kconfig(path, warn=False)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def _sym(self, name):
+        return self.kconf.syms[name].str_value
+
+    def test_default_board(self):
+        self.assertEqual(self._sym("OVE_BOARD_NAME"), "stm32f746g-discovery")
+
+    def test_board_facts_come_from_yaml(self):
+        self.kconf.syms["OVE_RTOS_ZEPHYR"].set_value(2)
+        self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN521"].set_value(2)
+        self.assertEqual(self._sym("OVE_BOARD_NAME"), "qemu-mps2-an521")
+        self.assertEqual(self._sym("OVE_MCU"), "CMSDK_CM33")
+        self.assertEqual(self._sym("OVE_FLASH_SIZE"), str(4096 * 1024))
+        self.assertEqual(self._sym("OVE_RAM_SIZE"), str(4096 * 1024))
+
+    def test_board_needs_a_declared_engine(self):
+        self.kconf.syms["OVE_RTOS_NUTTX"].set_value(2)
+        self.assertEqual(self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN521"].visibility, 0)
+
+    def test_board_kconfig_attributes(self):
+        self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
+        self.assertEqual(self._sym("OVE_SIM"), "y")
+        self.kconf.syms["OVE_LINUX"].set_value(2)
+        self.assertEqual(self._sym("OVE_SIM"), "n")
 
 
 class LookupTest(unittest.TestCase):

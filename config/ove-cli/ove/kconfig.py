@@ -10,6 +10,7 @@ import os
 import sys
 
 from .appgen import generate_app_kconfig
+from .boardgen import board_symbol as yaml_board_symbol, generate_board_kconfig
 from .utils import atomic_symlink
 from .workspace import Workspace, find_ove_dir, write_app_path
 
@@ -95,6 +96,7 @@ def cmd_menuconfig(args):
         sys.exit(1)
 
     generate_app_kconfig(ove_dir)
+    generate_board_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig("Config.in")
     menuconfig(kconf)
 
@@ -156,6 +158,7 @@ def cmd_defconfig(args):
 
     os.environ["srctree"] = ove_dir
     generate_app_kconfig(ove_dir)
+    generate_board_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     kconf.load_config(defconfig_path)
     activate = not getattr(args, "no_activate", False)
@@ -269,31 +272,7 @@ def _find_board_variant(ove_dir, name):
 
 def _find_board_kconfig_symbol(ove_dir, board_dir_name):
     """Find the CONFIG_OVE_BOARD_* symbol for a board directory name."""
-    hw_config = os.path.join(ove_dir, "config", "Config.in.hardware")
-    if not os.path.isfile(hw_config):
-        return None
-
-    # Build mapping from board directory names to Kconfig symbols
-    # by reading the 'default "board-name" if OVE_BOARD_*' lines
-    import re
-    with open(hw_config) as f:
-        content = f.read()
-
-    for m in re.finditer(
-            r'config (OVE_BOARD_\w+)\s.*?default\s+"([^"]+)"',
-            content, re.DOTALL):
-        if m.group(1) == "OVE_BOARD_NAME":
-            continue
-        # Find the board name associated with this symbol from
-        # the OVE_BOARD_NAME defaults
-    # Simpler: match board dir name against OVE_BOARD_NAME defaults
-    symbol_map = {}
-    for m in re.finditer(
-            r'default\s+"([^"]+)"\s+if\s+(OVE_BOARD_\w+)',
-            content):
-        symbol_map[m.group(1)] = m.group(2)
-
-    return symbol_map.get(board_dir_name)
+    return yaml_board_symbol(ove_dir, board_dir_name)
 
 
 def _load_yaml(path):
@@ -474,6 +453,7 @@ def cmd_defconfig_fragments(args):
     # ── Resolve app ────────────────────────────────────────────────
     os.environ["srctree"] = ove_dir
     generate_app_kconfig(ove_dir)
+    generate_board_kconfig(ove_dir)
 
     app_yaml_path = _find_app_yaml(ove_dir, app)
     if not app_yaml_path:
@@ -615,6 +595,7 @@ def cmd_savedefconfig(args):
     os.environ["srctree"] = ove_dir
     _advertise_workspace_app(ws)
     generate_app_kconfig(ove_dir)
+    generate_board_kconfig(ove_dir)
     kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     kconf.load_config(config_path)
     destination = _savedefconfig_destination(ws)

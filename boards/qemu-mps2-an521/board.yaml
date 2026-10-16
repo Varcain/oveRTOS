@@ -2,6 +2,15 @@ board:
   name: qemu-mps2-an521
   mcu_family: arm
   mcu: CMSDK_CM33
+  symbol: OVE_BOARD_QEMU_MPS2_AN521
+  title: QEMU MPS2-AN521 (Cortex-M33, USERSPACE)
+  description: |
+    ARM MPS2-AN521 board emulated by QEMU (Cortex-M33, MPU + CONFIG_USERSPACE).
+    The substrate for the Linux personality: runs a loaded program
+    unprivileged and traps its svc. Console + exit via semihosting.
+  kconfig: |
+    # Debug by default, as the an500; the browser bundle is optimised.
+    imply OVE_DEBUG_BUILD if !OVE_SIM_WEB
 
 rtos:
   zephyr:

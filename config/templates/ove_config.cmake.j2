@@ -10,9 +10,9 @@ set(OVE_RTOS "nuttx")
 {% endif %}
 
 # Hardware
-set(OVE_MCU "{{ config.get('CONFIG_OVE_MCU', 'STM32F746xx') }}")
-set(OVE_FLASH_SIZE {{ config.get('CONFIG_OVE_FLASH_SIZE', 1048576) }})
-set(OVE_RAM_SIZE {{ config.get('CONFIG_OVE_RAM_SIZE', 327680) }})
+set(OVE_MCU "{{ config.get('CONFIG_OVE_MCU', '') }}")
+set(OVE_FLASH_SIZE {{ config.get('CONFIG_OVE_FLASH_SIZE', 0) }})
+set(OVE_RAM_SIZE {{ config.get('CONFIG_OVE_RAM_SIZE', 0) }})
 
 # Toolchain
 set(OVE_CROSS_COMPILE "{{ config.get('CONFIG_OVE_CROSS_COMPILE', 'arm-none-eabi-') }}")
