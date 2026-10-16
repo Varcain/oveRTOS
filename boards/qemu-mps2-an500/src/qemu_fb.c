@@ -26,6 +26,9 @@
 
 #define FB_W OVE_DISPLAY_WIDTH
 #define FB_H OVE_DISPLAY_HEIGHT
+#ifndef OVE_DISPLAY_FORMAT_RGB565
+#error "this framebuffer backend drives RGB565 only (board.yaml display.color_format)"
+#endif
 #define FB_MAGIC 0x42465854u /* "TXFB" */
 #define FB_FORMAT_RGB565 0
 

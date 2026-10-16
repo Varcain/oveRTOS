@@ -11,6 +11,7 @@
  */
 
 #include "ove_config.h"
+#include "board_desc.h"
 
 #if defined(CONFIG_OVE_FT5336)
 
@@ -110,7 +111,8 @@ int ove_ft5336_read(int *x, int *y, int *pressed)
 		 * Discovery. Match ST's BSP_TS_Init(TS_SWAP_XY): LCD X comes from raw
 		 * Y and LCD Y from raw X. Reject invalid IDs/coordinates rather than
 		 * letting the evdev layer clamp a no-data frame to the bottom-right. */
-		if (touch_id != FT5336_INVALID_TOUCH_ID && raw_x < 272 && raw_y < 480) {
+		if (touch_id != FT5336_INVALID_TOUCH_ID && raw_x < OVE_DISPLAY_HEIGHT &&
+		    raw_y < OVE_DISPLAY_WIDTH) {
 			g_last_x = raw_y;
 			g_last_y = raw_x;
 			is_pressed = 1;

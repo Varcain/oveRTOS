@@ -10,6 +10,15 @@
 #include "ove/hal/hal_gpio.h"
 #include "ove_backend_common.h"
 #include "board_desc.h"
+#include <zephyr/devicetree.h>
+#include <zephyr/toolchain.h>
+
+#if DT_HAS_CHOSEN(zephyr_display)
+/* The devicetree describes the display on Zephyr; board.yaml must agree. */
+BUILD_ASSERT(DT_PROP(DT_CHOSEN(zephyr_display), width) == OVE_DISPLAY_WIDTH &&
+		     DT_PROP(DT_CHOSEN(zephyr_display), height) == OVE_DISPLAY_HEIGHT,
+	     "board.yaml display size differs from the devicetree zephyr,display");
+#endif
 
 int ove_hal_board_init(void)
 {

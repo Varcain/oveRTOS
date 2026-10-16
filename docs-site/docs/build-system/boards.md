@@ -54,7 +54,7 @@ The MPS2 AN500 model emulates a Cortex-M7 SoC on the QEMU machine. It is the pri
 | CPU frequency | 25 MHz |
 | Flash | 4096 KB |
 | RAM | 4096 KB |
-| Display | 480 × 272 px, RGB565 |
+| Display | 480 × 272 px, RGB565 (the sim dashboard carries it to the host as XRGB8888) |
 | Console | CMSDK UART0 on QEMU's stdio (the Linux personality guest uses UART1) |
 | GPIO ports | 8 ports, 16 pins each |
 | LEDs | None |
