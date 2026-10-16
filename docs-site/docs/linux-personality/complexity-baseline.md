@@ -932,3 +932,20 @@ FreeRTOS SVC priority is configured by the personality prepare hook rather than
 as a side effect of console initialization. Hardened production builds after
 this move use 243,032 B of flash on FreeRTOS, 237,620 B on NuttX, and 283,788 B
 on Zephyr, with no static-RAM growth.
+
+## POSIX argument limit (2026-10-16)
+
+The exec capture used to hold 768 bytes of arguments, 512 bytes of environment
+and 32 + 24 entries, below the 4,096 bytes POSIX guarantees for `ARG_MAX`. A
+1.2 KB argument failed with `E2BIG`, and NOMMU Hush, which re-executes itself
+with every shell variable as an argument, stopped running subshells and builtin
+pipeline stages once one variable passed a few hundred bytes. The capture now
+holds 3,072 + 1,024 bytes and 64 + 32 entries: 4,296 B per slot instead of
+1,400 B. Ports keep it in external memory, except NuttX on QEMU, where it is
+internal BSS.
+
+The coordinator no longer copies the capture into its runtime record before
+building the new stack; it reads the strings where execve captured them. That
+copy was the only internal-RAM part of the capture, so the reported coordinator
+static set shrinks by 1,120 B on every engine. The startup-stack builder no
+longer keeps two 32-entry pointer arrays on the coordinator's stack either.

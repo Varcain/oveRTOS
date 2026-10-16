@@ -599,11 +599,16 @@ area.
 | Zephyr | Diagnostic | 5 / 1 | 220,432 (227,600) | 117,235 | 1,055,576 | 1,400 | 1,024 |
 | Zephyr | Hardened | 5 / 1 | 217,944 (225,112) | 115,043 | 793,432 | 1,400 | 1,024 |
 
+The table was measured when the profiles were introduced (`ecdcd359`). Since
+then the exec capture has grown from 1,400 B to 4,296 B per slot, to hold
+POSIX's 4,096-byte `ARG_MAX`, while the coordinator's internal static set
+shrank by 1,120 B (see the complexity baseline).
+
 These are board-layout costs, not portable claims about the engines. On the
 STM32 board, NuttX places its cold captures and native slot stacks in SDRAM
-rather than internal BSS. Zephyr/AN521 reserves the lower 15,296 KiB of PSRAM
-for the runner-loaded rootfs and gives the remaining 1,088 KiB to
-`OVE_PROG_RAM`; Full and Diagnostic currently use 94.75% of that window.
+rather than internal BSS. Zephyr/AN521 now loads the rootfs into the lower 8 MiB
+of PSRAM and gives the upper 8 MiB to `OVE_PROG_RAM`, where the Full profile's
+six regions and their captures take 5,025,360 B (60%).
 FreeRTOS' QEMU linker emits `.bss` as loadable `PROGBITS`, so its generated
 flash image includes those zero-filled bytes; the table intentionally reports
 the actual artifact rather than only `.text`.
