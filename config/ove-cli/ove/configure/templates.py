@@ -98,6 +98,15 @@ def generate_configs(ws):
     env.globals["get_int"] = lambda k, d=0: get_int(config, k, d)
     env.globals["get_str"] = lambda k, d="": get_str(config, k, d)
     env.globals["config"] = config
+    # board.yaml, for settings the RTOS config takes from the board.
+    board = {}
+    if ws.board_dir:
+        board_yaml = os.path.join(ws.board_dir, "board.yaml")
+        if os.path.isfile(board_yaml):
+            import yaml
+            with open(board_yaml) as f:
+                board = yaml.safe_load(f) or {}
+    env.globals["board"] = board
 
     # NuttX + C++/inference: discover GCC C++ sysroot paths so cmake
     # doesn't have to introspect the compiler on every invocation.

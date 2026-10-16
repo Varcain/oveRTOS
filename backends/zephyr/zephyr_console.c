@@ -6,6 +6,7 @@
  * This file is part of oveRTOS.
  */
 
+#include "board_desc.h"
 #include "ove/console.h"
 #include "ove_backend_common.h"
 #include "ove_config.h"
@@ -17,6 +18,10 @@
 #include <zephyr/sys/printk.h>
 #include <stdint.h>
 
+/* The devicetree sets the console baud on Zephyr; board.yaml must agree. */
+BUILD_ASSERT(DT_PROP(DT_CHOSEN(zephyr_console), current_speed) == OVE_SERIAL_CONSOLE_BAUD,
+	     "board.yaml serial.console.baud differs from the devicetree console");
+
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* Own RX after Zephyr finishes setting up its boot console. The backend keeps
  * a bounded IRQ-filled FIFO and publishes readiness to the Linux coordinator;
@@ -25,7 +30,7 @@
 #define OVE_Z_USART1 0x40011000u
 #define OVE_Z_U1_ISR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x1Cu))
 #define OVE_Z_U1_TDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x28u))
-#define OVE_Z_RX_BUFFER_SIZE 128u
+#define OVE_Z_RX_BUFFER_SIZE OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE
 
 static const struct device *const g_console_uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
 static uint8_t g_console_rx[OVE_Z_RX_BUFFER_SIZE];

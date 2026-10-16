@@ -53,6 +53,7 @@ audio:
 
 serial:
   console:
+    instance: CMSDK_UART0
     baud: 115200
     rx_buffer_size: 1024
 

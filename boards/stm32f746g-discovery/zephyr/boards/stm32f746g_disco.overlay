@@ -15,12 +15,6 @@
 	};
 };
 
-/* TODO: verify USART instance — defaulting to usart1 */
-&usart1 {
-	current-speed = <115200>;
-	status = "okay";
-};
-
 /* Display: 480x272 */
 /* TODO: Add display panel node with appropriate compatible */
 

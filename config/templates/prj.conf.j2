@@ -168,6 +168,11 @@ CONFIG_EVENTS=y
 # Serial input
 CONFIG_CONSOLE_SUBSYS=y
 CONFIG_CONSOLE_GETCHAR=y
+{% if not get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
+# board.yaml console RX buffer. (The STM32F746G-DISCO backend reads USART1
+# into its own buffer of that size and never calls console_getchar().)
+CONFIG_CONSOLE_GETCHAR_BUFSIZE={{ board.get("serial", {}).get("console", {}).get("rx_buffer_size", 16) }}
+{% endif %}
 {% endif %}
 
 # Thread introspection (for sim dashboard thread view)

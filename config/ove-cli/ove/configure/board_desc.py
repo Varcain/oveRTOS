@@ -134,6 +134,12 @@ def _generate_board_desc_header(board):
                 lines.append(
                     f"#define OVE_SERIAL_CONSOLE_BAUD {con['baud']}")
             if "rx_buffer_size" in con:
+                size = con["rx_buffer_size"]
+                if size & (size - 1):
+                    # Backends index the ring with a mask.
+                    print("Board YAML error: serial.console.rx_buffer_size "
+                          f"must be a power of two, not {size}")
+                    sys.exit(1)
                 lines.append(
                     f"#define OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE "
                     f"{con['rx_buffer_size']}")

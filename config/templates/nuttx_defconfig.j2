@@ -144,6 +144,13 @@ CONFIG_HAVE_FLOAT=y
 CONFIG_HAVE_DOUBLE=y
 {% endif %}
 
+{% set console = board.get("serial", {}).get("console", {}) %}
+{% if console.get("instance") %}
+# Console UART, from board.yaml
+CONFIG_{{ console.instance }}_BAUD={{ console.baud }}
+CONFIG_{{ console.instance }}_RXBUFSIZE={{ console.rx_buffer_size }}
+{% endif %}
+
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
 # Suppress verbose scheduler debug logging on QEMU
 # (mps2-an500:nsh base enables DEBUG_SCHED_INFO which floods console)
