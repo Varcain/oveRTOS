@@ -106,6 +106,15 @@ static void qspi_rootfs_memmap(void)
 	m.addr = 0;
 	m.key = 0;
 	m.buffer = NULL;
+	/* Let the memory-mapped window answer across its whole 256 MiB (DCR.FSIZE = 27). A read
+	 * above the 16 MiB device, beyond FSIZE, leaves the QUADSPI waiting forever and stalls
+	 * every bus master; the M7 reads Normal memory speculatively, and privileged code sees the
+	 * window above the flash region as Normal through the default map (ST AN4838/AN4760; ST
+	 * support on the ST community). ST's guard is an MPU region making the window no-access, but
+	 * every MPU region is in use, so instead the window answers: above the device the 24-bit
+	 * address wraps to flash data. The controller is idle here, so DCR is writable. */
+	volatile uint32_t *const dcr = (volatile uint32_t *)0xA0001004u;
+	*dcr = (*dcr & ~(0x1Fu << 16)) | (27u << 16);
 	stm32f7_qspi_enter_memorymapped(qspi, &m, 0 /* lpto: no auto-CS timeout */);
 	/* 0x90000000..0x90FFFFFF now reads the N25Q read-only via 0xEB quad. */
 }
