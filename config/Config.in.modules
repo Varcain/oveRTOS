@@ -914,13 +914,16 @@ config OVE_NET_RX_READY_NOTIFY
 
 config OVE_NET_RX_FAIR_SCHEDULING
     bool "Bound Ethernet RX work for scheduler fairness"
-    default y if OVE_LINUX
     default n
     depends on OVE_NET && OVE_RTOS_FREERTOS
     help
       Rate-limit saturated Ethernet receive processing with a three-frame
-      token bucket. This bounds network task interference while preserving
-      short ARP/TCP bursts. Disable for throughput-oriented native workloads.
+      token bucket refilled every 8 ms, about 1.5 Mbit/s of bulk traffic.
+      This bounds the CPU the network tasks take from lower-priority work
+      while preserving short ARP/TCP bursts. Off by default: on the
+      STM32F746G-DISCO under the hardware hammer it held a guest download
+      to 1.3 Mbit/s against 3.2-4.0 Mbit/s without it, for a 4-10%
+      shorter LVGL render time; NuttX and Zephyr have no such limit.
 
 comment "lwIP bounded-pool sizing (FreeRTOS only)"
     depends on OVE_NET && OVE_RTOS_FREERTOS
