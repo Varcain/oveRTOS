@@ -99,10 +99,12 @@
         "i2s": {
           "type": "object",
           "properties": {
-            "sample_rate":     { "type": "integer", "minimum": 1 },
+            "sample_rate":     { "type": "integer", "minimum": 1,
+                                 "description": "Rate the board's I2S clock tree is tuned for (exact there; other rates the app asks for are approximate), and the sim's default" },
             "bit_depth":       { "type": "integer", "enum": [8, 16, 24, 32] },
             "channels":        { "type": "integer", "minimum": 1 },
-            "buffer_samples":  { "type": "integer", "minimum": 1 }
+            "buffer_samples":  { "type": "integer", "minimum": 1,
+                                 "description": "Largest frames_per_period the I2S backends accept" }
           },
           "additionalProperties": false
         },
@@ -110,7 +112,8 @@
           "type": "object",
           "properties": {
             "type":     { "type": "string" },
-            "i2c_addr": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" }
+            "i2c_addr": { "type": "string", "pattern": "^0x[0-7]?[0-9a-fA-F]$",
+                          "description": "7-bit I2C address" }
           },
           "additionalProperties": false
         }

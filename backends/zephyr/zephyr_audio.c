@@ -34,6 +34,14 @@
 
 #if HAVE_I2S_NODES
 
+/* The I2S stream is 16-bit mono, one board.yaml buffer_samples period per block. */
+BUILD_ASSERT(OVE_AUDIO_I2S_BIT_DEPTH == 16 && OVE_AUDIO_I2S_CHANNELS == 1,
+	     "board.yaml audio.i2s must be 16-bit mono on Zephyr");
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(audio_codec), okay)
+BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(audio_codec)) == OVE_AUDIO_CODEC_I2C_ADDR,
+	     "board.yaml audio.codec.i2c_addr differs from the devicetree codec");
+#endif
+
 #define BYTES_PER_SAMPLE sizeof(int16_t)
 #define BLOCK_SIZE (BYTES_PER_SAMPLE * OVE_AUDIO_I2S_BUFFER_SAMPLES)
 #define SLAB_BLOCK_SIZE ((BLOCK_SIZE + 31) & ~31)
@@ -48,6 +56,7 @@ K_MEM_SLAB_DEFINE_IN_SECT_STATIC(audio_slab, __dtcm_noinit_section, SLAB_BLOCK_S
 
 static const struct device *dev_rx;
 static const struct device *dev_tx;
+static unsigned int g_i2s_rate; /* the app's sample rate; one SAI serves both directions */
 
 static K_SEM_DEFINE(i2s_ready_sem, 0, 1);
 
@@ -171,7 +180,7 @@ static int zephyr_sink_process(void *ctx, const struct ove_audio_buf *in, struct
 
 /* ── I2S helpers ────────────────────────────────────────────────── */
 
-static bool configure_i2s_streams(void)
+static bool configure_i2s_streams(unsigned int rate)
 {
 	struct i2s_config config;
 	int ret;
@@ -180,7 +189,7 @@ static bool configure_i2s_streams(void)
 	config.channels = 1;
 	config.format = I2S_FMT_DATA_FORMAT_I2S;
 	config.options = I2S_OPT_BIT_CLK_CONTROLLER | I2S_OPT_FRAME_CLK_CONTROLLER;
-	config.frame_clk_freq = OVE_AUDIO_I2S_SAMPLE_RATE;
+	config.frame_clk_freq = rate;
 	config.mem_slab = &audio_slab;
 	config.block_size = BLOCK_SIZE;
 	config.timeout = I2S_TIMEOUT;
@@ -274,11 +283,11 @@ static const struct ove_audio_node_ops zephyr_sink_ops = {
 /* DEVICE NODE FACTORIES                                                     */
 /* ========================================================================= */
 
-static int zephyr_i2s_init_once(void)
+static int zephyr_i2s_init_once(unsigned int rate)
 {
 	static int initialized;
 	if (initialized)
-		return OVE_OK;
+		return rate == g_i2s_rate ? OVE_OK : OVE_ERR_INVALID_PARAM;
 
 	dev_rx = DEVICE_DT_GET(I2S_RX_NODE);
 	dev_tx = DEVICE_DT_GET(I2S_TX_NODE);
@@ -288,8 +297,9 @@ static int zephyr_i2s_init_once(void)
 	if (dev_rx != dev_tx && !device_is_ready(dev_tx))
 		return OVE_ERR_NOT_SUPPORTED;
 
-	if (!configure_i2s_streams())
+	if (!configure_i2s_streams(rate))
 		return OVE_ERR_NOT_SUPPORTED;
+	g_i2s_rate = rate;
 
 	/* Enable SAI2_A MCLK output AFTER I2S configure but BEFORE codec. */
 	{
@@ -308,7 +318,7 @@ static int zephyr_i2s_init_once(void)
 	audio_cfg.dai_cfg.i2s.channels = 1;
 	audio_cfg.dai_cfg.i2s.format = I2S_FMT_DATA_FORMAT_I2S;
 	audio_cfg.dai_cfg.i2s.options = I2S_OPT_FRAME_CLK_CONTROLLER;
-	audio_cfg.dai_cfg.i2s.frame_clk_freq = OVE_AUDIO_I2S_SAMPLE_RATE;
+	audio_cfg.dai_cfg.i2s.frame_clk_freq = rate;
 	audio_cfg.dai_cfg.i2s.mem_slab = &audio_slab;
 	audio_cfg.dai_cfg.i2s.block_size = BLOCK_SIZE;
 	audio_codec_configure(codec_dev, &audio_cfg);
@@ -329,8 +339,10 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
 		return OVE_ERR_NOT_SUPPORTED;
+	if (g->frames_per_period > OVE_AUDIO_I2S_BUFFER_SAMPLES)
+		return OVE_ERR_INVALID_PARAM;
 
-	int ret = zephyr_i2s_init_once();
+	int ret = zephyr_i2s_init_once(cfg->fmt.sample_rate);
 	if (ret != OVE_OK)
 		return ret;
 
@@ -352,8 +364,10 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
 		return OVE_ERR_NOT_SUPPORTED;
+	if (g->frames_per_period > OVE_AUDIO_I2S_BUFFER_SAMPLES)
+		return OVE_ERR_INVALID_PARAM;
 
-	int ret = zephyr_i2s_init_once();
+	int ret = zephyr_i2s_init_once(cfg->fmt.sample_rate);
 	if (ret != OVE_OK)
 		return ret;
 
