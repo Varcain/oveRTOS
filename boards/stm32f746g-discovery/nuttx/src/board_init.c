@@ -120,18 +120,6 @@ static void qspi_rootfs_memmap(void)
 }
 #endif
 
-/* FMC SDRAM read-pipe delay = 1 (SDCR1 @ 0xA0000140, RPIPE bits [14:13]).  Same fix as
- * FreeRTOS bsp_sdram_fixup: NuttX programs RPIPE=0 in stm32_enablefmc, but at the
- * 108 MHz FMC clock that leaves no read-capture margin — once the LTDC continuously
- * burst-reads the framebuffer out of this SDRAM, CPU cache-line fills and other guest-pool reads
- * go marginal and the guest heap takes bit-flips (LVGL crashes). Nothing re-touches
- * SDCR after boot, so one OR sticks. */
-static void sdram_rpipe_fix(void)
-{
-	volatile uint32_t *const sdcr1 = (volatile uint32_t *)0xA0000140u;
-	*sdcr1 = (*sdcr1 & ~(3u << 13)) | (1u << 13); /* RPIPE = 01 */
-}
-
 #if defined(CONFIG_OVE_FB)
 /* Framebuffer backend for the personality's /dev/fb0.  NuttX's own LTDC driver (fb_register at
  * board_late_initialize, CONFIG_STM32F7_LTDC) already frames a 480x272 RGB565 buffer at
@@ -193,7 +181,6 @@ void ove_hal_fb_present(int x, int y, int w, int h)
  * rootfs at 0x90000000. */
 int ove_hal_board_init(void)
 {
-	sdram_rpipe_fix();
 #if defined(CONFIG_OVE_FT5336)
 	touch_i2c_register();
 #endif

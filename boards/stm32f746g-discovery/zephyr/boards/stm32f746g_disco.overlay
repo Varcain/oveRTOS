@@ -8,6 +8,30 @@
 
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
 #include <dt-bindings/clock/stm32f7_sai_clock.h>
+#include <zephyr/dt-bindings/memory-controller/stm32-fmc-sdram.h>
+
+/*
+ * FMC read-pipe delay = 1. At the 108 MHz FMC clock RPIPE=0 leaves no read-capture margin: once the
+ * LTDC continuously burst-reads the framebuffer out of this SDRAM, CPU cache-line fills and other
+ * SDRAM reads go marginal. Every build that drives the panel needs it, native LVGL as well as the
+ * Linux personality; FreeRTOS applies the same in bsp_sdram_fixup() and NuttX in board patch 0016.
+ * Here it is the st,sdram-control RPIPE field (index 7), which the memc driver programs into
+ * SDCR1[14:13] during init, before the LTDC starts fetching. The SDTR timing and refresh stay stock.
+ */
+&fmc {
+	sdram {
+		bank@0 {
+			st,sdram-control = <STM32_FMC_SDRAM_NC_8
+					    STM32_FMC_SDRAM_NR_12
+					    STM32_FMC_SDRAM_MWID_16
+					    STM32_FMC_SDRAM_NB_4
+					    STM32_FMC_SDRAM_CAS_2
+					    STM32_FMC_SDRAM_SDCLK_PERIOD_2
+					    STM32_FMC_SDRAM_RBURST_ENABLE
+					    STM32_FMC_SDRAM_RPIPE_1>;
+		};
+	};
+};
 
 /* ove_watchdog drives the IWDG through the watchdog0 alias. */
 / {

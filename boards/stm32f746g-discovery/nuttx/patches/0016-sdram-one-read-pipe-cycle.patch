@@ -1,0 +1,21 @@
+From: oveRTOS <noreply@invalid>
+Subject: [PATCH] stm32f746g-disco: one SDRAM read-pipe cycle
+
+At the 108 MHz FMC clock, RPIPE=0 leaves no read-capture margin: once
+the LTDC burst-reads the framebuffer out of the same SDRAM, CPU reads
+from it take bit-flips. Program one read-pipe delay cycle at SDRAM init,
+as the FreeRTOS and Zephyr builds of this board do.
+
+diff --git a/boards/arm/stm32f7/stm32f746g-disco/src/stm32_extmem.c b/boards/arm/stm32f7/stm32f746g-disco/src/stm32_extmem.c
+index d9b9fbb..daf5326 100644
+--- a/boards/arm/stm32f7/stm32f746g-disco/src/stm32_extmem.c
++++ b/boards/arm/stm32f7/stm32f746g-disco/src/stm32_extmem.c
+@@ -195,7 +195,7 @@ void stm32_enablefmc(void)
+    *   All timings from the datasheet for Speedgrade -6A (=6ns)
+    */
+ 
+-  putreg32(FMC_SDCR_RPIPE_0 |
++  putreg32(FMC_SDCR_RPIPE_1 |
+            FMC_SDCR_BURST_READ |
+            FMC_SDCR_SDCLK_2X |
+            FMC_SDCR_CASLAT_3 |

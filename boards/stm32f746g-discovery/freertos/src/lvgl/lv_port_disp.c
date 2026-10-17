@@ -8,6 +8,7 @@
 
 #include "lvgl.h"
 #include "stm32746g_discovery_lcd.h"
+#include "bsp.h" /* bsp_sdram_fixup */
 #include "board_desc.h"
 #include <string.h>
 
@@ -56,8 +57,10 @@ static void disp_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t 
 
 void lv_port_disp_hw_init(void)
 {
-	/* Initialize LCD hardware (SDRAM, LTDC, GPIO, PLLSAI clock) */
+	/* Initialize LCD hardware (SDRAM, LTDC, GPIO, PLLSAI clock). Its SDRAM re-init resets the
+	 * FMC read-pipe delay the LTDC's framebuffer reads need; restore it. */
 	BSP_LCD_Init();
+	bsp_sdram_fixup();
 	BSP_LCD_LayerRgb565Init(0, LCD_FB_START_ADDRESS);
 	BSP_LCD_SelectLayer(0);
 	BSP_LCD_SetLayerVisible(0, ENABLE);
