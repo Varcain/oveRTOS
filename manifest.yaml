@@ -55,7 +55,7 @@ rtos:
     stm32cubef7:
       version: "v1.17.2"
       url: "https://github.com/STMicroelectronics/STM32CubeF7.git"
-    kernel-qemu:
+    kernel:
       version: "V11.2.0"
       url: "https://github.com/FreeRTOS/FreeRTOS-Kernel.git"
   zephyr:

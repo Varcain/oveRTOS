@@ -14,6 +14,8 @@
 #define __FPU_USED 1
 
 /* Scheduler — tuned for QEMU emulation (slower tick, wider tolerances) */
+/* Per-task errno through picolibc's TLS (FreeRTOS.h pulls in picolibc-freertos.h). */
+#define configUSE_PICOLIBC_TLS 1
 #define configUSE_PREEMPTION 1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_IDLE_HOOK 0

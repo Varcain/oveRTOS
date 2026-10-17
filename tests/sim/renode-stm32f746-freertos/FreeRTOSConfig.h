@@ -18,6 +18,8 @@
  * because CMSIS uses `1U` and we'd use `1`. */
 
 /* Scheduler — nominal STM32F746 clock (216 MHz). */
+/* Per-task errno through picolibc's TLS (FreeRTOS.h pulls in picolibc-freertos.h). */
+#define configUSE_PICOLIBC_TLS 1
 #define configUSE_PREEMPTION 1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_IDLE_HOOK 0

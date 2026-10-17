@@ -213,25 +213,22 @@ def download_picolibc(config, dl_dir, ws_dl_dir=None, manifest=None):
 
 def download_freertos(config, dl_dir, build_dir, ws_dl_dir=None,
                       manifest=None):
-    """Download FreeRTOS (STM32CubeF7 or standalone kernel), picolibc, LVGL."""
+    """Download the FreeRTOS kernel, STM32CubeF7 (STM32 HAL/BSP), picolibc, LVGL."""
     ok = download_picolibc(config, dl_dir, ws_dl_dir, manifest=manifest)
     is_qemu = get_bool(config, "CONFIG_OVE_BOARD_QEMU_MPS2_AN500")
-    uses_standalone_kernel = is_qemu or get_bool(config, "CONFIG_OVE_LINUX")
 
-    # The Linux personality uses the current standalone ARM_CM4_MPU port on
-    # both QEMU and STM32.  STM32 still needs STM32CubeF7 below for its HAL
-    # and BSP, so these downloads are intentionally independent.
-    if uses_standalone_kernel:
-        freertos_tag = get_component(
-            manifest, "rtos", "freertos", "kernel-qemu", "version")
-        freertos_url = get_component(
-            manifest, "rtos", "freertos", "kernel-qemu", "url")
-        dest, link, global_link = hashed_dir(dl_dir, "FreeRTOS-Kernel",
-                                freertos_tag, ws_dl_dir)
-        ok = git_clone(freertos_url,
-            freertos_tag, dest, "FreeRTOS-Kernel") and ok
-        if os.path.isdir(dest):
-            update_symlink(link, dest)
+    # Every board builds the standalone kernel; STM32 takes only its HAL and
+    # BSP from STM32CubeF7 below.
+    freertos_tag = get_component(
+        manifest, "rtos", "freertos", "kernel", "version")
+    freertos_url = get_component(
+        manifest, "rtos", "freertos", "kernel", "url")
+    dest, link, global_link = hashed_dir(dl_dir, "FreeRTOS-Kernel",
+                            freertos_tag, ws_dl_dir)
+    ok = git_clone(freertos_url,
+        freertos_tag, dest, "FreeRTOS-Kernel") and ok
+    if os.path.isdir(dest):
+        update_symlink(link, dest)
 
     if not is_qemu:
         url = get_component(

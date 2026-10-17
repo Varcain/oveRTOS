@@ -21,6 +21,8 @@
 /* Scheduler — nominal STM32F746 clock.  Renode approximates real time
  * at ~1 simulated second per wall-clock second under default settings, so
  * tick math works out without extra fudge factors. */
+/* Per-task errno through picolibc's TLS (FreeRTOS.h pulls in picolibc-freertos.h). */
+#define configUSE_PICOLIBC_TLS 1
 #define configUSE_PREEMPTION 1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_IDLE_HOOK 0
