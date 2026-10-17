@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include <errno.h>
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -513,6 +514,51 @@ static void test_thread_list_priority(void **state)
 	assert_int_equal(after_set, moved);
 }
 
+/* errno belongs to each thread: values set on either side of a context
+ * switch must not leak into the other thread. */
+static atomic_int g_errno_main_set;
+static atomic_int g_errno_seen;
+
+static void entry_errno(void *arg)
+{
+	(void)arg;
+	errno = 1111;
+	atomic_store(&g_flag, 1);
+	while (!atomic_load(&g_errno_main_set))
+		test_msleep(1);
+	atomic_store(&g_errno_seen, errno);
+	atomic_store(&g_flag, 2);
+}
+
+static void test_errno_per_thread(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_errno_main_set, 0);
+	atomic_store(&g_errno_seen, 0);
+	errno = 0;
+	ove_thread_t h = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "terrno", entry_errno, NULL,
+					   OVE_PRIO_NORMAL, 4096, s_th_stack));
+#else
+	OVE_TEST_ASSERT_OK(
+		ove_thread_create(&h, "terrno", entry_errno, NULL, OVE_PRIO_NORMAL, 4096));
+#endif
+	int started = wait_for_atomic(&g_flag, 1, 1000);
+	int main_errno_after_start = errno;
+	errno = 2222;
+	atomic_store(&g_errno_main_set, 1);
+	int finished = wait_for_atomic(&g_flag, 2, 1000);
+	int main_errno = errno;
+	ove_test_thread_destroy(h);
+	assert_true(started);
+	assert_true(finished);
+	assert_int_equal(main_errno_after_start, 0);
+	assert_int_equal(main_errno, 2222);
+	assert_int_equal(atomic_load(&g_errno_seen), 1111);
+}
+
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -541,6 +587,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_create_priority_out_of_range),
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_priority, teardown_stop_spin),
+		cmocka_unit_test(test_errno_per_thread),
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),
 #endif

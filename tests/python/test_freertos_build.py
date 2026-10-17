@@ -59,12 +59,10 @@ class FreeRTOSBuildSourceTest(unittest.TestCase):
         build_freertos(self.ws)
         return self.run.call_args_list[0].args[0]
 
-    def test_cube_kernel_fallback_clears_stale_cache_value(self):
-        args = self._configure_args()
-
-        self.assertIn("-UFREERTOS_PATH", args)
-        self.assertFalse(any(arg.startswith("-DFREERTOS_PATH=")
-                             for arg in args))
+    def test_missing_kernel_download_fails(self):
+        with self.assertRaises(SystemExit):
+            self._configure_args()
+        self.run.assert_not_called()
 
     def test_standalone_kernel_uses_prepared_worktree(self):
         os.makedirs(os.path.join(self.ws.ws_dl_dir, "FreeRTOS-Kernel"))
@@ -74,7 +72,6 @@ class FreeRTOSBuildSourceTest(unittest.TestCase):
             args = self._configure_args()
 
         self.assertIn("-DFREERTOS_PATH=" + prepared, args)
-        self.assertNotIn("-UFREERTOS_PATH", args)
 
 
 if __name__ == "__main__":

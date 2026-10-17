@@ -13,15 +13,10 @@
 # ─── ove_add_freertos_kernel(port_path) ──────────────────────────────
 # Add FreeRTOS kernel source files and include directories.
 macro(ove_add_freertos_kernel _port_path)
-    # Auto-detect FreeRTOS location if not explicitly set
+    # The standalone kernel; ove build passes its patched worktree
     if(NOT DEFINED FREERTOS_PATH)
         if(EXISTS "${OVE_DL_DIR}/FreeRTOS-Kernel/include")
-            # Standalone FreeRTOS-Kernel (QEMU boards)
             set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
-        elseif(EXISTS "${OVE_DL_DIR}/STM32CubeF7/Middlewares/Third_Party/FreeRTOS/Source/include")
-            # STM32CubeF7 bundled FreeRTOS
-            set(FREERTOS_PATH
-                "${OVE_DL_DIR}/STM32CubeF7/Middlewares/Third_Party/FreeRTOS/Source")
         else()
             message(FATAL_ERROR
                 "FreeRTOS kernel not found in ${OVE_DL_DIR}. "

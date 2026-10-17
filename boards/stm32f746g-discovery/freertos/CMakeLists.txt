@@ -140,13 +140,13 @@ ove_add_fatfs(
 ove_add_cmsis_dsp()
 
 # ── FreeRTOS kernel ────────────────────────────────────────────────
-# OVE_LINUX wants the V11 standalone ARM_CM4_MPU port (PMSAv7, runs on the M7) for
-# unprivileged Linux-personality isolation; the STM32Cube V10 MPU port is ABI-incompatible
-# with configUSE_PICOLIBC_TLS. Non-Linux keeps the fast STM32Cube V10 ARM_CM7 port.
+# The standalone kernel (manifest.yaml), not the copy bundled with STM32Cube. OVE_LINUX
+# uses its ARM_CM4_MPU port (PMSAv7, runs on the M7) for unprivileged Linux-personality
+# isolation; everything else the ARM_CM7 r0p1 port.
+if(NOT DEFINED FREERTOS_PATH)
+    set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
+endif()
 if(OVE_LINUX)
-    if(NOT DEFINED FREERTOS_PATH)
-        set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
-    endif()
     if(NOT OVE_ZERO_HEAP)
         # xTaskCreate() stacks use an independent heap in internal DTCM; the general heap remains
         # in external SDRAM for the personality's much larger non-stack allocations.

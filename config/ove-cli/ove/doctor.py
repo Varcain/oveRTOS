@@ -225,7 +225,7 @@ def _checks():
     # ── Manifest components (source tarballs / clones under dl/) ─────
     manifest = load_manifest(ove_dir)
     if manifest:
-        if get_component(manifest, "rtos", "freertos", "kernel-qemu"):
+        if get_component(manifest, "rtos", "freertos", "kernel"):
             out.append(_check_manifest_component(
                 ove_dir, "FreeRTOS-Kernel", "FreeRTOS-Kernel-*"))
         if get_component(manifest, "rtos", "freertos", "stm32cubef7"):
