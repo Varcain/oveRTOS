@@ -23,6 +23,7 @@
 #include "lxp_ove_port_common.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
+#include "ove/lxp_host.h"
 #include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
 #include "ove_lxp_memory_contract.h"
@@ -35,6 +36,9 @@
 
 BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE,
 	     "system workqueue priority must match the Zephyr priority contract");
+BUILD_ASSERT(OVE_ZEPHYR_PRIO_LXP_COORDINATOR ==
+		     OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_LXP_COORDINATOR),
+	     "the Zephyr coordinator slot must be OVE_PRIO_LXP_COORDINATOR");
 BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_NORMAL,
 	     "main thread priority must match the Zephyr priority contract");
 BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
