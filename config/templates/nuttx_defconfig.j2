@@ -26,7 +26,7 @@ CONFIG_RR_INTERVAL={{ config.get("CONFIG_OVE_LINUX_GUEST_QUANTUM_MS", 10) }}
 # uniform lxp_frame and restores when the parked task resumes. The board CMakeLists also compiles the
 # firmware -mfloat-abi=hard -mfpu=fpv5-sp-d16 when CONFIG_ARCH_FPU is set.
 CONFIG_ARCH_FPU=y
-# CONFIG_ARMV7M_LAZYFPU is not set
+# CONFIG_ARCH_LAZYFPU is not set
 {% endif %}
 
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
@@ -57,20 +57,19 @@ CONFIG_MM_REGIONS=1
 # CONFIG_DEBUG_MM is not set
 # CONFIG_MM_BACKTRACE is not set
 # CONFIG_MM_DUMP_ON_FAILURE is not set
-CONFIG_OVE_NUTTX_HEAP_LOCK=y
 
-# Pre-allocated kernel resource pools — pinned via Kconfig so no run-
-# time growth.  Override per-app by setting CONFIG_OVE_NUTTX_* in
-# defconfig fragments.
-CONFIG_MAX_TASKS={{ config.get("CONFIG_OVE_NUTTX_MAX_TASKS", 16) }}
+# Pre-allocated kernel resource pools, sized by the CONFIG_OVE_NUTTX_*
+# knobs.  The PID table starts at PID_INITIAL_COUNT and can still grow.
+CONFIG_PID_INITIAL_COUNT={{ config.get("CONFIG_OVE_NUTTX_MAX_TASKS", 16) }}
 CONFIG_NFILE_DESCRIPTORS_PER_BLOCK={{ config.get("CONFIG_OVE_NUTTX_FD_BLOCK", 8) }}
 CONFIG_PREALLOC_TIMERS={{ config.get("CONFIG_OVE_NUTTX_PREALLOC_TIMERS", 8) }}
 CONFIG_PREALLOC_MQ_MSGS={{ config.get("CONFIG_OVE_NUTTX_PREALLOC_MQ_MSGS", 16) }}
 {% if config.get("CONFIG_OVE_NET") == True %}
-CONFIG_NET_TCP_CONNS={{ config.get("CONFIG_OVE_NUTTX_TCP_CONNS", 8) }}
-CONFIG_NET_UDP_CONNS={{ config.get("CONFIG_OVE_NUTTX_UDP_CONNS", 8) }}
+CONFIG_NET_TCP_PREALLOC_CONNS={{ config.get("CONFIG_OVE_NUTTX_TCP_CONNS", 8) }}
+CONFIG_NET_TCP_ALLOC_CONNS=0
+CONFIG_NET_UDP_PREALLOC_CONNS={{ config.get("CONFIG_OVE_NUTTX_UDP_CONNS", 8) }}
+CONFIG_NET_UDP_ALLOC_CONNS=0
 CONFIG_IOB_NBUFFERS={{ config.get("CONFIG_OVE_NUTTX_IOB_NBUFFERS", 24) }}
-CONFIG_IOB_BUFSIZE={{ config.get("CONFIG_OVE_NUTTX_IOB_BUFSIZE", 196) }}
 {% endif %}
 {% endif %}
 
@@ -138,10 +137,6 @@ CONFIG_SIG_EVTHREAD_HPWORK=y
 CONFIG_HAVE_CXX=y
 CONFIG_HAVE_CXXINITIALIZE=y
 CONFIG_LIBCXXTOOLCHAIN=y
-# Enable float/double support so NuttX's <cmath> declares std::acos etc.,
-# matching what GCC's C++ math.h wrapper expects.
-CONFIG_HAVE_FLOAT=y
-CONFIG_HAVE_DOUBLE=y
 {% endif %}
 
 {% set console = board.get("serial", {}).get("console", {}) %}
@@ -206,9 +201,8 @@ CONFIG_NET_ICMP_SOCKET=y
 CONFIG_NET_ARP=y
 CONFIG_NET_LOOPBACK=y
 CONFIG_NET_STATISTICS=y
-CONFIG_NSOCKET_DESCRIPTORS=16
-CONFIG_NET_NACTIVESOCKETS=16
 CONFIG_NET_ETH_PKTSIZE=1518
+CONFIG_IOB_BUFSIZE={{ config.get("CONFIG_OVE_NUTTX_IOB_BUFSIZE", 196) }}
 CONFIG_NETDB_DNSCLIENT=y
 CONFIG_NETDB_DNSCLIENT_NAMESIZE=64
 CONFIG_NETDB_DNSSERVER_IPv4=y
@@ -233,11 +227,11 @@ CONFIG_NETDEV_LPWORK_THREAD=y
 # NuttX no longer builds LVGL itself (CONFIG_GRAPHICS_LVGL removed).
 {% endif %}
 
-{% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True %}
-# ── Hard-float SRAM reclaim ──
+{% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True and config.get("CONFIG_OVE_ZERO_HEAP") != True %}
+# ── Hard-float SRAM reclaim (STM32F746) ──
 # CONFIG_ARCH_FPU adds the per-task FPU register context (s0-s31 + FPSCR) across the run-loop's
 # parked-context + signal-save arrays, which pushes .bss past the already-tight SRAM1. Reclaim it
-# by halving the network IOB packet-buffer pool (~7.5 KB -> ~3.7 KB). Networking keeps working with
-# a smaller pool. Placed last so it overrides the CONFIG_OVE_NET default earlier in this file.
+# from the network IOB pool: 12 instead of NuttX's 36 frame-sized (1534-byte) buffers, ~18 KB
+# instead of ~54 KB. Zero-heap builds size the pool with CONFIG_OVE_NUTTX_IOB_NBUFFERS instead.
 CONFIG_IOB_NBUFFERS=12
 {% endif %}
