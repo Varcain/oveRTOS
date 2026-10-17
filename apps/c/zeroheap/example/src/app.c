@@ -19,12 +19,12 @@
  *
  * LVGL specifics in zero-heap mode:
  *   - LVGL has no static-allocation API for widgets; lv_*_create()
- *     always allocates the widget struct.  We pin LVGL's TLSF pool to
- *     LV_MEM_SIZE bytes in BSS (CONFIG_LV_MEM_SIZE_KILOBYTES) and
- *     disable expansion (CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=0)
- *     so allocations never touch the system malloc.  This pool lives
- *     in its own BSS region — separate from the RTOS heap that
- *     ove_heap_lock() guards.
+ *     always allocates the widget struct.  LVGL allocates from a fixed
+ *     BSS pool that never expands (its built-in TLSF pool of the
+ *     board's LV_MEM_SIZE; on Zephyr, a sys_heap of
+ *     CONFIG_ZEPHYR_LV_MEM_POOL_SIZE), so allocations never touch the
+ *     system malloc.  This pool lives in its own BSS region — separate
+ *     from the RTOS heap that ove_heap_lock() guards.
  *   - All widget creation happens once in create_ui(), before
  *     ove_run() engages the heap lock.  The UI never grows or shrinks
  *     after that point.

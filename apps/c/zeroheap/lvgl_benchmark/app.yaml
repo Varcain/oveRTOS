@@ -11,9 +11,6 @@ includes:
   - include
 defconfig:
   - CONFIG_OVE_ZERO_HEAP=y
-  # Pin LVGL TLSF pool to fixed BSS size; no spillover to system malloc.
-  - CONFIG_LV_MEM_SIZE_KILOBYTES=64
-  - CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=0
   - CONFIG_OVE_BSP=y
   - CONFIG_OVE_LVGL=y
   - CONFIG_OVE_TIMER=y

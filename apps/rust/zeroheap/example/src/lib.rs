@@ -22,9 +22,10 @@
 //!   - No `_create()` symbols are linked in this build.  No `Box`, no
 //!     `alloc`, no operator new of any kind.
 //!
-//! LVGL specifics: the TLSF pool is pinned to LV_MEM_SIZE bytes in BSS
-//! (CONFIG_LV_MEM_SIZE_KILOBYTES) with expansion disabled, so no
-//! allocation ever falls back to the system malloc.  All widget creation
+//! LVGL specifics: LVGL allocates from a fixed BSS pool that never
+//! expands (its built-in TLSF pool of the board's LV_MEM_SIZE; on Zephyr,
+//! a sys_heap of CONFIG_ZEPHYR_LV_MEM_POOL_SIZE), so no allocation ever
+//! falls back to the system malloc.  All widget creation
 //! happens once in `create_ui()` before `ove::run()`; label text uses
 //! `set_text_static` with caller-owned buffers so updates don't realloc.
 
