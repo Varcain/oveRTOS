@@ -153,6 +153,7 @@ The `ove` CLI composes the final `.config` by layering these fragments in order:
 4. **Board+RTOS overrides** from `board.yaml` `rtos_defconfig.<rtos>` — per-RTOS board tuning
 5. **App selection** + `app.yaml` defconfig entries — app language and required modules
 6. **App+RTOS overrides** from `app.yaml` `rtos_defconfig.<rtos>` — per-RTOS app tuning
+7. **App+RTOS+board overrides** from `app.yaml` `rtos_defconfig.<rtos>@<board>` (e.g. `freertos@stm32f746g-discovery`) — app values sized for one board's memory
 
 The layers go from generic to specific, and a later layer overrides a symbol an earlier one set; a symbol no layer sets keeps its Kconfig default.
 

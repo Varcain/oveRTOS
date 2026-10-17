@@ -94,11 +94,12 @@
     },
     "rtos_defconfig": {
       "type": "object",
+      "propertyNames": { "pattern": "^[a-z]+(@[a-z0-9-]+)?$" },
       "additionalProperties": {
         "type": "array",
         "items": { "type": "string" }
       },
-      "description": "Per-RTOS Kconfig overrides applied after app defconfig, keyed by RTOS name (freertos, zephyr, nuttx, posix)."
+      "description": "Per-RTOS Kconfig overrides applied after app defconfig, keyed by RTOS name (freertos, zephyr, nuttx, posix). A '<rtos>@<board name>' key (e.g. 'freertos@stm32f746g-discovery') applies only on that board, after the plain '<rtos>' lines."
     },
     "incompatible_boards": {
       "type": "array",

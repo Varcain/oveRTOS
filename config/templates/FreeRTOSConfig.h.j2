@@ -8,10 +8,14 @@
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
 
+#include "ove_config.h"
+
 /* Ensure stdint is only used by the compiler, and not the assembler. */
 #if defined(__ICCARM__) || defined(__CC_ARM) || defined(__GNUC__)
  #include <stdint.h>
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
  #include "stm32f7xx.h"
+{% endif %}
  extern uint32_t SystemCoreClock;
 #endif
 
@@ -30,9 +34,7 @@
  * stay in low-power states across multiple ticks instead of waking on
  * every SysTick.  configUSE_TICKLESS_IDLE=1 makes the FreeRTOS idle task
  * call portSUPPRESS_TICKS_AND_SLEEP, which suspends the tick interrupt
- * for the duration of the next scheduled wakeup.  freertos_pm.c also
- * uses vPortSuppressTicksAndSleep() in ove_hal_pm_enter_state() for the
- * same reason. */
+ * for the duration of the next scheduled wakeup. */
 #define configUSE_TICKLESS_IDLE			1
 #define configEXPECTED_IDLE_TIME_BEFORE_SLEEP	2
 {% endif %}
@@ -184,12 +186,11 @@ vPortSVCHandler, so vPortSVCHandler must keep its own name (else LXP's port
 {% endif %}
 
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
-/* QEMU doesn't emulate the DWT cycle counter — use a SysTick-based
- * millisecond counter instead.  Incremented from vApplicationTickHook()
- * which FreeRTOS calls on every tick (1 kHz). */
-extern volatile uint32_t ove_runtime_counter_ms;
-#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() (ove_runtime_counter_ms = 0)
-#define portGET_RUN_TIME_COUNTER_VALUE() ove_runtime_counter_ms
+/* QEMU doesn't emulate the DWT cycle counter, so task runtime is counted in
+ * ticks.  The tick count also advances across tickless idle. */
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()
+#define portGET_RUN_TIME_COUNTER_VALUE() xTaskGetTickCount()
+#define OVE_FREERTOS_RUNTIME_TO_US(count) ((uint64_t)(count) * 1000000u / configTICK_RATE_HZ)
 {% else %}
 /* Switch-time task accounting uses a 64-bit, wrap-stitched DWT cycle count.
  * Reading CYCCNT directly would wrap every ~19.9 seconds at 216 MHz and make
@@ -204,6 +205,7 @@ uint64_t ove_freertos_runtime_counter_get(void);
 #endif
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() ove_freertos_runtime_counter_init()
 #define portGET_RUN_TIME_COUNTER_VALUE() ove_freertos_runtime_counter_get()
+#define OVE_FREERTOS_RUNTIME_TO_US(count) ((uint64_t)(count) / (SystemCoreClock / 1000000u))
 {% endif %}
 
 /* Trace hooks wired to oveRTOS trace backend (backends/freertos/freertos_trace.c).

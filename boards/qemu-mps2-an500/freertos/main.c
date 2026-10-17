@@ -22,12 +22,15 @@
 #include "ove/ove.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "board_desc.h"
 
+#include <stdint.h>
 #include <stdio.h>
 
-_Static_assert(configCPU_CLOCK_HZ == OVE_CLOCK_SYSCLK_MHZ * 1000000ul,
-	       "board.yaml sysclk differs from configCPU_CLOCK_HZ");
+#if configSUPPORT_DYNAMIC_ALLOCATION
+/* The FreeRTOS heap (configAPPLICATION_ALLOCATED_HEAP), sized by
+ * CONFIG_FREERTOS_TOTAL_HEAP_SIZE. */
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8)));
+#endif
 
 extern void xPortSysTickHandler(void);
 extern int ove_sim_board_init(void);

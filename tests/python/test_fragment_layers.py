@@ -92,6 +92,18 @@ class LayerOrderTest(unittest.TestCase):
     def test_board_defconfig_overrides_the_rtos_fragment(self):
         self.assertEqual(self._foo(), "2")
 
+    def _app_rtos_lines(self, key, value):
+        with open(os.path.join(self.root, "apps/c/demo/app.yaml"), "a") as f:
+            f.write(f"rtos_defconfig:\n  {key}:\n    - CONFIG_OVE_FOO={value}\n")
+
+    def test_app_line_for_this_board_applies(self):
+        self._app_rtos_lines("freertos@demo-board", 3)
+        self.assertEqual(self._foo(), "3")
+
+    def test_app_line_for_another_board_is_ignored(self):
+        self._app_rtos_lines("freertos@other-board", 3)
+        self.assertEqual(self._foo(), "2")
+
     def test_unknown_symbol_in_an_app_line_fails(self):
         with open(os.path.join(self.root, "apps/c/demo/app.yaml"), "a") as f:
             f.write("defconfig:\n  - CONFIG_OVE_NO_SUCH=y\n")

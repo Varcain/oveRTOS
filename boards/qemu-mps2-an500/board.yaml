@@ -66,6 +66,9 @@ variants:
 rtos_defconfig:
   freertos:
     - CONFIG_OVE_RUST_TARGET="thumbv7em-none-eabihf"
+    # 4 MB of RAM leaves room for a large heap and minimal stack
+    - CONFIG_FREERTOS_TOTAL_HEAP_SIZE=262144
+    - CONFIG_FREERTOS_MINIMAL_STACK_SIZE=256
   nuttx:
     - CONFIG_OVE_RUST_TARGET="thumbv7em-none-eabihf"
   zephyr:
