@@ -11,55 +11,59 @@
 
 #include "ove/thread.h"
 
-/* Zephyr's non-negative priorities are preemptible; lower numbers win. Keep
- * odd levels between public oveRTOS bands for personality infrastructure:
+#include <zephyr/kernel.h>
+
+/* Zephyr's non-negative priorities are preemptible; lower numbers win. The ove
+ * scale maps one to one onto 32 of them (CONFIG_NUM_PREEMPT_PRIORITIES=32 in
+ * every build), highest ove priority first. The personality's infrastructure
+ * sits at fixed points of the same scale, in this order:
  *
- *   0 critical        scope response
- *   1 realtime
- *   2 high
- *   3 coordinator     privileged LXP run loop (assigned by the seam)
- *   4 above-normal    Ethernet RX
- *   5 network TC / guest-quantum server
- *   6 guest           unprivileged Linux programs
- *   7 system workqueue
- *   8..14 remaining public bands
+ *   ove  native
+ *   31    0   critical        scope response
+ *   24    7   realtime
+ *   20   11   high
+ *   18   13   coordinator     privileged LXP run loop (assigned by the seam)
+ *   16   15   above-normal    Ethernet RX
+ *   15   16   network TC / guest-quantum server
+ *   14   17   guest           unprivileged Linux programs
+ *   13   18   system workqueue
+ *   12   19   normal          ordinary oveRTOS threads and main
+ *    8,4,0    below-normal, low, idle
  *
  * The matching Kconfig values live in config/templates/prj.conf.j2. */
-#define OVE_ZEPHYR_PRIO_CRITICAL 0
-#define OVE_ZEPHYR_PRIO_REALTIME 1
-#define OVE_ZEPHYR_PRIO_HIGH 2
-#define OVE_ZEPHYR_PRIO_LXP_COORDINATOR 3
-#define OVE_ZEPHYR_PRIO_ABOVE_NORMAL 4
-#define OVE_ZEPHYR_PRIO_NET_TC 5
-#define OVE_ZEPHYR_PRIO_LXP_GUEST 6
-#define OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE 7
-#define OVE_ZEPHYR_PRIO_NORMAL 8
-#define OVE_ZEPHYR_PRIO_BELOW_NORMAL 10
-#define OVE_ZEPHYR_PRIO_LOW 12
-#define OVE_ZEPHYR_PRIO_IDLE 14
+#define OVE_ZEPHYR_NATIVE_PRIORITY(prio) ((int)OVE_PRIO_MAX - (int)(prio))
 
+BUILD_ASSERT(
+	CONFIG_NUM_PREEMPT_PRIORITIES > OVE_PRIO_MAX,
+	"Zephyr needs a preemptible priority for every ove priority (NUM_PREEMPT_PRIORITIES 32)");
+
+#define OVE_ZEPHYR_PRIO_CRITICAL OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_CRITICAL)
+#define OVE_ZEPHYR_PRIO_REALTIME OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_REALTIME)
+#define OVE_ZEPHYR_PRIO_HIGH OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_HIGH)
+#define OVE_ZEPHYR_PRIO_LXP_COORDINATOR OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_BELOW(OVE_PRIO_HIGH, 2))
+#define OVE_ZEPHYR_PRIO_ABOVE_NORMAL OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_ABOVE_NORMAL)
+#define OVE_ZEPHYR_PRIO_NET_TC OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_BELOW(OVE_PRIO_ABOVE_NORMAL, 1))
+#define OVE_ZEPHYR_PRIO_LXP_GUEST \
+	OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_BELOW(OVE_PRIO_ABOVE_NORMAL, 2))
+#define OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE \
+	OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_BELOW(OVE_PRIO_ABOVE_NORMAL, 3))
+#define OVE_ZEPHYR_PRIO_NORMAL OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_NORMAL)
+#define OVE_ZEPHYR_PRIO_BELOW_NORMAL OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_BELOW_NORMAL)
+#define OVE_ZEPHYR_PRIO_LOW OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_LOW)
+#define OVE_ZEPHYR_PRIO_IDLE OVE_ZEPHYR_NATIVE_PRIORITY(OVE_PRIO_IDLE)
+
+BUILD_ASSERT(OVE_ZEPHYR_PRIO_HIGH < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
+		     OVE_ZEPHYR_PRIO_LXP_COORDINATOR < OVE_ZEPHYR_PRIO_ABOVE_NORMAL &&
+		     OVE_ZEPHYR_PRIO_ABOVE_NORMAL < OVE_ZEPHYR_PRIO_NET_TC &&
+		     OVE_ZEPHYR_PRIO_NET_TC < OVE_ZEPHYR_PRIO_LXP_GUEST &&
+		     OVE_ZEPHYR_PRIO_LXP_GUEST < OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE &&
+		     OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE < OVE_ZEPHYR_PRIO_NORMAL,
+	     "personality infrastructure must stay between the high and normal bands");
+
+/* Callers reject a priority above OVE_PRIO_MAX before mapping it. */
 static inline int ove_zephyr_map_priority(ove_prio_t prio)
 {
-	switch (prio) {
-	case OVE_PRIO_IDLE:
-		return OVE_ZEPHYR_PRIO_IDLE;
-	case OVE_PRIO_LOW:
-		return OVE_ZEPHYR_PRIO_LOW;
-	case OVE_PRIO_BELOW_NORMAL:
-		return OVE_ZEPHYR_PRIO_BELOW_NORMAL;
-	case OVE_PRIO_NORMAL:
-		return OVE_ZEPHYR_PRIO_NORMAL;
-	case OVE_PRIO_ABOVE_NORMAL:
-		return OVE_ZEPHYR_PRIO_ABOVE_NORMAL;
-	case OVE_PRIO_HIGH:
-		return OVE_ZEPHYR_PRIO_HIGH;
-	case OVE_PRIO_REALTIME:
-		return OVE_ZEPHYR_PRIO_REALTIME;
-	case OVE_PRIO_CRITICAL:
-		return OVE_ZEPHYR_PRIO_CRITICAL;
-	default:
-		return OVE_ZEPHYR_PRIO_NORMAL;
-	}
+	return OVE_ZEPHYR_NATIVE_PRIORITY(prio);
 }
 
 #endif /* OVE_ZEPHYR_PRIORITY_H */

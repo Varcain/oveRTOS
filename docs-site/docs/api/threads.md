@@ -39,15 +39,17 @@ stateDiagram-v2
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `OVE_PRIO_IDLE` | 0 | Lowest priority; runs only when no other thread is ready. Suitable for background statistics collection. |
-| `OVE_PRIO_LOW` | 1 | Low-priority background work (logging, cleanup). |
-| `OVE_PRIO_BELOW_NORMAL` | 2 | Below-default priority; useful for deferring non-urgent work. |
-| `OVE_PRIO_NORMAL` | 3 | Default application priority. Most application threads should use this level. |
-| `OVE_PRIO_ABOVE_NORMAL` | 4 | Slightly elevated; useful for UI or moderate-latency tasks. |
-| `OVE_PRIO_HIGH` | 5 | High priority; prefer for time-sensitive processing threads. |
-| `OVE_PRIO_REALTIME` | 6 | Real-time priority; use with care — starvation of lower-priority threads is possible. |
-| `OVE_PRIO_CRITICAL` | 7 | Highest priority; reserved for critical system tasks (watchdog feeds, safety monitors). |
+| `OVE_PRIO_LOW` | 4 | Low-priority background work (logging, cleanup). |
+| `OVE_PRIO_BELOW_NORMAL` | 8 | Below-default priority; useful for deferring non-urgent work. |
+| `OVE_PRIO_NORMAL` | 12 | Default application priority. Most application threads should use this level. |
+| `OVE_PRIO_ABOVE_NORMAL` | 16 | Slightly elevated; useful for UI or moderate-latency tasks. |
+| `OVE_PRIO_HIGH` | 20 | High priority; prefer for time-sensitive processing threads. |
+| `OVE_PRIO_REALTIME` | 24 | Real-time priority; use with care — starvation of lower-priority threads is possible. |
+| `OVE_PRIO_CRITICAL` | 31 | Highest priority; reserved for critical system tasks (watchdog feeds, safety monitors). |
 
-Each value maps to a backend-specific numeric priority at initialisation time. Higher values mean higher scheduling priority on all backends.
+Priorities form a scale from 0 to `OVE_PRIO_MAX` (31); the constants above are named anchors on it, and every value in between is a valid priority as well. `OVE_PRIO_ABOVE(p, n)` and `OVE_PRIO_BELOW(p, n)` step `n` levels from a priority, clamped to the scale, for example `OVE_PRIO_ABOVE(OVE_PRIO_NORMAL, 1)` for a thread that must preempt `OVE_PRIO_NORMAL` work but stay below `OVE_PRIO_ABOVE_NORMAL`. Thread and workqueue creation reject a priority above `OVE_PRIO_MAX` with `OVE_ERR_INVALID_PARAM`; `ove_thread_set_priority()` ignores one.
+
+Each backend maps the 32 values to 32 distinct native priorities, so the order between any two values holds on every RTOS. Higher values mean higher scheduling priority on all backends.
 
 ## Thread Lifecycle
 

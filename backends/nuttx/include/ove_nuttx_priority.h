@@ -13,10 +13,13 @@
 
 #include <nuttx/config.h>
 
-/* NuttX SCHED_FIFO uses larger numbers for higher priorities. Keep the
- * portable critical band above NuttX's high-priority kernel work queue
- * (normally 224): HPWORK is a device-driver bottom half and must not preempt
- * an OVE_PRIO_CRITICAL host task. */
+/* NuttX SCHED_FIFO uses larger numbers for higher priorities. The named ove
+ * priorities keep fixed native anchors; the priorities between two anchors
+ * spread evenly across the native levels between them, so all 32 stay
+ * distinct (the narrowest gap, IDLE..LOW, spaces them two or three apart).
+ * Keep the portable critical band above NuttX's high-priority kernel work
+ * queue (normally 224): HPWORK is a device-driver bottom half and must not
+ * preempt an OVE_PRIO_CRITICAL host task. */
 #define OVE_NUTTX_PRIO_IDLE 50
 #define OVE_NUTTX_PRIO_LOW 60
 #define OVE_NUTTX_PRIO_BELOW_NORMAL 80
@@ -33,26 +36,24 @@ _Static_assert(OVE_NUTTX_PRIO_CRITICAL > CONFIG_SCHED_HPWORKPRIORITY,
 
 static inline int ove_nuttx_map_priority(ove_prio_t prio)
 {
-	switch (prio) {
-	case OVE_PRIO_IDLE:
-		return OVE_NUTTX_PRIO_IDLE;
-	case OVE_PRIO_LOW:
-		return OVE_NUTTX_PRIO_LOW;
-	case OVE_PRIO_BELOW_NORMAL:
-		return OVE_NUTTX_PRIO_BELOW_NORMAL;
-	case OVE_PRIO_NORMAL:
+	static const unsigned char ove_at[] = {
+		OVE_PRIO_IDLE,	       OVE_PRIO_LOW,  OVE_PRIO_BELOW_NORMAL, OVE_PRIO_NORMAL,
+		OVE_PRIO_ABOVE_NORMAL, OVE_PRIO_HIGH, OVE_PRIO_REALTIME,     OVE_PRIO_CRITICAL,
+	};
+	static const unsigned char native_at[] = {
+		OVE_NUTTX_PRIO_IDLE,	 OVE_NUTTX_PRIO_LOW,	      OVE_NUTTX_PRIO_BELOW_NORMAL,
+		OVE_NUTTX_PRIO_NORMAL,	 OVE_NUTTX_PRIO_ABOVE_NORMAL, OVE_NUTTX_PRIO_HIGH,
+		OVE_NUTTX_PRIO_REALTIME, OVE_NUTTX_PRIO_CRITICAL,
+	};
+	unsigned p = (unsigned)prio;
+
+	if (p > OVE_PRIO_MAX)
 		return OVE_NUTTX_PRIO_NORMAL;
-	case OVE_PRIO_ABOVE_NORMAL:
-		return OVE_NUTTX_PRIO_ABOVE_NORMAL;
-	case OVE_PRIO_HIGH:
-		return OVE_NUTTX_PRIO_HIGH;
-	case OVE_PRIO_REALTIME:
-		return OVE_NUTTX_PRIO_REALTIME;
-	case OVE_PRIO_CRITICAL:
-		return OVE_NUTTX_PRIO_CRITICAL;
-	default:
-		return OVE_NUTTX_PRIO_NORMAL;
-	}
+	unsigned i = 1;
+	while (p > ove_at[i])
+		i++;
+	return native_at[i - 1] + (int)((native_at[i] - native_at[i - 1]) * (p - ove_at[i - 1]) /
+					(ove_at[i] - ove_at[i - 1]));
 }
 
 #endif /* OVE_NUTTX_PRIORITY_H */

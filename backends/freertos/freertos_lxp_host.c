@@ -21,6 +21,7 @@
 #include "ove/build.h"
 #include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
+#include "ove_freertos_priority.h"
 #include "ove_freertos_tick.h"
 #include "ove_lxp_memory_contract.h"
 #include "ove_config.h"
@@ -258,6 +259,9 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 #else
 	.coordinator_rootfs_region = UINT8_MAX,
 #endif
+	/* Guests where an OVE_PRIO_LOW thread runs, their scheduler at OVE_PRIO_BELOW_NORMAL. */
+	.guest_priority = OVE_FREERTOS_NATIVE_PRIORITY(OVE_PRIO_LOW),
+	.scheduler_priority = OVE_FREERTOS_NATIVE_PRIORITY(OVE_PRIO_BELOW_NORMAL),
 	.guest_quantum_ms = CONFIG_OVE_LINUX_GUEST_QUANTUM_MS,
 	.tick_subscribe = ove_freertos_tick_subscribe,
 	.tick_unsubscribe = ove_freertos_tick_unsubscribe,

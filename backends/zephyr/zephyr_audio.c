@@ -9,6 +9,7 @@
 #include "ove/types.h"
 #include "ove/audio_device.h"
 #include "ove_backend_common.h"
+#include "ove_zephyr_priority.h"
 #include <zephyr/kernel.h>
 #include <zephyr/linker/section_tags.h>
 #include <zephyr/drivers/i2s.h>
@@ -47,7 +48,7 @@ BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(audio_codec)) == OVE_AUDIO_CODEC_I2C_ADDR,
 #define SLAB_BLOCK_SIZE ((BLOCK_SIZE + 31) & ~31)
 #define DEFAULT_INITIAL_BLOCKS 4
 #define DEFAULT_BLOCK_COUNT (DEFAULT_INITIAL_BLOCKS + 4)
-#define DEFAULT_AUDIO_PRIORITY 2
+#define DEFAULT_AUDIO_PRIORITY OVE_ZEPHYR_PRIO_HIGH
 #define DEFAULT_AUDIO_STACK 4096
 #define I2S_TIMEOUT 1000
 

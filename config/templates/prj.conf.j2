@@ -16,6 +16,9 @@ CONFIG_PICOLIBC_USE_TOOLCHAIN=y
 CONFIG_PICOLIBC_USE_MODULE=y
 {% endif %}
 
+# One preemptible priority per ove priority (backends/zephyr/include/ove_zephyr_priority.h).
+CONFIG_NUM_PREEMPT_PRIORITIES=32
+
 {% if get_bool("CONFIG_OVE_AUDIO") and config.get("CONFIG_ZEPHYR_I2S", True) %}
 # Audio: the I2S/SAI streams (DMA-driven) and the codec on its I2C bus
 CONFIG_I2S=y
@@ -294,20 +297,21 @@ CONFIG_THREAD_CUSTOM_DATA=y
 CONFIG_EXCEPTION_DUMP_HOOK=y
 CONFIG_EXCEPTION_DUMP_HOOK_ONLY=y
 # Scheduling contract. All values are PREEMPTIBLE priorities (non-negative):
-# scope critical=0, coordinator=3, Ethernet RX=4, network TC=5, Linux guest=6,
-# system workqueue=7, ordinary oveRTOS/main=8. The LXP seam promotes its caller
+# scope critical=0, coordinator=13, Ethernet RX=15, network TC=16, Linux guest=17,
+# system workqueue=18, ordinary oveRTOS/main=19. The LXP seam promotes its caller
 # to coordinator priority during host preparation; the application does not
-# encode that private contract. Keep in sync with ove_zephyr_priority.h.
-CONFIG_MAIN_THREAD_PRIORITY=8
-CONFIG_SYSTEM_WORKQUEUE_PRIORITY=7
+# encode that private contract. Keep in sync with ove_zephyr_priority.h, which
+# checks each value at build time.
+CONFIG_MAIN_THREAD_PRIORITY=19
+CONFIG_SYSTEM_WORKQUEUE_PRIORITY=18
 {% if config.get("CONFIG_OVE_NET") == True %}
 CONFIG_NET_TC_THREAD_PREEMPTIVE=y
 CONFIG_NET_TC_THREAD_PRIO_CUSTOM=y
-CONFIG_NET_TC_TX_THREAD_BASE_PRIO=5
-CONFIG_NET_TC_RX_THREAD_BASE_PRIO=5
+CONFIG_NET_TC_TX_THREAD_BASE_PRIO=16
+CONFIG_NET_TC_RX_THREAD_BASE_PRIO=16
 {% if get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
 CONFIG_ETH_STM32_HAL_RX_THREAD_PREEMPTIVE=y
-CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO=4
+CONFIG_ETH_STM32_HAL_RX_THREAD_PRIO=15
 {% endif %}
 {% endif %}
 # W^X holds for every program. Rootfs code executes from a shared RX mapping;
@@ -323,9 +327,9 @@ CONFIG_MAX_THREAD_BYTES=4
 # Keep native round-robin disabled for the personality. On Zephyr 4.4 its
 # per-CPU slice-timeout reset can reinsert a zero-delta timeout while tickless
 # sys_clock_announce() drains elapsed ticks, locking STM32 under frequent guest
-# park/resume. The LXP seam instead accounts only priority-6 guests in a bounded
-# timer callback and wakes a priority-5 seam thread to rotate an expired guest
-# in thread context. Coordinator and host RT priorities 0..4 remain immediately
+# park/resume. The LXP seam instead accounts only priority-17 guests in a bounded
+# timer callback and wakes a priority-16 seam thread to rotate an expired guest
+# in thread context. Coordinator and host RT priorities 0..15 remain immediately
 # preemptive and unrelated equal-priority work is unaffected.
 CONFIG_TIMESLICING=n
 # Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the

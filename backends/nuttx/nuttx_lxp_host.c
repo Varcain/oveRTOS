@@ -23,6 +23,7 @@
 #include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
 #include "ove_lxp_memory_contract.h"
+#include "ove_nuttx_priority.h"
 #include "ove_nuttx_runtime.h"
 #include "ove_config.h"
 
@@ -230,7 +231,7 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.trusted_tcb_base = OVE_LXP_TRUSTED_TCB_BASE,
 	.trusted_tcb_end = OVE_LXP_TRUSTED_TCB_END,
 #endif
-	.guest_priority = 60u,
+	.guest_priority = OVE_NUTTX_PRIO_LOW,
 	.runtime_reset = host_runtime_reset,
 	.runtime_start = host_runtime_start,
 	.runtime_stop = host_runtime_stop,

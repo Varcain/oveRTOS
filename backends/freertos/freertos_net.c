@@ -15,6 +15,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "ove_freertos_priority.h"
 #include "ove_ns_to_ticks.h"
 #if defined(CONFIG_OVE_NET_RX_READY_NOTIFY)
 #include "ove_net_ready.h"
@@ -80,6 +81,11 @@ int ethernetif_input(struct netif *netif, unsigned budget)
 	(void)budget;
 	return 0;
 }
+
+_Static_assert(TCPIP_THREAD_PRIO == tskIDLE_PRIORITY + OVE_PRIO_NORMAL,
+	       "lwIP's tcpip thread runs at OVE_PRIO_NORMAL");
+_Static_assert(DEFAULT_THREAD_PRIO == tskIDLE_PRIORITY + OVE_PRIO_BELOW_NORMAL,
+	       "lwIP's other threads run at OVE_PRIO_BELOW_NORMAL");
 
 static struct netif s_netif;
 static volatile int s_tcpip_ready;
@@ -343,10 +349,12 @@ int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	static StaticTask_t s_eth_rx_tcb;
 	static StackType_t s_eth_rx_stack[1024];
-	xTaskCreateStatic(eth_rx_task, "eth_rx", 1024, NULL, 4 | portPRIVILEGE_BIT, s_eth_rx_stack,
+	xTaskCreateStatic(eth_rx_task, "eth_rx", 1024, NULL,
+			  ove_freertos_map_priority(OVE_PRIO_ABOVE_NORMAL), s_eth_rx_stack,
 			  &s_eth_rx_tcb);
 #else
-	xTaskCreate(eth_rx_task, "eth_rx", 1024, NULL, 4 | portPRIVILEGE_BIT, NULL);
+	xTaskCreate(eth_rx_task, "eth_rx", 1024, NULL,
+		    ove_freertos_map_priority(OVE_PRIO_ABOVE_NORMAL), NULL);
 #endif
 
 	return OVE_OK;

@@ -470,20 +470,20 @@ const _: () = {
 #[doc = "< @brief Lowest priority; runs only when no other thread is ready."]
 pub const OVE_PRIO_IDLE: ove_prio_t = 0;
 #[doc = "< @brief Low priority background work."]
-pub const OVE_PRIO_LOW: ove_prio_t = 1;
+pub const OVE_PRIO_LOW: ove_prio_t = 4;
 #[doc = "< @brief Below-normal priority."]
-pub const OVE_PRIO_BELOW_NORMAL: ove_prio_t = 2;
+pub const OVE_PRIO_BELOW_NORMAL: ove_prio_t = 8;
 #[doc = "< @brief Default application priority."]
-pub const OVE_PRIO_NORMAL: ove_prio_t = 3;
+pub const OVE_PRIO_NORMAL: ove_prio_t = 12;
 #[doc = "< @brief Above-normal priority."]
-pub const OVE_PRIO_ABOVE_NORMAL: ove_prio_t = 4;
+pub const OVE_PRIO_ABOVE_NORMAL: ove_prio_t = 16;
 #[doc = "< @brief High priority; prefer for time-sensitive tasks."]
-pub const OVE_PRIO_HIGH: ove_prio_t = 5;
+pub const OVE_PRIO_HIGH: ove_prio_t = 20;
 #[doc = "< @brief Real-time priority; use with care."]
-pub const OVE_PRIO_REALTIME: ove_prio_t = 6;
+pub const OVE_PRIO_REALTIME: ove_prio_t = 24;
 #[doc = "< @brief Highest priority; reserved for critical system tasks."]
-pub const OVE_PRIO_CRITICAL: ove_prio_t = 7;
-#[doc = " @brief Portable thread-priority levels.\n\n Each value maps to a backend-specific numeric priority at initialisation\n time.  Higher enum values represent higher scheduling priority."]
+pub const OVE_PRIO_CRITICAL: ove_prio_t = 31;
+#[doc = " @brief Portable thread priority, on a scale from 0 to @ref OVE_PRIO_MAX.\n\n Higher values represent higher scheduling priority. The named levels are\n anchors on the scale; any value in between is a valid priority too, and\n @ref OVE_PRIO_ABOVE / @ref OVE_PRIO_BELOW derive one from an anchor. Every\n backend maps each of the 32 values to a distinct native priority, so the\n order between any two values holds on every RTOS."]
 pub type ove_prio_t = core::ffi::c_uint;
 #[doc = " @cond INTERNAL"]
 #[repr(C)]
@@ -807,7 +807,7 @@ const _: () = {
         [core::mem::offset_of!(ove_i2s_storage_t, _opaque) - 0usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a thread using caller-supplied static storage and stack.\n\n Creates a new thread without any heap allocation.  The caller must\n provide a backend @p storage object and a @p stack buffer of @p stack_size\n bytes.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  storage     Pointer to statically allocated backend storage.\n                         Must remain valid for the lifetime of the thread.\n @param[in]  name        Human-readable thread name.  May be truncated.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority.\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @param[in]  stack       Pointer to caller-allocated stack buffer.  Must be\n                         8-byte aligned (ARM AAPCS).  Use the\n                         @c OVE_THREAD_STACK_DEFINE_ family of helpers in\n                         @c include/ove/storage.h.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_deinit, ove_thread_create"]
+    #[doc = " @brief Initialise a thread using caller-supplied static storage and stack.\n\n Creates a new thread without any heap allocation.  The caller must\n provide a backend @p storage object and a @p stack buffer of @p stack_size\n bytes.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  storage     Pointer to statically allocated backend storage.\n                         Must remain valid for the lifetime of the thread.\n @param[in]  name        Human-readable thread name.  May be truncated.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX\n                         (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @param[in]  stack       Pointer to caller-allocated stack buffer.  Must be\n                         8-byte aligned (ARM AAPCS).  Use the\n                         @c OVE_THREAD_STACK_DEFINE_ family of helpers in\n                         @c include/ove/storage.h.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_deinit, ove_thread_create"]
     pub fn ove_thread_init(
         handle: *mut ove_thread_t,
         storage: *mut ove_thread_storage_t,
@@ -824,7 +824,7 @@ unsafe extern "C" {
     pub fn ove_thread_deinit(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and start a heap-backed thread.\n\n Both the backend storage and the stack are allocated from the RTOS heap.\n\n @note Requires @c OVE_HEAP_THREAD.  In zero-heap mode this function is\n       not declared; use @c ove_thread_init() or\n       @c OVE_THREAD_DEFINE_STATIC() instead.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  name        Human-readable thread name.  May be truncated.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority.\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_destroy"]
+    #[doc = " @brief Allocate and start a heap-backed thread.\n\n Both the backend storage and the stack are allocated from the RTOS heap.\n\n @note Requires @c OVE_HEAP_THREAD.  In zero-heap mode this function is\n       not declared; use @c ove_thread_init() or\n       @c OVE_THREAD_DEFINE_STATIC() instead.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  name        Human-readable thread name.  May be truncated.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX\n                         (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_destroy"]
     pub fn ove_thread_create(
         handle: *mut ove_thread_t,
         name: *const core::ffi::c_char,
@@ -843,7 +843,7 @@ unsafe extern "C" {
     pub fn ove_thread_get_self() -> ove_thread_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Change the scheduling priority of a thread.\n\n @param[in] handle  Thread to modify.\n @param[in] prio    New priority level."]
+    #[doc = " @brief Change the scheduling priority of a thread.\n\n @param[in] handle  Thread to modify.\n @param[in] prio    New priority, at most @ref OVE_PRIO_MAX; a larger value\n                    leaves the priority unchanged."]
     pub fn ove_thread_set_priority(handle: ove_thread_t, prio: ove_prio_t);
 }
 unsafe extern "C" {
@@ -960,7 +960,7 @@ pub struct ove_thread_info {
     pub identity: usize,
     #[doc = "< Execution state."]
     pub state: ove_thread_state_t,
-    #[doc = "< Priority level."]
+    #[doc = "< The backend's native priority value."]
     pub priority: core::ffi::c_int,
     #[doc = "< Stack high-water mark; valid when its flag is set."]
     pub stack_used: usize,
@@ -2466,7 +2466,7 @@ unsafe extern "C" {
 #[doc = " @brief Prototype for a work item handler function.\n\n Called by the work queue thread when the work item is executed. The\n @p work handle may be used to identify the item. Submitting the same item\n from its handler is rejected as busy; recurring work needs another item,\n a timer, or an external submitter.\n\n @param[in] work  Handle of the work item being executed."]
 pub type ove_work_fn = Option<unsafe extern "C" fn(work: ove_work_t)>;
 unsafe extern "C" {
-    #[doc = " @brief Initialise a work queue using caller-provided static storage.\n\n Creates the underlying RTOS thread with the given @p name, @p priority,\n @p stack_size, and pre-allocated @p stack buffer. The queue begins\n dispatching items as soon as the first work item is submitted.\n\n @param[out] wq          Receives the initialised work queue handle.\n @param[in]  storage     Pointer to statically-allocated work queue storage.\n @param[in]  name        Human-readable name for the underlying thread.\n @param[in]  priority    Thread priority for the work queue thread.\n @param[in]  stack_size  Size of the thread stack in bytes.\n @param[in]  stack       Pointer to the pre-allocated stack buffer.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
+    #[doc = " @brief Initialise a work queue using caller-provided static storage.\n\n Creates the underlying RTOS thread with the given @p name, @p priority,\n @p stack_size, and pre-allocated @p stack buffer. The queue begins\n dispatching items as soon as the first work item is submitted.\n\n @param[out] wq          Receives the initialised work queue handle.\n @param[in]  storage     Pointer to statically-allocated work queue storage.\n @param[in]  name        Human-readable name for the underlying thread.\n @param[in]  priority    Thread priority for the work queue thread, at most\n                         @ref OVE_PRIO_MAX (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Size of the thread stack in bytes.\n @param[in]  stack       Pointer to the pre-allocated stack buffer.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
     pub fn ove_workqueue_init(
         wq: *mut ove_workqueue_t,
         storage: *mut ove_workqueue_storage_t,

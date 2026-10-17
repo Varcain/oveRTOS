@@ -9,6 +9,7 @@
 #include "ove/types.h"
 #include "ove/audio_device.h"
 #include "ove_backend_common.h"
+#include "ove_freertos_priority.h"
 #include "board_desc.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -28,7 +29,7 @@
 
 typedef enum { BUFFER_FIRST_HALF = 0, BUFFER_SECOND_HALF = 1 } buffer_phase_t;
 
-#define DEFAULT_AUDIO_PRIORITY (tskIDLE_PRIORITY + 7)
+#define DEFAULT_AUDIO_PRIORITY ove_freertos_priority_value(OVE_PRIO_ABOVE(OVE_PRIO_REALTIME, 1))
 #define DEFAULT_AUDIO_STACK (configMINIMAL_STACK_SIZE * 32)
 
 /*

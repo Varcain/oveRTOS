@@ -70,7 +70,8 @@ typedef void (*ove_work_fn)(ove_work_t work);
  * @param[out] wq          Receives the initialised work queue handle.
  * @param[in]  storage     Pointer to statically-allocated work queue storage.
  * @param[in]  name        Human-readable name for the underlying thread.
- * @param[in]  priority    Thread priority for the work queue thread.
+ * @param[in]  priority    Thread priority for the work queue thread, at most
+ *                         @ref OVE_PRIO_MAX (larger values return OVE_ERR_INVALID_PARAM).
  * @param[in]  stack_size  Size of the thread stack in bytes.
  * @param[in]  stack       Pointer to the pre-allocated stack buffer.
  * @return OVE_OK on success, negative error code on failure.
@@ -153,7 +154,8 @@ void ove_work_free(ove_work_t work);
  *
  * @param[out] wq          Receives the created work queue handle.
  * @param[in]  name        Human-readable name for the underlying thread.
- * @param[in]  priority    Thread priority for the work queue thread.
+ * @param[in]  priority    Thread priority for the work queue thread, at most
+ *                         @ref OVE_PRIO_MAX (larger values return OVE_ERR_INVALID_PARAM).
  * @param[in]  stack_size  Stack size in bytes for the work queue thread.
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.

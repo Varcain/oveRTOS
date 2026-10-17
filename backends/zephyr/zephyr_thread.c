@@ -145,7 +145,8 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 {
 	k_tid_t tid;
 
-	if (handle == NULL || storage == NULL || entry == NULL) {
+	if (handle == NULL || storage == NULL || entry == NULL ||
+	    (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
@@ -231,7 +232,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	k_thread_stack_t *stack;
 	k_tid_t tid;
 
-	if (handle == NULL || entry == NULL) {
+	if (handle == NULL || entry == NULL || (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -297,6 +298,8 @@ ove_thread_t ove_thread_get_self(void)
 
 void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
+	if ((unsigned)prio > OVE_PRIO_MAX)
+		return;
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
 		k_thread_priority_set(&info->thread, ove_zephyr_map_priority(prio));

@@ -72,11 +72,10 @@ int ove_workqueue_init(ove_workqueue_t *wqh, ove_workqueue_storage_t *storage, c
 		       ove_prio_t priority, size_t stack_size, void *stack)
 {
 	(void)name;
-	(void)priority;
 	(void)stack_size;
 	(void)stack;
 
-	if (!wqh || !storage)
+	if (!wqh || !storage || (unsigned)priority > OVE_PRIO_MAX)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_workqueue *wq = (struct ove_workqueue *)storage;
 	memset(wq, 0, sizeof(*wq));

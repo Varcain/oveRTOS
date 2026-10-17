@@ -13,6 +13,7 @@
 #include "ove/hal/hal_pm.h"
 #include "ove/log.h"
 #include "ove_backend_common.h"
+#include "ove_freertos_priority.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -133,7 +134,8 @@ int ove_hal_pm_setup(void)
 
 	atomic_store_explicit(&pm_idle_running, 1, memory_order_release);
 	pm_idle_handle = xTaskCreateStatic(pm_idle_entry, "ove_pm_idle", PM_IDLE_STACK_DEPTH, NULL,
-					   tskIDLE_PRIORITY + 1, pm_idle_stack, &pm_idle_tcb);
+					   ove_freertos_priority_value(OVE_PRIO_LOW), pm_idle_stack,
+					   &pm_idle_tcb);
 	if (!pm_idle_handle) {
 		atomic_store_explicit(&pm_idle_running, 0, memory_order_release);
 		OVE_LOG_ERR("pm: failed to spawn idle thread");

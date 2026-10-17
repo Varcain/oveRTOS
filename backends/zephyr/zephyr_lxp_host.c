@@ -35,6 +35,8 @@
 
 BUILD_ASSERT(CONFIG_SYSTEM_WORKQUEUE_PRIORITY == OVE_ZEPHYR_PRIO_SYSTEM_WORKQUEUE,
 	     "system workqueue priority must match the Zephyr priority contract");
+BUILD_ASSERT(CONFIG_MAIN_THREAD_PRIORITY == OVE_ZEPHYR_PRIO_NORMAL,
+	     "main thread priority must match the Zephyr priority contract");
 BUILD_ASSERT(OVE_ZEPHYR_PRIO_CRITICAL < OVE_ZEPHYR_PRIO_LXP_COORDINATOR &&
 		     OVE_ZEPHYR_PRIO_LXP_COORDINATOR < OVE_ZEPHYR_PRIO_LXP_GUEST,
 	     "critical, coordinator, and guest priorities must remain ordered");
