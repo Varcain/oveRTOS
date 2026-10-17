@@ -34,16 +34,12 @@ CONFIG_MM_REGIONS=2
 # CONFIG_SYSTEM_DD is not set
 # CONFIG_FSUTILS_MKFATFS is not set
 # CONFIG_BUILTIN is not set
-# CONFIG_BUILTIN_TOOLCHAIN is not set
-# CONFIG_BINFMT_ELF_RELOCATABLE is not set
 # CONFIG_BINFMT_LOADABLE is not set
 
 # --- Fault diagnostic: print Cortex-M fault info on hardfault ---
 CONFIG_DEBUG_HARDFAULT_ALERT=y
 CONFIG_DEBUG_BUSFAULT=y
-CONFIG_DEBUG_MEMFAULT=y
 CONFIG_DEBUG_USAGEFAULT=y
-CONFIG_ARMV7M_USEBASEPRI=y
 # STM32F746 silicon uses Cortex-M7 r0p1. Erratum 837070 can let the
 # instruction following a BASEPRI raise be preempted before the new mask takes
 # effect, violating NuttX scheduler critical sections. Serialize priority

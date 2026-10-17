@@ -1236,13 +1236,14 @@ comment "NuttX zero-heap sizing"
     depends on OVE_RTOS_NUTTX
 
 config OVE_NUTTX_MAX_TASKS
-    int "Maximum concurrent tasks"
+    int "Initial task table length"
     default 16
     depends on OVE_RTOS_NUTTX
     help
-      Pinned at compile time as CONFIG_MAX_TASKS — the kernel
-      allocates the task table from the static .bss region rather
-      than growing it dynamically.
+      CONFIG_PID_INITIAL_COUNT: the length NuttX allocates its PID
+      table with at boot. NuttX grows the table when more tasks exist,
+      which after ove_heap_lock() comes from the reserved heap, so size
+      it for every task the app creates.
 
 config OVE_NUTTX_FD_BLOCK
     int "File descriptors per task block"
@@ -1263,32 +1264,33 @@ config OVE_NUTTX_TCP_CONNS
     int "TCP connection slots"
     default 8
     depends on OVE_RTOS_NUTTX && OVE_NET
+    help
+      CONFIG_NET_TCP_PREALLOC_CONNS, with no dynamic connections.
 
 config OVE_NUTTX_UDP_CONNS
     int "UDP connection slots"
     default 8
     depends on OVE_RTOS_NUTTX && OVE_NET
+    help
+      CONFIG_NET_UDP_PREALLOC_CONNS, with no dynamic connections.
 
 config OVE_NUTTX_IOB_NBUFFERS
     int "Network IOB buffer count"
     default 24
     depends on OVE_RTOS_NUTTX && OVE_NET
 
+endif # OVE_ZERO_HEAP
+
 config OVE_NUTTX_IOB_BUFSIZE
     int "Network IOB buffer size (bytes)"
+    default 1534 if OVE_BOARD_STM32F746G_DISCO
     default 196
     depends on OVE_RTOS_NUTTX && OVE_NET
-
-config OVE_NUTTX_HEAP_LOCK
-    bool "Wrap malloc/kmm_malloc with post-init trap"
-    default y
-    depends on OVE_RTOS_NUTTX
     help
-      Enables --wrap=malloc,kmm_malloc,... at link time so that
-      ove_heap_lock() (called from ove_run()) traps any kernel-mm
-      allocation that escapes the static-sizing / boot-time-creation
-      discipline.  Implementation in backends/nuttx/nuttx_heap_lock.c.
-
-endif # OVE_ZERO_HEAP
+      CONFIG_IOB_BUFSIZE, the payload of one NuttX network I/O buffer.
+      The STM32F746 keeps one Ethernet frame per buffer: with 196-byte
+      buffers its MAC chains eight per full frame, and TCP, which
+      derives its receive window from the four buffers above
+      CONFIG_IOB_THROTTLE, gets a 784-byte window.
 
 endmenu

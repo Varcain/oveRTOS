@@ -37,14 +37,14 @@ static SRAM cost and the TCP receive window.  For example, `linux_interop` uses
 frame, four full-frame slots, enough objects for concurrent small packets, and
 a 2048-byte derived receive window.
 
-## NuttX net stack (zero-heap only)
+## NuttX net stack
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `CONFIG_OVE_NUTTX_TCP_CONNS` | 8 | `CONFIG_NET_TCP_PREALLOC_TCBS` |
-| `CONFIG_OVE_NUTTX_UDP_CONNS` | 8 | `CONFIG_NET_UDP_PREALLOC_CONNS` |
-| `CONFIG_OVE_NUTTX_IOB_NBUFFERS` | 24 | I/O buffer count |
-| `CONFIG_OVE_NUTTX_IOB_BUFSIZE` | 196 | Bytes per IOB |
+| `CONFIG_OVE_NUTTX_TCP_CONNS` | 8 | `CONFIG_NET_TCP_PREALLOC_CONNS`, no dynamic connections (zero-heap only) |
+| `CONFIG_OVE_NUTTX_UDP_CONNS` | 8 | `CONFIG_NET_UDP_PREALLOC_CONNS`, no dynamic connections (zero-heap only) |
+| `CONFIG_OVE_NUTTX_IOB_NBUFFERS` | 24 | I/O buffer count (zero-heap only) |
+| `CONFIG_OVE_NUTTX_IOB_BUFSIZE` | 196, 1534 on STM32F746G-DISCO | Bytes per IOB |
 
 ## Sizing example
 
