@@ -1186,11 +1186,23 @@ if (navigator.mediaDevices)
 var THREAD_STATE_NAMES = ["running", "ready", "blocked", "suspended", "terminated", "unknown"];
 var THREAD_STATE_CSS   = ["st-running", "st-ready", "st-blocked", "st-suspended", "st-terminated", "st-unknown"];
 
-/* Mirrors the ove_prio_t enum in include/ove/thread.h. */
-var THREAD_PRIO_NAMES = [
-    "idle", "low", "below-normal", "normal",
-    "above-normal", "high", "realtime", "critical"
+/* The named anchors of the ove_prio_t scale in include/ove/thread.h (0..31). */
+var THREAD_PRIO_ANCHORS = [
+    [0, "idle"], [4, "low"], [8, "below-normal"], [12, "normal"],
+    [16, "above-normal"], [20, "high"], [24, "realtime"], [31, "critical"]
 ];
+
+/* An anchor prints by name, any other level as the anchor below it plus a step:
+ * 13 -> "normal+1". */
+function _prioName(level) {
+    var name = String(level);
+    for (var i = 0; i < THREAD_PRIO_ANCHORS.length; i++) {
+        var a = THREAD_PRIO_ANCHORS[i];
+        if (a[0] > level) break;
+        name = a[0] === level ? a[1] : a[1] + "+" + (level - a[0]);
+    }
+    return name;
+}
 
 var THREAD_VALID_STACK_USED     = 1 << 0;
 var THREAD_VALID_STACK_SIZE     = 1 << 1;
@@ -1280,7 +1292,7 @@ function handleThreadSnapshot(buf, off) {
         html += "<tr>"
               + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
               + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
-              + "<td>" + (THREAD_PRIO_NAMES[t.priority] || t.priority) + "</td>"
+              + "<td>" + _prioName(t.priority) + "</td>"
               + "<td class=\"td-num\">" + _fmtStack(t) + "</td>"
               + "<td class=\"td-num\">" + cpuStr + "</td>"
               + "<td>" + _fmtStateBar(t) + "</td>"

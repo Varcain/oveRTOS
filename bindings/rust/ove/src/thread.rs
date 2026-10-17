@@ -1128,7 +1128,15 @@ impl bindings::ove_thread_info {
                 blocked_us: 0,
                 suspended_us: 0,
             },
+            native_priority: 0,
         }
+    }
+
+    /// The thread's priority on the ove scale; `native_priority` keeps the RTOS's own value.
+    pub fn prio(&self) -> Option<Priority> {
+        u8::try_from(self.priority)
+            .ok()
+            .and_then(Priority::from_level)
     }
 
     /// Thread name bytes without the trailing NUL.

@@ -931,7 +931,10 @@ fn testThreadListUsesFullCallerCapacity() !void {
     try expect(list.len >= 20);
     var named: usize = 0;
     for (list) |*info| {
-        if (std.mem.eql(u8, info.name(), "wide")) named += 1;
+        if (std.mem.eql(u8, info.name(), "wide")) {
+            named += 1;
+            try expect(info.prio().? == .normal);
+        }
     }
     try expect(named >= 20);
 }

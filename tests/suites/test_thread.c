@@ -469,6 +469,50 @@ static void test_priority_between_anchors(void **state)
 	ove_test_thread_destroy(h);
 }
 
+/* The priority ove_thread_list reports for the thread named @p name, or -1. */
+static int listed_priority(const char *name)
+{
+	struct ove_thread_info info[32];
+	size_t count = 0;
+	if (ove_thread_list(info, 32, &count) != OVE_OK)
+		return -1;
+	for (size_t i = 0; i < count; i++) {
+		if (strcmp(info[i].name, name) == 0)
+			return info[i].priority;
+	}
+	return -1;
+}
+
+/* 20. ove_thread_list reports a thread's ove priority, after set_priority too */
+static void test_thread_list_priority(void **state)
+{
+	(void)state;
+	struct ove_thread_info probe[1];
+	size_t n = 0;
+	if (ove_thread_list(probe, 1, &n) == OVE_ERR_NOT_SUPPORTED)
+		skip();
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	const ove_prio_t created = OVE_PRIO_ABOVE(OVE_PRIO_NORMAL, 1);
+	const ove_prio_t moved = OVE_PRIO_BELOW(OVE_PRIO_HIGH, 2);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "tprio", entry_spin_flagged, NULL,
+					   created, 4096, s_th_stack));
+#else
+	OVE_TEST_ASSERT_OK(ove_thread_create(&h, "tprio", entry_spin_flagged, NULL, created, 4096));
+#endif
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	int at_create = listed_priority("tprio");
+	ove_thread_set_priority(h, moved);
+	int after_set = listed_priority("tprio");
+	atomic_store(&g_keep_running, 0);
+	test_msleep(20);
+	ove_test_thread_destroy(h);
+	assert_int_equal(at_create, created);
+	assert_int_equal(after_set, moved);
+}
+
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -496,6 +540,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_priority_scale_helpers),
 		cmocka_unit_test(test_create_priority_out_of_range),
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
+		cmocka_unit_test_teardown(test_thread_list_priority, teardown_stop_spin),
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),
 #endif

@@ -401,7 +401,7 @@ ove_httpd_route("GET", "/api/items/*", my_handler);
 | `/api/network` | GET | Network interface status |
 | `/api/log` | GET | Recent log messages |
 | `/api/system/memory` | GET | System heap totals (free / used / peak). |
-| `/api/system/threads` | GET | Thread list with state, priority, stack usage, CPU%. |
+| `/api/system/threads` | GET | Thread list with state, priority (`priority` on the ove scale, `native_priority` as the RTOS reports it), stack usage, CPU%. |
 | `/api/audio/stats` | GET | Audio graph runtime statistics (requires `CONFIG_OVE_AUDIO`). |
 | `/api/infer/stats` | GET | Last inference latency and stats (requires `CONFIG_OVE_INFER`). |
 

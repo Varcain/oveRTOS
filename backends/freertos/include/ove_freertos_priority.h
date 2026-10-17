@@ -32,6 +32,15 @@ static inline UBaseType_t ove_freertos_priority_value(ove_prio_t prio)
 	return OVE_FREERTOS_NATIVE_PRIORITY(prio);
 }
 
+/* The ove priority of a native one, clamped to the scale (ove_thread_list). */
+static inline ove_prio_t ove_freertos_unmap_priority(UBaseType_t native)
+{
+	if (native <= tskIDLE_PRIORITY)
+		return OVE_PRIO_IDLE;
+	native -= tskIDLE_PRIORITY;
+	return native > (UBaseType_t)OVE_PRIO_MAX ? OVE_PRIO_MAX : (ove_prio_t)native;
+}
+
 static inline UBaseType_t ove_freertos_map_priority(ove_prio_t prio)
 {
 	UBaseType_t p = ove_freertos_priority_value(prio);

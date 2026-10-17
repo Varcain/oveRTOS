@@ -950,7 +950,7 @@ const _: () = {
     ["Offset of field: ove_thread_state_times::suspended_us"]
         [core::mem::offset_of!(ove_thread_state_times, suspended_us) - 24usize];
 };
-#[doc = " @brief Snapshot of a single thread's info."]
+#[doc = " @brief Snapshot of a single thread's info.\n\n @c priority maps the thread's native priority back onto the ove scale: a\n thread created at an ove priority reports that priority. A native priority\n no ove priority maps to (an RTOS service thread, say) reports the highest ove\n priority at or below it, clamped to the scale; @c native_priority keeps the\n value as the RTOS sees it."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_thread_info {
@@ -960,7 +960,7 @@ pub struct ove_thread_info {
     pub identity: usize,
     #[doc = "< Execution state."]
     pub state: ove_thread_state_t,
-    #[doc = "< The backend's native priority value."]
+    #[doc = "< Priority on the ove scale, 0..OVE_PRIO_MAX (see ove_prio_t)."]
     pub priority: core::ffi::c_int,
     #[doc = "< Stack high-water mark; valid when its flag is set."]
     pub stack_used: usize,
@@ -972,10 +972,12 @@ pub struct ove_thread_info {
     pub valid_fields: u32,
     #[doc = "< Per-state cumulative time."]
     pub state_times: ove_thread_state_times,
+    #[doc = "< The backend's own priority value for the thread."]
+    pub native_priority: core::ffi::c_int,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 80usize];
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 88usize];
     ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
     ["Offset of field: ove_thread_info::name"]
         [core::mem::offset_of!(ove_thread_info, name) - 0usize];
@@ -995,6 +997,8 @@ const _: () = {
         [core::mem::offset_of!(ove_thread_info, valid_fields) - 44usize];
     ["Offset of field: ove_thread_info::state_times"]
         [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
+    ["Offset of field: ove_thread_info::native_priority"]
+        [core::mem::offset_of!(ove_thread_info, native_priority) - 80usize];
 };
 unsafe extern "C" {
     #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]

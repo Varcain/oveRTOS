@@ -273,7 +273,10 @@ fn test_thread_list_with_spawned() {
                 // Exercise the fields so the construction isn't DCE'd.
                 let _ = info.name();
                 let _ = info.state();
-                let _ = info.priority;
+                if info.name() == b"enum" {
+                    assert_eq!(info.prio(), Some(ove::Priority::Normal));
+                }
+                let _ = info.native_priority;
                 let _ = info.valid_fields;
                 let _ = info.stack_used();
                 let _ = info.identity;

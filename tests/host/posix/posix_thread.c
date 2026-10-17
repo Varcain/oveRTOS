@@ -653,6 +653,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			(ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		out[count].state = state;
 		out[count].priority = t->priority;
+		out[count].native_priority = t->priority; /* the host records the ove priority */
 		int final_stack = state == OVE_THREAD_STATE_TERMINATED && t->stack_headroom_valid &&
 				  t->stack_size >= t->stack_headroom;
 		out[count].stack_used = final_stack ? t->stack_size - t->stack_headroom : 0;

@@ -374,10 +374,11 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 			off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",");
 		off += snprintf(buf + off, sizeof(buf) - (size_t)off,
 				"{\"name\":\"%s\",\"state\":\"%s\","
-				"\"priority\":%d,\"valid_fields\":%u,\"stack_used\":",
+				"\"priority\":%d,\"native_priority\":%d,\"valid_fields\":%u,"
+				"\"stack_used\":",
 				threads[i].name ? threads[i].name : "?",
 				state_str(threads[i].state), threads[i].priority,
-				(unsigned int)threads[i].valid_fields);
+				threads[i].native_priority, (unsigned int)threads[i].valid_fields);
 		if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_STACK_USED))
 			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%zu",
 					threads[i].stack_used);

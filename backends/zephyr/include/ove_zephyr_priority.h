@@ -66,4 +66,16 @@ static inline int ove_zephyr_map_priority(ove_prio_t prio)
 	return OVE_ZEPHYR_NATIVE_PRIORITY(prio);
 }
 
+/* The ove priority of a native one (ove_thread_list). Cooperative threads
+ * (negative) outrank every preemptible one; the kernel's idle thread sits
+ * below the scale. */
+static inline ove_prio_t ove_zephyr_unmap_priority(int native)
+{
+	if (native < 0)
+		return OVE_PRIO_MAX;
+	if (native > (int)OVE_PRIO_MAX)
+		return OVE_PRIO_IDLE;
+	return (ove_prio_t)((int)OVE_PRIO_MAX - native);
+}
+
 #endif /* OVE_ZEPHYR_PRIORITY_H */

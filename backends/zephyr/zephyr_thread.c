@@ -509,7 +509,8 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 		info->name = "?";
 	info->identity = (uintptr_t)thread;
 	info->state = _map_zephyr_state(thread->base.thread_state);
-	info->priority = (int)k_thread_priority_get((k_tid_t)thread);
+	info->native_priority = k_thread_priority_get((k_tid_t)thread);
+	info->priority = (int)ove_zephyr_unmap_priority(info->native_priority);
 
 	info->cpu_percent_x100 = 0;
 	info->valid_fields = 0;

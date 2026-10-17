@@ -769,7 +769,8 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 		break;
 	}
 
-	info->priority = (int)tcb->sched_priority;
+	info->native_priority = (int)tcb->sched_priority;
+	info->priority = (int)ove_nuttx_unmap_priority(info->native_priority);
 	info->stack_size = tcb->adj_stack_size;
 	info->stack_used = 0;
 	info->cpu_percent_x100 = 0;
