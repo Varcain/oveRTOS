@@ -8,6 +8,6 @@ config AUDIO_CODEC_WM8994
 	bool "Wolfson WM8994 codec support"
 	default y
 	select I2C
-	depends on DT_HAS_WOLFSON_WM8994_ENABLED
+	depends on DT_HAS_WOLFSON_WM8994_ENABLED && AUDIO_CODEC
 	help
 	  Enable support for the Wolfson/Cirrus Logic WM8994 audio codec.

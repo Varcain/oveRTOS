@@ -16,9 +16,17 @@ CONFIG_PICOLIBC_USE_TOOLCHAIN=y
 CONFIG_PICOLIBC_USE_MODULE=y
 {% endif %}
 
-{% if config.get("CONFIG_ZEPHYR_I2S", True) %}
-# Audio
+{% if get_bool("CONFIG_OVE_AUDIO") and config.get("CONFIG_ZEPHYR_I2S", True) %}
+# Audio: the I2S/SAI streams (DMA-driven) and the codec on its I2C bus
 CONFIG_I2S=y
+CONFIG_DMA=y
+CONFIG_I2C=y
+CONFIG_AUDIO=y
+CONFIG_AUDIO_CODEC=y
+{% endif %}
+
+{% if get_bool("CONFIG_OVE_I2C") %}
+CONFIG_I2C=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
@@ -79,7 +87,8 @@ CONFIG_CMSIS_DSP_SUPPORT=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_FS", False) and config.get("CONFIG_ZEPHYR_SD_FILESYSTEM", True) %}
-# SD card / filesystem
+# SD card / filesystem (the SDMMC host transfers by DMA)
+CONFIG_DMA=y
 CONFIG_DISK_ACCESS=y
 CONFIG_DISK_DRIVERS=y
 CONFIG_DISK_DRIVER_SDMMC=y
