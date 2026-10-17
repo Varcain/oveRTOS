@@ -106,10 +106,15 @@ def main():
     # ── test ───────────────────────────────────────────────────────────
     p = sub.add_parser("test", help="Run tests")
     p.add_argument("names", nargs="*",
-                   help="Test names (stub, cpp, rust, freertos, nuttx, "
-                        "zephyr, qemu-freertos, qemu-nuttx, qemu-zephyr, "
-                        "renode-stm32f746-freertos[-zeroheap], "
-                        "qemu, renode, all)")
+                   help="Test targets or groups. Groups: sim (the default: "
+                        "lxp-layout-config, stub, cpp, rust, zig, nuttx, "
+                        "zephyr), qemu (qemu-<rtos>[-zeroheap]), renode "
+                        "(renode-stm32f746-<rtos>[-zeroheap]), hw "
+                        "(hw-stm32f746-<rtos>[-zeroheap], needs a board), "
+                        "all (sim + qemu + renode). Single targets add the "
+                        "-sanitize, -coverage and -zeroheap variants and the "
+                        "opt-in qemu-<rtos>-linux-* tests; an unknown name "
+                        "lists every target.")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON test summary on stdout")
 
