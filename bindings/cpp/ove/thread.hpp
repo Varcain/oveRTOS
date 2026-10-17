@@ -23,6 +23,32 @@
 namespace ove
 {
 
+/* ── Priority scale ─────────────────────────────────────────────────── */
+
+/**
+ * @brief The priority @p n levels above @p prio, clamped to @ref OVE_PRIO_MAX.
+ *
+ * C++ form of @ref OVE_PRIO_ABOVE, e.g. `ove::prio_above(OVE_PRIO_NORMAL, 1)`
+ * for a thread that preempts NORMAL work but stays below ABOVE_NORMAL.
+ */
+[[nodiscard]] constexpr ove_prio_t prio_above(ove_prio_t prio, unsigned n) noexcept
+{
+	const auto top = static_cast<unsigned>(OVE_PRIO_MAX);
+	const auto level = static_cast<unsigned>(prio);
+	return static_cast<ove_prio_t>(level >= top || n >= top - level ? top : level + n);
+}
+
+/**
+ * @brief The priority @p n levels below @p prio, clamped to @ref OVE_PRIO_IDLE.
+ *
+ * C++ form of @ref OVE_PRIO_BELOW.
+ */
+[[nodiscard]] constexpr ove_prio_t prio_below(ove_prio_t prio, unsigned n) noexcept
+{
+	const auto level = static_cast<unsigned>(prio);
+	return static_cast<ove_prio_t>(n >= level ? 0U : level - n);
+}
+
 /* ── Cooperative cancellation token ─────────────────────────────────── */
 
 /**

@@ -75,6 +75,12 @@ static void entry_spin(void *arg)
 	}
 }
 
+static void entry_spin_flagged(void *arg)
+{
+	atomic_store(&g_flag, 1);
+	entry_spin(arg);
+}
+
 static void entry_sleep_briefly(void *arg)
 {
 	(void)arg;
@@ -410,6 +416,59 @@ static void test_create_misaligned_stack(void **state)
 }
 #endif /* CONFIG_OVE_ZERO_HEAP */
 
+/* 17. OVE_PRIO_ABOVE / OVE_PRIO_BELOW step along the scale and clamp at its ends */
+static void test_priority_scale_helpers(void **state)
+{
+	(void)state;
+	_Static_assert(OVE_PRIO_ABOVE(OVE_PRIO_NORMAL, 1) > OVE_PRIO_NORMAL &&
+			       OVE_PRIO_ABOVE(OVE_PRIO_NORMAL, 1) < OVE_PRIO_ABOVE_NORMAL,
+		       "one step above an anchor stays below the next anchor");
+	assert_int_equal(OVE_PRIO_ABOVE(OVE_PRIO_NORMAL, 1), OVE_PRIO_NORMAL + 1);
+	assert_int_equal(OVE_PRIO_ABOVE(OVE_PRIO_HIGH, 100), OVE_PRIO_MAX);
+	assert_int_equal(OVE_PRIO_ABOVE(OVE_PRIO_CRITICAL, 1), OVE_PRIO_MAX);
+	assert_int_equal(OVE_PRIO_BELOW(OVE_PRIO_NORMAL, 4), OVE_PRIO_BELOW_NORMAL);
+	assert_int_equal(OVE_PRIO_BELOW(OVE_PRIO_LOW, 10), OVE_PRIO_IDLE);
+}
+
+/* 18. a priority above OVE_PRIO_MAX is rejected */
+static void test_create_priority_out_of_range(void **state)
+{
+	(void)state;
+	ove_thread_t h = NULL;
+	const ove_prio_t bad = (ove_prio_t)(OVE_PRIO_MAX + 1);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	int rc = ove_thread_init(&h, &s_th_storage, "tbad", entry_set_flag, NULL, bad, 4096,
+				 s_th_stack);
+#else
+	int rc = ove_thread_create(&h, "tbad", entry_set_flag, NULL, bad, 4096);
+#endif
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+	assert_null(h);
+}
+
+/* 19. a thread runs at a priority between two anchors, and can be moved to another one;
+ * set_priority ignores a priority above the scale */
+static void test_priority_between_anchors(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	const ove_prio_t between = OVE_PRIO_ABOVE(OVE_PRIO_NORMAL, 1);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "tmid", entry_spin_flagged, NULL,
+					   between, 4096, s_th_stack));
+#else
+	OVE_TEST_ASSERT_OK(ove_thread_create(&h, "tmid", entry_spin_flagged, NULL, between, 4096));
+#endif
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	ove_thread_set_priority(h, OVE_PRIO_BELOW(OVE_PRIO_HIGH, 2));
+	ove_thread_set_priority(h, (ove_prio_t)(OVE_PRIO_MAX + 1));
+	atomic_store(&g_keep_running, 0);
+	test_msleep(20);
+	ove_test_thread_destroy(h);
+}
+
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -434,6 +493,9 @@ int test_thread_run(void)
 #endif
 		cmocka_unit_test_teardown(test_runtime_stats, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_identity, teardown_stop_spin),
+		cmocka_unit_test(test_priority_scale_helpers),
+		cmocka_unit_test(test_create_priority_out_of_range),
+		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),
 #endif

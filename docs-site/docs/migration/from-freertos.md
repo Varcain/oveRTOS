@@ -22,7 +22,7 @@ Three differences worth knowing up front:
 | `xTaskGetCurrentTaskHandle()` | `ove_thread_get_self()` | same |
 | `vTaskPrioritySet(h, p)` | `ove_thread_set_priority(h, p)` | same |
 
-Priority levels map: `tskIDLE_PRIORITY` → `OVE_PRIO_IDLE`, then a small set of named constants (`OVE_PRIO_LOW`, `OVE_PRIO_NORMAL`, `OVE_PRIO_HIGH`, `OVE_PRIO_CRITICAL`). The portable API uses names because FreeRTOS, Zephyr, and NuttX disagree on numeric direction (lower = higher in FreeRTOS, opposite in Zephyr).
+Priority levels map: `tskIDLE_PRIORITY` → `OVE_PRIO_IDLE`, and higher numbers win, as in FreeRTOS. oveRTOS priorities run from 0 to `OVE_PRIO_MAX` (31) with named anchors (`OVE_PRIO_LOW`, `OVE_PRIO_NORMAL`, `OVE_PRIO_HIGH`, `OVE_PRIO_CRITICAL`, …); `OVE_PRIO_ABOVE(p, n)` and `OVE_PRIO_BELOW(p, n)` reach the levels between them. On FreeRTOS each ove priority is the native priority of the same number. Use the names: Zephyr and NuttX number their priorities differently (lower wins in Zephyr), and the anchors keep their meaning on every backend.
 
 There is no portable getter for priority — keep your own copy if you need to read it back.
 

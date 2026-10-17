@@ -83,29 +83,100 @@ const _: () = assert!(
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
 
-/// Thread priority levels, matching `ove_prio_t`.
+/// Thread priority, matching `ove_prio_t`: a level from 0 to [`Priority::MAX`].
 ///
-/// Variants are ordered from lowest (`Idle`) to highest (`Critical`) so that
-/// standard comparison operators (`<`, `>`) work intuitively.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum Priority {
+/// Higher levels preempt lower ones. The named constants (`Idle`, `Low`, …,
+/// `Critical`) are anchors on the scale; [`above`](Priority::above) and
+/// [`below`](Priority::below) step between them, so a thread can sit just
+/// above `Normal` without reaching `AboveNormal`. Every backend maps the 32
+/// levels to distinct native priorities, and comparison operators follow the
+/// scale.
+///
+/// ```ignore
+/// use ove::Priority;
+/// let worker = Priority::Normal.above(1);
+/// assert!(Priority::Normal < worker && worker < Priority::AboveNormal);
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct Priority(u8);
+
+#[allow(non_upper_case_globals)]
+impl Priority {
     /// Lowest priority, typically the RTOS idle task level.
-    Idle = 0,
+    pub const Idle: Priority = Priority(bindings::OVE_PRIO_IDLE as u8);
     /// Low background priority.
-    Low = 4,
+    pub const Low: Priority = Priority(bindings::OVE_PRIO_LOW as u8);
     /// Below-normal priority.
-    BelowNormal = 8,
+    pub const BelowNormal: Priority = Priority(bindings::OVE_PRIO_BELOW_NORMAL as u8);
     /// Default priority for most application threads.
-    Normal = 12,
+    pub const Normal: Priority = Priority(bindings::OVE_PRIO_NORMAL as u8);
     /// Above-normal priority for time-sensitive work.
-    AboveNormal = 16,
+    pub const AboveNormal: Priority = Priority(bindings::OVE_PRIO_ABOVE_NORMAL as u8);
     /// High priority for latency-critical tasks.
-    High = 20,
+    pub const High: Priority = Priority(bindings::OVE_PRIO_HIGH as u8);
     /// Real-time priority; preempts most other threads.
-    Realtime = 24,
+    pub const Realtime: Priority = Priority(bindings::OVE_PRIO_REALTIME as u8);
     /// Highest priority; reserved for system-critical tasks.
-    Critical = 31,
+    pub const Critical: Priority = Priority(bindings::OVE_PRIO_CRITICAL as u8);
+
+    /// The highest priority on the scale (`Critical`).
+    pub const MAX: Priority = Priority::Critical;
+
+    /// The priority at `level`, or `None` above [`Priority::MAX`].
+    pub const fn from_level(level: u8) -> Option<Priority> {
+        if level <= Priority::MAX.0 {
+            Some(Priority(level))
+        } else {
+            None
+        }
+    }
+
+    /// This priority's level on the scale, 0..=31.
+    pub const fn level(self) -> u8 {
+        self.0
+    }
+
+    /// The priority `n` levels higher, clamped to [`Priority::MAX`].
+    pub const fn above(self, n: u8) -> Priority {
+        let max = Priority::MAX.0;
+        if n >= max - self.0 {
+            Priority::MAX
+        } else {
+            Priority(self.0 + n)
+        }
+    }
+
+    /// The priority `n` levels lower, clamped to [`Priority::Idle`].
+    pub const fn below(self, n: u8) -> Priority {
+        if n >= self.0 {
+            Priority::Idle
+        } else {
+            Priority(self.0 - n)
+        }
+    }
+
+    pub(crate) const fn raw(self) -> bindings::ove_prio_t {
+        self.0 as bindings::ove_prio_t
+    }
+}
+
+impl core::fmt::Debug for Priority {
+    /// Anchors print by name (`Normal`), other levels as `Priority(13)`.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let name = match *self {
+            Priority::Idle => "Idle",
+            Priority::Low => "Low",
+            Priority::BelowNormal => "BelowNormal",
+            Priority::Normal => "Normal",
+            Priority::AboveNormal => "AboveNormal",
+            Priority::High => "High",
+            Priority::Realtime => "Realtime",
+            Priority::Critical => "Critical",
+            _ => return write!(f, "Priority({})", self.0),
+        };
+        f.write_str(name)
+    }
 }
 
 /// Thread state, matching `ove_thread_state_t`.
@@ -344,7 +415,7 @@ impl Thread {
     /// Set this thread's priority.
     #[inline]
     pub fn set_priority(&self, prio: Priority) {
-        unsafe { bindings::ove_thread_set_priority(self.handle, prio as bindings::ove_prio_t) }
+        unsafe { bindings::ove_thread_set_priority(self.handle, prio.raw()) }
     }
 
     /// Legacy query for minimum free stack bytes.
@@ -532,7 +603,7 @@ impl Builder {
                 self.name.as_ptr() as *const _,
                 Some(box_cooperative_trampoline),
                 raw as *mut core::ffi::c_void,
-                self.priority as bindings::ove_prio_t,
+                self.priority.raw(),
                 self.stack_size,
             )
         };
@@ -558,7 +629,7 @@ impl Builder {
                 self.name.as_ptr() as *const _,
                 Some(fn_cooperative_trampoline),
                 entry as *mut core::ffi::c_void,
-                self.priority as bindings::ove_prio_t,
+                self.priority.raw(),
                 self.stack_size,
             )
         };
@@ -584,7 +655,7 @@ impl Builder {
                 self.name.as_ptr() as *const _,
                 Some(fn_simple_trampoline),
                 entry as *mut core::ffi::c_void,
-                self.priority as bindings::ove_prio_t,
+                self.priority.raw(),
                 self.stack_size,
             )
         };
@@ -628,7 +699,7 @@ impl Builder {
                 self.name.as_ptr() as *const _,
                 Some(fn_cooperative_trampoline),
                 entry as *mut core::ffi::c_void,
-                self.priority as bindings::ove_prio_t,
+                self.priority.raw(),
                 N,
                 UnsafeCell::raw_get(&storage.stack).cast(),
             )
@@ -655,7 +726,7 @@ impl Builder {
                 self.name.as_ptr() as *const _,
                 Some(fn_simple_trampoline),
                 entry as *mut core::ffi::c_void,
-                self.priority as bindings::ove_prio_t,
+                self.priority.raw(),
                 N,
                 UnsafeCell::raw_get(&storage.stack).cast(),
             )

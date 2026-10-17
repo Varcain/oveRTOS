@@ -45,12 +45,7 @@ impl Workqueue {
     ) -> Result<Self> {
         let mut handle: bindings::ove_workqueue_t = core::ptr::null_mut();
         let rc = unsafe {
-            bindings::ove_workqueue_create(
-                &mut handle,
-                name.as_ptr(),
-                priority as bindings::ove_prio_t,
-                stack_size,
-            )
+            bindings::ove_workqueue_create(&mut handle, name.as_ptr(), priority.raw(), stack_size)
         };
         Error::from_code(rc)?;
         Ok(Self { handle })
@@ -76,7 +71,7 @@ impl Workqueue {
                 &mut handle,
                 storage,
                 name.as_ptr(),
-                priority as bindings::ove_prio_t,
+                priority.raw(),
                 stack_size,
                 stack,
             )

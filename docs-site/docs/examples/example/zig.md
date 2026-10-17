@@ -124,7 +124,7 @@ fn appMain() void {
 comptime { ove.exportMain(appMain); }
 ```
 
-`Priority` is an `enum(c_uint)` whose variants pin against the substrate's `OVE_PRIO_*` C enum at comptime — use the enum-literal `.normal` / `.high` instead of the older `ove.thread.prio.normal` constants struct.
+`Priority` is a non-exhaustive `enum(c_uint)` whose named tags pin against the substrate's `OVE_PRIO_*` anchors at comptime — use the enum-literal `.normal` / `.high` instead of the older `ove.thread.prio.normal` constants struct, and `ove.Priority.normal.above(1)` for a level between two anchors.
 
 ## Zero-heap variant — same call sites, FBA allocator
 

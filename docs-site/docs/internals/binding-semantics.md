@@ -42,7 +42,7 @@ A recurring difference is *how a scope-bound resource is released*:
 | Idempotent deinit | yes | yes | yes |
 | Cancellation flag | `stop_token::stop_requested()` | `StopToken::is_stopped()` | `StopToken.isStopped()` |
 | Request stop | `Thread::request_stop()` | `Thread::request_stop()` | `Thread.requestStop()` |
-| Priority | `ove_prio_t` (C enum) | `Priority` enum | `Priority` `enum(c_uint)` |
+| Priority | `ove_prio_t` (C enum) + `ove::prio_above`/`prio_below` | `Priority` newtype (`u8` level, anchor consts, `above`/`below`) | `Priority` non-exhaustive `enum(c_uint)` (`above`/`below`) |
 | State | `ove_thread_state_t` (C enum) | `ThreadState` enum | `State` `enum(c_uint)` |
 
 **Contract notes**
@@ -55,9 +55,16 @@ A recurring difference is *how a scope-bound resource is released*:
 - Cooperative cancellation is the supported shutdown path: the entry loops
   `while (!stop_requested())` and the owner calls `request_stop()` (implicitly via
   drop, or explicitly).
-- `Priority` and `State` are typed enums in Rust and Zig; C++ currently surfaces
-  the raw C enums (`ove_prio_t`, `ove_thread_state_t`). Treat the named values as
-  the contract, not the integers.
+- `Priority` is a level on the 0..31 scale in every binding. The named values
+  are anchors on it (`OVE_PRIO_NORMAL`, `Priority::Normal`, `.normal`), and
+  each binding steps between them the same way, clamping at both ends:
+  `OVE_PRIO_ABOVE(p, n)` / `ove::prio_above(p, n)` / `p.above(n)` and the
+  `below` forms. Rust keeps the anchor names as associated consts, so
+  `Priority::Normal` reads as before; a level outside the scale cannot be
+  built (`Priority::from_level` returns `None`, Zig's `fromLevel` `null`).
+- `State` is a typed enum in Rust and Zig; C++ currently surfaces the raw C
+  enum (`ove_thread_state_t`). Treat the named values as the contract, not
+  the integers.
 
 ---
 
