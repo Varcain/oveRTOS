@@ -835,6 +835,27 @@ fn testThreadSetPriority() !void {
     ove.thread.sleepMs(50);
 }
 
+fn testPriorityScale() !void {
+    const P = ove.Priority;
+    const mid = P.normal.above(1);
+    try expect(mid.level() > P.normal.level() and mid.level() < P.above_normal.level());
+    try expectEqual(P, P.max, P.high.above(100));
+    try expectEqual(P, P.max, P.critical.above(1));
+    try expectEqual(P, P.below_normal, P.normal.below(4));
+    try expectEqual(P, P.idle, P.low.below(10));
+    try expect(P.fromLevel(31).? == P.critical);
+    try expect(P.fromLevel(32) == null);
+}
+
+fn testThreadBetweenAnchors() !void {
+    thread_ran = false;
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "tmid", .priority = ove.Priority.normal.above(1) }, threadEntry, .{});
+    defer t.deinit();
+    t.setPriority(ove.Priority.high.below(2));
+    ove.thread.sleepMs(50);
+    try expect(thread_ran);
+}
+
 fn testThreadGetStateRunning() !void {
     var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "stat", .priority = .normal }, threadEntry, .{});
     defer t.deinit();
@@ -1999,6 +2020,8 @@ pub fn main() void {
         .{ .name = "yield_no_crash", .func = testThreadYieldNoCrash },
         .{ .name = "get_self", .func = testThreadGetSelf },
         .{ .name = "set_priority", .func = testThreadSetPriority },
+        .{ .name = "priority_scale", .func = testPriorityScale },
+        .{ .name = "between_anchors", .func = testThreadBetweenAnchors },
         .{ .name = "get_state_running", .func = testThreadGetStateRunning },
         .{ .name = "get_state_terminated", .func = testThreadGetStateTerminated },
         .{ .name = "thread_list", .func = testThreadList },

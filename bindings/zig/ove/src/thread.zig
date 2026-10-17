@@ -114,16 +114,24 @@ pub fn stackTotal(comptime stack_size: usize) usize {
     return stack_size;
 }
 
-/// Thread priority levels.
+/// Thread priority: a level from 0 to [`Priority.max`], higher preempting lower.
 ///
-/// `enum(c_uint)` matching the substrate's `ove_prio_t` C enum exactly
-/// (the C side translates as `c_uint` since all variants are
-/// non-negative), so the FFI conversion at the boundary is
-/// `@intFromEnum(p)` — a no-op at the machine-code level.  Pin block
-/// below catches substrate drift at compile time.
+/// The named tags (`.idle`, `.low`, …, `.critical`) are anchors on the
+/// scale; [`above`](Priority.above) and [`below`](Priority.below) step
+/// between them, so a thread can sit just above `.normal` without reaching
+/// `.above_normal`.  Every backend maps the 32 levels to distinct native
+/// priorities.
+///
+/// A non-exhaustive `enum(c_uint)` matching the substrate's `ove_prio_t`
+/// (the C side translates as `c_uint` since all values are non-negative),
+/// so the FFI conversion at the boundary is `@intFromEnum(p)` — a no-op at
+/// the machine-code level.  Pin block below catches substrate drift at
+/// compile time.
 ///
 /// ```zig
 /// try ove.Thread(4096).spawn(allocator, .{ .name = "worker", .priority = .high },
+///                             entry, .{});
+/// try ove.Thread(4096).spawn(allocator, .{ .priority = ove.Priority.normal.above(1) },
 ///                             entry, .{});
 /// ```
 pub const Priority = enum(c_uint) {
@@ -143,6 +151,37 @@ pub const Priority = enum(c_uint) {
     realtime = 24,
     /// Highest priority; reserved for critical system tasks.
     critical = 31,
+    /// Any other level on the scale; see [`fromLevel`](Priority.fromLevel).
+    _,
+
+    /// The highest priority on the scale (`.critical`).
+    pub const max: Priority = .critical;
+
+    /// The priority at `lvl`, or `null` above [`max`](Priority.max).
+    pub fn fromLevel(lvl: u8) ?Priority {
+        if (lvl > @intFromEnum(max)) return null;
+        return @enumFromInt(lvl);
+    }
+
+    /// This priority's level on the scale, 0..31.
+    pub fn level(self: Priority) u8 {
+        return @intCast(@intFromEnum(self));
+    }
+
+    /// The priority `n` levels higher, clamped to [`max`](Priority.max).
+    pub fn above(self: Priority, n: u8) Priority {
+        const top = @intFromEnum(max);
+        const v = @intFromEnum(self);
+        if (v >= top or n >= top - v) return max;
+        return @enumFromInt(v + n);
+    }
+
+    /// The priority `n` levels lower, clamped to `.idle`.
+    pub fn below(self: Priority, n: u8) Priority {
+        const v = @intFromEnum(self);
+        if (n >= v) return .idle;
+        return @enumFromInt(v - n);
+    }
 };
 /// Scheduler-observable thread state, as reported by the active backend.
 ///

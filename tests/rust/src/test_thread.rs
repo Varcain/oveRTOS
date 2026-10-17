@@ -358,6 +358,45 @@ fn test_priority_ordering() {
     let _ = format!("{:?}", Priority::BelowNormal);
 }
 
+/* ── Priority scale: steps between anchors, clamping, levels ──── */
+
+fn test_priority_scale() {
+    use ove::Priority;
+    let mid = Priority::Normal.above(1);
+    assert!(Priority::Normal < mid && mid < Priority::AboveNormal);
+    assert_eq!(mid.level(), Priority::Normal.level() + 1);
+    assert_eq!(Priority::High.above(100), Priority::MAX);
+    assert_eq!(Priority::Critical.above(1), Priority::MAX);
+    assert_eq!(Priority::Normal.below(4), Priority::BelowNormal);
+    assert_eq!(Priority::Low.below(10), Priority::Idle);
+    assert_eq!(Priority::from_level(31), Some(Priority::Critical));
+    assert_eq!(Priority::from_level(32), None);
+    assert_eq!(format!("{:?}", Priority::Normal), "Normal");
+    assert_eq!(format!("{:?}", mid), "Priority(13)");
+}
+
+/* ── A thread runs between two anchors and moves to another level ─ */
+
+fn test_priority_between_anchors() {
+    use ove::Priority;
+    FLAG.store(0, Ordering::SeqCst);
+    let th = Thread::builder()
+        .name(c"tmid")
+        .priority(Priority::Normal.above(1))
+        .stack_size(4096)
+        .spawn_simple(entry_set_flag)
+        .expect("spawn at an in-between priority");
+    th.set_priority(Priority::High.below(2));
+    for _ in 0..1000 {
+        if FLAG.load(Ordering::SeqCst) == 1 {
+            break;
+        }
+        Thread::sleep_ms(1);
+    }
+    assert_eq!(FLAG.load(Ordering::SeqCst), 1);
+    drop(th);
+}
+
 /* ── ThreadState derive exercise ────────────────────────────────── */
 
 fn test_thread_state_debug_eq() {
@@ -392,6 +431,8 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_thread_list_with_spawned),
         test_entry!(test_thread_list_uses_full_caller_capacity),
         test_entry!(test_priority_ordering),
+        test_entry!(test_priority_scale),
+        test_entry!(test_priority_between_anchors),
         test_entry!(test_thread_state_debug_eq),
     ])
 }

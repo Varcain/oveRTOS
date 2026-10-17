@@ -248,6 +248,24 @@ static void test_cpp_thread_list_no_binding_cap(void **state)
 	}
 }
 
+static void test_cpp_priority_scale_helpers(void **state)
+{
+	(void)state;
+	static_assert(ove::prio_above(OVE_PRIO_NORMAL, 1) > OVE_PRIO_NORMAL &&
+			      ove::prio_above(OVE_PRIO_NORMAL, 1) < OVE_PRIO_ABOVE_NORMAL,
+		      "one step above an anchor stays below the next anchor");
+	static_assert(ove::prio_above(OVE_PRIO_HIGH, 100) == OVE_PRIO_MAX, "clamped to the top");
+	static_assert(ove::prio_below(OVE_PRIO_LOW, 10) == OVE_PRIO_IDLE, "clamped to idle");
+	static_assert(ove::prio_below(OVE_PRIO_NORMAL, 4) == OVE_PRIO_BELOW_NORMAL,
+		      "anchor spacing");
+	g_cpp_keep_running.store(1);
+	ove::Thread<4096> t(cpp_entry_spin, nullptr, ove::prio_above(OVE_PRIO_NORMAL, 1), "tmid");
+	test_msleep(10);
+	t.set_priority(ove::prio_below(OVE_PRIO_HIGH, 2));
+	g_cpp_keep_running.store(0);
+	test_msleep(20);
+}
+
 int test_cpp_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -257,6 +275,7 @@ int test_cpp_thread_run(void)
 		cmocka_unit_test(test_cpp_thread_yield),
 		cmocka_unit_test(test_cpp_thread_get_self),
 		cmocka_unit_test_teardown(test_cpp_thread_set_priority, teardown_stop_cpp_spin),
+		cmocka_unit_test_teardown(test_cpp_priority_scale_helpers, teardown_stop_cpp_spin),
 		cmocka_unit_test_teardown(test_cpp_thread_get_state_running,
 					  teardown_stop_cpp_spin),
 		cmocka_unit_test(test_cpp_thread_get_state_terminated),

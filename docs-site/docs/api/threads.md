@@ -51,6 +51,8 @@ Priorities form a scale from 0 to `OVE_PRIO_MAX` (31); the constants above are n
 
 Each backend maps the 32 values to 32 distinct native priorities, so the order between any two values holds on every RTOS. Higher values mean higher scheduling priority on all backends.
 
+The bindings use the same scale: C++ has `ove::prio_above(p, n)` / `ove::prio_below(p, n)`, Rust `Priority::Normal.above(n)` (with `level()` and `Priority::from_level()`), and Zig `ove.Priority.normal.above(n)` (with `level()` and `fromLevel()`).
+
 ## Thread Lifecycle
 
 ```mermaid

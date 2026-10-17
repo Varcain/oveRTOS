@@ -152,7 +152,7 @@ ove_pm_notify_register(my_notify, NULL);
 
 ## FreeRTOS backend notes
 
-- Uses FreeRTOS tasks for threads, with the oveRTOS priority enum mapped linearly onto FreeRTOS task priorities.
+- Uses FreeRTOS tasks for threads; the 32 oveRTOS priorities map one to one onto the native priorities above idle (`configMAX_PRIORITIES` is 32).
 - Heap mode uses `pvPortMalloc` / `vPortFree`; zero-heap mode uses static FreeRTOS object APIs.
 - `freertos_heap_stubs.c` provides `malloc`/`free` shims for third-party libraries (e.g. LVGL) that call the C allocator directly.
 - Timer callbacks run in the FreeRTOS timer service task context.
@@ -165,13 +165,13 @@ ove_pm_notify_register(my_notify, NULL);
 
 ## Zephyr backend notes
 
-- Threads map to Zephyr kernel threads; the priority enum is translated to Zephyr cooperative/preemptive priorities.
+- Threads map to Zephyr kernel threads; the 32 oveRTOS priorities map onto 32 preemptible Zephyr priorities (`CONFIG_NUM_PREEMPT_PRIORITIES=32`), highest first.
 - Synchronization primitives use `k_mutex`, `k_sem`, `k_condvar`, and `k_poll_signal`.
 - Timers use `k_timer`.
 
 ## NuttX backend notes
 
-- Threads map to NuttX `pthread` or `task_create` depending on configuration.
+- Threads map to NuttX `pthread` or `task_create` depending on configuration. The named oveRTOS priorities keep fixed NuttX priorities (50..240); the levels between two of them spread evenly in between.
 - Filesystem operations delegate to the NuttX VFS layer.
 
 ## Running in a browser
