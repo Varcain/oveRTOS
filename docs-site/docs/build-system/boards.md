@@ -35,6 +35,8 @@ The ST STM32F746G-DISCO discovery kit is the primary hardware target and the ref
 
 The board directory contains subdirectories for `freertos`, `nuttx`, and `zephyr`. The FreeRTOS backend is the primary integration target and the one used in the reference examples.
 
+Audio (`ove_audio`) is not available on NuttX: NuttX's WM8994 driver plays audio but cannot record, and the audio graph needs both, so on NuttX starting an audio graph with an I2S device returns `OVE_ERR_NOT_SUPPORTED`. FreeRTOS and Zephyr drive the codec in both directions.
+
 **Clock tree**
 
 HSE crystal at 25 MHz is used as the PLL source. The PLL output drives SYSCLK at 216 MHz, AHB at 216 MHz (divider 1), APB1 at 54 MHz (divider 4), and APB2 at 108 MHz (divider 2).
