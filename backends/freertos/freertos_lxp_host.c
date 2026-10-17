@@ -19,6 +19,7 @@
 #include "lxp_ove_port_common.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
+#include "ove/lxp_host.h"
 #include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
 #include "ove_freertos_priority.h"
@@ -90,6 +91,13 @@ static int host_thread_list(struct lxp_thread_info *out, size_t max_count, size_
 _Static_assert(sizeof(LXP_SYSTEM_VERSION) <= LXP_OVE_SYSTEM_VERSION_MAX,
 	       "uname version exceeds Linux utsname field");
 
+/* The caller of ove_lxp_host_run() becomes the coordinator, at the same ove
+ * priority on every engine; it outranks every guest and the guest scheduler. */
+static void host_promote_coordinator(void)
+{
+	vTaskPrioritySet(NULL, ove_freertos_priority_value(OVE_PRIO_LXP_COORDINATOR));
+}
+
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static int host_random_fill(void *buf, size_t len)
 {
@@ -160,6 +168,7 @@ static int host_prepare(void)
 {
 	/* The LXP trap posts a FreeRTOS semaphore from SVCall context. */
 	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	host_promote_coordinator();
 	return LXP_OK;
 }
 
@@ -189,6 +198,7 @@ static int host_random_fill(void *buf, size_t len)
 
 static int host_prepare(void)
 {
+	host_promote_coordinator();
 	uintptr_t storage_base = (uintptr_t)&g_lxp_storage;
 	uintptr_t storage_end = storage_base + sizeof(g_lxp_storage);
 	return storage_base >= OVE_LXP_GUEST_POOL_BASE && storage_end <= OVE_LXP_GUEST_POOL_END

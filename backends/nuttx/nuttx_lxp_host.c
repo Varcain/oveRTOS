@@ -11,6 +11,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/version.h>
 
+#include <sched.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -20,6 +21,7 @@
 #include "lxp_ove_port_common.h"
 #include "lxp_ove_thread_adapter.h"
 #include "ove/build.h"
+#include "ove/lxp_host.h"
 #include "lxp_ove_memory_layout.h"
 #include "ove/time.h"
 #include "ove_lxp_memory_contract.h"
@@ -170,6 +172,16 @@ static int host_validate_memory_contract(const lxp_cpu_memory_contract_t *declar
 #define HOST_MEMORY_VALIDATOR ove_lxp_validate_uncached_memory_contract
 #endif
 
+/* The caller of ove_lxp_host_run() becomes the coordinator, at the same ove
+ * priority on every engine; it outranks every guest. */
+static int host_prepare(void)
+{
+	struct sched_param param = {
+		.sched_priority = ove_nuttx_map_priority(OVE_PRIO_LXP_COORDINATOR),
+	};
+	return sched_setparam(0, &param) == 0 ? LXP_OK : LXP_ERR_INVALID_PARAM;
+}
+
 const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 	.common =
 		{
@@ -188,6 +200,7 @@ const lxp_nuttx_port_config_t g_lxp_nuttx_port_config = {
 #endif
 			LXP_OVE_PORT_SERVICES(host_thread_list, LXP_SYSTEM_VERSION,
 					      HOST_MEMORY_VALIDATOR),
+			.host_prepare = host_prepare,
 		},
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	.slot_stacks = g_slot_stacks,

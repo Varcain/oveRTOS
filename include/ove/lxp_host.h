@@ -13,6 +13,7 @@
 
 #include "ove/lxp_launch.h"
 #include "ove/net.h"
+#include "ove/thread.h"
 #include "ove_config.h"
 
 #if !defined(CONFIG_OVE_LINUX_ROOTFS_FILE_CAPACITY) || \
@@ -22,6 +23,10 @@
 
 #define OVE_LXP_ROOTFS_FILE_CAPACITY CONFIG_OVE_LINUX_ROOTFS_FILE_CAPACITY
 #define OVE_LXP_ROOTFS_NAME_CAPACITY CONFIG_OVE_LINUX_ROOTFS_NAME_CAPACITY
+
+/** Priority of the thread running ove_lxp_host_run(): above ABOVE_NORMAL work, below HIGH.
+ * Linux guests run below it; a thread that must preempt the personality uses a higher one. */
+#define OVE_PRIO_LXP_COORDINATOR OVE_PRIO_BELOW(OVE_PRIO_HIGH, 2)
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,7 +119,10 @@ int ove_lxp_host_netif_get_addr(const ove_lxp_host_t *host, ove_sockaddr_t *ip,
  * host, OVE_ERR_NOT_FOUND when @p path does not exist, OVE_ERR_NOT_SUPPORTED when it
  * cannot be executed or the console refuses readiness events, OVE_ERR_NO_MEMORY, a
  * native service's own error when run setup fails, or OVE_ERR_TIMEOUT when every
- * guest process stays blocked with nothing left to wake it. */
+ * guest process stays blocked with nothing left to wake it.
+ *
+ * The calling thread becomes the personality's coordinator: the run raises it to
+ * @ref OVE_PRIO_LXP_COORDINATOR on every engine, and it keeps that priority afterwards. */
 int ove_lxp_host_run(const ove_lxp_host_t *host, const ove_lxp_launch_config_t *config,
 		     const char *path, int argc, const char *const argv[]);
 
