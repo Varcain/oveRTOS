@@ -24,8 +24,8 @@
 #define OVE_FREERTOS_NATIVE_PRIORITY(prio) (tskIDLE_PRIORITY + (UBaseType_t)(prio))
 
 _Static_assert(configMAX_PRIORITIES > OVE_FREERTOS_NATIVE_PRIORITY(OVE_PRIO_MAX),
-	       "FreeRTOS needs a native priority for every ove priority: set "
-	       "CONFIG_FREERTOS_MAX_PRIORITIES to 32 or more (regenerate an older .config)");
+	       "FreeRTOS needs a native priority for every ove priority "
+	       "(regenerate an older FreeRTOSConfig.h with ove configure)");
 
 static inline UBaseType_t ove_freertos_priority_value(ove_prio_t prio)
 {
