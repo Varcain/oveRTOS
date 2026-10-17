@@ -55,7 +55,7 @@ if(OVE_NVS)
     ove_add_board_sources(${OVE_DIR}/backends/common/ove_nvs_ram.c)
 endif()
 if(OVE_WATCHDOG)
-    ove_add_board_sources(qemu_watchdog.c)
+    ove_add_board_sources(../qemu_watchdog.c)
 endif()
 
 # The Linux personality build is headless (no sim display/audio). Everything

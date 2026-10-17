@@ -78,6 +78,12 @@ if(OVE_GPIO)
     ove_nuttx_add_sources(${CMAKE_CURRENT_LIST_DIR}/src/gpio.c)
 endif()
 
+# The IWDG, driven directly: NuttX's STM32F7 port has no IWDG driver.
+if(OVE_WATCHDOG)
+    ove_nuttx_exclude_backends(WATCHDOG)
+    ove_nuttx_add_sources(${CMAKE_CURRENT_LIST_DIR}/src/watchdog.c)
+endif()
+
 if(OVE_LINUX_RT_SCOPE)
     ove_nuttx_add_sources(${OVE_DIR}/boards/stm32f746g-discovery/common/rt_scope.c)
 endif()

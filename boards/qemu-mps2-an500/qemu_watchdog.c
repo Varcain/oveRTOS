@@ -7,17 +7,25 @@
  */
 
 /*
- * Watchdog for QEMU MPS2-AN500 on FreeRTOS: the CMSDK APB watchdog at
- * 0x40008000, clocked from the 25 MHz system clock. Its counter raises an
+ * Watchdog for QEMU MPS2-AN500, shared by FreeRTOS and NuttX: the CMSDK APB
+ * watchdog at 0x40008000, clocked from the system clock. Its counter raises an
  * interrupt (wired to NMI on this machine) the first time it reaches zero
  * and resets the machine the second time, so it is loaded with half the
  * timeout: an unfed dog resets the board timeout_ms after the last feed.
  * Unlike the STM32 IWDG it can be stopped again.
  */
 
+#include "ove_config.h"
+#include "ove/reset.h"
 #include "ove/watchdog.h"
+#include "board_desc.h"
 #include <stdint.h>
 #include <stdlib.h>
+#if defined(CONFIG_OVE_RTOS_NUTTX)
+#include <nuttx/irq.h>
+/* NVIC_IRQ_NMI in NuttX's arch-private arch/arm/src/armv7-m/nvic.h */
+#define WDOG_NMI_IRQ 2
+#endif
 
 #define WDOG_BASE 0x40008000u
 #define WDOG_REG(off) (*(volatile uint32_t *)(uintptr_t)(WDOG_BASE + (off)))
@@ -30,12 +38,10 @@
 #define WDOG_CONTROL_RESEN (1u << 1)
 #define WDOG_UNLOCK 0x1ACCE551u
 
-extern uint32_t SystemCoreClock;
-
 /* The counter runs from WDOGCLK, the system clock. */
 static uint32_t half_timeout_ticks(uint32_t timeout_ms)
 {
-	uint64_t ticks = (uint64_t)SystemCoreClock / 1000u * timeout_ms / 2u;
+	uint64_t ticks = (uint64_t)OVE_CLOCK_SYSCLK_MHZ * 1000u * timeout_ms / 2u;
 	return ticks > UINT32_MAX ? UINT32_MAX : (ticks ? (uint32_t)ticks : 1u);
 }
 
@@ -49,9 +55,26 @@ static void wdog_write(volatile uint32_t *reg, uint32_t value)
 
 /* The first expiry's NMI only announces the reset to come: returning leaves
  * the count running, and feeding before the second expiry still saves the
- * board. */
+ * board. FreeRTOS takes the NMI vector by name; NuttX dispatches it as an IRQ
+ * and panics on one nobody attached. */
+#if defined(CONFIG_OVE_RTOS_NUTTX)
+static int wdog_nmi(int irq, void *context, void *arg)
+{
+	(void)irq;
+	(void)context;
+	(void)arg;
+	return 0;
+}
+#else
 void NMI_Handler(void)
 {
+}
+#endif
+
+/* The CMSDK watchdog keeps no record of why the machine last reset. */
+ove_reset_cause_t ove_reset_cause(void)
+{
+	return OVE_RESET_UNKNOWN;
 }
 
 int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)
@@ -62,6 +85,9 @@ int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint
 	struct ove_watchdog *w = (struct ove_watchdog *)storage;
 	w->timeout_ms = timeout_ms;
 	w->started = 0;
+#if defined(CONFIG_OVE_RTOS_NUTTX)
+	irq_attach(WDOG_NMI_IRQ, wdog_nmi, NULL);
+#endif
 	*wdt = w;
 	return OVE_OK;
 }
