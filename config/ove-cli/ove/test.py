@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -132,6 +133,26 @@ def _run_test_binary(cmd, suite, **kwargs) -> TestResults:
     if result.returncode != 0 and parsed.failed == 0:
         parsed.failed = 1
     return parsed
+
+
+@contextmanager
+def _kconfig_srctree(ove_dir):
+    """Point kconfiglib at the oveRTOS tree for the duration of a block.
+
+    kconfiglib reads $srctree when it parses Config.in. Setting it for the
+    rest of the process would also hand it to every later subprocess, and
+    NuttX's olddefconfig in the nuttx-sim build would then look for its
+    Kconfig in the oveRTOS tree.
+    """
+    previous = os.environ.get("srctree")
+    os.environ["srctree"] = ove_dir
+    try:
+        yield
+    finally:
+        if previous is None:
+            del os.environ["srctree"]
+        else:
+            os.environ["srctree"] = previous
 
 
 def _venv_env(ove_dir, base_env=None):
@@ -2277,16 +2298,16 @@ def test_qemu_freertos_linux_hardfloat(ove_dir, output_dir):
     # The fragment command intentionally defaults to the broadly compatible
     # soft guest. Select the independent hard guest ABI; the hidden rootfs
     # output symbol must follow that choice even after loading a saved .config.
-    os.environ["srctree"] = ove_dir
-    kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
     config_path = os.path.join(ove_dir, ".config")
-    kconf.load_config(config_path)
-    kconf.syms["OVE_LINUX_GUEST_FLOAT_ABI_HARD"].set_value(2)
-    kconf.syms["OVE_LINUX_GUEST_FP_SELFTEST"].set_value(2)
-    rootfs_output = kconf.syms["OVE_LINUX_ROOTFS_OUTPUT"].str_value
-    if rootfs_output != "output-hardfloat":
-        raise RuntimeError(f"hard-float guest selected {rootfs_output!r} rootfs")
-    kconf.write_config(config_path)
+    with _kconfig_srctree(ove_dir):
+        kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
+        kconf.load_config(config_path)
+        kconf.syms["OVE_LINUX_GUEST_FLOAT_ABI_HARD"].set_value(2)
+        kconf.syms["OVE_LINUX_GUEST_FP_SELFTEST"].set_value(2)
+        rootfs_output = kconf.syms["OVE_LINUX_ROOTFS_OUTPUT"].str_value
+        if rootfs_output != "output-hardfloat":
+            raise RuntimeError(f"hard-float guest selected {rootfs_output!r} rootfs")
+        kconf.write_config(config_path)
 
     # Regenerate the CMake/header inputs after changing Kconfig. An existing
     # workspace may otherwise retain a previously generated soft-guest file.
@@ -2768,13 +2789,13 @@ def test_lxp_memory_layout_config(ove_dir, output_dir):
     names = ("OVE_LINUX_ROOTFS_BASE", "OVE_LINUX_ROOTFS_SIZE",
              "OVE_LINUX_GUEST_POOL_BASE", "OVE_LINUX_GUEST_POOL_SIZE")
     result = TestResults(suite="lxp-layout-config")
-    os.environ["srctree"] = ove_dir
     generate_app_kconfig(ove_dir)
     generate_board_kconfig(ove_dir)
 
     for label, rtos, board, qspi, expected in cases:
-        kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"),
-                                   warn=False)
+        with _kconfig_srctree(ove_dir):
+            kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"),
+                                       warn=False)
         kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
         kconf.syms[f"OVE_BOARD_{board}"].set_value(2)
         kconf.syms["OVE_ARENA"].set_value(2)
