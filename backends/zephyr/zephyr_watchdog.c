@@ -7,10 +7,52 @@
  */
 
 #include "ove/watchdog.h"
+#include "ove/reset.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/hwinfo.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/device.h>
+#include <zephyr/init.h>
+
+/* ─── reset cause ────────────────────────────────────────────────────── */
+
+/* Latched once at boot and then cleared, so the value describes the reset
+ * that started this boot. Boards without a hwinfo reset-cause driver report
+ * OVE_RESET_UNKNOWN. */
+static ove_reset_cause_t g_reset_cause = OVE_RESET_UNKNOWN;
+
+static int latch_reset_cause(void)
+{
+	uint32_t flags;
+
+	if (hwinfo_get_reset_cause(&flags) != 0)
+		return 0;
+	(void)hwinfo_clear_reset_cause();
+
+	/* Most specific first, as on FreeRTOS: a watchdog recovery is never masked
+	 * by the pin/power-on flags a reset also sets. */
+	if (flags & RESET_WATCHDOG)
+		g_reset_cause = OVE_RESET_WATCHDOG;
+	else if (flags & RESET_SOFTWARE)
+		g_reset_cause = OVE_RESET_SOFTWARE;
+	else if (flags & RESET_LOW_POWER_WAKE)
+		g_reset_cause = OVE_RESET_LOW_POWER;
+	else if (flags & RESET_POR)
+		g_reset_cause = OVE_RESET_POWER_ON;
+	else if (flags & RESET_BROWNOUT)
+		g_reset_cause = OVE_RESET_BROWNOUT;
+	else if (flags & RESET_PIN)
+		g_reset_cause = OVE_RESET_PIN;
+	return 0;
+}
+
+SYS_INIT(latch_reset_cause, POST_KERNEL, 0);
+
+ove_reset_cause_t ove_reset_cause(void)
+{
+	return g_reset_cause;
+}
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)

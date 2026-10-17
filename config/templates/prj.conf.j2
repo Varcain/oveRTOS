@@ -159,6 +159,17 @@ CONFIG_ENTROPY_GENERATOR=y
 CONFIG_TEST_RANDOM_GENERATOR=y
 {% endif %}
 
+{% if get_bool("CONFIG_OVE_WATCHDOG") %}
+# ove_watchdog: the board's watchdog0 (STM32 IWDG, CMSDK APB watchdog), and
+# the reset cause through hwinfo where the board has a driver for it
+CONFIG_WATCHDOG=y
+CONFIG_HWINFO=y
+{% if get_bool("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") or get_bool("CONFIG_OVE_BOARD_QEMU_MPS2_AN521") %}
+# The CMSDK watchdog announces its first expiry on the NMI.
+CONFIG_RUNTIME_NMI=y
+{% endif %}
+{% endif %}
+
 {% if config.get("CONFIG_OVE_EVENTGROUP", False) %}
 # Kernel events (for ove_eventgroup)
 CONFIG_EVENTS=y
