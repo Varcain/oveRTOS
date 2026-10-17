@@ -192,7 +192,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
 		    void *stack)
 {
-	if (!handle || !storage || !entry) {
+	if (!handle || !storage || !entry || (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* Backstop the AAPCS 8-byte stack alignment promised by the
@@ -289,7 +289,7 @@ int ove_thread_deinit(ove_thread_t handle)
 int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
 		      ove_prio_t priority, size_t stack_size)
 {
-	if (!handle || !entry) {
+	if (!handle || !entry || (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -378,7 +378,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 	 * still record the requested value so ove_thread_list reports
 	 * it and backend-neutral code sees a round-trip. */
 	struct ove_thread *t = handle;
-	if (t)
+	if (t && (unsigned)prio <= OVE_PRIO_MAX)
 		t->priority = (uint8_t)prio;
 }
 

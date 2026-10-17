@@ -93,19 +93,19 @@ pub enum Priority {
     /// Lowest priority, typically the RTOS idle task level.
     Idle = 0,
     /// Low background priority.
-    Low = 1,
+    Low = 4,
     /// Below-normal priority.
-    BelowNormal = 2,
+    BelowNormal = 8,
     /// Default priority for most application threads.
-    Normal = 3,
+    Normal = 12,
     /// Above-normal priority for time-sensitive work.
-    AboveNormal = 4,
+    AboveNormal = 16,
     /// High priority for latency-critical tasks.
-    High = 5,
+    High = 20,
     /// Real-time priority; preempts most other threads.
-    Realtime = 6,
+    Realtime = 24,
     /// Highest priority; reserved for system-critical tasks.
-    Critical = 7,
+    Critical = 31,
 }
 
 /// Thread state, matching `ove_thread_state_t`.

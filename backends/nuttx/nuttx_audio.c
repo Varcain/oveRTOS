@@ -9,6 +9,7 @@
 #include "ove/types.h"
 #include "ove/audio_device.h"
 #include "ove_backend_common.h"
+#include "ove_nuttx_priority.h"
 
 #include <nuttx/config.h>
 #include <stdio.h>
@@ -33,7 +34,7 @@
 #define AUDIO_PLAY_PATH "/dev/audio/pcm0"
 #define AUDIO_REC_PATH "/dev/audio/pcm1"
 #define DEFAULT_NUM_BUFFERS 3
-#define DEFAULT_AUDIO_PRIORITY 200
+#define DEFAULT_AUDIO_PRIORITY OVE_NUTTX_PRIO_REALTIME
 #define DEFAULT_AUDIO_STACK 4096
 #define BYTES_PER_SAMPLE sizeof(int16_t)
 /* Upper bound on buffer-pointer arrays so they can live on the audio

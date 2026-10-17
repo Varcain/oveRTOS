@@ -37,6 +37,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "ove_freertos_priority.h"
 #include "ove_config.h"
 
 #include <string.h>
@@ -338,10 +339,12 @@ err_t ethernetif_init(struct netif *netif)
 #ifdef CONFIG_OVE_ZERO_HEAP
 		static StaticTask_t s_rmii_wd_tcb;
 		static StackType_t s_rmii_wd_stack[256];
-		xTaskCreateStatic(rmii_watchdog_task, "rmii_wd", 256, NULL, 4, s_rmii_wd_stack,
-				  &s_rmii_wd_tcb);
+		xTaskCreateStatic(rmii_watchdog_task, "rmii_wd", 256, NULL,
+				  ove_freertos_priority_value(OVE_PRIO_ABOVE_NORMAL),
+				  s_rmii_wd_stack, &s_rmii_wd_tcb);
 #else
-		xTaskCreate(rmii_watchdog_task, "rmii_wd", 256, NULL, 4, NULL);
+		xTaskCreate(rmii_watchdog_task, "rmii_wd", 256, NULL,
+			    ove_freertos_priority_value(OVE_PRIO_ABOVE_NORMAL), NULL);
 #endif
 	}
 

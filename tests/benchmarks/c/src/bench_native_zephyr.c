@@ -38,6 +38,9 @@
 #include <stdint.h>
 #include <string.h>
 
+/* Native helper threads run where an OVE_PRIO_NORMAL thread runs. */
+#define NATIVE_THREAD_PRIO K_PRIO_PREEMPT((int)OVE_PRIO_MAX - (int)OVE_PRIO_NORMAL)
+
 /* ─── Shared state ─────────────────────────────────────────────── */
 
 static struct k_mutex native_mtx;
@@ -133,7 +136,7 @@ static void native_mutex_contention_setup(void *ctx)
 	contention_count = 0;
 	k_mutex_init(&native_mtx);
 	k_thread_create(&native_contention_th, native_contention_stack, NATIVE_THREAD_STACK,
-			native_contention_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0,
+			native_contention_thread, NULL, NULL, NULL, NATIVE_THREAD_PRIO, 0,
 			K_NO_WAIT);
 }
 
@@ -228,7 +231,8 @@ static void native_condvar_signal_wait_setup(void *ctx)
 	k_condvar_init(&native_cv);
 	native_cv_done = 0;
 	k_thread_create(&native_cv_signal_th, native_cv_signal_stack, NATIVE_THREAD_STACK,
-			native_cv_signal_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+			native_cv_signal_thread, NULL, NULL, NULL, NATIVE_THREAD_PRIO, 0,
+			K_NO_WAIT);
 }
 
 static void native_condvar_signal_wait_run(void *ctx)
@@ -271,7 +275,7 @@ static void native_event_signal_wait_setup(void *ctx)
 	k_event_init(&native_evt);
 	native_evt_done = 0;
 	k_thread_create(&native_evt_signal_th, native_evt_signal_stack, NATIVE_THREAD_STACK,
-			native_event_signal_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0,
+			native_event_signal_thread, NULL, NULL, NULL, NATIVE_THREAD_PRIO, 0,
 			K_NO_WAIT);
 }
 
@@ -317,7 +321,7 @@ static void native_thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
 	k_thread_create(&native_create_destroy_th, native_create_destroy_stack, NATIVE_THREAD_STACK,
-			native_thread_noop, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+			native_thread_noop, NULL, NULL, NULL, NATIVE_THREAD_PRIO, 0, K_NO_WAIT);
 	k_thread_join(&native_create_destroy_th, K_FOREVER);
 }
 
@@ -346,7 +350,7 @@ static void native_thread_context_switch_setup(void *ctx)
 	k_sem_init(&native_cs_b, 0, 1);
 	native_cs_done = 0;
 	k_thread_create(&native_cs_pong_th, native_cs_pong_stack, NATIVE_THREAD_STACK,
-			native_cs_pong_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+			native_cs_pong_thread, NULL, NULL, NULL, NATIVE_THREAD_PRIO, 0, K_NO_WAIT);
 }
 
 static void native_thread_context_switch_run(void *ctx)

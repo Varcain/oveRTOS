@@ -239,7 +239,8 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
 		    void *stack)
 {
-	if (handle == NULL || storage == NULL || entry == NULL) {
+	if (handle == NULL || storage == NULL || entry == NULL ||
+	    (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
@@ -307,7 +308,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	struct ove_thread *t;
 	int ret;
 
-	if (handle == NULL || entry == NULL) {
+	if (handle == NULL || entry == NULL || (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -347,6 +348,8 @@ ove_thread_t ove_thread_get_self(void)
 void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	struct sched_param param;
+	if ((unsigned)prio > OVE_PRIO_MAX)
+		return;
 	param.sched_priority = ove_nuttx_map_priority(prio);
 
 	pid_t pid = (handle != NULL) ? handle->pid : getpid();

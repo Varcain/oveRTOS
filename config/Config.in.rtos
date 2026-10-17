@@ -78,7 +78,11 @@ menu "FreeRTOS"
 
         config FREERTOS_MAX_PRIORITIES
             int "Max priorities"
-            default 12
+            default 32
+            range 32 255
+            help
+              oveRTOS maps its 32 thread priorities one to one onto native
+              FreeRTOS priorities, so at least 32 are required.
 
         config FREERTOS_MINIMAL_STACK_SIZE
             int "Minimal stack size (words)"
@@ -107,7 +111,8 @@ menu "FreeRTOS"
 
         config FREERTOS_TIMER_TASK_PRIORITY
             int "Timer task priority"
-            default 4
+            # OVE_PRIO_ABOVE_NORMAL
+            default 16
             depends on FREERTOS_USE_TIMERS
 
         config FREERTOS_TIMER_QUEUE_LENGTH

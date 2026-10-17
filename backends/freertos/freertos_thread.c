@@ -73,7 +73,8 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
 		    void *stack)
 {
-	if (handle == NULL || storage == NULL || entry == NULL || stack == NULL) {
+	if (handle == NULL || storage == NULL || entry == NULL || stack == NULL ||
+	    (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires the stack pointer to be 8-byte aligned at public
@@ -155,7 +156,7 @@ int ove_thread_deinit(ove_thread_t handle)
 int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
 		      ove_prio_t priority, size_t stack_size)
 {
-	if (handle == NULL || entry == NULL)
+	if (handle == NULL || entry == NULL || (unsigned)priority > OVE_PRIO_MAX)
 		return OVE_ERR_INVALID_PARAM;
 
 	uint32_t stack_depth = stack_size / sizeof(StackType_t);
@@ -231,6 +232,8 @@ ove_thread_t ove_thread_get_self(void)
 
 void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
+	if ((unsigned)prio > OVE_PRIO_MAX)
+		return;
 	TaskHandle_t task = (handle != NULL) ? handle->task : NULL;
 	vTaskPrioritySet(task, ove_freertos_priority_value(prio));
 }

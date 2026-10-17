@@ -49,6 +49,9 @@
  * fit comfortably in 512 bytes). */
 #define NATIVE_TASK_STACK 512
 
+/* Native helper tasks run where an OVE_PRIO_LOW thread runs. */
+#define NATIVE_TASK_PRIO (tskIDLE_PRIORITY + OVE_PRIO_LOW)
+
 static StaticSemaphore_t native_mtx_storage;
 static StaticSemaphore_t native_rmtx_storage;
 static StaticSemaphore_t native_sem_storage;
@@ -131,8 +134,7 @@ static void native_mutex_contention_setup(void *ctx)
 	contention_count = 0;
 	native_mtx = xSemaphoreCreateMutexStatic(&native_mtx_storage);
 	(void)xTaskCreateStatic(native_contention_task, "nat_cont", NATIVE_TASK_STACK, NULL,
-				tskIDLE_PRIORITY + 1, native_contention_stack,
-				&native_contention_tcb);
+				NATIVE_TASK_PRIO, native_contention_stack, &native_contention_tcb);
 }
 
 static void native_mutex_contention_run(void *ctx)
@@ -238,7 +240,7 @@ static void native_condvar_signal_wait_setup(void *ctx)
 	native_cv_done = 0;
 	native_cv_waiter = xTaskGetCurrentTaskHandle();
 	native_cv_signaller = xTaskCreateStatic(native_cv_signal_task, "nat_cv", NATIVE_TASK_STACK,
-						NULL, tskIDLE_PRIORITY + 1, native_cv_stack,
+						NULL, NATIVE_TASK_PRIO, native_cv_stack,
 						&native_cv_tcb);
 }
 
@@ -279,7 +281,7 @@ static void native_event_signal_wait_setup(void *ctx)
 	native_evt_done = 0;
 	native_evt_waiter = xTaskGetCurrentTaskHandle();
 	native_evt_signaller = xTaskCreateStatic(native_evt_signal_task, "nat_evt",
-						 NATIVE_TASK_STACK, NULL, tskIDLE_PRIORITY + 1,
+						 NATIVE_TASK_STACK, NULL, NATIVE_TASK_PRIO,
 						 native_evt_stack, &native_evt_tcb);
 }
 
@@ -356,7 +358,7 @@ static void native_thread_context_switch_setup(void *ctx)
 	native_cs_b = xSemaphoreCreateBinaryStatic(&native_cs_b_storage);
 	native_cs_done = 0;
 	(void)xTaskCreateStatic(native_cs_pong_task, "nat_cs", NATIVE_TASK_STACK, NULL,
-				tskIDLE_PRIORITY + 1, native_cs_stack, &native_cs_tcb);
+				NATIVE_TASK_PRIO, native_cs_stack, &native_cs_tcb);
 }
 
 static void native_thread_context_switch_run(void *ctx)

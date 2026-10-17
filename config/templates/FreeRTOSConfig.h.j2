@@ -38,7 +38,7 @@
 {% endif %}
 #define configCPU_CLOCK_HZ			( SystemCoreClock )
 #define configTICK_RATE_HZ			( ( TickType_t ) {{ config.get("CONFIG_FREERTOS_TICK_RATE_HZ", 1000) }} )
-#define configMAX_PRIORITIES			( {{ config.get("CONFIG_FREERTOS_MAX_PRIORITIES", 12) }})
+#define configMAX_PRIORITIES			( {{ config.get("CONFIG_FREERTOS_MAX_PRIORITIES", 32) }})
 #define configSTACK_DEPTH_TYPE			uint32_t
 #define configMINIMAL_STACK_SIZE		( (configSTACK_DEPTH_TYPE) {{ config.get("CONFIG_FREERTOS_MINIMAL_STACK_SIZE", 128) }} )
 #define configTOTAL_HEAP_SIZE			( {{ config.get("CONFIG_FREERTOS_TOTAL_HEAP_SIZE", 65536) }} )
@@ -91,7 +91,7 @@ void ove_backend_freertos_task_deleted(void *task);
 
 /* Software timer definitions. */
 #define configUSE_TIMERS			{{ 1 if config.get("CONFIG_FREERTOS_USE_TIMERS", True) else 0 }}
-#define configTIMER_TASK_PRIORITY	        {{ config.get("CONFIG_FREERTOS_TIMER_TASK_PRIORITY", 4) }}
+#define configTIMER_TASK_PRIORITY	        {{ config.get("CONFIG_FREERTOS_TIMER_TASK_PRIORITY", 16) }}
 #define configTIMER_QUEUE_LENGTH		{{ config.get("CONFIG_FREERTOS_TIMER_QUEUE_LENGTH", 10) }}
 #define configTIMER_TASK_STACK_DEPTH	        ({{ config.get("CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH", 128) }})
 

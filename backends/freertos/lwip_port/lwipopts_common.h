@@ -202,14 +202,16 @@
 #ifndef TCPIP_THREAD_STACKSIZE
 #define TCPIP_THREAD_STACKSIZE 4096
 #endif
+/* Native priorities: tcpip = OVE_PRIO_NORMAL, other lwIP threads =
+ * OVE_PRIO_BELOW_NORMAL (checked in freertos_net.c). */
 #ifndef TCPIP_THREAD_PRIO
-#define TCPIP_THREAD_PRIO 3
+#define TCPIP_THREAD_PRIO 12
 #endif
 #ifndef DEFAULT_THREAD_STACKSIZE
 #define DEFAULT_THREAD_STACKSIZE 2048
 #endif
 #ifndef DEFAULT_THREAD_PRIO
-#define DEFAULT_THREAD_PRIO 2
+#define DEFAULT_THREAD_PRIO 8
 #endif
 #ifndef TCPIP_MBOX_SIZE
 #define TCPIP_MBOX_SIZE 16

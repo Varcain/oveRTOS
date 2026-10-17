@@ -130,19 +130,19 @@ pub const Priority = enum(c_uint) {
     /// Lowest priority; runs only when no other thread is ready.
     idle = 0,
     /// Low priority background work.
-    low = 1,
+    low = 4,
     /// Below-normal priority.
-    below_normal = 2,
+    below_normal = 8,
     /// Default application priority.
-    normal = 3,
+    normal = 12,
     /// Above-normal priority.
-    above_normal = 4,
+    above_normal = 16,
     /// High priority; prefer for time-sensitive tasks.
-    high = 5,
+    high = 20,
     /// Real-time priority; use with care.
-    realtime = 6,
+    realtime = 24,
     /// Highest priority; reserved for critical system tasks.
-    critical = 7,
+    critical = 31,
 };
 /// Scheduler-observable thread state, as reported by the active backend.
 ///

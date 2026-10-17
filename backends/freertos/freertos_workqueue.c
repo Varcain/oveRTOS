@@ -98,7 +98,7 @@ static TickType_t work_delay_ticks(uint32_t delay_ms)
 int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
 		       ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (wq == NULL || storage == NULL)
+	if (wq == NULL || storage == NULL || (unsigned)priority > OVE_PRIO_MAX)
 		return OVE_ERR_INVALID_PARAM;
 #ifndef OVE_HEAP_WORKQUEUE
 	if (stack == NULL)

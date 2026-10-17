@@ -60,21 +60,45 @@ struct ove_thread_stats {
 };
 
 /**
- * @brief Portable thread-priority levels.
+ * @brief Portable thread priority, on a scale from 0 to @ref OVE_PRIO_MAX.
  *
- * Each value maps to a backend-specific numeric priority at initialisation
- * time.  Higher enum values represent higher scheduling priority.
+ * Higher values represent higher scheduling priority. The named levels are
+ * anchors on the scale; any value in between is a valid priority too, and
+ * @ref OVE_PRIO_ABOVE / @ref OVE_PRIO_BELOW derive one from an anchor. Every
+ * backend maps each of the 32 values to a distinct native priority, so the
+ * order between any two values holds on every RTOS.
  */
 typedef enum {
 	OVE_PRIO_IDLE = 0, /**< @brief Lowest priority; runs only when no other thread is ready. */
-	OVE_PRIO_LOW = 1,  /**< @brief Low priority background work. */
-	OVE_PRIO_BELOW_NORMAL = 2, /**< @brief Below-normal priority. */
-	OVE_PRIO_NORMAL = 3,	   /**< @brief Default application priority. */
-	OVE_PRIO_ABOVE_NORMAL = 4, /**< @brief Above-normal priority. */
-	OVE_PRIO_HIGH = 5,	   /**< @brief High priority; prefer for time-sensitive tasks. */
-	OVE_PRIO_REALTIME = 6,	   /**< @brief Real-time priority; use with care. */
-	OVE_PRIO_CRITICAL = 7, /**< @brief Highest priority; reserved for critical system tasks. */
+	OVE_PRIO_LOW = 4,  /**< @brief Low priority background work. */
+	OVE_PRIO_BELOW_NORMAL = 8,  /**< @brief Below-normal priority. */
+	OVE_PRIO_NORMAL = 12,	    /**< @brief Default application priority. */
+	OVE_PRIO_ABOVE_NORMAL = 16, /**< @brief Above-normal priority. */
+	OVE_PRIO_HIGH = 20,	    /**< @brief High priority; prefer for time-sensitive tasks. */
+	OVE_PRIO_REALTIME = 24,	    /**< @brief Real-time priority; use with care. */
+	OVE_PRIO_CRITICAL = 31, /**< @brief Highest priority; reserved for critical system tasks. */
 } ove_prio_t;
+
+/** @brief Highest valid priority; thread and workqueue calls reject larger values. */
+#define OVE_PRIO_MAX OVE_PRIO_CRITICAL
+
+/**
+ * @brief The priority @p n steps above @p prio, clamped to @ref OVE_PRIO_MAX.
+ *
+ * A constant expression when both arguments are; evaluates them more than once.
+ */
+#define OVE_PRIO_ABOVE(prio, n)                                                 \
+	((ove_prio_t)((unsigned)(prio) + (unsigned)(n) > (unsigned)OVE_PRIO_MAX \
+			      ? (unsigned)OVE_PRIO_MAX                          \
+			      : (unsigned)(prio) + (unsigned)(n)))
+
+/**
+ * @brief The priority @p n steps below @p prio, clamped to @ref OVE_PRIO_IDLE.
+ *
+ * A constant expression when both arguments are; evaluates them more than once.
+ */
+#define OVE_PRIO_BELOW(prio, n) \
+	((ove_prio_t)((unsigned)(n) > (unsigned)(prio) ? 0u : (unsigned)(prio) - (unsigned)(n)))
 
 #include "ove/storage.h"
 
@@ -91,7 +115,8 @@ typedef enum {
  * @param[in]  name        Human-readable thread name.  May be truncated.
  * @param[in]  entry       Thread entry-point function.  Must not be NULL.
  * @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.
- * @param[in]  priority    Scheduling priority.
+ * @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX
+ *                         (larger values return OVE_ERR_INVALID_PARAM).
  * @param[in]  stack_size  Stack size in bytes.  Must be > 0.
  * @param[in]  stack       Pointer to caller-allocated stack buffer.  Must be
  *                         8-byte aligned (ARM AAPCS).  Use the
@@ -137,7 +162,8 @@ int ove_thread_deinit(ove_thread_t handle);
  * @param[in]  name        Human-readable thread name.  May be truncated.
  * @param[in]  entry       Thread entry-point function.  Must not be NULL.
  * @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.
- * @param[in]  priority    Scheduling priority.
+ * @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX
+ *                         (larger values return OVE_ERR_INVALID_PARAM).
  * @param[in]  stack_size  Stack size in bytes.  Must be > 0.
  * @return OVE_OK on success, or a negative error code on failure.
  *
@@ -175,7 +201,8 @@ ove_thread_t ove_thread_get_self(void);
  * @brief Change the scheduling priority of a thread.
  *
  * @param[in] handle  Thread to modify.
- * @param[in] prio    New priority level.
+ * @param[in] prio    New priority, at most @ref OVE_PRIO_MAX; a larger value
+ *                    leaves the priority unchanged.
  */
 void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio);
 
@@ -374,7 +401,7 @@ struct ove_thread_info {
 	const char *name;	   /**< Thread name (static, do not free). */
 	uintptr_t identity;	   /**< Opaque native identity; equality only. */
 	ove_thread_state_t state;  /**< Execution state. */
-	int priority;		   /**< Priority level. */
+	int priority;		   /**< The backend's native priority value. */
 	size_t stack_used;	   /**< Stack high-water mark; valid when its flag is set. */
 	size_t stack_size;	   /**< Total stack allocation; valid when its flag is set. */
 	uint32_t cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
