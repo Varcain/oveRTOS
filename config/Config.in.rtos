@@ -26,28 +26,7 @@ endchoice
 menu "FreeRTOS"
     visible if OVE_RTOS_FREERTOS
 
-    choice FREERTOS_SOURCE_METHOD
-        prompt "Source method"
-        default FREERTOS_SOURCE_GIT
-
-    config FREERTOS_SOURCE_GIT
-        bool "Git repository"
-    config FREERTOS_SOURCE_TARBALL
-        bool "Tarball download"
-    config FREERTOS_SOURCE_LOCAL
-        bool "Local directory"
-    endchoice
-
-    config FREERTOS_TARBALL_URL
-        string "Tarball URL"
-        depends on FREERTOS_SOURCE_TARBALL
-
-    config FREERTOS_LOCAL_PATH
-        string "Local path"
-        depends on FREERTOS_SOURCE_LOCAL
-
     comment "Git URLs and versions are controlled by manifest.yaml"
-        depends on FREERTOS_SOURCE_GIT
 
     menu "Kernel Configuration"
         config FREERTOS_USE_PREEMPTION
@@ -76,14 +55,6 @@ menu "FreeRTOS"
               higher values (2000+) only pay off on very short
               sub-ms waits and cost measurable CPU on M0/M3 parts.
 
-        config FREERTOS_MAX_PRIORITIES
-            int "Max priorities"
-            default 32
-            range 32 255
-            help
-              oveRTOS maps its 32 thread priorities one to one onto native
-              FreeRTOS priorities, so at least 32 are required.
-
         config FREERTOS_MINIMAL_STACK_SIZE
             int "Minimal stack size (words)"
             default 128
@@ -108,6 +79,9 @@ menu "FreeRTOS"
         config FREERTOS_USE_TIMERS
             bool "Software timers"
             default y
+            help
+              The timer service task behind xTimer* and
+              xTimerPendFunctionCall(). OVE_TIMER and OVE_WORKQUEUE need it.
 
         config FREERTOS_TIMER_TASK_PRIORITY
             int "Timer task priority"
@@ -125,10 +99,6 @@ menu "FreeRTOS"
             default 128
             depends on FREERTOS_USE_TIMERS
 
-        config FREERTOS_PRIO_BITS
-            int "NVIC priority bits"
-            default 4
-
         config FREERTOS_LOWEST_INTERRUPT_PRIORITY
             hex "Lowest interrupt priority"
             default 0xf
@@ -136,44 +106,6 @@ menu "FreeRTOS"
         config FREERTOS_MAX_SYSCALL_INTERRUPT_PRIORITY
             int "Max syscall interrupt priority"
             default 5
-
-        menu "API Includes"
-            config FREERTOS_INCLUDE_vTaskPrioritySet
-                bool "vTaskPrioritySet"
-                default y
-
-            config FREERTOS_INCLUDE_uxTaskPriorityGet
-                bool "uxTaskPriorityGet"
-                default y
-
-            config FREERTOS_INCLUDE_vTaskDelete
-                bool "vTaskDelete"
-                default y
-
-            config FREERTOS_INCLUDE_vTaskSuspend
-                bool "vTaskSuspend"
-                default y
-
-            config FREERTOS_INCLUDE_vTaskDelay
-                bool "vTaskDelay"
-                default y
-
-            config FREERTOS_INCLUDE_xTaskGetSchedulerState
-                bool "xTaskGetSchedulerState"
-                default y
-
-            config FREERTOS_INCLUDE_uxTaskGetStackHighWaterMark
-                bool "uxTaskGetStackHighWaterMark"
-                default y
-
-            config FREERTOS_INCLUDE_xTimerPendFunctionCall
-                bool "xTimerPendFunctionCall"
-                default y
-
-            config FREERTOS_INCLUDE_eTaskGetState
-                bool "eTaskGetState"
-                default y
-        endmenu
     endmenu
 endmenu
 

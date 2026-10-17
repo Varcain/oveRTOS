@@ -77,28 +77,6 @@ def git_clone(url, tag, dest, name, submodules=None):
     return True
 
 
-def download_tarball(url, dest_dir, name):
-    """Download a tarball to dest_dir."""
-    os.makedirs(dest_dir, exist_ok=True)
-    filename = url.rsplit("/", 1)[-1]
-    filepath = os.path.join(dest_dir, filename)
-
-    if os.path.isfile(filepath):
-        logger.info(f"{name}: tarball up to date")
-        return True
-
-    logger.info(f"{name}: downloading tarball...")
-    try:
-        _retry(lambda: urllib.request.urlretrieve(url, filepath),
-               f"download {name}")
-    except Exception as e:
-        logger.error(f"download failed for {name}: {e}")
-        return False
-
-    logger.info(f"{name}: done")
-    return True
-
-
 def extract_tarball(tarball_path, dest_dir, name):
     """Extract a tarball to dest_dir."""
     if not os.path.isfile(tarball_path):
@@ -240,69 +218,50 @@ def download_freertos(config, dl_dir, build_dir, ws_dl_dir=None,
     is_qemu = get_bool(config, "CONFIG_OVE_BOARD_QEMU_MPS2_AN500")
     uses_standalone_kernel = is_qemu or get_bool(config, "CONFIG_OVE_LINUX")
 
-    if get_bool(config, "CONFIG_FREERTOS_SOURCE_GIT"):
-        # The Linux personality uses the current standalone ARM_CM4_MPU port on
-        # both QEMU and STM32.  STM32 still needs STM32CubeF7 below for its HAL
-        # and BSP, so these downloads are intentionally independent.
-        if uses_standalone_kernel:
-            freertos_tag = get_component(
-                manifest, "rtos", "freertos", "kernel-qemu", "version")
-            freertos_url = get_component(
-                manifest, "rtos", "freertos", "kernel-qemu", "url")
-            dest, link, global_link = hashed_dir(dl_dir, "FreeRTOS-Kernel",
-                                    freertos_tag, ws_dl_dir)
-            ok = git_clone(freertos_url,
-                freertos_tag, dest, "FreeRTOS-Kernel") and ok
-            if os.path.isdir(dest):
-                update_symlink(link, dest)
-
-        if not is_qemu:
-            url = get_component(
-                manifest, "rtos", "freertos", "stm32cubef7", "url")
-            tag = get_component(
-                manifest, "rtos", "freertos", "stm32cubef7", "version")
-            stm32cube_submodules = [
-                "Drivers/STM32F7xx_HAL_Driver",
-                "Drivers/CMSIS/Device/ST/STM32F7xx",
-                "Drivers/BSP/STM32746G-Discovery",
-                "Drivers/BSP/Components/Common",
-                "Drivers/BSP/Components/wm8994",
-                "Drivers/BSP/Components/ft5336",
-                "Drivers/BSP/Components/stmpe811",
-                "Drivers/BSP/Components/rk043fn48h",
-            ]
-            dest, link, global_link = hashed_dir(dl_dir, "STM32CubeF7", tag, ws_dl_dir)
-            ok = git_clone(url, tag, dest, "STM32CubeF7",
-                           submodules=stm32cube_submodules) and ok
-            if os.path.isdir(dest):
-                update_symlink(link, dest)
-
-        lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
-        lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
-        dest, link, global_link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
-        ok = git_clone(lvgl_url, lvgl_tag, dest, "LVGL") and ok
+    # The Linux personality uses the current standalone ARM_CM4_MPU port on
+    # both QEMU and STM32.  STM32 still needs STM32CubeF7 below for its HAL
+    # and BSP, so these downloads are intentionally independent.
+    if uses_standalone_kernel:
+        freertos_tag = get_component(
+            manifest, "rtos", "freertos", "kernel-qemu", "version")
+        freertos_url = get_component(
+            manifest, "rtos", "freertos", "kernel-qemu", "url")
+        dest, link, global_link = hashed_dir(dl_dir, "FreeRTOS-Kernel",
+                                freertos_tag, ws_dl_dir)
+        ok = git_clone(freertos_url,
+            freertos_tag, dest, "FreeRTOS-Kernel") and ok
         if os.path.isdir(dest):
             update_symlink(link, dest)
-            if global_link:
-                update_symlink(global_link, dest)
 
-    elif get_bool(config, "CONFIG_FREERTOS_SOURCE_TARBALL"):
-        url = get_str(config, "CONFIG_FREERTOS_TARBALL_URL")
-        if url:
-            ok = download_tarball(url, dl_dir, "STM32CubeF7") and ok
-        else:
-            logger.error("FREERTOS_TARBALL_URL not set")
-            ok = False
+    if not is_qemu:
+        url = get_component(
+            manifest, "rtos", "freertos", "stm32cubef7", "url")
+        tag = get_component(
+            manifest, "rtos", "freertos", "stm32cubef7", "version")
+        stm32cube_submodules = [
+            "Drivers/STM32F7xx_HAL_Driver",
+            "Drivers/CMSIS/Device/ST/STM32F7xx",
+            "Drivers/BSP/STM32746G-Discovery",
+            "Drivers/BSP/Components/Common",
+            "Drivers/BSP/Components/wm8994",
+            "Drivers/BSP/Components/ft5336",
+            "Drivers/BSP/Components/stmpe811",
+            "Drivers/BSP/Components/rk043fn48h",
+        ]
+        dest, link, global_link = hashed_dir(dl_dir, "STM32CubeF7", tag, ws_dl_dir)
+        ok = git_clone(url, tag, dest, "STM32CubeF7",
+                       submodules=stm32cube_submodules) and ok
+        if os.path.isdir(dest):
+            update_symlink(link, dest)
 
-    elif get_bool(config, "CONFIG_FREERTOS_SOURCE_LOCAL"):
-        path = get_str(config, "CONFIG_FREERTOS_LOCAL_PATH")
-        if path:
-            ok = symlink_local(path,
-                               os.path.join(build_dir, "STM32CubeF7"),
-                               "STM32CubeF7") and ok
-        else:
-            logger.error("FREERTOS_LOCAL_PATH not set")
-            ok = False
+    lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+    lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+    dest, link, global_link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+    ok = git_clone(lvgl_url, lvgl_tag, dest, "LVGL") and ok
+    if os.path.isdir(dest):
+        update_symlink(link, dest)
+        if global_link:
+            update_symlink(global_link, dest)
 
     return ok
 

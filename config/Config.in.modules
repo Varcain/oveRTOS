@@ -623,6 +623,7 @@ config OVE_QUEUE
 config OVE_TIMER
     bool "Software timers"
     default n
+    select FREERTOS_USE_TIMERS if OVE_RTOS_FREERTOS
 
 config OVE_EVENTGROUP
     bool "Event groups"
@@ -704,6 +705,7 @@ config OVE_LINUX_SMASHTEST
 config OVE_WORKQUEUE
     bool "Work queues"
     default n
+    select FREERTOS_USE_TIMERS if OVE_RTOS_FREERTOS
 
 config OVE_STREAM
     bool "Stream I/O"
