@@ -254,6 +254,18 @@ CONFIG_LV_USE_FLEX=y
 CONFIG_LV_USE_SYSMON=y
 CONFIG_LV_USE_PERF_MONITOR=y
 CONFIG_LV_USE_PERF_MONITOR_LOG_MODE=y
+{% else %}
+# LVGL display (v9) on the QEMU an500: the sim framework drives LVGL (sim_lvgl.c)
+# and the ove,shmem-display driver carries the pixels to the dashboard.
+CONFIG_LVGL=y
+CONFIG_DISPLAY=y
+CONFIG_STATIC_INIT_GNU=y
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
+CONFIG_LV_Z_MEM_POOL_SIZE={{ config.get("CONFIG_ZEPHYR_LV_MEM_POOL_SIZE", 16384) }}
+CONFIG_LV_USE_OBSERVER=y
+CONFIG_LV_USE_FLEX=y
 {% endif %}
 {% endif %}
 
