@@ -675,6 +675,13 @@ pub const ThreadInfo = extern struct {
     cpu_percent_x100_raw: u32,
     valid_fields: u32,
     state_times: c.struct_ove_thread_state_times,
+    native_priority: i32,
+
+    /// The thread's priority on the ove scale.
+    pub fn prio(self: *const ThreadInfo) ?Priority {
+        if (self.priority < 0) return null;
+        return Priority.fromLevel(@intCast(self.priority));
+    }
 
     pub fn name(self: *const ThreadInfo) []const u8 {
         if (self.name_ptr == null) return "";
@@ -721,6 +728,7 @@ comptime {
     std.debug.assert(@offsetOf(ThreadInfo, "identity") == @offsetOf(c.struct_ove_thread_info, "identity"));
     std.debug.assert(@offsetOf(ThreadInfo, "state") == @offsetOf(c.struct_ove_thread_info, "state"));
     std.debug.assert(@offsetOf(ThreadInfo, "priority") == @offsetOf(c.struct_ove_thread_info, "priority"));
+    std.debug.assert(@offsetOf(ThreadInfo, "native_priority") == @offsetOf(c.struct_ove_thread_info, "native_priority"));
     std.debug.assert(@offsetOf(ThreadInfo, "stack_used_raw") == @offsetOf(c.struct_ove_thread_info, "stack_used"));
     std.debug.assert(@offsetOf(ThreadInfo, "stack_size_raw") == @offsetOf(c.struct_ove_thread_info, "stack_size"));
     std.debug.assert(@offsetOf(ThreadInfo, "cpu_percent_x100_raw") == @offsetOf(c.struct_ove_thread_info, "cpu_percent_x100"));

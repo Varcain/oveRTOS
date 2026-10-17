@@ -56,4 +56,15 @@ static inline int ove_nuttx_map_priority(ove_prio_t prio)
 					(ove_at[i] - ove_at[i - 1]));
 }
 
+/* The highest ove priority whose native priority is at or below @p native
+ * (ove_thread_list): exact for every priority the map produces. */
+static inline ove_prio_t ove_nuttx_unmap_priority(int native)
+{
+	for (int p = OVE_PRIO_MAX; p > OVE_PRIO_IDLE; p--) {
+		if (ove_nuttx_map_priority((ove_prio_t)p) <= native)
+			return (ove_prio_t)p;
+	}
+	return OVE_PRIO_IDLE;
+}
+
 #endif /* OVE_NUTTX_PRIORITY_H */

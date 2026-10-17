@@ -396,17 +396,24 @@ struct ove_thread_state_times {
 
 /**
  * @brief Snapshot of a single thread's info.
+ *
+ * @c priority maps the thread's native priority back onto the ove scale: a
+ * thread created at an ove priority reports that priority. A native priority
+ * no ove priority maps to (an RTOS service thread, say) reports the highest ove
+ * priority at or below it, clamped to the scale; @c native_priority keeps the
+ * value as the RTOS sees it.
  */
 struct ove_thread_info {
-	const char *name;	   /**< Thread name (static, do not free). */
-	uintptr_t identity;	   /**< Opaque native identity; equality only. */
-	ove_thread_state_t state;  /**< Execution state. */
-	int priority;		   /**< The backend's native priority value. */
-	size_t stack_used;	   /**< Stack high-water mark; valid when its flag is set. */
-	size_t stack_size;	   /**< Total stack allocation; valid when its flag is set. */
+	const char *name;	  /**< Thread name (static, do not free). */
+	uintptr_t identity;	  /**< Opaque native identity; equality only. */
+	ove_thread_state_t state; /**< Execution state. */
+	int priority;	   /**< Priority on the ove scale, 0..OVE_PRIO_MAX (see ove_prio_t). */
+	size_t stack_used; /**< Stack high-water mark; valid when its flag is set. */
+	size_t stack_size; /**< Total stack allocation; valid when its flag is set. */
 	uint32_t cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
 	uint32_t valid_fields;	   /**< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags. */
 	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
+	int native_priority; /**< The backend's own priority value for the thread. */
 };
 
 /**
