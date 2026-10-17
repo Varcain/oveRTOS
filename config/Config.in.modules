@@ -661,8 +661,9 @@ config OVE_WATCHDOG_SELFTEST
     help
       Debug/proof aid for the linux_interop app: a few seconds after the guest
       is running, deliberately starve the personality coordinator (a spinner
-      just above it in priority, interrupts left enabled) so the high-priority
-      watchdog monitor observes a stalled heartbeat, withholds the feed, and the
+      one level above OVE_PRIO_LXP_COORDINATOR and below the OVE_PRIO_HIGH
+      monitor, interrupts left enabled) so the watchdog monitor observes a
+      stalled heartbeat, withholds the feed, and the
       IWDG resets the board. The next boot reports its reset cause as "watchdog"
       and does NOT re-trip, so the board wedges exactly once and then runs clean.
 

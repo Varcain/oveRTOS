@@ -16,6 +16,7 @@
 #include <stdio.h>
 
 #include "ove/lxp_console.h"
+#include "ove/lxp_host.h"
 #include "ove/time.h"
 #if defined(CONFIG_OVE_WATCHDOG)
 #include "ove/reset.h"
@@ -46,6 +47,8 @@ static size_t g_thread_audit_count;
  */
 #define WD_TIMEOUT_MS 2000u
 #define WD_FEED_MS 250u
+/* Above the Linux coordinator, so a wedged coordinator cannot starve its own watchdog. */
+#define WD_MONITOR_PRIO OVE_PRIO_HIGH
 
 static ove_thread_t g_wd;
 #if defined(CONFIG_OVE_DEBUG_BUILD)
@@ -68,7 +71,12 @@ static int wd_should_feed(int active, int hb_advanced)
  * Starve the coordinator without masking interrupts. The scheduler and monitor
  * stay alive, but the frozen heartbeat withholds the feed and proves the
  * watchdog policy end to end. A watchdog-recovery boot never re-trips it.
+ * The spinner must outrank the coordinator and stay below the monitor, on
+ * every engine.
  */
+#define WDTEST_PRIO OVE_PRIO_ABOVE(OVE_PRIO_LXP_COORDINATOR, 1)
+_Static_assert(WDTEST_PRIO > OVE_PRIO_LXP_COORDINATOR && WDTEST_PRIO < WD_MONITOR_PRIO,
+	       "watchdog monitor > selftest spinner > Linux coordinator");
 static ove_thread_t g_wdtest;
 OVE_THREAD_DEFINE(g_wdtest_storage, 512);
 
@@ -89,7 +97,7 @@ static void wd_selftest_maybe_trip(void)
 	ove_lxp_console_write("[wd] selftest: starving the coordinator (scheduler stays live);"
 			      " expect a watchdog reset in ~2s...\n");
 	(void)OVE_THREAD_INIT_DEFINED(g_wdtest, g_wdtest_storage, "wdtest", wdtest_spin, NULL,
-				      OVE_PRIO_ABOVE_NORMAL);
+				      WDTEST_PRIO);
 }
 #endif /* CONFIG_OVE_WATCHDOG_SELFTEST */
 
@@ -312,7 +320,7 @@ void linux_interop_qualification_start(void)
 	ove_lxp_console_write("[reset] cause: ");
 	ove_lxp_console_write(ove_reset_cause_str(ove_reset_cause()));
 	ove_lxp_console_write("\n");
-	if (OVE_THREAD_INIT_DEFINED(g_wd, g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH) !=
+	if (OVE_THREAD_INIT_DEFINED(g_wd, g_wd_storage, "wd", wd_body, NULL, WD_MONITOR_PRIO) !=
 	    OVE_OK) {
 		ove_lxp_console_write(
 			"[wd] FAIL: monitor thread init; running without a watchdog\n");
