@@ -490,9 +490,9 @@ def cmd_defconfig_fragments(args):
 
     # ── Build merged defconfig lines ───────────────────────────────
     # Layer 1: global fragment
-    # Layer 2: board (from board.yaml), then its variant if the spec
+    # Layer 2: rtos fragment
+    # Layer 3: board (from board.yaml), then its variant if the spec
     #          named one
-    # Layer 3: rtos fragment
     # Layer 4: board rtos-specific (from board.yaml rtos_defconfig)
     # Layer 5: app (from app.yaml)
     # Layer 6: app rtos-specific (from app.yaml rtos_defconfig)
@@ -540,17 +540,17 @@ def cmd_defconfig_fragments(args):
         print("  [global] config/fragments/global.defconfig")
         kconf.load_config(global_path, replace=True)
 
-    # 2. Board selection + board.yaml defconfig
+    # 2. RTOS fragment: generic, so the board layers below override it
+    rtos_path = os.path.join(frag_dir, "rtos", f"{rtos}.defconfig")
+    _load_fragment("rtos", rtos_path)
+
+    # 3. Board selection + board.yaml defconfig, then the variant's lines
     board_lines = [f"CONFIG_{board_symbol}=y"]
     board_defconfig = board_yaml.get("defconfig", [])
     if isinstance(board_defconfig, list):
         board_lines.extend(board_defconfig)
     _load_lines("board", board_lines, strict=True)
     _load_lines("variant", variant_lines, strict=True)
-
-    # 3. RTOS fragment
-    rtos_path = os.path.join(frag_dir, "rtos", f"{rtos}.defconfig")
-    _load_fragment("rtos", rtos_path)
 
     # 4. Board rtos-specific from board.yaml
     rtos_defconfig = board_yaml.get("rtos_defconfig", {})

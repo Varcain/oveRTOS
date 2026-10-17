@@ -148,13 +148,13 @@ Run `make help` to see available targets at any time.
 The `ove` CLI composes the final `.config` by layering these fragments in order:
 
 1. **Global fragment** (`config/fragments/global.defconfig`) — common modules
-2. **Board selection** + `board.yaml` defconfig entries — board-specific symbols
-3. **RTOS fragment** (`config/fragments/rtos/<rtos>.defconfig`) — RTOS selection and settings
+2. **RTOS fragment** (`config/fragments/rtos/<rtos>.defconfig`) — RTOS selection and settings
+3. **Board selection** + `board.yaml` `defconfig` entries, then the variant's entries when the spec names one — board-specific symbols
 4. **Board+RTOS overrides** from `board.yaml` `rtos_defconfig.<rtos>` — per-RTOS board tuning
 5. **App selection** + `app.yaml` defconfig entries — app language and required modules
 6. **App+RTOS overrides** from `app.yaml` `rtos_defconfig.<rtos>` — per-RTOS app tuning
 
-Each layer supplements the previous without overwriting, so earlier settings are preserved unless explicitly overridden.
+The layers go from generic to specific, and a later layer overrides a symbol an earlier one set; a symbol no layer sets keeps its Kconfig default.
 
 ## Saving a Modified Configuration
 
