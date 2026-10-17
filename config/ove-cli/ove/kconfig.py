@@ -496,6 +496,7 @@ def cmd_defconfig_fragments(args):
     # Layer 4: board rtos-specific (from board.yaml rtos_defconfig)
     # Layer 5: app (from app.yaml)
     # Layer 6: app rtos-specific (from app.yaml rtos_defconfig)
+    # Layer 7: app rtos-specific for one board (rtos_defconfig.<rtos>@<board>)
 
     import tempfile
     try:
@@ -570,6 +571,11 @@ def cmd_defconfig_fragments(args):
         app_rtos_lines = app_rtos_defconfig.get(rtos, [])
         if app_rtos_lines:
             _load_lines("app+rtos", app_rtos_lines)
+        # 7. App rtos-specific for one board ("<rtos>@<board name>"), for
+        #    values sized to that board's memory
+        app_board_lines = app_rtos_defconfig.get(f"{rtos}@{board_dir_name}", [])
+        if app_board_lines:
+            _load_lines("app+rtos+board", app_board_lines)
 
     # Clean up temp files
     shutil.rmtree(tmp_dir, ignore_errors=True)

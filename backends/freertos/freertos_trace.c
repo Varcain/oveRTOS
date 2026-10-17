@@ -98,7 +98,8 @@ void ove_backend_trace_task_switched_out(void)
 	TaskHandle_t h = xTaskGetCurrentTaskHandle();
 	if (!h)
 		return;
-	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTag(h);
+	/* PendSV context: the task-level getter would enter a critical section. */
+	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
 	if (!t)
 		return; /* idle / timer / tasks not created via ove_thread_init */
 
@@ -125,7 +126,7 @@ void ove_backend_trace_task_switched_in(void)
 	TaskHandle_t h = xTaskGetCurrentTaskHandle();
 	if (!h)
 		return;
-	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTag(h);
+	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
 	if (!t)
 		return;
 

@@ -332,11 +332,7 @@ int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *s
 	vTaskGetInfo(handle->task, &task_status, pdFALSE, eInvalid);
 
 	configRUN_TIME_COUNTER_TYPE total = portGET_RUN_TIME_COUNTER_VALUE();
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-	stats->runtime_us = (uint64_t)task_status.ulRunTimeCounter * 1000u;
-#else
-	stats->runtime_us = (uint64_t)task_status.ulRunTimeCounter / (SystemCoreClock / 1000000u);
-#endif
+	stats->runtime_us = OVE_FREERTOS_RUNTIME_TO_US(task_status.ulRunTimeCounter);
 
 	stats->cpu_percent_x100 = runtime_percent(task_status.ulRunTimeCounter, total);
 	return OVE_OK;
@@ -538,13 +534,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 #if configGENERATE_RUN_TIME_STATS == 1
 			out[i].cpu_percent_x100 =
 				runtime_percent(task.ulRunTimeCounter, total_runtime);
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-			uint64_t run_us = (uint64_t)task.ulRunTimeCounter * 1000u;
-#else
-			uint64_t cycles_per_us = SystemCoreClock / 1000000u;
-			uint64_t run_us = (uint64_t)task.ulRunTimeCounter / cycles_per_us;
-#endif
-			out[i].state_times.running_us = run_us;
+			out[i].state_times.running_us =
+				OVE_FREERTOS_RUNTIME_TO_US(task.ulRunTimeCounter);
 			out[i].valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT |
 					       OVE_THREAD_INFO_VALID_RUNNING_TIME;
 #endif

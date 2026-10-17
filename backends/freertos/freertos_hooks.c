@@ -90,7 +90,7 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 /* ========================================================================= */
 
 #if configUSE_IDLE_HOOK
-/* configUSE_IDLE_HOOK is hardcoded on in FreeRTOSConfig.h.j2.  Provide a
+/* configUSE_IDLE_HOOK is on in FreeRTOSConfig.h.j2.  Provide a
  * weak empty default so apps that don't override it still link.
  * CONFIG_OVE_PM previously hooked PM here; PM now drives from a polling
  * thread (see backends/freertos/freertos_pm.c) and the idle hook stays
@@ -123,17 +123,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 }
 
 #endif /* configCHECK_FOR_STACK_OVERFLOW */
-
-/* ========================================================================= */
-/* RUN-TIME STATS COUNTER (QEMU — DWT not emulated)                         */
-/* ========================================================================= */
-
-#if (configGENERATE_RUN_TIME_STATS == 1)
-/* Millisecond counter incremented from vApplicationTickHook().
- * Used by portGET_RUN_TIME_COUNTER_VALUE() on boards where the
- * DWT cycle counter is not available (e.g. QEMU). */
-volatile uint32_t ove_runtime_counter_ms;
-#endif
 
 /* ========================================================================= */
 /* TICK HOOK                                                                 */
@@ -188,13 +177,6 @@ void vApplicationTickHook(void)
 	ove_freertos_tick_callback_t callback = g_tick_callback;
 	if (callback)
 		callback();
-#if (configGENERATE_RUN_TIME_STATS == 1)
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-	/* QEMU has no DWT, so its run-time-stat counter advances with SysTick.
-	 * Hardware builds use the wrap-stitched DWT counter instead. */
-	ove_runtime_counter_ms++;
-#endif
-#endif
 #ifdef CONFIG_OVE_PROFILER
 	ove_backend_profiler_on_tick();
 #endif
