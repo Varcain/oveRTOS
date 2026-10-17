@@ -515,20 +515,16 @@ def cmd_defconfig_fragments(args):
             print(f"  [{label}] {rel}")
             kconf.load_config(path, replace=False)
 
-    def _load_lines(label, lines, strict=False):
+    def _load_lines(label, lines):
         if not lines:
             return
         # kconfiglib drops an assignment to an unknown symbol silently, so a
-        # misspelt or stale line would have no effect. Board lines must be
-        # exact; app lines only warn.
+        # misspelt or stale board or app line would have no effect.
         undefined = _undefined_symbols(kconf, lines)
         if undefined:
-            message = f"[{label}] no such Kconfig symbol: {', '.join(undefined)}"
-            if strict:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-                print(f"Error: {message}")
-                sys.exit(1)
-            print(f"Warning: {message}")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            print(f"Error: [{label}] no such Kconfig symbol: {', '.join(undefined)}")
+            sys.exit(1)
         tmp = os.path.join(tmp_dir, f"{label}.defconfig")
         _write_temp_defconfig(lines, tmp)
         print(f"  [{label}] {len(lines)} configs from yaml")
@@ -549,15 +545,15 @@ def cmd_defconfig_fragments(args):
     board_defconfig = board_yaml.get("defconfig", [])
     if isinstance(board_defconfig, list):
         board_lines.extend(board_defconfig)
-    _load_lines("board", board_lines, strict=True)
-    _load_lines("variant", variant_lines, strict=True)
+    _load_lines("board", board_lines)
+    _load_lines("variant", variant_lines)
 
     # 4. Board rtos-specific from board.yaml
     rtos_defconfig = board_yaml.get("rtos_defconfig", {})
     if isinstance(rtos_defconfig, dict):
         rtos_lines = rtos_defconfig.get(rtos, [])
         if rtos_lines:
-            _load_lines("board+rtos", rtos_lines, strict=True)
+            _load_lines("board+rtos", rtos_lines)
 
     # 5. App selection + app.yaml defconfig
     app_lines = [f"CONFIG_{app_symbol}=y"]

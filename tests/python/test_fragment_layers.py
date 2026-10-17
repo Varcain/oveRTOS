@@ -4,7 +4,7 @@
 #
 # This file is part of oveRTOS.
 
-"""Precedence of the configuration layers `ove defconfig-fragments` merges."""
+"""The configuration layers `ove defconfig-fragments` merges: order and checks."""
 
 import contextlib
 import io
@@ -91,6 +91,12 @@ class LayerOrderTest(unittest.TestCase):
 
     def test_board_defconfig_overrides_the_rtos_fragment(self):
         self.assertEqual(self._foo(), "2")
+
+    def test_unknown_symbol_in_an_app_line_fails(self):
+        with open(os.path.join(self.root, "apps/c/demo/app.yaml"), "a") as f:
+            f.write("defconfig:\n  - CONFIG_OVE_NO_SUCH=y\n")
+        with self.assertRaises(SystemExit):
+            self._foo()
 
 
 if __name__ == "__main__":
