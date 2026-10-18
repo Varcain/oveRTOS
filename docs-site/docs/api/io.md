@@ -98,6 +98,7 @@ The board subsystem (`ove/board.h`) exposes hardware identity information and a 
 
 The board descriptor structure:
 
+<!-- ove:body -->
 ```c
 struct ove_board_desc {
     const char             *name;               /* human-readable board name  */

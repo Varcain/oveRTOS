@@ -28,6 +28,7 @@ graph LR
 
 On FreeRTOS and NuttX, NVS lives in `/nvs` on the volume mounted with `ove_fs_mount()` (`CONFIG_OVE_NVS` turns on `CONFIG_OVE_FS` there), so mount first. The QEMU MPS2-AN500 has no storage device and keeps values in RAM until QEMU exits.
 
+<!-- ove:body -->
 ```c
 /* Initialize (FreeRTOS / NuttX: after ove_fs_mount) */
 ove_nvs_init();

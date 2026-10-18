@@ -54,6 +54,7 @@ typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
 
 Each registered command is described by a persistent `ove_shell_cmd` structure. Pass a pointer to `ove_shell_register_cmd`; the struct must remain valid (e.g. declared `static`) after registration.
 
+<!-- ove:fragment -->
 ```c
 struct ove_shell_cmd {
     const char       *name;    /* token matched against the first word of input */

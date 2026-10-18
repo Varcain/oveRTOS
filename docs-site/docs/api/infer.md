@@ -65,6 +65,7 @@ stateDiagram-v2
 
 ## Model Config Struct
 
+<!-- ove:body -->
 ```c
 struct ove_model_config {
     const void *model_data;  /* pointer to .tflite FlatBuffer (typically in flash) */
@@ -77,6 +78,7 @@ struct ove_model_config {
 
 ## Tensor Info Struct
 
+<!-- ove:body -->
 ```c
 struct ove_tensor_info {
     void                *data;    /* pointer into the tensor arena — valid for model lifetime */
@@ -96,22 +98,30 @@ Write input data directly to `info->data` before calling `ove_model_invoke()`. R
 Supply a caller-allocated storage struct and arena buffer. Both must remain valid for the session lifetime. The arena should be 16-byte aligned for CMSIS-NN.
 
 ```c
+/* models/<dir>/my_model.tflite, converted by the build into
+ * g_my_model_model_data.h, which declares: */
+extern const unsigned char g_my_model_model_data[];
+extern const unsigned int  g_my_model_model_data_len;
+
 static ove_model_storage_t model_storage;
 static uint8_t __attribute__((aligned(16))) arena[32768];
 
-ove_model_t model;
-struct ove_model_config cfg = {
-    .model_data  = my_model_data,
-    .model_size  = my_model_data_size,
-    .arena_size  = sizeof(arena),
-};
-ove_model_init(&model, &model_storage, arena, &cfg);
+int load_model(ove_model_t *model)
+{
+    struct ove_model_config cfg = {
+        .model_data  = g_my_model_model_data,
+        .model_size  = g_my_model_model_data_len,
+        .arena_size  = sizeof(arena),
+    };
+    return ove_model_init(model, &model_storage, arena, &cfg);
+}
 ```
 
 **Heap-mode — `create` / `destroy`:**
 
 `ove_model_create()` is heap-mode only — it allocates storage and arena from the RTOS heap. In zero-heap builds the symbol is unavailable; use `ove_model_init()` with a caller-supplied arena, or `OVE_MODEL_DEFINE_STATIC()` at file scope (which works in both modes).
 
+<!-- ove:fragment -->
 ```c
 ove_model_t model;
 ove_model_create(&model, &cfg);
@@ -143,6 +153,14 @@ graph LR
 ```c
 #include "ove/ove.h"
 #include "ove/infer.h"
+#include <string.h>
+
+/* The two models that ship in models/keyword; their generated headers
+ * (g_<name>_model_data.h) declare: */
+extern const unsigned char g_audio_preprocessor_int8_model_data[];
+extern const unsigned int  g_audio_preprocessor_int8_model_data_len;
+extern const unsigned char g_micro_speech_quantized_model_data[];
+extern const unsigned int  g_micro_speech_quantized_model_data_len;
 
 #define ARENA_SIZE 32768
 
@@ -156,7 +174,7 @@ static int generate_features(const int16_t *audio, unsigned int len,
 {
     struct ove_model_config cfg = {
         .model_data = g_audio_preprocessor_int8_model_data,
-        .model_size = g_audio_preprocessor_int8_model_data_size,
+        .model_size = g_audio_preprocessor_int8_model_data_len,
         .arena_size = ARENA_SIZE,
     };
 
@@ -186,7 +204,7 @@ static int classify(const int8_t *features, const char **label_out)
 
     struct ove_model_config cfg = {
         .model_data = g_micro_speech_quantized_model_data,
-        .model_size = g_micro_speech_quantized_model_data_size,
+        .model_size = g_micro_speech_quantized_model_data_len,
         .arena_size = ARENA_SIZE,
     };
 
