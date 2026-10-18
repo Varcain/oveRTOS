@@ -1226,9 +1226,9 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     All build artifacts (objects, dep files, .gcno/.gcda for coverage) live
     under build_dir/CMakeFiles/.../*.o — no scatter into the OVE source
     tree, no manual dep tracking required."""
-    env = _venv_env(ove_dir)
-    if extra_env:
-        env.update(extra_env)
+    # The venv goes on top of extra_env's PATH (the cross toolchain's), so NuttX's
+    # find_program(olddefconfig) finds kconfiglib without an activated venv.
+    env = _venv_env(ove_dir, {**os.environ, **(extra_env or {})})
 
     cmake_defs = [
         f"-DBOARD_CONFIG={board_config}",
