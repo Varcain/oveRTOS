@@ -14,12 +14,23 @@
 #include <pthread.h>
 #include <string.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
 #include <lvgl/lvgl.h>
 #include "board_desc.h"
 
 static pthread_mutex_t lvgl_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int lvgl_initialized;
+
+/* LVGL reads the monotonic clock, so time also advances inside lv_timer_handler()
+ * and the perf monitor sees non-zero render/flush/CPU times. */
+static uint32_t lvgl_tick_cb(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint32_t)((uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u);
+}
 
 /* Board-specific QEMU display port (semihosting framebuffer). */
 #ifdef CONFIG_OVE_BOARD_QEMU_MPS2_AN500
@@ -98,6 +109,7 @@ int ove_lvgl_init(void)
 	}
 
 	lv_init();
+	lv_tick_set_cb(lvgl_tick_cb);
 
 #ifdef OVE_NUTTX_HAS_FB_DISPLAY
 	/* Direct framebuffer path — avoids lv_nuttx_init() fbdev malloc */
@@ -159,6 +171,7 @@ void ove_lvgl_tick(uint32_t ms)
 {
 	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
 		return;
+	/* Ignored by LVGL while lvgl_tick_cb is installed. */
 	lv_tick_inc(ms);
 }
 
