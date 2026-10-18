@@ -116,7 +116,29 @@ pub fn Workqueue(comptime stack_size: usize) type {
 pub const Work = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_work_t,
-    storage: ?*c.ove_work_storage_t,
+    box: ?*Box,
+
+    /// Substrate storage plus the per-item context.  `ove_work_init_static`
+    /// hands the storage address back as the handle, so a trampoline recovers
+    /// its own item with `@fieldParentPtr` instead of a shared static.
+    const Box = struct {
+        storage: c.ove_work_storage_t,
+        ctx: ?*anyopaque = null,
+    };
+
+    fn boxOf(h: c.ove_work_t) *Box {
+        const storage: *c.ove_work_storage_t = @ptrCast(@alignCast(h.?));
+        return @fieldParentPtr("storage", storage);
+    }
+
+    fn init(allocator: std.mem.Allocator, ctx: ?*anyopaque, invoke: c.ove_work_fn) Error!Work {
+        const box = try allocator.create(Box);
+        errdefer allocator.destroy(box);
+        box.* = .{ .storage = std.mem.zeroes(c.ove_work_storage_t), .ctx = ctx };
+        var h: c.ove_work_t = null;
+        try err.fromCode(c.ove_work_init_static(&h, &box.storage, invoke));
+        return .{ .allocator = allocator, .handle = h, .box = box };
+    }
 
     /// Create a deferred work item bound to a plain Zig callback.
     pub fn create(allocator: std.mem.Allocator, comptime handler: fn () void) Error!Work {
@@ -125,12 +147,7 @@ pub const Work = struct {
                 handler();
             }
         };
-        const storage = try allocator.create(c.ove_work_storage_t);
-        errdefer allocator.destroy(storage);
-        storage.* = std.mem.zeroes(c.ove_work_storage_t);
-        var h: c.ove_work_t = null;
-        try err.fromCode(c.ove_work_init_static(&h, storage, &Tramp.invoke));
-        return .{ .allocator = allocator, .handle = h, .storage = storage };
+        return init(allocator, null, &Tramp.invoke);
     }
 
     /// Create with a typed context pointer.  `ctx` must outlive the work.
@@ -140,19 +157,12 @@ pub const Work = struct {
         ctx: *Context,
         comptime handler: fn (*Context) void,
     ) Error!Work {
-        const Captured = struct {
-            var ctx_ptr: ?*Context = null;
-            fn invoke(_: c.ove_work_t) callconv(.c) void {
-                if (ctx_ptr) |p| handler(p);
+        const Tramp = struct {
+            fn invoke(h: c.ove_work_t) callconv(.c) void {
+                handler(@ptrCast(@alignCast(boxOf(h).ctx.?)));
             }
         };
-        Captured.ctx_ptr = ctx;
-        const storage = try allocator.create(c.ove_work_storage_t);
-        errdefer allocator.destroy(storage);
-        storage.* = std.mem.zeroes(c.ove_work_storage_t);
-        var h: c.ove_work_t = null;
-        try err.fromCode(c.ove_work_init_static(&h, storage, &Captured.invoke));
-        return .{ .allocator = allocator, .handle = h, .storage = storage };
+        return init(allocator, ctx, &Tramp.invoke);
     }
 
     /// Idempotent — drains the item before releasing its caller-owned storage,
@@ -160,11 +170,11 @@ pub const Work = struct {
     /// `defer work.deinit()` after an explicit `deinit()` is a safe no-op
     /// rather than a double free.
     pub fn deinit(self: *Work) void {
-        if (self.storage) |s| {
+        if (self.box) |b| {
             c.ove_work_deinit(self.handle);
             self.handle = null;
-            self.allocator.destroy(s);
-            self.storage = null;
+            self.allocator.destroy(b);
+            self.box = null;
         }
     }
 

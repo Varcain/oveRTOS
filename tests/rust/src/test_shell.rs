@@ -23,7 +23,7 @@ fn test_register_and_dispatch() {
     }
 
     PING_COUNT.store(0, Ordering::SeqCst);
-    ove::shell::register_cmd(b"ping\0", b"Ping test\0", ping_handler).unwrap();
+    ove::shell::register_cmd(c"ping", c"Ping test", ping_handler).unwrap();
 
     // Feed "ping\n" into the shell
     for &c in b"ping\n" {
@@ -45,7 +45,7 @@ fn test_args_passed_to_handler() {
     }
 
     ECHO_ARGC.store(0, Ordering::SeqCst);
-    ove::shell::register_cmd(b"echo\0", b"Echo test\0", echo_handler).unwrap();
+    ove::shell::register_cmd(c"echo", c"Echo test", echo_handler).unwrap();
 
     // Feed "echo hello world\n"
     for &c in b"echo hello world\n" {
@@ -84,8 +84,8 @@ fn test_multiple_commands() {
     A_COUNT.store(0, Ordering::SeqCst);
     B_COUNT.store(0, Ordering::SeqCst);
 
-    ove::shell::register_cmd(b"aaa\0", b"Test A\0", cmd_a).unwrap();
-    ove::shell::register_cmd(b"bbb\0", b"Test B\0", cmd_b).unwrap();
+    ove::shell::register_cmd(c"aaa", c"Test A", cmd_a).unwrap();
+    ove::shell::register_cmd(c"bbb", c"Test B", cmd_b).unwrap();
 
     for &c in b"aaa\n" {
         ove::shell::process_char(c as i32);
@@ -104,8 +104,8 @@ fn test_multiple_commands() {
 fn test_process_line() {
     ove::shell::init().unwrap();
     // Null-terminated line should parse through the FFI.
-    ove::shell::process_line(b"\0");
-    ove::shell::process_line(b"help\n\0");
+    ove::shell::process_line(c"");
+    ove::shell::process_line(c"help\n");
 }
 
 fn test_set_output_hook() {
@@ -113,24 +113,54 @@ fn test_set_output_hook() {
     ove::shell::set_output_hook(None);
 }
 
+/// Re-registering a name must replace the handler, matching the C table
+/// (ove_shell_register_cmd overwrites a same-name entry).  Regression: the
+/// Rust side appended a second entry and its trampoline dispatched the
+/// FIRST match, so the stale handler kept running.
+fn test_register_same_name_replaces_handler() {
+    ove::shell::init().unwrap();
+
+    static DUP_A: AtomicI32 = AtomicI32::new(0);
+    static DUP_B: AtomicI32 = AtomicI32::new(0);
+
+    fn dup_a(_args: &[&[u8]]) {
+        DUP_A.fetch_add(1, Ordering::Relaxed);
+    }
+    fn dup_b(_args: &[&[u8]]) {
+        DUP_B.fetch_add(1, Ordering::Relaxed);
+    }
+
+    DUP_A.store(0, Ordering::SeqCst);
+    DUP_B.store(0, Ordering::SeqCst);
+    ove::shell::register_cmd(c"dup", c"first", dup_a).unwrap();
+    ove::shell::register_cmd(c"dup", c"second", dup_b).unwrap();
+
+    for &c in b"dup\n" {
+        ove::shell::process_char(c as i32);
+    }
+
+    let (a, b) = (DUP_A.load(Ordering::SeqCst), DUP_B.load(Ordering::SeqCst));
+    println!("    dup: old handler ran {a}x, new handler ran {b}x (expect 0/1)");
+    assert_eq!(b, 1, "re-registered handler should run");
+    assert_eq!(a, 0, "replaced handler must not run");
+}
+
 fn test_register_cmd_table_overflow() {
     ove::shell::init().unwrap();
 
     fn noop(_args: &[&[u8]]) {}
 
-    // CMD_TABLE holds at most MAX_CMDS (16) entries. Prior tests have
-    // registered a handful of commands; keep registering until the Rust
-    // table reports NoMemory.  Must be the last shell test — once the
-    // table is full, further register_cmd calls will fail permanently.
-    const NAMES: &[&[u8]] = &[
-        b"f0\0", b"f1\0", b"f2\0", b"f3\0",
-        b"f4\0", b"f5\0", b"f6\0", b"f7\0",
-        b"f8\0", b"f9\0", b"fa\0", b"fb\0",
-        b"fc\0", b"fd\0", b"fe\0", b"ff\0",
+    // The table holds 16 commands including the built-in `help`; keep
+    // registering until it reports NoMemory.
+    const NAMES: &[&core::ffi::CStr] = &[
+        c"f0", c"f1", c"f2", c"f3",
+        c"f4", c"f5", c"f6", c"f7",
+        c"f8", c"f9", c"fa", c"fb",
+        c"fc", c"fd", c"fe", c"ff",
     ];
     let mut overflow_seen = false;
     for &name in NAMES {
-        if let Err(e) = ove::shell::register_cmd(name, b"h\0", noop) {
+        if let Err(e) = ove::shell::register_cmd(name, c"h", noop) {
             assert!(matches!(e, ove::Error::NoMemory), "unexpected: {e:?}");
             overflow_seen = true;
             break;
@@ -138,9 +168,36 @@ fn test_register_cmd_table_overflow() {
     }
     if !overflow_seen {
         // Table wasn't full before; one more call must overflow.
-        let rc = ove::shell::register_cmd(b"over\0", b"h\0", noop);
+        let rc = ove::shell::register_cmd(c"over", c"h", noop);
         assert!(matches!(rc, Err(ove::Error::NoMemory)), "expected NoMemory, got {:?}", rc);
     }
+}
+
+/// `init()` empties the C command table, so after a re-init there must be
+/// room again.  Regression: the Rust CMD_TABLE/CMD_COUNT survived init()
+/// and kept returning NoMemory although the C table was empty.
+fn test_reinit_frees_command_table() {
+    ove::shell::init().unwrap();
+
+    fn noop(_args: &[&[u8]]) {}
+
+    // Fill the table to capacity.
+    const NAMES: &[&core::ffi::CStr] = &[
+        c"g0", c"g1", c"g2", c"g3",
+        c"g4", c"g5", c"g6", c"g7",
+        c"g8", c"g9", c"ga", c"gb",
+        c"gc", c"gd", c"ge", c"gf",
+    ];
+    for &name in NAMES {
+        if ove::shell::register_cmd(name, c"h", noop).is_err() {
+            break;
+        }
+    }
+
+    ove::shell::init().unwrap();
+    let rc = ove::shell::register_cmd(c"after", c"h", noop);
+    println!("    register after re-init: {rc:?} (expect Ok)");
+    assert!(rc.is_ok(), "register after re-init should succeed, got {rc:?}");
 }
 
 pub fn run() -> (usize, usize) {
@@ -154,7 +211,9 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_multiple_commands),
             test_entry!(test_process_line),
             test_entry!(test_set_output_hook),
+            test_entry!(test_register_same_name_replaces_handler),
             test_entry!(test_register_cmd_table_overflow),
+            test_entry!(test_reinit_frees_command_table),
         ],
     )
 }

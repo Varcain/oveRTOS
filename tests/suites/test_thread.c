@@ -39,6 +39,94 @@ static int wait_for_atomic(atomic_int *flag, int expected, uint32_t timeout_ms)
 	return 1;
 }
 
+/* ── First-creation self-identity race ──────────────────────────────────
+ * Several threads that start together, before any ove thread has ever run,
+ * must each resolve ove_thread_get_self() to their own handle.  Regression:
+ * the NuttX backend allocated its task-TLS index lazily from every child
+ * with no lock, so children racing through the first allocation could each
+ * take a slot; the shared index then pointed at only one of them and the
+ * others read NULL.  The race exists only while that index is unset, so
+ * this must be the first test in the suite (and the Thread suite runs
+ * before any other suite that creates threads).  On a single core the
+ * equal-priority children run that setup back to back, so this is a smoke
+ * test there: it catches the bug only if a child is preempted inside the
+ * allocation (SMP, or a yield injected to widen the window). */
+#define SELF_RACE_N 4
+OVE_TEST_STORAGE(ove_thread_storage_t, s_race_storage[SELF_RACE_N]);
+OVE_TEST_STACK(s_race_stack0, 4096);
+OVE_TEST_STACK(s_race_stack1, 4096);
+OVE_TEST_STACK(s_race_stack2, 4096);
+OVE_TEST_STACK(s_race_stack3, 4096);
+OVE_TEST_STORAGE(ove_sem_storage_t, s_race_sem_storage);
+
+static ove_sem_t s_race_go;
+static atomic_int s_race_arrived;
+static atomic_int s_race_done;
+static atomic_intptr_t s_race_self[SELF_RACE_N];
+
+static void entry_self_race(void *arg)
+{
+	intptr_t idx = (intptr_t)arg;
+	atomic_fetch_add(&s_race_arrived, 1);
+	/* Released together only once every child has started, so each reads
+	 * its identity after all of them went through the TLS setup. */
+	int rc = ove_sem_take(s_race_go, 2000ULL * 1000ULL * 1000ULL);
+	(void)rc; /* a timeout shows up as a missing/late record, not a hang */
+	atomic_store(&s_race_self[idx], (intptr_t)ove_thread_get_self());
+	atomic_fetch_add(&s_race_done, 1);
+}
+
+static void test_get_self_concurrent_first_start(void **state)
+{
+	(void)state;
+	void *stacks[SELF_RACE_N] = {s_race_stack0, s_race_stack1, s_race_stack2, s_race_stack3};
+	static const char *const names[SELF_RACE_N] = {"race0", "race1", "race2", "race3"};
+	ove_thread_t h[SELF_RACE_N] = {NULL};
+	int made[SELF_RACE_N] = {0};
+	int created = 0;
+
+	atomic_store(&s_race_arrived, 0);
+	atomic_store(&s_race_done, 0);
+	OVE_TEST_ASSERT_OK(ove_test_sem_create(&s_race_go, &s_race_sem_storage, 0, SELF_RACE_N));
+	/* Same priority as the runner: none starts until the runner blocks, so
+	 * all of them go through their first TLS setup back to back. */
+	for (int i = 0; i < SELF_RACE_N; i++) {
+		if (ove_test_thread_run(&h[i], &s_race_storage[i], names[i], entry_self_race,
+					(void *)(intptr_t)i, stacks[i], 4096) == OVE_OK) {
+			made[i] = 1;
+			created++;
+		}
+	}
+	int arrived = wait_for_atomic(&s_race_arrived, created, 2000);
+	for (int i = 0; i < created; i++)
+		ove_sem_give(s_race_go);
+	int done = wait_for_atomic(&s_race_done, created, 2000);
+
+	int mismatches = 0;
+	for (int i = 0; i < SELF_RACE_N; i++) {
+		if (!made[i])
+			continue;
+		intptr_t seen = atomic_load(&s_race_self[i]);
+		if (seen != (intptr_t)h[i]) {
+			mismatches++;
+			print_message("    race%d: ove_thread_get_self()=%p, handle=%p\n", i,
+				      (void *)seen, (void *)h[i]);
+		}
+	}
+	print_message("    %d/%d threads resolved their own handle\n", created - mismatches,
+		      created);
+	for (int i = 0; i < SELF_RACE_N; i++) {
+		if (made[i])
+			ove_test_thread_destroy(h[i]);
+	}
+	ove_test_sem_destroy(s_race_go);
+
+	assert_int_equal(created, SELF_RACE_N);
+	assert_true(arrived);
+	assert_true(done);
+	assert_int_equal(mismatches, 0);
+}
+
 /* Teardown ensures spinning threads are stopped even if an assertion fails
    (cmocka longjmps past the cleanup code in the test body). */
 static int teardown_stop_spin(void **state)
@@ -562,6 +650,8 @@ static void test_errno_per_thread(void **state)
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
+		/* Must stay first: see test_get_self_concurrent_first_start. */
+		cmocka_unit_test(test_get_self_concurrent_first_start),
 		cmocka_unit_test(test_create_destroy),
 		cmocka_unit_test(test_entry_arg),
 		cmocka_unit_test(test_sleep_duration),

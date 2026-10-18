@@ -98,6 +98,11 @@ void ove_workqueue_deinit(ove_workqueue_t wq);
  * Associates the @p handler function with the work item. The item must be
  * initialised before it can be submitted to a work queue.
  *
+ * The handle written to @p work is @p storage itself, and that same handle is
+ * passed to @p handler.  A caller that embeds @p storage in its own structure
+ * can therefore recover that structure from the handler argument
+ * (container_of), which is how per-item context is attached.
+ *
  * @param[out] work     Receives the initialised work handle.
  * @param[in]  storage  Pointer to statically-allocated work item storage.
  * @param[in]  handler  Function to call when the work item is executed.

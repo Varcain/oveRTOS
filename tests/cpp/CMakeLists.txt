@@ -96,6 +96,12 @@ set(STUB_SOURCES
 set(SUITE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/suites)
 ove_test_cpp_suites(${CMAKE_CURRENT_SOURCE_DIR}/framework/suites.inc ${SUITE_DIR} SUITE_SOURCES)
 
+# Release-build half of the StaticCell suite: one helper TU compiled with
+# NDEBUG so OVE_STATIC_INIT_ASSERT checks nothing, as in release firmware.
+set(STATIC_CELL_NDEBUG_SRC ${SUITE_DIR}/static_cell_ndebug.cpp)
+set_source_files_properties(${STATIC_CELL_NDEBUG_SRC} PROPERTIES COMPILE_DEFINITIONS NDEBUG)
+list(APPEND SUITE_SOURCES ${STATIC_CELL_NDEBUG_SRC})
+
 # ove_add_cpp_variant(<name> [compile_opts...])
 # Mirrors ove_add_stub_variant in tests/CMakeLists.txt: shared sources +
 # per-variant compile/link flags so we can stamp out coverage/asan builds

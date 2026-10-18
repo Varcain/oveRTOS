@@ -72,6 +72,19 @@ static void test_wq_init_free_work(void **state)
 	ove_test_work_destroy(w);
 }
 
+/* Contract the bindings rely on: the handle produced by ove_work_init_static
+ * IS the caller's storage, so a binding can recover per-item context from the
+ * handle its trampoline receives (e.g. by embedding the storage first in a
+ * larger struct). */
+static void test_wq_init_static_handle_is_storage(void **state)
+{
+	(void)state;
+	ove_work_t w = NULL;
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, work_handler));
+	assert_ptr_equal(w, (ove_work_t)&s_work_storage);
+	ove_work_deinit(w);
+}
+
 static void test_wq_submit_handler_called(void **state)
 {
 	(void)state;
@@ -349,6 +362,7 @@ int test_workqueue_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup(test_wq_create_destroy, wq_setup),
 		cmocka_unit_test_setup(test_wq_init_free_work, wq_setup),
+		cmocka_unit_test_setup(test_wq_init_static_handle_is_storage, wq_setup),
 		cmocka_unit_test_setup(test_wq_submit_handler_called, wq_setup),
 		cmocka_unit_test_setup(test_wq_submit_multiple, wq_setup),
 		cmocka_unit_test_setup(test_wq_submit_delayed, wq_setup),

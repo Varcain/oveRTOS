@@ -857,36 +857,38 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
         stub_build,
         extra_args=(["-DOVE_STUB_ZERO_HEAP=ON"] if zero_heap else None))
 
-    # Zero-heap: generate an ove_config.h carrying CONFIG_OVE_ZERO_HEAP and put
-    # its dir first on the include path so the ove module's @cImport sees it —
-    # `pin.zero_heap = @hasDecl(c, "CONFIG_OVE_ZERO_HEAP")` then flips on, and
-    # the primitives' create() route through the static-storage *_init() APIs.
-    zh_include = []
+    # Every Zig wrapper embeds its storage block and hands it to the static
+    # ove_*_init() APIs, so @cImport needs the real storage sizes in both
+    # modes; without them storage.h falls back to 1-byte placeholders and
+    # the C side writes past each allocation (ove_zig.cmake does the same
+    # for firmware builds).  The stub build emits ove_storage_sizes.env
+    # (KEY=VALUE); convert to `#define OVE_KEY VALUE`.
+    gen_dir = os.path.join(output_dir, "tests",
+                           "zig_zh_gen" if zero_heap else "zig_gen")
+    os.makedirs(gen_dir, exist_ok=True)
+    with open(os.path.join(stub_build, "ove_storage_sizes.env")) as f:
+        sizes = f.read()
+    with open(os.path.join(gen_dir, "zig_storage_sizes.h"), "w") as out:
+        out.write("/* Auto-generated storage sizes for the Zig test build. */\n")
+        for line in sizes.splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                key, val = line.split("=", 1)
+                out.write(f"#define OVE_{key} {val}\n")
+
+    # Zero-heap: also generate an ove_config.h carrying CONFIG_OVE_ZERO_HEAP
+    # in the same dir, first on the include path, so the ove module's
+    # @cImport sees it — `pin.zero_heap = @hasDecl(c, "CONFIG_OVE_ZERO_HEAP")`
+    # then flips on and the zero-heap-only wrapper variants are selected.
     if zero_heap:
-        zh_dir = os.path.join(output_dir, "tests", "zig_zh_gen")
-        os.makedirs(zh_dir, exist_ok=True)
         with open(os.path.join(ove_dir, "tests", "ove_config.h")) as f:
             base_cfg = f.read()
         zh_cfg = base_cfg.replace(
             "#endif /* OVE_CONFIG_H */",
             "#define CONFIG_OVE_ZERO_HEAP 1\n\n#endif /* OVE_CONFIG_H */")
-        with open(os.path.join(zh_dir, "ove_config.h"), "w") as f:
+        with open(os.path.join(gen_dir, "ove_config.h"), "w") as f:
             f.write(zh_cfg)
-        # storage.h's @ZIG_CIMPORT zero-heap path embeds each storage struct by
-        # size, so it needs OVE_SIZEOF_*/OVE_ALIGNOF_* defines.  The stub build
-        # emits ove_storage_sizes.env (KEY=VALUE); convert to `#define OVE_KEY
-        # VALUE` (same mapping as config/cmake/ove_zig.cmake's generator).
-        with open(os.path.join(stub_build, "ove_storage_sizes.env")) as f:
-            sizes = f.read()
-        with open(os.path.join(zh_dir, "zig_storage_sizes.h"), "w") as out:
-            out.write("/* Auto-generated storage sizes for the zero-heap Zig "
-                      "test build. */\n")
-            for line in sizes.splitlines():
-                line = line.strip()
-                if "=" in line and not line.startswith("#"):
-                    key, val = line.split("=", 1)
-                    out.write(f"#define OVE_{key} {val}\n")
-        zh_include = ["-I" + zh_dir]
+    zh_include = ["-I" + gen_dir]
 
     zig = _find_zig(ove_dir)
     zig_test_dir = os.path.join(ove_dir, "tests", "zig")
