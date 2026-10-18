@@ -626,6 +626,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_profiler.c")
 # Common networking sources (platform-independent)
 {% if config.get("CONFIG_OVE_NET_TLS") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_tls.c")
+{% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_entropy.c")
+{% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_HTTP") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_http.c")

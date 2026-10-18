@@ -65,6 +65,7 @@ target_sources(app PRIVATE
 )
 
 ove_zephyr_add_tflm_if_enabled()
+ove_zephyr_add_mbedtls_if_enabled()
 ove_zephyr_include_app_sources()
 ove_zephyr_add_profiler_flags()
 ove_zephyr_add_common_includes(

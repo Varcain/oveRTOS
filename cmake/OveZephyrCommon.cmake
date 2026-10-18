@@ -10,6 +10,7 @@
 #
 #   ove_zephyr_pre_find()                — before find_package(Zephyr)
 #   ove_zephyr_add_tflm_if_enabled()     — after project()
+#   ove_zephyr_add_mbedtls_if_enabled()  — after project()
 #   ove_zephyr_include_app_sources()     — after project()
 #   ove_zephyr_add_common_includes()     — after project()
 #
@@ -85,6 +86,28 @@ macro(ove_zephyr_add_tflm_if_enabled)
         target_include_directories(app PRIVATE
             $<TARGET_PROPERTY:ove_tflm,INTERFACE_INCLUDE_DIRECTORIES>)
         target_link_libraries(app PRIVATE stdc++)
+    endif()
+endmacro()
+
+
+# ─── ove_zephyr_add_mbedtls_if_enabled() ────────────────────────────
+# Build the vendored mbedTLS 3.6 (the API backends/common/ove_net_tls.c uses;
+# Zephyr's own module is mbedTLS 4) with the oveRTOS config when OVE_NET_TLS
+# is set, and hand `app` its objects, include path and config define, since
+# ove_net_tls.c compiles in `app`.  Must be called after project().
+macro(ove_zephyr_add_mbedtls_if_enabled)
+    if(OVE_NET_TLS AND NOT TARGET ove_mbedtls)
+        if(NOT DEFINED OVE_DL_DIR)
+            set(OVE_DL_DIR "${OVE_DIR}/dl")
+        endif()
+        include(${OVE_DIR}/cmake/OveMbedtls.cmake)
+        ove_build_mbedtls()
+        target_link_libraries(ove_mbedtls PRIVATE zephyr_interface)
+        target_sources(app PRIVATE $<TARGET_OBJECTS:ove_mbedtls>)
+        target_include_directories(app PRIVATE
+            $<TARGET_PROPERTY:ove_mbedtls,INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(app PRIVATE
+            $<TARGET_PROPERTY:ove_mbedtls,INTERFACE_COMPILE_DEFINITIONS>)
     endif()
 endmacro()
 
