@@ -42,14 +42,11 @@ _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTAL
 
 # page (relative to docs-site/docs) -> why it does not compile yet
 _PENDING = {
-    "api/audio.md": "excerpts not yet marked or made self-contained",
     "api/fs.md": "excerpts not yet marked or made self-contained",
     "api/i2c.md": "excerpts not yet marked or made self-contained",
     "api/i2s.md": "excerpts not yet marked or made self-contained",
     "api/infer.md": "excerpts not yet marked or made self-contained",
     "api/io.md": "excerpts not yet marked or made self-contained",
-    "api/ipc.md": "excerpts not yet marked or made self-contained",
-    "api/net.md": "excerpts not yet marked or made self-contained",
     "api/nvs.md": "excerpts not yet marked or made self-contained",
     "api/shell.md": "excerpts not yet marked or made self-contained",
     "api/spi.md": "excerpts not yet marked or made self-contained",
