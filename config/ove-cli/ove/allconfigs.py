@@ -174,6 +174,36 @@ def _ove_bin(ws):
     return ove_bin if os.path.isfile(ove_bin) else "ove"
 
 
+def _canonical_board(ove_dir, name):
+    """One spelling for a board in a spec or an incompatible_boards entry.
+
+    A variant ('web') stays itself: it is a different target from its board.
+    Any other name ('stm32f746', 'stm32f746g-discovery') becomes the board's
+    directory name; a name no board has is kept as written.
+    """
+    from .kconfig import _find_board_dir, _find_board_variant
+
+    variant_dir, _ = _find_board_variant(ove_dir, name)
+    if variant_dir:
+        return name
+    board_dir = _find_board_dir(ove_dir, name)
+    return os.path.basename(board_dir) if board_dir else name
+
+
+def _incompatible(ove_dir, board, rtos, entries):
+    """The incompatible_boards entry that rules out <board>.<rtos>, or None.
+
+    Entries are a board ('web', skip on any rtos) or '<board>.<rtos>' (skip
+    only that pair), in any spelling of the board.
+    """
+    target = _canonical_board(ove_dir, board)
+    for entry in entries:
+        name, _, entry_rtos = entry.partition(".")
+        if _canonical_board(ove_dir, name) == target and entry_rtos in ("", rtos):
+            return entry
+    return None
+
+
 def build_matrix(ws, board, rtos):
     """Build every app for <board>.<rtos>, each in its own workspace.
 
@@ -188,20 +218,17 @@ def build_matrix(ws, board, rtos):
     ove_bin = _ove_bin(ws)
     results = []
     total = len(apps)
-    spec_pair = f"{board}.{rtos}"
     for i, (app, incompat, app_skip) in enumerate(apps, 1):
         print(f"\n{'=' * 60}")
-        # Entries are either bare board names (`host`, skip on any rtos)
-        # or `<board>.<rtos>` (skip only that pair — used for board/rtos
-        # combos that lack a C-side driver, e.g. STM32F7 ETH driver lives
-        # in drivers/freertos so the NuttX/Zephyr combos won't link).
+        # `<board>.<rtos>` entries cover board/rtos combos that lack a C-side
+        # driver (e.g. the STM32F7 ETH driver lives in drivers/freertos, so
+        # the NuttX/Zephyr combos won't link).
         skip_reason = None
+        entry = _incompatible(ws.ove_dir, board, rtos, incompat)
         if app_skip is not None:
             skip_reason = app_skip
-        elif board in incompat:
-            skip_reason = f"incompatible_boards includes {board}"
-        elif spec_pair in incompat:
-            skip_reason = f"incompatible_boards includes {spec_pair}"
+        elif entry is not None:
+            skip_reason = f"incompatible_boards includes {entry}"
         if skip_reason is not None:
             print(f"[{i}/{total}] Skipping {board}.{rtos}.{app}"
                   f" ({skip_reason})")
