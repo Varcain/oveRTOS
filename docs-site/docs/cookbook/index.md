@@ -40,7 +40,7 @@ Every recipe is short (one page), runnable, and constrained to QEMU/FreeRTOS so 
 ## Conventions
 
 - Code is C unless the pattern is meaningfully different in the language binding (rare).
-- `make lint` compiles every ```` ```c ```` block on these pages against the real headers (`doc-snippets`). Mark a block that is only an excerpt with `<!-- ove:fragment -->` on the line before its fence.
+- `make lint` compiles every ```` ```c ```` block in the cookbook, API reference and getting-started pages against the real headers (`doc-snippets`). On the line before a fence, `<!-- ove:body -->` compiles a statements-only excerpt inside a function, and `<!-- ove:fragment -->` skips a block that cannot stand alone.
 - Error checking is shown but kept brief — production apps should still log and recover; the recipes optimise for *clarity*, not robustness.
 - Where a recipe needs hardware-only modules (real I2C, real UART), it says so; the simulation dashboard (`sim/`) stands in for the display, audio, GPIO and LEDs under QEMU.
 

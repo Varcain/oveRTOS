@@ -8,7 +8,7 @@
 
 /*
  * Config for the documentation snippet check (ove lint, doc-snippets): the
- * host test config plus the modules the cookbook uses that it leaves off.
+ * host test config plus the modules the docs use that it leaves off.
  */
 
 #ifndef OVE_DOCS_CONFIG_H
@@ -33,5 +33,7 @@
 #define CONFIG_OVE_NET_MQTT_MAX_SUBS 8
 #define CONFIG_OVE_NET_MQTT_RX_BUF 1024
 #define CONFIG_OVE_NET_MQTT_TX_BUF 512
+#define CONFIG_OVE_NET_HTTPD 1
+#define CONFIG_OVE_NET_HTTPD_WS 1
 
 #endif /* OVE_DOCS_CONFIG_H */
