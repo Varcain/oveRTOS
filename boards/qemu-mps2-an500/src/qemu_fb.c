@@ -8,8 +8,10 @@
  * QEMU MPS2-AN500 framebuffer backend for the Linux personality (/dev/fb0).
  * The panel is a RAM RGB565 buffer pushed to /dev/shm/ove-fb over semihosting
  * file I/O (the same TXFB header protocol the native lv_port_disp.c uses), read
- * by the host viewer (config/scripts/ove-dashboard-bridge.py). Headless runs
- * (no --display) just get a NULL file and present() no-ops.
+ * by the host viewer (config/scripts/ove-dashboard-bridge.py). Each present is
+ * one direct semihosting write: stdio would push the frame through a small
+ * buffer, one trap per chunk, and at the fb tick rate that starves the guest.
+ * Without the shm file (no viewer has created it) present() no-ops.
  */
 
 #include "ove_config.h"
@@ -21,8 +23,9 @@
 #include "board_desc.h"
 
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
+
+#include "semihosting.h"
 
 #define FB_W OVE_DISPLAY_WIDTH
 #define FB_H OVE_DISPLAY_HEIGHT
@@ -42,13 +45,12 @@ struct fb_header {
 };
 
 static uint16_t g_fb[FB_W * FB_H];
-static FILE *g_shm;
+static int g_shm = -1;
 
 int ove_hal_fb_init(void)
 {
 	memset(g_fb, 0, sizeof(g_fb));
-	/* Opened via semihosting; NULL when run headless (no --display) — fine. */
-	g_shm = fopen("/dev/shm/ove-fb", "r+b");
+	g_shm = sh_open("/dev/shm/ove-fb", 7); /* "r+b" */
 	return OVE_OK;
 }
 
@@ -73,7 +75,7 @@ void ove_hal_fb_present(int x, int y, int w, int h)
 	(void)y;
 	(void)w;
 	(void)h;
-	if (!g_shm)
+	if (g_shm < 0)
 		return;
 	struct fb_header hdr = {
 		.magic = FB_MAGIC,
@@ -82,10 +84,9 @@ void ove_hal_fb_present(int x, int y, int w, int h)
 		.format = FB_FORMAT_RGB565,
 		.dirty = 1,
 	};
-	fseek(g_shm, 0, SEEK_SET);
-	fwrite(&hdr, 1, sizeof(hdr), g_shm);
-	fwrite(g_fb, 1, sizeof(g_fb), g_shm);
-	fflush(g_shm);
+	sh_seek(g_shm, 0);
+	sh_write(g_shm, &hdr, sizeof(hdr));
+	sh_write(g_shm, g_fb, sizeof(g_fb));
 }
 
 #endif /* CONFIG_OVE_FB */
