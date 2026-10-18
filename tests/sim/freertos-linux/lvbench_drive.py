@@ -34,7 +34,7 @@ except subprocess.TimeoutExpired:
 text = open(log, "rb").read().decode("latin-1", "replace") if os.path.exists(log) else ""
 
 started    = "lvbench: starting lv_demo_benchmark on /dev/fb0" in text
-m          = re.search(r"lvbench: DONE avg_fps=(\d+)", text)
+m          = re.search(r"lvbench: DONE .*?avg_fps=(\d+)", text)
 done_ok    = bool(m) and int(m.group(1)) > 0        # completed + a real (non-zero) FPS
 shell_ok   = "Linux overtos" in text                # uname ran after -> shell survived
 no_kfault  = not re.search(r"HardFault|up_assert|PANIC|panic|Assertion|MPU FAULT|FATAL", text)
