@@ -6,11 +6,12 @@
 # and printf semantics across heap/zeroheap builds.  PICOLIBC_USE_MODULE
 # `depends on !GLIBCXX_LIBCPP` (Zephyr's lib/libc/picolibc/Kconfig:13-14),
 # so C++ apps must use PICOLIBC_USE_TOOLCHAIN (Zephyr SDK ships picolibc).
-# PICOLIBC_IO_LONG_LONG is opt-in; default is integer-only and silently
-# truncates %llu/%lld to %u/%d.
+# The printf level is opt-in; the default is integer-only and silently
+# truncates %llu/%lld to %u/%d. Full float printf (which covers long long)
+# on every board: an FPU build selects it anyway.
 CONFIG_PICOLIBC=y
-CONFIG_PICOLIBC_IO_LONG_LONG=y
-{% if config.get("CONFIG_OVE_APP_LANG_CXX") == True %}
+CONFIG_PICOLIBC_IO_FLOAT=y
+{% if config.get("CONFIG_OVE_APP_LANG_CXX") == True or config.get("CONFIG_OVE_INFER") == True %}
 CONFIG_PICOLIBC_USE_TOOLCHAIN=y
 {% else %}
 CONFIG_PICOLIBC_USE_MODULE=y
@@ -52,9 +53,8 @@ CONFIG_THREAD_STACK_INFO=y
 CONFIG_THREAD_CUSTOM_DATA=y
 CONFIG_MAIN_STACK_SIZE=4096
 CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048
-CONFIG_ISR_STACK_SIZE=2048
 CONFIG_IDLE_STACK_SIZE=512
-{% elif config.get("CONFIG_ZEPHYR_DYNAMIC_THREAD", True) %}
+{% else %}
 # Dynamic thread stacks (heap must be large enough for stacks + runtime mallocs)
 CONFIG_DYNAMIC_THREAD=y
 CONFIG_DYNAMIC_THREAD_ALLOC=y
@@ -65,7 +65,7 @@ CONFIG_MAIN_STACK_SIZE=4096
 CONFIG_SYS_HEAP_RUNTIME_STATS=y
 {% endif %}
 
-{% if config.get("CONFIG_ZEPHYR_FPU", True) %}
+{% if get_bool("CONFIG_ZEPHYR_FPU") %}
 # Hardware FPU (required for hard-float ABI and CMSIS-DSP performance)
 CONFIG_FPU=y
 CONFIG_FP_HARDABI=y
@@ -76,11 +76,11 @@ CONFIG_FP_HARDABI=y
 # the resume trampoline, covering the parked exception frame Zephyr's context switch cannot see.
 CONFIG_FPU_SHARING=y
 {% endif %}
-# FPU context adds ~68 bytes per exception frame; size ISR stack accordingly
-CONFIG_ISR_STACK_SIZE=4096
 {% endif %}
+# ISR stack: room for nested exception frames (an FPU context adds ~68 bytes each)
+CONFIG_ISR_STACK_SIZE=4096
 
-{% if config.get("CONFIG_ZEPHYR_CMSIS_DSP", True) %}
+{% if get_bool("CONFIG_ZEPHYR_CMSIS_DSP") %}
 # DSP (CMSIS-DSP FFT)
 CONFIG_CMSIS_DSP=y
 CONFIG_CMSIS_DSP_TRANSFORM=y
@@ -141,7 +141,9 @@ CONFIG_NET_BUF_TX_COUNT={{ config.get("CONFIG_OVE_ZEPHYR_NET_BUF_TX_COUNT", 36) 
 CONFIG_NET_MGMT=y
 CONFIG_NET_MGMT_EVENT=y
 CONFIG_NET_L2_ETHERNET=y
+{% if get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
 CONFIG_ETH_STM32_HAL=y
+{% endif %}
 CONFIG_NET_CONTEXT_RCVTIMEO=y
 CONFIG_NET_CONTEXT_SNDTIMEO=y
 {% endif %}
@@ -336,14 +338,20 @@ CONFIG_TIMESLICING=n
 # program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC
 # display, which the headless personality disables — so enable it explicitly. No-op on the an521.
 CONFIG_MEMC=y
-# Headless personality: drop the board's app drivers (display/audio/SD) — the personality uses none
-# of them and they cost RAM, flash, and USERSPACE thread-id slots. No-ops on boards without them.
+# Headless personality: drop the board's app drivers (display/audio/SD) the app does not ask for —
+# they cost RAM, flash, and USERSPACE thread-id slots. No-ops on boards without them.
+{% if not get_bool("CONFIG_OVE_FB") and not get_bool("CONFIG_OVE_LVGL") %}
 CONFIG_DISPLAY=n
+{% endif %}
+{% if not get_bool("CONFIG_OVE_AUDIO") %}
 CONFIG_AUDIO=n
 CONFIG_AUDIO_CODEC=n
 CONFIG_I2S=n
+{% endif %}
+{% if not (get_bool("CONFIG_OVE_FS") and config.get("CONFIG_ZEPHYR_SD_FILESYSTEM", True)) %}
 CONFIG_DISK_ACCESS=n
 CONFIG_DISK_DRIVERS=n
+{% endif %}
 # Drop Zephyr's logging subsystem. The personality drives its own USART1 console (serial_wrapper.c),
 # so Zephyr's LOG only emits driver INFO noise (QSPI SFDP, PHY id) that competes with it on the same
 # UART. It also costs SRAM (the deferred log buffer + the log-process thread + its stack) on a board
@@ -387,8 +395,8 @@ CONFIG_FLASH=y
 CONFIG_FLASH_STM32_QSPI=y
 CONFIG_STM32_MEMMAP=y
 {% if get_bool("CONFIG_OVE_FB") %}
-# lvbench on the panel: re-enable the LTDC display over the headless CONFIG_DISPLAY=n above.
-# The ove-linux-fb.overlay re-enables the display nodes and applies display-active FMC timing.
+# lvbench on the panel: the LTDC display. The ove-linux-fb.overlay re-enables the display
+# nodes and applies display-active FMC timing.
 CONFIG_DISPLAY=y
 CONFIG_STM32_LTDC=y
 # board.yaml display.color_format; fb_port.c rejects any other format.

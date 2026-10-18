@@ -137,17 +137,20 @@ menu "Zephyr"
             int "Heap memory pool size (bytes)"
             default 65536
 
-        config ZEPHYR_DYNAMIC_THREAD
-            bool "Enable dynamic threads"
-            default y
-
         config ZEPHYR_I2S
             bool "Enable I2S audio"
             default y
 
+        config ZEPHYR_FPU
+            bool "Hardware FPU"
+            default y if OVE_BOARD_STM32F746G_DISCO
+            help
+              CONFIG_FPU with the hard-float ABI. The MPS2 AN500 and the
+              AN521 CPU0 Zephyr SoCs have no FPU.
+
         config ZEPHYR_CMSIS_DSP
             bool "Enable CMSIS-DSP"
-            default y
+            default y if OVE_AUDIO || OVE_INFER
 
         config ZEPHYR_SD_FILESYSTEM
             bool "Enable SD card filesystem"
@@ -157,14 +160,10 @@ menu "Zephyr"
             bool "Enable console subsystem"
             default y
 
-        config ZEPHYR_LVGL
-            bool "Enable LVGL display"
-            default y
-
         config ZEPHYR_LV_MEM_POOL_SIZE
             int "LVGL memory pool size"
             default 16384
-            depends on ZEPHYR_LVGL
+            depends on OVE_LVGL
 
         comment "--- For advanced Zephyr kernel config, run: make zephyr-menuconfig ---"
     endmenu

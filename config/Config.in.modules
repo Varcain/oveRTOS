@@ -103,6 +103,7 @@ config OVE_LINUX_GUEST_FLOAT_ABI_SOFT
 config OVE_LINUX_GUEST_FLOAT_ABI_HARD
     bool "Hard-float guest ABI (VFP argument registers)"
     depends on OVE_BOARD_STM32F746G_DISCO || OVE_BOARD_QEMU_MPS2_AN500
+    depends on !OVE_RTOS_ZEPHYR || ZEPHYR_FPU
     help
       Use the Cortex-M7 FPv5-SP hard-float FDPIC Buildroot userspace from
       "output-hardfloat" and preserve s0-s31 plus FPSCR across every deferred
