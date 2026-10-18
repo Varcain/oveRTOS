@@ -38,6 +38,13 @@ pub const O_TRUNC: i32 = bindings::OVE_FS_O_TRUNC as i32;
 /// Open flag: with [`O_CREATE`], fail if the path already exists.
 pub const O_EXCL: i32 = bindings::OVE_FS_O_EXCL as i32;
 
+/// Seek origin for [`File::seek`]: the start of the file.
+pub const SEEK_SET: i32 = bindings::OVE_FS_SEEK_SET as i32;
+/// Seek origin for [`File::seek`]: the current position.
+pub const SEEK_CUR: i32 = bindings::OVE_FS_SEEK_CUR as i32;
+/// Seek origin for [`File::seek`]: the end of the file.
+pub const SEEK_END: i32 = bindings::OVE_FS_SEEK_END as i32;
+
 /// Portable metadata returned by [`stat`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Metadata {
@@ -59,6 +66,14 @@ pub fn mount(dev: Option<&[u8]>, mnt: Option<&[u8]>) -> Result<()> {
     let mnt_ptr = mnt.map_or(core::ptr::null(), |m| m.as_ptr() as *const _);
     let rc = unsafe { bindings::ove_fs_mount(dev_ptr, mnt_ptr) };
     Error::from_code(rc)
+}
+
+/// Unmount the volume mounted at `mnt` (`None` for the board's volume).
+///
+/// Close every [`File`] and [`Dir`] on it first.
+pub fn unmount(mnt: Option<&[u8]>) {
+    let mnt_ptr = mnt.map_or(core::ptr::null(), |m| m.as_ptr() as *const _);
+    unsafe { bindings::ove_fs_unmount(mnt_ptr) };
 }
 
 /// RAII file handle.
@@ -103,6 +118,31 @@ impl File {
         };
         Error::from_code(rc)?;
         Ok(bytes_written)
+    }
+
+    /// Total size of the open file in bytes.
+    pub fn size(&self) -> Result<usize> {
+        let mut size: usize = 0;
+        let rc = unsafe { bindings::ove_fs_size(self.handle, &mut size) };
+        Error::from_code(rc)?;
+        Ok(size)
+    }
+
+    /// Move the position to `offset` bytes relative to `whence`
+    /// ([`SEEK_SET`], [`SEEK_CUR`] or [`SEEK_END`]).
+    ///
+    /// Returns [`Error::InvalidParam`] if `offset` does not fit the target's
+    /// C `long`.
+    pub fn seek(&self, offset: i64, whence: i32) -> Result<()> {
+        let offset = core::ffi::c_long::try_from(offset).map_err(|_| Error::InvalidParam)?;
+        let rc = unsafe { bindings::ove_fs_seek(self.handle, offset, whence) };
+        Error::from_code(rc)
+    }
+
+    /// Current position, in bytes from the start of the file.
+    pub fn tell(&self) -> Result<u64> {
+        let pos = unsafe { bindings::ove_fs_tell(self.handle) };
+        u64::try_from(pos).map_err(|_| Error::Io)
     }
 
     /// Resize the open file.
