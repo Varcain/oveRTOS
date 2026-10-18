@@ -111,6 +111,7 @@ endif()
 if(OVE_NET_TLS)
     include(${OVE_DIR}/cmake/OveMbedtls.cmake)
     ove_build_mbedtls()
+    ove_add_board_sources(../src/qemu_entropy.c)
 endif()
 
 # ML inference (TensorFlow Lite Micro)

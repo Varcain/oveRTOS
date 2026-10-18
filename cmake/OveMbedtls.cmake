@@ -29,6 +29,13 @@ macro(ove_build_mbedtls)
         ${_MBEDTLS_PATH}/library
     )
 
+    # oveRTOS overrides (entropy, time, no hosted-OS modules). PUBLIC: every
+    # user of the mbedTLS headers must see the same struct layouts.
+    target_include_directories(ove_mbedtls PUBLIC ${OVE_DIR}/config/mbedtls)
+    target_compile_definitions(ove_mbedtls PUBLIC
+        "MBEDTLS_USER_CONFIG_FILE=\"ove_mbedtls_config.h\""
+    )
+
     set_target_properties(ove_mbedtls PROPERTIES
         C_STANDARD 99
         C_STANDARD_REQUIRED ON
@@ -36,6 +43,9 @@ macro(ove_build_mbedtls)
 
     # Suppress third-party warnings
     target_compile_options(ove_mbedtls PRIVATE -w)
+    # The bignum multiply-accumulate assembly needs every register; the
+    # profiler's frame pointer (OveCommon.cmake) would take r7 from it.
+    target_compile_options(ove_mbedtls PRIVATE -fomit-frame-pointer)
 
     # Zero-heap: use mbedTLS static buffer allocator instead of libc calloc
     if(OVE_ZERO_HEAP)

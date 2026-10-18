@@ -2,8 +2,8 @@
 
 **Pattern** — periodically push a JSON document to an HTTPS endpoint, using oveRTOS's `ove_net_http` client over `ove_net_tls` (mbedTLS). Works against any TLS server that does not ask for a client certificate.
 
-!!! warning "TLS builds for the host tests only"
-    `CONFIG_OVE_NET_TLS` does not build for the RTOS targets yet: the bundled mbedTLS has no entropy source configured for them. Until that is fixed, this recipe compiles but cannot be built into firmware.
+!!! warning "FreeRTOS only, for now"
+    `CONFIG_OVE_NET_TLS` builds and runs on FreeRTOS (verified on the STM32F746 Discovery against a public HTTPS server). NuttX and Zephyr do not build mbedTLS for oveRTOS yet.
 
 **What to enable** (in your `app.yaml`'s `defconfig:` list):
 
@@ -20,6 +20,8 @@ defconfig:
 ## Why SNTP?
 
 A freshly booted board only knows the time since boot. `ove_sntp_sync()` asks an NTP server once and keeps the offset; `ove_sntp_get_utc()` then returns UTC seconds, which is what a telemetry backend wants in each record.
+
+TLS needs it too: certificate dates are checked against that clock, so until SNTP has synced once every `https://` request fails verification.
 
 ## Code
 

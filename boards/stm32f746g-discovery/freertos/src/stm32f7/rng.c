@@ -13,6 +13,7 @@
  */
 
 #include "bsp.h"
+#include "ove/hal/hal_entropy.h"
 #include "ove/types.h"
 
 #include <stdint.h>
@@ -135,4 +136,10 @@ int bsp_random_fill(void *buf, size_t len)
 			return random_fail(buf, len, OVE_ERR_TIMEOUT);
 	}
 	return OVE_OK;
+}
+
+/* The TLS layer's entropy source (ove/hal/hal_entropy.h). */
+int ove_hal_entropy_fill(void *buf, size_t len)
+{
+	return bsp_random_fill(buf, len);
 }
