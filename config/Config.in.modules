@@ -640,10 +640,10 @@ config OVE_NVS
     default n
 
 config OVE_NVS_FILES
-    # FreeRTOS and NuttX keep each key as a file in /nvs on the volume the
-    # application mounts (backends/common/ove_nvs_fs.c). The QEMU AN500 has
-    # no storage device, so its board keeps values in RAM instead.
-    def_bool OVE_NVS && (OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX) && !OVE_BOARD_QEMU_MPS2_AN500
+    # Every engine keeps each key as a file in /nvs on the volume the
+    # application mounts (backends/common/ove_nvs_fs.c). The QEMU boards have
+    # no storage device, so there values live in RAM instead (ove_nvs_ram.c).
+    def_bool OVE_NVS && !OVE_BOARD_QEMU_MPS2_AN500 && !OVE_BOARD_QEMU_MPS2_AN521
     select OVE_FS
 
 config OVE_WATCHDOG

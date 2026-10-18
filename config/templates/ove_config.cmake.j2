@@ -213,7 +213,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "BLOCK", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "NET", "PM",
+               "WATCHDOG", "NET", "PM",
                "UART", "SPI", "I2C"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_{{ mod|lower }}.c
@@ -269,8 +269,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_ready.c")
 {% endif %}
 
 {% if config.get("CONFIG_OVE_NVS_FILES") == True %}
-# NVS as files on the mounted volume (FreeRTOS, NuttX)
+# NVS as files on the mounted volume
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_nvs_fs.c")
+{% elif config.get("CONFIG_OVE_NVS") == True %}
+# No storage device (the QEMU boards): NVS lives in RAM until the board stops
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_nvs_ram.c")
 {% endif %}
 
 # Arena allocator (platform-independent)

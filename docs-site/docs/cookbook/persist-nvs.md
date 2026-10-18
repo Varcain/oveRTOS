@@ -14,9 +14,8 @@ defconfig:
 
 NVS storage backing differs by RTOS and board:
 
-- **FreeRTOS and NuttX**: one file per key in `/nvs` on the volume the application mounts with `ove_fs_mount()` (`CONFIG_OVE_NVS` turns on `CONFIG_OVE_FS`). Mount before the first read or write; on NuttX's default SD mount the directory is `/mnt/sd/nvs`.
-- **Zephyr**: the Zephyr `nvs` subsystem on a flash partition.
-- **QEMU MPS2-AN500** (no storage device): a RAM table that lasts until QEMU exits.
+- **FreeRTOS, NuttX and Zephyr**: one file per key in `/nvs` on the volume the application mounts with `ove_fs_mount()` (`CONFIG_OVE_NVS` turns on `CONFIG_OVE_FS`). Mount before the first read or write; on NuttX's default SD mount the directory is `/mnt/sd/nvs`. The layout is the same on every engine, so a key written under one engine reads back under another from the same card.
+- **QEMU MPS2-AN500 and AN521** (no storage device): a RAM table that lasts until QEMU exits.
 
 The API is identical across all of them.
 
@@ -31,7 +30,7 @@ The API is identical across all of them.
 
 void ove_main(void)
 {
-    ove_fs_mount(NULL, NULL);   /* FreeRTOS / NuttX: the SD card */
+    ove_fs_mount(NULL, NULL);   /* the SD card; RAM-only QEMU boards ignore it */
     ove_nvs_init();
 
     uint32_t boots = 0;
@@ -89,8 +88,7 @@ The `version` field is the migration handle: when you change the struct layout, 
 
 ## What NOT to store in NVS
 
-- **Frequently-changing data** — every `ove_nvs_write` rewrites flash or an SD-card file, and both wear out. Use NVS for occasional writes, not 100 Hz log lines.
-- **Large blobs** — Zephyr's NVS partition is small (typically tens of KB). For arbitrary files, use `ove_fs` directly.
+- **Frequently-changing data** — every `ove_nvs_write` rewrites an SD-card file, and cards wear out. Use NVS for occasional writes, not 100 Hz log lines.
 - **Secrets** — flash and SD cards are readable with a debug probe or a card reader. Encrypt before storing if confidentiality matters.
 
 ## Where else in the tree
