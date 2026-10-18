@@ -282,6 +282,17 @@ def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
     return tree
 
 
+def _drop_legacy_source_copy(ws, name, download):
+    """Remove a source copy an older ove kept inside the workspace's build dir."""
+    legacy = os.path.join(ws.build_dir, name)
+    if not os.path.isdir(legacy):
+        return
+    logger.info("Removing the workspace's own source copy %s (now shared)", legacy)
+    shutil.rmtree(legacy)
+    if os.path.isdir(os.path.join(download, ".git")):
+        run(["git", "worktree", "prune"], cwd=download)
+
+
 def _check_source_trees_unchanged(ws):
     """Fail when a build changed one of the shared source trees it used.
 
@@ -475,6 +486,7 @@ def build_freertos(ws):
             "app patch", os.path.join(ws.app_dir, "patches", "freertos")))
     freertos_src = _shared_patched_tree(
         ws, freertos_download, patch_layers, log_file=ws.build_log)
+    _drop_legacy_source_copy(ws, "rtos-source", os.path.realpath(freertos_download))
 
     toolchain_file = os.path.join(board_dir, "cmake", "arm-none-eabi.cmake")
 
@@ -625,6 +637,9 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
         [("global patch",
           os.path.join(ws.ove_dir, "config", "patches", "nuttx-apps"))],
         log_file=log_file)
+    for name, download in (("nuttx", "nuttx"), ("nuttx-apps", "nuttx-apps")):
+        _drop_legacy_source_copy(
+            ws, name, os.path.realpath(os.path.join(ws.ws_dl_dir, download)))
 
     app_dir = _nuttx_app_dir(ws)
     if os.path.exists(app_dir):

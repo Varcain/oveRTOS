@@ -2270,6 +2270,8 @@ def test_qemu_freertos_linux_segv(ove_dir, output_dir):
     # Regenerate after changing Kconfig: this workspace is shared with the
     # hard-float suite, which leaves generated/ selecting the hard guest and the
     # FP self-test. Without this the soft-guest build silently reuses them.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "segv_drive.py")
@@ -2311,6 +2313,8 @@ def test_qemu_freertos_linux_hardfloat(ove_dir, output_dir):
 
     # Regenerate the CMake/header inputs after changing Kconfig. An existing
     # workspace may otherwise retain a previously generated soft-guest file.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux",
@@ -2338,6 +2342,8 @@ def test_qemu_freertos_linux_faultmatrix(ove_dir, output_dir):
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     # Regenerate after the fragment: this workspace is shared with the hard-float
     # suite, which leaves generated/ selecting the hard guest and the FP self-test.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux",
@@ -2386,6 +2392,8 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "fbtest_drive.py")
@@ -2410,6 +2418,8 @@ def test_qemu_freertos_linux_lvbench(ove_dir, output_dir):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "lvbench_drive.py")
@@ -2434,6 +2444,8 @@ def test_qemu_freertos_linux_evread(ove_dir, output_dir):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "evread_drive.py")
@@ -2468,6 +2480,8 @@ def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "nuttx-linux", "segv_drive.py")
@@ -2494,6 +2508,8 @@ def test_qemu_nuttx_linux_xregion(ove_dir, output_dir):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "nuttx-linux", "xregion_drive.py")
@@ -2521,6 +2537,8 @@ def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "zephyr-linux", "segv_drive.py")
@@ -2542,6 +2560,8 @@ def _linux_kstress(ove_dir, output_dir, board_frag, engine):
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
     # generated/ silently builds the previous configuration.
+    # A fresh workspace has no sources yet.
+    run([ove, "download"], cwd=ove_dir)
     run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", engine + "-linux", "kstress_drive.py")
