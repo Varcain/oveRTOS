@@ -1,6 +1,6 @@
 # Run TFLite Micro inference on an audio buffer
 
-**Pattern** — collect a fixed-length audio window from an audio source, feed it to a TFLite Micro model via `ove_infer`, react to the result. Mirrors the `example_keyword_live` app at smaller scale.
+**Pattern** — fill a model's input tensor with a window of samples, run a TFLite Micro model through `ove_model`, react to the result. The same steps `example_keyword_live` runs on live microphone audio.
 
 **What to enable** (in your `app.yaml`'s `defconfig:` list):
 
@@ -9,20 +9,10 @@ defconfig:
   - CONFIG_OVE_CONSOLE=y
   - CONFIG_OVE_LOG=y
   - CONFIG_OVE_INFER=y
-  - CONFIG_OVE_AUDIO=y
-  - CONFIG_OVE_QUEUE=y
   - CONFIG_OVE_THREAD=y
 ```
 
-You also need a model. The build system can convert a `.tflite` file into a C array at compile time — drop the file under `models/` and add this to your app's `app.yaml`:
-
-```yaml
-models:
-  - path: models/your_model.tflite
-    sym:  YOUR_MODEL
-```
-
-The build emits `generated/your_model_model_data.h` exposing `YOUR_MODEL_data[]` and `YOUR_MODEL_data_len`.
+You also need a model. With `CONFIG_OVE_INFER` on, the build converts every `.tflite` file under the repository's `models/` directory into a C array: `models/<dir>/my_model.tflite` becomes `g_my_model_model_data.h`, declaring `g_my_model_model_data[]` with its size in `g_my_model_model_data_size`. Every model there is linked into every inference app, so keep only the ones you use.
 
 ## Code
 
@@ -30,105 +20,82 @@ The build emits `generated/your_model_model_data.h` exposing `YOUR_MODEL_data[]`
 #include "ove/ove.h"
 #include "ove/log.h"
 #include "ove/infer.h"
-#include "ove/audio.h"
-#include "generated/your_model_model_data.h"
 
-#define WINDOW_SAMPLES  16000    /* 1 s @ 16 kHz */
-#define TENSOR_ARENA    64 * 1024
+/* From the generated g_my_model_model_data.h. */
+extern const unsigned char g_my_model_model_data[];
+#define MODEL_SIZE 18800   /* g_my_model_model_data_size */
 
-static uint8_t tensor_arena[TENSOR_ARENA] __attribute__((aligned(16)));
-static ove_infer_t model;
+#define ARENA_SIZE (32 * 1024)
 
-static int16_t  window[WINDOW_SAMPLES];
-static size_t   filled;
+/* Your audio path: write `len` int8 samples (already scaled). */
+void fill_window(int8_t *dst, size_t len);
 
-/* Pull a window's worth of audio off the queue, then run inference. */
-static void inference_thread(void *arg)
+static uint8_t __attribute__((aligned(16))) arena[ARENA_SIZE];
+static ove_model_storage_t model_storage;
+static ove_thread_t worker;
+
+static void inference_fn(void *arg)
 {
     (void)arg;
+    const struct ove_model_config cfg = {
+        .model_data = g_my_model_model_data,
+        .model_size = MODEL_SIZE,
+        .arena_size = ARENA_SIZE,
+    };
+    ove_model_t model;
+    if (ove_model_init(&model, &model_storage, arena, &cfg) != OVE_OK) {
+        OVE_LOG_ERR("model load failed (arena too small?)");
+        return;
+    }
+
+    struct ove_tensor_info in, out;
+    ove_model_input(model, 0, &in);
+    if (in.type != OVE_TENSOR_INT8) {
+        OVE_LOG_ERR("expected an int8 input, got type %d", (int)in.type);
+        return;
+    }
+
     while (1) {
-        int16_t batch[256];
-        size_t n = audio_source_pull(batch, sizeof(batch) / sizeof(batch[0]));
-
-        size_t to_copy = n < (WINDOW_SAMPLES - filled)
-                       ? n : (WINDOW_SAMPLES - filled);
-        memcpy(&window[filled], batch, to_copy * sizeof(int16_t));
-        filled += to_copy;
-
-        if (filled < WINDOW_SAMPLES) continue;
-
-        /* Run model.  Input tensor is int16 PCM. */
-        int16_t *in = ove_infer_input_data(model, 0);
-        memcpy(in, window, sizeof(window));
-
-        if (ove_infer_invoke(model) != OVE_OK) {
+        fill_window((int8_t *)in.data, in.size);
+        if (ove_model_invoke(model) != OVE_OK) {
             OVE_LOG_ERR("invoke failed");
-            filled = 0;
             continue;
         }
-
-        const float *out = ove_infer_output_data(model, 0);
-        size_t classes  = ove_infer_output_count(model, 0);
-
-        int best = 0;
-        float best_p = out[0];
-        for (size_t i = 1; i < classes; i++) {
-            if (out[i] > best_p) { best_p = out[i]; best = (int)i; }
+        ove_model_output(model, 0, &out);
+        const int8_t *scores = (const int8_t *)out.data;
+        size_t best = 0;
+        for (size_t i = 1; i < out.size; i++) {
+            if (scores[i] > scores[best])
+                best = i;
         }
-        OVE_LOG_INF("class=%d p=%.2f", best, (double)best_p);
-
-        filled = 0;   /* next window */
+        OVE_LOG_INF("class=%u score=%d (%u us)", (unsigned)best, scores[best],
+                    (unsigned)ove_model_last_inference_us(model));
     }
 }
 
 void ove_main(void)
 {
-    if (ove_infer_create(&model, YOUR_MODEL_data, YOUR_MODEL_data_len,
-                         tensor_arena, sizeof(tensor_arena)) != OVE_OK) {
-        OVE_LOG_ERR("model load failed");
-        return;
-    }
-
-    /* Open an audio source (e.g., DMIC) — see ove_audio_device docs. */
-    audio_source_open(16000 /* Hz */, 1 /* mono */);
-
-    static ove_thread_t inf_thread;
-    ove_thread_create(&inf_thread, "infer", inference_thread, NULL,
-                      OVE_PRIO_NORMAL, 8192);
-
+    ove_thread_create(&worker, "infer", inference_fn, NULL, OVE_PRIO_NORMAL, 8192);
     ove_run();
 }
 ```
 
+`ove_model_init()` takes caller storage and works in both heap and zero-heap builds; `ove_model_create()` allocates instead. The input and output pointers stay valid for the life of the model, so read them once.
+
+## Feeding live audio
+
+`fill_window()` is where your samples arrive. For microphone input, build an audio graph (`ove_audio_device_source()` into a processor node) that copies frames into a ring buffer, and let `fill_window()` take the newest window from it. `example_keyword_live` does exactly that, including the feature-extraction model that runs in front of the classifier.
+
 ## Tensor arena sizing
 
-Too small and `ove_infer_invoke` fails. Too large and you waste SRAM. The conventional approach:
-
-1. Start with `64 * 1024` (64 KB).
-2. After `ove_infer_create` succeeds, call `ove_infer_arena_used(model)` to read the peak used bytes.
-3. Tighten the arena to peak + 10 %.
-
-The keyword-live model fits in 16 KB; image classification models often need 256 KB+.
+The arena holds the model's intermediate tensors. Too small and `ove_model_init()` fails with `OVE_ERR_ML_FAILED`; too large wastes SRAM. There is no call that reports the bytes used, so start generous, shrink until the init fails, and keep a margin above that point. `example_keyword_live` runs both of its models in 32 KB.
 
 ## Quantized vs float
 
-`ove_infer_input_dtype(model, 0)` tells you what to write. Int8/int16 quantized models save flash and run faster on Cortex-M with CMSIS-NN; float32 is easier to author but bigger and slower.
-
-For int8 inputs:
-
-```c
-int8_t *in = ove_infer_input_data(model, 0);
-float scale; int32_t zero_point;
-ove_infer_input_quant_params(model, 0, &scale, &zero_point);
-for (size_t i = 0; i < WINDOW_SAMPLES; i++) {
-    in[i] = (int8_t)(window[i] / 256 + zero_point);   /* approximate */
-}
-```
-
-The exact quantization params come from your trained model.
+`in.type` and `out.type` tell you the element type (`OVE_TENSOR_INT8`, `OVE_TENSOR_INT16`, `OVE_TENSOR_FLOAT32`, ...). Int8 models save flash and run faster on Cortex-M with CMSIS-NN; float32 is easier to author but bigger and slower. `ove_model` does not expose a tensor's scale and zero point: take them from your training pipeline (the TFLite converter reports them per tensor) and apply them when you fill the input and read the scores.
 
 ## Where else in the tree
 
 - [API: ML Inference](../api/infer.md) — full surface, lifecycle, quantization handling.
 - [`apps/c/heap/example_keyword_live/`](https://github.com/Varcain/oveRTOS/tree/main/apps/c/heap/example_keyword_live) — the canonical "yes" / "no" classifier with DMIC capture and LVGL visualisation.
-- [`models/`](https://github.com/Varcain/oveRTOS/tree/main/models) — bundled models you can target without retraining.
+- [`models/`](https://github.com/Varcain/oveRTOS/tree/main/models) — where models go; the keyword-spotting pair ships there.
