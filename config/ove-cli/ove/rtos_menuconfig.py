@@ -138,7 +138,7 @@ def ensure_rtos_config_applied(ws, rtos, nuttx_build=None, apps_build=None,
     has a fresh, correct config.
 
     For NuttX CMake builds, defconfig overlays are applied by
-    build_nuttx() directly via _apply_nuttx_defconfig_overlays() before
+    build_nuttx() directly via _write_nuttx_defconfig() before
     cmake configure.  This function only records the drift sentinel.
 
     For Zephyr, returns the absolute path to the merged prj.conf so the
@@ -156,12 +156,12 @@ def _apply_nuttx_guard(ws, nuttx_build, apps_build, env, log_file):
 
     Precondition: _setup_nuttx_build_tree() must have been called first.
 
-    With CMake, defconfig overlays are merged into the board's defconfig
-    in the source tree.  NuttX's CMake build reads the defconfig and runs
-    olddefconfig during cmake configure.
+    With CMake, defconfig overlays are merged into the workspace's copy of
+    the board's defconfig, which NuttX's CMake build reads (OVE_DEFCONFIG)
+    and expands with olddefconfig during cmake configure.
 
     This function is kept as a no-op for the CMake flow since
-    build_nuttx() applies overlays via _apply_nuttx_defconfig_overlays()
+    build_nuttx() writes that defconfig via _write_nuttx_defconfig()
     before cmake configure.  It only records the hash sentinel for
     post-build drift detection.
     """
@@ -227,22 +227,22 @@ def _run_nuttx_menuconfig(ws, env):
     """NuttX native menuconfig flow (CMake-based)."""
     import shutil as _shutil
 
-    nuttx_src, apps_build = ensure_rtos_build_tree(ws, "nuttx", env)
+    nuttx_src, apps_src = ensure_rtos_build_tree(ws, "nuttx", env)
     cmake_build = os.path.join(ws.build_dir, "nuttx-cmake")
+    from .build import (_drop_stale_cmake_cache, _find_cmake,
+                        _nuttx_cmake_configure_args, _write_nuttx_defconfig)
+    _drop_stale_cmake_cache(cmake_build, nuttx_src)
     os.makedirs(cmake_build, exist_ok=True)
 
     # Resolve NuttX board config
-    from .build import _find_nuttx_defconfig, _find_cmake
     nuttx_board_cfg = nuttx_board_config(ws.board_dir)
     if not nuttx_board_cfg:
         print(f"error: no rtos.nuttx in {ws.board_name}/board.yaml")
         sys.exit(1)
 
-    # Layers 1-3: merge into board defconfig
-    merged = merge_rtos_config_layers(ws, "nuttx")
-    defconfig = _find_nuttx_defconfig(nuttx_src, nuttx_board_cfg)
-    if merged and defconfig:
-        apply_defconfig_overlay(defconfig, merged)
+    # Layers 1-3 over the board defconfig, in the workspace
+    defconfig = _write_nuttx_defconfig(ws, nuttx_src, nuttx_board_cfg,
+                                       user_layer=False)
 
     # Export env for CMake
     env["OVE_DIR"] = ws.ove_dir
@@ -252,16 +252,12 @@ def _run_nuttx_menuconfig(ws, env):
 
     # Ensure cmake is configured (creates .config from merged defconfig)
     cmake = _find_cmake()
-    apps_abs = os.path.abspath(apps_build)
     # Remove cached .config to force re-init from modified defconfig
     config_path = os.path.join(cmake_build, ".config")
     if os.path.isfile(config_path):
         os.unlink(config_path)
-    run([cmake,
-         f"-S{os.path.abspath(nuttx_src)}",
-         f"-B{os.path.abspath(cmake_build)}",
-         f"-DBOARD_CONFIG={nuttx_board_cfg}",
-         f"-DNUTTX_APPS_DIR={apps_abs}"],
+    run(_nuttx_cmake_configure_args(cmake, ws, nuttx_src, apps_src,
+                                    nuttx_board_cfg, defconfig),
         env=env, cwd=nuttx_src)
 
     nuttx_config = os.path.join(cmake_build, ".config")

@@ -1,0 +1,27 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 39ce9e2c..5e997599 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -170,6 +170,11 @@ endif()
+ 
+ include(nuttx_process_config)
+ get_filename_component(NUTTX_DEFCONFIG_DIR "${NUTTX_DEFCONFIG}" DIRECTORY)
++# oveRTOS: the build's own merged defconfig, kept out of a source tree shared
++# between builds; #include lines still resolve from the board's directory
++if(OVE_DEFCONFIG)
++  set(NUTTX_DEFCONFIG ${OVE_DEFCONFIG})
++endif()
+ process_config(
+   ${CMAKE_BINARY_DIR}/.defconfig.processed
+   ${NUTTX_DEFCONFIG}
+@@ -227,6 +232,10 @@ set(ENV{APPSBINDIR} ${NUTTX_APPS_BINDIR}) # TODO: support not having apps/
+ set(ENV{BINDIR} ${CMAKE_BINARY_DIR}) # TODO: support not having apps/
+ set(ENV{EXTERNALDIR} dummy) # TODO
+ set(ENV{DRIVERS_PLATFORM_DIR} dummy) # TODO
++# oveRTOS: the build's external app, for apps/external (Kconfig and CMake)
++if(OVE_NUTTX_APP_DIR)
++  set(ENV{OVE_NUTTX_APP_DIR} ${OVE_NUTTX_APP_DIR})
++endif()
+ 
+ set(ENV{HOST_LINUX} n)
+ set(ENV{HOST_MACOS} n)
