@@ -11,6 +11,8 @@
 #include "ove_backend_common.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 static ove_mutex_t lvgl_mutex;
 static int lvgl_initialized;
@@ -18,6 +20,13 @@ static int lvgl_initialized;
 #ifdef CONFIG_OVE_ZERO_HEAP
 static ove_mutex_storage_t lvgl_mutex_storage;
 #endif
+
+/* LVGL reads the kernel tick, so time also advances inside lv_timer_handler()
+ * and the perf monitor sees non-zero render/flush/CPU times. */
+static uint32_t lvgl_tick_cb(void)
+{
+	return (uint32_t)((uint64_t)xTaskGetTickCount() * 1000u / configTICK_RATE_HZ);
+}
 
 int ove_lvgl_init(void)
 {
@@ -37,6 +46,7 @@ int ove_lvgl_init(void)
 	}
 
 	lv_init();
+	lv_tick_set_cb(lvgl_tick_cb);
 	lv_port_disp_init();
 
 	lv_theme_t *th = lv_theme_default_init(lv_display_get_default(),
@@ -75,6 +85,7 @@ void ove_lvgl_tick(uint32_t ms)
 {
 	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
 		return;
+	/* Ignored by LVGL while lvgl_tick_cb is installed. */
 	lv_tick_inc(ms);
 }
 
