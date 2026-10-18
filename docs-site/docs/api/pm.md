@@ -4,6 +4,8 @@ The oveRTOS power management subsystem provides a unified sleep state machine, p
 
 Requires `CONFIG_OVE_PM`.
 
+On FreeRTOS `CONFIG_OVE_PM` turns on tickless idle. Zephyr's system power management (`CONFIG_PM`) is not available for the STM32F7 or the MPS2 SoCs, so on Zephyr a sleep state is a plain `k_msleep()`.
+
 ## Power States
 
 Four sleep states are defined, ordered by increasing depth:
