@@ -25,6 +25,7 @@ import subprocess
 import sys
 
 from . import lint_backend_struct
+from . import lint_doc_snippets
 from . import lint_error_codes
 from .workspace import find_ove_dir
 
@@ -799,6 +800,13 @@ def _error_code_pinning(ove_dir, check):
     return ("error-code-pin", "FAIL", detail)
 
 
+def _doc_snippets(ove_dir, check):
+    """Every C example in the cookbook compiles against the real headers."""
+    del check  # read-only
+    status, detail = lint_doc_snippets.check(ove_dir)
+    return ("doc-snippets", status, detail)
+
+
 def _run_all(check, include_lint=True):
     """Run all checks. `check=True` means read-only mode; `check=False`
     rewrites files (only the formatters honour the distinction — the
@@ -822,6 +830,7 @@ def _run_all(check, include_lint=True):
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
             _error_code_pinning(ove_dir, check),
+            _doc_snippets(ove_dir, check),
         ]
     return results
 
