@@ -169,16 +169,16 @@ SECTIONS
         PROVIDE(__heap_end = .);
     } > RAM
 
-    /* The Linux rootfs cpio is XIP'd from the bottom 12 MiB of PSRAM @ 0x60000000, where QEMU's
+    /* The Linux rootfs cpio is XIP'd from the bottom 8 MiB of PSRAM @ 0x60000000, where QEMU's
      * `-device loader` places it at reset (see qemu-run.sh) rather than embedding it in the ELF —
      * so the 11 MB rootfs never competes with the 4 MB internal FLASH. This is the QEMU analog of
      * the STM32 board, which XIPs the cpio from external QSPI NOR @ 0x90000000. The cpio window is
      * deliberately NOT reserved as an ELF section: a NOLOAD reservation still emits a PT_LOAD
      * program header spanning 0x60000000, which QEMU then flags as a ROM region overlapping the
-     * -device-loader cpio. Instead the FDPIC program pools are placed at 0x60C00000 (top 4 MiB),
-     * leaving 0x60000000..0x60C00000 as unclaimed ELF address space that QEMU fills. The guest
-     * gets an unprivileged-RX MPU window over the bottom 12 MiB in freertos_spawn_common. */
-    .psram 0x60C00000 (NOLOAD) :
+     * -device-loader cpio. Instead the FDPIC program pools are placed at 0x60800000 (top 8 MiB,
+     * CONFIG_OVE_LINUX_GUEST_POOL_BASE), leaving 0x60000000..0x60800000 as unclaimed ELF address
+     * space that QEMU fills. The guest gets an unprivileged-RX MPU window over the bottom 8 MiB. */
+    .psram 0x60800000 (NOLOAD) :
     {
         *(.psram.lxp)
         *(.psram*)

@@ -436,13 +436,10 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x20000u LXP_NREG=8)
 # so every PMSAv7 base remains naturally aligned even when the configured count is odd.
 add_compile_definitions(LXP_NREG=6)
 {% else %}
-# FreeRTOS keeps its pools in a linker-placed .psram section. The section must fit the top 4 MiB:
-# 5x(256K+512K) = 3.75 MiB. Remote-exec's 256K stage plus cold captures requires one fewer row.
-{% if config.get("CONFIG_OVE_LINUX_NETFS_EXEC") == True %}
-add_compile_definitions(LXP_NREG=4)
-{% else %}
-add_compile_definitions(LXP_NREG=5)
-{% endif %}
+# FreeRTOS keeps its pools in a linker-placed .psram section in the top 8 MiB:
+# 10x(256K+512K) = 7.5 MiB, leaving room for remote-exec's 256K stage and the
+# exec captures (freertos_lxp_host.c asserts the fit).
+add_compile_definitions(LXP_NREG=10)
 {% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN521") == True and config.get("CONFIG_OVE_LINUX") == True %}

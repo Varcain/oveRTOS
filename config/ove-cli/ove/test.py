@@ -2798,7 +2798,7 @@ def test_lxp_memory_layout_config(ove_dir, output_dir):
 
     cases = [
         ("freertos-an500", "FREERTOS", "QEMU_MPS2_AN500", False,
-         ("0x60000000", "0x00c00000", "0x60c00000", "0x00400000")),
+         ("0x60000000", "0x00800000", "0x60800000", "0x00800000")),
         ("nuttx-an500", "NUTTX", "QEMU_MPS2_AN500", False,
          ("0x60000000", "0x00800000", "0x60800000", "0x00800000")),
         ("zephyr-an521", "ZEPHYR", "QEMU_MPS2_AN521", False,
