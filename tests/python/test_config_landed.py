@@ -32,6 +32,16 @@ class ConfigLandedTest(unittest.TestCase):
         b = self._file("b", "CONFIG_FOO=2\n")
         self.assertEqual(config_assignments(a, b), {"CONFIG_FOO": "2", "CONFIG_BAR": "n"})
 
+    def test_optional_lines_are_not_required(self):
+        conf = self._file("conf", """
+            # ove:optional
+            CONFIG_LOG_MODE_MINIMAL=y
+            CONFIG_FOO=1
+            # ove:optional
+            # CONFIG_BAR is not set
+            """)
+        self.assertEqual(config_assignments(conf), {"CONFIG_FOO": "1"})
+
     def test_everything_landed(self):
         final = self._file(".config", """
             CONFIG_FOO=2

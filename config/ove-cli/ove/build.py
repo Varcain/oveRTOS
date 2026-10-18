@@ -603,6 +603,11 @@ def build_zephyr(ws):
         if os.path.isfile(src_path):
             shutil.copy2(src_path, os.path.join(ws.images_dir, dst))
 
+    # merged_prj.conf holds the template, the app's prj.conf and rtos.config
+    # (the board's own conf files are not checked)
+    if conf_file:
+        _check_config_landed(
+            "Zephyr", [conf_file], os.path.join(fw_build, "zephyr", ".config"))
     _check_rtos_config_drift(ws, os.path.join(fw_build, "zephyr", ".config"))
     _check_source_trees_unchanged(ws)
     _create_run_or_flash_script(ws, rtos="zephyr")
@@ -799,7 +804,10 @@ def build_nuttx(ws):
 
     logger.debug(f"CMake configure: {' '.join(cmake_args)}")
     run(cmake_args, env=env, cwd=nuttx_src, log_file=ws.build_log)
-    _check_nuttx_config_landed(ws, os.path.join(cmake_build, ".config"))
+    _check_config_landed(
+        "NuttX",
+        [os.path.join(ws.gen_dir, "merged_nuttx_defconfig"), ws.rtos_config_path],
+        os.path.join(cmake_build, ".config"))
 
     # Build
     run([cmake, "--build", os.path.abspath(cmake_build), f"-j{nproc()}"],
@@ -817,25 +825,24 @@ def build_nuttx(ws):
     _create_run_or_flash_script(ws, rtos="nuttx")
 
 
-def _check_nuttx_config_landed(ws, config_path):
-    """Fail when NuttX's olddefconfig dropped or changed a requested line.
+def _check_config_landed(rtos_name, layers, config_path):
+    """Fail when the RTOS's Kconfig dropped or changed a requested line.
 
-    kconfiglib drops an assignment to an unknown symbol, or to one whose
-    dependencies are unmet, without a word, so a renamed upstream symbol or a
-    misplaced board line would silently do nothing.
+    Kconfig drops an assignment to an unknown symbol, or to one whose
+    dependencies are unmet, without a word (NuttX) or with only a warning
+    (Zephyr), so a renamed upstream symbol or a misplaced line would silently
+    do nothing. A line meant only for builds that meet its dependencies is
+    marked '# ove:optional'.
     """
     from .utils import config_assignments, unlanded_assignments
 
-    layers = [os.path.join(ws.gen_dir, "merged_nuttx_defconfig")]
-    if os.path.isfile(ws.rtos_config_path):
-        layers.append(ws.rtos_config_path)
     layers = [path for path in layers if os.path.isfile(path)]
     if not layers or not os.path.isfile(config_path):
         return
     missed = unlanded_assignments(config_assignments(*layers), config_path)
     if not missed:
         return
-    logger.error("NuttX did not take these requested config lines "
+    logger.error(f"{rtos_name} did not take these requested config lines "
                  "(unknown symbol, unmet dependency, or overridden):")
     for key, want, got in missed:
         shown = "absent" if got is None else got

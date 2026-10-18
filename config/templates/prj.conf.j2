@@ -225,9 +225,6 @@ CONFIG_THREAD_MONITOR=y
 CONFIG_INIT_STACKS=y
 CONFIG_THREAD_RUNTIME_STATS=y
 
-# Logging thread needs enough stack for vfprintf-based timestamp formatting
-CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=2048
-
 # Keep printk output synchronous — prevents message drops in benchmarks
 CONFIG_LOG_PRINTK=n
 
