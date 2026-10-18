@@ -39,7 +39,6 @@ _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTAL
 # page -> why it does not compile yet
 _PENDING = {
     "inference.md": "written against an ove_infer_* API that does not exist",
-    "pm-gpio-wake.md": "written against ove_gpio_open/ove_pm_state_set, which do not exist",
 }
 
 
