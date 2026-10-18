@@ -296,6 +296,39 @@ static inline int in_handler(void)
 	return (r & 0x1ffu) != 0;
 }
 
+static inline bool sock_nonblocking(ove_socket_t sock)
+{
+	FAR struct socket_conn_s *conn = PSOCK(sock)->s_conn;
+	return conn != NULL && _SS_ISNONBLOCK(conn->s_flags);
+}
+
+static unsigned poll_once(ove_socket_t sock, unsigned events);
+
+/*
+ * How long a call on a BLOCKING socket may wait for it to become ready for @p events: true when
+ * the caller should go ahead (ready, or allowed to block in NuttX), false on timeout.
+ *
+ * A finite timeout waits by polling, so the call that follows does not block. OVE_WAIT_FOREVER
+ * blocks in NuttX. In the SVCall handler nothing may wait. Non-blocking sockets, which is every
+ * socket of the Linux personality (it parks and retries), never get here.
+ */
+static bool wait_ready(ove_socket_t sock, unsigned events, uint64_t timeout_ns)
+{
+	unsigned ready = events | OVE_SOCK_POLLERR | OVE_SOCK_POLLHUP;
+	if (timeout_ns == OVE_WAIT_FOREVER && !in_handler())
+		return true;
+	if (timeout_ns == 0 || in_handler())
+		return (poll_once(sock, events) & ready) != 0;
+	uint64_t deadline = ove_time_now_steady_ns() + timeout_ns;
+	for (;;) {
+		if (poll_once(sock, events) & ready)
+			return true;
+		if (ove_time_now_steady_ns() >= deadline)
+			return false;
+		usleep(10000);
+	}
+}
+
 /* A psock_* op takes net_lock. In the SVCall handler, blocking on a CONTENDED net_lock
  * would trigger an illegal context switch INSIDE the exception (NuttX hands the note
  * driver a garbage tcb → BusFault at tcb->pid). So in the handler: try-lock; on contention
@@ -499,16 +532,18 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
 	struct ove_socket *cs = (struct ove_socket *)client_storage;
-	/* SOCK_NONBLOCK: return -EAGAIN when no connection is pending (the module parks and
-	 * retries), and mark the accepted socket non-blocking too. */
 	if (!psock_ok(PSOCK(sock)))
 		return OVE_ERR_NET_CLOSED;
+	/* A non-blocking listener returns -EAGAIN when no connection is pending (the Linux
+	 * personality parks and retries, and makes the accepted socket non-blocking itself). A
+	 * blocking one honours the timeout. The accepted socket is blocking, as in POSIX. */
+	if (!sock_nonblocking(sock) && !wait_ready(sock, OVE_SOCK_POLLIN, timeout_ns))
+		return OVE_ERR_TIMEOUT;
 	int _held;
 	if (!net_op_begin(&_held))
 		return OVE_ERR_TIMEOUT;
-	int r = psock_accept(PSOCK(sock), NULL, NULL, PSOCK(cs), SOCK_NONBLOCK);
+	int r = psock_accept(PSOCK(sock), NULL, NULL, PSOCK(cs), 0);
 	net_op_end(_held);
 	if (r < 0)
 		return r == -EAGAIN ? OVE_ERR_TIMEOUT : psockerr(r);
@@ -539,13 +574,18 @@ int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, 
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
 	if (!psock_ok(PSOCK(sock)))
 		return OVE_ERR_NET_CLOSED;
+	int flags = 0;
+	if (!sock_nonblocking(sock) && timeout_ns != OVE_WAIT_FOREVER) {
+		if (!wait_ready(sock, OVE_SOCK_POLLIN, timeout_ns))
+			return OVE_ERR_TIMEOUT;
+		flags = MSG_DONTWAIT;
+	}
 	int _held;
 	if (!net_op_begin(&_held))
 		return OVE_ERR_TIMEOUT;
-	ssize_t n = psock_recvfrom(PSOCK(sock), buf, len, 0, NULL, NULL);
+	ssize_t n = psock_recvfrom(PSOCK(sock), buf, len, flags, NULL, NULL);
 	net_op_end(_held);
 	if (n < 0)
 		return psockerr((int)n);
@@ -582,15 +622,20 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof(sin);
 	if (!psock_ok(PSOCK(sock)))
 		return OVE_ERR_NET_CLOSED;
+	int flags = 0;
+	if (!sock_nonblocking(sock) && timeout_ns != OVE_WAIT_FOREVER) {
+		if (!wait_ready(sock, OVE_SOCK_POLLIN, timeout_ns))
+			return OVE_ERR_TIMEOUT;
+		flags = MSG_DONTWAIT;
+	}
 	int _held;
 	if (!net_op_begin(&_held))
 		return OVE_ERR_TIMEOUT;
-	ssize_t n = psock_recvfrom(PSOCK(sock), buf, len, 0, (struct sockaddr *)&sin, &slen);
+	ssize_t n = psock_recvfrom(PSOCK(sock), buf, len, flags, (struct sockaddr *)&sin, &slen);
 	net_op_end(_held);
 	if (n < 0)
 		return psockerr((int)n);
@@ -616,16 +661,11 @@ int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
 	return r < 0 ? psockerr(r) : OVE_OK;
 }
 
-int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns)
+/* One readiness probe, without waiting: the OVE_SOCK_POLL* bits that are ready. */
+static unsigned poll_once(ove_socket_t sock, unsigned events)
 {
-	if (!sock)
-		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
-	if (!psock_ok(PSOCK(sock))) {
-		if (revents)
-			*revents = OVE_SOCK_POLLHUP;
-		return OVE_OK;
-	}
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_SOCK_POLLHUP;
 	/* Fire a deferred connect (stashed by ove_socket_connect in the handler) now that we run in
 	 * the coordinator thread, where the connect's completion-wait is legal. Only in thread mode:
 	 * the guest may also poll() the connecting fd from the handler, which must NOT initiate. */
@@ -660,12 +700,8 @@ int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint6
 	if (events & OVE_SOCK_POLLOUT)
 		fds.events |= POLLOUT;
 	int _held;
-	if (!net_op_begin(&_held)) {
-		if (revents)
-			*revents =
-				0; /* contended in handler: report not-ready, coordinator re-polls */
-		return OVE_OK;
-	}
+	if (!net_op_begin(&_held))
+		return 0; /* contended in handler: report not-ready, coordinator re-polls */
 	int r = psock_poll(PSOCK(sock), &fds, true);
 	unsigned re = (r < 0) ? (unsigned)POLLERR : (unsigned)fds.revents;
 	if (r >= 0)
@@ -694,6 +730,24 @@ int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint6
 		out |= OVE_SOCK_POLLHUP;
 	if (sock->connect_errno)
 		out |= OVE_SOCK_POLLERR;
+	return out;
+}
+
+int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	unsigned ready = events | OVE_SOCK_POLLERR | OVE_SOCK_POLLHUP;
+	unsigned out = poll_once(sock, events);
+	/* A finite timeout from a thread waits for readiness; 0 (the Linux personality's polls)
+	 * and OVE_WAIT_FOREVER probe once, as before. */
+	if (!(out & ready) && timeout_ns != 0 && timeout_ns != OVE_WAIT_FOREVER && !in_handler()) {
+		uint64_t deadline = ove_time_now_steady_ns() + timeout_ns;
+		while (!(out & ready) && ove_time_now_steady_ns() < deadline) {
+			usleep(10000);
+			out = poll_once(sock, events);
+		}
+	}
 	if (revents)
 		*revents = out;
 	return OVE_OK;
