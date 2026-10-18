@@ -33,6 +33,15 @@
 #define HAVE_I2S_NODES 0
 #endif
 
+#if HAVE_I2S_NODES && DT_NODE_HAS_COMPAT(I2S_TX_NODE, st_stm32_sai)
+#include <soc.h>
+#define SAI_TX_BLOCK ((SAI_Block_TypeDef *)DT_REG_ADDR(I2S_TX_NODE))
+#define SAI_RX_BLOCK ((SAI_Block_TypeDef *)DT_REG_ADDR(I2S_RX_NODE))
+#define HAVE_STM32_SAI 1
+#else
+#define HAVE_STM32_SAI 0
+#endif
+
 #if HAVE_I2S_NODES
 
 /* The I2S stream is 16-bit mono, one board.yaml buffer_samples period per block. */
@@ -57,7 +66,8 @@ K_MEM_SLAB_DEFINE_IN_SECT_STATIC(audio_slab, __dtcm_noinit_section, SLAB_BLOCK_S
 
 static const struct device *dev_rx;
 static const struct device *dev_tx;
-static unsigned int g_i2s_rate; /* the app's sample rate; one SAI serves both directions */
+static unsigned int g_i2s_rate;	    /* the app's sample rate; one SAI serves both directions */
+static unsigned int g_input_device; /* the source's ove_audio_device_cfg.i2s.input_device */
 
 static K_SEM_DEFINE(i2s_ready_sem, 0, 1);
 
@@ -250,10 +260,71 @@ static bool start_i2s_streams(unsigned int initial_blocks)
 	return true;
 }
 
+#if HAVE_STM32_SAI
+/*
+ * The WM8994 carries two AIF1 timeslots in each LRCLK half, so the bus needs a 64-bit
+ * frame of four 16-bit slots: slot 0/2 = timeslot 0 L/R (DAC1, line-in ADC1), slot 1/3 =
+ * timeslot 1 L/R (DMIC2). Zephyr's SAI driver builds a 2-slot I2S frame, which cannot
+ * reach the DMICs, so widen it while the blocks are still disabled. Each stream keeps one
+ * slot, so the blocks stay mono: TX plays slot 0 (the codec copies it to the right DAC)
+ * and RX captures the slot the selected input lands in. MCLK is 256 fs, so the wider
+ * frame doubles SCK, not the sample rate.
+ */
+static void sai_use_wm8994_frame(SAI_Block_TypeDef *blk, unsigned int slot)
+{
+	blk->CR1 &= ~SAI_xCR1_MONO;
+	blk->FRCR = (blk->FRCR & ~(SAI_xFRCR_FRL | SAI_xFRCR_FSALL)) | (63u << SAI_xFRCR_FRL_Pos) |
+		    (31u << SAI_xFRCR_FSALL_Pos);
+	blk->SLOTR = (blk->SLOTR & ~(SAI_xSLOTR_NBSLOT | SAI_xSLOTR_SLOTEN)) |
+		     (3u << SAI_xSLOTR_NBSLOT_Pos) | (BIT(slot) << SAI_xSLOTR_SLOTEN_Pos);
+}
+#endif
+
+/* Bring up the SAI frame and the codec once, at the first start, when the source has
+ * named its input. */
+static void zephyr_audio_hw_start(void)
+{
+	static int started;
+	if (started)
+		return;
+	started = 1;
+
+#if HAVE_STM32_SAI
+	sai_use_wm8994_frame(SAI_TX_BLOCK, 0);
+	sai_use_wm8994_frame(SAI_RX_BLOCK, g_input_device ? 1 : 0);
+
+	/* Enable SAI2_A so MCLK runs AFTER I2S configure but BEFORE codec. */
+	SAI_TX_BLOCK->CR1 |= SAI_xCR1_SAIEN;
+#endif
+
+	/* Configure codec */
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(audio_codec), okay)
+	const struct device *const codec_dev = DEVICE_DT_GET(DT_NODELABEL(audio_codec));
+	struct audio_codec_cfg audio_cfg;
+
+	audio_cfg.dai_route = AUDIO_ROUTE_PLAYBACK_CAPTURE;
+	audio_cfg.dai_type = AUDIO_DAI_TYPE_I2S;
+	audio_cfg.dai_cfg.i2s.word_size = 16;
+	audio_cfg.dai_cfg.i2s.channels = 1;
+	audio_cfg.dai_cfg.i2s.format = I2S_FMT_DATA_FORMAT_I2S;
+	audio_cfg.dai_cfg.i2s.options = I2S_OPT_FRAME_CLK_CONTROLLER;
+	audio_cfg.dai_cfg.i2s.frame_clk_freq = g_i2s_rate;
+	audio_cfg.dai_cfg.i2s.mem_slab = &audio_slab;
+	audio_cfg.dai_cfg.i2s.block_size = BLOCK_SIZE;
+	audio_codec_route_input(codec_dev, AUDIO_CHANNEL_ALL, g_input_device);
+	audio_codec_configure(codec_dev, &audio_cfg);
+
+	audio_codec_start(codec_dev, AUDIO_DAI_DIR_TX);
+	audio_codec_start(codec_dev, AUDIO_DAI_DIR_RX);
+	k_msleep(1000);
+#endif
+}
+
 static int zephyr_sink_start(void *ctx)
 {
 	struct zephyr_i2s_sink_ctx *sc = (struct zephyr_i2s_sink_ctx *)ctx;
 
+	zephyr_audio_hw_start();
 	if (!start_i2s_streams(sc->initial_blocks))
 		return OVE_ERR_NOT_SUPPORTED;
 
@@ -302,33 +373,6 @@ static int zephyr_i2s_init_once(unsigned int rate)
 		return OVE_ERR_NOT_SUPPORTED;
 	g_i2s_rate = rate;
 
-	/* Enable SAI2_A MCLK output AFTER I2S configure but BEFORE codec. */
-	{
-		volatile uint32_t *sai2a_cr1 = (volatile uint32_t *)0x40015C04U;
-		*sai2a_cr1 |= (1U << 16);
-	}
-
-	/* Configure codec */
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(audio_codec), okay)
-	const struct device *const codec_dev = DEVICE_DT_GET(DT_NODELABEL(audio_codec));
-	struct audio_codec_cfg audio_cfg;
-
-	audio_cfg.dai_route = AUDIO_ROUTE_PLAYBACK_CAPTURE;
-	audio_cfg.dai_type = AUDIO_DAI_TYPE_I2S;
-	audio_cfg.dai_cfg.i2s.word_size = 16;
-	audio_cfg.dai_cfg.i2s.channels = 1;
-	audio_cfg.dai_cfg.i2s.format = I2S_FMT_DATA_FORMAT_I2S;
-	audio_cfg.dai_cfg.i2s.options = I2S_OPT_FRAME_CLK_CONTROLLER;
-	audio_cfg.dai_cfg.i2s.frame_clk_freq = rate;
-	audio_cfg.dai_cfg.i2s.mem_slab = &audio_slab;
-	audio_cfg.dai_cfg.i2s.block_size = BLOCK_SIZE;
-	audio_codec_configure(codec_dev, &audio_cfg);
-
-	audio_codec_start(codec_dev, AUDIO_DAI_DIR_TX);
-	audio_codec_start(codec_dev, AUDIO_DAI_DIR_RX);
-	k_msleep(1000);
-#endif
-
 	initialized = 1;
 	return OVE_OK;
 }
@@ -350,6 +394,7 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	static struct zephyr_i2s_source_ctx source_ctx;
 	memset(&source_ctx, 0, sizeof(source_ctx));
 	source_ctx.fmt = cfg->fmt;
+	g_input_device = cfg->i2s.input_device;
 
 	k_thread_priority_set(zephyr_audio_thread,
 			      cfg->thread_priority ? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY);

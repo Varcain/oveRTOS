@@ -20,11 +20,17 @@ LOG_MODULE_REGISTER(wolfson_wm8994, CONFIG_AUDIO_CODEC_LOG_LEVEL);
 
 #define DT_DRV_COMPAT wolfson_wm8994
 
+/* audio_codec_route_input() inputs; the numbering follows oveRTOS's
+ * ove_audio_device_cfg.i2s.input_device. */
+#define WM8994_INPUT_LINE_1 0 /* line-in jack, IN1L/IN1R -> AIF1 timeslot 0 */
+#define WM8994_INPUT_DMIC_2 1 /* on-board microphones, DMICDAT2 -> AIF1 timeslot 1 */
+
 struct wm8994_driver_config {
 	struct i2c_dt_spec i2c;
 };
 
 struct wm8994_driver_data {
+	uint32_t input; /* WM8994_INPUT_*, applied by the next configure */
 	bool configured;
 	bool input_enabled;
 	bool output_enabled;
@@ -217,6 +223,13 @@ static int wm8994_configure_dai(const struct device *dev, struct audio_codec_cfg
 
 	/* AIF1 Word Length = 16-bits, AIF1 Format = I2S (0x4010 for 16-bit I2S) */
 	ret = wm8994_write_reg(dev, WM8994_REG_AIF1_CTRL_1, aif1_ctrl1);
+	if (ret != 0) {
+		return ret;
+	}
+
+	/* The SAI sends one mono slot, timeslot 0 left: AIF1DACR_SRC=0 feeds it
+	 * to the right DAC as well. */
+	ret = wm8994_update_reg(dev, WM8994_REG_AIF1_CTRL_2, BIT(14), 0);
 	if (ret != 0) {
 		return ret;
 	}
@@ -454,7 +467,7 @@ static int wm8994_configure_output(const struct device *dev, uint16_t *power_mgn
 	return 0;
 }
 
-static int wm8994_configure_input(const struct device *dev)
+static int wm8994_configure_line_in(const struct device *dev)
 {
 	int ret;
 
@@ -549,6 +562,53 @@ static int wm8994_configure_input(const struct device *dev)
 	}
 
 	LOG_INF("WM8994: ADC enabled");
+	return 0;
+}
+
+/* Digital microphones on DMICDAT2, captured on AIF1 timeslot 1 (STM32Cube
+ * wm8994_Init for INPUT_DEVICE_DIGITAL_MICROPHONE_2, with the ADC2 gain the
+ * FreeRTOS port uses). */
+static int wm8994_configure_dmic2(const struct device *dev, uint16_t power_mgnt_reg_1)
+{
+	static const struct {
+		uint16_t reg;
+		uint16_t val;
+	} seq[] = {
+		/* Enable AIF1ADC2 (Left/Right), DMICDAT2 (Left/Right) */
+		{WM8994_REG_POWER_MGMT_4, 0x0C30},
+		/* AIF1 DRC2 signal detect & DRC in AIF1ADC2 Left/Right Timeslot 1 */
+		{0x0450, 0x00DB},
+		/* Disable IN1L, IN1R, IN2L, IN2R; thermal sensor & shutdown on */
+		{WM8994_REG_POWER_MGMT_2, 0x6000},
+		/* DMIC2 Left/Right to AIF1 Timeslot 1 Left/Right */
+		{WM8994_REG_AIF1_ADC2_LEFT_MIXER_ROUTING, 0x0002},
+		{WM8994_REG_AIF1_ADC2_RIGHT_MIXER_ROUTING, 0x0002},
+		/* GPIO1 = output, AIF1 DRC2 signal detect */
+		{WM8994_REG_GPIO_1, 0x000E},
+		/* ADC oversample enable */
+		{WM8994_REG_OVERSAMPLING, 0x0002},
+		/* AIF1 ADC2 HPF enable, voice mode 1 */
+		{0x0411, 0x3800},
+		/* AIF1 ADC2 digital volume +9 dB, update */
+		{WM8994_REG_AIF1_ADC2_LEFT_VOL, 0x01D8},
+		{WM8994_REG_AIF1_ADC2_RIGHT_VOL, 0x01D8},
+	};
+	int ret;
+
+	/* The microphones run from MICBIAS1 */
+	ret = wm8994_write_reg(dev, WM8994_REG_POWER_MGMT_1, power_mgnt_reg_1 | 0x0013);
+	if (ret != 0) {
+		return ret;
+	}
+
+	for (size_t i = 0; i < ARRAY_SIZE(seq); i++) {
+		ret = wm8994_write_reg(dev, seq[i].reg, seq[i].val);
+		if (ret != 0) {
+			return ret;
+		}
+	}
+
+	LOG_INF("WM8994: DMIC2 enabled");
 	return 0;
 }
 
@@ -650,7 +710,11 @@ static int wm8994_configure(const struct device *dev, struct audio_codec_cfg *cf
 	/* Configure input if needed */
 	if (cfg->dai_route == AUDIO_ROUTE_CAPTURE ||
 	    cfg->dai_route == AUDIO_ROUTE_PLAYBACK_CAPTURE) {
-		ret = wm8994_configure_input(dev);
+		if (data->input == WM8994_INPUT_DMIC_2) {
+			ret = wm8994_configure_dmic2(dev, power_mgnt_reg_1);
+		} else {
+			ret = wm8994_configure_line_in(dev);
+		}
 		if (ret != 0) {
 			LOG_ERR("Input configuration failed");
 			return ret;
@@ -726,6 +790,10 @@ static int wm8994_stop(const struct device *dev, audio_dai_dir_t dir)
 		/* Disable the ADCR(Right) to AIF1 Timeslot 0 (Right) mixer path */
 		wm8994_write_reg(dev, WM8994_REG_AIF1_ADC1_RIGHT_MIXER_ROUTING, 0);
 
+		/* Disable the DMIC2 to AIF1 Timeslot 1 mixer paths */
+		wm8994_write_reg(dev, WM8994_REG_AIF1_ADC2_LEFT_MIXER_ROUTING, 0);
+		wm8994_write_reg(dev, WM8994_REG_AIF1_ADC2_RIGHT_MIXER_ROUTING, 0);
+
 		/* Disable Left ADC, Disable Right ADC */
 		wm8994_write_reg(dev, WM8994_REG_POWER_MGMT_5, 0);
 
@@ -798,11 +866,14 @@ static int wm8994_apply_properties(const struct device *dev)
 
 static int wm8994_route_input(const struct device *dev, audio_channel_t channel, uint32_t input)
 {
-	ARG_UNUSED(dev);
 	ARG_UNUSED(channel);
-	ARG_UNUSED(input);
 
-	/* WM8994 input routing is configured during initialization */
+	if (input != WM8994_INPUT_LINE_1 && input != WM8994_INPUT_DMIC_2) {
+		return -EINVAL;
+	}
+
+	/* Both channels come from the one input; it takes effect at the next configure. */
+	DEV_DATA(dev)->input = input;
 	return 0;
 }
 
@@ -828,6 +899,7 @@ static int wm8994_init(const struct device *dev)
 	}
 
 	/* Initialize state flags */
+	data->input = WM8994_INPUT_LINE_1;
 	data->input_enabled = false;
 	data->output_enabled = false;
 	data->configured = false;
