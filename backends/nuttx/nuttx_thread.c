@@ -46,28 +46,50 @@
 		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
 	} while (0)
 
-/* Per-task pointer via NuttX task TLS */
+/* Per-task pointer via NuttX task TLS.  The index comes from a global,
+ * never-freed table (CONFIG_TLS_TASK_NELEM slots), so it is allocated once,
+ * by the creating thread before its first child exists: every task_wrapper()
+ * then stores into the one index tls_get_current() reads. */
 static int tls_index = -1;
+static mutex_t tls_lock = NXMUTEX_INITIALIZER;
 
-static void tls_ensure_init(void)
+static int tls_ensure_init(void)
 {
-	if (tls_index < 0) {
-		tls_index = task_tls_alloc(NULL);
+	int idx = __atomic_load_n(&tls_index, __ATOMIC_ACQUIRE);
+
+	if (idx >= 0) {
+		return OVE_OK;
 	}
+	nxmutex_lock(&tls_lock);
+	idx = tls_index;
+	if (idx < 0) {
+		idx = task_tls_alloc(NULL);
+		if (idx >= 0) {
+			__atomic_store_n(&tls_index, idx, __ATOMIC_RELEASE);
+		}
+	}
+	nxmutex_unlock(&tls_lock);
+	return idx >= 0 ? OVE_OK : OVE_ERR_NO_MEMORY;
 }
 
+/* Relaxed is enough on this hot path (get_self, sleep, trace, profiler):
+ * the index is published before the first ove task is created, and a task
+ * only reads the slot it wrote itself. */
 static struct ove_thread *tls_get_current(void)
 {
-	if (tls_index < 0) {
+	int idx = __atomic_load_n(&tls_index, __ATOMIC_RELAXED);
+
+	if (idx < 0) {
 		return NULL;
 	}
-	return (struct ove_thread *)(uintptr_t)task_tls_get_value(tls_index);
+	return (struct ove_thread *)(uintptr_t)task_tls_get_value(idx);
 }
 
+/* Only called from task_wrapper(): thread_start() allocated the index
+ * before creating the task. */
 static void tls_set_current(struct ove_thread *t)
 {
-	tls_ensure_init();
-	task_tls_set_value(tls_index, (uintptr_t)t);
+	task_tls_set_value(__atomic_load_n(&tls_index, __ATOMIC_RELAXED), (uintptr_t)t);
 }
 
 /* ── Thread registry (intrusive list) ─────────────────────────────────
@@ -167,6 +189,12 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 {
 	char addr_str[20];
 	int pid;
+	int rc;
+
+	rc = tls_ensure_init();
+	if (rc != OVE_OK) {
+		return rc;
+	}
 
 	t->entry = entry;
 	t->arg = arg;

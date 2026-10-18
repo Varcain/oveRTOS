@@ -17,6 +17,8 @@
 #include <ove/types.hpp>
 #include <ove/error.hpp>
 #include <atomic>
+#include <new>
+#include <type_traits>
 
 #ifdef CONFIG_OVE_SYNC
 
@@ -470,7 +472,8 @@ class LockGuard
  * Holds the object in a properly aligned raw byte buffer so that no dynamic
  * allocation is required.  The object is placement-constructed by calling
  * `init()` and its lifetime ends when the `StaticCell` is destroyed.  A
- * second call to `init()` aborts via assertion.
+ * second call to `init()` is a programming error: it asserts in debug builds
+ * and traps in release builds, and never constructs a second object.
  *
  * This is useful for zero-heap embedded targets where global objects with
  * complex constructors must be initialised in a controlled order.
@@ -479,15 +482,19 @@ class LockGuard
  *           arguments passed to `init()`.
  *
  * @note Non-copyable and non-movable.
- * @note **Thread-safety.** The cell publishes the `init() → get()`
- *       happens-before edge via an atomic flag, so once `init()` has
- *       returned on one thread, all subsequent `get()` calls on other
- *       threads observe a fully constructed object.  Beyond that, the
+ * @note **Thread-safety.** The cell becomes initialised only once `T`'s
+ *       constructor has returned: `is_initialized()` is `false` while
+ *       `init()` is still constructing, and a `true` result (or a `get()`)
+ *       observes the fully constructed object.  Beyond that, the
  *       cell does **not** synchronise access to the contained `T`:
  *       concurrent reads/mutations via the returned reference are the
  *       caller's responsibility — wrap the contents in your own
  *       @ref Mutex (or use a type that is internally thread-safe) if
  *       multiple threads will mutate it after publication.
+ * @note **Destruction.** `T`'s destructor runs when the cell is destroyed,
+ *       if `init()` completed.  For a trivially destructible `T` the cell
+ *       itself stays trivially destructible, so a file-scope cell registers
+ *       no exit-time destructor.
  */
 template <typename T> class StaticCell
 {
@@ -495,8 +502,9 @@ template <typename T> class StaticCell
 	/**
 	 * @brief Constructs the contained object in-place.
 	 *
-	 * Forwards all arguments to `T`'s constructor.  The initialisation flag is
-	 * set atomically, ensuring the cell is initialised at most once.
+	 * Forwards all arguments to `T`'s constructor.  The cell is claimed
+	 * atomically before construction and published once the constructor
+	 * returns, so it is initialised at most once.
 	 *
 	 * @tparam Args Constructor argument types.
 	 * @param[in] args Arguments forwarded to `T`'s constructor.
@@ -504,16 +512,21 @@ template <typename T> class StaticCell
 	 */
 	template <typename... Args> T &init(Args &&...args)
 	{
-		bool expected = false;
-		if (!initialized_.compare_exchange_strong(expected, true))
+		uint8_t expected = EMPTY;
+		if (!state_.compare_exchange_strong(expected, CONSTRUCTING,
+						    std::memory_order_relaxed)) {
 			OVE_STATIC_INIT_ASSERT(false && "StaticCell already initialized");
-		return *new (storage_) T(std::forward<Args>(args)...);
+			__builtin_trap();
+		}
+		T *obj = ::new (static_cast<void *>(storage_)) T(std::forward<Args>(args)...);
+		state_.store(READY, std::memory_order_release);
+		return *obj;
 	}
 
 	/**
 	 * @brief Returns a reference to the contained object.
 	 *
-	 * Asserts if `init()` has not been called yet.
+	 * Asserts if `init()` has not completed yet.
 	 *
 	 * The returned reference is unsynchronised — see the class-level
 	 * thread-safety note: concurrent mutations through this reference
@@ -523,14 +536,14 @@ template <typename T> class StaticCell
 	 */
 	T &get()
 	{
-		OVE_STATIC_INIT_ASSERT(initialized_.load());
-		return *reinterpret_cast<T *>(storage_);
+		OVE_STATIC_INIT_ASSERT(is_initialized());
+		return *object();
 	}
 
 	/**
 	 * @brief Returns a const reference to the contained object.
 	 *
-	 * Asserts if `init()` has not been called yet.
+	 * Asserts if `init()` has not completed yet.
 	 *
 	 * The returned reference is unsynchronised — see the class-level
 	 * thread-safety note.  Concurrent `const` reads are safe; if any
@@ -542,29 +555,47 @@ template <typename T> class StaticCell
 	 */
 	const T &get() const
 	{
-		OVE_STATIC_INIT_ASSERT(initialized_.load());
-		return *reinterpret_cast<const T *>(storage_);
+		OVE_STATIC_INIT_ASSERT(is_initialized());
+		return *object();
 	}
 
 	/**
-	 * @brief Returns `true` if `init()` has been called successfully.
-	 * @return `true` when the cell contains a live object.
+	 * @brief Returns `true` once `init()` has completed.
+	 * @return `true` when the cell contains a live, fully constructed object.
 	 */
 	bool is_initialized() const
 	{
-		return initialized_.load();
+		return state_.load(std::memory_order_acquire) == READY;
 	}
 
 	StaticCell() = default;
-	~StaticCell() = default;
+	~StaticCell()
+		requires std::is_trivially_destructible_v<T>
+	= default;
+	~StaticCell()
+	{
+		if (is_initialized())
+			object()->~T();
+	}
 	StaticCell(const StaticCell &) = delete;
 	StaticCell &operator=(const StaticCell &) = delete;
 	StaticCell(StaticCell &&) = delete;
 	StaticCell &operator=(StaticCell &&) = delete;
 
       private:
+	enum : uint8_t { EMPTY, CONSTRUCTING, READY };
+
+	T *object()
+	{
+		return std::launder(reinterpret_cast<T *>(storage_));
+	}
+	const T *object() const
+	{
+		return std::launder(reinterpret_cast<const T *>(storage_));
+	}
+
 	alignas(T) uint8_t storage_[sizeof(T)]{};
-	std::atomic<bool> initialized_{false};
+	std::atomic<uint8_t> state_{EMPTY};
 };
 
 /**

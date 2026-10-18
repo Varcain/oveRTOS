@@ -10,6 +10,13 @@
 //! simple command-line interface over a serial console. Commands are registered
 //! as safe Rust `fn(args: &[&[u8]])` callbacks; the FFI trampoline handles the
 //! C/Rust boundary automatically.
+//!
+//! The command table, like the C table it mirrors, is not synchronised: call
+//! [`init`] and [`register_cmd`] from one thread, not concurrently with
+//! [`process_char`] or [`process_line`]. A handler may itself register commands.
+
+use core::cell::UnsafeCell;
+use core::ffi::CStr;
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -35,18 +42,33 @@ const MAX_CMDS: usize = 16;
 const MAX_ARGS: usize = 8;
 
 struct CmdEntry {
-    name: &'static [u8],
+    name: &'static CStr,
     handler: CmdFn,
 }
 
-static mut CMD_TABLE: [Option<CmdEntry>; MAX_CMDS] = {
-    const NONE: Option<CmdEntry> = None;
-    [NONE; MAX_CMDS]
-};
-static mut CMD_COUNT: usize = 0;
+struct CmdTable {
+    entries: [Option<CmdEntry>; MAX_CMDS],
+    count: usize,
+}
+
+struct Registry(UnsafeCell<CmdTable>);
+
+// SAFETY: the table is only touched from the one shell thread (module-level
+// contract above), exactly like the C table it mirrors.
+unsafe impl Sync for Registry {}
+
+static REGISTRY: Registry = Registry(UnsafeCell::new(CmdTable {
+    entries: [const { None }; MAX_CMDS],
+    count: 0,
+}));
 
 /// Initialize the shell subsystem.
+///
+/// Empties the command table; only the built-in `help` command remains.
 pub fn init() -> Result<()> {
+    // SAFETY: single-threaded registration per the module contract. The C
+    // side empties its table, so drop the Rust mirror with it.
+    unsafe { (*REGISTRY.0.get()).count = 0 };
     let rc = unsafe { bindings::ove_shell_init() };
     Error::from_code(rc)
 }
@@ -58,30 +80,39 @@ pub fn process_char(c: i32) {
 
 /// Register a shell command with a safe Rust handler.
 ///
-/// `name` and `help` must be `\0`-terminated `&'static` byte slices.
 /// A single trampoline dispatches to the correct handler by matching `argv[0]`.
+/// Registering a name again replaces its handler and help text.
 ///
 /// # Errors
-/// Returns [`Error::NoMemory`] when the internal command table is full
-/// (capacity is 16 commands).
-pub fn register_cmd(name: &'static [u8], help: &'static [u8], handler: CmdFn) -> Result<()> {
-    let idx = unsafe { CMD_COUNT };
-    if idx >= MAX_CMDS {
-        return Err(Error::NoMemory);
-    }
-
-    unsafe {
-        CMD_TABLE[idx] = Some(CmdEntry { name, handler });
-        CMD_COUNT = idx + 1;
-    }
+/// Returns [`Error::NoMemory`] when the command table is full (16 commands,
+/// including the built-in `help`).
+pub fn register_cmd(name: &'static CStr, help: &'static CStr, handler: CmdFn) -> Result<()> {
+    // SAFETY: single-threaded registration per the module contract, and the
+    // C call below does not re-enter this module.
+    let table = unsafe { &mut *REGISTRY.0.get() };
+    let count = table.count;
+    let existing = table.entries[..count]
+        .iter()
+        .position(|e| e.as_ref().is_some_and(|e| e.name == name));
+    let slot = match existing {
+        Some(i) => i,
+        None if count < MAX_CMDS => count,
+        None => return Err(Error::NoMemory),
+    };
 
     let cmd = bindings::ove_shell_cmd {
-        name: name.as_ptr() as *const _,
-        help: help.as_ptr() as *const _,
+        name: name.as_ptr(),
+        help: help.as_ptr(),
         handler: Some(trampoline),
     };
-    let rc = unsafe { bindings::ove_shell_register_cmd(&cmd) };
-    Error::from_code(rc)
+    // Commit to the Rust table only once C has accepted the command, so the
+    // two tables cannot disagree.
+    Error::from_code(unsafe { bindings::ove_shell_register_cmd(&cmd) })?;
+    table.entries[slot] = Some(CmdEntry { name, handler });
+    if slot == count {
+        table.count = count + 1;
+    }
+    Ok(())
 }
 
 unsafe extern "C" fn trampoline(argc: core::ffi::c_int, argv: *mut *const core::ffi::c_char) {
@@ -106,22 +137,17 @@ unsafe extern "C" fn trampoline(argc: core::ffi::c_int, argv: *mut *const core::
     }
     let cmd_name = args[0];
 
-    let count = unsafe { CMD_COUNT };
-    for entry in unsafe { &CMD_TABLE[..count] }.iter().flatten() {
-        // Compare without trailing \0
-        let entry_name = strip_nul(entry.name);
-        if cmd_name == entry_name {
-            (entry.handler)(args);
-            return;
-        }
-    }
-}
-
-fn strip_nul(s: &[u8]) -> &[u8] {
-    if s.last() == Some(&0) {
-        &s[..s.len() - 1]
-    } else {
-        s
+    // Copy the handler out so the table borrow ends before it runs: a
+    // handler may register commands.
+    // SAFETY: dispatch runs on the shell thread per the module contract.
+    let table = unsafe { &*REGISTRY.0.get() };
+    let handler = table.entries[..table.count]
+        .iter()
+        .flatten()
+        .find(|e| e.name.to_bytes() == cmd_name)
+        .map(|e| e.handler);
+    if let Some(handler) = handler {
+        handler(args);
     }
 }
 
@@ -136,11 +162,9 @@ unsafe fn cstr_ptr_to_slice<'a>(ptr: *const u8) -> &'a [u8] {
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
 
-/// Process a complete input line through the shell.
-///
-/// `line` must be a null-terminated byte string (e.g. `b"help\0"`).
-pub fn process_line(line: &[u8]) {
-    unsafe { bindings::ove_shell_process_line(line.as_ptr() as *const _) }
+/// Process a complete input line through the shell (e.g. `c"help"`).
+pub fn process_line(line: &CStr) {
+    unsafe { bindings::ove_shell_process_line(line.as_ptr()) }
 }
 
 /// Set a hook to capture shell output.

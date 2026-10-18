@@ -1789,7 +1789,7 @@ fn testWorkCreateDestroy() !void {
 fn testWorkDeinitIdempotent() !void {
     var work = try ove.Work.create(test_allocator, workHandler);
     work.deinit();
-    try expect(work.storage == null);
+    try expect(work.box == null);
     work.deinit();
 }
 
@@ -1823,6 +1823,32 @@ fn testWorkCancel() !void {
     var work = try ove.Work.create(test_allocator, workHandler);
     defer work.deinit();
     _ = work.cancel() catch {};
+}
+
+// Two Work items sharing the same Context type and handler must each run
+// with their OWN context.  Regression: createWithContext kept ctx in a
+// per-(Context, handler) static, so the second create clobbered the first.
+const WqSharedCtx = struct { count: u32 = 0 };
+
+fn wqSharedCtxHandler(ctx: *WqSharedCtx) void {
+    ctx.count += 1;
+}
+
+fn testWorkContextPerItem() !void {
+    var wq = try ove.Workqueue(4096).create(test_allocator, "wctx\x00", .normal);
+    defer wq.deinit();
+    var ctx1 = WqSharedCtx{};
+    var ctx2 = WqSharedCtx{};
+    var w1 = try ove.Work.createWithContext(test_allocator, WqSharedCtx, &ctx1, wqSharedCtxHandler);
+    defer w1.deinit();
+    var w2 = try ove.Work.createWithContext(test_allocator, WqSharedCtx, &ctx2, wqSharedCtxHandler);
+    defer w2.deinit();
+    try wq.submit(&w1);
+    try wq.submit(&w2);
+    ove.thread.sleepMs(100);
+    w.print("    ctx1.count={d} ctx2.count={d} (expect 1/1)\n", .{ ctx1.count, ctx2.count }) catch {};
+    try expectEqual(u32, 1, ctx1.count);
+    try expectEqual(u32, 1, ctx2.count);
 }
 
 fn testWorkqueueRaiiDrop() !void {
@@ -2184,6 +2210,7 @@ pub fn main() void {
         .{ .name = "submit_delayed", .func = testWorkSubmitDelayed },
         .{ .name = "cancel", .func = testWorkCancel },
         .{ .name = "raii_drop", .func = testWorkqueueRaiiDrop },
+        .{ .name = "context_per_item", .func = testWorkContextPerItem },
     });
 
     runSuite("Errors", &.{
