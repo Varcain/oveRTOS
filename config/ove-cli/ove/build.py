@@ -262,8 +262,9 @@ def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
 
     The tree is named after its content (source revision plus the ordered patch
     set), next to the download, so workspaces with the same patches use one
-    checkout. Builds treat it as read-only. A lock serializes its preparation,
-    and the workspace records it for `ove clean --sources`.
+    checkout. A build must not write into it (_check_source_trees_unchanged).
+    A lock serializes its preparation, and the workspace records it for
+    `ove clean --sources`.
     """
     import fcntl
 
@@ -279,6 +280,38 @@ def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
         _prepare_patched_git_tree(source_dir, tree, layers, log_file=log_file)
         _record_source_tree(ws, tree)
     return tree
+
+
+def _check_source_trees_unchanged(ws):
+    """Fail when a build changed one of the shared source trees it used.
+
+    Other workspaces build from the same tree. Its patches are staged in the
+    worktree index, so anything git reports beyond them (a modified tracked
+    file, a new file the tree does not ignore) came from a build.
+    """
+    record = os.path.join(ws.build_dir, _SOURCE_TREES_RECORD)
+    if not os.path.isfile(record):
+        return
+    with open(record) as f:
+        trees = [line.strip() for line in f if line.strip()]
+    changed = []
+    for tree in trees:
+        if not os.path.isdir(tree):
+            continue
+        status = _git_capture(tree, ["status", "--porcelain", "-z"])
+        for entry in status.split("\0"):
+            if not entry or entry[3:] == _PATCH_STATE_FILE:
+                continue
+            # "XY path": staged patch changes have Y == " "
+            if entry[1] != " ":
+                changed.append(os.path.join(tree, entry[3:]))
+    if not changed:
+        return
+    logger.error("The build wrote into shared source trees "
+                 "(other workspaces build from them):")
+    for path in changed:
+        logger.error(f"  {path}")
+    sys.exit(1)
 
 
 def _record_source_tree(ws, tree):
@@ -475,6 +508,7 @@ def build_freertos(ws):
         log_file=ws.build_log)
 
     _copy_images(ws, fw_build)
+    _check_source_trees_unchanged(ws)
     _create_run_or_flash_script(ws)
 
 
@@ -558,6 +592,7 @@ def build_zephyr(ws):
             shutil.copy2(src_path, os.path.join(ws.images_dir, dst))
 
     _check_rtos_config_drift(ws, os.path.join(fw_build, "zephyr", ".config"))
+    _check_source_trees_unchanged(ws)
     _create_run_or_flash_script(ws, rtos="zephyr")
 
 
@@ -627,8 +662,16 @@ def _drop_stale_cmake_cache(build_dir, source_dir):
 def _nuttx_cmake_configure_args(cmake, ws, nuttx_src, apps_src, board_cfg,
                                 defconfig):
     """The NuttX CMake configure command for this workspace."""
+    launcher = []
+    ccache = shutil.which("ccache")
+    # Like the other engines' builds (OveCommon.cmake): ccache unless
+    # OVE_NO_CCACHE is set.
+    if ccache and not os.environ.get("OVE_NO_CCACHE"):
+        launcher = [f"-DCMAKE_C_COMPILER_LAUNCHER={ccache}",
+                    f"-DCMAKE_CXX_COMPILER_LAUNCHER={ccache}"]
     return [
         cmake,
+        *launcher,
         f"-S{os.path.abspath(nuttx_src)}",
         f"-B{os.path.abspath(os.path.join(ws.build_dir, 'nuttx-cmake'))}",
         f"-DBOARD_CONFIG={board_cfg}",
@@ -755,6 +798,7 @@ def build_nuttx(ws):
         if os.path.isfile(src):
             shutil.copy2(src, os.path.join(ws.images_dir, dst_name))
 
+    _check_source_trees_unchanged(ws)
     _create_run_or_flash_script(ws, rtos="nuttx")
 
 

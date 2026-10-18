@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 from ove.build import (
+    _check_source_trees_unchanged,
     _prepare_patched_git_tree,
     _shared_patched_tree,
     discard_all_patch_worktrees,
@@ -203,6 +204,21 @@ class SharedSourceTreeTest(_GitSourceCase):
             ["git", "worktree", "list", "--porcelain"], cwd=self.source,
             check=True, capture_output=True, text=True).stdout
         self.assertNotIn(unused, worktrees)
+
+    def test_a_build_writing_into_a_shared_tree_fails(self):
+        self._patch_a("bravo")
+        ws = self._workspace("a")
+        tree = self._shared(ws)
+        _check_source_trees_unchanged(ws)  # patches alone are fine
+
+        self._write(os.path.join(tree, "b.txt"), "changed\n")
+        with self.assertRaises(SystemExit):
+            _check_source_trees_unchanged(ws)
+        _run("git", "checkout", "--", "b.txt", cwd=tree)
+
+        self._write(os.path.join(tree, "generated.txt"), "new\n")
+        with self.assertRaises(SystemExit):
+            _check_source_trees_unchanged(ws)
 
     def test_clean_all_removes_shared_trees(self):
         self._patch_a("bravo")
