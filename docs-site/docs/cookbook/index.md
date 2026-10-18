@@ -10,7 +10,7 @@ Every recipe is short (one page), runnable, and constrained to QEMU/FreeRTOS so 
 |---|---|---|
 | 1 | [Periodic sensor read via timer + queue](periodic-sensor.md) | `ove_timer`, `ove_queue`, `ove_thread` |
 | 2 | [Persist a value across reboots](persist-nvs.md) | `ove_nvs` |
-| 3 | [Stream UART input into a worker thread](uart-worker.md) | `ove_uart`, `ove_stream`, `ove_thread` |
+| 3 | [Stream UART input into a worker thread](uart-worker.md) | `ove_uart`, `ove_thread` |
 | 4 | [POST telemetry to HTTPS](https-post.md) | `ove_net`, `ove_net_http`, `ove_net_tls` |
 | 5 | [Run TFLite Micro inference on an audio buffer](inference.md) | `ove_infer`, `ove_audio` |
 | 6 | [Show a value on LVGL with thread-safe locking](lvgl-thread-safe.md) | `ove_lvgl`, `ove_mutex`, `ove_timer` |

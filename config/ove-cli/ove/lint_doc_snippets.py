@@ -38,11 +38,9 @@ _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTAL
 
 # page -> why it does not compile yet
 _PENDING = {
-    "https-post.md": "uses ove_net_is_up/ove_tls_set_trust_store; never calls ove_run()",
     "inference.md": "written against an ove_infer_* API that does not exist",
     "pm-gpio-wake.md": "written against ove_gpio_open/ove_pm_state_set, which do not exist",
     "shell-command.md": "written against an OVE_SHELL_CMD_REGISTER/ove_shell_printf API",
-    "uart-worker.md": "written against ove_uart_open/ove_uart_set_rx_callback",
 }
 
 

@@ -1,6 +1,6 @@
 # Stream UART input into a worker thread
 
-**Pattern** — a UART receives bytes asynchronously (an LRA, a CLI prompt, an inbound packet protocol). Decouple the ISR-side byte arrival from your protocol parser using a stream buffer.
+**Pattern** — a UART receives bytes asynchronously (a GPS, a CLI prompt, an inbound packet protocol). A worker thread blocks on the UART and hands each chunk to your parser; the driver's own receive buffer absorbs the bursts.
 
 **What to enable** (in your `app.yaml`'s `defconfig:` list):
 
@@ -9,91 +9,74 @@ defconfig:
   - CONFIG_OVE_CONSOLE=y
   - CONFIG_OVE_LOG=y
   - CONFIG_OVE_UART=y
-  - CONFIG_OVE_STREAM=y
   - CONFIG_OVE_THREAD=y
 ```
 
-## Why a stream buffer, not a queue?
+## Where the bytes wait
 
-A queue moves *fixed-size messages*. A stream buffer moves *bytes* — perfect for "the next packet might be 7 bytes, the one after 31 bytes". The reader side blocks until at least *N* bytes are available (or a timeout fires), then returns whatever it has.
-
-The UART driver's RX callback fires from an ISR (FreeRTOS) or a high-priority context (Zephyr / NuttX) — it must not block. Pushing bytes into a stream buffer is safe from that context.
+You don't write an RX interrupt handler. Each backend's UART ISR pushes received bytes into a byte stream inside the driver (an `ove_stream` of `rx_buf_size` bytes, `CONFIG_OVE_UART` selects `CONFIG_OVE_STREAM`). `ove_uart_read()` blocks until at least one byte is there, then returns whatever is buffered, up to the length you asked for. A queue would move fixed-size messages; a byte stream suits "the next packet might be 7 bytes, the one after 31".
 
 ## Code
 
 ```c
 #include "ove/ove.h"
 #include "ove/uart.h"
-#include "ove/stream.h"
 #include "ove/log.h"
 
-#define RX_STREAM_SIZE  256
+#define RX_BUF_SIZE  256
 
-static ove_stream_t rx_stream;
+void parse_packet(const uint8_t *data, size_t len);   /* your protocol code */
+
 static ove_uart_t   uart;
 static ove_thread_t parser;
 
-/* RX callback — runs from an ISR/high-prio context. No blocking. */
-static void uart_rx_cb(ove_uart_t u, const uint8_t *data, size_t len, void *arg)
-{
-    (void)u; (void)arg;
-    /* Stream buffer push is interrupt-safe with timeout 0. */
-    ove_stream_send(rx_stream, data, len, 0);
-}
-
-/* Worker thread — runs in normal thread context, can block. */
+/* Worker thread — normal thread context, may block. */
 static void parser_fn(void *arg)
 {
     (void)arg;
     uint8_t buf[64];
     while (1) {
-        size_t got = ove_stream_receive(rx_stream, buf, sizeof(buf),
-                                        OVE_WAIT_FOREVER);
-        if (got > 0) {
-            parse_packet(buf, got);   /* your protocol code */
+        size_t got = 0;
+        if (ove_uart_read(uart, buf, sizeof(buf), OVE_WAIT_FOREVER, &got) == OVE_OK &&
+            got > 0) {
+            parse_packet(buf, got);
         }
     }
 }
 
 void ove_main(void)
 {
-    ove_stream_create(&rx_stream, RX_STREAM_SIZE);
+    const struct ove_uart_cfg cfg = {
+        .instance     = 1,          /* a free UART; 0 is usually the console */
+        .baudrate     = 115200,
+        .data_bits    = 8,
+        .parity       = OVE_UART_PARITY_NONE,
+        .stop_bits    = OVE_UART_STOP_1,
+        .flow_control = OVE_UART_FLOW_NONE,
+        .rx_buf_size  = RX_BUF_SIZE,
+    };
+    if (ove_uart_create(&uart, &cfg) != OVE_OK) {
+        OVE_LOG_ERR("UART %u unavailable", cfg.instance);
+        return;
+    }
     ove_thread_create(&parser, "rx_parser", parser_fn, NULL,
                       OVE_PRIO_NORMAL, 4096);
-
-    struct ove_uart_config cfg = {
-        .baudrate = 115200,
-        .parity   = OVE_UART_PARITY_NONE,
-        .stop_bits = 1,
-        .flow_ctrl = OVE_UART_FLOW_NONE,
-    };
-    ove_uart_open(&uart, OVE_UART_DEV_0, &cfg);
-    ove_uart_set_rx_callback(uart, uart_rx_cb, NULL);
-
     ove_run();
 }
 ```
 
 ## Reading the design
 
-- **Push side never blocks**. `ove_stream_send(..., 0)` returns immediately. If the stream is full, the call drops bytes and returns the count actually written. Sizing matters; see below.
-- **Pull side may block forever**. The parser is happy waiting; `OVE_WAIT_FOREVER` is what you want.
-- **Buffer size** = peak burst length × headroom. For 115200 baud (11.5 KB/s) and a parser that consumes every 10 ms, 256 bytes is two parser cycles of margin. Increase if your parser ever stalls (filesystem write, network send, etc.).
+- **The read may return less than you asked for.** `got` is however many bytes were buffered (at least one). Your parser keeps its own state across calls; a packet can arrive split over several reads.
+- **The parser can wait forever.** `OVE_WAIT_FOREVER` is the right timeout when nothing else is due; pass a finite timeout (nanoseconds) to wake up periodically, e.g. for an inter-byte timeout in a framed protocol.
+- **Buffer size** = peak burst length × headroom. At 115200 baud (11.5 KB/s), a parser that runs every 10 ms needs about 115 bytes per cycle, so 256 bytes is two cycles of margin. Increase it if the parser ever stalls (filesystem write, network send, etc.).
+- **Writing back** is `ove_uart_write(uart, data, len, timeout_ns, &written)`; it is thread-safe and may accept fewer than `len` bytes, so loop until everything is sent.
 
 ## Handling overrun
 
-If `ove_stream_send` returns less than `len`, you lost bytes. For protocols that frame with delimiters, this is recoverable — the parser resyncs on the next delimiter. For protocols that don't frame (binary positional formats), drop the parser state and reconnect.
+When the receive buffer is full, the driver drops the bytes that do not fit; there is no overrun counter to read. For protocols that frame with delimiters this is recoverable: the parser resyncs on the next delimiter. For protocols that don't frame (binary positional formats), add a length and checksum to each packet so the parser can detect a gap, drop its state and wait for the next start marker. If drops happen in practice, raise `rx_buf_size` or the parser thread's priority.
 
-```c
-static void uart_rx_cb(ove_uart_t u, const uint8_t *data, size_t len, void *arg)
-{
-    size_t wrote = ove_stream_send(rx_stream, data, len, 0);
-    if (wrote < len) {
-        /* Lost some bytes — signal the parser to resync. */
-        atomic_store(&rx_overrun, true);
-    }
-}
-```
+For a zero-heap build, `OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr)` declares the storage and RX buffer at file scope and initialises the UART before `ove_main()` runs; drop the `ove_uart_create()` call.
 
 ## Where else in the tree
 

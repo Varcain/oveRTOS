@@ -1,6 +1,9 @@
 # POST telemetry to HTTPS
 
-**Pattern** — periodically push a JSON document to an HTTPS endpoint. The code below works against any TLS-terminating server (no client cert), using oveRTOS's bundled `ove_net_http` over `ove_net_tls`.
+**Pattern** — periodically push a JSON document to an HTTPS endpoint, using oveRTOS's `ove_net_http` client over `ove_net_tls` (mbedTLS). Works against any TLS server that does not ask for a client certificate.
+
+!!! warning "TLS builds for the host tests only"
+    `CONFIG_OVE_NET_TLS` does not build for the RTOS targets yet: the bundled mbedTLS has no entropy source configured for them. Until that is fixed, this recipe compiles but cannot be built into firmware.
 
 **What to enable** (in your `app.yaml`'s `defconfig:` list):
 
@@ -11,98 +14,110 @@ defconfig:
   - CONFIG_OVE_NET=y
   - CONFIG_OVE_NET_TLS=y
   - CONFIG_OVE_NET_HTTP=y
-  - CONFIG_OVE_NET_SNTP=y    # for clock; TLS cert validation needs a valid time
+  - CONFIG_OVE_NET_SNTP=y    # UTC timestamps for the payload
 ```
 
 ## Why SNTP?
 
-TLS certificate validation rejects certificates outside their `notBefore`/`notAfter` window. A freshly-booted board has no idea what year it is. `ove_net_sntp` syncs the system clock before the first HTTPS call.
+A freshly booted board only knows the time since boot. `ove_sntp_sync()` asks an NTP server once and keeps the offset; `ove_sntp_get_utc()` then returns UTC seconds, which is what a telemetry backend wants in each record.
 
 ## Code
 
+All the network work runs in a worker thread: on FreeRTOS `ove_main()` runs before the scheduler, where nothing may block.
+
 ```c
 #include "ove/ove.h"
-#include "ove/log.h"
-#include "ove/net.h"
-#include "ove/net_http.h"
-#include "ove/net_sntp.h"
 #include <stdio.h>
 
-#define POST_PERIOD_MS  60000   /* once per minute */
+#define POST_URL        "https://telemetry.example.com/ingest"
+#define POST_PERIOD_MS  10000
+
+/* Your server's CA certificate, PEM with its terminating NUL (or DER). */
+extern const unsigned char server_ca[];
+extern const size_t        server_ca_len;
+
+int32_t read_sensor(void);   /* your driver */
+
+static ove_netif_t               netif;
+static ove_netif_storage_t       netif_storage;
+static ove_http_client_t         http;
+static ove_http_client_storage_t http_storage;
+static ove_thread_t              worker;
+
+static int net_up(void)
+{
+    ove_netif_config_t cfg = {0};   /* static address, as in apps/c/heap/example_net */
+    ove_sockaddr_ipv4(&cfg.static_ip, 172, 1, 1, 2, 0);
+    ove_sockaddr_ipv4(&cfg.gateway, 172, 1, 1, 1, 0);
+    ove_sockaddr_ipv4(&cfg.netmask, 255, 255, 255, 0, 0);
+    ove_sockaddr_ipv4(&cfg.dns, 8, 8, 8, 8, 0);
+
+    int rc = ove_netif_init(&netif, &netif_storage);
+    if (rc == OVE_OK)
+        rc = ove_netif_up(netif, &cfg);
+    return rc;
+}
 
 static void post_one(void)
 {
-    char body[128];
-    snprintf(body, sizeof(body),
-             "{\"ts\":%llu,\"value\":%d}",
-             (unsigned long long)(ove_time_now_us() / 1000),
-             read_sensor());
+    uint32_t utc = 0;
+    ove_sntp_get_utc(&utc);
 
-    struct ove_http_request req = {
-        .method   = OVE_HTTP_POST,
-        .url      = "https://your-server.example.com/ingest",
-        .headers  = (const char *[]){
-            "Content-Type: application/json",
-            "Authorization: Bearer YOUR_TOKEN",
-            NULL,
-        },
-        .body     = (const uint8_t *)body,
-        .body_len = strlen(body),
-        .timeout_ms = 10000,
-    };
+    char body[96];
+    int len = snprintf(body, sizeof(body), "{\"ts\":%lu,\"value\":%ld}",
+                       (unsigned long)utc, (long)read_sensor());
 
-    struct ove_http_response resp = {0};
-    int rc = ove_http_request(&req, &resp);
+    ove_http_response_t resp;
+    int rc = ove_http_post(http, POST_URL, "application/json", body, (size_t)len, &resp);
     if (rc != OVE_OK) {
-        OVE_LOG_WRN("POST failed: %d", rc);
+        OVE_LOG_ERR("POST failed: %d", rc);
         return;
     }
-
-    OVE_LOG_INF("POST %d (%zu bytes returned)", resp.status, resp.body_len);
+    if (resp.status != 200)
+        OVE_LOG_WRN("POST returned %d", resp.status);
     ove_http_response_free(&resp);
 }
 
-void ove_main(void)
+static void worker_fn(void *arg)
 {
-    /* Block until the network interface is up (DHCP / static IP). */
-    while (!ove_net_is_up()) {
-        ove_thread_sleep_ms(200);
+    (void)arg;
+    if (net_up() != OVE_OK) {
+        OVE_LOG_ERR("network did not come up");
+        return;
     }
+    ove_thread_sleep_ms(3000);   /* let the link come up on hardware */
 
-    /* Sync wallclock before our first TLS call. */
-    if (ove_sntp_sync(/* server */ "pool.ntp.org",
-                      /* timeout_ms */ 5000) != OVE_OK) {
-        OVE_LOG_ERR("SNTP failed — TLS cert validation will reject everything");
-    }
+    if (ove_sntp_sync(NULL) != OVE_OK)   /* pool.ntp.org, 5 s timeout */
+        OVE_LOG_WRN("SNTP failed; timestamps count from boot");
+
+    ove_http_set_tls(server_ca, server_ca_len, 0);
+    if (ove_http_client_init(&http, &http_storage) != OVE_OK)
+        return;
 
     while (1) {
         post_one();
         ove_thread_sleep_ms(POST_PERIOD_MS);
     }
 }
+
+void ove_main(void)
+{
+    /* TLS handshakes are stack-hungry: give the worker 16 KB. */
+    ove_thread_create(&worker, "telemetry", worker_fn, NULL,
+                      OVE_PRIO_NORMAL, 16 * 1024);
+    ove_run();
+}
 ```
 
 ## Trust store
 
-Server cert validation uses a baked-in CA bundle (Mozilla's, regenerated from `ca-certificates`). For self-signed servers, either:
-
-- Provide a custom CA via `ove_tls_set_trust_store(pem_data, pem_len)` before the first HTTPS call, or
-- Pin the server certificate's SHA-256: `req.tls_pin_sha256 = pin_bytes;`
-
-Don't disable validation entirely — there is no `tls_verify = false` knob on purpose.
+There is no built-in CA bundle. Until `ove_http_set_tls()` installs a trust anchor, every `https://` request fails closed, because the server cannot be verified. Pass your server's CA (or the CA that signed it) as PEM including the terminating NUL, or as DER. The third argument, `allow_insecure`, skips verification for bring-up on a test bench only; never ship with it set.
 
 ## Memory and stack
 
-HTTPS over the bundled mbedTLS needs a substantial thread stack — bump the calling thread to **at least 16 KB** for handshakes:
-
-```c
-ove_thread_create(&worker, "telemetry", worker_fn, NULL,
-                  OVE_PRIO_NORMAL, 16 * 1024);
-```
-
-If you build with `CONFIG_OVE_NET_TLS_MEM_PROFILE=tiny`, mbedTLS is configured for ECC-only curves and 8 KB stacks; expect handshake speed to drop.
+The handshake runs on the calling thread, which is why the worker gets 16 KB above. mbedTLS takes its working memory from the heap, or from a `CONFIG_OVE_NET_TLS_HEAP_SIZE` static pool in zero-heap builds.
 
 ## Where else in the tree
 
 - [API: Networking](../api/net.md) — sockets, DNS, TLS, HTTP, MQTT, HTTPD, SNTP.
-- [`apps/c/heap/example_net/`](https://github.com/Varcain/oveRTOS/tree/main/apps/c/heap/example_net) — TCP/UDP + DNS demo with the same `ove_net_is_up()` startup pattern.
+- [`apps/c/heap/example_net/`](https://github.com/Varcain/oveRTOS/tree/main/apps/c/heap/example_net) — sockets, DNS, HTTP and SNTP; brings the interface up the same way.
