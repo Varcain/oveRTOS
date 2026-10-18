@@ -11,6 +11,9 @@ c_sources:
   - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_avatar.c
 c_includes:
   - ../../../c/zeroheap/lvgl_benchmark/include
+incompatible_boards:
+  # The an521 has no display.
+  - qemu-mps2-an521
 defconfig:
   - CONFIG_OVE_ZERO_HEAP=y
   - CONFIG_OVE_BSP=y

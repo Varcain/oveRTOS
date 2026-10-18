@@ -9,6 +9,9 @@ sources:
   - src/assets/benchmark_avatar.c
 includes:
   - include
+incompatible_boards:
+  # The an521 has no display.
+  - qemu-mps2-an521
 defconfig:
   - CONFIG_OVE_ZERO_HEAP=y
   - CONFIG_OVE_BSP=y

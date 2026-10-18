@@ -3,6 +3,9 @@ lang: rust
 description: "Live DMIC Keyword Detection (Rust)"
 rust:
   lib_name: example_keyword_live_rust
+incompatible_boards:
+  # The an521 has no audio input.
+  - qemu-mps2-an521
 defconfig:
   - CONFIG_OVE_ZERO_HEAP=y
   - CONFIG_OVE_BSP=y
