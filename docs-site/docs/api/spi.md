@@ -8,6 +8,7 @@ SPI master driver with configurable clock/mode, thread-safe bus locking, and por
 
 ## Configuration
 
+<!-- ove:body -->
 ```c
 struct ove_spi_cfg {
     unsigned int        instance;   // SPI peripheral index (0, 1, 2...)
@@ -35,6 +36,7 @@ struct ove_spi_cs {
 
 ## Example
 
+<!-- ove:body -->
 ```c
 struct ove_spi_cfg cfg = {
     .instance  = 0,

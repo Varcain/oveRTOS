@@ -8,6 +8,7 @@ I2C master driver with configurable bus speed, thread-safe bus locking, register
 
 ## Configuration
 
+<!-- ove:body -->
 ```c
 struct ove_i2c_cfg {
     unsigned int    instance;  // I2C peripheral index (0, 1, 2...)
@@ -28,6 +29,7 @@ struct ove_i2c_cfg {
 
 ## Example
 
+<!-- ove:body -->
 ```c
 struct ove_i2c_cfg cfg = { .instance = 0, .speed = OVE_I2C_SPEED_FAST };
 

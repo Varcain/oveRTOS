@@ -251,6 +251,12 @@ The first run downloads ~150 MB of Renode binaries; subsequent runs reuse `outpu
 **Fix** — give long-lived state `static` storage:
 
 ```c
+#include <stdlib.h>
+
+struct app_ctx { int state; };   /* whatever the worker shares */
+void worker(void *arg);
+static ove_thread_t t;
+
 void ove_main(void)
 {
     static struct app_ctx ctx;           /* OK — static storage */

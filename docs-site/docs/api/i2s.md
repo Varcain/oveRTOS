@@ -14,6 +14,7 @@ I2C register writes).
 
 ## Configuration
 
+<!-- ove:body -->
 ```c
 struct ove_i2s_cfg {
     unsigned int  instance;         // Peripheral index (0, 1, ...)
@@ -53,31 +54,43 @@ a worker thread to process the buffer.
 ## Example: Capturing Microphone Audio
 
 ```c
+static ove_event_t buf_ready;
+
+/* ISR context: only signal the worker. */
 static void rx_ready(ove_i2s_t i2s, void *user_data)
 {
-    ove_sem_t *sem = user_data;
-    ove_sem_give_from_isr(*sem);
+    (void)i2s;
+    (void)user_data;
+    ove_event_signal_from_isr(buf_ready);
 }
 
-struct ove_i2s_cfg cfg = {
-    .instance        = 2,
-    .sample_rate     = 16000,
-    .bit_depth       = 16,
-    .channels        = 1,
-    .direction       = OVE_I2S_DIR_RX,
-    .dma_buf_samples = 1024,        /* two halves of 512 samples */
-};
+void capture_task(void *arg)
+{
+    (void)arg;
+    struct ove_i2s_cfg cfg = {
+        .instance        = 2,
+        .sample_rate     = 16000,
+        .bit_depth       = 16,
+        .channels        = 1,
+        .direction       = OVE_I2S_DIR_RX,
+        .dma_buf_samples = 1024,        /* two halves of 512 samples */
+    };
 
-ove_i2s_t i2s;
-ove_i2s_create(&i2s, &cfg);
-ove_i2s_set_rx_callback(i2s, rx_ready, &buf_ready_sem);
-ove_i2s_start(i2s);
+    ove_i2s_t i2s;
+    if (ove_event_create(&buf_ready) != OVE_OK || ove_i2s_create(&i2s, &cfg) != OVE_OK)
+        return;
+    ove_i2s_set_rx_callback(i2s, rx_ready, NULL);
+    ove_i2s_start(i2s);
 
-for (;;) {
-    ove_sem_take(buf_ready_sem, OVE_WAIT_FOREVER);
-    const int16_t *samples = ove_i2s_rx_buf(i2s);
-    size_t bytes           = ove_i2s_half_buf_size(i2s);
-    /* process samples ... */
+    for (;;) {
+        if (ove_event_wait(buf_ready, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
+        const int16_t *samples = ove_i2s_rx_buf(i2s);
+        size_t bytes           = ove_i2s_half_buf_size(i2s);
+        /* process samples ... */
+        (void)samples;
+        (void)bytes;
+    }
 }
 ```
 

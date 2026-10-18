@@ -8,6 +8,7 @@ Multi-instance UART driver with configurable baud rate and framing, interrupt-dr
 
 ## Configuration
 
+<!-- ove:body -->
 ```c
 struct ove_uart_cfg {
     unsigned int      instance;      // Peripheral index (0, 1, 2...)
@@ -34,6 +35,7 @@ struct ove_uart_cfg {
 
 ## Example
 
+<!-- ove:body -->
 ```c
 struct ove_uart_cfg cfg = {
     .instance    = 0,

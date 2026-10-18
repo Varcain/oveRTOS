@@ -62,6 +62,7 @@ graph TD
 
 Each `ove_fs_readdir` call fills an `ove_dirent` structure:
 
+<!-- ove:body -->
 ```c
 struct ove_dirent {
     char         name[256]; /* null-terminated entry name (not full path) */
@@ -97,6 +98,7 @@ File and directory handles follow the same dual-allocation pattern used througho
 
 The caller declares an `ove_file_storage_t` (and, for directory iteration, `ove_dir_storage_t`) at file scope and passes it to `ove_fs_open_init` / `ove_fs_opendir_init`. No heap allocation is performed; the storage must remain valid for the lifetime of the open handle. Use this on targets where `CONFIG_OVE_ZERO_HEAP=y`.
 
+<!-- ove:body -->
 ```c
 static ove_file_storage_t file_storage;
 
@@ -110,6 +112,7 @@ ove_fs_close_deinit(f);
 
 Available when `OVE_HEAP_FS` is defined (i.e. `CONFIG_OVE_ZERO_HEAP` is not set). The backend allocates the handle from the RTOS heap.
 
+<!-- ove:body -->
 ```c
 ove_file_t f;
 ove_fs_open(&f, "/sd/data.bin", OVE_FS_O_READ);
@@ -121,6 +124,7 @@ Both `ove_fs_opendir` / `ove_fs_closedir` and `ove_fs_opendir_init` / `ove_fs_cl
 
 ## Example: Reading a WAV File from SD Card
 
+<!-- ove:body -->
 ```c
 #include "ove/ove.h"
 

@@ -41,18 +41,7 @@ _BODY_MARK = "<!-- ove:body -->"
 _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 # page (relative to docs-site/docs) -> why it does not compile yet
-_PENDING = {
-    "api/fs.md": "excerpts not yet marked or made self-contained",
-    "api/i2c.md": "excerpts not yet marked or made self-contained",
-    "api/i2s.md": "excerpts not yet marked or made self-contained",
-    "api/infer.md": "excerpts not yet marked or made self-contained",
-    "api/io.md": "excerpts not yet marked or made self-contained",
-    "api/nvs.md": "excerpts not yet marked or made self-contained",
-    "api/shell.md": "excerpts not yet marked or made self-contained",
-    "api/spi.md": "excerpts not yet marked or made self-contained",
-    "api/uart.md": "excerpts not yet marked or made self-contained",
-    "getting-started/troubleshooting.md": "excerpts not yet marked or made self-contained",
-}
+_PENDING = {}
 
 
 def _blocks(text):
