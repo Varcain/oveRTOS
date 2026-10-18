@@ -37,9 +37,7 @@ _FRAGMENT_MARK = "<!-- ove:fragment -->"
 _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 # page -> why it does not compile yet
-_PENDING = {
-    "inference.md": "written against an ove_infer_* API that does not exist",
-}
+_PENDING = {}
 
 
 def _blocks(text):

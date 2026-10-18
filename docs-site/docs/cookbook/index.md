@@ -12,7 +12,7 @@ Every recipe is short (one page), runnable, and constrained to QEMU/FreeRTOS so 
 | 2 | [Persist a value across reboots](persist-nvs.md) | `ove_nvs` |
 | 3 | [Stream UART input into a worker thread](uart-worker.md) | `ove_uart`, `ove_thread` |
 | 4 | [POST telemetry to HTTPS](https-post.md) | `ove_net`, `ove_net_http`, `ove_net_tls` |
-| 5 | [Run TFLite Micro inference on an audio buffer](inference.md) | `ove_infer`, `ove_audio` |
+| 5 | [Run TFLite Micro inference on an audio buffer](inference.md) | `ove_model` (`ove/infer.h`) |
 | 6 | [Show a value on LVGL with thread-safe locking](lvgl-thread-safe.md) | `ove_lvgl`, `ove_mutex`, `ove_timer` |
 | 7 | [Sleep and wake on a GPIO edge](pm-gpio-wake.md) | `ove_pm`, `ove_gpio` |
 | 8 | [Add a custom shell command](shell-command.md) | `ove_shell`, `ove_log` |
