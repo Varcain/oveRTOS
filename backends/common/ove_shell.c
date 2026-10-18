@@ -59,7 +59,7 @@ static void run_handler(const struct ove_shell_cmd *cmd, int argc, const char *a
 
 static void shell_execute(char *line)
 {
-	const char *argv[OVE_SHELL_MAX_ARGS];
+	const char *argv[OVE_SHELL_MAX_ARGS + 1]; /* + the NULL after the last word */
 	int argc = 0;
 	char *p = line;
 	unsigned int i;
@@ -83,6 +83,7 @@ static void shell_execute(char *line)
 	if (argc == 0) {
 		return;
 	}
+	argv[argc] = NULL;
 
 	for (i = 0; i < cmd_count; i++) {
 		if (strcmp(argv[0], cmd_table[i].name) == 0) {
