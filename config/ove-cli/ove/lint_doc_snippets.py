@@ -117,3 +117,61 @@ def check(ove_dir):
     if problems:
         return "FAIL", "; ".join(problems)
     return "OK", f"{compiled} blocks, {len(_PENDING)} pages pending"
+
+
+# ── doc-names: API names quoted in prose and tables ─────────────────────────
+#
+# Text outside code fences is not compiled, so a renamed or invented
+# `ove_*` / `OVE_*` name there goes unnoticed. Every such name in backticks
+# must appear somewhere in the source tree. Prefixes (`ove_mutex_`) and the
+# `ove_X_*` placeholder used for API families are exempt.
+
+_SOURCE_ROOTS = ("include", "src", "backends", "bindings", "drivers", "boards", "config",
+                 "cmake", "sim", "tests", "scripts", "apps", "models", "CMakeLists.txt",
+                 "Makefile")
+_SKIP_DIRS = {"output", "dl", "target", ".git", "__pycache__", "node_modules"}
+_NAME_RE = re.compile(r"\b(?:ove|OVE)_[A-Za-z0-9_]+\b")
+_TICKED_RE = re.compile(r"`[^`\n]*`")
+_FENCE_RE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
+
+
+def _known_names(ove_dir):
+    names = set()
+    for root in _SOURCE_ROOTS:
+        path = os.path.join(ove_dir, root)
+        files = [path] if os.path.isfile(path) else []
+        for dp, dirs, fs in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+            files += [os.path.join(dp, f) for f in fs if not f.endswith(".md")]
+        for f in files:
+            try:
+                with open(f, encoding="utf-8", errors="ignore") as fh:
+                    names.update(_NAME_RE.findall(fh.read()))
+            except OSError:
+                pass
+    return names
+
+
+def check_names(ove_dir):
+    """Returns (status, detail) for backticked API names in the docs."""
+    known = _known_names(ove_dir)
+    docs_root = os.path.join(ove_dir, "docs-site", "docs")
+    problems = []
+    checked = 0
+    for dp, _dirs, fs in os.walk(docs_root):
+        for f in sorted(fs):
+            if not f.endswith(".md"):
+                continue
+            path = os.path.join(dp, f)
+            with open(path, encoding="utf-8") as fh:
+                text = _FENCE_RE.sub("", fh.read())
+            for span in _TICKED_RE.findall(text):
+                for name in _NAME_RE.findall(span):
+                    if name.endswith("_") or name.startswith("ove_X") or "_X_" in name:
+                        continue
+                    checked += 1
+                    if name not in known:
+                        problems.append(f"{os.path.relpath(path, docs_root)}: {name}")
+    if problems:
+        return "FAIL", "unknown names: " + "; ".join(sorted(set(problems)))
+    return "OK", f"{checked} names"

@@ -150,7 +150,7 @@ class EventGroup
 	/**
 	 * @brief Deadline-based variant of @ref wait_bits.
 	 * @param[in] bits     Bitmask to wait on.
-	 * @param[in] flags    Wait flags (e.g., @c OVE_EVENT_WAIT_ALL).
+	 * @param[in] flags    Wait flags (e.g., @c OVE_EG_WAIT_ALL).
 	 * @param[in] deadline @ref ove::steady_clock::time_point at which
 	 *                     the wait must complete.
 	 * @return As @ref wait_bits — `Result<ove_eventbits_t>`.

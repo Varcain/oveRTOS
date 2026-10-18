@@ -90,7 +90,7 @@ The callback signature is `void cb(ove_timer_t t, void *user_data)` — the time
 | `xEventGroupWaitBits(eg, mask, clear, all, T)` | `ove_eventgroup_wait_bits(eg, mask, flags, OVE_MS(ms), &got)` |
 | `xEventGroupGetBits(eg)` | `ove_eventgroup_get_bits(eg)` |
 
-`flags` is `OVE_EVENT_WAIT_ALL` or `OVE_EVENT_WAIT_ANY`, optionally `| OVE_EVENT_CLEAR_ON_EXIT`.
+`flags` is `0` (wake when any requested bit is set) or `OVE_EG_WAIT_ALL`, optionally `| OVE_EG_CLEAR_ON_EXIT`.
 
 ## Stream buffers
 
