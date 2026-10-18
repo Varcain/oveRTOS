@@ -37,6 +37,34 @@ fn test_file_write_read_roundtrip() {
     std::fs::remove_file("/tmp/ove_test_rw.txt").ok();
 }
 
+fn test_file_seek_tell_size() {
+    ove::fs::mount(None, None).unwrap();
+    let path = b"/tmp/ove_test_seek.txt\0";
+
+    let file = ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE | ove::fs::O_READ)
+        .unwrap();
+    file.write(b"hello ove").unwrap();
+    assert_eq!(file.size().unwrap(), 9);
+    assert_eq!(file.tell().unwrap(), 9);
+
+    file.seek(6, ove::fs::SEEK_SET).unwrap();
+    let mut buf = [0u8; 3];
+    assert_eq!(file.read(&mut buf).unwrap(), 3);
+    assert_eq!(&buf, b"ove");
+
+    file.seek(-3, ove::fs::SEEK_END).unwrap();
+    assert_eq!(file.tell().unwrap(), 6);
+    drop(file);
+
+    std::fs::remove_file("/tmp/ove_test_seek.txt").ok();
+}
+
+fn test_unmount_then_mount() {
+    ove::fs::mount(None, None).unwrap();
+    ove::fs::unmount(None);
+    ove::fs::mount(None, None).unwrap();
+}
+
 fn test_file_raii_close() {
     ove::fs::mount(None, None).unwrap();
     let path = b"/tmp/ove_test_raii.txt\0";
@@ -172,6 +200,8 @@ pub fn run() -> (usize, usize) {
         &[
             test_entry!(test_mount),
             test_entry!(test_file_write_read_roundtrip),
+            test_entry!(test_file_seek_tell_size),
+            test_entry!(test_unmount_then_mount),
             test_entry!(test_file_raii_close),
             test_entry!(test_open_nonexistent_fails),
             test_entry!(test_dir_open_read),

@@ -4,7 +4,7 @@
 //
 // This file is part of oveRTOS.
 
-//! `embedded-io` 0.6 sync trait impls.
+//! `embedded-io` 0.7 sync trait impls.
 //!
 //! Compiled only when the `embedded-io` Cargo feature is enabled.
 //! Each section is further gated by the substrate `has_*` cfg for the
@@ -143,6 +143,21 @@ mod file_impl {
             // layer (LittleFS / Zephyr nvs-backed FS) handles its own
             // commit barriers.
             Ok(())
+        }
+    }
+
+    impl embedded_io::Seek for File {
+        fn seek(&mut self, pos: embedded_io::SeekFrom) -> Result<u64, Self::Error> {
+            let (offset, whence) = match pos {
+                embedded_io::SeekFrom::Start(n) => (
+                    i64::try_from(n).map_err(|_| Error::InvalidParam)?,
+                    crate::fs::SEEK_SET,
+                ),
+                embedded_io::SeekFrom::Current(n) => (n, crate::fs::SEEK_CUR),
+                embedded_io::SeekFrom::End(n) => (n, crate::fs::SEEK_END),
+            };
+            File::seek(self, offset, whence)?;
+            File::tell(self)
         }
     }
 }
