@@ -64,11 +64,6 @@ target_sources(app PRIVATE
     ${SIM_QEMU_SOURCES}
 )
 
-# Staged lv_conf.h copy so Rust bindgen (which processes LVGL headers
-# with its own clang) can find it via lv_conf_internal.h's relative
-# include path.
-ove_zephyr_copy_lv_conf_for_bindgen()
-
 ove_zephyr_add_tflm_if_enabled()
 ove_zephyr_include_app_sources()
 ove_zephyr_add_profiler_flags()

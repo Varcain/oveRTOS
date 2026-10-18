@@ -12,7 +12,6 @@
 #   ove_zephyr_add_tflm_if_enabled()     — after project()
 #   ove_zephyr_include_app_sources()     — after project()
 #   ove_zephyr_add_common_includes()     — after project()
-#   ove_zephyr_copy_lv_conf_for_bindgen() — optional Rust bindgen helper
 #
 # The board file itself must call find_package(Zephyr) and project() —
 # Zephyr's build system requires these to live in the top-level
@@ -60,23 +59,6 @@ macro(ove_zephyr_pre_find)
 
     # Board-local DTS bindings
     list(APPEND DTS_ROOT ${OVE_BOARD_DIR})
-endmacro()
-
-
-# ─── ove_zephyr_copy_lv_conf_for_bindgen() ──────────────────────────
-# Places lv_conf.h at the location LVGL's lv_conf_internal.h expects via
-# a relative #include "../../lv_conf.h" from lvgl/src/.  This is required
-# for Rust bindgen, which processes LVGL headers with its own clang and
-# doesn't see the CMake-level LV_CONF_PATH.  Safe to call unconditionally;
-# no-op when ZEPHYR_BASE is unset or the target already exists.
-macro(ove_zephyr_copy_lv_conf_for_bindgen)
-    if(DEFINED ZEPHYR_BASE AND EXISTS "${OVE_BOARD_DIR}/lv_conf.h")
-        set(_LVGL_CONF_DEST "${ZEPHYR_BASE}/../modules/lib/gui/lv_conf.h")
-        if(NOT EXISTS "${_LVGL_CONF_DEST}")
-            file(COPY "${OVE_BOARD_DIR}/lv_conf.h"
-                 DESTINATION "${ZEPHYR_BASE}/../modules/lib/gui")
-        endif()
-    endif()
 endmacro()
 
 
