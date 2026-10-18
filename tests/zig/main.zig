@@ -1577,8 +1577,8 @@ fn testShellMultipleCommands() !void {
 // ---------------------------------------------------------------------------
 
 fn doFsMount() void {
-    // POSIX backend mount with empty path (acts as no-op init)
-    ove.fs.mount("\x00", "\x00") catch {};
+    // The portable form: the board's volume (a no-op init on the POSIX backend)
+    ove.fs.mount(null, null) catch {};
 }
 
 fn testFsMount() !void {

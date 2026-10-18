@@ -235,12 +235,15 @@ int ove_fs_closedir(ove_dir_t dir);
 /**
  * @brief Mount the backend storage volume.
  *
- * Backends with a native VFS use @p dev_path and @p mount_point directly.
- * Backends with a fixed logical drive accept @c NULL to select their board
- * defaults. File API paths remain relative to the mounted volume.
+ * Pass @c NULL for both arguments to mount the board's volume: that is the
+ * only form that means the same on every engine. A non-NULL value is the
+ * backend's native name and is not portable: on NuttX @p dev_path is the
+ * block device (default /dev/mmcsd0) and @p mount_point the VFS path
+ * (default /mnt/sd); Zephyr accepts only its FatFs drive "/SD:"; FreeRTOS
+ * ignores both. File API paths are relative to the mounted volume either way.
  *
- * @param[in] dev_path     Path identifying the storage device.
- * @param[in] mount_point  Absolute path to use as the mount prefix.
+ * @param[in] dev_path     Native storage device, or @c NULL for the board's.
+ * @param[in] mount_point  Native mount path, or @c NULL for the board's.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_fs_mount(const char *dev_path, const char *mount_point);
@@ -255,7 +258,8 @@ int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_po
  * @p mount_point. All file handles under this mount point must be closed
  * before calling this function.
  *
- * @param[in] mount_point  Mount point string passed to @ref ove_fs_mount.
+ * @param[in] mount_point  Mount point string passed to @ref ove_fs_mount
+ *                         (@c NULL for the board's volume).
  */
 void ove_fs_unmount(const char *mount_point);
 

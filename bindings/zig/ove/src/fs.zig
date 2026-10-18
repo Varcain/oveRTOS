@@ -204,18 +204,22 @@ pub const Dir = struct {
     }
 };
 
-/// Mount a filesystem at `mount_point`, backed by the block device at `dev_path`.
+/// Mount the board's storage volume.
+///
+/// Pass `null` for both to mount the board's volume: the only form that means
+/// the same on every engine. Non-null values are backend-native names (see
+/// `ove_fs_mount()`). File paths are relative to the mounted volume.
 ///
 /// Returns `Error` if the mount fails (e.g. device not found, wrong filesystem type).
-pub fn mount(dev_path: [*:0]const u8, mount_point: [*:0]const u8) Error!void {
+pub fn mount(dev_path: ?[*:0]const u8, mount_point: ?[*:0]const u8) Error!void {
     try err.fromCode(c.ove_fs_mount(dev_path, mount_point));
 }
 
-/// Unmount the filesystem at `mount_point`.
+/// Unmount the volume mounted at `mount_point` (`null` for the board's volume).
 ///
-/// Flushes pending writes and releases the mount. The mount point becomes
+/// Flushes pending writes and releases the mount. The volume becomes
 /// inaccessible until `mount()` is called again.
-pub fn unmount(mount_point: [*:0]const u8) void {
+pub fn unmount(mount_point: ?[*:0]const u8) void {
     c.ove_fs_unmount(mount_point);
 }
 

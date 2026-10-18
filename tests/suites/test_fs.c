@@ -97,15 +97,15 @@ static int fs_teardown(void **state)
 static void test_fs_mount(void **state)
 {
 	(void)state;
-	int rc = ove_fs_mount(NULL, "/");
+	int rc = ove_fs_mount(NULL, NULL);
 	assert_int_equal(rc, OVE_OK);
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_open_close(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	ove_file_t f = NULL;
 	int rc = fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE);
@@ -115,13 +115,13 @@ static void test_fs_open_close(void **state)
 	rc = fs_close(f);
 	assert_int_equal(rc, OVE_OK);
 
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_write_read(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	ove_file_t f = NULL;
 	fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_CREATE);
@@ -143,13 +143,13 @@ static void test_fs_write_read(void **state)
 	assert_string_equal(buf, "Hello, filesystem!");
 
 	fs_close(f);
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_seek_tell(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	ove_file_t f = NULL;
 	fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_CREATE);
@@ -169,13 +169,13 @@ static void test_fs_seek_tell(void **state)
 	assert_memory_equal(buf, "EFGH", 4);
 
 	fs_close(f);
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_file_size(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	ove_file_t f = NULL;
 	fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_CREATE);
@@ -190,13 +190,13 @@ static void test_fs_file_size(void **state)
 	assert_int_equal(sz, 10);
 
 	fs_close(f);
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_opendir_readdir_closedir(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	ove_dir_t d = NULL;
 	int rc = fs_opendir(&d, s_tmpdir);
@@ -215,13 +215,13 @@ static void test_fs_opendir_readdir_closedir(void **state)
 	rc = fs_closedir(d);
 	assert_int_equal(rc, OVE_OK);
 
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_unlink(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	/* Create a file to unlink */
 	char unlinkpath[128];
@@ -238,13 +238,13 @@ static void test_fs_unlink(void **state)
 	rc = fs_open(&f, unlinkpath, OVE_FS_O_READ);
 	assert_int_not_equal(rc, OVE_OK);
 
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_rename(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	char srcpath[128];
 	snprintf(srcpath, sizeof(srcpath), "/tmp/ove_rename_src_XXXXXX");
@@ -261,19 +261,19 @@ static void test_fs_rename(void **state)
 	/* Clean up destination */
 	unlink(dstpath);
 
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_open_nonexistent(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 
 	ove_file_t f = NULL;
 	int rc = fs_open(&f, "/tmp/ove_nonexistent_file_xyz", OVE_FS_O_READ);
 	assert_int_equal(rc, OVE_ERR_NOT_FOUND);
 
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_open_creation_semantics(void **state)
@@ -358,7 +358,7 @@ static void test_fs_volume_stat(void **state)
 	(void)state;
 	struct ove_fs_statvfs stat;
 
-	assert_int_equal(ove_fs_mount(NULL, "/"), OVE_OK);
+	assert_int_equal(ove_fs_mount(NULL, NULL), OVE_OK);
 	assert_int_equal(ove_fs_statvfs(&stat), OVE_OK);
 	assert_true(stat.block_size > 0u);
 	assert_true(stat.fragment_size > 0u);
@@ -366,15 +366,15 @@ static void test_fs_volume_stat(void **state)
 	assert_true(stat.blocks_free <= stat.blocks);
 	assert_true(stat.blocks_available <= stat.blocks_free);
 	assert_true(stat.name_max > 0u);
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 static void test_fs_unmount(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, "/");
+	ove_fs_mount(NULL, NULL);
 	/* Should not crash */
-	ove_fs_unmount("/");
+	ove_fs_unmount(NULL);
 }
 
 /* ── runner ──────────────────────────────────────────────────────────── */

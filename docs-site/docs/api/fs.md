@@ -1,6 +1,6 @@
 # Filesystem
 
-The oveRTOS filesystem module provides a VFS abstraction that maps POSIX-like file and directory operations onto the underlying RTOS storage backend. Volumes are mounted by path prefix and all subsequent operations use absolute path strings. The same application code runs unchanged across FatFS (SD card), LittleFS and the NuttX VFS.
+The oveRTOS filesystem module maps POSIX-like file and directory operations onto the RTOS storage backend: FatFs on the SD card (FreeRTOS, Zephyr) or the NuttX VFS. `ove_fs_mount(NULL, NULL)` mounts the board's volume, and every path after that is relative to the volume root, so the same application code runs unchanged on all three engines.
 
 ## Architecture
 
@@ -36,7 +36,7 @@ graph TD
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `ove_fs_mount` | `(dev_path, mount_point) → int` | Mount a storage device at a virtual path prefix |
+| `ove_fs_mount` | `(dev_path, mount_point) → int` | Mount the board's volume (`NULL, NULL`); non-NULL values are backend-native and not portable |
 | `ove_fs_unmount` | `(mount_point) → void` | Unmount a previously mounted device; flush pending data |
 | `ove_fs_open_init` | `(file, storage, path, flags) → int` | Open using caller-supplied static storage (no heap) |
 | `ove_fs_close_deinit` | `(file) → int` | Close a statically-allocated file handle |
@@ -124,11 +124,11 @@ Both `ove_fs_opendir` / `ove_fs_closedir` and `ove_fs_opendir_init` / `ove_fs_cl
 ```c
 #include "ove/ove.h"
 
-/* Mount the SD card (FatFS backend, SDIO interface) */
-ove_fs_mount("/dev/sdcard", "/sd");
+/* Mount the board's volume (the SD card on the STM32F746 Discovery) */
+ove_fs_mount(NULL, NULL);
 
 ove_file_t f;
-if (ove_fs_open(&f, "/sd/sample.wav", OVE_FS_O_READ) != OVE_OK) {
+if (ove_fs_open(&f, "/sample.wav", OVE_FS_O_READ) != OVE_OK) {
     OVE_LOG_ERR("Failed to open WAV file");
     return;
 }
@@ -153,7 +153,7 @@ while (audio_len > 0) {
 }
 
 ove_fs_close(f);
-ove_fs_unmount("/sd");
+ove_fs_unmount(NULL);
 ```
 
 ## Kconfig Options

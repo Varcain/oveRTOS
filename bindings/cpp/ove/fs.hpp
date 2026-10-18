@@ -33,9 +33,13 @@ namespace fs
 {
 
 /**
- * @brief Mounts a filesystem at the given mount point.
- * @param[in] dev_path    Path to the block device or image file.
- * @param[in] mount_point Directory path at which to mount the filesystem.
+ * @brief Mounts the board's storage volume.
+ *
+ * Pass `nullptr` for both to mount the board's volume: the only form that
+ * means the same on every engine. Non-null values are backend-native names
+ * (see `ove_fs_mount()`). File paths are relative to the mounted volume.
+ * @param[in] dev_path    Native storage device, or `nullptr`.
+ * @param[in] mount_point Native mount path, or `nullptr`.
  * @return Empty `Result<void>` on success; `unexpected`
  *         @ref Error on failure.
  */
@@ -46,7 +50,8 @@ namespace fs
 
 /**
  * @brief Unmounts a previously mounted filesystem.
- * @param[in] mount_point The mount point path passed to `mount()`.
+ * @param[in] mount_point The mount point passed to `mount()` (`nullptr` for the
+ *                        board's volume).
  */
 inline void unmount(const char *mount_point)
 {
