@@ -49,9 +49,11 @@ pub struct Metadata {
     pub is_dir: bool,
 }
 
-/// Mount a filesystem.
+/// Mount the board's storage volume.
 ///
-/// Pass `None` for `dev` or `mnt` to use platform defaults.
+/// Pass `None` for both to mount the board's volume: the only form that means
+/// the same on every engine. `Some` values are backend-native names (see
+/// `ove_fs_mount()`). File paths are relative to the mounted volume.
 pub fn mount(dev: Option<&[u8]>, mnt: Option<&[u8]>) -> Result<()> {
     let dev_ptr = dev.map_or(core::ptr::null(), |d| d.as_ptr() as *const _);
     let mnt_ptr = mnt.map_or(core::ptr::null(), |m| m.as_ptr() as *const _);
