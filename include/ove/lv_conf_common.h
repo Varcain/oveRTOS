@@ -57,10 +57,8 @@
 #define LV_USE_ASSERT_MEM_INTEGRITY 0
 #define LV_USE_ASSERT_OBJ 0
 
-#define LV_ASSERT_HANDLER_INCLUDE <stdint.h>
-#define LV_ASSERT_HANDLER \
-	while (1)         \
-		;
+#define LV_ASSERT_HANDLER_INCLUDE "ove/lvgl_assert.h"
+#define LV_ASSERT_HANDLER ove_lvgl_assert_failed(__FILE__, __LINE__);
 
 #define LV_USE_REFR_DEBUG 0
 #define LV_USE_LAYER_DEBUG 0

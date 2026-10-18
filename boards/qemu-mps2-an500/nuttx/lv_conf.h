@@ -27,8 +27,9 @@
 /* RGB565 color display */
 #define LV_COLOR_DEPTH 16
 
-/* Generous on QEMU (4MB RAM) */
-#define LV_MEM_SIZE (64 * 1024)
+/* The F746's pool: the same 480x272 panel. 64 KB ran out in the benchmark's
+ * scrolling-containers scene. */
+#define LV_MEM_SIZE (96 * 1024)
 
 /*=================
  * OPERATING SYSTEM
