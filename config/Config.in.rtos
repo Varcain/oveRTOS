@@ -197,14 +197,25 @@ menu "NuttX"
         config NUTTX_PROGNAME
             string "Program name"
             default "ove_app"
+            help
+              The app's NuttX program; NuttX enters it as
+              <name>_main, the init task's entry point.
 
         config NUTTX_PRIORITY
-            int "Task priority"
+            int "Init task priority"
             default 100
+            help
+              CONFIG_INIT_PRIORITY. The app's entry runs as NuttX's init
+              task; 100 is OVE_PRIO_NORMAL on NuttX.
 
         config NUTTX_STACKSIZE
-            int "Stack size"
+            int "Init task stack size"
+            default 16384 if OVE_BOARD_STM32F746G_DISCO
             default 8192
+            help
+              CONFIG_INIT_STACKSIZE, the stack the app's entry runs on.
+              The STM32F746 Linux personality's loader and nested program
+              launches overflow less than 16 KB there (a precise BusFault).
 
         comment "--- For advanced NuttX kernel config, run: make nuttx-menuconfig ---"
     endmenu

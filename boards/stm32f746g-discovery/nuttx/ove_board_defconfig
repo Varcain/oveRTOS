@@ -24,7 +24,7 @@ CONFIG_MM_REGIONS=2
 # The upstream stm32f746g-disco:nsh base config pulls in ~45 KB of code
 # we never call: an interactive shell, the `dd` builtin, the mkfatfs
 # utility, and the binfmt-based builtin-app loader. Entry into oveRTOS
-# is via CONFIG_INIT_ENTRYPOINT="ove_app_main" (set in the j2 template),
+# is via CONFIG_INIT_ENTRYPOINT (set in the j2 template),
 # so none of this is on the boot path.
 # CONFIG_SYSTEM_NSH is not set
 # CONFIG_NSH_LIBRARY is not set
@@ -46,12 +46,8 @@ CONFIG_DEBUG_USAGEFAULT=y
 # raises through PRIMASK using NuttX's architecture workaround.
 CONFIG_ARMV7M_BASEPRI_WAR=y
 
-# --- Linux personality: the init task (ove_app_main) runs the FDPIC loader + the
-# personality run loop on its own stack, which are stack-heavy. The ~2K default INIT
-# stack overflows on the first program launch (a precise BusFault on real silicon; the
-# an500 in QEMU overflows silently with no MPU/stack guard). 16K gives the loader +
-# nxtask_init + the boot's nested launches ample headroom.
-CONFIG_INIT_STACKSIZE=16384
+# The init task's stack (the app's entry) comes from CONFIG_NUTTX_STACKSIZE,
+# 16 KB on this board.
 
 # The NuttX console backend reads RX through NuttX's IRQ-filled serial buffer and puts its
 # non-blocking descriptor in raw mode so NuttX does not also echo each keystroke (the shell, or
