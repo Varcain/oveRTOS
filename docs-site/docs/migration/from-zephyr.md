@@ -90,7 +90,7 @@ Zephyr's `k_event` maps onto `ove_eventgroup`. The naming uses the `_bits` suffi
 | `k_event_wait(&e, mask, reset, T)` | `ove_eventgroup_wait_bits(e, mask, flags, OVE_MS(ms), &got)` |
 | `k_event_test(&e, mask)` | `(ove_eventgroup_get_bits(e) & mask)` |
 
-`flags` is `OVE_EVENT_WAIT_ALL` or `OVE_EVENT_WAIT_ANY`, optionally `| OVE_EVENT_CLEAR_ON_EXIT`. There is no atomic "overwrite" variant; use `_clear_bits` followed by `_set_bits` if you need set-with-reset semantics.
+`flags` is `0` (wake when any requested bit is set) or `OVE_EG_WAIT_ALL`, optionally `| OVE_EG_CLEAR_ON_EXIT`. There is no atomic "overwrite" variant; use `_clear_bits` followed by `_set_bits` if you need set-with-reset semantics.
 
 ## Workqueues
 

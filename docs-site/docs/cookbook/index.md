@@ -16,7 +16,7 @@ Every recipe is short (one page), runnable, and constrained to QEMU/FreeRTOS so 
 | 6 | [Show a value on LVGL with thread-safe locking](lvgl-thread-safe.md) | `ove_lvgl`, `ove_mutex`, `ove_timer` |
 | 7 | [Sleep and wake on a GPIO edge](pm-gpio-wake.md) | `ove_pm`, `ove_gpio` |
 | 8 | [Add a custom shell command](shell-command.md) | `ove_shell`, `ove_log` |
-| 9 | [Async TCP heartbeat with embassy-net](async-tcp-echo.md) | `ove_async`, `ove_async_net` (Rust only) |
+| 9 | [Async TCP heartbeat with embassy-net](async-tcp-echo.md) | `ove::async_runtime`, `ove::async_net` (Rust only) |
 | 10 | [MPMC channel between Rust threads](rust-mpmc-channel.md) | `ove_queue`, `ove::channel` (Rust only) |
 
 ## How to use a recipe

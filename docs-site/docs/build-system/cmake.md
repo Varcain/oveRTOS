@@ -34,63 +34,21 @@ The parent project adds `${OVE_SOURCES}` to its own target alongside the board-s
 
 ## Adding oveRTOS to a project
 
-```cmake
-# In your project's CMakeLists.txt
-cmake_minimum_required(VERSION 3.20)
-project(my_firmware C)
+`ove configure` turns the Kconfig selection into `generated/ove_config.h` (the `CONFIG_OVE_*` symbols) and `generated/ove_config.cmake`, which sets `OVE_BACKEND_SOURCES` for the chosen engine and modules. `ove build` then runs the board's own CMake project in `boards/<board>/<rtos>/`, which brings the core, the backend sources and the board support together. That is the supported way to build firmware.
 
-add_subdirectory(oveRTOS)
-
-# Add a board (e.g. STM32F746G-DISCO with FreeRTOS backend)
-add_subdirectory(oveRTOS/boards/stm32f746g-discovery)
-
-add_executable(firmware
-    src/main.c
-    ${OVE_BOARD_SOURCES}      # populated by the board subdirectory
-    ${OVE_BACKEND_SOURCES}    # populated by the board subdirectory
-)
-
-target_include_directories(firmware PRIVATE
-    ${OVE_BOARD_INCLUDE_DIRS}
-    ${OVE_BACKEND_INCLUDE_DIRS}
-)
-
-target_link_libraries(firmware PRIVATE ove)
-```
+A parent CMake project that adds `oveRTOS/` as a subdirectory gets the `ove` target and the variables above for the portable core; it must also put the generated directory on its include path (for `ove_config.h`) and compile the `OVE_BACKEND_SOURCES` that `ove_config.cmake` lists.
 
 Existing projects may continue to put `${OVE_SOURCES}` in their source list and `${OVE_INCLUDE_DIR}` in their include path instead of linking `ove`; do not use both forms in the same target.
 
 ## Module selection
 
-Feature modules are enabled at compile time through Kconfig-style `CONFIG_OVE_*` preprocessor symbols. The board's CMakeLists (or the parent project) passes these as compile definitions:
-
-```cmake
-target_compile_definitions(firmware PRIVATE
-    CONFIG_OVE_SYNC
-    CONFIG_OVE_QUEUE
-    CONFIG_OVE_TIMER
-    CONFIG_OVE_EVENTGROUP
-    CONFIG_OVE_STREAM
-    CONFIG_OVE_WORKQUEUE
-    CONFIG_OVE_FS
-    CONFIG_OVE_CONSOLE
-    CONFIG_OVE_TIME
-    CONFIG_OVE_BOARD
-    CONFIG_OVE_GPIO
-    CONFIG_OVE_LED
-    CONFIG_OVE_NVS
-    CONFIG_OVE_WATCHDOG
-    CONFIG_OVE_SHELL
-    CONFIG_OVE_AUDIO
-    # CONFIG_OVE_LVGL (optional, requires LVGL library)
-)
-```
+Feature modules are enabled in Kconfig (`CONFIG_OVE_*`, chosen with `ove menuconfig` or an app's `defconfig:` list). `ove configure` writes them to `generated/ove_config.h`, which every oveRTOS header includes; nothing is passed as a compile definition.
 
 Modules that are not enabled compile to empty inline stubs, producing no object code. The entire umbrella header `ove/ove.h` can always be included regardless of which modules are active.
 
 ## Backend selection
 
-Each board's CMakeLists selects a backend by including the appropriate subdirectory from `backends/`. The backend populates `OVE_BACKEND_SOURCES` and `OVE_BACKEND_INCLUDE_DIRS`. The active backend is identified to the oveRTOS core via one of:
+The engine is a Kconfig choice too. The generated `ove_config.cmake` lists that engine's backend sources in `OVE_BACKEND_SOURCES`, and the generated `ove_config.h` identifies it to the core with one of:
 
 | Preprocessor symbol | Backend |
 |---------------------|---------|

@@ -807,6 +807,13 @@ def _doc_snippets(ove_dir, check):
     return ("doc-snippets", status, detail)
 
 
+def _doc_names(ove_dir, check):
+    """Every backticked ove_/OVE_ name in the docs exists in the tree."""
+    del check  # read-only
+    status, detail = lint_doc_snippets.check_names(ove_dir)
+    return ("doc-names", status, detail)
+
+
 def _run_all(check, include_lint=True):
     """Run all checks. `check=True` means read-only mode; `check=False`
     rewrites files (only the formatters honour the distinction — the
@@ -831,6 +838,7 @@ def _run_all(check, include_lint=True):
             _backend_struct_guard(ove_dir, check),
             _error_code_pinning(ove_dir, check),
             _doc_snippets(ove_dir, check),
+            _doc_names(ove_dir, check),
         ]
     return results
 

@@ -218,7 +218,7 @@ HW (`#ifndef OVE_HW`):
 | `<pyserial missing>` | Re-run `make .venv` |
 | `<openocd flash failed>` | Board not detected — check `lsusb` for `0483:3752 STMicroelectronics ST-LINK/V2.1`, check `dmesg` for `/dev/ttyACMx` enumeration |
 | `<no cmocka output>` after 120 s | Firmware didn't reach `printf` — sometimes a stale `.o` cache (NuttX); try `find tests/suites -name '*.c.*.o' -delete` |
-| Test count off by ~9 from Renode | Should not happen with the current double-drain; if it does, raise `OVE_HW_DRAIN_IDLE_MS`-style knob would not help — file a bug |
+| Test count off by ~9 from Renode | Should not happen with the current double-drain; if it does, file a bug |
 
 ## Doctor
 
