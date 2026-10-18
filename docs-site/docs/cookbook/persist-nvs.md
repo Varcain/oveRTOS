@@ -12,6 +12,8 @@ defconfig:
   - CONFIG_OVE_NVS=y
 ```
 
+The storage calls block (an SD card read, a file write), so they run in a thread. On FreeRTOS `ove_main()` runs before the scheduler starts, and a blocking call there crashes; NuttX and Zephyr happen to tolerate it.
+
 NVS storage backing differs by RTOS and board:
 
 - **FreeRTOS, NuttX and Zephyr**: one file per key in `/nvs` on the volume the application mounts with `ove_fs_mount()` (`CONFIG_OVE_NVS` turns on `CONFIG_OVE_FS`). Mount before the first read or write; on NuttX's default SD mount the directory is `/mnt/sd/nvs`. The layout is the same on every engine, so a key written under one engine reads back under another from the same card.
@@ -28,8 +30,9 @@ The API is identical across all of them.
 
 #define KEY_BOOT_COUNT  "boot_count"
 
-void ove_main(void)
+static void boot_counter(void *arg)
 {
+    (void)arg;
     ove_fs_mount(NULL, NULL);   /* the SD card; RAM-only QEMU boards ignore it */
     ove_nvs_init();
 
@@ -38,7 +41,7 @@ void ove_main(void)
 
     int rc = ove_nvs_read(KEY_BOOT_COUNT, &boots, sizeof(boots), &len);
     if (rc == OVE_OK && len == sizeof(boots)) {
-        OVE_LOG_INF("boot #%u (resumed)", boots);
+        OVE_LOG_INF("boot #%u (resumed)", (unsigned)boots);
     } else {
         OVE_LOG_INF("first boot");
         boots = 0;
@@ -48,7 +51,13 @@ void ove_main(void)
     if (ove_nvs_write(KEY_BOOT_COUNT, &boots, sizeof(boots)) != OVE_OK) {
         OVE_LOG_ERR("failed to persist boot count");
     }
+}
 
+void ove_main(void)
+{
+    static ove_thread_t counter;
+    ove_thread_create(&counter, "boot_counter", boot_counter, NULL,
+                      OVE_PRIO_NORMAL, 4096);
     ove_run();
 }
 ```
@@ -56,6 +65,8 @@ void ove_main(void)
 Run it three times — log lines walk `first boot`, `boot #1 (resumed)`, `boot #2 (resumed)`.
 
 ## Larger values: a calibration struct
+
+Call `load_calib()` from a thread too, after `ove_nvs_init()`:
 
 ```c
 typedef struct {

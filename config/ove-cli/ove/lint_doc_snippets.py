@@ -18,6 +18,10 @@ been downloaded, else from the stub header the host tests use.
 A block that is deliberately an excerpt is skipped when the line before its
 fence is `<!-- ove:fragment -->`.
 
+The compile is for the host, so a format mismatch that only exists on the
+32-bit targets (uint32_t is unsigned long on arm-none-eabi) is not caught;
+snippets cast printf arguments for that reason.
+
 _PENDING lists pages still being rewritten. A pending page that compiles is
 reported too, so the list can only shrink.
 """
@@ -36,8 +40,6 @@ _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTAL
 _PENDING = {
     "https-post.md": "uses ove_net_is_up/ove_tls_set_trust_store; never calls ove_run()",
     "inference.md": "written against an ove_infer_* API that does not exist",
-    "lvgl-thread-safe.md": "uses OVE_TIMER_PERIODIC",
-    "periodic-sensor.md": "uses ove_time_now_us",
     "pm-gpio-wake.md": "written against ove_gpio_open/ove_pm_state_set, which do not exist",
     "shell-command.md": "written against an OVE_SHELL_CMD_REGISTER/ove_shell_printf API",
     "uart-worker.md": "written against ove_uart_open/ove_uart_set_rx_callback",

@@ -34,6 +34,9 @@ typedef struct {
     int32_t  value;
 } sample_t;
 
+int32_t read_sensor(void);       /* your driver */
+void process(const sample_t *s); /* filter, log, persist, transmit, whatever */
+
 static ove_queue_t  samples;
 static ove_timer_t  sample_timer;
 static ove_thread_t worker;
@@ -43,10 +46,8 @@ static void sample_cb(ove_timer_t t, void *arg)
 {
     (void)t; (void)arg;
 
-    sample_t s = {
-        .timestamp_us = ove_time_now_us(),
-        .value        = read_sensor(),   /* your driver */
-    };
+    sample_t s = { .value = read_sensor() };
+    ove_time_get_us(&s.timestamp_us);
 
     /* Non-blocking enqueue (timer context can't wait).  If the worker
      * is falling behind, drop and log.  Timeout is in nanoseconds; 0
@@ -63,7 +64,7 @@ static void worker_fn(void *arg)
     sample_t s;
     while (1) {
         if (ove_queue_receive(samples, &s, OVE_WAIT_FOREVER) == OVE_OK) {
-            process(&s);   /* filter, log, persist, transmit, whatever */
+            process(&s);
         }
     }
 }
@@ -92,8 +93,9 @@ void ove_main(void)
 
 ## Zero-heap variant
 
-Same shape, file-scope storage:
+Same shape, file-scope storage (`sample_t`, `sample_cb` and `worker_fn` as above):
 
+<!-- ove:fragment -->
 ```c
 OVE_QUEUE_DEFINE_STATIC(samples, sizeof(sample_t), QUEUE_DEPTH);
 OVE_TIMER_DEFINE_STATIC(sample_timer, sample_cb, NULL,

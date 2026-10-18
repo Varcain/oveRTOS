@@ -11,7 +11,7 @@ defconfig:
   - CONFIG_OVE_LVGL=y
   - CONFIG_OVE_TIMER=y
   - CONFIG_OVE_THREAD=y
-  - CONFIG_OVE_MUTEX=y
+  - CONFIG_OVE_SYNC=y
 ```
 
 ## Why two locks?
@@ -34,6 +34,7 @@ Keep the app-side critical section short: copy the value out, drop the mutex, *t
 static ove_mutex_t  value_mutex;
 static ove_timer_t  ui_timer;
 static ove_thread_t producer;
+static ove_thread_t graphics;
 
 static uint32_t latest_value;     /* shared, protected by value_mutex */
 
@@ -51,6 +52,24 @@ static void producer_fn(void *arg)
         latest_value = v;
         ove_mutex_unlock(value_mutex);
         ove_thread_sleep_ms(50);
+    }
+}
+
+/* --- Graphics thread: the only caller of the LVGL handler. --- */
+static void graphics_fn(void *arg)
+{
+    (void)arg;
+    uint64_t last_us = 0;
+    ove_time_get_us(&last_us);
+    while (1) {
+        uint64_t now_us = 0;
+        ove_time_get_us(&now_us);
+        ove_lvgl_lock();
+        ove_lvgl_tick((uint32_t)((now_us - last_us) / 1000));
+        ove_lvgl_handler();
+        ove_lvgl_unlock();
+        last_us = now_us;
+        ove_thread_sleep_ms(33);
     }
 }
 
@@ -91,13 +110,15 @@ static void build_ui(void)
 void ove_main(void)
 {
     ove_mutex_create(&value_mutex);
+    ove_lvgl_init();
     build_ui();
 
+    ove_thread_create(&graphics, "graphics", graphics_fn, NULL,
+                      OVE_PRIO_HIGH, 4096);
     ove_thread_create(&producer, "producer", producer_fn, NULL,
                       OVE_PRIO_NORMAL, 4096);
 
-    ove_timer_create(&ui_timer, "ui", ui_tick, NULL,
-                     200 /* ms */, OVE_TIMER_PERIODIC);
+    ove_timer_create(&ui_timer, ui_tick, NULL, 200 /* ms */, 0 /* periodic */);
     ove_timer_start(ui_timer);
 
     ove_run();
@@ -106,10 +127,11 @@ void ove_main(void)
 
 ## Building UI from `ove_main`
 
-The first widgets must be created before LVGL starts ticking — that's why `build_ui()` runs synchronously in `ove_main`. After that, every widget mutation must hold the LVGL lock.
+The first widgets must be created before LVGL starts ticking — that's why `ove_lvgl_init()` and `build_ui()` run in `ove_main`, before the graphics thread exists. After that, every widget mutation must hold the LVGL lock.
 
 If your app builds the UI from a worker thread (data-driven layout), lock the same way:
 
+<!-- ove:fragment -->
 ```c
 ove_lvgl_lock();
 lv_obj_t *card = lv_obj_create(parent);
