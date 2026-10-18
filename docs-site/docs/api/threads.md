@@ -138,6 +138,8 @@ Works in both heap and zero-heap mode. The caller supplies both a storage object
 ```c
 #include <ove/ove.h>
 
+void worker_entry(void *arg);   /* your thread function */
+
 /* Declare storage at file scope (backend-specific opaque type). */
 static ove_thread_storage_t worker_storage;
 static uint8_t              worker_stack[2048] __attribute__((aligned(8)));
@@ -156,6 +158,8 @@ void app_start(void)
 Combines storage declaration, stack allocation, and initialisation into a single file-scope statement. Works in both heap and zero-heap mode. Parameters: `(hname, stack_sz, fn, ctx, prio, tname)`.
 
 ```c
+void worker_entry(void *arg);
+
 OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "worker");
 ```
 
@@ -164,6 +168,8 @@ When initialization order or error handling must remain explicit, pair
 storage and stack arguments without using a file-scope constructor:
 
 ```c
+void worker_entry(void *arg);
+
 static ove_thread_t worker;
 OVE_THREAD_DEFINE(worker_storage, 2048);
 
@@ -229,6 +235,7 @@ zero-byte margin. FreeRTOS, Zephyr with stack initialization enabled, and
 the heap-enabled host test backend provide the measurement. NuttX currently does
 not expose a safe high-water query for an oveRTOS-owned task handle.
 
+<!-- ove:fragment -->
 ```c
 struct ove_thread_stats stats;
 int rc = ove_thread_get_runtime_stats(worker, &stats);
@@ -250,13 +257,18 @@ zero is a measurement only when its validity bit is present. Use
 `ove_thread_info_has()` rather than inferring availability from the value:
 
 ```c
-struct ove_thread_info threads[16];
-size_t count;
-int rc = ove_thread_list(threads, 16, &count);
-if (rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL) {
-    for (size_t i = 0; i < count; i++) {
-        if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_CPU_PERCENT)) {
-            consume_cpu_percent(threads[i].cpu_percent_x100);
+void consume_cpu_percent(uint32_t pct_x100);   /* your code */
+
+void report_cpu(void)
+{
+    struct ove_thread_info threads[16];
+    size_t count;
+    int rc = ove_thread_list(threads, 16, &count);
+    if (rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL) {
+        for (size_t i = 0; i < count; i++) {
+            if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_CPU_PERCENT)) {
+                consume_cpu_percent(threads[i].cpu_percent_x100);
+            }
         }
     }
 }
@@ -325,6 +337,8 @@ A typical pattern for a periodic background task — create once at startup, run
 
 #define WORKER_STACK_SZ  2048
 #define WORKER_PERIOD_MS 100
+
+int32_t read_sensor(void);   /* your driver */
 
 static volatile uint32_t sensor_value;
 static ove_thread_t       sensor_thread;

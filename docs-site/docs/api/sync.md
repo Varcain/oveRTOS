@@ -66,6 +66,7 @@ sequenceDiagram
 
 ```c
 static ove_mutex_t shared_mutex;
+static int         shared_value;
 
 void init(void)
 {
@@ -136,6 +137,11 @@ sequenceDiagram
 ```c
 #define QUEUE_SLOTS 8
 
+int  produce_item(void);   /* your queue */
+void enqueue_item(int item);
+int  dequeue_item(void);
+void process_item(int item);
+
 static ove_sem_t slots_used;
 static ove_sem_t slots_free;
 
@@ -187,6 +193,8 @@ sequenceDiagram
 ```
 
 ```c
+void process_dma_buffer(void);   /* your code */
+
 static ove_event_t data_ready_evt;
 
 void init(void)
@@ -246,6 +254,9 @@ sequenceDiagram
 ```
 
 ```c
+void prepare_data(void);   /* your code */
+void consume_data(void);
+
 static ove_mutex_t  state_mutex;
 static ove_condvar_t state_ready_cv;
 static bool          data_available = false;

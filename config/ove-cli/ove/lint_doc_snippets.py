@@ -53,9 +53,6 @@ _PENDING = {
     "api/nvs.md": "excerpts not yet marked or made self-contained",
     "api/shell.md": "excerpts not yet marked or made self-contained",
     "api/spi.md": "excerpts not yet marked or made self-contained",
-    "api/sync.md": "excerpts not yet marked or made self-contained",
-    "api/threads.md": "excerpts not yet marked or made self-contained",
-    "api/timers.md": "excerpts not yet marked or made self-contained",
     "api/uart.md": "excerpts not yet marked or made self-contained",
     "getting-started/troubleshooting.md": "excerpts not yet marked or made self-contained",
 }
