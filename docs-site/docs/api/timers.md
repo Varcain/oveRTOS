@@ -20,6 +20,14 @@ A software timer calls a user-supplied callback after a specified period. Callba
 - `one_shot != 0`: fires once then stops automatically.
 - `one_shot == 0`: periodic — reloads automatically and fires repeatedly.
 
+Where the callback runs, by backend:
+
+| Backend | Context | Priority |
+|---------|---------|----------|
+| FreeRTOS | timer service task | `CONFIG_FREERTOS_TIMER_TASK_PRIORITY`, `OVE_PRIO_ABOVE_NORMAL` by default |
+| Zephyr | system work queue | cooperative (-1, above every preemptible thread); `OVE_PRIO_NORMAL + 1` with the Linux personality |
+| NuttX | high-priority work queue (HPWORK) | native 224, above `OVE_PRIO_REALTIME` |
+
 ### State Machine
 
 ```mermaid

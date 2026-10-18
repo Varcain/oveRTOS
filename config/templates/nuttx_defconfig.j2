@@ -74,13 +74,17 @@ CONFIG_IOB_NBUFFERS={{ config.get("CONFIG_OVE_NUTTX_IOB_NBUFFERS", 24) }}
 {% endif %}
 
 # oveRTOS external app
+{% set progname = config.get('CONFIG_NUTTX_PROGNAME', 'ove_app') %}
 CONFIG_EXTERNAL_OVE_APP=y
-CONFIG_EXTERNAL_OVE_APP_PROGNAME="{{ config.get('CONFIG_NUTTX_PROGNAME', 'ove_app') }}"
+CONFIG_EXTERNAL_OVE_APP_PROGNAME="{{ progname }}"
 CONFIG_EXTERNAL_OVE_APP_PRIORITY={{ config.get('CONFIG_NUTTX_PRIORITY', 100) }}
-CONFIG_EXTERNAL_OVE_APP_STACKSIZE={{ config.get('CONFIG_NUTTX_STACKSIZE', 16384) }}
+CONFIG_EXTERNAL_OVE_APP_STACKSIZE={{ config.get('CONFIG_NUTTX_STACKSIZE', 8192) }}
 
-# Entry point
-CONFIG_INIT_ENTRYPOINT="ove_app_main"
+# Entry point: the app runs as the init task (nuttx_add_application names
+# the app's main <progname>_main).
+CONFIG_INIT_ENTRYPOINT="{{ progname }}_main"
+CONFIG_INIT_PRIORITY={{ config.get('CONFIG_NUTTX_PRIORITY', 100) }}
+CONFIG_INIT_STACKSIZE={{ config.get('CONFIG_NUTTX_STACKSIZE', 8192) }}
 
 # Watchdog timer
 CONFIG_WATCHDOG=y
@@ -122,8 +126,12 @@ CONFIG_TASK_NAME_SIZE=31
 CONFIG_TLS_NELEM=4
 CONFIG_TLS_TASK_NELEM=4
 
-# High-priority work queue (required for SIGEV_THREAD timer callbacks)
+# High-priority work queue: ove_timer callbacks (nuttx_timer.c) and short
+# driver bottom halves. Pinned to NuttX's default priority on every board,
+# above the ove scale's REALTIME (200), with room for timer callbacks.
 CONFIG_SCHED_HPWORK=y
+CONFIG_SCHED_HPWORKPRIORITY=224
+CONFIG_SCHED_HPWORKSTACKSIZE=4096
 
 # SIGEV_THREAD for safe timer callbacks (runs on HP work queue, no signals)
 CONFIG_SIG_EVTHREAD=y
