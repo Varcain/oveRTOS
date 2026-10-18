@@ -99,6 +99,14 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 	return 0;
 }
 
+int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	/* FreeRTOS defers the clear to the timer service task. */
+	return xEventGroupClearBitsFromISR(eg->handle, (EventBits_t)bits) == pdPASS
+		       ? OVE_OK
+		       : OVE_ERR_QUEUE_FULL;
+}
+
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	return (ove_eventbits_t)xEventGroupGetBits(eg->handle);

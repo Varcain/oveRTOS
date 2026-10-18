@@ -151,6 +151,13 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 	return ove_eventgroup_set_bits(eg, bits);
 }
 
+int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	/* clear_bits only takes a critical section, which is ISR-safe here. */
+	(void)ove_eventgroup_clear_bits(eg, bits);
+	return OVE_OK;
+}
+
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	struct ove_eventgroup *g = eg;

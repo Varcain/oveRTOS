@@ -123,4 +123,10 @@ pub const EventGroup = struct {
     pub inline fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
+
+    /// Clear bits from an ISR.  On FreeRTOS the clear is deferred to the
+    /// timer service task; `error.QueueFull` means it could not be queued.
+    pub inline fn clearBitsFromIsr(self: EventGroup, bits: EventBits) Error!void {
+        try err.fromCode(c.ove_eventgroup_clear_bits_from_isr(self.handle, bits));
+    }
 };

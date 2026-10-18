@@ -97,6 +97,13 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 	return result;
 }
 
+int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	/* k_event_clear() takes the event's spinlock: safe from an ISR. */
+	k_event_clear(&eg->event, bits);
+	return OVE_OK;
+}
+
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	return (ove_eventbits_t)k_event_test(&eg->event, 0xFFFFFFFFU);

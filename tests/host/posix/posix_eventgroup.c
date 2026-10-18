@@ -77,6 +77,13 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 	return prev;
 }
 
+int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	/* No interrupts on the host: the locked clear stands in for the ISR path. */
+	(void)ove_eventgroup_clear_bits(eg, bits);
+	return OVE_OK;
+}
+
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
 			     uint64_t timeout_ns, ove_eventbits_t *result)
 {

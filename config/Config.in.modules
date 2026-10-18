@@ -626,6 +626,8 @@ config OVE_TIMER
 config OVE_EVENTGROUP
     bool "Event groups"
     default n
+    # ove_eventgroup_clear_bits_from_isr() defers through the timer service.
+    select FREERTOS_USE_TIMERS if OVE_RTOS_FREERTOS
 
 config OVE_SHELL
     bool "Interactive shell"

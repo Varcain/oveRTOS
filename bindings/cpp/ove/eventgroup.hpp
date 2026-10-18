@@ -32,7 +32,8 @@ namespace ove
  * parameter of `wait_bits()`.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
- * @note `set_bits_from_isr()` is safe to call from interrupt context.
+ * @note `set_bits_from_isr()` and `clear_bits_from_isr()` are safe to call
+ *       from interrupt context.
  */
 class EventGroup
 {
@@ -175,6 +176,19 @@ class EventGroup
 	[[nodiscard]] ove_eventbits_t set_bits_from_isr(ove_eventbits_t bits)
 	{
 		return ove_eventgroup_set_bits_from_isr(handle_, bits);
+	}
+
+	/**
+	 * @brief Clears one or more event bits from an ISR context.
+	 *
+	 * On FreeRTOS the clear is deferred to the timer service task.
+	 * @param[in] bits Bitmask of bits to clear.
+	 * @return Empty `Result<void>` on success; `unexpected` @ref Error
+	 *         (QueueFull) if the deferred clear could not be queued.
+	 */
+	[[nodiscard]] Result<void> clear_bits_from_isr(ove_eventbits_t bits) noexcept
+	{
+		return from_rc(ove_eventgroup_clear_bits_from_isr(handle_, bits));
 	}
 
 	/**

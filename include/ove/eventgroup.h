@@ -134,6 +134,7 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
  * @return The value of the event group as it was *before* the clear operation
  *         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps
  *         or mirrors).
+ * @note Must not be called from an ISR; use @ref ove_eventgroup_clear_bits_from_isr.
  */
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits);
 
@@ -201,6 +202,21 @@ static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t eg, ove_eventb
  *         pending context switch).
  */
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
+
+/**
+ * @brief Clear bits in the event group from an ISR.
+ *
+ * ISR-safe variant of @ref ove_eventgroup_clear_bits. On FreeRTOS the clear
+ * is handed to the timer service task and takes effect once that task runs,
+ * after the ISR returns; the other engines clear immediately. Because of that
+ * deferral it reports a status, not the previous bits.
+ *
+ * @param[in] eg    Event group handle.
+ * @param[in] bits  Bitmask of bits to clear.
+ * @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue
+ *         had no room for the request.
+ */
+int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
 
 /**
  * @brief Read the current bit value of the event group without blocking.
@@ -272,6 +288,12 @@ static inline ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t 
 	(void)eg;
 	(void)bits;
 	return 0;
+}
+static inline int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	(void)eg;
+	(void)bits;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {

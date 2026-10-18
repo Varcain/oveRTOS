@@ -183,6 +183,7 @@ Combining both flags (`OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT`) is the recommend
 | `ove_eventgroup_get_bits` | `ove_eventbits_t (ove_eventgroup_t eg)` | Read current bit mask without blocking. |
 | `ove_eventgroup_wait_bits` | `int (ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags, uint64_t timeout_ns, ove_eventbits_t *result)` | Block until bit pattern satisfied. Writes the bits value at wake-time to `*result` if non-NULL. |
 | `ove_eventgroup_set_bits_from_isr` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | ISR-safe set. |
+| `ove_eventgroup_clear_bits_from_isr` | `int (ove_eventgroup_t eg, ove_eventbits_t bits)` | ISR-safe clear; deferred to the timer task on FreeRTOS. |
 
 Static-storage macro: `OVE_EVENTGROUP_DEFINE_STATIC(name)` (in `ove/storage.h`).
 
@@ -218,15 +219,14 @@ void wait_for_ir(void)
                              OVE_EG_WAIT_ALL, OVE_WAIT_FOREVER, NULL);
 }
 
-/* Bypass button handler (task context: clearing bits has no ISR variant;
- * an ISR would set a bit with ove_eventgroup_set_bits_from_isr() instead) */
-void toggle_bypass(void)
+/* Bypass button ISR — toggle bypass bit */
+void BYPASS_IRQHandler(void)
 {
     bool bypass = !!(ove_eventgroup_get_bits(g_state_eg) & BIT_BYPASS_ACTIVE);
     if (bypass) {
-        ove_eventgroup_clear_bits(g_state_eg, BIT_BYPASS_ACTIVE);
+        ove_eventgroup_clear_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE);
     } else {
-        ove_eventgroup_set_bits(g_state_eg, BIT_BYPASS_ACTIVE);
+        ove_eventgroup_set_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE);
     }
 }
 ```
