@@ -324,5 +324,24 @@ class AllconfigsChildTest(unittest.TestCase):
         self.assertEqual(proc.waits, 2)
 
 
+class IncompatibleBoardsTest(unittest.TestCase):
+    """incompatible_boards entries match any spelling of the board."""
+
+    OVE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    def _rules_out(self, board, rtos, entries):
+        return allconfigs._incompatible(self.OVE_DIR, board, rtos, entries)
+
+    def test_short_and_directory_names_match(self):
+        for board in ("stm32f746", "stm32f746g-discovery"):
+            self.assertEqual(self._rules_out(board, "nuttx", ["stm32f746.nuttx"]), "stm32f746.nuttx")
+            self.assertIsNone(self._rules_out(board, "zephyr", ["stm32f746.nuttx"]))
+
+    def test_a_variant_is_not_its_board(self):
+        self.assertEqual(self._rules_out("web", "freertos", ["web"]), "web")
+        for board in ("qemu", "qemu-mps2-an500"):
+            self.assertIsNone(self._rules_out(board, "freertos", ["web"]))
+
+
 if __name__ == "__main__":
     unittest.main()
