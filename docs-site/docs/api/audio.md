@@ -149,8 +149,14 @@ static const struct ove_audio_node_ops my_dsp_ops = {
 Register it with:
 
 ```c
-int node = ove_audio_graph_add_node(&graph, &my_dsp_ops, my_ctx,
+extern struct ove_audio_graph graph;                /* your graph */
+extern const struct ove_audio_node_ops my_dsp_ops;  /* your node's callbacks */
+
+int add_my_node(void *my_ctx)
+{
+    return ove_audio_graph_add_node(&graph, &my_dsp_ops, my_ctx,
                                     "my-dsp", OVE_AUDIO_NODE_PROCESSOR);
+}
 ```
 
 ## Buffer Storage and Zero-Heap Mode
@@ -163,8 +169,13 @@ static uint8_t graph_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(
     /*nodes=*/3, /*frames=*/512, /*channels=*/1, /*sample_bytes=*/2)]
     __attribute__((aligned(4)));
 
-ove_audio_graph_init(&graph, 512);
-ove_audio_graph_set_buf_storage(&graph, graph_buf, sizeof(graph_buf));
+static struct ove_audio_graph graph;
+
+void graph_setup(void)
+{
+    ove_audio_graph_init(&graph, 512);
+    ove_audio_graph_set_buf_storage(&graph, graph_buf, sizeof(graph_buf));
+}
 ```
 
 The `OVE_AUDIO_GRAPH_DEFINE(name, nodes, frames, channels, sample_bytes)` macro combines the storage array and the `struct ove_audio_graph` declaration into one file-scope statement. The companion `ove_audio_graph_create(pg, frames, nodes, channels, sample_bytes)` macro initialises a graph and (in heap mode) calls `_init`. In heap mode the `nodes`/`channels`/`sample_bytes` arguments are unused — the macro signature is shared with the zero-heap path for source compatibility.
@@ -186,6 +197,8 @@ graph LR
 ```
 
 ```c
+extern const struct ove_audio_node_ops hiroic_dsp_ops;   /* your DSP node */
+
 static struct ove_audio_graph graph;
 
 void app_init(void)

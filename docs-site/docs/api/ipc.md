@@ -85,6 +85,8 @@ Static-storage macro: `OVE_QUEUE_DEFINE_STATIC(name, item_sz, max)` (in `ove/sto
 
 #define IR_REQ_DEPTH 4
 
+void hiroic_load_ir(uint8_t slot, uint32_t file_offset, uint32_t length);   /* your loader */
+
 struct ir_request {
     uint8_t  slot;          /* IR preset slot 0–7 */
     uint32_t file_offset;   /* byte offset in flash */
@@ -103,13 +105,19 @@ void app_init(void)
 /* OVE_QUEUE_DEFINE_STATIC(g_ir_req_q, sizeof(struct ir_request), IR_REQ_DEPTH); */
 
 /* Control task — posts a load request */
-struct ir_request req = { .slot = 2, .file_offset = 0x8000, .length = 1024 };
-ove_queue_send(g_ir_req_q, &req, OVE_WAIT_FOREVER);
+void request_ir(void)
+{
+    struct ir_request req = { .slot = 2, .file_offset = 0x8000, .length = 1024 };
+    ove_queue_send(g_ir_req_q, &req, OVE_WAIT_FOREVER);
+}
 
 /* DSP task — drains requests between audio cycles */
-struct ir_request rx;
-while (ove_queue_receive(g_ir_req_q, &rx, 0) == OVE_OK) {
-    hiroic_load_ir(rx.slot, rx.file_offset, rx.length);
+void drain_ir_requests(void)
+{
+    struct ir_request rx;
+    while (ove_queue_receive(g_ir_req_q, &rx, 0) == OVE_OK) {
+        hiroic_load_ir(rx.slot, rx.file_offset, rx.length);
+    }
 }
 ```
 
@@ -187,6 +195,8 @@ Static-storage macro: `OVE_EVENTGROUP_DEFINE_STATIC(name)` (in `ove/storage.h`).
 #define BIT_BYPASS_ACTIVE (1u << 1)
 #define BIT_CLIP_DETECTED (1u << 2)
 
+void hiroic_load_ir_blocking(uint8_t slot);   /* your loader */
+
 static ove_eventgroup_t g_state_eg;
 
 void app_init(void)
@@ -195,19 +205,29 @@ void app_init(void)
 }
 
 /* Load task — signal that a new IR is ready */
-hiroic_load_ir_blocking(slot);
-ove_eventgroup_set_bits(g_state_eg, BIT_IR_LOADED);
+void load_ir(uint8_t slot)
+{
+    hiroic_load_ir_blocking(slot);
+    ove_eventgroup_set_bits(g_state_eg, BIT_IR_LOADED);
+}
 
 /* DSP task — wait for first IR before processing audio */
-ove_eventgroup_wait_bits(g_state_eg, BIT_IR_LOADED,
-                         OVE_EG_WAIT_ALL, OVE_WAIT_FOREVER, NULL);
+void wait_for_ir(void)
+{
+    ove_eventgroup_wait_bits(g_state_eg, BIT_IR_LOADED,
+                             OVE_EG_WAIT_ALL, OVE_WAIT_FOREVER, NULL);
+}
 
-/* Bypass button ISR — toggle bypass bit */
-bool bypass = !!(ove_eventgroup_get_bits(g_state_eg) & BIT_BYPASS_ACTIVE);
-if (bypass) {
-    ove_eventgroup_clear_bits(g_state_eg, BIT_BYPASS_ACTIVE);
-} else {
-    ove_eventgroup_set_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE);
+/* Bypass button handler (task context: clearing bits has no ISR variant;
+ * an ISR would set a bit with ove_eventgroup_set_bits_from_isr() instead) */
+void toggle_bypass(void)
+{
+    bool bypass = !!(ove_eventgroup_get_bits(g_state_eg) & BIT_BYPASS_ACTIVE);
+    if (bypass) {
+        ove_eventgroup_clear_bits(g_state_eg, BIT_BYPASS_ACTIVE);
+    } else {
+        ove_eventgroup_set_bits(g_state_eg, BIT_BYPASS_ACTIVE);
+    }
 }
 ```
 
@@ -271,6 +291,9 @@ Static-storage macro: `OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger)` (in `ove
 #define STREAM_CAP    512   /* ring buffer capacity in bytes  */
 #define STREAM_TRIG    64   /* wake consumer once ≥64 bytes   */
 
+uint8_t uart_read_byte(void);                       /* board: read the RX data register */
+void process_frame(const uint8_t *buf, size_t len); /* your code */
+
 static ove_stream_t g_uart_stream;
 
 void app_init(void)
@@ -282,7 +305,7 @@ void app_init(void)
  * context switch when a higher-priority waiter is unblocked. */
 void USART1_IRQHandler(void)
 {
-    uint8_t byte = USART1->RDR;
+    uint8_t byte = uart_read_byte();
     ove_stream_send_from_isr(g_uart_stream, &byte, 1, NULL);
 }
 

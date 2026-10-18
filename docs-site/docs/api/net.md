@@ -108,6 +108,7 @@ In addition to the common error codes, networking functions may return:
 
 `ove_sockaddr_t` holds an IPv4 or IPv6 address with port. Use the helper to construct IPv4 addresses:
 
+<!-- ove:body -->
 ```c
 ove_sockaddr_t addr;
 ove_sockaddr_ipv4(&addr, 192, 168, 1, 100, 8080);
@@ -117,6 +118,7 @@ ove_sockaddr_ipv4(&addr, 192, 168, 1, 100, 8080);
 
 Before any networking, bring up the interface with static IP or DHCP:
 
+<!-- ove:body -->
 ```c
 ove_netif_t netif;
 ove_netif_storage_t storage;
@@ -165,6 +167,7 @@ sequenceDiagram
 
 ### TCP Example
 
+<!-- ove:body -->
 ```c
 ove_socket_t sock;
 ove_socket_storage_t storage;
@@ -188,6 +191,7 @@ ove_socket_close(sock);
 
 ### UDP Example
 
+<!-- ove:body -->
 ```c
 ove_socket_t sock;
 ove_socket_storage_t storage;
@@ -229,6 +233,7 @@ ove_socket_close(sock);
 
 ## DNS
 
+<!-- ove:body -->
 ```c
 ove_sockaddr_t addr;
 int rc = ove_dns_resolve("example.com", &addr, OVE_SEC(10));
@@ -242,30 +247,35 @@ The hostname must be a null-terminated C string. The timeout is in nanoseconds; 
 
 ## TLS
 
-TLS wraps an existing TCP socket with mbedTLS encryption. Requires `CONFIG_OVE_NET_TLS`.
+TLS wraps an existing TCP socket with mbedTLS encryption. Requires `CONFIG_OVE_NET_TLS`. The random generator is seeded from the board's entropy source (the STM32 hardware RNG; QEMU builds use a test-only source and say so), and certificate dates are checked against the clock `ove_sntp_sync()` sets, so verification fails until SNTP has synced once.
 
 ```c
-ove_tls_t tls;
-ove_tls_storage_t tls_storage;
-ove_tls_init(&tls, &tls_storage);
+/* sock is an already-connected TCP socket */
+void tls_get(ove_socket_t sock)
+{
+    ove_tls_t tls;
+    ove_tls_storage_t tls_storage;
+    ove_tls_init(&tls, &tls_storage);
 
-ove_tls_config_t cfg = {0};
-cfg.hostname = "example.com";  /* SNI hostname for verification */
-/* A non-NULL ca_cert is required for a verified handshake.  To opt out of
- * certificate validation (test/dev only) set cfg.allow_insecure = 1 — the
- * handshake refuses to complete otherwise. */
+    ove_tls_config_t cfg = {0};
+    cfg.hostname = "example.com";  /* SNI hostname for verification */
+    /* A non-NULL ca_cert is required for a verified handshake.  To opt out of
+     * certificate validation (test/dev only) set cfg.allow_insecure = 1 — the
+     * handshake refuses to complete otherwise. */
 
-ove_tls_handshake(tls, sock, &cfg);  /* sock is an already-connected TCP socket */
+    ove_tls_handshake(tls, sock, &cfg);
 
-size_t sent;
-ove_tls_send(tls, "GET / HTTP/1.1\r\n...", len, &sent);
+    static const char request[] = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+    size_t sent;
+    ove_tls_send(tls, request, sizeof(request) - 1, &sent);
 
-char buf[512];
-size_t received;
-ove_tls_recv(tls, buf, sizeof(buf), &received);
+    char buf[512];
+    size_t received;
+    ove_tls_recv(tls, buf, sizeof(buf), &received);
 
-ove_tls_close(tls);
-ove_tls_deinit(tls);
+    ove_tls_close(tls);
+    ove_tls_deinit(tls);
+}
 ```
 
 For certificate verification, set `cfg.ca_cert` and `cfg.ca_cert_len` to a PEM or DER certificate.
@@ -274,6 +284,7 @@ For certificate verification, set `cfg.ca_cert` and `cfg.ca_cert_len` to a PEM o
 
 Requires `CONFIG_OVE_NET_HTTP`. Handles DNS, TCP connection, optional TLS, request formatting, and response parsing internally.
 
+<!-- ove:body -->
 ```c
 ove_http_client_t client;
 ove_http_client_storage_t storage;
@@ -326,34 +337,37 @@ static void on_message(const char *topic, size_t topic_len,
                 (int)payload_len, (const char *)payload);
 }
 
-ove_mqtt_client_t mqtt;
-ove_mqtt_client_storage_t storage;
-ove_mqtt_client_init(&mqtt, &storage);
+void mqtt_demo(void)
+{
+    ove_mqtt_client_t mqtt;
+    static ove_mqtt_client_storage_t storage;
+    ove_mqtt_client_init(&mqtt, &storage);
 
-ove_mqtt_config_t cfg = {
-    .host = "test.mosquitto.org",
-    .port = 1883,
-    .client_id = "my-device",
-    .keep_alive_s = 30,
-    .on_message = on_message,
-    /* Optional authentication */
-    .username = NULL,
-    .password = NULL,
-    /* Optional TLS — set use_tls = 1 and supply tls_ca_cert (+ tls_ca_cert_len),
-     * or set tls_allow_insecure = 1 for test/dev. */
-    .use_tls = 0,
-    .user_data = NULL,
-};
-ove_mqtt_connect(mqtt, &cfg);
+    ove_mqtt_config_t cfg = {
+        .host = "test.mosquitto.org",
+        .port = 1883,
+        .client_id = "my-device",
+        .keep_alive_s = 30,
+        .on_message = on_message,
+        /* Optional authentication */
+        .username = NULL,
+        .password = NULL,
+        /* Optional TLS — set use_tls = 1 and supply tls_ca_cert (+ tls_ca_cert_len),
+         * or set tls_allow_insecure = 1 for test/dev. */
+        .use_tls = 0,
+        .user_data = NULL,
+    };
+    ove_mqtt_connect(mqtt, &cfg);
 
-ove_mqtt_subscribe(mqtt, "my/topic", OVE_MQTT_QOS0);
-ove_mqtt_publish(mqtt, "my/topic", "hello", 5, OVE_MQTT_QOS1);
+    ove_mqtt_subscribe(mqtt, "my/topic", OVE_MQTT_QOS0);
+    ove_mqtt_publish(mqtt, "my/topic", "hello", 5, OVE_MQTT_QOS1);
 
-/* Call periodically to process incoming messages and send keep-alive */
-ove_mqtt_loop(mqtt, OVE_MS(500));
+    /* Call periodically to process incoming messages and send keep-alive */
+    ove_mqtt_loop(mqtt, OVE_MS(500));
 
-ove_mqtt_disconnect(mqtt);
-ove_mqtt_client_deinit(mqtt);
+    ove_mqtt_disconnect(mqtt);
+    ove_mqtt_client_deinit(mqtt);
+}
 ```
 
 ### MQTT Client API
@@ -371,6 +385,7 @@ ove_mqtt_client_deinit(mqtt);
 
 Requires `CONFIG_OVE_NET_HTTPD`. Single-threaded HTTP/1.1 server with path-based routing and a built-in Tasmota-style web dashboard.
 
+<!-- ove:body -->
 ```c
 ove_httpd_config_t cfg = { .port = 80, .max_body_size = 1024 };
 ove_httpd_start(&cfg);
@@ -387,7 +402,10 @@ static int my_handler(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
     return ove_httpd_resp_json(resp, 200, "{\"status\":\"ok\"}");
 }
 
-ove_httpd_route("GET", "/api/items/*", my_handler);
+void register_routes(void)
+{
+    ove_httpd_route("GET", "/api/items/*", my_handler);
+}
 ```
 
 ### Built-in Dashboard Routes
@@ -441,14 +459,18 @@ static void ws_on_message(ove_httpd_ws_conn_t *conn,
     ove_httpd_ws_send(conn, data, len);
 }
 
-ove_httpd_ws_route("/ws", ws_on_message, NULL);
-ove_httpd_ws_broadcast("/ws", "hello", 5);
+void register_ws(void)
+{
+    ove_httpd_ws_route("/ws", ws_on_message, NULL);
+    ove_httpd_ws_broadcast("/ws", "hello", 5);
+}
 ```
 
 ## SNTP
 
 Requires `CONFIG_OVE_NET_SNTP`. Performs a single NTP query to get UTC time.
 
+<!-- ove:body -->
 ```c
 ove_sntp_config_t cfg = { .server = "pool.ntp.org", .timeout_ns = OVE_SEC(5) };
 ove_sntp_sync(&cfg);
