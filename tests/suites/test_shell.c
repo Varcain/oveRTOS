@@ -14,6 +14,7 @@
 static volatile int s_cmd_executed;
 static volatile int s_argc_received;
 static const char *s_argv_received[8];
+static int s_argv_terminated;
 
 static void test_cmd_handler(int argc, const char *argv[])
 {
@@ -28,6 +29,7 @@ static void test_argv_handler(int argc, const char *argv[])
 	for (int i = 0; i < argc && i < 8; i++) {
 		s_argv_received[i] = argv[i];
 	}
+	s_argv_terminated = argv[argc] == NULL;
 }
 
 static char s_hook_buf[128];
@@ -246,6 +248,29 @@ static void test_shell_reregister_replaces(void **state)
 	assert_int_equal(s_second_calls, 1);
 }
 
+static void test_shell_argv_null_terminated(void **state)
+{
+	(void)state;
+	ove_shell_init();
+	struct ove_shell_cmd cmd = {
+		.name = "cmd",
+		.help = "test argv",
+		.handler = test_argv_handler,
+	};
+	ove_shell_register_cmd(&cmd);
+
+	s_argv_terminated = 0;
+	ove_shell_process_line("cmd a");
+	assert_int_equal(s_argc_received, 2);
+	assert_true(s_argv_terminated);
+
+	/* A full line: OVE_SHELL_MAX_ARGS words, the NULL still fits. */
+	s_argv_terminated = 0;
+	ove_shell_process_line("cmd 1 2 3 4 5 6 7 8 9");
+	assert_int_equal(s_argc_received, OVE_SHELL_MAX_ARGS);
+	assert_true(s_argv_terminated);
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_shell_run(void)
@@ -257,6 +282,7 @@ int test_shell_run(void)
 		cmocka_unit_test(test_shell_complete_command),
 		cmocka_unit_test(test_shell_register_null),
 		cmocka_unit_test(test_shell_argv_parsing),
+		cmocka_unit_test(test_shell_argv_null_terminated),
 		cmocka_unit_test(test_shell_output_hook),
 		cmocka_unit_test(test_shell_process_line_terminates),
 		cmocka_unit_test(test_shell_reregister_replaces),
