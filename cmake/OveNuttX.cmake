@@ -237,6 +237,23 @@ macro(ove_nuttx_build_tflm)
 endmacro()
 
 
+# ─── ove_nuttx_build_mbedtls() ───────────────────────────────────
+# Build the vendored mbedTLS with the oveRTOS config when OVE_NET_TLS is set.
+# It shares types (time_t, the storage structs) with the app, so it sees the
+# C headers the app does: NuttX's include trees ahead of the toolchain's.
+macro(ove_nuttx_build_mbedtls)
+    if(OVE_NET_TLS AND NOT TARGET ove_mbedtls)
+        include(${OVE_DIR}/cmake/OveMbedtls.cmake)
+        ove_build_mbedtls()
+        target_include_directories(ove_mbedtls SYSTEM BEFORE PRIVATE
+            ${NUTTX_DIR}/include
+            ${CMAKE_BINARY_DIR}/include)
+        target_compile_definitions(ove_mbedtls PRIVATE __NuttX__)
+        set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ove_mbedtls)
+    endif()
+endmacro()
+
+
 # ─── ove_nuttx_add_cmsis_dsp() ────────────────────────────────────
 # Add CMSIS-DSP sources and includes (for boards like stm32f746g-discovery).
 macro(ove_nuttx_add_cmsis_dsp)
@@ -274,8 +291,9 @@ macro(ove_nuttx_register_app)
         ${_OVE_NX_EXTRA_SOURCES}
     )
 
-    # Build TFLM if enabled
+    # Build TFLM and mbedTLS if enabled
     ove_nuttx_build_tflm()
+    ove_nuttx_build_mbedtls()
 
     # Compile flags
     set(_OVE_NX_CFLAGS "")
@@ -292,6 +310,15 @@ macro(ove_nuttx_register_app)
 
     # The target created by nuttx_add_application is apps_<NAME>
     set(_OVE_NX_TARGET "apps_${CONFIG_EXTERNAL_OVE_APP_PROGNAME}")
+
+    # ove_net_tls.c and the storage header include mbedTLS: give the app the
+    # same headers and config define the library was built with.
+    if(TARGET ove_mbedtls)
+        target_include_directories(${_OVE_NX_TARGET} PRIVATE
+            $<TARGET_PROPERTY:ove_mbedtls,INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(${_OVE_NX_TARGET} PRIVATE
+            $<TARGET_PROPERTY:ove_mbedtls,INTERFACE_COMPILE_DEFINITIONS>)
+    endif()
 
     # Apply app language support (adds app sources, handles Rust/Zig/models)
     include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)

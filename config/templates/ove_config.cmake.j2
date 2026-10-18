@@ -628,6 +628,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_profiler.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_tls.c")
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_entropy.c")
+{% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_entropy.c")
 {% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_HTTP") == True %}

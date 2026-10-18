@@ -197,6 +197,13 @@ CONFIG_AUDIO=y
 CONFIG_SCHED_BACKTRACE=y
 {% endif %}
 
+{% if config.get("CONFIG_OVE_NET_TLS") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+# TLS entropy (backends/nuttx/nuttx_entropy.c reads /dev/random): the STM32
+# hardware RNG.
+CONFIG_STM32F7_RNG=y
+CONFIG_DEV_RANDOM=y
+{% endif %}
+
 {% if config.get("CONFIG_OVE_NET") == True %}
 # Networking (POSIX sockets)
 CONFIG_NET=y
