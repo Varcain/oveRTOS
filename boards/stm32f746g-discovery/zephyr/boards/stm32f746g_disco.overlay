@@ -40,6 +40,12 @@
 	};
 };
 
+/* Hardware entropy for the network stack and the Linux personality's CSPRNG
+ * (ENTROPY_STM32_RNG); the upstream board leaves the RNG disabled. */
+&rng {
+	status = "okay";
+};
+
 &iwdg {
 	status = "okay";
 };

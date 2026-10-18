@@ -33,6 +33,10 @@ CONFIG_AUDIO_CODEC=y
 CONFIG_I2C=y
 {% endif %}
 
+{% if get_bool("CONFIG_OVE_SPI") %}
+CONFIG_SPI=y
+{% endif %}
+
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
 # Fully static: no kernel heap, no dynamic thread pool, no libc heap.
 # Block-scope ove_thread_create / ove_workqueue_create now emit
@@ -118,6 +122,14 @@ CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT=5
 CONFIG_FS_FATFS_CUSTOM_MOUNT_POINTS="SD,SD,SD,SD,SD"
 {% endif %}
 
+{% if get_bool("CONFIG_OVE_BLOCK") and config.get("CONFIG_ZEPHYR_SD_FILESYSTEM", True) %}
+# ove_block: the SD card through the disk access API (zephyr_block.c)
+CONFIG_DMA=y
+CONFIG_DISK_ACCESS=y
+CONFIG_DISK_DRIVERS=y
+CONFIG_DISK_DRIVER_SDMMC=y
+{% endif %}
+
 {% if config.get("CONFIG_OVE_NET") == True %}
 # Networking (BSD sockets) — pool counts driven by OVE_ZEPHYR_NET_* Kconfig
 CONFIG_NETWORKING=y
@@ -168,9 +180,16 @@ CONFIG_TEST_RANDOM_GENERATOR=y
 CONFIG_TEST_CSPRNG_GENERATOR=y
 {% endif %}
 {% elif config.get("CONFIG_OVE_NET") == True %}
-# Non-personality network samples retain the existing test-provider policy.
+# Network randomness (TCP sequence numbers, DNS ids, TLS): the STM32F746's
+# hardware entropy peripheral; the emulators have none.
 CONFIG_ENTROPY_GENERATOR=y
+{% if get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
+CONFIG_TEST_RANDOM_GENERATOR=n
+CONFIG_ENTROPY_STM32_RNG=y
+CONFIG_HARDWARE_DEVICE_CS_GENERATOR=y
+{% else %}
 CONFIG_TEST_RANDOM_GENERATOR=y
+{% endif %}
 {% endif %}
 
 {% if get_bool("CONFIG_OVE_WATCHDOG") %}
@@ -348,7 +367,7 @@ CONFIG_AUDIO=n
 CONFIG_AUDIO_CODEC=n
 CONFIG_I2S=n
 {% endif %}
-{% if not (get_bool("CONFIG_OVE_FS") and config.get("CONFIG_ZEPHYR_SD_FILESYSTEM", True)) %}
+{% if not ((get_bool("CONFIG_OVE_FS") or get_bool("CONFIG_OVE_BLOCK")) and config.get("CONFIG_ZEPHYR_SD_FILESYSTEM", True)) %}
 CONFIG_DISK_ACCESS=n
 CONFIG_DISK_DRIVERS=n
 {% endif %}
