@@ -74,6 +74,10 @@ graph LR
 The callback receives a handle to the fired timer and the `user_data` pointer supplied at init/create, so a single handler can serve multiple timers:
 
 ```c
+struct my_ctx {
+    uint32_t ticks;
+};
+
 static void on_timer(ove_timer_t timer, void *user_data)
 {
     struct my_ctx *ctx = user_data;
@@ -100,6 +104,8 @@ Static-storage macro: `OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, o
 ```c
 #include <ove/ove.h>
 
+extern struct ove_audio_graph *g_graph;   /* your audio graph */
+
 static ove_timer_t g_stats_timer;
 
 static void stats_cb(ove_timer_t t, void *user_data)
@@ -109,7 +115,7 @@ static void stats_cb(ove_timer_t t, void *user_data)
     ove_audio_graph_get_stats(g_graph, &stats);
     OVE_LOG_INF("cycles=%llu underruns=%u avg_us=%u",
                 (unsigned long long)stats.cycles,
-                stats.underruns, stats.avg_process_us);
+                (unsigned)stats.underruns, (unsigned)stats.avg_process_us);
 }
 
 void app_init(void)
@@ -119,17 +125,23 @@ void app_init(void)
     ove_timer_start(g_stats_timer);
 }
 
-/* On shutdown */
-ove_timer_destroy(g_stats_timer);
+void app_shutdown(void)
+{
+    ove_timer_destroy(g_stats_timer);
+}
 ```
 
 Or, with the static-init macro (works in both heap and zero-heap modes):
 
 ```c
+void stats_cb(ove_timer_t t, void *user_data);   /* as above */
+
 OVE_TIMER_DEFINE_STATIC(g_stats_timer, stats_cb, NULL, 1000, 0);
 
-/* … later … */
-ove_timer_start(g_stats_timer);
+void app_init(void)
+{
+    ove_timer_start(g_stats_timer);
+}
 ```
 
 ---
@@ -212,6 +224,8 @@ submitter for recurring work.
 ```c
 #include <ove/ove.h>
 
+void do_blocking_save(void);   /* your code */
+
 OVE_WORKQUEUE_DEFINE_STATIC(g_io_wq, 2048, "io_wq", OVE_PRIO_NORMAL);
 
 static void save_handler(ove_work_t work)
@@ -231,6 +245,9 @@ void DMA1_Stream0_IRQHandler(void)
 For periodic deferred work, a handler can reschedule itself:
 
 ```c
+extern ove_workqueue_t g_io_wq;            /* the queue from the example above */
+void do_background_housekeeping(void);     /* your code */
+
 static void periodic_work_handler(ove_work_t work)
 {
     do_background_housekeeping();
