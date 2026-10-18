@@ -4,19 +4,21 @@
 #
 # This file is part of oveRTOS.
 
-"""Lint rule: every C example in the cookbook compiles against the real API.
+"""Lint rule: every C example in the docs compiles against the real API.
 
 Why this exists
 ---------------
-The cookbook pages under docs-site/docs/cookbook/ show complete programs, but
-nothing ever built them, so they drifted onto functions that do not exist.
-This rule pulls out each ```c block, prepends `#include "ove/ove.h"`, and runs
-a syntax-only compile against include/ with tests/docs/ove_config.h (every
-module the cookbook uses switched on). LVGL comes from dl/lvgl when it has
-been downloaded, else from the stub header the host tests use.
+The cookbook, API reference and getting-started pages show C code, but
+nothing ever built it, so it drifted onto functions that do not exist. This
+rule pulls out each ```c block under _PAGE_DIRS, prepends
+`#include "ove/ove.h"`, and runs a syntax-only compile against include/ with
+tests/docs/ove_config.h (every module the docs use switched on). LVGL comes
+from dl/lvgl when it has been downloaded, else from the stub header the host
+tests use.
 
-A block that is deliberately an excerpt is skipped when the line before its
-fence is `<!-- ove:fragment -->`.
+The line before a fence can mark the block:
+  <!-- ove:body -->      statements only: compiled inside a function body
+  <!-- ove:fragment -->  an excerpt that cannot stand alone: skipped
 
 The compile is for the host, so a format mismatch that only exists on the
 32-bit targets (uint32_t is unsigned long on arm-none-eabi) is not caught;
@@ -32,22 +34,45 @@ import shutil
 import subprocess
 import tempfile
 
-_PAGES_DIR = "docs-site/docs/cookbook"
+_PAGE_DIRS = ("docs-site/docs/cookbook", "docs-site/docs/api",
+              "docs-site/docs/getting-started", "docs-site/docs/examples")
 _FRAGMENT_MARK = "<!-- ove:fragment -->"
+_BODY_MARK = "<!-- ove:body -->"
 _BLOCK_RE = re.compile(r"^```c[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
-# page -> why it does not compile yet
-_PENDING = {}
+# page (relative to docs-site/docs) -> why it does not compile yet
+_PENDING = {
+    "api/audio.md": "excerpts not yet marked or made self-contained",
+    "api/fs.md": "excerpts not yet marked or made self-contained",
+    "api/i2c.md": "excerpts not yet marked or made self-contained",
+    "api/i2s.md": "excerpts not yet marked or made self-contained",
+    "api/infer.md": "excerpts not yet marked or made self-contained",
+    "api/io.md": "excerpts not yet marked or made self-contained",
+    "api/ipc.md": "excerpts not yet marked or made self-contained",
+    "api/net.md": "excerpts not yet marked or made self-contained",
+    "api/nvs.md": "excerpts not yet marked or made self-contained",
+    "api/shell.md": "excerpts not yet marked or made self-contained",
+    "api/spi.md": "excerpts not yet marked or made self-contained",
+    "api/sync.md": "excerpts not yet marked or made self-contained",
+    "api/threads.md": "excerpts not yet marked or made self-contained",
+    "api/timers.md": "excerpts not yet marked or made self-contained",
+    "api/uart.md": "excerpts not yet marked or made self-contained",
+    "getting-started/troubleshooting.md": "excerpts not yet marked or made self-contained",
+}
 
 
 def _blocks(text):
-    """Yield (line, code) for each ```c block not marked as a fragment."""
+    """Yield (line, code) for each ```c block not marked as a fragment; a
+    block marked as a body comes back wrapped in a function."""
     for m in _BLOCK_RE.finditer(text):
         line = text.count("\n", 0, m.start()) + 1
         before = text[:m.start()].rstrip("\n").rsplit("\n", 1)[-1].strip()
         if before == _FRAGMENT_MARK:
             continue
-        yield line, m.group(1)
+        code = m.group(1)
+        if before == _BODY_MARK:
+            code = "void ove_doc_excerpt(void)\n{\n" + code + "}\n"
+        yield line, code
 
 
 def _include_args(ove_dir):
@@ -83,14 +108,18 @@ def check(ove_dir):
     cc = shutil.which("gcc") or shutil.which("cc")
     if not cc:
         return "SKIP", "no host C compiler"
-    pages_dir = os.path.join(ove_dir, _PAGES_DIR)
+    docs_root = os.path.join(ove_dir, "docs-site", "docs")
     args = _include_args(ove_dir)
     problems = []
     compiled = 0
-    for page in sorted(os.listdir(pages_dir)):
-        if not page.endswith(".md"):
-            continue
-        with open(os.path.join(pages_dir, page), encoding="utf-8") as f:
+    pages = []
+    for d in _PAGE_DIRS:
+        full = os.path.join(ove_dir, d)
+        if os.path.isdir(full):
+            pages += [os.path.join(full, p) for p in sorted(os.listdir(full)) if p.endswith(".md")]
+    for path in pages:
+        page = os.path.relpath(path, docs_root)
+        with open(path, encoding="utf-8") as f:
             text = f.read()
         page_ok = True
         for line, code in _blocks(text):

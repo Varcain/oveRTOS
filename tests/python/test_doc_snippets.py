@@ -4,7 +4,7 @@
 #
 # This file is part of oveRTOS.
 
-"""Cookbook C blocks are found, and fragments are skipped."""
+"""Doc C blocks are found, fragments skipped and body excerpts wrapped."""
 
 import unittest
 
@@ -21,6 +21,11 @@ void ove_main(void) { ove_run(); }
 ove_queue_send(q, &v, 0);
 ```
 
+<!-- ove:body -->
+```c
+ove_run();
+```
+
 ```rust
 fn main() {}
 ```
@@ -28,8 +33,11 @@ fn main() {}
 
 
 class DocSnippetBlocksTest(unittest.TestCase):
-    def test_c_blocks_without_fragment_mark(self):
-        self.assertEqual(list(_blocks(PAGE)), [(3, "void ove_main(void) { ove_run(); }\n")])
+    def test_blocks_and_markers(self):
+        self.assertEqual(list(_blocks(PAGE)), [
+            (3, "void ove_main(void) { ove_run(); }\n"),
+            (13, "void ove_doc_excerpt(void)\n{\nove_run();\n}\n"),
+        ])
 
 
 if __name__ == "__main__":
