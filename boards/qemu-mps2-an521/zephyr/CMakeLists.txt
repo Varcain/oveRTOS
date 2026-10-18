@@ -39,6 +39,7 @@ target_sources(app PRIVATE
     ${OVE_BACKEND_SOURCES}
 )
 
+ove_zephyr_add_mbedtls_if_enabled()
 ove_zephyr_include_app_sources()
 ove_zephyr_add_profiler_flags()
 

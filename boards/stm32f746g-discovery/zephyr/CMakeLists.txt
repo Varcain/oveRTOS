@@ -46,6 +46,7 @@ if(OVE_LINUX_RT_SCOPE)
     target_sources(app PRIVATE ${OVE_BOARD_DIR}/../common/rt_scope.c)
 endif()
 
+ove_zephyr_add_mbedtls_if_enabled()
 ove_zephyr_include_app_sources()
 
 if(OVE_LINUX AND CONFIG_NETWORKING)
