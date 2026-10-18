@@ -253,47 +253,107 @@ def _prepare_patched_git_tree(source_dir, worktree, layers, *,
     return worktree
 
 
-def _zephyr_patch_worktree(ws, zephyr_download):
-    """Return this build workspace's stable location inside the west tree."""
-    workspace_key = hashlib.sha256(
-        os.path.realpath(ws.workspace_dir).encode()).hexdigest()[:16]
-    return os.path.join(
-        os.path.dirname(zephyr_download), ".ove-worktrees", workspace_key)
+_SOURCE_TREES_DIR = ".ove-worktrees"
+_SOURCE_TREES_RECORD = ".ove-source-trees"
 
 
-def discard_workspace_patch_worktrees(ws):
-    """Remove generated patch worktrees owned by the active workspace."""
-    try:
-        rtos = ws.rtos
-    except FileNotFoundError:
-        # Preserve `ove clean` as a recovery command when configuration was
-        # never generated or has already been removed.
+def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
+    """Return the patched source tree shared by every workspace with this patch set.
+
+    The tree is named after its content (source revision plus the ordered patch
+    set), next to the download, so workspaces with the same patches use one
+    checkout. Builds treat it as read-only. A lock serializes its preparation,
+    and the workspace records it for `ove clean --sources`.
+    """
+    import fcntl
+
+    source_dir = os.path.realpath(source_dir)
+    manifest = _patch_manifest(source_dir, _collect_patch_series(layers))
+    key = hashlib.sha256(
+        json.dumps(manifest, sort_keys=True).encode()).hexdigest()[:16]
+    root = os.path.join(os.path.dirname(source_dir), _SOURCE_TREES_DIR)
+    tree = os.path.join(root, f"{os.path.basename(source_dir)}-{key}")
+    os.makedirs(root, exist_ok=True)
+    with open(tree + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _prepare_patched_git_tree(source_dir, tree, layers, log_file=log_file)
+        _record_source_tree(ws, tree)
+    return tree
+
+
+def _record_source_tree(ws, tree):
+    """Note in the workspace that its build uses a shared source tree."""
+    record = os.path.join(ws.build_dir, _SOURCE_TREES_RECORD)
+    trees = set()
+    if os.path.isfile(record):
+        with open(record) as f:
+            trees = {line.strip() for line in f if line.strip()}
+    if tree in trees:
         return
-    if rtos != "zephyr":
-        return
-    source = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
-    if not os.path.isdir(source):
-        return
-    _discard_patch_worktree(
-        os.path.realpath(source), _zephyr_patch_worktree(ws, source))
+    trees.add(tree)
+    os.makedirs(ws.build_dir, exist_ok=True)
+    with open(record, "w") as f:
+        f.writelines(f"{path}\n" for path in sorted(trees))
+
+
+def _source_tree_roots(dl_dir):
+    """Every directory that holds shared source trees, with its Git source."""
+    import glob
+
+    roots = {}
+    for candidate in glob.glob(os.path.join(dl_dir, "zephyr-workspace-*")):
+        topdir = os.path.realpath(candidate)
+        roots[os.path.join(topdir, _SOURCE_TREES_DIR)] = topdir
+    roots[os.path.join(os.path.realpath(dl_dir), _SOURCE_TREES_DIR)] = None
+    return {root: topdir for root, topdir in roots.items() if os.path.isdir(root)}
+
+
+def _discard_source_tree(path):
+    """Remove one shared tree (or a legacy one) and its Git registration."""
+    git_file = os.path.join(path, ".git")
+    source = None
+    if os.path.isfile(git_file):
+        with open(git_file) as f:
+            gitdir = f.read().strip().removeprefix("gitdir: ")
+        # <source>/.git/worktrees/<name>
+        source = os.path.dirname(os.path.dirname(os.path.dirname(gitdir)))
+    shutil.rmtree(path, ignore_errors=True)
+    if source and os.path.isdir(source):
+        run(["git", "worktree", "prune"], cwd=source)
+
+
+def discard_unreferenced_source_trees(ove_dir, dl_dir):
+    """Remove shared source trees no workspace under output/ records."""
+    import fcntl
+    import glob
+
+    referenced = set()
+    pattern = os.path.join(ove_dir, "output", "**", _SOURCE_TREES_RECORD)
+    for record in glob.glob(pattern, recursive=True):
+        with open(record) as f:
+            referenced.update(line.strip() for line in f if line.strip())
+    removed = 0
+    for root in _source_tree_roots(dl_dir):
+        for name in sorted(os.listdir(root)):
+            path = os.path.join(root, name)
+            if not os.path.isdir(path) or path in referenced:
+                continue
+            # The lock file stays: a build may be waiting on it.
+            with open(path + ".lock", "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                _discard_source_tree(path)
+            removed += 1
+    return removed
 
 
 def discard_all_patch_worktrees(dl_dir):
-    """Remove generated Zephyr worktrees retained outside output/."""
-    import glob
-
-    seen = set()
-    for candidate in glob.glob(os.path.join(dl_dir, "zephyr-workspace-*")):
-        topdir = os.path.realpath(candidate)
-        if topdir in seen:
-            continue
-        seen.add(topdir)
-        source = os.path.join(topdir, "zephyr")
-        generated = os.path.join(topdir, ".ove-worktrees")
-        if not os.path.isdir(source) or not os.path.isdir(generated):
-            continue
-        shutil.rmtree(generated)
-        run(["git", "worktree", "prune"], cwd=source)
+    """Remove every shared source tree retained outside output/."""
+    for root in _source_tree_roots(dl_dir):
+        for name in sorted(os.listdir(root)):
+            path = os.path.join(root, name)
+            if os.path.isdir(path):
+                _discard_source_tree(path)
+        shutil.rmtree(root)
 
 
 def _find_cmake():
@@ -380,10 +440,8 @@ def build_freertos(ws):
     if ws.app_dir:
         patch_layers.append((
             "app patch", os.path.join(ws.app_dir, "patches", "freertos")))
-    freertos_src = _prepare_patched_git_tree(
-        freertos_download,
-        os.path.join(ws.build_dir, "rtos-source", "FreeRTOS-Kernel"),
-        patch_layers, log_file=ws.build_log)
+    freertos_src = _shared_patched_tree(
+        ws, freertos_download, patch_layers, log_file=ws.build_log)
 
     toolchain_file = os.path.join(board_dir, "cmake", "arm-none-eabi.cmake")
 
@@ -453,12 +511,10 @@ def build_zephyr(ws):
             patch_layers.append((
                 "app patch", os.path.join(ws.app_dir, "patches", "zephyr")))
 
-        # Keep ZEPHYR_BASE below the original west workspace so west still
-        # discovers its manifest and modules while using our isolated checkout.
-        zephyr_ws = _prepare_patched_git_tree(
-            zephyr_download,
-            _zephyr_patch_worktree(ws, zephyr_download),
-            patch_layers, log_file=ws.build_log)
+        # The shared tree sits below the original west workspace so west still
+        # discovers its manifest and modules.
+        zephyr_ws = _shared_patched_tree(
+            ws, zephyr_download, patch_layers, log_file=ws.build_log)
         env["ZEPHYR_BASE"] = zephyr_ws
 
     _prepare_zephyr_build_dir(fw_build, zephyr_ws)

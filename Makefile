@@ -535,6 +535,10 @@ clean:
 		rm -rf output/*/build output/*/generated output/*/images; \
 	}
 
+.PHONY: clean-sources
+clean-sources:
+	@$(OVE) clean --sources
+
 .PHONY: clean-all
 clean-all:
 	@$(OVE) clean --all 2>/dev/null || { \

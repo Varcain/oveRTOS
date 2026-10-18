@@ -67,7 +67,7 @@ class FreeRTOSBuildSourceTest(unittest.TestCase):
     def test_standalone_kernel_uses_prepared_worktree(self):
         os.makedirs(os.path.join(self.ws.ws_dl_dir, "FreeRTOS-Kernel"))
         prepared = os.path.join(self.temp.name, "prepared-kernel")
-        with mock.patch("ove.build._prepare_patched_git_tree",
+        with mock.patch("ove.build._shared_patched_tree",
                         return_value=prepared):
             args = self._configure_args()
 
