@@ -19,6 +19,7 @@ reports diagnostics.
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -390,6 +391,40 @@ def _strip_gcc_only(args):
         a == p or a.startswith(p) for p in _GCC_ONLY_PREFIXES)]
 
 
+# GCC's own compiler headers (stdatomic.h, stddef.h, arm_acle.h, ...) live in
+# <prefix>/lib/gcc/<target>/<version>/include[-fixed].  They are written for
+# GCC's builtins: under clang, GCC's stdatomic.h makes every atomic_* call on
+# an _Atomic object an error.
+_GCC_PRIVATE_INCLUDE = re.compile(r"/lib/gcc/[^/]+/[^/]+/include(-fixed)?/?$")
+
+
+def _use_clang_builtin_headers(args):
+    """Let clang use its own compiler headers instead of GCC's.
+
+    Zephyr builds pass -nostdinc and add GCC's private include directory by
+    hand; clang's -nostdinc would also drop clang's builtin headers, so it
+    becomes -nostdlibinc and GCC's directory goes.
+    """
+    out = []
+    skip_next = False
+    for i, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "-nostdinc":
+            out.append("-nostdlibinc")
+            continue
+        if arg in ("-isystem", "-I") and i + 1 < len(args) \
+                and _GCC_PRIVATE_INCLUDE.search(args[i + 1]):
+            skip_next = True
+            continue
+        if arg.startswith(("-isystem", "-I")) and \
+                _GCC_PRIVATE_INCLUDE.search(arg.removeprefix("-isystem").removeprefix("-I")):
+            continue
+        out.append(arg)
+    return out
+
+
 # Path fragments that mark third-party / vendored include trees.  When
 # we see `-I<path>` whose path contains one of these, we rewrite it to
 # `-isystem<path>` so clang treats the headers as system headers and
@@ -518,19 +553,6 @@ def _clang_tidy_backends(ove_dir, check):
     files_total = 0
     filtered_root = os.path.join(ove_dir, "output", "tests",
                                  "lint_backend_dbs")
-    # Per-RTOS extra clang-tidy args.  Zephyr needs a force-included
-    # shim header (scripts/lint/zephyr_clang_compat.h) that pre-sets
-    # the include guard for the SDK's gcc arm_acle.h — the header's
-    # wrapper inlines call `__builtin_arm_cdp` etc. with non-constant
-    # parameters that clang's stricter signature rejects.  The shim
-    # short-circuits arm_acle.h cleanly; backends/zephyr code doesn't
-    # call those intrinsics directly so nothing real is masked.
-    per_rtos_extra_args = {
-        "zephyr": [
-            "--extra-arg=-include" + os.path.abspath(os.path.join(
-                ove_dir, "scripts", "lint", "zephyr_clang_compat.h")),
-        ],
-    }
     for rtos in sorted(rtos_db):
         _, db_path = rtos_db[rtos]
         backend_root = os.path.abspath(
@@ -561,12 +583,13 @@ def _clang_tidy_backends(ove_dir, check):
             new_entry = dict(e)
             if "arguments" in e and e["arguments"]:
                 new_entry["arguments"] = _pin_float_abi(
-                    _demote_thirdparty_includes(
-                        _strip_gcc_only(e["arguments"])))
+                    _demote_thirdparty_includes(_use_clang_builtin_headers(
+                        _strip_gcc_only(e["arguments"]))))
             elif "command" in e and e["command"]:
                 tokens = shlex.split(e["command"])
                 new_entry["command"] = shlex.join(_pin_float_abi(
-                    _demote_thirdparty_includes(_strip_gcc_only(tokens))))
+                    _demote_thirdparty_includes(_use_clang_builtin_headers(
+                        _strip_gcc_only(tokens)))))
             filtered.append(new_entry)
 
         if not filtered:
@@ -631,7 +654,7 @@ def _clang_tidy_backends(ove_dir, check):
             # allocator redeclarations — clang rejects the `error`
             # attribute on a redeclaration (see header for rationale).
             "--extra-arg=-D__OVE_LINT__",
-        ] + per_rtos_extra_args.get(rtos, []) + [e["file"] for e in filtered]
+        ] + [e["file"] for e in filtered]
         rc, out = _run(cmd, cwd=ove_dir)
         if rc != 0:
             failures.append(
