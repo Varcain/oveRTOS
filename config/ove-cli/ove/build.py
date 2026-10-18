@@ -611,6 +611,12 @@ def _apply_nuttx_defconfig_overlays(ws, nuttx_src, board_cfg):
         logger.warning(f"NuttX defconfig not found for {board_cfg}")
         return
 
+    # Start from the board's patched upstream defconfig: the overlays below
+    # only replace the keys they name, so lines from an earlier build (a
+    # feature since switched off, a template line since removed) would stay.
+    run(["git", "checkout", "--", defconfig], cwd=nuttx_src,
+        log_file=ws.build_log)
+
     # Layers 1-3 (oveRTOS template + board overlay + app overlay)
     merged = merge_rtos_config_layers(ws, "nuttx")
     if merged:
@@ -689,6 +695,7 @@ def build_nuttx(ws):
 
     logger.debug(f"CMake configure: {' '.join(cmake_args)}")
     run(cmake_args, env=env, cwd=nuttx_src, log_file=ws.build_log)
+    _check_nuttx_config_landed(ws, os.path.join(cmake_build, ".config"))
 
     # Build
     run([cmake, "--build", os.path.abspath(cmake_build), f"-j{nproc()}"],
@@ -702,8 +709,33 @@ def build_nuttx(ws):
         if os.path.isfile(src):
             shutil.copy2(src, os.path.join(ws.images_dir, dst_name))
 
-    _check_rtos_config_drift(ws, os.path.join(cmake_build, ".config"))
     _create_run_or_flash_script(ws, rtos="nuttx")
+
+
+def _check_nuttx_config_landed(ws, config_path):
+    """Fail when NuttX's olddefconfig dropped or changed a requested line.
+
+    kconfiglib drops an assignment to an unknown symbol, or to one whose
+    dependencies are unmet, without a word, so a renamed upstream symbol or a
+    misplaced board line would silently do nothing.
+    """
+    from .utils import config_assignments, unlanded_assignments
+
+    layers = [os.path.join(ws.gen_dir, "merged_nuttx_defconfig")]
+    if os.path.isfile(ws.rtos_config_path):
+        layers.append(ws.rtos_config_path)
+    layers = [path for path in layers if os.path.isfile(path)]
+    if not layers or not os.path.isfile(config_path):
+        return
+    missed = unlanded_assignments(config_assignments(*layers), config_path)
+    if not missed:
+        return
+    logger.error("NuttX did not take these requested config lines "
+                 "(unknown symbol, unmet dependency, or overridden):")
+    for key, want, got in missed:
+        shown = "absent" if got is None else got
+        logger.error(f"  {key}: requested {want}, got {shown}")
+    sys.exit(1)
 
 
 def _write_build_id_header(ws):
