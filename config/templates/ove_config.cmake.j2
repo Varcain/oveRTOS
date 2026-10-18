@@ -624,7 +624,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_profiler.c")
 {% endif %}
 
 # Common networking sources (platform-independent)
-{% if config.get("CONFIG_OVE_NET_TLS") == True and config.get("CONFIG_OVE_SIM") != True %}
+{% if config.get("CONFIG_OVE_NET_TLS") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_tls.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_HTTP") == True %}

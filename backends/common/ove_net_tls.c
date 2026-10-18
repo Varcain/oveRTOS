@@ -17,6 +17,8 @@
 #include "ove/ove.h"
 #include "ove/log.h"
 #include "ove/net_tls.h"
+#include "ove/net_sntp.h"
+#include "ove/hal/hal_entropy.h"
 #include "ove_backend_common.h"
 
 #include "mbedtls/ssl.h"
@@ -76,6 +78,39 @@ static int bio_recv(void *ctx, unsigned char *buf, size_t len)
 }
 
 /* ---------- TLS session ---------- */
+
+/* mbedTLS's entropy source (MBEDTLS_ENTROPY_HARDWARE_ALT): the board's. The
+ * prototype lives in a private mbedTLS header. */
+int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen);
+int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)
+{
+	(void)data;
+	if (ove_hal_entropy_fill(output, len) != OVE_OK) {
+		*olen = 0;
+		return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+	}
+	*olen = len;
+	return 0;
+}
+
+/* Certificate validity is checked against UTC from SNTP (mbedtls_time, see
+ * config/mbedtls/ove_mbedtls_config.h). Before a sync this reports 1970, so
+ * every certificate looks not-yet-valid: TLS fails closed. */
+time_t ove_mbedtls_time(time_t *timer)
+{
+	uint32_t utc = 0;
+	(void)ove_sntp_get_utc(&utc);
+	if (timer)
+		*timer = (time_t)utc;
+	return (time_t)utc;
+}
+
+mbedtls_ms_time_t mbedtls_ms_time(void)
+{
+	uint64_t us = 0;
+	ove_time_get_us(&us);
+	return (mbedtls_ms_time_t)(us / 1000u);
+}
 
 int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
 {

@@ -18,6 +18,12 @@
  * mbedTLS and delegates I/O to the oveRTOS socket API, making it
  * portable across all backends.
  *
+ * Its random generator is seeded from the board's entropy source
+ * (@c ove_hal_entropy_fill: the STM32 hardware RNG; on QEMU a test-only
+ * source that warns at first use). Certificate dates are checked against
+ * UTC from @ref ove_sntp_sync, so peer verification fails until SNTP has
+ * synced once.
+ *
  * @note Requires @c CONFIG_OVE_NET_TLS (implies @c CONFIG_OVE_NET).
  *       When disabled every function is replaced by a no-op stub
  *       that returns @c OVE_ERR_NOT_SUPPORTED.
