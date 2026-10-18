@@ -109,4 +109,4 @@ make clean-all      # Remove all output/ workspaces
 make distclean      # Remove output/, dl/, .venv, and .config
 ```
 
-Workspaces that apply the same RTOS patches (the global, board and app patch layers) share one patched source tree, kept next to the download under `dl/`. A workspace's `make clean` leaves those trees in place; `make clean-sources` removes the ones no workspace uses.
+Workspaces that apply the same RTOS patches (the global, board and app patch layers) share one patched source tree, kept next to the download under `dl/`; a build that writes into one fails, naming the files. A workspace's `make clean` leaves those trees in place; `make clean-sources` removes the ones no workspace uses.
