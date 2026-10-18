@@ -3,8 +3,9 @@
 # ============================================================================
 #
 # Runs within NuttX's CMake build system.  The board-level CMakeLists.txt
-# (copied to nuttx-apps/external/ove_app/) includes this module and uses
-# its macros to register the oveRTOS app via nuttx_add_application().
+# (copied to the workspace's build/nuttx-app/, which apps/external builds)
+# includes this module and uses its macros to register the oveRTOS app via
+# nuttx_add_application().
 #
 # Unlike OveCommon.cmake (which drives a standalone build for FreeRTOS,
 # Zephyr and POSIX), this module must work inside NuttX's project()

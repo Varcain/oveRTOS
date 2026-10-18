@@ -561,81 +561,81 @@ def build_zephyr(ws):
     _create_run_or_flash_script(ws, rtos="zephyr")
 
 
-def _stage_nuttx_tree(src, dest, label):
-    """Copy src → dest once, gated by a stamp file.
-
-    copytree is not atomic: an interrupted copy leaves a partial tree
-    whose presence fools a plain isdir() check on the next run. The
-    stamp file is only written after copytree returns, so any earlier
-    abort forces a full re-copy.
-    """
-    stamp = os.path.join(dest, ".ove_stage_complete")
-    if os.path.exists(stamp):
-        return
-    if os.path.isdir(dest):
-        logger.debug("Removing partial %s tree at %s", label, dest)
-        shutil.rmtree(dest)
-    logger.debug("Copying %s to build tree...", label)
-    shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
-    with open(stamp, "w") as f:
-        f.write("staged\n")
+def _nuttx_app_dir(ws):
+    """This workspace's copy of the board's NuttX app (apps/external)."""
+    return os.path.join(ws.build_dir, "nuttx-app")
 
 
 def _setup_nuttx_build_tree(ws, env, log_file=None):
-    """Prepare patched NuttX sources and set up the external CMake app.
+    """Prepare the shared NuttX sources and this workspace's external app.
 
-    Returns (nuttx_src, apps_build) paths.  The nuttx_src directory is
-    used as the CMake source directory (-S); a separate binary directory
-    is created by the caller.
+    Returns (nuttx_src, apps_src): the patched kernel and apps trees, shared
+    with every workspace that applies the same patches and never written by a
+    build. The app (a copy of the board's nuttx/ directory) and the merged
+    defconfig (_write_nuttx_defconfig) live in the workspace, which the
+    oveRTOS NuttX patches point the build at.
     """
-    nuttx_src = os.path.join(ws.build_dir, "nuttx")
-    apps_build = os.path.join(ws.build_dir, "nuttx-apps")
-
-    # Materialize the kernel from immutable downloaded Git state. The build may
-    # subsequently edit its private defconfig; patch validation is deliberately
-    # limited to patch-owned paths so those generated edits remain valid.
-    nuttx_download = os.path.join(ws.ws_dl_dir, "nuttx")
-    patch_layers = [
+    nuttx_layers = [
+        ("global patch", os.path.join(ws.ove_dir, "config", "patches", "nuttx")),
         ("board patch", os.path.join(ws.board_dir, "nuttx", "patches")),
     ]
     if ws.app_dir:
-        patch_layers.append((
+        nuttx_layers.append((
             "app patch", os.path.join(ws.app_dir, "patches", "nuttx")))
-    _prepare_patched_git_tree(
-        nuttx_download, nuttx_src, patch_layers, log_file=log_file)
+    nuttx_src = _shared_patched_tree(
+        ws, os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_layers,
+        log_file=log_file)
+    apps_src = _shared_patched_tree(
+        ws, os.path.join(ws.ws_dl_dir, "nuttx-apps"),
+        [("global patch",
+          os.path.join(ws.ove_dir, "config", "patches", "nuttx-apps"))],
+        log_file=log_file)
 
-    # NuttX apps are not patched, but still need a private writable staging tree.
-    # A stamp gates re-copy: a bare isdir() check can accept a partial copy left
-    # by interruption and later fail with a misleading missing-file error.
-    _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx-apps"), apps_build,
-                      label="NuttX apps")
-
-    # Set up external app (CMake)
-    ext_dir = os.path.join(apps_build, "external")
-    os.makedirs(ext_dir, exist_ok=True)
-    app_dest = os.path.join(ext_dir, "ove_app")
-    if os.path.exists(app_dest):
-        shutil.rmtree(app_dest)
-    shutil.copytree(os.path.join(ws.board_dir, "nuttx"), app_dest)
-
-    # Kconfig for the external app (same as before — Kconfig is
-    # build-system agnostic and works with both Make and CMake)
-    with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
-        f.write(f'source "{os.path.abspath(app_dest)}/Kconfig"\n')
-
-    # CMakeLists.txt for the external directory — NuttX's CMake build
-    # discovers external apps via add_subdirectory(external)
-    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
-        f.write("add_subdirectory(ove_app)\n")
-
+    app_dir = _nuttx_app_dir(ws)
+    if os.path.exists(app_dir):
+        shutil.rmtree(app_dir)
+    shutil.copytree(os.path.join(ws.board_dir, "nuttx"), app_dir)
     # Write .ove_env in key=value format (read by OveNuttX.cmake)
-    with open(os.path.join(app_dest, ".ove_env"), "w") as f:
+    with open(os.path.join(app_dir, ".ove_env"), "w") as f:
         f.write(f"OVE_DIR={ws.ove_dir}\n")
         f.write(f"OVE_GEN_DIR={ws.gen_dir}\n")
         f.write(f"OVE_APP_DIR={ws.app_dir}\n")
         f.write(f"OVE_DL_DIR={ws.ws_dl_dir}\n")
 
-    return nuttx_src, apps_build
+    return nuttx_src, apps_src
+
+
+def _drop_stale_cmake_cache(build_dir, source_dir):
+    """Remove a CMake build directory configured for another source tree.
+
+    CMake refuses to reuse a build directory whose cache names a different
+    source directory, as after a move to a shared source tree.
+    """
+    cache = os.path.join(build_dir, "CMakeCache.txt")
+    if not os.path.isfile(cache):
+        return
+    with open(cache, errors="replace") as f:
+        for line in f:
+            if line.startswith("CMAKE_HOME_DIRECTORY:INTERNAL="):
+                cached = line.split("=", 1)[1].strip()
+                if os.path.realpath(cached) != os.path.realpath(source_dir):
+                    logger.info("Source tree moved; reconfiguring %s", build_dir)
+                    shutil.rmtree(build_dir)
+                return
+
+
+def _nuttx_cmake_configure_args(cmake, ws, nuttx_src, apps_src, board_cfg,
+                                defconfig):
+    """The NuttX CMake configure command for this workspace."""
+    return [
+        cmake,
+        f"-S{os.path.abspath(nuttx_src)}",
+        f"-B{os.path.abspath(os.path.join(ws.build_dir, 'nuttx-cmake'))}",
+        f"-DBOARD_CONFIG={board_cfg}",
+        f"-DNUTTX_APPS_DIR={os.path.abspath(apps_src)}",
+        f"-DOVE_DEFCONFIG={os.path.abspath(defconfig)}",
+        f"-DOVE_NUTTX_APP_DIR={os.path.abspath(_nuttx_app_dir(ws))}",
+    ]
 
 
 def _find_nuttx_defconfig(nuttx_src, board_cfg):
@@ -653,25 +653,21 @@ def _find_nuttx_defconfig(nuttx_src, board_cfg):
     return matches[0] if matches else None
 
 
-def _apply_nuttx_defconfig_overlays(ws, nuttx_src, board_cfg):
-    """Merge oveRTOS config overlays into the NuttX board defconfig.
+def _write_nuttx_defconfig(ws, nuttx_src, board_cfg, *, user_layer=True):
+    """Write this workspace's defconfig: the board's, with the oveRTOS overlays.
 
-    This modifies the defconfig in-place within the copied source tree so
-    that NuttX's CMake build picks up the merged config during its
-    olddefconfig expansion.
+    It starts from the board's patched upstream defconfig on every call, so a
+    line from an earlier build (a feature since switched off, a removed
+    template line) cannot stay. NuttX reads it through OVE_DEFCONFIG.
     """
     from .rtos_menuconfig import merge_rtos_config_layers
 
-    defconfig = _find_nuttx_defconfig(nuttx_src, board_cfg)
-    if not defconfig:
-        logger.warning(f"NuttX defconfig not found for {board_cfg}")
-        return
-
-    # Start from the board's patched upstream defconfig: the overlays below
-    # only replace the keys they name, so lines from an earlier build (a
-    # feature since switched off, a template line since removed) would stay.
-    run(["git", "checkout", "--", defconfig], cwd=nuttx_src,
-        log_file=ws.build_log)
+    board_defconfig = _find_nuttx_defconfig(nuttx_src, board_cfg)
+    if not board_defconfig:
+        logger.error(f"NuttX defconfig not found for {board_cfg}")
+        sys.exit(1)
+    defconfig = os.path.join(ws.build_dir, "nuttx-defconfig")
+    shutil.copyfile(board_defconfig, defconfig)
 
     # Layers 1-3 (oveRTOS template + board overlay + app overlay)
     merged = merge_rtos_config_layers(ws, "nuttx")
@@ -679,8 +675,9 @@ def _apply_nuttx_defconfig_overlays(ws, nuttx_src, board_cfg):
         apply_defconfig_overlay(defconfig, merged)
 
     # Layer 4: user customizations (rtos.config)
-    if os.path.isfile(ws.rtos_config_path):
+    if user_layer and os.path.isfile(ws.rtos_config_path):
         apply_defconfig_overlay(defconfig, ws.rtos_config_path)
+    return defconfig
 
 
 def build_nuttx(ws):
@@ -690,9 +687,10 @@ def build_nuttx(ws):
 
     logger.info("Building NuttX firmware")
 
-    nuttx_src, apps_build = _setup_nuttx_build_tree(ws, env,
-                                                     log_file=ws.build_log)
+    nuttx_src, apps_src = _setup_nuttx_build_tree(ws, env,
+                                                   log_file=ws.build_log)
     cmake_build = os.path.join(ws.build_dir, "nuttx-cmake")
+    _drop_stale_cmake_cache(cmake_build, nuttx_src)
     os.makedirs(cmake_build, exist_ok=True)
 
     # NuttX board config mapping (e.g. "mps2-an500:nsh")
@@ -701,14 +699,12 @@ def build_nuttx(ws):
         logger.error(f"no rtos.nuttx in {ws.board_name}/board.yaml")
         sys.exit(1)
 
-    # Apply oveRTOS defconfig overlays to the board's defconfig in the
-    # copied source tree.  NuttX CMake reads this defconfig directly and
-    # runs olddefconfig to expand it into .config.
-    _apply_nuttx_defconfig_overlays(ws, nuttx_src, nuttx_board_cfg)
+    # The board's defconfig with the oveRTOS overlays, in the workspace. NuttX
+    # CMake reads it (OVE_DEFCONFIG) and runs olddefconfig to expand it.
+    defconfig_path = _write_nuttx_defconfig(ws, nuttx_src, nuttx_board_cfg)
 
     # Check if defconfig changed since last cmake configure — if so,
     # force re-initialisation by removing the cached .config.
-    defconfig_path = _find_nuttx_defconfig(nuttx_src, nuttx_board_cfg)
     if defconfig_path:
         from .utils import hash_file as _hash_file
         current_hash = _hash_file(defconfig_path)
@@ -740,14 +736,8 @@ def build_nuttx(ws):
         env["LV_CONF_PATH"] = lv_conf_dir
 
     # CMake configure
-    apps_abs = os.path.abspath(apps_build)
-    cmake_args = [
-        cmake,
-        f"-S{os.path.abspath(nuttx_src)}",
-        f"-B{os.path.abspath(cmake_build)}",
-        f"-DBOARD_CONFIG={nuttx_board_cfg}",
-        f"-DNUTTX_APPS_DIR={apps_abs}",
-    ]
+    cmake_args = _nuttx_cmake_configure_args(
+        cmake, ws, nuttx_src, apps_src, nuttx_board_cfg, defconfig_path)
 
     logger.debug(f"CMake configure: {' '.join(cmake_args)}")
     run(cmake_args, env=env, cwd=nuttx_src, log_file=ws.build_log)
