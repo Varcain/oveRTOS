@@ -195,6 +195,14 @@ impl EventGroup {
         unsafe { bindings::ove_eventgroup_set_bits_from_isr(self.handle, bits) }
     }
 
+    /// Clear bits from an ISR context. On FreeRTOS the clear is deferred to
+    /// the timer service task; [`Error::QueueFull`] means it could not be
+    /// queued.
+    #[inline]
+    pub fn clear_bits_from_isr(&self, bits: u32) -> Result<()> {
+        Error::from_code(unsafe { bindings::ove_eventgroup_clear_bits_from_isr(self.handle, bits) })
+    }
+
     /// Get current bits value.
     #[inline]
     pub fn get_bits(&self) -> u32 {

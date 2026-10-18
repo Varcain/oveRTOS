@@ -175,6 +175,27 @@ static void test_eg_set_bits_from_isr(void **state)
 	ove_test_eventgroup_destroy(eg);
 }
 
+static void test_eg_clear_bits_from_isr(void **state)
+{
+	(void)state;
+	ove_eventgroup_t eg = NULL;
+	ove_test_eventgroup_create(&eg, &s_eg_storage);
+
+	ove_eventgroup_set_bits(eg, BIT_0 | BIT_2);
+	assert_int_equal(ove_eventgroup_clear_bits_from_isr(eg, BIT_2), OVE_OK);
+
+	/* FreeRTOS applies the clear in its timer service task: give it a turn. */
+	ove_eventbits_t bits = ove_eventgroup_get_bits(eg);
+	for (int i = 0; i < 10 && (bits & BIT_2); i++) {
+		ove_thread_sleep_ms(10);
+		bits = ove_eventgroup_get_bits(eg);
+	}
+	assert_false(bits & BIT_2);
+	assert_true(bits & BIT_0);
+
+	ove_test_eventgroup_destroy(eg);
+}
+
 static void test_eg_cross_thread(void **state)
 {
 	(void)state;
@@ -222,6 +243,7 @@ int test_eventgroup_run(void)
 		cmocka_unit_test(test_eg_wait_timeout),
 		cmocka_unit_test(test_eg_clear_on_exit),
 		cmocka_unit_test(test_eg_set_bits_from_isr),
+		cmocka_unit_test(test_eg_clear_bits_from_isr),
 		cmocka_unit_test(test_eg_cross_thread),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_eg_create_null_handle),

@@ -86,6 +86,7 @@ The callback signature is `void cb(ove_timer_t t, void *user_data)` — the time
 | `xEventGroupSetBits(eg, mask)` | `ove_eventgroup_set_bits(eg, mask)` |
 | `xEventGroupSetBitsFromISR(eg, mask, &woken)` | `ove_eventgroup_set_bits_from_isr(eg, mask)` |
 | `xEventGroupClearBits(eg, mask)` | `ove_eventgroup_clear_bits(eg, mask)` |
+| `xEventGroupClearBitsFromISR(eg, mask)` | `ove_eventgroup_clear_bits_from_isr(eg, mask)` (still deferred to the timer task) |
 | `xEventGroupWaitBits(eg, mask, clear, all, T)` | `ove_eventgroup_wait_bits(eg, mask, flags, OVE_MS(ms), &got)` |
 | `xEventGroupGetBits(eg)` | `ove_eventgroup_get_bits(eg)` |
 

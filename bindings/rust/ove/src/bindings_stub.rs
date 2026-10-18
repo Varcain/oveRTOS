@@ -1868,7 +1868,7 @@ unsafe extern "C" {
     pub fn ove_fs_closedir(dir: ove_dir_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Mount the backend storage volume.\n\n Backends with a native VFS use @p dev_path and @p mount_point directly.\n Backends with a fixed logical drive accept @c NULL to select their board\n defaults. File API paths remain relative to the mounted volume.\n\n @param[in] dev_path     Path identifying the storage device.\n @param[in] mount_point  Absolute path to use as the mount prefix.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Mount the backend storage volume.\n\n Pass @c NULL for both arguments to mount the board's volume: that is the\n only form that means the same on every engine. A non-NULL value is the\n backend's native name and is not portable: on NuttX @p dev_path is the\n block device (default /dev/mmcsd0) and @p mount_point the VFS path\n (default /mnt/sd); Zephyr accepts only its FatFs drive \"/SD:\"; FreeRTOS\n ignores both. File API paths are relative to the mounted volume either way.\n\n @param[in] dev_path     Native storage device, or @c NULL for the board's.\n @param[in] mount_point  Native mount path, or @c NULL for the board's.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_fs_mount(
         dev_path: *const core::ffi::c_char,
         mount_point: *const core::ffi::c_char,
@@ -1882,7 +1882,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Unmount a previously mounted storage device.\n\n Flushes any pending data and detaches the device associated with\n @p mount_point. All file handles under this mount point must be closed\n before calling this function.\n\n @param[in] mount_point  Mount point string passed to @ref ove_fs_mount."]
+    #[doc = " @brief Unmount a previously mounted storage device.\n\n Flushes any pending data and detaches the device associated with\n @p mount_point. All file handles under this mount point must be closed\n before calling this function.\n\n @param[in] mount_point  Mount point string passed to @ref ove_fs_mount\n                         (@c NULL for the board's volume)."]
     pub fn ove_fs_unmount(mount_point: *const core::ffi::c_char);
 }
 unsafe extern "C" {
@@ -2432,7 +2432,7 @@ unsafe extern "C" {
     pub fn ove_eventgroup_set_bits(eg: ove_eventgroup_t, bits: ove_eventbits_t) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group as it was *before* the clear operation\n         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps\n         or mirrors)."]
+    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group as it was *before* the clear operation\n         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps\n         or mirrors).\n @note Must not be called from an ISR; use @ref ove_eventgroup_clear_bits_from_isr."]
     pub fn ove_eventgroup_clear_bits(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
@@ -2454,6 +2454,13 @@ unsafe extern "C" {
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
     ) -> ove_eventbits_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Clear bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_clear_bits. On FreeRTOS the clear\n is handed to the timer service task and takes effect once that task runs,\n after the ISR returns; the other engines clear immediately. Because of that\n deferral it reports a status, not the previous bits.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue\n         had no room for the request."]
+    pub fn ove_eventgroup_clear_bits_from_isr(
+        eg: ove_eventgroup_t,
+        bits: ove_eventbits_t,
+    ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Read the current bit value of the event group without blocking.\n\n Returns a snapshot of the event group's bit pattern at the time of the\n call. The value may change immediately after the call returns.\n\n @param[in] eg  Event group handle.\n @return Current event bits value."]
