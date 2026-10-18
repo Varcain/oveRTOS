@@ -241,17 +241,12 @@ const lxp_freertos_port_config_t g_lxp_freertos_port_config = {
 			},
 		},
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-	.rootfs_region_count = 2u,
+	.rootfs_region_count = 1u,
 	.rootfs_regions =
 		{
 			{
 				.base = OVE_LXP_ROOTFS_MPU0_BASE,
 				.size = OVE_LXP_ROOTFS_MPU0_SIZE,
-				.texscb = configTEX_S_C_B_SRAM,
-			},
-			{
-				.base = OVE_LXP_ROOTFS_MPU1_BASE,
-				.size = OVE_LXP_ROOTFS_MPU1_SIZE,
 				.texscb = configTEX_S_C_B_SRAM,
 			},
 		},

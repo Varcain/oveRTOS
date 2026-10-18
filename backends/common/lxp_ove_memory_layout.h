@@ -36,22 +36,10 @@
 #define OVE_LXP_GUEST_POOL_END (OVE_LXP_GUEST_POOL_BASE + OVE_LXP_GUEST_POOL_SIZE)
 #endif
 
-/*
- * PMSAv7 cannot express a 12 MiB region. FreeRTOS/AN500 has four task MPU
- * descriptors available, so it represents the configured range as adjacent
- * 8 MiB and 4 MiB windows. Every other supported layout uses one window.
- */
-#if defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) && defined(CONFIG_OVE_RTOS_FREERTOS)
-#define OVE_LXP_ROOTFS_MPU_WINDOW_COUNT 2
-#define OVE_LXP_ROOTFS_MPU0_BASE OVE_LXP_ROOTFS_BASE
-#define OVE_LXP_ROOTFS_MPU0_SIZE ((uintptr_t)0x00800000u)
-#define OVE_LXP_ROOTFS_MPU1_BASE (OVE_LXP_ROOTFS_BASE + OVE_LXP_ROOTFS_MPU0_SIZE)
-#define OVE_LXP_ROOTFS_MPU1_SIZE (OVE_LXP_ROOTFS_SIZE - OVE_LXP_ROOTFS_MPU0_SIZE)
-#else
-#define OVE_LXP_ROOTFS_MPU_WINDOW_COUNT 1
+/* Every supported layout covers the rootfs with one PMSAv7 window, so its size
+ * must be a power of two. */
 #define OVE_LXP_ROOTFS_MPU0_BASE OVE_LXP_ROOTFS_BASE
 #define OVE_LXP_ROOTFS_MPU0_SIZE OVE_LXP_ROOTFS_SIZE
-#endif
 
 #if defined(OVE_MEMORY_SDRAM_START) && defined(OVE_MEMORY_SDRAM_KB)
 /* External SDRAM, from the board description. */
