@@ -28,7 +28,8 @@ sys.stdout.write(html)
 " > "$TMPHTML"
 
 # Gzip compress
-gzip -9 -c "$TMPHTML" > "$TMPGZ"
+# -n: no file name or time stamp, so an unchanged UI rebuilds the same header
+gzip -9 -n -c "$TMPHTML" > "$TMPGZ"
 
 # Convert to C header
 cat > "$OUT" <<'HEADER'
