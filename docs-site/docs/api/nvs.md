@@ -1,6 +1,6 @@
 # Non-Volatile Storage
 
-The NVS module provides a key-value store backed by non-volatile storage: files on the mounted volume (FreeRTOS, NuttX) or a flash partition (Zephyr).
+The NVS module provides a key-value store backed by non-volatile storage: one file per key on the mounted volume, on every engine. The QEMU boards have no storage device and keep values in RAM.
 
 ## Architecture
 
@@ -8,8 +8,8 @@ The NVS module provides a key-value store backed by non-volatile storage: files 
 graph LR
     APP["Application"] --> API["ove_nvs API"]
     API --> BE["Backend"]
-    BE --> Files["FreeRTOS, NuttX<br/><small>files in /nvs via ove_fs</small>"]
-    BE --> Zephyr["Zephyr<br/><small>NVS subsystem</small>"]
+    BE --> Files["FreeRTOS, NuttX, Zephyr<br/><small>files in /nvs via ove_fs</small>"]
+    BE --> RAM["QEMU boards<br/><small>RAM table</small>"]
 
     style API fill:#48b,stroke:#333,color:#fff
 ```
