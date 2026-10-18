@@ -1,6 +1,6 @@
 # Add a custom shell command
 
-**Pattern** — `ove_shell` provides a serial-console CLI with line editing and command dispatch. Register your own commands to drive the app, inspect state, or flip runtime flags without recompiling.
+**Pattern** — `ove_shell` is a small serial-console command line: it splits each line into words and calls the handler registered under the first word. Register your own commands to drive the app, inspect state, or flip runtime flags without recompiling.
 
 **What to enable** (in your `app.yaml`'s `defconfig:` list):
 
@@ -17,114 +17,125 @@ defconfig:
 #include "ove/ove.h"
 #include "ove/shell.h"
 #include "ove/log.h"
-#include <stdio.h>
 
-static int cmd_hello(int argc, char **argv, ove_shell_t sh)
+static void cmd_hello(int argc, const char *argv[])
 {
     (void)argc; (void)argv;
-    ove_shell_printf(sh, "Hello, world!\n");
-    return 0;
+    OVE_LOG_INF("Hello, world!");
 }
 
-OVE_SHELL_CMD_REGISTER(hello, cmd_hello, "Print a greeting");
+static const struct ove_shell_cmd hello_cmd = {
+    .name    = "hello",
+    .help    = "Print a greeting",
+    .handler = cmd_hello,
+};
+
+/* The shell only sees what you feed it: read the console, pass each
+ * character on. A line is dispatched when Enter arrives. */
+static void shell_fn(void *arg)
+{
+    (void)arg;
+    while (1) {
+        int c = ove_console_getchar();
+        if (c >= 0)
+            ove_shell_process_char(c);
+        else
+            ove_thread_sleep_ms(10);
+    }
+}
 
 void ove_main(void)
 {
-    ove_shell_start();   /* spawns the shell on the default console */
+    static ove_thread_t shell;
+    ove_shell_init();                 /* also registers the built-in "help" */
+    ove_shell_register_cmd(&hello_cmd);
+    ove_thread_create(&shell, "shell", shell_fn, NULL, OVE_PRIO_LOW, 4096);
     ove_run();
 }
 ```
 
-`OVE_SHELL_CMD_REGISTER` emits a static descriptor + a constructor that links the command into the shell's table before `ove_main` runs. No central registry to keep in sync.
+The descriptor must outlive the registration, hence `static`. The table holds 16 commands, `help` included; registering a name twice replaces the earlier handler.
 
 Then over the console:
 
 ```
-ove> hello
-Hello, world!
-ove>
+> hello
+[I] Hello, world!
+>
 ```
+
+Handlers print with `OVE_LOG_*` (or raw text with `ove_console_write()`). While a handler runs, the log lines it emits from its own thread also reach the hook set with `ove_shell_set_output_hook()`, which is how the HTTP dashboard's terminal shows command output.
 
 ## Commands with arguments
 
 ```c
-static int cmd_set_gain(int argc, char **argv, ove_shell_t sh)
+#include <stdlib.h>
+
+void set_gain(float g);   /* your code */
+
+static void cmd_set_gain(int argc, const char *argv[])
 {
     if (argc != 2) {
-        ove_shell_printf(sh, "usage: set_gain <value>\n");
-        return -1;
+        OVE_LOG_WRN("usage: set_gain <value>");
+        return;
     }
     char *end;
     float g = strtof(argv[1], &end);
     if (*end != '\0') {
-        ove_shell_printf(sh, "not a number: %s\n", argv[1]);
-        return -1;
+        OVE_LOG_WRN("not a number: %s", argv[1]);
+        return;
     }
     set_gain(g);
-    ove_shell_printf(sh, "gain = %.2f\n", (double)g);
-    return 0;
+    OVE_LOG_INF("gain = %d.%02d", (int)g, (int)(g * 100) % 100);
 }
 
-OVE_SHELL_CMD_REGISTER(set_gain, cmd_set_gain,
-                       "Set DSP gain (linear, e.g. 1.5)");
+static const struct ove_shell_cmd set_gain_cmd = {
+    .name    = "set_gain",
+    .help    = "Set DSP gain (linear, e.g. 1.5)",
+    .handler = cmd_set_gain,
+};
 ```
 
-`argv[0]` is the command name; `argv[1..]` are the typed tokens. Quoting follows POSIX-ish rules — `set_gain "1.5"` works.
+`argv[0]` is the command name; `argv[1..]` are the words that followed, split at spaces and tabs. There is no quoting, a line holds at most 127 characters, and words past the eighth (`OVE_SHELL_MAX_ARGS`) are dropped. Register `set_gain_cmd` with `ove_shell_register_cmd()` as above.
 
 ## Subcommands
 
 For grouping related commands, use one top-level command with a manual dispatch:
 
 ```c
-static int cmd_net(int argc, char **argv, ove_shell_t sh)
+#include <string.h>
+
+int  sensor_last_reading(void);   /* your code */
+void sensor_calibrate(void);
+
+static void cmd_sensor(int argc, const char *argv[])
 {
     if (argc < 2) {
-        ove_shell_printf(sh, "usage: net status|reconnect|stats\n");
-        return -1;
+        OVE_LOG_WRN("usage: sensor read|calibrate");
+        return;
     }
-    if (strcmp(argv[1], "status") == 0) {
-        ove_shell_printf(sh, "link: %s  ip: %s\n",
-                         ove_net_is_up() ? "up" : "down",
-                         ove_net_ip_str());
-        return 0;
+    if (strcmp(argv[1], "read") == 0) {
+        OVE_LOG_INF("last reading: %d", sensor_last_reading());
+    } else if (strcmp(argv[1], "calibrate") == 0) {
+        sensor_calibrate();
+        OVE_LOG_INF("calibrated");
+    } else {
+        OVE_LOG_WRN("unknown subcommand: %s", argv[1]);
     }
-    if (strcmp(argv[1], "reconnect") == 0) {
-        return ove_net_reconnect();
-    }
-    if (strcmp(argv[1], "stats") == 0) {
-        ove_shell_printf(sh, "rx_bytes=%llu tx_bytes=%llu\n",
-                         (unsigned long long)ove_net_stats_rx_bytes(),
-                         (unsigned long long)ove_net_stats_tx_bytes());
-        return 0;
-    }
-    ove_shell_printf(sh, "unknown subcommand: %s\n", argv[1]);
-    return -1;
 }
 
-OVE_SHELL_CMD_REGISTER(net, cmd_net,
-                       "Network status (status|reconnect|stats)");
+static const struct ove_shell_cmd sensor_cmd = {
+    .name    = "sensor",
+    .help    = "Sensor tools (read|calibrate)",
+    .handler = cmd_sensor,
+};
 ```
-
-## Logging from a shell command
-
-`OVE_LOG_INF` goes to the log sink — usually the same console, so it interleaves with the shell prompt. For shell-only output, use `ove_shell_printf(sh, ...)`. For "this should appear both as a log line and in the shell", call both.
 
 ## Built-in commands
 
-`ove_shell` ships with a handful by default:
-
-| Command | What it does |
-|---|---|
-| `help` | List commands |
-| `version` | Print oveRTOS + backend versions |
-| `tasks` | List threads with priority, stack high-water mark |
-| `mem` | Heap statistics (heap mode only) |
-| `reboot` | Trigger a soft reset |
-| `log <level>` | Change runtime log level |
-
-Disable any of these by setting `CONFIG_OVE_SHELL_BUILTIN_<NAME>=n`.
+Only `help`, which lists every registered command with its help text. Anything else (versions, thread lists, reboot) is yours to add the same way.
 
 ## Where else in the tree
 
-- [API: Shell & Console](../api/shell.md) — registration macros, return codes, completion hooks.
-- [`apps/c/heap/example_pm/`](https://github.com/Varcain/oveRTOS/tree/main/apps/c/heap/example_pm) — registers `pm_status` and `pm_sleep` shell commands.
+- [API: Shell & Console](../api/shell.md) — the full shell and console API.
+- [`tests/suites/test_shell.c`](https://github.com/Varcain/oveRTOS/tree/main/tests/suites/test_shell.c) — registration, dispatch and argument splitting exercised by the test suite.
