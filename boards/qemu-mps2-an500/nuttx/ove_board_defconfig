@@ -9,12 +9,6 @@
 CONFIG_RAM_START=0x20000000
 CONFIG_RAM_SIZE=4194304
 
-# MPS2-AN500 has no on-chip MAC and no on-board ethernet driver wired in.
-# Networking apps rely on loopback only, so tell NuttX to skip the call
-# to arm_netinitialize() from up_initialize() — otherwise the link fails
-# with "undefined reference to arm_netinitialize".
-CONFIG_NETDEV_LATEINIT=y
-
 # SCHED_BACKTRACE is driven by CONFIG_OVE_PROFILER from the j2 template
 # (config/templates/nuttx_defconfig.j2): off by default so kernel + apps
 # don't pay the -funwind-tables / -fno-omit-frame-pointer flash bloat,

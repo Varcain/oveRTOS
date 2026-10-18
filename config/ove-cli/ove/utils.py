@@ -214,6 +214,47 @@ def apply_defconfig_overlay(config_path: str, overlay_path: str) -> None:
                     seen_keys.add(k)
 
 
+def config_assignments(*paths: str) -> dict[str, str]:
+    """The CONFIG_* assignments in Kconfig files, later files winning.
+
+    A value is its text after '='; '# CONFIG_X is not set' reads as 'n'.
+    """
+    import re
+
+    values: dict[str, str] = {}
+    for path in paths:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                m = re.match(r'^(CONFIG_\w+)=(.*)$', line)
+                if m:
+                    values[m.group(1)] = m.group(2)
+                    continue
+                m = re.match(r'^# (CONFIG_\w+) is not set$', line)
+                if m:
+                    values[m.group(1)] = "n"
+    return values
+
+
+def unlanded_assignments(requested: dict[str, str],
+                         config_path: str) -> list[tuple[str, str, str | None]]:
+    """Requested assignments a resolved .config does not hold.
+
+    Returns (symbol, requested, final) for each, final None when the symbol
+    is absent (unknown, or its dependencies are unmet). An 'n' request is
+    met by an absent symbol too.
+    """
+    final = config_assignments(config_path)
+    missed = []
+    for key, want in requested.items():
+        got = final.get(key)
+        if want == "n" and got in (None, "n"):
+            continue
+        if got != want:
+            missed.append((key, want, got))
+    return missed
+
+
 def diff_configs(reference_path: str, current_path: str) -> str:
     """Compute the delta between two Kconfig .config files.
 
