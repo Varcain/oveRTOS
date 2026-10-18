@@ -104,6 +104,9 @@ These targets iterate over all app definitions, compose the configuration from f
 
 ```bash
 make clean          # Remove build artifacts for the active workspace
+make clean-sources  # Remove shared patched RTOS sources no workspace uses
 make clean-all      # Remove all output/ workspaces
 make distclean      # Remove output/, dl/, .venv, and .config
 ```
+
+Workspaces that apply the same RTOS patches (the global, board and app patch layers) share one patched source tree, kept next to the download under `dl/`. A workspace's `make clean` leaves those trees in place; `make clean-sources` removes the ones no workspace uses.

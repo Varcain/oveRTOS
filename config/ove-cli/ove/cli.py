@@ -154,6 +154,9 @@ def main():
     p = sub.add_parser("clean", help="Clean build artifacts")
     p.add_argument("--all", action="store_true",
                    help="Clean all workspaces (entire output/)")
+    p.add_argument("--sources", action="store_true",
+                   help="Remove shared patched RTOS source trees no workspace "
+                        "under output/ uses")
     p.add_argument("--dist", action="store_true",
                    help="Full reset (output/, dl/, .venv, .config)")
 
@@ -388,10 +391,15 @@ def _cmd_clean(args):
         if os.path.islink(ws.config_path) or os.path.isfile(ws.config_path):
             os.unlink(ws.config_path)
 
+    elif args.sources:
+        from .build import discard_unreferenced_source_trees
+        removed = discard_unreferenced_source_trees(ws.ove_dir, ws.dl_dir)
+        logger.info(f"Removed {removed} unused shared source tree(s)")
+
     else:
+        # Shared patched source trees stay: other workspaces may use them
+        # (ove clean --sources removes the unused ones).
         logger.info("Cleaning active workspace build artifacts...")
-        from .build import discard_workspace_patch_worktrees
-        discard_workspace_patch_worktrees(ws)
         # images_base_dir, not images_dir: clean every ABI variant, and stay
         # usable when .config is absent (images_dir has to read it).
         for d in (ws.build_dir, ws.gen_dir, ws.images_base_dir):
