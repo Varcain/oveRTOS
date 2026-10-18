@@ -214,25 +214,40 @@ def apply_defconfig_overlay(config_path: str, overlay_path: str) -> None:
                     seen_keys.add(k)
 
 
+CONFIG_OPTIONAL_MARKER = "# ove:optional"
+
+
 def config_assignments(*paths: str) -> dict[str, str]:
     """The CONFIG_* assignments in Kconfig files, later files winning.
 
-    A value is its text after '='; '# CONFIG_X is not set' reads as 'n'.
+    A value is its text after '='; '# CONFIG_X is not set' reads as 'n'. An
+    assignment right after a '# ove:optional' line is left out: it is meant
+    to apply only where its dependencies are met (unlanded_assignments).
     """
     import re
 
     values: dict[str, str] = {}
     for path in paths:
+        optional = False
         with open(path) as f:
             for line in f:
                 line = line.strip()
+                if line == CONFIG_OPTIONAL_MARKER:
+                    optional = True
+                    continue
                 m = re.match(r'^(CONFIG_\w+)=(.*)$', line)
                 if m:
-                    values[m.group(1)] = m.group(2)
-                    continue
-                m = re.match(r'^# (CONFIG_\w+) is not set$', line)
-                if m:
-                    values[m.group(1)] = "n"
+                    key, value = m.group(1), m.group(2)
+                else:
+                    m = re.match(r'^# (CONFIG_\w+) is not set$', line)
+                    if not m:
+                        continue
+                    key, value = m.group(1), "n"
+                if optional:
+                    values.pop(key, None)
+                else:
+                    values[key] = value
+                optional = False
     return values
 
 

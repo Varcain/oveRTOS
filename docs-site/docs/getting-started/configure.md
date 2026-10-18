@@ -157,6 +157,8 @@ The `ove` CLI composes the final `.config` by layering these fragments in order:
 
 The layers go from generic to specific, and a later layer overrides a symbol an earlier one set; a symbol no layer sets keeps its Kconfig default.
 
+NuttX and Zephyr resolve the requested lines with their own Kconfig, which drops a line for an unknown symbol or one whose dependencies are unmet. The build fails when a line oveRTOS asked for (the generated config, the board and app overlays, `rtos.config`) did not land, and names it. A line meant only for builds that meet its dependencies goes right after a `# ove:optional` comment.
+
 ## Saving a Modified Configuration
 
 After customising settings in `menuconfig`, save the minimal diff as a defconfig:
