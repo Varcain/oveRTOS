@@ -138,11 +138,8 @@ mod file_impl {
         }
 
         fn flush(&mut self) -> Result<(), Self::Error> {
-            // The substrate doesn't expose an explicit fsync/flush
-            // primitive — writes go out synchronously and the FS
-            // layer (LittleFS / Zephyr nvs-backed FS) handles its own
-            // commit barriers.
-            Ok(())
+            // Commit buffered data and metadata to storage (ove_fs_sync).
+            File::sync(self)
         }
     }
 
