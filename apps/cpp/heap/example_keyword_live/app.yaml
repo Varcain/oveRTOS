@@ -5,6 +5,9 @@ sources:
   - src/app.cpp
 includes:
   - ../../../c/heap/example_keyword_live/include
+incompatible_boards:
+  # The an521 has no audio input.
+  - qemu-mps2-an521
 defconfig:
   - CONFIG_OVE_BSP=y
   - CONFIG_OVE_INFER=y

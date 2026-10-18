@@ -9,6 +9,8 @@ incompatible_boards:
   # The browser bundle has no network peer: the firmware's Ethernet frames
   # have nowhere to go inside the page.
   - web
+  # The an521's Zephyr build has no network interface for the oveRTOS net stack.
+  - qemu-mps2-an521
 defconfig:
   - CONFIG_OVE_BSP=y
   - CONFIG_OVE_NET=y

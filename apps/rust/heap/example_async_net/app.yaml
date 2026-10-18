@@ -11,6 +11,8 @@ incompatible_boards:
   - web
   - stm32f746.nuttx
   - stm32f746.zephyr
+  # The an521's Zephyr build has no network interface for the oveRTOS net stack.
+  - qemu-mps2-an521
 defconfig:
   - CONFIG_OVE_SYNC=y
   - CONFIG_OVE_TIMER=y
