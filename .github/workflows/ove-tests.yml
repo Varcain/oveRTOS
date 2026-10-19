@@ -68,6 +68,9 @@ jobs:
       - name: ove CLI and tooling unit tests
         run: timeout --signal=INT --kill-after=30 120 make test-python
 
+      - name: Dashboard parser tests (Node)
+        run: timeout --signal=INT --kill-after=30 60 make test-js
+
   stub-tests:
     name: Stub Backend Tests
     runs-on: ubuntu-latest

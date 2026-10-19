@@ -85,6 +85,7 @@ make test-stub             # Stub backend unit tests
 make test-cpp              # C++ binding tests
 make test-rust             # Rust binding tests
 make test-zig              # Zig binding tests
+make test-js               # Dashboard parser tests (Node)
 
 make test-qemu             # All QEMU ARM tests
 make test-qemu-freertos    # FreeRTOS on QEMU

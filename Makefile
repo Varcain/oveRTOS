@@ -168,6 +168,12 @@ test: $(VENV_STAMP)
 test-python: $(VENV_STAMP)
 	@$(VENV_PYTHON) -m unittest discover -s $(OVE_DIR)/tests/python
 
+# Dashboard trace/profiler decoder tests run app.js under a DOM shim.
+# Requires Node 18 or later (node:test).
+.PHONY: test-js
+test-js:
+	@node --test $(OVE_DIR)/tests/js/*.test.mjs
+
 # ── Benchmarks ─────────────────────────────────────────────────────────────
 # `make benchmarks-<platform>` — build all 4 bindings (c, cpp, rust, zig)
 # of the benchmark app for the given platform, run each, and emit a
@@ -526,6 +532,7 @@ help:
 	@echo "  test-rust               - Rust binding tests"
 	@echo "  test-zig                - Zig binding tests"
 	@echo "  test-python             - ove CLI and tooling unit tests"
+	@echo "  test-js                 - Dashboard trace/profiler parser tests (Node)"
 	@echo "  test-nuttx              - NuttX simulator tests"
 	@echo "  test-zephyr             - Zephyr native_sim tests"
 	@echo "  test-qemu               - All QEMU ARM tests"
