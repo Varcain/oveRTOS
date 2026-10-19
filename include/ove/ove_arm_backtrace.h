@@ -76,8 +76,9 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintp
  *   - the pair's footprint must sit strictly above the most recently
  *     accepted saved-r7 (ascending-chain invariant).
  *
- * Scan terminates on: fill-pattern match (when @p fill != 0), leaving
- * SRAM, hitting OVE_ARM_STACK_SCAN_WORDS, or filling @p max slots.
+ * Scan terminates at the top of the task's stack (@p stack_hi), after a
+ * 16 KiB safety cap, or on filling @p max slots. Returns 0 when @p psp is
+ * outside [@p stack_lo, @p stack_hi).
  *
  * @param[in]  psp      PSP at exception entry (or equivalent — points at the
  *                      stacked R0 of the interrupted task). Caller is
@@ -89,19 +90,17 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintp
  *                      table so small integer stack values can't alias vectors).
  * @param[in]  text_hi  Exclusive .text upper bound (linker @c __etext /
  *                      @c __text_region_end).
- * @param[in]  sram_lo  Inclusive SRAM lower bound.
- * @param[in]  sram_hi  Exclusive SRAM upper bound.
- * @param[in]  fill     Stack-fill pattern that terminates the scan, or 0
- *                      to disable the check. FreeRTOS uses 0xA5A5A5A5 from
- *                      @c tskSTACK_FILL_BYTE; Zephyr without
- *                      @c CONFIG_INIT_STACKS should pass 0.
+ * @param[in]  stack_lo Inclusive lower bound of the interrupted task's stack.
+ * @param[in]  stack_hi Exclusive upper bound (top) of the task's stack. A
+ *                      fill pattern cannot serve as the bound: never-written
+ *                      locals in live frames still hold it.
  * @param[out] out      Output buffer for walked return addresses, Thumb
  *                      bit cleared, inner frames first.
  * @param[in]  max      Capacity of @p out (number of slots).
  * @return Number of slots written to @p out (0..max).
  */
-int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t sram_lo,
-			   uintptr_t sram_hi, uint32_t fill, uintptr_t *out, int max);
+int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t stack_lo,
+			   uintptr_t stack_hi, uintptr_t *out, int max);
 
 #ifdef __cplusplus
 }

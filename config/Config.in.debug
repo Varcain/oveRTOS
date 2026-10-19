@@ -128,12 +128,13 @@ config OVE_PROFILER_HZ
 config OVE_PROFILER_MAX_DEPTH
     int "Maximum stack depth per sample"
     depends on OVE_PROFILER
-    default 16
+    default 32
     range 4 64
     help
       Upper bound on frames captured per sample. Deeper stacks are
-      truncated. Each sample allocates a fixed slot of
-      header + depth * sizeof(void *) bytes in the ring.
+      truncated; LVGL rendering chains run about 30 frames deep. Each
+      sample allocates a fixed slot of header + depth * sizeof(void *)
+      bytes in the ring.
 
 config OVE_PROFILER_RING_SIZE
     int "Profiler sample ring size (samples)"
