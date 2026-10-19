@@ -751,7 +751,8 @@ comptime {
 /// FreeRTOS lists at most 32 tasks; `error.QueueFull` means a live thread was
 /// left out (on FreeRTOS, a task created while its registry was full stays
 /// unlisted while it lives). A thread NuttX has no run-time accounting slot
-/// for is still listed, with its run-time valid bits clear. Returns
+/// for is still listed, with its running-time bit clear unless it has a state
+/// tracker. Returns
 /// `error.WouldBlock` from an ISR.
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     var actual: usize = 0;
