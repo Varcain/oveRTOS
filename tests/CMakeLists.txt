@@ -354,6 +354,9 @@ add_test(NAME ove_app_new_python
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
         ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_app_new.py)
+add_test(NAME ove_profiler_bridge_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_profiler_bridge.py)
 add_test(NAME ove_manifest_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_manifest.py)

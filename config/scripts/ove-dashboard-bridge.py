@@ -29,6 +29,7 @@ import hashlib
 import mmap
 import os
 import select
+import shutil
 import socket
 import struct
 import sys
@@ -1247,6 +1248,24 @@ def _nm_symbols(path, base, want_dynamic, nm_bin="nm"):
     return syms
 
 
+def profiler_tools(gdb_toolchain):
+    """Return (nm, objdump) of the cross toolchain that @gdb_toolchain (a
+    `<prefix>-gdb` path or bare name on PATH) belongs to; None for a tool
+    that cannot be found."""
+    gdb = gdb_toolchain or ""
+    if not (gdb.endswith("-gdb") and len(gdb) > len("-gdb")):
+        return None, None
+    prefix = gdb[:-len("-gdb")]
+    found = []
+    for tool in ("-nm", "-objdump"):
+        cand = prefix + tool
+        if os.path.isfile(cand):
+            found.append(cand)
+        else:
+            found.append(shutil.which(cand))
+    return found[0], found[1]
+
+
 def build_profiler_symbols(elf_path, nm_bin="nm"):
     """Build a PROFILE_SUB_SYMBOLS WebSocket frame for the firmware ELF.
 
@@ -1343,12 +1362,16 @@ def build_profiler_symbols(elf_path, nm_bin="nm"):
 # makes G inherit F's saved LR (into F's caller). Stack then shows
 # `G <- F_caller` even though F_caller never directly called G. We
 # compute tail-call closure and include transitive targets.
-_profiler_cfg_calls = {}      # caller_name -> set(callee_name)  direct BLs
-_profiler_cfg_reach = {}      # caller_name -> set(callee_name)  direct + tail-closure
-_profiler_cfg_indirect = set()  # callers with ≥1 `blx reg` / `bx reg` (not lr)
-_profiler_cfg_indirect_hub = set()  # callers with ≥2 `blx reg` — real dispatchers (event_send_core, etc.)
+# The tables are keyed by function start address, not name: static
+# functions (and LVGL's per-file inline copies — e.g. 39 x lv_memzero)
+# share names, and merging them would refute real edges or validate
+# phantom ones. Names are for display only.
+_profiler_cfg_calls = {}      # caller_start -> set(callee_start)  direct BLs
+_profiler_cfg_reach = {}      # caller_start -> set(callee_start)  direct + tail-closure (2-hop)
+_profiler_cfg_indirect = set()  # callers with >=1 `blx reg` / `bx reg` (not lr)
+_profiler_cfg_indirect_hub = set()  # callers with >=2 `blx reg` — real dispatchers (event_send_core, etc.)
 
-_CFG_FUNC_RE = re.compile(r'^[0-9a-f]+\s+<([^>]+)>:')
+_CFG_FUNC_RE = re.compile(r'^([0-9a-f]+)\s+<([^>]+)>:')
 # `bl HEXTARGET <NAME(+0xOFFSET)?>` — direct call. objdump on ARM emits
 # `bl` even for inter-Thumb-calls (no `bl.w` distinction).
 _CFG_BL_RE = re.compile(r'\sbl\s+([0-9a-f]+)\s+<([^>]+)>')
@@ -1361,46 +1384,45 @@ _CFG_INDIRECT_RE = re.compile(
     r'\s(?:blx|bx)\s+(r\d+|ip|sl|sb|fp)\b')
 
 
-def _build_profiler_cfg(elf_path, objdump_bin="objdump"):
-    """Disassemble @elf_path and populate module-global CFG tables used
-    by _prune_profile_payload(). Must be called AFTER
-    build_profiler_symbols() so BL targets can be resolved to names via
-    _profiler_resolve()."""
-    global _profiler_cfg_calls, _profiler_cfg_reach
-    global _profiler_cfg_indirect, _profiler_cfg_indirect_hub
-    if not elf_path or not os.path.isfile(elf_path):
-        return
+def _profiler_func_start(pc):
+    """Start address of the symbol containing @pc, or None."""
     if not _profiler_sym_index:
-        return
-    try:
-        out = subprocess.check_output(
-            [objdump_bin, "-d", "--no-show-raw-insn", elf_path],
-            stderr=subprocess.DEVNULL).decode("utf-8", "replace")
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return
+        return None
+    lo, hi = 0, len(_profiler_sym_index) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        ps, pe, _nm = _profiler_sym_index[mid]
+        if pc < ps:
+            hi = mid - 1
+        elif pc >= pe:
+            lo = mid + 1
+        else:
+            return ps
+    return None
 
-    calls = {}      # name -> set of direct-BL callees
-    tails = {}      # name -> set of tail-call targets (external B)
-    indirect_count = {}  # name -> number of `blx reg` instructions
+
+def _cfg_from_objdump(text):
+    """Build the call-graph tables from `objdump -d` output (requires the
+    symbol index). Returns (calls, reach, indirect, indirect_hub)."""
+    calls = {}      # start -> set of direct-BL callee starts
+    tails = {}      # start -> set of tail-call target starts (external B)
+    indirect_count = {}  # start -> number of `blx reg` instructions
     cur = None
 
-    for line in out.splitlines():
+    for line in text.splitlines():
         m = _CFG_FUNC_RE.match(line)
         if m:
-            cur = m.group(1)
-            calls.setdefault(cur, set())
-            tails.setdefault(cur, set())
+            cur = _profiler_func_start(int(m.group(1), 16))
+            if cur is not None:
+                calls.setdefault(cur, set())
+                tails.setdefault(cur, set())
             continue
         if cur is None:
             continue
         m = _CFG_BL_RE.search(line)
         if m:
-            try:
-                target = int(m.group(1), 16)
-            except ValueError:
-                continue
-            tgt = _profiler_resolve(target)
-            if tgt and not tgt.startswith("0x"):
+            tgt = _profiler_func_start(int(m.group(1), 16))
+            if tgt is not None:
                 calls[cur].add(tgt)
             continue
         m = _CFG_INDIRECT_RE.search(line)
@@ -1409,20 +1431,14 @@ def _build_profiler_cfg(elf_path, objdump_bin="objdump"):
             continue
         m = _CFG_B_RE.search(line)
         if m:
-            try:
-                target = int(m.group(1), 16)
-            except ValueError:
-                continue
-            tgt = _profiler_resolve(target)
-            # Intra-function branch: target resolves to the same function
-            # we're currently parsing. Skip — it's control flow, not a
-            # tail call.
-            if tgt and not tgt.startswith("0x") and tgt != cur:
+            tgt = _profiler_func_start(int(m.group(1), 16))
+            # Intra-function branch: control flow, not a tail call.
+            if tgt is not None and tgt != cur:
                 tails[cur].add(tgt)
 
-    # Compute tail-call closure: when caller BL's some X, and X chains
-    # through `b Y; b Z;` tail-calls, any of {X, Y, Z, ...} can appear
-    # on the stack below caller.
+    # Tail-call closure: when caller BL's some X, and X chains through
+    # `b Y; b Z;` tail-calls, any of {X, Y, Z, ...} can appear on the stack
+    # below caller.
     tc_cache = {}
 
     def tc_close(f, stk):
@@ -1448,15 +1464,9 @@ def _build_profiler_cfg(elf_path, objdump_bin="objdump"):
             r |= calls.get(g, set())
         reach_1[f] = r
 
-    # Expand to 2-hop: reach[F] = reach_1[F] ∪ ⋃ reach_1[X] for X in
-    # reach_1[F]. Covers the "unwinder missed a frame" case — e.g. an
-    # LVGL draw_sw_fill call into blend where fill's large locals
-    # corrupt the saved-r7 chain and fill drops out of the capture;
-    # we still want to accept execute_drawing -> blend as a valid
-    # (hole-containing) edge. 2-hop stays tight in this firmware
-    # because callbacks dispatch via `blx reg`, which reach doesn't
-    # traverse — event-dispatch functions don't reach draw code via
-    # reach_2. Sampled separately at build time before relying on it.
+    # Expand to 2-hop: covers the "unwinder missed a frame" case (e.g. a
+    # large-locals frame drops out of the capture). Callbacks dispatch via
+    # `blx reg`, which reach doesn't traverse, so 2-hop stays tight.
     reach = {}
     for f in reach_1:
         r = set(reach_1[f])
@@ -1466,7 +1476,27 @@ def _build_profiler_cfg(elf_path, objdump_bin="objdump"):
 
     indirect = set(indirect_count)
     indirect_hub = {f for f, n in indirect_count.items() if n >= 2}
+    return calls, reach, indirect, indirect_hub
 
+
+def _build_profiler_cfg(elf_path, objdump_bin="objdump"):
+    """Disassemble @elf_path and populate module-global CFG tables used
+    by _prune_profile_payload(). Must be called AFTER
+    build_profiler_symbols() so BL targets resolve to function starts."""
+    global _profiler_cfg_calls, _profiler_cfg_reach
+    global _profiler_cfg_indirect, _profiler_cfg_indirect_hub
+    if not elf_path or not os.path.isfile(elf_path):
+        return
+    if not _profiler_sym_index:
+        return
+    try:
+        out = subprocess.check_output(
+            [objdump_bin, "-d", "--no-show-raw-insn", elf_path],
+            stderr=subprocess.DEVNULL).decode("utf-8", "replace")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return
+
+    calls, reach, indirect, indirect_hub = _cfg_from_objdump(out)
     _profiler_cfg_calls = calls
     _profiler_cfg_reach = reach
     _profiler_cfg_indirect = indirect
@@ -1485,16 +1515,16 @@ _PRUNE_WINDOW = 4   # max consecutive phantoms we'll try to bypass
 
 
 def _edge_allowed(callee, caller, strict=False):
-    """True when `caller` could plausibly be the direct-or-transitive
-    ancestor of `callee`. Allows when either side is unresolved. When
-    strict=False (default, used for the primary adjacent-edge check),
-    an indirect-dispatch hub caller (≥2 `blx reg` sites — e.g.
-    event_send_core) also permits arbitrary callees. When strict=True
-    (used for validator-scan targets that want to drop intermediate
-    frames), hub-permit is disabled — only direct/reach edges count.
-    Hub-permit at the scan target would wrongly accept a hub as the
+    """True when function `caller` (start address) could plausibly be the
+    direct-or-transitive ancestor of `callee`. Allows when either side is
+    unresolved (None). When strict=False (default, used for the primary
+    adjacent-edge check), an indirect-dispatch hub caller (≥2 `blx reg`
+    sites — e.g. event_send_core) also permits arbitrary callees. When
+    strict=True (used for validator-scan targets that want to drop
+    intermediate frames), hub-permit is disabled — only direct/reach edges
+    count. Hub-permit at the scan target would wrongly accept a hub as the
     validator across several REAL intermediate frames, dropping them."""
-    if caller not in _profiler_cfg_reach or callee.startswith("0x"):
+    if caller is None or callee is None or caller not in _profiler_cfg_reach:
         return True
     if callee in _profiler_cfg_reach[caller]:
         return True
@@ -1503,14 +1533,125 @@ def _edge_allowed(callee, caller, strict=False):
     return caller in _profiler_cfg_indirect_hub
 
 
+def _prune_chain(pcs):
+    """Return the keep-mask for one sample's PC chain (leaf first)."""
+    funcs = [_profiler_func_start(pc) for pc in pcs]
+    keep = [True] * len(pcs)
+
+    # Duplicate-phantom pass: if the same function appears at multiple
+    # positions AND the CFG says it is not a hub and cannot reach itself
+    # (no recursion path in 2-hop), every copy except the outermost is a
+    # stale-LR phantom (e.g. `finalize_task_creation` at depth 6 AND 10 in
+    # the LVGL draw dispatch path). Compared by function address, so two
+    # different static functions sharing a name are not merged.
+    seen_at = {}
+    for idx, f in enumerate(funcs):
+        if f is None:
+            continue
+        seen_at.setdefault(f, []).append(idx)
+    for f, positions in seen_at.items():
+        if len(positions) < 2:
+            continue
+        if f in _profiler_cfg_indirect_hub:
+            continue
+        if f in _profiler_cfg_reach.get(f, ()):
+            continue  # real recursion
+        for idx in positions[:-1]:
+            keep[idx] = False
+
+    # Walk from leaf. i = current validated callee index.
+    i = 0
+    while i < len(keep):
+        if not keep[i]:
+            i += 1
+            continue
+        j = i + 1
+        while j < len(keep) and not keep[j]:
+            j += 1
+        if j >= len(keep):
+            break
+        callee = funcs[i]
+        if _edge_allowed(callee, funcs[j]):
+            i = j
+            continue
+        # Edge refuted. Scan up to _PRUNE_WINDOW frames higher for a
+        # validator; if found, every refuted intermediate frame is a
+        # phantom. strict=True so a hub several frames up cannot
+        # hub-permit across real intermediate frames.
+        k = j + 1
+        hops = 0
+        found = -1
+        while k < len(keep) and hops < _PRUNE_WINDOW:
+            if not keep[k]:
+                k += 1
+                continue
+            if _edge_allowed(callee, funcs[k], strict=True):
+                found = k
+                break
+            k += 1
+            hops += 1
+        if found >= 0:
+            for m in range(j, found):
+                keep[m] = False
+            i = found
+        else:
+            i = j  # no validator — keep j as an unvalidated caller
+
+    # Firm-refuted up-edge pass: drop a frame whose UP edge is firmly
+    # refuted — the up-caller has a resolvable reach set, the frame is not
+    # in it, AND the up-caller has ZERO indirect call sites (so its reach
+    # is complete). Catches stale-LR phantoms wedged between real frames
+    # whose down-edge happens to be CFG-valid. Iterate: removing one can
+    # expose another.
+    changed = True
+    while changed:
+        changed = False
+        kept_idx = [k for k, v in enumerate(keep) if v]
+        for pos in range(len(kept_idx) - 1):
+            cur = funcs[kept_idx[pos]]
+            up = funcs[kept_idx[pos + 1]]
+            if (up in _profiler_cfg_reach and cur is not None
+                    and cur not in _profiler_cfg_reach[up]
+                    and up not in _profiler_cfg_indirect):
+                keep[kept_idx[pos]] = False
+                changed = True
+                break
+
+    # Isolated-phantom pass: a frame whose edges to BOTH surviving
+    # neighbours refute (loose) is a stale-LR phantom wedged between real
+    # frames (e.g. an indirect non-hub sitting where a blx call went).
+    changed = True
+    while changed:
+        changed = False
+        kept_idx = [k for k, v in enumerate(keep) if v]
+        for pos in range(1, len(kept_idx) - 1):
+            mid = kept_idx[pos]
+            down = kept_idx[pos - 1]    # closer to leaf (callee)
+            up = kept_idx[pos + 1]      # closer to outer (caller)
+            if (not _edge_allowed(funcs[down], funcs[mid])
+                    and not _edge_allowed(funcs[mid], funcs[up])):
+                keep[mid] = False
+                changed = True
+                break
+
+    # Top-of-chain trim: drop outermost frames whose edge to the frame
+    # below is refuted (nothing above to validate them).
+    kept_idx = [k for k, v in enumerate(keep) if v]
+    while len(kept_idx) >= 2:
+        top = kept_idx[-1]
+        below = kept_idx[-2]
+        if _edge_allowed(funcs[below], funcs[top]):
+            break
+        keep[top] = False
+        kept_idx.pop()
+    return keep
+
+
 def _prune_profile_payload(payload):
-    """Rewrite a PROFILE_SUB_SAMPLES payload, dropping phantom frames.
-    For each (callee, apparent-caller) pair, if the edge is refuted AND
-    a valid caller for the same callee exists within _PRUNE_WINDOW
-    frames above, drop every refuted frame between and promote the
-    validator. If no validator is reachable, keep the chain as-is —
-    better to show a bogus caller than to shred a chain we can't
-    confidently repair. No-op when CFG tables are empty."""
+    """Rewrite a PROFILE_SUB_SAMPLES payload, dropping phantom frames
+    (see _prune_chain). If no validator is reachable for a refuted edge the
+    chain is kept as-is — better to show a bogus caller than to shred a
+    chain we can't confidently repair. No-op when CFG tables are empty."""
     if not _profiler_cfg_reach or len(payload) < 8:
         return payload
     try:
@@ -1538,150 +1679,9 @@ def _prune_profile_payload(payload):
             pcs.append(pc)
             p += 8
 
-        names = [_profiler_resolve(pc) for pc in pcs]
-        keep = [True] * len(pcs)
-
-        # Duplicate-phantom pass: if the same function name appears at
-        # multiple positions AND the CFG says the function is not a hub
-        # and cannot reach itself (no recursion path in 2-hop), every
-        # copy except the outermost is a stale-LR phantom. Drops the
-        # very common `finalize_task_creation @ depth 6 AND 10` pattern
-        # from the LVGL draw dispatch path.
-        seen_at = {}
-        for idx, nm in enumerate(names):
-            if nm.startswith("0x"):
-                continue
-            seen_at.setdefault(nm, []).append(idx)
-        for nm, positions in seen_at.items():
-            if len(positions) < 2:
-                continue
-            if nm in _profiler_cfg_indirect_hub:
-                continue
-            if nm in _profiler_cfg_reach.get(nm, ()):
-                continue  # real recursion
-            # Keep only the outermost occurrence.
-            for idx in positions[:-1]:
-                keep[idx] = False
-
-        # Walk from leaf. i = current validated callee index.
-        i = 0
-        while i < len(keep):
-            if not keep[i]:
-                i += 1
-                continue
-            # Find next kept neighbour.
-            j = i + 1
-            while j < len(keep) and not keep[j]:
-                j += 1
-            if j >= len(keep):
-                break
-            callee = names[i]
-            if _edge_allowed(callee, names[j]):
-                i = j
-                continue
-            # Edge refuted. Scan up to _PRUNE_WINDOW frames higher for
-            # a validator. If found, mark every refuted intermediate
-            # frame as phantom. strict=True because we don't want a
-            # hub caller 3 frames up to hub-permit across real
-            # intermediate frames (e.g. finalize_task_creation
-            # hub-permitting `dispatch` would drop real lv_draw_dispatch
-            # and lv_draw_dispatch_layer frames in between).
-            k = j + 1
-            hops = 0
-            found = -1
-            while k < len(keep) and hops < _PRUNE_WINDOW:
-                if not keep[k]:
-                    k += 1
-                    continue
-                if _edge_allowed(callee, names[k], strict=True):
-                    found = k
-                    break
-                k += 1
-                hops += 1
-            if found >= 0:
-                for m in range(j, found):
-                    if keep[m]:
-                        keep[m] = False
-                i = found
-            else:
-                # No validator — keep j as an unvalidated caller.
-                i = j
-
-        # Firm-refuted up-edge pass: drop a frame whose UP edge
-        # (current-frame called-by next-up-frame) is firmly refuted —
-        # the up-caller has a resolvable reach set, callee is not in
-        # it, AND the up-caller has ZERO indirect call sites. With no
-        # indirect calls, the CFG reach is COMPLETE (direct bl/b +
-        # tail-call closure); missing callee means the call is truly
-        # impossible. Catches stale-LR phantoms wedged between real
-        # frames where the down-edge happens to be CFG-valid so the
-        # isolated-phantom pass (which needs BOTH edges refuted) can't
-        # touch them. Example: in LVGL label draw, a previous rect
-        # draw leaves `finalize_task_creation @ lv_draw_rect` on the
-        # stack, so the chain shows
-        # `iterate_characters <- finalize_task_creation <- lv_draw_rect
-        # <- lv_draw_sw_label`; `sw_label` has 0 indirect callsites
-        # and doesn't reach `lv_draw_rect`, so that edge is firm-
-        # refuted and `lv_draw_rect` is dropped. Iterating lets the
-        # now-exposed `finalize_task_creation <- lv_draw_sw_label`
-        # edge also get firm-refuted and dropped.
-        changed = True
-        while changed:
-            changed = False
-            kept_idx = [k for k, v in enumerate(keep) if v]
-            for pos in range(len(kept_idx) - 1):
-                cur = kept_idx[pos]
-                up = kept_idx[pos + 1]
-                up_name = names[up]
-                cur_name = names[cur]
-                if (up_name in _profiler_cfg_reach
-                        and not cur_name.startswith("0x")
-                        and cur_name not in _profiler_cfg_reach[up_name]
-                        and up_name not in _profiler_cfg_indirect):
-                    keep[cur] = False
-                    changed = True
-                    break
-
-        # Isolated-phantom pass: a frame whose edges to BOTH its
-        # surviving upstream and downstream neighbours refute (loose)
-        # is almost certainly a stale-LR phantom wedged between real
-        # frames. The window-validator pass can miss these when the
-        # phantom is an indirect non-hub (permits nothing strict, but
-        # not refuted-enough to trigger the scan). Example:
-        # `draw_letter_cb <- lv_draw_buf_width_to_stride_ex <-
-        # lv_draw_unit_draw_letter` — buf_width is indirect but not a
-        # hub, and sits where the real chain is
-        # unit_draw_letter -> draw_letter_cb via blx.
-        changed = True
-        while changed:
-            changed = False
-            kept_idx = [k for k, v in enumerate(keep) if v]
-            for pos in range(1, len(kept_idx) - 1):
-                mid = kept_idx[pos]
-                down = kept_idx[pos - 1]    # closer to leaf (callee)
-                up = kept_idx[pos + 1]      # closer to outer (caller)
-                if (not _edge_allowed(names[down], names[mid])
-                        and not _edge_allowed(names[mid], names[up])):
-                    keep[mid] = False
-                    changed = True
-                    break
-
-        # Top-of-chain trim: if the outermost surviving frame has a
-        # refuted edge to the frame below, drop it and keep trimming
-        # until the top validates or we run out. Catches phantoms at
-        # the end of the unwound chain with nothing above to validate.
-        kept_idx = [i for i, k in enumerate(keep) if k]
-        while len(kept_idx) >= 2:
-            top = kept_idx[-1]
-            below = kept_idx[-2]
-            if _edge_allowed(names[below], names[top]):
-                break
-            keep[top] = False
-            kept_idx.pop()
-
+        keep = _prune_chain(pcs)
         new_pcs = [pc for pc, k in zip(pcs, keep) if k]
-        new_depth = len(new_pcs)
-        out += struct.pack("<QIBBH", ts, tid, new_depth, state, pad)
+        out += struct.pack("<QIBBH", ts, tid, len(new_pcs), state, pad)
         for pc in new_pcs:
             out += struct.pack("<Q", pc)
     return bytes(out)
@@ -2333,22 +2333,24 @@ def main():
     # --gdb-toolchain points at arm-none-eabi-gdb, derive the matching
     # arm-none-eabi-nm alongside it and feed it to build_profiler_symbols.
     if args.elf_path:
-        nm_bin = "nm"
-        objdump_bin = None
-        gdb = args.gdb_toolchain or ""
-        if gdb.endswith("-gdb") and len(gdb) > len("-gdb"):
-            nm_candidate = gdb[:-len("-gdb")] + "-nm"
-            if os.path.isfile(nm_candidate):
-                nm_bin = nm_candidate
-            od_candidate = gdb[:-len("-gdb")] + "-objdump"
-            if os.path.isfile(od_candidate):
-                objdump_bin = od_candidate
+        nm_bin, objdump_bin = profiler_tools(args.gdb_toolchain)
+        if nm_bin is None:
+            sys.stderr.write(
+                "[profiler] WARNING: no cross nm next to --gdb-toolchain "
+                f"({args.gdb_toolchain or 'not given'}); trying host nm — "
+                "profiler symbols may be missing\n")
+            nm_bin = "nm"
         build_profiler_symbols(args.elf_path, nm_bin=nm_bin)
         # CFG validator: reject phantom frames left over from stale
         # saved-{r7,lr} pairs in functions with large local frames, for the
-        # stack-scan unwinder. Gated on a cross-toolchain objdump resolving.
+        # stack-scan unwinder. Needs the cross-toolchain objdump.
         if objdump_bin:
             _build_profiler_cfg(args.elf_path, objdump_bin=objdump_bin)
+        else:
+            sys.stderr.write(
+                "[profiler] WARNING: no cross objdump next to --gdb-toolchain; "
+                "phantom-frame pruning is disabled\n")
+        sys.stderr.flush()
 
     threading.Thread(target=display_bridge, daemon=True).start()
     threading.Thread(target=audio_bridge, daemon=True).start()
