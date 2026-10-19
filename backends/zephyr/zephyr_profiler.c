@@ -191,12 +191,6 @@ void ove_backend_profiler_on_tick(void)
 	(void)ove_profiler_ring_push(&s);
 }
 
-/* Sampling is timer-driven, so the pump-side sample_tick is a no-op —
- * matches the FreeRTOS contract. */
-void ove_backend_profiler_sample_tick(void)
-{
-}
-
 static void profiler_timer_expiry(struct k_timer *timer)
 {
 	(void)timer;

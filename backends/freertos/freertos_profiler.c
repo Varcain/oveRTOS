@@ -16,11 +16,8 @@
  * hardware has already stacked the interrupted task's exception frame
  * onto its PSP. We read the stacked PC from there and push a sample.
  *
- * Cross-backend contract:
- *   sample_tick() is called from the sim-debug pump. On POSIX that
- *   is where sampling is kicked off. On FreeRTOS sampling is ISR-driven,
- *   so sample_tick() is a no-op — the actual producer is
- *   ove_backend_profiler_on_tick(), invoked from freertos_hooks.c.
+ * The producer is ove_backend_profiler_on_tick(), invoked from
+ * vApplicationTickHook in freertos_hooks.c.
  *
  * Multi-frame unwinding: the stack-scan walker and the five heuristic
  * filters (Thumb bit, text range, bl/blx precedence, saved-r7 adjacency,
@@ -244,16 +241,6 @@ void ove_backend_profiler_on_tick(void)
 	}
 
 	(void)ove_profiler_ring_push(&s);
-}
-
-/*
- * No-op: sampling is ISR-driven via ove_backend_profiler_on_tick().
- * The pump still calls this every iteration per the cross-backend
- * contract — keeping it empty means the pump pays zero per-tick cost
- * on FreeRTOS.
- */
-void ove_backend_profiler_sample_tick(void)
-{
 }
 
 int ove_backend_profiler_start(void)
