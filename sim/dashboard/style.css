@@ -683,6 +683,7 @@ body {
 .trace-sw-ready     { --sw: #4f8fd8; }
 .trace-sw-blocked   { --sw: #5e5130; }
 .trace-sw-suspended { --sw: #50566a; }
+.trace-sw-unknown   { --sw: repeating-linear-gradient(45deg, #3b2230, #3b2230 2px, #7a4a5c 2px, #7a4a5c 3px); }
 
 .trace-controls label { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; }
 
