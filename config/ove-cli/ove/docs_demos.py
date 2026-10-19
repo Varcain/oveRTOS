@@ -37,8 +37,9 @@ from .workspace import Workspace
 logger = logging.getLogger("ove")
 
 # What a demo page needs out of the bundle 'ove build' wrote to serve/.
-_DEMO_FILES = ("index.html", "app.js", "style.css", "coi-serviceworker.js",
-               "qemu-wasm.js", "firmware.elf")
+_DEMO_FILES = ("index.html", "app.js", "board.js", "style.css", "board.css",
+               "manifest.json", "coi-serviceworker.js", "qemu-wasm.js",
+               "firmware.elf")
 # ...and out of a Linux personality bundle, whose page is a terminal.
 _TERMINAL_FILES = ("index.html", "terminal.js", "coi-serviceworker.js",
                    "firmware.elf", "rootfs.cpio")

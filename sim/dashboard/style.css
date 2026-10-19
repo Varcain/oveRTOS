@@ -4,10 +4,22 @@
     --bg: #1a1a2e;
     --surface: #16213e;
     --border: #0f3460;
+    --border-hi: #1f4f8a;     /* hover / raised controls */
     --text: #e0e0e0;
-    --accent: #e94560;
+    --fg: var(--text);        /* legacy alias used by profiler rules */
+    --dim: #9aa4b8;           /* secondary text: labels, metadata */
+    --faint: #6f7a90;         /* tertiary: gutters, placeholders */
+    --accent: #e94560;        /* errors, breakpoints, destructive only */
+    --focus: #5b8def;         /* focus / selection */
     --green: #4ecca3;
-    --dim: #e0e0e0;
+    --amber: #ffd54f;
+
+    /* Typography: sans for interface chrome, mono for data. */
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+    --mono: "Cascadia Code", "Fira Code", Consolas, Monaco, "DejaVu Sans Mono", monospace;
+    --fs-xs: 11px;            /* uppercase micro-labels only */
+    --fs-sm: 12px;            /* controls, tables, logs */
+    --fs-md: 13px;            /* body */
 }
 
 * {
@@ -17,173 +29,14 @@
 }
 
 body {
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: var(--ui);
+    font-size: var(--fs-md);
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
 }
 
-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 24px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    position: relative;
-    z-index: 100;
-}
-
-header h1 {
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-}
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.status {
-    font-size: 12px;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-weight: 600;
-}
-
-.status.connected {
-    background: rgba(78, 204, 163, 0.2);
-    color: var(--green);
-}
-
-.status.disconnected {
-    background: rgba(233, 69, 96, 0.2);
-    color: var(--accent);
-}
-
-/* ── WinBox dark theme ────────────────────────────────────────────── */
-
-.winbox {
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-
-.winbox .wb-header {
-    background: var(--surface) !important;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--dim);
-    border-bottom: 1px solid var(--border);
-    border-radius: 8px 8px 0 0;
-}
-
-.winbox .wb-body {
-    background: var(--surface);
-    border-radius: 0 0 8px 8px;
-}
-
-/* Hide WinBox's built-in minimized badge — the bottom #taskbar already
-   lists minimized windows and is the sole restore path. */
-.winbox.min {
-    display: none !important;
-}
-
-.winbox.focus {
-    border-color: var(--accent);
-    box-shadow: 0 4px 24px rgba(233, 69, 96, 0.15);
-}
-
-.winbox .wb-control .wb-min,
-.winbox .wb-control .wb-max,
-.winbox .wb-control .wb-full,
-.winbox .wb-control .wb-close {
-    opacity: 0.5;
-    background-size: 14px auto !important;
-    background-repeat: no-repeat !important;
-    background-position: center !important;
-}
-
-/* Minimize: horizontal line */
-.winbox .wb-control .wb-min {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5'%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E") !important;
-}
-
-/* Maximize: single square */
-.winbox .wb-control .wb-max {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5'%3E%3Crect x='4' y='4' width='16' height='16' rx='1'/%3E%3C/svg%3E") !important;
-}
-
-/* Close: X mark */
-.winbox .wb-control .wb-close {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5'%3E%3Cline x1='6' y1='6' x2='18' y2='18'/%3E%3Cline x1='18' y1='6' x2='6' y2='18'/%3E%3C/svg%3E") !important;
-}
-
-.winbox .wb-control .wb-min:hover,
-.winbox .wb-control .wb-max:hover,
-.winbox .wb-control .wb-full:hover {
-    opacity: 1;
-}
-
-.winbox .wb-control .wb-close:hover {
-    opacity: 1;
-    background: var(--accent);
-}
-
-/* ── Bottom taskbar ───────────────────────────────────────────────── */
-
-#taskbar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 34px;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    padding: 0 8px;
-    gap: 4px;
-    z-index: 2147483646;
-}
-
-.taskbar-badge {
-    padding: 4px 12px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    border-radius: 4px;
-    cursor: pointer;
-    color: var(--dim);
-    background: transparent;
-    border: 1px solid transparent;
-    white-space: nowrap;
-    user-select: none;
-}
-
-.taskbar-badge:hover {
-    background: var(--border);
-    color: var(--text);
-}
-
-.taskbar-badge.active {
-    background: rgba(233, 69, 96, 0.15);
-    color: var(--accent);
-    border-color: var(--accent);
-}
-
-.taskbar-badge.minimized {
-    opacity: 0.5;
-    font-style: italic;
-}
-
-/* ── Panels (inside WinBox bodies) ────────────────────────────────── */
+/* ── Panels (moved into inspector panes by board.js) ─────────────── */
 
 .panel {
     background: var(--surface);
@@ -194,34 +47,22 @@ header h1 {
     overflow: hidden;
 }
 
-/* ── Display ──────────────────────────────────────────────────────── */
-
-.display-container {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #000;
-    border-radius: 4px;
-    padding: 8px;
-}
-
-#display-canvas {
-    image-rendering: pixelated;
-    max-width: 100%;
-    max-height: 100%;
-    height: auto;
-}
-
-.display-info {
-    display: flex;
-    gap: 16px;
-    margin-top: 8px;
-    font-size: 12px;
+/* Segmented control (display scale, console levels, ...) */
+.seg {
+    background: transparent;
     color: var(--dim);
-    flex-shrink: 0;
+    border: 1px solid var(--border-hi);
+    padding: 2px 10px;
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
 }
+.seg + .seg { border-left: none; }
+.seg:first-child { border-radius: 4px 0 0 4px; }
+.seg:last-child  { border-radius: 0 4px 4px 0; }
+.seg:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.seg.active { color: var(--text); background: rgba(91, 141, 239, 0.22); border-color: var(--focus); }
+.seg.active + .seg { border-left: 1px solid var(--focus); }
 
 /* ── Audio ─────────────────────────────────────────────────────────── */
 
@@ -236,25 +77,57 @@ header h1 {
 .btn {
     background: var(--border);
     color: var(--text);
-    border: none;
-    padding: 6px 16px;
+    border: 1px solid transparent;
+    padding: 5px 14px;
     border-radius: 4px;
     cursor: pointer;
     font-family: inherit;
-    font-size: 12px;
+    font-size: var(--fs-sm);
+    white-space: nowrap;
 }
 
 .btn:hover {
-    background: var(--accent);
+    background: var(--border-hi);
+}
+
+.btn:focus-visible,
+.seg:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
 }
 
 .btn-small {
-    padding: 4px 10px;
-    font-size: 11px;
+    padding: 3px 10px;
+    font-size: var(--fs-sm);
 }
 
+/* On/off toggle buttons: a filled box when on, hollow when off, so the
+ * state is readable without hovering. */
+.btn-toggle {
+    background: transparent;
+    border-color: var(--border-hi);
+    color: var(--dim);
+}
+.btn-toggle::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    vertical-align: 0;
+}
+.btn-toggle:hover { background: rgba(255, 255, 255, 0.04); color: var(--text); }
+.btn-toggle.active {
+    background: rgba(78, 204, 163, 0.14);
+    border-color: var(--green);
+    color: var(--green);
+}
+.btn-toggle.active::before { background: currentColor; }
+
 #audio-info {
-    font-size: 12px;
+    font-size: var(--fs-sm);
     color: var(--dim);
 }
 
@@ -266,7 +139,7 @@ header h1 {
 }
 
 .audio-devices label {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: var(--dim);
     display: flex;
     align-items: center;
@@ -280,7 +153,7 @@ header h1 {
     border-radius: 4px;
     padding: 4px 8px;
     font-family: inherit;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     max-width: 180px;
 }
 
@@ -318,56 +191,73 @@ header h1 {
     position: absolute;
     top: 4px;
     left: 6px;
-    font-size: 9px;
+    font-size: var(--fs-xs);
     font-weight: 600;
     letter-spacing: 1px;
     color: var(--dim);
-    opacity: 0.5;
     z-index: 1;
     pointer-events: none;
 }
 
 /* ── Events ────────────────────────────────────────────────────────── */
 
-.events-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 6px;
-    flex-shrink: 0;
-}
-
-.autoscroll-on {
-    background: rgba(78, 204, 163, 0.2);
-    color: var(--green);
-}
-
 .event-log {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    font-size: 11px;
-    line-height: 1.6;
-    color: var(--dim);
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    color: var(--text);
 }
 
 .event-log .entry {
-    padding: 2px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1px 0;
     white-space: pre-wrap;
     tab-size: 8;
 }
 
+.event-log .entry:hover { background: rgba(255, 255, 255, 0.03); }
+
 .event-log .entry .time {
-    color: var(--green);
+    color: var(--faint);
     margin-right: 8px;
 }
 
+/* Source tag: quiet for firmware log lines, coloured for everything else. */
 .event-log .entry .type {
-    color: var(--accent);
+    color: var(--faint);
     margin-right: 8px;
 }
+.event-log .entry.src-log .type { display: none; }   /* the common case: no tag */
+.event-log .entry.src-system .type { color: var(--focus); }
+.event-log .entry.src-system       { color: var(--dim); }
 
-/* ── Mobile / small viewport ──────────────────────────────────────── */
+/* Firmware log level, parsed from the "[I]/[W]/[E]/[D]" prefix. */
+.event-log .entry.lvl-w { color: var(--amber); }
+.event-log .entry.lvl-e { color: #ff6b81; background: rgba(233, 69, 96, 0.08); }
+.event-log .entry.lvl-d { color: var(--dim); }
+
+.console-bar {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-shrink: 0;
+}
+
+.console-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-hi);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+}
+.console-input::placeholder { color: var(--faint); }
+.console-input:focus { outline: none; border-color: var(--focus); }
 
 /* ── Thread view ─────────────────────────────────────────────────── */
 
@@ -379,7 +269,7 @@ header h1 {
     border-bottom: 1px solid var(--border);
     margin-bottom: 6px;
 }
-.thread-mem-label { font-size: 11px; color: var(--text); white-space: nowrap; }
+.thread-mem-label { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; }
 .thread-mem-track {
     flex: 1;
     height: 10px;
@@ -396,7 +286,7 @@ header h1 {
 }
 .thread-mem-fill.mem-warn  { background: #f0a500; }
 .thread-mem-fill.mem-critical { background: var(--accent); }
-.thread-mem-text { font-size: 10px; color: #aaa; white-space: nowrap; }
+.thread-mem-text { font-size: var(--fs-sm); font-family: var(--mono); color: var(--dim); white-space: nowrap; }
 
 .thread-table-wrap {
     overflow-y: auto;
@@ -405,8 +295,8 @@ header h1 {
 .thread-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
-    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: var(--fs-sm);
+    font-family: var(--mono);
 }
 .thread-table thead th {
     position: sticky;
@@ -414,12 +304,23 @@ header h1 {
     background: var(--surface);
     text-align: left;
     padding: 4px 8px;
+    font-family: var(--ui);
     font-weight: 600;
-    font-size: 10px;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.5px;
     text-transform: uppercase;
-    color: #888;
+    color: var(--dim);
     border-bottom: 1px solid var(--border);
 }
+.thread-table thead th.td-num { text-align: right; }
+.thread-table td.col-cpu,
+.thread-table th.col-cpu { width: 1%; }   /* shrink-to-fit */
+
+/* Columns the backend never reports are hidden rather than shown as a
+ * column of "--" (toggled per snapshot in handleThreadSnapshot). */
+.thread-table.no-stack  .col-stack,
+.thread-table.no-cpu    .col-cpu,
+.thread-table.no-states .col-states { display: none; }
 .thread-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
 .thread-table tbody tr:hover { background: rgba(255,255,255,0.05); }
 .thread-table td {
@@ -433,7 +334,8 @@ header h1 {
     display: inline-block;
     padding: 1px 6px;
     border-radius: 3px;
-    font-size: 10px;
+    font-family: var(--ui);
+    font-size: var(--fs-xs);
     font-weight: 600;
     text-transform: uppercase;
 }
@@ -461,9 +363,9 @@ header h1 {
 
 .thread-empty {
     text-align: center;
-    color: #555;
+    color: var(--faint);
     padding: 24px;
-    font-size: 12px;
+    font-size: var(--fs-sm);
 }
 
 #threads-panel {
@@ -480,35 +382,6 @@ header h1 {
     height: 100%;
 }
 
-.debug-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--border);
-}
-.dbg-btn {
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    width: 30px;
-    height: 26px;
-    font-size: 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-}
-.dbg-btn:hover:not(:disabled) { background: var(--border); }
-.dbg-btn:active:not(:disabled) { background: var(--accent); }
-.dbg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.dbg-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
-.dbg-status { font-size: 11px; color: #888; margin-left: auto; }
-.dbg-running { color: var(--green); }
-.dbg-stopped { color: #ffd54f; }
-
 .debug-tabs {
     display: flex;
     gap: 2px;
@@ -516,31 +389,35 @@ header h1 {
 }
 .dbg-tab {
     background: transparent;
-    color: #888;
+    color: var(--dim);
     border: 1px solid transparent;
     border-radius: 3px;
     padding: 2px 10px;
-    font-size: 11px;
+    font-family: inherit;
+    font-size: var(--fs-sm);
     cursor: pointer;
 }
 .dbg-tab:hover { color: var(--text); }
-.dbg-tab.active { color: var(--text); border-color: var(--border); background: var(--bg); }
+.dbg-tab.active { color: var(--text); border-color: var(--border-hi); background: var(--bg); }
 
 .debug-body {
     display: flex;
     flex: 1;
+    min-height: 0;
     gap: 8px;
     overflow: hidden;
 }
 .debug-source-wrap {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
 }
 .dbg-file-label {
-    font-size: 10px;
-    color: #666;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--dim);
     padding: 2px 0;
     white-space: nowrap;
     overflow: hidden;
@@ -549,14 +426,36 @@ header h1 {
 .dbg-source-view {
     flex: 1;
     overflow: auto;
-    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
-    font-size: 12px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
     line-height: 1.5;
     background: var(--bg);
     border-radius: 4px;
     padding: 4px 0;
 }
 .dbg-source-view.dbg-dimmed { opacity: 0.4; }
+
+/* Placeholder shown in the source pane before anything is loaded. */
+.dbg-hint {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    color: var(--faint);
+    font-family: var(--ui);
+    font-size: var(--fs-sm);
+    line-height: 1.6;
+}
+.dbg-hint kbd {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--dim);
+    border: 1px solid var(--border-hi);
+    border-radius: 3px;
+    padding: 0 4px;
+}
 
 /* Monaco Editor overrides */
 .dbg-source-view .monaco-editor { height: 100% !important; }
@@ -589,7 +488,7 @@ header h1 {
     width: 40px;
     text-align: right;
     padding-right: 12px;
-    color: #555;
+    color: var(--faint);
     user-select: none;
     cursor: pointer;
     flex-shrink: 0;
@@ -604,15 +503,15 @@ header h1 {
     display: flex;
     gap: 12px;
     padding: 0 8px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
-.dbg-asm-addr { color: #666; width: 80px; flex-shrink: 0; }
+.dbg-asm-addr { color: var(--faint); width: 80px; flex-shrink: 0; }
 .dbg-asm-func { color: #82aaff; width: 120px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
 .dbg-asm-inst { color: var(--text); }
 .dbg-asm-src {
     padding: 4px 8px 0;
-    font-size: 10px;
-    color: #546e7a;
+    font-size: var(--fs-sm);
+    color: var(--dim);
     border-top: 1px solid rgba(255,255,255,0.05);
     margin-top: 4px;
 }
@@ -627,56 +526,62 @@ header h1 {
 }
 .dbg-section { margin-bottom: 4px; }
 .dbg-section summary {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     font-weight: 600;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
-    color: #888;
+    color: var(--dim);
     cursor: pointer;
     padding: 4px 0;
 }
 .dbg-section summary:hover { color: var(--text); }
 
-.dbg-callstack { font-size: 11px; }
+.dbg-callstack { font-family: var(--mono); font-size: var(--fs-sm); }
 .dbg-frame {
     padding: 2px 4px;
     cursor: pointer;
     border-radius: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .dbg-frame:hover { background: rgba(255,255,255,0.05); }
 .dbg-frame.active { background: rgba(255, 213, 79, 0.1); }
-.dbg-frame-idx { color: #666; }
+.dbg-frame-idx { color: var(--faint); }
 .dbg-frame-func { color: #82aaff; }
-.dbg-frame-loc { color: #888; font-size: 10px; }
+.dbg-frame-loc { color: var(--dim); }
 
 .dbg-reg-group-title {
-    font-size: 9px;
+    font-size: var(--fs-xs);
     font-weight: 600;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
-    color: #666;
+    color: var(--faint);
     padding: 4px 0 1px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     margin-bottom: 2px;
 }
 .dbg-reg-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1px 8px;
-    font-size: 11px;
-    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    grid-template-columns: auto 1fr;
+    gap: 1px 12px;
+    font-size: var(--fs-sm);
+    font-family: var(--mono);
 }
-.dbg-reg-name { color: #888; }
-.dbg-reg-val  { color: var(--text); }
+.dbg-reg-name { color: var(--dim); }
+.dbg-reg-val  { color: var(--text); font-variant-numeric: tabular-nums; }
 
-.dbg-bp { display: flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 0; }
+.dbg-bp { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: var(--fs-sm); padding: 1px 0; }
 .dbg-bp-num { color: var(--accent); }
-.dbg-bp-loc { flex: 1; color: #888; overflow: hidden; text-overflow: ellipsis; }
+.dbg-bp-loc { flex: 1; color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
 .dbg-bp-del {
-    background: transparent; border: none; color: #666; cursor: pointer;
-    font-size: 12px; padding: 0 4px;
+    background: transparent; border: none; color: var(--faint); cursor: pointer;
+    font-size: var(--fs-sm); padding: 0 4px;
 }
 .dbg-bp-del:hover { color: var(--accent); }
 
-/* File explorer (left panel) */
+/* File explorer (left panel). Hidden entirely when the bridge indexed no
+ * sources, so the source view gets the width instead of "No files". */
 .debug-explorer {
     width: 200px;
     flex-shrink: 0;
@@ -686,11 +591,13 @@ header h1 {
     display: flex;
     flex-direction: column;
 }
+.debug-explorer.empty { display: none; }
 .dbg-explorer-title {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     font-weight: 600;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
-    color: #888;
+    color: var(--dim);
     padding: 4px 0;
     border-bottom: 1px solid var(--border);
     margin-bottom: 4px;
@@ -698,10 +605,10 @@ header h1 {
 }
 .dbg-files { flex: 1; overflow-y: auto; }
 .dbg-file-cat {
-    font-size: 9px;
+    font-size: var(--fs-xs);
     font-weight: 600;
     text-transform: uppercase;
-    color: #666;
+    color: var(--faint);
     padding: 4px 0 1px;
     margin-top: 2px;
 }
@@ -709,38 +616,22 @@ header h1 {
     padding: 1px 4px;
     cursor: pointer;
     border-radius: 2px;
-    font-size: 11px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .dbg-file-entry:hover { background: rgba(255,255,255,0.05); }
 .dbg-file-active { background: rgba(78, 204, 163, 0.12) !important; }
-.dbg-file-dir { color: #555; }
+.dbg-file-dir { color: var(--faint); }
 .dbg-file-name { color: var(--text); }
 
-.dbg-empty { color: #555; font-size: 11px; padding: 8px; text-align: center; }
+.dbg-empty { color: var(--faint); font-size: var(--fs-sm); padding: 8px; text-align: center; }
 
 @media (max-width: 639px) {
-    header h1 { font-size: 13px; }
     .btn-small { padding: 6px 10px; font-size: 12px; }
-
-    /* Larger touch targets for WinBox controls. */
-    .winbox .wb-control span { width: 36px; height: 36px; }
-    .winbox .wb-header { min-height: 36px; }
-
-    /* Taskbar badges fill width equally. */
-    #taskbar { gap: 2px; padding: 0 4px; height: 38px; }
-    .taskbar-badge {
-        flex: 1;
-        text-align: center;
-        padding: 6px 4px;
-        font-size: 10px;
-    }
-
-    /* Panels: tighter padding. */
     .panel { padding: 8px; }
-    .display-container { padding: 4px; }
 }
 
 /* ── Trace panel ─────────────────────────────────────────────────── */
@@ -757,34 +648,43 @@ header h1 {
     display: flex;
     gap: 12px;
     align-items: center;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     flex-wrap: wrap;
 }
 
 #trace-info {
     color: var(--dim);
-    opacity: 0.8;
 }
 
 .trace-legend {
     display: inline-flex;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
 }
 
+/* Legend: small colour chip + quiet label (the chips must match
+ * TRACE_STATE_COLORS in app.js). */
 .trace-swatch {
-    display: inline-block;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 10px;
-    color: #000;
-    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fs-sm);
+    color: var(--dim);
+}
+.trace-swatch::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--sw);
 }
 
-.trace-sw-running   { background: #4ecca3; }
-.trace-sw-ready     { background: #f5d76e; }
-.trace-sw-blocked   { background: #e94560; color: #fff; }
-.trace-sw-suspended { background: #666; color: #fff; }
+.trace-sw-running   { --sw: #4ecca3; }
+.trace-sw-ready     { --sw: #4f8fd8; }
+.trace-sw-blocked   { --sw: #5e5130; }
+.trace-sw-suspended { --sw: #50566a; }
+
+.trace-controls label { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; }
 
 .trace-controls {
     display: inline-flex;
@@ -814,8 +714,8 @@ header h1 {
     color: #e6eaf2;
     border: 1px solid #4d5a78;
     padding: 4px 8px;
-    font-size: 11px;
-    font-family: 'Consolas', monospace;
+    font-size: var(--fs-sm);
+    font-family: var(--mono);
     pointer-events: none;
     z-index: 5;
     white-space: nowrap;
@@ -838,7 +738,7 @@ header h1 {
     display: flex;
     gap: 12px;
     align-items: center;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     flex-wrap: wrap;
 }
 
@@ -852,7 +752,7 @@ header h1 {
     color: var(--dim);
     border: 1px solid var(--border);
     padding: 3px 10px;
-    font-size: 11px;
+    font-size: var(--fs-sm);
     cursor: pointer;
     border-radius: 3px;
     font-family: inherit;
@@ -867,9 +767,13 @@ header h1 {
 
 .profiler-controls {
     display: inline-flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 6px 8px;
     align-items: center;
 }
+
+.profiler-controls .btn,
+.trace-controls .btn { white-space: nowrap; }
 
 .profiler-window-label,
 .profiler-rate-label,
@@ -889,7 +793,7 @@ header h1 {
     border-radius: 3px;
     padding: 2px 4px;
     font: inherit;
-    font-size: 11px;
+    font-size: var(--fs-sm);
 }
 
 #profiler-window {
@@ -906,15 +810,9 @@ header h1 {
     color: #ffd59a;
 }
 
-#profiler-oncpu.active {
-    background: rgba(78, 204, 163, 0.2);
-    border-color: var(--green);
-    color: var(--green);
-}
 
 .profiler-info {
     color: var(--dim);
-    opacity: 0.8;
     margin-left: auto;
 }
 
@@ -934,8 +832,8 @@ header h1 {
 .profiler-flat-table {
     width: 100%;
     border-collapse: collapse;
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
 }
 
 .profiler-flat-table thead th {
@@ -994,8 +892,8 @@ header h1 {
     color: #e6eaf2;
     border: 1px solid #4d5a78;
     padding: 4px 8px;
-    font-size: 11px;
-    font-family: 'Consolas', monospace;
+    font-size: var(--fs-sm);
+    font-family: var(--mono);
     pointer-events: none;
     z-index: 5;
     white-space: nowrap;

@@ -92,11 +92,11 @@ var CONSOLE_PLUGIN_ID = 0xFFFFFFFF;
 var EVENT_POLL_MS = 30;
 var AUDIO_POLL_MS = 10;
 
-var statusEl = document.getElementById("status");
+/* Loading progress and failures go to the page's status bar (board.js),
+ * which is set up after this script runs — look it up on each call. */
 function setStatus(text, ok) {
-    if (!statusEl) return;
-    statusEl.textContent = text;
-    statusEl.className = "status " + (ok ? "connected" : "disconnected");
+    var host = window.oveLayoutHost;
+    if (host && host.on) host.on("status", { text: text, ok: !!ok });
 }
 
 /* ── The link object handed to app.js ──────────────────────────────── */

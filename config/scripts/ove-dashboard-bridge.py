@@ -30,6 +30,7 @@ import traceback
 # Find the sibling package when Python omits the script directory.
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
+import ove_manifest
 from ove_dashboard import gdb as gdb_bridge
 from ove_dashboard import profiler, server, shm, sources
 
@@ -84,6 +85,12 @@ def main():
     # Build source file list from CMake build objects.
     if args.build_dir:
         sources.build_project_file_list(args.build_dir, sources.OVE_DIR)
+
+    # Board and feature manifest the dashboard draws, served at /manifest.json.
+    workspace = ove_manifest.find_workspace(args.build_dir) if args.build_dir else None
+    server.manifest.update(ove_manifest.build(
+        workspace, sources.OVE_DIR, debugger=bool(args.gdb_port),
+        console=bool(args.console_fifo), log=lambda msg: print(msg, flush=True)))
 
     # Build profiler symbol map from the ELF. The firmware is ARM and
     # system nm may not handle the architecture on every host — when

@@ -64,7 +64,7 @@ sudo dnf install openocd
 
 ### QEMU (in-dashboard)
 
-When running a `qemu` board under `make run`, the browser dashboard exposes a Debug window (Monaco source view, breakpoints, step controls, call stack, registers). It drives `arm-none-eabi-gdb` attached to QEMU's GDB stub via `config/scripts/ove-dashboard-bridge.py`. F5 / F6 / F10 map to continue / pause / step-over.
+When running a `qemu` board under `make run`, the browser dashboard has a debugger: run control in its status bar (pause, continue, step over / into / out, reset) and a Debug panel (Monaco source view, breakpoints, call stack, registers). Halting the target switches the dashboard to its Debug workspace. It drives `arm-none-eabi-gdb` attached to QEMU's GDB stub via `config/scripts/ove-dashboard-bridge.py`. F6 / F10 / F11 / Shift+F11 map to pause / step over / step into / step out; F5 continues while the Debug panel is shown.
 
 ### Browser bundle
 

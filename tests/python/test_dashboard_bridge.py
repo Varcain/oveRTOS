@@ -300,6 +300,12 @@ class DashboardBridgeTest(unittest.TestCase):
                 self.assertEqual(response.getheader("Cross-Origin-Embedder-Policy"), "require-corp")
                 self.assertEqual(response.getheader("Cache-Control"), "no-cache")
                 self.assertEqual(response.read(), b"<html>dashboard</html>")
+            request = b"GET /manifest.json HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            with patch.object(self.server, "manifest", {"app": "demo"}), \
+                    self.http_response(address, request) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.getheader("Content-Type"), "application/json")
+                self.assertEqual(json.loads(response.read()), {"app": "demo"})
             host, port = address
             for authority, origin in ((f"{host}:{port}", "http://evil.example"),
                                       (f"evil.example:{port}", f"http://evil.example:{port}")):

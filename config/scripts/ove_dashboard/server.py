@@ -37,6 +37,9 @@ DEFAULT_HOST = "127.0.0.1"
 # --console-fifo).
 console_fd = [None]
 
+# Board and feature manifest served to the dashboard.
+manifest = {}
+
 # ── HTTP and WebSocket server ────────────────────────────────────────
 
 MIME = {
@@ -69,19 +72,24 @@ def _process_request(connection, request, dashboard_dir, bind_host):
             return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
         return None  # Let websockets validate the upgrade.
 
-    if path == "/":
-        path = "/index.html"
-    filepath = os.path.realpath(os.path.join(dashboard_dir, path.lstrip("/")))
-    if os.path.commonpath((dashboard_dir, filepath)) != dashboard_dir:
-        return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
-    if not os.path.isfile(filepath):
-        return connection.respond(HTTPStatus.NOT_FOUND, "Not Found\n")
+    if path == "/manifest.json":
+        content_type = "application/json"
+        body = json.dumps(manifest).encode()
+    else:
+        if path == "/":
+            path = "/index.html"
+        filepath = os.path.realpath(os.path.join(dashboard_dir, path.lstrip("/")))
+        if os.path.commonpath((dashboard_dir, filepath)) != dashboard_dir:
+            return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
+        if not os.path.isfile(filepath):
+            return connection.respond(HTTPStatus.NOT_FOUND, "Not Found\n")
 
-    ext = os.path.splitext(filepath)[1]
-    with open(filepath, "rb") as f:
-        body = f.read()
+        ext = os.path.splitext(filepath)[1]
+        content_type = MIME.get(ext, "application/octet-stream")
+        with open(filepath, "rb") as f:
+            body = f.read()
     return Response(200, "OK", Headers([
-        ("Content-Type", MIME.get(ext, "application/octet-stream")),
+        ("Content-Type", content_type),
         ("Content-Length", str(len(body))),
         ("Cross-Origin-Opener-Policy", "same-origin"),
         ("Cross-Origin-Embedder-Policy", "require-corp"),
