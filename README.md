@@ -456,7 +456,7 @@ The two modes share the same FFI. `ove_*_create` / `_destroy` go through the RTO
 
 ## Debugging
 
-Code-level debugging is available on the QEMU targets: the browser dashboard includes a Debug window (Monaco source view, breakpoints, step/pause/continue, call stack, registers) driven by `arm-none-eabi-gdb` attached to QEMU's GDB stub.
+Code-level debugging is available on the QEMU targets. The browser dashboard provides run control in its status bar and a Debug panel (Monaco source view, breakpoints, call stack, registers), both driven by `arm-none-eabi-gdb` attached to QEMU's GDB stub.
 
 Full workflow: [Debugging](docs-site/docs/getting-started/run.md#debugging).
 
