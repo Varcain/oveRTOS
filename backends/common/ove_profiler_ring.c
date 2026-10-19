@@ -102,4 +102,9 @@ uint32_t ove_profiler_ring_dropped_get(void)
 	return atomic_exchange_explicit(&ring.dropped, 0u, memory_order_relaxed);
 }
 
+void ove_profiler_ring_add_dropped(uint32_t n)
+{
+	atomic_fetch_add_explicit(&ring.dropped, n, memory_order_relaxed);
+}
+
 #endif /* CONFIG_OVE_PROFILER */

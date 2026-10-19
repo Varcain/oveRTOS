@@ -105,8 +105,9 @@ config OVE_PROFILER
       forwards the samples to the dashboard for flat top-N and
       flame-graph rendering. FreeRTOS/Cortex-M samples from the
       SysTick tick hook and walks saved-{r7,lr} pairs out of the task
-      stack. NuttX uses up_backtrace(tcb) driven from the sim-debug
-      pump; requires CONFIG_SCHED_BACKTRACE=y in the NuttX defconfig.
+      stack. NuttX walks every thread with up_backtrace(tcb) from a
+      watchdog-timed high-priority work item (CONFIG_SCHED_BACKTRACE,
+      set in the generated NuttX defconfig).
       Zephyr/Cortex-M samples from a high-priority k_timer expiry
       (runs in SysTick ISR context) and shares the FreeRTOS walker
       via backends/common/ove_arm_backtrace.c.

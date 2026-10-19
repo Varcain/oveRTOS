@@ -67,6 +67,13 @@ size_t ove_profiler_ring_drain(struct ove_profiler_sample *out, size_t max);
  */
 uint32_t ove_profiler_ring_dropped_get(void);
 
+/**
+ * ove_profiler_ring_add_dropped - count samples a backend failed to take
+ * (e.g. a skipped sampling tick), reported to the dashboard with the
+ * ring's own overflow drops.
+ */
+void ove_profiler_ring_add_dropped(uint32_t n);
+
 #endif /* CONFIG_OVE_PROFILER */
 
 #endif /* OVE_PROFILER_RING_H */
