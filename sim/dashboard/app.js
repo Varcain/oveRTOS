@@ -2019,9 +2019,8 @@ function handleProfile(buf, off) {
          *
          * Merge into the existing table rather than replacing it: the
          * bridge delivers one large upfront blob (merge is a no-op on an
-         * empty table), and a target that symbolicates for itself may
-         * add batches later. Either way the net effect is an append-only
-         * sorted set keyed by pc_start. */
+         * empty table) and may re-send it on reconnect. Either way the
+         * net effect is an append-only sorted set keyed by pc_start. */
         var bytes = new Uint8Array(buf, off + 1, dv.byteLength - 1);
         try {
             var json = new TextDecoder().decode(bytes);
