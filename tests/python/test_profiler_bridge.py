@@ -134,27 +134,38 @@ class PrunerTest(unittest.TestCase):
         chain = [0x302, 0xDEAD0, 0x106]
         self.assertEqual(self.kept(chain), chain)
 
-    def test_payload_round_trip(self):
+    def round_trip(self, word_size):
+        fmt = {4: "<I", 8: "<Q"}[word_size]
         samples = [(1000, 0x2000, 0, [0x302, 0x406, 0x206, 0x106]),
                    (2000, 0x3000, 2, [0x302, 0x206, 0x106])]
-        payload = struct.pack("<BBHI", 1, 8, len(samples), 7)
+        payload = struct.pack("<BBHI", 1, word_size, len(samples), 7)
         for ts, tid, state, pcs in samples:
             payload += struct.pack("<QIBBH", ts, tid, len(pcs), state, 0)
-            payload += b"".join(struct.pack("<Q", pc) for pc in pcs)
+            payload += b"".join(struct.pack(fmt, pc) for pc in pcs)
         out = self.b._prune_profile_payload(payload)
         ver, ws, count, dropped = struct.unpack_from("<BBHI", out, 0)
-        self.assertEqual((ver, ws, count, dropped), (1, 8, 2, 7))
+        self.assertEqual((ver, ws, count, dropped), (1, word_size, 2, 7))
         p = 8
         got = []
         for _ in range(count):
             ts, tid, depth, state = struct.unpack_from("<QIBB", out, p)
             p += 16
-            pcs = [struct.unpack_from("<Q", out, p + 8 * k)[0] for k in range(depth)]
-            p += 8 * depth
+            pcs = [struct.unpack_from(fmt, out, p + word_size * k)[0] for k in range(depth)]
+            p += word_size * depth
             got.append((ts, tid, state, pcs))
         self.assertEqual(p, len(out))
         self.assertEqual(got[0], (1000, 0x2000, 0, [0x302, 0x206, 0x106]))
         self.assertEqual(got[1], (2000, 0x3000, 2, [0x302, 0x206, 0x106]))
+
+    def test_payload_round_trip_4_byte_pcs(self):
+        self.round_trip(4)
+
+    def test_payload_round_trip_8_byte_pcs(self):
+        self.round_trip(8)
+
+    def test_unknown_word_size_passes_through(self):
+        payload = struct.pack("<BBHI", 1, 2, 0, 0)
+        self.assertEqual(self.b._prune_profile_payload(payload), payload)
 
 
 class ToolsTest(unittest.TestCase):

@@ -1155,6 +1155,11 @@ def _profiler_resolve(pc):
     return f"0x{pc:x}"
 
 
+# Profiler sample PCs travel at the target's pointer size (envelope
+# word_size): 4 on Cortex-M, 8 on 64-bit hosts.
+_PC_FMT = {4: "<I", 8: "<Q"}
+
+
 def _profiler_dump_samples(payload):
     """Decode a PROFILE_SUB_SAMPLES payload and print per-sample frames."""
     if len(payload) < 8:
@@ -1164,7 +1169,8 @@ def _profiler_dump_samples(payload):
             "<BBHI", payload, 0)
     except struct.error:
         return
-    if word_size != 8:
+    pc_fmt = _PC_FMT.get(word_size)
+    if pc_fmt is None:
         return
     p = 8
     for _ in range(count):
@@ -1173,13 +1179,13 @@ def _profiler_dump_samples(payload):
         ts, tid, depth, state = struct.unpack_from("<QIBB", payload, p)
         p += 16
         # skip 2-byte pad
-        if p + depth * 8 > len(payload):
+        if p + depth * word_size > len(payload):
             return
         pcs = []
         for _j in range(depth):
-            (pc,) = struct.unpack_from("<Q", payload, p)
+            (pc,) = struct.unpack_from(pc_fmt, payload, p)
             pcs.append(pc)
-            p += 8
+            p += word_size
         frames = " <- ".join(f"{_profiler_resolve(x)}@0x{x:x}" for x in pcs)
         sys.stderr.write(
             f"[dump] t={ts} tid=0x{tid:x} st={state} d={depth} {frames}\n")
@@ -1659,7 +1665,8 @@ def _prune_profile_payload(payload):
             "<BBHI", payload, 0)
     except struct.error:
         return payload
-    if word_size != 8:
+    pc_fmt = _PC_FMT.get(word_size)
+    if pc_fmt is None:
         return payload
 
     out = bytearray()
@@ -1671,19 +1678,19 @@ def _prune_profile_payload(payload):
         ts, tid, depth, state = struct.unpack_from("<QIBB", payload, p)
         pad = struct.unpack_from("<H", payload, p + 14)[0]
         p += 16
-        if p + depth * 8 > len(payload):
+        if p + depth * word_size > len(payload):
             return payload
         pcs = []
         for _j in range(depth):
-            (pc,) = struct.unpack_from("<Q", payload, p)
+            (pc,) = struct.unpack_from(pc_fmt, payload, p)
             pcs.append(pc)
-            p += 8
+            p += word_size
 
         keep = _prune_chain(pcs)
         new_pcs = [pc for pc, k in zip(pcs, keep) if k]
         out += struct.pack("<QIBBH", ts, tid, len(new_pcs), state, pad)
         for pc in new_pcs:
-            out += struct.pack("<Q", pc)
+            out += struct.pack(pc_fmt, pc)
     return bytes(out)
 
 
