@@ -327,7 +327,7 @@ def test_stub(ove_dir, output_dir):
                                 "ove_test_httpd_ws", "ove_test_nvs_default",
                                 "ove_test_nvs_custom", "ove_test_nvs_full",
                                 "ove_test_trace_ring", "ove_test_trace_ring_preempt",
-                                "ove_test_trace_ring_tsan"), "stub", results)
+                                "ove_test_trace_ring_tsan", "ove_test_arm_backtrace"), "stub", results)
     return results
 
 
