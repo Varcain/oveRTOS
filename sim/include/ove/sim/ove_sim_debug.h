@@ -21,7 +21,7 @@
  *   [uint32_t heap_used]
  *   [uint32_t heap_peak]
  *   Per thread (repeated thread_count times):
- *     [uint8_t  name_len]       (max 16)
+ *     [uint8_t  name_len]       (max OVE_SIM_DEBUG_MAX_NAME_LEN = 31)
  *     [char     name[name_len]]
  *     [uint8_t  state]          (ove_thread_state_t)
  *     [uint8_t  priority]
@@ -45,11 +45,12 @@ extern "C" {
 /** Event type for thread/memory snapshots. */
 #define OVE_SIM_DEBUG_EVT_THREADS 0
 
-/** Maximum threads reported per snapshot. */
-#define OVE_SIM_DEBUG_MAX_THREADS 16
+/** Maximum threads reported per snapshot (matches the trace descriptors). */
+#define OVE_SIM_DEBUG_MAX_THREADS 32
 
-/** Maximum thread name length in snapshot. */
-#define OVE_SIM_DEBUG_MAX_NAME_LEN 16
+/** Maximum thread name length in snapshot (matches the trace descriptors,
+ *  so the dashboard can match a thread across panels by name). */
+#define OVE_SIM_DEBUG_MAX_NAME_LEN 31
 
 /** Snapshot interval in milliseconds (~2 Hz). */
 #define OVE_SIM_DEBUG_INTERVAL_MS 500
