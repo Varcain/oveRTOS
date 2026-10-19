@@ -37,7 +37,7 @@
  * interrupted samples); see gotcha 24 in memory/project_profiler_trace.md.
  *
  * Symbolication: host-side via the dashboard bridge (arm-none-eabi-nm
- * on the firmware ELF). drain_symbols() returns 0.
+ * on the firmware ELF).
  */
 
 #include "ove_config.h"
@@ -314,18 +314,6 @@ uint32_t ove_backend_profiler_get_flags(void)
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
 	return (uint32_t)CONFIG_OVE_PROFILER_HZ;
-}
-
-/*
- * FreeRTOS symbolicates host-side: the dashboard bridge feeds
- * unresolved PCs to arm-none-eabi-gdb via MI and caches the result.
- * Matches the POSIX path (nm on the sim binary).
- */
-size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
-{
-	(void)out;
-	(void)out_max;
-	return 0;
 }
 
 #endif /* CONFIG_OVE_PROFILER */

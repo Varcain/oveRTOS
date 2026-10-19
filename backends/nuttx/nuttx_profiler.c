@@ -29,7 +29,7 @@
  * (populated by nuttx_thread.c).
  *
  * Symbolication: host-side via the dashboard bridge (arm-none-eabi-nm on
- * the firmware ELF). drain_symbols() returns 0.
+ * the firmware ELF).
  */
 
 #include "ove_config.h"
@@ -212,13 +212,6 @@ void ove_backend_profiler_stop(void)
 	atomic_store_explicit(&profiler_running, 0, memory_order_release);
 	wd_cancel(&sample_wdog);
 	work_cancel(HPWORK, &sample_work);
-}
-
-size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
-{
-	(void)out;
-	(void)out_max;
-	return 0;
 }
 
 #endif /* CONFIG_OVE_PROFILER */

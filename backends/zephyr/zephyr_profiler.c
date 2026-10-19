@@ -40,7 +40,7 @@
  *     memory/project_profiler_trace.md.
  *
  *   - Symbolication is host-side (same as FreeRTOS) via the dashboard
- *     bridge — arm-none-eabi-nm on the Zephyr ELF. drain_symbols() is 0.
+ *     bridge — arm-none-eabi-nm on the Zephyr ELF.
  *
  * Rate control: the k_timer runs one-shot and is re-armed from its expiry
  * with a period jittered around the mean (1 / rate) by +/-25%, so the
@@ -260,17 +260,6 @@ uint32_t ove_backend_profiler_get_max_hz(void)
 	uint32_t cfg_hz = (uint32_t)CONFIG_OVE_PROFILER_HZ;
 	uint32_t tick_hz = (uint32_t)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
 	return (cfg_hz < tick_hz) ? cfg_hz : tick_hz;
-}
-
-/*
- * Zephyr symbolicates host-side: the dashboard bridge runs
- * arm-none-eabi-nm on the linked ELF, same as FreeRTOS.
- */
-size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
-{
-	(void)out;
-	(void)out_max;
-	return 0;
 }
 
 #endif /* CONFIG_OVE_PROFILER */
