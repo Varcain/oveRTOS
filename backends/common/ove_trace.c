@@ -16,8 +16,13 @@
 
 void ove_trace_emit_state(uintptr_t thread_handle, int old_state, int new_state)
 {
+	ove_trace_emit_state_at(thread_handle, old_state, new_state, ove_state_stats_now_us());
+}
+
+void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_state, uint64_t ts_us)
+{
 	struct ove_trace_record rec = {
-		.ts_us = ove_state_stats_now_us(),
+		.ts_us = ts_us,
 		.tid = (uint32_t)thread_handle,
 		.kind = OVE_TRACE_KIND_STATE,
 		.code = (uint8_t)new_state,

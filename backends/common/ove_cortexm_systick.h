@@ -68,4 +68,24 @@ static inline uint32_t ove_cortexm_systick_elapsed(uint32_t *load, bool *pending
 	return val <= rvr ? rvr - val : 0u;
 }
 
+/*
+ * Division-free scaling for the hot path (context-switch hooks): a ratio
+ * num/den < 1 as a Q32 factor, computed once (one 64-bit division) and
+ * applied with a single 32x32->64 multiply. The result is floor-rounded
+ * and never exceeds the exact floor(x * num / den), so a sub-tick offset
+ * stays below one tick and successive values stay monotonic.
+ */
+
+/** floor(num * 2^32 / den); requires 0 < num < den. */
+static inline uint32_t ove_q32_factor(uint32_t num, uint32_t den)
+{
+	return (uint32_t)(((uint64_t)num << 32) / den);
+}
+
+/** floor(x * k / 2^32). */
+static inline uint32_t ove_q32_apply(uint32_t x, uint32_t k)
+{
+	return (uint32_t)(((uint64_t)x * k) >> 32);
+}
+
 #endif /* OVE_CORTEXM_SYSTICK_H */
