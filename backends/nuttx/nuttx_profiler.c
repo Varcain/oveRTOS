@@ -9,11 +9,11 @@
 /*
  * NuttX sampling profiler backend.
  *
- * Unlike POSIX (SIGRTMIN + glibc backtrace in each target's signal handler)
- * or FreeRTOS (ISR-driven PSP read + FP-chain scan), NuttX ships a portable
- * on-target unwinder: up_backtrace(tcb, buf, size, skip). It is enabled by
- * CONFIG_SCHED_BACKTRACE=y and works on any architecture with .eh_frame or
- * a frame-pointer convention (ARMv7-M is supported).
+ * Unlike FreeRTOS and Zephyr (ISR-driven PSP read + saved-{r7,lr} stack
+ * scan), NuttX ships a portable on-target unwinder: up_backtrace(tcb,
+ * buf, size, skip). It is enabled by CONFIG_SCHED_BACKTRACE=y and works
+ * on any architecture with .eh_frame or a frame-pointer convention
+ * (ARMv7-M is supported).
  *
  * up_backtrace(tcb, ...) walks the SAVED register context of @tcb, so it's
  * safe to call for any TCB that isn't currently running — the scheduler's
