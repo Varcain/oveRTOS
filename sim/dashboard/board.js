@@ -49,7 +49,7 @@ var WORKSPACES = {
 var WS_ORDER = ["run", "debug", "perf"];
 
 var RTOS_NAMES = { freertos: "FreeRTOS", zephyr: "Zephyr", nuttx: "NuttX" };
-var IDLE_RE = /^(IDLE|idle|Idle)(\d*)$/;
+var IDLE_RE = /^(IDLE|idle|Idle)(\d*)$|^Idle_Task$/;
 
 /* ── State ────────────────────────────────────────────────────────── */
 
