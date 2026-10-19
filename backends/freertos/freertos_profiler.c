@@ -34,7 +34,7 @@
  *     MPS2-AN500 RAM window [0x20000000, 0x20400000).
  * The hardware-stacked LR is used only as a fallback when the scan
  * finds no saved {r7, lr} pair (true-leaf functions or prologue-
- * interrupted samples); see gotcha 24 in memory/project_profiler_trace.md.
+ * interrupted samples).
  *
  * Symbolication: host-side via the dashboard bridge (arm-none-eabi-nm
  * on the firmware ELF).
