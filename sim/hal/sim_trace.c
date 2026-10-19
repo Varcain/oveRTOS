@@ -42,6 +42,10 @@ static struct sim_trace_ctx trace_ctx;
 #define STREAM_BUF_BYTES \
 	(STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_BATCH * sizeof(struct ove_trace_record))
 
+_Static_assert(sizeof(struct ove_sim_event) + STREAM_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
+	       "trace batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+_Static_assert(sizeof(struct ove_trace_record) == 16, "trace record wire size is 16 bytes");
+
 /* Pump-scoped scratch. The trace plugin emits from the consolidated
  * sim-debug pump thread only, so these are single-threaded. Keeping them
  * in BSS avoids a ~4 KiB stack spike that overflows the 4 KiB pump stack
@@ -82,6 +86,9 @@ static void emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_re
 /* Envelope (8 B) + per thread (4 tid + 1 len + up to 31 name). */
 #define DESC_PER_MAX (4 + 1 + OVE_SIM_TRACE_MAX_NAME)
 #define DESC_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
+
+_Static_assert(sizeof(struct ove_sim_event) + DESC_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
+	       "trace descriptor batch exceeds OVE_SIM_EVENT_MAX_BYTES");
 
 static uint8_t desc_ev_buf[sizeof(struct ove_sim_event) + DESC_BUF_BYTES];
 static struct ove_trace_thread_desc desc_scratch[OVE_SIM_TRACE_MAX_DESC];

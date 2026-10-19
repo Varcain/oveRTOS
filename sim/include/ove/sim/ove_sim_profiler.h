@@ -14,15 +14,19 @@
  * or more samples. Envelope:
  *
  *   [uint8_t  version]        1
- *   [uint8_t  word_size]      sizeof(uintptr_t) on host (4 or 8)
+ *   [uint8_t  word_size]      bytes per PC on the wire (always 8)
  *   [uint16_t count]          number of samples
  *   [uint32_t dropped]        samples dropped since last emit
  *   Samples follow, each:
  *     [uint64_t ts_us]
  *     [uint32_t tid]
  *     [uint8_t  depth]        count of valid PCs in the chain
- *     [uint8_t  _pad[3]]
+ *     [uint8_t  state]        ove_thread_state_t at sample time
+ *     [uint8_t  _pad[2]]
  *     [uint64_t pcs[depth]]   inner-most first (depth entries only)
+ *
+ * A batch holds as many full-depth samples as fit in
+ * OVE_SIM_EVENT_MAX_BYTES, derived from CONFIG_OVE_PROFILER_MAX_DEPTH.
  *
  * The dashboard receives these as FRAME_PROFILE (0x0F) and aggregates
  * them into a flat table (by leaf PC) and a flame graph (by chain).
@@ -68,14 +72,6 @@ extern "C" {
 
 /** Drain period for samples (ms). */
 #define OVE_SIM_PROFILER_DRAIN_MS 200
-
-/*
- * Upper bound on samples per emission. Each sample is 16 B header +
- * depth * 8 B. Budget is the bridge's 4 KiB cap minus the envelope,
- * leaving ~4080 B for samples. With depth=16 that's 144 B/sample, so
- * cap at 24 samples/batch to stay safely under the limit.
- */
-#define OVE_SIM_PROFILER_MAX_BATCH 24
 
 /**
  * @brief Register the profiler plugin.
