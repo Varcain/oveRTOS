@@ -62,6 +62,15 @@ struct ove_sim_event {
 };
 
 /**
+ * @brief Largest event (header + payload) the host side forwards.
+ *
+ * The dashboard bridge (config/scripts/ove-dashboard-bridge.py) and the
+ * in-browser link (sim/dashboard/qemu-wasm.js) skip larger events, so
+ * plugins must size their batches to fit.
+ */
+#define OVE_SIM_EVENT_MAX_BYTES 4096u
+
+/**
  * @brief Command injected from the host dashboard into a plugin.
  *
  * Commands are variable-length: the header is followed by @c data_len

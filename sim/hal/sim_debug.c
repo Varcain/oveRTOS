@@ -292,10 +292,10 @@ int ove_sim_debug_register(void)
 	 * The thread starts immediately but ove_thread_sleep_ms will block
 	 * until the scheduler is running.
 	 *
-	 * Stack sized for the worst-case drain-path frame. sim_profiler_tick
-	 * holds batch[24] (~2 KB) while calling emit_batch, which itself
-	 * stack-allocates payload + ev_buf (~7 KB wire-size × 2). 16 KB
-	 * leaves a generous margin; FreeRTOS honours the request literally. */
+	 * The profiler and trace drain buffers live in BSS; the deepest
+	 * frames left on this stack are the thread snapshot (payload +
+	 * ev_buf, ~2 KB) and the profiler symbol drain (~4 KB). 16 KB leaves a
+	 * generous margin; FreeRTOS honours the request literally. */
 #ifdef OVE_HEAP_THREAD
 	int ret = ove_thread_create(&debug_thread_handle, "sim_debug", debug_thread_fn, &debug_ctx,
 				    OVE_PRIO_LOW, 16384);
