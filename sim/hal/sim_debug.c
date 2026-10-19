@@ -303,9 +303,9 @@ int ove_sim_debug_register(void)
 	 * until the scheduler is running.
 	 *
 	 * The profiler, trace and thread-snapshot buffers live in BSS; the
-	 * deepest frame left on this stack is the profiler symbol drain
-	 * (~4 KB). 16 KB leaves a generous margin; FreeRTOS honours the
-	 * request literally. */
+	 * deepest call chain left is the thread snapshot (build_snapshot ->
+	 * ove_thread_list, about 0.5 KB on FreeRTOS). 16 KB leaves a generous
+	 * margin; FreeRTOS honours the request literally. */
 #ifdef OVE_HEAP_THREAD
 	int ret = ove_thread_create(&debug_thread_handle, "sim_debug", debug_thread_fn, &debug_ctx,
 				    OVE_PRIO_LOW, 16384);

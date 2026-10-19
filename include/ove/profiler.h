@@ -97,25 +97,6 @@ uint32_t ove_backend_profiler_get_max_hz(void);
  */
 uint32_t ove_backend_profiler_get_flags(void);
 
-/**
- * @brief Drain newly-interned symbol entries as a JSON array.
- *
- * Writes a JSON array of @c [pc_start,pc_end,"name"] triples into
- * @p out, compatible with the dashboard's existing
- * @c PROFILE_SUB_SYMBOLS parser.
- *
- * For backends that symbolicate on-target, interning names to
- * synthetic pseudo-PCs.  No current backend does: they all return 0
- * because symbolication is done host-side by the bridge via @c nm on
- * the ELF.
- *
- * @param[out] out     Buffer to receive the JSON fragment.
- * @param[in]  out_max Size of @p out in bytes.
- * @return Bytes written to @p out (0 if nothing to emit or @p out_max
- *         is too small).
- */
-size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max);
-
 #else
 
 static inline int ove_backend_profiler_start(void)
@@ -135,12 +116,6 @@ static inline uint32_t ove_backend_profiler_get_max_hz(void)
 }
 static inline uint32_t ove_backend_profiler_get_flags(void)
 {
-	return 0;
-}
-static inline size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
-{
-	(void)out;
-	(void)out_max;
 	return 0;
 }
 

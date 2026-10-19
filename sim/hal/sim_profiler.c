@@ -141,43 +141,8 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
 
-/*
- * Drain any newly-interned symbol entries from the backend and emit
- * them as a JSON-payload event to the dashboard. Backends that
- * symbolicate host-side (POSIX via bridge/nm) return 0 unconditionally
- * and this is a no-op. A backend that symbolicates on target returns
- * incremental `[[pc,pc+1,"name"],...]` as it interns new frame names.
- *
- * Buffer size trades off against emission frequency: 2 KiB fits ~30
- * symbols/batch worst-case and stays well below the bridge's per-event
- * frame cap. Drained fresh each tick so the per-tick load stays small.
- */
-#define SYMBOLS_DRAIN_BUF_BYTES 2048
-
-static void drain_symbols(struct sim_profiler_ctx *t)
-{
-	char json[SYMBOLS_DRAIN_BUF_BYTES];
-	size_t n = ove_backend_profiler_drain_symbols(json, sizeof(json));
-	if (n == 0)
-		return;
-
-	uint8_t ev_buf[sizeof(struct ove_sim_event) + SYMBOLS_DRAIN_BUF_BYTES];
-	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
-	ev->plugin_id = t->plugin_id;
-	ev->event_type = OVE_SIM_PROFILER_EVT_SYMBOLS;
-	ev->timestamp_ms = 0;
-	ev->data_len = (uint32_t)n;
-	memcpy(ev->data, json, n);
-
-	ove_sim_plugin_emit_event(t->plugin_id, ev);
-}
-
 void ove_sim_profiler_tick(void)
 {
-	/* Emit any new symbols first so the dashboard can resolve PCs in
-	 * the very next sample batch it receives. */
-	drain_symbols(&profiler_ctx);
-
 	size_t n;
 	do {
 		n = ove_profiler_ring_drain(drain_batch, PROFILE_MAX_BATCH);
