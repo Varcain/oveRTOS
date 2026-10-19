@@ -30,8 +30,9 @@
  *
  * The dashboard receives these as FRAME_PROFILE (0x0F) and aggregates
  * them into a flat table (by leaf PC) and a flame graph (by chain).
- * Symbols arrive separately from the bridge as a PROFILER_EVT_SYMBOLS
- * frame (built by parsing the ELF with nm -n).
+ * Symbols come from the host: the bridge parses the firmware ELF with
+ * the cross nm and sends them to the dashboard as a FRAME_PROFILE
+ * symbols sub-frame.
  * @{
  */
 
@@ -59,15 +60,6 @@ extern "C" {
  *   [uint32_t flags]       OVE_PROFILER_FLAG_* (absent in older firmware)
  */
 #define OVE_SIM_PROFILER_EVT_CAPS 21
-
-/**
- * Event type: newly-interned symbols as a JSON payload of the form
- * @c [[pc_start,pc_end,"name"],...] compatible with the dashboard's
- * PROFILE_SUB_SYMBOLS handler. Emitted incrementally by backends that
- * symbolicate on target; none does at present. POSIX never emits this
- * (the bridge forwards a single upfront blob).
- */
-#define OVE_SIM_PROFILER_EVT_SYMBOLS 22
 
 /** Command type: set sampling rate. Payload = uint32_t Hz (LE). */
 #define OVE_SIM_PROFILER_CMD_SET_RATE 100
