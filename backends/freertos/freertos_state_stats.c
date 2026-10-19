@@ -46,40 +46,33 @@
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "ove/types.h"
+#include "ove_freertos_systick.h"
 
 /* ── Time source (microsecond resolution via SysTick) ────────────── */
 
-/* SysTick registers — CMSIS layout, always mapped on Cortex-M. */
-#define TRACE_SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014)
-#define TRACE_SYSTICK_VAL (*(volatile uint32_t *)0xE000E018)
-
 extern uint32_t SystemCoreClock;
+
+static uint64_t now_us_last;
 
 uint64_t ove_state_stats_now_us(void)
 {
-	uint32_t load = TRACE_SYSTICK_LOAD;
-	TickType_t t1;
-	uint32_t val;
+	TickType_t ticks;
+	uint32_t elapsed;
 
-	if (xPortIsInsideInterrupt()) {
-		/* ISR context: xTickCount is updated from the SysTick handler
-		 * at higher priority, so a tick boundary across our read is
-		 * impossible.  Single read of t1 + val is sufficient and
-		 * matches the no-retry contract of the FromISR variants. */
-		t1 = xTaskGetTickCountFromISR();
-		val = TRACE_SYSTICK_VAL;
-	} else {
-		TickType_t t2;
-		do {
-			t1 = xTaskGetTickCount();
-			val = TRACE_SYSTICK_VAL;
-			t2 = xTaskGetTickCount();
-		} while (t1 != t2);
-	}
+	/* Pending-reload-safe snapshot: also correct from PendSV, ISRs and
+	 * critical sections (see ove_freertos_systick.h). SysTick is clocked
+	 * from the core clock (the port's default configSYSTICK_CLOCK_HZ).
+	 * Snapshot and clamp share one masked region. */
+	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
+	ove_freertos_systick_read(&ticks, &elapsed);
 
-	uint32_t elapsed_cycles = (load + 1) - val;
-	uint64_t us_frac = (uint64_t)elapsed_cycles * 1000000ULL / (uint64_t)SystemCoreClock;
-	return (uint64_t)t1 * (1000000ULL / configTICK_RATE_HZ) + us_frac;
+	uint64_t us = (uint64_t)ticks * 1000000ULL / configTICK_RATE_HZ +
+		      (uint64_t)elapsed * 1000000ULL / SystemCoreClock;
+	us = ove_freertos_monotonic(&now_us_last, us,
+				    OVE_FREERTOS_MONOTONIC_HOLD_TICKS * 1000000ULL /
+					    configTICK_RATE_HZ);
+	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
+	return us;
 }
 
 /* ── Kernel trace hooks ───────────────────────────────────────────── */

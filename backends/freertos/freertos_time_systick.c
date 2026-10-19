@@ -17,11 +17,11 @@
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
 #include "task.h"
-
-#define SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014u)
-#define SYSTICK_VAL (*(volatile uint32_t *)0xE000E018u)
+#include "ove_freertos_systick.h"
 
 extern uint32_t SystemCoreClock;
+
+static uint64_t now_ns_last;
 
 static TickType_t tick_count(void)
 {
@@ -42,18 +42,21 @@ int ove_time_get_ns(uint64_t *out)
 	if (out == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	uint32_t load = SYSTICK_LOAD;
 	TickType_t ticks;
-	uint32_t val;
+	uint32_t elapsed;
 
-	/* Retry when a tick lands between the two reads. */
-	do {
-		ticks = tick_count();
-		val = SYSTICK_VAL;
-	} while (ticks != tick_count());
-
-	uint64_t cycles = (uint64_t)ticks * (load + 1) + (load - val);
-	*out = cycles * 1000000000ULL / (uint64_t)SystemCoreClock;
+	/* Pending-reload-safe snapshot (see ove_freertos_systick.h). Scale the
+	 * tick count and the sub-tick cycles separately: converting the total
+	 * cycle count, ticks * (LOAD + 1) * 1e9 overflowed 64 bits after
+	 * ~738 s at 25 MHz. ticks * 1e9 fits for the whole 32-bit tick range. */
+	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
+	ove_freertos_systick_read(&ticks, &elapsed);
+	uint64_t ns = (uint64_t)ticks * 1000000000ULL / configTICK_RATE_HZ +
+		      (uint64_t)elapsed * 1000000000ULL / (uint64_t)SystemCoreClock;
+	*out = ove_freertos_monotonic(&now_ns_last, ns,
+				      OVE_FREERTOS_MONOTONIC_HOLD_TICKS * 1000000000ULL /
+					      configTICK_RATE_HZ);
+	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
 	return OVE_OK;
 }
 
