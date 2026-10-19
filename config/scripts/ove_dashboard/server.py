@@ -137,11 +137,16 @@ async def _dispatch(payload, debug_lock):
     if ftype == FRAME_CMD and len(fdata) >= 12:
         plugin_id, cmd_type = struct.unpack_from("<II", fdata)
         pcm = fdata[12:]
-        if plugin_id == 0xFFFFFFFF and console_fd[0] is not None:
-            # Console text goes straight to the firmware's UART.
-            with suppress(OSError):
-                os.write(console_fd[0], pcm)
-        elif plugin_id != 0xFFFFFFFF and cmd_type == 0 and pcm:
+        # The firmware broadcasts the profiler sentinel until we learn its ID.
+        if (plugin_id == 0xFFFFFFFE and cmd_type == shm.SIM_PROFILER_CMD_SET_RATE
+                and shm._learned_profiler_id is not None):
+            plugin_id = shm._learned_profiler_id
+        if plugin_id == 0xFFFFFFFF:
+            # Console text goes to the UART when a FIFO is available.
+            if console_fd[0] is not None:
+                with suppress(OSError):
+                    os.write(console_fd[0], pcm)
+        elif cmd_type == shm.SIM_AUDIO_CMD_INJECT and pcm:
             shm.audio_input_write(pcm)
         else:
             shm.sim_cmd_send(plugin_id, cmd_type, pcm)
