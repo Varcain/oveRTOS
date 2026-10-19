@@ -10,9 +10,9 @@
  * FreeRTOS sampling profiler backend (Cortex-M).
  *
  * Sampling runs in the interrupt of a dedicated hardware timer (CMSDK APB
- * TIMER1 on MPS2-AN500): the hardware has stacked the interrupted task's
- * exception frame onto its PSP, so we read the stacked PC from there,
- * walk the stack and push a sample.
+ * TIMER1 on MPS2-AN500, named by the board header): the hardware has
+ * stacked the interrupted task's exception frame onto its PSP, so we read
+ * the stacked PC from there, walk the stack and push a sample.
  *
  * Why not the kernel tick: sampling exactly on the SysTick boundary never
  * sees work that the tick itself wakes (delays, timers, periodic loops) —
@@ -24,14 +24,14 @@
  * filters (Thumb bit, text range, bl/blx precedence, saved-r7 adjacency,
  * ascending-chain invariant) live in backends/common/ove_arm_backtrace.c.
  * We only pass the FreeRTOS-specific bounds:
- *   - text bounds: [__stext, __etext) from the linker script
- *     (__stext is placed right after the ISR vector table so small
- *      integer stack values with the Thumb bit set can't alias
- *      __isr_vector+0x2 style fake offsets)
+ *   - text bounds: [OVE_BOARD_PROFILER_TEXT_START, OVE_BOARD_PROFILER_TEXT_END)
+ *     from the linker script (__stext is placed right after the ISR vector
+ *     table so small integer stack values with the Thumb bit set can't
+ *     alias __isr_vector+0x2 style fake offsets)
  *   - the interrupted task's stack [pxStack, pxEndOfStack], recorded at
  *     task creation by the traceTASK_CREATE hook (FreeRTOSConfig.h.j2);
  *     tasks missing from the table fall back to a short scan within the
- *     MPS2-AN500 RAM window [0x20000000, 0x20400000).
+ *     board's OVE_BOARD_PROFILER_RAM window.
  * The hardware-stacked LR is used only as a fallback when the scan
  * finds no saved {r7, lr} pair (true-leaf functions or prologue-
  * interrupted samples).
@@ -57,25 +57,55 @@
 #include "ove/types.h"
 #include "ove_profiler_ring.h"
 
+/*
+ * Board bindings: sampling timer base/IRQ/handler, the fallback RAM scan
+ * window and the linker .text bounds. Each OVE_PROFILER-capable board
+ * ships boards/<board>/<rtos>/inc/ove_board_profiler.h; see the an500 one
+ * for the expected macros.
+ */
+#if defined(__has_include)
+#if __has_include("ove_board_profiler.h")
+#include "ove_board_profiler.h"
+#endif
+#endif
+
+/* A partial header: name the missing macro. HANDLER matters most: without
+ * it the backend defines a function nobody vectors to and the first sample
+ * hangs in the startup code's weak default handler. */
+#ifdef OVE_BOARD_PROFILER_TIMER_BASE
+#ifndef OVE_BOARD_PROFILER_TIMER_IRQ
+#error "ove_board_profiler.h must define OVE_BOARD_PROFILER_TIMER_IRQ"
+#endif
+#ifndef OVE_BOARD_PROFILER_HANDLER
+#error "ove_board_profiler.h must define OVE_BOARD_PROFILER_HANDLER (the vector-table name of the timer IRQ)"
+#endif
+#if !defined(OVE_BOARD_PROFILER_RAM_BASE) || !defined(OVE_BOARD_PROFILER_RAM_END)
+#error "ove_board_profiler.h must define OVE_BOARD_PROFILER_RAM_BASE and OVE_BOARD_PROFILER_RAM_END"
+#endif
+#if !defined(OVE_BOARD_PROFILER_TEXT_START) || !defined(OVE_BOARD_PROFILER_TEXT_END)
+#error "ove_board_profiler.h must define OVE_BOARD_PROFILER_TEXT_START and OVE_BOARD_PROFILER_TEXT_END"
+#endif
+/* The timer is driven through NVIC ISER0/ICER0/ICPR0 only. */
+_Static_assert(OVE_BOARD_PROFILER_TIMER_IRQ < 32u,
+	       "OVE_BOARD_PROFILER_TIMER_IRQ must be below 32 (NVIC ISER0/ICER0/ICPR0)");
+#endif
+
+#ifndef OVE_BOARD_PROFILER_TIMER_BASE
+#error "FreeRTOS OVE_PROFILER needs a board-provided ove_board_profiler.h defining OVE_BOARD_PROFILER_TIMER_BASE, OVE_BOARD_PROFILER_TIMER_IRQ, OVE_BOARD_PROFILER_HANDLER, OVE_BOARD_PROFILER_RAM_BASE, OVE_BOARD_PROFILER_RAM_END, OVE_BOARD_PROFILER_TEXT_START and OVE_BOARD_PROFILER_TEXT_END"
+#endif
+
 #ifndef CONFIG_OVE_PROFILER_HZ
 #define CONFIG_OVE_PROFILER_HZ 250
 #endif
 
-/* SRAM bounds. MPS2-AN500 linker script puts RAM at 0x20000000 + 4 MB
- * (boards/qemu-mps2-an500/freertos/mps2_an500.ld). Only used for tasks
- * whose stack range is unknown, with a short scan window. */
-#define OVE_SRAM_BASE 0x20000000u
-#define OVE_SRAM_END 0x20400000u
+#define OVE_SRAM_BASE OVE_BOARD_PROFILER_RAM_BASE
+#define OVE_SRAM_END OVE_BOARD_PROFILER_RAM_END
 #define OVE_FALLBACK_SCAN_BYTES 1024u
 
-/* Text section bounds. __stext is placed right after the ISR vector
- * table in mps2_an500.ld so integer stack values with bit 0 set
- * (0x3, 0x5, 0x23, 0x27, ...) can't pass the is-text filter as fake
- * offsets into __isr_vector. __etext is the linker-defined end of .text. */
-extern uint32_t __stext;
-extern uint32_t __etext;
-#define OVE_TEXT_BASE ((uintptr_t)&__stext)
-#define OVE_TEXT_END ((uintptr_t)&__etext)
+extern uint32_t OVE_BOARD_PROFILER_TEXT_START;
+extern uint32_t OVE_BOARD_PROFILER_TEXT_END;
+#define OVE_TEXT_BASE ((uintptr_t)&OVE_BOARD_PROFILER_TEXT_START)
+#define OVE_TEXT_END ((uintptr_t)&OVE_BOARD_PROFILER_TEXT_END)
 
 /* ── Per-task stack ranges ────────────────────────────────────────
  * Filled from traceTASK_CREATE / traceTASK_DELETE, which run inside the
@@ -139,16 +169,18 @@ static int profiler_running;
 
 /* ── Sampling timer: CMSDK APB TIMER1 (MPS2-AN500) ───────────────────
  * 32-bit down-counter clocked at the system clock; interrupts and
- * reloads from RELOAD when it reaches zero. IRQ 9, named in the board's
- * vector table (startup_CMSDK_CM7.s). Its priority is
- * configKERNEL_INTERRUPT_PRIORITY, so kernel critical sections mask it.
- * The port puts SysTick and PendSV at 0xff; where the NVIC implements all
- * eight priority bits (QEMU) the timer outranks them, so a sample that
- * interrupted a handler, PendSV mid-switch included, is skipped. Only
- * samples taken from thread mode are kept, where pxCurrentTCB and PSP
- * describe the same task. */
-#define PROF_TIMER_BASE 0x40001000u
-#define PROF_TIMER_IRQ 9u
+ * reloads from RELOAD when it reaches zero. Base/IRQ come from the board
+ * header, which must point at a CMSDK APB timer (CTRL/VALUE/RELOAD/
+ * INTCLEAR at 0x00/0x04/0x08/0x0C, EN bit 0, IRQEN bit 3); the IRQ is
+ * named in the board's vector table (startup_CMSDK_CM7.s). Its priority
+ * is configKERNEL_INTERRUPT_PRIORITY, so kernel critical sections mask
+ * it. The port puts SysTick and PendSV at 0xff; where the NVIC
+ * implements all eight priority bits (QEMU) the timer outranks them, so
+ * a sample that interrupted a handler, PendSV mid-switch included, is
+ * skipped. Only samples taken from thread mode are kept, where
+ * pxCurrentTCB and PSP describe the same task. */
+#define PROF_TIMER_BASE OVE_BOARD_PROFILER_TIMER_BASE
+#define PROF_TIMER_IRQ OVE_BOARD_PROFILER_TIMER_IRQ
 #define PROF_TIMER_CTRL (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x00u))
 #define PROF_TIMER_VALUE (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x04u))
 #define PROF_TIMER_RELOAD (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x08u))
@@ -267,7 +299,7 @@ static void sample_interrupted_task(void)
 	(void)ove_profiler_ring_push(&s);
 }
 
-void TIMER1_IRQHandler(void)
+void OVE_BOARD_PROFILER_HANDLER(void)
 {
 	PROF_TIMER_INTCLEAR = 1u;
 	/* Writing RELOAD also restarts the count, so each period is drawn
