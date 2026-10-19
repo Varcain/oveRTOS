@@ -9,15 +9,16 @@
 /*
  * FreeRTOS sampling profiler backend (Cortex-M).
  *
- * Cortex-M has no in-task signal mechanism, so we can't copy the POSIX
- * "pthread_kill + backtrace() in the target's signal handler" design.
- * Instead, sampling is driven from vApplicationTickHook — the FreeRTOS
- * tick hook runs in SysTick ISR context at configTICK_RATE_HZ, and the
- * hardware has already stacked the interrupted task's exception frame
- * onto its PSP. We read the stacked PC from there and push a sample.
+ * Sampling runs in the interrupt of a dedicated hardware timer (CMSDK APB
+ * TIMER1 on MPS2-AN500): the hardware has stacked the interrupted task's
+ * exception frame onto its PSP, so we read the stacked PC from there,
+ * walk the stack and push a sample.
  *
- * The producer is ove_backend_profiler_on_tick(), invoked from
- * vApplicationTickHook in freertos_hooks.c.
+ * Why not the kernel tick: sampling exactly on the SysTick boundary never
+ * sees work that the tick itself wakes (delays, timers, periodic loops) —
+ * a thread using 41% of the CPU that way got 0.8% of the samples. The
+ * timer runs independently of the tick, and each period is jittered by
+ * +/-25% so the sampler cannot phase-lock with periodic work either.
  *
  * Multi-frame unwinding: the stack-scan walker and the five heuristic
  * filters (Thumb bit, text range, bl/blx precedence, saved-r7 adjacency,
@@ -78,7 +79,7 @@ extern uint32_t __etext;
 
 /* ── Per-task stack ranges ────────────────────────────────────────
  * Filled from traceTASK_CREATE / traceTASK_DELETE, which run inside the
- * kernel's task-list critical section. The SysTick sampler reads the table
+ * kernel's task-list critical section. The timer sampler reads the table
  * from an ISR at the kernel interrupt priority, which that critical section
  * masks, so it always sees a consistent table. Covers kernel tasks (IDLE,
  * Tmr Svc) as well as ove threads. */
@@ -132,16 +133,49 @@ static int task_stack_find(TaskHandle_t task, uintptr_t *lo, uintptr_t *hi)
  * trips on the "address argument to atomic op must be pointer to
  * trivially-copyable type" check during cross-compile lint.  The
  * builtins give identical codegen on Cortex-M (aligned 4-byte
- * load/store/fetch_add are single-instruction). Same approach in
+ * load/store are single-instruction). Same approach in
  * backends/zephyr/zephyr_profiler.c. */
 static int profiler_running;
 
-/* Runtime rate control. The tick hook fires at configTICK_RATE_HZ
- * (1 kHz on QEMU MPS2); sample_divisor picks an integer divisor so the
- * actual sampling rate = tick_rate / divisor. divisor == 1 samples every
- * tick. Dashboard → set_rate() → divisor update. */
-static unsigned int sample_divisor = 1;
-static unsigned int sample_counter;
+/* ── Sampling timer: CMSDK APB TIMER1 (MPS2-AN500) ───────────────────
+ * 32-bit down-counter clocked at the system clock; interrupts and
+ * reloads from RELOAD when it reaches zero. IRQ 9, named in the board's
+ * vector table (startup_CMSDK_CM7.s). Its priority is the kernel's (the
+ * same as SysTick and PendSV), so it never preempts a context switch or a
+ * critical section: pxCurrentTCB and PSP always describe the same task. */
+#define PROF_TIMER_BASE 0x40001000u
+#define PROF_TIMER_IRQ 9u
+#define PROF_TIMER_CTRL (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x00u))
+#define PROF_TIMER_VALUE (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x04u))
+#define PROF_TIMER_RELOAD (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x08u))
+#define PROF_TIMER_INTCLEAR (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x0Cu))
+#define PROF_TIMER_CTRL_EN (1u << 0)
+#define PROF_TIMER_CTRL_IRQEN (1u << 3)
+#define NVIC_ISER0 (*(volatile uint32_t *)0xE000E100u)
+#define NVIC_ICER0 (*(volatile uint32_t *)0xE000E180u)
+#define NVIC_ICPR0 (*(volatile uint32_t *)0xE000E280u)
+#define NVIC_IPR_BYTE(irq) (*(volatile uint8_t *)(0xE000E400u + (irq)))
+#define SCB_ICSR (*(volatile uint32_t *)0xE000ED04u)
+#define SCB_ICSR_RETTOBASE (1u << 11)
+
+extern uint32_t SystemCoreClock;
+
+/* Mean sampling period in timer cycles (SystemCoreClock / Hz). */
+static uint32_t mean_period;
+static uint32_t jitter_state = 0x2545F491u;
+
+/* Next period: uniform in [0.75, 1.25) x mean (xorshift32). */
+static uint32_t next_period(void)
+{
+	uint32_t x = jitter_state;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	jitter_state = x;
+	uint32_t mean = __atomic_load_n(&mean_period, __ATOMIC_RELAXED);
+	uint32_t span = mean / 2u;
+	return mean - mean / 4u + (span ? x % span : 0u);
+}
 
 static inline uint32_t read_psp(void)
 {
@@ -150,28 +184,14 @@ static inline uint32_t read_psp(void)
 	return psp;
 }
 
-/*
- * Called from vApplicationTickHook (SysTick ISR context).
- *
- * SysTick runs at configKERNEL_INTERRUPT_PRIORITY (lowest), so by the
- * time we get here any higher-priority IRQ has already returned. PSP
- * points at the interrupted task's stack top, where the CPU stacked
- * r0-r3,r12,lr,pc,xpsr on exception entry. We read PSP[EXC_FRAME_PC].
- */
-void ove_backend_profiler_on_tick(void)
+/* Take one sample of the interrupted task (timer ISR context). PSP points
+ * at its stacked exception frame (r0-r3, r12, lr, pc, xpsr). */
+static void sample_interrupted_task(void)
 {
-	if (!__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
+	/* Only thread-mode code can be attributed through PSP: skip if we
+	 * interrupted another handler, or before the scheduler starts. */
+	if (!(SCB_ICSR & SCB_ICSR_RETTOBASE))
 		return;
-
-	unsigned div = __atomic_load_n(&sample_divisor, __ATOMIC_RELAXED);
-	unsigned c = __atomic_fetch_add(&sample_counter, 1u, __ATOMIC_RELAXED) + 1u;
-	if (c < div)
-		return;
-	__atomic_store_n(&sample_counter, 0u, __ATOMIC_RELAXED);
-
-	/* The PSP tracks the interrupted task's stack — except when the
-	 * tick fires while the scheduler isn't yet running (PSP == 0) or
-	 * while we interrupted another exception. Skip those. */
 	uint32_t psp = read_psp();
 	if (psp == 0)
 		return;
@@ -243,15 +263,37 @@ void ove_backend_profiler_on_tick(void)
 	(void)ove_profiler_ring_push(&s);
 }
 
+void TIMER1_IRQHandler(void)
+{
+	PROF_TIMER_INTCLEAR = 1u;
+	/* Takes effect at the next reload: each period is drawn anew. */
+	PROF_TIMER_RELOAD = next_period();
+	if (__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
+		sample_interrupted_task();
+}
+
 int ove_backend_profiler_start(void)
 {
+	if (__atomic_load_n(&mean_period, __ATOMIC_RELAXED) == 0)
+		ove_backend_profiler_set_rate(ove_backend_profiler_get_max_hz());
+
 	__atomic_store_n(&profiler_running, 1, __ATOMIC_RELEASE);
+	PROF_TIMER_CTRL = 0u;
+	PROF_TIMER_INTCLEAR = 1u;
+	PROF_TIMER_RELOAD = next_period();
+	PROF_TIMER_VALUE = next_period();
+	NVIC_IPR_BYTE(PROF_TIMER_IRQ) = (uint8_t)configKERNEL_INTERRUPT_PRIORITY;
+	NVIC_ICPR0 = 1u << PROF_TIMER_IRQ;
+	NVIC_ISER0 = 1u << PROF_TIMER_IRQ;
+	PROF_TIMER_CTRL = PROF_TIMER_CTRL_EN | PROF_TIMER_CTRL_IRQEN;
 	return OVE_OK;
 }
 
 void ove_backend_profiler_stop(void)
 {
 	__atomic_store_n(&profiler_running, 0, __ATOMIC_RELEASE);
+	PROF_TIMER_CTRL = 0u;
+	NVIC_ICER0 = 1u << PROF_TIMER_IRQ;
 }
 
 void ove_backend_profiler_set_rate(uint32_t hz)
@@ -259,28 +301,19 @@ void ove_backend_profiler_set_rate(uint32_t hz)
 	uint32_t max_hz = ove_backend_profiler_get_max_hz();
 	if (hz == 0 || hz > max_hz)
 		hz = max_hz;
-
-	uint32_t tick_hz = (uint32_t)configTICK_RATE_HZ;
-	unsigned div = (unsigned)(tick_hz / hz);
-	if (div == 0)
-		div = 1;
-
-	__atomic_store_n(&sample_divisor, div, __ATOMIC_RELEASE);
-	__atomic_store_n(&sample_counter, 0u, __ATOMIC_RELEASE);
+	uint32_t period = SystemCoreClock / hz;
+	__atomic_store_n(&mean_period, period ? period : 1u, __ATOMIC_RELEASE);
 }
 
 uint32_t ove_backend_profiler_get_flags(void)
 {
-	/* Samples only the task interrupted by SysTick (on-CPU). */
+	/* Samples only the task interrupted by the sampling timer (on-CPU). */
 	return 0;
 }
 
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
-	uint32_t cfg_hz = (uint32_t)CONFIG_OVE_PROFILER_HZ;
-	uint32_t tick_hz = (uint32_t)configTICK_RATE_HZ;
-	/* Can't sample faster than the tick fires. */
-	return (cfg_hz < tick_hz) ? cfg_hz : tick_hz;
+	return (uint32_t)CONFIG_OVE_PROFILER_HZ;
 }
 
 /*
