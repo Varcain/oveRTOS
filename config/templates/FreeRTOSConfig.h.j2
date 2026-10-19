@@ -209,11 +209,12 @@ uint64_t ove_freertos_runtime_counter_get(void);
 #define OVE_FREERTOS_RUNTIME_TO_US(count) ((uint64_t)(count) / (SystemCoreClock / 1000000u))
 {% endif %}
 
-/* Trace hooks wired to oveRTOS trace backend (backends/freertos/freertos_trace.c).
+/* Trace hooks wired to oveRTOS state tracking (backends/freertos/freertos_state_stats.c),
+ * which also feeds the trace stream when CONFIG_OVE_TRACE_STREAM is on.
  * SWITCHED_IN/OUT fire from inside vTaskSwitchContext() (PendSV context); the
  * blocking macros fire in task context before the yield. See the header comment
- * in freertos_trace.c for the reasoning behind the split. */
-#ifdef CONFIG_OVE_TRACE_STREAM
+ * in freertos_state_stats.c for the reasoning behind the split. */
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
 extern void ove_backend_trace_task_switched_in(void);
 extern void ove_backend_trace_task_switched_out(void);
 extern void ove_backend_trace_task_blocking(void);
