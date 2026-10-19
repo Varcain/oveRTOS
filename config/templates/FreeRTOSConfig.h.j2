@@ -57,12 +57,37 @@ extern "C" {
 #endif
 void ove_backend_freertos_task_created(void *task, const char *name);
 void ove_backend_freertos_task_deleted(void *task);
+#ifdef CONFIG_OVE_PROFILER
+void ove_backend_profiler_task_created(void *task, void *stack_lo, void *stack_end);
+void ove_backend_profiler_task_deleted(void *task);
+#endif
 #ifdef __cplusplus
 }
 #endif
-#define traceTASK_CREATE(pxNewTCB) \
-	ove_backend_freertos_task_created((void *)(pxNewTCB), (const char *)((pxNewTCB)->pcTaskName))
-#define traceTASK_DELETE(pxTCB) ove_backend_freertos_task_deleted((void *)(pxTCB))
+#ifdef CONFIG_OVE_PROFILER
+/* The sampling profiler bounds its stack scan by each task's real stack
+ * [pxStack, pxEndOfStack]; pxEndOfStack needs configRECORD_STACK_HIGH_ADDRESS
+ * on a descending stack. Both hooks expand inside tasks.c (TCB_t visible). */
+#define configRECORD_STACK_HIGH_ADDRESS		1
+#define OVE_PROFILER_TASK_CREATED(pxNewTCB) \
+	ove_backend_profiler_task_created((void *)(pxNewTCB), (void *)(pxNewTCB)->pxStack, \
+					  (void *)(pxNewTCB)->pxEndOfStack)
+#define OVE_PROFILER_TASK_DELETED(pxTCB) ove_backend_profiler_task_deleted((void *)(pxTCB))
+#else
+#define OVE_PROFILER_TASK_CREATED(pxNewTCB) do { } while (0)
+#define OVE_PROFILER_TASK_DELETED(pxTCB) do { } while (0)
+#endif
+#define traceTASK_CREATE(pxNewTCB)                                                          \
+	do {                                                                                \
+		ove_backend_freertos_task_created((void *)(pxNewTCB),                       \
+						  (const char *)((pxNewTCB)->pcTaskName));  \
+		OVE_PROFILER_TASK_CREATED(pxNewTCB);                                        \
+	} while (0)
+#define traceTASK_DELETE(pxTCB)                                                             \
+	do {                                                                                \
+		ove_backend_freertos_task_deleted((void *)(pxTCB));                         \
+		OVE_PROFILER_TASK_DELETED(pxTCB);                                           \
+	} while (0)
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1
 #define configUSE_MUTEXES			1
