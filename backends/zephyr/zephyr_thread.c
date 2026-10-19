@@ -31,7 +31,9 @@ static uint32_t runtime_percent(uint64_t part, uint64_t total)
 }
 #endif
 
-/* Set thread state with tracking + trace emit (mirrors posix/nuttx).
+/* Set thread state with tracking + trace emit. With
+ * CONFIG_OVE_THREAD_STATE_STATS the scheduler hooks below drive it; the
+ * thread itself only marks RUNNING on entry and TERMINATED on exit.
  *
  * Atomic store-release for cross-thread visibility (list_threads /
  * SET_STATE may run from different threads); relaxed load for the
@@ -125,16 +127,22 @@ static void thread_wrapper(void *p1, void *p2, void *p3)
 	ove_thread_fn entry = (ove_thread_fn)p1;
 	void *arg = p2;
 	struct ove_thread *info = (struct ove_thread *)p3;
-	k_thread_custom_data_set(info);
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Init the tracker in the owning task so last_ts_us is anchored at
-	 * the actual scheduling moment, not at ove_thread_init() time. */
+	 * the actual scheduling moment, not at ove_thread_init() time — and
+	 * before custom_data makes the thread visible to the scheduler hooks. */
 	ove_state_track_init(&info->st, OVE_THREAD_STATE_READY);
 #endif
+	k_thread_custom_data_set(info);
+
+	unsigned int key = irq_lock(); /* vs. the scheduler hooks */
 	SET_STATE(info, OVE_THREAD_STATE_RUNNING);
+	irq_unlock(key);
 	entry(arg);
+	key = irq_lock();
 	SET_STATE(info, OVE_THREAD_STATE_TERMINATED);
+	irq_unlock(key);
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -310,12 +318,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
-	struct ove_thread *t = ove_zephyr_current_thread();
-	if (t)
-		SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	k_sleep(K_MSEC(ms));
-	if (t)
-		SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -337,7 +340,6 @@ void ove_thread_suspend(ove_thread_t handle)
 {
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
-		SET_STATE(info, OVE_THREAD_STATE_SUSPENDED);
 		k_thread_suspend(&info->thread);
 	}
 }
@@ -346,7 +348,6 @@ void ove_thread_resume(ove_thread_t handle)
 {
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
-		SET_STATE(info, OVE_THREAD_STATE_READY);
 		k_thread_resume(&info->thread);
 	}
 }
@@ -365,11 +366,64 @@ bool ove_thread_should_stop(ove_thread_t handle)
 }
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
-void ove_backend_thread_set_state(int new_state)
+/* ── Scheduler-driven state (CONFIG_TRACING_USER hooks) ─────────────
+ *
+ * With state tracking on, prj.conf enables CONFIG_TRACING_USER and the
+ * kernel calls these hooks on every context switch, wake-up and suspend,
+ * so the tracker (and the trace stream) follow the scheduler: preemption
+ * shows as READY, and waits inside the kernel, drivers or LVGL show as
+ * BLOCKED, not only waits through the ove API.
+ *
+ * Only threads created through ove_thread_* (custom_data set in
+ * thread_wrapper) are tracked. switched_out runs on PendSV entry before
+ * the kernel masks interrupts, so each update runs under irq_lock()
+ * against an ISR readying the same thread. Plain memory accesses only.
+ */
+static void sched_transition(struct k_thread *thread, int next, bool only_from_waiting)
 {
-	struct ove_thread *t = ove_zephyr_current_thread();
-	if (t)
-		SET_STATE(t, new_state);
+	struct ove_thread *t = thread ? (struct ove_thread *)thread->custom_data : NULL;
+	if (!t)
+		return;
+
+	unsigned int key = irq_lock();
+	int prev = __atomic_load_n(&t->state, __ATOMIC_RELAXED);
+	bool waiting = prev == OVE_THREAD_STATE_BLOCKED || prev == OVE_THREAD_STATE_SUSPENDED;
+	if (prev != next && prev != OVE_THREAD_STATE_TERMINATED && (!only_from_waiting || waiting))
+		SET_STATE(t, next);
+	irq_unlock(key);
+}
+
+void sys_trace_thread_switched_in_user(void)
+{
+	sched_transition(k_current_get(), OVE_THREAD_STATE_RUNNING, false);
+}
+
+void sys_trace_thread_switched_out_user(void)
+{
+	struct k_thread *thread = k_current_get();
+	uint8_t ks = thread->base.thread_state;
+	int next;
+
+	if (ks & _THREAD_SUSPENDED)
+		next = OVE_THREAD_STATE_SUSPENDED;
+	else if (ks & (_THREAD_PENDING | _THREAD_SLEEPING | _THREAD_DEAD))
+		next = OVE_THREAD_STATE_BLOCKED;
+	else
+		next = OVE_THREAD_STATE_READY; /* preempted or yielded */
+	sched_transition(thread, next, false);
+}
+
+/* Wake-up (or resume): the thread entered the run queue. Ignored unless it
+ * was waiting, so a re-queue of a ready thread is not counted. */
+void sys_trace_thread_sched_ready_user(struct k_thread *thread)
+{
+	sched_transition(thread, OVE_THREAD_STATE_READY, true);
+}
+
+/* Suspension of another thread happens without a context switch. */
+void sys_trace_thread_suspend_user(struct k_thread *thread)
+{
+	sched_transition(thread, OVE_THREAD_STATE_SUSPENDED, false);
 }
 #endif
 

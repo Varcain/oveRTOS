@@ -224,6 +224,13 @@ CONFIG_THREAD_NAME=y
 CONFIG_THREAD_MONITOR=y
 CONFIG_INIT_STACKS=y
 CONFIG_THREAD_RUNTIME_STATS=y
+{% if get_bool("CONFIG_OVE_THREAD_STATE_STATS") %}
+# Per-thread state tracking follows the scheduler: user tracing hooks
+# (switched in/out, ready, suspend) are implemented in
+# backends/zephyr/zephyr_state_stats.c.
+CONFIG_TRACING=y
+CONFIG_TRACING_USER=y
+{% endif %}
 
 # Keep printk output synchronous — prevents message drops in benchmarks
 CONFIG_LOG_PRINTK=n
