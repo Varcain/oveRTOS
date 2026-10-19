@@ -1117,6 +1117,11 @@ function _monacoSetDecorations(currentLine, startLine, file) {
 var TRACE_KIND_STATE = 1;
 var TRACE_KIND_MARK  = 2;
 
+/* Spans whose true state can't be known because records went missing. */
+var TRACE_STATE_UNKNOWN = -1;
+var TRACE_STATE_READY = 1;
+var TRACE_STATE_TERMINATED = 4;
+
 /* Rolling window in simulation time (microseconds). */
 var TRACE_WINDOW_US  = 30 * 1000 * 1000;
 /* Hard memory cap on each of traceSpans / traceMarks — evict oldest first.
@@ -1141,6 +1146,7 @@ var TRACE_STATE_COLORS = {
     2: "#5e5130", /* BLOCKED */
     3: "#50566a", /* SUSPENDED */
     4: "#222222", /* TERMINATED */
+    [TRACE_STATE_UNKNOWN]: "#3b2230", /* UNKNOWN (gaps, hatched) */
 };
 
 /* Lanes to draw, sorted by name: only threads that carry trace data.
@@ -1172,6 +1178,38 @@ window.oveTraceSelect = function (name) {
 
 function traceLaneH(cssH, n) {
     return Math.max(14, Math.min(28, Math.floor((cssH - 20) / n)));
+}
+
+function traceStateName(st) {
+    return st === 0 ? "running"
+         : st === 1 ? "ready"
+         : st === 2 ? "blocked"
+         : st === 3 ? "suspended"
+         : st === 4 ? "terminated"
+         : "unknown";
+}
+
+function traceDurText(us) {
+    if (us >= 1e6) return (us / 1e6).toFixed(3) + " s";
+    if (us >= 1e3) return (us / 1e3).toFixed(3) + " ms";
+    return us.toFixed(0) + " µs";
+}
+
+/* Diagonal hatching marks time we can't attribute (lost trace records). */
+function traceHatch(ctx, x, y, w, h) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+    ctx.lineWidth = 1;
+    for (var hx = x - h; hx < x + w; hx += 6) {
+        ctx.beginPath();
+        ctx.moveTo(hx, y + h);
+        ctx.lineTo(hx + h, y);
+        ctx.stroke();
+    }
+    ctx.restore();
 }
 
 /* Visible time range. While live, if less history has been recorded than
@@ -1223,7 +1261,7 @@ function traceActName(a) {
 
 /* Per-thread lane state: last state + last timestamp (for closing span). */
 var traceThreads = {};            /* tid -> { name, lastState, lastTs } */
-var traceSpans   = [];            /* [{tid, start, end, state}] */
+var traceSpans   = [];            /* [{tid, start, end, state, gap?}] */
 var traceMarks   = [];            /* [{tid, ts, prim, act}] */
 var traceDropped = 0;
 var traceMinTs   = 0;             /* earliest observed ts */
@@ -1330,9 +1368,19 @@ function handleTrace(buf, off) {
         th.hasData = true;
 
         if (kind === TRACE_KIND_STATE) {
+            /* old_state is the state the backend saw before this transition.
+             * If it doesn't match the state we last recorded, records were
+             * lost in between: the interval can't be attributed to a single
+             * state, so draw it hatched as unknown instead of guessing.
+             * A terminated lane followed by READY is not a loss: a new
+             * thread reusing its storage starts from READY. */
+            var reused = th.lastState === TRACE_STATE_TERMINATED && arg === TRACE_STATE_READY;
+            var gap = th.lastState >= 0 && !reused && arg !== th.lastState;
             /* Close out the previous span for this thread. */
             if (th.lastState >= 0 && ts > th.lastTs) {
-                traceSpans.push({ tid: tid, start: th.lastTs, end: ts, state: th.lastState });
+                traceSpans.push({ tid: tid, start: th.lastTs, end: ts,
+                                  state: gap ? TRACE_STATE_UNKNOWN : th.lastState,
+                                  gap: gap });
             }
             th.lastState = code;
             th.lastTs = ts;
@@ -1452,6 +1500,7 @@ function renderTrace() {
         ctx.globalAlpha = (selTid !== null && sp.tid !== selTid) ? 0.35 : 1;
         ctx.fillStyle = TRACE_STATE_COLORS[sp.state] || "#888";
         ctx.fillRect(x0, y, w, laneH - 4);
+        if (sp.gap) traceHatch(ctx, x0, y, w, laneH - 4);
     }
     ctx.globalAlpha = 1;
 
@@ -1663,15 +1712,15 @@ function traceBindPanel() {
         e.preventDefault();
     }, { passive: false });
 
-    /* ── Marker tooltip ────────────────────────────────────────────
+    /* ── Marker / span tooltip ─────────────────────────────────────
      * Triangles are 6 px wide; widen hit tolerance to ±6 px so the
      * glyph is easy to land on. Pick the nearest mark in time on the
-     * cursor's lane. */
+     * cursor's lane, otherwise the span under the cursor (including
+     * the still-open span at the right edge). */
     var tip = document.getElementById("trace-mark-tip");
     if (tip) {
         cvs.addEventListener("mousemove", function (e) {
             if (drag) { tip.style.display = "none"; return; }
-            if (traceMarks.length === 0) { tip.style.display = "none"; return; }
             var plot = traceGetPlot();
             if (!plot) { tip.style.display = "none"; return; }
             var rect = cvs.getBoundingClientRect();
@@ -1692,10 +1741,14 @@ function traceBindPanel() {
                 tip.style.display = "none"; return;
             }
             var rowTid = tids[row];
+            var rowName = traceThreads[rowTid]
+                ? traceThreads[rowTid].name : ("0x" + rowTid.toString(16));
 
             var range = traceViewRange();
             var tEnd = range.tEnd, tStart = range.tStart, span = range.span;
+            var tAt = tStart + ((xCss - plot.plotX) / plot.plotW) * span;
 
+            /* Markers win when the cursor is close to one. */
             var best = null, bestDx = Infinity;
             for (var i = traceMarks.length - 1; i >= 0; i--) {
                 var mk = traceMarks[i];
@@ -1705,17 +1758,42 @@ function traceBindPanel() {
                 var dx = Math.abs(mx - xCss);
                 if (dx < bestDx) { bestDx = dx; best = mk; }
             }
-            if (!best || bestDx > 6) {
-                tip.style.display = "none"; return;
+            if (best && bestDx <= 6) {
+                tip.textContent = rowName + "  "
+                    + tracePrimName(best.prim) + " "
+                    + traceActName(best.act)
+                    + "  obj=0x" + best.arg.toString(16)
+                    + "  @ " + (best.ts / 1e6).toFixed(3) + "s";
+                tip.style.display = "block";
+                tip.style.left = (xCss + 12) + "px";
+                tip.style.top  = (yCss + 12) + "px";
+                return;
             }
 
-            var name = traceThreads[best.tid]
-                ? traceThreads[best.tid].name : ("0x" + best.tid.toString(16));
-            tip.textContent = name + "  "
-                + tracePrimName(best.prim) + " "
-                + traceActName(best.act)
-                + "  obj=0x" + best.arg.toString(16)
-                + "  @ " + (best.ts / 1e6).toFixed(3) + "s";
+            /* Spans: closed ones, else the live one for this thread. */
+            var sp = null;
+            for (var k = traceSpans.length - 1; k >= 0; k--) {
+                var cand = traceSpans[k];
+                if (cand.tid !== rowTid) continue;
+                if (tAt >= cand.start && tAt < cand.end) { sp = cand; break; }
+            }
+            if (!sp) {
+                var lth = traceThreads[rowTid];
+                if (lth && lth.lastState >= 0 && tAt >= lth.lastTs && tAt <= tEnd) {
+                    sp = { tid: rowTid, start: lth.lastTs, end: tEnd,
+                           state: lth.lastState, live: true };
+                }
+            }
+            if (!sp) { tip.style.display = "none"; return; }
+
+            var stName = traceStateName(sp.state);
+            var dur = traceDurText(sp.end - sp.start);
+            tip.textContent = rowName + "  " + stName
+                + "  " + dur
+                + (sp.gap ? "  (records lost)" : "")
+                + (sp.live ? "  (in flight)" : "")
+                + "  [" + (sp.start / 1e6).toFixed(6) + "s → "
+                + (sp.end / 1e6).toFixed(6) + "s]";
             tip.style.display = "block";
             tip.style.left = (xCss + 12) + "px";
             tip.style.top  = (yCss + 12) + "px";
