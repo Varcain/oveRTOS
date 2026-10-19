@@ -45,6 +45,10 @@ static uint64_t tick_clock_us(void)
 
 #ifdef OVE_NX_SYSTICK_REFINE
 static uint64_t now_us_last;
+/* Q32 cycles->us factor for the current SysTick reload (division-free hot
+ * path; recomputed only when the reload changes). */
+static uint32_t q32_load;
+static uint32_t q32_us_per_cycle;
 
 uint64_t ove_state_stats_now_us(void)
 {
@@ -64,7 +68,18 @@ uint64_t ove_state_stats_now_us(void)
 	uint32_t cycles = ove_cortexm_systick_elapsed(&load, &pending);
 	if (pending)
 		us += USEC_PER_TICK;
-	us += (uint64_t)cycles * USEC_PER_TICK / ((uint64_t)load + 1u);
+
+	uint64_t sub_us;
+	if ((uint64_t)load + 1u > USEC_PER_TICK) {
+		if (load != q32_load) {
+			q32_us_per_cycle = ove_q32_factor(USEC_PER_TICK, load + 1u);
+			q32_load = load;
+		}
+		sub_us = ove_q32_apply(cycles, q32_us_per_cycle);
+	} else {
+		sub_us = (uint64_t)cycles * USEC_PER_TICK / ((uint64_t)load + 1u);
+	}
+	us += sub_us;
 
 	/* Emulated SysTick can show a reload before PENDSTSET (see
 	 * backends/freertos/include/ove_freertos_systick.h): hold such small

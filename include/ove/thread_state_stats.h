@@ -54,14 +54,21 @@ static inline void ove_state_track_init(struct ove_state_tracker *st, int initia
 	st->cur_state = initial_state;
 }
 
-static inline void ove_state_track_transition(struct ove_state_tracker *st, int new_state)
+/** Transition at a caller-supplied time (one clock read shared with the
+ *  trace emit on hot paths). */
+static inline void ove_state_track_transition_at(struct ove_state_tracker *st, int new_state,
+						 uint64_t now)
 {
-	uint64_t now = ove_state_stats_now_us();
 	int idx = st->cur_state;
-	if (idx >= 0 && idx < OVE_STATE_COUNT)
+	if (idx >= 0 && idx < OVE_STATE_COUNT && now >= st->last_ts_us)
 		st->cumul_us[idx] += now - st->last_ts_us;
 	st->last_ts_us = now;
 	st->cur_state = new_state;
+}
+
+static inline void ove_state_track_transition(struct ove_state_tracker *st, int new_state)
+{
+	ove_state_track_transition_at(st, new_state, ove_state_stats_now_us());
 }
 
 #else /* !CONFIG_OVE_THREAD_STATE_STATS */
@@ -71,6 +78,7 @@ struct ove_state_tracker {
 };
 #define ove_state_track_init(st, s) ((void)0)
 #define ove_state_track_transition(st, s) ((void)0)
+#define ove_state_track_transition_at(st, s, now) ((void)0)
 
 #endif /* CONFIG_OVE_THREAD_STATE_STATS */
 

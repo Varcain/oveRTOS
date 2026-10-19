@@ -280,6 +280,9 @@ add_executable(ove_test_arm_backtrace
     ${OVE_ROOT}/backends/common/ove_arm_backtrace.c
 )
 target_include_directories(ove_test_arm_backtrace PRIVATE ${OVE_INCLUDE})
+# Division-free Q32 scaling of the SysTick time sources vs exact division.
+add_executable(ove_test_systick_q32 ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_systick_q32.c)
+target_include_directories(ove_test_systick_q32 PRIVATE ${OVE_ROOT}/backends/common)
 option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
 # TSan cannot share a binary with ASan or MSan: when the whole tree is
 # configured with either (make test-stub-sanitize, test-stub-msan), skip
@@ -325,6 +328,7 @@ add_test(NAME ove_stub_tests COMMAND ove_test_stub)
 add_test(NAME ove_trace_ring COMMAND ove_test_trace_ring)
 add_test(NAME ove_trace_ring_preempt COMMAND ove_test_trace_ring_preempt)
 add_test(NAME ove_arm_backtrace COMMAND ove_test_arm_backtrace)
+add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
     set_tests_properties(ove_trace_ring_tsan PROPERTIES

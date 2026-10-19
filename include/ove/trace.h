@@ -70,6 +70,19 @@ enum {
 void ove_trace_emit_state(uintptr_t thread_handle, int old_state, int new_state);
 
 /**
+ * @brief Emit a thread state transition with a caller-supplied timestamp.
+ *
+ * For hot paths that also feed the state tracker: read the clock once
+ * (ove_state_stats_now_us()) and pass the same time to both.
+ *
+ * @param[in] thread_handle Stable backend handle of the thread changing state.
+ * @param[in] old_state     Previous state (@c ove_thread_state_t encoding).
+ * @param[in] new_state     New state (@c ove_thread_state_t encoding).
+ * @param[in] ts_us         Timestamp, microseconds.
+ */
+void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_state, uint64_t ts_us);
+
+/**
  * @brief Emit a sync-primitive marker.
  *
  * @param[in] thread_handle Stable backend handle of the emitting thread.
@@ -99,6 +112,14 @@ static inline void ove_trace_emit_state(uintptr_t t, int o, int n)
 	(void)t;
 	(void)o;
 	(void)n;
+}
+
+static inline void ove_trace_emit_state_at(uintptr_t t, int o, int n, uint64_t ts)
+{
+	(void)t;
+	(void)o;
+	(void)n;
+	(void)ts;
 }
 
 static inline void ove_trace_emit_mark(uintptr_t t, uint8_t p, uint8_t a, uintptr_t o)

@@ -40,13 +40,20 @@ static uint32_t runtime_percent(uint64_t part, uint64_t total)
  * itself.  Race surface is narrower in Zephyr than POSIX (destroy /
  * resume paths read Zephyr's k_thread state, not our `state` field),
  * but the macro stays consistent with the other backends. */
-#define SET_STATE(t, s)                                                                    \
-	do {                                                                               \
-		ove_trace_emit_state((uintptr_t)(t),                                       \
-				     __atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s)); \
-		ove_state_track_transition(&(t)->st, (s));                                 \
-		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+/* One clock read per transition, shared by the trace record and the tracker. */
+#define SET_STATE(t, s)                                                                      \
+	do {                                                                                 \
+		uint64_t now_ = ove_state_stats_now_us();                                    \
+		ove_trace_emit_state_at((uintptr_t)(t),                                      \
+					__atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s), \
+					now_);                                               \
+		ove_state_track_transition_at(&(t)->st, (s), now_);                          \
+		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                        \
 	} while (0)
+#else
+#define SET_STATE(t, s) __atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE)
+#endif
 
 struct ove_thread *ove_zephyr_current_thread(void)
 {
