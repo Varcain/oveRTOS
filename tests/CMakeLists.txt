@@ -254,6 +254,31 @@ if(OVE_TEST_BUILD_ASAN)
     )
 endif()
 
+# --- Observability ring tests (tests/obs/) — standalone, no CMocka, so the
+#     multi-producer cases also run under ThreadSanitizer. Uses its own
+#     minimal ove_config.h from tests/obs/.
+function(ove_add_obs_test name)
+    add_executable(${name}
+        ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_ring.c
+        ${OVE_ROOT}/backends/common/ove_trace_ring.c
+    )
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/obs
+        ${OVE_ROOT}/backends/common
+    )
+    target_compile_definitions(${name} PRIVATE _GNU_SOURCE)
+    target_link_libraries(${name} PRIVATE pthread)
+    if(ARGN)
+        target_compile_options(${name} PRIVATE ${ARGN})
+        target_link_options(${name} PRIVATE ${ARGN})
+    endif()
+endfunction()
+ove_add_obs_test(ove_test_trace_ring)
+option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
+if(OVE_TEST_BUILD_TSAN)
+    ove_add_obs_test(ove_test_trace_ring_tsan -fsanitize=thread -O1 -g)
+endif()
+
 # --- Coverage variant — gcov instrumentation for the `coverage` target. ---
 # Two binaries share the same gcov tree: the default (heap-allocated *_create
 # path) and a CONFIG_OVE_ZERO_HEAP twin that routes ove_test_*_create() through
@@ -271,6 +296,12 @@ endif()
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
+add_test(NAME ove_trace_ring COMMAND ove_test_trace_ring)
+if(OVE_TEST_BUILD_TSAN)
+    add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
+    set_tests_properties(ove_trace_ring_tsan PROPERTIES
+        ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
+endif()
 add_test(NAME ove_patch_worktree_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
