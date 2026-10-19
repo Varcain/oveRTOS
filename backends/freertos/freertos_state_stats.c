@@ -28,7 +28,7 @@
  * blocking macros, which fire in task context; SWITCHED_OUT keeps it.
  *
  * Each transition is also emitted to the trace stream; with
- * CONFIG_OVE_TRACE_STREAM off, ove_trace_emit_state() is an empty inline.
+ * CONFIG_OVE_TRACE_STREAM off, ove_trace_emit_state_at() is an empty inline.
  *
  * Also provides the time source shared by the tracker, the trace stream
  * and the sampling profiler (which depends on this option).
@@ -53,6 +53,10 @@
 extern uint32_t SystemCoreClock;
 
 static uint64_t now_us_last;
+/* Q32 cycles->us factor for the current SystemCoreClock (division-free
+ * hot path; recomputed only if the core clock changes). */
+static uint32_t q32_clk;
+static uint32_t q32_us_per_cycle;
 
 uint64_t ove_state_stats_now_us(void)
 {
@@ -64,9 +68,29 @@ uint64_t ove_state_stats_now_us(void)
 	 * from the core clock (the port's default configSYSTICK_CLOCK_HZ). */
 	ove_freertos_systick_read(&ticks, &elapsed);
 
-	uint64_t us = (uint64_t)ticks * 1000000ULL / configTICK_RATE_HZ +
-		      (uint64_t)elapsed * 1000000ULL / SystemCoreClock;
+	uint32_t clk = SystemCoreClock;
+	if (clk != q32_clk) {
+		/* Benign race: every context computes the same value. */
+		q32_us_per_cycle = ove_q32_factor(1000000u, clk);
+		q32_clk = clk;
+	}
+
+	/* Constant multiply when the tick period is a whole number of us
+	 * (folded at compile time); division otherwise. */
+	uint64_t tick_us = (1000000u % configTICK_RATE_HZ == 0)
+				   ? (uint64_t)ticks * (1000000u / configTICK_RATE_HZ)
+				   : (uint64_t)ticks * 1000000u / configTICK_RATE_HZ;
+	uint64_t us = tick_us + ove_q32_apply(elapsed, q32_us_per_cycle);
 	return ove_freertos_monotonic(&now_us_last, us);
+}
+
+/* One clock read per transition, shared by the trace record and the
+ * tracker. */
+static void transition(struct ove_thread *t, int prev, int next)
+{
+	uint64_t now = ove_state_stats_now_us();
+	ove_trace_emit_state_at((uintptr_t)t, prev, next, now);
+	ove_state_track_transition_at(&t->st, next, now);
 }
 
 /* ── Kernel trace hooks ───────────────────────────────────────────── */
@@ -89,16 +113,10 @@ void ove_backend_trace_task_switched_out(void)
 	if (!t)
 		return; /* idle / timer / tasks not created via ove_thread_init */
 
-	int prev = t->st.cur_state;
-	int next;
-	if (prev == OVE_THREAD_STATE_BLOCKED || prev == OVE_THREAD_STATE_SUSPENDED)
-		next = prev;
-	else
-		next = OVE_THREAD_STATE_READY;
-
-	if (prev != next)
-		ove_trace_emit_state((uintptr_t)t, prev, next);
-	ove_state_track_transition(&t->st, next);
+	/* BLOCKED / SUSPENDED were already set by traceBLOCKING_ON_* /
+	 * traceTASK_SUSPEND; a still-RUNNING task was preempted or yielded. */
+	if (t->st.cur_state == OVE_THREAD_STATE_RUNNING)
+		transition(t, OVE_THREAD_STATE_RUNNING, OVE_THREAD_STATE_READY);
 }
 
 /*
@@ -114,9 +132,7 @@ void ove_backend_trace_task_switched_in(void)
 	if (!t)
 		return;
 
-	int prev = t->st.cur_state;
-	ove_trace_emit_state((uintptr_t)t, prev, OVE_THREAD_STATE_RUNNING);
-	ove_state_track_transition(&t->st, OVE_THREAD_STATE_RUNNING);
+	transition(t, t->st.cur_state, OVE_THREAD_STATE_RUNNING);
 }
 
 /*
@@ -137,8 +153,7 @@ void ove_backend_trace_task_blocking(void)
 
 	int prev = t->st.cur_state;
 	if (prev != OVE_THREAD_STATE_BLOCKED)
-		ove_trace_emit_state((uintptr_t)t, prev, OVE_THREAD_STATE_BLOCKED);
-	ove_state_track_transition(&t->st, OVE_THREAD_STATE_BLOCKED);
+		transition(t, prev, OVE_THREAD_STATE_BLOCKED);
 }
 
 /*
@@ -156,8 +171,7 @@ void ove_backend_trace_task_suspended(uintptr_t task_tag)
 	int prev = t->st.cur_state;
 	if (prev == OVE_THREAD_STATE_SUSPENDED)
 		return;
-	ove_trace_emit_state((uintptr_t)t, prev, OVE_THREAD_STATE_SUSPENDED);
-	ove_state_track_transition(&t->st, OVE_THREAD_STATE_SUSPENDED);
+	transition(t, prev, OVE_THREAD_STATE_SUSPENDED);
 }
 
 /*
@@ -181,8 +195,7 @@ void ove_backend_trace_task_ready(uintptr_t task_tag)
 	int prev = t->st.cur_state;
 	if (prev != OVE_THREAD_STATE_BLOCKED && prev != OVE_THREAD_STATE_SUSPENDED)
 		return;
-	ove_trace_emit_state((uintptr_t)t, prev, OVE_THREAD_STATE_READY);
-	ove_state_track_transition(&t->st, OVE_THREAD_STATE_READY);
+	transition(t, prev, OVE_THREAD_STATE_READY);
 }
 
 #endif /* CONFIG_OVE_THREAD_STATE_STATS */

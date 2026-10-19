@@ -470,8 +470,10 @@ static void obs_transition(struct ove_thread *t, int s)
 	int prev = t->st.cur_state;
 	if (prev == s || prev == OVE_THREAD_STATE_TERMINATED)
 		return;
-	ove_trace_emit_state((uintptr_t)t, prev, s);
-	ove_state_track_transition(&t->st, s);
+	/* One clock read, shared by the trace record and the tracker. */
+	uint64_t now = ove_state_stats_now_us();
+	ove_trace_emit_state_at((uintptr_t)t, prev, s, now);
+	ove_state_track_transition_at(&t->st, s, now);
 }
 
 static struct ove_thread *obs_find(pid_t pid)
