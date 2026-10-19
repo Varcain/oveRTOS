@@ -614,10 +614,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_trace.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_trace.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_thread_registry.c")
 {% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_trace.c")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_thread_registry.c")
 {% endif %}
 {% endif %}
 

@@ -11,7 +11,6 @@
 #include "ove/thread_state_stats.h"
 #include "ove/trace.h"
 #include "ove_backend_common.h"
-#include "ove_thread_registry.h"
 #include "ove_zephyr_priority.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_heap.h>
@@ -49,78 +48,12 @@ static uint32_t runtime_percent(uint64_t part, uint64_t total)
 		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
 	} while (0)
 
-/* ── Thread registry (intrusive list) ─────────────────────────────────
- * The shared registry (backends/common/ove_thread_registry.h), used for trace
- * descriptor enumeration. The profiler is
- * ISR-driven (SysTick-style) and identifies targets via k_thread_custom_data
- * — no enumeration needed from there — so the registry exists mainly for
- * the trace swimlane. Lock is a k_mutex so it's safe from any task context
- * but not ISR; trace enumeration runs off the sim_debug pump thread.
- *
- * Gated on CONFIG_OVE_TRACE_STREAM — the same guard the sole consumer,
- * ove_backend_trace_list_threads() in ove_thread_registry.c, compiles under. With
- * trace off the registry is pure overhead (a global k_mutex taken twice on
- * every thread create/destroy), so it and _register/_unregister compile to
- * nothing. struct ove_thread keeps its `next` field either way so the
- * storage size (size probes / test_storage_bounds) is unchanged. */
-#ifdef CONFIG_OVE_TRACE_STREAM
-struct ove_thread *ove_backend_thread_registry_head;
-static struct k_mutex thread_list_lock;
-static bool thread_list_lock_initialised;
-
-static void ensure_list_lock(void)
-{
-	if (!thread_list_lock_initialised) {
-		k_mutex_init(&thread_list_lock);
-		thread_list_lock_initialised = true;
-	}
-}
-
-void ove_backend_thread_registry_lock(void)
-{
-	ensure_list_lock();
-	k_mutex_lock(&thread_list_lock, K_FOREVER);
-}
-
-void ove_backend_thread_registry_unlock(void)
-{
-	k_mutex_unlock(&thread_list_lock);
-}
-#endif /* CONFIG_OVE_TRACE_STREAM */
-
 struct ove_thread *ove_zephyr_current_thread(void)
 {
 	/* k_thread_custom_data_get returns NULL for the idle thread /
 	 * system threads; callers must handle that. */
 	return (struct ove_thread *)k_thread_custom_data_get();
 }
-
-#ifdef CONFIG_OVE_TRACE_STREAM
-static void _register_thread(struct ove_thread *t)
-{
-	ove_backend_thread_registry_lock();
-	ove_thread_registry_add(t);
-	ove_backend_thread_registry_unlock();
-}
-
-static void _unregister_thread(struct ove_thread *t)
-{
-	ove_backend_thread_registry_lock();
-	ove_thread_registry_remove(t);
-	ove_backend_thread_registry_unlock();
-}
-#else
-/* Trace off: the registry is compiled out (see comment above); these
- * no-ops keep the create/destroy/init/deinit call sites unchanged. */
-static inline void _register_thread(struct ove_thread *t)
-{
-	(void)t;
-}
-static inline void _unregister_thread(struct ove_thread *t)
-{
-	(void)t;
-}
-#endif /* CONFIG_OVE_TRACE_STREAM */
 
 static void thread_wrapper(void *p1, void *p2, void *p3)
 {
@@ -207,7 +140,6 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		k_thread_name_set(tid, name);
 	}
 
-	_register_thread(storage);
 	*handle = storage;
 	return OVE_OK;
 }
@@ -222,7 +154,6 @@ int ove_thread_deinit(ove_thread_t handle)
 	if (k_thread_join(&info->thread, K_FOREVER) != 0) {
 		k_thread_abort(&info->thread);
 	}
-	_unregister_thread(info);
 	if (info->heap_stack && info->stack != NULL) {
 		k_thread_stack_free(info->stack);
 		info->stack = NULL;
@@ -274,7 +205,6 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 		k_thread_name_set(tid, name);
 	}
 
-	_register_thread(info);
 	*handle = info;
 	return OVE_OK;
 }
@@ -291,7 +221,6 @@ int ove_thread_destroy(ove_thread_t handle)
 	if (k_thread_join(&info->thread, K_FOREVER) != 0) {
 		k_thread_abort(&info->thread);
 	}
-	_unregister_thread(info);
 	k_thread_stack_free(info->stack);
 	OVE_BACKEND_FREE(info);
 	return OVE_OK;

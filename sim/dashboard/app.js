@@ -1143,15 +1143,16 @@ var TRACE_STATE_COLORS = {
     4: "#222222", /* TERMINATED */
 };
 
-/* Lanes to draw, sorted by name. Threads the firmware never described
- * (no descriptor → hex placeholder name) are only shown once they carry
- * data; tid 0 is activity outside any thread context. Shared by
+/* Lanes to draw, sorted by name: only threads that carry trace data.
+ * Descriptors name every kernel thread (so profiler samples of idle and
+ * system threads get names), but kernel threads without state tracking
+ * would only add empty lanes. tid 0 is interrupt context. Shared by
  * renderTrace and the hover hit-test so row math always agrees. */
 function traceLanes() {
     var tids = [];
     for (var k in traceThreads) {
         var th = traceThreads[k];
-        if (th.described || th.hasData) tids.push(+k);
+        if (th.hasData) tids.push(+k);
     }
     tids.sort(function (a, b) {
         var na = traceThreads[a].name, nb = traceThreads[b].name;
@@ -1323,7 +1324,7 @@ function handleTrace(buf, off) {
         var th = traceThreads[tid];
         if (!th) {
             th = traceThreads[tid] = {
-                name: tid === 0 ? "(no thread)" : "0x" + tid.toString(16),
+                name: tid === 0 ? "(interrupt)" : "0x" + tid.toString(16),
                 lastState: -1, lastTs: ts };
         }
         th.hasData = true;

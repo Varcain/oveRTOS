@@ -31,12 +31,18 @@
 
 /* ── Current-thread handle for OVE_TRACE_MARK_CURRENT ─────────────── */
 
+/* Thread identity (shared with the profiler and the descriptors): the
+ * ove_thread for tasks created through ove_thread_*, otherwise the TCB;
+ * 0 for interrupt context. */
 uintptr_t ove_backend_thread_current_handle(void)
 {
+	if (xPortIsInsideInterrupt())
+		return 0;
 	TaskHandle_t h = xTaskGetCurrentTaskHandle();
 	if (!h)
 		return 0;
-	return (uintptr_t)xTaskGetApplicationTaskTag(h);
+	uintptr_t tag = (uintptr_t)xTaskGetApplicationTaskTag(h);
+	return tag ? tag : (uintptr_t)h;
 }
 
 /* ── Descriptor enumeration for sim_trace plugin ─────────────────── */
