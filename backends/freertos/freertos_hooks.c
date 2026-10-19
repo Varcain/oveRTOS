@@ -152,16 +152,6 @@ void ove_freertos_tick_unsubscribe(ove_freertos_tick_callback_t callback)
 	taskEXIT_CRITICAL();
 }
 
-#ifdef CONFIG_OVE_PROFILER
-/* Provided by backends/freertos/freertos_profiler.c. Runs in SysTick ISR
- * context and samples the interrupted task's stacked PC. Weak so builds
- * without the profiler backend (plugged via Kconfig gating of that file)
- * still link. */
-__attribute__((weak)) void ove_backend_profiler_on_tick(void)
-{
-}
-#endif
-
 /* Advances the 64-bit wrap-stitched nanosecond clock. The strong version lives in
  * freertos_time.c (real HW, with the DWT cycle counter); a weak no-op here keeps
  * builds on freertos_time_systick.c (QEMU, Renode) linking. */
@@ -177,8 +167,5 @@ void vApplicationTickHook(void)
 	ove_freertos_tick_callback_t callback = g_tick_callback;
 	if (callback)
 		callback();
-#ifdef CONFIG_OVE_PROFILER
-	ove_backend_profiler_on_tick();
-#endif
 }
 #endif
