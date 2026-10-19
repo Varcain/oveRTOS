@@ -30,18 +30,18 @@ extern "C" {
 /* ── Audio event types ─────────────────────────────────────────────── */
 
 /** @brief Event: PCM samples are ready (firmware -> dashboard). */
-#define OVE_SIM_AUDIO_EVT_SAMPLES 0
+#define OVE_SIM_AUDIO_EVT_SAMPLES (OVE_SIM_EVT_BASE_AUDIO + 0)
 
 /** @brief Event: audio format changed. */
-#define OVE_SIM_AUDIO_EVT_FMT 1
+#define OVE_SIM_AUDIO_EVT_FMT (OVE_SIM_EVT_BASE_AUDIO + 1)
 
 /* ── Audio command types ───────────────────────────────────────────── */
 
 /** @brief Command: inject PCM samples (dashboard -> firmware). */
-#define OVE_SIM_AUDIO_CMD_INJECT 0
+#define OVE_SIM_AUDIO_CMD_INJECT (OVE_SIM_CMD_BASE_AUDIO + 0)
 
 /** @brief Command: set capture enable/disable. */
-#define OVE_SIM_AUDIO_CMD_CAPTURE 1
+#define OVE_SIM_AUDIO_CMD_CAPTURE (OVE_SIM_CMD_BASE_AUDIO + 1)
 
 /* ── Audio sample format ───────────────────────────────────────────── */
 

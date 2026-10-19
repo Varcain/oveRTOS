@@ -6,11 +6,40 @@
  * This file is part of oveRTOS.
  */
 
+#include "ove/sim/ove_sim_audio.h"
+#include "ove/sim/ove_sim_debug.h"
+#include "ove/sim/ove_sim_display.h"
 #include "ove/sim/ove_sim_plugin.h"
+#include "ove/sim/ove_sim_profiler.h"
+#include "ove/sim/ove_sim_trace.h"
 #include "ove/sim/ove_sim_transport.h"
 #include "ove/types.h"
 
 #include <string.h>
+
+/* Each plugin's event and command values must stay inside its own range
+ * (ove_sim_plugin.h): the bridge dispatches on the value alone. */
+#define OVE_SIM_IN_RANGE(v, base) ((v) >= (base) && (v) < (base) + 10)
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_DEBUG_EVT_THREADS, OVE_SIM_EVT_BASE_DEBUG),
+	       "debug event out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_TRACE_EVT_STREAM, OVE_SIM_EVT_BASE_TRACE) &&
+		       OVE_SIM_IN_RANGE(OVE_SIM_TRACE_EVT_DESCRIPTORS, OVE_SIM_EVT_BASE_TRACE),
+	       "trace event out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_PROFILER_EVT_SAMPLES, OVE_SIM_EVT_BASE_PROFILER) &&
+		       OVE_SIM_IN_RANGE(OVE_SIM_PROFILER_EVT_CAPS, OVE_SIM_EVT_BASE_PROFILER),
+	       "profiler event out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_DISPLAY_EVT_FRAME, OVE_SIM_EVT_BASE_DISPLAY),
+	       "display event out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_AUDIO_EVT_SAMPLES, OVE_SIM_EVT_BASE_AUDIO) &&
+		       OVE_SIM_IN_RANGE(OVE_SIM_AUDIO_EVT_FMT, OVE_SIM_EVT_BASE_AUDIO),
+	       "audio event out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_DISPLAY_CMD_REFRESH, OVE_SIM_CMD_BASE_DISPLAY),
+	       "display command out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_AUDIO_CMD_INJECT, OVE_SIM_CMD_BASE_AUDIO) &&
+		       OVE_SIM_IN_RANGE(OVE_SIM_AUDIO_CMD_CAPTURE, OVE_SIM_CMD_BASE_AUDIO),
+	       "audio command out of range");
+_Static_assert(OVE_SIM_IN_RANGE(OVE_SIM_PROFILER_CMD_SET_RATE, OVE_SIM_CMD_BASE_PROFILER),
+	       "profiler command out of range");
 
 /* ── Plugin registry ───────────────────────────────────────────────── */
 

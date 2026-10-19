@@ -382,18 +382,28 @@ def serve(port, dashboard_dir):
                             plugin_id = struct.unpack_from("<I", fdata, 0)[0]
                             cmd_type = struct.unpack_from("<I", fdata, 4)[0]
                             pcm = fdata[12:]
-                            # Audio-inject short-circuit: cmd_type 0 with
-                            # a real plugin ID (skip console sentinel)
-                            # writes PCM directly into the audio ring.
-                            if plugin_id == 0xFFFFFFFF and console_fd[0] is not None:
+                            # The dashboard addresses the profiler with the
+                            # 0xFFFFFFFE sentinel (it doesn't know the id).
+                            # Replace it with the id learned from profiler
+                            # events once available.
+                            if (plugin_id == 0xFFFFFFFE
+                                    and cmd_type == SIM_PROFILER_CMD_SET_RATE
+                                    and _learned_profiler_id is not None):
+                                plugin_id = _learned_profiler_id
+                            if plugin_id == 0xFFFFFFFF:
                                 # Console text: straight to the firmware's
                                 # UART, as typing in the terminal does.
-                                try:
-                                    os.write(console_fd[0], pcm)
-                                except OSError:
-                                    pass
-                            elif (plugin_id != 0xFFFFFFFF
-                                    and cmd_type == 0 and pcm):
+                                # Without a console FIFO it is dropped: as
+                                # a broadcast its cmd_type would reach a
+                                # plugin command.
+                                if console_fd[0] is not None:
+                                    try:
+                                        os.write(console_fd[0], pcm)
+                                    except OSError:
+                                        pass
+                            elif cmd_type == SIM_AUDIO_CMD_INJECT and pcm:
+                                # Audio-inject short-circuit: PCM goes
+                                # straight into the audio input ring.
                                 audio_input_write(pcm)
                             else:
                                 # Forward to the firmware's shm cmd ring.
@@ -758,16 +768,25 @@ SIM_SHM_TOTAL_SIZE = SIM_SHM_HDR_SIZE + 2 * SIM_SHM_RING_SIZE
 
 # ove_sim_event header: plugin_id(4) + event_type(4) + timestamp_ms(4) + data_len(4)
 SIM_EVENT_HDR_SIZE = 16
-# Debug plugin event type
+# Plugin event/command types are allocated from disjoint per-plugin bases
+# in sim/include/ove/sim/ove_sim_plugin.h; the bridge routes events on
+# event_type alone, so these values must match the headers.
 SIM_DEBUG_EVT_THREADS = 0
-# Trace plugin event types (see sim/include/ove/sim/ove_sim_trace.h).
-# Values are picked to not collide with SIM_DEBUG_EVT_THREADS=0.
 SIM_TRACE_EVT_STREAM      = 10
 SIM_TRACE_EVT_DESCRIPTORS = 11
-
-# Profiler plugin event types (see sim/include/ove/sim/ove_sim_profiler.h).
 SIM_PROFILER_EVT_SAMPLES  = 20
 SIM_PROFILER_EVT_CAPS     = 21
+SIM_DISPLAY_EVT_FRAME     = 30
+SIM_AUDIO_EVT_SAMPLES     = 40
+SIM_AUDIO_EVT_FMT         = 41
+
+SIM_AUDIO_CMD_INJECT      = 10
+SIM_PROFILER_CMD_SET_RATE = 20
+
+# Profiler plugin id, learned from the first profiler event. The firmware
+# assigns plugin ids at registration, so the host can't assume one; cache
+# it and target commands instead of broadcasting.
+_learned_profiler_id = None
 
 # Profiler frame subtypes (bridge-synthesised).
 PROFILE_SUB_SAMPLES = 1
@@ -862,6 +881,16 @@ def event_bridge():
             sys.stderr.write("[event-bridge] crashed, restarting in 1s\n")
             traceback.print_exc(file=sys.stderr)
             time.sleep(1)
+
+
+def _learn_profiler_id(plugin_id):
+    """Remember which registered plugin is the profiler (ids are assigned
+    in the guest at startup) so commands can be addressed, not broadcast."""
+    global _learned_profiler_id
+    if _learned_profiler_id is None:
+        _learned_profiler_id = plugin_id
+        sys.stderr.write(f"[event-bridge] profiler plugin id = {plugin_id}\n")
+        sys.stderr.flush()
 
 
 def _event_bridge_loop():
@@ -970,6 +999,7 @@ def _event_bridge_loop():
             # subtype=SAMPLES. The symbol table is synthesised once
             # per ELF and emitted on WebSocket connect — see mailbox.
             elif event_type == SIM_PROFILER_EVT_SAMPLES and payload:
+                _learn_profiler_id(plugin_id)
                 payload = _prune_profile_payload(payload)
                 frame = ws_frame(
                     struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SAMPLES)
@@ -984,6 +1014,7 @@ def _event_bridge_loop():
             # the cache a browser reload after initial announce would
             # never see the ceiling and the dropdown would stay empty.
             elif event_type == SIM_PROFILER_EVT_CAPS and payload:
+                _learn_profiler_id(plugin_id)
                 frame = ws_frame(
                     struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_CAPS)
                     + payload)

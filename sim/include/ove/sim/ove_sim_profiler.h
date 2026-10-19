@@ -39,19 +39,15 @@
 #ifndef OVE_SIM_PROFILER_H
 #define OVE_SIM_PROFILER_H
 
+#include "ove_sim_plugin.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Event-type namespace — picked to not collide with SIM_DEBUG_EVT_THREADS=0
- * or the trace plugin's 10/11.
- */
-
 /** Event type: a batch of samples. */
-#define OVE_SIM_PROFILER_EVT_SAMPLES 20
+#define OVE_SIM_PROFILER_EVT_SAMPLES (OVE_SIM_EVT_BASE_PROFILER + 0)
 
 /**
  * Event type: profiler capabilities. Payload (LE):
@@ -59,10 +55,10 @@ extern "C" {
  *   [uint32_t current_hz]  rate in use
  *   [uint32_t flags]       OVE_PROFILER_FLAG_* (absent in older firmware)
  */
-#define OVE_SIM_PROFILER_EVT_CAPS 21
+#define OVE_SIM_PROFILER_EVT_CAPS (OVE_SIM_EVT_BASE_PROFILER + 1)
 
 /** Command type: set sampling rate. Payload = uint32_t Hz (LE). */
-#define OVE_SIM_PROFILER_CMD_SET_RATE 100
+#define OVE_SIM_PROFILER_CMD_SET_RATE (OVE_SIM_CMD_BASE_PROFILER + 0)
 
 /** Envelope version. */
 #define OVE_SIM_PROFILER_VERSION 1

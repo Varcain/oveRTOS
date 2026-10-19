@@ -36,6 +36,7 @@
 #ifndef OVE_SIM_DEBUG_H
 #define OVE_SIM_DEBUG_H
 
+#include "ove_sim_plugin.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -43,7 +44,7 @@ extern "C" {
 #endif
 
 /** Event type for thread/memory snapshots. */
-#define OVE_SIM_DEBUG_EVT_THREADS 0
+#define OVE_SIM_DEBUG_EVT_THREADS (OVE_SIM_EVT_BASE_DEBUG + 0)
 
 /** Maximum threads reported per snapshot (matches the trace descriptors). */
 #define OVE_SIM_DEBUG_MAX_THREADS 32

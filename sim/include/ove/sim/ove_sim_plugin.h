@@ -47,6 +47,25 @@ enum ove_sim_plugin_type {
 
 /* ── Events and commands ───────────────────────────────────────────── */
 
+/*
+ * Event-type and command-type namespaces.
+ *
+ * The host bridge dispatches plugin events on @c event_type alone (it
+ * does not know which plugin ID emitted them), so every plugin must use
+ * a disjoint range. Bases are spaced by 10 to leave room for growth;
+ * keep each plugin's own @c OVE_SIM_*_EVT_* / @c OVE_SIM_*_CMD_* values
+ * as @c base + offset.
+ */
+#define OVE_SIM_EVT_BASE_DEBUG 0
+#define OVE_SIM_EVT_BASE_TRACE 10
+#define OVE_SIM_EVT_BASE_PROFILER 20
+#define OVE_SIM_EVT_BASE_DISPLAY 30
+#define OVE_SIM_EVT_BASE_AUDIO 40
+
+#define OVE_SIM_CMD_BASE_DISPLAY 0
+#define OVE_SIM_CMD_BASE_AUDIO 10
+#define OVE_SIM_CMD_BASE_PROFILER 20
+
 /**
  * @brief Event pushed from a plugin to the host dashboard.
  *
