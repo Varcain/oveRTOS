@@ -63,7 +63,7 @@ struct ove_thread {
 	int heap_stack;
 	int state;		 /* ove_thread_state_t last observed */
 	const char *name;	 /* caller-owned from desc->name */
-	struct ove_thread *next; /* intrusive registry list */
+	struct ove_thread *next; /* unused on Zephyr (no thread registry) */
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	struct ove_state_tracker st;
 #endif

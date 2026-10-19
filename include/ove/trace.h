@@ -81,13 +81,14 @@ void ove_trace_emit_state(uintptr_t thread_handle, int old_state, int new_state)
 void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
 
 /**
- * @brief Return the current thread's stable handle, or 0 if none.
+ * @brief Return the current thread's trace id.
  *
  * Supplied by the thread backend. Used by
  * @c OVE_TRACE_MARK_CURRENT to tag markers emitted from sync-primitive
  * code that doesn't otherwise have the thread pointer in scope.
  *
- * @return Stable backend handle of the calling thread, or 0 if unavailable.
+ * @return The calling ove_thread, else the kernel thread handle; 0 in
+ *         interrupt context or when there is no current thread.
  */
 uintptr_t ove_backend_thread_current_handle(void);
 

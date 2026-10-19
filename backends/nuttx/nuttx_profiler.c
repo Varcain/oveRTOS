@@ -61,10 +61,11 @@
 #define CONFIG_OVE_PROFILER_HZ 250
 #endif
 
-/* The shared thread registry (ove_thread_registry.h) — the same one trace
- * enumeration walks. The worker snapshots PIDs under the list lock (taken
- * with trylock: a high-priority worker must not wait behind a lower-priority
- * thread holding it), then releases it before calling up_backtrace. */
+/* The thread registry (ove_thread_registry.h), populated by nuttx_thread.c;
+ * trace descriptors use nxsched_foreach instead. The worker snapshots PIDs
+ * under the list lock (taken with trylock: a high-priority worker must not
+ * wait behind a lower-priority thread holding it), then releases it before
+ * calling up_backtrace. */
 extern bool ove_nuttx_thread_registry_trylock(void);
 
 #define PROFILER_MAX_THREADS 32

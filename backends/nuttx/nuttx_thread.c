@@ -487,6 +487,16 @@ static struct ove_thread *obs_find(pid_t pid)
 	return NULL;
 }
 
+/* The ove_thread running as task @pid, or NULL (kernel / other tasks).
+ * Used by trace descriptor enumeration for the shared thread identity. */
+struct ove_thread *ove_nuttx_thread_by_pid(pid_t pid)
+{
+	irqstate_t flags = enter_critical_section();
+	struct ove_thread *t = obs_find(pid);
+	leave_critical_section(flags);
+	return t;
+}
+
 static void obs_note_suspend(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
 {
 	(void)drv;

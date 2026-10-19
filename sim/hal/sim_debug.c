@@ -46,12 +46,21 @@ static struct sim_debug_ctx debug_ctx;
 /* ── Snapshot serialisation ────────────────────────────────────────── */
 
 /* Maximum binary snapshot size:
- *   1 (count) + 16 (mem) + 16 * (1+16+1+1+4+4+4+4+16) = 833 bytes */
-#define SNAPSHOT_BUF_SIZE 1024
+ *   1 (count) + 16 (mem) + MAX_THREADS * (1 + name + 1+1+4+4+4+4+16) */
+#define SNAPSHOT_ENTRY_MAX (OVE_SIM_DEBUG_MAX_NAME_LEN + 35u)
+#define SNAPSHOT_BUF_SIZE (17u + OVE_SIM_DEBUG_MAX_THREADS * SNAPSHOT_ENTRY_MAX)
+
+_Static_assert(sizeof(struct ove_sim_event) + SNAPSHOT_BUF_SIZE <= OVE_SIM_EVENT_MAX_BYTES,
+	       "thread snapshot exceeds OVE_SIM_EVENT_MAX_BYTES");
+
+/* Pump-scoped scratch (single caller), kept off the pump stack. */
+static struct ove_thread_info snap_threads[OVE_SIM_DEBUG_MAX_THREADS];
+static uint8_t
+	__attribute__((aligned(8))) snap_ev_buf[sizeof(struct ove_sim_event) + SNAPSHOT_BUF_SIZE];
 
 static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 {
-	struct ove_thread_info threads[OVE_SIM_DEBUG_MAX_THREADS];
+	struct ove_thread_info *threads = snap_threads;
 	size_t count = 0;
 
 	ove_thread_list(threads, OVE_SIM_DEBUG_MAX_THREADS, &count);
@@ -134,18 +143,15 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 
 static void emit_snapshot(struct sim_debug_ctx *d)
 {
-	uint8_t payload[SNAPSHOT_BUF_SIZE];
-	size_t payload_len = build_snapshot(payload, sizeof(payload));
+	struct ove_sim_event *ev = (struct ove_sim_event *)snap_ev_buf;
+	size_t payload_len = build_snapshot(ev->data, SNAPSHOT_BUF_SIZE);
 	if (payload_len == 0)
 		return;
 
-	uint8_t ev_buf[sizeof(struct ove_sim_event) + SNAPSHOT_BUF_SIZE];
-	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
 	ev->plugin_id = d->plugin_id;
 	ev->event_type = OVE_SIM_DEBUG_EVT_THREADS;
 	ev->timestamp_ms = 0;
 	ev->data_len = (uint32_t)payload_len;
-	memcpy(ev->data, payload, payload_len);
 
 	ove_sim_plugin_emit_event(d->plugin_id, ev);
 }
@@ -296,10 +302,10 @@ int ove_sim_debug_register(void)
 	 * The thread starts immediately but ove_thread_sleep_ms will block
 	 * until the scheduler is running.
 	 *
-	 * The profiler and trace drain buffers live in BSS; the deepest
-	 * frames left on this stack are the thread snapshot (payload +
-	 * ev_buf, ~2 KB) and the profiler symbol drain (~4 KB). 16 KB leaves a
-	 * generous margin; FreeRTOS honours the request literally. */
+	 * The profiler, trace and thread-snapshot buffers live in BSS; the
+	 * deepest frame left on this stack is the profiler symbol drain
+	 * (~4 KB). 16 KB leaves a generous margin; FreeRTOS honours the
+	 * request literally. */
 #ifdef OVE_HEAP_THREAD
 	int ret = ove_thread_create(&debug_thread_handle, "sim_debug", debug_thread_fn, &debug_ctx,
 				    OVE_PRIO_LOW, 16384);
