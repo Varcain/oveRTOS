@@ -28,12 +28,12 @@ extern "C" {
 /* ── Display event types ───────────────────────────────────────────── */
 
 /** @brief Event: a new frame is ready to be sent to the dashboard. */
-#define OVE_SIM_DISPLAY_EVT_FRAME 0
+#define OVE_SIM_DISPLAY_EVT_FRAME (OVE_SIM_EVT_BASE_DISPLAY + 0)
 
 /* ── Display command types ─────────────────────────────────────────── */
 
 /** @brief Command: request a full-frame refresh. */
-#define OVE_SIM_DISPLAY_CMD_REFRESH 0
+#define OVE_SIM_DISPLAY_CMD_REFRESH (OVE_SIM_CMD_BASE_DISPLAY + 0)
 
 /* ── Display plugin sub-interface ──────────────────────────────────── */
 

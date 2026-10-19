@@ -34,24 +34,18 @@
 #ifndef OVE_SIM_TRACE_H
 #define OVE_SIM_TRACE_H
 
+#include "ove_sim_plugin.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Event-type namespace: the sim bridge currently dispatches to dashboard
- * frames on event_type alone (not plugin_id), so each plugin must pick
- * values that don't collide with others. The debug plugin owns 0
- * (SIM_DEBUG_EVT_THREADS). Reserve 10+ for the trace plugin.
- */
-
 /** Event type: a batch of stream records. */
-#define OVE_SIM_TRACE_EVT_STREAM 10
+#define OVE_SIM_TRACE_EVT_STREAM (OVE_SIM_EVT_BASE_TRACE + 0)
 
 /** Event type: the tid->name descriptor table. */
-#define OVE_SIM_TRACE_EVT_DESCRIPTORS 11
+#define OVE_SIM_TRACE_EVT_DESCRIPTORS (OVE_SIM_EVT_BASE_TRACE + 1)
 
 /** Envelope sub_type byte values. */
 #define OVE_SIM_TRACE_SUB_DESCRIPTORS 0

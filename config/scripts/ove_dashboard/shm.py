@@ -282,16 +282,15 @@ SIM_SHM_TOTAL_SIZE = SIM_SHM_HDR_SIZE + 2 * SIM_SHM_RING_SIZE
 
 # ove_sim_event header: plugin_id(4) + event_type(4) + timestamp_ms(4) + data_len(4)
 SIM_EVENT_HDR_SIZE = 16
-# Debug plugin event type
+# Per-plugin event and command ranges are defined in sim/include/ove/sim/ove_sim_plugin.h.
 SIM_DEBUG_EVT_THREADS = 0
-# Trace plugin event types (see sim/include/ove/sim/ove_sim_trace.h).
-# Values are picked to not collide with SIM_DEBUG_EVT_THREADS=0.
 SIM_TRACE_EVT_STREAM      = 10
 SIM_TRACE_EVT_DESCRIPTORS = 11
-
-# Profiler plugin event types (see sim/include/ove/sim/ove_sim_profiler.h).
 SIM_PROFILER_EVT_SAMPLES  = 20
 SIM_PROFILER_EVT_CAPS     = 21
+
+SIM_AUDIO_CMD_INJECT = 10
+SIM_PROFILER_CMD_SET_RATE = 20
 
 # Sim shm cmd-ring writer (host → guest). Module-level so callers don't
 # reopen the file on every command; the header offsets mirror
@@ -384,6 +383,15 @@ def event_bridge():
 
 
 _profiler_caps_frame   = None  # cached payload for PROFILE_SUB_CAPS
+_learned_profiler_id = None
+
+
+def _learn_profiler_id(plugin_id):
+    global _learned_profiler_id
+    if _learned_profiler_id is None:
+        _learned_profiler_id = plugin_id
+        sys.stderr.write(f"[event-bridge] profiler plugin id = {plugin_id}\n")
+        sys.stderr.flush()
 
 
 def _event_bridge_loop():
@@ -488,6 +496,7 @@ def _event_bridge_loop():
             # subtype=SAMPLES. The symbol table is synthesised once
             # per ELF and emitted on WebSocket connect.
             elif event_type == SIM_PROFILER_EVT_SAMPLES and payload:
+                _learn_profiler_id(plugin_id)
                 payload = profiler._prune_profile_payload(payload)
                 frames.post_frame(struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SAMPLES)
                            + payload)
@@ -500,6 +509,7 @@ def _event_bridge_loop():
             # the cache a browser reload after initial announce would
             # never see the ceiling and the dropdown would stay empty.
             elif event_type == SIM_PROFILER_EVT_CAPS and payload:
+                _learn_profiler_id(plugin_id)
                 _profiler_caps_frame = (
                     struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_CAPS) + payload)
                 frames.post_frame(_profiler_caps_frame)

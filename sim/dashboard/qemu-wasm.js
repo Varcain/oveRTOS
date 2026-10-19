@@ -56,6 +56,7 @@ var SIM_EVENT_MAX      = 4096;
 var EVT_DEBUG_THREADS     = 0;         /* OVE_SIM_DEBUG_EVT_THREADS */
 var EVT_TRACE_STREAM      = 10;        /* OVE_SIM_TRACE_EVT_STREAM */
 var EVT_TRACE_DESCRIPTORS = 11;        /* OVE_SIM_TRACE_EVT_DESCRIPTORS */
+var CMD_AUDIO_INJECT      = 10;        /* OVE_SIM_AUDIO_CMD_INJECT */
 
 /* ── Framebuffer file: 16-byte header + XRGB8888 pixels ────────────── */
 var FB_PATH     = "/dev/shm/ove-fb";
@@ -454,8 +455,9 @@ Link.prototype.send = function (buf) {
             for (var i = 0; i < text.length; i++) this._stdin.push(text[i]);
             return;
         }
-        if (cmdType === 0 && buf.byteLength > 16) {
-            /* Audio injection goes straight into the input ring. */
+        if (cmdType === CMD_AUDIO_INJECT && buf.byteLength > 16) {
+            /* Audio injection (OVE_SIM_AUDIO_CMD_INJECT) goes straight
+             * into the input ring. */
             this._audioInput(new Uint8Array(buf, 16));
             return;
         }

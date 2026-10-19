@@ -236,6 +236,21 @@ class DashboardBridgeTest(unittest.TestCase):
         host, port = address
         return connect(f"ws://{host}:{port}/ws", sock=sock, **kwargs)
 
+    def test_command_routing(self):
+        server, shm = self.server, self.shm
+        audio_inject, profiler_set_rate = 10, 20
+        sent = []
+        with patch.object(shm, "sim_cmd_send", lambda *args: sent.append(args)), \
+                patch.object(shm, "audio_input_write", lambda pcm: sent.append(("audio", pcm))), \
+                patch.object(shm, "_learned_profiler_id", 3, create=True), \
+                patch.object(server, "console_fd", [None]):
+            for plugin_id, cmd_type in (
+                (0xFFFFFFFF, 0), (1, audio_inject), (0xFFFFFFFE, profiler_set_rate), (2, 0),
+            ):
+                frame = struct.pack("<IIII", self.protocol.FRAME_CMD, plugin_id, cmd_type, 2)
+                asyncio.run(server._dispatch(frame + b"ab", None))
+        self.assertEqual(sent, [("audio", b"ab"), (3, profiler_set_rate, b"ab"), (2, 0, b"ab")])
+
     def test_websocket_origins(self):
         host = "127.0.0.1:12345"
         cases = (

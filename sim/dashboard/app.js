@@ -638,7 +638,7 @@ function startMicCapture() {
                 var s = Math.max(-1, Math.min(1, input[i]));
                 view16[i] = (s < 0 ? s * 32768 : s * 32767) | 0;
             }
-            sendCmd(audioPluginId, 0, new Uint8Array(pcm));
+            sendCmd(audioPluginId, AUDIO_CMD_INJECT, new Uint8Array(pcm));
         };
         captureSource.connect(captureNode);
         captureNode.connect(audioCtx.destination);
@@ -732,7 +732,7 @@ if (filePlayBtn) {
             fileInputPos = end % fileInputPcm.length;
 
             drawWave("waveform-input", chunk, "#4ecca3");
-            sendCmd(audioPluginId, 0, new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+            sendCmd(audioPluginId, AUDIO_CMD_INJECT, new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
         }, intervalMs);
 
         this.textContent = "Stop File";
@@ -1918,8 +1918,9 @@ var PROFILE_SUB_SAMPLES = 1;
 var PROFILE_SUB_SYMBOLS = 2;
 var PROFILE_SUB_CAPS    = 3;
 
-/* Profiler plugin's cmd_type for "set sampling rate" (payload = u32 Hz). */
-var PROFILER_CMD_SET_RATE = 100;
+/* Sim plugin command types (see sim/include/ove/sim/ove_sim_plugin.h). */
+var PROFILER_CMD_SET_RATE = 20;   /* payload = u32 Hz */
+var AUDIO_CMD_INJECT = 10;        /* payload = PCM bytes */
 
 /* Capabilities received from the firmware — max_hz (compile-time ceiling)
  * and current_hz (what the backend is using right now). Arrive on the
@@ -2785,10 +2786,10 @@ function profilerBindPanel() {
         rateSel.addEventListener("change", function () {
             var hz = parseInt(rateSel.value, 10);
             if (!isFinite(hz) || hz <= 0) return;
-            /* plugin_id is resolved by broadcast on the firmware side
-             * (profiler.handle_cmd filters on cmd_type). Using a non-
-             * audio, non-console sentinel keeps the bridge's audio
-             * short-circuit out of the picture. */
+            /* The firmware assigns plugin ids at registration, so the
+             * dashboard doesn't know the profiler's. The bridge rewrites
+             * this sentinel to the id it learned from profiler events
+             * (falling back to a broadcast if none has arrived yet). */
             var payload = new Uint8Array(4);
             new DataView(payload.buffer).setUint32(0, hz, true);
             sendCmd(0xFFFFFFFE, PROFILER_CMD_SET_RATE, payload);
