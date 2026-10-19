@@ -52,7 +52,12 @@ extern "C" {
 /** Event type: a batch of samples. */
 #define OVE_SIM_PROFILER_EVT_SAMPLES 20
 
-/** Event type: profiler capabilities (max Hz, current Hz). */
+/**
+ * Event type: profiler capabilities. Payload (LE):
+ *   [uint32_t max_hz]      compile-time sampling ceiling
+ *   [uint32_t current_hz]  rate in use
+ *   [uint32_t flags]       OVE_PROFILER_FLAG_* (absent in older firmware)
+ */
 #define OVE_SIM_PROFILER_EVT_CAPS 21
 
 /**

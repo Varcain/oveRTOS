@@ -976,7 +976,7 @@ def _event_bridge_loop():
                 mailbox.post_log(frame)
                 if os.environ.get("OVE_PROFILER_DUMP"):
                     _profiler_dump_samples(payload)
-            # Forward profiler capability events (max_hz, current_hz).
+            # Forward profiler capability events (max_hz, current_hz, flags).
             # The dashboard uses these to populate its rate dropdown.
             # Also cache for late-joining WS clients — the firmware only
             # emits this on state changes (start + set-rate), so without
@@ -990,9 +990,13 @@ def _event_bridge_loop():
                 mailbox.post_log(frame)
                 if len(payload) >= 8:
                     max_hz, cur_hz = struct.unpack_from("<II", payload, 0)
+                    flags = (struct.unpack_from("<I", payload, 8)[0]
+                             if len(payload) >= 12 else 0)
+                    mode = "wall-clock" if flags & 1 else "on-CPU"
                     sys.stderr.write(
                         f"[event-bridge] profiler caps: "
-                        f"max={max_hz} Hz, current={cur_hz} Hz\n")
+                        f"max={max_hz} Hz, current={cur_hz} Hz, "
+                        f"sampling={mode}\n")
                     sys.stderr.flush()
     finally:
         os.close(fd)

@@ -1739,6 +1739,12 @@ var PROFILER_CMD_SET_RATE = 100;
  * first pump tick after transport is up. */
 var profilerMaxHz     = 0;
 var profilerCurrentHz = 0;
+/* OVE_PROFILER_FLAG_* from the CAPS event. WALL_CLOCK: the backend samples
+ * every thread, blocked ones included (NuttX); clear: it samples only the
+ * thread on the CPU when the sampling interrupt fired (FreeRTOS, Zephyr),
+ * so every sample is RUNNING and a state filter would do nothing. */
+var PROFILER_FLAG_WALL_CLOCK = 0x1;
+var profilerFlags     = 0;
 
 /* Memory safeguard, scaled with the active window at evict time. The
  * raw constant previously capped at 8000 regardless of window, which at
@@ -1797,7 +1803,7 @@ var PROFILER_SKIP_FRAMES = {
 
 var profilerWindowUs    = 30 * 1000 * 1000; /* rolling window, mutable */
 var profilerPaused      = false;
-var profilerOnCpuOnly   = false; /* filter: keep only RUNNING/READY samples */
+var profilerOnCpuOnly   = false; /* "Runnable" filter: keep only RUNNING/READY samples (wall-clock backends) */
 var profilerHidePump    = true;  /* hide the sim-debug pump thread (default on) */
 var profilerHideIdle    = true;  /* hide RTOS IDLE / Tmr Svc (default on) */
 var profilerApiOnly     = true;  /* collapse non-ove/non-app frames (default on) */
@@ -1899,7 +1905,7 @@ function profilerSampleIsPump(sample) {
 }
 
 /*
- * Apply all four profiler toggles — On-CPU, Hide pump, Hide idle, and
+ * Apply all four profiler toggles — Runnable, Hide pump, Hide idle, and
  * the per-thread dropdown — in one place so the three render paths
  * (info line, flat top, flame graph) can't drift out of sync. Returns
  * true when @s should contribute to aggregation.
@@ -1909,12 +1915,13 @@ function profilerSampleIsPump(sample) {
  * then drop every one of its samples because it's the pump.
  */
 function profilerSampleIncluded(s) {
+    var runnableOnly = profilerOnCpuOnly && profilerIsWallClock();
     if (profilerThreadFilter) {
         if (s.tid !== profilerThreadFilter) return false;
-        if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) return false;
+        if (runnableOnly && s.state !== 0 && s.state !== 1) return false;
         return true;
     }
-    if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) return false;
+    if (runnableOnly && s.state !== 0 && s.state !== 1) return false;
     if (profilerHidePump && profilerSampleIsPump(s)) return false;
     if (profilerHideIdle) {
         var th = traceThreads[s.tid];
@@ -1936,11 +1943,13 @@ var profilerLastFlameData = null;
 /* Clear timebase- and ELF-tied profiler state so a sim restart (new
  * timebase, potentially rebuilt binary with shifted symbols) can't mix
  * its caps/samples with the previous session's. User settings (window,
- * pause, on-cpu filter, active tab, refresh timer) are preserved;
+ * pause, runnable filter, active tab, refresh timer) are preserved;
  * capabilities + symbols are re-sent by the backend on reconnect. */
 function profilerResetOnReconnect() {
     profilerMaxHz = 0;
     profilerCurrentHz = 0;
+    profilerFlags = 0;
+    profilerUpdateModeUi();
     profilerSymbols = [];
     profilerSamples = [];
     profilerDropped = 0;
@@ -2039,11 +2048,15 @@ function handleProfile(buf, off) {
     }
 
     if (subType === PROFILE_SUB_CAPS) {
-        /* Payload: uint32 max_hz, uint32 current_hz. */
+        /* Payload: uint32 max_hz, uint32 current_hz[, uint32 flags]. */
         if (dv.byteLength < 1 + 8) return;
         profilerMaxHz     = dv.getUint32(1, true);
         profilerCurrentHz = dv.getUint32(5, true);
+        /* flags were added later; older firmware sends 8 bytes */
+        profilerFlags     = dv.byteLength >= 1 + 12 ? dv.getUint32(9, true) : 0;
         profilerUpdateRateOptions();
+        profilerUpdateModeUi();
+        profilerDirty = true;
         return;
     }
 
@@ -2089,6 +2102,23 @@ function handleProfile(buf, off) {
     profilerDirty = true;
     ensureWindow("profiler");
     ensureProfilerRefresh();
+}
+
+/* The "Runnable" state filter only means something when the backend
+ * samples blocked threads too (wall-clock). On on-CPU backends every sample
+ * is RUNNING: hide the button, and the filter does not apply. */
+function profilerIsWallClock() {
+    return (profilerFlags & PROFILER_FLAG_WALL_CLOCK) !== 0;
+}
+
+function profilerUpdateModeUi() {
+    var btn = document.getElementById("profiler-oncpu");
+    if (!btn) return;
+    var wall = profilerIsWallClock();
+    btn.hidden = !wall;
+    /* The Runnable preference survives a backend without the filter (and
+     * the caps reset on reconnect); it only applies while wall-clock. */
+    btn.classList.toggle("active", wall && profilerOnCpuOnly);
 }
 
 /* Populate the rate dropdown using a standard set of rates filtered to
@@ -2162,7 +2192,8 @@ function renderProfiler() {
             if (profilerLeafOffset(_smp.pcs) >= _smp.pcs.length) continue;
             kept++;
         }
-        var mode = profilerOnCpuOnly ? "on-CPU" : "wall-clock";
+        var mode = !profilerIsWallClock() ? "on-CPU, sampled from ISR"
+                 : profilerOnCpuOnly ? "runnable" : "wall-clock";
         var threadTag = "";
         if (profilerThreadFilter) {
             var th = traceThreads[profilerThreadFilter];
@@ -2508,6 +2539,7 @@ function profilerBindPanel() {
             onCpuBtn.classList.toggle("active", profilerOnCpuOnly);
             renderProfiler();
         });
+        profilerUpdateModeUi();
     }
 
     var hidePumpBtn = document.getElementById("profiler-hidepump");
