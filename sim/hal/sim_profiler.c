@@ -60,16 +60,33 @@ static void emit_caps(struct sim_profiler_ctx *t)
  *   8 (ts) + 4 (tid) + 1 (depth) + 1 (state) + 2 (pad) + depth * 8 (pcs)
  *
  * The state byte is ove_thread_state_t captured at sample time so the
- * dashboard can filter on-CPU vs wall-clock views. It reuses one of the
- * previously-zero pad bytes — wire size is unchanged.
+ * dashboard can filter on-CPU vs wall-clock views.
  *
  * We serialise each sample compactly (only @depth PCs, not the full
  * fixed slot) to avoid wasting bridge bandwidth on zero-padded tails.
+ *
+ * A batch holds as many full-depth samples as fit in one event of at most
+ * OVE_SIM_EVENT_MAX_BYTES (the host side skips larger ones), so the batch
+ * size follows CONFIG_OVE_PROFILER_MAX_DEPTH: 28 at depth 16, 7 at 64.
  */
-#define PROFILE_ENVELOPE_BYTES 8
-#define SAMPLE_HDR_BYTES 16
-#define MAX_SAMPLE_BYTES (SAMPLE_HDR_BYTES + CONFIG_OVE_PROFILER_MAX_DEPTH * 8)
-#define PROFILE_BUF_BYTES (PROFILE_ENVELOPE_BYTES + OVE_SIM_PROFILER_MAX_BATCH * MAX_SAMPLE_BYTES)
+#define PROFILE_ENVELOPE_BYTES 8u
+#define SAMPLE_HDR_BYTES 16u
+#define PC_WIRE_BYTES 8u
+#define MAX_SAMPLE_BYTES (SAMPLE_HDR_BYTES + CONFIG_OVE_PROFILER_MAX_DEPTH * PC_WIRE_BYTES)
+#define PROFILE_PAYLOAD_MAX (OVE_SIM_EVENT_MAX_BYTES - sizeof(struct ove_sim_event))
+#define PROFILE_MAX_BATCH ((PROFILE_PAYLOAD_MAX - PROFILE_ENVELOPE_BYTES) / MAX_SAMPLE_BYTES)
+#define PROFILE_BUF_BYTES (PROFILE_ENVELOPE_BYTES + PROFILE_MAX_BATCH * MAX_SAMPLE_BYTES)
+
+_Static_assert(PROFILE_MAX_BATCH >= 1, "CONFIG_OVE_PROFILER_MAX_DEPTH too large for one event");
+_Static_assert(sizeof(struct ove_sim_event) + PROFILE_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
+	       "profiler batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+
+/* Pump-scoped scratch: only the consolidated sim-debug pump drains the
+ * ring, so these are single-threaded. Kept in BSS rather than on the pump
+ * stack (they scale with CONFIG_OVE_PROFILER_MAX_DEPTH). */
+static struct ove_profiler_sample drain_batch[PROFILE_MAX_BATCH];
+static uint8_t __attribute__((
+	aligned(8))) samples_ev_buf[sizeof(struct ove_sim_event) + PROFILE_BUF_BYTES];
 
 static size_t serialise_sample(uint8_t *p, const struct ove_profiler_sample *s)
 {
@@ -84,8 +101,8 @@ static size_t serialise_sample(uint8_t *p, const struct ove_profiler_sample *s)
 	*q++ = 0;
 	for (uint8_t i = 0; i < s->depth; i++) {
 		uint64_t pc = (uint64_t)s->pcs[i];
-		memcpy(q, &pc, 8);
-		q += 8;
+		memcpy(q, &pc, PC_WIRE_BYTES);
+		q += PC_WIRE_BYTES;
 	}
 	return (size_t)(q - p);
 }
@@ -96,15 +113,15 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
 	if (n == 0 && dropped == 0)
 		return;
 
-	uint8_t payload[PROFILE_BUF_BYTES];
-	uint8_t *p = payload;
+	struct ove_sim_event *ev = (struct ove_sim_event *)samples_ev_buf;
+	uint8_t *p = ev->data;
 
 	*p++ = OVE_SIM_PROFILER_VERSION;
 	/* Wire format: PCs are always serialised as 8 bytes regardless of
 	 * the target's native pointer size (see serialise_sample). Report 8
 	 * so the dashboard parses 64-bit slots — otherwise a 32-bit target
 	 * would report 4 and the batch gets dropped as "unsupported word size". */
-	*p++ = 8;
+	*p++ = PC_WIRE_BYTES;
 	uint16_t count16 = (uint16_t)n;
 	memcpy(p, &count16, 2);
 	p += 2;
@@ -114,15 +131,10 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
 	for (size_t i = 0; i < n; i++)
 		p += serialise_sample(p, &samples[i]);
 
-	size_t payload_len = (size_t)(p - payload);
-
-	uint8_t ev_buf[sizeof(struct ove_sim_event) + PROFILE_BUF_BYTES];
-	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
 	ev->plugin_id = t->plugin_id;
 	ev->event_type = OVE_SIM_PROFILER_EVT_SAMPLES;
 	ev->timestamp_ms = 0;
-	ev->data_len = (uint32_t)payload_len;
-	memcpy(ev->data, payload, payload_len);
+	ev->data_len = (uint32_t)(p - ev->data);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
@@ -164,13 +176,12 @@ void ove_sim_profiler_tick(void)
 	 * the very next sample batch it receives. */
 	drain_symbols(&profiler_ctx);
 
-	struct ove_profiler_sample batch[OVE_SIM_PROFILER_MAX_BATCH];
 	size_t n;
 	do {
-		n = ove_profiler_ring_drain(batch, OVE_SIM_PROFILER_MAX_BATCH);
+		n = ove_profiler_ring_drain(drain_batch, PROFILE_MAX_BATCH);
 		uint32_t dropped = ove_profiler_ring_dropped_get();
-		emit_batch(&profiler_ctx, batch, n, dropped);
-	} while (n == OVE_SIM_PROFILER_MAX_BATCH);
+		emit_batch(&profiler_ctx, drain_batch, n, dropped);
+	} while (n == PROFILE_MAX_BATCH);
 }
 
 static int profiler_init(void *ctx, const void *config, size_t config_len)
