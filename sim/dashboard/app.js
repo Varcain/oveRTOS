@@ -1122,6 +1122,9 @@ var TRACE_STATE_UNKNOWN = -1;
 var TRACE_STATE_READY = 1;
 var TRACE_STATE_TERMINATED = 4;
 
+/* A backward step at least this large means the guest timebase restarted. */
+var TRACE_TIMEBASE_RESTART_US = 1000 * 1000;
+
 /* Rolling window in simulation time (microseconds). */
 var TRACE_WINDOW_US  = 30 * 1000 * 1000;
 /* Hard memory cap on each of traceSpans / traceMarks — evict oldest first.
@@ -1165,6 +1168,59 @@ function traceLanes() {
         return na < nb ? -1 : (na > nb ? 1 : 0);
     });
     return tids;
+}
+
+/* Per-lane, time-ordered views of traceSpans/traceMarks. Rebuilt by
+ * renderTrace and reused by the hover hit-test, so neither has to scan
+ * every span and call tids.indexOf() per record. Records arrive in event
+ * order, a lane's last timestamp never steps back and a timebase restart
+ * starts the view over, so a lane's slice is sorted and can be windowed
+ * with a binary search. Building it is one
+ * linear pass over the retained records per frame. */
+var traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
+
+function traceBuildLaneIndex(tids) {
+    var spans = new Array(tids.length);
+    var marks = new Array(tids.length);
+    var rowOf = Object.create(null);
+    for (var i = 0; i < tids.length; i++) {
+        spans[i] = [];
+        marks[i] = [];
+        rowOf[tids[i]] = i;
+    }
+    for (var s = 0; s < traceSpans.length; s++) {
+        var sp = traceSpans[s];
+        var sr = rowOf[sp.tid];
+        if (sr !== undefined) spans[sr].push(sp);
+    }
+    for (var m = 0; m < traceMarks.length; m++) {
+        var mk = traceMarks[m];
+        var mr = rowOf[mk.tid];
+        if (mr !== undefined) marks[mr].push(mk);
+    }
+    traceLaneIndex = { tids: tids, spans: spans, marks: marks, rowOf: rowOf };
+}
+
+/* First index whose span ends at or after tStart. */
+function traceFirstEndingAfter(arr, tStart) {
+    var lo = 0, hi = arr.length;
+    while (lo < hi) {
+        var mid = (lo + hi) >>> 1;
+        if (arr[mid].end < tStart) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+/* First index at or after tStart (marks, keyed by ts). */
+function traceFirstAtOrAfter(arr, tStart) {
+    var lo = 0, hi = arr.length;
+    while (lo < hi) {
+        var mid = (lo + hi) >>> 1;
+        if (arr[mid].ts < tStart) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
 }
 
 /* Linked selection: one thread highlighted across panels (set by the
@@ -1274,6 +1330,27 @@ var traceView    = { spanUs: TRACE_WINDOW_US, follow: true, tEndFrozen: 0 };
 var traceDirty   = false;
 var traceRafScheduled = false;
 
+/* Drop everything tied to the old timebase but keep the thread names
+ * (descriptors are not re-sent just because the guest rebooted). */
+function traceRestartTimebase() {
+    for (var t in traceThreads) {
+        var th = traceThreads[t];
+        th.lastState = -1;
+        th.lastTs = 0;
+        th.hasData = false;
+    }
+    traceSpans = [];
+    traceMarks = [];
+    traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
+    traceMinTs = 0;
+    traceMaxTs = 0;
+    /* A paused view's anchor belongs to the old timebase. */
+    traceView.follow = true;
+    traceView.tEndFrozen = 0;
+    var follow = document.getElementById("trace-follow");
+    if (follow) follow.checked = true;
+}
+
 /* Clear timebase-tied trace state so a sim restart can't leave stale
  * spans/marks plotted against a reused timestamp range. User settings
  * (zoom span, tab) are preserved; follow is forced back on since the
@@ -1282,6 +1359,7 @@ function traceResetOnReconnect() {
     traceThreads = {};
     traceSpans = [];
     traceMarks = [];
+    traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
     traceDropped = 0;
     traceMinTs = 0;
     traceMaxTs = 0;
@@ -1293,21 +1371,26 @@ function traceResetOnReconnect() {
 }
 
 function traceEvict() {
+    /* Drop spans older than the window from our retention anchor.
+     * When paused we anchor at the frozen view edge (not traceMaxTs), so
+     * new samples keep flowing in but the left side of the paused display
+     * isn't evicted as simulation time advances. The TRACE_MAX_RECORDS cap
+     * below still bounds total memory. Find the first survivor and splice
+     * once: shift() in a loop was quadratic once the window filled. */
+    var anchor = traceView.follow ? traceMaxTs : traceView.tEndFrozen;
+    var cutoff = anchor - TRACE_WINDOW_US;
+    var i = 0;
+    while (i < traceSpans.length && traceSpans[i].end < cutoff) i++;
+    if (i > 0) traceSpans.splice(0, i);
+    i = 0;
+    while (i < traceMarks.length && traceMarks[i].ts < cutoff) i++;
+    if (i > 0) traceMarks.splice(0, i);
     if (traceSpans.length > TRACE_MAX_RECORDS) {
         traceSpans.splice(0, traceSpans.length - TRACE_MAX_RECORDS);
     }
     if (traceMarks.length > TRACE_MAX_RECORDS) {
         traceMarks.splice(0, traceMarks.length - TRACE_MAX_RECORDS);
     }
-    /* Drop spans older than the window from our retention anchor.
-     * When paused we anchor at the frozen view edge (not traceMaxTs), so
-     * new samples keep flowing in but the left side of the paused display
-     * isn't evicted as simulation time advances. The TRACE_MAX_RECORDS cap
-     * above still bounds total memory. */
-    var anchor = traceView.follow ? traceMaxTs : traceView.tEndFrozen;
-    var cutoff = anchor - TRACE_WINDOW_US;
-    while (traceSpans.length && traceSpans[0].end < cutoff) traceSpans.shift();
-    while (traceMarks.length && traceMarks[0].ts  < cutoff) traceMarks.shift();
     if (traceSpans.length) traceMinTs = traceSpans[0].start;
 }
 
@@ -1356,6 +1439,9 @@ function handleTrace(buf, off) {
         var code = dv.getUint8(p0 + 13);
         var arg  = dv.getUint16(p0 + 14, true);
 
+        /* A step back of a second or more is the guest timebase restarting
+         * (board reset without a reconnect): start the view over. */
+        if (traceMaxTs - ts >= TRACE_TIMEBASE_RESTART_US) traceRestartTimebase();
         if (ts > traceMaxTs) traceMaxTs = ts;
         if (traceMinTs === 0 || ts < traceMinTs) traceMinTs = ts;
 
@@ -1383,7 +1469,9 @@ function handleTrace(buf, off) {
                                   gap: gap });
             }
             th.lastState = code;
-            th.lastTs = ts;
+            /* Don't step back (a record pushed late): the lane index relies
+             * on each lane's spans being sorted and non-overlapping. */
+            th.lastTs = Math.max(th.lastTs, ts);
         } else if (kind === TRACE_KIND_MARK) {
             traceMarks.push({ tid: tid, ts: ts,
                               prim: (code >> 4) & 0x0F, act: code & 0x0F,
@@ -1428,11 +1516,13 @@ function renderTrace() {
 
     var tids = traceLanes();
     if (tids.length === 0) {
+        traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
         ctx.fillStyle = "#9aa4b8";
         ctx.font = "12px 'DejaVu Sans Mono', Consolas, monospace";
         ctx.fillText("Waiting for trace data…", 10, 20);
         return;
     }
+    traceBuildLaneIndex(tids);
 
     var laneH = traceLaneH(cssH, tids.length);
     var plotX = TRACE_LABEL_W;
@@ -1487,20 +1577,22 @@ function renderTrace() {
             if (traceThreads[tids[q]].name === traceSelectedName) selTid = tids[q];
     }
 
-    /* Draw spans. */
-    for (var s = 0; s < traceSpans.length; s++) {
-        var sp = traceSpans[s];
-        if (sp.end < tStart || sp.start > tEnd) continue;
-        var row = tids.indexOf(sp.tid);
-        if (row < 0) continue;
-        var x0 = plotX + ((Math.max(sp.start, tStart) - tStart) / span) * plotW;
-        var x1 = plotX + ((Math.min(sp.end, tEnd) - tStart) / span) * plotW;
-        var w  = Math.max(1, x1 - x0);
-        var y  = axisY + axisH + row * laneH + 2;
-        ctx.globalAlpha = (selTid !== null && sp.tid !== selTid) ? 0.35 : 1;
-        ctx.fillStyle = TRACE_STATE_COLORS[sp.state] || "#888";
-        ctx.fillRect(x0, y, w, laneH - 4);
-        if (sp.gap) traceHatch(ctx, x0, y, w, laneH - 4);
+    /* Draw spans, lane by lane, starting at the first one that can still
+     * overlap the visible window. */
+    for (var row = 0; row < tids.length; row++) {
+        var spRow = traceLaneIndex.spans[row];
+        var y = axisY + axisH + row * laneH + 2;
+        for (var s = traceFirstEndingAfter(spRow, tStart); s < spRow.length; s++) {
+            var sp = spRow[s];
+            if (sp.start > tEnd) break;
+            var x0 = plotX + ((Math.max(sp.start, tStart) - tStart) / span) * plotW;
+            var x1 = plotX + ((Math.min(sp.end, tEnd) - tStart) / span) * plotW;
+            var w  = Math.max(1, x1 - x0);
+            ctx.globalAlpha = (selTid !== null && sp.tid !== selTid) ? 0.35 : 1;
+            ctx.fillStyle = TRACE_STATE_COLORS[sp.state] || "#888";
+            ctx.fillRect(x0, y, w, laneH - 4);
+            if (sp.gap) traceHatch(ctx, x0, y, w, laneH - 4);
+        }
     }
     ctx.globalAlpha = 1;
 
@@ -1520,19 +1612,20 @@ function renderTrace() {
 
     /* Draw markers as small triangles at the top of the lane. */
     ctx.fillStyle = "#ffffff";
-    for (var m = 0; m < traceMarks.length; m++) {
-        var mk = traceMarks[m];
-        if (mk.ts < tStart || mk.ts > tEnd) continue;
-        var mrow = tids.indexOf(mk.tid);
-        if (mrow < 0) continue;
-        var mx = plotX + ((mk.ts - tStart) / span) * plotW;
+    for (var mrow = 0; mrow < tids.length; mrow++) {
+        var mkRow = traceLaneIndex.marks[mrow];
         var my = axisY + axisH + mrow * laneH + 1;
-        ctx.beginPath();
-        ctx.moveTo(mx, my);
-        ctx.lineTo(mx - 3, my + 4);
-        ctx.lineTo(mx + 3, my + 4);
-        ctx.closePath();
-        ctx.fill();
+        for (var m = traceFirstAtOrAfter(mkRow, tStart); m < mkRow.length; m++) {
+            var mk = mkRow[m];
+            if (mk.ts > tEnd) break;
+            var mx = plotX + ((mk.ts - tStart) / span) * plotW;
+            ctx.beginPath();
+            ctx.moveTo(mx, my);
+            ctx.lineTo(mx - 3, my + 4);
+            ctx.lineTo(mx + 3, my + 4);
+            ctx.closePath();
+            ctx.fill();
+        }
     }
 
     /* Info line. */
@@ -1748,12 +1841,17 @@ function traceBindPanel() {
             var tEnd = range.tEnd, tStart = range.tStart, span = range.span;
             var tAt = tStart + ((xCss - plot.plotX) / plot.plotW) * span;
 
-            /* Markers win when the cursor is close to one. */
+            /* Markers win when the cursor is close to one. Only marks
+             * within the ±6 px tolerance in time need checking, so the
+             * per-lane binary search keeps hover O(log n). */
+            var cached = traceLaneIndex.tids[row] === rowTid;
+            var mkRow = cached ? traceLaneIndex.marks[row]
+                               : traceMarks.filter(function (m) { return m.tid === rowTid; });
             var best = null, bestDx = Infinity;
-            for (var i = traceMarks.length - 1; i >= 0; i--) {
-                var mk = traceMarks[i];
-                if (mk.ts < tStart || mk.ts > tEnd) continue;
-                if (mk.tid !== rowTid) continue;
+            var dtTol = (6 / plot.plotW) * span;
+            for (var i = traceFirstAtOrAfter(mkRow, tAt - dtTol);
+                 i < mkRow.length && mkRow[i].ts <= tAt + dtTol; i++) {
+                var mk = mkRow[i];
                 var mx = plot.plotX + ((mk.ts - tStart) / span) * plot.plotW;
                 var dx = Math.abs(mx - xCss);
                 if (dx < bestDx) { bestDx = dx; best = mk; }
@@ -1772,10 +1870,20 @@ function traceBindPanel() {
 
             /* Spans: closed ones, else the live one for this thread. */
             var sp = null;
-            for (var k = traceSpans.length - 1; k >= 0; k--) {
-                var cand = traceSpans[k];
-                if (cand.tid !== rowTid) continue;
-                if (tAt >= cand.start && tAt < cand.end) { sp = cand; break; }
+            var spRow = cached ? traceLaneIndex.spans[row] : null;
+            if (spRow) {
+                /* First span with end > tAt (tAt is fractional); the one
+                 * before it can't contain tAt because spans on a lane never
+                 * overlap. */
+                var k = traceFirstEndingAfter(spRow, tAt);
+                if (k < spRow.length && spRow[k].end === tAt) k++;
+                if (k < spRow.length && spRow[k].start <= tAt) sp = spRow[k];
+            } else {
+                for (var kf = traceSpans.length - 1; kf >= 0; kf--) {
+                    var cand = traceSpans[kf];
+                    if (cand.tid !== rowTid) continue;
+                    if (tAt >= cand.start && tAt < cand.end) { sp = cand; break; }
+                }
             }
             if (!sp) {
                 var lth = traceThreads[rowTid];
@@ -2031,6 +2139,7 @@ function profilerResetOnReconnect() {
     profilerUpdateModeUi();
     profilerSymbols = [];
     profilerSamples = [];
+    profilerPcNames.clear();
     profilerDropped = 0;
     profilerLastTs = 0;
     profilerSymbolCount = 0;
@@ -2070,9 +2179,17 @@ function profilerLeafOffset(pcs) {
  * `@GLIBC_X.Y` version-tag suffixes are stripped so aggregation lumps
  * the same function across glibc builds and the skip-frames set can
  * match without encoding every version.
+ *
+ * Results are memoised: the same PC recurs in every stack and every
+ * refresh, so a binary search per occurrence was the dominant cost of
+ * the flame/flat rebuild. Cleared when the symbol table changes.
  */
+var profilerPcNames = new Map();
 function resolvePc(pc) {
+    var cached = profilerPcNames.get(pc);
+    if (cached !== undefined) return cached;
     var lo = 0, hi = profilerSymbols.length - 1;
+    var name = null;
     while (lo <= hi) {
         var mid = (lo + hi) >>> 1;
         var e = profilerSymbols[mid];
@@ -2081,10 +2198,13 @@ function resolvePc(pc) {
         else {
             var nm = e[2];
             var at = nm.indexOf("@");
-            return at > 0 ? nm.slice(0, at) : nm;
+            name = at > 0 ? nm.slice(0, at) : nm;
+            break;
         }
     }
-    return "0x" + pc.toString(16);
+    if (name === null) name = "0x" + pc.toString(16);
+    profilerPcNames.set(pc, name);
+    return name;
 }
 
 function handleProfile(buf, off) {
@@ -2114,8 +2234,10 @@ function handleProfile(buf, off) {
                 profilerSymbols.push(e);
                 added++;
             }
-            if (added > 0)
+            if (added > 0) {
                 profilerSymbols.sort(function (a, b) { return a[0] - b[0]; });
+                profilerPcNames.clear();
+            }
             profilerSymbolCount = profilerSymbols.length;
         } catch (err) {
             console.error("profiler: symbol parse failed", err);
@@ -2237,9 +2359,9 @@ function profilerUpdateRateOptions() {
 
 function profilerEvict() {
     var cutoff = profilerLastTs - profilerWindowUs;
-    while (profilerSamples.length && profilerSamples[0].ts < cutoff) {
-        profilerSamples.shift();
-    }
+    var i = 0;
+    while (i < profilerSamples.length && profilerSamples[i].ts < cutoff) i++;
+    if (i > 0) profilerSamples.splice(0, i);
     var cap = Math.max(PROFILER_MIN_CAP,
         Math.round((profilerWindowUs / 1e6) * PROFILER_SAMPLE_BUDGET_HZ));
     if (profilerSamples.length > cap) {
