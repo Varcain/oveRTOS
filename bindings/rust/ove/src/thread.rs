@@ -1265,7 +1265,7 @@ impl Default for bindings::ove_thread_info {
 /// tasks; `QueueFull` means a live thread was left out (on FreeRTOS, a task
 /// created while its registry was full stays unlisted while it lives).  A thread
 /// NuttX has no run-time accounting slot for is still listed, with its
-/// run-time valid bits clear.
+/// running-time bit clear unless it has a state tracker.
 pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
     let mut actual: usize = 0;
     let rc = unsafe { bindings::ove_thread_list(buf.as_mut_ptr(), buf.len(), &mut actual) };

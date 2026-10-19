@@ -986,6 +986,26 @@ static void _nuttx_list_finish(struct ove_thread_info *info, uint64_t dt_us)
 	(void)pid;
 	(void)dt_us;
 #endif
+
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	/* ove-created tasks report all four states from their tracker, so the
+	 * Threads view gets a state bar; kernel and other tasks (no tracker)
+	 * keep the running-time estimate above.  The note driver updates the
+	 * tracker inside the scheduler's critical section, so look the thread
+	 * up, read the clock and copy the tracker inside one as well. */
+	irqstate_t flags = enter_critical_section();
+	struct ove_thread *t = obs_find(pid);
+	if (t && t->st.cur_state != OVE_THREAD_STATE_TERMINATED) {
+		uint64_t times[OVE_STATE_COUNT];
+		ove_state_track_read(&t->st, ove_state_stats_now_us(), times);
+		info->state_times.running_us = times[OVE_THREAD_STATE_RUNNING];
+		info->state_times.ready_us = times[OVE_THREAD_STATE_READY];
+		info->state_times.blocked_us = times[OVE_THREAD_STATE_BLOCKED];
+		info->state_times.suspended_us = times[OVE_THREAD_STATE_SUSPENDED];
+		info->valid_fields |= OVE_THREAD_INFO_VALID_STATE_TIMES;
+	}
+	leave_critical_section(flags);
+#endif
 }
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
@@ -1024,7 +1044,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	if (actual_count)
 		*actual_count = ctx.count;
 	nxmutex_unlock(&g_nx_list_lock);
-	/* A thread with no accounting slot is still listed, with its runtime
-	 * valid bits clear, so only an omitted thread makes this QUEUE_FULL. */
+	/* A thread with no accounting slot is still listed, with its running-time
+	 * bit clear unless it has a state tracker, so only an omitted thread makes
+	 * this QUEUE_FULL. */
 	return ctx.overflow ? OVE_ERR_QUEUE_FULL : OVE_OK;
 }

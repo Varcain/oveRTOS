@@ -320,13 +320,16 @@ can skip the trace facility, which grows every kernel object); NuttX, Zephyr and
 the host test backend have no limit. `OVE_ERR_QUEUE_FULL` means the call left a live thread out; on
 FreeRTOS that includes a task created while the registry was full, which stays
 unlisted while it lives. A thread NuttX has no run-time accounting slot for is
-still listed, with its run-time valid bits clear.
+still listed, with its running-time bit clear unless it has a state tracker
+(below).
 
-The flags are deliberately granular. For example, FreeRTOS, NuttX, and
-Zephyr can report cumulative running time without pretending that
-`total - running` is exact blocked time; that remainder can also include time
-spent ready or suspended. The heap-enabled host test backend with state
-tracking provides all four state buckets. Snapshot stack scanning stays
+The flags are deliberately granular. With `CONFIG_OVE_THREAD_STATE_STATS`,
+FreeRTOS, NuttX, Zephyr and the heap-enabled host test backend report all four
+state buckets for live threads created through `ove_thread_*`. Kernel and other
+native threads have no state tracker: FreeRTOS, NuttX and Zephyr report only
+their cumulative running time, without pretending that `total - running` is
+exact blocked time, since that remainder can also include time spent ready or
+suspended. Snapshot stack scanning stays
 disabled in bounded scheduler-locked traversals, so a backend may know the
 allocation size without providing `stack_used`.
 

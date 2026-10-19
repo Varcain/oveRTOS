@@ -437,7 +437,9 @@ OVE_NODISCARD int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
 /**
  * @brief Cumulative time per thread state (microseconds).
  *
- * Only populated when CONFIG_OVE_THREAD_STATE_STATS is enabled.
+ * Which fields are filled is reported by the OVE_THREAD_INFO_VALID_*_TIME
+ * flags: all four for threads tracked under CONFIG_OVE_THREAD_STATE_STATS,
+ * otherwise at most the kernel's running-time estimate.
  */
 struct ove_thread_state_times {
 	uint64_t running_us;   /**< Time in RUNNING state. */
@@ -513,7 +515,8 @@ static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint3
  * no limit.  @c OVE_ERR_QUEUE_FULL means this call left a live thread out;
  * on FreeRTOS that includes a task created while the registry was full,
  * which stays unlisted while it lives.  A thread NuttX has no run-time
- * accounting slot for is still listed, with its run-time valid bits clear.
+ * accounting slot for is still listed, with its running-time bit clear
+ * unless it has a state tracker.
  *
  * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
  *         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.
