@@ -575,6 +575,19 @@ def _handle_http(c, dashboard_dir):
         print("WebSocket client connected", flush=True)
         return
 
+    # Build/board manifest: what the dashboard draws (ove_manifest.py).
+    if path == "/manifest.json":
+        body = json.dumps(_manifest).encode("utf-8")
+        hdr = (f"HTTP/1.1 200 OK\r\n"
+               f"Content-Type: application/json\r\n"
+               f"Content-Length: {len(body)}\r\n"
+               f"Cross-Origin-Resource-Policy: same-origin\r\n"
+               f"Cache-Control: no-cache\r\n"
+               f"Connection: close\r\n"
+               f"\r\n").encode()
+        _send_http(c, hdr + body)
+        return
+
     # Static file
     if path == "/":
         path = "/index.html"
@@ -2230,6 +2243,23 @@ def _mi_parse_kv(s):
     return result
 
 
+# ── Build manifest ───────────────────────────────────────────────────
+#
+# Board + feature description for the dashboard (see ove_manifest.py, next
+# to this script). Served at /manifest.json.
+
+_manifest = {}
+
+
+def build_manifest(build_dir, ove_dir, gdb_enabled, console_enabled):
+    import ove_manifest  # this script's directory is on sys.path
+    ws = ove_manifest.find_workspace(build_dir) if build_dir else None
+    _manifest.clear()
+    _manifest.update(ove_manifest.build(
+        ws, ove_dir, debugger=gdb_enabled, console=console_enabled,
+        log=lambda msg: print(msg, flush=True)))
+
+
 # Global GDB controller instance (set in main if --gdb-port)
 gdb_controller = [None]
 
@@ -2289,6 +2319,10 @@ def main():
     # Build source file list from CMake build objects.
     if args.build_dir:
         build_project_file_list(args.build_dir, ove_dir)
+
+    build_manifest(args.build_dir, ove_dir,
+                   gdb_enabled=bool(args.gdb_port),
+                   console_enabled=bool(args.console_fifo))
 
     # Build profiler symbol map from the ELF. The firmware is ARM and
     # system nm may not handle the architecture on every host — when

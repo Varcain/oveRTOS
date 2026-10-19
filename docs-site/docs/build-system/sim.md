@@ -21,7 +21,7 @@ flowchart LR
     subgraph Dashboard["Browser Dashboard"]
         DISP["Display Canvas"]
         AUDIO["Audio Panel"]
-        GPIO_P["GPIO / LED Panel"]
+        GPIO_P["Board parts (LEDs, UART, ...)"]
         CONSOLE["Console Log"]
     end
 
@@ -123,12 +123,27 @@ The browser bundle (`web` variant of the QEMU board) uses the guest transport un
 
 ## Web Dashboard
 
-The browser-based dashboard (`sim/dashboard/`) provides real-time visualisation:
+The browser-based dashboard (`sim/dashboard/`) is built around a drawing of the simulated board, with every other tool in an inspector beside it.
 
-- **Display canvas** — renders the LVGL framebuffer into an HTML5 `<canvas>` element
-- **Audio panel** — Web Audio playback of firmware output, waveform visualisation, microphone capture, and audio file injection for testing
-- **LED / GPIO panel** — shows LED states and GPIO pin values; allows toggling inputs from the browser
-- **Console log** — displays firmware serial output
+- **Board**: the LCD (the live LVGL framebuffer; clicks and drags are touch input) and the board's parts, drawn from `boards/<board>/board.yaml`: the MCU with its CPU load, RAM with heap usage, the console UART with TX/RX activity, the debug port, the audio codec, user LEDs, and the status LEDs. Clicking a part opens its tool. The **Reset** switch resets the board (needs the debugger). The display scales to the largest whole-number size that fits (**Auto**), or **Fit**, **1×** or **2×**.
+- **Glance strip**: CPU, heap, threads and log warnings at a glance, under the board.
+- **Inspector**: Console (shell input, filter, warning/error levels), Threads, Trace, Profiler, Debug and Audio, in one pane or two stacked panes. A tool the build does not enable says which Kconfig option turns it on.
+- **Status bar**: run state, simulated time, run control (pause / continue / step / reset), the selected thread, and warning/error counts.
+
+Three **workspaces** set up the inspector for a task: **Run** (console), **Debug** (source, call stack, registers, console) and **Perf** (trace above the profiler). Halting the target switches to Debug and resuming switches back. Pane choices and sizes are kept per build. Selecting a thread (in Threads, or a Trace lane label) highlights it in Trace and filters the Profiler to it.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+K` | Command palette |
+| `1` `2` `3` | Run / Debug / Perf workspace |
+| `F` | Board only |
+| `` ` `` | Shell input |
+| `/` | Filter the console |
+| `Esc` | Clear the thread selection |
+| `F6` `F10` `F11` `Shift+F11` | Pause / step over / step into / step out |
+| `F5` | Continue (while the Debug panel is shown) |
+
+The board drawing and the tools on offer come from `manifest.json`, built from `board.yaml` and the build's `.config` by `config/scripts/ove_manifest.py`. The local bridge serves it; a `web` bundle ships it next to `index.html`.
 
 The dashboard is served automatically when running a QEMU build:
 

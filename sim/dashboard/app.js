@@ -1,13 +1,31 @@
 /*
- * oveRTOS Simulation Dashboard
+ * oveRTOS Simulation Dashboard — firmware link and panels
  *
  * Talks to the firmware over one framed link: a WebSocket to the Python
  * bridge (native QEMU), or the in-page link to QEMU running in
- * this page (qemu-wasm.js).
- * Provides: event log, WinBox window management, display, audio.
+ * this page (qemu-wasm.js), and renders the panels (display, console,
+ * threads, debugger, trace, profiler, audio). Page layout belongs to
+ * board.js, through the layout host below.
  */
 
 "use strict";
+
+/* ── Layout host ─────────────────────────────────────────────────────
+ * The page's layout (board.js) defines window.oveLayoutHost before this
+ * script loads:
+ *   panelAvailable(id)    a panel got its first data
+ *   isPanelVisible(id)    is that panel on screen right now
+ *   layoutDisplay(w, h)   size the LCD canvas (replaces applyDisplayScale)
+ *   on(event, data)       live data feed: "link", "log", "threads",
+ *                         "debug", "display", "audio", "simtime",
+ *                         "uart-rx", "select-thread"
+ * Every member is optional. */
+var HOST = window.oveLayoutHost || {};
+
+function hostEmit(evt, data) {
+    if (!HOST.on) return;
+    try { HOST.on(evt, data); } catch (e) { console.error("[host]", evt, e); }
+}
 
 /* ── Frame type constants (shared with ove-dashboard-bridge.py) ────── */
 var FRAME_FB        = 0x01;
@@ -95,11 +113,8 @@ function attachInputHandlers(cvs, onInput) {
 }
 
 /* ── DOM elements (may be null when a panel is absent) ────────────── */
-var statusEl     = document.getElementById("status");
 var canvas       = document.getElementById("display-canvas");
 var ctx          = canvas ? canvas.getContext("2d") : null;
-var resolutionEl = document.getElementById("display-resolution");
-var fpsEl        = document.getElementById("display-fps");
 var audioInfoEl  = document.getElementById("audio-info");
 var eventLog     = document.getElementById("event-log");
 
@@ -128,361 +143,7 @@ var wsAudioSab = null;   /* SharedArrayBuffer backing the ring */
 var wsAudioPos = null;   /* Uint32Array: [writePos, readPos] */
 var wsAudioRing = null;  /* Uint8Array: PCM ring data */
 
-/* ── Floating window layout (WinBox) ──────────────────────────────── */
-var LAYOUT_KEY = "ove-sim-dashboard-layout";
-var MOBILE_BP  = 640;  /* viewport width below which we stack full-width */
-
-/* Proportional defaults: fractions of usable area. */
-var WIN_DEFS = {
-    display: { title: "Display",  col: 0, row: 0, cw: 0.6, rh: 0.55 },
-    threads: { title: "Threads",  col: 1, row: 0, cw: 0.4, rh: 0.55 },
-    debug:   { title: "Debug",    col: 0, row: 1, cw: 0.6, rh: 0.45 },
-    audio:   { title: "Audio",    col: 0, row: 1, cw: 0.5, rh: 0.4 },
-    events:  { title: "Events",   col: 0, row: 1, cw: 0.5, rh: 0.4 },
-    trace:   { title: "Trace",    col: 0, row: 1, cw: 1.0, rh: 0.35 },
-    profiler:{ title: "Profiler", col: 0, row: 1, cw: 1.0, rh: 0.4  },
-};
-
-function isMobile() { return window.innerWidth < MOBILE_BP; }
-
-/**
- * Compute tiled layout rects for all currently open windows.
- * Returns { id: {x, y, width, height}, ... }.
- *
- * 1 window  → full area
- * 2 windows → split left/right (PC) or top/bottom (mobile)
- * 3 windows → first takes left half, other two stacked on right half
- * 4+ windows → 2-column grid
- */
-function computeLayout() {
-    var ids = [];
-    for (var id in wins) ids.push(id);
-    var n = ids.length;
-    if (n === 0) return {};
-
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var usableH = vh - HEADER_H - TASKBAR_H;
-    var mobile = isMobile();
-    var layout = {};
-
-    if (n === 1) {
-        layout[ids[0]] = { x: GAP, y: HEADER_H + GAP,
-            width: vw - GAP * 2, height: usableH - GAP * 2 };
-    } else if (n === 2) {
-        if (mobile) {
-            var h = (usableH - GAP * 3) / 2;
-            layout[ids[0]] = { x: GAP, y: HEADER_H + GAP, width: vw - GAP * 2, height: h };
-            layout[ids[1]] = { x: GAP, y: HEADER_H + GAP * 2 + h, width: vw - GAP * 2, height: h };
-        } else {
-            var w = (vw - GAP * 3) / 2;
-            layout[ids[0]] = { x: GAP, y: HEADER_H + GAP, width: w, height: usableH - GAP * 2 };
-            layout[ids[1]] = { x: GAP * 2 + w, y: HEADER_H + GAP, width: w, height: usableH - GAP * 2 };
-        }
-    } else if (n === 3 && !mobile) {
-        var lw = (vw - GAP * 3) / 2;
-        var rh = (usableH - GAP * 3) / 2;
-        layout[ids[0]] = { x: GAP, y: HEADER_H + GAP, width: lw, height: usableH - GAP * 2 };
-        layout[ids[1]] = { x: GAP * 2 + lw, y: HEADER_H + GAP, width: lw, height: rh };
-        layout[ids[2]] = { x: GAP * 2 + lw, y: HEADER_H + GAP * 2 + rh, width: lw, height: rh };
-    } else {
-        /* Grid: 2 columns on PC, 1 column on mobile. */
-        var cols = mobile ? 1 : 2;
-        var rows = Math.ceil(n / cols);
-        var cw = (vw - GAP * (cols + 1)) / cols;
-        var rh = (usableH - GAP * (rows + 1)) / rows;
-        for (var i = 0; i < n; i++) {
-            var c = i % cols, r = Math.floor(i / cols);
-            layout[ids[i]] = {
-                x: GAP + c * (cw + GAP),
-                y: HEADER_H + GAP + r * (rh + GAP),
-                width: cw, height: rh
-            };
-        }
-    }
-    return layout;
-}
-
-/** Get default rect for a single window (used when first created). */
-function defaultRect(def) {
-    /* If this is the only window, give it full area. Otherwise use
-       the proportional hints from WIN_DEFS as a fallback. */
-    var openCount = Object.keys(wins).length;
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var usableH = vh - HEADER_H - TASKBAR_H;
-
-    if (openCount === 0) {
-        /* First window — maximize. */
-        return { x: GAP, y: HEADER_H + GAP,
-            width: vw - GAP * 2, height: usableH - GAP * 2 };
-    }
-    /* Fallback: proportional placement from WIN_DEFS. */
-    var hw = vw * def.cw;
-    var hh = usableH * def.rh;
-    return {
-        x: def.col * (vw / 2) + GAP,
-        y: HEADER_H + def.row * (usableH * 0.6) + GAP,
-        width: Math.max(hw - GAP * 2, 200),
-        height: Math.max(hh - GAP * 2, 80),
-    };
-}
-
-/** Clamp a saved rect so it stays visible in the current viewport. */
-function clampRect(opts) {
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var maxW = vw - GAP * 2, maxH = vh - HEADER_H - TASKBAR_H - GAP * 2;
-    var w = Math.min(opts.width, maxW);
-    var h = Math.min(opts.height, maxH);
-    var x = Math.max(0, Math.min(opts.x, vw - w));
-    var y = Math.max(HEADER_H, Math.min(opts.y, vh - TASKBAR_H - h));
-    return { x: x, y: y, width: w, height: h };
-}
-
-var wins = {};
-var badges = {};
-
-/* ── Bottom taskbar ───────────────────────────────────────────────── */
-var taskbar = document.createElement("div");
-taskbar.id = "taskbar";
-document.body.appendChild(taskbar);
-
-function addBadge(id, title) {
-    var b = document.createElement("div");
-    b.className = "taskbar-badge";
-    b.textContent = title;
-    b.addEventListener("click", function () {
-        var w = wins[id];
-        if (!w) return;
-        if (w.min) w.minimize(false);
-        w.focus();
-    });
-    taskbar.appendChild(b);
-    badges[id] = b;
-}
-
-function updateBadges() {
-    for (var id in badges) {
-        var w = wins[id];
-        if (!w) continue;
-        badges[id].className = "taskbar-badge" +
-            (w.focused ? " active" : "") +
-            (w.min ? " minimized" : "");
-    }
-}
-
-/* ── Edge tiling & magnetic snap ──────────────────────────────────── */
-var EDGE_PX     = 6;   /* cursor pixels from viewport edge to trigger tile */
-var SNAP_PX     = 10;  /* magnetic snap distance between windows */
-var HEADER_H    = 50;  /* height of page header (top boundary) */
-var TASKBAR_H   = 34;  /* height of bottom taskbar */
-var GAP         = 8;   /* margin around tiled windows */
-var draggingId  = null;
-var snapPreview = null;
-var _snapping   = false;
-
-function ensurePreview() {
-    if (snapPreview) return snapPreview;
-    var el = document.createElement("div");
-    el.style.cssText =
-        "position:fixed;z-index:99999;background:rgba(78,204,163,0.12);" +
-        "border:2px dashed rgba(78,204,163,0.5);border-radius:8px;" +
-        "pointer-events:none;display:none;transition:all .15s ease;";
-    document.body.appendChild(el);
-    snapPreview = el;
-    return el;
-}
-
-function tileZone(cx, cy) {
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var atLeft  = cx <= EDGE_PX;
-    var atRight = cx >= vw - EDGE_PX;
-    var atTop   = cy <= EDGE_PX + HEADER_H;
-    var atBot   = cy >= vh - EDGE_PX;
-
-    /* Corners → quarter tiles */
-    if (atLeft  && atTop) return "tl";
-    if (atRight && atTop) return "tr";
-    if (atLeft  && atBot) return "bl";
-    if (atRight && atBot) return "br";
-    /* Edges → half / full tiles */
-    if (atLeft)  return "left";
-    if (atRight) return "right";
-    if (atTop)   return "top";
-    return null;
-}
-
-function tileRect(zone) {
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var h = vh - HEADER_H - TASKBAR_H;
-    var hw = vw / 2, hh = h / 2;
-    switch (zone) {
-        case "left":  return { x: GAP, y: HEADER_H + GAP, w: hw - GAP * 2, h: h - GAP * 2 };
-        case "right": return { x: hw + GAP, y: HEADER_H + GAP, w: hw - GAP * 2, h: h - GAP * 2 };
-        case "top":   return { x: GAP, y: HEADER_H + GAP, w: vw - GAP * 2, h: h - GAP * 2 };
-        case "tl":    return { x: GAP, y: HEADER_H + GAP, w: hw - GAP * 2, h: hh - GAP * 2 };
-        case "tr":    return { x: hw + GAP, y: HEADER_H + GAP, w: hw - GAP * 2, h: hh - GAP * 2 };
-        case "bl":    return { x: GAP, y: HEADER_H + hh + GAP, w: hw - GAP * 2, h: hh - GAP * 2 };
-        case "br":    return { x: hw + GAP, y: HEADER_H + hh + GAP, w: hw - GAP * 2, h: hh - GAP * 2 };
-    }
-    return null;
-}
-
-function showPreview(zone) {
-    var el = ensurePreview();
-    var r = tileRect(zone);
-    if (!r) return;
-    el.style.display = "block";
-    el.style.left   = r.x + "px";
-    el.style.top    = r.y + "px";
-    el.style.width  = r.w + "px";
-    el.style.height = r.h + "px";
-}
-
-function hidePreview() { if (snapPreview) snapPreview.style.display = "none"; }
-
-/* Detect drag start on any WinBox header. */
-document.addEventListener("pointerdown", function (e) {
-    var hdr = e.target.closest && e.target.closest(".wb-drag");
-    if (!hdr) return;
-    var el = hdr.closest(".winbox");
-    if (!el) return;
-    for (var id in wins) {
-        if (wins[id].window === el) { draggingId = id; break; }
-    }
-});
-
-document.addEventListener("pointermove", function (e) {
-    if (!draggingId) return;
-    var zone = tileZone(e.clientX, e.clientY);
-    if (zone) showPreview(zone); else hidePreview();
-});
-
-document.addEventListener("pointerup", function (e) {
-    if (!draggingId) { hidePreview(); return; }
-    var win = wins[draggingId];
-    draggingId = null;
-
-    var zone = tileZone(e.clientX, e.clientY);
-    var r = zone ? tileRect(zone) : null;
-    if (r && win) {
-        win.move(r.x, r.y);
-        win.resize(r.w, r.h);
-        saveLayout();
-        syncWaveformSize();
-    }
-    hidePreview();
-});
-
-/* Magnetic snap: align edges to nearby windows during drag. */
-function snapToNeighbors(id) {
-    if (_snapping) return;
-    var w = wins[id];
-    if (!w) return;
-    var x = w.x, y = w.y, ww = w.width, wh = w.height;
-    var sx = x, sy = y;
-
-    for (var oid in wins) {
-        if (oid === id || wins[oid].min) continue;
-        var o = wins[oid];
-        /* vertical edges */
-        if (Math.abs(x - (o.x + o.width)) < SNAP_PX) sx = o.x + o.width;
-        else if (Math.abs((x + ww) - o.x) < SNAP_PX)  sx = o.x - ww;
-        else if (Math.abs(x - o.x) < SNAP_PX)          sx = o.x;
-        else if (Math.abs((x + ww) - (o.x + o.width)) < SNAP_PX) sx = o.x + o.width - ww;
-        /* horizontal edges */
-        if (Math.abs(y - (o.y + o.height)) < SNAP_PX) sy = o.y + o.height;
-        else if (Math.abs((y + wh) - o.y) < SNAP_PX)   sy = o.y - wh;
-        else if (Math.abs(y - o.y) < SNAP_PX)           sy = o.y;
-        else if (Math.abs((y + wh) - (o.y + o.height)) < SNAP_PX) sy = o.y + o.height - wh;
-    }
-    if (sx !== x || sy !== y) {
-        _snapping = true;
-        w.move(sx, sy);
-        _snapping = false;
-    }
-}
-
-function saveLayout() {
-    var layout = {};
-    for (var id in wins) {
-        layout[id] = {
-            x: wins[id].x, y: wins[id].y,
-            width: wins[id].width, height: wins[id].height,
-            min: wins[id].min,
-        };
-    }
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
-}
-
-/**
- * Create a single WinBox window for a dashboard panel.
- */
-function createDashboardWindow(id, title) {
-    if (typeof WinBox === "undefined") return;
-
-    var def = WIN_DEFS[id] || { title: "Window", col: 0, row: 0, cw: 0.5, rh: 0.5 };
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem(LAYOUT_KEY)); } catch (e) {}
-    var opts = saved && saved[id] ? clampRect(saved[id]) : defaultRect(def);
-
-    var panel = document.getElementById(id + "-panel");
-    if (!panel) return;
-
-    var winTitle = title || def.title;
-    var mobile = isMobile();
-
-    wins[id] = new WinBox({
-        id: id,
-        title: winTitle,
-        mount: panel,
-        class: mobile ? "no-full no-close no-resize no-move" : "no-full no-close",
-        x: opts.x,
-        y: opts.y,
-        width: opts.width,
-        height: opts.height,
-        minwidth: 200,
-        minheight: 80,
-        top: 50,
-        bottom: TASKBAR_H,
-        onmove: function () {
-            snapToNeighbors(id);
-            saveLayout();
-        },
-        onresize: function () {
-            saveLayout();
-            syncWaveformSize();
-        },
-        onfocus: updateBadges,
-        onblur: updateBadges,
-        onminimize: function () { saveLayout(); updateBadges(); },
-        onrestore: function () { saveLayout(); updateBadges(); },
-        onmaximize: function () {
-            var w = wins[id];
-            if (w._preMax) {
-                /* Restore previous size/position. */
-                var p = w._preMax;
-                w.move(p.x, p.y);
-                w.resize(p.w, p.h);
-                w._preMax = null;
-            } else {
-                /* Save current state, then tile to usable area. */
-                w._preMax = { x: w.x, y: w.y, w: w.width, h: w.height };
-                var r = tileRect("top");
-                if (r) { w.move(r.x, r.y); w.resize(r.w, r.h); }
-            }
-            saveLayout();
-            syncWaveformSize();
-            return true; /* cancel default maximize */
-        },
-    });
-
-    addBadge(id, winTitle);
-    if (!mobile && opts.min) wins[id].minimize(true);
-    updateBadges();
-}
-
-window.createDashboardWindow = createDashboardWindow;
-
-/* Keep waveform canvases pixel-buffer in sync with their CSS size. */
+/* Keep waveform canvases' pixel buffers in sync with their CSS size. */
 function syncWaveformSize() {
     var wOut = document.getElementById("waveform-output");
     var wIn  = document.getElementById("waveform-input");
@@ -490,67 +151,12 @@ function syncWaveformSize() {
     if (wIn  && wIn.clientWidth  > 0) wIn.width  = wIn.clientWidth;
 }
 
-/** Re-layout all windows to fill the viewport optimally. */
-function autoLayout() {
-    var layout = computeLayout();
-    for (var id in layout) {
-        if (!wins[id]) continue;
-        var r = layout[id];
-        if (wins[id].min) wins[id].minimize(false);
-        wins[id]._preMax = null;
-        wins[id].move(r.x, r.y);
-        wins[id].resize(r.width, r.height);
-        if (isMobile()) {
-            wins[id].addClass("no-resize").addClass("no-move");
-        } else {
-            wins[id].removeClass("no-resize").removeClass("no-move");
-        }
-    }
-    saveLayout();
-    syncWaveformSize();
-}
-
-/* Reset button (may not exist in all modes). */
-var resetBtn = document.getElementById("reset-layout");
-if (resetBtn) {
-    resetBtn.addEventListener("click", function () {
-        localStorage.removeItem(LAYOUT_KEY);
-        autoLayout();
-    });
-}
-
-/* Re-layout on viewport resize (debounced). */
+/* The layout host fires resize after moving panels around. */
 var resizeTimer = null;
 window.addEventListener("resize", function () {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () {
-        /* On mobile, always auto-layout. On desktop, just clamp. */
-        if (isMobile()) {
-            autoLayout();
-        } else {
-            for (var id in wins) {
-                if (wins[id].min) continue;
-                var c = clampRect({ x: wins[id].x, y: wins[id].y,
-                                     width: wins[id].width, height: wins[id].height });
-                wins[id].move(c.x, c.y);
-                wins[id].resize(c.width, c.height);
-                wins[id].removeClass("no-resize").removeClass("no-move");
-            }
-        }
-        syncWaveformSize();
-        saveLayout();
-    }, 150);
+    resizeTimer = setTimeout(syncWaveformSize, 150);
 });
-
-/* ── Create the always-on windows ─────────────────────────────────── */
-if (typeof WinBox !== "undefined") {
-    /* Events + console windows are always useful;
-       display/audio windows are created lazily when the first data
-       frame arrives so that only features the firmware actually uses
-       get a panel. */
-    if (document.getElementById("events-panel"))
-        createDashboardWindow("events", WIN_DEFS.events.title);
-}
 
 /* ── Firmware link (WebSocket, or the page's own link) ────────────── */
 var reconnectDelay = RECONNECT_BASE_MS;
@@ -571,8 +177,7 @@ function connect() {
     ws.onopen = function () {
         reconnectDelay = RECONNECT_BASE_MS;
         reconnectAttempt = 0;
-        statusEl.textContent = "Connected";
-        statusEl.className = "status connected";
+        hostEmit("link", { connected: true });
         addEvent("system", "Connected to sim server");
         /* Drop prior-session state — timebase and symbol maps are not
          * comparable across a sim restart. */
@@ -582,8 +187,7 @@ function connect() {
 
     ws.onclose = function () {
         reconnectAttempt++;
-        statusEl.textContent = "Reconnecting (" + reconnectAttempt + ")...";
-        statusEl.className = "status disconnected";
+        hostEmit("link", { connected: false, attempt: reconnectAttempt });
         setTimeout(connect, reconnectDelay);
         reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
     };
@@ -611,21 +215,26 @@ function connect() {
     };
 }
 
-/* ── Lazy window creation ────────────────────────────────────────────
- * Panels appear on the first frame that needs them (FRAME_FB,
- * FRAME_THREAD, FRAME_FILE_LIST, ...).  The !wins[id] guard below
- * prevents double-creation. */
+/* ── Panel availability ──────────────────────────────────────────────
+ * A panel "becomes available" on the first frame that carries its data
+ * (FRAME_FB, FRAME_THREAD, FRAME_FILE_LIST, ...): its DOM gets wired once
+ * and the layout host is told, so it can stop showing an empty state. */
+var PANEL_IDS = { display: 1, threads: 1, debug: 1, audio: 1, events: 1,
+                  trace: 1, profiler: 1 };
+var _panelsSeen = {};
+
+/* One-time wiring for a panel's DOM, independent of who lays it out. */
+function _panelFirstShown(id) {
+    if (id === "display") attachCanvasInput();
+    if (id === "profiler") profilerBindPanel();
+    if (id === "trace") traceBindPanel();
+}
+
 function ensureWindow(id) {
-    if (!WIN_DEFS[id]) return;
-    if (document.getElementById(id + "-panel") && !wins[id]) {
-        createDashboardWindow(id, WIN_DEFS[id].title);
-        /* Re-tile all windows to accommodate the new one. */
-        autoLayout();
-        /* Attach input handlers when display panel is created. */
-        if (id === "display") attachCanvasInput();
-        if (id === "profiler") profilerBindPanel();
-        if (id === "trace") traceBindPanel();
-    }
+    if (!PANEL_IDS[id] || _panelsSeen[id]) return;
+    _panelsSeen[id] = true;
+    _panelFirstShown(id);
+    if (HOST.panelAvailable) HOST.panelAvailable(id);
 }
 
 /* ── Display rendering ────────────────────────────────────────────── */
@@ -643,7 +252,7 @@ function handleFramebuffer(buf, off) {
         displayHeight = y2 + 1;
         canvas.width = displayWidth;
         canvas.height = displayHeight;
-        resolutionEl.textContent = displayWidth + "x" + displayHeight;
+        applyDisplayScale();
     }
 
     var pixels = new Uint8Array(buf, off + 8);
@@ -654,10 +263,18 @@ function handleFramebuffer(buf, off) {
     frameCount++;
     var now = performance.now();
     if (now - lastFpsTime >= 1000) {
-        fpsEl.textContent = (frameCount - lastFpsCount) + " FPS";
+        var fps = frameCount - lastFpsCount;
+        hostEmit("display", { width: displayWidth, height: displayHeight, fps: fps });
         lastFpsCount = frameCount;
         lastFpsTime = now;
     }
+}
+
+/* The canvas backing store is always the LCD's native size; the layout
+ * host sizes it on screen. */
+function applyDisplayScale() {
+    if (canvas && displayWidth && displayHeight && HOST.layoutDisplay)
+        HOST.layoutDisplay(displayWidth, displayHeight);
 }
 
 /* ── Audio handling ───────────────────────────────────────────────── */
@@ -727,6 +344,14 @@ function handleAudio(buf, off) {
     var samples = new Int16Array(pcmData.buffer, pcmData.byteOffset,
                                  Math.floor(pcmData.length / 2));
     drawWave("waveform-output", samples, "#e94560");
+    if (HOST.on) {
+        var peak = 0;
+        for (var si = 0; si < samples.length; si++) {
+            var a = samples[si] < 0 ? -samples[si] : samples[si];
+            if (a > peak) peak = a;
+        }
+        hostEmit("audio", { dir: "out", peak: peak / 32768, rate: audioSampleRate });
+    }
 
     /* Record output if active. */
     if (isRecording) {
@@ -1281,6 +906,19 @@ function handleThreadSnapshot(buf, off) {
     }
     if (empty) empty.style.display = "none";
 
+    /* Hide whole columns the backend doesn't report for any thread,
+     * instead of rendering a column of "--". */
+    var anyValid = 0;
+    for (var v = 0; v < threads.length; v++) anyValid |= threads[v].validFields;
+    var table = document.getElementById("thread-table");
+    if (table) {
+        table.classList.toggle("no-stack",
+            !(anyValid & (THREAD_VALID_STACK_USED | THREAD_VALID_STACK_SIZE)));
+        table.classList.toggle("no-cpu", !(anyValid & THREAD_VALID_CPU_PERCENT));
+        table.classList.toggle("no-states",
+            (anyValid & THREAD_VALID_STATE_TIMES) !== THREAD_VALID_STATE_TIMES);
+    }
+
     var html = "";
     for (var j = 0; j < threads.length; j++) {
         var t = threads[j];
@@ -1293,23 +931,30 @@ function handleThreadSnapshot(buf, off) {
               + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
               + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
               + "<td>" + _prioName(t.priority) + "</td>"
-              + "<td class=\"td-num\">" + _fmtStack(t) + "</td>"
-              + "<td class=\"td-num\">" + cpuStr + "</td>"
-              + "<td>" + _fmtStateBar(t) + "</td>"
+              + "<td class=\"td-num col-stack\">" + _fmtStack(t) + "</td>"
+              + "<td class=\"td-num col-cpu\">" + cpuStr + "</td>"
+              + "<td class=\"col-states\">" + _fmtStateBar(t) + "</td>"
               + "</tr>";
     }
     tbody.innerHTML = html;
+    hostEmit("threads", {
+        threads: threads.map(function (t) {
+            return { name: t.name, state: t.state, priority: t.priority,
+                     cpu: (t.validFields & THREAD_VALID_CPU_PERCENT) ? t.cpuX100 / 100 : null };
+        }),
+        heap: { total: heapTotal, used: heapUsed, peak: heapPeak }
+    });
 }
 
 function _fmtStateBar(t) {
     if ((t.validFields & THREAD_VALID_STATE_TIMES) !== THREAD_VALID_STATE_TIMES)
-        return "<span class=\"td-num\" style=\"color:#555\">--</span>";
+        return "<span class=\"td-num\" style=\"color:var(--faint)\">--</span>";
     var r = (t.stRunning || 0) / 100;
     var rd = (t.stReady || 0) / 100;
     var b = (t.stBlocked || 0) / 100;
     var s = (t.stSuspended || 0) / 100;
     var total = r + rd + b + s;
-    if (total < 0.1) return "<span class=\"td-num\" style=\"color:#555\">--</span>";
+    if (total < 0.1) return "<span class=\"td-num\" style=\"color:var(--faint)\">--</span>";
     /* Normalize to 100% */
     var rp = (r / total * 100).toFixed(0);
     var rdp = (rd / total * 100).toFixed(0);
@@ -1486,13 +1131,76 @@ var TRACE_MAX_RECORDS = 60000;
 var TRACE_LABEL_W = 90;
 var TRACE_PLOT_PAD_R = 4;
 
+/* RUNNING is the bright colour — it is what the eye should find. BLOCKED
+ * is usually most of the timeline, so it is deliberately muted (and no
+ * longer red, which reads as an error). Keep in sync with the
+ * .trace-sw-* legend chips in style.css and the thread-table badges. */
 var TRACE_STATE_COLORS = {
     0: "#4ecca3", /* RUNNING */
-    1: "#f5d76e", /* READY */
-    2: "#e94560", /* BLOCKED */
-    3: "#666666", /* SUSPENDED */
+    1: "#4f8fd8", /* READY */
+    2: "#5e5130", /* BLOCKED */
+    3: "#50566a", /* SUSPENDED */
     4: "#222222", /* TERMINATED */
 };
+
+/* Lanes to draw, sorted by name. Threads the firmware never described
+ * (no descriptor → hex placeholder name) are only shown once they carry
+ * data; tid 0 is activity outside any thread context. Shared by
+ * renderTrace and the hover hit-test so row math always agrees. */
+function traceLanes() {
+    var tids = [];
+    for (var k in traceThreads) {
+        var th = traceThreads[k];
+        if (th.described || th.hasData) tids.push(+k);
+    }
+    tids.sort(function (a, b) {
+        var na = traceThreads[a].name, nb = traceThreads[b].name;
+        return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+    return tids;
+}
+
+/* Linked selection: one thread highlighted across panels (set by the
+ * layout host, or by clicking a lane label). Matched by name because the
+ * Threads table only knows names. */
+var traceSelectedName = null;
+window.oveTraceSelect = function (name) {
+    traceSelectedName = name || null;
+    scheduleTraceRender();
+};
+
+function traceLaneH(cssH, n) {
+    return Math.max(14, Math.min(28, Math.floor((cssH - 20) / n)));
+}
+
+/* Visible time range. While live, if less history has been recorded than
+ * the zoom span (e.g. just after connecting), the view fits the recorded
+ * data instead of leaving most of the plot empty — never narrower than
+ * 1 s (or the zoom span, if that is smaller). */
+function traceViewRange() {
+    var tEnd = traceView.follow ? traceMaxTs : traceView.tEndFrozen;
+    var span = traceView.spanUs;
+    if (traceView.follow && traceMinTs > 0) {
+        var have = tEnd - traceMinTs;
+        if (have < span) span = Math.max(have, Math.min(span, 1e6));
+    }
+    if (span <= 0) span = 1;
+    return { tStart: tEnd - span, tEnd: tEnd, span: span };
+}
+
+/* Tick spacing that keeps labels at least ~80 px apart. */
+var TRACE_TICK_STEPS_US = [100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4,
+                           1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7, 2e7, 6e7];
+function traceTickStep(spanUs, plotW) {
+    for (var i = 0; i < TRACE_TICK_STEPS_US.length; i++) {
+        if (TRACE_TICK_STEPS_US[i] * plotW / spanUs >= 80) return TRACE_TICK_STEPS_US[i];
+    }
+    return TRACE_TICK_STEPS_US[TRACE_TICK_STEPS_US.length - 1];
+}
+function traceTickLabel(tUs, stepUs) {
+    var dec = stepUs >= 1e6 ? 0 : stepUs >= 1e5 ? 1 : stepUs >= 1e4 ? 2 : stepUs >= 1e3 ? 3 : 4;
+    return (tUs / 1e6).toFixed(dec) + "s";
+}
 
 /* Names for OVE_TRACE_PRIM_* / OVE_TRACE_ACT_* nibble codes in mark.code. */
 function tracePrimName(p) {
@@ -1587,6 +1295,7 @@ function handleTrace(buf, off) {
             p += nameLen;
             if (!traceThreads[tid]) traceThreads[tid] = { name: name, lastState: -1, lastTs: 0 };
             else traceThreads[tid].name = name;
+            traceThreads[tid].described = true;
         }
         traceDirty = true;
         ensureWindow("trace");
@@ -1613,8 +1322,11 @@ function handleTrace(buf, off) {
 
         var th = traceThreads[tid];
         if (!th) {
-            th = traceThreads[tid] = { name: "0x" + tid.toString(16), lastState: -1, lastTs: ts };
+            th = traceThreads[tid] = {
+                name: tid === 0 ? "(no thread)" : "0x" + tid.toString(16),
+                lastState: -1, lastTs: ts };
         }
+        th.hasData = true;
 
         if (kind === TRACE_KIND_STATE) {
             /* Close out the previous span for this thread. */
@@ -1634,6 +1346,7 @@ function handleTrace(buf, off) {
     traceDirty = true;
     ensureWindow("trace");
     scheduleTraceRender();
+    hostEmit("simtime", { us: traceMaxTs });
 }
 
 function scheduleTraceRender() {
@@ -1664,42 +1377,32 @@ function renderTrace() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    /* Collect live tids in insertion order. */
-    var tids = [];
-    for (var k in traceThreads) tids.push(+k);
+    var tids = traceLanes();
     if (tids.length === 0) {
-        ctx.fillStyle = "#888";
-        ctx.font = "11px 'Consolas', monospace";
+        ctx.fillStyle = "#9aa4b8";
+        ctx.font = "12px 'DejaVu Sans Mono', Consolas, monospace";
         ctx.fillText("Waiting for trace data…", 10, 20);
         return;
     }
-    tids.sort(function (a, b) {
-        var na = traceThreads[a].name, nb = traceThreads[b].name;
-        return na < nb ? -1 : (na > nb ? 1 : 0);
-    });
 
-    var laneH = Math.max(14, Math.min(28, Math.floor((cssH - 20) / tids.length)));
+    var laneH = traceLaneH(cssH, tids.length);
     var plotX = TRACE_LABEL_W;
     var plotW = cssW - TRACE_LABEL_W - TRACE_PLOT_PAD_R;
     var axisY = 0;
-    var axisH = 14;
+    var axisH = 16;
 
     /* Time range: live follows traceMaxTs; paused anchors to tEndFrozen.
      * Visible span is traceView.spanUs (zoom controls). */
-    var tEnd = traceView.follow ? traceMaxTs : traceView.tEndFrozen;
-    var tStart = tEnd - traceView.spanUs;
-    var span = tEnd - tStart;
-    if (span <= 0) span = 1;
+    var range = traceViewRange();
+    var tEnd = range.tEnd, tStart = range.tStart, span = range.span;
 
-    /* Axis ticks every 1 s. */
+    /* Axis ticks, spaced so labels never collide. */
     ctx.fillStyle = "#2a2f3a";
     ctx.fillRect(plotX, axisY, plotW, axisH);
     ctx.strokeStyle = "#40475a";
-    ctx.fillStyle = "#8a94ad";
-    ctx.font = "10px 'Consolas', monospace";
-    var tickStep = 1000000;
-    if (span < 5e6) tickStep = 500000;
-    if (span > 20e6) tickStep = 2000000;
+    ctx.fillStyle = "#9aa4b8";
+    ctx.font = "11px 'DejaVu Sans Mono', Consolas, monospace";
+    var tickStep = traceTickStep(span, plotW);
     var firstTick = Math.ceil(tStart / tickStep) * tickStep;
     for (var t = firstTick; t <= tEnd; t += tickStep) {
         var x = plotX + ((t - tStart) / span) * plotW;
@@ -1707,7 +1410,7 @@ function renderTrace() {
         ctx.moveTo(x, axisY);
         ctx.lineTo(x, axisY + axisH);
         ctx.stroke();
-        ctx.fillText((t / 1e6).toFixed(1) + "s", x + 2, axisY + axisH - 2);
+        ctx.fillText(traceTickLabel(t, tickStep), x + 3, axisY + axisH - 3);
     }
 
     /* Lanes. */
@@ -1717,10 +1420,22 @@ function renderTrace() {
         var ly = axisY + axisH + i * laneH;
 
         /* Lane label. */
-        ctx.fillStyle = (i % 2 === 0) ? "#181c28" : "#141826";
+        var selected = traceSelectedName !== null && th.name === traceSelectedName;
+        ctx.fillStyle = selected ? "#1d2b4a" : (i % 2 === 0) ? "#181c28" : "#141826";
         ctx.fillRect(0, ly, cssW, laneH);
-        ctx.fillStyle = "#cfd3dc";
-        ctx.fillText(th.name, 4, ly + laneH / 2 + 3);
+        if (selected) {
+            ctx.fillStyle = "#5b8def";
+            ctx.fillRect(0, ly, 3, laneH);
+        }
+        ctx.fillStyle = selected ? "#ffffff" : th.described ? "#cfd3dc" : "#9aa4b8";
+        ctx.fillText(th.name, 6, ly + laneH / 2 + 4);
+    }
+
+    /* With a thread selected, other lanes fade back. */
+    var selTid = null;
+    if (traceSelectedName !== null) {
+        for (var q = 0; q < tids.length; q++)
+            if (traceThreads[tids[q]].name === traceSelectedName) selTid = tids[q];
     }
 
     /* Draw spans. */
@@ -1733,9 +1448,11 @@ function renderTrace() {
         var x1 = plotX + ((Math.min(sp.end, tEnd) - tStart) / span) * plotW;
         var w  = Math.max(1, x1 - x0);
         var y  = axisY + axisH + row * laneH + 2;
+        ctx.globalAlpha = (selTid !== null && sp.tid !== selTid) ? 0.35 : 1;
         ctx.fillStyle = TRACE_STATE_COLORS[sp.state] || "#888";
         ctx.fillRect(x0, y, w, laneH - 4);
     }
+    ctx.globalAlpha = 1;
 
     /* Draw in-flight spans (open: lastTs -> tEnd). */
     for (var ti = 0; ti < tids.length; ti++) {
@@ -1745,9 +1462,11 @@ function renderTrace() {
         var xs = plotX + ((Math.max(th2.lastTs, tStart) - tStart) / span) * plotW;
         var xe = plotX + plotW;
         var ys = axisY + axisH + ti * laneH + 2;
+        ctx.globalAlpha = (selTid !== null && tid2 !== selTid) ? 0.35 : 1;
         ctx.fillStyle = TRACE_STATE_COLORS[th2.lastState] || "#888";
         ctx.fillRect(xs, ys, xe - xs, laneH - 4);
     }
+    ctx.globalAlpha = 1;
 
     /* Draw markers as small triangles at the top of the lane. */
     ctx.fillStyle = "#ffffff";
@@ -1807,6 +1526,8 @@ function traceClampTEnd(tEnd) {
 
 /* Enter paused mode anchored at the given tEnd. Idempotent. */
 function traceEnterPaused(tEnd, followCheckbox) {
+    /* Keep what is on screen: freeze the auto-fitted span too. */
+    if (traceView.follow) traceView.spanUs = traceViewRange().span;
     traceView.follow = false;
     traceView.tEndFrozen = traceClampTEnd(tEnd);
     if (followCheckbox) followCheckbox.checked = false;
@@ -1834,7 +1555,7 @@ function traceBindPanel() {
      * In paused mode anchor is the supplied CSS x — or the midpoint if
      * none is given. */
     function applyZoom(factor, xCssOpt) {
-        var nextSpan = clampSpan(traceView.spanUs * factor);
+        var nextSpan = clampSpan(traceViewRange().span * factor);
         if (traceView.follow) {
             traceView.spanUs = nextSpan;
             scheduleTraceRender();
@@ -1866,8 +1587,8 @@ function traceBindPanel() {
 
     if (follow) {
         follow.addEventListener("change", function () {
-            traceView.follow = follow.checked;
-            if (!traceView.follow) traceView.tEndFrozen = traceMaxTs;
+            if (follow.checked) traceView.follow = true;
+            else traceEnterPaused(traceMaxTs, null);
             scheduleTraceRender();
         });
     }
@@ -1886,7 +1607,18 @@ function traceBindPanel() {
         if (!plot) return;
         var rect = cvs.getBoundingClientRect();
         var xCss = e.clientX - rect.left;
-        if (xCss < plot.plotX) return; /* clicks in the label column */
+        if (xCss < plot.plotX) {
+            /* Lane label click selects (or clears) that thread everywhere. */
+            var lanes = traceLanes();
+            if (!lanes.length) return;
+            var row = Math.floor((e.clientY - rect.top - 16) / traceLaneH(rect.height, lanes.length));
+            if (row < 0 || row >= lanes.length) return;
+            var name = traceThreads[lanes[row]].name;
+            name = (name === traceSelectedName) ? null : name;
+            window.oveTraceSelect(name);
+            hostEmit("select-thread", { name: name });
+            return;
+        }
         var startTEnd = traceCurrentTEnd();
         traceEnterPaused(startTEnd, follow);
         drag = { startX: e.clientX, startTEnd: startTEnd,
@@ -1948,27 +1680,20 @@ function traceBindPanel() {
 
             /* Rebuild tids list the same way renderTrace does so lane
              * row math matches. Cheap — only runs on hover. */
-            var tids = [];
-            for (var k in traceThreads) tids.push(+k);
+            var tids = traceLanes();
             if (tids.length === 0) { tip.style.display = "none"; return; }
-            tids.sort(function (a, b) {
-                var na = traceThreads[a].name, nb = traceThreads[b].name;
-                return na < nb ? -1 : (na > nb ? 1 : 0);
-            });
 
             var cssH = rect.height;
-            var axisH = 14;
-            var laneH = Math.max(14, Math.min(28,
-                Math.floor((cssH - 20) / tids.length)));
+            var axisH = 16;
+            var laneH = traceLaneH(cssH, tids.length);
             var row = Math.floor((yCss - axisH) / laneH);
             if (row < 0 || row >= tids.length) {
                 tip.style.display = "none"; return;
             }
             var rowTid = tids[row];
 
-            var tEnd = traceCurrentTEnd();
-            var tStart = tEnd - traceView.spanUs;
-            var span = tEnd - tStart; if (span <= 0) span = 1;
+            var range = traceViewRange();
+            var tEnd = range.tEnd, tStart = range.tStart, span = range.span;
 
             var best = null, bestDx = Infinity;
             for (var i = traceMarks.length - 1; i >= 0; i--) {
@@ -2550,7 +2275,7 @@ function renderProfilerFlat() {
             + "</tr>";
     }
     if (!rows.length) html = '<tr><td colspan="4" style="padding:12px;'
-        + 'color:#666;text-align:center">Waiting for samples…</td></tr>';
+        + 'color:var(--faint);text-align:center">Waiting for samples…</td></tr>';
     tbody.innerHTML = html;
 }
 
@@ -2904,9 +2629,9 @@ function profilerBindPanel() {
         if (profilerActiveTab === "flame") renderProfiler();
     });
 
-    /* WinBox drag-resize doesn't emit a viewport resize event, so the flame
-     * canvas bitmap stays pinned at its first-render width and the right
-     * edge gets cropped once the panel grows. A ResizeObserver on the
+    /* Splitter drags don't emit a viewport resize event, so the flame
+     * canvas bitmap would stay pinned at its first-render width and the
+     * right edge get cropped once the panel grows. A ResizeObserver on the
      * flame view re-renders whenever its content box changes size. */
     var flameView = document.getElementById("profiler-flame-view");
     if (flameView && typeof ResizeObserver !== "undefined") {
@@ -2969,23 +2694,9 @@ function dbgHandleState(data) {
     dbgCurrentLine = data.line || 0;
     dbgCurrentAddr = data.addr || null;
 
-    var statusEl = document.getElementById("dbg-status");
-    if (statusEl) {
-        if (dbgState === "running") {
-            statusEl.textContent = "Running";
-            statusEl.className = "dbg-status dbg-running";
-        } else if (dbgState === "stopped") {
-            var reason = data.reason || "";
-            var loc = dbgCurrentFile
-                ? _shortPath(dbgCurrentFile) + ":" + dbgCurrentLine
-                : "";
-            statusEl.textContent = "Stopped" + (reason ? " (" + reason + ")" : "") + (loc ? " at " + loc : "");
-            statusEl.className = "dbg-status dbg-stopped";
-        } else {
-            statusEl.textContent = "Disconnected";
-            statusEl.className = "dbg-status";
-        }
-    }
+    /* Run state is shown by the layout host (status bar). */
+    hostEmit("debug", { state: dbgState, file: dbgCurrentFile, line: dbgCurrentLine,
+                        reason: data.reason || null });
 
     /* Dim source view when running */
     var srcView = document.getElementById("dbg-source-view");
@@ -3010,7 +2721,9 @@ function dbgHandleBacktrace(data) {
         var addr = f.addr || "";
         var loc = file ? _shortPath(file) + ":" + line : addr;
         var cls = i === 0 ? "dbg-frame active" : "dbg-frame";
-        html += "<div class=\"" + cls + "\" data-file=\"" + _esc(f.fullname || file) + "\" data-line=\"" + line + "\">"
+        var full = f.fullname || file;
+        html += "<div class=\"" + cls + "\" data-file=\"" + _esc(full) + "\" data-line=\"" + line + "\""
+              + " title=\"" + _esc(func + (full ? "  " + full + ":" + line : "  " + addr)) + "\">"
               + "<span class=\"dbg-frame-idx\">#" + (f.level || i) + "</span> "
               + "<span class=\"dbg-frame-func\">" + _esc(func) + "</span> "
               + "<span class=\"dbg-frame-loc\">" + _esc(loc) + "</span>"
@@ -3145,8 +2858,7 @@ function _openFileInMonaco(path, content) {
     editor.updateOptions({ lineNumbers: "on" });
 
     /* Update file label */
-    var fileLabel = document.getElementById("dbg-source-file");
-    if (fileLabel) fileLabel.textContent = _shortPath(path);
+    _setPathLabel(document.getElementById("dbg-source-file"), path);
 
     /* Re-apply decorations (breakpoints + current line if in this file) */
     _monacoSetDecorations(
@@ -3160,8 +2872,10 @@ function _openFileInMonaco(path, content) {
 function _renderFileExplorer() {
     var el = document.getElementById("dbg-files");
     if (!el) return;
+    var explorer = el.closest(".debug-explorer");
+    if (explorer) explorer.classList.toggle("empty", projectFiles.length === 0);
     if (projectFiles.length === 0) {
-        el.innerHTML = "<div class=\"dbg-empty\">No files</div>";
+        el.innerHTML = "";
         return;
     }
     var html = "";
@@ -3337,8 +3051,7 @@ function _renderSourceSnippet(data) {
     var currentLine = data.current_line || 0;
     var lines = data.lines || [];
 
-    var fileLabel = document.getElementById("dbg-source-file");
-    if (fileLabel) fileLabel.textContent = file ? _shortPath(file) : "No source loaded";
+    _setPathLabel(document.getElementById("dbg-source-file"), file);
 
     var editor = _ensureMonacoEditor();
     if (editor) {
@@ -3428,26 +3141,26 @@ function _hasBreakpointAt(file, line) {
 function _shortPath(p) {
     if (!p) return "";
     var parts = p.replace(/\\/g, "/").split("/");
-    return parts.length > 2 ? parts.slice(-2).join("/") : p;
+    if (parts.length <= 2) return p;
+    /* Downloaded deps live in hash-suffixed worktrees
+     * ("FreeRTOS-Kernel-996e1af3-5276366e4804a23f"); the hashes are noise
+     * in a label, so show "FreeRTOS-Kernel/tasks.c". Full path stays in
+     * the element's title. */
+    var dir = parts[parts.length - 2].replace(/(-[0-9a-f]{8,40})+$/, "");
+    return dir + "/" + parts[parts.length - 1];
+}
+
+/** Set a source-location label: short text, full path on hover. */
+function _setPathLabel(el, path, suffix) {
+    if (!el) return;
+    el.textContent = path ? _shortPath(path) + (suffix || "") : "";
+    el.title = path || "";
 }
 
 /* ── Debug toolbar button wiring ─────────────────────────────────── */
 
 (function() {
-    var btnMap = {
-        "dbg-continue":  DBG_CMD_CONTINUE,
-        "dbg-pause":     DBG_CMD_PAUSE,
-        "dbg-step-over": DBG_CMD_STEP_OVER,
-        "dbg-step-into": DBG_CMD_STEP_INTO,
-        "dbg-step-out":  DBG_CMD_STEP_OUT,
-        "dbg-reset":     DBG_CMD_RESET,
-    };
-    Object.keys(btnMap).forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.addEventListener("click", function() {
-            sendDebugCmd(btnMap[id]);
-        });
-    });
+    /* Run control buttons live in the status bar (board.js). */
 
     /* Tab switching — renders from cached data */
     document.querySelectorAll(".dbg-tab").forEach(function(tab) {
@@ -3490,7 +3203,17 @@ function _shortPath(p) {
     /* Keyboard shortcuts */
     document.addEventListener("keydown", function(e) {
         if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-        if (e.key === "F5") { e.preventDefault(); sendDebugCmd(DBG_CMD_CONTINUE); }
+        /* Shortcuts only exist once there is a debugger to talk to. F5 is
+         * also the browser's reload key, so it is claimed only while the
+         * Debug window has focus. */
+        if (dbgState === "disconnected") return;
+        /* Run control is always on screen (status bar), so the step keys
+         * are global; F5 is the browser's reload key, so it is claimed
+         * only while the Debug panel is visible. */
+        if (e.key === "F5") {
+            if (!(HOST.isPanelVisible && HOST.isPanelVisible("debug"))) return;
+            e.preventDefault(); sendDebugCmd(DBG_CMD_CONTINUE);
+        }
         if (e.key === "F6") { e.preventDefault(); sendDebugCmd(DBG_CMD_PAUSE); }
         if (e.key === "F10") { e.preventDefault(); sendDebugCmd(DBG_CMD_STEP_OVER); }
         if (e.key === "F11" && !e.shiftKey) { e.preventDefault(); sendDebugCmd(DBG_CMD_STEP_INTO); }
@@ -3524,7 +3247,9 @@ function handleState(buf, off) {
     var view = new DataView(buf, off);
     var id = view.getUint32(0, true);
     var json = new TextDecoder().decode(new Uint8Array(buf, off + 4));
-    addEvent("state:" + id, json);
+    /* Plugin state is machine-readable config (e.g. the audio format sent
+     * on every connect) — keep it out of the human log. */
+    if (window.console && console.debug) console.debug("[state:" + id + "]", json);
     try {
         var obj = JSON.parse(json);
         if (obj && obj.type === "audio") audioPluginId = id;
@@ -3536,8 +3261,7 @@ var scrollBtn = document.getElementById("autoscroll-toggle");
 if (scrollBtn) {
     scrollBtn.addEventListener("click", function () {
         autoScroll = !autoScroll;
-        scrollBtn.textContent = "Auto-scroll: " + (autoScroll ? "ON" : "OFF");
-        scrollBtn.className = "btn btn-small" + (autoScroll ? " autoscroll-on" : "");
+        scrollBtn.classList.toggle("active", autoScroll);
         if (autoScroll && eventLog)
             eventLog.scrollTop = eventLog.scrollHeight;
     });
@@ -3560,7 +3284,17 @@ function _flushLogQueue() {
 function addEvent(type, msg) {
     if (!eventLog) return;
     var el = document.createElement("div");
-    el.className = "entry";
+    el.className = "entry src-" + type.split(":")[0];
+    /* Firmware log level from the OVE_LOG "[I] / [W] / [E] / [D]" prefix. */
+    var level = null;
+    if (type === "log") {
+        var m = /^\s*\[([DIWE])\]/.exec(msg);
+        if (m) {
+            level = m[1].toLowerCase();
+            el.className += " lvl-" + level;
+        }
+    }
+    hostEmit("log", { type: type, msg: msg, level: level, el: el });
     var time = new Date().toTimeString().split(" ")[0];
     var timeSpan = document.createElement("span");
     timeSpan.className = "time";
@@ -3624,6 +3358,7 @@ function initConsoleInput() {
         for (var i = 0; i < text.length; i++)
             bytes[i] = text.charCodeAt(i) & 0xFF;
         sendCmd(0xFFFFFFFF, 0, bytes);  /* console sentinel */
+        hostEmit("uart-rx", { text: text });
         conInput.value = "";
     }
     conSend.addEventListener("click", sendConsoleText);
