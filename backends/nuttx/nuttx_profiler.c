@@ -18,14 +18,15 @@
  * up_backtrace(tcb, ...) walks the SAVED register context of @tcb, so it's
  * safe to call for any TCB that isn't currently running — the scheduler's
  * stack-saved {r7, lr} / PSP state is authoritative after the last context
- * switch. For the current task we pass NULL and the unwinder walks live
- * registers.
+ * switch.
  *
- * Sampling is driven by the sim-debug pump calling sample_tick() at
- * CONFIG_OVE_PROFILER_HZ. Each tick iterates the thread registry (populated
- * by nuttx_thread.c) and produces one sample per runnable ove_thread. The
- * pump's own task is skipped so the flame graph isn't dominated by the
- * observer.
+ * Sampling is timed by a NuttX watchdog (ISR context, re-armed on an
+ * absolute tick schedule, so the rate is exact) that queues one work item
+ * on the high-priority work queue. The HPWORK worker runs above every
+ * application thread, so busy threads are sampled too: the thread it
+ * preempted is captured with its real stack, in state READY. Each tick
+ * walks every RUNNING/READY/BLOCKED ove thread in the registry
+ * (populated by nuttx_thread.c).
  *
  * Symbolication: host-side via the dashboard bridge (arm-none-eabi-nm on
  * the firmware ELF). drain_symbols() returns 0.
@@ -160,11 +161,6 @@ static void sample_wdog_cb(wdparm_t arg)
 		work_queue(HPWORK, &sample_work, sample_worker, NULL, 0);
 	else
 		ove_profiler_ring_add_dropped(1);
-}
-
-/* Sampling is timer-driven; the pump-side tick is a no-op on every backend. */
-void ove_backend_profiler_sample_tick(void)
-{
 }
 
 static unsigned int ticks_for_hz(uint32_t hz)

@@ -52,22 +52,13 @@ extern "C" {
  * @brief Arm the backend sampling mechanism (a tick hook or timer,
  *        depending on the RTOS).
  *
- * Idempotent.  Does not spawn any thread — the consolidated sim-debug
- * pump drives sampling by calling @ref ove_backend_profiler_sample_tick
- * on its schedule.
+ * Idempotent.  Sampling then runs on its own (tick hook, timer
+ * interrupt or timer-queued work); the sim-debug pump only drains the
+ * sample ring.
  *
  * @return OVE_OK on success, negative ove error code on failure.
  */
 int ove_backend_profiler_start(void);
-
-/**
- * @brief Drive one sampler tick.
- *
- * Called from the sim-debug pump at @c CONFIG_OVE_PROFILER_HZ.
- * Snapshots runnable threads and delivers the profiling signal to
- * each.  No-op if @ref ove_backend_profiler_start has not succeeded.
- */
-void ove_backend_profiler_sample_tick(void);
 
 /**
  * @brief Disarm the backend sampling mechanism.
@@ -128,9 +119,6 @@ size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max);
 static inline int ove_backend_profiler_start(void)
 {
 	return 0;
-}
-static inline void ove_backend_profiler_sample_tick(void)
-{
 }
 static inline void ove_backend_profiler_stop(void)
 {
