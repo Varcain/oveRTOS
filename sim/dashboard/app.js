@@ -2070,8 +2070,8 @@ function handleProfile(buf, off) {
     var dropped  = dv.getUint32(5, true);
     profilerDropped += dropped;
 
-    if (wordSize !== 8) {
-        /* sim_profiler.c widens every PC to 64 bits on all targets. */
+    if (wordSize !== 4 && wordSize !== 8) {
+        /* sim_profiler.c sends PCs at the target's pointer size. */
         console.warn("profiler: unsupported word size", wordSize);
         return;
     }
@@ -2086,13 +2086,13 @@ function handleProfile(buf, off) {
         var depth = dv.getUint8(p + 12);
         var state = dv.getUint8(p + 13);
         p += 16;
-        if (p + depth * 8 > dv.byteLength) break;
+        if (p + depth * wordSize > dv.byteLength) break;
         var pcs = new Array(depth);
         for (var k = 0; k < depth; k++) {
             var lo = dv.getUint32(p, true);
-            var hi = dv.getUint32(p + 4, true);
+            var hi = wordSize === 8 ? dv.getUint32(p + 4, true) : 0;
             pcs[k] = hi * 0x100000000 + lo;
-            p += 8;
+            p += wordSize;
         }
         profilerSamples.push({ ts: ts, tid: tid, state: state, pcs: pcs });
         if (ts > profilerLastTs) profilerLastTs = ts;

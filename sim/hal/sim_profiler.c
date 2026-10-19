@@ -59,7 +59,10 @@ static void emit_caps(struct sim_profiler_ctx *t)
 
 /*
  * Envelope (1+1+2+4 = 8 B) + per sample:
- *   8 (ts) + 4 (tid) + 1 (depth) + 1 (state) + 2 (pad) + depth * 8 (pcs)
+ *   8 (ts) + 4 (tid) + 1 (depth) + 1 (state) + 2 (pad) + depth * W (pcs)
+ *
+ * W (the envelope's word_size byte) is the target's pointer size: 4 on
+ * Cortex-M. Widening PCs to 8 bytes would waste half of every event.
  *
  * The state byte is ove_thread_state_t captured at sample time so the
  * dashboard can filter on-CPU vs wall-clock views.
@@ -69,11 +72,12 @@ static void emit_caps(struct sim_profiler_ctx *t)
  *
  * A batch holds as many full-depth samples as fit in one event of at most
  * OVE_SIM_EVENT_MAX_BYTES (the host side skips larger ones), so the batch
- * size follows CONFIG_OVE_PROFILER_MAX_DEPTH: 28 at depth 16, 7 at 64.
+ * size follows CONFIG_OVE_PROFILER_MAX_DEPTH (with 4-byte PCs: 28 at
+ * depth 32, 14 at 64).
  */
 #define PROFILE_ENVELOPE_BYTES 8u
 #define SAMPLE_HDR_BYTES 16u
-#define PC_WIRE_BYTES 8u
+#define PC_WIRE_BYTES ((unsigned)sizeof(uintptr_t))
 #define MAX_SAMPLE_BYTES (SAMPLE_HDR_BYTES + CONFIG_OVE_PROFILER_MAX_DEPTH * PC_WIRE_BYTES)
 #define PROFILE_PAYLOAD_MAX (OVE_SIM_EVENT_MAX_BYTES - sizeof(struct ove_sim_event))
 #define PROFILE_MAX_BATCH ((PROFILE_PAYLOAD_MAX - PROFILE_ENVELOPE_BYTES) / MAX_SAMPLE_BYTES)
@@ -102,7 +106,7 @@ static size_t serialise_sample(uint8_t *p, const struct ove_profiler_sample *s)
 	*q++ = 0;
 	*q++ = 0;
 	for (uint8_t i = 0; i < s->depth; i++) {
-		uint64_t pc = (uint64_t)s->pcs[i];
+		uintptr_t pc = s->pcs[i];
 		memcpy(q, &pc, PC_WIRE_BYTES);
 		q += PC_WIRE_BYTES;
 	}
@@ -119,11 +123,7 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
 	uint8_t *p = ev->data;
 
 	*p++ = OVE_SIM_PROFILER_VERSION;
-	/* Wire format: PCs are always serialised as 8 bytes regardless of
-	 * the target's native pointer size (see serialise_sample). Report 8
-	 * so the dashboard parses 64-bit slots — otherwise a 32-bit target
-	 * would report 4 and the batch gets dropped as "unsupported word size". */
-	*p++ = PC_WIRE_BYTES;
+	*p++ = (uint8_t)PC_WIRE_BYTES; /* word_size: bytes per PC */
 	uint16_t count16 = (uint16_t)n;
 	memcpy(p, &count16, 2);
 	p += 2;

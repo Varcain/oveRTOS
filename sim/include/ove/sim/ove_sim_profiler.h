@@ -14,7 +14,7 @@
  * or more samples. Envelope:
  *
  *   [uint8_t  version]        1
- *   [uint8_t  word_size]      bytes per PC on the wire (always 8)
+ *   [uint8_t  word_size]      bytes per PC: sizeof(uintptr_t) (4 on Cortex-M)
  *   [uint16_t count]          number of samples
  *   [uint32_t dropped]        samples dropped since last emit
  *   Samples follow, each:
@@ -23,7 +23,7 @@
  *     [uint8_t  depth]        count of valid PCs in the chain
  *     [uint8_t  state]        ove_thread_state_t at sample time
  *     [uint8_t  _pad[2]]
- *     [uint64_t pcs[depth]]   inner-most first (depth entries only)
+ *     [word     pcs[depth]]   word_size bytes each, inner-most first
  *
  * A batch holds as many full-depth samples as fit in
  * OVE_SIM_EVENT_MAX_BYTES, derived from CONFIG_OVE_PROFILER_MAX_DEPTH.
