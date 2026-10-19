@@ -215,16 +215,37 @@ uint64_t ove_freertos_runtime_counter_get(void);
  * blocking macros fire in task context before the yield. See the header comment
  * in freertos_state_stats.c for the reasoning behind the split. */
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void ove_backend_trace_task_switched_in(void);
 extern void ove_backend_trace_task_switched_out(void);
 extern void ove_backend_trace_task_blocking(void);
+extern void ove_backend_trace_task_suspended(uintptr_t task_tag);
+extern void ove_backend_trace_task_ready(uintptr_t task_tag);
+#ifdef __cplusplus
+}
+#endif
 #define traceTASK_SWITCHED_IN() ove_backend_trace_task_switched_in()
 #define traceTASK_SWITCHED_OUT() ove_backend_trace_task_switched_out()
+/* Running task is about to block (task context, before the yield). */
 #define traceBLOCKING_ON_QUEUE_RECEIVE(pxQueue) ove_backend_trace_task_blocking()
 #define traceBLOCKING_ON_QUEUE_SEND(pxQueue) ove_backend_trace_task_blocking()
 #define traceBLOCKING_ON_QUEUE_PEEK(pxQueue) ove_backend_trace_task_blocking()
+#define traceBLOCKING_ON_STREAM_BUFFER_RECEIVE(xStreamBuffer) ove_backend_trace_task_blocking()
+#define traceBLOCKING_ON_STREAM_BUFFER_SEND(xStreamBuffer) ove_backend_trace_task_blocking()
+#define traceEVENT_GROUP_WAIT_BITS_BLOCK(xEventGroup, uxBitsToWaitFor) \
+	ove_backend_trace_task_blocking()
+#define traceTASK_NOTIFY_TAKE_BLOCK(uxIndexToWait) ove_backend_trace_task_blocking()
+#define traceTASK_NOTIFY_WAIT_BLOCK(uxIndexToWait) ove_backend_trace_task_blocking()
 #define traceTASK_DELAY() ove_backend_trace_task_blocking()
 #define traceTASK_DELAY_UNTIL(xTimeToWake) ove_backend_trace_task_blocking()
+/* Expanded only inside tasks.c, where TCB_t is visible: pass the task tag
+ * (the ove_thread wrapper) directly so the hooks need no kernel API. Both
+ * run inside critical sections / ISRs. */
+#define traceTASK_SUSPEND(pxTCB) ove_backend_trace_task_suspended((uintptr_t)(pxTCB)->pxTaskTag)
+#define traceMOVED_TASK_TO_READY_STATE(pxTCB) \
+	ove_backend_trace_task_ready((uintptr_t)(pxTCB)->pxTaskTag)
 #endif
 
 #endif /* FREERTOS_CONFIG_H */
