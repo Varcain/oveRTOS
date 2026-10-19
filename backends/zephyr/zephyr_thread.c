@@ -563,6 +563,25 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 		}
 	}
 #endif
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	{
+		/* ove threads report all four states from their tracker, so the
+		 * Threads view gets a state bar; native threads keep the cycle
+		 * estimate above.  The monitor lock held around this callback
+		 * also holds off the transition hooks, so read the clock here,
+		 * in the same section as the tracker. */
+		struct ove_thread *t = (struct ove_thread *)thread->custom_data;
+		if (t && t->st.cur_state != OVE_THREAD_STATE_TERMINATED) {
+			uint64_t times[OVE_STATE_COUNT];
+			ove_state_track_read(&t->st, ove_state_stats_now_us(), times);
+			info->state_times.running_us = times[OVE_THREAD_STATE_RUNNING];
+			info->state_times.ready_us = times[OVE_THREAD_STATE_READY];
+			info->state_times.blocked_us = times[OVE_THREAD_STATE_BLOCKED];
+			info->state_times.suspended_us = times[OVE_THREAD_STATE_SUSPENDED];
+			info->valid_fields |= OVE_THREAD_INFO_VALID_STATE_TIMES;
+		}
+	}
+#endif
 
 	ctx->count++;
 }

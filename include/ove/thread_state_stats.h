@@ -71,6 +71,21 @@ static inline void ove_state_track_transition(struct ove_state_tracker *st, int 
 	ove_state_track_transition_at(st, new_state, ove_state_stats_now_us());
 }
 
+/** Time spent in each state up to @p now: the cumulative counters plus
+ *  the open interval since the last transition, folded into the current
+ *  state.  The caller holds off the transition hooks and takes @p now
+ *  inside the same section, or a transition between the reads counts the
+ *  same interval twice. */
+static inline void ove_state_track_read(const struct ove_state_tracker *st, uint64_t now,
+					uint64_t out[OVE_STATE_COUNT])
+{
+	for (int i = 0; i < OVE_STATE_COUNT; i++)
+		out[i] = st->cumul_us[i];
+	int idx = st->cur_state;
+	if (idx >= 0 && idx < OVE_STATE_COUNT && now >= st->last_ts_us)
+		out[idx] += now - st->last_ts_us;
+}
+
 #else /* !CONFIG_OVE_THREAD_STATE_STATS */
 
 struct ove_state_tracker {

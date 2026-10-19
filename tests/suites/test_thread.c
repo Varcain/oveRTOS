@@ -363,6 +363,7 @@ static void test_thread_list_identity(void **state)
 	bool fields_ok = true;
 	bool found = false;
 	bool identity_ok = false;
+	bool state_times_ok = false;
 	if (rc != OVE_ERR_NOT_SUPPORTED) {
 		for (size_t i = 0; i < count; i++) {
 			if (info[i].valid_fields & ~known_fields)
@@ -378,6 +379,14 @@ static void test_thread_list_identity(void **state)
 				fields_ok = false;
 			if (strcmp(info[i].name, "tenum") == 0) {
 				identity_ok = info[i].identity != 0;
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+				/* An ove thread has a state tracker, so it must report
+				 * all four state times, not only running time. */
+				state_times_ok = ove_thread_info_has(
+					&info[i], OVE_THREAD_INFO_VALID_STATE_TIMES);
+#else
+				state_times_ok = true;
+#endif
 				found = true;
 				break;
 			}
@@ -393,6 +402,7 @@ static void test_thread_list_identity(void **state)
 		assert_true(fields_ok);
 		assert_true(found);
 		assert_true(identity_ok);
+		assert_true(state_times_ok);
 	}
 }
 

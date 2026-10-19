@@ -487,6 +487,12 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 #if configGENERATE_RUN_TIME_STATS == 1
 	total_runtime = portGET_RUN_TIME_COUNTER_VALUE();
 #endif
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	/* One clock read for the whole snapshot.  The transition hooks run
+	 * from the scheduler, which stays suspended until every tracker has
+	 * been read, so the reads below are consistent with it. */
+	uint64_t stats_now = ove_state_stats_now_us();
+#endif
 
 	if (out != NULL) {
 		for (UBaseType_t i = 0; i < filled; ++i) {
@@ -538,6 +544,21 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 				OVE_FREERTOS_RUNTIME_TO_US(task.ulRunTimeCounter);
 			out[i].valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT |
 					       OVE_THREAD_INFO_VALID_RUNNING_TIME;
+#endif
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+			/* ove-created threads report all four states from their
+			 * tracker, so the Threads view gets a state bar.  Kernel tasks
+			 * (IDLE, Tmr Svc, ...) have no tracker and keep the run-time
+			 * counter estimate above. */
+			if (wrapper && __atomic_load_n(&wrapper->exited, __ATOMIC_ACQUIRE) == 0u) {
+				uint64_t times[OVE_STATE_COUNT];
+				ove_state_track_read(&wrapper->st, stats_now, times);
+				out[i].state_times.running_us = times[OVE_THREAD_STATE_RUNNING];
+				out[i].state_times.ready_us = times[OVE_THREAD_STATE_READY];
+				out[i].state_times.blocked_us = times[OVE_THREAD_STATE_BLOCKED];
+				out[i].state_times.suspended_us = times[OVE_THREAD_STATE_SUSPENDED];
+				out[i].valid_fields |= OVE_THREAD_INFO_VALID_STATE_TIMES;
+			}
 #endif
 		}
 	}

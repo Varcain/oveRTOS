@@ -285,11 +285,13 @@ void report_cpu(void)
 | `OVE_THREAD_INFO_VALID_SUSPENDED_TIME` | `state_times.suspended_us` |
 | `OVE_THREAD_INFO_VALID_STATE_TIMES` | All four state-time fields |
 
-The flags are deliberately granular. For example, FreeRTOS, NuttX, and
-Zephyr can report cumulative running time without pretending that
-`total - running` is exact blocked time; that remainder can also include time
-spent ready or suspended. The heap-enabled host test backend with state
-tracking provides all four state buckets. Snapshot stack scanning stays
+The flags are deliberately granular. With `CONFIG_OVE_THREAD_STATE_STATS`,
+FreeRTOS, NuttX, Zephyr and the heap-enabled host test backend report all four
+state buckets for live threads created through `ove_thread_*`. Kernel and other
+native threads have no state tracker: FreeRTOS, NuttX and Zephyr report only
+their cumulative running time, without pretending that `total - running` is
+exact blocked time, since that remainder can also include time spent ready or
+suspended. Snapshot stack scanning stays
 disabled in bounded scheduler-locked traversals, so a backend may know the
 allocation size without providing `stack_used`.
 

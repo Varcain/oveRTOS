@@ -923,7 +923,7 @@ unsafe extern "C" {
     #[doc = " @brief Query system heap statistics.\n\n @param[out] stats Caller-allocated structure to receive stats.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable."]
     pub fn ove_sys_get_mem_stats(stats: *mut ove_mem_stats) -> core::ffi::c_int;
 }
-#[doc = " @brief Cumulative time per thread state (microseconds).\n\n Only populated when CONFIG_OVE_THREAD_STATE_STATS is enabled."]
+#[doc = " @brief Cumulative time per thread state (microseconds).\n\n Which fields are filled is reported by the OVE_THREAD_INFO_VALID_*_TIME\n flags: all four for threads tracked under CONFIG_OVE_THREAD_STATE_STATS,\n otherwise at most the kernel's running-time estimate."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_thread_state_times {
