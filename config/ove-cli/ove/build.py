@@ -955,6 +955,26 @@ def _web_index_html(dashboard_dir):
     return html
 
 
+def _write_web_manifest(ws, path):
+    """Write the dashboard's manifest.json (board drawing + features).
+
+    The local bridge serves the same document live; both come from
+    config/scripts/ove_manifest.py.  In the page there is no debugger,
+    and the console box feeds the firmware's UART.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "ove_manifest",
+        os.path.join(ws.ove_dir, "config", "scripts", "ove_manifest.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    manifest = mod.build(ws.workspace_dir, ws.ove_dir, debugger=False,
+                         console=True, web=True, log=logger.warning)
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+
+
 def _strip_firmware(ws, src, dest):
     """Copy the firmware ELF without symbols and debug info.
 
@@ -1025,9 +1045,11 @@ def _assemble_web_bundle(ws):
     else:
         with open(os.path.join(serve_dir, "index.html"), "w") as f:
             f.write(_web_index_html(dash_dir))
-        pages = ("app.js", "style.css", "coi-serviceworker.js", "qemu-wasm.js")
+        pages = ("app.js", "board.js", "style.css", "board.css",
+                 "coi-serviceworker.js", "qemu-wasm.js")
         web = {"firmware": "firmware.elf", "emulator": "qemu/",
                "machine": machine[-1]}
+        _write_web_manifest(ws, os.path.join(serve_dir, "manifest.json"))
     for name in pages:
         shutil.copy2(os.path.join(dash_dir, name), serve_dir)
 
