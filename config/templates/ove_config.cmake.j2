@@ -594,6 +594,18 @@ list(APPEND OVE_BACKEND_SOURCES
 {% endif %}
 {% endif %}
 
+# Per-thread state tracking — time source (shared with the trace stream and
+# the profiler, which both depend on it) and, on FreeRTOS, the kernel hooks
+{% if config.get("CONFIG_OVE_THREAD_STATE_STATS") == True %}
+{% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_state_stats.c")
+{% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_state_stats.c")
+{% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_state_stats.c")
+{% endif %}
+{% endif %}
+
 # Trace stream (dashboard swimlane) — backend-agnostic ring + emit
 {% if config.get("CONFIG_OVE_TRACE_STREAM") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace_ring.c")

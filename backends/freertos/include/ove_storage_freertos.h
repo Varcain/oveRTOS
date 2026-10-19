@@ -125,7 +125,7 @@ struct ove_thread {
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Embedded per-thread state tracker. Required so the sim trace view
 	 * can emit state transitions with sub-tick resolution. Updated from
-	 * the traceTASK_SWITCHED_IN/OUT hooks in freertos_trace.c. */
+	 * the traceTASK_SWITCHED_IN/OUT hooks in freertos_state_stats.c. */
 	struct ove_state_tracker st;
 #endif
 	/* Cooperative cancellation flag.  Set by ove_thread_request_stop,

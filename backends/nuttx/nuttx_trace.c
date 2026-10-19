@@ -17,10 +17,11 @@
  *   - sync-primitive wrappers in nuttx_sync.c (BLOCKED before the wait,
  *     RUNNING after), tagged with OVE_TRACE_MARK_CURRENT
  *
- * This file only owns the pieces that don't belong in the thread backend:
+ * This file only owns the piece that doesn't belong in the thread backend:
  *
- *   - ove_state_stats_now_us()             monotonic time source
  *   - ove_backend_thread_current_handle()  current-task handle for markers
+ *
+ * The time source lives in nuttx_state_stats.c.
  *
  * Descriptor enumeration walks the shared thread registry
  * (backends/common/ove_thread_registry.c).
@@ -29,18 +30,6 @@
 #include "ove_config.h"
 
 #include <stdint.h>
-#include <time.h>
-
-#ifdef CONFIG_OVE_THREAD_STATE_STATS
-#include "ove/thread_state_stats.h"
-
-uint64_t ove_state_stats_now_us(void)
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
-}
-#endif
 
 #ifdef CONFIG_OVE_TRACE_STREAM
 
