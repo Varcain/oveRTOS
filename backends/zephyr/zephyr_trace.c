@@ -17,10 +17,11 @@
  * explicitly from zephyr_thread.c::thread_wrapper() and the sync wrappers
  * in zephyr_sync.c.
  *
- * This file only owns the pieces that don't belong in the thread backend:
+ * This file only owns the piece that doesn't belong in the thread backend:
  *
- *   - ove_state_stats_now_us()             monotonic time source
  *   - ove_backend_thread_current_handle()  current-task handle for markers
+ *
+ * The time source lives in zephyr_state_stats.c.
  *
  * Descriptor enumeration walks the shared thread registry
  * (backends/common/ove_thread_registry.c).
@@ -29,22 +30,6 @@
 #include "ove_config.h"
 
 #include <stdint.h>
-
-#include <zephyr/kernel.h>
-
-#ifdef CONFIG_OVE_THREAD_STATE_STATS
-#include "ove/thread_state_stats.h"
-
-uint64_t ove_state_stats_now_us(void)
-{
-	/* k_uptime_ticks + k_ticks_to_us_near64 is portable across all
-	 * Zephyr arches (cycle_get_64 isn't guaranteed without
-	 * CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER) and gives tick-resolution
-	 * monotonic microseconds. Safe to call from any context — both
-	 * helpers are pure arithmetic / atomic tick reads. */
-	return k_ticks_to_us_near64(k_uptime_ticks());
-}
-#endif
 
 #ifdef CONFIG_OVE_TRACE_STREAM
 

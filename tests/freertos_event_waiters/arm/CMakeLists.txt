@@ -40,6 +40,7 @@ if(OVE_NATIVE_TRACE)
     target_include_directories(event_waiters_target PRIVATE "${OVE_ROOT}/sim/include")
     target_sources(event_waiters_target PRIVATE
         "${OVE_ROOT}/backends/freertos/freertos_trace.c"
+        "${OVE_ROOT}/backends/freertos/freertos_state_stats.c"
         "${OVE_ROOT}/backends/common/ove_trace.c" "${OVE_ROOT}/backends/common/ove_trace_ring.c")
 endif()
 if(OVE_MPU_V1)
