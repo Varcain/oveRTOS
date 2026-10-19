@@ -230,6 +230,11 @@ CONFIG_THREAD_RUNTIME_STATS=y
 # backends/zephyr/zephyr_thread.c.
 CONFIG_TRACING=y
 CONFIG_TRACING_USER=y
+{% if get_bool("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") or get_bool("CONFIG_OVE_BOARD_QEMU_MPS2_AN521") %}
+# Microsecond state/trace timestamps from the SysTick driver's software
+# cycle count (zephyr_state_stats.c); off by default below 60 MHz.
+CONFIG_CORTEX_M_SYSTICK_64BIT_CYCLE_COUNTER=y
+{% endif %}
 {% endif %}
 
 # Keep printk output synchronous — prevents message drops in benchmarks
