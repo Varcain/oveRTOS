@@ -27,9 +27,12 @@
  *         Zephyr's linker-defs. These are placed well past the ISR
  *         vector table so low-integer stack values with bit 0 set
  *         can't alias fake offsets.
- *       - SRAM bounds: CONFIG_SRAM_BASE_ADDRESS .. +CONFIG_SRAM_SIZE*1024.
- *       - fill pattern: 0xAAAAAAAA when CONFIG_INIT_STACKS=y (Zephyr
- *         fills stacks with 0xaa); 0 otherwise (disables the check).
+ *       - stack bounds: the interrupted thread's stack_info, from
+ *         start up to its initial stack pointer (start + size - delta),
+ *         which excludes the TLS block and any random stack offset
+ *         above it. prj.conf.j2 sets CONFIG_THREAD_STACK_INFO; without
+ *         it, a short scan within CONFIG_SRAM_BASE_ADDRESS ..
+ *         +CONFIG_SRAM_SIZE.
  *
  *   - Stacked-LR fallback mirrors FreeRTOS: the hardware-stacked LR
  *     is used as the second frame ONLY when the scan found no saved
@@ -69,9 +72,11 @@
 
 /* SRAM bounds. Derived from Zephyr Kconfig so the same profiler works
  * on any Cortex-M board without touching this file. CONFIG_SRAM_SIZE is
- * in KB, CONFIG_SRAM_BASE_ADDRESS is a byte address. */
+ * in KB, CONFIG_SRAM_BASE_ADDRESS is a byte address. Only used when the
+ * thread's stack range is unknown, with a short scan window. */
 #define OVE_SRAM_BASE ((uintptr_t)CONFIG_SRAM_BASE_ADDRESS)
 #define OVE_SRAM_END ((uintptr_t)CONFIG_SRAM_BASE_ADDRESS + (uintptr_t)CONFIG_SRAM_SIZE * 1024U)
+#define OVE_FALLBACK_SCAN_BYTES 1024u
 
 /* Text section bounds from Zephyr's linker script (include/zephyr/linker/
  * linker-defs.h). __text_region_start sits after the ISR vector table so
@@ -81,16 +86,6 @@ extern char __text_region_start[];
 extern char __text_region_end[];
 #define OVE_TEXT_BASE ((uintptr_t)__text_region_start)
 #define OVE_TEXT_END ((uintptr_t)__text_region_end)
-
-/* Stack fill pattern. Zephyr fills every new thread stack with 0xaa
- * when CONFIG_INIT_STACKS=y — hitting 0xAAAAAAAA during the scan means
- * we've walked off the live portion of the stack. Without INIT_STACKS
- * the scan relies purely on SRAM bounds + scan-word cap. */
-#ifdef CONFIG_INIT_STACKS
-#define OVE_STACK_FILL 0xAAAAAAAAu
-#else
-#define OVE_STACK_FILL 0u
-#endif
 
 /* Plain int + __atomic_* builtins rather than C11 _Atomic types: the
  * Zephyr SDK gcc's stdatomic.h macros use a temporary `_Atomic int`
@@ -153,9 +148,22 @@ void ove_backend_profiler_on_tick(void)
 	s.pcs[0] = (uintptr_t)pc;
 	s.depth = 1;
 
-	int extra = ove_arm_backtrace_walk((uintptr_t)psp, OVE_TEXT_BASE, OVE_TEXT_END,
-					   OVE_SRAM_BASE, OVE_SRAM_END, OVE_STACK_FILL, &s.pcs[1],
-					   CONFIG_OVE_PROFILER_MAX_DEPTH - 1);
+	/* Bound the scan by the thread's real stack. A PSP outside it (e.g.
+	 * a user thread on its privileged stack) makes the walker return 0
+	 * and the stacked-LR fallback below applies. */
+	uintptr_t stack_lo = psp;
+	uintptr_t stack_hi = psp + OVE_FALLBACK_SCAN_BYTES;
+#ifdef CONFIG_THREAD_STACK_INFO
+	stack_lo = (uintptr_t)cur->stack_info.start;
+	/* start + size - delta is the thread's initial SP: TLS and the
+	 * random stack offset sit above it and hold no frames. */
+	stack_hi = stack_lo + (uintptr_t)cur->stack_info.size - (uintptr_t)cur->stack_info.delta;
+#else
+	if (stack_hi > OVE_SRAM_END || stack_lo < OVE_SRAM_BASE)
+		stack_hi = stack_lo; /* outside RAM: no scan */
+#endif
+	int extra = ove_arm_backtrace_walk((uintptr_t)psp, OVE_TEXT_BASE, OVE_TEXT_END, stack_lo,
+					   stack_hi, &s.pcs[1], CONFIG_OVE_PROFILER_MAX_DEPTH - 1);
 	s.depth = (uint8_t)(1 + extra);
 
 	/*

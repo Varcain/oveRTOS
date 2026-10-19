@@ -25,13 +25,15 @@
  * Multi-frame unwinding: the stack-scan walker and the five heuristic
  * filters (Thumb bit, text range, bl/blx precedence, saved-r7 adjacency,
  * ascending-chain invariant) live in backends/common/ove_arm_backtrace.c.
- * We only pass the FreeRTOS-specific constants:
+ * We only pass the FreeRTOS-specific bounds:
  *   - text bounds: [__stext, __etext) from the linker script
  *     (__stext is placed right after the ISR vector table so small
  *      integer stack values with the Thumb bit set can't alias
  *      __isr_vector+0x2 style fake offsets)
- *   - SRAM bounds: MPS2-AN500 RAM window [0x20000000, 0x20400000)
- *   - fill pattern: 0xA5A5A5A5 from FreeRTOS's tskSTACK_FILL_BYTE.
+ *   - the interrupted task's stack [pxStack, pxEndOfStack], recorded at
+ *     task creation by the traceTASK_CREATE hook (FreeRTOSConfig.h.j2);
+ *     tasks missing from the table fall back to a short scan within the
+ *     MPS2-AN500 RAM window [0x20000000, 0x20400000).
  * The hardware-stacked LR is used only as a fallback when the scan
  * finds no saved {r7, lr} pair (true-leaf functions or prologue-
  * interrupted samples); see gotcha 24 in memory/project_profiler_trace.md.
@@ -62,10 +64,11 @@
 #endif
 
 /* SRAM bounds. MPS2-AN500 linker script puts RAM at 0x20000000 + 4 MB
- * (boards/qemu-mps2-an500/freertos/mps2_an500.ld). Any candidate outside
- * this range can't point at a live stack frame — stop walking. */
+ * (boards/qemu-mps2-an500/freertos/mps2_an500.ld). Only used for tasks
+ * whose stack range is unknown, with a short scan window. */
 #define OVE_SRAM_BASE 0x20000000u
 #define OVE_SRAM_END 0x20400000u
+#define OVE_FALLBACK_SCAN_BYTES 1024u
 
 /* Text section bounds. __stext is placed right after the ISR vector
  * table in mps2_an500.ld so integer stack values with bit 0 set
@@ -73,12 +76,58 @@
  * offsets into __isr_vector. __etext is the linker-defined end of .text. */
 extern uint32_t __stext;
 extern uint32_t __etext;
-#define OVE_TEXT_BASE ((uintptr_t) & __stext)
-#define OVE_TEXT_END ((uintptr_t) & __etext)
+#define OVE_TEXT_BASE ((uintptr_t)&__stext)
+#define OVE_TEXT_END ((uintptr_t)&__etext)
 
-/* FreeRTOS task stack fill pattern (tskSTACK_FILL_BYTE = 0xA5 repeated).
- * Hitting this during the scan means we've reached unused stack. */
-#define OVE_STACK_FILL 0xA5A5A5A5u
+/* ── Per-task stack ranges ────────────────────────────────────────
+ * Filled from traceTASK_CREATE / traceTASK_DELETE, which run inside the
+ * kernel's task-list critical section. The SysTick sampler reads the table
+ * from an ISR at the kernel interrupt priority, which that critical section
+ * masks, so it always sees a consistent table. Covers kernel tasks (IDLE,
+ * Tmr Svc) as well as ove threads. */
+#define OVE_PROFILER_MAX_TASKS 32
+
+struct task_stack {
+	TaskHandle_t task;
+	uintptr_t lo; /* inclusive */
+	uintptr_t hi; /* exclusive */
+};
+
+static struct task_stack task_stacks[OVE_PROFILER_MAX_TASKS];
+static unsigned int task_stack_count;
+
+void ove_backend_profiler_task_created(void *task, void *stack_lo, void *stack_end)
+{
+	if (!task || task_stack_count >= OVE_PROFILER_MAX_TASKS)
+		return;
+	struct task_stack *e = &task_stacks[task_stack_count++];
+	e->task = (TaskHandle_t)task;
+	e->lo = (uintptr_t)stack_lo;
+	/* pxEndOfStack is the highest valid stack word (inclusive). */
+	e->hi = (uintptr_t)stack_end + sizeof(StackType_t);
+}
+
+void ove_backend_profiler_task_deleted(void *task)
+{
+	for (unsigned int i = 0; i < task_stack_count; i++) {
+		if (task_stacks[i].task != (TaskHandle_t)task)
+			continue;
+		task_stacks[i] = task_stacks[--task_stack_count];
+		return;
+	}
+}
+
+static int task_stack_find(TaskHandle_t task, uintptr_t *lo, uintptr_t *hi)
+{
+	for (unsigned int i = 0; i < task_stack_count; i++) {
+		if (task_stacks[i].task == task) {
+			*lo = task_stacks[i].lo;
+			*hi = task_stacks[i].hi;
+			return 1;
+		}
+	}
+	return 0;
+}
 
 /* Plain int + __atomic_* builtins rather than C11 _Atomic types: the
  * Zephyr SDK gcc's stdatomic.h macros use a temporary `_Atomic int`
@@ -156,9 +205,15 @@ void ove_backend_profiler_on_tick(void)
 	s.pcs[0] = (uintptr_t)pc;
 	s.depth = 1;
 
-	int extra = ove_arm_backtrace_walk((uintptr_t)psp, OVE_TEXT_BASE, OVE_TEXT_END,
-					   OVE_SRAM_BASE, OVE_SRAM_END, OVE_STACK_FILL, &s.pcs[1],
-					   CONFIG_OVE_PROFILER_MAX_DEPTH - 1);
+	uintptr_t stack_lo, stack_hi;
+	if (!task_stack_find(h, &stack_lo, &stack_hi)) {
+		stack_lo = psp;
+		stack_hi = psp + OVE_FALLBACK_SCAN_BYTES;
+		if (stack_hi > OVE_SRAM_END || stack_lo < OVE_SRAM_BASE)
+			stack_hi = stack_lo; /* outside RAM: no scan */
+	}
+	int extra = ove_arm_backtrace_walk((uintptr_t)psp, OVE_TEXT_BASE, OVE_TEXT_END, stack_lo,
+					   stack_hi, &s.pcs[1], CONFIG_OVE_PROFILER_MAX_DEPTH - 1);
 	s.depth = (uint8_t)(1 + extra);
 
 	/*

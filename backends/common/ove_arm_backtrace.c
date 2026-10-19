@@ -12,8 +12,8 @@
  * Hoisted from backends/freertos/freertos_profiler.c so Zephyr (and any
  * future Cortex-M RTOS backend) can reuse the same heuristic chain
  * without carrying its own copy of the five filters. The only
- * RTOS-specific pieces are the address ranges and the stack-fill
- * pattern — all passed as parameters.
+ * RTOS-specific pieces are the .text range and the interrupted task's
+ * stack range — both passed as parameters.
  *
  * A classic r7 FP-chain walk does NOT work here: GCC's
  * -fno-omit-frame-pointer on Thumb-2 emits
@@ -47,9 +47,13 @@
  *    residual {r7,lr} pairs in an outer frame's locals that look valid
  *    in isolation but carry a saved-r7 pointing into frames we've
  *    already walked past.
- * 5. Scan termination: stops on the fill pattern (when enabled),
- *    on leaving SRAM, on hitting OVE_ARM_STACK_SCAN_WORDS, or on
- *    filling all @max slots.
+ * 5. Scan termination: stops at the top of the task's stack, after
+ *    OVE_ARM_STACK_SCAN_MAX_WORDS, or on filling all @max slots. The
+ *    scan is bounded by the real stack range rather than by a fill
+ *    pattern: never-written locals inside live frames still hold the
+ *    fill pattern (which cut chains short), and nothing else stopped
+ *    the scan at the stack top, past which it reported frames from
+ *    neighbouring memory.
  *
  * Even with all five filters, stale saved-{r7, lr} pairs from
  * previously-completed deep calls whose addresses fall inside the
@@ -63,11 +67,10 @@
 
 #include "ove/ove_arm_backtrace.h"
 
-/* Hard cap on how many stack words to inspect per sample. 256 words =
- * 1 KiB — larger than any realistic in-progress call chain, small
- * enough that a linear scan stays cheap from ISR context and bounds
- * the cost if the SRAM/fill/filter checks all miss. */
-#define OVE_ARM_STACK_SCAN_WORDS 256u
+/* Safety cap on how many stack words to inspect per sample (16 KiB).
+ * The stack range normally ends the scan first; this bounds the ISR-side
+ * cost for very large stacks. Deep LVGL call chains need several KiB. */
+#define OVE_ARM_STACK_SCAN_MAX_WORDS 4096u
 
 int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintptr_t text_hi)
 {
@@ -96,15 +99,23 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintp
 	return 0;
 }
 
-int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t sram_lo,
-			   uintptr_t sram_hi, uint32_t fill, uintptr_t *out, int max)
+int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t stack_lo,
+			   uintptr_t stack_hi, uintptr_t *out, int max)
 {
 	if (!out || max <= 0)
+		return 0;
+	/* PSP outside the task's stack: overflowed, or not this task's
+	 * stack (e.g. a privileged stack). Nothing trustworthy to scan. */
+	if (psp < stack_lo || psp >= stack_hi)
 		return 0;
 
 	/* Skip the 8-word hardware exception frame at PSP. */
 	const uint32_t *scan = (const uint32_t *)(psp) + 8;
-	const uint32_t *scan_end = scan + OVE_ARM_STACK_SCAN_WORDS;
+	const uint32_t *scan_end = (const uint32_t *)(stack_hi & ~(uintptr_t)3u);
+	if (scan >= scan_end)
+		return 0;
+	if ((uintptr_t)scan_end - (uintptr_t)scan > OVE_ARM_STACK_SCAN_MAX_WORDS * 4u)
+		scan_end = scan + OVE_ARM_STACK_SCAN_MAX_WORDS;
 
 	uint32_t prev_word = 0;
 	uintptr_t last_r7 = 0; /* most recently accepted saved_r7 value */
@@ -112,11 +123,7 @@ int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, 
 
 	while (depth < max && scan < scan_end) {
 		uintptr_t sp_addr = (uintptr_t)scan;
-		if (sp_addr < sram_lo || sp_addr >= sram_hi)
-			break;
 		uint32_t val = *scan;
-		if (fill != 0 && val == fill)
-			break;
 		scan++;
 		if ((val & 1u) == 0) {
 			prev_word = val;
