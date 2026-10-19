@@ -8,10 +8,10 @@
 
 /*
  * Registry of live oveRTOS threads, linked through struct ove_thread::next,
- * for the backends whose kernel offers no enumeration that oveRTOS can use
- * (Zephyr, NuttX, and the host test backend). The backend defines the head
- * and the lock with its own kernel's mutex; the helpers below run with that
- * lock held. FreeRTOS lists kernel tasks instead and has no registry.
+ * used where oveRTOS must walk its own threads: the NuttX profiler and the
+ * host test backend. The backend defines the head and the lock with its own
+ * kernel's mutex; the helpers below run with that lock held. Trace
+ * descriptors enumerate the kernel's threads instead (all RTOSes).
  */
 
 #ifndef OVE_THREAD_REGISTRY_H

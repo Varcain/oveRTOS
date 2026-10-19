@@ -68,10 +68,14 @@ struct ove_trace_thread_desc {
 };
 
 /**
- * ove_backend_trace_list_threads - enumerate live thread handles+names
+ * ove_backend_trace_list_threads - enumerate live threads as tid + name
  *
- * Implemented by the thread backend (posix_thread.c).
- * Returns the number of entries written to @out (bounded by @max).
+ * Implemented per RTOS (*_trace.c). Lists every kernel thread, not only
+ * ove threads, so profiler samples of idle and system threads get names.
+ * tid follows the shared identity rule: the ove_thread for threads created
+ * through ove_thread_*, otherwise the kernel's thread handle (0 is
+ * reserved for interrupt context). Returns the number of entries written
+ * to @out (bounded by @max).
  */
 size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max);
 
