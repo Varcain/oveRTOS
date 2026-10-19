@@ -360,6 +360,11 @@ add_test(NAME ove_profiler_bridge_python
 add_test(NAME ove_manifest_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_manifest.py)
+# Every queue backend must bracket its blocking send and receive with
+# the QUEUE wait markers, so a queue wait shows up on every backend.
+add_test(NAME ove_queue_trace_markers_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_queue_trace_markers.py)
 add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

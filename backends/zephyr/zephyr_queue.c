@@ -8,6 +8,7 @@
 
 #include "ove/queue.h"
 #include "ove/storage.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 #include <string.h>
@@ -50,10 +51,16 @@ int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 		timeout = K_NSEC(timeout_ns);
 	}
 
+	/* k_msgq_put() parks the caller while the message queue is full: mark
+	 * that wait the same way the receive path and the NuttX backend do, so
+	 * a throttled producer is visible as a queue wait on every backend. */
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, q);
 	ret = k_msgq_put(&q->msgq, data, timeout);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, q);
 	if (ret != 0) {
 		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_POST, q);
 	if (q->notify_cb != NULL) {
 		q->notify_cb(q->notify_ud);
 	}
@@ -72,7 +79,9 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
 		timeout = K_NSEC(timeout_ns);
 	}
 
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, q);
 	ret = k_msgq_get(&q->msgq, buf, timeout);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, q);
 	if (ret != 0) {
 		return (timeout_ns == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
