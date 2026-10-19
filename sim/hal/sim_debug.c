@@ -26,16 +26,14 @@
 #include "ove/sim/ove_sim_trace.h"
 #include "ove/sim/ove_sim_transport.h"
 #include "ove/thread.h"
+#include "ove/time.h"
 #include "ove/types.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 struct ove_sim_transport *ove_sim_get_transport(void);
-
-#ifndef CONFIG_OVE_PROFILER_HZ
-#define CONFIG_OVE_PROFILER_HZ 250
-#endif
 
 /* ── Plugin context ────────────────────────────────────────────────── */
 
@@ -155,22 +153,29 @@ static void emit_snapshot(struct sim_debug_ctx *d)
 /* ── Consolidated pump thread ─────────────────────────────────────── */
 
 /*
- * The pump tick is set to the profiler sampling period when profiling
- * is enabled (4 ms at the default 250 Hz) so sample cadence is
- * preserved. When profiling is off we fall back to the trace drain
- * period, or the snapshot period as a last resort.
+ * The pump only drains and reports — sampling runs on its own in every
+ * profiler backend (tick hook, timer interrupt, timer-queued work). Its
+ * tick just bounds dashboard command latency; the drains keep their own
+ * cadence (trace 100 ms, profiler 200 ms, snapshots 500 ms), scheduled
+ * from measured time so a late or starved pump drains once on its next
+ * pass instead of stretching every interval.
  */
-#if defined(CONFIG_OVE_PROFILER)
-#if (1000 / CONFIG_OVE_PROFILER_HZ) < 1
-#define PUMP_TICK_MS 1
-#else
-#define PUMP_TICK_MS (1000 / CONFIG_OVE_PROFILER_HZ)
-#endif
-#elif defined(CONFIG_OVE_TRACE_STREAM)
-#define PUMP_TICK_MS OVE_SIM_TRACE_DRAIN_MS
-#else
-#define PUMP_TICK_MS OVE_SIM_DEBUG_INTERVAL_MS
-#endif
+#define PUMP_TICK_MS 50u
+
+/* Elapsed milliseconds since the previous call (measured when the time
+ * service is available, else the nominal tick). */
+static uint32_t pump_elapsed_ms(uint64_t *last_us)
+{
+	uint64_t now_us;
+	if (ove_time_get_us(&now_us) != OVE_OK)
+		return PUMP_TICK_MS;
+	uint64_t prev = *last_us;
+	*last_us = now_us;
+	if (prev == 0 || now_us < prev)
+		return PUMP_TICK_MS;
+	uint64_t ms = (now_us - prev) / 1000u;
+	return ms > UINT32_MAX ? UINT32_MAX : (uint32_t)ms;
+}
 
 /*
  * Small buffer sized for our current in-tree commands (all payloads fit
@@ -193,6 +198,7 @@ static void debug_thread_fn(void *arg)
 {
 	struct sim_debug_ctx *d = (struct sim_debug_ctx *)arg;
 
+	uint64_t last_us = 0;
 	uint32_t t_snap = 0;
 #ifdef CONFIG_OVE_TRACE_STREAM
 	uint32_t t_trace = 0;
@@ -207,6 +213,7 @@ static void debug_thread_fn(void *arg)
 
 	for (;;) {
 		ove_thread_sleep_ms(PUMP_TICK_MS);
+		uint32_t elapsed = pump_elapsed_ms(&last_us);
 
 		struct ove_sim_transport *tr = ove_sim_get_transport();
 		drain_commands(tr);
@@ -217,10 +224,7 @@ static void debug_thread_fn(void *arg)
 			caps_announced = 1;
 		}
 
-		/* Fast path: fire the sampling signal every tick. */
-		ove_backend_profiler_sample_tick();
-
-		t_prof += PUMP_TICK_MS;
+		t_prof += elapsed;
 		if (t_prof >= OVE_SIM_PROFILER_DRAIN_MS) {
 			t_prof = 0;
 			ove_sim_profiler_tick();
@@ -228,14 +232,14 @@ static void debug_thread_fn(void *arg)
 #endif
 
 #ifdef CONFIG_OVE_TRACE_STREAM
-		t_trace += PUMP_TICK_MS;
+		t_trace += elapsed;
 		if (t_trace >= OVE_SIM_TRACE_DRAIN_MS) {
 			ove_sim_trace_tick(t_trace);
 			t_trace = 0;
 		}
 #endif
 
-		t_snap += PUMP_TICK_MS;
+		t_snap += elapsed;
 		if (t_snap >= OVE_SIM_DEBUG_INTERVAL_MS) {
 			t_snap = 0;
 			emit_snapshot(d);

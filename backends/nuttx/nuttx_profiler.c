@@ -175,11 +175,6 @@ static void sample_wdog_cb(wdparm_t arg)
 		ove_profiler_ring_add_dropped(1);
 }
 
-/* Sampling is timer-driven; the pump-side tick is a no-op on every backend. */
-void ove_backend_profiler_sample_tick(void)
-{
-}
-
 static unsigned int ticks_for_hz(uint32_t hz)
 {
 	unsigned int ticks = (unsigned int)((TICK_PER_SEC + hz / 2u) / hz);
