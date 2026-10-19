@@ -1945,49 +1945,6 @@ var PROFILER_FLAT_TOP   = 40;               /* rows in flat table */
 var PROFILER_WINDOW_MIN_S = 1;
 var PROFILER_WINDOW_MAX_S = 360;
 
-/* Skip list for flat-top / flame-graph leaf detection. Two purposes:
- *   (1) Signal-delivery bookkeeping frames — the target already drops
- *       them at source but build/glibc skew can leave leftovers.
- *   (2) Blocking-primitive leaves — when a sample lands on a thread
- *       parked in pthread_cond_wait / nanosleep / read, the leaf is
- *       libc syscall internals and the *calling* user-code frame is
- *       what actually matters for profiling. Skipping these reveals
- *       the user function doing the blocking (e.g. lv_thread_sync_wait).
- * Names are compared AFTER the GLIBC version suffix has been stripped. */
-var PROFILER_SKIP_FRAMES = {
-    /* handler / trampoline */
-    "profile_sig_handler": 1,
-    "__restore_rt": 1,
-    "__sigaction": 1,
-    "sigaction": 1,
-    "__libc_sigaction": 1,
-    /* futex / condvar internals — exported and non-exported misattribution targets */
-    "__nptl_death_event": 1,
-    "__futex_abstimed_wait_common": 1,
-    "__futex_abstimed_wait_common64": 1,
-    "__pthread_cond_wait_common": 1,
-    "__pthread_cond_wait": 1,
-    "pthread_cond_wait": 1,
-    "pthread_cond_timedwait": 1,
-    "pthread_cond_signal": 1,
-    "__lll_lock_wait": 1,
-    "__lll_lock_wake_private": 1,
-    "__lll_unlock_wake_private": 1,
-    /* sleep / time */
-    "__nanosleep": 1,
-    "nanosleep": 1,
-    "clock_nanosleep": 1,
-    "__clock_nanosleep": 1,
-    "usleep": 1,
-    /* basic I/O that often blocks */
-    "__read": 1,
-    "__write": 1,
-    "__open": 1,
-    "__close": 1,
-    /* libc internal misattribution targets */
-    "__nss_database_lookup": 1,
-};
-
 var profilerWindowUs    = 30 * 1000 * 1000; /* rolling window, mutable */
 var profilerPaused      = false;
 var profilerOnCpuOnly   = false; /* "Runnable" filter: keep only RUNNING/READY samples (wall-clock backends) */
@@ -2005,22 +1962,26 @@ var profilerPumpTids    = Object.create(null);
 
 /* Case-insensitive match of a thread name against the RTOS system tasks
  * whose wall-clock dominance makes the aggregate view uninformative on
- * mostly-idle runs. Used both to build the thread dropdown (so the user
- * can still explicitly select e.g. IDLE) and to short-circuit samples
- * when the Hide-idle toggle is on. */
+ * mostly-idle runs. Used to drop their samples when the Hide-idle toggle
+ * is on; they can still be selected explicitly in the thread dropdown. */
 function profilerThreadIsIdle(name) {
     if (!name) return false;
     var lc = name.toLowerCase();
-    return lc === "idle" || lc === "tmr svc" || lc === "timer svc";
+    /* FreeRTOS: IDLE, Tmr Svc. NuttX: Idle_Task. Zephyr: idle. */
+    return lc === "idle" || lc === "idle_task"
+        || lc === "tmr svc" || lc === "timer svc";
 }
 
 /*
- * Symbol prefixes that the API-only toggle collapses. The goal is to
- * leave oveRTOS API (ove_*) and app code visible while hiding LVGL,
- * RTOS kernel, and libc internals. App code has no mandatory prefix,
- * so "app" is defined by elimination — anything that doesn't start
- * with one of these and isn't already filtered by PROFILER_SKIP_FRAMES
- * is treated as user code.
+ * Symbol prefix groups that the API-only toggle collapses into a single
+ * bucket. The goal is to leave oveRTOS API (ove_*) and app code visible
+ * while hiding LVGL, RTOS kernel and runtime internals. App code has no
+ * mandatory prefix, so "app" is defined by elimination — anything that
+ * doesn't start with one of these is treated as user code.
+ *
+ * A sample whose whole stack is excluded is not dropped: it is counted
+ * under its group's bucket (e.g. [kernel]) so the percentages still add
+ * up over every sample the filters kept.
  *
  * Prefixes are matched with startsWith(). Be deliberately conservative
  * about adding an item — a prefix like "port" intentionally catches
@@ -2028,47 +1989,68 @@ function profilerThreadIsIdle(name) {
  * starting with "port". Users can still turn the toggle off to see
  * everything.
  */
-var PROFILER_EXCLUDE_PREFIXES = [
-    /* LVGL */
-    "lv_", "_lv_",
-    /* Zephyr kernel + arch + sys helpers */
-    "k_", "z_", "_k_", "_z_", "arch_", "sys_",
-    "_isr_wrapper", "_interrupt_stack",
-    /* FreeRTOS kernel */
-    "xTask", "vTask", "uxTask",
-    "xQueue", "vQueue",
-    "xList", "vList",
-    "xEvent", "vEvent",
-    "xSemaphore",
-    "xTimer", "vTimer",
-    "prv", "pxCurrent",
-    "xPort", "vPort", "port",
-    /* NuttX kernel */
-    "nxsched_", "nxtask_", "nxmutex_", "nxsem_",
-    "nxcondvar_", "nxrmutex_", "nxsig_", "nxclock_", "nxnotify_",
-    "nx_", "up_", "sched_", "group_",
-    /* Cortex-M handlers + runtime */
-    "HardFault_", "Reset_Handler", "Default_Handler",
-    "SysTick_Handler", "PendSV_Handler", "SVC_Handler", "NMI_Handler",
-    "__aeabi_", "__gnu_", "__cxa_",
-    /* pthreads / libc (most already caught by PROFILER_SKIP_FRAMES) */
-    "__pthread_", "__nptl_", "__futex_", "__lll_",
-    "__libc_", "__restore_", "__errno", "__nss_",
+var PROFILER_EXCLUDE_GROUPS = [
+    { label: "[lvgl]", prefixes: ["lv_", "_lv_"] },
+    { label: "[kernel]", prefixes: [
+        /* Zephyr kernel + arch + sys helpers */
+        "k_", "z_", "_k_", "_z_", "arch_", "sys_",
+        "_isr_wrapper", "_interrupt_stack",
+        /* FreeRTOS kernel */
+        "xTask", "vTask", "uxTask",
+        "xQueue", "vQueue",
+        "xList", "vList",
+        "xEvent", "vEvent",
+        "xSemaphore",
+        "xTimer", "vTimer",
+        "ulTask", "pvTask", "eTask", "uxList",
+        "prv", "pxCurrent",
+        "xPort", "vPort", "pvPort", "port",
+        /* NuttX kernel */
+        "nxsched_", "nxtask_", "nxmutex_", "nxsem_",
+        "nxcondvar_", "nxrmutex_", "nxsig_", "nxclock_", "nxnotify_",
+        "nxmq_", "nxthread_",
+        "wd_start", "wd_cancel", "wd_timer", "wd_gettime", "wd_recover",
+        "wd_expiration",
+        "nx_", "up_", "sched_", "group_",
+        /* NuttX libc blocking wrappers the ove sync calls park in */
+        "clock_nanosleep", "nanosleep", "usleep", "pthread_cond_",
+        /* Cortex-M handlers */
+        "HardFault_", "Reset_Handler", "Default_Handler",
+        "SysTick_Handler", "PendSV_Handler", "SVC_Handler", "NMI_Handler",
+    ] },
+    { label: "[runtime]", prefixes: ["__aeabi_", "__gnu_", "__cxa_"] },
 ];
 
+/* Bucket label for an excluded frame, or null when it isn't excluded.
+ * Memoised per name (cleared with profilerPcNames): every frame of every
+ * sample is classified on each refresh. */
+var profilerBucketMemo = new Map();
+function profilerFrameBucket(name) {
+    var cached = profilerBucketMemo.get(name);
+    if (cached !== undefined) return cached;
+    var label = profilerFrameBucketScan(name);
+    profilerBucketMemo.set(name, label);
+    return label;
+}
+function profilerFrameBucketScan(name) {
+    if (!name || name.indexOf("ove_") === 0) return null;
+    for (var g = 0; g < PROFILER_EXCLUDE_GROUPS.length; g++) {
+        var grp = PROFILER_EXCLUDE_GROUPS[g];
+        for (var i = 0; i < grp.prefixes.length; i++) {
+            if (name.indexOf(grp.prefixes[i]) === 0) return grp.label;
+        }
+    }
+    return null;
+}
+
 /**
- * Return true when @name is an LVGL / RTOS kernel / libc internal
+ * Return true when @name is an LVGL / RTOS kernel / runtime internal
  * frame that the user almost certainly didn't write, and not the
- * oveRTOS API. Called by the API-only toggle in every render path so
- * flat-top, flame graph, and info-line denominators stay consistent.
+ * oveRTOS API. Used through profilerLeafInfo, so the flat table, flame
+ * graph and info line share one notion of an excluded frame.
  */
 function profilerFrameIsExcluded(name) {
-    if (!name) return false;
-    if (name.indexOf("ove_") === 0) return false;
-    for (var i = 0; i < PROFILER_EXCLUDE_PREFIXES.length; i++) {
-        if (name.indexOf(PROFILER_EXCLUDE_PREFIXES[i]) === 0) return true;
-    }
-    return false;
+    return profilerFrameBucket(name) !== null;
 }
 
 /*
@@ -2140,6 +2122,7 @@ function profilerResetOnReconnect() {
     profilerSymbols = [];
     profilerSamples = [];
     profilerPcNames.clear();
+    profilerBucketMemo.clear();
     profilerDropped = 0;
     profilerLastTs = 0;
     profilerSymbolCount = 0;
@@ -2157,28 +2140,30 @@ function profilerResetOnReconnect() {
 }
 
 /**
- * Given a sample's pcs[] (leaf-first), return the index of the first
- * frame that is not a known signal-handler trampoline. All profiler
- * samples are captured inside a SIGRTMIN handler, so every stack starts
- * with the handler; treating pcs[0] as the leaf pegs flat-top at
- * profile_sig_handler 100%.
+ * Given a sample's pcs[] (leaf-first), locate the frame that carries the
+ * sample's self time. With API-only on, the first non-excluded frame is
+ * used; if the whole stack is excluded the sample is attributed to a
+ * synthetic bucket (@c bucket, e.g. "[kernel]") instead of being dropped,
+ * so the denominator covers every sample.
+ *
+ * @returns {{off:number, bucket:(string|null)}} off is -1 for a bucket.
  */
-function profilerLeafOffset(pcs) {
+function profilerLeafInfo(pcs) {
     for (var i = 0; i < pcs.length; i++) {
         var n = resolvePc(pcs[i]);
-        if (PROFILER_SKIP_FRAMES[n]) continue;
         if (profilerApiOnly && profilerFrameIsExcluded(n)) continue;
-        return i;
+        return { off: i, bucket: null };
     }
-    return pcs.length; /* all frames filtered — skip this sample */
+    /* Every frame is excluded, so the leaf has a bucket. Callers skip
+     * empty stacks. */
+    return { off: -1, bucket: pcs.length ? profilerFrameBucket(resolvePc(pcs[0])) : null };
 }
 
 /**
  * Resolve a PC to a symbol name via binary search. Falls back to a
- * hex string if no symbol contains the PC. Glibc's `@@GLIBC_X.Y` /
- * `@GLIBC_X.Y` version-tag suffixes are stripped so aggregation lumps
- * the same function across glibc builds and the skip-frames set can
- * match without encoding every version.
+ * hex string if no symbol contains the PC. Symbol-version suffixes
+ * (`@@VER` / `@VER`) are stripped so aggregation lumps the same function
+ * across builds and group matching doesn't need to encode every version.
  *
  * Results are memoised: the same PC recurs in every stack and every
  * refresh, so a binary search per occurrence was the dominant cost of
@@ -2237,6 +2222,7 @@ function handleProfile(buf, off) {
             if (added > 0) {
                 profilerSymbols.sort(function (a, b) { return a[0] - b[0]; });
                 profilerPcNames.clear();
+                profilerBucketMemo.clear();
             }
             profilerSymbolCount = profilerSymbols.length;
         } catch (err) {
@@ -2378,20 +2364,24 @@ function ensureProfilerRefresh() {
     }, PROFILER_REFRESH_MS);
 }
 
+/* Samples that pass every filter and carry a stack: the one set the
+ * info line, flat table and flame graph all count. */
+function profilerKeptSamples() {
+    var kept = [];
+    for (var i = 0; i < profilerSamples.length; i++) {
+        var s = profilerSamples[i];
+        if (s.pcs.length && profilerSampleIncluded(s)) kept.push(s);
+    }
+    return kept;
+}
+
 function renderProfiler() {
     profilerUpdateThreadOptions();
+    var samples = profilerKeptSamples();
     var info = document.getElementById("profiler-info");
     if (info) {
         var winS = Math.round(profilerWindowUs / 1e6);
-        var kept = 0;
-        for (var si = 0; si < profilerSamples.length; si++) {
-            var _smp = profilerSamples[si];
-            if (!profilerSampleIncluded(_smp)) continue;
-            /* Mirror the render-path drop: samples whose every frame is
-             * excluded by API-only shouldn't be counted either. */
-            if (profilerLeafOffset(_smp.pcs) >= _smp.pcs.length) continue;
-            kept++;
-        }
+        var kept = samples.length;
         var mode = !profilerIsWallClock() ? "on-CPU, sampled from ISR"
                  : profilerOnCpuOnly ? "runnable" : "wall-clock";
         var threadTag = "";
@@ -2409,8 +2399,8 @@ function renderProfiler() {
         info.textContent = label;
         info.classList.toggle("paused", profilerPaused);
     }
-    if (profilerActiveTab === "flat") renderProfilerFlat();
-    else renderProfilerFlame();
+    if (profilerActiveTab === "flat") renderProfilerFlat(samples);
+    else renderProfilerFlame(samples);
 }
 
 /*
@@ -2450,27 +2440,31 @@ function profilerUpdateThreadOptions() {
     sel.value = String(profilerThreadFilter || 0);
 }
 
-function renderProfilerFlat() {
+function renderProfilerFlat(samples) {
+    if (!samples) samples = profilerKeptSamples();
     var tbody = document.getElementById("profiler-flat-tbody");
     if (!tbody) return;
 
-    /* self = leaf PC (after skipping signal-handler frames); total = any
-     * frame. */
+    /* self = the sample's leaf frame (or its [group] bucket); total =
+     * any frame on the stack. */
     var selfCount = Object.create(null);
     var totalCount = Object.create(null);
     var countedSamples = 0;
-    for (var i = 0; i < profilerSamples.length; i++) {
-        var smp = profilerSamples[i];
-        if (!profilerSampleIncluded(smp)) continue;
-        var pcs = smp.pcs;
-        if (!pcs.length) continue;
-        var leafOff = profilerLeafOffset(pcs);
-        if (leafOff >= pcs.length) continue; /* all frames filtered */
+    for (var i = 0; i < samples.length; i++) {
+        var pcs = samples[i].pcs;
+        var leaf = profilerLeafInfo(pcs);
         countedSamples++;
-        var leafName = resolvePc(pcs[leafOff]);
+        if (leaf.bucket) {
+            /* Whole stack excluded: one row for the group, no real frame
+             * to walk. */
+            selfCount[leaf.bucket] = (selfCount[leaf.bucket] || 0) + 1;
+            totalCount[leaf.bucket] = (totalCount[leaf.bucket] || 0) + 1;
+            continue;
+        }
+        var leafName = resolvePc(pcs[leaf.off]);
         selfCount[leafName] = (selfCount[leafName] || 0) + 1;
         var seenInSample = Object.create(null);
-        for (var k = leafOff; k < pcs.length; k++) {
+        for (var k = leaf.off; k < pcs.length; k++) {
             var n = resolvePc(pcs[k]);
             if (profilerApiOnly && profilerFrameIsExcluded(n)) continue;
             if (seenInSample[n]) continue;
@@ -2522,30 +2516,27 @@ function escapeHtml(s) {
  * at the bottom — hotter leaves bubble up. Standard Brendan-Gregg
  * icicle style.
  */
-function renderProfilerFlame() {
+function renderProfilerFlame(samples) {
+    if (!samples) samples = profilerKeptSamples();
     var cvs = document.getElementById("profiler-flame-canvas");
     if (!cvs) return;
     var view = cvs.parentElement;
     if (!view) return;
 
     /* Build trie. Walk pcs outermost→leaf. A sample's pcs[] is recorded
-     * in call-stack order, which with glibc backtrace() is leaf-first.
-     * Reverse so the root is index 0. Drop the signal-handler frames at
-     * the leaf — they dominate the graph and obscure real call paths.
+     * leaf-first; reverse so the root is index 0. Frames excluded by
+     * API-only are elided; a sample whose whole stack is excluded lands
+     * in a single [group] bucket under its thread.
      *
      * Between [root] and the PC frames we insert a synthetic thread-name
-     * row. Without it the FreeRTOS/Cortex-M backend (depth-1 samples —
-     * the ISR can't unwind r4-r11) collapses to a single row of leaf
-     * PCs with no per-thread breakdown. With it, [root] fans out into
-     * one box per thread, and each thread's leaves stack below — making
-     * attribution visually obvious even when the stack is depth-1. */
+     * row. Without it, threads that share leaf frames collapse into one
+     * row with no per-thread breakdown. With it, [root] fans out into one
+     * box per thread, and each thread's frames stack below — making
+     * attribution visually obvious even for shallow stacks. */
     var root = { name: "[root]", count: 0, kids: Object.create(null) };
-    for (var i = 0; i < profilerSamples.length; i++) {
-        var s = profilerSamples[i];
-        if (!profilerSampleIncluded(s)) continue;
-        if (!s.pcs.length) continue;
-        var leafOff = profilerLeafOffset(s.pcs);
-        if (leafOff >= s.pcs.length) continue;
+    for (var i = 0; i < samples.length; i++) {
+        var s = samples[i];
+        var leaf = profilerLeafInfo(s.pcs);
         root.count++;
         var node = root;
         var th = traceThreads[s.tid];
@@ -2560,7 +2551,16 @@ function renderProfilerFlame() {
         }
         tnode.count++;
         node = tnode;
-        for (var k = s.pcs.length - 1; k >= leafOff; k--) {
+        if (leaf.bucket) {
+            var bucket = node.kids[leaf.bucket];
+            if (!bucket) {
+                bucket = { name: leaf.bucket, count: 0, kids: Object.create(null) };
+                node.kids[leaf.bucket] = bucket;
+            }
+            bucket.count++;
+            continue;
+        }
+        for (var k = s.pcs.length - 1; k >= leaf.off; k--) {
             var n = resolvePc(s.pcs[k]);
             if (profilerApiOnly && profilerFrameIsExcluded(n)) continue;
             var next = node.kids[n];
