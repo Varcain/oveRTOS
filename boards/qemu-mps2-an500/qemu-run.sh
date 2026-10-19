@@ -297,10 +297,14 @@ if [ "${HEADLESS}" -eq 0 ]; then
         BUILD_DIR="${WS_DIR}/build"
     fi
 
+    # The ELF and toolchain are always passed: the profiler's symbols and
+    # phantom-frame pruning (cross nm/objdump, found next to the gdb) need
+    # them with or without a debugger. --gdb-port alone starts the debugger.
     VIEWER_ARGS=( --port ${DASHBOARD_PORT} --log-fd 0 --build-dir "${BUILD_DIR}"
-                  --console-fifo "${UART_PIPE}.in" )
+                  --console-fifo "${UART_PIPE}.in"
+                  --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
     if [ "${NO_GDB}" -eq 0 ]; then
-        VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
+        VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" )
     fi
 
     "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" &
