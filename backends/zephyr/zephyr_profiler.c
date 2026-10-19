@@ -42,9 +42,10 @@
  *   - Symbolication is host-side (same as FreeRTOS) via the dashboard
  *     bridge — arm-none-eabi-nm on the Zephyr ELF. drain_symbols() is 0.
  *
- * Rate control: unlike FreeRTOS's tick-hook + divisor, the Zephyr path
- * re-arms the k_timer with a new period in set_rate(). k_timer_start on
- * a running timer restarts it, so this is atomic from the caller's POV.
+ * Rate control: the k_timer runs one-shot and is re-armed from its expiry
+ * with a period jittered around the mean (1 / rate) by +/-25%, so the
+ * sampler cannot phase-lock with periodic work; set_rate() changes the
+ * mean for the next re-arm.
  */
 
 #include "ove_config.h"
@@ -186,49 +187,64 @@ void ove_backend_profiler_on_tick(void)
 	(void)ove_profiler_ring_push(&s);
 }
 
-static void profiler_timer_expiry(struct k_timer *timer)
+/* Mean sampling period (us) and jitter state. Each period is drawn
+ * uniformly in [0.75, 1.25) x mean so the sampler cannot phase-lock with
+ * periodic work (a fixed-period sampler aligned with a task's period sees
+ * it always, or never). */
+static uint32_t mean_period_us;
+static uint32_t jitter_state = 0x2545F491u;
+static bool timer_initialised;
+
+static uint32_t next_period_us(void)
 {
-	(void)timer;
-	ove_backend_profiler_on_tick();
+	uint32_t x = jitter_state;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	jitter_state = x;
+	uint32_t mean = __atomic_load_n(&mean_period_us, __ATOMIC_RELAXED);
+	uint32_t span = mean / 2u;
+	uint32_t us = mean - mean / 4u + (span ? x % span : 0u);
+	return us ? us : 1u;
 }
 
-static k_timeout_t period_for_hz(uint32_t hz)
+/* One-shot timer, re-armed from its own expiry with a fresh period. */
+static void profiler_timer_expiry(struct k_timer *timer)
 {
-	if (hz == 0)
-		hz = 1;
-	/* K_USEC gives sub-millisecond periods when the tick rate allows;
-	 * Zephyr clamps to the nearest tick internally. */
-	uint32_t us = 1000000u / hz;
-	if (us == 0)
-		us = 1;
-	return K_USEC(us);
+	if (!__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
+		return;
+	ove_backend_profiler_on_tick();
+	k_timer_start(timer, K_USEC(next_period_us()), K_NO_WAIT);
 }
 
 int ove_backend_profiler_start(void)
 {
-	/* Idempotent: re-start with the current rate. */
-	k_timer_init(&profiler_timer, profiler_timer_expiry, NULL);
-	k_timeout_t period = period_for_hz(CONFIG_OVE_PROFILER_HZ);
-	k_timer_start(&profiler_timer, period, period);
+	if (!timer_initialised) {
+		k_timer_init(&profiler_timer, profiler_timer_expiry, NULL);
+		timer_initialised = true;
+	}
+	if (__atomic_load_n(&mean_period_us, __ATOMIC_RELAXED) == 0)
+		ove_backend_profiler_set_rate(ove_backend_profiler_get_max_hz());
 	__atomic_store_n(&profiler_running, 1, __ATOMIC_RELEASE);
+	k_timer_start(&profiler_timer, K_USEC(next_period_us()), K_NO_WAIT);
 	return OVE_OK;
 }
 
 void ove_backend_profiler_stop(void)
 {
 	__atomic_store_n(&profiler_running, 0, __ATOMIC_RELEASE);
-	k_timer_stop(&profiler_timer);
+	if (timer_initialised)
+		k_timer_stop(&profiler_timer);
 }
 
+/* Takes effect at the next re-arm; never starts a stopped profiler. */
 void ove_backend_profiler_set_rate(uint32_t hz)
 {
 	uint32_t max_hz = ove_backend_profiler_get_max_hz();
 	if (hz == 0 || hz > max_hz)
 		hz = max_hz;
-
-	k_timeout_t period = period_for_hz(hz);
-	/* k_timer_start on a running timer restarts it atomically. */
-	k_timer_start(&profiler_timer, period, period);
+	uint32_t us = 1000000u / hz;
+	__atomic_store_n(&mean_period_us, us ? us : 1u, __ATOMIC_RELAXED);
 }
 
 uint32_t ove_backend_profiler_get_flags(void)

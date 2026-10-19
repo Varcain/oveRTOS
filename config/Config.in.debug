@@ -101,16 +101,16 @@ config OVE_PROFILER
     depends on OVE_THREAD_STATE_STATS
     default y
     help
-      Periodically samples each runnable thread's PC + call stack and
-      forwards the samples to the dashboard for flat top-N and
-      flame-graph rendering. FreeRTOS/Cortex-M samples from the
-      SysTick tick hook and walks saved-{r7,lr} pairs out of the task
-      stack. NuttX walks every thread with up_backtrace(tcb) from a
-      watchdog-timed high-priority work item (CONFIG_SCHED_BACKTRACE,
-      set in the generated NuttX defconfig).
-      Zephyr/Cortex-M samples from a high-priority k_timer expiry
-      (runs in SysTick ISR context) and shares the FreeRTOS walker
-      via backends/common/ove_arm_backtrace.c.
+      Periodically samples thread PCs + call stacks and forwards them
+      to the dashboard for flat top-N and flame-graph rendering.
+      FreeRTOS samples the interrupted task from a dedicated hardware
+      timer (CMSDK TIMER1 on MPS2-AN500) and walks saved-{r7,lr} pairs
+      out of its stack; Zephyr does the same from a k_timer expiry and
+      shares the walker (backends/common/ove_arm_backtrace.c). Both
+      jitter each period by +/-25% so sampling cannot lock to the
+      kernel tick or to periodic work. NuttX walks every thread with
+      up_backtrace(tcb) from a watchdog-timed high-priority work item
+      (CONFIG_SCHED_BACKTRACE, set in the generated NuttX defconfig).
 
       Needs OVE_THREAD_STATE_STATS, which provides the sample time
       source and the per-sample thread state.
@@ -121,10 +121,10 @@ config OVE_PROFILER_HZ
     default 250
     range 10 1000
     help
-      Per-thread sample rate. Higher values give finer resolution
-      at the cost of overhead (one stack walk per running thread per
-      tick). 250 Hz is a good default for
-      interactive workloads.
+      Mean sample rate. Higher values give finer resolution at the
+      cost of overhead (one stack walk per sample; on NuttX one walk
+      per thread). Zephyr and NuttX cap it at the kernel tick rate.
+      250 Hz is a good default for interactive workloads.
 
 config OVE_PROFILER_MAX_DEPTH
     int "Maximum stack depth per sample"
