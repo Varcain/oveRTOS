@@ -254,6 +254,51 @@ if(OVE_TEST_BUILD_ASAN)
     )
 endif()
 
+# --- Observability ring tests (tests/obs/) — standalone, no CMocka, so the
+#     multi-producer cases also run under ThreadSanitizer. Uses its own
+#     minimal ove_config.h from tests/obs/.
+function(ove_add_obs_test name)
+    add_executable(${name}
+        ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_ring.c
+        ${OVE_ROOT}/backends/common/ove_trace_ring.c
+    )
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/obs
+        ${OVE_ROOT}/backends/common
+    )
+    target_compile_definitions(${name} PRIVATE _GNU_SOURCE)
+    target_link_libraries(${name} PRIVATE pthread)
+    if(ARGN)
+        target_compile_options(${name} PRIVATE ${ARGN})
+        target_link_options(${name} PRIVATE ${ARGN})
+    endif()
+endfunction()
+ove_add_obs_test(ove_test_trace_ring)
+option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
+# TSan cannot share a binary with ASan or MSan: when the whole tree is
+# configured with either (make test-stub-sanitize, test-stub-msan), skip
+# the TSan variant instead of failing the build.
+set(OVE_TEST_TSAN_ACTIVE ${OVE_TEST_BUILD_TSAN})
+if(CMAKE_C_FLAGS MATCHES "-fsanitize=[^ ]*(address|memory)")
+    set(OVE_TEST_TSAN_ACTIVE OFF)
+endif()
+if(OVE_TEST_TSAN_ACTIVE)
+    ove_add_obs_test(ove_test_trace_ring_tsan -fsanitize=thread -O1 -g)
+endif()
+
+# Deterministic preemption of the trace ring push: trace_ring_preempt.c
+# builds the ring with a hook before every atomic load, so the test can
+# run a nested push and drain at an exact point of one push.
+add_executable(ove_test_trace_ring_preempt
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_ring_preempt.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/trace_ring_preempt.c
+)
+target_include_directories(ove_test_trace_ring_preempt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs
+    ${OVE_ROOT}/backends/common
+)
+target_compile_definitions(ove_test_trace_ring_preempt PRIVATE CONFIG_OVE_TRACE_RING_SIZE=8)
+
 # --- Coverage variant — gcov instrumentation for the `coverage` target. ---
 # Two binaries share the same gcov tree: the default (heap-allocated *_create
 # path) and a CONFIG_OVE_ZERO_HEAP twin that routes ove_test_*_create() through
@@ -271,6 +316,13 @@ endif()
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
+add_test(NAME ove_trace_ring COMMAND ove_test_trace_ring)
+add_test(NAME ove_trace_ring_preempt COMMAND ove_test_trace_ring_preempt)
+if(OVE_TEST_TSAN_ACTIVE)
+    add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
+    set_tests_properties(ove_trace_ring_tsan PROPERTIES
+        ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
+endif()
 add_test(NAME ove_patch_worktree_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli

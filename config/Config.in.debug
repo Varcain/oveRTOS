@@ -62,7 +62,7 @@ config OVE_TRACE_STREAM
     default y if OVE_SIM
     help
       Emit every thread state transition as a timestamped record
-      into a lock-free SPSC ring buffer, drained by the sim
+      into a lock-free multi-producer ring buffer, drained by the sim
       transport layer and rendered as a swimlane in the dashboard
       trace panel. Disabling removes all per-transition overhead.
 
@@ -89,10 +89,11 @@ config OVE_TRACE_RING_SIZE
     depends on OVE_TRACE_STREAM
     default 4096
     help
-      Capacity of the trace ring buffer, in records (16 bytes each).
-      On overflow the producer drops records and increments a counter
-      reported by the dashboard. 4096 records = 64 KiB, ~30 s of
-      typical activity at 150 transitions/s.
+      Capacity of the trace ring buffer, in records (16 bytes each,
+      plus a 1-byte commit flag). On overflow the producer drops
+      records and increments a counter reported by the dashboard.
+      4096 records = 68 KiB, ~30 s of typical activity at 150
+      transitions/s.
 
 config OVE_PROFILER
     bool "Sampling profiler"
