@@ -107,6 +107,13 @@ void ove_backend_thread_registry_unlock(void)
 	nxmutex_unlock(&thread_list_lock);
 }
 
+/* Non-blocking variant for the profiler's high-priority sampling worker,
+ * which must never wait behind a lower-priority thread holding the lock. */
+bool ove_nuttx_thread_registry_trylock(void)
+{
+	return nxmutex_trylock(&thread_list_lock) == OK;
+}
+
 struct ove_thread *ove_nuttx_current_thread(void)
 {
 	return tls_get_current();
