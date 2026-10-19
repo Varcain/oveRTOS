@@ -59,8 +59,7 @@
  * previously-completed deep calls whose addresses fall inside the
  * current frame's locals remain indistinguishable from live frames
  * without DWARF CFI. The dashboard bridge runs a CFG-based pruner over
- * the resolved chain to drop those residual phantoms; see gotcha 26b
- * in memory/project_profiler_trace.md.
+ * the resolved chain to drop those residual phantoms.
  */
 
 #include <stdint.h>

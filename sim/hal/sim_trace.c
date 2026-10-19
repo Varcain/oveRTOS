@@ -48,8 +48,8 @@ _Static_assert(sizeof(struct ove_trace_record) == 16, "trace record wire size is
 
 /* Pump-scoped scratch. The trace plugin emits from the consolidated
  * sim-debug pump thread only, so these are single-threaded. Keeping them
- * in BSS avoids a ~4 KiB stack spike that overflows the 4 KiB pump stack
- * on embedded RTOSes. */
+ * in BSS avoids a buffer-sized stack spike on the embedded RTOSes' pump
+ * stack. */
 static uint8_t stream_ev_buf[sizeof(struct ove_sim_event) + STREAM_BUF_BYTES];
 
 static void emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_record *recs,

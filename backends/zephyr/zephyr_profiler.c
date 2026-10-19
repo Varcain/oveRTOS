@@ -39,8 +39,7 @@
  *     {r7, lr} pair. For non-leaf functions the stacked LR is an
  *     address inside the function itself (return point from an internal
  *     `bl`), not a caller — using it there would inject phantom
- *     self-edges into the flame graph. See gotcha 24 in
- *     memory/project_profiler_trace.md.
+ *     self-edges into the flame graph.
  *
  *   - Symbolication is host-side (same as FreeRTOS) via the dashboard
  *     bridge — arm-none-eabi-nm on the Zephyr ELF.

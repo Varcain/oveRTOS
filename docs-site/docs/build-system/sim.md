@@ -165,6 +165,50 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | `sim_trace.c` | Thread-state trace stream |
 | `sim_profiler.c` | Sampling-profiler batches |
 
+## Trace and Profiler
+
+Two optional plugins stream runtime behaviour into the dashboard:
+
+| Panel | Kconfig | Shows |
+|-------|---------|-------|
+| Trace | `CONFIG_OVE_TRACE_STREAM`, `CONFIG_OVE_TRACE_MARKERS` | Thread-state swimlanes, sync-primitive markers, dropped/gap intervals |
+| Profiler | `CONFIG_OVE_PROFILER` | Flat top-N and flame graph of sampled PCs |
+
+Both are drained by the consolidated sim-debug pump and forwarded by the bridge; the dashboard does not poll.
+
+### Sampling modes
+
+- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry still lands on a tick boundary.
+- **Wall-clock (NuttX)**: a watchdog-timed high-priority work item walks every registered thread with `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`). Blocked and ready threads are sampled too, so the dashboard can filter to runnable states.
+- FreeRTOS and Zephyr share the saved-`{r7, lr}` walker in `backends/common/ove_arm_backtrace.c`; NuttX uses its own unwinder.
+- Sampling rate is changed from the dashboard (`SET_RATE`, payload `uint32_t` Hz) and echoed in the caps event. The ceiling is `CONFIG_OVE_PROFILER_HZ` (250 Hz by default); on Zephyr and NuttX it is further clamped to the kernel tick rate, so the effective maximum is the lower of the two.
+
+### Wire formats
+
+Plugin event types and command types use disjoint per-plugin bases (`ove/sim/ove_sim_plugin.h`). The bridge routes events on `event_type` alone; the profiler's runtime plugin id is learned from its events so commands can be addressed rather than broadcast.
+
+**Trace** (`OVE_SIM_TRACE_EVT_STREAM` = 10, `..._DESCRIPTORS` = 11). Envelope:
+
+```
+u8  sub_type      0 = descriptors, 1 = stream
+u8  version       1
+u16 count
+u32 dropped       records lost since the previous batch
+```
+
+Stream records are 16 bytes each (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 arg` (previous state for state records; low 16 bits of the object address for marks). Descriptors repeat `u32 tid`, `u8 name_len`, `char name[name_len]`.
+
+**Profiler samples** (`OVE_SIM_PROFILER_EVT_SAMPLES` = 20). Envelope:
+
+```
+u8  version       1
+u8  word_size     sizeof(uintptr_t): 4 on Cortex-M, 8 on 64-bit hosts
+u16 count
+u32 dropped
+```
+
+Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, two pad bytes, then `depth` PCs of `word_size` bytes. **Profiler caps** (event 21) carry `u32 max_hz` (the effective maximum, i.e. `CONFIG_OVE_PROFILER_HZ` clamped to the kernel tick rate where the backend applies such a clamp), `u32 current_hz`, `u32 flags` (bit 0 = wall-clock sampling). Symbol tables and the CFG pruner are host-side: the bridge resolves PCs from the firmware ELF with `nm`/`objdump`, so firmware images carry no symbol payload.
+
 ## Kconfig Options
 
 | Option | Type | Default | Description |
@@ -172,6 +216,14 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | `CONFIG_OVE_SIM` | bool | selected by the an500 | Enable the simulation plugin framework |
 | `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`; `web-an521.zephyr.<app>` for Zephyr's Linux personality) |
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` if SIM | Enable the browser-based dashboard |
+| `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` if SIM | Per-thread state time tracking (prerequisite for trace and profiler) |
+| `CONFIG_OVE_TRACE_STREAM` | bool | `y` if SIM | Emit state transitions into the trace ring |
+| `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) |
+| `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 16-byte records |
+| `CONFIG_OVE_PROFILER` | bool | `y` | Sampling profiler |
+| `CONFIG_OVE_PROFILER_HZ` | int | 250 | Mean sample rate (10–1000 Hz) |
+| `CONFIG_OVE_PROFILER_MAX_DEPTH` | int | 32 | Maximum captured stack depth |
+| `CONFIG_OVE_PROFILER_RING_SIZE` | int | 1024 | Profiler ring capacity in samples |
 
 ## Headers
 
@@ -185,3 +237,5 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | `ove/sim/ove_sim_shm.h` | Shared memory layout definitions |
 | `ove/sim/ove_sim_spi_dev.h` | SPI device plugin interface |
 | `ove/sim/ove_sim_i2c_dev.h` | I2C device plugin interface |
+| `ove/sim/ove_sim_trace.h` | Trace event types and record envelope |
+| `ove/sim/ove_sim_profiler.h` | Profiler event/command types and sample envelope |

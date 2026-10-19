@@ -38,7 +38,7 @@
  * that class of drops entirely; only genuine ring-full now increments
  * ring.dropped.
  *
- * Async-signal-safe: only atomic primitives and a plain memcpy into
+ * ISR-safe: only atomic primitives and a plain memcpy into
  * an exclusively-reserved slot — no mutex, no malloc.
  */
 static struct {

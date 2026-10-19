@@ -22,16 +22,17 @@
 #endif
 
 /*
- * Fixed-size sample slot. A sample is produced by the backend sampler
- * (usually a signal handler running in the target thread's context).
+ * Fixed-size sample slot. A sample is produced by the backend sampler:
+ * a timer ISR that reads the interrupted thread's stack on
+ * FreeRTOS/Zephyr, or a high-priority work-queue worker on NuttX.
  *
- *   ts_us : CLOCK_MONOTONIC in microseconds
+ *   ts_us : ove_state_stats_now_us(), microseconds
  *   tid   : low 32 bits of the struct ove_thread pointer
  *   depth : number of valid entries in pcs[]
  *   state : ove_thread_state_t value captured at sample time; lets the
  *           dashboard pivot between wall-clock and on-CPU views
- *   pcs   : inner-most frame first (pcs[0] is where the signal was
- *           delivered); unused slots are undefined.
+ *   pcs   : inner-most frame first (pcs[0] is the interrupted PC / leaf
+ *           frame); unused slots are undefined.
  *
  * Using fixed-size slots keeps the ring trivial (no variable-length
  * framing) and makes drain-side copying a plain memcpy.
@@ -48,7 +49,7 @@ struct ove_profiler_sample {
 /**
  * ove_profiler_ring_push - enqueue a sample; drops only on overflow.
  *
- * Async-signal-safe, lock-free MPSC: producers CAS the write index to
+ * ISR-safe, lock-free MPSC: producers CAS the write index to
  * reserve a slot, then release-store a per-slot commit byte. Samples
  * are never dropped due to producer contention — only a genuinely full
  * ring increments the dropped counter.
@@ -58,7 +59,8 @@ bool ove_profiler_ring_push(const struct ove_profiler_sample *s);
 /**
  * ove_profiler_ring_drain - copy up to @max samples to @out, advancing read.
  *
- * Consumer-side — called from the sim_profiler drain thread.
+ * Consumer-side — called from the consolidated sim-debug pump via
+ * ove_sim_profiler_tick().
  */
 size_t ove_profiler_ring_drain(struct ove_profiler_sample *out, size_t max);
 
