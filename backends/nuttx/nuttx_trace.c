@@ -9,13 +9,9 @@
 /*
  * NuttX trace backend.
  *
- * NuttX is a POSIX-shaped kernel, so the trace wiring mirrors posix_*.c
- * instead of the kernel-hook model used by freertos_trace.c. Per-thread
- * state is driven explicitly by:
- *
- *   - thread entry/exit in nuttx_thread.c::task_wrapper()
- *   - sync-primitive wrappers in nuttx_sync.c (BLOCKED before the wait,
- *     RUNNING after), tagged with OVE_TRACE_MARK_CURRENT
+ * Thread state transitions come from the scheduler, through the sched_note
+ * driver in nuttx_thread.c (suspend/resume on every context switch); the
+ * sync wrappers in nuttx_sync.c add sync-primitive markers.
  *
  * This file only owns the piece that doesn't belong in the thread backend:
  *
