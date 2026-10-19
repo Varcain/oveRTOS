@@ -282,6 +282,12 @@ void ove_backend_profiler_set_rate(uint32_t hz)
 	__atomic_store_n(&sample_counter, 0u, __ATOMIC_RELEASE);
 }
 
+uint32_t ove_backend_profiler_get_flags(void)
+{
+	/* Samples only the task interrupted by SysTick (on-CPU). */
+	return 0;
+}
+
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
 	uint32_t cfg_hz = (uint32_t)CONFIG_OVE_PROFILER_HZ;

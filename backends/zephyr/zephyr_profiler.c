@@ -237,6 +237,12 @@ void ove_backend_profiler_set_rate(uint32_t hz)
 	k_timer_start(&profiler_timer, period, period);
 }
 
+uint32_t ove_backend_profiler_get_flags(void)
+{
+	/* Samples only the thread interrupted by the timer (on-CPU). */
+	return 0;
+}
+
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
 	/* Capped by the system clock granularity. At 1 kHz tick rate

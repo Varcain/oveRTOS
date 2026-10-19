@@ -158,6 +158,12 @@ void ove_backend_profiler_set_rate(uint32_t hz)
 	atomic_store_explicit(&sample_counter, 0, memory_order_release);
 }
 
+uint32_t ove_backend_profiler_get_flags(void)
+{
+	/* Samples every ove thread, blocked ones included, from the pump. */
+	return OVE_PROFILER_FLAG_WALL_CLOCK;
+}
+
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
 	return (uint32_t)CONFIG_OVE_PROFILER_HZ;

@@ -36,6 +36,16 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Profiler flag: wall-clock sampling.
+ *
+ * Set when the backend samples every thread, including blocked ones, on
+ * each tick (NuttX). Clear when it samples only the thread that was on the
+ * CPU when the sampling interrupt fired (FreeRTOS, Zephyr). Reported to
+ * the dashboard in the capabilities event.
+ */
+#define OVE_PROFILER_FLAG_WALL_CLOCK (1u << 0)
+
 #ifdef CONFIG_OVE_PROFILER
 
 /**
@@ -88,6 +98,13 @@ void ove_backend_profiler_set_rate(uint32_t hz);
 uint32_t ove_backend_profiler_get_max_hz(void);
 
 /**
+ * @brief Report how the backend samples.
+ *
+ * @return Bitwise OR of @c OVE_PROFILER_FLAG_* values.
+ */
+uint32_t ove_backend_profiler_get_flags(void);
+
+/**
  * @brief Drain newly-interned symbol entries as a JSON array.
  *
  * Writes a JSON array of @c [pc_start,pc_end,"name"] triples into
@@ -123,6 +140,10 @@ static inline void ove_backend_profiler_set_rate(uint32_t hz)
 	(void)hz;
 }
 static inline uint32_t ove_backend_profiler_get_max_hz(void)
+{
+	return 0;
+}
+static inline uint32_t ove_backend_profiler_get_flags(void)
 {
 	return 0;
 }
