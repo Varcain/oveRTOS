@@ -39,10 +39,12 @@ static struct sim_profiler_ctx profiler_ctx;
 
 static void emit_caps(struct sim_profiler_ctx *t)
 {
-	uint8_t payload[8];
+	uint8_t payload[12];
 	uint32_t max_hz = ove_backend_profiler_get_max_hz();
+	uint32_t flags = ove_backend_profiler_get_flags();
 	memcpy(payload + 0, &max_hz, 4);
 	memcpy(payload + 4, &t->current_hz, 4);
+	memcpy(payload + 8, &flags, 4);
 
 	uint8_t ev_buf[sizeof(struct ove_sim_event) + sizeof(payload)];
 	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;

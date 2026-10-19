@@ -240,8 +240,8 @@
                         <select id="profiler-thread"
                                 data-signature=""></select>
                     </label>
-                    <button id="profiler-oncpu" class="btn btn-small btn-toggle"
-                            title="Filter to samples where the thread was RUNNING or READY at capture time (CPU-work view). Off = wall-clock view including BLOCKED.">On-CPU</button>
+                    <button id="profiler-oncpu" class="btn btn-small btn-toggle" hidden
+                            title="Keep only samples of threads that were runnable (RUNNING or READY) at capture time; off = wall-clock view including BLOCKED. Shown for backends that sample every thread (NuttX), where the sampler preempts the running thread, so it appears as READY. Other backends sample only the thread on the CPU.">Runnable</button>
                     <button id="profiler-hidepump" class="btn btn-small btn-toggle"
                             title="Hide the sim-debug pump thread — it samples itself every tick and dominates the view. Defaults on.">Hide pump</button>
                     <button id="profiler-hideidle" class="btn btn-small btn-toggle"
