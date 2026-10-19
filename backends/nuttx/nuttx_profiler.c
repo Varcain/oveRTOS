@@ -84,10 +84,11 @@ static size_t snapshot_runnable(struct snap_entry *out, size_t max, struct ove_t
 	for (struct ove_thread *t = ove_backend_thread_registry_head; t && n < max; t = t->next) {
 		if (t == skip || !t->started)
 			continue;
-		int s = t->state;
-		/* Same policy as POSIX: sample RUNNING/READY/BLOCKED. A
-		 * blocked task's saved stack is the waiter call site, which
-		 * is usually what the user wants to see. */
+		/* Scheduler-observed state (the profiler depends on
+		 * OVE_THREAD_STATE_STATS); t->state only tracks suspension.
+		 * Sample RUNNING/READY/BLOCKED: a blocked task's saved stack
+		 * is the waiter call site, usually what the user wants. */
+		int s = t->st.cur_state;
 		if (s != OVE_THREAD_STATE_RUNNING && s != OVE_THREAD_STATE_READY &&
 		    s != OVE_THREAD_STATE_BLOCKED)
 			continue;

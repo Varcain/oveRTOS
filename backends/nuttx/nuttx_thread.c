@@ -21,6 +21,9 @@
 #include <nuttx/mutex.h>
 #include <nuttx/sched.h>
 #include <nuttx/clock.h>
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+#include <nuttx/note/note_driver.h>
+#endif
 #include <sched.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -29,21 +32,37 @@
 #include <signal.h>
 #include <errno.h>
 #include <malloc.h>
-/* Set thread state with tracking + trace emit (mirrors posix_thread.c).
+/* Thread state has two roles on NuttX:
+ *
+ *  - t->state is functional: the SIGUSR1 suspend loop waits while it reads
+ *    SUSPENDED, and ove_thread_resume() releases it by storing READY.
+ *  - With CONFIG_OVE_THREAD_STATE_STATS, the observed state (t->st, and the
+ *    trace stream) follows the scheduler through the note driver below;
+ *    the thread itself only marks RUNNING on entry, SUSPENDED/READY around
+ *    a suspension, and TERMINATED on exit.
  *
  * Atomic store-release on t->state matches the destroying / enumerating
  * thread's atomic acquire-load — same race that TSan flagged in POSIX
  * (sanitizers can't reach NuttX bare-metal code, so this fix is by
- * cross-backend audit rather than a triggered TSan finding).  The
- * trace-emit `from` snapshot is a relaxed load: it runs on the same
- * thread that's about to publish the new state, so no cross-thread
- * happens-before is needed for the read. */
-#define SET_STATE(t, s)                                                                    \
-	do {                                                                               \
-		ove_trace_emit_state((uintptr_t)(t),                                       \
-				     __atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s)); \
-		ove_state_track_transition(&(t)->st, (s));                                 \
-		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
+ * cross-backend audit rather than a triggered TSan finding). */
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+static void obs_transition(struct ove_thread *t, int s);
+static void obs_register(struct ove_thread *t);
+static void obs_unregister(struct ove_thread *t);
+#define OBS_TRANSITION(t, s)                                     \
+	do {                                                     \
+		irqstate_t obs_flags = enter_critical_section(); \
+		obs_transition((t), (s));                        \
+		leave_critical_section(obs_flags);               \
+	} while (0)
+#else
+#define OBS_TRANSITION(t, s) ((void)0)
+#endif
+
+#define SET_STATE(t, s)                                               \
+	do {                                                          \
+		OBS_TRANSITION((t), (s));                             \
+		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE); \
 	} while (0)
 
 /* Per-task pointer via NuttX task TLS */
@@ -150,12 +169,17 @@ static int task_wrapper(int argc, char *argv[])
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Init the tracker in the owning task so last_ts_us is anchored at
-	 * the actual scheduling moment, not at ove_thread_init() time. */
+	 * the actual scheduling moment, not at ove_thread_init() time — and
+	 * before obs_register() makes it visible to the scheduler hooks. */
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
+	obs_register(t);
 #endif
 	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 	t->entry(t->arg);
 	SET_STATE(t, OVE_THREAD_STATE_TERMINATED);
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	obs_unregister(t);
+#endif
 	nxsem_post(&t->done_sem);
 	return 0;
 }
@@ -358,12 +382,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
-	struct ove_thread *t = tls_get_current();
-	if (t)
-		SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	usleep(ms * 1000U);
-	if (t)
-		SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -420,11 +439,103 @@ bool ove_thread_should_stop(ove_thread_t handle)
 }
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
-void ove_backend_thread_set_state(int new_state)
+/* ── Scheduler-driven observed state (sched_note driver) ────────────
+ *
+ * CONFIG_SCHED_INSTRUMENTATION_SWITCH calls the registered note drivers'
+ * suspend(tcb) when a task leaves the CPU and resume(tcb) when it takes it,
+ * inside the scheduler's critical section. Preemption shows as READY and
+ * every wait (ove API, kernel, drivers, LVGL) as BLOCKED. NuttX has no
+ * "became ready" note, so wake-to-run latency stays inside BLOCKED.
+ *
+ * Tasks are mapped to their ove_thread through a small pid table filled
+ * by task_wrapper(); kernel and other tasks are not tracked. The table and
+ * the tracker are only touched inside critical sections.
+ */
+#define OBS_MAX_TASKS 32
+
+static struct {
+	pid_t pid;
+	struct ove_thread *t;
+} obs_tasks[OBS_MAX_TASKS];
+
+static void obs_transition(struct ove_thread *t, int s)
 {
-	struct ove_thread *t = tls_get_current();
+	int prev = t->st.cur_state;
+	if (prev == s || prev == OVE_THREAD_STATE_TERMINATED)
+		return;
+	ove_trace_emit_state((uintptr_t)t, prev, s);
+	ove_state_track_transition(&t->st, s);
+}
+
+static struct ove_thread *obs_find(pid_t pid)
+{
+	for (int i = 0; i < OBS_MAX_TASKS; i++)
+		if (obs_tasks[i].t && obs_tasks[i].pid == pid)
+			return obs_tasks[i].t;
+	return NULL;
+}
+
+static void obs_note_suspend(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
+{
+	(void)drv;
+	struct ove_thread *t = obs_find(tcb->pid);
+	if (!t)
+		return;
+
+	int next;
+	if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED)
+		next = OVE_THREAD_STATE_SUSPENDED; /* parked in the SIGUSR1 suspend loop */
+	else if (tcb->task_state == TSTATE_TASK_READYTORUN ||
+		 tcb->task_state == TSTATE_TASK_RUNNING)
+		next = OVE_THREAD_STATE_READY; /* preempted or yielded */
+	else
+		next = OVE_THREAD_STATE_BLOCKED;
+	obs_transition(t, next);
+}
+
+static void obs_note_resume(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
+{
+	(void)drv;
+	struct ove_thread *t = obs_find(tcb->pid);
 	if (t)
-		SET_STATE(t, new_state);
+		obs_transition(t, OVE_THREAD_STATE_RUNNING);
+}
+
+static const struct note_driver_ops_s obs_note_ops = {
+	.suspend = obs_note_suspend,
+	.resume = obs_note_resume,
+};
+
+static struct note_driver_s obs_note_driver = {
+	.ops = &obs_note_ops,
+};
+
+/* Called by the task itself on entry, before it marks itself RUNNING. */
+static void obs_register(struct ove_thread *t)
+{
+	static bool driver_registered;
+	irqstate_t flags = enter_critical_section();
+	if (!driver_registered) {
+		/* No unregister API exists; one static driver for the system. */
+		driver_registered = note_driver_register(&obs_note_driver) == OK;
+	}
+	for (int i = 0; i < OBS_MAX_TASKS; i++) {
+		if (!obs_tasks[i].t) {
+			obs_tasks[i].pid = getpid();
+			obs_tasks[i].t = t;
+			break;
+		}
+	}
+	leave_critical_section(flags);
+}
+
+static void obs_unregister(struct ove_thread *t)
+{
+	irqstate_t flags = enter_critical_section();
+	for (int i = 0; i < OBS_MAX_TASKS; i++)
+		if (obs_tasks[i].t == t)
+			obs_tasks[i].t = NULL;
+	leave_critical_section(flags);
 }
 #endif
 

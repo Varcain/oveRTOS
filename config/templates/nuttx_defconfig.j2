@@ -197,6 +197,18 @@ CONFIG_AUDIO=y
 CONFIG_SCHED_BACKTRACE=y
 {% endif %}
 
+{% if config.get("CONFIG_OVE_THREAD_STATE_STATS") == True %}
+# Per-thread state tracking follows the scheduler: backends/nuttx/nuttx_thread.c
+# registers a note driver whose suspend/resume hooks see every context
+# switch. No note buffer is needed. Two driver slots: this one plus the
+# Linux personality's MPU-switch driver (ove_board_defconfig.linux).
+CONFIG_SCHED_INSTRUMENTATION=y
+CONFIG_SCHED_INSTRUMENTATION_SWITCH=y
+CONFIG_DRIVERS_NOTE=y
+CONFIG_DRIVERS_NOTE_MAX=2
+CONFIG_DRIVERS_NOTERAM=n
+{% endif %}
+
 {% if config.get("CONFIG_OVE_NET_TLS") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
 # TLS entropy (backends/nuttx/nuttx_entropy.c reads /dev/random): the STM32
 # hardware RNG.
