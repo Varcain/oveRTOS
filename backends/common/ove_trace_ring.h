@@ -37,10 +37,11 @@ struct ove_trace_record {
 };
 
 /**
- * ove_trace_ring_push - enqueue a record; drops on contention or overflow
+ * ove_trace_ring_push - enqueue a record; drops only when the ring is full
  *
- * Safe from any thread context. Returns true when committed, false when
- * dropped (and increments the internal dropped counter).
+ * Lock-free multi-producer: safe from thread, kernel-hook and ISR context,
+ * including when one producer preempts another mid-push. Returns true when
+ * committed, false when dropped (and increments the dropped counter).
  */
 bool ove_trace_ring_push(const struct ove_trace_record *rec);
 

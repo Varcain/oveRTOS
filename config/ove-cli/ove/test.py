@@ -325,7 +325,9 @@ def test_stub(ove_dir, output_dir):
                                 "ove_test_mqtt_wide", "ove_test_mqtt_varint",
                                 "ove_test_mqtt_small_rx", "ove_test_mqtt_zh_small_rx",
                                 "ove_test_httpd_ws", "ove_test_nvs_default",
-                                "ove_test_nvs_custom", "ove_test_nvs_full"), "stub", results)
+                                "ove_test_nvs_custom", "ove_test_nvs_full",
+                                "ove_test_trace_ring", "ove_test_trace_ring_preempt",
+                                "ove_test_trace_ring_tsan"), "stub", results)
     return results
 
 
