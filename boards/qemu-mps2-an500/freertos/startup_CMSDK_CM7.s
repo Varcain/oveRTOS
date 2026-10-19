@@ -70,7 +70,7 @@ __isr_vector:
     .long   Default_Handler         /*  6: (not wired) */
     .long   Default_Handler         /*  7: (not wired) */
     .long   Default_Handler         /*  8: TIMER0 */
-    .long   Default_Handler         /*  9: TIMER1 */
+    .long   TIMER1_IRQHandler       /*  9: TIMER1 (sampling profiler) */
     .long   Default_Handler         /* 10: DUALTIMER */
     .long   Default_Handler         /* 11: SPI0/1 */
     .long   Default_Handler         /* 12: UART0-2 overflow */
@@ -168,6 +168,7 @@ Reset_Handler:
     def_irq_handler PendSV_Handler
     def_irq_handler SysTick_Handler
     def_irq_handler UART0RX_IRQHandler
+    def_irq_handler TIMER1_IRQHandler
     def_irq_handler Default_Handler
 
     .end
