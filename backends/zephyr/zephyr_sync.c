@@ -40,11 +40,9 @@ void ove_mutex_deinit(ove_mutex_t mtx)
 int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
-	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret = k_mutex_lock(&mtx->mtx, ns_to_timeout(timeout_ns));
 
-	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -75,11 +73,9 @@ void ove_recursive_mutex_deinit(ove_mutex_t mtx)
 int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
-	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret = k_mutex_lock(&mtx->mtx, ns_to_timeout(timeout_ns));
 
-	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -112,11 +108,9 @@ void ove_sem_deinit(ove_sem_t sem)
 int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, sem);
-	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret = k_sem_take(&sem->sem, ns_to_timeout(timeout_ns));
 
-	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -160,11 +154,9 @@ void ove_event_deinit(ove_event_t evt)
 int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
-	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret = k_sem_take(&evt->sem, ns_to_timeout(timeout_ns));
 
-	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -201,11 +193,9 @@ void ove_condvar_deinit(ove_condvar_t cv)
 int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
-	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret = k_condvar_wait(&cv->cv, &mtx->mtx, ns_to_timeout(timeout_ns));
 
-	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
