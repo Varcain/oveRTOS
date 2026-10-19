@@ -42,6 +42,9 @@ jobs:
       - name: Run ove lint
         run: make lint
 
+      - name: Run dashboard parser tests (Node)
+        run: make test-js
+
   stub-tests:
     name: Stub Backend Tests
     runs-on: ubuntu-latest

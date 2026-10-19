@@ -473,6 +473,7 @@ make test-stub                              # API tests on the host test backend
 make test-cpp                               # C++ binding tests
 make test-rust                              # Rust binding tests
 make test-zig                               # Zig binding tests
+make test-js                                # Dashboard parser tests (Node, no build)
 make test-nuttx                             # NuttX simulator tests
 make test-zephyr                            # Zephyr native_sim tests
 make test-qemu-<rtos>{,-zeroheap}           # QEMU MPS2-AN500 (rtos ∈ freertos/nuttx/zephyr)

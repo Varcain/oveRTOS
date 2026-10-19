@@ -217,6 +217,14 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
 $(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
 	@$(OVE) test $* $(if $(filter 1,$(JSON)),--json)
 
+# ── Dashboard parser tests (Node) ─────────────────────────────────────────
+# app.js is a plain browser script; the harness loads it under a DOM shim
+# with vm.runInThisContext so the trace/profiler decoders can be unit
+# tested without a browser. Requires Node >= 20 (node:test).
+.PHONY: test-js
+test-js:
+	@node --test $(OVE_DIR)/tests/js/*.test.mjs
+
 ASAN_BUILD_DIR := $(OVE_DIR)/output/tests/stub_asan
 
 .PHONY: asan
@@ -619,6 +627,7 @@ help:
 	@echo "  test-cpp                - C++ binding tests"
 	@echo "  test-rust               - Rust binding tests"
 	@echo "  test-zig                - Zig binding tests"
+	@echo "  test-js                 - Dashboard trace/profiler parser tests (Node)"
 	@echo "  test-nuttx              - NuttX simulator tests"
 	@echo "  test-zephyr             - Zephyr native_sim tests"
 	@echo "  test-qemu               - All QEMU ARM tests"
