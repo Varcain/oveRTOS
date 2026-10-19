@@ -9,13 +9,9 @@
 /*
  * Zephyr trace backend.
  *
- * Zephyr's CONFIG_TRACING_USER hooks would give us kernel-driven state
- * transitions, but the swimlane only cares about oveRTOS-managed threads
- * and the transitions the public API already performs at
- * ove_thread_sleep_ms / suspend / resume / sync-primitive wrappers. So
- * this backend mirrors posix_*.c and nuttx_*.c — state is driven
- * explicitly from zephyr_thread.c::thread_wrapper() and the sync wrappers
- * in zephyr_sync.c.
+ * Thread state transitions come from the kernel's CONFIG_TRACING_USER
+ * scheduler hooks in zephyr_thread.c; the sync wrappers in zephyr_sync.c
+ * add sync-primitive markers.
  *
  * This file only owns the piece that doesn't belong in the thread backend:
  *
