@@ -97,22 +97,24 @@ def main():
     # --gdb-toolchain points at arm-none-eabi-gdb, derive the matching
     # arm-none-eabi-nm alongside it and feed it to build_profiler_symbols.
     if args.elf_path:
-        nm_bin = "nm"
-        objdump_bin = None
-        gdb = args.gdb_toolchain or ""
-        if gdb.endswith("-gdb") and len(gdb) > len("-gdb"):
-            nm_candidate = gdb[:-len("-gdb")] + "-nm"
-            if os.path.isfile(nm_candidate):
-                nm_bin = nm_candidate
-            od_candidate = gdb[:-len("-gdb")] + "-objdump"
-            if os.path.isfile(od_candidate):
-                objdump_bin = od_candidate
+        nm_bin, objdump_bin = profiler.profiler_tools(args.gdb_toolchain)
+        if nm_bin is None:
+            sys.stderr.write(
+                "[profiler] WARNING: no cross nm next to --gdb-toolchain "
+                f"({args.gdb_toolchain or 'not given'}); trying host nm — "
+                "profiler symbols may be missing\n")
+            nm_bin = "nm"
         profiler.build_profiler_symbols(args.elf_path, nm_bin=nm_bin)
         # CFG validator: reject phantom frames left over from stale
         # saved-{r7,lr} pairs in functions with large local frames, for the
-        # stack-scan unwinder. Gated on a cross-toolchain objdump resolving.
+        # stack-scan unwinder. Needs the cross-toolchain objdump.
         if objdump_bin:
             profiler._build_profiler_cfg(args.elf_path, objdump_bin=objdump_bin)
+        else:
+            sys.stderr.write(
+                "[profiler] WARNING: no cross objdump next to --gdb-toolchain; "
+                "phantom-frame pruning is disabled\n")
+        sys.stderr.flush()
 
     threading.Thread(target=shm.display_bridge, daemon=True).start()
     threading.Thread(target=shm.audio_bridge, daemon=True).start()
