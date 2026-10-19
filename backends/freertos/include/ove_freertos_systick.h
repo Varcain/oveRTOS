@@ -9,16 +9,8 @@
 /*
  * Consistent (tick count, sub-tick cycles) snapshot from the FreeRTOS tick
  * count and the Cortex-M SysTick down-counter, callable from task, ISR,
- * PendSV and critical-section context.
- *
- * The hazard: SysTick can reload while its handler cannot run — inside a
- * higher- or equal-priority exception (PendSV, where the context-switch
- * trace hooks run) or a critical section (BASEPRI). VAL has then restarted
- * but xTickCount has not been incremented yet, so a naive
- * `ticks * period + (LOAD - VAL)` lands one whole tick in the past. A
- * re-read of the tick count cannot detect this, because the handler is
- * masked. SCB->ICSR.PENDSTSET can: it is set by the reload and cleared
- * when the handler is entered.
+ * PendSV and critical-section context. The pending-reload handling lives
+ * in backends/common/ove_cortexm_systick.h.
  *
  * Limitation: with configUSE_TICKLESS_IDLE the port reprograms LOAD while
  * ticks are suppressed; snapshots taken from ISRs during such a sleep are
@@ -33,10 +25,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define OVE_SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014u)
-#define OVE_SYSTICK_VAL (*(volatile uint32_t *)0xE000E018u)
-#define OVE_SCB_ICSR (*(volatile uint32_t *)0xE000ED04u)
-#define OVE_SCB_ICSR_PENDSTSET (1u << 26)
+#include "ove_cortexm_systick.h"
 
 /**
  * @brief Read the tick count and the SysTick cycles elapsed since that tick.
@@ -49,30 +38,24 @@
 static inline void ove_freertos_systick_read(TickType_t *ticks, uint32_t *elapsed)
 {
 	const int in_isr = xPortIsInsideInterrupt() != pdFALSE;
-	const uint32_t load = OVE_SYSTICK_LOAD;
 	TickType_t t1, t2;
-	uint32_t val, pending;
+	uint32_t load, cycles;
+	bool pending;
 
 	/*
 	 * Task context with interrupts enabled: the SysTick handler may run
 	 * anywhere in this sequence; it changes the tick count, so retry.
 	 * Where the handler cannot run (ISR, PendSV, critical section) the
 	 * tick count is stable and the loop runs once.
-	 *
-	 * VAL is read before PENDSTSET: a reload between the two reads leaves
-	 * PENDSTSET set, and VAL is then re-read after the reload.
 	 */
 	do {
 		t1 = in_isr ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
-		val = OVE_SYSTICK_VAL;
-		pending = OVE_SCB_ICSR & OVE_SCB_ICSR_PENDSTSET;
-		if (pending)
-			val = OVE_SYSTICK_VAL;
+		cycles = ove_cortexm_systick_elapsed(&load, &pending);
 		t2 = in_isr ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
 	} while (t1 != t2);
 
 	*ticks = pending ? t1 + 1 : t1;
-	*elapsed = val <= load ? load - val : 0u;
+	*elapsed = cycles;
 }
 
 /** Largest backward step ove_freertos_monotonic() holds, in ticks. */
