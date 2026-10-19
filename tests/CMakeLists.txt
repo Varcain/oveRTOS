@@ -348,6 +348,11 @@ add_test(NAME ove_freertos_build_python
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
         ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_freertos_build.py)
+add_test(NAME ove_nuttx_build_tree_python
+    COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=${OVE_ROOT}/config/ove-cli
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nuttx_build_tree.py)
 add_test(NAME ove_allconfigs_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli

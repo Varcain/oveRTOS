@@ -766,23 +766,26 @@ def build_nuttx(ws):
     # CMake reads it (OVE_DEFCONFIG) and runs olddefconfig to expand it.
     defconfig_path = _write_nuttx_defconfig(ws, nuttx_src, nuttx_board_cfg)
 
-    # Check if defconfig changed since last cmake configure — if so,
-    # force re-initialisation by removing the cached .config.
-    if defconfig_path:
-        from .utils import hash_file as _hash_file
-        current_hash = _hash_file(defconfig_path)
-        hash_file = os.path.join(cmake_build, ".ove_defconfig_hash")
-        force_reconfig = True
-        if os.path.isfile(hash_file):
-            with open(hash_file) as f:
-                if f.read().strip() == current_hash:
-                    force_reconfig = False
-        if force_reconfig:
-            config_path = os.path.join(cmake_build, ".config")
-            if os.path.isfile(config_path):
-                os.unlink(config_path)
-            with open(hash_file, "w") as f:
-                f.write(current_hash + "\n")
+    # NuttX regenerates include/nuttx/config.h only when .config differs
+    # from .config.prev, a copy of the first .config it never refreshes, so
+    # going back to that configuration would keep the previous config.h.
+    # Start from a clean CMake tree whenever the defconfig changes.  The
+    # record has a new name so a tree left stale by the old code, which only
+    # removed .config, is cleaned once as well.
+    from .utils import hash_file as _hash_file
+    current_hash = _hash_file(defconfig_path)
+    hash_file = os.path.join(cmake_build, ".ove_defconfig_sha256")
+    recorded = None
+    if os.path.isfile(hash_file):
+        with open(hash_file) as f:
+            recorded = f.read().strip()
+    if recorded != current_hash:
+        if recorded is not None:
+            logger.info(f"NuttX configuration changed; rebuilding {cmake_build}")
+        shutil.rmtree(cmake_build)
+        os.makedirs(cmake_build)
+        with open(hash_file, "w") as f:
+            f.write(current_hash + "\n")
 
     # Export build paths as environment variables for CMake and cargo/zig
     env["OVE_DIR"] = ws.ove_dir
