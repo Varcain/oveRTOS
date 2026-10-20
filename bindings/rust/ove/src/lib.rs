@@ -324,6 +324,7 @@ pub mod thread;
 pub mod time;
 #[cfg(has_timer)]
 pub mod timer;
+pub mod trace;
 #[cfg(has_uart)]
 pub mod uart;
 pub mod version;

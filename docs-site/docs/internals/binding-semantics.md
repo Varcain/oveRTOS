@@ -703,6 +703,29 @@ constants in every binding; see [Versioning](versioning.md).
 
 ---
 
+## Trace
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| Name an id | `ove::trace::name(id, "draw")` → `bool` | `trace::name(id, c"draw")` → `bool` | `ove.ffi.ove_trace_register_name` |
+| Point mark | `ove::trace::mark(id)` | `trace::mark(id)` | `ove.ffi.ove_trace_mark` |
+| Scope guard | `ove::trace::Zone z{id};` closes in the destructor | `let _z = trace::Zone::new(id);` closes on drop, and `finish()` closes early | — |
+| Manual zone | `zone_begin(id)` / `zone_end(id)` | `zone_begin(id)` / `zone_end(id)` | `ove.ffi.ove_trace_zone_begin` / `ove.ffi.ove_trace_zone_end` |
+| Markers disabled | No-ops, `name` returns `false` | No-ops, `name` returns `false` | C semantics |
+
+- Register names from one thread. The trace layer copies up to 31 bytes per
+  name and holds 32 entries. Re-registering an id appends an entry, and the
+  latest entry wins. Registration returns `false` for an empty name or a full
+  table. Rust also returns `false` when another Rust registration is in progress.
+- An end closes the innermost open zone with that id on the current lane.
+  Destroy a C++ `Zone` on the thread that opened it. Moving a C++ `Zone`
+  transfers responsibility for closing it. Rust `Zone` implements neither
+  `Send` nor `Sync`.
+- Marks and zones emitted from an interrupt handler use the interrupt lane.
+  Zig uses the raw C API.
+
+---
+
 ## Maintaining this contract
 
 When you add or change a binding API, update this page in the same change so the
