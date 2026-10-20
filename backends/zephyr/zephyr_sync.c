@@ -20,13 +20,14 @@ static k_timeout_t ns_to_timeout(uint64_t ns)
 	return K_NSEC(ns);
 }
 
+/* The public declarations carry OVE_NONNULL: GCC assumes those arguments
+ * are non-NULL, warns on a NULL check of them (-Wnonnull-compare) and, when
+ * optimising, drops it, so none is made here. */
+
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	if (mtx == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	k_mutex_init(&storage->mtx);
 	*mtx = storage;
 	return OVE_OK;
@@ -57,9 +58,6 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	if (mtx == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	k_mutex_init(&storage->mtx);
 	*mtx = storage;
 	return OVE_OK;
@@ -90,9 +88,6 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
-	if (sem == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	k_sem_init(&storage->sem, initial, max);
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
@@ -126,9 +121,6 @@ void ove_sem_give(ove_sem_t sem)
 
 int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 {
-	if (sem == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	sem->notify_cb = cb;
 	sem->notify_ud = user_data;
 	return OVE_OK;
@@ -138,9 +130,6 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
-	if (evt == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	k_sem_init(&storage->sem, 0, 1);
 	*evt = storage;
 	return OVE_OK;
@@ -177,9 +166,6 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
-	if (cv == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	k_condvar_init(&storage->cv);
 	*cv = storage;
 	return OVE_OK;
