@@ -31,27 +31,49 @@ export PATH := $(OVE_DIR)/config/scripts:$(VENV_DIR)/bin:$(PATH)
 # ── Python venv + CLI installation ─────────────────────────────────────────
 
 $(VENV_STAMP): $(REQUIREMENTS) $(CLI_DIR)/pyproject.toml
-	@command -v python3 >/dev/null 2>&1 || { \
-		echo ""; \
-		echo "ERROR: python3 not found."; \
-		echo ""; \
-		echo "  Ubuntu/Debian:  sudo apt install python3 python3-venv"; \
-		echo "  Fedora:         sudo dnf install python3"; \
-		echo "  Arch:           sudo pacman -S python"; \
-		echo ""; \
+	@# Reuse the target venv before looking for a base interpreter on PATH.
+	@python="$(OVE_PYTHON)"; \
+	too_old='sys.version_info < (3, 12)'; \
+	check_version="import sys; sys.exit($$too_old)"; \
+	if [ -z "$$python" ] && "$(VENV_PYTHON)" -c "$$check_version" 2>/dev/null; then \
+		python="$(VENV_PYTHON)"; \
+	elif [ -z "$$python" ]; then \
+		python=$$(IFS=:; set -f; path="$$PATH:"; fallback=; \
+			for name in python3.15 python3.14 python3.13 python3.12 python3; do \
+				for dir in $$path; do \
+					candidate="$${dir:-.}/$$name"; \
+					[ -x "$$candidate" ] || continue; \
+					status=0; \
+					"$$candidate" -c "import sys; sys.exit(2 if sys.prefix != sys.base_prefix else $$too_old)" 2>/dev/null || status=$$?; \
+					case $$status in \
+						0) printf '%s\n' "$$candidate"; exit ;; \
+						1) if [ "$$name" = python3 ] && [ -z "$$fallback" ]; then fallback="$$candidate"; fi ;; \
+					esac; \
+				done; \
+			done; printf '%s\n' "$$fallback"); \
+	fi; \
+	if [ -z "$$python" ] || ! "$$python" -c "$$check_version"; then \
+		echo "ERROR: Python >= 3.12 is required (Zephyr 4.4 needs it)."; \
+		if [ -n "$$python" ]; then \
+			echo "       $$python is $$("$$python" --version 2>/dev/null || echo unknown)."; \
+		fi; \
+		echo "  Install a base Python 3.12 or newer, or point OVE_PYTHON at one:"; \
+		echo "    make OVE_PYTHON=/path/to/python3.12 setup"; \
 		exit 1; \
-	}
-	@python3 -c "import venv" 2>/dev/null || { \
-		echo ""; \
+	fi; \
+	"$$python" -c 'import venv' 2>/dev/null || { \
 		echo "ERROR: python3-venv module not available."; \
-		echo ""; \
 		echo "  Ubuntu/Debian:  sudo apt install python3-venv"; \
 		echo "  Fedora:         sudo dnf install python3-libs"; \
-		echo ""; \
 		exit 1; \
-	}
-	@echo "=== Setting up Python virtual environment ==="
-	@python3 -m venv $(VENV_DIR)
+	}; \
+	echo "=== Setting up Python virtual environment ==="; \
+	version='import sys; print(sys.version_info[:2])'; \
+	if [ "$$("$(VENV_PYTHON)" -c "$$version" 2>/dev/null)" = "$$("$$python" -c "$$version")" ]; then \
+		"$$python" -m venv "$(VENV_DIR)"; \
+	else \
+		"$$python" -m venv --clear "$(VENV_DIR)"; \
+	fi
 	@$(VENV_PIP) install --quiet --upgrade pip
 	@$(VENV_PIP) install --quiet -r $(REQUIREMENTS)
 	@$(VENV_PIP) install --quiet -e $(CLI_DIR)

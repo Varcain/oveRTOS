@@ -6,7 +6,7 @@ Install the tools you need for the binding(s) and deployment target(s) you'll wo
 
 | Tool | Minimum version | Notes |
 |---|---|---|
-| Python 3 | 3.9+ | Required for the `ove` CLI and Kconfig |
+| Python 3 | 3.12+ | Required for setup and the pinned Zephyr |
 | python3-venv | — | Required to create the `.venv` environment |
 | CMake | 3.20+ | Used by Zephyr and NuttX build systems |
 | Git | — | Source checkout and RTOS source downloads |
@@ -115,8 +115,9 @@ make setup
 
 This will:
 
-1. Check that `python3` and the `venv` module are available
-2. Create `.venv/` in the project root
+1. Reuse a supported venv or find a base Python 3.12 or newer with the
+   `venv` module. Set `OVE_PYTHON` to choose the interpreter explicitly.
+2. Create or update `.venv/` in the project root
 3. Install all Python dependencies from `config/requirements.txt`
 4. Install the `ove` CLI from `config/ove-cli/` in editable mode
 
@@ -125,7 +126,7 @@ After setup, the `ove` command is available at `.venv/bin/ove` and is used autom
 ### Manual setup (alternative)
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -r config/requirements.txt
 .venv/bin/pip install -e config/ove-cli
 ```

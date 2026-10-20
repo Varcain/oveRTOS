@@ -19,7 +19,7 @@ board connected.
 - **OpenOCD** installed system-wide (`apt install openocd` on
   Ubuntu).  The runner shells out to `openocd -f
   board/stm32f7discovery.cfg`.  `ove doctor` reports availability.
-- **pyserial** in the project venv — `make .venv` installs it
+- **pyserial** in the project venv — `make setup` installs it
   (`config/requirements.txt` lists `pyserial>=3.5`).  `ove doctor`
   reports availability.
 - **Permissions** — your user needs read/write access to
@@ -219,7 +219,7 @@ HW (`#ifndef OVE_HW`):
 |---|---|
 | `OVE_HW_SERIAL_PORT is not set` | Forgot to export the env var |
 | `<openocd missing>` | `apt install openocd` |
-| `<pyserial missing>` | Re-run `make .venv` |
+| `<pyserial missing>` | Re-run `make setup` |
 | `<openocd flash failed>` | Board not detected — check `lsusb` for `0483:3752 STMicroelectronics ST-LINK/V2.1`, check `dmesg` for `/dev/ttyACMx` enumeration |
 | `<no cmocka output>` after 120 s | Firmware didn't reach `printf` — sometimes a stale `.o` cache (NuttX); try `find tests/suites -name '*.c.*.o' -delete` |
 | Test count off by ~9 from Renode | Should not happen with the current double-drain; if it does, file a bug |
