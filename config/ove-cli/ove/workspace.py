@@ -10,6 +10,8 @@ import contextlib
 import json
 import os
 
+from . import venv
+
 
 WORKSPACE_DIR_ENV = "OVE_WORKSPACE_DIR"
 APP_PATH_FILE = ".ove-app-path"
@@ -116,7 +118,7 @@ class Workspace:
         self.config_path = os.path.join(self.ove_dir, ".config")
         self.output_dir = os.path.join(self.ove_dir, "output")
         self.dl_dir = os.path.join(self.ove_dir, "dl")
-        self.venv_dir = os.path.join(self.ove_dir, ".venv")
+        self.venv_dir = venv.path(self.ove_dir)
 
         self._config = None
         self.build_log = None
@@ -300,7 +302,7 @@ class Workspace:
         tc = self.toolchain_dir
         if tc:
             env["PATH"] = os.path.join(tc, "bin") + ":" + env.get("PATH", "")
-        venv_bin = os.path.join(self.venv_dir, "bin")
+        venv_bin = venv.bin_path(self.ove_dir)
         if os.path.isdir(venv_bin):
             env["PATH"] = venv_bin + ":" + env.get("PATH", "")
         return env

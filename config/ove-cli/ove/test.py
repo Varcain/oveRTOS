@@ -20,12 +20,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
+from . import venv
 from .utils import CARGO_CLIPPY_COMMAND, run, nproc, apply_defconfig_overlay, atomic_symlink
 from .appgen import generate_app_kconfig
 from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
 from .build import _drop_stale_cmake_cache, _prepare_zephyr_build_dir
 from .manifest import load_manifest, get_component
+from .venv import require_zephyr_python as _require_zephyr_python
 from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
@@ -162,7 +164,7 @@ def _kconfig_srctree(ove_dir):
 def _venv_env(ove_dir, base_env=None):
     """Return an env dict with .venv/bin and config/scripts prepended to PATH."""
     env = dict(base_env or os.environ)
-    venv_bin = os.path.join(ove_dir, ".venv", "bin")
+    venv_bin = venv.bin_path(ove_dir)
     scripts_bin = os.path.join(ove_dir, "config", "scripts")
     env["PATH"] = venv_bin + os.pathsep + scripts_bin + os.pathsep + env.get("PATH", "")
     return env
@@ -1931,7 +1933,7 @@ def test_i2c_retirement_zephyr(ove_dir, output_dir):
     env["ZEPHYR_BASE"] = os.path.join(output_dir, "tests", "i2c_async_zephyr",
                                     "zephyr-workspace", "zephyr")
     build = os.path.join(output_dir, "tests", "i2c_async_zephyr_arm")
-    run([os.path.join(ove_dir, ".venv", "bin", "west"), "build", "-b", "mps2/an500",
+    run([venv.bin_path(ove_dir, "west"), "build", "-b", "mps2/an500",
          "-d", build, os.path.join(ove_dir, "tests", "i2c_async_zephyr")], env=env)
     rc = _run_owned_test_process(
         ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
@@ -2591,7 +2593,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
         "APPSBINDIR": os.path.join(build_dir, "nuttx-apps"),
         "BINDIR": build_dir,
     })
-    olddefconfig = os.path.join(ove_dir, ".venv", "bin", "olddefconfig")
+    olddefconfig = venv.bin_path(ove_dir, "olddefconfig")
     run([olddefconfig], cwd=nuttx_src, env=kconfig_env)
 
     # Re-run configure: nuttx_mkconfig.cmake compares .config vs .config.prev
@@ -2721,10 +2723,11 @@ def test_nuttx_startup(ove_dir, output_dir):
 def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
                             source_dir=None, owned_timeout=None):
     """Build and run a Zephyr native_sim test."""
+    _require_zephyr_python(ove_dir)
     import hashlib
     build = os.path.join(output_dir, "tests", build_subdir)
     dl_dir = os.path.join(ove_dir, "dl")
-    west = os.path.join(ove_dir, ".venv", "bin", "west")
+    west = venv.bin_path(ove_dir, "west")
 
     manifest = load_manifest(ove_dir)
     default_rev = get_component(manifest, "rtos", "zephyr", "version")
@@ -3007,10 +3010,11 @@ def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, label, zero_heap=Fals
     `extra_cmake` is a list of extra `-D…` flags forwarded to the
     CMake invocation.  The HW runner uses this to pass `-DOVE_HW=ON`.
     """
+    _require_zephyr_python(ove_dir)
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
     build = os.path.join(output_dir, "tests", label)
-    west = os.path.join(ove_dir, ".venv", "bin", "west")
+    west = venv.bin_path(ove_dir, "west")
 
     manifest = load_manifest(ove_dir)
     default_rev = get_component(manifest, "rtos", "zephyr", "version")
@@ -3379,13 +3383,14 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     `exit_status` builds and runs QEMU under a deadline and passes only when
     the guest's semihosting exit status is zero.
     """
+    _require_zephyr_python(ove_dir)
     import hashlib
     if board is None:
         board = zephyr_board(_board_dir(ove_dir, "qemu-mps2-an500"))
     dl_dir = os.path.join(ove_dir, "dl")
     build = (os.path.join(output_dir, build_subdir) if build_subdir
              else os.path.join(output_dir, "tests", label))
-    west = os.path.join(ove_dir, ".venv", "bin", "west")
+    west = venv.bin_path(ove_dir, "west")
 
     manifest = load_manifest(ove_dir)
     default_rev = get_component(manifest, "rtos", "zephyr", "version")
@@ -3511,7 +3516,7 @@ def test_qemu_freertos_linux_segv(ove_dir, output_dir):
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/segv (the
     overtos board's post-build compiles it) plus QEMU and the slow uClinux boot, so it
     is deliberately NOT in any auto-run group."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     # Regenerate after changing Kconfig: this workspace is shared with the
     # hard-float suite, which leaves generated/ selecting the hard guest and the
@@ -3540,7 +3545,7 @@ def test_qemu_freertos_linux_hardfloat(ove_dir, output_dir):
     """
     import kconfiglib
 
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
 
     # The fragment command intentionally defaults to the broadly compatible
@@ -3584,7 +3589,7 @@ def test_qemu_freertos_linux_faultmatrix(ove_dir, output_dir):
 
     Manual/opt-in — needs the embedded Buildroot rootfs carrying segv, mpufault,
     xregion, kstress and fpbadsp, plus QEMU and the slow uClinux boot."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     # Regenerate after the fragment: this workspace is shared with the hard-float
     # suite, which leaves generated/ selecting the hard guest and the FP self-test.
@@ -3633,7 +3638,7 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/fbtest
     (the overtos board's post-build compiles it) plus QEMU and the slow uClinux boot."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
@@ -3659,7 +3664,7 @@ def test_qemu_freertos_linux_lvbench(ove_dir, output_dir):
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/lvbench
     (the overtos-lvbench package) plus QEMU and the slow uClinux boot + benchmark run."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
@@ -3685,7 +3690,7 @@ def test_qemu_freertos_linux_evread(ove_dir, output_dir):
     several touch reports, and shell survival.
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/evread."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
@@ -3721,7 +3726,7 @@ def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/segv plus QEMU and
     the slow uClinux boot, so it is deliberately NOT in any auto-run group."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", NUTTX_QEMU_LINUX_FRAGMENT], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
@@ -3749,7 +3754,7 @@ def test_qemu_nuttx_linux_xregion(ove_dir, output_dir):
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/xregion plus QEMU and
     the slow uClinux boot, so it is deliberately NOT in any auto-run group."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", NUTTX_QEMU_LINUX_FRAGMENT], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
@@ -3778,7 +3783,7 @@ def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
     prefix-matches the an500 and would drop USERSPACE. Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying
     /usr/bin/segv plus QEMU and the slow uClinux boot, so it is deliberately NOT in any auto-run
     group."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", ZEPHYR_QEMU_LINUX_FRAGMENT], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
@@ -3801,7 +3806,7 @@ def _linux_kstress(ove_dir, output_dir, board_frag, engine):
     139, not a kernel panic) — the shell survives both. Proves the syscall-boundary + fault-type
     hardening. Manual/opt-in — needs the embedded rootfs carrying /usr/bin/kstress plus QEMU and the
     slow uClinux boot, so it is deliberately NOT in any auto-run group."""
-    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", board_frag], cwd=ove_dir)
     # Regenerate after the fragment: these Linux workspaces are shared between
     # engines and float ABIs, and ove build does not reconfigure. A stale
