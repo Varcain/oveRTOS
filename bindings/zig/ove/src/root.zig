@@ -71,8 +71,10 @@
 //!   wrapped; device source/sink factories and individual node types
 //!   require raw FFI.
 //! - `storage.h` — storage backend abstraction (~1 kLOC C API).
-//! - `profiler.h`, `trace.h`, `ove_arm_backtrace.h` — diagnostic /
-//!   platform-specific; intentionally C-only.
+//! - `trace.h` — user marks and zones are wrapped as `ove::trace` in C++
+//!   and Rust. Zig uses the raw C API.
+//! - `profiler.h`, `ove_arm_backtrace.h` — diagnostic and platform-specific
+//!   C-only APIs.
 //!
 //! ## Heap and zero-heap modes
 //!

@@ -53,6 +53,7 @@ fn main() {
             "i2s",
             "async",
             "async_net",
+            "trace",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{m})");
@@ -90,11 +91,19 @@ fn main() {
 
     println!("cargo:rustc-check-cfg=cfg(docsrs)");
     println!("cargo:rustc-check-cfg=cfg(ove_test)");
+    println!("cargo:rustc-check-cfg=cfg(has_trace)");
 
     // Detect enabled subsystems from ove_config.h and emit cfg flags
     {
         let config_path = format!("{ove_gen_dir}/ove_config.h");
         let config = std::fs::read_to_string(&config_path).unwrap_or_default();
+        // With markers off, bindgen omits the C header's static inline stubs.
+        if config
+            .lines()
+            .any(|line| line == "#define CONFIG_OVE_TRACE_MARKERS 1")
+        {
+            println!("cargo:rustc-cfg=has_trace");
+        }
         let modules = [
             "SYNC",
             "QUEUE",

@@ -17,6 +17,10 @@
 
 #ifdef CONFIG_OVE_TRACE_STREAM
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Fixed-size trace record (wire v3). 24 B keeps the 64-bit timestamp
  * aligned and lets the dashboard treat payloads as a flat array.
@@ -44,13 +48,22 @@ struct ove_trace_record {
 	uint32_t pad;
 };
 
-_Static_assert(sizeof(struct ove_trace_record) == 24, "v3 trace record is 24 bytes");
-_Static_assert(offsetof(struct ove_trace_record, tid) == 8 &&
-		       offsetof(struct ove_trace_record, kind) == 12 &&
-		       offsetof(struct ove_trace_record, code) == 13 &&
-		       offsetof(struct ove_trace_record, reserved) == 14,
-	       "the first 16 bytes keep the v2 record layout");
-_Static_assert(offsetof(struct ove_trace_record, object) == 16, "v3 object word at offset 16");
+#ifdef __cplusplus
+#define OVE_TRACE_STATIC_ASSERT static_assert
+#else
+#define OVE_TRACE_STATIC_ASSERT _Static_assert
+#endif
+
+OVE_TRACE_STATIC_ASSERT(sizeof(struct ove_trace_record) == 24, "v3 trace record is 24 bytes");
+OVE_TRACE_STATIC_ASSERT(offsetof(struct ove_trace_record, tid) == 8 &&
+				offsetof(struct ove_trace_record, kind) == 12 &&
+				offsetof(struct ove_trace_record, code) == 13 &&
+				offsetof(struct ove_trace_record, reserved) == 14,
+			"the first 16 bytes keep the v2 record layout");
+OVE_TRACE_STATIC_ASSERT(offsetof(struct ove_trace_record, object) == 16,
+			"v3 object word at offset 16");
+
+#undef OVE_TRACE_STATIC_ASSERT
 
 /**
  * ove_trace_ring_push - enqueue a record; drops only when the ring is full
@@ -108,6 +121,10 @@ size_t ove_trace_names(struct ove_trace_name_desc *out, size_t max);
  * to @out (bounded by @max).
  */
 size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CONFIG_OVE_TRACE_STREAM */
 
