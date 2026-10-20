@@ -42,7 +42,11 @@ struct ove_profiler_sample {
 	uint32_t tid;
 	uint8_t depth;
 	uint8_t state;
-	uint8_t _pad[2];
+	/* Exception number of the interrupted handler when the sample was
+	 * taken in handler mode (the sampler preempted an ISR); 0 for
+	 * thread-mode samples. The dashboard renders such samples as
+	 * "[ISR n]" instead of looking up tid 0 as a thread. */
+	uint16_t isr;
 	uintptr_t pcs[CONFIG_OVE_PROFILER_MAX_DEPTH];
 };
 

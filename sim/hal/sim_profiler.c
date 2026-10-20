@@ -68,7 +68,7 @@ static void emit_caps(struct sim_profiler_ctx *t)
 
 /*
  * Envelope (1+1+2+4 = 8 B) + per sample:
- *   8 (ts) + 4 (tid) + 1 (depth) + 1 (state) + 2 (pad) + depth * W (pcs)
+ *   8 (ts) + 4 (tid) + 1 (depth) + 1 (state) + 2 (isr) + depth * W (pcs)
  *
  * W (the envelope's word_size byte) is the target's pointer size: 4 on
  * Cortex-M. Widening PCs to 8 bytes would waste half of every event.
@@ -112,8 +112,8 @@ static size_t serialise_sample(uint8_t *p, const struct ove_profiler_sample *s)
 	q += 4;
 	*q++ = s->depth;
 	*q++ = s->state;
-	*q++ = 0;
-	*q++ = 0;
+	memcpy(q, &s->isr, 2);
+	q += 2;
 	for (uint8_t i = 0; i < s->depth; i++) {
 		uintptr_t pc = s->pcs[i];
 		memcpy(q, &pc, PC_WIRE_BYTES);

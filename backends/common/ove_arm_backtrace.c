@@ -77,6 +77,7 @@
  * the resolved chain to drop those residual phantoms.
  */
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "ove/ove_arm_backtrace.h"
@@ -111,6 +112,57 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintp
 	if ((hw1 & 0xF800u) == 0xF000u && (hw2 & 0xD000u) == 0xD000u)
 		return 1; /* bl imm */
 	return 0;
+}
+
+/* An exception number a preempted handler can have: NMI, the faults,
+ * SVCall, DebugMonitor, PendSV, SysTick or an external interrupt. */
+static int exc_number_valid(unsigned int exc)
+{
+	return (exc >= 2u && exc <= 6u) || exc == 11u || exc == 12u || exc >= 14u;
+}
+
+const uint32_t *ove_arm_find_exc_frame(uintptr_t msp, uintptr_t msp_limit, uintptr_t text_lo,
+				       uintptr_t text_hi, unsigned int max_words,
+				       unsigned int own_exc)
+{
+	if (!msp || (msp & 3u) || msp >= msp_limit)
+		return NULL;
+
+	const uint32_t *base = (const uint32_t *)msp;
+	uintptr_t avail = (msp_limit - msp) / 4u;
+	if (max_words && avail > max_words)
+		avail = max_words;
+
+	/* The frame is not the first frame-like block above the stack
+	 * pointer: the sampler's own locals lie in between and can look like
+	 * one. Anchor on the sampler's entry instead. The hardware stacked
+	 * the interrupted handler's frame, and the sampler's first push put
+	 * the EXC_RETURN it got right below it; returning to a handler, that
+	 * is 0xFFFFFFF1 (or 0xFFFFFFE1 for a frame with FP state). */
+	for (uintptr_t i = 1; i + 8u <= avail; i++) {
+		const uint32_t *f = base + i;
+		uint32_t exc_return = f[-1];
+		if (exc_return != 0xFFFFFFF1u && exc_return != 0xFFFFFFE1u)
+			continue;
+
+		/* Thumb bit set, reserved bits [23:20] clear, and an exception
+		 * number a preempted handler can have, other than the
+		 * sampler's own. */
+		uint32_t xpsr = f[OVE_ARM_EXC_XPSR];
+		if (!(xpsr & (1u << 24)) || (xpsr & 0x00F00000u))
+			continue;
+		unsigned int exc = xpsr & 0x1FFu;
+		if (!exc_number_valid(exc) || exc == own_exc)
+			continue;
+
+		uint32_t pc = f[OVE_ARM_EXC_PC];
+		if (pc < text_lo || pc >= text_hi)
+			continue;
+
+		return f;
+	}
+
+	return NULL;
 }
 
 int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t stack_lo,
