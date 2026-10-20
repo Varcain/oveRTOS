@@ -10,6 +10,8 @@
 
 #ifdef CONFIG_OVE_TRACE_STREAM
 
+#include <string.h>
+
 #include "ove/thread.h"
 #include "ove/trace.h"
 #include "ove/thread_state_stats.h"
@@ -103,5 +105,56 @@ void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uin
 	};
 	(void)ove_trace_ring_push(&rec);
 }
+
+#ifdef CONFIG_OVE_TRACE_MARKERS
+/* A single writer appends entries, publishing each through the count. */
+static struct ove_trace_name_desc trace_names[OVE_TRACE_NAME_MAX];
+static size_t trace_name_count;
+
+bool ove_trace_register_name(uint16_t id, const char *name)
+{
+	if (name == NULL || name[0] == '\0')
+		return false;
+
+	size_t count = __atomic_load_n(&trace_name_count, __ATOMIC_RELAXED);
+	if (count >= OVE_TRACE_NAME_MAX)
+		return false;
+
+	struct ove_trace_name_desc *entry = &trace_names[count];
+	size_t len = strnlen(name, OVE_TRACE_NAME_MAX_LEN);
+	entry->id = id;
+	memcpy(entry->name, name, len);
+	entry->name[len] = '\0';
+	__atomic_store_n(&trace_name_count, count + 1, __ATOMIC_RELEASE);
+	return true;
+}
+
+size_t ove_trace_names(struct ove_trace_name_desc *out, size_t max)
+{
+	if (out == NULL)
+		return 0;
+
+	size_t count = __atomic_load_n(&trace_name_count, __ATOMIC_ACQUIRE);
+	if (count > max)
+		count = max;
+	memcpy(out, trace_names, count * sizeof(*out));
+	return count;
+}
+
+void ove_trace_mark(uint16_t id)
+{
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_USER, OVE_TRACE_ACT_USER, id);
+}
+
+void ove_trace_zone_begin(uint16_t id)
+{
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_USER, OVE_TRACE_ACT_ZONE_BEGIN, id);
+}
+
+void ove_trace_zone_end(uint16_t id)
+{
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_USER, OVE_TRACE_ACT_ZONE_END, id);
+}
+#endif /* CONFIG_OVE_TRACE_MARKERS */
 
 #endif /* CONFIG_OVE_TRACE_STREAM */

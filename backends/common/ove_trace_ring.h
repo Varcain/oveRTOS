@@ -28,7 +28,7 @@
  *   kind     : OVE_TRACE_KIND_STATE or OVE_TRACE_KIND_MARK
  *   code     : STATE -> new_state; MARK -> primitive/action nibbles
  *   reserved : STATE -> old_state; MARK -> unused (kept for v2 layout)
- *   object   : STATE -> old_state; MARK -> low 32 bits of object address
+ *   object   : STATE -> old_state; MARK -> object address (low 32 bits) or user id
  *   pad      : always 0; named so that no stack bytes reach the wire
  *
  * Offsets 0..15 match the v2 (16-byte) record, so the dashboard can decode
@@ -83,6 +83,19 @@ struct ove_trace_thread_desc {
 	uint32_t generation; /* new at every ove thread start, 0 for kernel threads */
 	const char *name;
 };
+
+#ifdef CONFIG_OVE_TRACE_MARKERS
+#define OVE_TRACE_NAME_MAX 32
+#define OVE_TRACE_NAME_MAX_LEN 31
+
+struct ove_trace_name_desc {
+	uint16_t id;
+	char name[OVE_TRACE_NAME_MAX_LEN + 1];
+};
+
+/* Copy up to max published names in registration order. */
+size_t ove_trace_names(struct ove_trace_name_desc *out, size_t max);
+#endif
 
 /**
  * ove_backend_trace_list_threads - enumerate live threads as tid + name

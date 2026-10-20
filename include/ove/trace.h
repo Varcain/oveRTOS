@@ -13,7 +13,8 @@
  * When CONFIG_OVE_TRACE_STREAM is enabled, every thread state transition
  * is pushed into a lock-free ring and drained by the sim transport, which
  * forwards it to the dashboard as a swimlane. CONFIG_OVE_TRACE_MARKERS
- * additionally emits point markers at sync-primitive entry/exit.
+ * enables sync-primitive markers and user marks and zones. User marks
+ * and zones use the calling thread's lane, or the interrupt lane in an ISR.
  *
  * Thread identity is the low 32 bits of the backend thread handle. The
  * dashboard resolves these to names via descriptor records emitted
@@ -23,6 +24,7 @@
 #ifndef OVE_TRACE_H
 #define OVE_TRACE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "ove_config.h"
@@ -53,6 +55,8 @@ enum {
 	OVE_TRACE_ACT_WAIT_EXIT = 2,
 	OVE_TRACE_ACT_POST = 3,
 	OVE_TRACE_ACT_USER = 4,
+	OVE_TRACE_ACT_ZONE_BEGIN = 5,
+	OVE_TRACE_ACT_ZONE_END = 6,
 };
 
 /** @brief When ove_trace_emit_kthread_state() emits the transition. */
@@ -93,10 +97,31 @@ void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_sta
  * @param[in] thread_handle Stable backend handle of the emitting thread.
  * @param[in] prim          One of @c OVE_TRACE_PRIM_*.
  * @param[in] act           One of @c OVE_TRACE_ACT_*.
- * @param[in] object        Address of the primitive (its low 32 bits are
- *                          carried in the record).
+ * @param[in] object        Primitive address (low 32 bits) or user id.
  */
 void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
+
+#ifdef CONFIG_OVE_TRACE_MARKERS
+/**
+ * @brief Append a name for a user trace id.
+ *
+ * Call from a single thread. The table copies up to 31 bytes of the
+ * NUL-terminated name. Each registration uses one of 32 entries,
+ * including repeated ids. The latest entry supplies the name for the id.
+ *
+ * @return True on success, false for a NULL or empty name or a full table.
+ */
+bool ove_trace_register_name(uint16_t id, const char *name);
+
+/** @brief Emit a point marker for a user id. */
+void ove_trace_mark(uint16_t id);
+
+/** @brief Begin a user zone. Zones with the same id may nest. */
+void ove_trace_zone_begin(uint16_t id);
+
+/** @brief End the innermost open zone with this id on the current lane. */
+void ove_trace_zone_end(uint16_t id);
+#endif /* CONFIG_OVE_TRACE_MARKERS */
 
 /**
  * @brief Emit a state transition for a thread with no ove_thread wrapper.
@@ -168,7 +193,7 @@ static inline uintptr_t ove_backend_thread_current_handle(void)
 
 #endif /* CONFIG_OVE_TRACE_STREAM */
 
-#ifdef CONFIG_OVE_TRACE_MARKERS
+#if defined(CONFIG_OVE_TRACE_STREAM) && defined(CONFIG_OVE_TRACE_MARKERS)
 #define OVE_TRACE_MARK(thread, prim, act, obj) \
 	ove_trace_emit_mark((uintptr_t)(thread), (prim), (act), (uintptr_t)(obj))
 #define OVE_TRACE_MARK_CURRENT(prim, act, obj) \
@@ -176,6 +201,28 @@ static inline uintptr_t ove_backend_thread_current_handle(void)
 #else
 #define OVE_TRACE_MARK(thread, prim, act, obj) ((void)0)
 #define OVE_TRACE_MARK_CURRENT(prim, act, obj) ((void)0)
+
+static inline bool ove_trace_register_name(uint16_t id, const char *name)
+{
+	(void)id;
+	(void)name;
+	return false;
+}
+
+static inline void ove_trace_mark(uint16_t id)
+{
+	(void)id;
+}
+
+static inline void ove_trace_zone_begin(uint16_t id)
+{
+	(void)id;
+}
+
+static inline void ove_trace_zone_end(uint16_t id)
+{
+	(void)id;
+}
 #endif
 
 #ifdef __cplusplus

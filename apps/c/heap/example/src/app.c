@@ -64,7 +64,9 @@ static void producer_thread(void *arg)
 
 	while (!ove_thread_should_stop(self)) {
 		++count;
+		ove_trace_zone_begin(1);
 		int ret = ove_queue_send(counter_queue, &count, OVE_MS(1000));
+		ove_trace_zone_end(1);
 		if (ret != OVE_OK) {
 			OVE_LOG_WRN("Producer: queue full, dropped %u", (unsigned int)count);
 		}
@@ -83,7 +85,9 @@ static void consumer_thread(void *arg)
 	OVE_LOG_INF("Consumer started");
 
 	while (!ove_thread_should_stop(self)) {
+		ove_trace_zone_begin(2);
 		int ret = ove_queue_receive(counter_queue, &val, OVE_WAIT_FOREVER);
+		ove_trace_zone_end(2);
 		if (ret == OVE_OK) {
 			ret = ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
 			if (ret != OVE_OK) {
@@ -114,6 +118,7 @@ static void ui_timer_cb(ove_timer_t timer, void *user_data)
 	val = last_value;
 	ove_mutex_unlock(value_mutex);
 
+	ove_trace_mark(4);
 	ove_lvgl_lock();
 	snprintf(buf, sizeof(buf), "Count: %u", (unsigned int)val);
 	lv_label_set_text(count_label, buf);
@@ -137,10 +142,12 @@ static void graphics_thread(void *arg)
 		elapsed_ms = (uint32_t)((now_us - last_us) / 1000);
 		last_us = now_us;
 
+		ove_trace_zone_begin(3);
 		ove_lvgl_lock();
 		ove_lvgl_tick(elapsed_ms);
 		ove_lvgl_handler();
 		ove_lvgl_unlock();
+		ove_trace_zone_end(3);
 
 		ove_thread_sleep_ms(33);
 	}
@@ -205,6 +212,15 @@ void ove_main(void)
 	int ret;
 
 	OVE_LOG_INF("C example (heap mode): init");
+
+	/* Named user instrumentation: resolved by the dashboard from the
+	 * trace NAMES table. The calls are no-ops when markers are compiled
+	 * out, and four names cannot fill the table, so the result is not
+	 * checked. */
+	(void)ove_trace_register_name(1, "producer.send");
+	(void)ove_trace_register_name(2, "consumer.recv");
+	(void)ove_trace_register_name(3, "graphics.frame");
+	(void)ove_trace_register_name(4, "ui.update");
 
 	/* Heap-allocate kernel objects via the _create() API. */
 	ret = ove_queue_create(&counter_queue, sizeof(uint32_t), QUEUE_DEPTH);

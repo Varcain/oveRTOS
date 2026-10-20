@@ -170,13 +170,15 @@ Plugin event types and command types use disjoint per-plugin bases (`ove/sim/ove
 **Trace** (`OVE_SIM_TRACE_EVT_STREAM` = 10, `..._DESCRIPTORS` = 11). Envelope:
 
 ```
-u8  sub_type      0 = descriptors, 1 = stream
+u8  sub_type      0 = descriptors, 1 = stream, 2 = names
 u8  version       3
 u16 count
 u32 dropped       records lost since the previous batch
 ```
 
-Stream records are 24 bytes each in the current format (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 reserved` (previous state for state records; 0 for marks), `u32 object` (previous state for state records; full 32 bits of the object address for marks), `u32 pad` (always 0). The dashboard also decodes 16-byte v2 records. Descriptors repeat `u32 tid`, `u32 generation` (since version 2), `u8 name_len`, `char name[name_len]`. Each ove thread start gets a new generation so a thread on reused storage starts a new lane. Generation 0 is reported for kernel threads and Zephyr ove threads that have yet to run.
+Stream records are 24 bytes each in the current format (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 reserved` (previous state for state records; 0 for marks), `u32 object` (previous state for state records, the low 32 bits of the object address for sync marks, or the id for user marks), `u32 pad` (always 0). The dashboard also decodes 16-byte v2 records. Descriptors repeat `u32 tid`, `u32 generation` (since version 2), `u8 name_len`, `char name[name_len]`. Each ove thread start gets a new generation so a thread on reused storage starts a new lane. Generation 0 is reported for kernel threads and Zephyr ove threads that have yet to run. NAMES batches travel on the descriptor event every 500 ms and repeat `u16 id`, `u8 name_len`, `char name[name_len]` in registration order.
+
+With `CONFIG_OVE_TRACE_MARKERS` enabled, call `ove_trace_mark(id)` for a point marker or pair `ove_trace_zone_begin(id)` and `ove_trace_zone_end(id)` around a phase. These calls emit on the calling thread's lane or the interrupt lane. A single application thread can call `ove_trace_register_name(id, name)` to append a name of up to 31 bytes. The table keeps its own copy and holds 32 entries. A repeated id uses another entry, and its latest entry supplies the name. With markers disabled, the calls are inline no-ops and registration returns false.
 
 **Profiler samples** (`OVE_SIM_PROFILER_EVT_SAMPLES` = 20). Envelope:
 
@@ -198,7 +200,7 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` if SIM | Enable the browser-based dashboard |
 | `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` if SIM | Per-thread state time tracking (prerequisite for trace and profiler) |
 | `CONFIG_OVE_TRACE_STREAM` | bool | `y` if SIM | Emit state transitions into the trace ring |
-| `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) |
+| `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
 | `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
 | `CONFIG_OVE_PROFILER` | bool | `y` | Sampling profiler |
 | `CONFIG_OVE_PROFILER_HZ` | int | 250 | Mean sample rate (10–1000 Hz) |
