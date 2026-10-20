@@ -156,6 +156,24 @@ def _kconfig_srctree(ove_dir):
             os.environ["srctree"] = previous
 
 
+@contextmanager
+def _default_workspace():
+    """Ignore $OVE_WORKSPACE_DIR for the duration of a block.
+
+    A target that builds the active workspace in-process would otherwise
+    build the workspace the variable names instead of the one its
+    defconfig step just activated, and then check a stale ELF.
+    """
+    from .workspace import WORKSPACE_DIR_ENV
+
+    previous = os.environ.pop(WORKSPACE_DIR_ENV, None)
+    try:
+        yield
+    finally:
+        if previous is not None:
+            os.environ[WORKSPACE_DIR_ENV] = previous
+
+
 def _require_zephyr_python(ove_dir):
     """Exit with a fix-it message if the venv cannot build Zephyr."""
     error = venv.zephyr_error(ove_dir)
@@ -2267,6 +2285,121 @@ def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
                             label="qemu-zephyr-zeroheap")
 
 
+def _sim_invariant_elf(output_dir, rtos):
+    """Return the example firmware ELF for a QEMU trace test, if built."""
+    build = os.path.join(output_dir, "qemu", rtos, "example_c", "build")
+    if rtos == "nuttx":
+        elf = os.path.join(build, "nuttx-cmake", "nuttx")
+    elif rtos == "zephyr":
+        elf = os.path.join(build, "firmware", "zephyr", "zephyr.elf")
+    else:
+        elf = os.path.join(build, "firmware", "firmware.elf")
+    return elf if os.path.isfile(elf) else None
+
+
+# The workspace directories `ove build` looks for, per RTOS (the same list
+# as build.py's preflight check).
+_RTOS_SOURCE_DIRS = {
+    "freertos": ("FreeRTOS-Kernel", "STM32CubeF7"),
+    "nuttx": ("nuttx",),
+    "zephyr": ("zephyr-workspace",),
+}
+
+
+def _ensure_rtos_sources(ove_dir, rtos):
+    """Fetch the RTOS sources into the active workspace if they are missing.
+
+    The trace tests build the example application exactly like `ove build`
+    does, so they need the RTOS sources in the workspace `dl/`.  A fresh
+    clone (or a fresh CI runner) has none and the build would abort with
+    "RTOS sources not found".  The download is idempotent -- an already
+    present source tree is reused -- and is only attempted when something
+    is actually missing, so a warm workspace never hits the network.
+    """
+    candidates = _RTOS_SOURCE_DIRS.get(rtos, ())
+    if not candidates:
+        return
+    from .workspace import Workspace
+
+    ws = Workspace(ove_dir)
+
+    def _present():
+        return any(os.path.isdir(os.path.join(ws.ws_dl_dir, name))
+                   for name in candidates)
+
+    if _present():
+        return
+
+    from .download import download_all
+
+    download_all(ws)
+    if not _present():
+        logger.error("RTOS sources still missing in %s after 'ove download'",
+                     ws.ws_dl_dir)
+
+
+def _run_sim_invariants(ove_dir, output_dir, rtos, label):
+    """Build the example app, boot it and check trace/profiler invariants."""
+    from types import SimpleNamespace
+
+    from .build import cmd_build
+    from .configure import cmd_configure
+    from .kconfig import cmd_defconfig_fragments
+
+    # The steps below act on the workspace the fragments activate, which
+    # is the one _sim_invariant_elf() reads the ELF from.
+    with _default_workspace():
+        # cmd_defconfig_fragments points kconfiglib at this tree through
+        # $srctree; scope it so the NuttX build below does not inherit it.
+        with _kconfig_srctree(ove_dir):
+            cmd_defconfig_fragments(
+                SimpleNamespace(spec=f"qemu.{rtos}.example_c", no_activate=False)
+            )
+        _ensure_rtos_sources(ove_dir, rtos)
+        # `ove build` builds what generated/ holds; regenerate it from the
+        # .config the fragments just wrote.
+        cmd_configure(SimpleNamespace(dry_run=False))
+        cmd_build(SimpleNamespace(dry_run=False, json=False))
+
+    elf = _sim_invariant_elf(output_dir, rtos)
+    if not elf:
+        return TestResults(
+            suite=label, failed=1, failed_names=[f"{label}: no firmware ELF"]
+        )
+    script = os.path.join(ove_dir, "config", "scripts",
+                          "ove-sim-invariants.py")
+    proc = subprocess.run(
+        [sys.executable, script, "--elf", elf, "--rtos", rtos,
+         "--seconds", "5"],
+        cwd=ove_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    print(proc.stdout, end="")
+    if proc.returncode != 0:
+        return TestResults(suite=label, failed=1, failed_names=[label])
+    return TestResults(suite=label, passed=1)
+
+
+def test_qemu_freertos_trace(ove_dir, output_dir):
+    """Check trace/profiler invariants on the FreeRTOS example."""
+    return _run_sim_invariants(ove_dir, output_dir, "freertos",
+                               "qemu-freertos-trace")
+
+
+def test_qemu_nuttx_trace(ove_dir, output_dir):
+    """Check trace/profiler invariants on the NuttX example."""
+    return _run_sim_invariants(ove_dir, output_dir, "nuttx",
+                               "qemu-nuttx-trace")
+
+
+def test_qemu_zephyr_trace(ove_dir, output_dir):
+    """Check trace/profiler invariants on the Zephyr example."""
+    return _run_sim_invariants(ove_dir, output_dir, "zephyr",
+                               "qemu-zephyr-trace")
+
+
 def test_qemu_freertos_linux_segv(ove_dir, output_dir):
     """Build the QEMU mps2-an500 FreeRTOS ARM_CM4_MPU Linux personality and run the
     NEGATIVE isolation test: /usr/bin/segv deliberately writes kernel SRAM, which the
@@ -2872,12 +3005,15 @@ TEST_TARGETS = {
     "zephyr-coverage": test_zephyr_coverage,
     "qemu-freertos": test_qemu_freertos,
     "qemu-freertos-zeroheap": test_qemu_freertos_zeroheap,
+    "qemu-freertos-trace": test_qemu_freertos_trace,
     "qemu-freertos-coverage": test_qemu_freertos_coverage,
     "qemu-nuttx": test_qemu_nuttx,
     "qemu-nuttx-zeroheap": test_qemu_nuttx_zeroheap,
+    "qemu-nuttx-trace": test_qemu_nuttx_trace,
     "qemu-nuttx-coverage": test_qemu_nuttx_coverage,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
+    "qemu-zephyr-trace": test_qemu_zephyr_trace,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-freertos-linux-hardfloat": test_qemu_freertos_linux_hardfloat,
     "qemu-freertos-linux-faultmatrix": test_qemu_freertos_linux_faultmatrix,
@@ -2910,9 +3046,11 @@ TEST_TARGETS = {
 
 # Grouped test sets
 SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
-QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
-               "qemu-nuttx-zeroheap",
-               "qemu-zephyr", "qemu-zephyr-zeroheap"]
+QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap",
+               "qemu-freertos-trace", "qemu-nuttx",
+               "qemu-nuttx-zeroheap", "qemu-nuttx-trace",
+               "qemu-zephyr", "qemu-zephyr-zeroheap",
+               "qemu-zephyr-trace"]
 RENODE_TESTS = ["renode-stm32f746-freertos",
                 "renode-stm32f746-freertos-zeroheap",
                 "renode-stm32f746-zephyr",
@@ -2941,22 +3079,46 @@ def _save_terminal():
 
 
 def _save_active_workspace(ove_dir):
-    """Record the active-workspace links: <ove>/.config and output/current.
+    """Record the active workspace: the <ove>/.config and output/current
+    links and the CMakeUserPresets.json that `ove configure` writes.
 
-    The Linux personality targets configure and build through the active
-    workspace, so they repoint both links at their own; _restore puts the
-    user's back afterwards.
+    The trace and Linux personality targets configure and build through
+    the active workspace, so they repoint both links at their own and
+    rewrite the IDE preset; _restore puts the user's back afterwards.
     """
     links = (os.path.join(ove_dir, ".config"),
              os.path.join(ove_dir, "output", "current"))
-    return {p: os.readlink(p) for p in links if os.path.islink(p)}
+    presets = os.path.join(ove_dir, "CMakeUserPresets.json")
+    try:
+        with open(presets, encoding="utf-8") as f:
+            presets_text = f.read()
+    except OSError:
+        presets_text = None
+    return {
+        "links": {p: os.readlink(p) for p in links if os.path.islink(p)},
+        "presets": (presets, presets_text),
+    }
 
 
 def _restore_active_workspace(saved):
-    for link, target in saved.items():
+    for link, target in saved["links"].items():
         if not os.path.islink(link) or os.readlink(link) != target:
             atomic_symlink(target, link)
             logger.info(f"Restored {link} -> {target}")
+    presets, text = saved["presets"]
+    try:
+        with open(presets, encoding="utf-8") as f:
+            current = f.read()
+    except OSError:
+        current = None
+    if current == text:
+        return
+    if text is None:
+        os.remove(presets)
+    else:
+        with open(presets, "w", encoding="utf-8") as f:
+            f.write(text)
+    logger.info(f"Restored {presets}")
 
 
 def _restore_terminal(state):

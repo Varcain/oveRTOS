@@ -546,6 +546,9 @@ add_test(NAME ove_zig_struct_mirrors_python
 add_test(NAME ove_bridge_trace_descriptors_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_bridge_trace_descriptors.py)
+add_test(NAME ove_sim_invariants_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_sim_invariants.py)
 add_test(NAME ove_manifest_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_manifest.py)
@@ -559,6 +562,11 @@ add_test(NAME ove_sim_drain_priority_python
 add_test(NAME ove_queue_trace_markers_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_queue_trace_markers.py)
+add_test(NAME ove_test_env_python
+    COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=${OVE_ROOT}/config/ove-cli
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_ove_test_env.py)
 add_test(NAME ove_venv_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
@@ -573,6 +581,9 @@ add_test(NAME ove_rust_trace_cfg_python
 add_test(NAME ove_config_matrix_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_config_matrix.py)
+add_test(NAME ove_ci_workflow_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_ci_workflow.py)
 add_test(NAME ove_build_type_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

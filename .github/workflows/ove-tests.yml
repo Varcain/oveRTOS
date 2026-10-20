@@ -425,9 +425,31 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
+      # The trace step below builds the example app through `ove build`,
+      # which needs the RTOS sources in dl/.  Only the source trees are
+      # cached here -- the toolchain tarball also lands in dl/ but is left
+      # out on purpose: the extracted toolchain lives in output/toolchains
+      # (cached above), and caching both would double the cache size.
+      - name: Cache RTOS sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl/FreeRTOS-Kernel-*
+            dl/picolibc-*
+            dl/lvgl-*
+          key: ove-dl-freertos-${{ hashFiles('manifest.yaml') }}
+
+      # `ove download` needs a .config and a fresh checkout has none, so
+      # create the workspace config first, then fetch the RTOS sources.
+      - name: Fetch RTOS sources
+        run: |
+          timeout 900 make qemu.freertos.example_c
+          timeout 1800 make download
+
       # The build pulls FreeRTOS-Kernel and cmocka via CMake FetchContent
-      # at configure time (no `dl/` pre-cache for this variant), so the
-      # wall-clock ceiling has to absorb GitHub/GitLab clone slowdowns.
+      # at configure time (the sim variant does not consume the `dl/`
+      # pre-cache), so the wall-clock ceiling has to absorb GitHub/GitLab
+      # clone slowdowns.
       # A previous run hit a ~8 min github.com stall on a single shallow
       # clone after apt-get itself ran at 2 MB/s — well past the 600 s
       # budget despite the actual build+test taking ~3 min when warm.
@@ -436,6 +458,9 @@ jobs:
 
       - name: Run zeroheap tests
         run: timeout 1200 make test-qemu-freertos-zeroheap
+
+      - name: Check trace/profiler invariants
+        run: timeout 1200 make test-qemu-freertos-trace
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -506,11 +531,36 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
+      # The trace step below builds the example app through `ove build`,
+      # which needs the RTOS sources in dl/.  Only the source trees are
+      # cached here -- the toolchain tarball also lands in dl/ but is left
+      # out on purpose: the extracted toolchain lives in output/toolchains
+      # (cached above), and caching both would double the cache size.
+      - name: Cache RTOS sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl/nuttx-*
+            dl/CMSIS_5-*
+            dl/CMSIS-DSP-*
+            dl/lvgl-*
+          key: ove-dl-nuttx-${{ hashFiles('manifest.yaml') }}
+
+      # `ove download` needs a .config and a fresh checkout has none, so
+      # create the workspace config first, then fetch the RTOS sources.
+      - name: Fetch RTOS sources
+        run: |
+          timeout 900 make qemu.nuttx.example_c
+          timeout 1800 make download
+
       - name: Run tests
         run: timeout 900 make test-qemu-nuttx
 
       - name: Run zeroheap tests
         run: timeout 900 make test-qemu-nuttx-zeroheap
+
+      - name: Check trace/profiler invariants
+        run: timeout 900 make test-qemu-nuttx-trace
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -554,11 +604,30 @@ jobs:
             echo "Zephyr workspace restored from cache"
           fi
 
+      # The trace step below builds the example app through `ove build`,
+      # which needs the RTOS sources in dl/.  The Zephyr workspace itself
+      # is cached above; LVGL is the remaining source tree.
+      - name: Cache RTOS sources
+        uses: actions/cache@v4
+        with:
+          path: dl/lvgl-*
+          key: ove-dl-zephyr-${{ hashFiles('manifest.yaml') }}
+
+      # `ove download` needs a .config and a fresh checkout has none, so
+      # create the workspace config first, then fetch the RTOS sources.
+      - name: Fetch RTOS sources
+        run: |
+          timeout 900 make qemu.zephyr.example_c
+          timeout 1800 make download
+
       - name: Run tests
         run: timeout 600 make test-qemu-zephyr
 
       - name: Run zeroheap tests
         run: timeout 600 make test-qemu-zephyr-zeroheap
+
+      - name: Check trace/profiler invariants
+        run: timeout 900 make test-qemu-zephyr-trace
 
       - uses: actions/upload-artifact@v4
         if: failure()
