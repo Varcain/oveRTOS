@@ -522,6 +522,10 @@ add_test(NAME ove_venv_python
 add_test(NAME ove_makefile_python_resolution_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_makefile_python_resolution.py)
+add_test(NAME ove_build_type_cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DOVE_ROOT=${OVE_ROOT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestBuildType.cmake)
 add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

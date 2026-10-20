@@ -45,6 +45,19 @@ cmake_minimum_required(VERSION 3.20)
 
 include(${CMAKE_CURRENT_LIST_DIR}/OveHelpers.cmake)
 
+# Pick the configuration from OVE_DEBUG (CONFIG_OVE_DEBUG_BUILD).  A cached
+# Debug from an earlier build must not survive turning the option off; other
+# explicit types (RelWithDebInfo, MinSizeRel) are left alone.  The match is
+# case-insensitive, like $<CONFIG:Debug>.
+function(ove_select_build_type)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" type)
+    if(OVE_DEBUG)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+    elseif(NOT CMAKE_BUILD_TYPE OR type STREQUAL "DEBUG")
+        set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    endif()
+endfunction()
+
 # ─── ove_setup_project() ─────────────────────────────────────────────
 # Resolves all paths, includes generated config, enables optional languages,
 # sets common compiler flags, and includes the application source list.
@@ -111,12 +124,9 @@ macro(ove_setup_project)
         endif()
     endif()
 
-    # OVE_DEBUG_BUILD → Debug config; otherwise Release.
-    if(OVE_DEBUG)
-        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
-    elseif(NOT CMAKE_BUILD_TYPE)
-        set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-    endif()
+    # OVE_DEBUG_BUILD → Debug config; otherwise Release (see
+    # ove_select_build_type()).
+    ove_select_build_type()
 
     # The board declares the base C/ASM project directly so CMake performs one
     # conventional project initialization. Enable CXX only for consumers that
