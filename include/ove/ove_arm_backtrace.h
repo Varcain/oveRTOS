@@ -70,11 +70,21 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintp
  *   - have the Thumb bit set,
  *   - point (after clearing bit 0) into [@p text_lo, @p text_hi),
  *   - sit right after a `bl imm` or `blx reg`,
- *   - have its preceding word (the saved-r7) fit the prologue
- *     invariant: saved_r7_value = (saved_lr_slot_addr + 4) + K_caller
- *     for K_caller in [0, 128],
+ *   - have a plausible saved-r7 word in the push block below the saved
+ *     LR (at most five words: the callee may save r8-r11 between the
+ *     saved r7 and the saved LR): saved_r7_value =
+ *     (saved_lr_slot_addr + 4) + K_caller for K_caller in [0, 128].
+ *     When several words of the block qualify, the one whose value is
+ *     closest to (saved_lr_slot_addr + 4) — the modal K_caller = 0 — is
+ *     taken as the saved r7 (when the callee saves high registers, the
+ *     word nearest the saved LR is a saved r8/r9/sl/fp, not the saved
+ *     r7),
  *   - the pair's footprint must sit strictly above the most recently
  *     accepted saved-r7 (ascending-chain invariant).
+ *
+ * A stale return address left in a frame's locals can still pass all of
+ * these, so the result may contain phantom frames; the dashboard bridge
+ * prunes them against the control-flow graph.
  *
  * Scan terminates at the top of the task's stack (@p stack_hi), after a
  * 16 KiB safety cap, or on filling @p max slots. Returns 0 when @p psp is

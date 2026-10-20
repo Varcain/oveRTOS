@@ -21,7 +21,7 @@
  *   - Multi-frame unwinding is delegated to
  *     backends/common/ove_arm_backtrace.c — the same five-filter chain
  *     FreeRTOS uses (Thumb bit, text range, bl/blx precedes LR,
- *     saved-r7 adjacency, ascending chain). We only pass backend-
+ *     saved-r7 value window, ascending chain). We only pass backend-
  *     specific constants:
  *       - text bounds: [_image_text_start, _image_text_end) from
  *         Zephyr's linker-defs. These are placed well past the ISR
