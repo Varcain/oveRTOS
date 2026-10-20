@@ -1338,6 +1338,8 @@ function traceRestartTimebase() {
         th.lastState = -1;
         th.lastTs = 0;
         th.hasData = false;
+        th.generation = undefined;
+        th.restarted = false;
     }
     traceSpans = [];
     traceMarks = [];
@@ -1398,26 +1400,42 @@ function handleTrace(buf, off) {
     if (buf.byteLength - off < 8) return;
     var dv = new DataView(buf, off);
     var subType = dv.getUint8(0);
-    /* version at offset 1 — unused for now */
+    var version = dv.getUint8(1);
     var count   = dv.getUint16(2, true);
     var dropped = dv.getUint32(4, true);
     traceDropped += dropped;
 
     var base = 8;
     if (subType === 0) {
-        /* DESCRIPTORS — tid/name pairs. */
+        /* DESCRIPTORS — v2 adds a generation after each tid. */
+        var hasGen = version >= 2;
         var p = base;
         for (var i = 0; i < count; i++) {
-            if (p + 5 > dv.byteLength) break;
+            if (p + (hasGen ? 9 : 5) > dv.byteLength) break;
             var tid = dv.getUint32(p, true); p += 4;
+            var generation = hasGen ? dv.getUint32(p, true) : undefined;
+            if (hasGen) p += 4;
             var nameLen = dv.getUint8(p); p += 1;
             if (p + nameLen > dv.byteLength) break;
             var nameBytes = new Uint8Array(buf, off + p, nameLen);
             var name = new TextDecoder().decode(nameBytes);
             p += nameLen;
-            if (!traceThreads[tid]) traceThreads[tid] = { name: name, lastState: -1, lastTs: 0 };
-            else traceThreads[tid].name = name;
-            traceThreads[tid].described = true;
+            var th = traceThreads[tid];
+            if (!th) th = traceThreads[tid] = { lastState: -1, lastTs: 0 };
+            /* The stream handles closed lanes in record order. Generation 0
+             * can describe a Zephyr thread before it has run. */
+            if (th.generation && th.generation !== generation &&
+                !th.restarted && th.lastState !== TRACE_STATE_TERMINATED) {
+                traceSpans = traceSpans.filter(function (sp) { return sp.tid !== tid; });
+                traceMarks = traceMarks.filter(function (mk) { return mk.tid !== tid; });
+                th.lastState = -1;
+                th.lastTs = 0;
+                th.hasData = false;
+            }
+            th.restarted = false;
+            th.name = name;
+            th.generation = generation;
+            th.described = true;
         }
         traceDirty = true;
         ensureWindow("trace");
@@ -1460,6 +1478,8 @@ function handleTrace(buf, off) {
              * state, so draw it hatched as unknown instead of guessing.
              * A terminated lane followed by READY is not a loss: a new
              * thread reusing its storage starts from READY. */
+            /* Track a restart until its new descriptor arrives. */
+            if (th.lastState === TRACE_STATE_TERMINATED) th.restarted = true;
             var reused = th.lastState === TRACE_STATE_TERMINATED && arg === TRACE_STATE_READY;
             var gap = th.lastState >= 0 && !reused && arg !== th.lastState;
             /* Close out the previous span for this thread. */

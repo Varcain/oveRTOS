@@ -13,17 +13,21 @@
  * Emits two event types:
  *
  *  OVE_SIM_TRACE_EVT_STREAM       - batched trace records
- *  OVE_SIM_TRACE_EVT_DESCRIPTORS  - tid -> name mapping (periodic)
+ *  OVE_SIM_TRACE_EVT_DESCRIPTORS  - tid -> name mapping, sent periodically
+ *                                   and on (tid, generation) set changes
  *
  * Frame payload (both subtypes share a common envelope):
  *   [uint8_t  sub_type]          0 = DESCRIPTORS, 1 = STREAM
- *   [uint8_t  version]           1
+ *   [uint8_t  version]           OVE_SIM_TRACE_VERSION (2)
  *   [uint16_t count]             number of records
  *   [uint32_t dropped]           records dropped since last emit
  *   Records follow, @count of them:
  *     STREAM: 16 bytes each — matches struct ove_trace_record
  *     DESCRIPTORS:
  *       [uint32_t tid]
+ *       [uint32_t generation] (v2, new at every ove thread start)
+ *                             0 for kernel threads and Zephyr ove threads
+ *                             that have yet to run
  *       [uint8_t  name_len]   (capped at 31)
  *       [char     name[name_len]]
  *
@@ -51,13 +55,14 @@ extern "C" {
 #define OVE_SIM_TRACE_SUB_DESCRIPTORS 0
 #define OVE_SIM_TRACE_SUB_STREAM 1
 
-/** Envelope version (bumped on incompatible format change). */
-#define OVE_SIM_TRACE_VERSION 1
+/** Envelope version (bumped on incompatible format change).
+ *  v2: descriptors carry a per-thread generation word. */
+#define OVE_SIM_TRACE_VERSION 2
 
 /** Drain period for stream records (ms). */
 #define OVE_SIM_TRACE_DRAIN_MS 100
 
-/** Interval between descriptor emissions (ms). */
+/** Periodic refresh (ms), plus immediate sends on (tid, generation) set changes. */
 #define OVE_SIM_TRACE_DESC_MS 500
 
 /** Maximum records per stream emission. Keeps the per-event payload

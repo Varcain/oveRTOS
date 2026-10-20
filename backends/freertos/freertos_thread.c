@@ -37,6 +37,12 @@ static uint32_t runtime_percent(configRUN_TIME_COUNTER_TYPE part, configRUN_TIME
 }
 #endif
 
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+void ove_backend_trace_task_exited(struct ove_thread *t);
+#endif
+
+static uint32_t g_thread_generation;
+
 static void freertos_thread_wrapper(void *param)
 {
 	struct ove_thread *s = (struct ove_thread *)param;
@@ -46,6 +52,9 @@ static void freertos_thread_wrapper(void *param)
 	 * creator tags it: tag itself first, so ove_thread_get_self() works from entry. */
 	vTaskSetApplicationTaskTag(NULL, (TaskHookFunction_t)s);
 	entry(arg);
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	ove_backend_trace_task_exited(s);
+#endif
 	/* Dekker-style join handshake (paired with wait_for_worker_exit()):
 	 *   1. publish exited = 1
 	 *   2. memory barrier so the destroyer's read of `destroyer` (below)
@@ -93,6 +102,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->destroyer = NULL;
 	storage->exited = 0u;
 	storage->stop_requested = 0;
+	storage->generation = ove_thread_next_generation(&g_thread_generation);
 
 	ove_state_track_init(&storage->st, OVE_THREAD_STATE_READY);
 
@@ -201,6 +211,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	wrapper->destroyer = NULL;
 	wrapper->exited = 0u;
 	wrapper->stop_requested = 0;
+	wrapper->generation = ove_thread_next_generation(&g_thread_generation);
 
 	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 

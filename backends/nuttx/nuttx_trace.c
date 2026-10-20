@@ -79,6 +79,7 @@ static void list_one(FAR struct tcb_s *tcb, FAR void *arg)
 	char *dst = desc_names[c->count];
 	strlcpy(dst, (name && name[0]) ? name : "?", DESC_NAME_MAX);
 	c->out[c->count].tid = (uint32_t)(t ? (uintptr_t)t : (uintptr_t)tcb);
+	c->out[c->count].generation = t ? t->generation : 0u;
 	c->out[c->count].name = dst;
 	c->count++;
 }

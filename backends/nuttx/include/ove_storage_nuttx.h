@@ -77,6 +77,7 @@ struct ove_thread {
 	int state;
 	sem_t done_sem;
 	unsigned int scheduler_observers;
+	uint32_t generation;
 	const char *name;	 /* caller-owned from desc->name */
 	struct ove_thread *next; /* intrusive enumeration list */
 #ifdef CONFIG_OVE_THREAD_STATE_STATS

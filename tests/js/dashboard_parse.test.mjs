@@ -81,6 +81,70 @@ test("trace: records older than the 30 s window are evicted", () => {
     assert.equal(g.traceMinTs, 200);
 });
 
+test("trace: reused storage drops history from an unclosed lane", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(100, 7, 1, 0), markRec(150, 7, 1, 1, 0),
+        stateRec(200, 7, 0, 2)]), 0);
+    g.handleTrace(traceDescriptors([[7, 2, "worker"]]), 0);
+    assert.deepEqual(g.traceSpans, []);
+    assert.deepEqual(g.traceMarks, []);
+    assert.equal(g.traceThreads[7].lastState, -1);
+});
+
+for (const descriptorsFirst of [false, true]) {
+    const order = descriptorsFirst ? "descriptors first" : "records first";
+    test(`trace: reused storage preserves a closed lane (${order})`, () => {
+        const g = loadDashboard();
+        g.handleTrace(traceDescriptors([[7, 1, "old"]]), 0);
+        g.handleTrace(traceStream([stateRec(100, 7, 1, 0), stateRec(200, 7, 0, 4)]), 0);
+        const descriptor = traceDescriptors([[7, 2, "new"]]);
+        if (descriptorsFirst) g.handleTrace(descriptor, 0);
+        g.handleTrace(traceStream([stateRec(500, 7, 1, 0), stateRec(600, 7, 0, 2)]), 0);
+        if (!descriptorsFirst) g.handleTrace(descriptor, 0);
+        assert.equal(g.traceThreads[7].name, "new");
+        assert.deepEqual(g.traceSpans.map((s) => [s.start, s.end, s.state, s.gap]),
+            [[100, 200, 0, false], [200, 500, 4, false], [500, 600, 0, false]]);
+    });
+}
+
+test("trace: reuse preserves a lane first described after TERMINATED", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceStream([stateRec(100, 7, 1, 0), stateRec(200, 7, 0, 4)]), 0);
+    g.handleTrace(traceDescriptors([[7, 1, "old"]]), 0);
+    g.handleTrace(traceStream([stateRec(500, 7, 1, 0), stateRec(600, 7, 0, 2)]), 0);
+    g.handleTrace(traceDescriptors([[7, 2, "new"]]), 0);
+    assert.deepEqual(g.traceSpans.map((s) => [s.start, s.end, s.state, s.gap]),
+        [[100, 200, 0, false], [200, 500, 4, false], [500, 600, 0, false]]);
+});
+
+test("trace: replacing a pre-start generation zero preserves the first spans", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 0, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(100, 7, 1, 0), stateRec(200, 7, 0, 2)]), 0);
+    g.handleTrace(traceDescriptors([[7, 6, "worker"]]), 0);
+    assert.deepEqual(g.traceSpans, [{ tid: 7, start: 100, end: 200, state: 0, gap: false }]);
+});
+
+test("trace: a timebase restart forgets the old boot's generations", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 3, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(5_000_000, 7, 1, 0), stateRec(5_001_000, 7, 0, 2)]), 0);
+    g.handleTrace(traceStream([stateRec(100, 7, 1, 0), stateRec(200, 7, 0, 2)]), 0);
+    g.handleTrace(traceDescriptors([[7, 1, "rebooted"]]), 0);
+    assert.equal(g.traceThreads[7].name, "rebooted");
+    assert.deepEqual(g.traceSpans, [{ tid: 7, start: 100, end: 200, state: 0, gap: false }]);
+});
+
+test("trace: v1 descriptors still decode alongside v2", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 1, "current"]]), 0);
+    g.handleTrace(traceDescriptors([[8, "legacy"]], 0, 1), 0);
+    assert.equal(g.traceThreads[8].name, "legacy");
+    assert.equal(g.traceThreads[8].generation, undefined);
+    assert.equal(g.traceThreads[7].name, "current");
+});
+
 test("trace: lanes sort by name and the hover finds the span on its lane", () => {
     const g = loadDashboard();
     /* Name order is not tid order; tid 9 has no records and no lane. */

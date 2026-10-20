@@ -171,12 +171,12 @@ Plugin event types and command types use disjoint per-plugin bases (`ove/sim/ove
 
 ```
 u8  sub_type      0 = descriptors, 1 = stream
-u8  version       1
+u8  version       2
 u16 count
 u32 dropped       records lost since the previous batch
 ```
 
-Stream records are 16 bytes each (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 arg` (previous state for state records; low 16 bits of the object address for marks). Descriptors repeat `u32 tid`, `u8 name_len`, `char name[name_len]`.
+Stream records are 16 bytes each (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 arg` (previous state for state records; low 16 bits of the object address for marks). Descriptors repeat `u32 tid`, `u32 generation` (since version 2), `u8 name_len`, `char name[name_len]`. Each ove thread start gets a new generation so a thread on reused storage starts a new lane. Generation 0 is reported for kernel threads and Zephyr ove threads that have yet to run.
 
 **Profiler samples** (`OVE_SIM_PROFILER_EVT_SAMPLES` = 20). Envelope:
 

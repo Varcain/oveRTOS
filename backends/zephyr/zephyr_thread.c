@@ -17,6 +17,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+static uint32_t g_thread_generation;
+
 #if defined(CONFIG_THREAD_RUNTIME_STATS)
 static uint32_t runtime_percent(uint64_t part, uint64_t total)
 {
@@ -136,6 +138,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->name = name; /* caller-owned; retained for trace descriptor */
 	storage->next = NULL;
 	storage->stop_requested = 0;
+	storage->generation = ove_thread_next_generation(&g_thread_generation);
 
 	/* Public oveRTOS threads remain supervisor-only, so the storage helper uses
 	 * Zephyr's kernel-stack layout. Protected LXP K_USER tasks are outside this
@@ -207,6 +210,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	info->name = name;
 	info->next = NULL;
 	info->stop_requested = 0;
+	info->generation = ove_thread_next_generation(&g_thread_generation);
 
 	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry, arg,
 			      (void *)info, ove_zephyr_map_priority(priority), 0, K_NO_WAIT);

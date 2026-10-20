@@ -66,6 +66,7 @@ static void list_one(const struct k_thread *thread, void *user_data)
 	const struct ove_thread *ove = thread->custom_data;
 	const char *name = ove && ove->name ? ove->name : k_thread_name_get((k_tid_t)thread);
 	c->out[c->count].tid = (uint32_t)thread_tid(thread);
+	c->out[c->count].generation = ove ? ove->generation : 0u;
 	c->out[c->count].name = name && name[0] ? name : "?";
 	c->count++;
 }
