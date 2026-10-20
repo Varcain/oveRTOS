@@ -33,6 +33,12 @@
 #include <errno.h>
 #include <assert.h>
 #include <malloc.h>
+#ifdef __NuttX__
+/* Only the firmware build knows the NuttX syslog; the host builds of the
+ * observation code (tests/obs/nuttx_note) do not compile the diagnostics
+ * below. */
+#include <syslog.h>
+#endif
 
 /* A suspend sent before task_wrapper() installs the SIGUSR1 action relies on
  * the kernel dropping the signal (sched/signal/sig_dispatch.c: "There is no
@@ -740,21 +746,62 @@ bool ove_thread_should_stop(ove_thread_t handle)
 /* ── Scheduler-driven observed state (sched_note driver) ────────────
  *
  * CONFIG_SCHED_INSTRUMENTATION_SWITCH calls the registered note drivers'
- * suspend(tcb) when a task leaves the CPU and resume(tcb) when it takes it,
+ * suspend(tcb) when a task leaves the CPU, ready(tcb) when it is inserted
+ * into the ready/pending list, and resume(tcb) when it takes the CPU,
  * inside the scheduler's critical section. Preemption shows as READY and
- * every wait (ove API, kernel, drivers, LVGL) as BLOCKED. NuttX has no
- * "became ready" note, so wake-to-run latency stays inside BLOCKED.
+ * every wait (ove API, kernel, drivers, LVGL) as BLOCKED; the ready note
+ * splits a wake from BLOCKED to READY so wake-to-run latency is visible.
+ * The ready op needs the small sched_note extension in
+ * config/patches/nuttx/0002-sched-note-let-drivers-observe-wakeups.patch.
  *
  * Tasks are mapped to their ove_thread through a small pid table filled
  * by task_wrapper(); kernel and other tasks are not tracked. The table and
  * the tracker are only touched inside critical sections.
+ *
+ * NuttX reports the end of a task only after task_wrapper() has returned
+ * (sched/task/task_exit.c: nxsched_switch_context() raises the suspend
+ * note of the exiting task, sched_note_stop(dtcb) the stop note), i.e.
+ * after the thread has closed its own lane and left the table.  The TCB
+ * of the task is therefore remembered: it is the only way to tell the
+ * notes of a tracked thread apart from the notes of a kernel thread once
+ * the thread is gone.  It moves to the pending table (obs_pending[]) when
+ * the thread leaves the table of the tracked threads, so that a
+ * registration never takes over a slot that still carries it.  The exit of
+ * a tracked thread must not be reported through the kernel-thread path:
+ * the guest never described the tid of a TCB, so the dashboard would draw
+ * an empty lane for it.
  */
 #define OBS_MAX_TASKS 32
+
+/* The TCBs of the tracked threads whose stop note has not arrived yet.
+ *
+ * A thread that ends normally leaves the table of the tracked threads
+ * (obs_unregister()), but NuttX raises the stop note of its task only
+ * afterwards, so the TCB has to survive until that note arrives: it is
+ * the only way to tell the notes of a tracked thread apart from the notes
+ * of a kernel thread once the thread is gone.
+ *
+ * The pending TCBs live in this separate table and not in the table of the
+ * tracked threads: a registration must never take over a slot that still
+ * carries a pending TCB, because that would destroy the TCB the stop note
+ * has to be recognised by, and the exit of that thread would then be
+ * reported through the kernel-thread path (a lane the guest never
+ * described). */
+#define OBS_MAX_PENDING 32
 
 static struct {
 	pid_t pid;
 	struct ove_thread *t;
+	/* The TCB of the task this entry belongs to.  It is kept here while
+	 * the thread runs and moves to obs_pending[] when the thread leaves
+	 * the table, so that the slot can be reused by the next
+	 * registration. */
+	FAR struct tcb_s *tcb;
 } obs_tasks[OBS_MAX_TASKS];
+
+/* The TCBs whose stop note has not arrived yet (see above).  A
+ * registration never touches this table. */
+static FAR struct tcb_s *obs_pending[OBS_MAX_PENDING];
 
 static void obs_transition(struct ove_thread *t, int s)
 {
@@ -773,6 +820,48 @@ static struct ove_thread *obs_find(pid_t pid)
 		if (obs_tasks[i].t && obs_tasks[i].pid == pid)
 			return obs_tasks[i].t;
 	return NULL;
+}
+
+/* True when @tcb is the TCB of a task the scheduler-note driver tracked.
+ * The TCB of a thread stays in the pending table after the thread left
+ * the table of the tracked threads, until the stop note of the task
+ * arrives - the notes NuttX raises for the exit of the task come after
+ * task_wrapper() returned. */
+static bool obs_is_tracked_tcb(FAR struct tcb_s *tcb)
+{
+	if (tcb == NULL)
+		return false;
+	for (int i = 0; i < OBS_MAX_TASKS; i++)
+		if (obs_tasks[i].tcb == tcb)
+			return true;
+	for (int i = 0; i < OBS_MAX_PENDING; i++)
+		if (obs_pending[i] == tcb)
+			return true;
+	return false;
+}
+
+/* Consume the TCB of a tracked task.  NuttX raises the stop note of a task
+ * exactly once, so the TCB is only needed until the note arrives; taking
+ * it here also keeps a recycled TCB address from being mistaken for a
+ * tracked one later on.  Returns true when @tcb belongs to a task the
+ * scheduler-note driver tracked. */
+static bool obs_take_tracked_tcb(FAR struct tcb_s *tcb)
+{
+	if (tcb == NULL)
+		return false;
+	for (int i = 0; i < OBS_MAX_TASKS; i++) {
+		if (obs_tasks[i].tcb == tcb) {
+			obs_tasks[i].tcb = NULL;
+			return true;
+		}
+	}
+	for (int i = 0; i < OBS_MAX_PENDING; i++) {
+		if (obs_pending[i] == tcb) {
+			obs_pending[i] = NULL;
+			return true;
+		}
+	}
+	return false;
 }
 
 /* The ove_thread running as task @pid, or NULL (kernel / other tasks).
@@ -807,7 +896,11 @@ static void obs_note_suspend(FAR struct note_driver_s *drv, FAR struct tcb_s *tc
 		next = OVE_THREAD_STATE_BLOCKED;
 	if (t)
 		obs_transition(t, next);
-	else
+	else if (!obs_is_tracked_tcb(tcb))
+		/* A kernel thread (or a task the driver never tracked): it has a
+		 * lane of its own, so the note belongs there.  A tracked task
+		 * whose thread already ended must not be reported there: the
+		 * guest never described the tid of a TCB. */
 		ove_trace_emit_kthread_state((uintptr_t)tcb, next, OVE_TRACE_KT_ALWAYS);
 }
 
@@ -817,14 +910,81 @@ static void obs_note_resume(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb
 	struct ove_thread *t = obs_find(tcb->pid);
 	if (t)
 		obs_transition(t, OVE_THREAD_STATE_RUNNING);
-	else
+	else if (!obs_is_tracked_tcb(tcb))
 		ove_trace_emit_kthread_state((uintptr_t)tcb, OVE_THREAD_STATE_RUNNING,
 					     OVE_TRACE_KT_ALWAYS);
 }
 
+static void obs_note_stop_locked(FAR struct tcb_s *tcb)
+{
+	/* The note of a task comes exactly once, so the TCB of a tracked task
+	 * is consumed here. */
+	bool tracked = obs_take_tracked_tcb(tcb);
+	struct ove_thread *t = obs_find(tcb->pid);
+	if (t) {
+		/* The task was terminated without task_wrapper() reaching its
+		 * end: the lane of the thread is still open, close it here.
+		 *
+		 * The slot of the thread is released as well: the thread
+		 * will never unregister itself (obs_unregister() only runs
+		 * when task_wrapper() returns), so the slot would leak and it
+		 * would keep a pointer to a struct ove_thread that its owner
+		 * may free - obs_find() could then hand that stale pointer
+		 * out for the pid of the dead thread. */
+		obs_transition(t, OVE_THREAD_STATE_TERMINATED);
+		for (int i = 0; i < OBS_MAX_TASKS; i++) {
+			if (obs_tasks[i].t != t) {
+				continue;
+			}
+			obs_tasks[i].t = NULL;
+			obs_tasks[i].pid = 0;
+			obs_tasks[i].tcb = NULL;
+			break;
+		}
+		return;
+	}
+	if (tracked) {
+		/* The thread ended the normal way: task_wrapper() closed its
+		 * lane and left the table before NuttX raised this note.
+		 * Reporting the exit through the kernel-thread path would
+		 * invent a lane for a tid the guest never described. */
+		return;
+	}
+	/* A kernel thread (or any other task the driver never tracked): it
+	 * has a lane of its own, so the exit belongs there and frees its
+	 * kernel-thread slot. */
+	ove_trace_emit_kthread_state((uintptr_t)tcb, OVE_THREAD_STATE_TERMINATED,
+				     OVE_TRACE_KT_ALWAYS);
+}
+
+static void obs_note_stop(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
+{
+	(void)drv;
+	/* Unlike the switch notes, the stop note can come outside the
+	 * scheduler's critical section: task_delete() -> nxtask_terminate()
+	 * raises it after leave_critical_section(). */
+	irqstate_t flags = enter_critical_section();
+	obs_note_stop_locked(tcb);
+	leave_critical_section(flags);
+}
+
+static void obs_note_ready(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
+{
+	(void)drv;
+	struct ove_thread *t = obs_find(tcb->pid);
+	if (t)
+		obs_transition(t, OVE_THREAD_STATE_READY);
+	else if (!obs_is_tracked_tcb(tcb))
+		/* Only a wake: a preempted kernel thread is READY already. */
+		ove_trace_emit_kthread_state((uintptr_t)tcb, OVE_THREAD_STATE_READY,
+					     OVE_TRACE_KT_FROM_WAITING);
+}
+
 static const struct note_driver_ops_s obs_note_ops = {
+	.stop = obs_note_stop,
 	.suspend = obs_note_suspend,
 	.resume = obs_note_resume,
+	.ready = obs_note_ready,
 };
 
 static struct note_driver_s obs_note_driver = {
@@ -840,22 +1000,76 @@ static void obs_register(struct ove_thread *t)
 		/* No unregister API exists; one static driver for the system. */
 		driver_registered = note_driver_register(&obs_note_driver) == OK;
 	}
+	/* Claim a slot for the task.  Only a slot that carries neither a
+	 * thread nor a pending TCB may be claimed: a pending TCB has to
+	 * survive until the stop note of its task arrives, otherwise the
+	 * exit of that thread would be reported as the exit of a kernel
+	 * thread.  The pending TCBs live in their own table (obs_pending[]),
+	 * so a thread that ended normally does not block the registration
+	 * of the next one and a registration never overwrites a pending
+	 * TCB. */
+	int slot = -1;
 	for (int i = 0; i < OBS_MAX_TASKS; i++) {
-		if (!obs_tasks[i].t) {
-			obs_tasks[i].pid = getpid();
-			obs_tasks[i].t = t;
+		if (obs_tasks[i].t == NULL && obs_tasks[i].tcb == NULL) {
+			slot = i;
 			break;
 		}
 	}
+	if (slot >= 0) {
+		obs_tasks[slot].pid = getpid();
+		obs_tasks[slot].t = t;
+		obs_tasks[slot].tcb = nxsched_self();
+	}
 	leave_critical_section(flags);
+	if (slot < 0) {
+		/* More threads run at the same time than the table can hold:
+		 * the thread is not observed, so its notes are reported
+		 * through the kernel-thread path. */
+#ifdef __NuttX__
+		syslog(LOG_ERR, "ove: the thread table is full, the thread is not observed\n");
+#endif
+	}
 }
 
 static void obs_unregister(struct ove_thread *t)
 {
 	irqstate_t flags = enter_critical_section();
-	for (int i = 0; i < OBS_MAX_TASKS; i++)
-		if (obs_tasks[i].t == t)
-			obs_tasks[i].t = NULL;
+	/* The thread leaves the table, but the TCB of its task has to
+	 * survive: NuttX raises the stop note of the task only after
+	 * task_wrapper() returned, and the note must still be recognised as
+	 * the note of a tracked thread.  The TCB moves to the pending table
+	 * so that the slot of the thread can be reused by the next
+	 * registration - the pending table is never used by a registration,
+	 * so a pending TCB cannot be overwritten. */
+	for (int i = 0; i < OBS_MAX_TASKS; i++) {
+		FAR struct tcb_s *tcb;
+
+		if (obs_tasks[i].t != t) {
+			continue;
+		}
+		tcb = obs_tasks[i].tcb;
+		obs_tasks[i].t = NULL;
+		obs_tasks[i].pid = 0;
+		obs_tasks[i].tcb = NULL;
+		if (tcb == NULL) {
+			break;
+		}
+		for (int j = 0; j < OBS_MAX_PENDING; j++) {
+			if (obs_pending[j] == NULL) {
+				obs_pending[j] = tcb;
+				tcb = NULL;
+				break;
+			}
+		}
+		if (tcb != NULL) {
+			/* The pending table is full: the TCB stays in the
+			 * slot of the thread.  The slot is not free then (it
+			 * still carries the TCB), so a registration does not
+			 * take it over. */
+			obs_tasks[i].tcb = tcb;
+		}
+		break;
+	}
 	leave_critical_section(flags);
 }
 #endif

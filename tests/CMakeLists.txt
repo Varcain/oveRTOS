@@ -323,12 +323,64 @@ target_include_directories(ove_test_sim_profiler_refused PRIVATE
     ${OVE_ROOT}/backends/common
 )
 
+# NuttX scheduler-note driver: the exit of a tracked ove thread must not
+# create a lane of its own, and a wake must show as READY before RUNNING.
+# The observation code is not copied into the test - it is extracted
+# verbatim from the backend at build time, so the test always exercises
+# the real source text of backends/nuttx/nuttx_thread.c.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(NUTTX_OBS_BLOCK ${CMAKE_BINARY_DIR}/generated/ove_nuttx_obs_block.inc)
+add_custom_command(
+    OUTPUT ${NUTTX_OBS_BLOCK}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/generated
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/extract_nuttx_obs_block.py
+            ${OVE_ROOT}/backends/nuttx/nuttx_thread.c
+            ${NUTTX_OBS_BLOCK}
+    DEPENDS ${OVE_ROOT}/backends/nuttx/nuttx_thread.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/extract_nuttx_obs_block.py
+    COMMENT "Extracting the NuttX scheduler-note observation block"
+    VERBATIM
+)
+add_executable(ove_test_nuttx_note_exit
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/nuttx_note/test_nuttx_note_exit.c
+    ${NUTTX_OBS_BLOCK}
+    ${OVE_ROOT}/backends/common/ove_trace.c
+    ${OVE_ROOT}/backends/common/ove_trace_ring.c
+)
+target_include_directories(ove_test_nuttx_note_exit PRIVATE
+    # First: the test's own ove_config.h selects the NuttX storage header
+    # and the fake <nuttx/*.h> stand-ins of the NuttX storage header.
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/nuttx_note
+    ${OVE_ROOT}/include
+    ${OVE_ROOT}/backends/common
+    ${OVE_ROOT}/backends/nuttx/include
+    ${CMAKE_BINARY_DIR}/generated
+)
+target_compile_definitions(ove_test_nuttx_note_exit PRIVATE _GNU_SOURCE)
+target_link_libraries(ove_test_nuttx_note_exit PRIVATE pthread)
+
+add_executable(ove_test_nuttx_note_ready
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/nuttx_note/test_nuttx_note_ready.c
+    ${NUTTX_OBS_BLOCK}
+    ${OVE_ROOT}/backends/common/ove_trace.c
+    ${OVE_ROOT}/backends/common/ove_trace_ring.c
+)
+target_include_directories(ove_test_nuttx_note_ready PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/nuttx_note
+    ${OVE_ROOT}/include
+    ${OVE_ROOT}/backends/common
+    ${OVE_ROOT}/backends/nuttx/include
+    ${CMAKE_BINARY_DIR}/generated
+)
+target_compile_definitions(ove_test_nuttx_note_ready PRIVATE _GNU_SOURCE)
+target_link_libraries(ove_test_nuttx_note_ready PRIVATE pthread)
+
 # NuttX suspend/resume handshake: a resume that races the suspend must not
 # be lost - the target would park forever.  The handshake code is not
 # copied into the test - it is extracted verbatim from the backend at build
 # time, so the test always exercises the real source text of
 # backends/nuttx/nuttx_thread.c.
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(NUTTX_SUSPEND_BLOCK ${CMAKE_BINARY_DIR}/generated/ove_nuttx_suspend_block.inc)
 add_custom_command(
     OUTPUT ${NUTTX_SUSPEND_BLOCK}
@@ -407,6 +459,8 @@ add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
 add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
 add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
 add_test(NAME ove_trace_kthread COMMAND ove_test_trace_kthread)
+add_test(NAME ove_nuttx_note_exit COMMAND ove_test_nuttx_note_exit)
+add_test(NAME ove_nuttx_note_ready COMMAND ove_test_nuttx_note_ready)
 add_test(NAME ove_nuttx_suspend_handshake COMMAND ove_test_nuttx_suspend_handshake)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
