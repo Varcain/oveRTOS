@@ -17,6 +17,27 @@ import {
 
 const T = 2 ** 32; /* a timestamp that needs the high word */
 
+test("threads: snapshot rows distinguish threads with the same name", () => {
+    const g = loadDashboard();
+    const name = new TextEncoder().encode("worker");
+    const rows = [[0x20000010, 7], [0x20000020, 8]];
+    const frame = new DataView(new ArrayBuffer(17 + rows.length * (43 + name.length)));
+    frame.setUint8(0, rows.length);
+    let p = 17;
+    for (const [tid, generation] of rows) {
+        frame.setUint8(p++, name.length);
+        new Uint8Array(frame.buffer, p, name.length).set(name);
+        p += name.length + 34; // Skip state and metrics.
+        frame.setUint32(p, tid, true); p += 4;
+        frame.setUint32(p, generation, true); p += 4;
+    }
+    let threads;
+    g.HOST.on = (event, data) => { if (event === "threads") threads = data.threads; };
+    g.handleThreadSnapshot(frame.buffer, 0);
+    assert.deepEqual(threads.map((t) => [t.name, t.tid, t.generation]),
+        rows.map((row) => ["worker", ...row]));
+});
+
 test("trace: records decode into spans and marks, a lost record is a gap", () => {
     const g = loadDashboard();
     g.handleTrace(traceDescriptors([[5, "récepteur"]]), 0);

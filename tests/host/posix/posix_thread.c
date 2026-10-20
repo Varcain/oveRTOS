@@ -664,6 +664,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 		ove_name_copy(out[count].name, sizeof(out[count].name), t->name ? t->name : "?");
 		out[count].identity = (uintptr_t)t;
+		out[count].trace_id = (uintptr_t)t;
+		out[count].generation = t->generation;
 		ove_thread_state_t state =
 			(ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		out[count].state = state;

@@ -614,6 +614,54 @@ static void test_thread_list_identity(void **state)
 	}
 }
 
+#if !defined(CONFIG_OVE_RTOS_NUTTX) || defined(CONFIG_OVE_THREAD_STATE_STATS)
+static uint32_t run_and_list_tgen(void)
+{
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "tgen", entry_spin_flagged, NULL,
+					       s_th_stack, 4096));
+	bool ran = wait_for_atomic(&g_flag, 1, 1000);
+
+	size_t count = 0;
+	int rc = ran ? ove_thread_list(s_list_info, LIST_INFO_MAX, &count) : OVE_OK;
+	bool found = false, trace_id_ok = false;
+	uint32_t generation = 0;
+	for (size_t i = 0; i < count; i++) {
+		const struct ove_thread_info *info = &s_list_info[i];
+		if (strcmp(info->name, "tgen") == 0) {
+			found = true;
+			trace_id_ok = info->trace_id == (uintptr_t)h;
+			generation = info->generation;
+			break;
+		}
+	}
+
+	atomic_store(&g_keep_running, 0);
+	ove_test_thread_destroy(h);
+
+	assert_true(ran);
+	assert_true(rc == OVE_OK || rc == OVE_ERR_QUEUE_FULL);
+	assert_true(found);
+	assert_true(trace_id_ok);
+	assert_true(generation != 0);
+	return generation;
+}
+#endif
+
+static void test_thread_list_generation(void **state)
+{
+	(void)state;
+#if defined(CONFIG_OVE_RTOS_NUTTX) && !defined(CONFIG_OVE_THREAD_STATE_STATS)
+	skip();
+#else
+	uint32_t first = run_and_list_tgen();
+	uint32_t second = run_and_list_tgen();
+	assert_true(first != second);
+#endif
+}
+
 #ifdef CONFIG_OVE_ZERO_HEAP
 /* Hand-rolled misaligned stack: aligned(8) on the full array, but we
  * pass in a +1 offset so the backend sees a misaligned pointer.
@@ -1288,6 +1336,7 @@ int test_thread_run(void)
 #endif
 		cmocka_unit_test_teardown(test_runtime_stats, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_identity, teardown_stop_spin),
+		cmocka_unit_test_teardown(test_thread_list_generation, teardown_stop_spin),
 		cmocka_unit_test(test_priority_scale_helpers),
 		cmocka_unit_test(test_create_priority_out_of_range),
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
