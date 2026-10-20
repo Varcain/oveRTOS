@@ -20,6 +20,7 @@
  *   traceTASK_DELAY / DELAY_UNTIL  — running task is about to block or sleep
  *   traceTASK_SUSPEND(tcb)         — any task is being suspended
  *   traceMOVED_TASK_TO_READY_STATE — a task enters a ready list (wake-up)
+ *   traceTASK_DELETE(tcb)          — a kernel task's lane ends
  *
  * traceTASK_SWITCHED_{IN,OUT} fire from inside vTaskSwitchContext() in the
  * PendSV handler — API calls that walk kernel lists (eTaskGetState, etc.)
@@ -101,6 +102,9 @@ static void transition(struct ove_thread *t, int prev, int next)
 
 /* ── Kernel trace hooks ───────────────────────────────────────────── */
 
+/* A kernel task that deleted itself, until its final switch-out. */
+static uintptr_t self_deleted;
+
 /*
  * Emit RUNNING -> (state) for the outgoing task. Called from
  * traceTASK_SWITCHED_OUT(). We don't know the new state authoritatively
@@ -116,8 +120,16 @@ void ove_backend_trace_task_switched_out(void)
 		return;
 	/* PendSV context: the task-level getter would enter a critical section. */
 	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
-	if (!t)
-		return; /* idle / timer / tasks not created via ove_thread_init */
+	if (!t) {
+		if ((uintptr_t)h == self_deleted) {
+			self_deleted = 0;
+			return;
+		}
+		/* Keep BLOCKED and SUSPENDED states set by the earlier hooks. */
+		ove_trace_emit_kthread_state((uintptr_t)h, OVE_THREAD_STATE_READY,
+					     OVE_TRACE_KT_FROM_RUNNING);
+		return;
+	}
 
 	/* BLOCKED / SUSPENDED were already set by traceBLOCKING_ON_* /
 	 * traceTASK_SUSPEND; a still-RUNNING task was preempted or yielded. */
@@ -135,8 +147,11 @@ void ove_backend_trace_task_switched_in(void)
 	if (!h)
 		return;
 	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
-	if (!t)
+	if (!t) {
+		ove_trace_emit_kthread_state((uintptr_t)h, OVE_THREAD_STATE_RUNNING,
+					     OVE_TRACE_KT_ALWAYS);
 		return;
+	}
 
 	transition(t, t->st.cur_state, OVE_THREAD_STATE_RUNNING);
 }
@@ -155,8 +170,14 @@ void ove_backend_trace_task_blocking(void)
 	if (!h)
 		return;
 	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTag(h);
-	if (!t)
+	if (!t) {
+		/* Blocking hooks can run with interrupts enabled. */
+		UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
+		ove_trace_emit_kthread_state((uintptr_t)h, OVE_THREAD_STATE_BLOCKED,
+					     OVE_TRACE_KT_ALWAYS);
+		portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
 		return;
+	}
 
 	int prev = t->st.cur_state;
 	if (prev != OVE_THREAD_STATE_BLOCKED)
@@ -166,14 +187,16 @@ void ove_backend_trace_task_blocking(void)
 /*
  * Called from traceTASK_SUSPEND(pxTCB) inside vTaskSuspend()'s critical
  * section, for any task (not only the caller). @task_tag is the task's
- * application tag, i.e. its ove_thread wrapper (0 for kernel tasks).
- * Plain memory accesses only.
+ * application tag, i.e. its ove_thread wrapper (0 for kernel tasks), and
+ * @task its TCB.
  */
-void ove_backend_trace_task_suspended(uintptr_t task_tag)
+void ove_backend_trace_task_suspended(uintptr_t task_tag, uintptr_t task)
 {
 	struct ove_thread *t = (struct ove_thread *)task_tag;
-	if (!t)
+	if (!t) {
+		ove_trace_emit_kthread_state(task, OVE_THREAD_STATE_SUSPENDED, OVE_TRACE_KT_ALWAYS);
 		return;
+	}
 
 	int prev = t->st.cur_state;
 	if (prev == OVE_THREAD_STATE_SUSPENDED)
@@ -193,16 +216,30 @@ void ove_backend_trace_task_suspended(uintptr_t task_tag)
  * shows the wake-to-run latency as READY rather than folding it into
  * BLOCKED.
  */
-void ove_backend_trace_task_ready(uintptr_t task_tag)
+void ove_backend_trace_task_ready(uintptr_t task_tag, uintptr_t task)
 {
 	struct ove_thread *t = (struct ove_thread *)task_tag;
-	if (!t)
+	if (!t) {
+		ove_trace_emit_kthread_state(task, OVE_THREAD_STATE_READY,
+					     OVE_TRACE_KT_FROM_WAITING);
 		return;
+	}
 
 	int prev = t->st.cur_state;
 	if (prev != OVE_THREAD_STATE_BLOCKED && prev != OVE_THREAD_STATE_SUSPENDED)
 		return;
 	transition(t, prev, OVE_THREAD_STATE_READY);
+}
+
+/* Called from traceTASK_DELETE(pxTCB) inside the task-list critical section. */
+void ove_backend_trace_task_deleted(uintptr_t task_tag, uintptr_t task)
+{
+	if (task_tag != 0)
+		return;
+	ove_trace_emit_kthread_state(task, OVE_THREAD_STATE_TERMINATED, OVE_TRACE_KT_ALWAYS);
+	/* A self-deleting task still has one switch-out after its lane closes. */
+	if (task == (uintptr_t)xTaskGetCurrentTaskHandle())
+		self_deleted = task;
 }
 
 #endif /* CONFIG_OVE_THREAD_STATE_STATS */
