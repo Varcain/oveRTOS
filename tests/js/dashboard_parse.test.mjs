@@ -201,7 +201,7 @@ test("trace: lanes sort by name and the hover finds the span on its lane", () =>
 test("profiler: samples decode at word size 4 and 8, other sizes are skipped", () => {
     const g = loadDashboard();
     g.handleProfile(profilerSamples([
-        { ts: T + 10, tid: 2, pcs: [0x1000, 0x2000] },
+        { ts: T + 10, tid: 2, isr: 25, pcs: [0x1000, 0x2000] },
         { ts: T + 11, tid: 2, state: 1, pcs: [0x3000] },
     ], 4), 0);
     g.handleProfile(profilerSamples(
@@ -210,9 +210,9 @@ test("profiler: samples decode at word size 4 and 8, other sizes are skipped", (
     g.handleProfile(profilerSamples([{ ts: T + 30, tid: 4, pcs: [] }], 2, 4), 0);
     assert.equal(g.profilerDropped, 9);
     assert.deepEqual(g.profilerSamples, [
-        { ts: T + 10, tid: 2, state: 0, pcs: [0x1000, 0x2000] },
-        { ts: T + 11, tid: 2, state: 1, pcs: [0x3000] },
-        { ts: T + 20, tid: 3, state: 2, pcs: [0x1_0000_1234, 0x40] },
+        { ts: T + 10, tid: 2, state: 0, isr: 25, pcs: [0x1000, 0x2000] },
+        { ts: T + 11, tid: 2, state: 1, isr: 0, pcs: [0x3000] },
+        { ts: T + 20, tid: 3, state: 2, isr: 0, pcs: [0x1_0000_1234, 0x40] },
     ]);
 });
 

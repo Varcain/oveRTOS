@@ -16,7 +16,11 @@
  *     function runs out of the system-clock interrupt handler (before
  *     any context switch). Reading PSP there gives us the interrupted
  *     thread's stack, not the timer's. Samples therefore land on a tick
- *     boundary, before the threads that tick wakes have run.
+ *     boundary, before the threads that tick wakes have run. If the
+ *     system-clock ISR preempted another handler (RETTOBASE == 0), the
+ *     frame is on the MSP instead; that path emits a tid-0 sample tagged
+ *     with the interrupted handler's exception number ("[ISR n]" in the
+ *     UI).
  *
  *   - Multi-frame unwinding is delegated to
  *     backends/common/ove_arm_backtrace.c — the same five-filter chain
@@ -57,6 +61,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <cmsis_core.h>
 #include <zephyr/kernel.h>
 
 #include "ove/ove_arm_backtrace.h"
@@ -104,6 +109,40 @@ static inline uint32_t read_psp(void)
 	return psp;
 }
 
+static inline uint32_t read_msp(void)
+{
+	uint32_t msp;
+	__asm volatile("mrs %0, msp" : "=r"(msp));
+	return msp;
+}
+
+/* The system-clock ISR preempted another exception handler (PendSV, or a
+ * device IRQ of a lower urgency). Its stacked frame is on the
+ * MSP; locate it and push a tid-0 sample tagged with the interrupted
+ * handler's exception number. The PSP path handles thread-mode samples.
+ * SysTick, exception 15, is the sampler itself. */
+#define SAMPLER_EXC 15u
+
+static void sample_interrupted_handler(void)
+{
+	const uint32_t *frame = ove_arm_find_exc_frame(read_msp(), OVE_SRAM_END, OVE_TEXT_BASE,
+						       OVE_TEXT_END, 256, SAMPLER_EXC);
+	if (!frame)
+		return;
+
+	uint32_t ipsr = frame[OVE_ARM_EXC_XPSR] & 0x1FFu;
+
+	struct ove_profiler_sample s;
+	memset(&s, 0, sizeof(s));
+	s.ts_us = ove_state_stats_now_us();
+	s.tid = 0;
+	s.state = OVE_THREAD_STATE_RUNNING;
+	s.isr = (uint16_t)ipsr;
+	s.pcs[0] = (uintptr_t)(frame[OVE_ARM_EXC_PC] & ~1u);
+	s.depth = 1;
+	(void)ove_profiler_ring_push(&s);
+}
+
 /*
  * Called from the k_timer expiry path, which Zephyr dispatches out of
  * the system-clock ISR after the timeout list has been processed. At
@@ -115,6 +154,18 @@ void ove_backend_profiler_on_tick(void)
 {
 	if (!__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
 		return;
+
+	/* RETTOBASE == 0: the system-clock exception is nested on top of
+	 * another handler, so the interrupted frame is on MSP, not PSP.
+	 * SysTick runs at _IRQ_PRIO_OFFSET, above PendSV. IRQ_CONNECT places
+	 * a device IRQ at its devicetree priority plus that offset, so SysTick
+	 * preempts the devices at devicetree priority 1 or more (all of them
+	 * on the QEMU mps2 boards); a priority-0 device, as most are on the
+	 * STM32F7, shares SysTick's level and its time is not attributed. */
+	if (!(SCB->ICSR & SCB_ICSR_RETTOBASE_Msk)) {
+		sample_interrupted_handler();
+		return;
+	}
 
 	uint32_t psp = read_psp();
 	if (psp == 0)

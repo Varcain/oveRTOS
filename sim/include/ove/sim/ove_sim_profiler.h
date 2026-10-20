@@ -22,7 +22,8 @@
  *     [uint32_t tid]
  *     [uint8_t  depth]        count of valid PCs in the chain
  *     [uint8_t  state]        ove_thread_state_t at sample time
- *     [uint8_t  _pad[2]]
+ *     [uint16_t isr]          interrupted handler's exception number,
+ *                             0 for thread-mode samples
  *     [word     pcs[depth]]   word_size bytes each, inner-most first
  *
  * A batch holds as many full-depth samples as fit in
