@@ -361,6 +361,12 @@ pub const OVE_HTTPD_MAX_ROUTES: u32 = 16;
 pub const OVE_HTTPD_MAX_SEGMENTS: u32 = 8;
 #[doc = " Maximum data bytes per ove_i2c_reg_write() call."]
 pub const OVE_I2C_REG_WRITE_MAX: u32 = 32;
+#[doc = "< Whenever the state changes."]
+pub const OVE_TRACE_KT_ALWAYS: u32 = 0;
+#[doc = "< Only from BLOCKED or SUSPENDED."]
+pub const OVE_TRACE_KT_FROM_WAITING: u32 = 1;
+#[doc = "< Only from RUNNING."]
+pub const OVE_TRACE_KT_FROM_RUNNING: u32 = 2;
 #[doc = " Operation completed successfully."]
 pub const OVE_OK: ove_err = 0;
 #[doc = " The requested backend or feature has not been registered."]
@@ -5116,6 +5122,72 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Drive the PM state machine once.\n\n Checks activity, invokes the policy, arms wake sources, transitions state\n and fires notifications.  Each engine calls it from its own low-priority\n PM thread, not from the idle hook; it takes the PM lock, so it cannot run\n in idle context.  Not intended to be called by application code."]
     pub fn ove_pm_idle_process();
+}
+pub const OVE_TRACE_KIND_STATE: _bindgen_ty_1 = 1;
+pub const OVE_TRACE_KIND_MARK: _bindgen_ty_1 = 2;
+pub type _bindgen_ty_1 = core::ffi::c_uint;
+pub const OVE_TRACE_PRIM_MUTEX: _bindgen_ty_2 = 1;
+pub const OVE_TRACE_PRIM_SEM: _bindgen_ty_2 = 2;
+pub const OVE_TRACE_PRIM_EVENT: _bindgen_ty_2 = 3;
+pub const OVE_TRACE_PRIM_CV: _bindgen_ty_2 = 4;
+pub const OVE_TRACE_PRIM_QUEUE: _bindgen_ty_2 = 5;
+pub const OVE_TRACE_PRIM_USER: _bindgen_ty_2 = 15;
+pub type _bindgen_ty_2 = core::ffi::c_uint;
+pub const OVE_TRACE_ACT_WAIT_ENTER: _bindgen_ty_3 = 1;
+pub const OVE_TRACE_ACT_WAIT_EXIT: _bindgen_ty_3 = 2;
+pub const OVE_TRACE_ACT_POST: _bindgen_ty_3 = 3;
+pub const OVE_TRACE_ACT_USER: _bindgen_ty_3 = 4;
+pub const OVE_TRACE_ACT_ZONE_BEGIN: _bindgen_ty_3 = 5;
+pub const OVE_TRACE_ACT_ZONE_END: _bindgen_ty_3 = 6;
+pub type _bindgen_ty_3 = core::ffi::c_uint;
+unsafe extern "C" {
+    #[doc = " @brief Emit a thread state transition.\n\n Called from backend thread code that already knows the current thread\n handle.\n\n @param[in] thread_handle Stable backend handle of the thread changing state.\n @param[in] old_state     Previous state, using the @c ove_thread_state_t encoding.\n @param[in] new_state     New state, using the @c ove_thread_state_t encoding."]
+    pub fn ove_trace_emit_state(
+        thread_handle: usize,
+        old_state: core::ffi::c_int,
+        new_state: core::ffi::c_int,
+    );
+}
+unsafe extern "C" {
+    #[doc = " @brief Emit a thread state transition with a caller-supplied timestamp.\n\n For hot paths that also feed the state tracker: read the clock once\n (ove_state_stats_now_us()) and pass the same time to both.\n\n @param[in] thread_handle Stable backend handle of the thread changing state.\n @param[in] old_state     Previous state (@c ove_thread_state_t encoding).\n @param[in] new_state     New state (@c ove_thread_state_t encoding).\n @param[in] ts_us         Timestamp, microseconds."]
+    pub fn ove_trace_emit_state_at(
+        thread_handle: usize,
+        old_state: core::ffi::c_int,
+        new_state: core::ffi::c_int,
+        ts_us: u64,
+    );
+}
+unsafe extern "C" {
+    #[doc = " @brief Emit a sync-primitive marker.\n\n @param[in] thread_handle Stable backend handle of the emitting thread.\n @param[in] prim          One of @c OVE_TRACE_PRIM_*.\n @param[in] act           One of @c OVE_TRACE_ACT_*.\n @param[in] object        Primitive address (low 32 bits) or user id."]
+    pub fn ove_trace_emit_mark(thread_handle: usize, prim: u8, act: u8, object: usize);
+}
+unsafe extern "C" {
+    #[doc = " @brief Append a name for a user trace id.\n\n Call from a single thread. The table copies up to 31 bytes of the\n NUL-terminated name. Each registration uses one of 32 entries,\n including repeated ids. The latest entry supplies the name for the id.\n\n @return True on success, false for a NULL or empty name or a full table."]
+    pub fn ove_trace_register_name(id: u16, name: *const core::ffi::c_char) -> bool;
+}
+unsafe extern "C" {
+    #[doc = " @brief Emit a point marker for a user id."]
+    pub fn ove_trace_mark(id: u16);
+}
+unsafe extern "C" {
+    #[doc = " @brief Begin a user zone. Zones with the same id may nest."]
+    pub fn ove_trace_zone_begin(id: u16);
+}
+unsafe extern "C" {
+    #[doc = " @brief End the innermost open zone with this id on the current lane."]
+    pub fn ove_trace_zone_end(id: u16);
+}
+unsafe extern "C" {
+    #[doc = " @brief Emit a state transition for a thread with no ove_thread wrapper.\n\n Idle and kernel worker threads have no embedded tracker; the trace\n layer keeps their previous state in a small per-tid table so the\n swimlane can show their lane.  Callable from ISR and context-switch\n context, but the table is not locked: callers must serialise (call\n with interrupts masked or from inside the scheduler).  A thread takes\n a slot only with an emitted transition and frees it on TERMINATED.\n TERMINATED emits only for a tid that holds a slot.\n\n @param[in] tid        Shared thread identity (trace tid).\n @param[in] new_state  New state (@c ove_thread_state_t encoding).\n @param[in] when       @c OVE_TRACE_KT_ALWAYS, or emit only from a waiting\n                       state (@c OVE_TRACE_KT_FROM_WAITING) or only from\n                       RUNNING (@c OVE_TRACE_KT_FROM_RUNNING)."]
+    pub fn ove_trace_emit_kthread_state(
+        tid: usize,
+        new_state: core::ffi::c_int,
+        when: core::ffi::c_int,
+    );
+}
+unsafe extern "C" {
+    #[doc = " @brief Return the current thread's trace id.\n\n Supplied by the thread backend. Used by\n @c OVE_TRACE_MARK_CURRENT to tag markers emitted from sync-primitive\n code that doesn't otherwise have the thread pointer in scope.\n\n @return The calling ove_thread, else the kernel thread handle; 0 in\n         interrupt context or when there is no current thread."]
+    pub fn ove_backend_thread_current_handle() -> usize;
 }
 pub const LV_RESULT_INVALID: lv_result_t = 0;
 pub const LV_RESULT_OK: lv_result_t = 1;

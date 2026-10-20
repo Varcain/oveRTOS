@@ -67,7 +67,7 @@ config OVE_TRACE_STREAM
       trace panel. Disabling removes all per-transition overhead.
 
 config OVE_TRACE_MARKERS
-    bool "Sync-primitive trace markers"
+    bool "Sync-primitive and user trace markers"
     depends on OVE_TRACE_STREAM
     default y
     help
@@ -75,6 +75,10 @@ config OVE_TRACE_MARKERS
       threads enter/leave sync primitives (mutex, semaphore, event,
       condvar, queue). Renders as triangles on the trace swimlane,
       aligned with known sem_take/sem_give sites.
+
+      Also enables the user instrumentation API in ove/trace.h
+      (ove_trace_register_name, ove_trace_mark, ove_trace_zone_begin,
+      ove_trace_zone_end). With this option off those calls are no-ops.
 
       Performance note: each marker is two wrapper calls plus a
       CAS ring push (~100 ns) around every sync op. On a fast host

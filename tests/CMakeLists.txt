@@ -276,6 +276,20 @@ target_include_directories(ove_test_nuttx_note PRIVATE
     ${OVE_ROOT}/backends/nuttx
 )
 target_compile_definitions(ove_test_nuttx_note PRIVATE CONFIG_OVE_THREAD_STATE_STATS=1)
+
+add_executable(ove_test_trace_api
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_api.c
+    ${OVE_ROOT}/backends/common/ove_trace.c
+    ${OVE_ROOT}/backends/common/ove_trace_ring.c
+)
+target_include_directories(ove_test_trace_api PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/trace_kthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/backends/common
+)
+target_compile_definitions(ove_test_trace_api PRIVATE CONFIG_OVE_TRACE_MARKERS=1)
+
 option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
 # TSan cannot share a binary with ASan or MSan: when the whole tree is
 # configured with either (make test-stub-sanitize, test-stub-msan), skip
@@ -464,6 +478,7 @@ add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
 add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
 add_test(NAME ove_trace_kthread COMMAND ove_test_trace_kthread)
 add_test(NAME ove_nuttx_note COMMAND ove_test_nuttx_note)
+add_test(NAME ove_trace_api COMMAND ove_test_trace_api)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
     set_tests_properties(ove_trace_ring_tsan PROPERTIES
