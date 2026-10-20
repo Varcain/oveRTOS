@@ -78,6 +78,8 @@ jobs:
 
       - name: Build allconfigs-qemu.freertos
         run: make allconfigs-qemu.freertos
+      - name: Build trace and profiler configurations
+        run: make test-kconfig-matrix-freertos
 
 
   qemu-nuttx:
@@ -105,6 +107,8 @@ jobs:
 
       - name: Build allconfigs-qemu.nuttx
         run: make allconfigs-qemu.nuttx
+      - name: Build trace and profiler configurations
+        run: make test-kconfig-matrix-nuttx
 
 
   qemu-zephyr:
@@ -146,6 +150,8 @@ jobs:
 
       - name: Build allconfigs-qemu.zephyr
         run: make allconfigs-qemu.zephyr
+      - name: Build trace and profiler configurations
+        run: make test-kconfig-matrix-zephyr
 
 
   stm32f746-freertos:

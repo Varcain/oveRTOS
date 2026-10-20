@@ -90,6 +90,7 @@ Every target follows a predictable shape:
 
 - `test-stub` — host test backend (`tests/host/posix/`)
 - `test-qemu-<rtos>{,-zeroheap}` — QEMU MPS2-AN500
+- `test-kconfig-matrix-<rtos>` — six trace and profiler configuration builds for QEMU MPS2-AN500
 - `test-renode-stm32f746-<rtos>{,-zeroheap}` — Renode
 - `test-hw-stm32f746-<rtos>{,-zeroheap}` — real Discovery board (manual)
 

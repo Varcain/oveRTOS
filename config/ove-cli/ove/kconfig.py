@@ -184,10 +184,10 @@ def workspace_path(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
 
 
 def _write_workspace_config(kconf, ove_dir, ws_board, ws_rtos, ws_app,
-                            ext_app_dir=None, activate=True):
+                            ext_app_dir=None, activate=True, workspace_dir=None):
     """Write one workspace config, then optionally make it active."""
     output_dir = os.path.join(ove_dir, "output")
-    ws_dir = workspace_path(
+    ws_dir = workspace_dir or workspace_path(
         ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir)
 
     os.makedirs(ws_dir, exist_ok=True)
@@ -353,7 +353,7 @@ def _write_temp_defconfig(lines, path):
             f.write(line + "\n")
 
 
-def cmd_defconfig_fragments(args):
+def cmd_defconfig_fragments(args, *, workspace_dir=None):
     """Load configuration by merging fragments and yaml-defined configs."""
     ove_dir = find_ove_dir()
 
@@ -513,7 +513,8 @@ def cmd_defconfig_fragments(args):
 
     activate = not getattr(args, "no_activate", False)
     ws_dir, ws_config = _write_workspace_config(
-        kconf, ove_dir, board, rtos, app, ext_app_dir, activate=activate)
+        kconf, ove_dir, board, rtos, app, ext_app_dir, activate=activate,
+        workspace_dir=workspace_dir if not activate else None)
 
     print(f"Configuration written to {ws_config}")
     if activate:
