@@ -10,8 +10,8 @@
  * NuttX trace backend.
  *
  * Thread state transitions come from the scheduler, through the sched_note
- * driver in nuttx_thread.c (suspend/resume on every context switch); the
- * sync wrappers in nuttx_sync.c add sync-primitive markers.
+ * driver's suspend, ready, resume and stop hooks. The sync wrappers in
+ * nuttx_sync.c add sync-primitive markers.
  *
  * Thread identity (shared with the profiler): the ove_thread for tasks
  * created through ove_thread_*, otherwise the task's TCB; 0 for interrupt

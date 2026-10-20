@@ -1,0 +1,116 @@
+diff --git a/drivers/note/note_driver.c b/drivers/note/note_driver.c
+index 71cc45b3..3aa31750 100644
+--- a/drivers/note/note_driver.c
++++ b/drivers/note/note_driver.c
+@@ -67,6 +67,8 @@
+   ((drv)->ops->suspend && ((drv)->ops->suspend(drv, tcb), true))
+ #define note_resume(drv, tcb)                                                \
+   ((drv)->ops->resume && ((drv)->ops->resume(drv, tcb), true))
++#define note_ready(drv, tcb)                                                 \
++  ((drv)->ops->ready && ((drv)->ops->ready(drv, tcb), true))
+ #define note_cpu_start(drv, tcb, cpu)                                        \
+   ((drv)->ops->cpu_start && ((drv)->ops->cpu_start(drv, tcb, cpu), true))
+ #define note_cpu_started(drv, tcb)                                           \
+@@ -778,6 +780,27 @@ void sched_note_suspend(FAR struct tcb_s *tcb)
+     }
+ }
+ 
++void sched_note_ready(FAR struct tcb_s *tcb)
++{
++  FAR struct note_driver_s **driver;
++
++  /* A task became runnable: it was inserted into the ready-to-run (or
++   * pending) list, but has not necessarily been scheduled yet.  This is
++   * the wake-up edge that suspend/resume notes cannot express: without
++   * it, consumers only see BLOCKED -> RUNNING and lose the ready wait.
++   * No binary note is emitted; drivers that want a record can implement
++   * the ready op themselves.
++   */
++
++  for (driver = g_note_drivers; *driver; driver++)
++    {
++      if (note_isenabled_switch(*driver))
++        {
++          (void)note_ready(*driver, tcb);
++        }
++    }
++}
++
+ void sched_note_resume(FAR struct tcb_s *tcb)
+ {
+   struct note_resume_s note;
+diff --git a/include/nuttx/note/note_driver.h b/include/nuttx/note/note_driver.h
+index 9b8496cf..5b5b6308 100644
+--- a/include/nuttx/note/note_driver.h
++++ b/include/nuttx/note/note_driver.h
+@@ -107,6 +107,13 @@ struct note_driver_ops_s
+   CODE void (*vprintf)(FAR struct note_driver_s *drv, uintptr_t ip,
+                        FAR const char *fmt, va_list va) printf_like(3, 0);
+ #endif
++#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
++  /* Last, so the drivers that initialise this struct positionally keep
++   * their layout.
++   */
++
++  CODE void (*ready)(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb);
++#endif
+ };
+ 
+ #ifdef CONFIG_SCHED_INSTRUMENTATION_FILTER
+diff --git a/include/nuttx/sched_note.h b/include/nuttx/sched_note.h
+index 5c13eee3..b152c0ac 100644
+--- a/include/nuttx/sched_note.h
++++ b/include/nuttx/sched_note.h
+@@ -606,11 +606,13 @@ void sched_note_start(FAR struct tcb_s *tcb);
+ void sched_note_stop(FAR struct tcb_s *tcb);
+ void sched_note_suspend(FAR struct tcb_s *tcb);
+ void sched_note_resume(FAR struct tcb_s *tcb);
++void sched_note_ready(FAR struct tcb_s *tcb);
+ #else
+ #  define sched_note_stop(t)
+ #  define sched_note_start(t)
+ #  define sched_note_suspend(t)
+ #  define sched_note_resume(t)
++#  define sched_note_ready(t)
+ #endif
+ 
+ #if defined(CONFIG_SMP) && defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+diff --git a/sched/sched/sched_addreadytorun.c b/sched/sched/sched_addreadytorun.c
+index 26e020f0..e1e5bf8a 100644
+--- a/sched/sched/sched_addreadytorun.c
++++ b/sched/sched/sched_addreadytorun.c
+@@ -29,6 +29,8 @@
+ #include <stdbool.h>
+ #include <assert.h>
+ 
++#include <nuttx/sched_note.h>
++
+ #include "irq/irq.h"
+ #include "sched/queue.h"
+ #include "sched/sched.h"
+@@ -112,6 +114,14 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
+       ret = false;
+     }
+ 
++  /* The task is now runnable, whether it went straight to the ready list
++   * or to the pending list because preemption is disabled.  Report the
++   * wake-up edge so instrumentation can measure the ready wait; the later
++   * resume note marks the actual switch to RUNNING.
++   */
++
++  sched_note_ready(btcb);
++
+   return ret;
+ }
+ 
+@@ -258,6 +268,10 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
+   btcb->task_state = TSTATE_TASK_READYTORUN;
+   nxsched_add_prioritized(btcb, list_readytorun());
+ 
++  /* Report the wake-up edge before any target-CPU switch is delivered. */
++
++  sched_note_ready(btcb);
++
+   if (target_cpu < CONFIG_SMP_NCPUS)
+     {
+       FAR struct tcb_s *tcb = current_task(target_cpu);

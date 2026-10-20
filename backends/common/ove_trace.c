@@ -63,6 +63,8 @@ void ove_trace_emit_kthread_state(uintptr_t tid, int new_state, int when)
 		if (free_idx < 0 && kthreads[i].tid == 0)
 			free_idx = i;
 	}
+	if (idx < 0 && new_state == OVE_THREAD_STATE_TERMINATED)
+		return;
 
 	/* A thread seen for the first time is assumed to have been running.
 	 * Claim a slot only for a transition that is emitted: the no-op first
