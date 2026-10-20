@@ -84,22 +84,30 @@ def _trace_dump_descriptors(payload):
     if len(payload) < 8:
         return
     try:
-        sub, _ver, count, _dropped = struct.unpack_from("<BBHI", payload, 0)
+        sub, ver, count, _dropped = struct.unpack_from("<BBHI", payload, 0)
     except struct.error:
         return
     if sub != 0:
         return
+    has_gen = ver >= 2
     p = 8
     for _ in range(count):
-        if p + 5 > len(payload):
+        if p + (9 if has_gen else 5) > len(payload):
             return
-        (tid,) = struct.unpack_from("<I", payload, p); p += 4
-        name_len = payload[p]; p += 1
+        (tid,) = struct.unpack_from("<I", payload, p)
+        p += 4
+        gen_field = ""
+        if has_gen:
+            (generation,) = struct.unpack_from("<I", payload, p)
+            p += 4
+            gen_field = f" gen=0x{generation:x}"
+        name_len = payload[p]
+        p += 1
         if p + name_len > len(payload):
             return
         name = payload[p:p + name_len].decode("utf-8", "replace")
         p += name_len
-        sys.stderr.write(f"[dump-desc] tid=0x{tid:x} name={name}\n")
+        sys.stderr.write(f"[dump-desc] tid=0x{tid:x} name={name}{gen_field}\n")
     sys.stderr.flush()
 
 

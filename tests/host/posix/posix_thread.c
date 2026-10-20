@@ -59,6 +59,7 @@ uint64_t ove_state_stats_now_us(void)
 
 static __thread struct ove_thread *tls_current;
 static struct ove_thread *first_thread;
+static uint32_t g_thread_generation;
 
 /* ── Stack coloration ─────────────────────────────────────────────── */
 
@@ -219,6 +220,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 
 	struct ove_thread *t = (struct ove_thread *)storage;
 	memset(t, 0, sizeof(*t));
+	t->generation = ove_thread_next_generation(&g_thread_generation);
 
 	t->entry = entry;
 	t->arg = arg;
@@ -300,6 +302,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 		return OVE_ERR_NO_MEMORY;
 	}
 	memset(t, 0, sizeof(*t));
+	t->generation = ove_thread_next_generation(&g_thread_generation);
 
 	t->entry = entry;
 	t->arg = arg;
@@ -413,6 +416,7 @@ size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t 
 	for (struct ove_thread *t = ove_backend_thread_registry_head; t && count < max;
 	     t = t->next) {
 		out[count].tid = (uint32_t)(uintptr_t)t;
+		out[count].generation = t->generation;
 		out[count].name = t->name ? t->name : "?";
 		count++;
 	}

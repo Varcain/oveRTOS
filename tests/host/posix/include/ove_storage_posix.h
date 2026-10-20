@@ -76,6 +76,7 @@ struct ove_thread {
 	struct ove_thread *next;      /* linked list for enumeration */
 	struct ove_state_tracker st;  /* per-state time tracking */
 	uint8_t priority;	      /* ove_prio_t; tracked for reporting */
+	uint32_t generation;	      /* lane generation, one per thread start */
 	/* CPU usage sampling: last observed CPU ns + last computed %.
 	 * ove_thread_list recomputes at most every 100 ms so rapid
 	 * callers don't collapse the delta window to near-zero. */

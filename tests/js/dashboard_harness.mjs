@@ -46,34 +46,37 @@ export function loadDashboard() {
 
 /* Wire formats: sim/include/ove/sim/ove_sim_{trace,profiler}.h. Trace
  * payloads start with sub_type, version, count and dropped. */
-function traceEnvelope(size, subType, count, dropped) {
+function traceEnvelope(size, subType, count, dropped, version) {
     const dv = new DataView(new ArrayBuffer(size));
     dv.setUint8(0, subType);
-    dv.setUint8(1, 1);
+    dv.setUint8(1, version);
     dv.setUint16(2, count, true);
     dv.setUint32(4, dropped, true);
     return dv;
 }
 
-/** DESCRIPTORS from [tid, name] pairs. */
-export function traceDescriptors(entries, dropped = 0) {
+/** DESCRIPTORS from [tid, name] or [tid, generation, name] entries. */
+export function traceDescriptors(entries, dropped = 0, version = 2) {
     const encoder = new TextEncoder();
-    const encoded = entries.map(([tid, name]) => [tid, encoder.encode(name)]);
-    const size = encoded.reduce((n, [, name]) => n + 5 + name.length, 8);
-    const dv = traceEnvelope(size, 0, encoded.length, dropped);
+    const encoded = entries.map(([tid, gen, name]) =>
+        name === undefined ? [tid, 0, encoder.encode(gen)] : [tid, gen, encoder.encode(name)]);
+    const hasGen = version >= 2;
+    const size = encoded.reduce((n, [, , name]) => n + (hasGen ? 9 : 5) + name.length, 8);
+    const dv = traceEnvelope(size, 0, encoded.length, dropped, version);
     let p = 8;
-    for (const [tid, name] of encoded) {
-        dv.setUint32(p, tid, true);
-        dv.setUint8(p + 4, name.length);
-        new Uint8Array(dv.buffer, p + 5, name.length).set(name);
-        p += 5 + name.length;
+    for (const [tid, gen, name] of encoded) {
+        dv.setUint32(p, tid, true); p += 4;
+        if (hasGen) { dv.setUint32(p, gen, true); p += 4; }
+        dv.setUint8(p++, name.length);
+        new Uint8Array(dv.buffer, p, name.length).set(name);
+        p += name.length;
     }
     return dv.buffer;
 }
 
 /** STREAM of 16-byte records. */
 export function traceStream(records, dropped = 0) {
-    const dv = traceEnvelope(8 + records.length * 16, 1, records.length, dropped);
+    const dv = traceEnvelope(8 + records.length * 16, 1, records.length, dropped, 2);
     records.forEach((r, i) => {
         const p = 8 + i * 16;
         dv.setBigUint64(p, BigInt(r.ts), true);

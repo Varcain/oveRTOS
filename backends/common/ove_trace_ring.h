@@ -64,6 +64,7 @@ uint32_t ove_trace_ring_dropped_get(void);
  */
 struct ove_trace_thread_desc {
 	uint32_t tid;
+	uint32_t generation; /* new at every ove thread start, 0 for kernel threads */
 	const char *name;
 };
 

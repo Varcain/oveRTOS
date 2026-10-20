@@ -153,7 +153,9 @@ void ove_backend_trace_task_switched_in(void)
 		return;
 	}
 
-	transition(t, t->st.cur_state, OVE_THREAD_STATE_RUNNING);
+	/* An exited thread can still run briefly before parking itself. */
+	if (t->st.cur_state != OVE_THREAD_STATE_TERMINATED)
+		transition(t, t->st.cur_state, OVE_THREAD_STATE_RUNNING);
 }
 
 /*
@@ -180,7 +182,7 @@ void ove_backend_trace_task_blocking(void)
 	}
 
 	int prev = t->st.cur_state;
-	if (prev != OVE_THREAD_STATE_BLOCKED)
+	if (prev != OVE_THREAD_STATE_BLOCKED && prev != OVE_THREAD_STATE_TERMINATED)
 		transition(t, prev, OVE_THREAD_STATE_BLOCKED);
 }
 
@@ -199,9 +201,17 @@ void ove_backend_trace_task_suspended(uintptr_t task_tag, uintptr_t task)
 	}
 
 	int prev = t->st.cur_state;
-	if (prev == OVE_THREAD_STATE_SUSPENDED)
+	if (prev == OVE_THREAD_STATE_SUSPENDED || prev == OVE_THREAD_STATE_TERMINATED)
 		return;
 	transition(t, prev, OVE_THREAD_STATE_SUSPENDED);
+}
+
+/* Close the lane before the wrapper parks in vTaskSuspend(NULL). */
+void ove_backend_trace_task_exited(struct ove_thread *t)
+{
+	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
+	transition(t, t->st.cur_state, OVE_THREAD_STATE_TERMINATED);
+	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
 }
 
 /*

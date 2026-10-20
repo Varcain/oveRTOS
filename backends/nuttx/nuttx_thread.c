@@ -149,6 +149,7 @@ static void _unregister_thread(struct ove_thread *t)
 
 /* Store first thread for join in start_scheduler */
 static struct ove_thread *first_thread;
+static uint32_t g_thread_generation;
 
 static int task_wrapper(int argc, char *argv[])
 {
@@ -289,6 +290,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	 * documented in thread_start(). */
 
 	memset(storage, 0, sizeof(*storage));
+	storage->generation = ove_thread_next_generation(&g_thread_generation);
 	int ret = thread_start(storage, name, entry, arg, priority, stack_size, stack);
 	if (ret != OVE_OK) {
 		return ret;
@@ -353,6 +355,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 		return OVE_ERR_NO_MEMORY;
 	}
 	memset(t, 0, sizeof(*t));
+	t->generation = ove_thread_next_generation(&g_thread_generation);
 
 	ret = thread_start(t, name, entry, arg, priority, stack_size, NULL);
 	if (ret != OVE_OK) {

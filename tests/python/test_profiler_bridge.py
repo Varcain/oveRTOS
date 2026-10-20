@@ -10,6 +10,7 @@ import os
 import struct
 import sys
 import unittest
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -17,6 +18,30 @@ from unittest.mock import patch
 SCRIPTS = Path(__file__).resolve().parents[2] / "config" / "scripts"
 with patch.object(sys, "path", [str(SCRIPTS), *sys.path]):
     from ove_dashboard import profiler
+
+
+class TraceDescriptorDumpTest(unittest.TestCase):
+    def test_v1_after_v2(self):
+        current = struct.pack("<BBHIIIB", 0, 2, 1, 0, 7, 3, 6) + b"worker"
+        legacy = struct.pack("<BBHIIB", 0, 1, 1, 0, 8, 4) + b"idle"
+        with patch("sys.stderr", new_callable=StringIO) as stderr:
+            profiler._trace_dump_descriptors(current)
+            profiler._trace_dump_descriptors(legacy)
+        self.assertEqual(stderr.getvalue().splitlines(), [
+            "[dump-desc] tid=0x7 name=worker gen=0x3",
+            "[dump-desc] tid=0x8 name=idle",
+        ])
+
+    def test_v2_reads_generation_on_each_record(self):
+        payload = struct.pack("<BBHI", 0, 2, 2, 0)
+        payload += struct.pack("<IIB", 7, 0x12345678, 6) + b"worker"
+        payload += struct.pack("<IIB", 8, 0, 4) + b"idle"
+        with patch("sys.stderr", new_callable=StringIO) as stderr:
+            profiler._trace_dump_descriptors(payload)
+        self.assertEqual(stderr.getvalue().splitlines(), [
+            "[dump-desc] tid=0x7 name=worker gen=0x12345678",
+            "[dump-desc] tid=0x8 name=idle gen=0x0",
+        ])
 
 
 # Synthetic firmware: function start, end, name — including two different
