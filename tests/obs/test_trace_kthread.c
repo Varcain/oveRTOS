@@ -104,6 +104,10 @@ static void test_from_running(void)
 
 int main(void)
 {
+	/* An unseen tid has no lane to close. */
+	ove_trace_emit_kthread_state(0xE000, OVE_THREAD_STATE_TERMINATED, OVE_TRACE_KT_ALWAYS);
+	CHECK(records == 0);
+
 	test_no_op_observations_take_no_slot();
 	test_exit_frees_the_slot();
 	test_from_running();

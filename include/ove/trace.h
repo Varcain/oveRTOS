@@ -107,6 +107,7 @@ void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uin
  * context, but the table is not locked: callers must serialise (call
  * with interrupts masked or from inside the scheduler).  A thread takes
  * a slot only with an emitted transition and frees it on TERMINATED.
+ * TERMINATED emits only for a tid that holds a slot.
  *
  * @param[in] tid        Shared thread identity (trace tid).
  * @param[in] new_state  New state (@c ove_thread_state_t encoding).
