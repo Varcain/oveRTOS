@@ -539,6 +539,9 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	const char *name = k_thread_name_get((k_tid_t)thread);
 	ove_name_copy(info->name, sizeof(info->name), name != NULL ? name : "?");
 	info->identity = (uintptr_t)thread;
+	const struct ove_thread *ove = thread->custom_data;
+	info->trace_id = ove ? (uintptr_t)ove : (uintptr_t)thread;
+	info->generation = ove ? ove->generation : 0u;
 	info->state = _map_zephyr_state(thread->base.thread_state);
 	info->native_priority = k_thread_priority_get((k_tid_t)thread);
 	info->priority = (int)ove_zephyr_unmap_priority(info->native_priority);
@@ -583,10 +586,9 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 		 * estimate above.  The monitor lock held around this callback
 		 * also holds off the transition hooks, so read the clock here,
 		 * in the same section as the tracker. */
-		struct ove_thread *t = (struct ove_thread *)thread->custom_data;
-		if (t && t->st.cur_state != OVE_THREAD_STATE_TERMINATED) {
+		if (ove && ove->st.cur_state != OVE_THREAD_STATE_TERMINATED) {
 			uint64_t times[OVE_STATE_COUNT];
-			ove_state_track_read(&t->st, ove_state_stats_now_us(), times);
+			ove_state_track_read(&ove->st, ove_state_stats_now_us(), times);
 			info->state_times.running_us = times[OVE_THREAD_STATE_RUNNING];
 			info->state_times.ready_us = times[OVE_THREAD_STATE_READY];
 			info->state_times.blocked_us = times[OVE_THREAD_STATE_BLOCKED];

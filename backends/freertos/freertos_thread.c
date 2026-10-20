@@ -570,6 +570,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			frt_task_info(handle, &task);
 			ove_name_copy(out[i].name, sizeof(out[i].name), task.pcTaskName);
 			out[i].identity = (uintptr_t)handle;
+			out[i].trace_id = wrapper ? (uintptr_t)wrapper : (uintptr_t)handle;
+			out[i].generation = wrapper ? wrapper->generation : 0u;
 			out[i].priority = (int)ove_freertos_unmap_priority(task.uxCurrentPriority);
 			out[i].native_priority = (int)task.uxCurrentPriority;
 			out[i].stack_size = 0u;

@@ -683,6 +683,12 @@ pub const ThreadInfo = extern struct {
     valid_fields: u32,
     native_priority: i32,
     state_times: c.struct_ove_thread_state_times,
+    /// Lane generation: a new value for every thread start, so a new thread
+    /// on reused storage is told apart from the old one. Zero for kernel threads,
+    /// Zephyr ove threads that have yet to run, and NuttX tasks without a state tracker.
+    generation: u32,
+    /// The thread's tid in trace records, descriptors and profiler samples; equality only.
+    trace_id: usize,
     name_buf: [c.OVE_THREAD_NAME_MAX]u8,
 
     /// The thread's priority on the ove scale.
@@ -741,6 +747,8 @@ comptime {
     std.debug.assert(@offsetOf(ThreadInfo, "cpu_percent_x100_raw") == @offsetOf(c.struct_ove_thread_info, "cpu_percent_x100"));
     std.debug.assert(@offsetOf(ThreadInfo, "valid_fields") == @offsetOf(c.struct_ove_thread_info, "valid_fields"));
     std.debug.assert(@offsetOf(ThreadInfo, "state_times") == @offsetOf(c.struct_ove_thread_info, "state_times"));
+    std.debug.assert(@offsetOf(ThreadInfo, "generation") == @offsetOf(c.struct_ove_thread_info, "generation"));
+    std.debug.assert(@offsetOf(ThreadInfo, "trace_id") == @offsetOf(c.struct_ove_thread_info, "trace_id"));
     std.debug.assert(@offsetOf(ThreadInfo, "name_buf") == @offsetOf(c.struct_ove_thread_info, "name"));
 }
 

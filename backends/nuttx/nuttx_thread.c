@@ -891,6 +891,15 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	ove_name_copy(info->name, sizeof(info->name), "?");
 #endif
 	info->identity = (uintptr_t)(uint32_t)tcb->pid;
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	/* nxsched_foreach() already holds the scheduler's critical section. */
+	const struct ove_thread *ove = obs_find(tcb->pid);
+	info->trace_id = ove ? (uintptr_t)ove : (uintptr_t)tcb;
+	info->generation = ove ? ove->generation : 0u;
+#else
+	info->trace_id = (uintptr_t)tcb;
+	info->generation = 0u;
+#endif
 
 	switch (tcb->task_state) {
 	case TSTATE_TASK_RUNNING:

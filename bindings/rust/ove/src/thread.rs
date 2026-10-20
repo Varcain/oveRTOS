@@ -1124,6 +1124,8 @@ pub fn get_mem_stats() -> Result<MemStats> {
 /// buffer directly without a binding-owned capacity limit or allocation. Raw
 /// fields remain available for FFI-oriented code; prefer the methods below for
 /// typed states and optional metrics.
+/// `trace_id` is the thread's tid in trace and profiler data. `generation`
+/// distinguishes starts on reused storage and is zero when unavailable.
 pub type ThreadInfo = bindings::ove_thread_info;
 
 impl bindings::ove_thread_info {
@@ -1144,6 +1146,8 @@ impl bindings::ove_thread_info {
                 blocked_us: 0,
                 suspended_us: 0,
             },
+            generation: 0,
+            trace_id: 0,
             name: [0; bindings::OVE_THREAD_NAME_MAX as usize],
         }
     }
