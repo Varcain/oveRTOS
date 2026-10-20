@@ -500,9 +500,10 @@ def _event_bridge_loop():
             # Forward debug thread snapshots as FRAME_THREAD
             if event_type == SIM_DEBUG_EVT_THREADS and payload:
                 frames.post_frame(struct.pack("<I", FRAME_THREAD) + payload)
-            # Forward trace plugin events as FRAME_TRACE. Both subtypes
-            # (stream records, descriptor table) share the same outer
-            # frame; the dashboard dispatches on the embedded sub_type.
+            # Forward trace plugin events as FRAME_TRACE. All sub_types
+            # (stream records, thread descriptors, user names) share the
+            # same outer frame; the dashboard dispatches on the embedded
+            # sub_type.
             elif event_type in (SIM_TRACE_EVT_STREAM,
                                 SIM_TRACE_EVT_DESCRIPTORS) and payload:
                 frames.post_frame(struct.pack("<I", FRAME_TRACE) + payload)
