@@ -27,7 +27,8 @@ set(MODULE_CONFIG "${OVE_ROOT}/config/Config.in.modules")
 # Tighten the ceilings as demo, qualification, and board policy are separated.
 set(APP_SOURCE_LINE_CEILING 129)
 set(NETWORK_SMOKE_SOURCE_LINE_CEILING 110)
-set(QUALIFICATION_SOURCE_LINE_CEILING 407)
+# 415 after the Zephyr watchdog selftest (6abc9c2d).
+set(QUALIFICATION_SOURCE_LINE_CEILING 415)
 set(ROUNDTRIP_SOURCE_LINE_CEILING 136)
 set(RT_SCOPE_SOURCE_LINE_CEILING 811)
 set(BOARD_RT_SCOPE_SOURCE_LINE_CEILING 300)
