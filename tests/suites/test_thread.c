@@ -19,6 +19,7 @@ static atomic_int g_flag;
 static atomic_intptr_t g_arg_val;
 static atomic_intptr_t g_self_seen;
 static atomic_int g_keep_running;
+static atomic_int g_progress;
 
 /* Bounded wait for an atomic_int flag — the stdatomic analogue of the
  * framework's wait_for_flag (which takes a plain volatile int).  Uses a
@@ -82,12 +83,16 @@ static void entry_spin_flagged(void *arg)
 	entry_spin(arg);
 }
 
-static void entry_sleep_briefly(void *arg)
+/* Keeps making observable progress until asked to stop; used to prove that
+ * suspend actually parks the thread. */
+static void entry_count_progress(void *arg)
 {
 	(void)arg;
 	atomic_store(&g_flag, 1);
-	test_msleep(200);
-	atomic_store(&g_flag, 2);
+	while (atomic_load(&g_keep_running)) {
+		atomic_fetch_add(&g_progress, 1);
+		test_msleep(1);
+	}
 }
 
 /* 1. create and destroy — verify entry runs */
@@ -290,24 +295,69 @@ static void test_suspend_resume(void **state)
 {
 	(void)state;
 	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	atomic_store(&g_progress, 0);
 	ove_thread_t h = NULL;
-	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t14", entry_sleep_briefly, NULL,
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t14", entry_count_progress, NULL,
 					       s_th_stack, 4096));
 	/* Wait for the thread to start (it sets g_flag=1 on entry). */
 	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	test_msleep(20);
+	int before = atomic_load(&g_progress);
+	assert_true(before > 0);
 
 	ove_thread_suspend(h);
-	test_msleep(10);
-	ove_thread_resume(h);
+	test_msleep(20);
+	int mid = atomic_load(&g_progress);
+	test_msleep(20);
+	int mid2 = atomic_load(&g_progress);
+	/* Parked: a sane sleep loop makes no progress across 20 ms. */
+	assert_int_equal(mid, mid2);
 
-	/* Settle delay (not a flag-poll): let the resumed worker finish its
-	 * sleep before we destroy it, so destroy's join can't race a thread
-	 * that resume hasn't woken yet.  We don't assert post-resume progress —
-	 * suspend/resume wake latency is backend/scheduler-sensitive (notably
-	 * under TSan's signal interception); this test verifies suspend/resume
-	 * don't crash and the thread stays joinable. */
-	test_msleep(300);
+	ove_thread_resume(h);
+	test_msleep(20);
+	assert_true(atomic_load(&g_progress) > mid2);
+
+	atomic_store(&g_keep_running, 0);
 	ove_test_thread_destroy(h);
+}
+
+/* 14b. a suspend right after a resume, before the lower-priority target
+ * ran again, is not lost: the target is either SUSPENDED and makes no
+ * progress, or not SUSPENDED and keeps running. */
+static void test_suspend_resume_back_to_back(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	atomic_store(&g_progress, 0);
+	ove_thread_t h = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t14b", entry_count_progress,
+					       NULL, s_th_stack, 4096));
+	ove_thread_set_priority(h, OVE_PRIO_LOW);
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	test_msleep(20);
+
+	int bad = 0;
+	for (int round = 0; round < 5; round++) {
+		ove_thread_suspend(h);
+		test_msleep(10);
+		ove_thread_resume(h);
+		ove_thread_suspend(h);
+		ove_thread_state_t st = ove_thread_get_state(h);
+		int a = atomic_load(&g_progress);
+		test_msleep(50);
+		int b = atomic_load(&g_progress);
+		if (st == OVE_THREAD_STATE_SUSPENDED ? a != b : a == b)
+			bad++;
+		ove_thread_resume(h);
+		test_msleep(20);
+	}
+
+	atomic_store(&g_keep_running, 0);
+	ove_thread_resume(h);
+	ove_test_thread_destroy(h);
+	assert_int_equal(bad, 0);
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -588,6 +638,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_create_null_entry),
 #endif
 		cmocka_unit_test(test_suspend_resume),
+		cmocka_unit_test(test_suspend_resume_back_to_back),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_destroy_null),
 #endif

@@ -599,10 +599,16 @@ pub fn Thread(comptime stack_size: usize) type {
             c.ove_thread_set_priority(self.handle, @intFromEnum(priority));
         }
 
+        /// Suspend the thread; it normally stays suspended until
+        /// `resumeThread`.  The suspension is not guaranteed on every
+        /// backend: on NuttX the wait for the target is bounded, so a
+        /// target that cannot be reached is not suspended at all.  Check
+        /// `getState() == .suspended` to know the thread really stopped.
         pub fn suspendThread(self: Self) void {
             c.ove_thread_suspend(self.handle);
         }
 
+        /// Resume a thread suspended with `suspendThread`.
         pub fn resumeThread(self: Self) void {
             c.ove_thread_resume(self.handle);
         }

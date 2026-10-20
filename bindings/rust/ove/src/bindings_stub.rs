@@ -859,7 +859,7 @@ unsafe extern "C" {
     pub fn ove_thread_start_scheduler();
 }
 unsafe extern "C" {
-    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread remains suspended until ove_thread_resume() is called.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n\n @see ove_thread_resume"]
+    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread normally remains suspended until ove_thread_resume() is\n called.  The suspension is not guaranteed on every backend: on NuttX\n the acknowledgement wait of the suspending thread is bounded, so a\n target that cannot be reached (for example because a higher priority\n task holds the CPU) is not suspended at all.  The function has no\n return value, so the caller has to check the outcome with\n ove_thread_get_state(): only @ref OVE_THREAD_STATE_SUSPENDED means that\n the thread really stopped.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n\n @see ove_thread_resume, ove_thread_get_state"]
     pub fn ove_thread_suspend(handle: ove_thread_t);
 }
 unsafe extern "C" {

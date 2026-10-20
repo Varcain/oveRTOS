@@ -624,7 +624,13 @@ template <size_t StackSize = 0> class Thread
 	/**
 	 * @brief Suspends execution of the thread.
 	 *
-	 * The thread will not be scheduled until `resume()` is called.
+	 * The thread normally will not be scheduled until `resume()` is
+	 * called.  The suspension is not guaranteed on every backend: on
+	 * NuttX the acknowledgement wait of the suspending thread is
+	 * bounded, so a target that cannot be reached is not suspended at
+	 * all.  The call has no return value, so check `get_state()` for
+	 * `OVE_THREAD_STATE_SUSPENDED` to find out whether the thread
+	 * really stopped.
 	 */
 	void suspend()
 	{

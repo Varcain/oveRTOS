@@ -30,7 +30,7 @@ stateDiagram-v2
 | **READY** | Thread is runnable; waiting for the CPU. |
 | **RUNNING** | Currently executing on the CPU. |
 | **BLOCKED** | Sleeping or waiting on a sync object; will be unblocked automatically. |
-| **SUSPENDED** | Explicitly paused via `ove_thread_suspend()`; stays suspended until `ove_thread_resume()`. |
+| **SUSPENDED** | Explicitly paused via `ove_thread_suspend()`; stays suspended until `ove_thread_resume()`. On NuttX the suspend waits a bounded time for the target to park, so check for this state to know the thread really stopped. |
 | **TERMINATED** | Entry function has returned. The handle is still valid until the thread is destroyed. |
 | **UNKNOWN** | State could not be determined by the backend. |
 
@@ -193,7 +193,7 @@ int start_worker(void)
 | `ove_thread_sleep_ms` | `void (uint32_t ms)` | Block the calling thread for at least `ms` milliseconds. Passing `0` yields for one scheduler tick. |
 | `ove_thread_yield` | `void (void)` | Voluntarily relinquish the CPU to another ready thread of equal or higher priority. |
 | `ove_thread_start_scheduler` | `void (void)` | Start the RTOS scheduler. Usually called indirectly via `ove_run()`. Does not return on most platforms. |
-| `ove_thread_suspend` | `void (ove_thread_t handle)` | Prevent a thread from being scheduled. May be called on the calling thread itself. |
+| `ove_thread_suspend` | `void (ove_thread_t handle)` | Prevent a thread from being scheduled. May be called on the calling thread itself. Not guaranteed on NuttX, where the wait for the target is bounded: check `ove_thread_get_state()` for `OVE_THREAD_STATE_SUSPENDED`. |
 | `ove_thread_resume` | `void (ove_thread_t handle)` | Resume a previously suspended thread. |
 | `ove_thread_get_stack_headroom` | `int (ove_thread_t handle, size_t *headroom_bytes)` | Return the minimum free stack observed, with `OVE_ERR_NOT_SUPPORTED` when profiling is unavailable. |
 | `ove_thread_get_stack_usage` | `size_t (ove_thread_t handle)` | Legacy, misnamed minimum-free-stack query. Returns `0` both for an exhausted stack and when profiling is unavailable. |

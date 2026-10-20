@@ -235,11 +235,18 @@ void ove_thread_start_scheduler(void);
 /**
  * @brief Suspend a thread, preventing it from being scheduled.
  *
- * The thread remains suspended until ove_thread_resume() is called.
+ * The thread normally remains suspended until ove_thread_resume() is
+ * called.  The suspension is not guaranteed on every backend: on NuttX
+ * the acknowledgement wait of the suspending thread is bounded, so a
+ * target that cannot be reached (for example because a higher priority
+ * task holds the CPU) is not suspended at all.  The function has no
+ * return value, so the caller has to check the outcome with
+ * ove_thread_get_state(): only @ref OVE_THREAD_STATE_SUSPENDED means that
+ * the thread really stopped.
  *
  * @param[in] handle  Thread to suspend.  May be the calling thread itself.
  *
- * @see ove_thread_resume
+ * @see ove_thread_resume, ove_thread_get_state
  */
 void ove_thread_suspend(ove_thread_t handle);
 

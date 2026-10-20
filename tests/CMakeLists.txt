@@ -286,6 +286,41 @@ target_include_directories(ove_test_systick_q32 PRIVATE ${OVE_ROOT}/backends/com
 # Per-state snapshot the RTOS backends report from ove_thread_list().
 add_executable(ove_test_state_track_read ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_state_track_read.c)
 target_include_directories(ove_test_state_track_read PRIVATE ${OVE_INCLUDE})
+
+# NuttX suspend/resume handshake: a resume that races the suspend must not
+# be lost - the target would park forever.  The handshake code is not
+# copied into the test - it is extracted verbatim from the backend at build
+# time, so the test always exercises the real source text of
+# backends/nuttx/nuttx_thread.c.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(NUTTX_SUSPEND_BLOCK ${CMAKE_BINARY_DIR}/generated/ove_nuttx_suspend_block.inc)
+add_custom_command(
+    OUTPUT ${NUTTX_SUSPEND_BLOCK}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/generated
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/extract_nuttx_suspend_block.py
+            ${OVE_ROOT}/backends/nuttx/nuttx_thread.c
+            ${NUTTX_SUSPEND_BLOCK}
+    DEPENDS ${OVE_ROOT}/backends/nuttx/nuttx_thread.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/extract_nuttx_suspend_block.py
+    COMMENT "Extracting the NuttX suspend/resume handshake block"
+    VERBATIM
+)
+add_executable(ove_test_nuttx_suspend_handshake
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/nuttx_suspend/test_nuttx_suspend_handshake.c
+    ${NUTTX_SUSPEND_BLOCK}
+)
+target_include_directories(ove_test_nuttx_suspend_handshake PRIVATE
+    # First: the test's own ove_config.h selects the NuttX storage header
+    # and the fake <nuttx/*.h> stand-ins of the NuttX storage header.
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/nuttx_suspend
+    ${OVE_ROOT}/include
+    ${OVE_ROOT}/backends/nuttx/include
+    ${CMAKE_BINARY_DIR}/generated
+)
+target_compile_definitions(ove_test_nuttx_suspend_handshake PRIVATE _GNU_SOURCE)
+target_link_libraries(ove_test_nuttx_suspend_handshake PRIVATE pthread)
+
 option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
 # TSan cannot share a binary with ASan or MSan: when the whole tree is
 # configured with either (make test-stub-sanitize, test-stub-msan), skip
@@ -333,6 +368,7 @@ add_test(NAME ove_trace_ring_preempt COMMAND ove_test_trace_ring_preempt)
 add_test(NAME ove_arm_backtrace COMMAND ove_test_arm_backtrace)
 add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
+add_test(NAME ove_nuttx_suspend_handshake COMMAND ove_test_nuttx_suspend_handshake)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
     set_tests_properties(ove_trace_ring_tsan PROPERTIES

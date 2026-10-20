@@ -31,11 +31,23 @@
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
+#include <assert.h>
 #include <malloc.h>
+
+/* A suspend sent before task_wrapper() installs the SIGUSR1 action relies on
+ * the kernel dropping the signal (sched/signal/sig_dispatch.c: "There is no
+ * default action"); with the POSIX default action the task would be killed
+ * instead. */
+#ifdef CONFIG_SIG_SIGUSR1_ACTION
+#error "ove_thread_suspend() needs SIGUSR1 without a default action: disable CONFIG_SIG_SIGUSR1_ACTION"
+#endif
+
 /* Thread state has two roles on NuttX:
  *
- *  - t->state is functional: the SIGUSR1 suspend loop waits while it reads
- *    SUSPENDED, and ove_thread_resume() releases it by storing READY.
+ *  - t->state is functional: it reports whether the thread is parked in the
+ *    SIGUSR1 suspend loop (SUSPENDED) and is the acknowledgement the
+ *    suspending thread waits for.  The parked thread leaves its wait on the
+ *    suspend semaphore, not on the state (see the handshake below).
  *  - With CONFIG_OVE_THREAD_STATE_STATS, the observed state (t->st, and the
  *    trace stream) follows the scheduler through the note driver below;
  *    the thread itself only marks RUNNING on entry, SUSPENDED/READY around
@@ -65,28 +77,51 @@ static void obs_unregister(struct ove_thread *t);
 		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE); \
 	} while (0)
 
-/* Per-task pointer via NuttX task TLS */
+/* Per-task pointer via NuttX task TLS.
+ *
+ * task_tls_alloc() hands out a *different* index on every call, so the
+ * index has to be allocated exactly once: an unsynchronised check-then-act
+ * can give two tasks two different indices, and the loser of that race
+ * stores its pointer under an index nobody reads any more - its
+ * tls_get_current() stays NULL forever.  Since the suspend handler
+ * resolves the thread through the TLS, such a thread's suspend would
+ * silently do nothing.  The allocation is therefore
+ * done once, under a mutex; the fast path is a single atomic load. */
 static int tls_index = -1;
+static mutex_t tls_index_lock = NXMUTEX_INITIALIZER;
 
 static void tls_ensure_init(void)
 {
-	if (tls_index < 0) {
-		tls_index = task_tls_alloc(NULL);
+	if (__atomic_load_n(&tls_index, __ATOMIC_ACQUIRE) >= 0) {
+		return;
 	}
+	nxmutex_lock(&tls_index_lock);
+	if (tls_index < 0) {
+		__atomic_store_n(&tls_index, task_tls_alloc(NULL), __ATOMIC_RELEASE);
+	}
+	nxmutex_unlock(&tls_index_lock);
 }
 
 static struct ove_thread *tls_get_current(void)
 {
-	if (tls_index < 0) {
+	int index = __atomic_load_n(&tls_index, __ATOMIC_ACQUIRE);
+
+	if (index < 0) {
 		return NULL;
 	}
-	return (struct ove_thread *)(uintptr_t)task_tls_get_value(tls_index);
+	return (struct ove_thread *)(uintptr_t)task_tls_get_value(index);
 }
 
 static void tls_set_current(struct ove_thread *t)
 {
+	int index;
+
 	tls_ensure_init();
-	task_tls_set_value(tls_index, (uintptr_t)t);
+	index = __atomic_load_n(&tls_index, __ATOMIC_ACQUIRE);
+	if (index < 0) {
+		return;
+	}
+	task_tls_set_value(index, (uintptr_t)t);
 }
 
 /* ── Thread registry (intrusive list) ─────────────────────────────────
@@ -136,34 +171,161 @@ static void _unregister_thread(struct ove_thread *t)
 /* Store first thread for join in start_scheduler */
 static struct ove_thread *first_thread;
 
-/* SIGUSR1 handler installed once */
-static volatile int sig_handler_installed;
+/* ── Suspend/resume handshake ─────────────────────────────────────────
+ *
+ * NuttX has no pthread_suspend(), so a suspend is implemented with a
+ * signal: ove_thread_suspend() sends SIGUSR1 to the target, the target's
+ * handler parks it on t->suspend_sem, and ove_thread_resume() wakes it up
+ * again.
+ *
+ * The signal alone is not a handshake.  NuttX queues the action and runs
+ * it at the target's *next* dispatch
+ * (arch/arm/src/armv7-m/arm_schedulesigaction.c:61, up_schedule_sigaction():
+ * "This operation should not cause the task to be unblocked nor should it
+ * cause any immediate execution of sigdeliver"); only a signal a task sends
+ * to itself runs at once, which is what a self-suspend relies on.  A signal
+ * whose action is not installed yet is dropped silently
+ * (sched/signal/sig_dispatch.c:117-127: "There is no default action").
+ * Three orderings therefore have to be covered:
+ *
+ *   1. the resume is issued before the action was delivered - the resume
+ *      must not be lost and the target must not park afterwards;
+ *   2. the suspend is issued before the target's first dispatch - the
+ *      signal is dropped by the kernel, the request must not be lost;
+ *   3. suspend and resume overlap, or a suspend follows a resume before
+ *      the target ran again - each request must take effect once, and
+ *      only while it is not released.
+ *
+ * The protocol, and the invariant it establishes:
+ *
+ *   - every suspend takes the next number in suspend_req, *before* the
+ *     signal is sent;
+ *   - suspend_rel is the highest request released so far.  A resume (and
+ *     a deinit, and a suspend whose acknowledgement timed out) raises it
+ *     to the latest request; it never moves back;
+ *   - a request is outstanding while suspend_rel is behind suspend_req.
+ *     The target parks only for an outstanding request and stays parked
+ *     only while suspend_rel is behind the request it parked for, so a
+ *     resume that beats the handler cancels the suspend, and a suspend
+ *     that follows a resume before the target ran again is a new request
+ *     with a new number, not the released one;
+ *   - suspend_sem carries the wake-up.  Every resume posts it, also when
+ *     the target is not parked (yet), so a release that arrives before
+ *     the target parks is not lost.  The parked target re-checks
+ *     suspend_rel after every wake-up, so a token that belongs to an
+ *     already released request cannot end a later suspension.
+ *
+ * Net effect: a suspend followed by a resume always leaves the target
+ * runnable, whatever the ordering, and the target parks exactly while a
+ * suspend is outstanding.
+ */
+
+/* Bounded acknowledgement wait.  The target has to be dispatched for the
+ * signal action to run; a target that never runs (a higher priority task
+ * holds the CPU) must not block the suspending thread forever.  Each
+ * iteration yields the CPU, so the target gets its dispatch.  usleep()
+ * rounds up to whole ticks, so the bound is ACK_TRIES ticks or more, not
+ * ACK_US * ACK_TRIES microseconds. */
+#define OVE_NUTTX_SUSPEND_ACK_US 100u
+#define OVE_NUTTX_SUSPEND_ACK_TRIES 100u
+
+/* Sequence order that survives the 32-bit wrap. */
+static bool seq_before(uint32_t a, uint32_t b)
+{
+	return (int32_t)(a - b) < 0;
+}
+
+/* The outstanding suspend request, if any: true and its number in @seq
+ * when a request has not been released yet.  The caller parks for it. */
+static bool suspend_claim(struct ove_thread *t, uint32_t *seq)
+{
+	uint32_t req = __atomic_load_n(&t->suspend_req, __ATOMIC_ACQUIRE);
+
+	if (!seq_before(__atomic_load_n(&t->suspend_rel, __ATOMIC_ACQUIRE), req))
+		return false;
+	*seq = req;
+	return true;
+}
+
+/* Release every request up to @seq.  suspend_rel only moves forward, so
+ * a late release of an older request cannot undo a newer one. */
+static void suspend_release_upto(struct ove_thread *t, uint32_t seq)
+{
+	uint32_t rel = __atomic_load_n(&t->suspend_rel, __ATOMIC_ACQUIRE);
+
+	while (seq_before(rel, seq) &&
+	       !__atomic_compare_exchange_n(&t->suspend_rel, &rel, seq, false, __ATOMIC_ACQ_REL,
+					    __ATOMIC_ACQUIRE)) {
+	}
+}
+
+/* Park the target until request @seq is released (see suspend_claim()). */
+static void suspend_park(struct ove_thread *t, uint32_t seq)
+{
+	SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
+	/* The release token may already be there (the resume arrived before
+	 * this task parked), so the release is checked before and after every
+	 * wait.  A wait that returns EINTR (another signal) simply repeats.
+	 * A releaser of an older request may have marked this task READY
+	 * while it is still parked for @seq; every releaser posts after that
+	 * store, so the task wakes here and says SUSPENDED again. */
+	while (seq_before(__atomic_load_n(&t->suspend_rel, __ATOMIC_ACQUIRE), seq)) {
+		nxsem_wait(&t->suspend_sem);
+		if (seq_before(__atomic_load_n(&t->suspend_rel, __ATOMIC_ACQUIRE), seq) &&
+		    __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) != OVE_THREAD_STATE_SUSPENDED) {
+			SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
+		}
+	}
+	/* The task runs again from here on. */
+	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+}
+
+/* After a release: the target is no longer suspended unless a newer
+ * request is still outstanding (it parked, or is about to park, for that
+ * one).  A target that parks for a newer request after this check
+ * corrects the state itself in suspend_park(). */
+static void suspend_mark_released(struct ove_thread *t)
+{
+	if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED &&
+	    !seq_before(__atomic_load_n(&t->suspend_rel, __ATOMIC_ACQUIRE),
+			__atomic_load_n(&t->suspend_req, __ATOMIC_ACQUIRE))) {
+		SET_STATE(t, OVE_THREAD_STATE_READY);
+	}
+}
 
 static void sigusr1_handler(int sig)
 {
 	(void)sig;
 	struct ove_thread *t = tls_get_current();
-	if (t && t->suspend_inited) {
-		SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
-		/* Acquire-load pairs with the resumer's release-store via
-		 * SET_STATE — keeps the wake observation well-defined. */
-		while (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
-			nxsem_wait(&t->suspend_sem);
-		}
+	if (t == NULL || !__atomic_load_n(&t->suspend_inited, __ATOMIC_ACQUIRE)) {
+		return;
 	}
+	/* Claim the request: a resume that raced this handler cancelled the
+	 * suspend already, so the target must not park. */
+	uint32_t seq;
+	if (!suspend_claim(t, &seq)) {
+		return;
+	}
+	suspend_park(t, seq);
 }
 
-static void ensure_sigusr1_handler(void)
+/*
+ * Install the suspend/resume signal handler in the calling task's group.
+ * Signal actions are per task group in NuttX and every ove thread is its
+ * own task with its own group, so this must run inside task_wrapper —
+ * installing it from the creating task (as it used to) left the new task
+ * without a handler and ove_thread_suspend()'s kill(SIGUSR1) a no-op.
+ */
+static void install_sigusr1_handler(void)
 {
-	if (!sig_handler_installed) {
-		struct sigaction sa;
-		memset(&sa, 0, sizeof(sa));
-		sa.sa_handler = sigusr1_handler;
-		sa.sa_flags = 0;
-		sigemptyset(&sa.sa_mask);
-		sigaction(SIGUSR1, &sa, NULL);
-		sig_handler_installed = 1;
-	}
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = sigusr1_handler;
+	sa.sa_flags = 0;
+	sigemptyset(&sa.sa_mask);
+	int ret = sigaction(SIGUSR1, &sa, NULL);
+	DEBUGASSERT(ret == 0);
+	(void)ret;
 }
 
 static int task_wrapper(int argc, char *argv[])
@@ -172,7 +334,12 @@ static int task_wrapper(int argc, char *argv[])
 
 	(void)argc;
 	t = (struct ove_thread *)strtoul(argv[1], NULL, 0);
+	/* The TLS pointer has to be published *before* the handler can run: a
+	 * SIGUSR1 delivered between the handler installation and the TLS
+	 * assignment would find no thread (tls_get_current() == NULL), and
+	 * the suspend request would be consumed and lost. */
 	tls_set_current(t);
+	install_sigusr1_handler();
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Init the tracker in the owning task so last_ts_us is anchored at
@@ -182,6 +349,17 @@ static int task_wrapper(int argc, char *argv[])
 	obs_register(t);
 #endif
 	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+
+	/* A suspend that was requested before this task's first dispatch must
+	 * not be lost: NuttX drops a signal whose action is not installed yet
+	 * (sched/signal/sig_dispatch.c:117-127), so the request is honoured
+	 * here, before the entry function runs. */
+	uint32_t seq;
+	if (suspend_claim(t, &seq)) {
+		suspend_park(t, seq);
+		SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+	}
+
 	t->entry(t->arg);
 	/* Close the lane and leave the note table BEFORE TERMINATED is
 	 * published: ove_thread_deinit() skips the join on TERMINATED and
@@ -207,11 +385,17 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	t->entry = entry;
 	t->arg = arg;
 	__atomic_store_n(&t->state, OVE_THREAD_STATE_READY, __ATOMIC_RELEASE);
-	t->suspend_inited = 0;
 	t->name = name; /* caller-owned string, retained for trace descriptors */
 	nxsem_init(&t->done_sem, 0, 0);
-
-	ensure_sigusr1_handler();
+	/* The suspend semaphore is created together with the thread, not on
+	 * the first suspend: the handshake publishes the request before the
+	 * signal, so a resume may have to post the semaphore before any
+	 * suspend happened.  The flag is published before the task exists,
+	 * so the handler of the new task always sees it. */
+	nxsem_init(&t->suspend_sem, 0, 0);
+	__atomic_store_n(&t->suspend_inited, 1, __ATOMIC_RELEASE);
+	__atomic_store_n(&t->suspend_req, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&t->suspend_rel, 0, __ATOMIC_RELEASE);
 
 	if (stack_size == 0) {
 		stack_size = 2048;
@@ -240,6 +424,11 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 		 *     threads end up in TSTATE_INVALID without running their
 		 *     entry function.
 		 *
+		 *   - task_wrapper() installs the task's SIGUSR1 action in
+		 *     its own group; sched/signal/sig_action.c takes it from
+		 *     a pool of CONFIG_SIG_PREALLOC_ACTIONS and kmm-allocates
+		 *     a block of actions when the pool is empty.
+		 *
 		 * Bottom line: dynamic ove_thread_create on NuttX inherently
 		 * touches the kernel mm region.  Apps that want the heap-
 		 * lock guarantee on NuttX must structure all thread creation
@@ -256,6 +445,7 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 					     (int)stack_size, task_wrapper, argv_args);
 		if (pid < 0) {
 			nxsem_destroy(&t->done_sem);
+			nxsem_destroy(&t->suspend_sem);
 			return OVE_ERR_NO_MEMORY;
 		}
 	}
@@ -307,13 +497,21 @@ int ove_thread_deinit(ove_thread_t handle)
 		return ret;
 
 	if (__atomic_load_n(&handle->started, __ATOMIC_ACQUIRE)) {
-		/* Resume if suspended so it can finish */
-		if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) ==
-		    OVE_THREAD_STATE_SUSPENDED) {
-			SET_STATE(handle, OVE_THREAD_STATE_READY);
-			if (handle->suspend_inited) {
-				nxsem_post(&handle->suspend_sem);
-			}
+		/* Release the target so it can finish: release every suspend
+		 * request, so a handler that has not run yet does not park, and
+		 * wake a target that is (or is about to be) parked in the SIGUSR1
+		 * suspend loop.  The release
+		 * is unconditional - a target that has not parked yet would
+		 * otherwise park after this point and never be woken. */
+		if (__atomic_load_n(&handle->suspend_inited, __ATOMIC_ACQUIRE)) {
+			suspend_release_upto(handle, __atomic_load_n(&handle->suspend_req,
+								     __ATOMIC_ACQUIRE));
+			suspend_mark_released(handle);
+			/* At most one token may be outstanding (see
+			 * ove_thread_resume()): drain the token of an earlier
+			 * release before this one is posted. */
+			(void)nxsem_trywait(&handle->suspend_sem);
+			nxsem_post(&handle->suspend_sem);
 		}
 		/* Wait for thread to finish naturally (join) */
 		if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) !=
@@ -328,7 +526,7 @@ int ove_thread_deinit(ove_thread_t handle)
 		first_thread = NULL;
 	}
 
-	if (handle->suspend_inited) {
+	if (__atomic_load_n(&handle->suspend_inited, __ATOMIC_ACQUIRE)) {
 		nxsem_destroy(&handle->suspend_sem);
 	}
 	nxsem_destroy(&handle->done_sem);
@@ -417,24 +615,107 @@ void ove_thread_start_scheduler(void)
 
 void ove_thread_suspend(ove_thread_t handle)
 {
-	if (handle && __atomic_load_n(&handle->started, __ATOMIC_ACQUIRE)) {
-		if (!handle->suspend_inited) {
-			nxsem_init(&handle->suspend_sem, 0, 0);
-			handle->suspend_inited = 1;
+	struct ove_thread *t = handle;
+	unsigned int i;
+
+	if (t == NULL || !__atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
+		return;
+	}
+	if (!__atomic_load_n(&t->suspend_inited, __ATOMIC_ACQUIRE)) {
+		/* The suspend semaphore is created with the thread; a thread
+		 * that never got one cannot be suspended. */
+		return;
+	}
+	if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_TERMINATED) {
+		/* The thread already ended - it cannot be suspended. */
+		return;
+	}
+
+	/* Publish the request *before* the signal.  The target may be
+	 * dispatched between the kill() and the handler, and a suspend that
+	 * was requested before the target's first dispatch is honoured by
+	 * task_wrapper().  The request takes a new number, so a release of
+	 * an earlier request cannot cancel it. */
+	uint32_t seq = __atomic_add_fetch(&t->suspend_req, 1, __ATOMIC_ACQ_REL);
+	kill(t->pid, SIGUSR1);
+
+	/* A thread that suspends itself cannot wait for its own
+	 * acknowledgement - it parks in the handler. */
+	if (t == tls_get_current()) {
+		return;
+	}
+
+	/* Wait (bounded) for the acknowledgement: the target sets its state
+	 * to SUSPENDED when it parks.  The wait yields the CPU, so the
+	 * target gets its dispatch. */
+	for (i = 0;; i++) {
+		if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
+			return;
 		}
-		kill(handle->pid, SIGUSR1);
-		/* Wait briefly for the signal to be delivered */
-		usleep(1000);
+		if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_TERMINATED) {
+			/* The thread ended while the suspend was in flight. */
+			break;
+		}
+		if (!seq_before(__atomic_load_n(&t->suspend_rel, __ATOMIC_ACQUIRE), seq)) {
+			/* A resume cancelled the suspend. */
+			break;
+		}
+		/* The state is checked once more after the last sleep, so a
+		 * target that parks during it is not taken for a timeout. */
+		if (i == OVE_NUTTX_SUSPEND_ACK_TRIES)
+			break;
+		usleep(OVE_NUTTX_SUSPEND_ACK_US);
+	}
+
+	/* Not acknowledged: the target never suspended.  Release the request,
+	 * so that a handler that runs later does not park, and wake the
+	 * target if it parked for it just before the timeout - nobody would
+	 * be left to wake it.
+	 *
+	 * ove_thread_suspend() returns void (include/ove/thread.h), so the
+	 * failure is reported through the thread's state: it stays
+	 * READY/RUNNING and ove_thread_get_state() does not report
+	 * SUSPENDED. */
+	{
+		suspend_release_upto(t, seq);
+		suspend_mark_released(t);
+		/* At most one token may be outstanding (see
+		 * ove_thread_resume()): drain a token that an earlier release
+		 * left behind before the token of this release is posted. */
+		(void)nxsem_trywait(&t->suspend_sem);
+		nxsem_post(&t->suspend_sem);
 	}
 }
 
 void ove_thread_resume(ove_thread_t handle)
 {
-	if (handle &&
-	    __atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
-		SET_STATE(handle, OVE_THREAD_STATE_READY);
-		nxsem_post(&handle->suspend_sem);
+	struct ove_thread *t = handle;
+
+	if (t == NULL || !__atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
+		return;
 	}
+	if (!__atomic_load_n(&t->suspend_inited, __ATOMIC_ACQUIRE)) {
+		return;
+	}
+
+	/* Release the target unconditionally.  A resume that races the
+	 * suspend must not be lost: every request up to the latest one is
+	 * released (a handler that has not run yet does not park, a target
+	 * that is already parked leaves its wait) and the semaphore is posted
+	 * (a target that is about to park finds the token). */
+	suspend_release_upto(t, __atomic_load_n(&t->suspend_req, __ATOMIC_ACQUIRE));
+	suspend_mark_released(t);
+	/* At most one token may be outstanding: a resume that arrives
+	 * before its target parked leaves a token behind, and every further
+	 * resume would pile one token on top of it.  An undrained
+	 * semaphore would fill up (nxsem_post() fails with -EOVERFLOW at
+	 * SEM_VALUE_MAX) and a release would be lost, so the token of the
+	 * previous release is drained before the new one is posted.  The
+	 * drain cannot steal the token of a parked target: a target that
+	 * waits on the semaphore holds the count at zero (or below), so
+	 * nxsem_trywait() finds nothing to take. */
+	(void)nxsem_trywait(&t->suspend_sem);
+	nxsem_post(&t->suspend_sem);
 }
 
 void ove_thread_request_stop(ove_thread_t handle)

@@ -401,6 +401,14 @@ impl Thread {
     }
 
     /// Suspend this thread.
+    ///
+    /// The thread normally will not be scheduled until [`Self::resume`] is
+    /// called.  The suspension is not guaranteed on every backend: on NuttX
+    /// the acknowledgement wait of the suspending thread is bounded, so a
+    /// target that cannot be reached is not suspended at all.  The call has
+    /// no return value, so check [`Self::get_state`] for
+    /// [`ThreadState::Suspended`] to find out whether the thread really
+    /// stopped.
     #[inline]
     pub fn suspend(&self) {
         unsafe { bindings::ove_thread_suspend(self.handle) }
