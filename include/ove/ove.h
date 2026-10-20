@@ -162,6 +162,7 @@
 #include "ove/i2c.h"
 #include "ove/i2s.h"
 #include "ove/pm.h"
+#include "ove/trace.h"
 #include "ove/arena.h"
 #include "ove/loader.h"
 #include "ove/protected.h"

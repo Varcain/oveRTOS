@@ -31,6 +31,7 @@
 struct sim_trace_ctx {
 	uint32_t plugin_id;
 	uint32_t ms_since_desc;
+	uint32_t ms_since_names;
 };
 
 static struct sim_trace_ctx trace_ctx;
@@ -132,6 +133,63 @@ static void descriptors_remember(size_t count)
 	desc_last_count = count;
 }
 
+#ifdef CONFIG_OVE_TRACE_MARKERS
+/* User id -> name table. Sent on the descriptor cadence; the table is
+ * small (OVE_TRACE_NAME_MAX) and static, so re-sending it is cheap. */
+#define NAME_PER_MAX (2 + 1 + OVE_SIM_TRACE_MAX_NAME)
+#define NAMES_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_TRACE_NAME_MAX * NAME_PER_MAX)
+
+_Static_assert(sizeof(struct ove_sim_event) + NAMES_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
+	       "trace name batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+
+/* The name table truncates at registration, so the wire format never has
+ * to: the two limits must agree. */
+_Static_assert(OVE_TRACE_NAME_MAX_LEN == OVE_SIM_TRACE_MAX_NAME,
+	       "the name table and the trace wire format disagree on the name length");
+
+static uint8_t names_ev_buf[sizeof(struct ove_sim_event) + NAMES_BUF_BYTES];
+static struct ove_trace_name_desc name_scratch[OVE_TRACE_NAME_MAX];
+
+static void emit_names(struct sim_trace_ctx *t)
+{
+	size_t count = ove_trace_names(name_scratch, OVE_TRACE_NAME_MAX);
+	if (count == 0)
+		return;
+
+	struct ove_sim_event *ev = (struct ove_sim_event *)names_ev_buf;
+	uint8_t *p = ev->data;
+	uint8_t *end = ev->data + NAMES_BUF_BYTES;
+
+	*p++ = OVE_SIM_TRACE_SUB_NAMES;
+	*p++ = OVE_SIM_TRACE_VERSION;
+	uint16_t count16 = (uint16_t)count;
+	memcpy(p, &count16, 2);
+	p += 2;
+	uint32_t zero = 0;
+	memcpy(p, &zero, 4);
+	p += 4;
+
+	for (size_t i = 0; i < count; i++) {
+		const char *name = name_scratch[i].name;
+		size_t nlen = strlen(name);
+		if (p + 3 + nlen > end)
+			break;
+		memcpy(p, &name_scratch[i].id, 2);
+		p += 2;
+		*p++ = (uint8_t)nlen;
+		memcpy(p, name, nlen);
+		p += nlen;
+	}
+
+	ev->plugin_id = t->plugin_id;
+	ev->event_type = OVE_SIM_TRACE_EVT_DESCRIPTORS;
+	ev->timestamp_ms = 0;
+	ev->data_len = (uint32_t)(p - ev->data);
+
+	ove_sim_plugin_emit_event(t->plugin_id, ev);
+}
+#endif /* CONFIG_OVE_TRACE_MARKERS */
+
 /* Returns OVE_OK, or the transport's error when the batch was not sent. */
 static int emit_descriptors(struct sim_trace_ctx *t, size_t count)
 {
@@ -203,9 +261,24 @@ void ove_sim_trace_tick(uint32_t elapsed_ms)
 	size_t count = ove_backend_trace_list_threads(desc_scratch, OVE_SIM_TRACE_MAX_DESC);
 	trace_ctx.ms_since_desc += elapsed_ms;
 	bool due = trace_ctx.ms_since_desc >= OVE_SIM_TRACE_DESC_MS;
-	if (count > 0 && (due || descriptors_changed(count)) &&
-	    emit_descriptors(&trace_ctx, count) == OVE_OK)
+	bool changed = count > 0 && descriptors_changed(count);
+	if (count > 0 && (due || changed)) {
+		/* A refused batch is sent again on the next tick. */
+		if (emit_descriptors(&trace_ctx, count) == OVE_OK)
+			trace_ctx.ms_since_desc = 0;
+	} else if (due) {
 		trace_ctx.ms_since_desc = 0;
+	}
+
+#ifdef CONFIG_OVE_TRACE_MARKERS
+	/* Names have their own cadence: descriptor churn must not starve the
+	 * name table refresh. */
+	trace_ctx.ms_since_names += elapsed_ms;
+	if (trace_ctx.ms_since_names >= OVE_SIM_TRACE_DESC_MS) {
+		trace_ctx.ms_since_names = 0;
+		emit_names(&trace_ctx);
+	}
+#endif
 }
 
 /* ── Plugin ops ───────────────────────────────────────────────────── */
@@ -232,6 +305,7 @@ int ove_sim_trace_register(void)
 
 	trace_ctx.plugin_id = (uint32_t)id;
 	trace_ctx.ms_since_desc = 0;
+	trace_ctx.ms_since_names = 0;
 	return id;
 }
 

@@ -141,6 +141,27 @@ export function traceDescriptors(entries, dropped = 0) {
     return dv.buffer;
 }
 
+/** Build an OVE_SIM_TRACE_EVT_NAMES payload (user id -> name). */
+export function traceNames(entries, dropped = 0) {
+    let size = 8;
+    for (const [id, name] of entries) size += 3 + name.length;
+    const dv = new DataView(new ArrayBuffer(size));
+    dv.setUint8(0, 2); /* sub_type = NAMES */
+    dv.setUint8(1, 3); /* version */
+    dv.setUint16(2, entries.length, true);
+    dv.setUint32(4, dropped, true);
+    let p = 8;
+    for (const [id, name] of entries) {
+        dv.setUint16(p, id, true);
+        p += 2;
+        dv.setUint8(p, name.length);
+        p += 1;
+        for (let i = 0; i < name.length; i++) dv.setUint8(p + i, name.charCodeAt(i));
+        p += name.length;
+    }
+    return dv.buffer;
+}
+
 /** Build an OVE_SIM_TRACE_EVT_STREAM payload from record tuples.
  *  Defaults to the current v3 layout; pass version=2 for the legacy
  *  16-byte layout. */

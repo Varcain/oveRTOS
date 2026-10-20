@@ -13,10 +13,12 @@
  * Emits two event types:
  *
  *  OVE_SIM_TRACE_EVT_STREAM       - batched trace records
- *  OVE_SIM_TRACE_EVT_DESCRIPTORS  - tid -> name mapping (periodic)
+ *  OVE_SIM_TRACE_EVT_DESCRIPTORS  - tid -> name mapping and the user id ->
+ *                                   name table (both periodic)
  *
- * Frame payload (both subtypes share a common envelope):
- *   [uint8_t  sub_type]          0 = DESCRIPTORS, 1 = STREAM
+ * Frame payload (all three sub_types share a common envelope; NAMES
+ * travels on the DESCRIPTORS event):
+ *   [uint8_t  sub_type]          0 = DESCRIPTORS, 1 = STREAM, 2 = NAMES
  *   [uint8_t  version]           OVE_SIM_TRACE_VERSION (3)
  *   [uint16_t count]             number of records
  *   [uint32_t dropped]           records dropped since last emit
@@ -26,6 +28,10 @@
  *       [uint32_t tid]
  *       [uint32_t generation] (v2; new for every thread start, 0 for
  *                              threads that are not ove threads)
+ *       [uint8_t  name_len]   (capped at 31)
+ *       [char     name[name_len]]
+ *     NAMES:
+ *       [uint16_t id]
  *       [uint8_t  name_len]   (capped at 31)
  *       [char     name[name_len]]
  *
@@ -52,6 +58,7 @@ extern "C" {
 /** Envelope sub_type byte values. */
 #define OVE_SIM_TRACE_SUB_DESCRIPTORS 0
 #define OVE_SIM_TRACE_SUB_STREAM 1
+#define OVE_SIM_TRACE_SUB_NAMES 2
 
 /** Envelope version (bumped on incompatible format change).
  *  v2: descriptors carry a per-thread generation word.

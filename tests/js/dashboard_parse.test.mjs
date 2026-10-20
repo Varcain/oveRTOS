@@ -22,6 +22,7 @@ import {
     loadDashboard,
     traceDescriptors,
     traceStream,
+    traceNames,
     stateRec,
     markRec,
     profilerSamples,
@@ -109,6 +110,95 @@ test("trace: POST pairs with the matching WAIT_EXIT per object", () => {
     });
     assert.equal(g.traceFlows[1].postTid, null);
     assert.equal(g.traceFlows[1].end - g.traceFlows[1].start, 40);
+});
+
+test("trace: user names and zone markers pair into named zones", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceNames([[7, "draw"], [9, "flush"]]), 0);
+    assert.equal(g.traceNames[7], "draw");
+    assert.equal(g.traceNames[9], "flush");
+
+    g.handleTrace(traceStream([
+        markRec(100, 3, 15 /* USER */, 5 /* ZONE_BEGIN */, 7),
+        markRec(120, 3, 15, 5, 9),
+        markRec(180, 3, 15, 6 /* ZONE_END */, 9),
+        markRec(250, 3, 15, 6, 7),
+        markRec(300, 3, 15, 4 /* USER */, 7),
+    ]), 0);
+    assert.deepEqual(g.traceZones, [
+        { tid: 3, id: 9, start: 120, end: 180, depth: 1 },
+        { tid: 3, id: 7, start: 100, end: 250, depth: 0 },
+    ]);
+    assert.equal(g.traceMarks.length, 5);
+    assert.equal(g.traceMarks[0].obj, 7);
+});
+
+test("trace: zones nest, may be empty and pair per thread", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceStream([
+        /* The same id nested on one thread: the end closes the innermost. */
+        markRec(100, 3, 15, 5, 7),
+        markRec(110, 3, 15, 5, 7),
+        markRec(150, 3, 15, 6, 7),
+        markRec(200, 3, 15, 6, 7),
+        /* A zone that begins and ends in the same microsecond. */
+        markRec(300, 3, 15, 5, 8),
+        markRec(300, 3, 15, 6, 8),
+        /* The same id on two threads. */
+        markRec(400, 3, 15, 5, 9),
+        markRec(410, 4, 15, 5, 9),
+        markRec(420, 3, 15, 6, 9),
+        markRec(430, 4, 15, 6, 9),
+        /* An end without a begin. */
+        markRec(500, 3, 15, 6, 11),
+    ]), 0);
+    assert.deepEqual(g.traceZones, [
+        { tid: 3, id: 7, start: 110, end: 150, depth: 1 },
+        { tid: 3, id: 7, start: 100, end: 200, depth: 0 },
+        { tid: 3, id: 8, start: 300, end: 300, depth: 0 },
+        { tid: 3, id: 9, start: 400, end: 420, depth: 0 },
+        { tid: 4, id: 9, start: 410, end: 430, depth: 0 },
+    ]);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+});
+
+test("trace: a new thread on a lane that never closed drops its zones", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[3, 1, "worker"]]), 0);
+    g.handleTrace(traceStream([
+        stateRec(100, 3, 1, 0),
+        markRec(110, 3, 15, 5, 7),
+        markRec(120, 3, 15, 6, 7),
+        markRec(130, 3, 15, 5, 7),
+        markRec(140, 4, 15, 5, 7),
+        markRec(150, 4, 15, 6, 7),
+    ]), 0);
+    assert.equal(g.traceZones.length, 2);
+    /* Same storage, new generation, no TERMINATED seen. */
+    g.handleTrace(traceDescriptors([[3, 2, "worker"]]), 0);
+    assert.deepEqual(g.traceZones, [{ tid: 4, id: 7, start: 140, end: 150, depth: 0 }]);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+});
+
+test("trace: a reconnect forgets names and zones", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceNames([[7, "draw"]]), 0);
+    g.handleTrace(traceStream([
+        markRec(100, 3, 15, 5, 7),
+        markRec(120, 3, 15, 6, 7),
+        markRec(130, 3, 15, 5, 7),
+    ]), 0);
+    g.traceResetOnReconnect();
+    assert.equal(g.traceNames[7], undefined);
+    assert.equal(g.traceZones.length, 0);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+});
+
+test("trace: re-registering an id replaces its name", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceNames([[7, "old"]]), 0);
+    g.handleTrace(traceNames([[7, "new"]]), 0);
+    assert.equal(g.traceNames[7], "new");
 });
 
 test("trace: lanes only include threads with data, sorted by name", () => {
@@ -269,10 +359,15 @@ test("trace: a terminated lane reused from READY is not a gap", () => {
 test("trace: a record a second behind restarts the timebase", () => {
     const g = loadDashboard();
     g.handleTrace(traceDescriptors([[5, "worker"]]), 0);
+    g.handleTrace(traceNames([[7, "draw"]]), 0);
     g.handleTrace(traceStream([
         stateRec(5_000_000, 5, 1, 0),
         stateRec(5_100_000, 5, 0, 2),
         markRec(5_050_000, 5, 1, 1, 0x10),
+        /* A closed zone and an open one of the old boot. */
+        markRec(5_010_000, 5, 15, 5, 7),
+        markRec(5_020_000, 5, 15, 6, 7),
+        markRec(5_030_000, 5, 15, 5, 7),
         /* A paired flow, a pending post and an open wait of the old boot. */
         markRec(5_060_000, 6, 2, 1, 0x20),
         markRec(5_070_000, 7, 2, 3, 0x20),
@@ -281,10 +376,11 @@ test("trace: a record a second behind restarts the timebase", () => {
         markRec(5_095_000, 6, 2, 1, 0x40),
     ]), 0);
     assert.equal(g.traceFlows.length, 1);
+    assert.equal(g.traceZones.length, 1);
     /* A late record less than a second behind is not a restart. */
     g.handleTrace(traceStream([markRec(4_500_000, 5, 1, 2, 0x10)]), 0);
     assert.equal(g.traceSpans.length, 1);
-    assert.equal(g.traceMarks.length, 7);
+    assert.equal(g.traceMarks.length, 10);
     g.traceView.follow = false;
     g.traceView.tEndFrozen = 5_100_000;
 
@@ -302,6 +398,10 @@ test("trace: a record a second behind restarts the timebase", () => {
     assert.equal(g.traceFlows.length, 0);
     assert.deepEqual(Object.keys(g.tracePosts), []);
     assert.deepEqual(Object.keys(g.traceWaits), []);
+    assert.equal(g.traceZones.length, 0);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+    /* Names are registered once per boot and are not timestamps. */
+    assert.equal(g.traceNames[7], "draw");
     assert.equal(g.traceThreads[5].name, "worker");
     assert.equal(g.traceMinTs, 200);
     assert.equal(g.traceMaxTs, 300);
@@ -336,6 +436,50 @@ test("trace: span tooltip prints the interval to the microsecond", () => {
     const tip = els["trace-mark-tip"];
     assert.equal(tip.style.display, "block");
     assert.match(tip.textContent, /running {2}300 µs {2}\[1\.000100s → 1\.000400s\]$/);
+});
+
+test("trace: the zone tooltip names the innermost zone", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceNames([[7, "frame"], [9, "flush"]]), 0);
+    g.handleTrace(traceStream([
+        stateRec(1_000_000, 5, 1, 0),
+        markRec(1_010_000, 5, 15, 5, 7),
+        markRec(1_020_000, 5, 15, 5, 9),
+        markRec(1_060_000, 5, 15, 6, 9),
+        markRec(1_090_000, 5, 15, 6, 7),
+        stateRec(1_100_000, 5, 0, 2),
+    ]), 0);
+    assert.deepEqual(g.traceZones.map((z) => [z.id, z.depth]), [[9, 1], [7, 0]]);
+
+    const els = {};
+    const on = {};
+    const el = (id) => ({
+        id, style: {}, textContent: "", checked: true,
+        addEventListener(type, fn) { on[id + ":" + type] = fn; },
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 80 }),
+    });
+    g.document.getElementById = (id) => (els[id] ||= el(id));
+    g.traceBindPanel();
+
+    /* Hover the zone bars of the single lane (16 px axis, 28 px lane, so
+     * the depth-0 bar ends at y = 41 and each level sits 3 px higher),
+     * inside both zones and away from their begin/end markers. */
+    const r = g.traceViewRange();
+    const plotW = 1000 - g.TRACE_LABEL_W - g.TRACE_PLOT_PAD_R;
+    const x = g.TRACE_LABEL_W + ((1_040_000 - r.tStart) / r.span) * plotW;
+    const tip = els["trace-mark-tip"];
+    const hover = (y) => {
+        tip.style.display = "none";
+        tip.textContent = "";
+        on["trace-canvas:mousemove"]({ clientX: x, clientY: y });
+        assert.equal(tip.style.display, "block");
+        return tip.textContent;
+    };
+    /* The bar row under the cursor picks the zone. */
+    assert.match(hover(40), / zone frame /);
+    assert.match(hover(37), / zone flush /);
+    /* Above the drawn bars, but in the band: the innermost zone. */
+    assert.match(hover(34), / zone flush /);
 });
 
 test("profiler: the Runnable filter applies only to a wall-clock backend", () => {

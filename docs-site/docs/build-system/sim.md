@@ -196,7 +196,9 @@ u16 count
 u32 dropped       records lost since the previous batch
 ```
 
-Stream records are 24 bytes each in the current format (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 reserved` (previous state for v3 state records; low 16 bits of the object address in the legacy v2 layout), `u32 object` (previous state for state records; full 32 bits of the object address for marks), `u32 pad` (always 0). The dashboard also decodes 16-byte v2 records. Descriptors repeat `u32 tid`, `u32 generation` (since version 2; new for every thread start, so a new thread on reused storage starts a new lane, and 0 for threads that are not ove threads), `u8 name_len`, `char name[name_len]`.
+Stream records are 24 bytes each in the current format (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 reserved` (previous state for v3 state records; low 16 bits of the object address in the legacy v2 layout), `u32 object` (previous state for state records; full 32 bits of the object address for marks), `u32 pad` (always 0). The dashboard also decodes 16-byte v2 records. Descriptors repeat `u32 tid`, `u32 generation` (since version 2; new for every thread start, so a new thread on reused storage starts a new lane, and 0 for threads that are not ove threads), `u8 name_len`, `char name[name_len]`. Names (sub_type 2, sent on the descriptor event) repeat `u16 id`, `u8 name_len`, `char name[name_len]`: the table built by `ove_trace_register_name()`.
+
+Applications put their own phases on the timeline with the user instrumentation API in `ove/trace.h` (needs `CONFIG_OVE_TRACE_MARKERS`): `ove_trace_register_name(id, name)` names an id, `ove_trace_mark(id)` draws a point marker, and `ove_trace_zone_begin(id)` / `ove_trace_zone_end(id)` draw a zone along the bottom of the calling thread's lane. The C++ and Rust bindings wrap them as `ove::trace`, with a `Zone` that closes itself at the end of its scope.
 
 **Profiler samples** (`OVE_SIM_PROFILER_EVT_SAMPLES` = 20). Envelope:
 

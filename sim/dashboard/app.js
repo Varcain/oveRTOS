@@ -1143,6 +1143,12 @@ var TRACE_MAX_RECORDS = 60000;
  * time window does not advance while records keep arriving. The oldest
  * entries go first: a POST older than a wait's start can never wake it. */
 var TRACE_MAX_POSTS = 4096;
+/* Open zones kept per (thread, id): deeper nesting of one id is not real
+ * instrumentation, only a missing end. */
+var TRACE_MAX_ZONE_DEPTH = 64;
+/* Nesting levels the lane shows as separate bars; deeper zones share the
+ * top one. */
+var TRACE_ZONE_ROWS = 3;
 /* Plot geometry: left label column + right padding. Shared by renderTrace
  * and the pan/zoom pointer handlers so pixel↔time math matches exactly. */
 var TRACE_LABEL_W = 90;
@@ -1309,6 +1315,9 @@ function traceTickLabel(tUs, stepUs) {
 var TRACE_ACT_WAIT_ENTER = 1;
 var TRACE_ACT_WAIT_EXIT  = 2;
 var TRACE_ACT_POST       = 3;
+var TRACE_ACT_USER       = 4;
+var TRACE_ACT_ZONE_BEGIN = 5;
+var TRACE_ACT_ZONE_END   = 6;
 
 /* Colors for the wait-flow arcs, keyed by OVE_TRACE_PRIM_*. */
 var TRACE_PRIM_COLORS = { 1: "#e8b34a", 2: "#6fb3ff", 3: "#b58cff",
@@ -1329,7 +1338,16 @@ function traceActName(a) {
          : a === 2 ? "wait_exit"
          : a === 3 ? "post"
          : a === 4 ? "user"
+         : a === 5 ? "zone_begin"
+         : a === 6 ? "zone_end"
          : "act" + a;
+}
+
+/* User id -> name, registered by the application and emitted in NAMES
+ * batches (sub_type 2). User marks/zones carry the id in `obj`. */
+var traceNames = Object.create(null);
+function traceUserName(id) {
+    return traceNames[id] !== undefined ? traceNames[id] : "user " + id;
 }
 
 /* Per-thread lane state: last state + last timestamp (for closing span). */
@@ -1337,6 +1355,10 @@ var traceThreads = {};            /* tid -> { name, lastState, lastTs } */
 var traceSpans   = [];            /* [{tid, start, end, state, gap?}] */
 var traceMarks   = [];            /* [{tid, ts, prim, act, obj}] */
 var traceFlows   = [];            /* [{tid, start, end, obj, prim, postTid, postTs}] */
+var traceZones   = [];            /* [{tid, id, start, end, depth}] */
+/* "tid:id" -> [{ts, depth}], innermost last. depth counts the zones of
+ * any id open on the thread when this one began. */
+var traceZoneOpen = Object.create(null);
 /* Pending POSTs per object (FIFO queue) and the pending WAIT_ENTER per
  * thread, used to pair a wakeup with the post that caused it. Keyed by
  * 0x-prefixed obj; each queued post is {ts, tid, prim}. */
@@ -1371,6 +1393,8 @@ function traceRestartTimebase() {
     traceFlows = [];
     tracePosts = Object.create(null);
     traceWaits = Object.create(null);
+    traceZones = [];
+    traceZoneOpen = Object.create(null);
     traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
     traceMinTs = 0;
     traceMaxTs = 0;
@@ -1389,9 +1413,12 @@ function traceResetOnReconnect() {
     traceThreads = {};
     traceSpans = [];
     traceMarks = [];
+    traceNames = Object.create(null);
     traceFlows = [];
     tracePosts = Object.create(null);
     traceWaits = Object.create(null);
+    traceZones = [];
+    traceZoneOpen = Object.create(null);
     traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
     traceDropped = 0;
     traceMinTs = 0;
@@ -1441,6 +1468,12 @@ function traceEvict() {
         if (keep < pq.length) pq.length = keep;
         if (!pq.length) delete tracePosts[pk];
     }
+    i = 0;
+    while (i < traceZones.length && traceZones[i].end < cutoff) i++;
+    if (i > 0) traceZones.splice(0, i);
+    if (traceZones.length > TRACE_MAX_RECORDS) {
+        traceZones.splice(0, traceZones.length - TRACE_MAX_RECORDS);
+    }
     if (traceSpans.length) traceMinTs = traceSpans[0].start;
 }
 
@@ -1467,6 +1500,28 @@ function tracePairMark(mk) {
         /* Key by (thread, object): a thread can wait on the same object
          * again before its exit is drained, and two objects can nest. */
         traceWaits[mk.tid + ":" + key] = { obj: mk.obj, prim: mk.prim, start: mk.ts };
+    } else if (mk.act === TRACE_ACT_ZONE_BEGIN) {
+        /* A zone can nest inside one with the same id: keep a stack of
+         * begins, and drop the outermost one if ends never come. */
+        var zprefix = mk.tid + ":";
+        var zdepth = 0;
+        for (var zk in traceZoneOpen) {
+            if (zk.indexOf(zprefix) === 0) zdepth += traceZoneOpen[zk].length;
+        }
+        var zkb = zprefix + key;
+        var zs = traceZoneOpen[zkb];
+        if (!zs) zs = traceZoneOpen[zkb] = [];
+        zs.push({ ts: mk.ts, depth: zdepth });
+        if (zs.length > TRACE_MAX_ZONE_DEPTH) zs.shift();
+    } else if (mk.act === TRACE_ACT_ZONE_END) {
+        /* The end closes the innermost open zone with this id. */
+        var zkey = mk.tid + ":" + key;
+        var zopen = traceZoneOpen[zkey];
+        if (!zopen || mk.ts < zopen[zopen.length - 1].ts) return;
+        var zb = zopen.pop();
+        if (!zopen.length) delete traceZoneOpen[zkey];
+        traceZones.push({ tid: mk.tid, id: mk.obj, start: zb.ts, end: mk.ts,
+                          depth: zb.depth });
     } else if (mk.act === TRACE_ACT_WAIT_EXIT) {
         var wkey = mk.tid + ":" + key;
         var w = traceWaits[wkey];
@@ -1540,6 +1595,10 @@ function handleTrace(buf, off) {
                     for (var wk in traceWaits) {
                         if (wk.indexOf(tid + ":") === 0) delete traceWaits[wk];
                     }
+                    for (var zk in traceZoneOpen) {
+                        if (zk.indexOf(tid + ":") === 0) delete traceZoneOpen[zk];
+                    }
+                    traceZones = traceZones.filter(function (z) { return z.tid !== tid; });
                     th.lastState = -1;
                     th.lastTs = 0;
                     th.hasData = false;
@@ -1552,6 +1611,22 @@ function handleTrace(buf, off) {
         }
         traceDirty = true;
         ensureWindow("trace");
+        scheduleTraceRender();
+        return;
+    }
+    if (subType === 2) {
+        /* NAMES — user id/name pairs, sent on the descriptor cadence. */
+        var np = base;
+        for (var ni = 0; ni < count; ni++) {
+            if (np + 3 > dv.byteLength) break;
+            var nid = dv.getUint16(np, true); np += 2;
+            var nlen = dv.getUint8(np); np += 1;
+            if (np + nlen > dv.byteLength) break;
+            traceNames[nid] = new TextDecoder().decode(
+                new Uint8Array(buf, off + np, nlen));
+            np += nlen;
+        }
+        traceDirty = true;
         scheduleTraceRender();
         return;
     }
@@ -1745,6 +1820,24 @@ function renderTrace() {
     }
     ctx.globalAlpha = 1;
 
+    /* User zones: a thin bar along the bottom of the lane, from begin to
+     * end, colored by id; a nested zone sits one bar higher per level (up
+     * to TRACE_ZONE_ROWS). Hovering the bar shows the name and duration. */
+    for (var zi = 0; zi < traceZones.length; zi++) {
+        var zn = traceZones[zi];
+        if (zn.end < tStart || zn.start > tEnd) continue;
+        var zrow = tids.indexOf(zn.tid);
+        if (zrow < 0) continue;
+        var zx0 = plotX + ((Math.max(zn.start, tStart) - tStart) / span) * plotW;
+        var zx1 = plotX + ((Math.min(zn.end, tEnd) - tStart) / span) * plotW;
+        var zy = axisY + axisH + zrow * laneH + laneH - 5
+            - 3 * Math.min(zn.depth || 0, TRACE_ZONE_ROWS - 1);
+        ctx.globalAlpha = (selTid !== null && zn.tid !== selTid) ? 0.25 : 0.85;
+        ctx.fillStyle = "hsl(" + ((zn.id * 47) % 360) + ", 70%, 60%)";
+        ctx.fillRect(zx0, zy, Math.max(1, zx1 - zx0), 2);
+    }
+    ctx.globalAlpha = 1;
+
     /* Wait flows: dashed arc from the POST that woke a thread to its
      * WAIT_EXIT. Drawn under the markers so the glyphs stay legible. */
     ctx.lineWidth = 1;
@@ -1795,7 +1888,8 @@ function renderTrace() {
         info.textContent = tids.length + " threads, "
             + traceSpans.length + " spans, "
             + traceMarks.length + " marks, "
-            + traceFlows.length + " flows"
+            + traceFlows.length + " flows, "
+            + traceZones.length + " zones"
             + (traceDropped ? ", " + traceDropped + " dropped" : "");
     }
 }
@@ -2023,7 +2117,9 @@ function traceBindPanel() {
                 var msg = rowName + "  "
                     + tracePrimName(best.prim) + " "
                     + traceActName(best.act)
-                    + "  obj=0x" + best.obj.toString(16)
+                    + "  " + (best.prim === 15
+                        ? traceUserName(best.obj)
+                        : "obj=0x" + best.obj.toString(16))
                     + "  @ " + (best.ts / 1e6).toFixed(3) + "s";
                 if (best.act === TRACE_ACT_WAIT_EXIT) {
                     for (var fw = 0; fw < traceFlows.length; fw++) {
@@ -2043,6 +2139,38 @@ function traceBindPanel() {
                 tip.style.left = (xCss + 12) + "px";
                 tip.style.top  = (yCss + 12) + "px";
                 return;
+            }
+
+            /* User zone bars sit at the bottom of the lane; only claim the
+             * tooltip when the cursor is on the bars, not anywhere above
+             * them. The zone on the bar row under the cursor wins; between
+             * rows (or past the top one), the innermost one. */
+            var zBottom = axisH + row * laneH + laneH - 3;
+            if (yCss >= zBottom - 5 - 3 * (TRACE_ZONE_ROWS - 1)) {
+                var zRow = Math.max(0, Math.min(TRACE_ZONE_ROWS - 1,
+                                                Math.floor((zBottom - yCss) / 3)));
+                var zt = null;
+                var zOnRow = null;
+                for (var zf = 0; zf < traceZones.length; zf++) {
+                    var zc = traceZones[zf];
+                    if (zc.tid !== rowTid || tAt < zc.start || tAt >= zc.end) continue;
+                    var zd = Math.min(zc.depth || 0, TRACE_ZONE_ROWS - 1);
+                    if (zd === zRow && (!zOnRow || (zc.depth || 0) > (zOnRow.depth || 0)))
+                        zOnRow = zc;
+                    if (!zt || (zc.depth || 0) > (zt.depth || 0)) zt = zc;
+                }
+                if (zOnRow) zt = zOnRow;
+                if (zt) {
+                    tip.textContent = rowName + "  zone "
+                        + traceUserName(zt.id) + "  "
+                        + traceDurText(zt.end - zt.start)
+                        + "  [" + (zt.start / 1e6).toFixed(6) + "s → "
+                        + (zt.end / 1e6).toFixed(6) + "s]";
+                    tip.style.display = "block";
+                    tip.style.left = (xCss + 12) + "px";
+                    tip.style.top  = (yCss + 12) + "px";
+                    return;
+                }
             }
 
             /* Spans: closed ones, else the live one for this thread. */

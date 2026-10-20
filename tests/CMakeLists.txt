@@ -274,6 +274,45 @@ function(ove_add_obs_test name)
     endif()
 endfunction()
 ove_add_obs_test(ove_test_trace_ring)
+
+# Public user instrumentation API: name table + mark/zone records.
+add_executable(ove_test_trace_api
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_api.c
+    ${OVE_ROOT}/backends/common/ove_trace.c
+    ${OVE_ROOT}/backends/common/ove_trace_ring.c
+)
+target_include_directories(ove_test_trace_api PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs
+    ${OVE_ROOT}/include
+    ${OVE_ROOT}/backends/common
+    ${OVE_ROOT}/tests/host/posix/include
+)
+target_compile_definitions(ove_test_trace_api PRIVATE _GNU_SOURCE)
+
+# Concurrency regression test for the user trace name table: the snapshot
+# the reader gets must never contain a half-written entry.  A TSan variant
+# is added below with the ring's.
+function(ove_add_trace_name_concurrency_test name)
+    add_executable(${name}
+        ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_name_concurrency.c
+        ${OVE_ROOT}/backends/common/ove_trace.c
+        ${OVE_ROOT}/backends/common/ove_trace_ring.c
+    )
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/obs
+        ${OVE_ROOT}/include
+        ${OVE_ROOT}/backends/common
+        ${OVE_ROOT}/tests/host/posix/include
+    )
+    target_compile_definitions(${name} PRIVATE _GNU_SOURCE)
+    if(ARGN)
+        target_compile_options(${name} PRIVATE ${ARGN})
+        target_link_options(${name} PRIVATE ${ARGN})
+    endif()
+    target_link_libraries(${name} PRIVATE pthread)
+endfunction()
+ove_add_trace_name_concurrency_test(ove_test_trace_name_concurrency)
+
 # Cortex-M stack-scan unwinder on synthetic stacks (host-portable C).
 add_executable(ove_test_arm_backtrace
     ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_arm_backtrace.c
@@ -419,6 +458,8 @@ if(CMAKE_C_FLAGS MATCHES "-fsanitize=[^ ]*(address|memory)")
 endif()
 if(OVE_TEST_TSAN_ACTIVE)
     ove_add_obs_test(ove_test_trace_ring_tsan -fsanitize=thread -O1 -g)
+    ove_add_trace_name_concurrency_test(ove_test_trace_name_concurrency_tsan
+        -fsanitize=thread -O1 -g)
 endif()
 
 # Deterministic preemption of the trace ring push: trace_ring_preempt.c
@@ -453,6 +494,8 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
 add_test(NAME ove_trace_ring COMMAND ove_test_trace_ring)
 add_test(NAME ove_trace_ring_preempt COMMAND ove_test_trace_ring_preempt)
+add_test(NAME ove_trace_api COMMAND ove_test_trace_api)
+add_test(NAME ove_trace_name_concurrency COMMAND ove_test_trace_name_concurrency)
 add_test(NAME ove_arm_backtrace COMMAND ove_test_arm_backtrace)
 add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
@@ -464,8 +507,10 @@ add_test(NAME ove_nuttx_note_ready COMMAND ove_test_nuttx_note_ready)
 add_test(NAME ove_nuttx_suspend_handshake COMMAND ove_test_nuttx_suspend_handshake)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
-    set_tests_properties(ove_trace_ring_tsan PROPERTIES
-        ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
+    add_test(NAME ove_trace_name_concurrency_tsan
+        COMMAND ove_test_trace_name_concurrency_tsan)
+    set_tests_properties(ove_trace_ring_tsan ove_trace_name_concurrency_tsan
+        PROPERTIES ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
 endif()
 add_test(NAME ove_patch_worktree_python
     COMMAND ${CMAKE_COMMAND} -E env
@@ -522,6 +567,9 @@ add_test(NAME ove_venv_python
 add_test(NAME ove_makefile_python_resolution_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_makefile_python_resolution.py)
+add_test(NAME ove_rust_trace_cfg_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_rust_trace_cfg.py)
 add_test(NAME ove_build_type_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

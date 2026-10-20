@@ -54,6 +54,7 @@ fn main() {
             "i2s",
             "async",
             "async_net",
+            "trace",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{m})");
@@ -132,6 +133,21 @@ fn main() {
             "ASYNC",
             "ASYNC_NET",
         ];
+        // There is no CONFIG_OVE_TRACE symbol, so emit has_trace explicitly.
+        // The Rust `trace` module wraps the user-marker API
+        // (ove_trace_register_name / ove_trace_mark / ove_trace_zone_*),
+        // whose C declarations live under CONFIG_OVE_TRACE_MARKERS in
+        // include/ove/trace.h — gate the module's calls on that symbol
+        // (they become no-ops without it), so they are only built when
+        // bindgen can emit the functions they call.  With
+        // TRACE_STREAM=y and TRACE_MARKERS=n the header falls back to
+        // `static inline` no-ops (internal linkage, invisible to bindgen)
+        // and the crate would not build.  Kconfig makes TRACE_MARKERS
+        // depend on TRACE_STREAM, so MARKERS=y implies the stream is on.
+        println!("cargo:rustc-check-cfg=cfg(has_trace)");
+        if config.contains("#define CONFIG_OVE_TRACE_MARKERS 1") {
+            println!("cargo:rustc-cfg=has_trace");
+        }
         for m in &modules {
             let cfg_name = format!("has_{}", m.to_lowercase());
             println!("cargo:rustc-check-cfg=cfg({cfg_name})");

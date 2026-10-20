@@ -87,6 +87,40 @@ struct ove_trace_thread_desc {
 	const char *name;
 };
 
+/*
+ * User id -> name descriptor. Registered through
+ * ove_trace_register_name(); the sim trace plugin emits the table in a
+ * NAMES batch whenever descriptors are refreshed.
+ */
+#define OVE_TRACE_NAME_MAX 32
+
+/*
+ * Longest name the table keeps. The trace wire format carries a
+ * one-byte length and at most OVE_SIM_TRACE_MAX_NAME (31) name bytes,
+ * so the name is truncated once, at registration.
+ */
+#define OVE_TRACE_NAME_MAX_LEN 31
+
+/*
+ * The descriptor owns the name: the table keeps its own copy of the
+ * string, so the caller of ove_trace_register_name() may free or reuse
+ * its buffer as soon as the call returns, and the reader may copy the
+ * entry out without touching the caller's memory.
+ */
+struct ove_trace_name_desc {
+	uint16_t id;
+	char name[OVE_TRACE_NAME_MAX_LEN + 1];
+};
+
+/**
+ * ove_trace_names - copy the registered user names
+ *
+ * Returns the number of entries written to @out (bounded by @max). The
+ * copy is a consistent snapshot: it never contains a half-written
+ * entry, even when the application registers names concurrently.
+ */
+size_t ove_trace_names(struct ove_trace_name_desc *out, size_t max);
+
 /**
  * ove_backend_trace_list_threads - enumerate live threads as tid + name
  *

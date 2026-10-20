@@ -1004,9 +1004,10 @@ def _event_bridge_loop():
                 frame = ws_frame(
                     struct.pack("<I", FRAME_THREAD) + payload)
                 mailbox.post_log(frame)
-            # Forward trace plugin events as FRAME_TRACE. Both subtypes
-            # (stream records, descriptor table) share the same outer
-            # frame; the dashboard dispatches on the embedded sub_type.
+            # Forward trace plugin events as FRAME_TRACE. All sub_types
+            # (stream records, thread descriptors, user names) share the
+            # same outer frame; the dashboard dispatches on the embedded
+            # sub_type.
             elif event_type in (SIM_TRACE_EVT_STREAM,
                                 SIM_TRACE_EVT_DESCRIPTORS) and payload:
                 frame = ws_frame(

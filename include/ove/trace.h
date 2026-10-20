@@ -13,7 +13,11 @@
  * When CONFIG_OVE_TRACE_STREAM is enabled, every thread state transition
  * is pushed into a lock-free ring and drained by the sim transport, which
  * forwards it to the dashboard as a swimlane. CONFIG_OVE_TRACE_MARKERS
- * additionally emits point markers at sync-primitive entry/exit.
+ * additionally emits point markers at sync-primitive entry/exit and
+ * enables the user instrumentation API: named marks and zones
+ * (ove_trace_register_name(), ove_trace_mark(), ove_trace_zone_begin(),
+ * ove_trace_zone_end()). The mark and zone calls may also be made from an
+ * interrupt handler; their records then land on the interrupt lane.
  *
  * Thread identity is the low 32 bits of the backend thread handle. The
  * dashboard resolves these to names via descriptor records emitted
@@ -23,6 +27,7 @@
 #ifndef OVE_TRACE_H
 #define OVE_TRACE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "ove_config.h"
@@ -53,6 +58,8 @@ enum {
 	OVE_TRACE_ACT_WAIT_EXIT = 2,
 	OVE_TRACE_ACT_POST = 3,
 	OVE_TRACE_ACT_USER = 4,
+	OVE_TRACE_ACT_ZONE_BEGIN = 5,
+	OVE_TRACE_ACT_ZONE_END = 6,
 };
 
 /** @brief When ove_trace_emit_kthread_state() emits the transition. */
@@ -97,6 +104,67 @@ void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_sta
  *                          carried in the record).
  */
 void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
+
+#ifdef CONFIG_OVE_TRACE_MARKERS
+/**
+ * @brief Register a human-readable name for a user trace id.
+ *
+ * Names are emitted to the dashboard in a separate trace descriptor batch
+ * and resolve user marks/zones from an id to a string. The trace layer
+ * copies the name, so the caller's buffer does not have to outlive the
+ * call — it may be freed or reused as soon as the call returns. The copy
+ * is truncated to 31 characters, the limit of the trace wire format.
+ *
+ * The table holds up to @c OVE_TRACE_NAME_MAX ids; re-registering an id
+ * replaces its name.
+ *
+ * Threading: the table may be read while it is written (the sim pump
+ * reads it from its own thread), but the registrations themselves must
+ * come from a single thread, and they should happen before the sim pump
+ * starts. A late registration is still picked up, but a name that is
+ * replaced while the pump reads it may be reported with its previous
+ * value until the next refresh.
+ *
+ * @param[in] id   User id in the range 0..65535.
+ * @param[in] name NUL-terminated name; copied by the trace layer.
+ *
+ * @retval true  The name was registered.
+ * @retval false The name was rejected — it was empty, or the name table
+ *               was full.
+ */
+bool ove_trace_register_name(uint16_t id, const char *name);
+
+/**
+ * @brief Emit a point marker for a user id.
+ *
+ * Appears as a marker on the calling thread's lane, shown with the name
+ * registered for @p id.
+ *
+ * @param[in] id User id in the range 0..65535.
+ */
+void ove_trace_mark(uint16_t id);
+
+/**
+ * @brief Open a named user zone (e.g. an expensive function or phase).
+ *
+ * Pair with @ref ove_trace_zone_end. Zones may nest on the same thread,
+ * also with the same id; the dashboard draws each from begin to end.
+ *
+ * @param[in] id User id in the range 0..65535.
+ */
+void ove_trace_zone_begin(uint16_t id);
+
+/**
+ * @brief Close the most recent zone with @p id on the calling thread.
+ *
+ * That is the innermost one still open: an end closes zones with the
+ * same id in the reverse order of their begins.
+ *
+ * @param[in] id User id in the range 0..65535.
+ */
+void ove_trace_zone_end(uint16_t id);
+
+#endif /* CONFIG_OVE_TRACE_MARKERS */
 
 /**
  * @brief Emit a state transition for a thread with no ove_thread wrapper.
@@ -167,7 +235,7 @@ static inline uintptr_t ove_backend_thread_current_handle(void)
 
 #endif /* CONFIG_OVE_TRACE_STREAM */
 
-#ifdef CONFIG_OVE_TRACE_MARKERS
+#if defined(CONFIG_OVE_TRACE_STREAM) && defined(CONFIG_OVE_TRACE_MARKERS)
 #define OVE_TRACE_MARK(thread, prim, act, obj) \
 	ove_trace_emit_mark((uintptr_t)(thread), (prim), (act), (uintptr_t)(obj))
 #define OVE_TRACE_MARK_CURRENT(prim, act, obj) \
@@ -175,6 +243,24 @@ static inline uintptr_t ove_backend_thread_current_handle(void)
 #else
 #define OVE_TRACE_MARK(thread, prim, act, obj) ((void)0)
 #define OVE_TRACE_MARK_CURRENT(prim, act, obj) ((void)0)
+static inline bool ove_trace_register_name(uint16_t id, const char *name)
+{
+	(void)id;
+	(void)name;
+	return false;
+}
+static inline void ove_trace_mark(uint16_t id)
+{
+	(void)id;
+}
+static inline void ove_trace_zone_begin(uint16_t id)
+{
+	(void)id;
+}
+static inline void ove_trace_zone_end(uint16_t id)
+{
+	(void)id;
+}
 #endif
 
 #ifdef __cplusplus

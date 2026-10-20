@@ -202,6 +202,31 @@ lowers that into its language's error type.
 
 ---
 
+## Trace
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| Name an id | `ove::trace::name(id, "draw")` → `bool` | `trace::name(id, c"draw")` → `bool` | — (raw `c.ove_trace_register_name`) |
+| Point mark | `ove::trace::mark(id)` | `trace::mark(id)` | — |
+| Zone | `ove::trace::Zone z{id};` (closes in the destructor) | `let _z = trace::Zone::new(id);` (closes in `Drop`), `finish()` closes early | — |
+| Manual zone | `zone_begin(id)` / `zone_end(id)` | `zone_begin(id)` / `zone_end(id)` | — |
+| Markers compiled out | no-ops, `name` returns `false` | no-ops, `name` returns `false` | — |
+
+**Contract notes**
+
+- The trace layer copies the name, cut to 31 bytes, so the caller's buffer
+  need not outlive the call. `name` returns `false` for an empty name or a
+  full table. Names are registered from one thread only.
+- An end closes the innermost open zone with that id on the calling thread,
+  so a zone is closed on the thread that opened it: the Rust `Zone` is
+  neither `Send` nor `Sync`, and a C++ `Zone` must be destroyed on its
+  thread. A moved-from C++ `Zone` does not close anything.
+- Marks and zones may be emitted from an interrupt handler; they land on
+  the interrupt lane.
+- Zig has no wrapper yet: this is a known gap, not a design choice.
+
+---
+
 ## Maintaining this contract
 
 When you add or change a binding API, update this page in the same change so the

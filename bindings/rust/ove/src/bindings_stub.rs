@@ -6110,3 +6110,22 @@ unsafe extern "C" {
         style: *mut lv_style_t,
     );
 }
+
+// The user-marker API is declared in include/ove/trace.h under
+// `#ifdef CONFIG_OVE_TRACE_MARKERS`; bindgen would not emit it for a
+// configuration without markers (the header then provides `static inline`
+// no-ops).  It is hand-declared here so the docs.rs build — where
+// build.rs enables `has_trace` for every module — can still compile
+// src/trace.rs.  Guarded by the same cfg the module itself uses, so the
+// stub and the real bindings agree on when the symbols exist.
+#[cfg(has_trace)]
+unsafe extern "C" {
+    #[doc = " @brief Register a human-readable name for a user trace id."]
+    pub fn ove_trace_register_name(id: u16, name: *const core::ffi::c_char) -> bool;
+    #[doc = " @brief Emit a point marker for a user id."]
+    pub fn ove_trace_mark(id: u16);
+    #[doc = " @brief Open a named user zone."]
+    pub fn ove_trace_zone_begin(id: u16);
+    #[doc = " @brief Close the most recent zone with the given id."]
+    pub fn ove_trace_zone_end(id: u16);
+}

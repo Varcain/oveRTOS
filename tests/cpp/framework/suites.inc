@@ -55,6 +55,7 @@ OVE_CPP_SUITE(workqueue,       "Workqueue")
 OVE_CPP_SUITE(static_init,     "Static Init")
 OVE_CPP_SUITE(infer,           "Infer")
 OVE_CPP_SUITE(error,           "Error")
+OVE_CPP_SUITE(trace,           "Trace")
 OVE_CPP_SUITE(net,             "Net")
 
 #ifdef _OVE_CPP_SUITES_INC_DEFAULTED

@@ -78,6 +78,7 @@
 #include <ove/thread.hpp>
 #include <ove/console.hpp>
 #include <ove/time.hpp>
+#include <ove/trace.hpp>
 #include <ove/nvs.hpp>
 #include <ove/shell.hpp>
 #include <ove/board.hpp>
