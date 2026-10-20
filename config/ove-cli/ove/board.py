@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 
+from . import venv
 from .workspace import Workspace, find_ove_dir
 
 
@@ -61,7 +62,7 @@ def _find_rtos_base(ove_dir, ws, rtos):
 def _board_tool(ove_dir, args):
     """Run config/scripts/board_tool.py with the given arguments."""
     script = os.path.join(ove_dir, "config", "scripts", "board_tool.py")
-    python = os.path.join(ove_dir, ".venv", "bin", "python")
+    python = venv.python_path(ove_dir)
     if not os.path.isfile(python):
         python = sys.executable
 

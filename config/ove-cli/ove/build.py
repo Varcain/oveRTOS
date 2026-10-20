@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 
+from . import venv
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
 from .board_yaml import nuttx_board_config, rtos_entry, zephyr_board as yaml_zephyr_board
 from .workspace import Workspace, get_bool
@@ -526,6 +527,10 @@ def build_freertos(ws):
 
 def build_zephyr(ws):
     """Build Zephyr firmware via west."""
+    error = venv.zephyr_error(ws.ove_dir)
+    if error:
+        logger.error(error)
+        sys.exit(1)
     env = ws.toolchain_env()
     from .download import download_zephyr_sdk, zephyr_sdk_env
     from .manifest import load_manifest
@@ -539,7 +544,7 @@ def build_zephyr(ws):
         sys.exit(1)
     env = zephyr_sdk_env(env, sdk_dir)
 
-    west = os.path.join(ws.venv_dir, "bin", "west")
+    west = venv.bin_path(ws.ove_dir, "west")
     board_dir = os.path.join(ws.board_dir, "zephyr")
     fw_build = os.path.join(ws.build_dir, "firmware")
 

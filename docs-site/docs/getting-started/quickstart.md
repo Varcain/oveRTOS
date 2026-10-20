@@ -8,7 +8,7 @@ If anything fails along the way, jump to [Troubleshooting](troubleshooting.md). 
 
 You need:
 
-- Python 3.9+ with `python3-venv`
+- Python 3.12+ with `python3-venv` (the pinned Zephyr needs 3.12)
 - CMake 3.20+
 - A native C/C++ compiler (gcc or clang), used by the test suites
 - QEMU (`qemu-system-arm`)

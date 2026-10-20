@@ -514,6 +514,14 @@ add_test(NAME ove_sim_drain_priority_python
 add_test(NAME ove_queue_trace_markers_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_queue_trace_markers.py)
+add_test(NAME ove_venv_python
+    COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=${OVE_ROOT}/config/ove-cli
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_venv.py)
+add_test(NAME ove_makefile_python_resolution_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_makefile_python_resolution.py)
 add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

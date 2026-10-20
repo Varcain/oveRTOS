@@ -28,6 +28,38 @@ python3 -m venv /tmp/_ovecheck && echo ok || echo missing
 
 Then rerun `make setup`.
 
+### `make setup` fails with "Python >= 3.12 is required"
+
+**Symptom**
+
+```
+ERROR: Python >= 3.12 is required (Zephyr 4.4 needs it).
+       /usr/bin/python3 is 3.11.6.
+```
+
+`make setup` takes the first of `python3.15` … `python3.12` and `python3`
+on `PATH` that is at least 3.12, and stops with this error when there is
+none. A `PYTHON` exported in the environment replaces that search, and
+`OVE_PYTHON` replaces both. The pinned Zephyr refuses older interpreters.
+
+**Diagnose**
+
+```bash
+command -v python3.15 python3.14 python3.13 python3.12; python3 --version
+echo "PYTHON=$PYTHON OVE_PYTHON=$OVE_PYTHON"
+```
+
+**Fix**
+
+Install Python 3.12 or newer, or point `OVE_PYTHON` at one:
+
+```bash
+make OVE_PYTHON=/path/to/python3.12 setup
+```
+
+A venv made by another Python version is rebuilt, so the same command also
+replaces an old `.venv`.
+
 ### `make` complains about an old CMake
 
 **Symptom** — Zephyr or NuttX configure fails with `CMake 3.20 or higher is required.`

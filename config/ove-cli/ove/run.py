@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 
+from . import venv
 from .workspace import Workspace, get_bool
 
 
@@ -106,7 +107,7 @@ def cmd_flash(args):
     _check_image_identity(ws, getattr(args, "force", False))
 
     if rtos == "zephyr":
-        west = os.path.join(ws.venv_dir, "bin", "west")
+        west = venv.bin_path(ws.ove_dir, "west")
         env = ws.toolchain_env()
         zephyr_ws = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
         if os.path.isdir(zephyr_ws):

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 
+from . import venv
 from .kconfig import parse_defconfig_name, workspace_path
 from .workspace import WORKSPACE_DIR_ENV, Workspace
 
@@ -170,7 +171,7 @@ def _run_defconfig(ove_dir, app_dir, defconfig_path, ove_bin):
 
 def _ove_bin(ws):
     """The venv's own ove, so child stages run this checkout's CLI."""
-    ove_bin = os.path.join(ws.venv_dir, "bin", "ove")
+    ove_bin = venv.bin_path(ws.ove_dir, "ove")
     return ove_bin if os.path.isfile(ove_bin) else "ove"
 
 

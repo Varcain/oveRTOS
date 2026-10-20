@@ -20,6 +20,7 @@ import tarfile
 import time
 import urllib.request
 
+from . import venv
 from .manifest import get_component, load_manifest, warn_if_dirty
 from .utils import hashed_dir, update_symlink, atomic_symlink
 from .workspace import Workspace, get_bool, get_str
@@ -268,7 +269,7 @@ def _find_west(ove_dir):
     west = shutil.which("west")
     if west:
         return west
-    venv_west = os.path.join(ove_dir, ".venv", "bin", "west")
+    venv_west = venv.bin_path(ove_dir, "west")
     if os.path.isfile(venv_west):
         return venv_west
     return "west"
@@ -744,7 +745,11 @@ def download_zephyr_sdk(dl_dir, toolchains_dir, manifest=None):
             [paths["setup"], "-t", ZEPHYR_SDK_TARGET],
             cwd=paths["sdk_dir"], capture_output=True, text=True)
         if ret.returncode != 0:
-            logger.error(f"Zephyr SDK setup failed: {ret.stderr}")
+            detail = "\n".join(
+                part.strip() for part in (ret.stderr, ret.stdout)
+                if part and part.strip())
+            logger.error(f"Zephyr SDK setup failed (exit "
+                         f"{ret.returncode}): {detail or 'no output'}")
             return None
 
     if not _zephyr_sdk_compiler(paths["sdk_dir"]):

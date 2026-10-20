@@ -19,6 +19,37 @@
 
 OVE_DIR := $(CURDIR)
 VENV_DIR    := $(OVE_DIR)/.venv
+# Interpreter used to create .venv.  The pinned Zephyr 4.4 needs >= 3.12.
+OVE_PYTHON ?=
+# Auto-detected interpreter: the first one >= 3.12 on PATH, never the venv
+# that is about to be replaced (`make setup` re-runs make with
+# $(VENV_DIR)/bin first on PATH).  Without one, fall back to python3 so the
+# version gate can name it.  Add new Python releases to the list.
+OVE_PY_AUTO = $(shell sp=$$(printf '%s' "$$PATH" | tr ':' '\n' | \
+	grep -vxF '$(VENV_DIR)/bin' | paste -sd: -); \
+	for p in python3.15 python3.14 python3.13 python3.12 python3; do \
+	  x=$$(PATH=$$sp; command -v $$p) || continue; \
+	  "$$x" -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
+	    2>/dev/null && { echo "$$x"; exit 0; }; \
+	done; PATH=$$sp; command -v python3)
+# Fallback interpreter, never overriding a PYTHON that the user provided
+# explicitly (command line or environment).
+PYTHON ?= $(if $(OVE_PYTHON),$(OVE_PYTHON),$(OVE_PY_AUTO))
+# Interpreter actually used to create the venv.  It is resolved by *origin* so
+# that the most specific source wins:
+#
+#   command-line PYTHON=  >  OVE_PYTHON  >  environment PYTHON  >  auto-detect
+#
+# The plain default above cannot do that: `?=` never overrides a PYTHON that
+# comes from the environment (origin "environment"), so OVE_PYTHON would be
+# ignored exactly when it is needed most.  The origin of PYTHON stays
+# "environment"/"command line" only while nothing here has assigned it; the
+# default above assigns it only when the user provided none at all, in which
+# case the origin is "file" and the auto-detected value is the fallback.
+OVE_PY := $(if $(filter command line,$(origin PYTHON)),$(PYTHON),$(if $(OVE_PYTHON),$(OVE_PYTHON),$(PYTHON)))
+# Keep PYTHON in sync with the interpreter that is really used (a command-line
+# PYTHON= still wins, and then OVE_PY holds exactly that value).
+PYTHON := $(OVE_PY)
 VENV_PYTHON := $(VENV_DIR)/bin/python
 VENV_PIP    := $(VENV_DIR)/bin/pip
 VENV_STAMP  := $(VENV_DIR)/.stamp
@@ -31,7 +62,7 @@ export PATH := $(OVE_DIR)/config/scripts:$(VENV_DIR)/bin:$(PATH)
 # ── Python venv + CLI installation ─────────────────────────────────────────
 
 $(VENV_STAMP): $(REQUIREMENTS) $(CLI_DIR)/pyproject.toml
-	@command -v python3 >/dev/null 2>&1 || { \
+	@test -n "$(OVE_PY)" || { \
 		echo ""; \
 		echo "ERROR: python3 not found."; \
 		echo ""; \
@@ -41,7 +72,17 @@ $(VENV_STAMP): $(REQUIREMENTS) $(CLI_DIR)/pyproject.toml
 		echo ""; \
 		exit 1; \
 	}
-	@python3 -c "import venv" 2>/dev/null || { \
+	@$(OVE_PY) -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' || { \
+		echo ""; \
+		echo "ERROR: Python >= 3.12 is required (Zephyr 4.4 needs it)."; \
+		echo "       $(OVE_PY) is $$($(OVE_PY) -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)."; \
+		echo ""; \
+		echo "  Install Python 3.12 or newer, or point OVE_PYTHON at one:"; \
+		echo "    make OVE_PYTHON=/path/to/python3.12 setup"; \
+		echo ""; \
+		exit 1; \
+	}
+	@$(OVE_PY) -c "import venv" 2>/dev/null || { \
 		echo ""; \
 		echo "ERROR: python3-venv module not available."; \
 		echo ""; \
@@ -51,7 +92,14 @@ $(VENV_STAMP): $(REQUIREMENTS) $(CLI_DIR)/pyproject.toml
 		exit 1; \
 	}
 	@echo "=== Setting up Python virtual environment ==="
-	@python3 -m venv $(VENV_DIR)
+	@# A venv built by another Python version is rebuilt from scratch, so
+	@# an old interpreter cannot survive; otherwise it is updated in place.
+	@v='import sys; print(sys.version_info[:2])'; \
+	if [ "$$($(VENV_PYTHON) -c "$$v" 2>/dev/null)" = "$$($(OVE_PY) -c "$$v")" ]; then \
+		$(OVE_PY) -m venv $(VENV_DIR); \
+	else \
+		$(OVE_PY) -m venv --clear $(VENV_DIR); \
+	fi
 	@$(VENV_PIP) install --quiet --upgrade pip
 	@$(VENV_PIP) install --quiet -r $(REQUIREMENTS)
 	@$(VENV_PIP) install --quiet -e $(CLI_DIR)

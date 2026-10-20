@@ -24,7 +24,8 @@ The checks fall into five groups. A `FAIL` blocks building; a `WARN` is a tool y
 
 | Check | Required | What it verifies |
 |---|---|---|
-| `python` | Yes | Interpreter version ≥ 3.9 |
+| `python` | Yes | Version ≥ 3.9 of the interpreter running `ove` |
+| `venv python` | Yes | The `.venv` interpreter is ≥ 3.12; Zephyr's CMake build uses it |
 | `py:jinja2` | Yes | Template engine used to generate `FreeRTOSConfig.h`, `prj.conf`, etc. |
 | `py:yaml` | Yes | `app.yaml` / `board.yaml` / `manifest.yaml` parsing |
 | `py:jsonschema` | No | Validates `app.yaml` against the schema |
@@ -42,6 +43,7 @@ rm -rf .venv && make setup
 |---|---|---|
 | `cmake` | Yes | 3.20+ |
 | `ninja` | No | CMake falls back to `make` if Ninja is missing |
+| `wget` | No | Needed by the Zephyr SDK setup script (`ove download`) |
 | `make` | Yes | GNU Make |
 | `git` | Yes | Source checkout + manifest-driven downloads |
 | `ccache` | No | Optional compilation cache |
@@ -129,9 +131,10 @@ If `config=false`, no `.config` is loaded — pick one via `make <board>.<rtos>.
 ```
 oveRTOS environment check
 ========================================
-  [✓] python              3.11.6
+  [✓] python              3.12.3
   [✓] py:jinja2
-  [!] py:serial           missing — re-run 'make .venv'
+  [!] py:serial           missing — re-run 'make setup'
+  [✓] venv python         3.12.3
   [✓] cmake               cmake version 3.28.1
   [!] arm-gnu (downloaded) run 'ove download' to fetch the pinned toolchain
   [✓] workspace           ove_dir=/home/me/oveRTOS  venv=True  config=True

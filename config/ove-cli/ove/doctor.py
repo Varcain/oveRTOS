@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 
+from . import venv
 from .manifest import get_component, load_manifest
 from .workspace import Workspace, find_ove_dir
 
@@ -40,13 +41,13 @@ def _run(cmd):
         return 1, ""
 
 
-def _check_binary(name, version_cmd=None, required=True):
+def _check_binary(name, version_cmd=None, required=True, hint=None):
     path = shutil.which(name)
     if not path:
         return {
             "name": name,
             "status": _FAIL if required else _WARN,
-            "detail": "not found in PATH",
+            "detail": hint or "not found in PATH",
         }
     version = ""
     if version_cmd:
@@ -54,6 +55,22 @@ def _check_binary(name, version_cmd=None, required=True):
         if rc == 0 and out:
             version = out.splitlines()[0]
     return {"name": name, "status": _OK, "path": path, "version": version}
+
+
+def _check_venv_python(ove_dir):
+    """The interpreter Zephyr's CMake build will pick up from the venv."""
+    exe = venv.python_path(ove_dir)
+    version = venv.python_version(exe)
+    if version is None:
+        return {"name": "venv python", "status": _FAIL,
+                "detail": f"{exe} not found — {venv.SETUP_HINT}"}
+    text = venv.format_version(version)
+    if version < venv.ZEPHYR_MIN_PYTHON:
+        need = venv.format_version(venv.ZEPHYR_MIN_PYTHON)
+        return {"name": "venv python", "status": _FAIL,
+                "detail": f"{text}: Zephyr needs >= {need}; to recreate "
+                          f"it, {venv.SETUP_HINT}"}
+    return {"name": "venv python", "status": _OK, "version": text, "path": exe}
 
 
 def _check_downloaded_binary(display_name, path, version_cmd=None,
@@ -104,7 +121,7 @@ def _check_python_pkgs():
             results.append({
                 "name": f"py:{mod}",
                 "status": _FAIL if required else _WARN,
-                "detail": "missing — re-run 'make .venv'",
+                "detail": "missing — re-run 'make setup'",
             })
     return results
 
@@ -121,7 +138,7 @@ def _check_workspace():
             "config": os.path.isfile(ws.config_path)}
     if not info["venv"]:
         info["status"] = _WARN
-        info["detail"] = "no .venv — run 'make .venv'"
+        info["detail"] = "no .venv — run 'make setup'"
     return info
 
 
@@ -141,12 +158,17 @@ def _check_manifest_component(ove_dir, display, path_glob, required=False):
 
 def _checks():
     """Run all checks. Returns a list of result dicts."""
+    ove_dir = find_ove_dir()
     out = [_check_python_version()]
     out += _check_python_pkgs()
+    out.append(_check_venv_python(ove_dir))
 
     # ── Core build tools (required) ──────────────────────────────────
     out.append(_check_binary("cmake", ["cmake", "--version"]))
     out.append(_check_binary("ninja", ["ninja", "--version"], required=False))
+    out.append(_check_binary("wget", ["wget", "--version"], required=False,
+                             hint="not found; needed by the Zephyr SDK "
+                                  "setup script"))
     out.append(_check_binary("make", ["make", "--version"]))
     out.append(_check_binary("git", ["git", "--version"]))
     out.append(_check_binary("ccache", ["ccache", "--version"],
@@ -191,7 +213,6 @@ def _checks():
                              ["lcov", "--version"], required=False))
 
     # ── Downloaded tools (output/toolchains, output/tools) ───────────
-    ove_dir = find_ove_dir()
     out.append(_check_downloaded_binary(
         "arm-gnu (downloaded)",
         os.path.join(ove_dir, "output", "toolchains",

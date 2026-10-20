@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 
+from . import venv
 from .configure import configure_all
 from .board_yaml import nuttx_board_config, zephyr_board as yaml_zephyr_board
 from .utils import apply_defconfig_overlay, diff_configs, hash_file, run
@@ -309,6 +310,10 @@ def _run_nuttx_menuconfig(ws, env):
 
 def _run_zephyr_menuconfig(ws, env):
     """Zephyr native menuconfig flow."""
+    error = venv.zephyr_error(ws.ove_dir)
+    if error:
+        print(f"error: {error}")
+        sys.exit(1)
     from .download import download_zephyr_sdk, zephyr_sdk_env
     from .manifest import load_manifest
 
@@ -327,7 +332,7 @@ def _run_zephyr_menuconfig(ws, env):
     fw_build = os.path.join(ws.build_dir, "firmware")
     os.makedirs(fw_build, exist_ok=True)
 
-    west = os.path.join(ws.venv_dir, "bin", "west")
+    west = venv.bin_path(ws.ove_dir, "west")
     zephyr_ws = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
     if os.path.isdir(zephyr_ws):
         env["ZEPHYR_BASE"] = zephyr_ws
