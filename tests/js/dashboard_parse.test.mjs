@@ -62,16 +62,53 @@ test("trace: 64-bit timestamps survive the split-word decode", () => {
     assert.equal(g.traceThreads[1].lastTs, ts);
 });
 
-test("trace: marks decode the primitive/action nibbles and arg", () => {
+test("trace: marks decode the primitive/action nibbles and full object id", () => {
     const g = loadDashboard();
     g.handleTrace(traceStream([
-        markRec(100, 3, 5 /* QUEUE */, 3 /* POST */, 0xbeef),
-        markRec(200, 3, 1 /* MUTEX */, 1 /* WAIT_ENTER */, 0x1234),
+        markRec(100, 3, 5 /* QUEUE */, 3 /* POST */, 0x2000beef),
+        markRec(200, 3, 1 /* MUTEX */, 1 /* WAIT_ENTER */, 0x20001234),
+        markRec(250, 3, 1 /* MUTEX */, 2 /* WAIT_EXIT */, 0x20001234),
     ]), 0);
     assert.deepEqual(g.traceMarks, [
-        { tid: 3, ts: 100, prim: 5, act: 3, arg: 0xbeef },
-        { tid: 3, ts: 200, prim: 1, act: 1, arg: 0x1234 },
+        { tid: 3, ts: 100, prim: 5, act: 3, obj: 0x2000beef },
+        { tid: 3, ts: 200, prim: 1, act: 1, obj: 0x20001234 },
+        { tid: 3, ts: 250, prim: 1, act: 2, obj: 0x20001234 },
     ]);
+});
+
+test("trace: legacy v2 stream records still decode", () => {
+    const g = loadDashboard();
+    /* v2 has no second word: the object is truncated to its low 16 bits. */
+    g.handleTrace(traceStream([
+        markRec(100, 3, 5, 3, 0x2000beef),
+        stateRec(200, 3, 1, 0),
+    ], 0, 2), 0);
+    assert.deepEqual(g.traceMarks, [
+        { tid: 3, ts: 100, prim: 5, act: 3, obj: 0xbeef },
+    ]);
+    assert.equal(g.traceThreads[3].lastState, 0);
+    assert.equal(g.traceThreads[3].lastTs, 200);
+});
+
+test("trace: POST pairs with the matching WAIT_EXIT per object", () => {
+    const g = loadDashboard();
+    const obj = 0x20001234;
+    g.handleTrace(traceStream([
+        markRec(100, 5, 1 /* MUTEX */, 1 /* WAIT_ENTER */, obj),
+        markRec(140, 9, 1 /* MUTEX */, 3 /* POST */, obj),
+        markRec(200, 5, 1 /* MUTEX */, 2 /* WAIT_EXIT */, obj),
+        /* A different object sharing the low 16 bits must not pair with
+         * the first object's post. */
+        markRec(300, 6, 1 /* MUTEX */, 1 /* WAIT_ENTER */, 0x20011234),
+        markRec(340, 6, 1 /* MUTEX */, 2 /* WAIT_EXIT */, 0x20011234),
+    ]), 0);
+    assert.equal(g.traceFlows.length, 2);
+    assert.deepEqual(g.traceFlows[0], {
+        tid: 5, start: 100, end: 200, obj: obj, prim: 1,
+        postTid: 9, postTs: 140,
+    });
+    assert.equal(g.traceFlows[1].postTid, null);
+    assert.equal(g.traceFlows[1].end - g.traceFlows[1].start, 40);
 });
 
 test("trace: lanes only include threads with data, sorted by name", () => {
@@ -236,11 +273,18 @@ test("trace: a record a second behind restarts the timebase", () => {
         stateRec(5_000_000, 5, 1, 0),
         stateRec(5_100_000, 5, 0, 2),
         markRec(5_050_000, 5, 1, 1, 0x10),
+        /* A paired flow, a pending post and an open wait of the old boot. */
+        markRec(5_060_000, 6, 2, 1, 0x20),
+        markRec(5_070_000, 7, 2, 3, 0x20),
+        markRec(5_080_000, 6, 2, 2, 0x20),
+        markRec(5_090_000, 7, 2, 3, 0x30),
+        markRec(5_095_000, 6, 2, 1, 0x40),
     ]), 0);
+    assert.equal(g.traceFlows.length, 1);
     /* A late record less than a second behind is not a restart. */
     g.handleTrace(traceStream([markRec(4_500_000, 5, 1, 2, 0x10)]), 0);
     assert.equal(g.traceSpans.length, 1);
-    assert.equal(g.traceMarks.length, 2);
+    assert.equal(g.traceMarks.length, 7);
     g.traceView.follow = false;
     g.traceView.tEndFrozen = 5_100_000;
 
@@ -255,6 +299,9 @@ test("trace: a record a second behind restarts the timebase", () => {
         { tid: 5, start: 200, end: 300, state: 0, gap: false },
     ]);
     assert.equal(g.traceMarks.length, 0);
+    assert.equal(g.traceFlows.length, 0);
+    assert.deepEqual(Object.keys(g.tracePosts), []);
+    assert.deepEqual(Object.keys(g.traceWaits), []);
     assert.equal(g.traceThreads[5].name, "worker");
     assert.equal(g.traceMinTs, 200);
     assert.equal(g.traceMaxTs, 300);

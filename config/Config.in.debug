@@ -89,10 +89,10 @@ config OVE_TRACE_RING_SIZE
     depends on OVE_TRACE_STREAM
     default 4096
     help
-      Capacity of the trace ring buffer, in records (16 bytes each,
+      Capacity of the trace ring buffer, in records (24 bytes each,
       plus a 1-byte commit flag). On overflow the producer drops
       records and increments a counter reported by the dashboard.
-      4096 records = 68 KiB, ~30 s of typical activity at 150
+      4096 records = 100 KiB, ~30 s of typical activity at 150
       transitions/s.
 
 config OVE_PROFILER

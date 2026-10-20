@@ -27,7 +27,8 @@ void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_sta
 		.tid = (uint32_t)thread_handle,
 		.kind = OVE_TRACE_KIND_STATE,
 		.code = (uint8_t)new_state,
-		.arg = (uint16_t)old_state,
+		.reserved = (uint16_t)old_state,
+		.object = (uint32_t)old_state,
 	};
 	(void)ove_trace_ring_push(&rec);
 }
@@ -96,7 +97,7 @@ void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uin
 		.tid = (uint32_t)thread_handle,
 		.kind = OVE_TRACE_KIND_MARK,
 		.code = (uint8_t)((prim << 4) | (act & 0x0F)),
-		.arg = (uint16_t)(object & 0xFFFFu),
+		.object = (uint32_t)object,
 	};
 	(void)ove_trace_ring_push(&rec);
 }

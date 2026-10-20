@@ -64,7 +64,7 @@ static void test_no_op_observations_take_no_slot(void)
 	records = 0;
 	ove_trace_emit_kthread_state(0x9000, OVE_THREAD_STATE_READY, OVE_TRACE_KT_ALWAYS);
 	CHECK(records == 1); /* idle still gets its lane */
-	CHECK(last.tid == 0x9000 && last.arg == OVE_THREAD_STATE_RUNNING &&
+	CHECK(last.tid == 0x9000 && last.object == OVE_THREAD_STATE_RUNNING &&
 	      last.code == OVE_THREAD_STATE_READY);
 }
 
@@ -77,7 +77,7 @@ static void test_exit_frees_the_slot(void)
 	records = 0;
 	ove_trace_emit_kthread_state(0xA000, OVE_THREAD_STATE_BLOCKED, OVE_TRACE_KT_ALWAYS);
 	CHECK(records == 1);
-	CHECK(last.arg == OVE_THREAD_STATE_RUNNING); /* a new thread, assumed running */
+	CHECK(last.object == OVE_THREAD_STATE_RUNNING); /* a new thread, assumed running */
 
 	/* Slots are reusable: more exits than the table holds still work. */
 	for (uintptr_t t = 0xB000; t < 0xB000 + 64; t++) {
@@ -102,8 +102,24 @@ static void test_from_running(void)
 	CHECK(records == 2 && last.code == OVE_THREAD_STATE_READY);
 }
 
+/* A marker carries the full object address; a state record carries the
+ * old state at the v2 offset (the dashboard reads it there) and in the
+ * object word (other decoders read it there); the pad stays zero. */
+static void test_record_carries_full_object_and_old_state(void)
+{
+	ove_trace_emit_mark(0x7000, OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_POST, 0x2000beefu);
+	CHECK(last.kind == OVE_TRACE_KIND_MARK && last.object == 0x2000beefu && last.reserved == 0);
+	CHECK(last.code == ((OVE_TRACE_PRIM_QUEUE << 4) | OVE_TRACE_ACT_POST));
+	CHECK(last.pad == 0);
+	ove_trace_emit_state_at(0x7000, OVE_THREAD_STATE_BLOCKED, OVE_THREAD_STATE_READY, 42);
+	CHECK(last.kind == OVE_TRACE_KIND_STATE && last.code == OVE_THREAD_STATE_READY);
+	CHECK(last.reserved == OVE_THREAD_STATE_BLOCKED && last.object == OVE_THREAD_STATE_BLOCKED);
+	CHECK(last.pad == 0);
+}
+
 int main(void)
 {
+	test_record_carries_full_object_and_old_state();
 	test_no_op_observations_take_no_slot();
 	test_exit_frees_the_slot();
 	test_from_running();

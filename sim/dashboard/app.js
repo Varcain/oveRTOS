@@ -1138,6 +1138,11 @@ var TRACE_WINDOW_US  = 30 * 1000 * 1000;
  * the cap only clamps pathological bursts where the in-kernel ring would
  * otherwise flood the browser before time-based eviction ran. */
 var TRACE_MAX_RECORDS = 60000;
+/* Hard cap on the pending POSTs kept per object. Posts are pruned by time
+ * in traceEvict(); this bounds the queue when the view is paused, so the
+ * time window does not advance while records keep arriving. The oldest
+ * entries go first: a POST older than a wait's start can never wake it. */
+var TRACE_MAX_POSTS = 4096;
 /* Plot geometry: left label column + right padding. Shared by renderTrace
  * and the pan/zoom pointer handlers so pixel↔time math matches exactly. */
 var TRACE_LABEL_W = 90;
@@ -1301,6 +1306,14 @@ function traceTickLabel(tUs, stepUs) {
     return (tUs / 1e6).toFixed(dec) + "s";
 }
 
+var TRACE_ACT_WAIT_ENTER = 1;
+var TRACE_ACT_WAIT_EXIT  = 2;
+var TRACE_ACT_POST       = 3;
+
+/* Colors for the wait-flow arcs, keyed by OVE_TRACE_PRIM_*. */
+var TRACE_PRIM_COLORS = { 1: "#e8b34a", 2: "#6fb3ff", 3: "#b58cff",
+                          4: "#ff8fb1", 5: "#5fd39a", 15: "#9aa7b8" };
+
 /* Names for OVE_TRACE_PRIM_* / OVE_TRACE_ACT_* nibble codes in mark.code. */
 function tracePrimName(p) {
     return p === 1 ? "mutex"
@@ -1322,7 +1335,13 @@ function traceActName(a) {
 /* Per-thread lane state: last state + last timestamp (for closing span). */
 var traceThreads = {};            /* tid -> { name, lastState, lastTs } */
 var traceSpans   = [];            /* [{tid, start, end, state, gap?}] */
-var traceMarks   = [];            /* [{tid, ts, prim, act}] */
+var traceMarks   = [];            /* [{tid, ts, prim, act, obj}] */
+var traceFlows   = [];            /* [{tid, start, end, obj, prim, postTid, postTs}] */
+/* Pending POSTs per object (FIFO queue) and the pending WAIT_ENTER per
+ * thread, used to pair a wakeup with the post that caused it. Keyed by
+ * 0x-prefixed obj; each queued post is {ts, tid, prim}. */
+var tracePosts   = Object.create(null);
+var traceWaits   = Object.create(null);
 var traceDropped = 0;
 var traceMinTs   = 0;             /* earliest observed ts */
 var traceMaxTs   = 0;             /* latest observed ts */
@@ -1348,6 +1367,10 @@ function traceRestartTimebase() {
     }
     traceSpans = [];
     traceMarks = [];
+    /* Flows, pending posts and open waits carry old-boot timestamps. */
+    traceFlows = [];
+    tracePosts = Object.create(null);
+    traceWaits = Object.create(null);
     traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
     traceMinTs = 0;
     traceMaxTs = 0;
@@ -1366,6 +1389,9 @@ function traceResetOnReconnect() {
     traceThreads = {};
     traceSpans = [];
     traceMarks = [];
+    traceFlows = [];
+    tracePosts = Object.create(null);
+    traceWaits = Object.create(null);
     traceLaneIndex = { tids: [], spans: [], marks: [], rowOf: Object.create(null) };
     traceDropped = 0;
     traceMinTs = 0;
@@ -1398,7 +1424,75 @@ function traceEvict() {
     if (traceMarks.length > TRACE_MAX_RECORDS) {
         traceMarks.splice(0, traceMarks.length - TRACE_MAX_RECORDS);
     }
+    i = 0;
+    while (i < traceFlows.length && traceFlows[i].end < cutoff) i++;
+    if (i > 0) traceFlows.splice(0, i);
+    if (traceFlows.length > TRACE_MAX_RECORDS) {
+        traceFlows.splice(0, traceFlows.length - TRACE_MAX_RECORDS);
+    }
+    /* A post older than the window can no longer pair with a visible wait:
+     * drop the expired entries of every per-object queue. */
+    for (var pk in tracePosts) {
+        var pq = tracePosts[pk];
+        var keep = 0;
+        for (var pi = 0; pi < pq.length; pi++) {
+            if (pq[pi].ts >= cutoff) pq[keep++] = pq[pi];
+        }
+        if (keep < pq.length) pq.length = keep;
+        if (!pq.length) delete tracePosts[pk];
+    }
     if (traceSpans.length) traceMinTs = traceSpans[0].start;
+}
+
+/* Pair POST -> WAIT_EXIT per object. The wakeup is the WAIT_EXIT that
+ * follows a WAIT_ENTER on the same thread and object; the waker is taken
+ * to be the oldest POST on that object that lands inside the wait window.
+ * This is a heuristic: the backends emit POST after the waking call, so a
+ * waiter that preempts the poster leaves before the POST. That wakeup is
+ * unmatched and the late POST goes to the waiter's next wait on the
+ * object, so the arc points one post back. A broadcast pairs with one
+ * waiter only, and queue senders and receivers share the object id. */
+function tracePairMark(mk) {
+    var key = "0x" + mk.obj.toString(16);
+    if (mk.act === TRACE_ACT_POST) {
+        /* Queue the post instead of overwriting the previous one: several
+         * posts can land inside a single wait window. */
+        var pq = tracePosts[key];
+        if (!pq) pq = tracePosts[key] = [];
+        pq.push({ ts: mk.ts, tid: mk.tid, prim: mk.prim });
+        if (pq.length > TRACE_MAX_POSTS) {
+            pq.splice(0, pq.length - TRACE_MAX_POSTS);
+        }
+    } else if (mk.act === TRACE_ACT_WAIT_ENTER) {
+        /* Key by (thread, object): a thread can wait on the same object
+         * again before its exit is drained, and two objects can nest. */
+        traceWaits[mk.tid + ":" + key] = { obj: mk.obj, prim: mk.prim, start: mk.ts };
+    } else if (mk.act === TRACE_ACT_WAIT_EXIT) {
+        var wkey = mk.tid + ":" + key;
+        var w = traceWaits[wkey];
+        if (!w) return;
+        delete traceWaits[wkey];
+        if (mk.ts <= w.start) return;
+        /* FIFO: take the oldest pending post that falls inside this wait
+         * window and consume it. A post wakes a single waiter, so it is
+         * removed from the queue once used; posts outside the window stay
+         * queued for a waiter they can actually belong to. */
+        var paired = null;
+        var q = tracePosts[key];
+        if (q) {
+            for (var qi = 0; qi < q.length; qi++) {
+                if (q[qi].ts >= w.start && q[qi].ts <= mk.ts) {
+                    paired = q.splice(qi, 1)[0];
+                    break;
+                }
+            }
+            if (!q.length) delete tracePosts[key];
+        }
+        traceFlows.push({ tid: mk.tid, start: w.start, end: mk.ts,
+                          obj: mk.obj, prim: w.prim,
+                          postTid: paired ? paired.tid : null,
+                          postTs: paired ? paired.ts : null });
+    }
 }
 
 function handleTrace(buf, off) {
@@ -1441,6 +1535,11 @@ function handleTrace(buf, off) {
                      * fall back to dropping the stale history. */
                     traceSpans = traceSpans.filter(function (sp) { return sp.tid !== tid; });
                     traceMarks = traceMarks.filter(function (mk) { return mk.tid !== tid; });
+                    traceFlows = traceFlows.filter(function (fl) {
+                        return fl.tid !== tid && fl.postTid !== tid; });
+                    for (var wk in traceWaits) {
+                        if (wk.indexOf(tid + ":") === 0) delete traceWaits[wk];
+                    }
                     th.lastState = -1;
                     th.lastTs = 0;
                     th.hasData = false;
@@ -1458,10 +1557,12 @@ function handleTrace(buf, off) {
     }
     if (subType !== 1) return;
 
-    /* STREAM — 16-byte records. */
+    /* STREAM — 24-byte v3 records; 16-byte v2 records are still accepted.
+     * The first 16 bytes share a layout, so only the object id moves. */
+    var recSize = version >= 3 ? 24 : 16;
     for (var j = 0; j < count; j++) {
-        var p0 = base + j * 16;
-        if (p0 + 16 > dv.byteLength) break;
+        var p0 = base + j * recSize;
+        if (p0 + recSize > dv.byteLength) break;
         /* ts_us: read as two uint32 LE and combine. Safe up to 2^53 us. */
         var tsLo = dv.getUint32(p0, true);
         var tsHi = dv.getUint32(p0 + 4, true);
@@ -1469,7 +1570,8 @@ function handleTrace(buf, off) {
         var tid = dv.getUint32(p0 + 8, true);
         var kind = dv.getUint8(p0 + 12);
         var code = dv.getUint8(p0 + 13);
-        var arg  = dv.getUint16(p0 + 14, true);
+        var oldState = dv.getUint16(p0 + 14, true);
+        var object = version >= 3 ? dv.getUint32(p0 + 16, true) : oldState;
 
         /* A step back of a second or more is the guest timebase restarting
          * (board reset without a reconnect): start the view over. */
@@ -1495,8 +1597,8 @@ function handleTrace(buf, off) {
             /* TERMINATED is final: the next record belongs to a new
              * thread on the same storage, in exact ring order. */
             if (th.lastState === TRACE_STATE_TERMINATED) th.restarted = true;
-            var reused = th.lastState === TRACE_STATE_TERMINATED && arg === TRACE_STATE_READY;
-            var gap = th.lastState >= 0 && !reused && arg !== th.lastState;
+            var reused = th.lastState === TRACE_STATE_TERMINATED && oldState === TRACE_STATE_READY;
+            var gap = th.lastState >= 0 && !reused && oldState !== th.lastState;
             /* Close out the previous span for this thread. */
             if (th.lastState >= 0 && ts > th.lastTs) {
                 traceSpans.push({ tid: tid, start: th.lastTs, end: ts,
@@ -1508,9 +1610,11 @@ function handleTrace(buf, off) {
              * on each lane's spans being sorted and non-overlapping. */
             th.lastTs = Math.max(th.lastTs, ts);
         } else if (kind === TRACE_KIND_MARK) {
-            traceMarks.push({ tid: tid, ts: ts,
-                              prim: (code >> 4) & 0x0F, act: code & 0x0F,
-                              arg: arg });
+            var mk = { tid: tid, ts: ts,
+                       prim: (code >> 4) & 0x0F, act: code & 0x0F,
+                       obj: object };
+            traceMarks.push(mk);
+            tracePairMark(mk);
         }
     }
 
@@ -1641,6 +1745,32 @@ function renderTrace() {
     }
     ctx.globalAlpha = 1;
 
+    /* Wait flows: dashed arc from the POST that woke a thread to its
+     * WAIT_EXIT. Drawn under the markers so the glyphs stay legible. */
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    for (var fi = 0; fi < traceFlows.length; fi++) {
+        var fl = traceFlows[fi];
+        if (fl.postTid === null || fl.end < tStart || fl.start > tEnd) continue;
+        var prow = tids.indexOf(fl.postTid);
+        var wrow = tids.indexOf(fl.tid);
+        if (prow < 0 || wrow < 0) continue;
+        var fx0 = plotX + ((Math.max(fl.postTs, tStart) - tStart) / span) * plotW;
+        var fx1 = plotX + ((Math.min(fl.end, tEnd) - tStart) / span) * plotW;
+        var fy0 = axisY + axisH + prow * laneH + laneH / 2;
+        var fy1 = axisY + axisH + wrow * laneH + laneH / 2;
+        ctx.globalAlpha = (selTid !== null && fl.tid !== selTid && fl.postTid !== selTid)
+            ? 0.12 : 0.45;
+        ctx.strokeStyle = TRACE_PRIM_COLORS[fl.prim] || "#aaa";
+        ctx.beginPath();
+        ctx.moveTo(fx0, fy0);
+        var midx = (fx0 + fx1) / 2;
+        ctx.bezierCurveTo(midx, fy0, midx, fy1, fx1, fy1);
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
     /* Draw markers as small triangles at the top of the lane. */
     ctx.fillStyle = "#ffffff";
     for (var mrow = 0; mrow < tids.length; mrow++) {
@@ -1664,7 +1794,8 @@ function renderTrace() {
     if (info) {
         info.textContent = tids.length + " threads, "
             + traceSpans.length + " spans, "
-            + traceMarks.length + " marks"
+            + traceMarks.length + " marks, "
+            + traceFlows.length + " flows"
             + (traceDropped ? ", " + traceDropped + " dropped" : "");
     }
 }
@@ -1889,11 +2020,25 @@ function traceBindPanel() {
                 if (dx < bestDx) { bestDx = dx; best = mk; }
             }
             if (best && bestDx <= 6) {
-                tip.textContent = rowName + "  "
+                var msg = rowName + "  "
                     + tracePrimName(best.prim) + " "
                     + traceActName(best.act)
-                    + "  obj=0x" + best.arg.toString(16)
+                    + "  obj=0x" + best.obj.toString(16)
                     + "  @ " + (best.ts / 1e6).toFixed(3) + "s";
+                if (best.act === TRACE_ACT_WAIT_EXIT) {
+                    for (var fw = 0; fw < traceFlows.length; fw++) {
+                        var wf = traceFlows[fw];
+                        if (wf.tid !== best.tid || wf.end !== best.ts
+                            || wf.obj !== best.obj) continue;
+                        msg += "  wait " + traceDurText(wf.end - wf.start);
+                        msg += wf.postTid === null ? " (unmatched)"
+                             : " (posted by " + (traceThreads[wf.postTid]
+                                 ? traceThreads[wf.postTid].name
+                                 : "0x" + wf.postTid.toString(16)) + ")";
+                        break;
+                    }
+                }
+                tip.textContent = msg;
                 tip.style.display = "block";
                 tip.style.left = (xCss + 12) + "px";
                 tip.style.top  = (yCss + 12) + "px";

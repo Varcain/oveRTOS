@@ -45,7 +45,7 @@ static struct ove_trace_record make_rec(uint32_t tid, uint64_t seq)
 	r.tid = tid;
 	r.kind = 1;
 	r.code = (uint8_t)(seq & 0xFF);
-	r.arg = (uint16_t)(seq & 0xFFFF);
+	r.object = (uint32_t)seq;
 	return r;
 }
 
@@ -75,7 +75,7 @@ static void test_fifo_order(void)
 	for (size_t i = 0; i < n; i++) {
 		CHECK(out[i].tid == 7);
 		CHECK(out[i].ts_us == i);
-		CHECK(out[i].arg == (uint16_t)i);
+		CHECK(out[i].object == (uint32_t)i);
 	}
 	CHECK(ove_trace_ring_dropped_get() == 0);
 	CHECK(ove_trace_ring_drain(out, 128) == 0);
@@ -220,7 +220,7 @@ static void *drainer(void *p)
 		for (size_t i = 0; i < n; i++) {
 			uint32_t pi = out[i].tid - 200u;
 			if (pi >= PRODUCERS || out[i].ts_us != d->next[pi] ||
-			    out[i].arg != (uint16_t)out[i].ts_us) {
+			    out[i].object != (uint32_t)out[i].ts_us) {
 				d->bad++;
 				continue;
 			}

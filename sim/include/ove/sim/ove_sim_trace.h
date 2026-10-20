@@ -17,11 +17,11 @@
  *
  * Frame payload (both subtypes share a common envelope):
  *   [uint8_t  sub_type]          0 = DESCRIPTORS, 1 = STREAM
- *   [uint8_t  version]           OVE_SIM_TRACE_VERSION (2)
+ *   [uint8_t  version]           OVE_SIM_TRACE_VERSION (3)
  *   [uint16_t count]             number of records
  *   [uint32_t dropped]           records dropped since last emit
  *   Records follow, @count of them:
- *     STREAM: 16 bytes each — matches struct ove_trace_record
+ *     STREAM: 24 bytes each — matches struct ove_trace_record
  *     DESCRIPTORS:
  *       [uint32_t tid]
  *       [uint32_t generation] (v2; new for every thread start, 0 for
@@ -54,8 +54,10 @@ extern "C" {
 #define OVE_SIM_TRACE_SUB_STREAM 1
 
 /** Envelope version (bumped on incompatible format change).
- *  v2: descriptors carry a per-thread generation word. */
-#define OVE_SIM_TRACE_VERSION 2
+ *  v2: descriptors carry a per-thread generation word.
+ *  v3: stream records grow to 24 B and carry a 32-bit object id; the
+ *      dashboard still decodes v2 (16 B). */
+#define OVE_SIM_TRACE_VERSION 3
 
 /** Drain period for stream records (ms). */
 #define OVE_SIM_TRACE_DRAIN_MS 100
@@ -64,7 +66,7 @@ extern "C" {
 #define OVE_SIM_TRACE_DESC_MS 500
 
 /** Maximum records per stream emission. Keeps the per-event payload
- *  (envelope 8 + records * 16) below the bridge's 4 KiB message cap. */
+ *  (envelope 8 + records * 24 = 3080 B) below the bridge's 4 KiB cap. */
 #define OVE_SIM_TRACE_MAX_BATCH 128
 
 /** Maximum threads per descriptor emission. */

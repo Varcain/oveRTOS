@@ -196,7 +196,7 @@ u16 count
 u32 dropped       records lost since the previous batch
 ```
 
-Stream records are 16 bytes each (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 arg` (previous state for state records; low 16 bits of the object address for marks). Descriptors repeat `u32 tid`, `u32 generation` (since version 2; new for every thread start, so a new thread on reused storage starts a new lane, and 0 for threads that are not ove threads), `u8 name_len`, `char name[name_len]`.
+Stream records are 24 bytes each in the current format (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 reserved` (previous state for v3 state records; low 16 bits of the object address in the legacy v2 layout), `u32 object` (previous state for state records; full 32 bits of the object address for marks), `u32 pad` (always 0). The dashboard also decodes 16-byte v2 records. Descriptors repeat `u32 tid`, `u32 generation` (since version 2; new for every thread start, so a new thread on reused storage starts a new lane, and 0 for threads that are not ove threads), `u8 name_len`, `char name[name_len]`.
 
 **Profiler samples** (`OVE_SIM_PROFILER_EVT_SAMPLES` = 20). Envelope:
 
@@ -219,7 +219,7 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 | `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` if SIM | Per-thread state time tracking (prerequisite for trace and profiler) |
 | `CONFIG_OVE_TRACE_STREAM` | bool | `y` if SIM | Emit state transitions into the trace ring |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) |
-| `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 16-byte records |
+| `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
 | `CONFIG_OVE_PROFILER` | bool | `y` | Sampling profiler |
 | `CONFIG_OVE_PROFILER_HZ` | int | 250 | Mean sample rate (10–1000 Hz) |
 | `CONFIG_OVE_PROFILER_MAX_DEPTH` | int | 32 | Maximum captured stack depth |

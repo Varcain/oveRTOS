@@ -1247,10 +1247,13 @@ def _profiler_dump_samples(payload):
 #   v1: descriptor record = tid(4) | name_len(1) | name
 #   v2: the descriptor record gained the per-thread generation word:
 #       tid(4) | generation(4) | name_len(1) | name
-#       Newer versions are assumed to keep the v2 descriptor layout.
+#   v3: only the stream records changed (24 B), the v2 descriptor layout
+#       is unchanged.  Newer versions are assumed to keep it - the same
+#       assumption the dashboard makes for the stream record size
+#       (version >= 3 ? 24 : 16).
 TRACE_VERSION_V1 = 1
 TRACE_VERSION_V2 = 2
-TRACE_VERSION_KNOWN = 2
+TRACE_VERSION_KNOWN = 3
 
 # Trace versions already reported to the operator.  The descriptor batch
 # arrives every 500 ms, so a warning must not be repeated for every batch.
@@ -1276,7 +1279,7 @@ def _trace_dump_descriptors(payload):
     The envelope version byte selects the record layout: v1 carries
     tid | name_len | name, v2 and later add the per-thread generation
     word (tid | generation | name_len | name).  The guest of this tree
-    emits v2, but an older guest binary (v1) may still talk to the
+    emits v3, but an older guest binary (v1) may still talk to the
     bridge, so the layout is taken from the version byte instead of
     unconditionally skipping four bytes."""
     if len(payload) < 8:

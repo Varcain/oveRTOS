@@ -89,7 +89,7 @@ static size_t count(uint32_t tid, uint32_t from, uint32_t to)
 	size_t c = 0;
 	for (size_t i = 0; i < n_records; i++)
 		if (records[i].kind == OVE_TRACE_KIND_STATE && records[i].tid == tid &&
-		    records[i].arg == from && records[i].code == to)
+		    records[i].object == from && records[i].code == to)
 			c++;
 	return c;
 }

@@ -96,7 +96,7 @@ class DescriptorDecodeTest(unittest.TestCase):
 
     def test_v2_layout_recovers_tid_and_name(self):
         # The guest's current layout (v2+, generation word present).
-        payload = envelope(2, [
+        payload = envelope(3, [
             desc_v2(0x1000, 0x00000000, "alpha"),
             desc_v2(0x2000, 0x00000001, "beta"),
             desc_v2(0x3000, 0x01020304, "gamma"),
@@ -107,12 +107,19 @@ class DescriptorDecodeTest(unittest.TestCase):
             [(0x1000, "alpha"), (0x2000, "beta"), (0x3000, "gamma")])
 
     def test_v2_layout_reports_the_generation(self):
-        payload = envelope(2, [
+        payload = envelope(3, [
             desc_v2(0x1000, 0x00000005, "alpha"),
             desc_v2(0x2000, 0x01020304, "beta"),
         ])
         _lines, parsed = self.dump(payload)
         self.assertEqual([gen for (_t, _n, gen) in parsed], [0x5, 0x01020304])
+
+    def test_v2_guest_descriptors_still_decode(self):
+        # A v2 guest (16-byte stream records) sends the same descriptor
+        # layout as v3.
+        payload = envelope(2, [desc_v2(0x1000, 0x00000007, "alpha")])
+        _lines, parsed = self.dump(payload)
+        self.assertEqual(parsed, [(0x1000, "alpha", 0x7)])
 
     def test_v1_layout_recovers_tid_and_name(self):
         # An older guest (v1) sends no generation word.
@@ -130,7 +137,7 @@ class DescriptorDecodeTest(unittest.TestCase):
 
     def test_v2_and_v1_payloads_differ_only_in_the_version_byte(self):
         # The layout is taken from the version byte, not guessed.
-        v2 = envelope(2, [desc_v2(0x1000, 0x00000000, "alpha")])
+        v2 = envelope(3, [desc_v2(0x1000, 0x00000000, "alpha")])
         v1 = envelope(1, [desc_v1(0x1000, "alpha")])
         _l2, parsed2 = self.dump(v2)
         _l1, parsed1 = self.dump(v1)
@@ -140,7 +147,7 @@ class DescriptorDecodeTest(unittest.TestCase):
     def test_truncated_v2_payload_is_dropped(self):
         # The record header is complete but the name bytes are missing:
         # the decoder must bail out instead of emitting a partial entry.
-        full = envelope(2, [desc_v2(0x1000, 0x00000000, "alpha")])
+        full = envelope(3, [desc_v2(0x1000, 0x00000000, "alpha")])
         truncated = full[:-len("alpha")]
         lines, parsed = self.dump(truncated)
         self.assertEqual(parsed, [])
@@ -155,14 +162,14 @@ class DescriptorDecodeTest(unittest.TestCase):
 
     def test_truncated_record_header_is_dropped(self):
         # One byte short of the fixed record header.
-        payload = struct.pack("<BBHI", 0, 2, 1, 0) + struct.pack("<II", 0x1000, 0)
+        payload = struct.pack("<BBHI", 0, 3, 1, 0) + struct.pack("<II", 0x1000, 0)
         lines, parsed = self.dump(payload)
         self.assertEqual(parsed, [])
         self.assertEqual([ln for ln in lines if ln.startswith("[dump-desc] tid=")], [])
 
     def test_count_larger_than_the_payload_is_bounded(self):
         # A lying count must not make the decoder walk past the payload.
-        payload = envelope(2, [desc_v2(0x1000, 0x00000000, "alpha")], count=1000)
+        payload = envelope(3, [desc_v2(0x1000, 0x00000000, "alpha")], count=1000)
         _lines, parsed = self.dump(payload)
         self.assertEqual([(t, n) for (t, n, _g) in parsed], [(0x1000, "alpha")])
 
@@ -191,7 +198,7 @@ class DescriptorDecodeTest(unittest.TestCase):
         self.assertTrue(any(WARN_RE.match(ln) for ln in lines))
 
     def test_non_descriptor_subtype_is_ignored(self):
-        payload = struct.pack("<BBHI", 1, 2, 1, 0) + desc_v2(0x1000, 0, "alpha")
+        payload = struct.pack("<BBHI", 1, 3, 1, 0) + desc_v2(0x1000, 0, "alpha")
         lines, parsed = self.dump(payload)
         self.assertEqual(parsed, [])
         self.assertEqual(lines, [])

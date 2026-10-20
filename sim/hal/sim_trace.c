@@ -37,14 +37,14 @@ static struct sim_trace_ctx trace_ctx;
 
 /* ── STREAM emission ──────────────────────────────────────────────── */
 
-/* Envelope is 1+1+2+4 = 8 bytes followed by @count * 16 byte records. */
+/* Envelope is 1+1+2+4 = 8 bytes followed by @count * 24 byte records. */
 #define STREAM_ENVELOPE_BYTES 8
 #define STREAM_BUF_BYTES \
 	(STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_BATCH * sizeof(struct ove_trace_record))
 
 _Static_assert(sizeof(struct ove_sim_event) + STREAM_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
 	       "trace batch exceeds OVE_SIM_EVENT_MAX_BYTES");
-_Static_assert(sizeof(struct ove_trace_record) == 16, "trace record wire size is 16 bytes");
+_Static_assert(sizeof(struct ove_trace_record) == 24, "trace record wire size is 24 bytes");
 
 /* Pump-scoped scratch. The trace plugin emits from the consolidated
  * sim-debug pump thread only, so these are single-threaded. Keeping them

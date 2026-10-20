@@ -141,35 +141,44 @@ export function traceDescriptors(entries, dropped = 0) {
     return dv.buffer;
 }
 
-/** Build an OVE_SIM_TRACE_EVT_STREAM payload from record tuples. */
-export function traceStream(records, dropped = 0) {
-    const dv = new DataView(new ArrayBuffer(8 + records.length * 16));
+/** Build an OVE_SIM_TRACE_EVT_STREAM payload from record tuples.
+ *  Defaults to the current v3 layout; pass version=2 for the legacy
+ *  16-byte layout. */
+export function traceStream(records, dropped = 0, version = 3) {
+    const recSize = version >= 3 ? 24 : 16;
+    const dv = new DataView(new ArrayBuffer(8 + records.length * recSize));
     dv.setUint8(0, 1); /* sub_type */
-    dv.setUint8(1, 1); /* version */
+    dv.setUint8(1, version);
     dv.setUint16(2, records.length, true);
     dv.setUint32(4, dropped, true);
     let p = 8;
     for (const r of records) {
         const ts = BigInt(r.ts);
+        const obj = r.obj !== undefined ? r.obj : (r.arg || 0);
         dv.setUint32(p, Number(ts & 0xffffffffn), true);
         dv.setUint32(p + 4, Number((ts >> 32n) & 0xffffffffn), true);
         dv.setUint32(p + 8, r.tid, true);
         dv.setUint8(p + 12, r.kind);
         dv.setUint8(p + 13, r.code);
-        dv.setUint16(p + 14, r.arg, true);
-        p += 16;
+        if (version >= 3) {
+            dv.setUint16(p + 14, r.reserved !== undefined ? r.reserved : 0, true);
+            dv.setUint32(p + 16, obj >>> 0, true);
+        } else {
+            dv.setUint16(p + 14, obj & 0xffff, true);
+        }
+        p += recSize;
     }
     return dv.buffer;
 }
 
 /** A state transition record. */
 export function stateRec(ts, tid, oldState, newState) {
-    return { ts, tid, kind: 1, code: newState, arg: oldState };
+    return { ts, tid, kind: 1, code: newState, reserved: oldState, obj: oldState };
 }
 
 /** A sync-primitive marker record. */
-export function markRec(ts, tid, prim, act, arg) {
-    return { ts, tid, kind: 2, code: ((prim & 0xf) << 4) | (act & 0xf), arg };
+export function markRec(ts, tid, prim, act, obj) {
+    return { ts, tid, kind: 2, code: ((prim & 0xf) << 4) | (act & 0xf), obj };
 }
 
 /** Build a FRAME_PROFILE samples body: the bridge's PROFILE_SUB_SAMPLES
