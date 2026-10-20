@@ -21,8 +21,9 @@
  * +/-25% so the sampler cannot phase-lock with periodic work either.
  *
  * Multi-frame unwinding: the stack-scan walker and the five heuristic
- * filters (Thumb bit, text range, bl/blx precedence, saved-r7 adjacency,
- * ascending-chain invariant) live in backends/common/ove_arm_backtrace.c.
+ * filters (Thumb bit, text range, bl/blx precedence, saved-r7 value
+ * window, ascending-chain invariant) live in
+ * backends/common/ove_arm_backtrace.c.
  * We only pass the FreeRTOS-specific bounds:
  *   - text bounds: [OVE_BOARD_PROFILER_TEXT_START, OVE_BOARD_PROFILER_TEXT_END)
  *     from the linker script (__stext is placed right after the ISR vector

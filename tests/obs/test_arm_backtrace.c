@@ -100,6 +100,234 @@ static void test_full_chain(void)
 		CHECK(out[k] == (ret_addr((unsigned)k) & ~1u));
 }
 
+/*
+ * Functions that use high registers push the whole callee-saved block,
+ * e.g. `stmdb sp!, {r4-r9, sl, fp, lr}`, so the saved r7 is up to five
+ * words below the saved LR instead of immediately adjacent. The walker
+ * used to require adjacency and truncated such chains at the first
+ * r8-clobbering frame (Zephyr LVGL stacks never reached thread_wrapper).
+ */
+static void test_wide_push_block(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+	unsigned w = 8;
+	for (unsigned k = 0; k < 3; k++) {
+		unsigned lr_slot = w + 8;
+		stack[w + 0] = 0x44444444u; /* saved r4 */
+		stack[w + 1] = 0x55555555u; /* saved r5 */
+		stack[w + 2] = 0x66666666u; /* saved r6 */
+		/* saved r7 = caller SP at the call (K = 0) */
+		stack[w + 3] = (uint32_t)(uintptr_t)&stack[lr_slot + 1];
+		stack[w + 4] = 0x88888888u; /* saved r8 */
+		stack[w + 5] = 0x99999999u; /* saved r9 */
+		stack[w + 6] = 0xAAAA4444u; /* saved sl */
+		stack[w + 7] = 0xBBBB4444u; /* saved fp */
+		stack[lr_slot] = ret_addr(k);
+		w = lr_slot + 1;
+	}
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[w], out, 8);
+	CHECK(n == 3);
+	for (int k = 0; k < n && k < 3; k++)
+		CHECK(out[k] == (ret_addr((unsigned)k) & ~1u));
+}
+
+/*
+ * The saved r7 is not always the word nearest the saved LR: a callee
+ * that uses the high registers saves r8-r11 between the saved r7 and
+ * the saved LR.  A saved r9 that happens to hold a pointer into an
+ * outer frame's locals passes the plausible-saved-r7 value filter, so
+ * the candidate has to be picked BY VALUE (the word closest to
+ * saved_lr_slot + 4, the modal K = 0) and not by position.  Anchoring
+ * on the r9 also breaks the ascending-chain filter for the next frame
+ * (the bogus anchor sits above the caller's real saved r7), so the
+ * caller drops out of the trace.
+ */
+static void test_r7_picked_by_value(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+
+	/*
+	 * F0: push {r4, r7, r8, r9, sl, lr}
+	 *   words 8..13 hold the saved r4, the saved r7 (K = 0), the saved
+	 *   r8, the saved r9, the saved sl and the saved lr.  The saved r9
+	 *   holds a pointer to a local of F2: an SRAM address inside the
+	 *   plausible-saved-r7 window, but not a saved r7.
+	 */
+	stack[8] = 0x11111111u;
+	stack[9] = (uint32_t)(uintptr_t)&stack[14];
+	stack[10] = 0x22222222u;
+	stack[11] = (uint32_t)(uintptr_t)&stack[23];
+	stack[12] = 0x33333333u;
+	stack[13] = ret_addr(0);
+
+	/* F1: two words of locals, then push {r4, r7, r8, r9, sl, lr} */
+	stack[14] = 0xEEEEEEEEu;
+	stack[15] = 0xEEEEEEEEu;
+	stack[16] = 0x44444444u;
+	stack[17] = (uint32_t)(uintptr_t)&stack[22];
+	stack[18] = 0x55555555u;
+	stack[19] = 0x66666666u;
+	stack[20] = 0x77777777u;
+	stack[21] = ret_addr(1);
+
+	/* F2: three words of locals, then push {r7, lr} */
+	stack[22] = 0xEEEEEEEEu;
+	stack[23] = 0xEEEEEEEEu;
+	stack[24] = 0xEEEEEEEEu;
+	stack[25] = (uint32_t)(uintptr_t)&stack[27];
+	stack[26] = ret_addr(2);
+
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[27], out, 8);
+	CHECK(n == 3);
+	for (int k = 0; k < n && k < 3; k++)
+		CHECK(out[k] == (ret_addr((unsigned)k) & ~1u));
+}
+
+/*
+ * The widest prologue GCC emits for a frame-pointer build,
+ * `push {r4, r5, r6, r7, r8, r9, sl, fp, lr}`, puts the saved r7 exactly
+ * five words below the saved LR — the very edge of the walker's five-word
+ * search window.  A callee-saved register sitting next to the saved LR
+ * that holds a pointer into an outer frame passes the plausible-saved-r7
+ * value filter, so the anchor has to be picked BY VALUE (the word closest
+ * to saved_lr_slot + 4) and not by position: anchoring on the high
+ * register breaks the ascending-chain filter and drops the caller frames.
+ */
+static void test_widest_push_block_picks_r7_by_value(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+
+	/* F0: push {r4, r5, r6, r7, r8, r9, sl, fp, lr} — the saved r7 is
+	 * five words below the saved LR, the saved fp is right below it and
+	 * holds a pointer into F2's frame. */
+	stack[8] = 0x44444444u;	 /* saved r4 */
+	stack[9] = 0x55555555u;	 /* saved r5 */
+	stack[10] = 0x66666666u; /* saved r6 */
+	/* saved r7 (K = 0) */
+	stack[11] = (uint32_t)(uintptr_t)&stack[17];
+	stack[12] = 0x88888888u; /* saved r8 */
+	stack[13] = 0x99999999u; /* saved r9 */
+	stack[14] = 0xAAAA4444u; /* saved sl */
+	/* saved fp: not an r7 */
+	stack[15] = (uint32_t)(uintptr_t)&stack[30];
+	stack[16] = ret_addr(0);
+
+	/* F1: two words of locals, then the same nine-word push block */
+	stack[17] = 0xEEEEEEEEu;
+	stack[18] = 0xEEEEEEEEu;
+	stack[19] = 0x44444444u; /* saved r4 */
+	stack[20] = 0x55555555u; /* saved r5 */
+	stack[21] = 0x66666666u; /* saved r6 */
+	/* saved r7 (K = 0) */
+	stack[22] = (uint32_t)(uintptr_t)&stack[28];
+	stack[23] = 0x88888888u; /* saved r8 */
+	stack[24] = 0x99999999u; /* saved r9 */
+	stack[25] = 0xAAAA4444u; /* saved sl */
+	/* saved fp: not an r7 */
+	stack[26] = (uint32_t)(uintptr_t)&stack[45];
+	stack[27] = ret_addr(1);
+
+	/* F2: three words of locals, then the same nine-word push block */
+	stack[28] = 0xEEEEEEEEu;
+	stack[29] = 0xEEEEEEEEu;
+	stack[30] = 0xEEEEEEEEu;
+	stack[31] = 0x44444444u; /* saved r4 */
+	stack[32] = 0x55555555u; /* saved r5 */
+	stack[33] = 0x66666666u; /* saved r6 */
+	/* saved r7 (K = 0) */
+	stack[34] = (uint32_t)(uintptr_t)&stack[40];
+	stack[35] = 0x88888888u; /* saved r8 */
+	stack[36] = 0x99999999u; /* saved r9 */
+	stack[37] = 0xAAAA4444u; /* saved sl */
+	stack[38] = 0xBBBB4444u; /* saved fp */
+	stack[39] = ret_addr(2);
+
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[40], out, 8);
+	CHECK(n == 3);
+	for (int k = 0; k < n && k < 3; k++)
+		CHECK(out[k] == (ret_addr((unsigned)k) & ~1u));
+}
+
+/* A stale {r7, lr} pair in an outer frame's locals is rejected when it
+ * sits at or below the address the last accepted saved r7 points to,
+ * even though its own saved-r7 value lies above that saved r7. */
+static void test_stale_pair_below_accepted_r7(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+	/* F0: push {r7, lr}; the saved r7 is F1's r7 = F1's SP + 16 (K = 16) */
+	stack[8] = (uint32_t)(uintptr_t)&stack[14];
+	stack[9] = ret_addr(0);
+	/* F1 locals 10..15 hold a stale pair whose saved r7 fits its own
+	 * window (K = 8) and lies above F0's saved r7 */
+	stack[11] = (uint32_t)(uintptr_t)&stack[15];
+	stack[12] = ret_addr(5);
+	/* F1: push {r7, lr} */
+	stack[16] = (uint32_t)(uintptr_t)&stack[18];
+	stack[17] = ret_addr(1);
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[18], out, 8);
+	CHECK(n == 2);
+	CHECK(n < 1 || out[0] == (ret_addr(0) & ~1u));
+	CHECK(n < 2 || out[1] == (ret_addr(1) & ~1u));
+}
+
+/* A word below the saved r7 can also fall in the value window (here a
+ * saved r6 holding a pointer further up).  The pick is the value closest
+ * to the saved-LR slot, not the lowest word: anchoring on the r6 would put
+ * the caller's push block below the anchor and drop the caller. */
+static void test_r7_picked_over_a_lower_candidate(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+	/* F0: push {r6, r7, r8, lr} */
+	stack[8] = (uint32_t)(uintptr_t)&stack[22]; /* saved r6, K = 40 */
+	stack[9] = (uint32_t)(uintptr_t)&stack[12]; /* saved r7, K = 0 */
+	stack[10] = 0x88888888u;		    /* saved r8 */
+	stack[11] = ret_addr(0);
+	/* F1: two words of locals, then push {r7, lr} */
+	stack[14] = (uint32_t)(uintptr_t)&stack[16];
+	stack[15] = ret_addr(1);
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[16], out, 8);
+	CHECK(n == 2);
+	CHECK(n < 2 || out[1] == (ret_addr(1) & ~1u));
+}
+
+/* The push block holds at most five words below the saved LR; a fitting
+ * value six words below it is not a saved r7. */
+static void test_push_block_is_five_words(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+	stack[8] = (uint32_t)(uintptr_t)&stack[15];
+	stack[14] = ret_addr(0);
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[16], out, 8);
+	CHECK(n == 0);
+}
+
+/* The push block is searched only down to the scan start: a word in the
+ * exception frame below it is never taken as the saved r7, even when its
+ * value would pass as one. */
+static void test_push_block_stops_at_scan_start(void)
+{
+	memset(stack, 0, STACK_WORDS * 4u);
+	/* stack[0..7] is the exception frame; the scan starts at stack[8]. */
+	stack[7] = (uint32_t)(uintptr_t)&stack[9];
+	stack[8] = ret_addr(0);
+	uintptr_t out[8];
+	int n = ove_arm_backtrace_walk((uintptr_t)stack, text_lo(), text_hi(), (uintptr_t)stack,
+				       (uintptr_t)&stack[16], out, 8);
+	CHECK(n == 0);
+}
+
 /* Never-written locals still hold the RTOS stack fill pattern; that must
  * not end the scan (it used to). */
 static void test_fill_pattern_inside_frames(void)
@@ -218,6 +446,13 @@ int main(void)
 	stack = (uint32_t *)s;
 
 	test_full_chain();
+	test_wide_push_block();
+	test_r7_picked_by_value();
+	test_widest_push_block_picks_r7_by_value();
+	test_stale_pair_below_accepted_r7();
+	test_r7_picked_over_a_lower_candidate();
+	test_push_block_is_five_words();
+	test_push_block_stops_at_scan_start();
 	test_fill_pattern_inside_frames();
 	test_stops_at_stack_top();
 	test_max_slots();
