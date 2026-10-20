@@ -85,7 +85,7 @@ This builds every `(board, RTOS, app)` combination via fragment composition. The
 
 | Language | Formatter | Linter |
 |---|---|---|
-| C / C++ | `clang-format` (Linux kernel style with project overrides) | `clang-tidy` (config in `.clang-tidy`) |
+| C / C++ | `clang-format` 23.1.3, as in CI (Linux kernel style with project overrides) | `clang-tidy` (config in `.clang-tidy`) |
 | Rust | `cargo fmt` | `cargo clippy -- -D warnings -W pedantic -W nursery` |
 | Zig | `zig fmt` | `zig ast-check` |
 | Python | `ruff format` | `ruff check` |

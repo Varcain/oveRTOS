@@ -348,6 +348,5 @@ template <class T> [[nodiscard]] inline Result<std::decay_t<T>> from_rc(int rc, 
  */
 namespace std
 {
-template <> struct is_error_code_enum<ove::Error> : true_type {
-};
+template <> struct is_error_code_enum<ove::Error> : true_type {};
 } /* namespace std */

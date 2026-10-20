@@ -670,7 +670,8 @@ static void test_channel_map_stereo_to_mono(void **state)
 
 	/* Extract right channel (index 1) to mono */
 	struct ove_audio_channel_map map = {
-		.out_channels = 1, .map = {1}, /* out ch0 = in ch1 (right) */
+		.out_channels = 1,
+		.map = {1}, /* out ch0 = in ch1 (right) */
 	};
 	int mapper = ove_audio_node_channel_map(&g, &map, "r-to-mono");
 
@@ -1309,7 +1310,8 @@ static void test_channel_map_stereo_to_mono_node(void **state)
 
 	/* Extract left channel (index 0) to mono */
 	struct ove_audio_channel_map map = {
-		.out_channels = 1, .map = {0}, /* out ch0 = in ch0 (left) */
+		.out_channels = 1,
+		.map = {0}, /* out ch0 = in ch0 (left) */
 	};
 	int mapper = ove_audio_node_channel_map(&g, &map, "l-to-mono");
 
@@ -1347,7 +1349,8 @@ static void test_channel_map_silence_channel(void **state)
 
 	/* Map output channel 0 to silence (-1) */
 	struct ove_audio_channel_map map = {
-		.out_channels = 1, .map = {-1}, /* silence */
+		.out_channels = 1,
+		.map = {-1}, /* silence */
 	};
 	int mapper = ove_audio_node_channel_map(&g, &map, "silence");
 

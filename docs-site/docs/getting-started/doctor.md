@@ -88,7 +88,7 @@ These are `WARN` when missing because they are only needed for their respective 
 
 | Check | Required for | Notes |
 |---|---|---|
-| `clang-format` | `make format` / `make lint` | Skipped silently if missing |
+| `clang-format` | `make format` / `make lint` | CI uses 23.1.3 (`pip install clang-format==23.1.3`); use the same release locally, other releases format some files differently. Reported as SKIP if missing |
 | `clang-tidy` | `make lint` (C/C++ semantic checks) | |
 | `ruff` | `make lint` (Python) | |
 | `lcov` | `make coverage` | |

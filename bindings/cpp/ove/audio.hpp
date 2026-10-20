@@ -53,8 +53,7 @@ namespace ove::audio
 inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t channels,
 						  uint32_t input_device)
 {
-	struct ove_audio_device_cfg cfg {
-	};
+	struct ove_audio_device_cfg cfg{};
 	cfg.transport = OVE_AUDIO_TRANSPORT_I2S;
 	cfg.fmt.sample_rate = sample_rate;
 	cfg.fmt.channels = channels;
@@ -160,8 +159,7 @@ class Graph
 	/// @return On success, the populated @c ove_audio_graph_stats.
 	[[nodiscard]] Result<struct ove_audio_graph_stats> get_stats() const noexcept
 	{
-		struct ove_audio_graph_stats stats {
-		};
+		struct ove_audio_graph_stats stats{};
 		const int rc = ove_audio_graph_get_stats(&g_, &stats);
 		return from_rc(rc, stats);
 	}

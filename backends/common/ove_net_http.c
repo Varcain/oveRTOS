@@ -229,7 +229,7 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 	if (ret != OVE_OK)
 		goto cleanup_sock;
 
-		/* TLS handshake if HTTPS */
+	/* TLS handshake if HTTPS */
 #ifdef CONFIG_OVE_NET_TLS
 	ove_tls_storage_t tls_storage;
 	ove_tls_t tls = NULL;
