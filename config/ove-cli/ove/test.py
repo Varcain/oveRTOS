@@ -331,7 +331,8 @@ def test_stub(ove_dir, output_dir):
                                 "ove_test_systick_q32",
                                 "ove_test_state_track_read",
                                 "ove_test_sim_shm_backpressure",
-                                "ove_test_sim_profiler_refused"), "stub", results)
+                                "ove_test_sim_profiler_refused",
+                                "ove_test_trace_kthread"), "stub", results)
     return results
 
 

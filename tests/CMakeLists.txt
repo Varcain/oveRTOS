@@ -253,6 +253,17 @@ target_include_directories(ove_test_sim_profiler_refused PRIVATE
     ${OVE_ROOT}/sim/include
     ${OVE_ROOT}/backends/common
 )
+# Kernel-thread state table. Use the shim for ove/thread.h.
+add_executable(ove_test_trace_kthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_kthread.c
+    ${OVE_ROOT}/backends/common/ove_trace.c
+)
+target_include_directories(ove_test_trace_kthread PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/trace_kthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/backends/common
+)
 option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
 # TSan cannot share a binary with ASan or MSan: when the whole tree is
 # configured with either (make test-stub-sanitize, test-stub-msan), skip
@@ -439,6 +450,7 @@ add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
 add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
 add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
+add_test(NAME ove_trace_kthread COMMAND ove_test_trace_kthread)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
     set_tests_properties(ove_trace_ring_tsan PROPERTIES

@@ -316,16 +316,21 @@ bool ove_thread_should_stop(ove_thread_t handle)
  * preemption shows as READY, and waits inside the kernel, drivers or LVGL
  * show as BLOCKED, not only waits through the ove API.
  *
- * Only threads created through ove_thread_* (custom_data set in
- * thread_wrapper) are tracked. switched_out runs on PendSV entry before
- * the kernel masks interrupts, so each update runs under irq_lock()
- * against an ISR readying the same thread. Plain memory accesses only.
+ * Threads created through ove_thread_* have per-thread counters. Kernel
+ * threads use the shared trace table. Hooks can run with interrupts
+ * enabled, so updates run under irq_lock().
  */
 static void sched_transition(struct k_thread *thread, int next, bool only_from_waiting)
 {
 	struct ove_thread *t = thread ? (struct ove_thread *)thread->custom_data : NULL;
-	if (!t)
+	if (!t) {
+		unsigned int key = irq_lock();
+		ove_trace_emit_kthread_state((uintptr_t)thread, next,
+					     only_from_waiting ? OVE_TRACE_KT_FROM_WAITING
+							       : OVE_TRACE_KT_ALWAYS);
+		irq_unlock(key);
 		return;
+	}
 
 	unsigned int key = irq_lock();
 	int prev = __atomic_load_n(&t->state, __ATOMIC_RELAXED);

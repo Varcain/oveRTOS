@@ -518,15 +518,16 @@ static void obs_note_suspend(FAR struct note_driver_s *drv, FAR struct tcb_s *tc
 	if (tcb->task_state == TSTATE_TASK_RUNNING)
 		return;
 	struct ove_thread *t = obs_find(tcb->pid);
-	if (!t)
-		return;
 
 	int next;
 	if (tcb->task_state == TSTATE_TASK_READYTORUN)
 		next = OVE_THREAD_STATE_READY; /* preempted or yielded */
 	else
 		next = OVE_THREAD_STATE_BLOCKED;
-	obs_transition(t, next);
+	if (t)
+		obs_transition(t, next);
+	else
+		ove_trace_emit_kthread_state((uintptr_t)tcb, next, OVE_TRACE_KT_ALWAYS);
 }
 
 static void obs_note_resume(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
@@ -535,6 +536,9 @@ static void obs_note_resume(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb
 	struct ove_thread *t = obs_find(tcb->pid);
 	if (t)
 		obs_transition(t, OVE_THREAD_STATE_RUNNING);
+	else
+		ove_trace_emit_kthread_state((uintptr_t)tcb, OVE_THREAD_STATE_RUNNING,
+					     OVE_TRACE_KT_ALWAYS);
 }
 
 static const struct note_driver_ops_s obs_note_ops = {

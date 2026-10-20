@@ -55,6 +55,11 @@ enum {
 	OVE_TRACE_ACT_USER = 4,
 };
 
+/** @brief When ove_trace_emit_kthread_state() emits the transition. */
+#define OVE_TRACE_KT_ALWAYS 0	    /**< Whenever the state changes. */
+#define OVE_TRACE_KT_FROM_WAITING 1 /**< Only from BLOCKED or SUSPENDED. */
+#define OVE_TRACE_KT_FROM_RUNNING 2 /**< Only from RUNNING. */
+
 #ifdef CONFIG_OVE_TRACE_STREAM
 
 /**
@@ -94,6 +99,24 @@ void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_sta
 void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
 
 /**
+ * @brief Emit a state transition for a thread with no ove_thread wrapper.
+ *
+ * Idle and kernel worker threads have no embedded tracker; the trace
+ * layer keeps their previous state in a small per-tid table so the
+ * swimlane can show their lane.  Callable from ISR and context-switch
+ * context, but the table is not locked: callers must serialise (call
+ * with interrupts masked or from inside the scheduler).  A thread takes
+ * a slot only with an emitted transition and frees it on TERMINATED.
+ *
+ * @param[in] tid        Shared thread identity (trace tid).
+ * @param[in] new_state  New state (@c ove_thread_state_t encoding).
+ * @param[in] when       @c OVE_TRACE_KT_ALWAYS, or emit only from a waiting
+ *                       state (@c OVE_TRACE_KT_FROM_WAITING) or only from
+ *                       RUNNING (@c OVE_TRACE_KT_FROM_RUNNING).
+ */
+void ove_trace_emit_kthread_state(uintptr_t tid, int new_state, int when);
+
+/**
  * @brief Return the current thread's trace id.
  *
  * Supplied by the thread backend. Used by
@@ -128,6 +151,13 @@ static inline void ove_trace_emit_mark(uintptr_t t, uint8_t p, uint8_t a, uintpt
 	(void)p;
 	(void)a;
 	(void)o;
+}
+
+static inline void ove_trace_emit_kthread_state(uintptr_t t, int n, int w)
+{
+	(void)t;
+	(void)n;
+	(void)w;
 }
 
 static inline uintptr_t ove_backend_thread_current_handle(void)
