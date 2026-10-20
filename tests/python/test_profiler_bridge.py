@@ -38,6 +38,8 @@ SYMBOLS = [
     (0x600, 0x640, "helper"),
     (0x700, 0x740, "r"),
     (0x800, 0x840, "hub"),
+    (0x900, 0x940, "wrap"),
+    (0xA00, 0xA40, "irec"),
 ]
 
 OBJDUMP = """
@@ -82,6 +84,17 @@ OBJDUMP = """
      802:	blx	r3
      804:	blx	r2
      806:	pop	{r7, pc}
+
+00000900 <wrap>:
+     900:	push	{r7, lr}
+     902:	blx	r3
+     904:	pop	{r7, pc}
+
+00000a00 <irec>:
+     a00:	push	{r7, lr}
+     a02:	blx	r3
+     a04:	bl	300 <b>
+     a08:	pop	{r7, pc}
 """
 
 
@@ -124,6 +137,65 @@ class PrunerTest(unittest.TestCase):
     def test_recursion_is_kept(self):
         chain = [0x302, 0x70a, 0x706, 0x706, 0x10a]  # b <- r <- r <- r <- main
         self.assertEqual(self.kept(chain), chain)
+
+    def test_single_indirect_caller_permits_edge(self):
+        # wrap has exactly one blx, so its reach set is incomplete. The
+        # old hub-only rule (>=2 blx) trimmed it from the top of the chain.
+        self.assertTrue(self.b._edge_allowed(0x300, 0x900))
+        self.assertFalse(self.b._edge_allowed(0x300, 0x900, strict=True))
+        self.assertEqual(self.kept([0x302, 0x902]), [0x302, 0x902])
+
+    def test_indirect_recursion_keeps_duplicates(self):
+        # irec could call itself through the function pointer, so two
+        # copies are not provably stale LR values.
+        chain = [0x302, 0xA04, 0xA04, 0xDEAD0]
+        self.assertEqual(self.kept(chain), chain)
+
+    def test_leaf_is_never_dropped(self):
+        # The sampled PC is real even when the frame above refutes it.
+        chain = [0x402, 0x206, 0x106]  # c <- a <- main; a never calls c
+        self.assertEqual(self.kept(chain)[0], 0x402)
+
+    def test_leaf_survives_a_duplicate_above_it(self):
+        # a <- stale a <- main: the sampled PC is in a, so the copy above
+        # it is the phantom, not the sampled PC.
+        self.assertEqual(self.kept([0x202, 0x206, 0x106]), [0x202, 0x106])
+
+    def test_leaf_duplicate_under_an_indirect_caller_is_dropped(self):
+        # b <- stale b <- wrap: b cannot recurse, so the copy above the
+        # sampled PC goes even though wrap's blx could explain either one.
+        self.assertEqual(self.kept([0x302, 0x304, 0x902]), [0x302, 0x902])
+
+    def test_unresolved_frame_does_not_validate_a_drop(self):
+        # b <- ? <- a <- helper@0x600: the unresolved frame cannot show that
+        # dropping a repairs the chain; the refuted top goes instead.
+        chain = [0x302, 0xDEAD0, 0x206, 0x606]
+        self.assertEqual(self.kept(chain), [0x302, 0xDEAD0, 0x206])
+
+    def test_phantom_top_does_not_erase_the_chain(self):
+        # b <- a <- main <- c: a phantom c above the real root refutes main,
+        # but must not cascade down and remove main, a and b.
+        chain = [0x302, 0x206, 0x106, 0x406]
+        self.assertEqual(self.kept(chain)[:3], [0x302, 0x206, 0x106])
+
+    def test_refuted_top_is_trimmed(self):
+        # helper@0x600 calls nothing and has no indirect call site, so it
+        # cannot be main's caller and nothing above can validate it.
+        chain = [0x302, 0x206, 0x106, 0x606]
+        self.assertEqual(self.kept(chain), [0x302, 0x206, 0x106])
+
+    def test_indirect_caller_does_not_validate_across_a_frame(self):
+        # wrap could have called b through its pointer, but the scan for a
+        # validator is strict: helper@0x600 between them stays (unvalidated).
+        chain = [0x302, 0x606, 0x902]
+        self.assertEqual(self.kept(chain), chain)
+
+    def test_frame_permitted_by_an_indirect_call_is_not_isolated(self):
+        # b <- wrap is permitted (wrap's reach is incomplete), so wrap is
+        # not an isolated phantom; helper@0x600 above it is, and main is a
+        # refuted top.
+        chain = [0x302, 0x902, 0x606, 0x106]
+        self.assertEqual(self.kept(chain), [0x302, 0x902])
 
     def test_duplicate_of_non_recursive_function_is_dropped(self):
         # a appears twice; only the outermost copy is real.

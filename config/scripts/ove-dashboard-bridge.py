@@ -1477,7 +1477,7 @@ def build_profiler_symbols(elf_path, nm_bin="nm"):
 _profiler_cfg_calls = {}      # caller_start -> set(callee_start)  direct BLs
 _profiler_cfg_reach = {}      # caller_start -> set(callee_start)  direct + tail-closure (2-hop)
 _profiler_cfg_indirect = set()  # callers with >=1 `blx reg` / `bx reg` (not lr)
-_profiler_cfg_indirect_hub = set()  # callers with >=2 `blx reg` — real dispatchers (event_send_core, etc.)
+_profiler_cfg_indirect_hub = set()  # callers with >=2 `blx reg` (dispatchers); logged, not used to prune
 
 _CFG_FUNC_RE = re.compile(r'^([0-9a-f]+)\s+<([^>]+)>:')
 # `bl HEXTARGET <NAME(+0xOFFSET)?>` — direct call. objdump on ARM emits
@@ -1626,19 +1626,22 @@ def _edge_allowed(callee, caller, strict=False):
     """True when function `caller` (start address) could plausibly be the
     direct-or-transitive ancestor of `callee`. Allows when either side is
     unresolved (None). When strict=False (default, used for the primary
-    adjacent-edge check), an indirect-dispatch hub caller (≥2 `blx reg`
-    sites — e.g. event_send_core) also permits arbitrary callees. When
-    strict=True (used for validator-scan targets that want to drop
-    intermediate frames), hub-permit is disabled — only direct/reach edges
-    count. Hub-permit at the scan target would wrongly accept a hub as the
-    validator across several REAL intermediate frames, dropping them."""
+    adjacent-edge check), a caller with ANY indirect call site (`blx reg` /
+    `bx reg`) also permits arbitrary callees: its reach set is incomplete,
+    so absence from it does not refute the edge. This is what keeps the
+    thread wrapper (one `blx` to the entry) and LVGL's function-pointer
+    dispatch. When strict=True (used for validator-scan targets that want
+    to drop intermediate frames), indirect-permit is disabled — only
+    direct/reach edges count. Indirect-permit at the scan target would
+    wrongly accept such a caller as the validator across several REAL
+    intermediate frames, dropping them."""
     if caller is None or callee is None or caller not in _profiler_cfg_reach:
         return True
     if callee in _profiler_cfg_reach[caller]:
         return True
     if strict:
         return False
-    return caller in _profiler_cfg_indirect_hub
+    return caller in _profiler_cfg_indirect
 
 
 def _prune_chain(pcs):
@@ -1647,11 +1650,12 @@ def _prune_chain(pcs):
     keep = [True] * len(pcs)
 
     # Duplicate-phantom pass: if the same function appears at multiple
-    # positions AND the CFG says it is not a hub and cannot reach itself
-    # (no recursion path in 2-hop), every copy except the outermost is a
-    # stale-LR phantom (e.g. `finalize_task_creation` at depth 6 AND 10 in
-    # the LVGL draw dispatch path). Compared by function address, so two
-    # different static functions sharing a name are not merged.
+    # positions AND the CFG says it cannot reach itself (no recursion path
+    # in 2-hop) and it has no indirect call site that could hide such a
+    # path, every copy except the outermost is a stale-LR phantom (e.g.
+    # `finalize_task_creation` at depth 6 AND 10 in the LVGL draw dispatch
+    # path). Compared by function address, so two different static
+    # functions sharing a name are not merged.
     seen_at = {}
     for idx, f in enumerate(funcs):
         if f is None:
@@ -1660,11 +1664,14 @@ def _prune_chain(pcs):
     for f, positions in seen_at.items():
         if len(positions) < 2:
             continue
-        if f in _profiler_cfg_indirect_hub:
-            continue
+        if f in _profiler_cfg_indirect:
+            continue  # an indirect call may hide the recursion
         if f in _profiler_cfg_reach.get(f, ()):
             continue  # real recursion
-        for idx in positions[:-1]:
+        # pcs[0] is the sampled PC, never a stale LR: when it is one of the
+        # copies, every other copy is the phantom.
+        stale = positions[1:] if positions[0] == 0 else positions[:-1]
+        for idx in stale:
             keep[idx] = False
 
     # Walk from leaf. i = current validated callee index.
@@ -1684,8 +1691,8 @@ def _prune_chain(pcs):
             continue
         # Edge refuted. Scan up to _PRUNE_WINDOW frames higher for a
         # validator; if found, every refuted intermediate frame is a
-        # phantom. strict=True so a hub several frames up cannot
-        # hub-permit across real intermediate frames.
+        # phantom. strict=True so a caller with an indirect call site
+        # several frames up cannot permit across real intermediate frames.
         k = j + 1
         hops = 0
         found = -1
@@ -1708,26 +1715,33 @@ def _prune_chain(pcs):
     # Firm-refuted up-edge pass: drop a frame whose UP edge is firmly
     # refuted — the up-caller has a resolvable reach set, the frame is not
     # in it, AND the up-caller has ZERO indirect call sites (so its reach
-    # is complete). Catches stale-LR phantoms wedged between real frames
-    # whose down-edge happens to be CFG-valid. Iterate: removing one can
-    # expose another.
+    # is complete) — but only when the up-caller validates the frame below
+    # it (an unresolved frame below validates nothing), so the drop repairs
+    # the chain. Without that condition one phantom high in a chain refuted
+    # the real frame under it, then the next one, and erased the chain down
+    # to the sampled PC. Catches stale-LR phantoms wedged between real
+    # frames whose down-edge happens to be CFG-valid. The sampled PC (pos 0)
+    # is never dropped. Iterate: removing one can expose another.
     changed = True
     while changed:
         changed = False
         kept_idx = [k for k, v in enumerate(keep) if v]
-        for pos in range(len(kept_idx) - 1):
+        for pos in range(1, len(kept_idx) - 1):
             cur = funcs[kept_idx[pos]]
             up = funcs[kept_idx[pos + 1]]
+            down = funcs[kept_idx[pos - 1]]
             if (up in _profiler_cfg_reach and cur is not None
+                    and down is not None
                     and cur not in _profiler_cfg_reach[up]
-                    and up not in _profiler_cfg_indirect):
+                    and up not in _profiler_cfg_indirect
+                    and _edge_allowed(down, up, strict=True)):
                 keep[kept_idx[pos]] = False
                 changed = True
                 break
 
     # Isolated-phantom pass: a frame whose edges to BOTH surviving
     # neighbours refute (loose) is a stale-LR phantom wedged between real
-    # frames (e.g. an indirect non-hub sitting where a blx call went).
+    # frames.
     changed = True
     while changed:
         changed = False
