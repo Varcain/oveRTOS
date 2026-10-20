@@ -566,3 +566,105 @@ jobs:
           name: qemu-zephyr-tests-logs
           path: output/
           retention-days: 7
+
+  qemu-kconfig-matrix:
+    name: QEMU Kconfig Matrix (${{ matrix.rtos }})
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        rtos: [freertos, nuttx, zephyr]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential meson ninja-build gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi gperf genromfs xxd \
+            python3-pip python3-venv device-tree-compiler ccache dfu-util \
+            wget xz-utils file
+
+      - name: Cache toolchains
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: qemu-kconfig-toolchains-${{ matrix.rtos }}-${{ hashFiles('manifest.yaml') }}
+
+      - name: Compute Zephyr cache hash
+        if: matrix.rtos == 'zephyr'
+        id: zephyr-hash
+        run: |
+          HASH=$(python3 scripts/manifest_query.py --hash rtos.zephyr.version)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        if: matrix.rtos == 'zephyr'
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-qemu-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        if: matrix.rtos == 'zephyr'
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      # The matrix builds the example app through `ove build`, which needs
+      # the RTOS sources in dl/.  Only the source trees are cached here --
+      # the toolchain and SDK tarballs also land in dl/ but are left out on
+      # purpose: the extracted trees live in output/toolchains (cached
+      # above), and caching both would double the cache size.
+      - name: Cache FreeRTOS sources
+        if: matrix.rtos == 'freertos'
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl/FreeRTOS-Kernel-*
+            dl/picolibc-*
+            dl/lvgl-*
+          key: qemu-kconfig-dl-freertos-${{ hashFiles('manifest.yaml') }}
+
+      - name: Cache NuttX sources
+        if: matrix.rtos == 'nuttx'
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl/nuttx-*
+            dl/CMSIS_5-*
+            dl/CMSIS-DSP-*
+            dl/lvgl-*
+          key: qemu-kconfig-dl-nuttx-${{ hashFiles('manifest.yaml') }}
+
+      - name: Cache Zephyr sources
+        if: matrix.rtos == 'zephyr'
+        uses: actions/cache@v4
+        with:
+          path: dl/lvgl-*
+          key: qemu-kconfig-dl-zephyr-${{ hashFiles('manifest.yaml') }}
+
+      # `ove download` needs a .config and a fresh checkout has none, so
+      # create the workspace config first, then fetch the RTOS sources.
+      - name: Fetch RTOS sources
+        run: |
+          timeout 900 make qemu.${{ matrix.rtos }}.example_c
+          timeout 1800 make download
+
+      # Six Kconfig combinations are built per RTOS, each from scratch
+      # (the driver wipes the build dir between combos), so allow up to
+      # 90 minutes.
+      - name: Build trace/profiler Kconfig combinations
+        run: timeout 5400 make test-kconfig-matrix RTOS=${{ matrix.rtos }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-kconfig-matrix-${{ matrix.rtos }}-logs
+          path: output/
+          retention-days: 7

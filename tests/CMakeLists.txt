@@ -570,6 +570,9 @@ add_test(NAME ove_makefile_python_resolution_python
 add_test(NAME ove_rust_trace_cfg_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_rust_trace_cfg.py)
+add_test(NAME ove_config_matrix_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_config_matrix.py)
 add_test(NAME ove_build_type_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

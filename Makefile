@@ -273,6 +273,18 @@ $(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
 test-js:
 	@node --test $(OVE_DIR)/tests/js/*.test.mjs
 
+# Build trace/profiler Kconfig combinations for one RTOS. The all-on
+# baseline is built by the "all-on" combination of the matrix itself; this
+# checks that every legal choice of stats, trace and profiler still links.
+.PHONY: test-kconfig-matrix
+test-kconfig-matrix: $(VENV_STAMP)
+	@test -n "$(RTOS)" || { \
+		echo "usage: make test-kconfig-matrix RTOS=freertos|nuttx|zephyr [APP=example_c]"; \
+		exit 2; \
+	}
+	@$(VENV_PYTHON) $(OVE_DIR)/config/scripts/ove-config-matrix.py \
+		--rtos $(RTOS) $(if $(APP),--app $(APP))
+
 ASAN_BUILD_DIR := $(OVE_DIR)/output/tests/stub_asan
 
 .PHONY: asan
@@ -685,6 +697,7 @@ help:
 	@echo "  test-qemu-nuttx-zeroheap  - NuttX QEMU ARM tests (zero-heap)"
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
+	@echo "  test-kconfig-matrix     - Build trace/profiler Kconfig combos for RTOS=<rtos>"
 	@echo "  test-renode             - All Renode STM32F746 targets (FreeRTOS / Zephyr / NuttX)"
 	@echo "  test-hw-stm32f746-<rtos>{,-zeroheap} - Manual HIL on real Discovery board."
 	@echo "                            Requires OVE_HW_SERIAL_PORT=/dev/ttyACMx and"
