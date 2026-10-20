@@ -136,11 +136,12 @@ class PrunerTest(unittest.TestCase):
 
     def round_trip(self, word_size):
         fmt = {4: "<I", 8: "<Q"}[word_size]
-        samples = [(1000, 0x2000, 0, [0x302, 0x406, 0x206, 0x106]),
-                   (2000, 0x3000, 2, [0x302, 0x206, 0x106])]
+        # The second sample is a handler-mode one: tid 0, exception 15.
+        samples = [(1000, 0x2000, 0, 0, [0x302, 0x406, 0x206, 0x106]),
+                   (2000, 0, 2, 15, [0x302, 0x206, 0x106])]
         payload = struct.pack("<BBHI", 1, word_size, len(samples), 7)
-        for ts, tid, state, pcs in samples:
-            payload += struct.pack("<QIBBH", ts, tid, len(pcs), state, 0)
+        for ts, tid, state, isr, pcs in samples:
+            payload += struct.pack("<QIBBH", ts, tid, len(pcs), state, isr)
             payload += b"".join(struct.pack(fmt, pc) for pc in pcs)
         out = self.b._prune_profile_payload(payload)
         ver, ws, count, dropped = struct.unpack_from("<BBHI", out, 0)
@@ -148,14 +149,14 @@ class PrunerTest(unittest.TestCase):
         p = 8
         got = []
         for _ in range(count):
-            ts, tid, depth, state = struct.unpack_from("<QIBB", out, p)
+            ts, tid, depth, state, isr = struct.unpack_from("<QIBBH", out, p)
             p += 16
             pcs = [struct.unpack_from(fmt, out, p + word_size * k)[0] for k in range(depth)]
             p += word_size * depth
-            got.append((ts, tid, state, pcs))
+            got.append((ts, tid, state, isr, pcs))
         self.assertEqual(p, len(out))
-        self.assertEqual(got[0], (1000, 0x2000, 0, [0x302, 0x206, 0x106]))
-        self.assertEqual(got[1], (2000, 0x3000, 2, [0x302, 0x206, 0x106]))
+        self.assertEqual(got[0], (1000, 0x2000, 0, 0, [0x302, 0x206, 0x106]))
+        self.assertEqual(got[1], (2000, 0, 2, 15, [0x302, 0x206, 0x106]))
 
     def test_payload_round_trip_4_byte_pcs(self):
         self.round_trip(4)

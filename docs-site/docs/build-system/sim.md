@@ -178,8 +178,8 @@ Both are drained by the consolidated sim-debug pump and forwarded by the bridge;
 
 ### Sampling modes
 
-- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry still lands on a tick boundary.
-- **Wall-clock (NuttX)**: a watchdog-timed high-priority work item walks every registered thread with `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`). Blocked and ready threads are sampled too, so the dashboard can filter to runnable states.
+- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry still lands on a tick boundary. When the sampler preempts another handler, the interrupted handler's exception frame is read from the MSP and the sample is attributed to `[ISR n]` (exception number) instead of a thread.
+- **Wall-clock (NuttX)**: a watchdog-timed high-priority work item walks every registered thread with `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`). Blocked and ready threads are sampled too, so the dashboard can filter to runnable states. It has no on-CPU view, so handler (ISR) time is not attributed on NuttX.
 - FreeRTOS and Zephyr share the saved-`{r7, lr}` walker in `backends/common/ove_arm_backtrace.c`; NuttX uses its own unwinder.
 - Sampling rate is changed from the dashboard (`SET_RATE`, payload `uint32_t` Hz) and echoed in the caps event. The ceiling is `CONFIG_OVE_PROFILER_HZ` (250 Hz by default); on Zephyr and NuttX it is further clamped to the kernel tick rate, so the effective maximum is the lower of the two.
 
@@ -207,7 +207,7 @@ u16 count
 u32 dropped
 ```
 
-Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, two pad bytes, then `depth` PCs of `word_size` bytes. **Profiler caps** (event 21) carry `u32 max_hz` (the effective maximum, i.e. `CONFIG_OVE_PROFILER_HZ` clamped to the kernel tick rate where the backend applies such a clamp), `u32 current_hz`, `u32 flags` (bit 0 = wall-clock sampling). Symbol tables and the CFG pruner are host-side: the bridge resolves PCs from the firmware ELF with `nm`/`objdump`, so firmware images carry no symbol payload.
+Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interrupted handler's exception number, 0 for thread-mode samples), then `depth` PCs of `word_size` bytes. **Profiler caps** (event 21) carry `u32 max_hz` (the effective maximum, i.e. `CONFIG_OVE_PROFILER_HZ` clamped to the kernel tick rate where the backend applies such a clamp), `u32 current_hz`, `u32 flags` (bit 0 = wall-clock sampling). Symbol tables and the CFG pruner are host-side: the bridge resolves PCs from the firmware ELF with `nm`/`objdump`, so firmware images carry no symbol payload.
 
 ## Kconfig Options
 

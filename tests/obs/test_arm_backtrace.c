@@ -431,6 +431,108 @@ static void test_lr_is_post_bl(void)
 	CHECK(!ove_arm_backtrace_lr_is_post_bl(text_lo() + 0xA04u, text_lo(), text_hi()));
 }
 
+/* Lay a handler-mode exception frame at word @off: @xpsr, @pc and @lr,
+ * and, when @exc_return is not 0, the sampler's saved EXC_RETURN in the
+ * word below it. */
+static void put_frame(unsigned off, uint32_t xpsr, uint32_t pc, uint32_t lr, uint32_t exc_return)
+{
+	stack[off + OVE_ARM_EXC_R0] = 0x11111111u;
+	stack[off + OVE_ARM_EXC_R1] = 0x22222222u;
+	stack[off + OVE_ARM_EXC_R2] = 0x33333333u;
+	stack[off + OVE_ARM_EXC_R3] = 0x44444444u;
+	stack[off + OVE_ARM_EXC_R12] = 0x55555555u;
+	stack[off + OVE_ARM_EXC_LR] = lr;
+	stack[off + OVE_ARM_EXC_PC] = pc;
+	stack[off + OVE_ARM_EXC_XPSR] = xpsr;
+	if (exc_return)
+		stack[off - 1u] = exc_return;
+}
+
+#define THUMB (1u << 24)
+#define SAMPLER_EXC 25u /* the sampler's own exception number */
+
+static const uint32_t *find(unsigned limit_word, unsigned max_words)
+{
+	return ove_arm_find_exc_frame((uintptr_t)stack, (uintptr_t)&stack[limit_word], text_lo(),
+				      text_hi(), max_words, SAMPLER_EXC);
+}
+
+static void test_find_exc_frame(void)
+{
+	memset(stack, FILL, STACK_WORDS * 4u);
+	put_frame(20, THUMB | 15u, (uint32_t)text_lo() + 0x300u, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	const uint32_t *f = find(STACK_WORDS, 256);
+	CHECK(f == &stack[20]);
+	CHECK(f && (f[OVE_ARM_EXC_XPSR] & 0x1FFu) == 15u);
+
+	/* A frame with FP state is anchored by 0xFFFFFFE1. */
+	memset(stack, FILL, STACK_WORDS * 4u);
+	put_frame(20, THUMB | 14u, (uint32_t)text_lo() + 0x300u, 0xFFFFFFF9u, 0xFFFFFFE1u);
+	CHECK(find(STACK_WORDS, 256) == &stack[20]);
+}
+
+/* What lies between the stack pointer and the frame: the sampler's own
+ * locals, which can look like a frame but are not anchored, and frames
+ * that fail the checks. */
+static void test_find_exc_frame_skips_noise(void)
+{
+	memset(stack, FILL, STACK_WORDS * 4u);
+	uint32_t pc = (uint32_t)text_lo() + 0x300u;
+	/* Locals that look like a frame (a pattern seen on QEMU). */
+	put_frame(8, 0x010007d0u, pc, (uint32_t)text_lo() + 0x200u, 0);
+	/* Anchored, but thread mode (IPSR 0). */
+	put_frame(18, THUMB, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but the sampler's own exception number. */
+	put_frame(28, THUMB | SAMPLER_EXC, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but a reserved exception number. */
+	put_frame(38, THUMB | 9u, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but no Thumb bit. */
+	put_frame(48, 15u, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but reserved xPSR bits set. */
+	put_frame(58, THUMB | (1u << 20) | 15u, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but the PC is outside .text. */
+	put_frame(68, THUMB | 15u, 0x12345678u, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but exception 1, 7 or 13, which cannot be preempted
+	 * handlers. */
+	put_frame(88, THUMB | 1u, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	put_frame(98, THUMB | 7u, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	put_frame(108, THUMB | 13u, pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* Anchored, but the PC is just past .text. */
+	put_frame(118, THUMB | 15u, (uint32_t)text_hi(), 0xFFFFFFF9u, 0xFFFFFFF1u);
+	/* The real frame: PendSV, which uses lr as a scratch register. */
+	put_frame(128, THUMB | 14u, pc + 0x100u, 0x2010acdcu, 0xFFFFFFF1u);
+	CHECK(find(STACK_WORDS, 256) == &stack[128]);
+	/* An external interrupt above 255 still counts: IPSR is 9 bits, and
+	 * 256 + the sampler's own number is a different exception. */
+	memset(stack, FILL, STACK_WORDS * 4u);
+	put_frame(20, THUMB | (256u + SAMPLER_EXC), pc, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	CHECK(find(STACK_WORDS, 256) == &stack[20]);
+}
+
+static void test_find_exc_frame_bounds(void)
+{
+	memset(stack, FILL, STACK_WORDS * 4u);
+	put_frame(40, THUMB | 15u, (uint32_t)text_lo() + 0x300u, 0xFFFFFFF9u, 0xFFFFFFF1u);
+
+	/* Frame at or above the stack limit must not be read/reported. */
+	CHECK(!find(40, 256));
+	/* max_words stops the scan before the frame. */
+	CHECK(!find(STACK_WORDS, 32));
+	/* A full-window scan finds it. */
+	CHECK(find(STACK_WORDS, 256) == &stack[40]);
+	/* The frame may end exactly at the limit, never beyond it. */
+	memset(stack, FILL, STACK_WORDS * 4u);
+	put_frame(32, THUMB | 15u, (uint32_t)text_lo() + 0x300u, 0xFFFFFFF9u, 0xFFFFFFF1u);
+	CHECK(find(40, 256) == &stack[32]);
+	CHECK(!find(39, 256));
+	/* Unaligned and empty windows are rejected. */
+	CHECK(!ove_arm_find_exc_frame((uintptr_t)stack + 1u, (uintptr_t)&stack[STACK_WORDS],
+				      text_lo(), text_hi(), 256, SAMPLER_EXC));
+	CHECK(!ove_arm_find_exc_frame((uintptr_t)&stack[STACK_WORDS],
+				      (uintptr_t)&stack[STACK_WORDS], text_lo(), text_hi(), 256,
+				      SAMPLER_EXC));
+}
+
 int main(void)
 {
 	void *t = mmap(NULL, TEXT_BYTES, PROT_READ | PROT_WRITE,
@@ -460,6 +562,9 @@ int main(void)
 	test_frame_at_stack_top();
 	test_no_read_past_stack_top();
 	test_lr_is_post_bl();
+	test_find_exc_frame();
+	test_find_exc_frame_skips_noise();
+	test_find_exc_frame_bounds();
 
 	if (failures) {
 		fprintf(stderr, "test_arm_backtrace: %d failure(s)\n", failures);

@@ -129,14 +129,14 @@ test("trace: eviction splices the expired prefix in one step", () => {
 test("profiler: samples decode at word size 4 and 8", () => {
     const g = loadDashboard();
     g.handleProfile(profilerSamples(
-        [{ ts: 10, tid: 2, state: 0, pcs: [0x1000, 0x2000] }], 4), 0);
+        [{ ts: 10, tid: 2, state: 0, isr: 25, pcs: [0x1000, 0x2000] }], 4), 0);
     g.handleProfile(profilerSamples(
         [{ ts: 20, tid: 3, state: 2, pcs: [0x1_0000_1234] }], 8, 5), 0);
 
     assert.equal(g.profilerDropped, 5);
     assert.deepEqual(g.profilerSamples, [
-        { ts: 10, tid: 2, state: 0, pcs: [0x1000, 0x2000] },
-        { ts: 20, tid: 3, state: 2, pcs: [0x1_0000_1234] },
+        { ts: 10, tid: 2, state: 0, isr: 25, pcs: [0x1000, 0x2000] },
+        { ts: 20, tid: 3, state: 2, isr: 0, pcs: [0x1_0000_1234] },
     ]);
 });
 

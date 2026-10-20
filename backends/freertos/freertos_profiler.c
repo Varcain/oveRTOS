@@ -10,9 +10,15 @@
  * FreeRTOS sampling profiler backend (Cortex-M).
  *
  * Sampling runs in the interrupt of a dedicated hardware timer (CMSDK APB
- * TIMER1 on MPS2-AN500, named by the board header): the hardware has
- * stacked the interrupted task's exception frame onto its PSP, so we read
- * the stacked PC from there, walk the stack and push a sample.
+ * TIMER1 on MPS2-AN500, named by the board header). If the timer
+ * interrupted a thread, the hardware has stacked that task's exception
+ * frame onto its PSP: we read the stacked PC from there, walk the stack
+ * and push a sample attributed to the task. If it interrupted another
+ * handler (SysTick or PendSV: interrupts at the timer's own priority, such
+ * as the console UART, are never preempted), the frame is on the MSP; we
+ * locate it and push a tid-0 sample tagged with the handler's exception
+ * number, which the dashboard renders as "[ISR n]". That handler time is
+ * attributed instead of silently vanishing from the profile.
  *
  * Why not the kernel tick: sampling exactly on the SysTick boundary never
  * sees work that the tick itself wakes (delays, timers, periodic loops) —
@@ -110,10 +116,10 @@ extern uint32_t OVE_BOARD_PROFILER_TEXT_END;
 
 /* ── Per-task stack ranges ────────────────────────────────────────
  * Filled from traceTASK_CREATE / traceTASK_DELETE, which run inside the
- * kernel's task-list critical section. The timer sampler reads the table
- * from an ISR at the kernel interrupt priority, which that critical section
- * masks, so it always sees a consistent table. Covers kernel tasks (IDLE,
- * Tmr Svc) as well as ove threads. */
+ * kernel's task-list critical section. The sampler runs at
+ * configMAX_SYSCALL_INTERRUPT_PRIORITY, which that critical section masks
+ * (BASEPRI), so it always sees a consistent table. Covers kernel tasks
+ * (IDLE, Tmr Svc) as well as ove threads. */
 #define OVE_PROFILER_MAX_TASKS 32
 
 struct task_stack {
@@ -174,12 +180,15 @@ static int profiler_running;
  * header, which must point at a CMSDK APB timer (CTRL/VALUE/RELOAD/
  * INTCLEAR at 0x00/0x04/0x08/0x0C, EN bit 0, IRQEN bit 3); the IRQ is
  * named in the board's vector table (startup_CMSDK_CM7.s). Its priority
- * is configKERNEL_INTERRUPT_PRIORITY, so kernel critical sections mask
- * it. The port puts SysTick and PendSV at 0xff; where the NVIC
- * implements all eight priority bits (QEMU) the timer outranks them, so
- * a sample that interrupted a handler, PendSV mid-switch included, is
- * skipped. Only samples taken from thread mode are kept, where
- * pxCurrentTCB and PSP describe the same task. */
+ * is configMAX_SYSCALL_INTERRUPT_PRIORITY, the highest level that may
+ * call FreeRTOS FromISR APIs (the timestamp read does), and low enough
+ * that kernel critical sections mask it: pxCurrentTCB/PSP always describe
+ * the same task in thread mode. It stays above SysTick and PendSV also on
+ * an NVIC with four priority bits, where the kernel priority and 0xff are
+ * one level, so it can interrupt the kernel tick and the context switch;
+ * those samples take the handler-mode path below. Interrupts at this same
+ * priority, the console UART RX among them, cannot be preempted and are
+ * not attributed. */
 #define PROF_TIMER_BASE OVE_BOARD_PROFILER_TIMER_BASE
 #define PROF_TIMER_IRQ OVE_BOARD_PROFILER_TIMER_IRQ
 #define PROF_TIMER_CTRL (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x00u))
@@ -193,6 +202,7 @@ static int profiler_running;
 #define NVIC_ICPR0 (*(volatile uint32_t *)0xE000E280u)
 #define NVIC_IPR_BYTE(irq) (*(volatile uint8_t *)(0xE000E400u + (irq)))
 #define SCB_ICSR (*(volatile uint32_t *)0xE000ED04u)
+#define SCB_VTOR (*(volatile uint32_t *)0xE000ED08u)
 #define SCB_ICSR_RETTOBASE (1u << 11)
 
 extern uint32_t SystemCoreClock;
@@ -221,14 +231,50 @@ static inline uint32_t read_psp(void)
 	return psp;
 }
 
+static inline uint32_t read_msp(void)
+{
+	uint32_t msp;
+	__asm volatile("mrs %0, msp" : "=r"(msp));
+	return msp;
+}
+
+/* Handler-mode sample: the timer preempted another exception handler.
+ * Its stacked frame (r0-r3, r12, lr, pc, xpsr) sits on the MSP; the
+ * finder scans over our own prologue for it. tid 0 plus the interrupted
+ * handler's exception number (xpsr.IPSR) identifies it. There is no task
+ * to unwind, so the chain is just the interrupted PC. */
+static void sample_interrupted_handler(void)
+{
+	/* The initial MSP, vector table entry 0, is the top of the handler
+	 * stack; the port restores it when it starts the scheduler. */
+	uintptr_t msp_top = *(const volatile uint32_t *)SCB_VTOR;
+	const uint32_t *frame = ove_arm_find_exc_frame(read_msp(), msp_top, OVE_TEXT_BASE,
+						       OVE_TEXT_END, 256, 16u + PROF_TIMER_IRQ);
+	if (!frame)
+		return;
+
+	uint32_t ipsr = frame[OVE_ARM_EXC_XPSR] & 0x1FFu;
+
+	struct ove_profiler_sample s;
+	memset(&s, 0, sizeof(s));
+	s.ts_us = ove_state_stats_now_us();
+	s.tid = 0;
+	s.state = OVE_THREAD_STATE_RUNNING;
+	s.isr = (uint16_t)ipsr;
+	s.pcs[0] = (uintptr_t)(frame[OVE_ARM_EXC_PC] & ~1u);
+	s.depth = 1;
+	(void)ove_profiler_ring_push(&s);
+}
+
 /* Take one sample of the interrupted task (timer ISR context). PSP points
  * at its stacked exception frame (r0-r3, r12, lr, pc, xpsr). */
 static void sample_interrupted_task(void)
 {
-	/* Only thread-mode code can be attributed through PSP: skip if we
-	 * interrupted another handler, or before the scheduler starts. */
-	if (!(SCB_ICSR & SCB_ICSR_RETTOBASE))
+	/* Nested on top of another handler: the frame is on MSP. */
+	if (!(SCB_ICSR & SCB_ICSR_RETTOBASE)) {
+		sample_interrupted_handler();
 		return;
+	}
 	uint32_t psp = read_psp();
 	if (psp == 0)
 		return;
@@ -320,7 +366,13 @@ int ove_backend_profiler_start(void)
 	PROF_TIMER_INTCLEAR = 1u;
 	PROF_TIMER_RELOAD = next_period();
 	PROF_TIMER_VALUE = next_period();
-	NVIC_IPR_BYTE(PROF_TIMER_IRQ) = (uint8_t)configKERNEL_INTERRUPT_PRIORITY;
+	/* Highest priority that may still call FromISR APIs: the timestamp
+	 * read needs xTaskGetTickCountFromISR(), whose configASSERT rejects
+	 * priorities above configMAX_SYSCALL_INTERRUPT_PRIORITY, and this
+	 * level also stays masked by kernel critical sections. It still
+	 * preempts SysTick/PendSV and lower-urgency driver handlers, which
+	 * is what gives the profiler ISR samples. */
+	NVIC_IPR_BYTE(PROF_TIMER_IRQ) = (uint8_t)configMAX_SYSCALL_INTERRUPT_PRIORITY;
 	NVIC_ICPR0 = 1u << PROF_TIMER_IRQ;
 	NVIC_ISER0 = 1u << PROF_TIMER_IRQ;
 	PROF_TIMER_CTRL = PROF_TIMER_CTRL_EN | PROF_TIMER_CTRL_IRQEN;

@@ -2304,6 +2304,7 @@ function handleProfile(buf, off) {
         var tid  = dv.getUint32(p + 8, true);
         var depth = dv.getUint8(p + 12);
         var state = dv.getUint8(p + 13);
+        var isr   = dv.getUint16(p + 14, true);
         p += 16;
         if (p + depth * wordSize > dv.byteLength) break;
         var pcs = new Array(depth);
@@ -2313,7 +2314,7 @@ function handleProfile(buf, off) {
             pcs[k] = hi * 0x100000000 + lo;
             p += wordSize;
         }
-        profilerSamples.push({ ts: ts, tid: tid, state: state, pcs: pcs });
+        profilerSamples.push({ ts: ts, tid: tid, state: state, isr: isr, pcs: pcs });
         if (ts > profilerLastTs) profilerLastTs = ts;
     }
 
@@ -2573,7 +2574,9 @@ function renderProfilerFlame(samples) {
         root.count++;
         var node = root;
         var th = traceThreads[s.tid];
-        var threadLabel = (th && th.name)
+        var threadLabel = s.isr
+                        ? "[ISR " + s.isr + "]"
+                        : (th && th.name)
                         ? "[" + th.name + "]"
                         : "[tid:0x" + s.tid.toString(16) + "]";
         var tnode = node.kids[threadLabel];

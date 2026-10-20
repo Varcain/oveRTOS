@@ -191,6 +191,7 @@ export function profilerSamples(samples, wordSize, dropped = 0) {
         dv.setUint32(p + 8, s.tid, true);
         dv.setUint8(p + 12, s.pcs.length);
         dv.setUint8(p + 13, s.state || 0);
+        dv.setUint16(p + 14, s.isr || 0, true);
         p += 16;
         for (const pc of s.pcs) {
             const v = BigInt(pc);

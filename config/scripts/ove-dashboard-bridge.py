@@ -1227,9 +1227,8 @@ def _profiler_dump_samples(payload):
     for _ in range(count):
         if p + 16 > len(payload):
             return
-        ts, tid, depth, state = struct.unpack_from("<QIBB", payload, p)
+        ts, tid, depth, state, isr = struct.unpack_from("<QIBBH", payload, p)
         p += 16
-        # skip 2-byte pad
         if p + depth * word_size > len(payload):
             return
         pcs = []
@@ -1238,8 +1237,9 @@ def _profiler_dump_samples(payload):
             pcs.append(pc)
             p += word_size
         frames = " <- ".join(f"{_profiler_resolve(x)}@0x{x:x}" for x in pcs)
+        where = f"isr={isr}" if isr else f"tid=0x{tid:x}"
         sys.stderr.write(
-            f"[dump] t={ts} tid=0x{tid:x} st={state} d={depth} {frames}\n")
+            f"[dump] t={ts} {where} st={state} d={depth} {frames}\n")
     sys.stderr.flush()
 
 
@@ -1777,8 +1777,7 @@ def _prune_profile_payload(payload):
     for _ in range(count):
         if p + 16 > len(payload):
             return payload
-        ts, tid, depth, state = struct.unpack_from("<QIBB", payload, p)
-        pad = struct.unpack_from("<H", payload, p + 14)[0]
+        ts, tid, depth, state, isr = struct.unpack_from("<QIBBH", payload, p)
         p += 16
         if p + depth * word_size > len(payload):
             return payload
@@ -1790,7 +1789,7 @@ def _prune_profile_payload(payload):
 
         keep = _prune_chain(pcs)
         new_pcs = [pc for pc, k in zip(pcs, keep) if k]
-        out += struct.pack("<QIBBH", ts, tid, len(new_pcs), state, pad)
+        out += struct.pack("<QIBBH", ts, tid, len(new_pcs), state, isr)
         for pc in new_pcs:
             out += struct.pack(pc_fmt, pc)
     return bytes(out)

@@ -52,6 +52,48 @@ enum {
 int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintptr_t text_hi);
 
 /**
+ * @brief Locate the exception frame pushed when an ISR interrupted a
+ *        handler (Cortex-M, MSP stack).
+ *
+ * When the sampling interrupt fires while the CPU is already in handler
+ * mode, the hardware stacks the interrupted handler's r0-r3, r12, lr, pc
+ * and xpsr on the MSP. By the time the sampler's C code runs, its own
+ * prologue has pushed registers and locals on top, so a plain
+ * `__get_MSP()` does not point at that frame, and the sampler's locals in
+ * between can look like one. This helper scans upward from @p msp for the
+ * 8-word block right above the sampler's saved EXC_RETURN (0xFFFFFFF1 or
+ * 0xFFFFFFE1: return to a handler), which the sampling handler's first
+ * push stores directly below the hardware frame. The block's xpsr must
+ * have the Thumb bit set, its reserved bits [23:20] clear and an
+ * exception number a preempted handler can have, other than @p own_exc,
+ * and its pc must lie in [@p text_lo, @p text_hi). The lowest such block
+ * wins: words the sampler has not written yet can still hold an older,
+ * anchored frame, so a stale handler frame further down can be reported
+ * instead of the real one (rare: it takes a nested handler that left one
+ * deeper than the sampler's entry). The anchors are the ARMv7-M and
+ * Armv8-M Secure EXC_RETURN values; an Armv8-M Non-secure build would
+ * need its own.
+ *
+ * Only call this when the sampler is nested on another handler
+ * (ICSR.RETTOBASE == 0); otherwise the interrupted frame is on the PSP.
+ *
+ * @param[in] msp        Current MSP value.
+ * @param[in] msp_limit  Exclusive upper bound of the MSP stack (e.g. the
+ *                       linker's stack top). Never read at or above it.
+ * @param[in] text_lo    Inclusive .text lower bound.
+ * @param[in] text_hi    Exclusive .text upper bound.
+ * @param[in] max_words  Maximum number of words to scan (0 = no cap
+ *                       beyond @p msp_limit).
+ * @param[in] own_exc    The sampling handler's own exception number,
+ *                       never reported as the interrupted one.
+ * @return Pointer to the frame's r0 slot, or NULL when no plausible
+ *         handler-mode frame was found.
+ */
+const uint32_t *ove_arm_find_exc_frame(uintptr_t msp, uintptr_t msp_limit, uintptr_t text_lo,
+				       uintptr_t text_hi, unsigned int max_words,
+				       unsigned int own_exc);
+
+/**
  * @brief Multi-frame stack-scan unwinder for Cortex-M / Thumb-2 tasks.
  *
  * A classic r7 FP-chain walk doesn't work on GCC with
