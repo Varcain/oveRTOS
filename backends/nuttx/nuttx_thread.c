@@ -171,6 +171,9 @@ static void _unregister_thread(struct ove_thread *t)
 /* Store first thread for join in start_scheduler */
 static struct ove_thread *first_thread;
 
+/* Lane generation source for every thread start (see ove_backend_common.h). */
+static uint32_t g_thread_generation;
+
 /* ── Suspend/resume handshake ─────────────────────────────────────────
  *
  * NuttX has no pthread_suspend(), so a suspend is implemented with a
@@ -481,6 +484,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	 * documented in thread_start(). */
 
 	memset(storage, 0, sizeof(*storage));
+	storage->generation = ove_thread_next_generation(&g_thread_generation);
 	int ret = thread_start(storage, name, entry, arg, priority, stack_size, stack);
 	if (ret != OVE_OK) {
 		return ret;
@@ -551,6 +555,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 		return OVE_ERR_NO_MEMORY;
 	}
 	memset(t, 0, sizeof(*t));
+	t->generation = ove_thread_next_generation(&g_thread_generation);
 
 	ret = thread_start(t, name, entry, arg, priority, stack_size, NULL);
 	if (ret != OVE_OK) {
@@ -792,17 +797,18 @@ static void obs_note_suspend(FAR struct note_driver_s *drv, FAR struct tcb_s *tc
 	if (tcb->task_state == TSTATE_TASK_RUNNING)
 		return;
 	struct ove_thread *t = obs_find(tcb->pid);
-	if (!t)
-		return;
 
 	int next;
-	if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED)
+	if (t && __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED)
 		next = OVE_THREAD_STATE_SUSPENDED; /* parked in the SIGUSR1 suspend loop */
 	else if (tcb->task_state == TSTATE_TASK_READYTORUN)
 		next = OVE_THREAD_STATE_READY; /* preempted or yielded */
 	else
 		next = OVE_THREAD_STATE_BLOCKED;
-	obs_transition(t, next);
+	if (t)
+		obs_transition(t, next);
+	else
+		ove_trace_emit_kthread_state((uintptr_t)tcb, next, OVE_TRACE_KT_ALWAYS);
 }
 
 static void obs_note_resume(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
@@ -811,6 +817,9 @@ static void obs_note_resume(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb
 	struct ove_thread *t = obs_find(tcb->pid);
 	if (t)
 		obs_transition(t, OVE_THREAD_STATE_RUNNING);
+	else
+		ove_trace_emit_kthread_state((uintptr_t)tcb, OVE_THREAD_STATE_RUNNING,
+					     OVE_TRACE_KT_ALWAYS);
 }
 
 static const struct note_driver_ops_s obs_note_ops = {
@@ -1175,6 +1184,14 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 #endif
 	snapshot->pid = tcb->pid;
 	info->identity = (uintptr_t)(uint32_t)tcb->pid;
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	struct ove_thread *ove = ove_nuttx_thread_by_pid(tcb->pid);
+	info->trace_id = ove ? (uintptr_t)ove : (uintptr_t)tcb;
+	info->generation = ove ? ove->generation : 0u;
+#else
+	info->trace_id = (uintptr_t)tcb;
+	info->generation = 0u;
+#endif
 
 	switch (tcb->task_state) {
 	case TSTATE_TASK_RUNNING:

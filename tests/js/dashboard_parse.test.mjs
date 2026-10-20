@@ -86,6 +86,26 @@ test("trace: lanes only include threads with data, sorted by name", () => {
     assert.deepEqual(g.traceLanes(), [2, 1]);
 });
 
+test("trace: reused thread storage starts a new lane", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
+    g.handleTrace(traceStream([
+        stateRec(1000, 7, 0, 1),
+        stateRec(2000, 7, 1, 0),
+    ]), 0);
+    assert.equal(g.traceSpans.length, 1);
+
+    /* Same tid, new generation: the old thread's spans and open state are
+     * dropped, and new records start a fresh lane. */
+    g.handleTrace(traceDescriptors([[7, 2, "worker"]]), 0);
+    assert.equal(g.traceSpans.length, 0);
+    assert.equal(g.traceThreads[7].lastState, -1);
+    assert.equal(g.traceThreads[7].generation, 2);
+
+    g.handleTrace(traceStream([stateRec(3000, 7, 0, 1)]), 0);
+    assert.equal(g.traceThreads[7].lastState, 1);
+});
+
 test("trace: eviction splices the expired prefix in one step", () => {
     const g = loadDashboard();
     g.traceView.follow = true;
@@ -322,4 +342,67 @@ test("link: trace and profile frames decode behind the frame type word", () => {
     ]);
     assert.equal(g.resolvePc(0x1050), "foo");
     assert.deepEqual(g.profilerSamples.map((s) => s.pcs), [[0x1050]]);
+});
+
+test("trace: a new thread on a closed lane keeps its first records", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(1000, 7, 1, 0), stateRec(2000, 7, 0, 4)]), 0);
+    /* The pump drains the stream before it sends descriptors, so the new
+     * thread's first records arrive before its new generation. */
+    g.handleTrace(traceStream([
+        stateRec(5000, 7, 1, 0),
+        stateRec(6000, 7, 0, 2),
+        stateRec(7000, 7, 2, 0),
+    ]), 0);
+    g.handleTrace(traceDescriptors([[7, 2, "worker"]]), 0);
+    const spans = g.traceSpans.filter((s) => s.tid === 7);
+    assert.ok(spans.some((s) => s.start === 5000 && s.end === 6000 && s.state === 0));
+    assert.ok(spans.some((s) => s.start === 1000), "the old thread's history stays");
+    assert.ok(!spans.some((s) => s.gap));
+});
+
+test("trace: a timebase restart forgets the old boot's generations", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 3, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(5_000_000, 7, 1, 0), stateRec(5_001_000, 7, 0, 2)]), 0);
+    /* Board reset without a reconnect: the new boot's records, then its
+     * descriptor with a generation of its own. */
+    g.handleTrace(traceStream([
+        stateRec(1000, 7, 1, 0),
+        stateRec(2000, 7, 0, 2),
+        stateRec(3000, 7, 2, 0),
+    ]), 0);
+    const before = g.traceSpans.filter((s) => s.tid === 7).length;
+    g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
+    assert.equal(g.traceSpans.filter((s) => s.tid === 7).length, before);
+    assert.ok(before > 0);
+});
+
+test("trace: version 1 descriptors carry no generation", () => {
+    const g = loadDashboard();
+    const name = "worker";
+    const dv = new DataView(new ArrayBuffer(8 + 5 + name.length));
+    dv.setUint8(0, 0); /* sub_type: descriptors */
+    dv.setUint8(1, 1); /* version 1 */
+    dv.setUint16(2, 1, true);
+    dv.setUint32(8, 7, true);
+    dv.setUint8(12, name.length);
+    new Uint8Array(dv.buffer).set(new TextEncoder().encode(name), 13);
+    g.handleTrace(dv.buffer, 0);
+    assert.equal(g.traceThreads[7].name, "worker");
+});
+
+test("trace: a closed lane survives a new thread described before it runs", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(1000, 7, 1, 0), stateRec(2000, 7, 0, 4)]), 0);
+    /* The new thread on the same storage exists but has not run when the
+     * pump lists the threads: its descriptor arrives before its records. */
+    g.handleTrace(traceDescriptors([[7, 2, "worker"]]), 0);
+    g.handleTrace(traceStream([stateRec(5000, 7, 1, 0), stateRec(6000, 7, 0, 2)]), 0);
+    const spans = g.traceSpans.filter((s) => s.tid === 7);
+    assert.ok(spans.some((s) => s.start === 1000), "the closed lane's history stays");
+    assert.ok(spans.some((s) => s.start === 5000 && s.state === 0));
+    assert.ok(!spans.some((s) => s.gap));
 });

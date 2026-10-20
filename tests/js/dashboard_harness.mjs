@@ -115,21 +115,28 @@ export function loadDashboard() {
 
 /** Build an OVE_SIM_TRACE_EVT_DESCRIPTORS payload. */
 export function traceDescriptors(entries, dropped = 0) {
+    /* Entry is [tid, name] (generation 0) or [tid, generation, name]. */
+    const norm = (e) => e.length === 3
+        ? { tid: e[0], gen: e[1], name: e[2] }
+        : { tid: e[0], gen: 0, name: e[1] };
+    const descs = entries.map(norm);
     let size = 8;
-    for (const [, name] of entries) size += 5 + name.length;
+    for (const d of descs) size += 9 + d.name.length;
     const dv = new DataView(new ArrayBuffer(size));
     dv.setUint8(0, 0); /* sub_type */
-    dv.setUint8(1, 1); /* version */
+    dv.setUint8(1, 2); /* version */
     dv.setUint16(2, entries.length, true);
     dv.setUint32(4, dropped, true);
     let p = 8;
-    for (const [tid, name] of entries) {
-        dv.setUint32(p, tid, true);
+    for (const d of descs) {
+        dv.setUint32(p, d.tid, true);
         p += 4;
-        dv.setUint8(p, name.length);
+        dv.setUint32(p, d.gen, true);
+        p += 4;
+        dv.setUint8(p, d.name.length);
         p += 1;
-        for (let i = 0; i < name.length; i++) dv.setUint8(p + i, name.charCodeAt(i));
-        p += name.length;
+        for (let i = 0; i < d.name.length; i++) dv.setUint8(p + i, d.name.charCodeAt(i));
+        p += d.name.length;
     }
     return dv.buffer;
 }

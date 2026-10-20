@@ -872,7 +872,7 @@ function handleThreadSnapshot(buf, off) {
     for (var i = 0; i < threadCount; i++) {
         if (pos >= len) break;
         var nameLen = view.getUint8(pos); pos += 1;
-        if (pos + nameLen + 34 > len) break;
+        if (pos + nameLen + 42 > len) break;
         var nameBytes = new Uint8Array(buf, off + pos, nameLen);
         var name = new TextDecoder().decode(nameBytes);
         pos += nameLen;
@@ -886,12 +886,15 @@ function handleThreadSnapshot(buf, off) {
         var stReady = view.getUint32(pos, true); pos += 4;
         var stBlocked = view.getUint32(pos, true); pos += 4;
         var stSuspended = view.getUint32(pos, true); pos += 4;
+        var tid = view.getUint32(pos, true); pos += 4;
+        var generation = view.getUint32(pos, true); pos += 4;
         threads.push({ name: name, state: state, priority: priority,
                         validFields: validFields,
                         stackUsed: stackUsed, stackSize: stackSize,
                         cpuX100: cpuX100,
                         stRunning: stRunning, stReady: stReady,
-                        stBlocked: stBlocked, stSuspended: stSuspended });
+                        stBlocked: stBlocked, stSuspended: stSuspended,
+                        tid: tid, generation: generation });
     }
 
     /* Render table */
@@ -927,7 +930,7 @@ function handleThreadSnapshot(buf, off) {
         var stCss = THREAD_STATE_CSS[stIdx];
         var cpuStr = (t.validFields & THREAD_VALID_CPU_PERCENT)
                    ? (t.cpuX100 / 100).toFixed(1) + "%" : "--";
-        html += "<tr>"
+        html += "<tr data-tid=\"" + t.tid + "\" data-gen=\"" + t.generation + "\">"
               + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
               + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
               + "<td>" + _prioName(t.priority) + "</td>"
@@ -940,6 +943,7 @@ function handleThreadSnapshot(buf, off) {
     hostEmit("threads", {
         threads: threads.map(function (t) {
             return { name: t.name, state: t.state, priority: t.priority,
+                     tid: t.tid, generation: t.generation,
                      cpu: (t.validFields & THREAD_VALID_CPU_PERCENT) ? t.cpuX100 / 100 : null };
         }),
         heap: { total: heapTotal, used: heapUsed, peak: heapPeak }
@@ -1153,9 +1157,9 @@ var TRACE_STATE_COLORS = {
 };
 
 /* Lanes to draw, sorted by name: only threads that carry trace data.
- * Descriptors name every kernel thread (so profiler samples of idle and
- * system threads get names), but kernel threads without state tracking
- * would only add empty lanes. tid 0 is interrupt context. Shared by
+ * Descriptors name every thread (so profiler samples of idle and system
+ * threads get names), but a thread with no records yet would only add an
+ * empty lane. tid 0 is interrupt context. Shared by
  * renderTrace and the hover hit-test so row math always agrees. */
 function traceLanes() {
     var tids = [];
@@ -1224,11 +1228,11 @@ function traceFirstAtOrAfter(arr, tStart) {
 }
 
 /* Linked selection: one thread highlighted across panels (set by the
- * layout host, or by clicking a lane label). Matched by name because the
- * Threads table only knows names. */
-var traceSelectedName = null;
-window.oveTraceSelect = function (name) {
-    traceSelectedName = name || null;
+ * layout host, or by clicking a lane label). Matched by tid: the Threads
+ * table carries each thread's trace tid. */
+var traceSelectedTid = null;
+window.oveTraceSelect = function (tid) {
+    traceSelectedTid = (typeof tid === "number" && tid > 0) ? tid : null;
     scheduleTraceRender();
 };
 
@@ -1338,6 +1342,9 @@ function traceRestartTimebase() {
         th.lastState = -1;
         th.lastTs = 0;
         th.hasData = false;
+        /* Generations belong to the previous boot. */
+        th.generation = undefined;
+        th.restarted = false;
     }
     traceSpans = [];
     traceMarks = [];
@@ -1398,26 +1405,51 @@ function handleTrace(buf, off) {
     if (buf.byteLength - off < 8) return;
     var dv = new DataView(buf, off);
     var subType = dv.getUint8(0);
-    /* version at offset 1 — unused for now */
+    var version = dv.getUint8(1);
     var count   = dv.getUint16(2, true);
     var dropped = dv.getUint32(4, true);
     traceDropped += dropped;
 
     var base = 8;
     if (subType === 0) {
-        /* DESCRIPTORS — tid/name pairs. */
+        /* DESCRIPTORS — tid/name pairs; from version 2 on each carries
+         * the thread's lane generation after the tid. */
+        var hasGen = version >= 2;
         var p = base;
         for (var i = 0; i < count; i++) {
-            if (p + 5 > dv.byteLength) break;
+            if (p + (hasGen ? 9 : 5) > dv.byteLength) break;
             var tid = dv.getUint32(p, true); p += 4;
+            var generation;
+            if (hasGen) { generation = dv.getUint32(p, true); p += 4; }
             var nameLen = dv.getUint8(p); p += 1;
             if (p + nameLen > dv.byteLength) break;
             var nameBytes = new Uint8Array(buf, off + p, nameLen);
             var name = new TextDecoder().decode(nameBytes);
             p += nameLen;
-            if (!traceThreads[tid]) traceThreads[tid] = { name: name, lastState: -1, lastTs: 0 };
-            else traceThreads[tid].name = name;
-            traceThreads[tid].described = true;
+            var th = traceThreads[tid];
+            if (th && th.generation === generation) {
+                /* Same thread: a restart the stream saw belongs to it. */
+                th.restarted = false;
+            } else if (th && th.generation !== undefined) {
+                if (th.restarted || th.lastState === TRACE_STATE_TERMINATED) {
+                    /* The lane closed: the stream started (or will start)
+                     * the new thread's lane at the record after TERMINATED,
+                     * in exact ring order, so the old history stays. */
+                    th.restarted = false;
+                } else {
+                    /* Lane never closed (lost records, external abort):
+                     * fall back to dropping the stale history. */
+                    traceSpans = traceSpans.filter(function (sp) { return sp.tid !== tid; });
+                    traceMarks = traceMarks.filter(function (mk) { return mk.tid !== tid; });
+                    th.lastState = -1;
+                    th.lastTs = 0;
+                    th.hasData = false;
+                }
+            }
+            if (!th) th = traceThreads[tid] = { name: name, lastState: -1, lastTs: 0 };
+            th.name = name;
+            th.generation = generation;
+            th.described = true;
         }
         traceDirty = true;
         ensureWindow("trace");
@@ -1460,6 +1492,9 @@ function handleTrace(buf, off) {
              * state, so draw it hatched as unknown instead of guessing.
              * A terminated lane followed by READY is not a loss: a new
              * thread reusing its storage starts from READY. */
+            /* TERMINATED is final: the next record belongs to a new
+             * thread on the same storage, in exact ring order. */
+            if (th.lastState === TRACE_STATE_TERMINATED) th.restarted = true;
             var reused = th.lastState === TRACE_STATE_TERMINATED && arg === TRACE_STATE_READY;
             var gap = th.lastState >= 0 && !reused && arg !== th.lastState;
             /* Close out the previous span for this thread. */
@@ -1559,7 +1594,7 @@ function renderTrace() {
         var ly = axisY + axisH + i * laneH;
 
         /* Lane label. */
-        var selected = traceSelectedName !== null && th.name === traceSelectedName;
+        var selected = traceSelectedTid !== null && +tid === traceSelectedTid;
         ctx.fillStyle = selected ? "#1d2b4a" : (i % 2 === 0) ? "#181c28" : "#141826";
         ctx.fillRect(0, ly, cssW, laneH);
         if (selected) {
@@ -1571,11 +1606,7 @@ function renderTrace() {
     }
 
     /* With a thread selected, other lanes fade back. */
-    var selTid = null;
-    if (traceSelectedName !== null) {
-        for (var q = 0; q < tids.length; q++)
-            if (traceThreads[tids[q]].name === traceSelectedName) selTid = tids[q];
-    }
+    var selTid = traceSelectedTid;
 
     /* Draw spans, lane by lane, starting at the first one that can still
      * overlap the visible window. */
@@ -1756,10 +1787,11 @@ function traceBindPanel() {
             if (!lanes.length) return;
             var row = Math.floor((e.clientY - rect.top - 16) / traceLaneH(rect.height, lanes.length));
             if (row < 0 || row >= lanes.length) return;
-            var name = traceThreads[lanes[row]].name;
-            name = (name === traceSelectedName) ? null : name;
-            window.oveTraceSelect(name);
-            hostEmit("select-thread", { name: name });
+            var rowTid = lanes[row];
+            var name = traceThreads[rowTid].name;
+            var nextTid = (traceSelectedTid === rowTid) ? null : rowTid;
+            window.oveTraceSelect(nextTid);
+            hostEmit("select-thread", { tid: nextTid, name: nextTid === null ? null : name });
             return;
         }
         var startTEnd = traceCurrentTEnd();

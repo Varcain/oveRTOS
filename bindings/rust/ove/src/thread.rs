@@ -1137,6 +1137,8 @@ impl bindings::ove_thread_info {
                 suspended_us: 0,
             },
             native_priority: 0,
+            generation: 0,
+            trace_id: 0,
         }
     }
 

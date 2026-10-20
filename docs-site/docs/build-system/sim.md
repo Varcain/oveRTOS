@@ -196,7 +196,7 @@ u16 count
 u32 dropped       records lost since the previous batch
 ```
 
-Stream records are 16 bytes each (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 arg` (previous state for state records; low 16 bits of the object address for marks). Descriptors repeat `u32 tid`, `u8 name_len`, `char name[name_len]`.
+Stream records are 16 bytes each (`struct ove_trace_record`): `u64 ts_us`, `u32 tid`, `u8 kind` (1 = state, 2 = mark), `u8 code` (state value, or `prim << 4 | act` for marks), `u16 arg` (previous state for state records; low 16 bits of the object address for marks). Descriptors repeat `u32 tid`, `u32 generation` (since version 2; new for every thread start, so a new thread on reused storage starts a new lane, and 0 for threads that are not ove threads), `u8 name_len`, `char name[name_len]`.
 
 **Profiler samples** (`OVE_SIM_PROFILER_EVT_SAMPLES` = 20). Envelope:
 

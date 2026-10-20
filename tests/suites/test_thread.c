@@ -456,6 +456,52 @@ static void test_thread_list_identity(void **state)
 	}
 }
 
+/* Run "tgen" on the shared storage, then report its generation and trace
+ * id from ove_thread_list() (both 0 if it is not listed). */
+static void run_and_list_tgen(uint32_t *generation, uintptr_t *trace_id)
+{
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	OVE_TEST_ASSERT_OK(
+		ove_test_thread_run(&h, &s_th_storage, "tgen", entry_spin, NULL, s_th_stack, 4096));
+	test_msleep(20);
+
+	struct ove_thread_info info[32];
+	size_t count = 0;
+	*generation = 0;
+	*trace_id = 0;
+	if (ove_thread_list(info, 32, &count) != OVE_ERR_NOT_SUPPORTED) {
+		for (size_t i = 0; i < count; i++) {
+			if (strcmp(info[i].name, "tgen") == 0) {
+				*generation = info[i].generation;
+				*trace_id = info[i].trace_id;
+				break;
+			}
+		}
+	}
+
+	atomic_store(&g_keep_running, 0);
+	test_msleep(20);
+	ove_test_thread_destroy(h);
+}
+
+/* 17b. a new thread on reused storage gets a new lane generation, so the
+ * trace can tell it from the previous thread; a backend that does not
+ * report generations lists 0. */
+static void test_thread_list_generation(void **state)
+{
+	(void)state;
+	uint32_t gen1, gen2;
+	uintptr_t tid1, tid2;
+	run_and_list_tgen(&gen1, &tid1);
+	run_and_list_tgen(&gen2, &tid2);
+	if (gen1 == 0 && gen2 == 0)
+		return;
+	assert_true(gen1 != 0 && gen2 != 0);
+	assert_true(gen1 != gen2);
+	assert_true(tid1 != 0 && tid2 != 0);
+}
+
 #ifdef CONFIG_OVE_ZERO_HEAP
 /* Hand-rolled misaligned stack: aligned(8) on the full array, but we
  * pass in a +1 offset so the backend sees a misaligned pointer.
@@ -644,6 +690,7 @@ int test_thread_run(void)
 #endif
 		cmocka_unit_test_teardown(test_runtime_stats, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_identity, teardown_stop_spin),
+		cmocka_unit_test_teardown(test_thread_list_generation, teardown_stop_spin),
 		cmocka_unit_test(test_priority_scale_helpers),
 		cmocka_unit_test(test_create_priority_out_of_range),
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),

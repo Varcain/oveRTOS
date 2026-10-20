@@ -974,10 +974,14 @@ pub struct ove_thread_info {
     pub state_times: ove_thread_state_times,
     #[doc = "< The backend's own priority value for the thread."]
     pub native_priority: core::ffi::c_int,
+    #[doc = " Lane generation: a new value for every thread start, so a new thread\n  on reused storage is told apart from the old one; 0 for threads that\n  are not ove threads."]
+    pub generation: u32,
+    #[doc = "< The thread's tid in trace records, descriptors\n   and profiler samples; equality only."]
+    pub trace_id: usize,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 88usize];
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 96usize];
     ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
     ["Offset of field: ove_thread_info::name"]
         [core::mem::offset_of!(ove_thread_info, name) - 0usize];
@@ -999,6 +1003,10 @@ const _: () = {
         [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
     ["Offset of field: ove_thread_info::native_priority"]
         [core::mem::offset_of!(ove_thread_info, native_priority) - 80usize];
+    ["Offset of field: ove_thread_info::generation"]
+        [core::mem::offset_of!(ove_thread_info, generation) - 84usize];
+    ["Offset of field: ove_thread_info::trace_id"]
+        [core::mem::offset_of!(ove_thread_info, trace_id) - 88usize];
 };
 unsafe extern "C" {
     #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]

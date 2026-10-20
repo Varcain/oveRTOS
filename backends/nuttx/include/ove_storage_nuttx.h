@@ -84,8 +84,10 @@ struct ove_thread {
 	 * sends SIGUSR1; resume raises suspend_rel to the latest request.  The
 	 * target stays parked while suspend_rel is behind the request it
 	 * parked for.  Both are accessed with release/acquire atomics. */
-	uint32_t suspend_req;	 /* sequence of the latest suspend request */
-	uint32_t suspend_rel;	 /* requests up to this sequence are released */
+	uint32_t suspend_req; /* sequence of the latest suspend request */
+	uint32_t suspend_rel; /* requests up to this sequence are released */
+	/* Trace lane generation: a new value at every thread start. */
+	uint32_t generation;
 	const char *name;	 /* caller-owned from desc->name */
 	struct ove_thread *next; /* intrusive enumeration list */
 #ifdef CONFIG_OVE_THREAD_STATE_STATS

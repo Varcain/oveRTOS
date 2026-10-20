@@ -296,6 +296,19 @@ target_include_directories(ove_test_sim_shm_backpressure PRIVATE
     ${OVE_ROOT}/sim/include
     ${OVE_INCLUDE}
 )
+# Kernel-thread state table: slots go only to emitted transitions and are
+# freed on exit.  The shim's ove/thread.h comes first.
+add_executable(ove_test_trace_kthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_kthread.c
+    ${OVE_ROOT}/backends/common/ove_trace.c
+)
+target_include_directories(ove_test_trace_kthread PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/trace_kthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/backends/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/host/posix/include
+)
 # Profiler drain against a transport that refuses events: refused samples
 # are reported once and stay out of the ring's overflow counter.
 add_executable(ove_test_sim_profiler_refused
@@ -393,6 +406,7 @@ add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
 add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
 add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
+add_test(NAME ove_trace_kthread COMMAND ove_test_trace_kthread)
 add_test(NAME ove_nuttx_suspend_handshake COMMAND ove_test_nuttx_suspend_handshake)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
@@ -427,6 +441,12 @@ add_test(NAME ove_app_new_python
 add_test(NAME ove_profiler_bridge_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_profiler_bridge.py)
+add_test(NAME ove_zig_struct_mirrors_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_zig_struct_mirrors.py)
+add_test(NAME ove_bridge_trace_descriptors_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_bridge_trace_descriptors.py)
 add_test(NAME ove_manifest_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_manifest.py)

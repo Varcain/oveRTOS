@@ -46,8 +46,8 @@ static struct sim_debug_ctx debug_ctx;
 /* ── Snapshot serialisation ────────────────────────────────────────── */
 
 /* Maximum binary snapshot size:
- *   1 (count) + 16 (mem) + MAX_THREADS * (1 + name + 1+1+4+4+4+4+16) */
-#define SNAPSHOT_ENTRY_MAX (OVE_SIM_DEBUG_MAX_NAME_LEN + 35u)
+ *   1 (count) + 16 (mem) + MAX_THREADS * (1 + name + 1+1+4+4+4+4+16 + 4+4) */
+#define SNAPSHOT_ENTRY_MAX (OVE_SIM_DEBUG_MAX_NAME_LEN + 43u)
 #define SNAPSHOT_BUF_SIZE (17u + OVE_SIM_DEBUG_MAX_THREADS * SNAPSHOT_ENTRY_MAX)
 
 _Static_assert(sizeof(struct ove_sim_event) + SNAPSHOT_BUF_SIZE <= OVE_SIM_EVENT_MAX_BYTES,
@@ -96,8 +96,8 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		if (name_len > OVE_SIM_DEBUG_MAX_NAME_LEN)
 			name_len = OVE_SIM_DEBUG_MAX_NAME_LEN;
 
-		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 + 4 + 16 = name_len + 35 */
-		if (p + name_len + 35 > end)
+		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 + 4 + 16 + 4 + 4 = name_len + 43 */
+		if (p + name_len + 43 > end)
 			break;
 
 		*p++ = (uint8_t)name_len;
@@ -136,6 +136,15 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		}
 		memcpy(p, st_pct, 16);
 		p += 16;
+
+		/* The thread's trace tid and lane generation, so the dashboard
+		 * links this row to its trace lane and profiler samples. */
+		uint32_t tid = (uint32_t)threads[i].trace_id;
+		memcpy(p, &tid, 4);
+		p += 4;
+		uint32_t generation = threads[i].generation;
+		memcpy(p, &generation, 4);
+		p += 4;
 	}
 
 	return (size_t)(p - buf);

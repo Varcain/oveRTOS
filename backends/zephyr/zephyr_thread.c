@@ -17,6 +17,9 @@
 #include <stdbool.h>
 #include <string.h>
 
+/* Lane generation source for every thread start (see ove_backend_common.h). */
+static uint32_t g_thread_generation;
+
 #if defined(CONFIG_THREAD_RUNTIME_STATS)
 static uint32_t runtime_percent(uint64_t part, uint64_t total)
 {
@@ -135,6 +138,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->name = name; /* caller-owned; retained for trace descriptor */
 	storage->next = NULL;
 	storage->stop_requested = 0;
+	storage->generation = ove_thread_next_generation(&g_thread_generation);
 
 	/* Public oveRTOS threads remain supervisor-only, so the storage helper uses
 	 * Zephyr's kernel-stack layout. Protected LXP K_USER tasks are outside this
@@ -204,6 +208,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	info->name = name;
 	info->next = NULL;
 	info->stop_requested = 0;
+	info->generation = ove_thread_next_generation(&g_thread_generation);
 
 	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry, arg,
 			      (void *)info, ove_zephyr_map_priority(priority), 0, K_NO_WAIT);
@@ -319,8 +324,19 @@ bool ove_thread_should_stop(ove_thread_t handle)
 static void sched_transition(struct k_thread *thread, int next, bool only_from_waiting)
 {
 	struct ove_thread *t = thread ? (struct ove_thread *)thread->custom_data : NULL;
-	if (!t)
+	if (!t) {
+		/* Kernel / idle thread: no embedded tracker, but it still gets a
+		 * swimlane from the shared per-tid table, which is not locked:
+		 * switched_in runs in PendSV after BASEPRI is restored and the
+		 * suspend hook in thread context, so update it under irq_lock()
+		 * as well. */
+		unsigned int kkey = irq_lock();
+		ove_trace_emit_kthread_state((uintptr_t)thread, next,
+					     only_from_waiting ? OVE_TRACE_KT_FROM_WAITING
+							       : OVE_TRACE_KT_ALWAYS);
+		irq_unlock(kkey);
 		return;
+	}
 
 	unsigned int key = irq_lock();
 	int prev = __atomic_load_n(&t->state, __ATOMIC_RELAXED);
@@ -525,7 +541,10 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	info->name = k_thread_name_get((k_tid_t)thread);
 	if (!info->name)
 		info->name = "?";
+	const struct ove_thread *ove = thread->custom_data;
 	info->identity = (uintptr_t)thread;
+	info->trace_id = ove ? (uintptr_t)ove : (uintptr_t)thread;
+	info->generation = ove ? ove->generation : 0u;
 	info->state = _map_zephyr_state(thread->base.thread_state);
 	info->native_priority = k_thread_priority_get((k_tid_t)thread);
 	info->priority = (int)ove_zephyr_unmap_priority(info->native_priority);

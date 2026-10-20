@@ -61,7 +61,9 @@ struct ove_thread {
 	k_thread_stack_t *stack;
 	size_t stack_size;
 	int heap_stack;
-	int state;		 /* ove_thread_state_t last observed */
+	int state; /* ove_thread_state_t last observed */
+	/* Trace lane generation: a new value at every thread start. */
+	uint32_t generation;
 	const char *name;	 /* caller-owned from desc->name */
 	struct ove_thread *next; /* unused on Zephyr (no thread registry) */
 #ifdef CONFIG_OVE_THREAD_STATE_STATS

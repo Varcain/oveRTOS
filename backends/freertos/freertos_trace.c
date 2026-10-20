@@ -66,6 +66,9 @@ size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t 
 	TaskStatus_t tasks[OVE_SIM_TRACE_MAX_DESC];
 	if (count > OVE_SIM_TRACE_MAX_DESC)
 		count = OVE_SIM_TRACE_MAX_DESC;
+	/* Keep the scheduler suspended while the tags are read: a thread
+	 * destroyed in between would free the wrapper they point to. */
+	vTaskSuspendAll();
 	UBaseType_t filled = uxTaskGetSystemState(tasks, count, NULL);
 
 	size_t n = 0;
@@ -77,9 +80,11 @@ size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t 
 		 * falls back to the raw FreeRTOS TCB address. */
 		uintptr_t handle = t ? (uintptr_t)t : (uintptr_t)tasks[i].xHandle;
 		out[n].tid = (uint32_t)handle;
+		out[n].generation = t ? t->generation : 0u;
 		out[n].name = tasks[i].pcTaskName;
 		n++;
 	}
+	(void)xTaskResumeAll();
 	return n;
 #else
 	(void)out;

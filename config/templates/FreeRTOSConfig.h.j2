@@ -77,6 +77,13 @@ void ove_backend_profiler_task_deleted(void *task);
 #define OVE_PROFILER_TASK_CREATED(pxNewTCB) do { } while (0)
 #define OVE_PROFILER_TASK_DELETED(pxTCB) do { } while (0)
 #endif
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+/* A deleted kernel task (no ove_thread tag) closes its swimlane. */
+#define OVE_TRACE_TASK_DELETED(pxTCB) \
+	ove_backend_trace_task_deleted((uintptr_t)(pxTCB)->pxTaskTag, (uintptr_t)(pxTCB))
+#else
+#define OVE_TRACE_TASK_DELETED(pxTCB) do { } while (0)
+#endif
 #define traceTASK_CREATE(pxNewTCB)                                                          \
 	do {                                                                                \
 		ove_backend_freertos_task_created((void *)(pxNewTCB),                       \
@@ -87,6 +94,7 @@ void ove_backend_profiler_task_deleted(void *task);
 	do {                                                                                \
 		ove_backend_freertos_task_deleted((void *)(pxTCB));                         \
 		OVE_PROFILER_TASK_DELETED(pxTCB);                                           \
+		OVE_TRACE_TASK_DELETED(pxTCB);                                              \
 	} while (0)
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1
@@ -246,8 +254,9 @@ extern "C" {
 extern void ove_backend_trace_task_switched_in(void);
 extern void ove_backend_trace_task_switched_out(void);
 extern void ove_backend_trace_task_blocking(void);
-extern void ove_backend_trace_task_suspended(uintptr_t task_tag);
-extern void ove_backend_trace_task_ready(uintptr_t task_tag);
+extern void ove_backend_trace_task_suspended(uintptr_t task_tag, uintptr_t task);
+extern void ove_backend_trace_task_ready(uintptr_t task_tag, uintptr_t task);
+extern void ove_backend_trace_task_deleted(uintptr_t task_tag, uintptr_t task);
 #ifdef __cplusplus
 }
 #endif
@@ -269,11 +278,12 @@ extern void ove_backend_trace_task_ready(uintptr_t task_tag);
 #define traceTASK_DELAY() ove_backend_trace_task_blocking()
 #define traceTASK_DELAY_UNTIL(xTimeToWake) ove_backend_trace_task_blocking()
 /* Expanded only inside tasks.c, where TCB_t is visible: pass the task tag
- * (the ove_thread wrapper) directly so the hooks need no kernel API. Both
- * run inside critical sections / ISRs. */
-#define traceTASK_SUSPEND(pxTCB) ove_backend_trace_task_suspended((uintptr_t)(pxTCB)->pxTaskTag)
+ * (the ove_thread wrapper, 0 for kernel tasks) and the TCB directly so the
+ * hooks need no kernel API. Both run inside critical sections / ISRs. */
+#define traceTASK_SUSPEND(pxTCB) \
+	ove_backend_trace_task_suspended((uintptr_t)(pxTCB)->pxTaskTag, (uintptr_t)(pxTCB))
 #define traceMOVED_TASK_TO_READY_STATE(pxTCB) \
-	ove_backend_trace_task_ready((uintptr_t)(pxTCB)->pxTaskTag)
+	ove_backend_trace_task_ready((uintptr_t)(pxTCB)->pxTaskTag, (uintptr_t)(pxTCB))
 #endif
 
 #endif /* FREERTOS_CONFIG_H */

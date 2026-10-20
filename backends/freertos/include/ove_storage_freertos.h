@@ -113,6 +113,8 @@ struct ove_thread {
 	StaticTask_t static_task;
 	void (*entry)(void *);
 	void *arg;
+	/* Trace lane generation: a new value at every thread start. */
+	uint32_t generation;
 	/* Cooperative join: worker sets `exited=1` + DMB + reads `destroyer`
 	 * after `entry()` returns; destroyer publishes `destroyer` + DMB +
 	 * reads `exited`.  Whichever side wins the race notifies the other

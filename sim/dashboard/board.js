@@ -227,7 +227,9 @@ var HANDLERS = {
         renderRun();
     },
     "uart-rx": function () { blink("uart-rx"); },
-    "select-thread": function (d) { selectThread(d.name, { fromTrace: true }); },
+    "select-thread": function (d) {
+        selectThread(d.tid != null ? d.tid : tidByName(d.name), { fromTrace: true });
+    },
 };
 
 /* ── Boot ─────────────────────────────────────────────────────────── */
@@ -297,8 +299,9 @@ function afterApp() {
         tbody.addEventListener("click", function (e) {
             var tr = e.target.closest("tr");
             if (!tr || !tr.cells.length) return;
-            var name = tr.cells[0].textContent;
-            selectThread(name === S.selected ? null : name);
+            var tid = tr.getAttribute("data-tid");
+            tid = tid === null ? null : parseInt(tid, 10);
+            selectThread(tid !== null && tid === S.selected ? null : tid);
         });
     }
     renderPanes();
@@ -1030,7 +1033,7 @@ function drawGlance() {
     if (S.threads.length) {
         $("gl-thr-v").textContent = S.threads.length;
         dots.innerHTML = S.threads.map(function (t) {
-            return "<i class='s" + t.state + (t.name === S.selected ? " sel" : "") + "' title='" +
+            return "<i class='s" + t.state + (t.tid === S.selected ? " sel" : "") + "' title='" +
                 esc(t.name) + "'></i>";
         }).join("");
     }
@@ -1103,16 +1106,30 @@ function focusShell() {
 
 /* ── Linked thread selection ──────────────────────────────────────── */
 
-function selectThread(name, opts) {
-    S.selected = name || null;
+function tidByName(name) {
+    if (name == null) return null;
+    for (var i = 0; i < S.threads.length; i++)
+        if (S.threads[i].name === name) return S.threads[i].tid;
+    return null;
+}
+
+function selectedThreadName() {
+    if (S.selected == null) return null;
+    for (var i = 0; i < S.threads.length; i++)
+        if (S.threads[i].tid === S.selected) return S.threads[i].name;
+    return "0x" + S.selected.toString(16);
+}
+
+function selectThread(tid, opts) {
+    S.selected = (tid == null) ? null : tid;
     if (!(opts && opts.fromTrace) && typeof window.oveTraceSelect === "function")
         window.oveTraceSelect(S.selected);
     applyRowSelection();
     applyProfilerThread();
     var chip = $("bv-sel");
-    if (S.selected) {
+    if (S.selected != null) {
         chip.hidden = false;
-        chip.innerHTML = "&#9673; " + esc(S.selected) + " <button title='Clear selection (Esc)'>&#10005;</button>";
+        chip.innerHTML = "&#9673; " + esc(selectedThreadName()) + " <button title='Clear selection (Esc)'>&#10005;</button>";
         chip.title = "Selected thread: highlighted in Trace, Profiler filtered to it";
         chip.querySelector("button").onclick = function () { selectThread(null); };
     } else {
@@ -1126,7 +1143,9 @@ function applyRowSelection() {
     if (!tbody) return;
     for (var i = 0; i < tbody.rows.length; i++) {
         var r = tbody.rows[i];
-        r.classList.toggle("bv-selected", !!S.selected && r.cells[0] && r.cells[0].textContent === S.selected);
+        var rowTid = r.getAttribute("data-tid");
+        r.classList.toggle("bv-selected", S.selected != null && rowTid !== null &&
+                            parseInt(rowTid, 10) === S.selected);
     }
 }
 
@@ -1136,7 +1155,7 @@ function applyProfilerThread() {
     var target = null;
     for (var i = 0; i < sel.options.length; i++) {
         var o = sel.options[i];
-        if (S.selected ? o.textContent === S.selected : o.value === "0") { target = o; break; }
+        if (S.selected != null ? o.value === String(S.selected) : o.value === "0") { target = o; break; }
     }
     if (target && sel.value !== target.value) {
         sel.value = target.value;
@@ -1163,7 +1182,7 @@ function commands() {
     c.push({ grp: "Run", title: "Step out", key: "Shift+F11", off: !halted, run: function () { dbg(window.DBG_CMD_STEP_OUT); } });
     c.push({ grp: "Run", title: "Reset board", off: !canDebug(), run: resetBoard });
     S.threads.forEach(function (t) {
-        c.push({ grp: "Thread", title: "Select " + t.name, run: function () { selectThread(t.name); } });
+        c.push({ grp: "Thread", title: "Select " + t.name, run: function () { selectThread(t.tid); } });
     });
     if (S.selected) c.push({ grp: "Thread", title: "Clear selection", key: "Esc", run: function () { selectThread(null); } });
     [["auto", "Auto (whole-number scale)"], ["fit", "Fit"], ["1", "1\u00d7"], ["2", "2\u00d7"]].forEach(function (s) {
@@ -1279,7 +1298,7 @@ function bindKeys() {
             var s = $("bv-con-search");
             if (s) { s.focus(); e.preventDefault(); }
         }
-        else if (k === "Escape" && S.selected) selectThread(null);
+        else if (k === "Escape" && S.selected != null) selectThread(null);
     });
 }
 

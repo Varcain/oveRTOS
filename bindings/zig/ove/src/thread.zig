@@ -682,6 +682,13 @@ pub const ThreadInfo = extern struct {
     valid_fields: u32,
     state_times: c.struct_ove_thread_state_times,
     native_priority: i32,
+    /// Lane generation: a new value for every thread start, so a new
+    /// thread on reused storage is told apart from the old one; 0 for
+    /// threads that are not ove threads.
+    generation: u32,
+    /// The thread's tid in trace records, descriptors and profiler
+    /// samples; equality only.
+    trace_id: usize,
 
     /// The thread's priority on the ove scale.
     pub fn prio(self: *const ThreadInfo) ?Priority {
@@ -732,6 +739,7 @@ comptime {
     std.debug.assert(@alignOf(ThreadInfo) == @alignOf(c.struct_ove_thread_info));
     std.debug.assert(@offsetOf(ThreadInfo, "name_ptr") == @offsetOf(c.struct_ove_thread_info, "name"));
     std.debug.assert(@offsetOf(ThreadInfo, "identity") == @offsetOf(c.struct_ove_thread_info, "identity"));
+    std.debug.assert(@offsetOf(ThreadInfo, "generation") == @offsetOf(c.struct_ove_thread_info, "generation"));
     std.debug.assert(@offsetOf(ThreadInfo, "state") == @offsetOf(c.struct_ove_thread_info, "state"));
     std.debug.assert(@offsetOf(ThreadInfo, "priority") == @offsetOf(c.struct_ove_thread_info, "priority"));
     std.debug.assert(@offsetOf(ThreadInfo, "native_priority") == @offsetOf(c.struct_ove_thread_info, "native_priority"));
@@ -740,6 +748,7 @@ comptime {
     std.debug.assert(@offsetOf(ThreadInfo, "cpu_percent_x100_raw") == @offsetOf(c.struct_ove_thread_info, "cpu_percent_x100"));
     std.debug.assert(@offsetOf(ThreadInfo, "valid_fields") == @offsetOf(c.struct_ove_thread_info, "valid_fields"));
     std.debug.assert(@offsetOf(ThreadInfo, "state_times") == @offsetOf(c.struct_ove_thread_info, "state_times"));
+    std.debug.assert(@offsetOf(ThreadInfo, "trace_id") == @offsetOf(c.struct_ove_thread_info, "trace_id"));
 }
 
 /// Fill the complete caller-provided buffer with thread snapshots.

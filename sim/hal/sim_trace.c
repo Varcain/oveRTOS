@@ -89,8 +89,8 @@ static int emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_rec
 
 /* ── DESCRIPTORS emission ────────────────────────────────────────── */
 
-/* Envelope (8 B) + per thread (4 tid + 1 len + up to 31 name). */
-#define DESC_PER_MAX (4 + 1 + OVE_SIM_TRACE_MAX_NAME)
+/* Envelope (8 B) + per thread (4 tid + 4 generation + 1 len + up to 31 name). */
+#define DESC_PER_MAX (4 + 4 + 1 + OVE_SIM_TRACE_MAX_NAME)
 #define DESC_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
 
 _Static_assert(sizeof(struct ove_sim_event) + DESC_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
@@ -98,12 +98,45 @@ _Static_assert(sizeof(struct ove_sim_event) + DESC_BUF_BYTES <= OVE_SIM_EVENT_MA
 
 static uint8_t desc_ev_buf[sizeof(struct ove_sim_event) + DESC_BUF_BYTES];
 static struct ove_trace_thread_desc desc_scratch[OVE_SIM_TRACE_MAX_DESC];
+/* Last emitted (tid, generation) set; lets us push a fresh descriptor as
+ * soon as a thread appears or its storage is reused, instead of waiting
+ * for the periodic refresh. */
+static uint32_t desc_last_tid[OVE_SIM_TRACE_MAX_DESC];
+static uint32_t desc_last_gen[OVE_SIM_TRACE_MAX_DESC];
+static size_t desc_last_count;
 
-static void emit_descriptors(struct sim_trace_ctx *t)
+/* Whether the (tid, generation) set differs from the last one sent.  The
+ * order does not matter: FreeRTOS lists tasks in state-list order, which
+ * changes all the time without any thread starting or ending. */
+static bool descriptors_changed(size_t count)
 {
-	size_t count = ove_backend_trace_list_threads(desc_scratch, OVE_SIM_TRACE_MAX_DESC);
+	if (count != desc_last_count)
+		return true;
+	for (size_t i = 0; i < count; i++) {
+		bool found = false;
+		for (size_t j = 0; j < desc_last_count && !found; j++)
+			found = desc_scratch[i].tid == desc_last_tid[j] &&
+				desc_scratch[i].generation == desc_last_gen[j];
+		if (!found)
+			return true;
+	}
+	return false;
+}
+
+static void descriptors_remember(size_t count)
+{
+	for (size_t i = 0; i < count; i++) {
+		desc_last_tid[i] = desc_scratch[i].tid;
+		desc_last_gen[i] = desc_scratch[i].generation;
+	}
+	desc_last_count = count;
+}
+
+/* Returns OVE_OK, or the transport's error when the batch was not sent. */
+static int emit_descriptors(struct sim_trace_ctx *t, size_t count)
+{
 	if (count == 0)
-		return;
+		return OVE_OK;
 
 	struct ove_sim_event *ev = (struct ove_sim_event *)desc_ev_buf;
 	uint8_t *p = ev->data;
@@ -123,9 +156,11 @@ static void emit_descriptors(struct sim_trace_ctx *t)
 		size_t nlen = strlen(name);
 		if (nlen > OVE_SIM_TRACE_MAX_NAME)
 			nlen = OVE_SIM_TRACE_MAX_NAME;
-		if (p + 5 + nlen > end)
+		if (p + 9 + nlen > end)
 			break;
 		memcpy(p, &desc_scratch[i].tid, 4);
+		p += 4;
+		memcpy(p, &desc_scratch[i].generation, 4);
 		p += 4;
 		*p++ = (uint8_t)nlen;
 		memcpy(p, name, nlen);
@@ -137,7 +172,12 @@ static void emit_descriptors(struct sim_trace_ctx *t)
 	ev->timestamp_ms = 0;
 	ev->data_len = (uint32_t)(p - ev->data);
 
-	ove_sim_plugin_emit_event(t->plugin_id, ev);
+	int ret = ove_sim_plugin_emit_event(t->plugin_id, ev);
+	/* Remember the set only once the host has it: a refused batch is
+	 * sent again on the next tick. */
+	if (ret == OVE_OK)
+		descriptors_remember(count);
+	return ret;
 }
 
 /* ── Pump-driven tick ─────────────────────────────────────────────── */
@@ -157,11 +197,15 @@ void ove_sim_trace_tick(uint32_t elapsed_ms)
 			trace_refused = dropped + (uint32_t)n;
 	} while (n == OVE_SIM_TRACE_MAX_BATCH);
 
+	/* Enumerate every tick so a thread start / storage reuse is reported
+	 * immediately (a fresh generation starts a new dashboard lane) rather
+	 * than up to OVE_SIM_TRACE_DESC_MS later. */
+	size_t count = ove_backend_trace_list_threads(desc_scratch, OVE_SIM_TRACE_MAX_DESC);
 	trace_ctx.ms_since_desc += elapsed_ms;
-	if (trace_ctx.ms_since_desc >= OVE_SIM_TRACE_DESC_MS) {
-		emit_descriptors(&trace_ctx);
+	bool due = trace_ctx.ms_since_desc >= OVE_SIM_TRACE_DESC_MS;
+	if (count > 0 && (due || descriptors_changed(count)) &&
+	    emit_descriptors(&trace_ctx, count) == OVE_OK)
 		trace_ctx.ms_since_desc = 0;
-	}
 }
 
 /* ── Plugin ops ───────────────────────────────────────────────────── */

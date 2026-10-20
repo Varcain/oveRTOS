@@ -1243,29 +1243,80 @@ def _profiler_dump_samples(payload):
     sys.stderr.flush()
 
 
+# Trace wire versions (see sim/include/ove/sim/ove_sim_trace.h):
+#   v1: descriptor record = tid(4) | name_len(1) | name
+#   v2: the descriptor record gained the per-thread generation word:
+#       tid(4) | generation(4) | name_len(1) | name
+#       Newer versions are assumed to keep the v2 descriptor layout.
+TRACE_VERSION_V1 = 1
+TRACE_VERSION_V2 = 2
+TRACE_VERSION_KNOWN = 2
+
+# Trace versions already reported to the operator.  The descriptor batch
+# arrives every 500 ms, so a warning must not be repeated for every batch.
+_trace_warned_versions = set()
+
+
+def _warn_trace_version(ver):
+    """Report a trace version this bridge does not know (once per version)."""
+    if ver in _trace_warned_versions:
+        return
+    _trace_warned_versions.add(ver)
+    sys.stderr.write(
+        f"[dump-desc] trace version {ver} is outside the known range "
+        f"{TRACE_VERSION_V1}..{TRACE_VERSION_KNOWN}\n")
+    sys.stderr.flush()
+
+
 def _trace_dump_descriptors(payload):
     """Decode a FRAME_TRACE descriptor batch (subType=0) and log tid→name
     pairs so an offline aggregator can filter idle/pump threads the same
-    way the dashboard does. Only DESCRIPTORS; stream records are skipped."""
+    way the dashboard does. Only DESCRIPTORS; stream records are skipped.
+
+    The envelope version byte selects the record layout: v1 carries
+    tid | name_len | name, v2 and later add the per-thread generation
+    word (tid | generation | name_len | name).  The guest of this tree
+    emits v2, but an older guest binary (v1) may still talk to the
+    bridge, so the layout is taken from the version byte instead of
+    unconditionally skipping four bytes."""
     if len(payload) < 8:
         return
     try:
-        sub, _ver, count, _dropped = struct.unpack_from("<BBHI", payload, 0)
+        sub, ver, count, _dropped = struct.unpack_from("<BBHI", payload, 0)
     except struct.error:
         return
     if sub != 0:
         return
+    if ver < TRACE_VERSION_V1:
+        # No version information at all: the layout cannot be guessed.
+        _warn_trace_version(ver)
+        return
+    if ver > TRACE_VERSION_KNOWN:
+        # Newer than this bridge knows: assume the v2 descriptor layout
+        # (unchanged since v2), but do not decode silently.
+        _warn_trace_version(ver)
+    has_generation = ver >= TRACE_VERSION_V2
     p = 8
     for _ in range(count):
-        if p + 5 > len(payload):
+        # tid(4) [+ generation(4)] and name_len(1) must be present
+        if p + (9 if has_generation else 5) > len(payload):
             return
         (tid,) = struct.unpack_from("<I", payload, p); p += 4
+        generation = 0
+        if has_generation:
+            (generation,) = struct.unpack_from("<I", payload, p)
+            p += 4
         name_len = payload[p]; p += 1
         if p + name_len > len(payload):
             return
         name = payload[p:p + name_len].decode("utf-8", "replace")
         p += name_len
-        sys.stderr.write(f"[dump-desc] tid=0x{tid:x} name={name}\n")
+        # The generation tells a recycled tid (a new thread reusing the
+        # storage) from the thread the name was seen for before - the same
+        # distinction the dashboard makes when it starts a fresh lane.
+        gen_field = f" gen=0x{generation:x}" if has_generation else ""
+        sys.stderr.write(
+            f"[dump-desc] tid=0x{tid:x} name={name}{gen_field}\n")
     sys.stderr.flush()
 
 

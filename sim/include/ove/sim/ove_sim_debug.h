@@ -30,6 +30,8 @@
  *     [uint32_t stack_size]     (total allocation bytes)
  *     [uint32_t cpu_x100]       (cpu_percent_x100)
  *     [uint32_t state_x100[4]]  (running, ready, blocked, suspended)
+ *     [uint32_t tid]            (shared trace/profiler identity)
+ *     [uint32_t generation]     (bumped when the storage is reused)
  * @{
  */
 
@@ -49,8 +51,7 @@ extern "C" {
 /** Maximum threads reported per snapshot (matches the trace descriptors). */
 #define OVE_SIM_DEBUG_MAX_THREADS 32
 
-/** Maximum thread name length in snapshot (matches the trace descriptors,
- *  so the dashboard can match a thread across panels by name). */
+/** Maximum thread name length in snapshot. */
 #define OVE_SIM_DEBUG_MAX_NAME_LEN 31
 
 /** Snapshot interval in milliseconds (~2 Hz). */

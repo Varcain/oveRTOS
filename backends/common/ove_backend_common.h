@@ -232,4 +232,18 @@ static inline void ove_backend_thread_set_state(int new_state)
 			return OVE_ERR_INVALID_PARAM; \
 	} while (0)
 
+/*
+ * Next thread lane generation from the backend's @p counter.  Every thread
+ * start takes a new one, so the trace can tell a new thread from an old
+ * one on reused storage (static storage, or a heap block malloc() hands
+ * out again).  Never 0: 0 means "no ove thread".
+ */
+static inline uint32_t ove_thread_next_generation(uint32_t *counter)
+{
+	uint32_t g = __atomic_add_fetch(counter, 1u, __ATOMIC_RELAXED);
+	if (g == 0u)
+		g = __atomic_add_fetch(counter, 1u, __ATOMIC_RELAXED);
+	return g;
+}
+
 #endif /* OVE_BACKEND_COMMON_H */

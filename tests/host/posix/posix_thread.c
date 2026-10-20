@@ -132,6 +132,9 @@ void ove_backend_thread_registry_unlock(void)
 	pthread_mutex_unlock(&thread_list_lock);
 }
 
+/* Lane generation source for every thread start (see ove_backend_common.h). */
+static uint32_t g_thread_generation;
+
 static void _register_thread(struct ove_thread *t)
 {
 	pthread_mutex_lock(&thread_list_lock);
@@ -212,6 +215,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 
 	struct ove_thread *t = (struct ove_thread *)storage;
 	memset(t, 0, sizeof(*t));
+	t->generation = ove_thread_next_generation(&g_thread_generation);
 
 	t->entry = entry;
 	t->arg = arg;
@@ -298,6 +302,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 		return OVE_ERR_NO_MEMORY;
 	}
 	memset(t, 0, sizeof(*t));
+	t->generation = ove_thread_next_generation(&g_thread_generation);
 
 	t->entry = entry;
 	t->arg = arg;
@@ -649,6 +654,8 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 		out[count].name = t->name ? t->name : "?";
 		out[count].identity = (uintptr_t)t;
+		out[count].trace_id = (uintptr_t)t;
+		out[count].generation = t->generation;
 		ove_thread_state_t state =
 			(ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		out[count].state = state;

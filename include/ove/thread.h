@@ -423,6 +423,12 @@ struct ove_thread_info {
 	uint32_t valid_fields;	   /**< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags. */
 	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
 	int native_priority; /**< The backend's own priority value for the thread. */
+	/** Lane generation: a new value for every thread start, so a new thread
+	 *  on reused storage is told apart from the old one; 0 for threads that
+	 *  are not ove threads. */
+	uint32_t generation;
+	uintptr_t trace_id; /**< The thread's tid in trace records, descriptors
+			     *   and profiler samples; equality only. */
 };
 
 /**

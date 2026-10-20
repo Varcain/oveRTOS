@@ -64,6 +64,10 @@ uint32_t ove_trace_ring_dropped_get(void);
  */
 struct ove_trace_thread_desc {
 	uint32_t tid;
+	/* Lane generation: a new value at every thread start, so the
+	 * dashboard starts a fresh lane when it changes for a tid; 0 for
+	 * threads that are not ove threads. */
+	uint32_t generation;
 	const char *name;
 };
 
