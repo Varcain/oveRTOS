@@ -4064,6 +4064,22 @@ def _test_kconfig_matrix(ove_dir, output_dir, *, rtos):
     return result
 
 
+def _test_qemu_trace(ove_dir, output_dir, *, rtos):
+    from .allconfigs import _run_app
+
+    board, app = "qemu-mps2-an500", "example_c_heap"
+    suite = f"qemu-{rtos}-trace"
+    built, _ = _run_app(ove_dir, board, rtos, app, venv.bin_path(ove_dir, "ove"))
+    if not built:
+        return TestResults(suite=suite, failed=1, failed_names=["firmware build"])
+
+    elf = os.path.join(output_dir, board, rtos, app, "images", "firmware.elf")
+    script = os.path.join(ove_dir, "config", "scripts", "ove-sim-invariants.py")
+    command = [venv.python_path(ove_dir), script, "--elf", elf, "--rtos", rtos]
+    rc = _run_owned_test_process(command, env=os.environ, timeout=20)
+    return TestResults(suite=suite, passed=int(rc == 0), failed=int(rc != 0))
+
+
 # Test name -> function mapping
 TEST_TARGETS = {
     "lxp-layout-config": test_lxp_memory_layout_config,
@@ -4168,6 +4184,9 @@ TEST_TARGETS = {
     "qemu-nuttx-cpuload": test_qemu_nuttx_cpuload,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
+    "qemu-freertos-trace": partial(_test_qemu_trace, rtos="freertos"),
+    "qemu-nuttx-trace": partial(_test_qemu_trace, rtos="nuttx"),
+    "qemu-zephyr-trace": partial(_test_qemu_trace, rtos="zephyr"),
     "kconfig-matrix-freertos": partial(_test_kconfig_matrix, rtos="freertos"),
     "kconfig-matrix-nuttx": partial(_test_kconfig_matrix, rtos="nuttx"),
     "kconfig-matrix-zephyr": partial(_test_kconfig_matrix, rtos="zephyr"),
@@ -4205,6 +4224,7 @@ SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "rust-lvgl", "zig", "nu
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
                "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
                "qemu-zephyr", "qemu-zephyr-zeroheap",
+               "qemu-freertos-trace", "qemu-nuttx-trace", "qemu-zephyr-trace",
                "kconfig-matrix-freertos", "kconfig-matrix-nuttx", "kconfig-matrix-zephyr"]
 RENODE_TESTS = ["renode-stm32f746-freertos",
                 "renode-stm32f746-freertos-zeroheap",

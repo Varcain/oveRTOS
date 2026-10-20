@@ -91,6 +91,8 @@ Every target follows a predictable shape:
 - `test-stub` — host test backend (`tests/host/posix/`)
 - `test-qemu-<rtos>{,-zeroheap}` — QEMU MPS2-AN500
 - `test-kconfig-matrix-<rtos>` — six trace and profiler configuration builds for QEMU MPS2-AN500
+- `test-qemu-<rtos>-trace` — check trace and profiler streams from the C heap example on QEMU MPS2-AN500.
+  Because this target uses and removes the same `/dev/shm/ove-*` files as `ove run`, run it only when no QEMU dashboard session is active.
 - `test-renode-stm32f746-<rtos>{,-zeroheap}` — Renode
 - `test-hw-stm32f746-<rtos>{,-zeroheap}` — real Discovery board (manual)
 

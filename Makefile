@@ -566,6 +566,7 @@ help:
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
 	@echo "  test-kconfig-matrix-<rtos> - QEMU trace and profiler configuration builds"
+	@echo "  test-qemu-<rtos>-trace - Check trace and profiler streams from the QEMU example"
 	@echo "  test-renode             - All Renode STM32F746 targets (FreeRTOS / Zephyr / NuttX)"
 	@echo "  test-hw-stm32f746-<rtos>{,-zeroheap} - Manual HIL on real Discovery board."
 	@echo "                            Requires OVE_HW_SERIAL_PORT=/dev/ttyACMx and"
