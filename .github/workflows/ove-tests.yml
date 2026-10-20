@@ -771,6 +771,8 @@ jobs:
 
       - name: Run zeroheap tests
         run: timeout 1200 make test-qemu-freertos-zeroheap
+      - name: Check FreeRTOS trace and profiler streams
+        run: timeout --signal=INT --kill-after=30 1800 make test-qemu-freertos-trace
 
       - name: Check EventGroup deferred interrupt delivery and task access
         run: timeout --signal=INT --kill-after=30 960 make test-eventgroup-deferred-arm
@@ -844,6 +846,8 @@ jobs:
 
       - name: Run cpuload tests
         run: timeout 900 make test-qemu-nuttx-cpuload
+      - name: Check NuttX trace and profiler streams
+        run: timeout --signal=INT --kill-after=30 1800 make test-qemu-nuttx-trace
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -899,6 +903,8 @@ jobs:
 
       - name: Run zeroheap tests
         run: timeout 600 make test-qemu-zephyr-zeroheap
+      - name: Check Zephyr trace and profiler streams
+        run: timeout --signal=INT --kill-after=30 1800 make test-qemu-zephyr-trace
 
       - name: Check EventGroup native user access
         run: timeout --signal=INT --kill-after=30 600 make test-eventgroup-user
