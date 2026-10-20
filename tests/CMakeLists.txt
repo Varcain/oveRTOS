@@ -529,6 +529,10 @@ add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestArmFloatAbi.cmake)
+add_test(NAME ove_build_type_cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DOVE_ROOT=${OVE_ROOT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestBuildType.cmake)
 foreach(_sizes_variant make ninja)
     set(_sizes_generator "Unix Makefiles")
     if(_sizes_variant STREQUAL "ninja")
