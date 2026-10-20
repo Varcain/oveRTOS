@@ -56,7 +56,49 @@ test("trace: records decode into spans and marks, a lost record is a gap", () =>
         { tid: 5, start: T + 2000, end: T + 4000, state: 2, gap: false },
         { tid: 5, start: T + 4000, end: T + 5000, state: -1, gap: true },
     ]);
-    assert.deepEqual(g.traceMarks, [{ tid: 5, ts: T + 3000, prim: 5, act: 3, arg: 0xbeef }]);
+    assert.deepEqual(g.traceMarks, [{ tid: 5, ts: T + 3000, prim: 5, act: 3, obj: 0xbeef }]);
+});
+
+test("trace: v3 keeps the full object id and v2 records still decode", () => {
+    const g = loadDashboard();
+    for (const [version, ts, obj] of [[3, 100, 0x2000beef], [2, 200, 0xbeef]]) {
+        g.handleTrace(traceStream([
+            markRec(ts, 3, 5, 3, 0x2000beef), stateRec(ts + 1, 3, 1, 0),
+        ], 0, version), 0);
+        assert.deepEqual(g.traceMarks.at(-1), { tid: 3, ts, prim: 5, act: 3, obj });
+        assert.equal(g.traceThreads[3].lastTs, ts + 1);
+    }
+});
+
+test("trace: each POST pairs once in FIFO order on its own object", () => {
+    const g = loadDashboard();
+    const obj = 0x20001234, other = 0x20011234;
+    const enter = (ts, tid, id = obj) => markRec(ts, tid, 1, 1, id);
+    const exit = (ts, tid, id = obj) => markRec(ts, tid, 1, 2, id);
+    g.handleTrace(traceStream([
+        enter(100, 5), enter(110, 6), enter(115, 7), enter(119, 8, other),
+        markRec(120, 12, 1, 3, other), markRec(130, 9, 1, 3, obj),
+        markRec(140, 10, 1, 3, obj),
+        exit(150, 5), exit(160, 6), exit(170, 7), exit(180, 8, other),
+    ]), 0);
+    assert.deepEqual(g.traceFlows, [
+        { tid: 5, start: 100, end: 150, obj, prim: 1, postTid: 9, postTs: 130 },
+        { tid: 6, start: 110, end: 160, obj, prim: 1, postTid: 10, postTs: 140 },
+        { tid: 7, start: 115, end: 170, obj, prim: 1, postTid: null, postTs: null },
+        { tid: 8, start: 119, end: 180, obj: other, prim: 1, postTid: 12, postTs: 120 },
+    ]);
+});
+
+test("trace: pairing skips zero-length waits and out-of-window posts", () => {
+    const g = loadDashboard();
+    const obj = 0x20;
+    g.handleTrace(traceStream([
+        markRec(90, 11, 1, 3, obj), markRec(100, 5, 1, 1, obj),
+        markRec(175, 13, 1, 3, obj), markRec(170, 5, 1, 2, obj),
+        markRec(180, 6, 1, 1, obj), markRec(180, 6, 1, 2, obj),
+    ]), 0);
+    assert.deepEqual(g.traceFlows.map((f) => [f.tid, f.postTid]), [[5, null]]);
+    assert.deepEqual(g.tracePosts["0x20"].map((p) => p.ts), [90, 175]);
 });
 
 test("trace: a lane reused after TERMINATED starts READY without a gap", () => {
@@ -73,11 +115,20 @@ test("trace: a lane reused after TERMINATED starts READY without a gap", () => {
 test("trace: a record a second behind restarts the timebase", () => {
     const g = loadDashboard();
     g.handleTrace(traceDescriptors([[5, "worker"]]), 0);
-    g.handleTrace(traceStream([stateRec(5_000_000, 5, 1, 0), stateRec(5_100_000, 5, 0, 2)]), 0);
+    g.handleTrace(traceStream([
+        stateRec(5_000_000, 5, 1, 0),
+        markRec(5_010_000, 5, 1, 1, 0x20), markRec(5_020_000, 6, 1, 3, 0x20),
+        markRec(5_030_000, 5, 1, 2, 0x20), markRec(5_040_000, 6, 1, 3, 0x30),
+        markRec(5_050_000, 5, 1, 1, 0x40),
+        stateRec(5_100_000, 5, 0, 2),
+    ]), 0);
     /* Less than a second behind is a late record, not a restart. */
     g.handleTrace(traceStream([markRec(4_500_000, 5, 1, 2, 0x10)]), 0);
     assert.equal(g.traceSpans.length, 1);
-    assert.equal(g.traceMarks.length, 1);
+    assert.equal(g.traceMarks.length, 6);
+    assert.equal(g.traceFlows.length, 1);
+    assert.equal(Object.keys(g.tracePosts).length, 1);
+    assert.equal(Object.keys(g.traceWaits).length, 1);
     /* Board reset: the old records go, the name stays, and the first new
      * record is not compared with the old last state. */
     g.traceView.follow = false;
@@ -86,30 +137,45 @@ test("trace: a record a second behind restarts the timebase", () => {
         { tid: 5, start: 4_100_000, end: 4_100_100, state: 0, gap: false },
     ]);
     assert.equal(g.traceMarks.length, 0);
+    assert.equal(g.traceFlows.length, 0);
+    assert.deepEqual(Object.keys(g.tracePosts), []);
+    assert.deepEqual(Object.keys(g.traceWaits), []);
     assert.equal(g.traceThreads[5].name, "worker");
     assert.equal(g.traceMinTs, 4_100_000);
     assert.equal(g.traceView.follow, true);
 });
 
-test("trace: records older than the 30 s window are evicted", () => {
+test("trace: the window evicts old records and each post queue is capped", () => {
     const g = loadDashboard();
+    const post = (ts) => markRec(ts, 9, 1, 3, 0x20);
     g.handleTrace(traceStream([
-        stateRec(100, 1, 1, 0), markRec(150, 1, 1, 1, 0), stateRec(200, 1, 0, 2),
+        stateRec(100, 1, 1, 0), markRec(150, 1, 1, 1, 0x20),
+        markRec(170, 1, 1, 2, 0x20), stateRec(200, 1, 0, 2), post(1000),
     ]), 0);
-    g.handleTrace(traceStream([stateRec(30_000_300, 1, 2, 0)]), 0);
+    assert.equal(g.traceFlows.length, 1);
+    g.handleTrace(traceStream([stateRec(30_001_001, 1, 2, 0)]), 0);
     assert.deepEqual(g.traceSpans.map((s) => s.start), [200]);
     assert.equal(g.traceMarks.length, 0);
+    assert.deepEqual(g.traceFlows, []);
+    assert.deepEqual(Object.keys(g.tracePosts), []);
     assert.equal(g.traceMinTs, 200);
+    g.handleTrace(traceStream(Array.from({ length: 4097 }, (_, i) => post(30_001_002 + i))), 0);
+    assert.equal(g.tracePosts["0x20"].length, 4096);
+    assert.equal(g.tracePosts["0x20"][0].ts, 30_001_003);
 });
 
 test("trace: reused storage drops history from an unclosed lane", () => {
     const g = loadDashboard();
     g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
-    g.handleTrace(traceStream([stateRec(100, 7, 1, 0), markRec(150, 7, 1, 1, 0),
-        stateRec(200, 7, 0, 2)]), 0);
+    g.handleTrace(traceStream([
+        stateRec(100, 7, 1, 0), markRec(150, 7, 1, 1, 0x10), markRec(170, 7, 1, 2, 0x10),
+        markRec(180, 7, 1, 1, 0x20), stateRec(200, 7, 0, 2),
+    ]), 0);
     g.handleTrace(traceDescriptors([[7, 2, "worker"]]), 0);
     assert.deepEqual(g.traceSpans, []);
     assert.deepEqual(g.traceMarks, []);
+    assert.deepEqual(g.traceFlows, []);
+    assert.deepEqual(Object.keys(g.traceWaits), []);
     assert.equal(g.traceThreads[7].lastState, -1);
 });
 

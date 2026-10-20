@@ -18,23 +18,39 @@
 #ifdef CONFIG_OVE_TRACE_STREAM
 
 /*
- * Fixed-size trace record. 16 B keeps alignment trivial and lets the
- * dashboard treat payloads as a flat array.
+ * Fixed-size trace record (wire v3). 24 B keeps the 64-bit timestamp
+ * aligned and lets the dashboard treat payloads as a flat array.
  *
- *   ts_us : CLOCK_MONOTONIC in microseconds
- *   tid   : low 32 bits of the struct ove_thread pointer (stable per thread,
- *           resolved to a name by descriptor records emitted periodically)
- *   kind  : OVE_TRACE_KIND_STATE or OVE_TRACE_KIND_MARK
- *   code  : STATE -> new_state; MARK -> primitive kind
- *   arg   : STATE -> old_state; MARK -> low 16 bits of object address
+ *   ts_us    : CLOCK_MONOTONIC in microseconds
+ *   tid      : low 32 bits of the struct ove_thread pointer (stable per
+ *              thread, resolved to a name by descriptor records emitted
+ *              periodically)
+ *   kind     : OVE_TRACE_KIND_STATE or OVE_TRACE_KIND_MARK
+ *   code     : STATE -> new_state; MARK -> primitive/action nibbles
+ *   reserved : STATE -> old_state; MARK -> unused (kept for v2 layout)
+ *   object   : STATE -> old_state; MARK -> low 32 bits of object address
+ *   pad      : always 0; named so that no stack bytes reach the wire
+ *
+ * Offsets 0..15 match the v2 (16-byte) record, so the dashboard can decode
+ * both versions: v2 carries the object's low 16 bits in `reserved`.
  */
 struct ove_trace_record {
 	uint64_t ts_us;
 	uint32_t tid;
 	uint8_t kind;
 	uint8_t code;
-	uint16_t arg;
+	uint16_t reserved;
+	uint32_t object;
+	uint32_t pad;
 };
+
+_Static_assert(sizeof(struct ove_trace_record) == 24, "v3 trace record is 24 bytes");
+_Static_assert(offsetof(struct ove_trace_record, tid) == 8 &&
+		       offsetof(struct ove_trace_record, kind) == 12 &&
+		       offsetof(struct ove_trace_record, code) == 13 &&
+		       offsetof(struct ove_trace_record, reserved) == 14,
+	       "the first 16 bytes keep the v2 record layout");
+_Static_assert(offsetof(struct ove_trace_record, object) == 16, "v3 object word at offset 16");
 
 /**
  * ove_trace_ring_push - enqueue a record; drops only when the ring is full

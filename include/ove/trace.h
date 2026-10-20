@@ -93,8 +93,8 @@ void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_sta
  * @param[in] thread_handle Stable backend handle of the emitting thread.
  * @param[in] prim          One of @c OVE_TRACE_PRIM_*.
  * @param[in] act           One of @c OVE_TRACE_ACT_*.
- * @param[in] object        Address of the primitive (low 16 bits survive
- *                          into the record).
+ * @param[in] object        Address of the primitive (its low 32 bits are
+ *                          carried in the record).
  */
 void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
 
