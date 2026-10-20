@@ -74,24 +74,26 @@ export function traceDescriptors(entries, dropped = 0, version = 2) {
     return dv.buffer;
 }
 
-/** STREAM of 16-byte records. */
-export function traceStream(records, dropped = 0) {
-    const dv = traceEnvelope(8 + records.length * 16, 1, records.length, dropped, 2);
+/** STREAM of 24-byte v3 or 16-byte legacy records. */
+export function traceStream(records, dropped = 0, version = 3) {
+    const recSize = version >= 3 ? 24 : 16;
+    const dv = traceEnvelope(8 + records.length * recSize, 1, records.length, dropped, version);
     records.forEach((r, i) => {
-        const p = 8 + i * 16;
+        const p = 8 + i * recSize;
         dv.setBigUint64(p, BigInt(r.ts), true);
         dv.setUint32(p + 8, r.tid, true);
         dv.setUint8(p + 12, r.kind);
         dv.setUint8(p + 13, r.code);
-        dv.setUint16(p + 14, r.arg, true);
+        dv.setUint16(p + 14, version >= 3 ? (r.reserved ?? 0) : r.obj, true);
+        if (version >= 3) dv.setUint32(p + 16, r.obj, true);
     });
     return dv.buffer;
 }
 
 export const stateRec = (ts, tid, oldState, newState) =>
-    ({ ts, tid, kind: 1, code: newState, arg: oldState });
-export const markRec = (ts, tid, prim, act, arg) =>
-    ({ ts, tid, kind: 2, code: ((prim & 0xf) << 4) | (act & 0xf), arg });
+    ({ ts, tid, kind: 1, code: newState, reserved: oldState, obj: oldState });
+export const markRec = (ts, tid, prim, act, obj) =>
+    ({ ts, tid, kind: 2, code: ((prim & 0xf) << 4) | (act & 0xf), obj });
 
 /* FRAME_PROFILE bodies start with the bridge's sub-type byte. */
 

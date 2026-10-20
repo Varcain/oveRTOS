@@ -50,7 +50,7 @@ static void check_transition(const struct ove_trace_record *record, const void *
 			     int to)
 {
 	CHECK(record->tid == (uint32_t)(uintptr_t)tid && record->kind == OVE_TRACE_KIND_STATE &&
-	      record->arg == from && record->code == to);
+	      record->object == (uint32_t)from && record->code == to);
 }
 
 static void check_edge(unsigned count, const void *tid, int from, int to)

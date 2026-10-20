@@ -34,8 +34,8 @@ class ProfilerSampleDumpTest(unittest.TestCase):
 
 
 class TraceDescriptorDumpTest(unittest.TestCase):
-    def test_v1_after_v2(self):
-        current = struct.pack("<BBHIIIB", 0, 2, 1, 0, 7, 3, 6) + b"worker"
+    def test_v1_after_v3(self):
+        current = struct.pack("<BBHIIIB", 0, 3, 1, 0, 7, 3, 6) + b"worker"
         legacy = struct.pack("<BBHIIB", 0, 1, 1, 0, 8, 4) + b"idle"
         with patch("sys.stderr", new_callable=StringIO) as stderr:
             profiler._trace_dump_descriptors(current)
