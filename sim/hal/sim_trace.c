@@ -52,11 +52,17 @@ _Static_assert(sizeof(struct ove_trace_record) == 16, "trace record wire size is
  * stack. */
 static uint8_t stream_ev_buf[sizeof(struct ove_sim_event) + STREAM_BUF_BYTES];
 
-static void emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_record *recs,
-			      size_t n, uint32_t dropped)
+/* Records and ring drops of stream batches the transport refused (it never
+ * laps the host, see guest_send_event()), reported in the next batch's
+ * drop count.  Pump thread only. */
+static uint32_t trace_refused;
+
+/* Returns OVE_OK, or the transport's error when the batch was not sent. */
+static int emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_record *recs, size_t n,
+			     uint32_t dropped)
 {
 	if (n == 0 && dropped == 0)
-		return;
+		return OVE_OK;
 
 	struct ove_sim_event *ev = (struct ove_sim_event *)stream_ev_buf;
 	uint8_t *p = ev->data;
@@ -78,7 +84,7 @@ static void emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_re
 	ev->timestamp_ms = 0;
 	ev->data_len = (uint32_t)(p - ev->data);
 
-	ove_sim_plugin_emit_event(t->plugin_id, ev);
+	return ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
 
 /* ── DESCRIPTORS emission ────────────────────────────────────────── */
@@ -143,8 +149,12 @@ void ove_sim_trace_tick(uint32_t elapsed_ms)
 	size_t n;
 	do {
 		n = ove_trace_ring_drain(drain_batch, OVE_SIM_TRACE_MAX_BATCH);
-		uint32_t dropped = ove_trace_ring_dropped_get();
-		emit_stream_batch(&trace_ctx, drain_batch, n, dropped);
+		uint32_t dropped = ove_trace_ring_dropped_get() + trace_refused;
+		trace_refused = 0;
+		/* A batch the transport refused is lost: carry its records and
+		 * the drops it reported into the next batch's count. */
+		if (emit_stream_batch(&trace_ctx, drain_batch, n, dropped) != OVE_OK)
+			trace_refused = dropped + (uint32_t)n;
 	} while (n == OVE_SIM_TRACE_MAX_BATCH);
 
 	trace_ctx.ms_since_desc += elapsed_ms;

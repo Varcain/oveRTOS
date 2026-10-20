@@ -46,7 +46,10 @@ struct ove_sim_transport_ops {
 	 *
 	 * @param[in] t      Transport instance.
 	 * @param[in] event  Event to send (header + payload).
-	 * @return 0 on success, negative error code on failure.
+	 * @return 0 on success, negative error code on failure;
+	 *         OVE_ERR_QUEUE_FULL when the host has not drained enough
+	 *         room yet and the event was dropped instead of overwriting
+	 *         unread data.
 	 */
 	int (*send_event)(struct ove_sim_transport *t, const struct ove_sim_event *event);
 
