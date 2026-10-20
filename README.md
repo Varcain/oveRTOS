@@ -479,6 +479,7 @@ make test-js                                # Dashboard parser tests (Node, no b
 make test-nuttx                             # NuttX simulator tests
 make test-zephyr                            # Zephyr native_sim tests
 make test-qemu-<rtos>{,-zeroheap}           # QEMU MPS2-AN500 (rtos ∈ freertos/nuttx/zephyr)
+make test-kconfig-matrix-<rtos>             # trace/profiler Kconfig builds (QEMU AN500)
 make test-renode-stm32f746-<rtos>{,-zeroheap}  # Renode STM32F7 silicon model
 make test-hw-stm32f746-<rtos>{,-zeroheap}   # Real Discovery board over OpenOCD (manual)
 ```

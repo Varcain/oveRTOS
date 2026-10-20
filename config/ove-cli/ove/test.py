@@ -17,6 +17,7 @@ import sys
 import time
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,7 +29,7 @@ from .boardgen import generate_board_kconfig
 from .build import _drop_stale_cmake_cache, _prepare_zephyr_build_dir
 from .manifest import load_manifest, get_component
 from .venv import require_zephyr_python as _require_zephyr_python
-from .workspace import find_ove_dir
+from .workspace import WORKSPACE_DIR_ENV, find_ove_dir
 
 logger = logging.getLogger("ove")
 
@@ -4014,6 +4015,55 @@ def test_lxp_memory_layout_config(ove_dir, output_dir):
     return result
 
 
+def _test_kconfig_matrix(ove_dir, output_dir, *, rtos):
+    board, app = "qemu-mps2-an500", "example_c_heap"
+    workspace = Path(output_dir) / board / rtos / f"{app}-matrix"
+    config = workspace / ".config"
+    ove = venv.bin_path(ove_dir, "ove")
+    setconfig = venv.bin_path(ove_dir, "setconfig")
+    env = dict(os.environ)
+    env.pop("srctree", None)
+    env.pop("KCONFIG_CONFIG", None)
+    env[WORKSPACE_DIR_ENV] = str(workspace)
+    result = TestResults(suite=f"kconfig-matrix-{rtos}")
+
+    setup = ("defconfig-fragments", f"{board}.{rtos}.{app}", "--no-activate")
+    for command in (setup, ("download",)):
+        if run([ove, *command], cwd=ove_dir, env=env, check=False).returncode:
+            result.failed = 1
+            result.failed_names.append(command[0])
+            return result
+
+    base_config = config.read_bytes()
+    symbols = ("OVE_THREAD_STATE_STATS", "OVE_TRACE_STREAM",
+               "OVE_TRACE_MARKERS", "OVE_PROFILER")
+    setconfig_env = dict(env, KCONFIG_CONFIG=str(config))
+    for combination in ("0000", "1000", "1001", "1100", "1101", "1110"):
+        print(f"=== {result.suite} {combination} (stats/trace/markers/profiler) ===",
+              flush=True)
+        start = time.monotonic()
+        assignments = [f"{symbol}={'y' if bit == '1' else 'n'}"
+                       for symbol, bit in zip(symbols, combination)]
+        try:
+            config.write_bytes(base_config)
+            subprocess.run([setconfig, "--kconfig", "Config.in", *assignments],
+                           cwd=ove_dir, env=setconfig_env, check=True)
+            subprocess.run([ove, "configure"], cwd=ove_dir, env=env, check=True)
+            shutil.rmtree(workspace / "build")
+            subprocess.run([ove, "build"], cwd=ove_dir, env=env, check=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            logger.error("%s %s failed: %s", result.suite, combination, error)
+            result.failed += 1
+            result.failed_names.append(combination)
+            status = "FAILED"
+        else:
+            result.passed += 1
+            status = "OK"
+        print(f"{result.suite} {combination}: {status} ({time.monotonic() - start:.1f}s)",
+              flush=True)
+    return result
+
+
 # Test name -> function mapping
 TEST_TARGETS = {
     "lxp-layout-config": test_lxp_memory_layout_config,
@@ -4118,6 +4168,9 @@ TEST_TARGETS = {
     "qemu-nuttx-cpuload": test_qemu_nuttx_cpuload,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
+    "kconfig-matrix-freertos": partial(_test_kconfig_matrix, rtos="freertos"),
+    "kconfig-matrix-nuttx": partial(_test_kconfig_matrix, rtos="nuttx"),
+    "kconfig-matrix-zephyr": partial(_test_kconfig_matrix, rtos="zephyr"),
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-freertos-linux-hardfloat": test_qemu_freertos_linux_hardfloat,
     "qemu-freertos-linux-faultmatrix": test_qemu_freertos_linux_faultmatrix,
@@ -4151,7 +4204,8 @@ TEST_TARGETS = {
 SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "rust-lvgl", "zig", "nuttx", "zephyr"]
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
                "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
-               "qemu-zephyr", "qemu-zephyr-zeroheap"]
+               "qemu-zephyr", "qemu-zephyr-zeroheap",
+               "kconfig-matrix-freertos", "kconfig-matrix-nuttx", "kconfig-matrix-zephyr"]
 RENODE_TESTS = ["renode-stm32f746-freertos",
                 "renode-stm32f746-freertos-zeroheap",
                 "renode-stm32f746-zephyr",

@@ -265,7 +265,9 @@ def main():
 
     elif args.command == "defconfig-fragments":
         from .kconfig import cmd_defconfig_fragments
-        cmd_defconfig_fragments(args)
+        from .workspace import Workspace
+        ws = Workspace()
+        cmd_defconfig_fragments(args, workspace_dir=ws.workspace_dir if ws.is_isolated else None)
 
     elif args.command == "menuconfig":
         from .kconfig import cmd_menuconfig
