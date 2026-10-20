@@ -298,25 +298,48 @@ int ove_sim_debug_register(void)
 
 	debug_ctx.plugin_id = (uint32_t)id;
 
-	/* Spawn a low-priority thread that emits snapshots every 500 ms.
+	/* Spawn a dedicated thread that emits snapshots every 500 ms.
 	 * The thread starts immediately but ove_thread_sleep_ms will block
 	 * until the scheduler is running.
 	 *
 	 * The profiler, trace and thread-snapshot buffers live in BSS; the
 	 * deepest call chain left is the thread snapshot (build_snapshot ->
 	 * ove_thread_list, about 0.5 KB on FreeRTOS). 16 KB leaves a generous
-	 * margin; FreeRTOS honours the request literally. */
+	 * margin; FreeRTOS honours the request literally.
+	 *
+	 * Priority: the pump is the only reader of the trace/profiler rings,
+	 * and a busy application thread (e.g. an LVGL render loop at
+	 * OVE_PRIO_HIGH) would otherwise starve the pump until the rings
+	 * overflow. It sleeps PUMP_TICK_MS between iterations.
+	 *
+	 * Invariant: the drain runs STRICTLY ABOVE every application thread.
+	 * An equal priority is not enough — the pump has to preempt the
+	 * application, not merely share the CPU with it:
+	 *   - NuttX   : equal-priority tasks are round-robin
+	 *               (CONFIG_RR_INTERVAL), so pump and application split
+	 *               the CPU ~50/50 and the drain rate halves;
+	 *   - FreeRTOS: equal-priority tasks time-slice 50/50, which halves
+	 *               the drain rate and skews the app CPU-share figures
+	 *               the dashboard reports;
+	 *   - Zephyr  : equal priorities do not preempt each other.
+	 * The highest priority any in-tree application thread uses is
+	 * OVE_PRIO_HIGH (the LVGL graphics threads), so OVE_PRIO_REALTIME is
+	 * the lowest band that keeps the invariant on every backend. It stays
+	 * below OVE_PRIO_CRITICAL, which NuttX reserves for tasks that must
+	 * outrank the kernel's own HPWORK queue, and maps to NuttX 200 —
+	 * below HPWORK (224 by default) — so the drain never starves
+	 * device-driver bottom halves either. */
 #ifdef OVE_HEAP_THREAD
 	int ret = ove_thread_create(&debug_thread_handle, "sim_debug", debug_thread_fn, &debug_ctx,
-				    OVE_PRIO_LOW, 16384);
+				    OVE_PRIO_REALTIME, 16384);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] debug thread create failed: %d\n", ret);
 #else
 	static ove_thread_storage_t debug_th_storage;
 	static uint8_t __attribute__((aligned(8))) debug_th_stack[16384];
 	int ret = ove_thread_init(&debug_thread_handle, &debug_th_storage, "sim_debug",
-				  debug_thread_fn, &debug_ctx, OVE_PRIO_LOW, sizeof(debug_th_stack),
-				  debug_th_stack);
+				  debug_thread_fn, &debug_ctx, OVE_PRIO_REALTIME,
+				  sizeof(debug_th_stack), debug_th_stack);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] debug thread init failed: %d\n", ret);
 #endif

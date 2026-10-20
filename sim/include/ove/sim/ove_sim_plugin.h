@@ -216,7 +216,11 @@ int ove_sim_plugin_dispatch_cmd(const struct ove_sim_cmd *cmd);
  *
  * @param[in] plugin_id  Originating plugin's ID.
  * @param[in] event      Event to emit (header + payload).
- * @return 0 on success, negative error code on failure.
+ * @return 0 on success, negative error code on failure.  OVE_ERR_QUEUE_FULL
+ *         means the host has not drained the transport yet and the event was
+ *         dropped (and counted); it is a normal outcome under load, so a
+ *         caller that must not lose what the event carries keeps it and
+ *         reports or sends it again later.
  */
 int ove_sim_plugin_emit_event(uint32_t plugin_id, const struct ove_sim_event *event);
 

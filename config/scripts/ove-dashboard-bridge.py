@@ -765,6 +765,7 @@ SIM_SHM_HDR_SIZE   = 64
 SIM_SHM_RING_SIZE  = 1 << 16  # 64 KB
 SIM_SHM_EVENT_OFF  = SIM_SHM_HDR_SIZE
 SIM_SHM_TOTAL_SIZE = SIM_SHM_HDR_SIZE + 2 * SIM_SHM_RING_SIZE
+SIM_EVENT_DROPPED_OFF = 32  # struct sim_shm_header.event_dropped
 
 # ove_sim_event header: plugin_id(4) + event_type(4) + timestamp_ms(4) + data_len(4)
 SIM_EVENT_HDR_SIZE = 16
@@ -924,11 +925,29 @@ def _event_bridge_loop():
         # via pread using absolute file offsets.
 
         rpos = 0
+        last_dropped = 0
         ring_mask = SIM_SHM_RING_SIZE - 1
         sys.stderr.write("[event-bridge] SIM SHM ready\n")
         sys.stderr.flush()
 
         while True:
+            # Report transport-level loss the guest counted (backpressure:
+            # it drops instead of lapping this reader).
+            dbuf = os.pread(fd, 4, SIM_EVENT_DROPPED_OFF)
+            if len(dbuf) == 4:
+                dropped = struct.unpack_from("<I", dbuf, 0)[0]
+                if dropped < last_dropped:  # the guest reset its header
+                    last_dropped = 0
+                if dropped != last_dropped:
+                    delta = (dropped - last_dropped) & 0xFFFFFFFF
+                    text = f"[sim] {delta} event(s) dropped: host behind"
+                    sys.stderr.write(text + "\n")
+                    sys.stderr.flush()
+                    mailbox.post_log(
+                        ws_frame(struct.pack("<I", FRAME_LOG)
+                                 + text.encode("utf-8")))
+                    last_dropped = dropped
+
             # Read event_write_pos via pread (offset 16 in header)
             wbuf = os.pread(fd, 4, 16)
             if len(wbuf) < 4:
@@ -953,10 +972,11 @@ def _event_bridge_loop():
                 time.sleep(0.05)
                 continue
             msg_len = b0[0] | (b1[0] << 8)
-            rpos += 2
+            # Positions are free-running u32 counters: wrap like the guest.
+            rpos = (rpos + 2) & 0xFFFFFFFF
 
             if msg_len < SIM_EVENT_HDR_SIZE or msg_len > 4096:
-                rpos += msg_len
+                rpos = (rpos + msg_len) & 0xFFFFFFFF
                 os.pwrite(fd, struct.pack("<I", rpos), 20)
                 continue
 
@@ -966,7 +986,7 @@ def _event_bridge_loop():
             buf = os.pread(fd, first, SIM_SHM_EVENT_OFF + ring_off)
             if first < msg_len:
                 buf += os.pread(fd, msg_len - first, SIM_SHM_EVENT_OFF)
-            rpos += msg_len
+            rpos = (rpos + msg_len) & 0xFFFFFFFF
 
             # Update read position
             os.pwrite(fd, struct.pack("<I", rpos), 20)

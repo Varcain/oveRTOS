@@ -75,6 +75,7 @@ struct shm_guest_priv {
 	int sim_fd;
 	uint32_t event_wpos;
 	uint32_t cmd_rpos;
+	uint32_t event_dropped;
 
 	/* Display (/dev/shm/ove-fb) */
 	int fb_fd;
@@ -163,6 +164,7 @@ static int guest_open(struct ove_sim_transport *t, const char *endpoint)
 		sh_write(p->sim_fd, &hdr, sizeof(hdr));
 		p->event_wpos = 0;
 		p->cmd_rpos = 0;
+		p->event_dropped = 0;
 	}
 
 	/* Open framebuffer SHM. */
@@ -192,6 +194,13 @@ static void guest_close(struct ove_sim_transport *t)
 	}
 }
 
+/* The hosts (config/scripts/ove-dashboard-bridge.py, sim/dashboard/qemu-wasm.js)
+ * hard-code these offsets. */
+_Static_assert(sizeof(struct sim_shm_header) == SIM_SHM_HDR_SIZE, "shm header size");
+_Static_assert(offsetof(struct sim_shm_header, event_write_pos) == 16, "event_write_pos offset");
+_Static_assert(offsetof(struct sim_shm_header, event_read_pos) == 20, "event_read_pos offset");
+_Static_assert(offsetof(struct sim_shm_header, event_dropped) == 32, "event_dropped offset");
+
 static int guest_send_event(struct ove_sim_transport *t, const struct ove_sim_event *event)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
@@ -203,6 +212,25 @@ static int guest_send_event(struct ove_sim_transport *t, const struct ove_sim_ev
 		return OVE_ERR_INVALID_PARAM;
 
 	uint16_t len = (uint16_t)total;
+
+	/*
+	 * Backpressure: never lap the host's read position. If the event
+	 * doesn't fit in the free space, drop it, count it and tell the
+	 * caller, rather than overwriting unread batches (which used to
+	 * corrupt the host's view and silently lose the drop counts the
+	 * batches carry).  The caller folds what the lost event carried back
+	 * into its own drop counter, so a later event reports it.
+	 */
+	uint32_t rpos = sh_read_u32(p->sim_fd, offsetof(struct sim_shm_header, event_read_pos));
+	uint32_t used = p->event_wpos - rpos;
+	if (used > SIM_SHM_RING_SIZE)
+		used = SIM_SHM_RING_SIZE; /* already lapped; treat as full */
+	if ((uint32_t)total + 2u > SIM_SHM_RING_SIZE - used) {
+		p->event_dropped++;
+		sh_write_u32(p->sim_fd, offsetof(struct sim_shm_header, event_dropped),
+			     p->event_dropped);
+		return OVE_ERR_QUEUE_FULL;
+	}
 
 	/* Write length prefix + event into event ring. */
 	uint8_t lenbuf[2] = {(uint8_t)(len & 0xFF), (uint8_t)(len >> 8)};

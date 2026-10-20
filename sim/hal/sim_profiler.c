@@ -26,6 +26,7 @@
 
 #include "ove_profiler_ring.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +37,14 @@ struct sim_profiler_ctx {
 };
 
 static struct sim_profiler_ctx profiler_ctx;
+
+/* Pump-thread state for events the transport refused (it never laps the
+ * host, see guest_send_event()): the samples and ring drops of refused
+ * batches, reported in the next batch's drop count, and a caps event to
+ * send again on the next tick.  Kept here rather than in the ring's drop
+ * counter, which counts only the ring's own overflow. */
+static uint32_t profiler_refused;
+static bool caps_pending;
 
 static void emit_caps(struct sim_profiler_ctx *t)
 {
@@ -54,7 +63,7 @@ static void emit_caps(struct sim_profiler_ctx *t)
 	ev->data_len = sizeof(payload);
 	memcpy(ev->data, payload, sizeof(payload));
 
-	ove_sim_plugin_emit_event(t->plugin_id, ev);
+	caps_pending = ove_sim_plugin_emit_event(t->plugin_id, ev) != OVE_OK;
 }
 
 /*
@@ -113,11 +122,12 @@ static size_t serialise_sample(uint8_t *p, const struct ove_profiler_sample *s)
 	return (size_t)(q - p);
 }
 
-static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sample *samples,
-		       size_t n, uint32_t dropped)
+/* Returns OVE_OK, or the transport's error when the batch was not sent. */
+static int emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sample *samples,
+		      size_t n, uint32_t dropped)
 {
 	if (n == 0 && dropped == 0)
-		return;
+		return OVE_OK;
 
 	struct ove_sim_event *ev = (struct ove_sim_event *)samples_ev_buf;
 	uint8_t *p = ev->data;
@@ -138,16 +148,23 @@ static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sam
 	ev->timestamp_ms = 0;
 	ev->data_len = (uint32_t)(p - ev->data);
 
-	ove_sim_plugin_emit_event(t->plugin_id, ev);
+	return ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
 
 void ove_sim_profiler_tick(void)
 {
 	size_t n;
+
+	if (caps_pending)
+		emit_caps(&profiler_ctx);
 	do {
 		n = ove_profiler_ring_drain(drain_batch, PROFILE_MAX_BATCH);
-		uint32_t dropped = ove_profiler_ring_dropped_get();
-		emit_batch(&profiler_ctx, drain_batch, n, dropped);
+		uint32_t dropped = ove_profiler_ring_dropped_get() + profiler_refused;
+		profiler_refused = 0;
+		/* A batch the transport refused is lost: carry its samples and
+		 * the drops it reported into the next batch's count. */
+		if (emit_batch(&profiler_ctx, drain_batch, n, dropped) != OVE_OK)
+			profiler_refused = dropped + (uint32_t)n;
 	} while (n == PROFILE_MAX_BATCH);
 }
 

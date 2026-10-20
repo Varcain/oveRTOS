@@ -44,7 +44,10 @@ extern "C" {
 /**
  * @brief Shared-memory header for the simulation transport.
  *
- * All positions are byte offsets that wrap modulo @c ring_size.
+ * Positions are free-running uint32_t byte counters; a ring offset is
+ * the position masked with (@c ring_size - 1).  The writer never moves
+ * more than @c ring_size ahead of the reader, so the host MUST publish
+ * event_read_pos, or the guest stops sending after one ring.
  * Messages are stored as [uint16_t length][uint8_t data[length]].
  */
 struct sim_shm_header {
@@ -61,7 +64,14 @@ struct sim_shm_header {
 	uint32_t cmd_write_pos; /**< Next write position (host). */
 	uint32_t cmd_read_pos;	/**< Next read position (guest). */
 
-	uint8_t _pad[28]; /**< Pad to 64 bytes. */
+	/**
+	 * Events the guest dropped because the host had not drained the ring
+	 * (the producer never laps the consumer, so unread batches — and any
+	 * drop counts they carry — survive). Hosts read this to report loss.
+	 */
+	uint32_t event_dropped;
+
+	uint8_t _pad[28]; /**< Pad to 64 bytes (SIM_SHM_HDR_SIZE). */
 };
 
 #ifdef __cplusplus
