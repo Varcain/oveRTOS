@@ -339,6 +339,19 @@ class DashboardBridgeTest(unittest.TestCase):
         with self.running_bridge() as address:
             asyncio.run(asyncio.wait_for(check(address), 4))
 
+    def test_event_bridge_reports_guest_drops(self):
+        shm = self.shm
+        # event_dropped (offset 32) = 3, no events to read.
+        header = struct.pack("<I28xI", shm.SIM_SHM_MAGIC, 3)
+        shm.SIM_SHM_PATH.write_bytes(header.ljust(shm.SIM_SHM_TOTAL_SIZE, b"\0"))
+        posted = []
+        with patch.object(self.frames, "post_frame", posted.append), \
+                patch.object(shm, "time", Mock(sleep=Mock(side_effect=SystemExit))), \
+                redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            shm._event_bridge_loop()
+        self.assertEqual(posted, [struct.pack("<I", self.protocol.FRAME_LOG)
+                                  + b"[sim] 3 event(s) dropped: host behind"])
+
     def test_websocket_log_burst(self):
         frame_delivery = self.frames
         prefix = struct.pack("<I", self.protocol.FRAME_LOG)

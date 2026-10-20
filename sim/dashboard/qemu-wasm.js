@@ -48,8 +48,10 @@ var SIM_EVENT_RING_OFF = SIM_HDR_SIZE;
 var SIM_CMD_RING_OFF   = SIM_HDR_SIZE + SIM_RING_SIZE;
 var SIM_TOTAL_SIZE     = SIM_HDR_SIZE + 2 * SIM_RING_SIZE;
 var SIM_OFF_EVENT_WPOS = 16;
+var SIM_OFF_EVENT_RPOS = 20;
 var SIM_OFF_CMD_WPOS   = 24;
 var SIM_OFF_CMD_RPOS   = 28;
+var SIM_OFF_EVENT_DROPPED = 32;
 var SIM_EVENT_HDR_SIZE = 16;           /* struct ove_sim_event header */
 var SIM_EVENT_MAX      = 4096;
 
@@ -112,6 +114,7 @@ function Link() {
     this._audioOutRpos = 0;
     this._audioInWpos = 0;
     this._eventRpos = 0;
+    this._eventDropped = 0;
     this._fbPending = false;
     this._fbFrame = null;              /* reused FRAME_FB buffer */
     this._stdin = [];                  /* console bytes for the firmware's UART */
@@ -387,6 +390,16 @@ Link.prototype._pollEvents = function () {
     var wpos = f.view.getUint32(SIM_OFF_EVENT_WPOS, true);
     var bytes = f.bytes, size = f.size;
 
+    /* Report transport-level loss the guest counted while we were slow. */
+    var dropped = f.view.getUint32(SIM_OFF_EVENT_DROPPED, true);
+    if (dropped < this._eventDropped)   /* the guest reset its header */
+        this._eventDropped = 0;
+    if (dropped > this._eventDropped) {
+        this._log("[sim] " + (dropped - this._eventDropped) +
+                  " event(s) dropped: host behind");
+        this._eventDropped = dropped;
+    }
+
     function ringByte(pos) {
         var off = SIM_EVENT_RING_OFF + (pos & mask);
         return off < size ? bytes[off] : 0;
@@ -397,6 +410,7 @@ Link.prototype._pollEvents = function () {
         if (avail < 2) return;
         if (avail > SIM_RING_SIZE) {    /* lapped: resynchronise */
             this._eventRpos = wpos;
+            this._writeU32(this._sim, this._eventRpos, SIM_OFF_EVENT_RPOS);
             return;
         }
 
@@ -404,10 +418,18 @@ Link.prototype._pollEvents = function () {
         var len = ringByte(rpos) | (ringByte(rpos + 1) << 8);
         rpos = (rpos + 2) >>> 0;
         this._eventRpos = (rpos + len) >>> 0;
-        if (len < SIM_EVENT_HDR_SIZE || len > SIM_EVENT_MAX) continue;
+        /* Publish the read position so the guest can apply backpressure
+         * instead of lapping (and corrupting) unread batches, and only
+         * once the message has been copied out: the guest may reuse the
+         * space as soon as it sees the new position. */
+        if (len < SIM_EVENT_HDR_SIZE || len > SIM_EVENT_MAX) {
+            this._writeU32(this._sim, this._eventRpos, SIM_OFF_EVENT_RPOS);
+            continue;
+        }
 
         var msg = new Uint8Array(len);
         for (var i = 0; i < len; i++) msg[i] = ringByte(rpos + i);
+        this._writeU32(this._sim, this._eventRpos, SIM_OFF_EVENT_RPOS);
         var hdr = new DataView(msg.buffer);
         var eventType = hdr.getUint32(4, true);
         var dataLen = hdr.getUint32(12, true);

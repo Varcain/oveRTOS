@@ -230,6 +230,29 @@ target_include_directories(ove_test_systick_q32 PRIVATE ${OVE_ROOT}/backends/com
 # Per-state snapshot the RTOS backends report from ove_thread_list().
 add_executable(ove_test_state_track_read ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_state_track_read.c)
 target_include_directories(ove_test_state_track_read PRIVATE ${OVE_INCLUDE})
+# Guest side of the sim shared-memory event ring: never overwrite unread
+# events, refuse and count what does not fit.  The shim directory comes
+# first, so its ove_config.h, ove/thread.h and semihosting.h are used.
+add_executable(ove_test_sim_shm_backpressure ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_sim_shm_backpressure.c)
+target_include_directories(ove_test_sim_shm_backpressure PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/sim_shm
+    ${OVE_ROOT}/sim/src
+    ${OVE_ROOT}/sim/include
+    ${OVE_INCLUDE}
+)
+# Profiler drain against a transport that refuses events: refused samples
+# are reported once and stay out of the ring's overflow counter.
+add_executable(ove_test_sim_profiler_refused
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_sim_profiler_refused.c
+    ${OVE_ROOT}/sim/hal/sim_profiler.c
+    ${OVE_ROOT}/backends/common/ove_profiler_ring.c
+)
+target_include_directories(ove_test_sim_profiler_refused PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/sim_profiler
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/sim/include
+    ${OVE_ROOT}/backends/common
+)
 option(OVE_TEST_BUILD_TSAN "Build ThreadSanitizer variants of the obs ring tests" ON)
 # TSan cannot share a binary with ASan or MSan: when the whole tree is
 # configured with either (make test-stub-sanitize, test-stub-msan), skip
@@ -414,6 +437,8 @@ add_test(NAME ove_trace_ring_preempt COMMAND ove_test_trace_ring_preempt)
 add_test(NAME ove_arm_backtrace COMMAND ove_test_arm_backtrace)
 add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
+add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
+add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
 if(OVE_TEST_TSAN_ACTIVE)
     add_test(NAME ove_trace_ring_tsan COMMAND ove_test_trace_ring_tsan)
     set_tests_properties(ove_trace_ring_tsan PROPERTIES

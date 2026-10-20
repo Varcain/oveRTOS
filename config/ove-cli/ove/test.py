@@ -329,7 +329,9 @@ def test_stub(ove_dir, output_dir):
                                 "ove_test_trace_ring", "ove_test_trace_ring_preempt",
                                 "ove_test_trace_ring_tsan", "ove_test_arm_backtrace",
                                 "ove_test_systick_q32",
-                                "ove_test_state_track_read"), "stub", results)
+                                "ove_test_state_track_read",
+                                "ove_test_sim_shm_backpressure",
+                                "ove_test_sim_profiler_refused"), "stub", results)
     return results
 
 
