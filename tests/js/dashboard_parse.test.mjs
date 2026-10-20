@@ -11,11 +11,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    loadDashboard, traceDescriptors, traceStream, stateRec, markRec,
+    loadDashboard, traceDescriptors, traceNames, traceStream, stateRec, markRec,
     profilerSamples, profilerCaps, profilerSymbols,
 } from "./dashboard_harness.mjs";
 
 const T = 2 ** 32; /* a timestamp that needs the high word */
+const zoneBegin = (ts, tid, id = 7) => markRec(ts, tid, 15, 5, id);
+const zoneEnd = (ts, tid, id = 7) => markRec(ts, tid, 15, 6, id);
 
 test("threads: snapshot rows distinguish threads with the same name", () => {
     const g = loadDashboard();
@@ -164,19 +166,72 @@ test("trace: the window evicts old records and each post queue is capped", () =>
     assert.equal(g.tracePosts["0x20"][0].ts, 30_001_003);
 });
 
+test("trace: zones nest, may be empty and pair per thread", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceStream([
+        zoneEnd(90, 3), zoneBegin(100, 3), zoneEnd(99, 3),
+        zoneBegin(110, 3), zoneBegin(120, 4),
+        zoneEnd(120, 4), zoneEnd(150, 3), zoneEnd(200, 3),
+    ]), 0);
+    assert.deepEqual(g.traceZones, [
+        { tid: 4, id: 7, start: 120, end: 120, depth: 0 },
+        { tid: 3, id: 7, start: 110, end: 150, depth: 1 },
+        { tid: 3, id: 7, start: 100, end: 200, depth: 0 },
+    ]);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+
+    g.handleTrace(traceStream(Array.from({ length: 65 }, (_, i) => zoneBegin(300 + i, 5))), 0);
+    assert.deepEqual([g.traceZoneOpen["5:0x7"].length, g.traceZoneOpen["5:0x7"][0].ts], [64, 301]);
+});
+
+test("trace: restart keeps names, reconnect clears them, and both drop zones", () => {
+    const g = loadDashboard();
+    const sendZones = (ts) => g.handleTrace(traceStream([
+        zoneBegin(ts, 3), zoneEnd(ts + 10, 3), zoneBegin(ts + 20, 3),
+    ]), 0);
+    g.handleTrace(traceNames([[7, "draw"]]), 0);
+    sendZones(5_000_000);
+    g.handleTrace(traceStream([stateRec(100, 3, 1, 0)]), 0);
+    assert.equal(g.traceUserName(7), "draw");
+    assert.deepEqual(g.traceZones, []);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+
+    sendZones(200);
+    assert.equal(g.traceZones.length, 1);
+    assert.equal(Object.keys(g.traceZoneOpen).length, 1);
+    g.traceResetOnReconnect();
+    assert.equal(g.traceUserName(7), "user 7");
+    assert.deepEqual(g.traceZones, []);
+    assert.deepEqual(Object.keys(g.traceZoneOpen), []);
+});
+
+test("trace: the window evicts zones by their end time", () => {
+    const g = loadDashboard();
+    g.handleTrace(traceStream([
+        zoneBegin(100, 3), zoneBegin(150, 4), zoneEnd(199, 3), zoneEnd(200, 4),
+    ]), 0);
+    g.handleTrace(traceStream([stateRec(g.TRACE_WINDOW_US + 200, 3, 1, 0)]), 0);
+    assert.deepEqual(g.traceZones, [{ tid: 4, id: 7, start: 150, end: 200, depth: 0 }]);
+});
+
 test("trace: reused storage drops history from an unclosed lane", () => {
     const g = loadDashboard();
     g.handleTrace(traceDescriptors([[7, 1, "worker"]]), 0);
     g.handleTrace(traceStream([
         stateRec(100, 7, 1, 0), markRec(150, 7, 1, 1, 0x10), markRec(170, 7, 1, 2, 0x10),
         markRec(180, 7, 1, 1, 0x20), stateRec(200, 7, 0, 2),
+        zoneBegin(210, 7), zoneEnd(220, 7), zoneBegin(230, 7), zoneBegin(240, 70),
     ]), 0);
+    assert.equal(g.traceZones.length, 1);
     g.handleTrace(traceDescriptors([[7, 2, "worker"]]), 0);
     assert.deepEqual(g.traceSpans, []);
-    assert.deepEqual(g.traceMarks, []);
+    assert.deepEqual(g.traceMarks.map((m) => m.tid), [70]);
     assert.deepEqual(g.traceFlows, []);
     assert.deepEqual(Object.keys(g.traceWaits), []);
     assert.equal(g.traceThreads[7].lastState, -1);
+    assert.deepEqual(g.traceZones, []);
+    g.handleTrace(traceStream([zoneEnd(250, 7), zoneEnd(260, 70)]), 0);
+    assert.deepEqual(g.traceZones, [{ tid: 70, id: 7, start: 240, end: 260, depth: 0 }]);
 });
 
 for (const descriptorsFirst of [false, true]) {
@@ -232,14 +287,18 @@ test("trace: v1 descriptors still decode alongside v2", () => {
     assert.equal(g.traceThreads[7].name, "current");
 });
 
-test("trace: lanes sort by name and the hover finds the span on its lane", () => {
+test("trace: sorted lanes show span and named zone and mark tooltips", () => {
     const g = loadDashboard();
     /* Name order is not tid order; tid 9 has no records and no lane. */
     g.handleTrace(traceDescriptors([[1, "zeta"], [2, "alpha"], [9, "idle"]]), 0);
+    g.handleTrace(traceNames([[7, "old"], [9, "flush"], [7, "réception"]]), 0);
     g.handleTrace(traceStream([
         stateRec(1_000_000, 2, 1, 0),
         stateRec(1_000_100, 1, 1, 0),
         stateRec(1_000_400, 1, 0, 2),
+        zoneBegin(1_020_000, 1), zoneBegin(1_030_000, 1, 9),
+        zoneEnd(1_070_000, 1, 9), zoneEnd(1_080_000, 1),
+        markRec(1_090_000, 1, 15, 4, 7),
         stateRec(1_500_000, 2, 0, 2),
     ]), 0);
     const lanes = g.traceLanes();
@@ -256,12 +315,21 @@ test("trace: lanes sort by name and the hover finds the span on its lane", () =>
     /* The middle of zeta's 300 us RUNNING span, on the second lane. */
     const r = g.traceViewRange();
     const plotW = 1000 - g.TRACE_LABEL_W - g.TRACE_PLOT_PAD_R;
-    els["trace-canvas"].onmousemove({
-        clientX: g.TRACE_LABEL_W + ((1_000_250 - r.tStart) / r.span) * plotW,
-        clientY: 16 + 1.5 * g.traceLaneH(80, 2),
-    });
-    assert.equal(els["trace-mark-tip"].textContent,
+    const hover = (ts, y) => {
+        els["trace-canvas"].onmousemove({
+            clientX: g.TRACE_LABEL_W + ((ts - r.tStart) / r.span) * plotW, clientY: y,
+        });
+        return els["trace-mark-tip"].textContent;
+    };
+    const laneH = g.traceLaneH(80, 2);
+    assert.equal(hover(1_000_250, 16 + 1.5 * laneH),
         "zeta  running  300 µs  [1.000100s → 1.000400s]");
+    const barY = 16 + 2 * laneH - 4;
+    assert.match(hover(1_050_000, barY), / zone réception /);
+    assert.match(hover(1_050_000, barY - 3), / zone flush /);
+    assert.match(hover(1_050_000, barY - 7), / zone flush /);
+    assert.match(hover(1_050_000, 16 + laneH + 4), /^zeta  blocked .*in flight/);
+    assert.match(hover(1_090_000, barY), /user user {2}réception/);
 });
 
 test("profiler: samples decode at word size 4 and 8, other sizes are skipped", () => {
@@ -335,10 +403,15 @@ test("link: trace and profile frames decode behind the frame type word", () => {
         g.ws.onmessage({ data: out.buffer });
     };
     send(g.FRAME_TRACE, traceDescriptors([[5, "producer"]]));
+    send(g.FRAME_TRACE, traceNames([[0xbeef, "draw"]]));
+    const truncated = traceNames([[0xbeef, "broken"]]);
+    send(g.FRAME_TRACE, truncated.slice(0, 10));
+    send(g.FRAME_TRACE, truncated.slice(0, 12));
     send(g.FRAME_TRACE, traceStream([stateRec(1000, 5, 1, 0), stateRec(2000, 5, 0, 2)]));
     send(g.FRAME_PROFILE, profilerSymbols([[0x1000, 0x1100, "foo"]]));
     send(g.FRAME_PROFILE, profilerSamples([{ ts: 10, tid: 5, pcs: [0x1050] }], 4));
     assert.equal(g.traceThreads[5].name, "producer");
+    assert.equal(g.traceUserName(0xbeef), "draw");
     assert.equal(g.traceSpans.length, 1);
     assert.equal(g.resolvePc(g.profilerSamples[0].pcs[0]), "foo");
 });

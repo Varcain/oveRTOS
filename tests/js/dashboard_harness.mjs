@@ -74,6 +74,22 @@ export function traceDescriptors(entries, dropped = 0, version = 2) {
     return dv.buffer;
 }
 
+/** NAMES from [id, name] entries. */
+export function traceNames(entries, dropped = 0) {
+    const encoder = new TextEncoder();
+    const encoded = entries.map(([id, name]) => [id, encoder.encode(name)]);
+    const size = encoded.reduce((n, [, name]) => n + 3 + name.length, 8);
+    const dv = traceEnvelope(size, 2, entries.length, dropped, 3);
+    let p = 8;
+    for (const [id, name] of encoded) {
+        dv.setUint16(p, id, true); p += 2;
+        dv.setUint8(p++, name.length);
+        new Uint8Array(dv.buffer, p, name.length).set(name);
+        p += name.length;
+    }
+    return dv.buffer;
+}
+
 /** STREAM of 24-byte v3 or 16-byte legacy records. */
 export function traceStream(records, dropped = 0, version = 3) {
     const recSize = version >= 3 ? 24 : 16;
