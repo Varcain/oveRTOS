@@ -49,7 +49,8 @@ void ove_main(void)
     static ove_thread_t shell;
     ove_shell_init();                 /* also registers the built-in "help" */
     ove_shell_register_cmd(&hello_cmd);
-    ove_thread_create(&shell, "shell", shell_fn, NULL, OVE_PRIO_LOW, 4096);
+    if (ove_thread_create(&shell, "shell", shell_fn, NULL, OVE_PRIO_LOW, 4096) != OVE_OK)
+        return;
     ove_run();
 }
 ```

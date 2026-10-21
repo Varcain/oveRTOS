@@ -59,8 +59,9 @@ void ove_main(void)
         OVE_LOG_ERR("UART %u unavailable", cfg.instance);
         return;
     }
-    ove_thread_create(&parser, "rx_parser", parser_fn, NULL,
-                      OVE_PRIO_NORMAL, 4096);
+    if (ove_thread_create(&parser, "rx_parser", parser_fn, NULL,
+                          OVE_PRIO_NORMAL, 4096) != OVE_OK)
+        return;
     ove_run();
 }
 ```

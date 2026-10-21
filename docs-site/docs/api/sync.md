@@ -68,9 +68,9 @@ sequenceDiagram
 static ove_mutex_t shared_mutex;
 static int         shared_value;
 
-void init(void)
+int init(void)
 {
-    ove_mutex_create(&shared_mutex);
+    return ove_mutex_create(&shared_mutex);
 }
 
 void update_shared_state(void)
@@ -145,16 +145,19 @@ void process_item(int item);
 static ove_sem_t slots_used;
 static ove_sem_t slots_free;
 
-void sync_init(void)
+int sync_init(void)
 {
-    ove_sem_create(&slots_used, 0,          QUEUE_SLOTS);
-    ove_sem_create(&slots_free, QUEUE_SLOTS, QUEUE_SLOTS);
+    int rc = ove_sem_create(&slots_used, 0, QUEUE_SLOTS);
+    if (rc == OVE_OK)
+        rc = ove_sem_create(&slots_free, QUEUE_SLOTS, QUEUE_SLOTS);
+    return rc;
 }
 
 void producer(void *arg)
 {
     for (;;) {
-        ove_sem_take(slots_free, OVE_WAIT_FOREVER);
+        if (ove_sem_take(slots_free, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
         enqueue_item(produce_item());
         ove_sem_give(slots_used);
     }
@@ -163,7 +166,8 @@ void producer(void *arg)
 void consumer(void *arg)
 {
     for (;;) {
-        ove_sem_take(slots_used, OVE_WAIT_FOREVER);
+        if (ove_sem_take(slots_used, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
         process_item(dequeue_item());
         ove_sem_give(slots_free);
     }
@@ -197,9 +201,9 @@ void process_dma_buffer(void);   /* your code */
 
 static ove_event_t data_ready_evt;
 
-void init(void)
+int init(void)
 {
-    ove_event_create(&data_ready_evt);
+    return ove_event_create(&data_ready_evt);
 }
 
 /* Called from ISR context */
@@ -211,7 +215,8 @@ void DMA_IRQHandler(void)
 static void processing_entry(void *arg)
 {
     for (;;) {
-        ove_event_wait(data_ready_evt, OVE_WAIT_FOREVER);
+        if (ove_event_wait(data_ready_evt, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
         process_dma_buffer();
     }
 }
@@ -261,10 +266,12 @@ static ove_mutex_t  state_mutex;
 static ove_condvar_t state_ready_cv;
 static bool          data_available = false;
 
-void sync_init(void)
+int sync_init(void)
 {
-    ove_mutex_create(&state_mutex);
-    ove_condvar_create(&state_ready_cv);
+    int rc = ove_mutex_create(&state_mutex);
+    if (rc == OVE_OK)
+        rc = ove_condvar_create(&state_ready_cv);
+    return rc;
 }
 
 void producer_entry(void *arg)
@@ -272,7 +279,8 @@ void producer_entry(void *arg)
     for (;;) {
         prepare_data();
 
-        ove_mutex_lock(state_mutex, OVE_WAIT_FOREVER);
+        if (ove_mutex_lock(state_mutex, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
         data_available = true;
         ove_condvar_signal(state_ready_cv);
         ove_mutex_unlock(state_mutex);
@@ -281,10 +289,14 @@ void producer_entry(void *arg)
 
 void consumer_entry(void *arg)
 {
-    ove_mutex_lock(state_mutex, OVE_WAIT_FOREVER);
+    if (ove_mutex_lock(state_mutex, OVE_WAIT_FOREVER) != OVE_OK)
+        return;
     while (!data_available) {
         /* spurious-wakeup safe: always recheck in a while loop */
-        ove_condvar_wait(state_ready_cv, state_mutex, OVE_WAIT_FOREVER);
+        if (ove_condvar_wait(state_ready_cv, state_mutex, OVE_WAIT_FOREVER) != OVE_OK) {
+            ove_mutex_unlock(state_mutex); /* held again on return */
+            return;
+        }
     }
     data_available = false;
     consume_data();

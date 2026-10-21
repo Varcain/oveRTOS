@@ -68,7 +68,7 @@ The `OVE_*_DEFINE_STATIC()` macros (e.g. `OVE_QUEUE_DEFINE_STATIC`, `OVE_THREAD_
 
 ## Error codes
 
-All functions that can fail return `int`. A return value of `OVE_OK` (0) indicates success; negative values are errors:
+All functions that can fail return `int`. A return value of `OVE_OK` (0) indicates success; negative values are errors. Calls whose status matters are declared `OVE_NODISCARD`, so the compiler warns when a caller drops the result. GCC does not accept a `(void)` cast as using it: where ignoring a status is deliberate, assign it (`int rc = …; (void)rc;`) and say why.
 
 | Constant | Value | Meaning |
 |----------|-------|---------|

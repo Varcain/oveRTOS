@@ -48,7 +48,8 @@ struct ove_spi_cfg cfg = {
 struct ove_spi_cs cs = { .gpio_port = 0, .gpio_pin = 4, .active_low = 1 };
 
 ove_spi_t spi;
-ove_spi_create(&spi, &cfg);
+if (ove_spi_create(&spi, &cfg) != OVE_OK)
+    return;
 
 uint8_t cmd = 0x9F;  // JEDEC ID
 uint8_t id[3];
@@ -56,7 +57,9 @@ struct ove_spi_xfer xfers[] = {
     { .tx = &cmd, .rx = NULL, .len = 1 },
     { .tx = NULL, .rx = id,   .len = 3 },
 };
-ove_spi_transfer_seq(spi, &cs, xfers, 2, OVE_WAIT_FOREVER);
+if (ove_spi_transfer_seq(spi, &cs, xfers, 2, OVE_WAIT_FOREVER) == OVE_OK) {
+    /* id[] holds the manufacturer, type and capacity bytes */
+}
 ```
 
 > Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).

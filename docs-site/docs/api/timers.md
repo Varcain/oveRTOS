@@ -118,11 +118,13 @@ static void stats_cb(ove_timer_t t, void *user_data)
                 (unsigned)stats.underruns, (unsigned)stats.avg_process_us);
 }
 
-void app_init(void)
+int app_init(void)
 {
-    ove_timer_create(&g_stats_timer, stats_cb, NULL,
-                     1000 /* ms */, 0 /* periodic */);
-    ove_timer_start(g_stats_timer);
+    int rc = ove_timer_create(&g_stats_timer, stats_cb, NULL,
+                              1000 /* ms */, 0 /* periodic */);
+    if (rc == OVE_OK)
+        rc = ove_timer_start(g_stats_timer);
+    return rc;
 }
 
 void app_shutdown(void)
@@ -138,9 +140,9 @@ void stats_cb(ove_timer_t t, void *user_data);   /* as above */
 
 OVE_TIMER_DEFINE_STATIC(g_stats_timer, stats_cb, NULL, 1000, 0);
 
-void app_init(void)
+int app_init(void)
 {
-    ove_timer_start(g_stats_timer);
+    return ove_timer_start(g_stats_timer);
 }
 ```
 
@@ -238,20 +240,43 @@ OVE_WORK_DEFINE_STATIC(g_save_work, save_handler);
 /* DMA RX complete ISR */
 void DMA1_Stream0_IRQHandler(void)
 {
-    ove_work_submit(g_io_wq, g_save_work);
+    if (ove_work_submit(g_io_wq, g_save_work) != OVE_OK) {
+        /* OVE_ERR_BUSY: a save is already queued or running */
+    }
 }
 ```
 
-For periodic deferred work, a handler can reschedule itself:
+For periodic deferred work, let a periodic timer submit the item. A handler
+cannot resubmit its own item while it runs, but the timer callback runs
+outside it:
 
 ```c
 extern ove_workqueue_t g_io_wq;            /* the queue from the example above */
 void do_background_housekeeping(void);     /* your code */
 
-static void periodic_work_handler(ove_work_t work)
+static void housekeeping_handler(ove_work_t work)
 {
+    (void)work;
     do_background_housekeeping();
-    ove_work_submit_delayed(g_io_wq, work, 500); /* run again in 500 ms */
+}
+OVE_WORK_DEFINE_STATIC(g_housekeeping_work, housekeeping_handler);
+
+static void housekeeping_tick(ove_timer_t t, void *user_data)
+{
+    (void)t;
+    (void)user_data;
+    if (ove_work_submit(g_io_wq, g_housekeeping_work) != OVE_OK) {
+        /* OVE_ERR_BUSY: the last run has not finished; skip this period */
+    }
+}
+
+int housekeeping_start(void)
+{
+    static ove_timer_t tick;
+    int rc = ove_timer_create(&tick, housekeeping_tick, NULL, 500 /* ms */, 0 /* periodic */);
+    if (rc == OVE_OK)
+        rc = ove_timer_start(tick);
+    return rc;
 }
 ```
 

@@ -58,10 +58,12 @@ static void button_cb(unsigned int port, unsigned int pin, void *user_data)
 void setup_button(void)
 {
     /* Configure pin as input */
-    ove_gpio_configure(0, 13, OVE_GPIO_MODE_INPUT);
+    if (ove_gpio_configure(0, 13, OVE_GPIO_MODE_INPUT) != OVE_OK)
+        return;
 
     /* Register falling-edge interrupt */
-    ove_gpio_irq_register(0, 13, OVE_GPIO_IRQ_FALLING, button_cb, NULL);
+    if (ove_gpio_irq_register(0, 13, OVE_GPIO_IRQ_FALLING, button_cb, NULL) != OVE_OK)
+        return;
 
     /* Arm the interrupt */
     ove_gpio_irq_enable(0, 13);
@@ -164,7 +166,8 @@ static void heartbeat_thread(void *arg)
         return;
     }
 
-    ove_watchdog_start(wdt);
+    if (ove_watchdog_start(wdt) != OVE_OK)
+        return;
     OVE_LOG_INF("Watchdog armed (%d ms)", WDT_TIMEOUT_MS);
 
     for (;;) {

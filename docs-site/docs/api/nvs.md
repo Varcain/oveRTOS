@@ -31,11 +31,13 @@ On FreeRTOS and NuttX, NVS lives in `/nvs` on the volume mounted with `ove_fs_mo
 <!-- ove:body -->
 ```c
 /* Initialize (FreeRTOS / NuttX: after ove_fs_mount) */
-ove_nvs_init();
+if (ove_nvs_init() != OVE_OK)
+    return;
 
 /* Write a setting */
 uint8_t bypass = 1;
-ove_nvs_write("bypass", &bypass, sizeof(bypass));
+if (ove_nvs_write("bypass", &bypass, sizeof(bypass)) != OVE_OK)
+    return;
 
 /* Read it back */
 uint8_t val = 0;
@@ -45,7 +47,8 @@ if (ove_nvs_read("bypass", &val, sizeof(val), &out_len) == OVE_OK) {
 }
 
 /* Delete */
-ove_nvs_erase("bypass");
+if (ove_nvs_erase("bypass") != OVE_OK)
+    OVE_LOG_WRN("could not erase \"bypass\"");
 ```
 
 ## Error Codes

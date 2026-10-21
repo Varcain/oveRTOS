@@ -102,8 +102,9 @@ static void worker_fn(void *arg)
 void ove_main(void)
 {
     /* TLS handshakes are stack-hungry: give the worker 16 KB. */
-    ove_thread_create(&worker, "telemetry", worker_fn, NULL,
-                      OVE_PRIO_NORMAL, 16 * 1024);
+    if (ove_thread_create(&worker, "telemetry", worker_fn, NULL,
+                          OVE_PRIO_NORMAL, 16 * 1024) != OVE_OK)
+        return;
     ove_run();
 }
 ```

@@ -48,7 +48,8 @@ static void producer_fn(void *arg)
     uint32_t v = 0;
     while (1) {
         v++;
-        ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
+        if (ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
         latest_value = v;
         ove_mutex_unlock(value_mutex);
         ove_thread_sleep_ms(50);
@@ -79,7 +80,8 @@ static void ui_tick(ove_timer_t t, void *arg)
     (void)t; (void)arg;
 
     uint32_t v;
-    ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
+    if (ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER) != OVE_OK)
+        return;
     v = latest_value;
     ove_mutex_unlock(value_mutex);     /* drop app-side lock FIRST */
 
@@ -109,17 +111,18 @@ static void build_ui(void)
 
 void ove_main(void)
 {
-    ove_mutex_create(&value_mutex);
+    if (ove_mutex_create(&value_mutex) != OVE_OK)
+        return;
     ove_lvgl_init();
     build_ui();
 
-    ove_thread_create(&graphics, "graphics", graphics_fn, NULL,
-                      OVE_PRIO_HIGH, 4096);
-    ove_thread_create(&producer, "producer", producer_fn, NULL,
-                      OVE_PRIO_NORMAL, 4096);
-
-    ove_timer_create(&ui_timer, ui_tick, NULL, 200 /* ms */, 0 /* periodic */);
-    ove_timer_start(ui_timer);
+    if (ove_thread_create(&graphics, "graphics", graphics_fn, NULL,
+                          OVE_PRIO_HIGH, 4096) != OVE_OK ||
+        ove_thread_create(&producer, "producer", producer_fn, NULL,
+                          OVE_PRIO_NORMAL, 4096) != OVE_OK ||
+        ove_timer_create(&ui_timer, ui_tick, NULL, 200 /* ms */, 0 /* periodic */) != OVE_OK ||
+        ove_timer_start(ui_timer) != OVE_OK)
+        return;
 
     ove_run();
 }

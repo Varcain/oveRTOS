@@ -11,10 +11,16 @@ Why this exists
 The cookbook, API reference and getting-started pages show C code, but
 nothing ever built it, so it drifted onto functions that do not exist. This
 rule pulls out each ```c block under _PAGE_DIRS, prepends
-`#include "ove/ove.h"`, and runs a syntax-only compile against include/ with
+`#include "ove/ove.h"`, and compiles it to assembly against include/ with
 tests/docs/ove_config.h (every module the docs use switched on). LVGL comes
 from dl/lvgl when it has been downloaded, else from the stub header the host
 tests use.
+
+The compile generates code (-S) at -O0 on purpose. GCC reports an ignored
+OVE_NODISCARD result only while generating code, so -fsyntax-only never sees
+one, and at -O1 and above it drops unreferenced static functions before
+warning, so ignored results inside them go unreported. GCC also ignores a
+(void) cast here, so a snippet has to use the result.
 
 The line before a fence can mark the block:
   <!-- ove:body -->      statements only: compiled inside a function body
@@ -76,7 +82,7 @@ def _compile(cc, args, code):
         f.write(code)
         path = f.name
     try:
-        r = subprocess.run([cc, "-std=c11", "-fsyntax-only", "-Wall", "-Werror",
+        r = subprocess.run([cc, "-std=c11", "-S", "-O0", "-o", os.devnull, "-Wall", "-Werror",
                             "-Wno-unused-function", "-Wno-unused-variable"] + args + [path],
                            capture_output=True, text=True)
     finally:

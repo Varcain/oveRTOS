@@ -115,9 +115,9 @@ static void worker_entry(void *arg)
 
 static ove_thread_t worker;
 
-void app_start(void)
+int app_start(void)
 {
-    ove_thread_create(&worker, "worker", worker_entry, NULL, OVE_PRIO_NORMAL, 2048);
+    return ove_thread_create(&worker, "worker", worker_entry, NULL, OVE_PRIO_NORMAL, 2048);
 }
 
 void app_stop(void)
@@ -146,10 +146,10 @@ static uint8_t              worker_stack[2048] __attribute__((aligned(8)));
 
 static ove_thread_t worker;
 
-void app_start(void)
+int app_start(void)
 {
-    ove_thread_init(&worker, &worker_storage, "worker", worker_entry, NULL,
-                    OVE_PRIO_NORMAL, sizeof(worker_stack), worker_stack);
+    return ove_thread_init(&worker, &worker_storage, "worker", worker_entry, NULL,
+                           OVE_PRIO_NORMAL, sizeof(worker_stack), worker_stack);
 }
 ```
 
@@ -354,8 +354,9 @@ static void sensor_entry(void *arg)
 
 void ove_main(void)
 {
-    ove_thread_create(&sensor_thread, "sensor", sensor_entry, NULL,
-                      OVE_PRIO_NORMAL, WORKER_STACK_SZ);
+    if (ove_thread_create(&sensor_thread, "sensor", sensor_entry, NULL,
+                          OVE_PRIO_NORMAL, WORKER_STACK_SZ) != OVE_OK)
+        return;
     ove_run();  /* starts the scheduler — does not return */
 }
 ```

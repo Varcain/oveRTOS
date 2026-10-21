@@ -103,7 +103,8 @@ The caller declares an `ove_file_storage_t` (and, for directory iteration, `ove_
 static ove_file_storage_t file_storage;
 
 ove_file_t f;
-ove_fs_open_init(&f, &file_storage, "/sd/data.bin", OVE_FS_O_READ);
+if (ove_fs_open_init(&f, &file_storage, "/sd/data.bin", OVE_FS_O_READ) != OVE_OK)
+    return;
 /* ... read ... */
 ove_fs_close_deinit(f);
 ```
@@ -115,7 +116,8 @@ Available when `OVE_HEAP_FS` is defined (i.e. `CONFIG_OVE_ZERO_HEAP` is not set)
 <!-- ove:body -->
 ```c
 ove_file_t f;
-ove_fs_open(&f, "/sd/data.bin", OVE_FS_O_READ);
+if (ove_fs_open(&f, "/sd/data.bin", OVE_FS_O_READ) != OVE_OK)
+    return;
 /* ... read ... */
 ove_fs_close(f);
 ```
@@ -129,29 +131,33 @@ Both `ove_fs_opendir` / `ove_fs_closedir` and `ove_fs_opendir_init` / `ove_fs_cl
 #include "ove/ove.h"
 
 /* Mount the board's volume (the SD card on the STM32F746 Discovery) */
-ove_fs_mount(NULL, NULL);
+if (ove_fs_mount(NULL, NULL) != OVE_OK)
+    return;
 
 ove_file_t f;
 if (ove_fs_open(&f, "/sample.wav", OVE_FS_O_READ) != OVE_OK) {
     OVE_LOG_ERR("Failed to open WAV file");
+    ove_fs_unmount(NULL);
     return;
 }
 
-/* Read WAV header (44 bytes) */
+/* Read the WAV header (44 bytes) and the file size */
 uint8_t header[44];
-size_t nr;
-ove_fs_read(f, header, sizeof(header), &nr);
-
-/* Determine file size and audio data length */
-size_t file_size;
-ove_fs_size(f, &file_size);
+size_t nr = 0;
+size_t file_size = 0;
+if (ove_fs_read(f, header, sizeof(header), &nr) != OVE_OK || nr != sizeof(header) ||
+    ove_fs_size(f, &file_size) != OVE_OK || file_size < sizeof(header)) {
+    OVE_LOG_ERR("Not a WAV file");
+    file_size = sizeof(header); /* skip the loop below */
+}
 size_t audio_len = file_size - sizeof(header);
 
 /* Stream audio data in 512-byte chunks */
 uint8_t chunk[512];
 while (audio_len > 0) {
     size_t to_read = audio_len < sizeof(chunk) ? audio_len : sizeof(chunk);
-    ove_fs_read(f, chunk, to_read, &nr);
+    if (ove_fs_read(f, chunk, to_read, &nr) != OVE_OK || nr == 0)
+        break; /* I/O error, or the file is shorter than its size said */
     /* feed nr bytes of PCM to the audio graph ... */
     audio_len -= nr;
 }
