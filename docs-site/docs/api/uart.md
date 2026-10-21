@@ -48,13 +48,17 @@ struct ove_uart_cfg cfg = {
 };
 
 ove_uart_t uart;
-ove_uart_create(&uart, &cfg);
+if (ove_uart_create(&uart, &cfg) != OVE_OK)
+    return;
 
-ove_uart_write(uart, "Hello\n", 6, OVE_WAIT_FOREVER, NULL);
+if (ove_uart_write(uart, "Hello\n", 6, OVE_WAIT_FOREVER, NULL) != OVE_OK)
+    return;
 
 uint8_t buf[32];
 size_t n;
-ove_uart_read(uart, buf, sizeof(buf), 1000, &n);
+if (ove_uart_read(uart, buf, sizeof(buf), 1000, &n) == OVE_OK) {
+    /* n bytes arrived in buf */
+}
 ```
 
 > Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).

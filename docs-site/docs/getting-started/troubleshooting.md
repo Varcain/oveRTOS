@@ -265,7 +265,8 @@ void ove_main(void)
     /* but never: */
     struct app_ctx ctx_bad;              /* WRONG — automatic storage */
 
-    ove_thread_create(&t, "worker", worker, &ctx, OVE_PRIO_NORMAL, 4096);
+    if (ove_thread_create(&t, "worker", worker, &ctx, OVE_PRIO_NORMAL, 4096) != OVE_OK)
+        return;
     ove_run();
 }
 ```

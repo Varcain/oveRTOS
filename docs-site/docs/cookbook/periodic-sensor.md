@@ -71,15 +71,17 @@ static void worker_fn(void *arg)
 
 void ove_main(void)
 {
-    ove_queue_create(&samples, sizeof(sample_t), QUEUE_DEPTH);
-    ove_thread_create(&worker, "sensor_worker", worker_fn, NULL,
-                      OVE_PRIO_NORMAL, 4096);
+    if (ove_queue_create(&samples, sizeof(sample_t), QUEUE_DEPTH) != OVE_OK ||
+        ove_thread_create(&worker, "sensor_worker", worker_fn, NULL,
+                          OVE_PRIO_NORMAL, 4096) != OVE_OK)
+        return;
 
     /* ove_timer_create(timer, cb, user_data, period_ms, one_shot)
      * — one_shot = 0 for a periodic timer that auto-reloads. */
-    ove_timer_create(&sample_timer, sample_cb, NULL,
-                     SAMPLE_PERIOD_MS, 0);
-    ove_timer_start(sample_timer);
+    if (ove_timer_create(&sample_timer, sample_cb, NULL,
+                         SAMPLE_PERIOD_MS, 0) != OVE_OK ||
+        ove_timer_start(sample_timer) != OVE_OK)
+        return;
 
     ove_run();
 }

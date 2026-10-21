@@ -34,11 +34,14 @@ struct ove_i2c_cfg {
 struct ove_i2c_cfg cfg = { .instance = 0, .speed = OVE_I2C_SPEED_FAST };
 
 ove_i2c_t i2c;
-ove_i2c_create(&i2c, &cfg);
+if (ove_i2c_create(&i2c, &cfg) != OVE_OK)
+    return;
 
 // Read WHO_AM_I register from an accelerometer at 0x68
 uint8_t who_am_i;
-ove_i2c_reg_read(i2c, 0x68, 0x75, &who_am_i, 1, OVE_WAIT_FOREVER);
+if (ove_i2c_reg_read(i2c, 0x68, 0x75, &who_am_i, 1, OVE_WAIT_FOREVER) == OVE_OK) {
+    /* who_am_i holds the chip ID */
+}
 
 // Scan the bus
 for (uint16_t addr = 0x08; addr < 0x78; addr++) {

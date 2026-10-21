@@ -122,7 +122,8 @@ Before any networking, bring up the interface with static IP or DHCP:
 ```c
 ove_netif_t netif;
 ove_netif_storage_t storage;
-ove_netif_init(&netif, &storage);
+if (ove_netif_init(&netif, &storage) != OVE_OK)
+    return;
 
 ove_netif_config_t cfg = {0};
 cfg.use_dhcp = 0;
@@ -131,7 +132,8 @@ ove_sockaddr_ipv4(&cfg.netmask,   255, 255, 255, 0, 0);
 ove_sockaddr_ipv4(&cfg.gateway,   172, 1, 1, 1, 0);
 ove_sockaddr_ipv4(&cfg.dns,       8, 8, 8, 8, 0);
 
-ove_netif_up(netif, &cfg);
+if (ove_netif_up(netif, &cfg) != OVE_OK)
+    return;
 ```
 
 For DHCP, set `cfg.use_dhcp = 1` and leave the address fields zeroed.
@@ -171,20 +173,22 @@ sequenceDiagram
 ```c
 ove_socket_t sock;
 ove_socket_storage_t storage;
-ove_socket_open(&sock, &storage, OVE_AF_INET, OVE_SOCK_STREAM);
+if (ove_socket_open(&sock, &storage, OVE_AF_INET, OVE_SOCK_STREAM) != OVE_OK)
+    return;
 
 ove_sockaddr_t dest;
-ove_dns_resolve("example.com", &dest, OVE_SEC(5));
-dest.port = 80;
-ove_socket_connect(sock, &dest, OVE_SEC(5));
-
 const char *req = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
 size_t sent;
-ove_socket_send(sock, req, strlen(req), &sent);
-
 char buf[512];
 size_t received;
-ove_socket_recv(sock, buf, sizeof(buf), &received, OVE_SEC(5));
+if (ove_dns_resolve("example.com", &dest, OVE_SEC(5)) == OVE_OK) {
+    dest.port = 80;
+    if (ove_socket_connect(sock, &dest, OVE_SEC(5)) == OVE_OK &&
+        ove_socket_send(sock, req, strlen(req), &sent) == OVE_OK &&
+        ove_socket_recv(sock, buf, sizeof(buf), &received, OVE_SEC(5)) == OVE_OK) {
+        /* buf holds the first `received` bytes of the response */
+    }
+}
 
 ove_socket_close(sock);
 ```
@@ -195,21 +199,23 @@ ove_socket_close(sock);
 ```c
 ove_socket_t sock;
 ove_socket_storage_t storage;
-ove_socket_open(&sock, &storage, OVE_AF_INET, OVE_SOCK_DGRAM);
+if (ove_socket_open(&sock, &storage, OVE_AF_INET, OVE_SOCK_DGRAM) != OVE_OK)
+    return;
 
 ove_sockaddr_t local = {0};
 ove_sockaddr_ipv4(&local, 0, 0, 0, 0, 9999);
-ove_socket_bind(sock, &local);
 
 ove_sockaddr_t dest;
 ove_sockaddr_ipv4(&dest, 127, 0, 0, 1, 9999);
 size_t sent;
-ove_socket_sendto(sock, "hello", 5, &sent, &dest);
-
 char buf[64];
 size_t received;
 ove_sockaddr_t src;
-ove_socket_recvfrom(sock, buf, sizeof(buf), &received, &src, 2000);
+if (ove_socket_bind(sock, &local) == OVE_OK &&
+    ove_socket_sendto(sock, "hello", 5, &sent, &dest) == OVE_OK &&
+    ove_socket_recvfrom(sock, buf, sizeof(buf), &received, &src, 2000) == OVE_OK) {
+    /* buf holds a `received`-byte datagram from src */
+}
 
 ove_socket_close(sock);
 ```

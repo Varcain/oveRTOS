@@ -377,7 +377,8 @@ static void consumer_thread(void *arg)
     uint32_t val;
     while (1) {
         if (ove_queue_receive(counter_queue, &val, OVE_WAIT_FOREVER) == OVE_OK) {
-            ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
+            if (ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER) != OVE_OK)
+                continue;
             last_value = val;
             ove_mutex_unlock(value_mutex);
 
@@ -390,12 +391,13 @@ static void consumer_thread(void *arg)
 
 void ove_main(void)
 {
-    ove_queue_create(&counter_queue, sizeof(uint32_t), QUEUE_DEPTH);
-    ove_mutex_create(&value_mutex);
-    ove_thread_create(&producer_handle, "producer", producer_thread, NULL,
-                      OVE_PRIO_NORMAL, 4096);
-    ove_thread_create(&consumer_handle, "consumer", consumer_thread, NULL,
-                      OVE_PRIO_NORMAL, 4096);
+    if (ove_queue_create(&counter_queue, sizeof(uint32_t), QUEUE_DEPTH) != OVE_OK ||
+        ove_mutex_create(&value_mutex) != OVE_OK ||
+        ove_thread_create(&producer_handle, "producer", producer_thread, NULL,
+                          OVE_PRIO_NORMAL, 4096) != OVE_OK ||
+        ove_thread_create(&consumer_handle, "consumer", consumer_thread, NULL,
+                          OVE_PRIO_NORMAL, 4096) != OVE_OK)
+        return;
     ove_run();
 }
 ```

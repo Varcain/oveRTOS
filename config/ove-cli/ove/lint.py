@@ -825,7 +825,7 @@ def _nonnull_public(ove_dir, check):
 
 
 def _doc_snippets(ove_dir, check):
-    """Every C example in the cookbook compiles against the real headers."""
+    """Every C example in the docs compiles against the real headers."""
     del check  # read-only
     status, detail = lint_doc_snippets.check(ove_dir)
     return ("doc-snippets", status, detail)

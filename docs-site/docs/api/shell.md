@@ -90,7 +90,8 @@ static const struct ove_shell_cmd status_cmd = {
 
 void shell_setup(void)
 {
-    ove_console_init();
+    if (ove_console_init() != OVE_OK)
+        return;
     ove_shell_init();
     ove_shell_register_cmd(&status_cmd);
 }

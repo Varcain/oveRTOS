@@ -75,7 +75,8 @@ static void inference_fn(void *arg)
 
 void ove_main(void)
 {
-    ove_thread_create(&worker, "infer", inference_fn, NULL, OVE_PRIO_NORMAL, 8192);
+    if (ove_thread_create(&worker, "infer", inference_fn, NULL, OVE_PRIO_NORMAL, 8192) != OVE_OK)
+        return;
     ove_run();
 }
 ```

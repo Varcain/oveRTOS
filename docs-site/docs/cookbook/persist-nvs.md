@@ -33,13 +33,18 @@ The API is identical across all of them.
 static void boot_counter(void *arg)
 {
     (void)arg;
-    ove_fs_mount(NULL, NULL);   /* the SD card; RAM-only QEMU boards ignore it */
-    ove_nvs_init();
+    /* The SD card. RAM-only QEMU boards have nothing to mount and keep NVS in
+     * RAM, so a failure here is not fatal: */
+    int rc = ove_fs_mount(NULL, NULL);
+    if (rc != OVE_OK)
+        OVE_LOG_WRN("no volume mounted; NVS stays in RAM");
+    if (ove_nvs_init() != OVE_OK)
+        return;
 
     uint32_t boots = 0;
     size_t len = 0;
 
-    int rc = ove_nvs_read(KEY_BOOT_COUNT, &boots, sizeof(boots), &len);
+    rc = ove_nvs_read(KEY_BOOT_COUNT, &boots, sizeof(boots), &len);
     if (rc == OVE_OK && len == sizeof(boots)) {
         OVE_LOG_INF("boot #%u (resumed)", (unsigned)boots);
     } else {
@@ -56,8 +61,9 @@ static void boot_counter(void *arg)
 void ove_main(void)
 {
     static ove_thread_t counter;
-    ove_thread_create(&counter, "boot_counter", boot_counter, NULL,
-                      OVE_PRIO_NORMAL, 4096);
+    if (ove_thread_create(&counter, "boot_counter", boot_counter, NULL,
+                          OVE_PRIO_NORMAL, 4096) != OVE_OK)
+        return;
     ove_run();
 }
 ```
@@ -90,7 +96,8 @@ static void load_calib(calib_t *out)
     if (rc != OVE_OK || len != sizeof(*out) || out->version != CALIB_VERSION) {
         OVE_LOG_WRN("calibration missing or stale, using defaults");
         *out = defaults;
-        ove_nvs_write(KEY_CALIB, out, sizeof(*out));
+        if (ove_nvs_write(KEY_CALIB, out, sizeof(*out)) != OVE_OK)
+            OVE_LOG_WRN("could not store the default calibration");
     }
 }
 ```

@@ -86,11 +86,13 @@ void ove_main(void)
     ove_pm_wake_register(&button_wake);
     ove_pm_notify_register(pm_notify, NULL);
 
-    ove_gpio_configure(BUTTON_PORT, BUTTON_PIN, OVE_GPIO_MODE_INPUT);
-    ove_gpio_irq_register(BUTTON_PORT, BUTTON_PIN, OVE_GPIO_IRQ_FALLING, button_irq, NULL);
+    if (ove_gpio_configure(BUTTON_PORT, BUTTON_PIN, OVE_GPIO_MODE_INPUT) != OVE_OK ||
+        ove_gpio_irq_register(BUTTON_PORT, BUTTON_PIN, OVE_GPIO_IRQ_FALLING, button_irq, NULL) != OVE_OK)
+        return;
     ove_gpio_irq_enable(BUTTON_PORT, BUTTON_PIN);
 
-    ove_thread_create(&worker, "button", worker_fn, NULL, OVE_PRIO_NORMAL, 2048);
+    if (ove_thread_create(&worker, "button", worker_fn, NULL, OVE_PRIO_NORMAL, 2048) != OVE_OK)
+        return;
     ove_run();
 }
 ```

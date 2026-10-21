@@ -96,9 +96,9 @@ struct ir_request {
 /* Heap mode: allocate at startup */
 static ove_queue_t g_ir_req_q;
 
-void app_init(void)
+int app_init(void)
 {
-    ove_queue_create(&g_ir_req_q, sizeof(struct ir_request), IR_REQ_DEPTH);
+    return ove_queue_create(&g_ir_req_q, sizeof(struct ir_request), IR_REQ_DEPTH);
 }
 
 /* Or, zero-heap mode: one-shot static helper */
@@ -108,7 +108,8 @@ void app_init(void)
 void request_ir(void)
 {
     struct ir_request req = { .slot = 2, .file_offset = 0x8000, .length = 1024 };
-    ove_queue_send(g_ir_req_q, &req, OVE_WAIT_FOREVER);
+    if (ove_queue_send(g_ir_req_q, &req, OVE_WAIT_FOREVER) != OVE_OK)
+        OVE_LOG_WRN("IR request not queued");
 }
 
 /* DSP task — drains requests between audio cycles */
@@ -200,9 +201,9 @@ void hiroic_load_ir_blocking(uint8_t slot);   /* your loader */
 
 static ove_eventgroup_t g_state_eg;
 
-void app_init(void)
+int app_init(void)
 {
-    ove_eventgroup_create(&g_state_eg);
+    return ove_eventgroup_create(&g_state_eg);
 }
 
 /* Load task — signal that a new IR is ready */
@@ -213,10 +214,10 @@ void load_ir(uint8_t slot)
 }
 
 /* DSP task — wait for first IR before processing audio */
-void wait_for_ir(void)
+int wait_for_ir(void)
 {
-    ove_eventgroup_wait_bits(g_state_eg, BIT_IR_LOADED,
-                             OVE_EG_WAIT_ALL, OVE_WAIT_FOREVER, NULL);
+    return ove_eventgroup_wait_bits(g_state_eg, BIT_IR_LOADED,
+                                    OVE_EG_WAIT_ALL, OVE_WAIT_FOREVER, NULL);
 }
 
 /* Bypass button ISR — toggle bypass bit */
@@ -224,7 +225,9 @@ void BYPASS_IRQHandler(void)
 {
     bool bypass = !!(ove_eventgroup_get_bits(g_state_eg) & BIT_BYPASS_ACTIVE);
     if (bypass) {
-        ove_eventgroup_clear_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE);
+        if (ove_eventgroup_clear_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE) != OVE_OK) {
+            /* FreeRTOS timer queue full: the bit stays set; the next press retries */
+        }
     } else {
         ove_eventgroup_set_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE);
     }
@@ -295,10 +298,11 @@ uint8_t uart_read_byte(void);                       /* board: read the RX data r
 void process_frame(const uint8_t *buf, size_t len); /* your code */
 
 static ove_stream_t g_uart_stream;
+static volatile uint32_t g_rx_dropped; /* bytes the full stream had no room for */
 
-void app_init(void)
+int app_init(void)
 {
-    ove_stream_create(&g_uart_stream, STREAM_CAP, STREAM_TRIG);
+    return ove_stream_create(&g_uart_stream, STREAM_CAP, STREAM_TRIG);
 }
 
 /* UART RX ISR — one byte at a time. oveRTOS internally requests a
@@ -306,7 +310,10 @@ void app_init(void)
 void USART1_IRQHandler(void)
 {
     uint8_t byte = uart_read_byte();
-    ove_stream_send_from_isr(g_uart_stream, &byte, 1, NULL);
+    size_t sent = 0;
+    /* A full stream reports the drop through sent, not the return value. */
+    if (ove_stream_send_from_isr(g_uart_stream, &byte, 1, &sent) != OVE_OK || sent == 0)
+        g_rx_dropped++;
 }
 
 /* Consumer task — process frames in bulk */

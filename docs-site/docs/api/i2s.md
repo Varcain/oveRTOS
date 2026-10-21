@@ -80,7 +80,8 @@ void capture_task(void *arg)
     if (ove_event_create(&buf_ready) != OVE_OK || ove_i2s_create(&i2s, &cfg) != OVE_OK)
         return;
     ove_i2s_set_rx_callback(i2s, rx_ready, NULL);
-    ove_i2s_start(i2s);
+    if (ove_i2s_start(i2s) != OVE_OK)
+        return;
 
     for (;;) {
         if (ove_event_wait(buf_ready, OVE_WAIT_FOREVER) != OVE_OK)
