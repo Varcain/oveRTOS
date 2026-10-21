@@ -14,11 +14,10 @@
  * interrupted a thread, the hardware has stacked that task's exception
  * frame onto its PSP: we read the stacked PC from there, walk the stack
  * and push a sample attributed to the task. If it interrupted another
- * handler (SysTick or PendSV: interrupts at the timer's own priority, such
- * as the console UART, are never preempted), the frame is on the MSP; we
- * locate it and push a tid-0 sample tagged with the handler's exception
- * number, which the dashboard renders as "[ISR n]". That handler time is
- * attributed instead of silently vanishing from the profile.
+ * handler (SysTick, PendSV, or a lower-priority driver interrupt such as
+ * the AN500 console UART RX), the frame is on the MSP. We locate it and
+ * push a tid-0 sample tagged with the handler's exception number, which
+ * the dashboard renders as "[ISR n]".
  *
  * Why not the kernel tick: sampling exactly on the SysTick boundary never
  * sees work that the tick itself wakes (delays, timers, periodic loops) —
@@ -186,9 +185,9 @@ static int profiler_running;
  * the same task in thread mode. It stays above SysTick and PendSV also on
  * an NVIC with four priority bits, where the kernel priority and 0xff are
  * one level, so it can interrupt the kernel tick and the context switch;
- * those samples take the handler-mode path below. Interrupts at this same
- * priority, the console UART RX among them, cannot be preempted and are
- * not attributed. */
+ * those samples take the handler-mode path below. Only lower-priority
+ * interrupts can be preempted. The AN500 console UART RX runs one level
+ * below the sampler so its time can be attributed. */
 #define PROF_TIMER_BASE OVE_BOARD_PROFILER_TIMER_BASE
 #define PROF_TIMER_IRQ OVE_BOARD_PROFILER_TIMER_IRQ
 #define PROF_TIMER_CTRL (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x00u))
