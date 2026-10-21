@@ -49,13 +49,14 @@ static int wait_for_atomic(atomic_int *flag, int expected, uint32_t timeout_ms)
  * before any other suite that creates threads).  On a single core the
  * equal-priority children run that setup back to back, so this is a smoke
  * test there: it catches the bug only if a child is preempted inside the
- * allocation (SMP, or a yield injected to widen the window). */
-#define SELF_RACE_N 4
+ * allocation (SMP, or a yield injected to widen the window).  Two threads
+ * are enough to race; the small stacks keep the STM32F746 test image inside
+ * its RAM. */
+#define SELF_RACE_N 2
+#define SELF_RACE_STACK 2048
 OVE_TEST_STORAGE(ove_thread_storage_t, s_race_storage[SELF_RACE_N]);
-OVE_TEST_STACK(s_race_stack0, 4096);
-OVE_TEST_STACK(s_race_stack1, 4096);
-OVE_TEST_STACK(s_race_stack2, 4096);
-OVE_TEST_STACK(s_race_stack3, 4096);
+OVE_TEST_STACK(s_race_stack0, SELF_RACE_STACK);
+OVE_TEST_STACK(s_race_stack1, SELF_RACE_STACK);
 OVE_TEST_STORAGE(ove_sem_storage_t, s_race_sem_storage);
 
 static ove_sem_t s_race_go;
@@ -78,8 +79,8 @@ static void entry_self_race(void *arg)
 static void test_get_self_concurrent_first_start(void **state)
 {
 	(void)state;
-	void *stacks[SELF_RACE_N] = {s_race_stack0, s_race_stack1, s_race_stack2, s_race_stack3};
-	static const char *const names[SELF_RACE_N] = {"race0", "race1", "race2", "race3"};
+	void *stacks[SELF_RACE_N] = {s_race_stack0, s_race_stack1};
+	static const char *const names[SELF_RACE_N] = {"race0", "race1"};
 	ove_thread_t h[SELF_RACE_N] = {NULL};
 	int made[SELF_RACE_N] = {0};
 	int created = 0;
@@ -91,7 +92,8 @@ static void test_get_self_concurrent_first_start(void **state)
 	 * all of them go through their first TLS setup back to back. */
 	for (int i = 0; i < SELF_RACE_N; i++) {
 		if (ove_test_thread_run(&h[i], &s_race_storage[i], names[i], entry_self_race,
-					(void *)(intptr_t)i, stacks[i], 4096) == OVE_OK) {
+					(void *)(intptr_t)i, stacks[i],
+					SELF_RACE_STACK) == OVE_OK) {
 			made[i] = 1;
 			created++;
 		}
@@ -241,9 +243,9 @@ static void test_get_self(void **state)
  * preemptive engine the HIGH child therefore runs to completion inside create; the host
  * POSIX backend does not enforce priorities, so there only the identity is checked.
  * The child also queries its own state there: the handle's backend fields (FreeRTOS task,
- * NuttX pid) must already be in place, not only its identity. */
+ * NuttX pid) must already be in place, not only its identity.  The spawner borrows the
+ * first race-test stack; the two tests never run at once. */
 OVE_TEST_STORAGE(ove_thread_storage_t, s_spawner_storage);
-OVE_TEST_STACK(s_spawner_stack, 4096);
 
 static atomic_int s_child_ran;
 static atomic_intptr_t s_child_self;
@@ -295,7 +297,8 @@ static void test_get_self_before_create_returns(void **state)
 
 	ove_thread_t spawner = NULL;
 	OVE_TEST_ASSERT_OK(ove_test_thread_run(&spawner, &s_spawner_storage, "t_spawn",
-					       entry_spawner, NULL, s_spawner_stack, 4096));
+					       entry_spawner, NULL, s_race_stack0,
+					       SELF_RACE_STACK));
 	int done = wait_for_atomic(&s_spawn_done, 1, 2000);
 	int ran = wait_for_atomic(&s_child_ran, 1, 2000);
 	ove_thread_t child = (ove_thread_t)atomic_load(&s_child_handle);
