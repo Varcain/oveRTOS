@@ -149,9 +149,13 @@ else()
   list(APPEND _srcs ${OVE_DIR}/backends/common/ove_nvs_fs.c)
 endif()
 
+# A nonnull-compare warning means the compiler is deleting a NULL check the
+# API promises (see OVE_NONNULL in include/ove/types.h); the lint rule
+# nonnull-public covers checks inside inlined helpers, which it cannot see.
 set(_compile_flags
   -Wno-unused-parameter
   -Wno-missing-field-initializers
+  -Werror=nonnull-compare
 )
 set(_definitions "")
 

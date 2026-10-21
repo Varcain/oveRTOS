@@ -800,6 +800,30 @@ def _error_code_pinning(ove_dir, check):
     return ("error-code-pin", "FAIL", detail)
 
 
+def _nonnull_public(ove_dir, check):
+    """No public declaration may carry OVE_NONNULL.
+
+    The public API rejects NULL at run time with OVE_ERR_INVALID_PARAM, and
+    GCC deletes those checks in the implementation once the declaration says
+    the parameter is non-NULL.  -Werror=nonnull-compare catches only a compare
+    written in the function body, not one inside an inlined helper such as
+    ove_check_param(), so the rule is enforced here instead.
+    """
+    del check  # read-only
+    hits = []
+    inc = os.path.join(ove_dir, "include", "ove")
+    for path in sorted(_glob(inc, ".h")):
+        with open(path, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                code = line.split("//", 1)[0].strip()
+                if "OVE_NONNULL(" not in code or code.startswith(("#define", "*", "/*")):
+                    continue
+                hits.append(f"{os.path.relpath(path, ove_dir)}:{n}")
+    if not hits:
+        return ("nonnull-public", "OK", "no OVE_NONNULL on public declarations")
+    return ("nonnull-public", "FAIL", "OVE_NONNULL deletes NULL checks: " + ", ".join(hits))
+
+
 def _doc_snippets(ove_dir, check):
     """Every C example in the cookbook compiles against the real headers."""
     del check  # read-only
@@ -837,6 +861,7 @@ def _run_all(check, include_lint=True):
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
             _error_code_pinning(ove_dir, check),
+            _nonnull_public(ove_dir, check),
             _doc_snippets(ove_dir, check),
             _doc_names(ove_dir, check),
         ]

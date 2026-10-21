@@ -18,7 +18,7 @@
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (item_size == 0 || max_items == 0) {
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -112,8 +112,8 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 
 int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
 {
-	/* OVE_NONNULL(1) on the public decl already guarantees q != NULL;
-	 * an explicit check would trip -Werror=nonnull-compare. */
+	if (q == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	q->notify_cb = cb;
 	q->notify_ud = user_data;
 	return OVE_OK;

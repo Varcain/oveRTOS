@@ -9,6 +9,7 @@
 #include "../framework/ove_test.h"
 
 OVE_TEST_STORAGE(ove_sem_storage_t, s_sem_storage);
+OVE_TEST_STORAGE(ove_sem_storage_t, s_sem_null_storage);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STACK(s_th_stack, 4096);
 
@@ -137,6 +138,31 @@ static void test_sem_destroy_null(void **state)
 
 #endif
 
+/* See test_mutex_init_null_out_rejected: the callee's own check must hold. */
+static void test_sem_init_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_sem_t *volatile out = NULL;
+	assert_int_equal(ove_sem_init(out, &s_sem_null_storage, 0, 1), OVE_ERR_INVALID_PARAM);
+}
+
+/* NULL arguments reach the call through a volatile, as in test_sync_mutex.c. */
+static void test_sem_set_notify_null_rejected(void **state)
+{
+	(void)state;
+	ove_sem_t volatile sem = NULL;
+	assert_int_equal(ove_sem_set_notify(sem, NULL, NULL), OVE_ERR_INVALID_PARAM);
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+static void test_sem_create_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_sem_t *volatile out = NULL;
+	assert_int_equal(ove_sem_create(out, 0, 1), OVE_ERR_INVALID_PARAM);
+}
+#endif
+
 int test_sync_sem_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -151,6 +177,11 @@ int test_sync_sem_run(void)
 		cmocka_unit_test(test_sem_wait_forever),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_sem_destroy_null),
+#endif
+		cmocka_unit_test(test_sem_init_null_out_rejected),
+		cmocka_unit_test(test_sem_set_notify_null_rejected),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_sem_create_null_out_rejected),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

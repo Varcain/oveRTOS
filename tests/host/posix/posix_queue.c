@@ -27,7 +27,7 @@ static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (item_size == 0 || max_items == 0)
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_queue *sq = (struct ove_queue *)storage;
 	memset(sq, 0, sizeof(*sq));

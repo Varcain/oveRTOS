@@ -19,6 +19,8 @@
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
+	if (mtx == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	storage->sem = xSemaphoreCreateMutexStatic(&storage->static_sem);
 	*mtx = storage;
 	return OVE_OK;
@@ -50,6 +52,8 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
+	if (sem == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	storage->sem = xSemaphoreCreateCountingStatic(max, initial, &storage->static_sem);
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
@@ -84,7 +88,8 @@ void ove_sem_give(ove_sem_t sem)
 
 int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 {
-	/* OVE_NONNULL on the public decl already guarantees sem != NULL. */
+	if (sem == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	sem->notify_cb = cb;
 	sem->notify_ud = user_data;
 	return OVE_OK;
@@ -94,6 +99,8 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
+	if (evt == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	__atomic_store_n(&storage->signaled, 0u, __ATOMIC_RELAXED);
 	__atomic_store_n(&storage->waiter, (TaskHandle_t)NULL, __ATOMIC_RELAXED);
 	*evt = storage;
@@ -193,6 +200,8 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
+	if (mtx == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	storage->sem = xSemaphoreCreateRecursiveMutexStatic(&storage->static_sem);
 	*mtx = storage;
 	return OVE_OK;
@@ -228,6 +237,8 @@ struct condvar_waiter {
 
 int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
+	if (cv == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	storage->head = NULL;
 	*cv = storage;
 	return OVE_OK;

@@ -43,10 +43,13 @@
  * @brief Mark required-non-NULL pointer parameters (1-indexed positions).
  *
  * Callers passing @c NULL trigger a compile-time @c -Wnonnull warning.
- * Caution: GCC may use this as an axiom and eliminate subsequent
- * @c NULL checks inside the callee body — annotation and defensive
- * @c if (!ptr) checks must be kept consistent or one will silently
- * disappear.
+ *
+ * Do not put it on a parameter the implementation checks for @c NULL.
+ * GCC treats the attribute as a promise and deletes those checks when
+ * optimising (even with @c -fno-delete-null-pointer-checks), so a @c NULL
+ * that the documented contract answers with @c OVE_ERR_INVALID_PARAM is
+ * silently dereferenced instead.  The public API rejects @c NULL at run
+ * time, so no public declaration uses it.
  */
 #define OVE_NONNULL(...) __attribute__((nonnull(__VA_ARGS__)))
 

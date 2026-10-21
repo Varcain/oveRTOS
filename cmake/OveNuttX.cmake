@@ -295,8 +295,10 @@ macro(ove_nuttx_register_app)
     ove_nuttx_build_tflm()
     ove_nuttx_build_mbedtls()
 
-    # Compile flags
-    set(_OVE_NX_CFLAGS "")
+    # Compile flags.  A nonnull-compare warning means the compiler is deleting a
+    # NULL check the API promises (see OVE_NONNULL in include/ove/types.h); the
+    # lint rule nonnull-public covers checks the warning cannot see.
+    set(_OVE_NX_CFLAGS "-Werror=nonnull-compare")
 
     # Register with NuttX
     nuttx_add_application(
