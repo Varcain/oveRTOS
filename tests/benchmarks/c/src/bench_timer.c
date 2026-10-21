@@ -25,7 +25,7 @@ static void timer_create_destroy_run(void *ctx)
 	(void)ctx;
 	ove_timer_t t;
 
-	ove_timer_create(&t, timer_dummy_cb, NULL, 1000, 0);
+	bench_check(ove_timer_create(&t, timer_dummy_cb, NULL, 1000, 0));
 	ove_timer_destroy(t);
 }
 #endif
@@ -35,13 +35,13 @@ static void timer_create_destroy_run(void *ctx)
 static void timer_start_stop_setup(void *ctx)
 {
 	(void)ctx;
-	ove_timer_init(&bench_tmr, &bench_tmr_storage, timer_dummy_cb, NULL, 1000, 0);
+	bench_check(ove_timer_init(&bench_tmr, &bench_tmr_storage, timer_dummy_cb, NULL, 1000, 0));
 }
 
 static void timer_start_stop_run(void *ctx)
 {
 	(void)ctx;
-	ove_timer_start(bench_tmr);
+	bench_check(ove_timer_start(bench_tmr));
 	ove_timer_stop(bench_tmr);
 }
 
@@ -58,7 +58,7 @@ static ove_timer_t mem_timer;
 static void timer_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_timer_create(&mem_timer, timer_dummy_cb, NULL, 1000, 0);
+	bench_check(ove_timer_create(&mem_timer, timer_dummy_cb, NULL, 1000, 0));
 }
 
 static void timer_memory_teardown(void *ctx)

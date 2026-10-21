@@ -22,7 +22,7 @@ static void test_nvs_init(void **state)
 static void test_nvs_write_read(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	const char *key = "test_key";
 	uint32_t value = 12345;
@@ -42,7 +42,7 @@ static void test_nvs_write_read(void **state)
 static void test_nvs_read_nonexistent(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	uint8_t buf[32];
 	size_t len = 0;
@@ -57,11 +57,11 @@ static void test_nvs_read_nonexistent(void **state)
 static void test_nvs_overwrite(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	const char *key = "overwrite_key";
 	uint32_t v1 = 100;
-	ove_nvs_write(key, &v1, sizeof(v1));
+	OVE_TEST_ASSERT_OK(ove_nvs_write(key, &v1, sizeof(v1)));
 
 	uint32_t v2 = 200;
 	int rc = ove_nvs_write(key, &v2, sizeof(v2));
@@ -79,11 +79,11 @@ static void test_nvs_overwrite(void **state)
 static void test_nvs_erase_then_read(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	const char *key = "erase_key";
 	uint32_t v = 42;
-	ove_nvs_write(key, &v, sizeof(v));
+	OVE_TEST_ASSERT_OK(ove_nvs_write(key, &v, sizeof(v)));
 
 	int rc = ove_nvs_erase(key);
 	assert_int_equal(rc, OVE_OK);
@@ -99,25 +99,25 @@ static void test_nvs_erase_then_read(void **state)
 static void test_nvs_multiple_keys(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	uint32_t a = 1, b = 2, c = 3;
-	ove_nvs_write("key_a", &a, sizeof(a));
-	ove_nvs_write("key_b", &b, sizeof(b));
-	ove_nvs_write("key_c", &c, sizeof(c));
+	OVE_TEST_ASSERT_OK(ove_nvs_write("key_a", &a, sizeof(a)));
+	OVE_TEST_ASSERT_OK(ove_nvs_write("key_b", &b, sizeof(b)));
+	OVE_TEST_ASSERT_OK(ove_nvs_write("key_c", &c, sizeof(c)));
 
 	uint32_t out = 0;
 	size_t len = 0;
 
-	ove_nvs_read("key_a", &out, sizeof(out), &len);
+	OVE_TEST_ASSERT_OK(ove_nvs_read("key_a", &out, sizeof(out), &len));
 	assert_int_equal(out, 1);
 
 	len = 0;
-	ove_nvs_read("key_b", &out, sizeof(out), &len);
+	OVE_TEST_ASSERT_OK(ove_nvs_read("key_b", &out, sizeof(out), &len));
 	assert_int_equal(out, 2);
 
 	len = 0;
-	ove_nvs_read("key_c", &out, sizeof(out), &len);
+	OVE_TEST_ASSERT_OK(ove_nvs_read("key_c", &out, sizeof(out), &len));
 	assert_int_equal(out, 3);
 
 	ove_nvs_deinit();
@@ -126,12 +126,12 @@ static void test_nvs_multiple_keys(void **state)
 static void test_nvs_read_small_buffer(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	const char *key = "big_data";
 	uint8_t data[32];
 	memset(data, 0xAA, sizeof(data));
-	ove_nvs_write(key, data, sizeof(data));
+	OVE_TEST_ASSERT_OK(ove_nvs_write(key, data, sizeof(data)));
 
 	uint8_t small_buf[8];
 	size_t len = 0;
@@ -146,14 +146,14 @@ static void test_nvs_read_small_buffer(void **state)
 static void test_nvs_persists_across_reinit(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	uint32_t v = 999;
 	assert_int_equal(ove_nvs_write("persist_key", &v, sizeof(v)), OVE_OK);
 	ove_nvs_deinit();
 
 	/* Non-volatile: a deinit/init cycle keeps what was written. */
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 	uint32_t out = 0;
 	size_t len = 0;
 	assert_int_equal(ove_nvs_read("persist_key", &out, sizeof(out), &len), OVE_OK);
@@ -167,7 +167,7 @@ static void test_nvs_persists_across_reinit(void **state)
 static void test_nvs_overwrite_shorter(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	/* A shorter value replaces the whole old one: no stale tail. */
 	assert_int_equal(ove_nvs_write("shrink_key", "home-network", 12), OVE_OK);
@@ -187,7 +187,7 @@ static void test_nvs_overwrite_shorter(void **state)
 static void test_nvs_size_query(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	uint8_t data[20];
 	memset(data, 0x5A, sizeof(data));
@@ -205,7 +205,7 @@ static void test_nvs_size_query(void **state)
 static void test_nvs_erase_missing(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	/* Contract (ove/nvs.h): erasing a key that is not stored has no effect. */
 	assert_int_equal(ove_nvs_erase("never_written_key"), OVE_OK);
@@ -216,7 +216,7 @@ static void test_nvs_erase_missing(void **state)
 static void test_nvs_long_keys_stay_distinct(void **state)
 {
 	(void)state;
-	ove_nvs_init();
+	OVE_TEST_ASSERT_OK(ove_nvs_init());
 
 	/* Two keys that differ only past character 63: a backend must keep
 	 * them apart or refuse them, never let one overwrite the other. */
@@ -236,8 +236,8 @@ static void test_nvs_long_keys_stay_distinct(void **state)
 		size_t len = 0;
 		assert_int_equal(ove_nvs_read(key_a, &out, sizeof(out), &len), OVE_OK);
 		assert_int_equal(out, 1);
-		(void)ove_nvs_erase(key_a);
-		(void)ove_nvs_erase(key_b);
+		OVE_TEST_ASSERT_OK(ove_nvs_erase(key_a));
+		OVE_TEST_ASSERT_OK(ove_nvs_erase(key_b));
 	} else {
 		assert_int_equal(rc_a, OVE_ERR_INVALID_PARAM);
 		assert_int_equal(rc_b, OVE_ERR_INVALID_PARAM);

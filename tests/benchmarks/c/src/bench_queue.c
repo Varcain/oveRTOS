@@ -75,8 +75,9 @@ static void queue_throughput_setup(void *ctx)
 	throughput_done = 0;
 	bench_check(
 		ove_queue_init(&bench_q, &bench_q_storage, throughput_q_buf, sizeof(uint32_t), 64));
-	ove_thread_init(&producer_th, &producer_th_storage, "q_prod", producer_thread, NULL,
-			OVE_PRIO_NORMAL, sizeof(producer_th_stack), producer_th_stack);
+	bench_check(ove_thread_init(&producer_th, &producer_th_storage, "q_prod", producer_thread,
+				    NULL, OVE_PRIO_NORMAL, sizeof(producer_th_stack),
+				    producer_th_stack));
 }
 
 static void queue_throughput_run(void *ctx)

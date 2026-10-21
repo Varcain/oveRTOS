@@ -149,7 +149,8 @@ struct ove_fs_media_metrics {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags);
+OVE_NODISCARD int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path,
+				   int flags);
 
 /**
  * @brief Close a statically-allocated file handle.
@@ -176,7 +177,7 @@ int ove_fs_close_deinit(ove_file_t file);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *path);
+OVE_NODISCARD int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *path);
 
 /**
  * @brief Close a statically-allocated directory handle.
@@ -203,7 +204,7 @@ int ove_fs_closedir_deinit(ove_dir_t dir);
  *       zero-heap mode use @ref ove_fs_open_init with caller-supplied
  *       storage instead.
  */
-int ove_fs_open(ove_file_t *file, const char *path, int flags);
+OVE_NODISCARD int ove_fs_open(ove_file_t *file, const char *path, int flags);
 
 /**
  * @brief Close a file handle returned by @ref ove_fs_open.
@@ -222,7 +223,7 @@ int ove_fs_close(ove_file_t file);
  * @note Requires @c CONFIG_OVE_FS and (per-backend) @c OVE_HEAP_FS. In
  *       zero-heap mode use @ref ove_fs_opendir_init.
  */
-int ove_fs_opendir(ove_dir_t *dir, const char *path);
+OVE_NODISCARD int ove_fs_opendir(ove_dir_t *dir, const char *path);
 
 /**
  * @brief Close a directory handle returned by @ref ove_fs_opendir.
@@ -246,10 +247,10 @@ int ove_fs_closedir(ove_dir_t dir);
  * @param[in] mount_point  Native mount path, or @c NULL for the board's.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_mount(const char *dev_path, const char *mount_point);
+OVE_NODISCARD int ove_fs_mount(const char *dev_path, const char *mount_point);
 
 /** Mount a validated whole-disk or partition view. */
-int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point);
+OVE_NODISCARD int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point);
 
 /**
  * @brief Unmount a previously mounted storage device.
@@ -276,7 +277,7 @@ void ove_fs_unmount(const char *mount_point);
  *                         @c NULL if not needed.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read);
+OVE_NODISCARD int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read);
 
 /**
  * @brief Write bytes to an open file.
@@ -293,7 +294,8 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read);
  *                            or @c NULL if not needed.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written);
+OVE_NODISCARD int ove_fs_write(ove_file_t file, const void *buf, size_t count,
+			       size_t *bytes_written);
 
 /**
  * @brief Query the total size of an open file.
@@ -302,7 +304,7 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_w
  * @param[out] out_size  Receives the file size in bytes.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_size(ove_file_t file, size_t *out_size);
+OVE_NODISCARD int ove_fs_size(ove_file_t file, size_t *out_size);
 
 /**
  * @brief Reposition the file read/write offset.
@@ -316,7 +318,7 @@ int ove_fs_size(ove_file_t file, size_t *out_size);
  *                    @c OVE_FS_SEEK_END.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_seek(ove_file_t file, long offset, int whence);
+OVE_NODISCARD int ove_fs_seek(ove_file_t file, long offset, int whence);
 
 /**
  * @brief Return the current file position.
@@ -338,7 +340,7 @@ long ove_fs_tell(ove_file_t file);
  * @return OVE_OK if an entry was read, @c OVE_ERR_EOF when the directory
  *         is exhausted, or another negative error code on failure.
  */
-int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry);
+OVE_NODISCARD int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry);
 
 /**
  * @brief Delete a file by path.
@@ -349,7 +351,7 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry);
  * @param[in] path  Absolute path of the file to delete.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_unlink(const char *path);
+OVE_NODISCARD int ove_fs_unlink(const char *path);
 
 /**
  * @brief Rename or move a file.
@@ -361,41 +363,42 @@ int ove_fs_unlink(const char *path);
  * @param[in] new_path  Absolute path for the new name or location.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_fs_rename(const char *old_path, const char *new_path);
+OVE_NODISCARD int ove_fs_rename(const char *old_path, const char *new_path);
 
 /** @brief Query metadata for a path without opening it. */
-int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat);
+OVE_NODISCARD int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat);
 
 /** @brief Query allocation statistics for the currently mounted volume. */
-int ove_fs_statvfs(struct ove_fs_statvfs *out_stat);
+OVE_NODISCARD int ove_fs_statvfs(struct ove_fs_statvfs *out_stat);
 
 /** @brief Create a directory. */
-int ove_fs_mkdir(const char *path);
+OVE_NODISCARD int ove_fs_mkdir(const char *path);
 
 /** @brief Remove an empty directory. */
-int ove_fs_rmdir(const char *path);
+OVE_NODISCARD int ove_fs_rmdir(const char *path);
 
 /** @brief Resize an open file. */
-int ove_fs_truncate(ove_file_t file, uint64_t length);
+OVE_NODISCARD int ove_fs_truncate(ove_file_t file, uint64_t length);
 
 /** @brief Flush buffered file data and metadata to the storage device. */
-int ove_fs_sync(ove_file_t file);
+OVE_NODISCARD int ove_fs_sync(ove_file_t file);
 
 /** Snapshot optional physical-media telemetry for the mounted backend. */
-int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics);
+OVE_NODISCARD int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics);
 
 /** Reset optional physical-media telemetry at the start of a measurement run. */
 void ove_fs_media_metrics_reset(void);
 
 #else /* !CONFIG_OVE_FS */
 
-static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
+OVE_NODISCARD static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
 {
 	(void)dev_path;
 	(void)mount_point;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_mount_volume(const struct ove_fs_volume *volume, const char *mount_point)
+OVE_NODISCARD static inline int ove_fs_mount_volume(const struct ove_fs_volume *volume,
+						    const char *mount_point)
 {
 	(void)volume;
 	(void)mount_point;
@@ -405,7 +408,7 @@ static inline void ove_fs_unmount(const char *mount_point)
 {
 	(void)mount_point;
 }
-static inline int ove_fs_open(ove_file_t *file, const char *path, int flags)
+OVE_NODISCARD static inline int ove_fs_open(ove_file_t *file, const char *path, int flags)
 {
 	(void)file;
 	(void)path;
@@ -417,7 +420,8 @@ static inline int ove_fs_close(ove_file_t file)
 	(void)file;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
+OVE_NODISCARD static inline int ove_fs_read(ove_file_t file, void *buf, size_t count,
+					    size_t *bytes_read)
 {
 	(void)file;
 	(void)buf;
@@ -425,8 +429,8 @@ static inline int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *
 	(void)bytes_read;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_write(ove_file_t file, const void *buf, size_t count,
-			       size_t *bytes_written)
+OVE_NODISCARD static inline int ove_fs_write(ove_file_t file, const void *buf, size_t count,
+					     size_t *bytes_written)
 {
 	(void)file;
 	(void)buf;
@@ -434,13 +438,13 @@ static inline int ove_fs_write(ove_file_t file, const void *buf, size_t count,
 	(void)bytes_written;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_size(ove_file_t file, size_t *out_size)
+OVE_NODISCARD static inline int ove_fs_size(ove_file_t file, size_t *out_size)
 {
 	(void)file;
 	(void)out_size;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_seek(ove_file_t file, long offset, int whence)
+OVE_NODISCARD static inline int ove_fs_seek(ove_file_t file, long offset, int whence)
 {
 	(void)file;
 	(void)offset;
@@ -452,13 +456,13 @@ static inline long ove_fs_tell(ove_file_t file)
 	(void)file;
 	return -1;
 }
-static inline int ove_fs_opendir(ove_dir_t *dir, const char *path)
+OVE_NODISCARD static inline int ove_fs_opendir(ove_dir_t *dir, const char *path)
 {
 	(void)dir;
 	(void)path;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
+OVE_NODISCARD static inline int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 {
 	(void)dir;
 	(void)entry;
@@ -469,50 +473,50 @@ static inline int ove_fs_closedir(ove_dir_t dir)
 	(void)dir;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_unlink(const char *path)
+OVE_NODISCARD static inline int ove_fs_unlink(const char *path)
 {
 	(void)path;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_rename(const char *old_path, const char *new_path)
+OVE_NODISCARD static inline int ove_fs_rename(const char *old_path, const char *new_path)
 {
 	(void)old_path;
 	(void)new_path;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
+OVE_NODISCARD static inline int ove_fs_stat(const char *path, struct ove_fs_stat *out_stat)
 {
 	(void)path;
 	(void)out_stat;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
+OVE_NODISCARD static inline int ove_fs_statvfs(struct ove_fs_statvfs *out_stat)
 {
 	(void)out_stat;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_mkdir(const char *path)
+OVE_NODISCARD static inline int ove_fs_mkdir(const char *path)
 {
 	(void)path;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_rmdir(const char *path)
+OVE_NODISCARD static inline int ove_fs_rmdir(const char *path)
 {
 	(void)path;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_truncate(ove_file_t file, uint64_t length)
+OVE_NODISCARD static inline int ove_fs_truncate(ove_file_t file, uint64_t length)
 {
 	(void)file;
 	(void)length;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_sync(ove_file_t file)
+OVE_NODISCARD static inline int ove_fs_sync(ove_file_t file)
 {
 	(void)file;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
+OVE_NODISCARD static inline int ove_fs_media_metrics(struct ove_fs_media_metrics *out_metrics)
 {
 	(void)out_metrics;
 	return OVE_ERR_NOT_SUPPORTED;

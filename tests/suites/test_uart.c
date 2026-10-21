@@ -86,7 +86,7 @@ static void test_uart_read_null_buf(void **state)
 		.flow_control = OVE_UART_FLOW_NONE,
 		.rx_buf_size = 64,
 	};
-	ove_uart_create(&uart, &cfg);
+	OVE_TEST_ASSERT_OK(ove_uart_create(&uart, &cfg));
 
 	int rc = ove_uart_read(uart, NULL, 4, 100, NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -161,7 +161,7 @@ static void test_uart_read_null_buf(void **state)
 		.flow_control = OVE_UART_FLOW_NONE,
 		.rx_buf_size = 64,
 	};
-	ove_uart_init(&uart, &s_uart_rd, s_uart_rd_rx_buf, &cfg);
+	OVE_TEST_ASSERT_OK(ove_uart_init(&uart, &s_uart_rd, s_uart_rd_rx_buf, &cfg));
 
 	int rc = ove_uart_read(uart, NULL, 4, 100, NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);

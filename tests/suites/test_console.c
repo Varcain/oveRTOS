@@ -24,7 +24,7 @@ static void test_console_init(void **state)
 static void test_console_put_char(void **state)
 {
 	(void)state;
-	ove_console_init();
+	OVE_TEST_ASSERT_OK(ove_console_init());
 	ove_console_putchar('A');
 	ove_console_putchar('\n');
 }
@@ -32,7 +32,7 @@ static void test_console_put_char(void **state)
 static void test_console_write(void **state)
 {
 	(void)state;
-	ove_console_init();
+	OVE_TEST_ASSERT_OK(ove_console_init());
 	const char *msg = "Hello, console!\n";
 	ove_console_write(msg, strlen(msg));
 }
@@ -40,7 +40,7 @@ static void test_console_write(void **state)
 static void test_log_long_message_truncates(void **state)
 {
 	(void)state;
-	ove_console_init();
+	OVE_TEST_ASSERT_OK(ove_console_init());
 	/* Longer than the 256-byte log buffer: the macros must truncate, not
 	 * write or read past it (the sanitizer builds catch either). */
 	char long_msg[400];
@@ -53,7 +53,7 @@ static void test_log_long_message_truncates(void **state)
 static void test_console_getchar_from_empty_stdin(void **state)
 {
 	(void)state;
-	ove_console_init();
+	OVE_TEST_ASSERT_OK(ove_console_init());
 #if !defined(OVE_QEMU_ARM)
 	/* Save original stdin fd, redirect to /dev/null, then restore */
 	int saved_stdin = dup(STDIN_FILENO);
@@ -76,7 +76,7 @@ static void test_console_getchar_from_empty_stdin(void **state)
 static void test_console_try_getchar_from_empty_stdin(void **state)
 {
 	(void)state;
-	ove_console_init();
+	OVE_TEST_ASSERT_OK(ove_console_init());
 #if !defined(OVE_QEMU_ARM)
 	int saved_stdin = dup(STDIN_FILENO);
 	int devnull = open("/dev/null", O_RDONLY);

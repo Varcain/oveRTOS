@@ -62,12 +62,12 @@ static void test_stream_fill_drain(void **state)
 	memset(data, 0xAB, sizeof(data));
 
 	size_t sent = 0;
-	ove_stream_send(s, data, 64, 0, &sent);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, data, 64, 0, &sent));
 	assert_int_equal(sent, 64);
 
 	uint8_t out[64] = {0};
 	size_t received = 0;
-	ove_stream_receive(s, out, 64, 0, &received);
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, out, 64, 0, &received));
 	assert_int_equal(received, 64);
 	assert_memory_equal(out, data, 64);
 
@@ -84,7 +84,7 @@ static void test_stream_bytes_available(void **state)
 	assert_int_equal(avail, 0);
 
 	const uint8_t tx[] = "abcdef";
-	ove_stream_send(s, tx, 6, 0, NULL);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, tx, 6, 0, NULL));
 
 	avail = ove_stream_bytes_available(s);
 	assert_int_equal(avail, 6);
@@ -99,7 +99,7 @@ static void test_stream_reset(void **state)
 	ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 1);
 
 	const uint8_t tx[] = "data";
-	ove_stream_send(s, tx, 4, 0, NULL);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, tx, 4, 0, NULL));
 
 	OVE_TEST_ASSERT_OK(ove_stream_reset(s));
 
@@ -116,11 +116,11 @@ static void test_stream_partial_receive(void **state)
 	ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 1);
 
 	const uint8_t tx[] = "abcdefghij"; /* 10 bytes */
-	ove_stream_send(s, tx, 10, 0, NULL);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, tx, 10, 0, NULL));
 
 	uint8_t rx[5] = {0};
 	size_t received = 0;
-	ove_stream_receive(s, rx, 5, 0, &received);
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, rx, 5, 0, &received));
 	assert_int_equal(received, 5);
 	assert_memory_equal(rx, "abcde", 5);
 
@@ -139,12 +139,12 @@ static void test_stream_send_timeout_full(void **state)
 
 	uint8_t data[8];
 	memset(data, 0x11, sizeof(data));
-	ove_stream_send(s, data, 8, 0, NULL);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, data, 8, 0, NULL));
 
 	/* Buffer is full; send should transfer 0 bytes */
 	uint8_t extra = 0x22;
 	size_t sent2 = 0;
-	ove_stream_send(s, &extra, 1, OVE_MS(10), &sent2);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, &extra, 1, OVE_MS(10), &sent2));
 	assert_int_equal(sent2, 0);
 
 	ove_test_stream_destroy(s);
@@ -158,7 +158,7 @@ static void test_stream_receive_timeout_empty(void **state)
 
 	uint8_t rx[16];
 	size_t received = 0;
-	ove_stream_receive(s, rx, sizeof(rx), OVE_MS(10), &received);
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, rx, sizeof(rx), OVE_MS(10), &received));
 	assert_int_equal(received, 0);
 
 	ove_test_stream_destroy(s);
@@ -171,9 +171,11 @@ static void trigger_producer_fn(void *arg)
 	const uint8_t b[] = {0xA3, 0xA4};
 	/* Two bytes (below the trigger), a gap so a correct receiver is left
 	 * blocked, then the two that complete the trigger threshold. */
-	ove_stream_send(s, a, 2, OVE_WAIT_FOREVER, NULL);
+	/* Worker thread: cmocka asserts belong on the runner, which checks the bytes. */
+	int rc = ove_stream_send(s, a, 2, OVE_WAIT_FOREVER, NULL);
 	test_msleep(50);
-	ove_stream_send(s, b, 2, OVE_WAIT_FOREVER, NULL);
+	rc = ove_stream_send(s, b, 2, OVE_WAIT_FOREVER, NULL);
+	(void)rc;
 }
 
 static void test_stream_trigger(void **state)
@@ -224,7 +226,7 @@ static void test_stream_send_from_isr(void **state)
 
 	uint8_t rx[32] = {0};
 	size_t received = 0;
-	ove_stream_receive(s, rx, sizeof(rx), 0, &received);
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, rx, sizeof(rx), 0, &received));
 	assert_int_equal(received, sizeof(tx));
 	assert_string_equal((char *)rx, "isr_send");
 
@@ -238,7 +240,7 @@ static void test_stream_receive_from_isr(void **state)
 	ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 1);
 
 	const uint8_t tx[] = "isr_recv";
-	ove_stream_send(s, tx, sizeof(tx), 0, NULL);
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, tx, sizeof(tx), 0, NULL));
 
 	uint8_t rx[32] = {0};
 	size_t received = 0;
@@ -263,7 +265,9 @@ static void stream_producer_fn(void *arg)
 	for (int i = 0; i < pa->count; i++) {
 		uint8_t byte = (uint8_t)(i & 0xFF);
 		size_t sent = 0;
-		ove_stream_send(pa->stream, &byte, 1, OVE_MS(100), &sent);
+		/* Worker thread: the runner checks what arrives, not this rc. */
+		int rc = ove_stream_send(pa->stream, &byte, 1, OVE_MS(100), &sent);
+		(void)rc;
 	}
 }
 
@@ -284,7 +288,7 @@ static void test_stream_cross_thread(void **state)
 	for (int tries = 0; tries < 200 && received_total < 100; tries++) {
 		uint8_t buf[32];
 		size_t received = 0;
-		ove_stream_receive(s, buf, sizeof(buf), OVE_MS(20), &received);
+		OVE_TEST_ASSERT_OK(ove_stream_receive(s, buf, sizeof(buf), OVE_MS(20), &received));
 		for (size_t j = 0; j < received; j++) {
 			assert_int_equal(buf[j], (uint8_t)(received_total & 0xFF));
 			received_total++;

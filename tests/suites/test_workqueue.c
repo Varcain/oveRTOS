@@ -95,9 +95,9 @@ static void test_wq_submit_handler_called(void **state)
 
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_work_init_static(&w, &s_work_storage, work_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, work_handler));
 #else
-	ove_work_init(&w, work_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, work_handler));
 #endif
 
 	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w));
@@ -120,11 +120,12 @@ static void test_wq_submit_multiple(void **state)
 	ove_work_t works[3];
 	for (int i = 0; i < 3; i++) {
 #ifdef CONFIG_OVE_ZERO_HEAP
-		ove_work_init_static(&works[i], &s_work_storages[i], counting_handler);
+		OVE_TEST_ASSERT_OK(
+			ove_work_init_static(&works[i], &s_work_storages[i], counting_handler));
 #else
-		ove_work_init(&works[i], counting_handler);
+		OVE_TEST_ASSERT_OK(ove_work_init(&works[i], counting_handler));
 #endif
-		ove_work_submit(wq, works[i]);
+		OVE_TEST_ASSERT_OK(ove_work_submit(wq, works[i]));
 	}
 
 	/* Poll the atomic counter via deadline loop (wait_for_flag only takes
@@ -156,9 +157,9 @@ static void test_wq_submit_delayed(void **state)
 
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_work_init_static(&w, &s_work_storage, delayed_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, delayed_handler));
 #else
-	ove_work_init(&w, delayed_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, delayed_handler));
 #endif
 
 	OVE_TEST_ASSERT_OK(ove_work_submit_delayed(wq, w, 50));
@@ -184,15 +185,15 @@ static void test_wq_cancel_work(void **state)
 
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_work_init_static(&w, &s_work_storage, delayed_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, delayed_handler));
 #else
-	ove_work_init(&w, delayed_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, delayed_handler));
 #endif
 
 	/* Cancel immediately — well before the 200 ms delay could fire — so the
 	 * outcome is unambiguous: cancel must synchronously drain the submission
 	 * and the handler must never run. */
-	ove_work_submit_delayed(wq, w, 200);
+	OVE_TEST_ASSERT_OK(ove_work_submit_delayed(wq, w, 200));
 	OVE_TEST_ASSERT_OK(ove_work_cancel(w));
 
 	/* Wait past the original delay window; a cancelled item never fires. */
@@ -208,9 +209,9 @@ static void test_wq_cancel_not_pending(void **state)
 	(void)state;
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_work_init_static(&w, &s_work_storage, delayed_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, delayed_handler));
 #else
-	ove_work_init(&w, delayed_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, delayed_handler));
 #endif
 
 	/* Never submitted -> not pending -> OVE_ERR_INVAL (ove/workqueue.h). */
@@ -229,9 +230,9 @@ static void test_wq_resubmit_after_cancel(void **state)
 
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_work_init_static(&w, &s_work_storage, counting_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, counting_handler));
 #else
-	ove_work_init(&w, counting_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, counting_handler));
 #endif
 
 	/* Cancel the work, then submit it: the work MUST run.  NuttX sets a
@@ -240,7 +241,7 @@ static void test_wq_resubmit_after_cancel(void **state)
 	 * dropped — this regresses that. */
 	atomic_store(&s_work_count, 0);
 	(void)ove_work_cancel(w);
-	ove_work_submit(wq, w);
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w));
 
 	for (int i = 0; i < 200 && atomic_load(&s_work_count) == 0; i++)
 		test_msleep(1);
@@ -312,12 +313,12 @@ static void test_wq_handler_receives_handle(void **state)
 
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_work_init_static(&w, &s_work_storage, work_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, work_handler));
 #else
-	ove_work_init(&w, work_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, work_handler));
 #endif
 
-	ove_work_submit(wq, w);
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w));
 
 	assert_true(wait_for_flag(&s_work_called, 1, 500));
 	assert_ptr_equal((void *)atomic_load(&s_received_handle_raw), w);

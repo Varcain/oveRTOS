@@ -31,7 +31,7 @@ static void test_watchdog_start(void **state)
 {
 	(void)state;
 	ove_watchdog_t wd = NULL;
-	ove_watchdog_create(&wd, 5000);
+	OVE_TEST_ASSERT_OK(ove_watchdog_create(&wd, 5000));
 	int rc = ove_watchdog_start(wd);
 	assert_int_equal(rc, OVE_OK);
 	ove_watchdog_stop(wd);
@@ -42,8 +42,8 @@ static void test_watchdog_feed(void **state)
 {
 	(void)state;
 	ove_watchdog_t wd = NULL;
-	ove_watchdog_create(&wd, 5000);
-	ove_watchdog_start(wd);
+	OVE_TEST_ASSERT_OK(ove_watchdog_create(&wd, 5000));
+	OVE_TEST_ASSERT_OK(ove_watchdog_start(wd));
 	int rc = ove_watchdog_feed(wd);
 	assert_int_equal(rc, OVE_OK);
 	ove_watchdog_stop(wd);
@@ -54,8 +54,8 @@ static void test_watchdog_stop(void **state)
 {
 	(void)state;
 	ove_watchdog_t wd = NULL;
-	ove_watchdog_create(&wd, 5000);
-	ove_watchdog_start(wd);
+	OVE_TEST_ASSERT_OK(ove_watchdog_create(&wd, 5000));
+	OVE_TEST_ASSERT_OK(ove_watchdog_start(wd));
 	int rc = ove_watchdog_stop(wd);
 	/* OVE_ERR_NOT_SUPPORTED is a valid return on backends whose watchdog
      * cannot be disarmed once started (STM32 IWDG is the canonical case

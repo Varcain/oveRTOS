@@ -69,7 +69,7 @@ static void test_spi_write_read_wrappers(void **state)
 		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 8,
 	};
-	ove_spi_create(&spi, &cfg);
+	OVE_TEST_ASSERT_OK(ove_spi_create(&spi, &cfg));
 
 	uint8_t data[] = {0x01, 0x02};
 	int rc = ove_spi_write(spi, NULL, data, sizeof(data), 100);
@@ -142,7 +142,7 @@ static void test_spi_write_read_wrappers(void **state)
 		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 8,
 	};
-	ove_spi_init(&spi, &s_spi_wr, &cfg);
+	OVE_TEST_ASSERT_OK(ove_spi_init(&spi, &s_spi_wr, &cfg));
 
 	uint8_t data[] = {0x01, 0x02};
 	int rc = ove_spi_write(spi, NULL, data, sizeof(data), 100);

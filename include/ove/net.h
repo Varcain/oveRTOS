@@ -102,7 +102,7 @@ typedef struct {
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_netif_init(ove_netif_t *netif, ove_netif_storage_t *storage);
+OVE_NODISCARD int ove_netif_init(ove_netif_t *netif, ove_netif_storage_t *storage);
 
 /**
  * @brief De-initialise a network interface.
@@ -118,7 +118,7 @@ void ove_netif_deinit(ove_netif_t netif);
  * @param[in] cfg   Interface configuration (DHCP or static).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg);
+OVE_NODISCARD int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg);
 
 /**
  * @brief Tear down the network interface.
@@ -136,8 +136,8 @@ void ove_netif_down(ove_netif_t netif);
  * @param[out] netmask Current subnet mask (may be NULL).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *gateway,
-		       ove_sockaddr_t *netmask);
+OVE_NODISCARD int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *gateway,
+				     ove_sockaddr_t *netmask);
 
 /** ove_netif status flags (ove_netif_get_flags). The Linux personality maps these
  *  to the guest's IFF_* values; keep them engine-neutral here. */
@@ -151,17 +151,17 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *ga
  * @brief Reconfigure the interface's address(es). A NULL field is left unchanged.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip, const ove_sockaddr_t *netmask,
-		       const ove_sockaddr_t *gateway);
+OVE_NODISCARD int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip,
+				     const ove_sockaddr_t *netmask, const ove_sockaddr_t *gateway);
 
 /** @brief Bring the interface administratively up (up != 0) or down (up == 0). */
-int ove_netif_set_up(ove_netif_t netif, int up);
+OVE_NODISCARD int ove_netif_set_up(ove_netif_t netif, int up);
 
 /** @brief Copy the interface's 6-byte hardware (MAC) address into @p mac. */
-int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6]);
+OVE_NODISCARD int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6]);
 
 /** @brief Read the interface's OVE_NETIF_FLAG_* bitmask into @p flags. */
-int ove_netif_get_flags(ove_netif_t netif, unsigned *flags);
+OVE_NODISCARD int ove_netif_get_flags(ove_netif_t netif, unsigned *flags);
 
 #ifdef OVE_HEAP_NET
 /**
@@ -170,7 +170,7 @@ int ove_netif_get_flags(ove_netif_t netif, unsigned *flags);
  * @param[out] netif Handle written on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_netif_create(ove_netif_t *netif);
+OVE_NODISCARD int ove_netif_create(ove_netif_t *netif);
 
 /**
  * @brief Destroy a heap-allocated network interface.
@@ -191,8 +191,8 @@ void ove_netif_destroy(ove_netif_t netif);
  * @param[in]  type    Socket type (TCP or UDP).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
-		    ove_sock_type_t type);
+OVE_NODISCARD int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+				  ove_sock_type_t type);
 
 /**
  * @brief Open a socket with an explicit IP protocol number.
@@ -208,8 +208,8 @@ int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t 
  * @param[in]  proto   IP protocol number (0 = default for @p type).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
-		       ove_sock_type_t type, int proto);
+OVE_NODISCARD int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+				     ove_sock_type_t type, int proto);
 
 /**
  * @brief Close a socket.
@@ -226,7 +226,8 @@ void ove_socket_close(ove_socket_t sock);
  * @param[in] timeout_ns Timeout in nanoseconds (OVE_WAIT_FOREVER to block).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns);
+OVE_NODISCARD int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
+				     uint64_t timeout_ns);
 
 /**
  * @brief Bind a socket to a local address.
@@ -235,7 +236,7 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
  * @param[in] addr Local address to bind.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr);
+OVE_NODISCARD int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr);
 
 /**
  * @brief Mark a bound socket as listening for incoming connections.
@@ -244,7 +245,7 @@ int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr);
  * @param[in] backlog Maximum pending connection queue length.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_listen(ove_socket_t sock, int backlog);
+OVE_NODISCARD int ove_socket_listen(ove_socket_t sock, int backlog);
 
 /**
  * @brief Accept an incoming connection on a listening socket.
@@ -255,8 +256,8 @@ int ove_socket_listen(ove_socket_t sock, int backlog);
  * @param[in]  timeout_ns     Timeout in nanoseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint64_t timeout_ns);
+OVE_NODISCARD int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
+				    ove_socket_storage_t *client_storage, uint64_t timeout_ns);
 
 /**
  * @brief Send data on a connected socket.
@@ -267,7 +268,7 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
  * @param[out] sent Number of bytes actually sent (may be NULL).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent);
+OVE_NODISCARD int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent);
 
 /**
  * @brief Receive data from a connected socket.
@@ -279,8 +280,8 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
  * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return OVE_OK on success, OVE_ERR_NET_CLOSED if peer closed.
  */
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
-		    uint64_t timeout_ns);
+OVE_NODISCARD int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
+				  uint64_t timeout_ns);
 
 /**
  * @brief Send a datagram to a specific destination.
@@ -292,8 +293,8 @@ int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
  * @param[in]  dest Destination address.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *sent,
-		      const ove_sockaddr_t *dest);
+OVE_NODISCARD int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *sent,
+				    const ove_sockaddr_t *dest);
 
 /**
  * @brief Receive a datagram and the sender's address.
@@ -306,8 +307,8 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
  * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint64_t timeout_ns);
+OVE_NODISCARD int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
+				      ove_sockaddr_t *src, uint64_t timeout_ns);
 
 /**
  * @brief Enable or disable non-blocking mode on a socket.
@@ -323,7 +324,7 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
  * @param[in] nonblock Non-zero to enable non-blocking mode, zero to clear it.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_set_nonblock(ove_socket_t sock, int nonblock);
+OVE_NODISCARD int ove_socket_set_nonblock(ove_socket_t sock, int nonblock);
 
 /**
  * @brief Wait for readiness on a socket (select/poll with a timeout).
@@ -337,7 +338,8 @@ int ove_socket_set_nonblock(ove_socket_t sock, int nonblock);
  * @param[in]  timeout_ns Timeout in nanoseconds (0 = poll, OVE_WAIT_FOREVER = block).
  * @return OVE_OK on success (inspect @p revents), negative error code on failure.
  */
-int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns);
+OVE_NODISCARD int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents,
+				  uint64_t timeout_ns);
 
 /**
  * @brief Shut down part or all of a full-duplex connection.
@@ -355,7 +357,7 @@ int ove_socket_shutdown(ove_socket_t sock, int how);
  * @param[out] addr Filled with the local address.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr);
+OVE_NODISCARD int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr);
 
 /**
  * @brief Get the remote address a socket is connected to.
@@ -364,7 +366,7 @@ int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr);
  * @param[out] addr Filled with the peer address.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr);
+OVE_NODISCARD int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr);
 
 /**
  * @brief Read and clear a socket's pending error (@c SO_ERROR).
@@ -375,7 +377,7 @@ int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr);
  * @param[in] sock Socket handle.
  * @return OVE_OK if no error is pending, otherwise a negative @c OVE_ERR_NET_*.
  */
-int ove_socket_get_error(ove_socket_t sock);
+OVE_NODISCARD int ove_socket_get_error(ove_socket_t sock);
 
 #ifdef OVE_HEAP_NET
 /**
@@ -386,7 +388,7 @@ int ove_socket_get_error(ove_socket_t sock);
  * @param[in]  type Socket type.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type);
+OVE_NODISCARD int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type);
 
 /**
  * @brief Destroy a heap-allocated socket.
@@ -406,7 +408,7 @@ void ove_socket_destroy(ove_socket_t sock);
  * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns);
+OVE_NODISCARD int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns);
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -427,7 +429,7 @@ void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b, uint8_t c, ui
  * @brief Parse dotted-decimal IPv4 text into a socket address.
  * @return OVE_OK, or OVE_ERR_INVALID_PARAM for malformed input.
  */
-int ove_sockaddr_parse_ipv4(ove_sockaddr_t *addr, const char *text, uint16_t port);
+OVE_NODISCARD int ove_sockaddr_parse_ipv4(ove_sockaddr_t *addr, const char *text, uint16_t port);
 
 #else /* !CONFIG_OVE_NET */
 
@@ -442,7 +444,7 @@ typedef struct {
 } ove_netif_storage_t;
 #endif
 
-static inline int ove_netif_init(ove_netif_t *netif, ove_netif_storage_t *storage)
+OVE_NODISCARD static inline int ove_netif_init(ove_netif_t *netif, ove_netif_storage_t *storage)
 {
 	(void)netif;
 	(void)storage;
@@ -452,7 +454,7 @@ static inline void ove_netif_deinit(ove_netif_t netif)
 {
 	(void)netif;
 }
-static inline int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
+OVE_NODISCARD static inline int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
 {
 	(void)netif;
 	(void)cfg;
@@ -462,8 +464,8 @@ static inline void ove_netif_down(ove_netif_t netif)
 {
 	(void)netif;
 }
-static inline int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *gw,
-				     ove_sockaddr_t *nm)
+OVE_NODISCARD static inline int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip,
+						   ove_sockaddr_t *gw, ove_sockaddr_t *nm)
 {
 	(void)netif;
 	(void)ip;
@@ -471,8 +473,9 @@ static inline int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_
 	(void)nm;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip,
-				     const ove_sockaddr_t *nm, const ove_sockaddr_t *gw)
+OVE_NODISCARD static inline int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip,
+						   const ove_sockaddr_t *nm,
+						   const ove_sockaddr_t *gw)
 {
 	(void)netif;
 	(void)ip;
@@ -480,26 +483,26 @@ static inline int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip
 	(void)gw;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_netif_set_up(ove_netif_t netif, int up)
+OVE_NODISCARD static inline int ove_netif_set_up(ove_netif_t netif, int up)
 {
 	(void)netif;
 	(void)up;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6])
+OVE_NODISCARD static inline int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6])
 {
 	(void)netif;
 	(void)mac;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_netif_get_flags(ove_netif_t netif, unsigned *flags)
+OVE_NODISCARD static inline int ove_netif_get_flags(ove_netif_t netif, unsigned *flags)
 {
 	(void)netif;
 	(void)flags;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
-				  ove_sock_type_t type)
+OVE_NODISCARD static inline int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage,
+						ove_af_t af, ove_sock_type_t type)
 {
 	(void)sock;
 	(void)storage;
@@ -507,8 +510,9 @@ static inline int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *stor
 	(void)type;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
-				     ove_sock_type_t type, int proto)
+OVE_NODISCARD static inline int ove_socket_open_ex(ove_socket_t *sock,
+						   ove_socket_storage_t *storage, ove_af_t af,
+						   ove_sock_type_t type, int proto)
 {
 	(void)sock;
 	(void)storage;
@@ -521,28 +525,29 @@ static inline void ove_socket_close(ove_socket_t sock)
 {
 	(void)sock;
 }
-static inline int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
-				     uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
+						   uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)addr;
 	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
+OVE_NODISCARD static inline int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
 {
 	(void)sock;
 	(void)addr;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_listen(ove_socket_t sock, int backlog)
+OVE_NODISCARD static inline int ove_socket_listen(ove_socket_t sock, int backlog)
 {
 	(void)sock;
 	(void)backlog;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
-				    ove_socket_storage_t *client_storage, uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
+						  ove_socket_storage_t *client_storage,
+						  uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)client;
@@ -550,7 +555,8 @@ static inline int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
 	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent)
+OVE_NODISCARD static inline int ove_socket_send(ove_socket_t sock, const void *data, size_t len,
+						size_t *sent)
 {
 	(void)sock;
 	(void)data;
@@ -558,8 +564,8 @@ static inline int ove_socket_send(ove_socket_t sock, const void *data, size_t le
 	(void)sent;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
-				  uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_socket_recv(ove_socket_t sock, void *buf, size_t len,
+						size_t *received, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)buf;
@@ -568,8 +574,8 @@ static inline int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size
 	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *sent,
-				    const ove_sockaddr_t *dest)
+OVE_NODISCARD static inline int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len,
+						  size_t *sent, const ove_sockaddr_t *dest)
 {
 	(void)sock;
 	(void)data;
@@ -578,8 +584,9 @@ static inline int ove_socket_sendto(ove_socket_t sock, const void *data, size_t 
 	(void)dest;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-				      ove_sockaddr_t *src, uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len,
+						    size_t *received, ove_sockaddr_t *src,
+						    uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)buf;
@@ -589,14 +596,14 @@ static inline int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, 
 	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
+OVE_NODISCARD static inline int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
 {
 	(void)sock;
 	(void)nonblock;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents,
-				  uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_socket_poll(ove_socket_t sock, unsigned events,
+						unsigned *revents, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)events;
@@ -610,24 +617,25 @@ static inline int ove_socket_shutdown(ove_socket_t sock, int how)
 	(void)how;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
+OVE_NODISCARD static inline int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
 {
 	(void)sock;
 	(void)addr;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
+OVE_NODISCARD static inline int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
 {
 	(void)sock;
 	(void)addr;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_socket_get_error(ove_socket_t sock)
+OVE_NODISCARD static inline int ove_socket_get_error(ove_socket_t sock)
 {
 	(void)sock;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr,
+						uint64_t timeout_ns)
 {
 	(void)hostname;
 	(void)addr;
@@ -644,7 +652,8 @@ static inline void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b,
 	(void)d;
 	(void)port;
 }
-static inline int ove_sockaddr_parse_ipv4(ove_sockaddr_t *addr, const char *text, uint16_t port)
+OVE_NODISCARD static inline int ove_sockaddr_parse_ipv4(ove_sockaddr_t *addr, const char *text,
+							uint16_t port)
 {
 	(void)addr;
 	(void)text;

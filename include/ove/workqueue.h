@@ -77,8 +77,9 @@ typedef void (*ove_work_fn)(ove_work_t work);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WORKQUEUE.
  */
-int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
-		       ove_prio_t priority, size_t stack_size, void *stack);
+OVE_NODISCARD int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage,
+				     const char *name, ove_prio_t priority, size_t stack_size,
+				     void *stack);
 
 /**
  * @brief Deinitialise a statically-allocated work queue.
@@ -109,7 +110,8 @@ void ove_workqueue_deinit(ove_workqueue_t wq);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WORKQUEUE.
  */
-int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler);
+OVE_NODISCARD int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage,
+				       ove_work_fn handler);
 
 /**
  * @brief Deinitialise a work item and release its RTOS resources.
@@ -136,7 +138,7 @@ void ove_work_deinit(ove_work_t work);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
  */
-int ove_work_init(ove_work_t *work, ove_work_fn handler);
+OVE_NODISCARD int ove_work_init(ove_work_t *work, ove_work_fn handler);
 
 /**
  * @brief Free a heap-allocated work item.
@@ -166,8 +168,8 @@ void ove_work_free(ove_work_t work);
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
  */
 #ifdef OVE_HEAP_WORKQUEUE
-int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t priority,
-			 size_t stack_size);
+OVE_NODISCARD int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t priority,
+				       size_t stack_size);
 
 /**
  * @brief Destroy a heap-allocated work queue.
@@ -192,7 +194,7 @@ void ove_workqueue_destroy(ove_workqueue_t wq);
  * @param[in] work  Work item handle to submit.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_work_submit(ove_workqueue_t wq, ove_work_t work);
+OVE_NODISCARD int ove_work_submit(ove_workqueue_t wq, ove_work_t work);
 
 /**
  * @brief Submit a work item for execution after a delay.
@@ -206,7 +208,7 @@ int ove_work_submit(ove_workqueue_t wq, ove_work_t work);
  * @param[in] delay_ms  Minimum delay before execution in milliseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms);
+OVE_NODISCARD int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms);
 
 /**
  * @brief Cancel a pending work item before it executes.
@@ -225,8 +227,9 @@ int ove_work_cancel(ove_work_t work);
 
 /* P0-3: _init/_deinit stubs so OVE_WORKQUEUE_DEFINE_STATIC links cleanly
  * when CONFIG_OVE_WORKQUEUE=n. */
-static inline int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *st,
-				     const char *n, ove_prio_t p, size_t s, void *stack)
+OVE_NODISCARD static inline int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *st,
+						   const char *n, ove_prio_t p, size_t s,
+						   void *stack)
 {
 	(void)wq;
 	(void)st;
@@ -241,7 +244,8 @@ static inline void ove_workqueue_deinit(ove_workqueue_t wq)
 	(void)wq;
 }
 
-static inline int ove_workqueue_create(ove_workqueue_t *wq, const char *n, ove_prio_t p, size_t s)
+OVE_NODISCARD static inline int ove_workqueue_create(ove_workqueue_t *wq, const char *n,
+						     ove_prio_t p, size_t s)
 {
 	(void)wq;
 	(void)n;
@@ -253,13 +257,14 @@ static inline void ove_workqueue_destroy(ove_workqueue_t wq)
 {
 	(void)wq;
 }
-static inline int ove_work_init(ove_work_t *w, ove_work_fn h)
+OVE_NODISCARD static inline int ove_work_init(ove_work_t *w, ove_work_fn h)
 {
 	(void)w;
 	(void)h;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_work_init_static(ove_work_t *w, ove_work_storage_t *s, ove_work_fn h)
+OVE_NODISCARD static inline int ove_work_init_static(ove_work_t *w, ove_work_storage_t *s,
+						     ove_work_fn h)
 {
 	(void)w;
 	(void)s;
@@ -274,13 +279,14 @@ static inline void ove_work_free(ove_work_t w)
 {
 	(void)w;
 }
-static inline int ove_work_submit(ove_workqueue_t wq, ove_work_t w)
+OVE_NODISCARD static inline int ove_work_submit(ove_workqueue_t wq, ove_work_t w)
 {
 	(void)wq;
 	(void)w;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t w, uint32_t d)
+OVE_NODISCARD static inline int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t w,
+							uint32_t d)
 {
 	(void)wq;
 	(void)w;

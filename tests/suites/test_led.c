@@ -16,7 +16,8 @@ static void test_led_set(void **state)
 {
 	(void)state;
 	ove_board_init();
-	ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP);
+	OVE_TEST_ASSERT_OK(
+		ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
 	/* LED 0 → port OVE_LED0_PORT, pin OVE_LED0_PIN; active_low=0 on stub. */
 	ove_led_set(0, 1);
@@ -29,7 +30,8 @@ static void test_led_toggle(void **state)
 {
 	(void)state;
 	ove_board_init();
-	ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP);
+	OVE_TEST_ASSERT_OK(
+		ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
 	ove_led_set(0, 0);
 	ove_led_toggle(0);

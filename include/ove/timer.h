@@ -73,8 +73,9 @@ typedef void (*ove_timer_fn)(ove_timer_t timer, void *user_data);
  *
  * @see ove_timer_deinit, ove_timer_create, ove_timer_start
  */
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot);
+OVE_NODISCARD int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage,
+				 ove_timer_fn callback, void *user_data, uint32_t period_ms,
+				 int one_shot);
 
 /**
  * @brief Stop and release resources held by a timer initialised with
@@ -121,8 +122,9 @@ void ove_timer_deinit(ove_timer_t timer);
  *
  * @see ove_timer_init, ove_timer_create_ns
  */
-int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		      void *user_data, uint64_t period_ns, int one_shot);
+OVE_NODISCARD int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage,
+				    ove_timer_fn callback, void *user_data, uint64_t period_ns,
+				    int one_shot);
 
 /**
  * @brief Change the period of an existing timer and (re)arm it.
@@ -149,7 +151,7 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
  *
  * @see ove_timer_init_ns, ove_timer_start, ove_timer_stop
  */
-int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns);
+OVE_NODISCARD int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns);
 
 /* _create / _destroy — heap-gated */
 #ifdef OVE_HEAP_TIMER
@@ -174,8 +176,8 @@ int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns);
  *
  * @see ove_timer_destroy, ove_timer_init, ove_timer_start
  */
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot);
+OVE_NODISCARD int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
+				   uint32_t period_ms, int one_shot);
 
 /**
  * @brief Allocate and initialise a software timer with a nanosecond
@@ -197,8 +199,8 @@ int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
  *
  * @see ove_timer_create, ove_timer_init_ns
  */
-int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
-			uint64_t period_ns, int one_shot);
+OVE_NODISCARD int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
+				      uint64_t period_ns, int one_shot);
 
 /**
  * @brief Stop and free a timer allocated with ove_timer_create().
@@ -226,7 +228,7 @@ void ove_timer_destroy(ove_timer_t timer);
  *
  * @see ove_timer_stop, ove_timer_reset
  */
-int ove_timer_start(ove_timer_t timer);
+OVE_NODISCARD int ove_timer_start(ove_timer_t timer);
 
 /**
  * @brief Stop a running timer without invoking its callback.
@@ -256,14 +258,14 @@ int ove_timer_stop(ove_timer_t timer);
  *
  * @see ove_timer_start, ove_timer_stop
  */
-int ove_timer_reset(ove_timer_t timer);
+OVE_NODISCARD int ove_timer_reset(ove_timer_t timer);
 
 #else /* !CONFIG_OVE_TIMER */
 
 /* P0-3: _init/_deinit stubs so OVE_TIMER_DEFINE_STATIC links cleanly when
  * CONFIG_OVE_TIMER=n. */
-static inline int ove_timer_init(ove_timer_t *t, ove_timer_storage_t *s, ove_timer_fn cb, void *ud,
-				 uint32_t p, int os)
+OVE_NODISCARD static inline int ove_timer_init(ove_timer_t *t, ove_timer_storage_t *s,
+					       ove_timer_fn cb, void *ud, uint32_t p, int os)
 {
 	(void)t;
 	(void)s;
@@ -278,7 +280,8 @@ static inline void ove_timer_deinit(ove_timer_t t)
 	(void)t;
 }
 
-static inline int ove_timer_create(ove_timer_t *t, ove_timer_fn cb, void *ud, uint32_t p, int os)
+OVE_NODISCARD static inline int ove_timer_create(ove_timer_t *t, ove_timer_fn cb, void *ud,
+						 uint32_t p, int os)
 {
 	(void)t;
 	(void)cb;
@@ -287,8 +290,8 @@ static inline int ove_timer_create(ove_timer_t *t, ove_timer_fn cb, void *ud, ui
 	(void)os;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_timer_init_ns(ove_timer_t *t, ove_timer_storage_t *s, ove_timer_fn cb,
-				    void *ud, uint64_t p, int os)
+OVE_NODISCARD static inline int ove_timer_init_ns(ove_timer_t *t, ove_timer_storage_t *s,
+						  ove_timer_fn cb, void *ud, uint64_t p, int os)
 {
 	(void)t;
 	(void)s;
@@ -298,7 +301,8 @@ static inline int ove_timer_init_ns(ove_timer_t *t, ove_timer_storage_t *s, ove_
 	(void)os;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_timer_create_ns(ove_timer_t *t, ove_timer_fn cb, void *ud, uint64_t p, int os)
+OVE_NODISCARD static inline int ove_timer_create_ns(ove_timer_t *t, ove_timer_fn cb, void *ud,
+						    uint64_t p, int os)
 {
 	(void)t;
 	(void)cb;
@@ -307,7 +311,7 @@ static inline int ove_timer_create_ns(ove_timer_t *t, ove_timer_fn cb, void *ud,
 	(void)os;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_timer_set_period_ns(ove_timer_t t, uint64_t p)
+OVE_NODISCARD static inline int ove_timer_set_period_ns(ove_timer_t t, uint64_t p)
 {
 	(void)t;
 	(void)p;
@@ -317,7 +321,7 @@ static inline void ove_timer_destroy(ove_timer_t t)
 {
 	(void)t;
 }
-static inline int ove_timer_start(ove_timer_t t)
+OVE_NODISCARD static inline int ove_timer_start(ove_timer_t t)
 {
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -327,7 +331,7 @@ static inline int ove_timer_stop(ove_timer_t t)
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_timer_reset(ove_timer_t t)
+OVE_NODISCARD static inline int ove_timer_reset(ove_timer_t t)
 {
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;

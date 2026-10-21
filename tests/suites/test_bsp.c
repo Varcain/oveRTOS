@@ -54,7 +54,8 @@ static void test_bsp_led_set(void **state)
 	/* No `ove_bsp_gpio_configure` shim exists in include/ove/bsp.h —
      * use ove_gpio_configure directly to put PI1 (LED0) in OUTPUT_PP
      * so the read-after-write checks below pass on real silicon. */
-	ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP);
+	OVE_TEST_ASSERT_OK(
+		ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
 	ove_bsp_led_set(0, 1);
 	assert_int_equal(ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN), 1);
@@ -69,7 +70,8 @@ static void test_bsp_led_toggle(void **state)
 	/* No `ove_bsp_gpio_configure` shim exists in include/ove/bsp.h —
      * use ove_gpio_configure directly to put PI1 (LED0) in OUTPUT_PP
      * so the read-after-write checks below pass on real silicon. */
-	ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP);
+	OVE_TEST_ASSERT_OK(
+		ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
 	ove_bsp_led_set(0, 0);
 	ove_bsp_led_toggle(0);

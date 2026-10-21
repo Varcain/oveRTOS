@@ -661,7 +661,7 @@ void ove_condvar_broadcast(ove_condvar_t cv);
 /* P0-3: _init/_deinit stubs so OVE_*_DEFINE_STATIC links cleanly when
  * CONFIG_OVE_SYNC=n. The macros expand to a constructor that calls the
  * _init function unconditionally; without these stubs, the link fails. */
-static inline int ove_mutex_init(ove_mutex_t *m, ove_mutex_storage_t *s)
+OVE_NODISCARD static inline int ove_mutex_init(ove_mutex_t *m, ove_mutex_storage_t *s)
 {
 	(void)m;
 	(void)s;
@@ -671,7 +671,8 @@ static inline void ove_mutex_deinit(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_sem_init(ove_sem_t *s, ove_sem_storage_t *st, unsigned int i, unsigned int x)
+OVE_NODISCARD static inline int ove_sem_init(ove_sem_t *s, ove_sem_storage_t *st, unsigned int i,
+					     unsigned int x)
 {
 	(void)s;
 	(void)st;
@@ -683,7 +684,7 @@ static inline void ove_sem_deinit(ove_sem_t s)
 {
 	(void)s;
 }
-static inline int ove_event_init(ove_event_t *e, ove_event_storage_t *s)
+OVE_NODISCARD static inline int ove_event_init(ove_event_t *e, ove_event_storage_t *s)
 {
 	(void)e;
 	(void)s;
@@ -693,7 +694,7 @@ static inline void ove_event_deinit(ove_event_t e)
 {
 	(void)e;
 }
-static inline int ove_recursive_mutex_init(ove_mutex_t *m, ove_mutex_storage_t *s)
+OVE_NODISCARD static inline int ove_recursive_mutex_init(ove_mutex_t *m, ove_mutex_storage_t *s)
 {
 	(void)m;
 	(void)s;
@@ -703,7 +704,7 @@ static inline void ove_recursive_mutex_deinit(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_condvar_init(ove_condvar_t *c, ove_condvar_storage_t *s)
+OVE_NODISCARD static inline int ove_condvar_init(ove_condvar_t *c, ove_condvar_storage_t *s)
 {
 	(void)c;
 	(void)s;
@@ -714,7 +715,7 @@ static inline void ove_condvar_deinit(ove_condvar_t c)
 	(void)c;
 }
 
-static inline int ove_mutex_create(ove_mutex_t *m)
+OVE_NODISCARD static inline int ove_mutex_create(ove_mutex_t *m)
 {
 	(void)m;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -723,7 +724,7 @@ static inline void ove_mutex_destroy(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_mutex_lock(ove_mutex_t m, uint64_t t)
+OVE_NODISCARD static inline int ove_mutex_lock(ove_mutex_t m, uint64_t t)
 {
 	(void)m;
 	(void)t;
@@ -733,7 +734,7 @@ static inline void ove_mutex_unlock(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_sem_create(ove_sem_t *s, unsigned int i, unsigned int x)
+OVE_NODISCARD static inline int ove_sem_create(ove_sem_t *s, unsigned int i, unsigned int x)
 {
 	(void)s;
 	(void)i;
@@ -744,7 +745,7 @@ static inline void ove_sem_destroy(ove_sem_t s)
 {
 	(void)s;
 }
-static inline int ove_sem_take(ove_sem_t s, uint64_t t)
+OVE_NODISCARD static inline int ove_sem_take(ove_sem_t s, uint64_t t)
 {
 	(void)s;
 	(void)t;
@@ -761,7 +762,7 @@ static inline void ove_sem_give(ove_sem_t s)
 {
 	(void)s;
 }
-static inline int ove_event_create(ove_event_t *e)
+OVE_NODISCARD static inline int ove_event_create(ove_event_t *e)
 {
 	(void)e;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -770,7 +771,7 @@ static inline void ove_event_destroy(ove_event_t e)
 {
 	(void)e;
 }
-static inline int ove_event_wait(ove_event_t e, uint64_t t)
+OVE_NODISCARD static inline int ove_event_wait(ove_event_t e, uint64_t t)
 {
 	(void)e;
 	(void)t;
@@ -784,12 +785,12 @@ static inline void ove_event_signal_from_isr(ove_event_t e)
 {
 	(void)e;
 }
-static inline int ove_recursive_mutex_create(ove_mutex_t *m)
+OVE_NODISCARD static inline int ove_recursive_mutex_create(ove_mutex_t *m)
 {
 	(void)m;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_recursive_mutex_lock(ove_mutex_t m, uint64_t t)
+OVE_NODISCARD static inline int ove_recursive_mutex_lock(ove_mutex_t m, uint64_t t)
 {
 	(void)m;
 	(void)t;
@@ -803,7 +804,7 @@ static inline void ove_recursive_mutex_destroy(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_condvar_create(ove_condvar_t *c)
+OVE_NODISCARD static inline int ove_condvar_create(ove_condvar_t *c)
 {
 	(void)c;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -812,7 +813,7 @@ static inline void ove_condvar_destroy(ove_condvar_t c)
 {
 	(void)c;
 }
-static inline int ove_condvar_wait(ove_condvar_t c, ove_mutex_t m, uint64_t t)
+OVE_NODISCARD static inline int ove_condvar_wait(ove_condvar_t c, ove_mutex_t m, uint64_t t)
 {
 	(void)c;
 	(void)m;

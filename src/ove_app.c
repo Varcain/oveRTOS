@@ -20,7 +20,9 @@ int ove_app_run(void)
 #endif
 
 #ifdef CONFIG_OVE_CONSOLE
-	ove_console_init();
+	/* Without a console there is nowhere to report a failure to. */
+	int rc = ove_console_init();
+	(void)rc;
 #endif
 
 	OVE_LOG("ove: starting %s %s on %s\n", CONFIG_OVE_APP_NAME, CONFIG_OVE_APP_VERSION,

@@ -54,7 +54,8 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  */
-int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms);
+OVE_NODISCARD int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage,
+				    uint32_t timeout_ms);
 
 /**
  * @brief Deinitialise a statically-allocated watchdog timer.
@@ -80,7 +81,7 @@ void ove_watchdog_deinit(ove_watchdog_t wdt);
  * @note Requires @c CONFIG_OVE_WATCHDOG and @c OVE_HEAP_WATCHDOG.
  */
 #ifdef OVE_HEAP_WATCHDOG
-int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms);
+OVE_NODISCARD int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms);
 
 /**
  * @brief Destroy a heap-allocated watchdog timer.
@@ -104,7 +105,7 @@ void ove_watchdog_destroy(ove_watchdog_t wdt);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  */
-int ove_watchdog_start(ove_watchdog_t wdt);
+OVE_NODISCARD int ove_watchdog_start(ove_watchdog_t wdt);
 
 /**
  * @brief Stop (disarm) the watchdog timer.
@@ -136,7 +137,8 @@ int ove_watchdog_feed(ove_watchdog_t wdt);
 
 /* P0-3: _init/_deinit stubs so OVE_WATCHDOG_DEFINE_STATIC links cleanly
  * when CONFIG_OVE_WATCHDOG=n. */
-static inline int ove_watchdog_init(ove_watchdog_t *w, ove_watchdog_storage_t *s, uint32_t t)
+OVE_NODISCARD static inline int ove_watchdog_init(ove_watchdog_t *w, ove_watchdog_storage_t *s,
+						  uint32_t t)
 {
 	(void)w;
 	(void)s;
@@ -148,7 +150,7 @@ static inline void ove_watchdog_deinit(ove_watchdog_t w)
 	(void)w;
 }
 
-static inline int ove_watchdog_create(ove_watchdog_t *w, uint32_t t)
+OVE_NODISCARD static inline int ove_watchdog_create(ove_watchdog_t *w, uint32_t t)
 {
 	(void)w;
 	(void)t;
@@ -158,7 +160,7 @@ static inline void ove_watchdog_destroy(ove_watchdog_t w)
 {
 	(void)w;
 }
-static inline int ove_watchdog_start(ove_watchdog_t w)
+OVE_NODISCARD static inline int ove_watchdog_start(ove_watchdog_t w)
 {
 	(void)w;
 	return OVE_ERR_NOT_SUPPORTED;
