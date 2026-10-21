@@ -55,7 +55,7 @@ static int gpio_irq_teardown(void **state)
 static void test_gpio_set(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	int rc = ove_gpio_set(TEST_GPIO_PORT, TEST_GPIO_PIN, 1);
 	assert_int_equal(rc, OVE_OK);
 }
@@ -63,7 +63,7 @@ static void test_gpio_set(void **state)
 static void test_gpio_get(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	/* Real GPIO read-back requires the pin to be in OUTPUT mode so IDR
      * follows ODR.  The stub backend ignores the mode argument and the
@@ -86,7 +86,7 @@ static void test_gpio_get(void **state)
 static void test_gpio_irq_register(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
 				       gpio_irq_handler, NULL);
@@ -97,7 +97,7 @@ static void test_gpio_irq_register(void **state)
 static void test_gpio_irq_rejects_invalid_mode(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, (ove_gpio_irq_mode_t)0,
 				       gpio_irq_handler, NULL);
@@ -108,7 +108,7 @@ static void test_gpio_irq_rejects_invalid_mode(void **state)
 static void test_gpio_irq_rejects_null_callback(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING, NULL,
 				       NULL);
@@ -119,7 +119,7 @@ static void test_gpio_irq_rejects_null_callback(void **state)
 static void test_gpio_irq_rejects_duplicate_registration(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
 				       gpio_irq_handler, NULL);
@@ -132,7 +132,7 @@ static void test_gpio_irq_rejects_duplicate_registration(void **state)
 static void test_gpio_irq_enable_disable(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	/* The gpio_irq_teardown registered on this test unregisters the line
 	 * afterwards, so registrations don't leak across suites and dispatch
 	 * reliably delivers to *this* file's handler — LED0 is safe to use. */
@@ -171,7 +171,7 @@ static void test_gpio_irq_enable_disable(void **state)
 static void test_gpio_irq_retains_owner_when_unregister_fails(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	int rc = ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
 				       gpio_irq_handler, NULL);
@@ -191,7 +191,7 @@ static void test_gpio_irq_retains_owner_when_unregister_fails(void **state)
 static void test_gpio_set_invalid_port(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 
 	int rc = ove_gpio_set(9999, 9999, 1);
 	assert_int_not_equal(rc, OVE_OK);

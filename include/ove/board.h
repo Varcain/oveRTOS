@@ -42,7 +42,7 @@ extern "C" {
  *
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_board_init(void);
+OVE_NODISCARD int ove_board_init(void);
 
 /**
  * @brief Return a human-readable name for the current board.
@@ -66,7 +66,7 @@ const struct ove_board_desc *ove_board_desc(void);
 
 #else /* !CONFIG_OVE_BOARD */
 
-static inline int ove_board_init(void)
+OVE_NODISCARD static inline int ove_board_init(void)
 {
 	return OVE_OK;
 }

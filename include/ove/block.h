@@ -56,22 +56,23 @@ typedef struct ove_block {
 
 #ifdef CONFIG_OVE_BLOCK
 /** Query current geometry/presence without acquiring a transfer lease. */
-int ove_block_get_info(struct ove_block_info *out);
+OVE_NODISCARD int ove_block_get_info(struct ove_block_info *out);
 /** Acquire a raw reader, or an exclusive writer with OVE_BLOCK_OPEN_WRITE. */
-int ove_block_open(ove_block_t *block, unsigned flags);
+OVE_NODISCARD int ove_block_open(ove_block_t *block, unsigned flags);
 /** Release a raw lease; a valid writer is flushed before ownership is dropped. */
 void ove_block_close(ove_block_t *block);
-int ove_block_read(ove_block_t *block, uint64_t first_block, uint32_t block_count, void *buffer);
-int ove_block_write(ove_block_t *block, uint64_t first_block, uint32_t block_count,
-		    const void *buffer);
-int ove_block_sync(ove_block_t *block);
+OVE_NODISCARD int ove_block_read(ove_block_t *block, uint64_t first_block, uint32_t block_count,
+				 void *buffer);
+OVE_NODISCARD int ove_block_write(ove_block_t *block, uint64_t first_block, uint32_t block_count,
+				  const void *buffer);
+OVE_NODISCARD int ove_block_sync(ove_block_t *block);
 #else
-static inline int ove_block_get_info(struct ove_block_info *out)
+OVE_NODISCARD static inline int ove_block_get_info(struct ove_block_info *out)
 {
 	(void)out;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_block_open(ove_block_t *block, unsigned flags)
+OVE_NODISCARD static inline int ove_block_open(ove_block_t *block, unsigned flags)
 {
 	(void)block;
 	(void)flags;
@@ -81,8 +82,8 @@ static inline void ove_block_close(ove_block_t *block)
 {
 	(void)block;
 }
-static inline int ove_block_read(ove_block_t *block, uint64_t first_block, uint32_t block_count,
-				 void *buffer)
+OVE_NODISCARD static inline int ove_block_read(ove_block_t *block, uint64_t first_block,
+					       uint32_t block_count, void *buffer)
 {
 	(void)block;
 	(void)first_block;
@@ -90,8 +91,8 @@ static inline int ove_block_read(ove_block_t *block, uint64_t first_block, uint3
 	(void)buffer;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_block_write(ove_block_t *block, uint64_t first_block, uint32_t block_count,
-				  const void *buffer)
+OVE_NODISCARD static inline int ove_block_write(ove_block_t *block, uint64_t first_block,
+						uint32_t block_count, const void *buffer)
 {
 	(void)block;
 	(void)first_block;
@@ -99,7 +100,7 @@ static inline int ove_block_write(ove_block_t *block, uint64_t first_block, uint
 	(void)buffer;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_block_sync(ove_block_t *block)
+OVE_NODISCARD static inline int ove_block_sync(ove_block_t *block)
 {
 	(void)block;
 	return OVE_ERR_NOT_SUPPORTED;

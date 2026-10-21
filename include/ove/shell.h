@@ -89,7 +89,7 @@ typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_SHELL.
  */
-int ove_shell_init(void);
+OVE_NODISCARD int ove_shell_init(void);
 
 /**
  * @brief Register a command with the shell.
@@ -102,7 +102,7 @@ int ove_shell_init(void);
  * @return OVE_OK on success, negative error code on failure (e.g. table full).
  * @note Requires @c CONFIG_OVE_SHELL.
  */
-int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
+OVE_NODISCARD int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
 
 /**
  * @brief Feed one character into the shell input processor.
@@ -144,11 +144,11 @@ void ove_shell_set_output_hook(ove_shell_output_hook_t hook);
 
 #else /* !CONFIG_OVE_SHELL */
 
-static inline int ove_shell_init(void)
+OVE_NODISCARD static inline int ove_shell_init(void)
 {
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_shell_register_cmd(const struct ove_shell_cmd *c)
+OVE_NODISCARD static inline int ove_shell_register_cmd(const struct ove_shell_cmd *c)
 {
 	(void)c;
 	return OVE_ERR_NOT_SUPPORTED;

@@ -24,6 +24,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ove/types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,10 +48,10 @@ struct ove_fb_info {
  * @brief Bring up the framebuffer backend (once, on the coordinator thread).
  * @return OVE_OK, or a negative error code if the board has no display.
  */
-int ove_fb_init(void);
+OVE_NODISCARD int ove_fb_init(void);
 
 /** @brief Fill @p info with the framebuffer geometry. Returns OVE_OK or an error. */
-int ove_fb_get_info(struct ove_fb_info *info);
+OVE_NODISCARD int ove_fb_get_info(struct ove_fb_info *info);
 
 /** @brief The linear pixel buffer (write pixels here, then @ref ove_fb_present). */
 void *ove_fb_get_buffer(void);

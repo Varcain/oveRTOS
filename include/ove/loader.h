@@ -105,8 +105,9 @@ typedef struct ove_module {
  *         OVE_ERR_NOT_FOUND if an undefined symbol is not in @p imports.
  * @note Requires @c CONFIG_OVE_LOADER.
  */
-int ove_loader_load(ove_module_t *mod, const void *image, size_t image_size, void *region,
-		    size_t region_size, const ove_loader_sym_t *imports, size_t n_imports);
+OVE_NODISCARD int ove_loader_load(ove_module_t *mod, const void *image, size_t image_size,
+				  void *region, size_t region_size, const ove_loader_sym_t *imports,
+				  size_t n_imports);
 
 /**
  * @brief Resolve an exported (defined, global/weak) symbol by name.
@@ -187,8 +188,9 @@ typedef struct ove_flat {
  *         OVE_ERR_NOT_SUPPORTED for an unhandled reloc; OVE_ERR_NO_MEMORY if too small.
  * @note Requires @c CONFIG_OVE_LOADER.
  */
-int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
-			  size_t region_size, int is_interp, int copy_text);
+OVE_NODISCARD int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size,
+					void *region, size_t region_size, int is_interp,
+					int copy_text);
 
 #ifdef __cplusplus
 }

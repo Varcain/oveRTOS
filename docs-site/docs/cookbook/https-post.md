@@ -60,7 +60,8 @@ static int net_up(void)
 static void post_one(void)
 {
     uint32_t utc = 0;
-    ove_sntp_get_utc(&utc);
+    if (ove_sntp_get_utc(&utc) != OVE_OK)
+        utc = 0; /* not synced yet */
 
     char body[96];
     int len = snprintf(body, sizeof(body), "{\"ts\":%lu,\"value\":%ld}",

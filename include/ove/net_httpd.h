@@ -70,7 +70,7 @@ typedef struct {
  * @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another
  *         negative error code on failure.
  */
-int ove_httpd_start(const ove_httpd_config_t *cfg);
+OVE_NODISCARD int ove_httpd_start(const ove_httpd_config_t *cfg);
 
 /**
  * @brief Stop the HTTP server and close the listening socket.
@@ -85,7 +85,8 @@ void ove_httpd_stop(void);
  * @param[in] handler Callback function.
  * @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full.
  */
-int ove_httpd_route(const char *method, const char *path, ove_httpd_handler_t handler);
+OVE_NODISCARD int ove_httpd_route(const char *method, const char *path,
+				  ove_httpd_handler_t handler);
 
 /**
  * @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).
@@ -148,21 +149,22 @@ const char *ove_httpd_req_segment(ove_httpd_req_t *req, int idx);
 /* ── Response helpers ────────────────────────────────────────── */
 
 /** @brief Send a JSON response. */
-int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status, const char *json);
+OVE_NODISCARD int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status, const char *json);
 
 /** @brief Send an HTML response. */
-int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status, const char *html, size_t len);
+OVE_NODISCARD int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status, const char *html,
+				      size_t len);
 
 /** @brief Send a response with arbitrary content type. */
-int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *content_type,
-			const void *body, size_t len);
+OVE_NODISCARD int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *content_type,
+				      const void *body, size_t len);
 
 /** @brief Send a pre-gzipped response (adds Content-Encoding: gzip). */
-int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status, const char *content_type,
-			   const void *body, size_t len);
+OVE_NODISCARD int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
+					 const char *content_type, const void *body, size_t len);
 
 /** @brief Send a JSON error response. */
-int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status, const char *message);
+OVE_NODISCARD int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status, const char *message);
 
 /* ── WebSocket support ──────────────────────────────────────── */
 
@@ -197,8 +199,8 @@ typedef void (*ove_httpd_ws_close_handler_t)(ove_httpd_ws_conn_t *conn);
  * @param[in] on_close   Callback when connection closes (may be NULL).
  * @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full.
  */
-int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
-		       ove_httpd_ws_close_handler_t on_close);
+OVE_NODISCARD int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
+				     ove_httpd_ws_close_handler_t on_close);
 
 /**
  * @brief Send a text message to a WebSocket connection.
@@ -208,7 +210,7 @@ int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
  * @param[in] len  Payload length in bytes.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn, const void *data, size_t len);
+OVE_NODISCARD int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn, const void *data, size_t len);
 
 /**
  * @brief Broadcast a text message to all WebSocket connections on a path.
@@ -234,8 +236,8 @@ int ove_httpd_ws_is_upgrade(const char *headers);
  * Invoked by the httpd accept loop after `ove_httpd_ws_is_upgrade()` returns
  * true.  On success the connection is handed off to the WS subsystem.
  */
-int ove_httpd_ws_handshake(const char *headers, size_t headers_len, const char *path,
-			   ove_socket_t sock, ove_socket_storage_t *storage);
+OVE_NODISCARD int ove_httpd_ws_handshake(const char *headers, size_t headers_len, const char *path,
+					 ove_socket_t sock, ove_socket_storage_t *storage);
 
 /** @brief Drive the WS subsystem from the httpd task's poll loop. */
 void ove_httpd_ws_poll(void);
@@ -254,7 +256,7 @@ void ove_httpd_log_append(const char *line);
 #else /* !CONFIG_OVE_NET_HTTPD */
 
 /** @cond INTERNAL */
-static inline int ove_httpd_start(const void *cfg)
+OVE_NODISCARD static inline int ove_httpd_start(const void *cfg)
 {
 	(void)cfg;
 	return OVE_ERR_NOT_SUPPORTED;

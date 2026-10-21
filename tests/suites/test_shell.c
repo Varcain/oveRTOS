@@ -91,7 +91,7 @@ static void test_shell_init(void **state)
 static void test_shell_register_cmd(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 
 	struct ove_shell_cmd cmd = {
 		.name = "help",
@@ -105,14 +105,14 @@ static void test_shell_register_cmd(void **state)
 static void test_shell_process_char(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 
 	struct ove_shell_cmd cmd = {
 		.name = "hello",
 		.help = "say hello",
 		.handler = test_cmd_handler,
 	};
-	ove_shell_register_cmd(&cmd);
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&cmd));
 
 	/* Feed characters — should not crash */
 	const char *input = "hel";
@@ -126,7 +126,7 @@ static void test_shell_complete_command(void **state)
 	(void)state;
 	s_cmd_executed = 0;
 
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 
 	/* Use a non-`help` name — the shell pre-registers `help` itself. */
 	struct ove_shell_cmd cmd = {
@@ -134,7 +134,7 @@ static void test_shell_complete_command(void **state)
 		.help = "test command",
 		.handler = test_cmd_handler,
 	};
-	ove_shell_register_cmd(&cmd);
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&cmd));
 
 	const char *input = "ovetestcmd\n";
 	for (size_t i = 0; i < strlen(input); i++) {
@@ -147,7 +147,7 @@ static void test_shell_complete_command(void **state)
 static void test_shell_register_null(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 
 	int rc = ove_shell_register_cmd(NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -159,14 +159,14 @@ static void test_shell_argv_parsing(void **state)
 	s_argc_received = 0;
 	memset((void *)s_argv_received, 0, sizeof(s_argv_received));
 
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 
 	struct ove_shell_cmd cmd = {
 		.name = "cmd",
 		.help = "test argv",
 		.handler = test_argv_handler,
 	};
-	ove_shell_register_cmd(&cmd);
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&cmd));
 
 	/* Feed "cmd arg1 arg2\n" */
 	const char *input = "cmd arg1 arg2\n";
@@ -183,7 +183,7 @@ static void test_shell_argv_parsing(void **state)
 static void test_shell_output_hook(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 	struct ove_shell_cmd cmd = {
 		.name = "oveout",
 		.help = "emit output",
@@ -209,13 +209,13 @@ static void test_shell_output_hook(void **state)
 static void test_shell_process_line_terminates(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 	struct ove_shell_cmd cmd = {
 		.name = "cmd",
 		.help = "test argv",
 		.handler = test_argv_handler,
 	};
-	ove_shell_register_cmd(&cmd);
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&cmd));
 
 	/* A shorter line after a longer one must not inherit its tail. */
 	ove_shell_process_line("cmd aaaa bbbb");
@@ -228,7 +228,7 @@ static void test_shell_process_line_terminates(void **state)
 static void test_shell_reregister_replaces(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 	struct ove_shell_cmd first = {
 		.name = "ovedup",
 		.help = "first",
@@ -251,13 +251,13 @@ static void test_shell_reregister_replaces(void **state)
 static void test_shell_argv_null_terminated(void **state)
 {
 	(void)state;
-	ove_shell_init();
+	OVE_TEST_ASSERT_OK(ove_shell_init());
 	struct ove_shell_cmd cmd = {
 		.name = "cmd",
 		.help = "test argv",
 		.handler = test_argv_handler,
 	};
-	ove_shell_register_cmd(&cmd);
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&cmd));
 
 	s_argv_terminated = 0;
 	ove_shell_process_line("cmd a");

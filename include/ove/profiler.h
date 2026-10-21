@@ -30,6 +30,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ove/types.h"
+
 #include "ove_config.h"
 
 #ifdef __cplusplus
@@ -48,7 +50,7 @@ extern "C" {
  *
  * @return OVE_OK on success, negative ove error code on failure.
  */
-int ove_backend_profiler_start(void);
+OVE_NODISCARD int ove_backend_profiler_start(void);
 
 /**
  * @brief Drive one sampler tick.
@@ -108,7 +110,7 @@ size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max);
 
 #else
 
-static inline int ove_backend_profiler_start(void)
+OVE_NODISCARD static inline int ove_backend_profiler_start(void)
 {
 	return 0;
 }

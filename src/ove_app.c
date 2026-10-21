@@ -16,7 +16,10 @@
 int ove_app_run(void)
 {
 #ifdef CONFIG_OVE_BOARD
-	ove_board_init();
+	/* The console is not up yet to report a failure on, and no board init
+	 * returns one today. */
+	int board_rc = ove_board_init();
+	(void)board_rc;
 #endif
 
 #ifdef CONFIG_OVE_CONSOLE

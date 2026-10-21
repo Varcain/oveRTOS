@@ -69,7 +69,7 @@ typedef struct {
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage);
+OVE_NODISCARD int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage);
 
 /**
  * @brief De-initialise a TLS session (frees internal resources, not storage).
@@ -86,7 +86,7 @@ void ove_tls_deinit(ove_tls_t tls);
  * @param[in] cfg  TLS configuration (certs, hostname).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg);
+OVE_NODISCARD int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg);
 
 /**
  * @brief Send data over an encrypted TLS session.
@@ -97,7 +97,7 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
  * @param[out] sent Number of bytes actually sent (may be NULL).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent);
+OVE_NODISCARD int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent);
 
 /**
  * @brief Receive data from an encrypted TLS session.
@@ -108,7 +108,7 @@ int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent);
  * @param[out] received Number of bytes received (may be NULL).
  * @return OVE_OK on success, OVE_ERR_NET_CLOSED if peer closed.
  */
-int ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received);
+OVE_NODISCARD int ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received);
 
 /**
  * @brief Shut down the TLS session (sends close_notify).
@@ -126,7 +126,7 @@ void ove_tls_close(ove_tls_t tls);
  * @param[out] tls Handle written on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_tls_create(ove_tls_t *tls);
+OVE_NODISCARD int ove_tls_create(ove_tls_t *tls);
 
 /**
  * @brief Destroy a heap-allocated TLS session.
@@ -145,7 +145,7 @@ typedef struct {
 } ove_tls_storage_t;
 #endif
 
-static inline int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
+OVE_NODISCARD static inline int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
 {
 	(void)tls;
 	(void)storage;
@@ -155,14 +155,16 @@ static inline void ove_tls_deinit(ove_tls_t tls)
 {
 	(void)tls;
 }
-static inline int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg)
+OVE_NODISCARD static inline int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock,
+						  const ove_tls_config_t *cfg)
 {
 	(void)tls;
 	(void)sock;
 	(void)cfg;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent)
+OVE_NODISCARD static inline int ove_tls_send(ove_tls_t tls, const void *data, size_t len,
+					     size_t *sent)
 {
 	(void)tls;
 	(void)data;
@@ -170,7 +172,7 @@ static inline int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size
 	(void)sent;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received)
+OVE_NODISCARD static inline int ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received)
 {
 	(void)tls;
 	(void)buf;

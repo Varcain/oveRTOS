@@ -99,7 +99,9 @@ int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t 
 time_t ove_mbedtls_time(time_t *timer)
 {
 	uint32_t utc = 0;
-	(void)ove_sntp_get_utc(&utc);
+	/* Before a sync this fails and utc stays 0, which fails TLS closed (above). */
+	int rc = ove_sntp_get_utc(&utc);
+	(void)rc;
 	if (timer)
 		*timer = (time_t)utc;
 	return (time_t)utc;

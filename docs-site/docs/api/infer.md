@@ -124,9 +124,10 @@ int load_model(ove_model_t *model)
 <!-- ove:fragment -->
 ```c
 ove_model_t model;
-ove_model_create(&model, &cfg);
-/* ... run inference ... */
-ove_model_destroy(model);
+if (ove_model_create(&model, &cfg) == OVE_OK) {
+    /* ... run inference ... */
+    ove_model_destroy(model);
+}
 ```
 
 ## Example: Keyword Detection with Audio Preprocessor and Classifier
@@ -183,18 +184,23 @@ static int generate_features(const int16_t *audio, unsigned int len,
         return OVE_ERR_ML_FAILED;
 
     struct ove_tensor_info in_info, out_info;
-    ove_model_input(preproc, 0, &in_info);
-    ove_model_output(preproc, 0, &out_info);
+    if (ove_model_input(preproc, 0, &in_info) != OVE_OK ||
+        ove_model_output(preproc, 0, &out_info) != OVE_OK) {
+        ove_model_deinit(preproc);
+        return OVE_ERR_ML_FAILED;
+    }
 
     /* Run one 30ms window per spectrogram row */
-    for (unsigned int frame = 0; frame < 49; frame++) {
+    int rc = OVE_OK;
+    for (unsigned int frame = 0; frame < 49 && rc == OVE_OK; frame++) {
         memcpy(in_info.data, audio + frame * 320, 480 * sizeof(int16_t));
-        ove_model_invoke(preproc);
-        memcpy(features_out + frame * 40, out_info.data, 40);
+        rc = ove_model_invoke(preproc);
+        if (rc == OVE_OK)
+            memcpy(features_out + frame * 40, out_info.data, 40);
     }
 
     ove_model_deinit(preproc);
-    return OVE_OK;
+    return rc;
 }
 
 /* Stage 2: spectral features → keyword label */
@@ -213,11 +219,17 @@ static int classify(const int8_t *features, const char **label_out)
         return OVE_ERR_ML_FAILED;
 
     struct ove_tensor_info in_info, out_info;
-    ove_model_input(classifier, 0, &in_info);
-    ove_model_output(classifier, 0, &out_info);
+    if (ove_model_input(classifier, 0, &in_info) != OVE_OK ||
+        ove_model_output(classifier, 0, &out_info) != OVE_OK) {
+        ove_model_deinit(classifier);
+        return OVE_ERR_ML_FAILED;
+    }
 
     memcpy(in_info.data, features, 49 * 40);
-    ove_model_invoke(classifier);
+    if (ove_model_invoke(classifier) != OVE_OK) {
+        ove_model_deinit(classifier);
+        return OVE_ERR_ML_FAILED;
+    }
 
     /* Find highest-scoring class */
     const int8_t *scores = (const int8_t *)out_info.data;

@@ -136,8 +136,13 @@ static int generate_features(const int16_t *audio_data, unsigned int audio_len)
 		return rc;
 
 	struct ove_tensor_info input_info, output_info;
-	ove_model_input(preproc, 0, &input_info);
-	ove_model_output(preproc, 0, &output_info);
+	rc = ove_model_input(preproc, 0, &input_info);
+	if (rc == OVE_OK)
+		rc = ove_model_output(preproc, 0, &output_info);
+	if (rc != OVE_OK) {
+		ove_model_deinit(preproc);
+		return rc;
+	}
 
 	/*
 	 * Scale stride and window size to the actual sample rate.
@@ -211,8 +216,13 @@ static int classify_keyword(int *prediction_idx, float *confidence)
 		return rc;
 
 	struct ove_tensor_info input_info, output_info;
-	ove_model_input(classifier, 0, &input_info);
-	ove_model_output(classifier, 0, &output_info);
+	rc = ove_model_input(classifier, 0, &input_info);
+	if (rc == OVE_OK)
+		rc = ove_model_output(classifier, 0, &output_info);
+	if (rc != OVE_OK) {
+		ove_model_deinit(classifier);
+		return rc;
+	}
 
 	int8_t *input = (int8_t *)input_info.data;
 	memcpy(input, features, FEATURE_ELEMENT_COUNT);

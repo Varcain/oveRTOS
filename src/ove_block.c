@@ -11,7 +11,9 @@
 static void refresh_presence_after_error(void)
 {
 	struct ove_block_info ignored;
-	(void)ove_block_get_info(&ignored);
+	/* Called for its side effect of re-probing presence; the info is unused. */
+	int rc = ove_block_get_info(&ignored);
+	(void)rc;
 }
 
 int ove_block_get_info(struct ove_block_info *out)

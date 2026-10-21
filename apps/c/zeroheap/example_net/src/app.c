@@ -423,12 +423,18 @@ static void test_mqtt(void)
 
 	TEST("mqtt_loop (receive published messages)");
 	mqtt_rx_count = 0;
-	for (int i = 0; i < 10; i++) {
-		ove_mqtt_loop(g_mqtt, OVE_MS(500));
+	ret = OVE_OK;
+	for (int i = 0; i < 10 && ret == OVE_OK; i++) {
+		ret = ove_mqtt_loop(g_mqtt, OVE_MS(500));
 		if (mqtt_rx_count >= 2)
 			break;
 	}
-	if (mqtt_rx_count >= 1) {
+	if (ret == OVE_ERR_NET_CLOSED || ret == OVE_ERR_NET_RESET) {
+		OVE_LOG_WRN("  connection closed by broker (%d)", ret);
+		PASS("mqtt_loop (connection closed, acceptable)");
+	} else if (ret != OVE_OK) {
+		FAIL("mqtt_loop", ret);
+	} else if (mqtt_rx_count >= 1) {
 		OVE_LOG_INF("  -> received %d message(s)", mqtt_rx_count);
 		PASS("mqtt_loop (received messages)");
 	} else {
@@ -448,8 +454,15 @@ static void test_mqtt(void)
 	}
 
 	TEST("mqtt_loop keepalive ping");
-	ove_mqtt_loop(g_mqtt, OVE_MS(100));
-	PASS("mqtt_loop keepalive");
+	ret = ove_mqtt_loop(g_mqtt, OVE_MS(100));
+	if (ret == OVE_OK) {
+		PASS("mqtt_loop keepalive");
+	} else if (ret == OVE_ERR_NET_CLOSED || ret == OVE_ERR_NET_RESET) {
+		OVE_LOG_WRN("  connection closed by broker (%d)", ret);
+		PASS("mqtt_loop keepalive (connection closed, acceptable)");
+	} else {
+		FAIL("mqtt_loop keepalive", ret);
+	}
 
 	TEST("mqtt_disconnect");
 	ove_mqtt_disconnect(g_mqtt);

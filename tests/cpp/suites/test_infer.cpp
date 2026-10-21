@@ -32,11 +32,11 @@ static void test_cpp_infer_invoke(void **state)
 	cfg.arena_size = SINE_MODEL_ARENA_SIZE;
 
 	ove_model_t model = nullptr;
-	ove_model_create(&model, &cfg);
+	assert_int_equal(ove_model_create(&model, &cfg), OVE_OK);
 
 	/* Get input tensor, set value */
 	struct ove_tensor_info info;
-	ove_model_input(model, 0, &info);
+	assert_int_equal(ove_model_input(model, 0, &info), OVE_OK);
 	float *input = static_cast<float *>(info.data);
 	*input = 1.0f;
 
@@ -44,7 +44,7 @@ static void test_cpp_infer_invoke(void **state)
 	assert_int_equal(rc, OVE_OK);
 
 	/* Check output */
-	ove_model_output(model, 0, &info);
+	assert_int_equal(ove_model_output(model, 0, &info), OVE_OK);
 	float *output = static_cast<float *>(info.data);
 	/* sin(1.0) ~ 0.841 */
 	assert_true(*output > 0.5f && *output < 1.0f);
@@ -72,7 +72,7 @@ static void test_cpp_infer_tensor_out_of_bounds(void **state)
 	cfg.arena_size = SINE_MODEL_ARENA_SIZE;
 
 	ove_model_t model = nullptr;
-	ove_model_create(&model, &cfg);
+	assert_int_equal(ove_model_create(&model, &cfg), OVE_OK);
 
 	struct ove_tensor_info info;
 	assert_int_not_equal(ove_model_input(model, 999, &info), OVE_OK);

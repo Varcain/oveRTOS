@@ -92,8 +92,8 @@ void shell_setup(void)
 {
     if (ove_console_init() != OVE_OK)
         return;
-    ove_shell_init();
-    ove_shell_register_cmd(&status_cmd);
+    if (ove_shell_init() != OVE_OK || ove_shell_register_cmd(&status_cmd) != OVE_OK)
+        return;
 }
 
 /* Drive the shell from a dedicated task */

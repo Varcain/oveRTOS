@@ -92,7 +92,8 @@ typedef struct {
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_client_init(ove_mqtt_client_t *client, ove_mqtt_client_storage_t *storage);
+OVE_NODISCARD int ove_mqtt_client_init(ove_mqtt_client_t *client,
+				       ove_mqtt_client_storage_t *storage);
 
 /**
  * @brief De-initialise an MQTT client.
@@ -108,7 +109,7 @@ void ove_mqtt_client_deinit(ove_mqtt_client_t client);
  * @param[in] cfg    Connection configuration.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg);
+OVE_NODISCARD int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg);
 
 /**
  * @brief Disconnect from the MQTT broker.
@@ -127,8 +128,8 @@ void ove_mqtt_disconnect(ove_mqtt_client_t client);
  * @param[in] qos         QoS level.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload,
-		     size_t payload_len, ove_mqtt_qos_t qos);
+OVE_NODISCARD int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload,
+				   size_t payload_len, ove_mqtt_qos_t qos);
 
 /**
  * @brief Subscribe to a topic.
@@ -138,7 +139,8 @@ int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *pa
  * @param[in] qos    Maximum QoS level.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos_t qos);
+OVE_NODISCARD int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic,
+				     ove_mqtt_qos_t qos);
 
 /**
  * @brief Unsubscribe from a topic.
@@ -147,7 +149,7 @@ int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos
  * @param[in] topic  Topic filter (NUL-terminated).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
+OVE_NODISCARD int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
 
 /**
  * @brief Process incoming packets and send keep-alive pings.
@@ -158,7 +160,7 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
  * @param[in] timeout_ns Maximum time to wait for incoming data.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns);
+OVE_NODISCARD int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns);
 
 #ifdef OVE_HEAP_NET_MQTT
 /**
@@ -167,7 +169,7 @@ int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns);
  * @param[out] client Handle written on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_client_create(ove_mqtt_client_t *client);
+OVE_NODISCARD int ove_mqtt_client_create(ove_mqtt_client_t *client);
 
 /**
  * @brief Destroy a heap-allocated MQTT client.
@@ -186,8 +188,8 @@ typedef struct {
 } ove_mqtt_client_storage_t;
 #endif
 
-static inline int ove_mqtt_client_init(ove_mqtt_client_t *client,
-				       ove_mqtt_client_storage_t *storage)
+OVE_NODISCARD static inline int ove_mqtt_client_init(ove_mqtt_client_t *client,
+						     ove_mqtt_client_storage_t *storage)
 {
 	(void)client;
 	(void)storage;
@@ -197,7 +199,8 @@ static inline void ove_mqtt_client_deinit(ove_mqtt_client_t client)
 {
 	(void)client;
 }
-static inline int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
+OVE_NODISCARD static inline int ove_mqtt_connect(ove_mqtt_client_t client,
+						 const ove_mqtt_config_t *cfg)
 {
 	(void)client;
 	(void)cfg;
@@ -207,8 +210,9 @@ static inline void ove_mqtt_disconnect(ove_mqtt_client_t client)
 {
 	(void)client;
 }
-static inline int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload,
-				   size_t payload_len, ove_mqtt_qos_t qos)
+OVE_NODISCARD static inline int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic,
+						 const void *payload, size_t payload_len,
+						 ove_mqtt_qos_t qos)
 {
 	(void)client;
 	(void)topic;
@@ -217,21 +221,21 @@ static inline int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, 
 	(void)qos;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic,
-				     ove_mqtt_qos_t qos)
+OVE_NODISCARD static inline int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic,
+						   ove_mqtt_qos_t qos)
 {
 	(void)client;
 	(void)topic;
 	(void)qos;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
+OVE_NODISCARD static inline int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 {
 	(void)client;
 	(void)topic;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns)
+OVE_NODISCARD static inline int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns)
 {
 	(void)client;
 	(void)timeout_ns;
