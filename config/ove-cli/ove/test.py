@@ -2464,10 +2464,9 @@ def _nuttx_fetch_sources(ove_dir):
     """Fetch the manifest-pinned NuttX kernel + apps + CMocka into dl/.
 
     Returns (nuttx_src, apps_dl, cmocka_dl) — absolute paths to the cached
-    upstream trees. ARM test builds prepare the global kernel patches in a
-    shared source tree; host SIM keeps its existing source path. The apps tree is the
-    pristine cache that callers copy into a per-variant build dir to
-    register external/ove_test/ without cross-variant interference."""
+    upstream trees. Test builds apply the global kernel patches in a shared
+    source tree. Callers copy the pristine apps tree into a per-variant build
+    dir to register external/ove_test/ without cross-variant interference."""
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
     manifest = load_manifest(ove_dir)
@@ -2538,15 +2537,12 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     from .build import (_shared_patched_tree,
                         _check_source_trees_unchanged)
 
-    arm_board = board_config.split(":", 1)[0]
-    patched = arm_board in ("mps2-an500", "stm32f746g-disco")
-    if patched:
-        # Keep the record beside the generated CMake directory: a source-key
-        # change removes that directory, while copied test apps stay intact.
-        source_record = SimpleNamespace(build_dir=os.path.dirname(os.path.abspath(build_dir)))
-        nuttx_src = _shared_patched_tree(source_record, nuttx_src, [
-            ("global patch", os.path.join(ove_dir, "config", "patches", "nuttx"))])
-        _drop_stale_cmake_cache(build_dir, nuttx_src)
+    # Keep the record beside the generated CMake directory: a source-key
+    # change removes that directory, while copied test apps stay intact.
+    source_record = SimpleNamespace(build_dir=os.path.dirname(os.path.abspath(build_dir)))
+    nuttx_src = _shared_patched_tree(source_record, nuttx_src, [
+        ("global patch", os.path.join(ove_dir, "config", "patches", "nuttx"))])
+    _drop_stale_cmake_cache(build_dir, nuttx_src)
 
     # The venv goes on top of extra_env's PATH (the cross toolchain's), so NuttX's
     # find_program(olddefconfig) finds kconfiglib without an activated venv.
@@ -2605,8 +2601,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     run(["cmake", "-S", nuttx_src, "-B", build_dir,
          "--no-warn-unused-cli"], env=env)
     run(["cmake", "--build", build_dir, "-j", str(nproc())], env=env)
-    if patched:
-        _check_source_trees_unchanged(source_record)
+    _check_source_trees_unchanged(source_record)
 
 
 def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label):
