@@ -12,6 +12,7 @@ OVE_TEST_STORAGE(ove_mutex_storage_t, s_mtx_storage);
 OVE_TEST_STORAGE(ove_mutex_storage_t, s_mtx_storage_a);
 OVE_TEST_STORAGE(ove_mutex_storage_t, s_mtx_storage_b);
 OVE_TEST_STORAGE(ove_mutex_storage_t, s_mtx_counter_storage);
+OVE_TEST_STORAGE(ove_mutex_storage_t, s_mtx_null_storage);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage_a);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage_b);
@@ -210,6 +211,36 @@ static void test_mutex_multiple_independent(void **state)
 	ove_test_mutex_destroy(b);
 }
 
+/*
+ * A NULL out-handle must be rejected by the implementation's own check,
+ * not compiled away.  The NULL reaches the call through a volatile so the
+ * caller-side -Wnonnull cannot fire and the optimiser cannot see it; only
+ * the callee's parameter check stands between it and a store to address 0.
+ */
+static void test_mutex_init_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_mutex_t *volatile out = NULL;
+	assert_int_equal(ove_mutex_init(out, &s_mtx_null_storage), OVE_ERR_INVALID_PARAM);
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+static void test_mutex_create_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_mutex_t *volatile out = NULL;
+	assert_int_equal(ove_mutex_create(out), OVE_ERR_INVALID_PARAM);
+}
+#endif
+
+static void test_mutex_init_null_storage_rejected(void **state)
+{
+	(void)state;
+	ove_mutex_t m = NULL;
+	ove_mutex_storage_t *volatile storage = NULL;
+	assert_int_equal(ove_mutex_init(&m, storage), OVE_ERR_INVALID_PARAM);
+}
+
 int test_sync_mutex_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -229,6 +260,11 @@ int test_sync_mutex_run(void)
 		cmocka_unit_test(test_mutex_shared_counter),
 		cmocka_unit_test(test_mutex_short_timeout),
 		cmocka_unit_test(test_mutex_multiple_independent),
+		cmocka_unit_test(test_mutex_init_null_out_rejected),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_mutex_create_null_out_rejected),
+#endif
+		cmocka_unit_test(test_mutex_init_null_storage_rejected),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

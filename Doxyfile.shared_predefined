@@ -17,6 +17,11 @@
 #                 Tells Doxygen to skip Zig-`@cImport`-specific blocks
 #                 in headers like storage.h, net.h, net_mqtt.h that use
 #                 minimal opaque types when consumed via Zig.
+# - OVE_NODISCARD, OVE_NONNULL(...), OVE_RETURNS_NONNULL, OVE_DEPRECATED(msg)
+#                 Attribute macros from types.h.  With EXPAND_ONLY_PREDEF
+#                 Doxygen does not expand them on its own and mis-parses
+#                 the declarations they decorate (e.g. "OVE_NODISCARD int
+#                 void ove_mutex_deinit"), so they expand to nothing here.
 PREDEFINED = OVE_HEAP_THREAD=1 \
              OVE_HEAP_MUTEX=1 \
              OVE_HEAP_SEM=1 \
@@ -39,4 +44,8 @@ PREDEFINED = OVE_HEAP_THREAD=1 \
              OVE_HEAP_NET_TLS=1 \
              OVE_HEAP_NET_HTTP=1 \
              OVE_HEAP_NET_MQTT=1 \
-             __ZIG_CIMPORT__=0
+             __ZIG_CIMPORT__=0 \
+             OVE_NODISCARD= \
+             "OVE_NONNULL(...)=" \
+             OVE_RETURNS_NONNULL= \
+             "OVE_DEPRECATED(msg)="

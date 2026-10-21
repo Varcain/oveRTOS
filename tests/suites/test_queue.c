@@ -13,6 +13,8 @@ OVE_TEST_STORAGE(ove_queue_storage_t, s_q_storage);
 static uint8_t s_q_buf[sizeof(int) * 10];
 OVE_TEST_STORAGE(ove_queue_storage_t, s_q_storage_pair);
 static uint8_t s_q_buf_pair[sizeof(int) * 2 * 8];
+OVE_TEST_STORAGE(ove_queue_storage_t, s_q_null_storage);
+static uint8_t s_q_null_buf[sizeof(int) * 4];
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STACK(s_th_stack, 4096);
 
@@ -326,6 +328,26 @@ static void test_queue_pair_item_size(void **state)
 	ove_test_queue_destroy(q);
 }
 
+/* ── NULL-parameter rejection ────────────────────────────────────────── */
+
+/* See test_mutex_init_null_out_rejected: the callee's own check must hold. */
+static void test_queue_init_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_queue_t *volatile out = NULL;
+	assert_int_equal(ove_queue_init(out, &s_q_null_storage, s_q_null_buf, sizeof(int), 4),
+			 OVE_ERR_INVALID_PARAM);
+}
+
+static void test_queue_init_null_buffer_rejected(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	void *volatile buf = NULL;
+	assert_int_equal(ove_queue_init(&q, &s_q_null_storage, buf, sizeof(int), 4),
+			 OVE_ERR_INVALID_PARAM);
+}
+
 /* ── setup/teardown ──────────────────────────────────────────────────── */
 
 static int queue_setup(void **state)
@@ -338,6 +360,31 @@ static int queue_setup(void **state)
 }
 
 /* ── runner ──────────────────────────────────────────────────────────── */
+
+static void test_queue_init_null_storage_rejected(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	ove_queue_storage_t *volatile storage = NULL;
+	assert_int_equal(ove_queue_init(&q, storage, s_q_null_buf, sizeof(int), 4),
+			 OVE_ERR_INVALID_PARAM);
+}
+
+static void test_queue_set_notify_null_rejected(void **state)
+{
+	(void)state;
+	ove_queue_t volatile q = NULL;
+	assert_int_equal(ove_queue_set_notify(q, NULL, NULL), OVE_ERR_INVALID_PARAM);
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+static void test_queue_create_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_queue_t *volatile out = NULL;
+	assert_int_equal(ove_queue_create(out, sizeof(int), 4), OVE_ERR_INVALID_PARAM);
+}
+#endif
 
 int test_queue_run(void)
 {
@@ -362,6 +409,13 @@ int test_queue_run(void)
 #endif
 		cmocka_unit_test_setup(test_queue_send_wait_forever, queue_setup),
 		cmocka_unit_test_setup(test_queue_pair_item_size, queue_setup),
+		cmocka_unit_test_setup(test_queue_init_null_out_rejected, queue_setup),
+		cmocka_unit_test_setup(test_queue_init_null_buffer_rejected, queue_setup),
+		cmocka_unit_test(test_queue_init_null_storage_rejected),
+		cmocka_unit_test(test_queue_set_notify_null_rejected),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_queue_create_null_out_rejected),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

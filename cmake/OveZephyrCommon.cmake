@@ -127,6 +127,11 @@ macro(ove_zephyr_include_app_sources)
     endif()
     include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
     ove_apply_app_language(app)
+    # The app target holds only oveRTOS and app sources.  A nonnull-compare warning
+    # means the compiler is deleting a NULL check the API promises (see OVE_NONNULL
+    # in include/ove/types.h).  It sees only compares written in the function body;
+    # the lint rule nonnull-public covers checks inside inlined helpers.
+    target_compile_options(app PRIVATE -Werror=nonnull-compare)
 endmacro()
 
 

@@ -9,6 +9,7 @@
 #include "../framework/ove_test.h"
 
 OVE_TEST_STORAGE(ove_event_storage_t, s_evt_storage);
+OVE_TEST_STORAGE(ove_event_storage_t, s_evt_null_storage);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STACK(s_th_stack, 4096);
 
@@ -121,6 +122,26 @@ static void test_event_destroy_null(void **state)
 
 #endif
 
+/* NULL arguments reach the call through a volatile, as in test_sync_mutex.c. */
+static void test_event_init_null_rejected(void **state)
+{
+	(void)state;
+	ove_event_t e = NULL;
+	ove_event_t *volatile out = NULL;
+	ove_event_storage_t *volatile storage = NULL;
+	assert_int_equal(ove_event_init(out, &s_evt_null_storage), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_event_init(&e, storage), OVE_ERR_INVALID_PARAM);
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+static void test_event_create_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_event_t *volatile out = NULL;
+	assert_int_equal(ove_event_create(out), OVE_ERR_INVALID_PARAM);
+}
+#endif
+
 int test_sync_event_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -134,6 +155,10 @@ int test_sync_event_run(void)
 		cmocka_unit_test(test_event_coalesces_repeated_signals),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_event_destroy_null),
+#endif
+		cmocka_unit_test(test_event_init_null_rejected),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_event_create_null_out_rejected),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

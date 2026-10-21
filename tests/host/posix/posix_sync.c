@@ -31,6 +31,8 @@ static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
+	if (mtx == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_mutex *m = (struct ove_mutex *)storage;
 	pthread_mutex_init(&m->mtx, NULL);
 	*mtx = m;
@@ -75,6 +77,8 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
+	if (sem == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	(void)max;
 	struct ove_sem *s = (struct ove_sem *)storage;
 	sem_init(&s->sem, 0, initial);
@@ -159,6 +163,8 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
+	if (evt == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_event *e = (struct ove_event *)storage;
 	memset(e, 0, sizeof(*e));
 	pthread_mutex_init(&e->lock, NULL);
@@ -237,6 +243,8 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
+	if (mtx == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_mutex *m = (struct ove_mutex *)storage;
 	pthread_mutexattr_t attr;
 	pthread_mutexattr_init(&attr);
@@ -266,6 +274,8 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 
 int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
+	if (cv == NULL || storage == NULL)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_condvar *c = (struct ove_condvar *)storage;
 	pthread_cond_init(&c->cond, NULL);
 	*cv = c;

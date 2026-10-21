@@ -839,7 +839,7 @@ unsafe extern "C" {
     pub fn ove_thread_destroy(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Return the handle of the currently executing thread.\n\n Valid from the first statement of an entry started by ove_thread_init() or\n ove_thread_create(), even when the new thread preempts its creator before\n that call returns.\n\n Task context only, after the scheduler has started: the result is undefined\n in an ISR and before ove_thread_start_scheduler().\n\n @return Handle of the calling thread, or NULL on a thread oveRTOS did not\n         create (the startup or main thread, idle, RTOS service threads).\n         On NuttX a pthread started by an oveRTOS thread currently reports\n         that thread's handle.\n "]
+    #[doc = " @brief Return the handle of the currently executing thread.\n\n Valid from the first statement of an entry started by ove_thread_init() or\n ove_thread_create(), even when the new thread preempts its creator before\n that call returns.\n\n Task context only, after the scheduler has started: the result is undefined\n in an ISR and before ove_thread_start_scheduler().\n\n @return Handle of the calling thread, or NULL on a thread oveRTOS did not\n         create (the startup or main thread, idle, RTOS service threads).\n         On NuttX a pthread started by an oveRTOS thread currently reports\n         that thread's handle."]
     pub fn ove_thread_get_self() -> ove_thread_t;
 }
 unsafe extern "C" {
@@ -859,11 +859,11 @@ unsafe extern "C" {
     pub fn ove_thread_start_scheduler();
 }
 unsafe extern "C" {
-    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread remains suspended until ove_thread_resume() is called.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n                    NULL is ignored.\n\n @see ove_thread_resume\n "]
+    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread remains suspended until ove_thread_resume() is called.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n                    NULL is ignored.\n\n @see ove_thread_resume"]
     pub fn ove_thread_suspend(handle: ove_thread_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Resume a previously suspended thread.\n\n @param[in] handle  Thread to resume.  Must have been suspended with\n                    ove_thread_suspend().  NULL is ignored.\n\n @see ove_thread_suspend\n "]
+    #[doc = " @brief Resume a previously suspended thread.\n\n @param[in] handle  Thread to resume.  Must have been suspended with\n                    ove_thread_suspend().  NULL is ignored.\n\n @see ove_thread_suspend"]
     pub fn ove_thread_resume(handle: ove_thread_t);
 }
 unsafe extern "C" {
@@ -886,11 +886,11 @@ unsafe extern "C" {
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the current execution state of a thread.\n\n @param[in] handle  Thread to inspect.\n @return One of the @c OVE_THREAD_STATE_* values; @c OVE_THREAD_STATE_UNKNOWN\n         for a NULL @p handle.\n "]
+    #[doc = " @brief Query the current execution state of a thread.\n\n @param[in] handle  Thread to inspect.\n @return One of the @c OVE_THREAD_STATE_* values; @c OVE_THREAD_STATE_UNKNOWN\n         for a NULL @p handle."]
     pub fn ove_thread_get_state(handle: ove_thread_t) -> ove_thread_state_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if @p handle or\n         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not\n         provide runtime accounting.\n "]
+    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if @p handle or\n         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not\n         provide runtime accounting."]
     pub fn ove_thread_get_runtime_stats(
         handle: ove_thread_t,
         stats: *mut ove_thread_stats,
@@ -1025,7 +1025,7 @@ unsafe extern "C" {
     pub fn ove_time_delay_us(us: u32);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a non-recursive mutex using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock"]
+    #[doc = " @brief Initialise a non-recursive mutex using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock"]
     pub fn ove_mutex_init(
         mtx: *mut ove_mutex_t,
         storage: *mut ove_mutex_storage_t,
@@ -1036,7 +1036,7 @@ unsafe extern "C" {
     pub fn ove_mutex_deinit(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a counting semaphore using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the semaphore.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give"]
+    #[doc = " @brief Initialise a counting semaphore using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the semaphore.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give"]
     pub fn ove_sem_init(
         sem: *mut ove_sem_t,
         storage: *mut ove_sem_storage_t,
@@ -1049,7 +1049,7 @@ unsafe extern "C" {
     pub fn ove_sem_deinit(sem: ove_sem_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  A signal is sticky:\n if posted while no thread is waiting, it remains pending and is\n consumed by the next ove_event_wait().  After a successful wait the\n event is auto-reset back to unsignalled.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
+    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  A signal is sticky:\n if posted while no thread is waiting, it remains pending and is\n consumed by the next ove_event_wait().  After a successful wait the\n event is auto-reset back to unsignalled.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
     pub fn ove_event_init(
         evt: *mut ove_event_t,
         storage: *mut ove_event_storage_t,
@@ -1060,7 +1060,7 @@ unsafe extern "C" {
     pub fn ove_event_deinit(evt: ove_event_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_recursive_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
+    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_recursive_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
     pub fn ove_recursive_mutex_init(
         mtx: *mut ove_mutex_t,
         storage: *mut ove_mutex_storage_t,
@@ -1071,7 +1071,7 @@ unsafe extern "C" {
     pub fn ove_recursive_mutex_deinit(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a condition variable using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] cv       Receives the opaque condition variable handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the condvar.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,\n      ove_condvar_signal, ove_condvar_broadcast"]
+    #[doc = " @brief Initialise a condition variable using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] cv       Receives the opaque condition variable handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the condvar.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,\n      ove_condvar_signal, ove_condvar_broadcast"]
     pub fn ove_condvar_init(
         cv: *mut ove_condvar_t,
         storage: *mut ove_condvar_storage_t,
@@ -1082,7 +1082,7 @@ unsafe extern "C" {
     pub fn ove_condvar_deinit(cv: ove_condvar_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a non-recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_destroy, ove_mutex_init"]
+    #[doc = " @brief Allocate and initialise a non-recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_mutex_destroy, ove_mutex_init"]
     pub fn ove_mutex_create(mtx: *mut ove_mutex_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1090,7 +1090,7 @@ unsafe extern "C" {
     pub fn ove_mutex_destroy(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a counting semaphore from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_sem_destroy, ove_sem_init"]
+    #[doc = " @brief Allocate and initialise a counting semaphore from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_sem_destroy, ove_sem_init"]
     pub fn ove_sem_create(
         sem: *mut ove_sem_t,
         initial: core::ffi::c_uint,
@@ -1102,7 +1102,7 @@ unsafe extern "C" {
     pub fn ove_sem_destroy(sem: ove_sem_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a binary event from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] evt  Receives the opaque event handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_event_destroy, ove_event_init"]
+    #[doc = " @brief Allocate and initialise a binary event from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] evt  Receives the opaque event handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_event_destroy, ove_event_init"]
     pub fn ove_event_create(evt: *mut ove_event_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1110,7 +1110,7 @@ unsafe extern "C" {
     pub fn ove_event_destroy(evt: ove_event_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_recursive_mutex_destroy, ove_recursive_mutex_init"]
+    #[doc = " @brief Allocate and initialise a recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_recursive_mutex_destroy, ove_recursive_mutex_init"]
     pub fn ove_recursive_mutex_create(mtx: *mut ove_mutex_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1118,7 +1118,7 @@ unsafe extern "C" {
     pub fn ove_recursive_mutex_destroy(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a condition variable from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] cv  Receives the opaque condition variable handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_condvar_destroy, ove_condvar_init"]
+    #[doc = " @brief Allocate and initialise a condition variable from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] cv  Receives the opaque condition variable handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_condvar_destroy, ove_condvar_init"]
     pub fn ove_condvar_create(cv: *mut ove_condvar_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1142,7 +1142,7 @@ unsafe extern "C" {
     pub fn ove_sem_give(sem: ove_sem_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a notify callback fired after every successful give.\n\n The callback is invoked at the tail of @ref ove_sem_give — once the\n count has been incremented. Only one slot per semaphore; a later\n call replaces an earlier registration. Pass @c cb=NULL to clear.\n\n Designed for async runtimes (Rust binding's @c AsyncSemaphore) that\n need a wake hook. Runs in whatever context the give was issued in —\n implementation must be non-blocking and ISR-safe.\n\n @param[in] sem        Semaphore handle.\n @param[in] cb         Callback to invoke, or @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Register a notify callback fired after every successful give.\n\n The callback is invoked at the tail of @ref ove_sem_give — once the\n count has been incremented. Only one slot per semaphore; a later\n call replaces an earlier registration. Pass @c cb=NULL to clear.\n\n Designed for async runtimes (Rust binding's @c AsyncSemaphore) that\n need a wake hook. Runs in whatever context the give was issued in —\n implementation must be non-blocking and ISR-safe.\n\n @param[in] sem        Semaphore handle.\n @param[in] cb         Callback to invoke, or @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM for a NULL handle, or\n         another negative error code on failure."]
     pub fn ove_sem_set_notify(
         sem: ove_sem_t,
         cb: ove_notify_cb,
@@ -1977,7 +1977,7 @@ pub struct ove_queue {
 #[doc = " @brief Opaque handle for a message queue object."]
 pub type ove_queue_t = *mut ove_queue;
 unsafe extern "C" {
-    #[doc = " @brief Initialise a queue using caller-supplied static storage and data buffer.\n\n No heap allocation is performed.  The @p buffer must be at least\n @p item_size * @p max_items bytes and remain valid for the lifetime of\n the queue.\n\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[out] q          Receives the opaque queue handle on success.\n @param[in]  storage    Pointer to statically allocated backend storage.\n                        Must remain valid for the lifetime of the queue.\n @param[in]  buffer     Caller-allocated data buffer of at least\n                        @p item_size * @p max_items bytes.\n @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.\n @param[in]  max_items  Maximum number of items the queue can hold.\n                        Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_queue_deinit, ove_queue_create"]
+    #[doc = " @brief Initialise a queue using caller-supplied static storage and data buffer.\n\n No heap allocation is performed.  The @p buffer must be at least\n @p item_size * @p max_items bytes and remain valid for the lifetime of\n the queue.\n\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[out] q          Receives the opaque queue handle on success.\n @param[in]  storage    Pointer to statically allocated backend storage.\n                        Must remain valid for the lifetime of the queue.\n @param[in]  buffer     Caller-allocated data buffer of at least\n                        @p item_size * @p max_items bytes.\n @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.\n @param[in]  max_items  Maximum number of items the queue can hold.\n                        Must be > 0.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_queue_deinit, ove_queue_create"]
     pub fn ove_queue_init(
         q: *mut ove_queue_t,
         storage: *mut ove_queue_storage_t,
@@ -1991,7 +1991,7 @@ unsafe extern "C" {
     pub fn ove_queue_deinit(q: ove_queue_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a queue from the heap.\n\n Both the backend storage and the item data buffer are allocated from\n the heap.\n\n @note Requires @c CONFIG_OVE_QUEUE and @c OVE_HEAP_QUEUE\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] q          Receives the opaque queue handle on success.\n @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.\n @param[in]  max_items  Maximum number of items the queue can hold.\n                        Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_queue_destroy, ove_queue_init"]
+    #[doc = " @brief Allocate and initialise a queue from the heap.\n\n Both the backend storage and the item data buffer are allocated from\n the heap.\n\n @note Requires @c CONFIG_OVE_QUEUE and @c OVE_HEAP_QUEUE\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] q          Receives the opaque queue handle on success.\n @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.\n @param[in]  max_items  Maximum number of items the queue can hold.\n                        Must be > 0.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_queue_destroy, ove_queue_init"]
     pub fn ove_queue_create(
         q: *mut ove_queue_t,
         item_size: usize,
@@ -2033,7 +2033,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a notify callback fired after every successful send.\n\n The callback is invoked at the tail of @ref ove_queue_send and\n @ref ove_queue_send_from_isr — once an item has been enqueued. Only\n one slot per queue; a later call replaces an earlier registration.\n Pass @c cb=NULL to clear.\n\n Designed for async runtimes that need a wake hook (the Rust binding\n uses it to call @c AtomicWaker::wake on a task awaiting\n @c AsyncQueue::recv).\n\n The callback runs in whatever context the originating send used —\n thread or ISR. Implementations must be non-blocking and ISR-safe.\n\n @param[in] q          Queue handle.\n @param[in] cb         Callback to invoke after successful sends, or\n                       @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Register a notify callback fired after every successful send.\n\n The callback is invoked at the tail of @ref ove_queue_send and\n @ref ove_queue_send_from_isr — once an item has been enqueued. Only\n one slot per queue; a later call replaces an earlier registration.\n Pass @c cb=NULL to clear.\n\n Designed for async runtimes that need a wake hook (the Rust binding\n uses it to call @c AtomicWaker::wake on a task awaiting\n @c AsyncQueue::recv).\n\n The callback runs in whatever context the originating send used —\n thread or ISR. Implementations must be non-blocking and ISR-safe.\n\n @param[in] q          Queue handle.\n @param[in] cb         Callback to invoke after successful sends, or\n                       @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM for a NULL handle, or\n         another negative error code on failure."]
     pub fn ove_queue_set_notify(
         q: ove_queue_t,
         cb: ove_notify_cb,

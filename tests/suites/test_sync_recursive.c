@@ -9,6 +9,7 @@
 #include "../framework/ove_test.h"
 
 OVE_TEST_STORAGE(ove_mutex_storage_t, s_rmtx_storage);
+OVE_TEST_STORAGE(ove_mutex_storage_t, s_rmtx_null_storage);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STACK(s_th_stack, 4096);
 
@@ -91,6 +92,27 @@ static void test_recursive_destroy_null(void **state)
 }
 #endif
 
+/* NULL arguments reach the call through a volatile, as in test_sync_mutex.c. */
+static void test_recursive_init_null_rejected(void **state)
+{
+	(void)state;
+	ove_mutex_t m = NULL;
+	ove_mutex_t *volatile out = NULL;
+	ove_mutex_storage_t *volatile storage = NULL;
+	assert_int_equal(ove_recursive_mutex_init(out, &s_rmtx_null_storage),
+			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_recursive_mutex_init(&m, storage), OVE_ERR_INVALID_PARAM);
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+static void test_recursive_create_null_out_rejected(void **state)
+{
+	(void)state;
+	ove_mutex_t *volatile out = NULL;
+	assert_int_equal(ove_recursive_mutex_create(out), OVE_ERR_INVALID_PARAM);
+}
+#endif
+
 int test_sync_recursive_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -101,6 +123,10 @@ int test_sync_recursive_run(void)
 		cmocka_unit_test(test_recursive_destroy),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_recursive_destroy_null),
+#endif
+		cmocka_unit_test(test_recursive_init_null_rejected),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_recursive_create_null_out_rejected),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

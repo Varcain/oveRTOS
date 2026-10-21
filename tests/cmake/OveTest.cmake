@@ -333,3 +333,11 @@ function(ove_test_cpp_suites suites_inc suite_dir out_sources_var)
 
     set(${out_sources_var} ${_sources} PARENT_SCOPE)
 endfunction()
+
+# Zephyr test builds compile the substrate into `app` without -Werror.  A
+# nonnull-compare warning means the compiler is deleting a NULL check the API
+# promises (see OVE_NONNULL in include/ove/types.h); the lint rule
+# nonnull-public covers checks inside inlined helpers, which it cannot see.
+if(TARGET app)
+    target_compile_options(app PRIVATE -Werror=nonnull-compare)
+endif()

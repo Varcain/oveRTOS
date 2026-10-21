@@ -60,12 +60,13 @@ typedef struct ove_queue *ove_queue_t;
  * @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.
  * @param[in]  max_items  Maximum number of items the queue can hold.
  *                        Must be > 0.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument
+ *         is NULL, or another negative error code on failure.
  *
  * @see ove_queue_deinit, ove_queue_create
  */
 OVE_NODISCARD int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer,
-				 size_t item_size, unsigned int max_items) OVE_NONNULL(1, 2, 3);
+				 size_t item_size, unsigned int max_items);
 
 /**
  * @brief Release resources held by a queue initialised with ove_queue_init().
@@ -96,12 +97,12 @@ void ove_queue_deinit(ove_queue_t q);
  * @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.
  * @param[in]  max_items  Maximum number of items the queue can hold.
  *                        Must be > 0.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument
+ *         is NULL, or another negative error code on failure.
  *
  * @see ove_queue_destroy, ove_queue_init
  */
-OVE_NODISCARD int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
-	OVE_NONNULL(1);
+OVE_NODISCARD int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items);
 
 /**
  * @brief Destroy and free a queue allocated with ove_queue_create().
@@ -137,8 +138,7 @@ void ove_queue_destroy(ove_queue_t q);
  *
  * @see ove_queue_receive, ove_queue_send_from_isr
  */
-OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
-	OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns);
 
 /**
  * @brief Deadline-based variant of @ref ove_queue_send.
@@ -185,8 +185,7 @@ OVE_NODISCARD static inline int ove_queue_send_until(ove_queue_t q, const void *
  *
  * @see ove_queue_send, ove_queue_receive_from_isr
  */
-OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
-	OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns);
 
 /**
  * @brief Deadline-based variant of @ref ove_queue_receive.
@@ -226,7 +225,7 @@ OVE_NODISCARD static inline int ove_queue_receive_until(ove_queue_t q, void *buf
  *
  * @see ove_queue_send
  */
-OVE_NODISCARD int ove_queue_send_from_isr(ove_queue_t q, const void *data) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_queue_send_from_isr(ove_queue_t q, const void *data);
 
 /**
  * @brief Receive an item from the queue from an interrupt service routine.
@@ -244,7 +243,7 @@ OVE_NODISCARD int ove_queue_send_from_isr(ove_queue_t q, const void *data) OVE_N
  *
  * @see ove_queue_receive
  */
-OVE_NODISCARD int ove_queue_receive_from_isr(ove_queue_t q, void *buf) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_queue_receive_from_isr(ove_queue_t q, void *buf);
 
 /**
  * @brief Register a notify callback fired after every successful send.
@@ -265,9 +264,10 @@ OVE_NODISCARD int ove_queue_receive_from_isr(ove_queue_t q, void *buf) OVE_NONNU
  * @param[in] cb         Callback to invoke after successful sends, or
  *                       @c NULL to clear.
  * @param[in] user_data  Opaque pointer forwarded to @p cb.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM for a NULL handle, or
+ *         another negative error code on failure.
  */
-int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data) OVE_NONNULL(1);
+int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data);
 
 #else /* !CONFIG_OVE_QUEUE */
 
