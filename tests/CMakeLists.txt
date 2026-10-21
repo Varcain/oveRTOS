@@ -253,6 +253,19 @@ target_include_directories(ove_test_sim_profiler_refused PRIVATE
     ${OVE_ROOT}/sim/include
     ${OVE_ROOT}/backends/common
 )
+# Trace drain against a refusing transport, including overflow and descriptors.
+add_executable(ove_test_sim_trace_refused
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_sim_trace_refused.c
+    ${OVE_ROOT}/sim/hal/sim_trace.c
+    ${OVE_ROOT}/backends/common/ove_trace_ring.c
+)
+target_compile_definitions(ove_test_sim_trace_refused PRIVATE CONFIG_OVE_TRACE_RING_SIZE=384)
+target_include_directories(ove_test_sim_trace_refused PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/obs
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/sim/include
+    ${OVE_ROOT}/backends/common
+)
 # Kernel-thread state table. Use the shim for ove/thread.h.
 add_executable(ove_test_trace_kthread
     ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_trace_kthread.c
@@ -492,6 +505,7 @@ add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
 add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
 add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
+add_test(NAME ove_sim_trace_refused COMMAND ove_test_sim_trace_refused)
 add_test(NAME ove_trace_kthread COMMAND ove_test_trace_kthread)
 add_test(NAME ove_nuttx_note COMMAND ove_test_nuttx_note)
 add_test(NAME ove_trace_api COMMAND ove_test_trace_api)

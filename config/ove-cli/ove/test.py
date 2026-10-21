@@ -338,7 +338,8 @@ def test_stub(ove_dir, output_dir):
                                 "ove_test_trace_kthread",
                                 "ove_test_nuttx_note",
                                 "ove_test_trace_api",
-                                "ove_test_trace_cpp"), "stub", results)
+                                "ove_test_trace_cpp",
+                                "ove_test_sim_trace_refused"), "stub", results)
     return results
 
 
