@@ -112,7 +112,8 @@ static void stats_cb(ove_timer_t t, void *user_data)
 {
     (void)t;
     struct ove_audio_graph_stats stats;
-    ove_audio_graph_get_stats(g_graph, &stats);
+    if (ove_audio_graph_get_stats(g_graph, &stats) != OVE_OK)
+        return;
     OVE_LOG_INF("cycles=%llu underruns=%u avg_us=%u",
                 (unsigned long long)stats.cycles,
                 (unsigned)stats.underruns, (unsigned)stats.avg_process_us);

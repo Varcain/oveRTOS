@@ -139,7 +139,7 @@ static uint8_t audio_graph_test_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(OVE_AUDIO_GRAP
 								  4)] __attribute__((aligned(4)));
 #endif
 
-static int graph_init(struct ove_audio_graph *g, unsigned int frames)
+OVE_NODISCARD static int graph_init(struct ove_audio_graph *g, unsigned int frames)
 {
 	int r = ove_audio_graph_init(g, frames);
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -151,9 +151,9 @@ static int graph_init(struct ove_audio_graph *g, unsigned int frames)
 }
 
 /* Helper: build a 3-node startable graph (source->proc->sink) */
-static void build_startable_graph(struct ove_audio_graph *g, int *node_ids, int *ctxs)
+OVE_NODISCARD static int build_startable_graph(struct ove_audio_graph *g, int *node_ids, int *ctxs)
 {
-	graph_init(g, 256);
+	int r = graph_init(g, 256);
 	ctxs[0] = 0;
 	ctxs[1] = 1;
 	ctxs[2] = 2;
@@ -163,9 +163,13 @@ static void build_startable_graph(struct ove_audio_graph *g, int *node_ids, int 
 					       OVE_AUDIO_NODE_PROCESSOR);
 	node_ids[2] = ove_audio_graph_add_node(g, &mock_startable_sink_ops, &ctxs[2], "sink",
 					       OVE_AUDIO_NODE_SINK);
-	ove_audio_graph_connect(g, node_ids[0], node_ids[1]);
-	ove_audio_graph_connect(g, node_ids[1], node_ids[2]);
-	ove_audio_graph_build(g);
+	if (r == OVE_OK)
+		r = ove_audio_graph_connect(g, node_ids[0], node_ids[1]);
+	if (r == OVE_OK)
+		r = ove_audio_graph_connect(g, node_ids[1], node_ids[2]);
+	if (r == OVE_OK)
+		r = ove_audio_graph_build(g);
+	return r;
 }
 
 /* ── Graph construction tests ───────────────────────────────────── */
@@ -199,7 +203,7 @@ static void test_graph_add_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int idx =
 		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
@@ -216,7 +220,7 @@ static void test_graph_connect(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int src =
 		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
@@ -232,7 +236,7 @@ static void test_graph_connect_sink_output_rejected(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int sink = ove_audio_graph_add_node(&g, &mock_sink_ops, NULL, "sink", OVE_AUDIO_NODE_SINK);
 	int proc = ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "proc",
@@ -247,7 +251,7 @@ static void test_graph_connect_source_input_rejected(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int proc = ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "proc",
 					    OVE_AUDIO_NODE_PROCESSOR);
@@ -265,7 +269,7 @@ static void test_graph_build_simple(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int src =
 		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
@@ -273,8 +277,8 @@ static void test_graph_build_simple(void **state)
 					    OVE_AUDIO_NODE_PROCESSOR);
 	int sink = ove_audio_graph_add_node(&g, &mock_sink_ops, NULL, "sink", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, proc);
-	ove_audio_graph_connect(&g, proc, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, proc));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, proc, sink));
 
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(g.state, OVE_AUDIO_GRAPH_READY);
@@ -295,15 +299,15 @@ static void test_graph_build_cycle_rejected(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int a = ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "a", OVE_AUDIO_NODE_PROCESSOR);
 	int b = ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "b", OVE_AUDIO_NODE_PROCESSOR);
 
 	int src =
 		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
-	ove_audio_graph_connect(&g, src, a);
-	ove_audio_graph_connect(&g, a, b);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, a));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, a, b));
 	/* b→a is rejected by fan-in guard (a already has incoming edge from src) */
 	assert_int_equal(ove_audio_graph_connect(&g, b, a), OVE_ERR_INVALID_PARAM);
 
@@ -329,13 +333,13 @@ static void test_graph_build_format_mismatch(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	int src =
 		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
 	int sink = ove_audio_graph_add_node(&g, &mismatched_sink_ops, NULL, "sink",
 					    OVE_AUDIO_NODE_SINK);
-	ove_audio_graph_connect(&g, src, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, sink));
 
 	assert_int_equal(ove_audio_graph_build(&g), OVE_ERR_INVALID_PARAM);
 
@@ -403,7 +407,7 @@ static void test_graph_data_flow(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 8); /* small buffer for testing */
+	assert_int_equal(graph_init(&g, 8), OVE_OK); /* small buffer for testing */
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "count",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -415,8 +419,8 @@ static void test_graph_data_flow(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "verify", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, dbl);
-	ove_audio_graph_connect(&g, dbl, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, dbl));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, dbl, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 
 	/* Pump one cycle */
@@ -436,7 +440,7 @@ static void test_graph_fan_out(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "count",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -451,8 +455,8 @@ static void test_graph_fan_out(void **state)
 					      OVE_AUDIO_NODE_SINK);
 
 	/* Fan-out: source feeds both sinks */
-	ove_audio_graph_connect(&g, src, sink_a);
-	ove_audio_graph_connect(&g, src, sink_b);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, sink_a));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, sink_b));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
@@ -485,7 +489,7 @@ static void test_graph_node_error_silence(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "count",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -497,8 +501,8 @@ static void test_graph_node_error_silence(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "verify", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, fail);
-	ove_audio_graph_connect(&g, fail, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, fail));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, fail, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
@@ -509,7 +513,7 @@ static void test_graph_node_error_silence(void **state)
 
 	/* Stats should record the error */
 	struct ove_audio_graph_stats stats;
-	ove_audio_graph_get_stats(&g, &stats);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_get_stats(&g, &stats));
 	assert_int_equal(stats.node_errors, 1);
 	assert_int_equal(stats.cycles, 1);
 
@@ -588,7 +592,7 @@ static void test_converter_s16_to_f32(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &s16_source_ops, NULL, "s16-src",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -599,8 +603,8 @@ static void test_converter_s16_to_f32(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &f32_sink_ops, &fs, "f32-sink", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, conv);
-	ove_audio_graph_connect(&g, conv, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, conv));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, conv, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -663,7 +667,7 @@ static void test_channel_map_stereo_to_mono(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 2); /* 2 frames */
+	assert_int_equal(graph_init(&g, 2), OVE_OK); /* 2 frames */
 
 	int src = ove_audio_graph_add_node(&g, &stereo_source_ops, NULL, "stereo",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -679,8 +683,8 @@ static void test_channel_map_stereo_to_mono(void **state)
 	int sink = ove_audio_graph_add_node(&g, &mono_verify_sink_ops, &vs, "mono-sink",
 					    OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, mapper);
-	ove_audio_graph_connect(&g, mapper, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, mapper));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, mapper, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -697,7 +701,7 @@ static void test_gain_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "count",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -708,8 +712,8 @@ static void test_gain_node(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "verify", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, gain);
-	ove_audio_graph_connect(&g, gain, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, gain));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, gain, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -759,7 +763,7 @@ static void test_graph_gain_dataflow(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 8);
+	assert_int_equal(graph_init(&g, 8), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &dataflow_source_ops, NULL, "src",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -769,8 +773,8 @@ static void test_graph_gain_dataflow(void **state)
 	struct verify_sink_ctx vs = {.captured = captured};
 	int sink = ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "sink", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, gain);
-	ove_audio_graph_connect(&g, gain, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, gain));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, gain, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 	assert_int_equal(vs.captured_frames, 8);
@@ -802,7 +806,7 @@ static void test_tap_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	tap_call_count = 0;
 	tap_last_sample = 0;
@@ -816,8 +820,8 @@ static void test_tap_node(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "verify", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, tap);
-	ove_audio_graph_connect(&g, tap, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, tap));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, tap, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -841,7 +845,7 @@ static void test_graph_start_stop(void **state)
 	int ids[3], ctxs[3];
 
 	reset_start_stop_counters();
-	build_startable_graph(&g, ids, ctxs);
+	assert_int_equal(build_startable_graph(&g, ids, ctxs), OVE_OK);
 
 	/* READY -> RUNNING */
 	assert_int_equal(ove_audio_graph_start(&g), OVE_OK);
@@ -866,7 +870,7 @@ static void test_graph_start_from_idle_fails(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	/* Graph is IDLE (not built), start should fail */
 	assert_int_equal(ove_audio_graph_start(&g), OVE_ERR_NOT_SUPPORTED);
@@ -878,7 +882,7 @@ static void test_graph_stop_from_idle_fails(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	/* Graph is IDLE, stop should fail */
 	assert_int_equal(ove_audio_graph_stop(&g), OVE_ERR_NOT_SUPPORTED);
@@ -894,7 +898,7 @@ static void test_graph_start_failure_rollback(void **state)
 
 	reset_start_stop_counters();
 	fail_on_start_idx = 2; /* 3rd node (sink) will fail */
-	build_startable_graph(&g, ids, ctxs);
+	assert_int_equal(build_startable_graph(&g, ids, ctxs), OVE_OK);
 
 	assert_int_not_equal(ove_audio_graph_start(&g), OVE_OK);
 
@@ -917,7 +921,7 @@ static void test_graph_add_node_after_build_fails(void **state)
 	memset(&g, 0, sizeof(g));
 	int ids[3], ctxs[3];
 
-	build_startable_graph(&g, ids, ctxs);
+	assert_int_equal(build_startable_graph(&g, ids, ctxs), OVE_OK);
 	assert_int_equal(g.state, OVE_AUDIO_GRAPH_READY);
 
 	/* Adding a node after build should fail */
@@ -934,7 +938,7 @@ static void test_graph_connect_after_build_fails(void **state)
 	memset(&g, 0, sizeof(g));
 	int ids[3], ctxs[3];
 
-	build_startable_graph(&g, ids, ctxs);
+	assert_int_equal(build_startable_graph(&g, ids, ctxs), OVE_OK);
 	assert_int_equal(g.state, OVE_AUDIO_GRAPH_READY);
 
 	/* Connecting after build should fail */
@@ -949,7 +953,7 @@ static void test_graph_max_nodes(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	/* Add exactly 16 source nodes */
 	for (int i = 0; i < OVE_AUDIO_GRAPH_MAX_NODES; i++) {
@@ -970,7 +974,7 @@ static void test_graph_max_edges(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	/* MAX_NODES=16, MAX_EDGES=16. Use 1 source + 15 sinks = 16 nodes, 15 edges.
      * Then verify we got as many edges as node slots allow (15).
@@ -1008,9 +1012,11 @@ static void test_graph_connect_self_loop(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
-	ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "proc", OVE_AUDIO_NODE_PROCESSOR);
+	assert_int_equal(ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "proc",
+						  OVE_AUDIO_NODE_PROCESSOR),
+			 0);
 
 	assert_int_equal(ove_audio_graph_connect(&g, 0, 0), OVE_ERR_INVALID_PARAM);
 
@@ -1021,9 +1027,11 @@ static void test_graph_connect_invalid_index(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
-	ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
+	assert_int_equal(ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src",
+						  OVE_AUDIO_NODE_SOURCE),
+			 0);
 
 	assert_int_equal(ove_audio_graph_connect(&g, 99, 0), OVE_ERR_INVALID_PARAM);
 
@@ -1036,12 +1044,12 @@ static void test_graph_stats_cycle_count(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src =
 		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
 	int sink = ove_audio_graph_add_node(&g, &mock_sink_ops, NULL, "sink", OVE_AUDIO_NODE_SINK);
-	ove_audio_graph_connect(&g, src, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 
 	for (int i = 0; i < 5; i++)
@@ -1060,7 +1068,7 @@ static void test_graph_stats_null_params(void **state)
 	memset(&g, 0, sizeof(g));
 	struct ove_audio_graph_stats stats;
 
-	graph_init(&g, 256);
+	assert_int_equal(graph_init(&g, 256), OVE_OK);
 
 	assert_int_not_equal(ove_audio_graph_get_stats(NULL, &stats), OVE_OK);
 	assert_int_not_equal(ove_audio_graph_get_stats(&g, NULL), OVE_OK);
@@ -1094,7 +1102,7 @@ static void test_graph_process_multiple_cycles(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "src",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -1103,7 +1111,7 @@ static void test_graph_process_multiple_cycles(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &counting_sink_ops, &cs, "sink", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 
 	for (int i = 0; i < 10; i++)
@@ -1180,7 +1188,7 @@ static void test_converter_f32_to_s16(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &f32_source_ops, NULL, "f32-src",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -1191,8 +1199,8 @@ static void test_converter_f32_to_s16(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &s16_sink_ops, &ss, "s16-sink", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, conv);
-	ove_audio_graph_connect(&g, conv, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, conv));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, conv, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -1212,7 +1220,7 @@ static void test_gain_0db_passthrough(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4);
+	assert_int_equal(graph_init(&g, 4), OVE_OK);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "count",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -1223,8 +1231,8 @@ static void test_gain_0db_passthrough(void **state)
 	int sink =
 		ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "verify", OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, gain);
-	ove_audio_graph_connect(&g, gain, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, gain));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, gain, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -1302,7 +1310,7 @@ static void test_channel_map_stereo_to_mono_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4); /* 4 frames */
+	assert_int_equal(graph_init(&g, 4), OVE_OK); /* 4 frames */
 
 	int src = ove_audio_graph_add_node(&g, &stereo_source_4f_ops, NULL, "stereo-4f",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -1318,8 +1326,8 @@ static void test_channel_map_stereo_to_mono_node(void **state)
 	int sink = ove_audio_graph_add_node(&g, &mono_capture_ops, &mc, "mono-cap",
 					    OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, mapper);
-	ove_audio_graph_connect(&g, mapper, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, mapper));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, mapper, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 
@@ -1340,7 +1348,7 @@ static void test_channel_map_silence_channel(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	graph_init(&g, 4); /* 4 frames */
+	assert_int_equal(graph_init(&g, 4), OVE_OK); /* 4 frames */
 
 	int src = ove_audio_graph_add_node(&g, &stereo_source_4f_ops, NULL, "stereo-4f",
 					   OVE_AUDIO_NODE_SOURCE);
@@ -1356,8 +1364,8 @@ static void test_channel_map_silence_channel(void **state)
 	int sink = ove_audio_graph_add_node(&g, &mono_capture_ops, &mc, "mono-cap",
 					    OVE_AUDIO_NODE_SINK);
 
-	ove_audio_graph_connect(&g, src, mapper);
-	ove_audio_graph_connect(&g, mapper, sink);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, src, mapper));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_connect(&g, mapper, sink));
 	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
 	assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
 

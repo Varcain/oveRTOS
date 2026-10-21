@@ -19,6 +19,7 @@
 #define OVE_AUDIO_DEVICE_H
 
 #include "ove/audio.h"
+#include "ove/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,8 +88,8 @@ struct ove_audio_device_cfg {
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_device_sink, ove_audio_graph_connect
  */
-int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			    const char *name);
+OVE_NODISCARD int ove_audio_device_source(struct ove_audio_graph *g,
+					  const struct ove_audio_device_cfg *cfg, const char *name);
 
 /**
  * @brief Add a hardware audio sink node to the graph.
@@ -106,8 +107,8 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_device_source, ove_audio_graph_connect
  */
-int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			  const char *name);
+OVE_NODISCARD int ove_audio_device_sink(struct ove_audio_graph *g,
+					const struct ove_audio_device_cfg *cfg, const char *name);
 
 #endif /* CONFIG_OVE_AUDIO */
 

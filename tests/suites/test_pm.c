@@ -88,15 +88,20 @@ static ove_pm_state_t userdata_policy(ove_pm_state_t current, uint32_t idle_ms,
 	return OVE_PM_STATE_ACTIVE;
 }
 
-/* Thread helper for concurrency tests */
+/* Thread helper for concurrency tests.  cmocka asserts belong on the runner
+ * thread, so the worker counts failed requests for the test to check. */
 static volatile int domain_thread_done;
+static volatile int domain_thread_failures;
 
 static void domain_stress_entry(void *arg)
 {
 	int i;
 	ove_pm_domain_t domain = (ove_pm_domain_t)(uintptr_t)arg;
 	for (i = 0; i < 50; i++) {
-		ove_pm_domain_request(domain);
+		if (ove_pm_domain_request(domain) != OVE_OK) {
+			domain_thread_failures++;
+			continue;
+		}
 		ove_pm_domain_release(domain);
 	}
 	TEST_FLAG_SET(domain_thread_done, 1);
@@ -144,7 +149,7 @@ static void test_pm_deinit_without_init(void **state)
 static void test_pm_reinit_after_deinit(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	ove_pm_deinit();
 
 	/* Re-init should succeed */
@@ -161,7 +166,7 @@ static void test_pm_reinit_after_deinit(void **state)
 static void test_pm_default_state(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	assert_int_equal(ove_pm_get_state(), OVE_PM_STATE_ACTIVE);
 	ove_pm_deinit();
 }
@@ -169,7 +174,7 @@ static void test_pm_default_state(void **state)
 static void test_pm_set_all_states(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int rc = ove_pm_set_state(OVE_PM_STATE_IDLE);
 	assert_int_equal(rc, OVE_OK);
@@ -193,7 +198,7 @@ static void test_pm_set_all_states(void **state)
 static void test_pm_set_state_invalid(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int rc = ove_pm_set_state(OVE_PM_STATE_COUNT);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -207,7 +212,7 @@ static void test_pm_set_state_invalid(void **state)
 static void test_pm_set_same_state_noop(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	/* Setting same state should succeed as no-op */
 	int rc = ove_pm_set_state(OVE_PM_STATE_ACTIVE);
@@ -220,9 +225,9 @@ static void test_pm_set_same_state_noop(void **state)
 static void test_pm_activity_resets_to_active(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
-	ove_pm_set_state(OVE_PM_STATE_IDLE);
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_IDLE));
 	assert_int_equal(ove_pm_get_state(), OVE_PM_STATE_IDLE);
 
 	ove_pm_activity();
@@ -235,9 +240,9 @@ static void test_pm_activity_resets_to_active(void **state)
 static void test_pm_activity_from_deep_sleep(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
-	ove_pm_set_state(OVE_PM_STATE_DEEP_SLEEP);
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_DEEP_SLEEP));
 	ove_pm_activity();
 	ove_pm_idle_process();
 	assert_int_equal(ove_pm_get_state(), OVE_PM_STATE_ACTIVE);
@@ -248,7 +253,7 @@ static void test_pm_activity_from_deep_sleep(void **state)
 static void test_pm_multiple_activities(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	/* Multiple activity calls should be idempotent */
 	ove_pm_activity();
@@ -297,7 +302,7 @@ static void test_pm_not_initialized_operations(void **state)
 static void test_pm_wake_register_gpio(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_GPIO,
@@ -315,7 +320,7 @@ static void test_pm_wake_register_gpio(void **state)
 static void test_pm_wake_register_timer(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_TIMER,
@@ -333,7 +338,7 @@ static void test_pm_wake_register_timer(void **state)
 static void test_pm_wake_register_uart(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_UART,
@@ -351,7 +356,7 @@ static void test_pm_wake_register_uart(void **state)
 static void test_pm_wake_register_rtc(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_RTC,
@@ -369,7 +374,7 @@ static void test_pm_wake_register_rtc(void **state)
 static void test_pm_wake_register_null(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int rc = ove_pm_wake_register(NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -383,7 +388,7 @@ static void test_pm_wake_register_null(void **state)
 static void test_pm_wake_unregister_not_found(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_UART,
@@ -401,7 +406,7 @@ static void test_pm_wake_table_full(void **state)
 	int i;
 	int rc;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {
 		struct ove_pm_wake_src src = {
@@ -428,7 +433,7 @@ static void test_pm_wake_reuse_slot(void **state)
 	(void)state;
 	int i;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	/* Fill table */
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {
@@ -436,7 +441,7 @@ static void test_pm_wake_reuse_slot(void **state)
 			.type = OVE_PM_WAKE_GPIO,
 			.gpio = {.port = 0, .pin = (unsigned int)i, .edge = OVE_GPIO_IRQ_RISING},
 		};
-		ove_pm_wake_register(&src);
+		OVE_TEST_ASSERT_OK(ove_pm_wake_register(&src));
 	}
 
 	/* Remove one */
@@ -461,7 +466,7 @@ static void test_pm_wake_reuse_slot(void **state)
 static void test_pm_wake_mixed_types(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	struct ove_pm_wake_src gpio_src = {
 		.type = OVE_PM_WAKE_GPIO,
@@ -495,7 +500,7 @@ static void test_pm_wake_mixed_types(void **state)
 static void test_pm_domain_request_release(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int rc = ove_pm_domain_request(OVE_PM_DOMAIN_RADIO);
 	assert_int_equal(rc, OVE_OK);
@@ -511,7 +516,7 @@ static void test_pm_domain_request_release(void **state)
 static void test_pm_domain_underflow(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	int rc = ove_pm_domain_release(OVE_PM_DOMAIN_SENSOR);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 	ove_pm_deinit();
@@ -520,11 +525,11 @@ static void test_pm_domain_underflow(void **state)
 static void test_pm_domain_multiple_users(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
-	ove_pm_domain_request(OVE_PM_DOMAIN_DISPLAY);
-	ove_pm_domain_request(OVE_PM_DOMAIN_DISPLAY);
-	ove_pm_domain_request(OVE_PM_DOMAIN_DISPLAY);
+	OVE_TEST_ASSERT_OK(ove_pm_domain_request(OVE_PM_DOMAIN_DISPLAY));
+	OVE_TEST_ASSERT_OK(ove_pm_domain_request(OVE_PM_DOMAIN_DISPLAY));
+	OVE_TEST_ASSERT_OK(ove_pm_domain_request(OVE_PM_DOMAIN_DISPLAY));
 	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_DISPLAY), 3);
 
 	ove_pm_domain_release(OVE_PM_DOMAIN_DISPLAY);
@@ -540,7 +545,7 @@ static void test_pm_domain_multiple_users(void **state)
 static void test_pm_domain_invalid(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	assert_int_equal(ove_pm_domain_request(OVE_PM_DOMAIN_COUNT), OVE_ERR_INVALID_PARAM);
 	assert_int_equal(ove_pm_domain_release(OVE_PM_DOMAIN_COUNT), OVE_ERR_INVALID_PARAM);
@@ -553,7 +558,7 @@ static void test_pm_domain_all_domains(void **state)
 {
 	(void)state;
 	int i;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	/* Request all domains */
 	for (i = 0; i < OVE_PM_DOMAIN_COUNT; i++) {
@@ -575,10 +580,10 @@ static void test_pm_domain_all_domains(void **state)
 static void test_pm_domain_independent(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
-	ove_pm_domain_request(OVE_PM_DOMAIN_RADIO);
-	ove_pm_domain_request(OVE_PM_DOMAIN_SENSOR);
+	OVE_TEST_ASSERT_OK(ove_pm_domain_request(OVE_PM_DOMAIN_RADIO));
+	OVE_TEST_ASSERT_OK(ove_pm_domain_request(OVE_PM_DOMAIN_SENSOR));
 
 	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_RADIO), 1);
 	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_SENSOR), 1);
@@ -595,7 +600,7 @@ static void test_pm_domain_independent(void **state)
 static void test_pm_domain_concurrent(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	domain_thread_done = 0;
 	OVE_TEST_STORAGE(ove_thread_storage_t, t_stor);
@@ -614,19 +619,23 @@ static void test_pm_domain_concurrent(void **state)
 					     OVE_PRIO_NORMAL, 2048));
 #endif
 
-	/* Main thread also hammers same domain */
+	/* Main thread also hammers same domain.  Count failures rather than
+	 * assert here: an assert would leave the test while the worker runs. */
 	int i;
+	int failures = 0;
 	for (i = 0; i < 50; i++) {
-		ove_pm_domain_request(OVE_PM_DOMAIN_AUDIO);
+		if (ove_pm_domain_request(OVE_PM_DOMAIN_AUDIO) != OVE_OK) {
+			failures++;
+			continue;
+		}
 		ove_pm_domain_release(OVE_PM_DOMAIN_AUDIO);
 	}
 
-	/* Wait for other thread */
-	(void)wait_for_flag(&domain_thread_done, 1, 5000);
+	/* Wait for other thread.  Record the outcome and refcount, and assert
+	 * only after the join below. */
+	int done = wait_for_flag(&domain_thread_done, 1, 5000);
 	test_msleep(10);
-
-	/* Refcount should be zero after both threads balanced */
-	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_AUDIO), 0);
+	int refcount = ove_pm_domain_get_refcount(OVE_PM_DOMAIN_AUDIO);
 
 	/* Join + free the worker before PM teardown.  ove_test_thread_destroy
 	 * blocks until the entry returns, so this also joins — without it the
@@ -634,6 +643,11 @@ static void test_pm_domain_concurrent(void **state)
 	 * create with destroy). */
 	ove_test_thread_destroy(th);
 
+	assert_true(done);
+	/* Refcount should be zero after both threads balanced */
+	assert_int_equal(refcount, 0);
+	assert_int_equal(failures, 0);
+	assert_int_equal(domain_thread_failures, 0);
 	ove_pm_deinit();
 }
 
@@ -644,7 +658,7 @@ static void test_pm_domain_concurrent(void **state)
 static void test_pm_custom_policy(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	fixed_state_for_policy = OVE_PM_STATE_STANDBY;
 	int rc = ove_pm_set_policy(fixed_policy, NULL);
@@ -656,9 +670,9 @@ static void test_pm_custom_policy(void **state)
 static void test_pm_restore_default_policy(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
-	ove_pm_set_policy(fixed_policy, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(fixed_policy, NULL));
 
 	/* NULL restores default */
 	int rc = ove_pm_set_policy(NULL, NULL);
@@ -670,14 +684,14 @@ static void test_pm_restore_default_policy(void **state)
 static void test_pm_policy_with_userdata(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int battery_level = 5;
 	int rc = ove_pm_set_policy(userdata_policy, &battery_level);
 	assert_int_equal(rc, OVE_OK);
 
 	/* Restore default for cleanup */
-	ove_pm_set_policy(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(NULL, NULL));
 
 	ove_pm_deinit();
 }
@@ -689,7 +703,7 @@ static void test_pm_policy_with_userdata(void **state)
 static void test_pm_notify_register_unregister(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	notify_pre_count = 0;
 	notify_post_count = 0;
@@ -710,7 +724,7 @@ static void test_pm_notify_register_unregister(void **state)
 static void test_pm_notify_null_callback(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int rc = ove_pm_notify_register(NULL, NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -723,7 +737,7 @@ static void test_pm_notify_table_full(void **state)
 	(void)state;
 	int i;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	/* Fill notifier table (use different user_data to distinguish) */
 	for (i = 0; i < CONFIG_OVE_PM_MAX_NOTIFIERS; i++) {
@@ -746,24 +760,24 @@ static void test_pm_notify_table_full(void **state)
 static void test_pm_notify_multiple_notifiers(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	notify_pre_count = 0;
 	notify2_count = 0;
 
-	ove_pm_notify_register(test_notify_cb, NULL);
-	ove_pm_notify_register(test_notify_cb2, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_notify_register(test_notify_cb, NULL));
+	OVE_TEST_ASSERT_OK(ove_pm_notify_register(test_notify_cb2, NULL));
 
 	/* Trigger a transition via idle_process with a custom policy */
 	fixed_state_for_policy = OVE_PM_STATE_IDLE;
-	ove_pm_set_policy(fixed_policy, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(fixed_policy, NULL));
 	ove_pm_idle_process();
 
 	/* Both notifiers should have fired */
 	assert_true(notify_pre_count > 0 || notify_post_count > 0);
 	assert_true(notify2_count > 0);
 
-	ove_pm_set_policy(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(NULL, NULL));
 	ove_pm_notify_unregister(test_notify_cb, NULL);
 	ove_pm_notify_unregister(test_notify_cb2, NULL);
 
@@ -775,19 +789,19 @@ static void test_pm_notify_userdata_forwarded(void **state)
 	(void)state;
 	int magic = 42;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	notify_user_data_received = NULL;
 
-	ove_pm_notify_register(test_notify_cb_userdata, &magic);
+	OVE_TEST_ASSERT_OK(ove_pm_notify_register(test_notify_cb_userdata, &magic));
 
 	/* Force a transition to trigger the notifier */
 	fixed_state_for_policy = OVE_PM_STATE_IDLE;
-	ove_pm_set_policy(fixed_policy, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(fixed_policy, NULL));
 	ove_pm_idle_process();
 
 	assert_ptr_equal(notify_user_data_received, &magic);
 
-	ove_pm_set_policy(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(NULL, NULL));
 	ove_pm_notify_unregister(test_notify_cb_userdata, &magic);
 	ove_pm_deinit();
 }
@@ -801,7 +815,7 @@ static void test_pm_stats_initial(void **state)
 	(void)state;
 	struct ove_pm_stats stats;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	test_msleep(1); /* ensure measurable elapsed time */
 	int rc = ove_pm_get_stats(&stats);
 	assert_int_equal(rc, OVE_OK);
@@ -819,7 +833,7 @@ static void test_pm_stats_initial(void **state)
 static void test_pm_stats_null_param(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	int rc = ove_pm_get_stats(NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 	ove_pm_deinit();
@@ -830,13 +844,13 @@ static void test_pm_stats_tracking(void **state)
 	(void)state;
 	struct ove_pm_stats stats;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
-	ove_pm_set_state(OVE_PM_STATE_IDLE);
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_IDLE));
 	test_msleep(10);
-	ove_pm_set_state(OVE_PM_STATE_STANDBY);
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_STANDBY));
 	test_msleep(10);
-	ove_pm_set_state(OVE_PM_STATE_ACTIVE);
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_ACTIVE));
 	test_msleep(1); /* ensure measurable active time for active_pct */
 
 	int rc = ove_pm_get_stats(&stats);
@@ -864,13 +878,13 @@ static void test_pm_stats_reset(void **state)
 	(void)state;
 	struct ove_pm_stats stats;
 
-	ove_pm_init(&default_cfg);
-	ove_pm_set_state(OVE_PM_STATE_IDLE);
-	ove_pm_set_state(OVE_PM_STATE_STANDBY);
-	ove_pm_set_state(OVE_PM_STATE_ACTIVE);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_IDLE));
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_STANDBY));
+	OVE_TEST_ASSERT_OK(ove_pm_set_state(OVE_PM_STATE_ACTIVE));
 
 	ove_pm_reset_stats();
-	ove_pm_get_stats(&stats);
+	OVE_TEST_ASSERT_OK(ove_pm_get_stats(&stats));
 
 	/* After reset: only ACTIVE entry, no other transitions */
 	assert_int_equal(stats.transition_count[OVE_PM_STATE_ACTIVE], 1);
@@ -886,10 +900,10 @@ static void test_pm_stats_active_pct_all_active(void **state)
 	(void)state;
 	struct ove_pm_stats stats;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	test_msleep(10);
 
-	ove_pm_get_stats(&stats);
+	OVE_TEST_ASSERT_OK(ove_pm_get_stats(&stats));
 
 	/* Should be ~100% active */
 	assert_int_equal(stats.active_pct_x100, 10000);
@@ -906,7 +920,7 @@ static void test_pm_budget_set_get(void **state)
 	(void)state;
 	uint32_t actual;
 
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	int rc = ove_pm_set_budget(5000);
 	assert_int_equal(rc, OVE_OK);
@@ -921,7 +935,7 @@ static void test_pm_budget_set_get(void **state)
 static void test_pm_budget_null_param(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 	int rc = ove_pm_get_budget_status(NULL);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 	ove_pm_deinit();
@@ -934,7 +948,7 @@ static void test_pm_budget_null_param(void **state)
 static void test_pm_idle_process_no_transition_when_active(void **state)
 {
 	(void)state;
-	ove_pm_init(&default_cfg);
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
 
 	/* With activity just reported, idle_process should keep ACTIVE */
 	ove_pm_activity();
@@ -954,7 +968,7 @@ static void test_pm_rapid_init_deinit_cycles(void **state)
 		assert_int_equal(rc, OVE_OK);
 		assert_int_equal(ove_pm_get_state(), OVE_PM_STATE_ACTIVE);
 
-		ove_pm_domain_request(OVE_PM_DOMAIN_RADIO);
+		OVE_TEST_ASSERT_OK(ove_pm_domain_request(OVE_PM_DOMAIN_RADIO));
 		ove_pm_domain_release(OVE_PM_DOMAIN_RADIO);
 
 		ove_pm_deinit();
@@ -974,6 +988,7 @@ static int pm_setup(void **state)
 	notify2_count = 0;
 	notify_user_data_received = NULL;
 	domain_thread_done = 0;
+	domain_thread_failures = 0;
 	return 0;
 }
 

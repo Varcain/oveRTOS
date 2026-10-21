@@ -83,8 +83,9 @@ void ove_main(void)
 
     if (ove_event_create(&pressed) != OVE_OK || ove_pm_init(&pm_cfg) != OVE_OK)
         return;
-    ove_pm_wake_register(&button_wake);
-    ove_pm_notify_register(pm_notify, NULL);
+    if (ove_pm_wake_register(&button_wake) != OVE_OK ||
+        ove_pm_notify_register(pm_notify, NULL) != OVE_OK)
+        return;
 
     if (ove_gpio_configure(BUTTON_PORT, BUTTON_PIN, OVE_GPIO_MODE_INPUT) != OVE_OK ||
         ove_gpio_irq_register(BUTTON_PORT, BUTTON_PIN, OVE_GPIO_IRQ_FALLING, button_irq, NULL) != OVE_OK)

@@ -71,7 +71,14 @@ static void sensor_thread(void *arg)
 	OVE_LOG_INF("sensor: started");
 
 	while (!ove_thread_should_stop(self)) {
-		ove_pm_domain_request(OVE_PM_DOMAIN_SENSOR);
+		/* Fails only while PM is not initialised: retry later, and
+		 * release only a domain this thread holds. */
+		if (ove_pm_domain_request(OVE_PM_DOMAIN_SENSOR) != OVE_OK) {
+			OVE_LOG_WRN("sensor: power domain unavailable, retrying");
+			if (sleep_until_stopped(self, 5000))
+				return;
+			continue;
+		}
 		ove_pm_activity();
 
 		if (sleep_until_stopped(self, 50)) {
@@ -140,17 +147,19 @@ void ove_main(void)
 		.type = OVE_PM_WAKE_GPIO,
 		.gpio = {.port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING},
 	};
-	ove_pm_wake_register(&btn_wake);
-
 	const struct ove_pm_wake_src uart_wake = {
 		.type = OVE_PM_WAKE_UART,
 		.uart = {.instance = 0},
 	};
-	ove_pm_wake_register(&uart_wake);
-
-	ove_pm_notify_register(pm_notify, NULL);
-	ove_pm_set_policy(battery_policy, &battery_pct);
-	ove_pm_set_budget(6000);
+	if (ove_pm_wake_register(&btn_wake) != OVE_OK ||
+	    ove_pm_wake_register(&uart_wake) != OVE_OK ||
+	    ove_pm_notify_register(pm_notify, NULL) != OVE_OK ||
+	    ove_pm_set_policy(battery_policy, &battery_pct) != OVE_OK ||
+	    ove_pm_set_budget(6000) != OVE_OK) {
+		OVE_LOG_ERR("Failed to configure PM");
+		ove_pm_deinit();
+		return;
+	}
 
 	ove_thread_t sensor;
 	ove_thread_t monitor;

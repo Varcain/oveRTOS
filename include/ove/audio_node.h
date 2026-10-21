@@ -27,6 +27,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "ove/storage.h"
+#include "ove/types.h"
 
 /** @brief Maximum number of audio channels supported by the channel-map node. */
 #define OVE_AUDIO_MAX_CHANNELS 8
@@ -245,8 +246,8 @@ typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf, void *user_dat
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_graph_add_node, ove_audio_graph_connect
  */
-int ove_audio_node_converter(struct ove_audio_graph *g, enum ove_audio_sample_fmt target_fmt,
-			     const char *name);
+OVE_NODISCARD int ove_audio_node_converter(struct ove_audio_graph *g,
+					   enum ove_audio_sample_fmt target_fmt, const char *name);
 
 /**
  * @brief Add a channel-mapping processor node to the graph.
@@ -263,8 +264,9 @@ int ove_audio_node_converter(struct ove_audio_graph *g, enum ove_audio_sample_fm
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_node_converter
  */
-int ove_audio_node_channel_map(struct ove_audio_graph *g, const struct ove_audio_channel_map *map,
-			       const char *name);
+OVE_NODISCARD int ove_audio_node_channel_map(struct ove_audio_graph *g,
+					     const struct ove_audio_channel_map *map,
+					     const char *name);
 
 /**
  * @brief Add a gain processor node to the graph.
@@ -280,7 +282,7 @@ int ove_audio_node_channel_map(struct ove_audio_graph *g, const struct ove_audio
  *
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  */
-int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *name);
+OVE_NODISCARD int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *name);
 
 /**
  * @brief Add a tap (observer) sink node to the graph.
@@ -298,8 +300,8 @@ int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *na
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_node_gain
  */
-int ove_audio_node_tap(struct ove_audio_graph *g, ove_audio_tap_fn fn, void *user_data,
-		       const char *name);
+OVE_NODISCARD int ove_audio_node_tap(struct ove_audio_graph *g, ove_audio_tap_fn fn,
+				     void *user_data, const char *name);
 
 #endif /* OVE_HEAP_AUDIO */
 
