@@ -50,7 +50,7 @@ static void test_bsp_board_init(void **state)
 static void test_bsp_led_set(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 	/* No `ove_bsp_gpio_configure` shim exists in include/ove/bsp.h —
      * use ove_gpio_configure directly to put PI1 (LED0) in OUTPUT_PP
      * so the read-after-write checks below pass on real silicon. */
@@ -66,7 +66,7 @@ static void test_bsp_led_set(void **state)
 static void test_bsp_led_toggle(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 	/* No `ove_bsp_gpio_configure` shim exists in include/ove/bsp.h —
      * use ove_gpio_configure directly to put PI1 (LED0) in OUTPUT_PP
      * so the read-after-write checks below pass on real silicon. */
@@ -83,7 +83,7 @@ static void test_bsp_led_toggle(void **state)
 static void test_bsp_gpio_set(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 	int rc = ove_bsp_gpio_set(OVE_LED0_PORT, OVE_LED0_PIN, 1);
 	assert_int_equal(rc, OVE_OK);
 }
@@ -91,7 +91,7 @@ static void test_bsp_gpio_set(void **state)
 static void test_bsp_gpio_get(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 
 	ove_bsp_gpio_set(OVE_LED0_PORT, OVE_LED0_PIN, 1);
 
@@ -106,7 +106,7 @@ static void test_bsp_gpio_get(void **state)
 static void test_bsp_gpio_irq_register(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 
 	int rc = ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_IRQ_RISING,
 					   gpio_irq_handler, NULL);
@@ -116,12 +116,12 @@ static void test_bsp_gpio_irq_register(void **state)
 static void test_bsp_gpio_irq_enable_disable(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 	/* bsp_irq_teardown unregisters the line afterwards, so registrations
 	 * don't leak across suites and dispatch reliably hits this file's
 	 * handler — LED0 is safe to use for the delivery + gating assertions. */
-	ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_IRQ_RISING,
-				  gpio_irq_handler, NULL);
+	OVE_TEST_ASSERT_OK(ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN,
+						     OVE_GPIO_IRQ_RISING, gpio_irq_handler, NULL));
 
 	int rc = ove_bsp_gpio_irq_enable(OVE_LED0_PORT, OVE_LED0_PIN);
 	assert_int_equal(rc, OVE_OK);
@@ -144,7 +144,7 @@ static void test_bsp_gpio_irq_enable_disable(void **state)
 static void test_bsp_gpio_set_invalid_port(void **state)
 {
 	(void)state;
-	ove_bsp_board_init();
+	OVE_TEST_ASSERT_OK(ove_bsp_board_init());
 
 	int rc = ove_bsp_gpio_set(9999, 9999, 1);
 	assert_int_not_equal(rc, OVE_OK);

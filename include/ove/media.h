@@ -33,11 +33,12 @@ void ove_media_observe(uint32_t generation, int present);
 void ove_media_removed(void);
 
 /** Acquire/release the single native-filesystem ownership slot. */
-int ove_media_fs_acquire(void);
+OVE_NODISCARD int ove_media_fs_acquire(void);
 void ove_media_fs_release(void);
 
 /** Acquire/release a raw reader or an exclusive raw writer. */
-int ove_media_raw_acquire(struct ove_media_lease *lease, unsigned flags, uint32_t generation);
+OVE_NODISCARD int ove_media_raw_acquire(struct ove_media_lease *lease, unsigned flags,
+					uint32_t generation);
 void ove_media_raw_release(struct ove_media_lease *lease);
 
 /** True only while the lease still refers to the present card generation. */

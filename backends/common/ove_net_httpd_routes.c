@@ -513,8 +513,12 @@ static ove_httpd_ws_conn_t *s_shell_ws_conn;
 
 static void ws_shell_output(const char *data, size_t len)
 {
-	if (s_shell_ws_conn)
-		ove_httpd_ws_send(s_shell_ws_conn, data, len);
+	if (s_shell_ws_conn) {
+		/* An output hook cannot report a failed write; a closed connection is
+		 * cleared by ws_shell_on_close. */
+		int rc = ove_httpd_ws_send(s_shell_ws_conn, data, len);
+		(void)rc;
+	}
 }
 
 static void ws_shell_on_message(ove_httpd_ws_conn_t *conn, const void *data, size_t len)
@@ -541,6 +545,23 @@ static void ws_shell_on_close(ove_httpd_ws_conn_t *conn)
 
 /* ── Registration ──────────────────────────────────────────────── */
 
+/* The built-ins fit OVE_HTTPD_MAX_ROUTES on their own; a failure means the
+ * application registered routes first and filled the table. */
+static void builtin_route(const char *method, const char *path, ove_httpd_handler_t handler)
+{
+	if (ove_httpd_route(method, path, handler) != OVE_OK)
+		OVE_LOG_WRN("httpd: no room for built-in route %s %s", method, path);
+}
+
+#ifdef CONFIG_OVE_NET_HTTPD_WS
+static void builtin_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
+			     ove_httpd_ws_close_handler_t on_close)
+{
+	if (ove_httpd_ws_route(path, on_message, on_close) != OVE_OK)
+		OVE_LOG_WRN("httpd: no room for built-in WebSocket route %s", path);
+}
+#endif
+
 void ove_httpd_register_builtin_routes(void)
 {
 #ifdef CONFIG_OVE_SYNC
@@ -552,28 +573,28 @@ void ove_httpd_register_builtin_routes(void)
 	}
 #endif
 
-	ove_httpd_route("GET", "/", handle_index);
-	ove_httpd_route("GET", "/api/info", handle_info);
-	ove_httpd_route("GET", "/api/leds", handle_leds_get);
-	ove_httpd_route("POST", "/api/leds", handle_leds_post);
-	ove_httpd_route("GET", "/api/gpio", handle_gpio_get);
-	ove_httpd_route("POST", "/api/gpio", handle_gpio_post);
-	ove_httpd_route("GET", "/api/network", handle_network);
-	ove_httpd_route("GET", "/api/log", handle_log);
-	ove_httpd_route("GET", "/api/system/memory", handle_system_memory);
-	ove_httpd_route("GET", "/api/system/threads", handle_system_threads);
+	builtin_route("GET", "/", handle_index);
+	builtin_route("GET", "/api/info", handle_info);
+	builtin_route("GET", "/api/leds", handle_leds_get);
+	builtin_route("POST", "/api/leds", handle_leds_post);
+	builtin_route("GET", "/api/gpio", handle_gpio_get);
+	builtin_route("POST", "/api/gpio", handle_gpio_post);
+	builtin_route("GET", "/api/network", handle_network);
+	builtin_route("GET", "/api/log", handle_log);
+	builtin_route("GET", "/api/system/memory", handle_system_memory);
+	builtin_route("GET", "/api/system/threads", handle_system_threads);
 
 #ifdef CONFIG_OVE_AUDIO
-	ove_httpd_route("GET", "/api/audio/stats", handle_audio_stats);
+	builtin_route("GET", "/api/audio/stats", handle_audio_stats);
 #endif
 #ifdef CONFIG_OVE_INFER
-	ove_httpd_route("GET", "/api/infer/stats", handle_infer_stats);
+	builtin_route("GET", "/api/infer/stats", handle_infer_stats);
 #endif
 
 #ifdef CONFIG_OVE_NET_HTTPD_WS
-	ove_httpd_ws_route("/ws/log", NULL, NULL);
+	builtin_ws_route("/ws/log", NULL, NULL);
 #ifdef CONFIG_OVE_SHELL
-	ove_httpd_ws_route("/ws/shell", ws_shell_on_message, ws_shell_on_close);
+	builtin_ws_route("/ws/shell", ws_shell_on_message, ws_shell_on_close);
 #endif
 #endif
 }

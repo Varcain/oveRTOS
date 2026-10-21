@@ -113,7 +113,8 @@ void ove_main(void)
 {
     if (ove_mutex_create(&value_mutex) != OVE_OK)
         return;
-    ove_lvgl_init();
+    if (ove_lvgl_init() != OVE_OK)
+        return;
     build_ui();
 
     if (ove_thread_create(&graphics, "graphics", graphics_fn, NULL,

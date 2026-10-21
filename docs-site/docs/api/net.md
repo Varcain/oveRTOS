@@ -261,7 +261,8 @@ void tls_get(ove_socket_t sock)
 {
     ove_tls_t tls;
     ove_tls_storage_t tls_storage;
-    ove_tls_init(&tls, &tls_storage);
+    if (ove_tls_init(&tls, &tls_storage) != OVE_OK)
+        return;
 
     ove_tls_config_t cfg = {0};
     cfg.hostname = "example.com";  /* SNI hostname for verification */
@@ -269,15 +270,15 @@ void tls_get(ove_socket_t sock)
      * certificate validation (test/dev only) set cfg.allow_insecure = 1 — the
      * handshake refuses to complete otherwise. */
 
-    ove_tls_handshake(tls, sock, &cfg);
-
     static const char request[] = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
     size_t sent;
-    ove_tls_send(tls, request, sizeof(request) - 1, &sent);
-
     char buf[512];
     size_t received;
-    ove_tls_recv(tls, buf, sizeof(buf), &received);
+    if (ove_tls_handshake(tls, sock, &cfg) == OVE_OK &&
+        ove_tls_send(tls, request, sizeof(request) - 1, &sent) == OVE_OK &&
+        ove_tls_recv(tls, buf, sizeof(buf), &received) == OVE_OK) {
+        /* buf holds the first `received` bytes of the response */
+    }
 
     ove_tls_close(tls);
     ove_tls_deinit(tls);
@@ -294,16 +295,18 @@ Requires `CONFIG_OVE_NET_HTTP`. Handles DNS, TCP connection, optional TLS, reque
 ```c
 ove_http_client_t client;
 ove_http_client_storage_t storage;
-ove_http_client_init(&client, &storage);
+if (ove_http_client_init(&client, &storage) != OVE_OK)
+    return;
 
 ove_http_response_t resp;
-ove_http_get(client, "http://example.com/", &resp);
-/* resp.status = 200, resp.body = "...", resp.body_len = 540 */
-ove_http_response_free(&resp);
+if (ove_http_get(client, "http://example.com/", &resp) == OVE_OK) {
+    /* resp.status = 200, resp.body = "...", resp.body_len = 540 */
+    ove_http_response_free(&resp);
+}
 
-ove_http_post(client, "http://httpbin.org/post",
-              "application/json", "{\"key\":\"value\"}", 15, &resp);
-ove_http_response_free(&resp);
+if (ove_http_post(client, "http://httpbin.org/post",
+                  "application/json", "{\"key\":\"value\"}", 15, &resp) == OVE_OK)
+    ove_http_response_free(&resp);
 
 ove_http_client_deinit(client);
 ```
@@ -347,7 +350,8 @@ void mqtt_demo(void)
 {
     ove_mqtt_client_t mqtt;
     static ove_mqtt_client_storage_t storage;
-    ove_mqtt_client_init(&mqtt, &storage);
+    if (ove_mqtt_client_init(&mqtt, &storage) != OVE_OK)
+        return;
 
     ove_mqtt_config_t cfg = {
         .host = "test.mosquitto.org",
@@ -363,13 +367,18 @@ void mqtt_demo(void)
         .use_tls = 0,
         .user_data = NULL,
     };
-    ove_mqtt_connect(mqtt, &cfg);
+    if (ove_mqtt_connect(mqtt, &cfg) != OVE_OK) {
+        ove_mqtt_client_deinit(mqtt);
+        return;
+    }
 
-    ove_mqtt_subscribe(mqtt, "my/topic", OVE_MQTT_QOS0);
-    ove_mqtt_publish(mqtt, "my/topic", "hello", 5, OVE_MQTT_QOS1);
+    if (ove_mqtt_subscribe(mqtt, "my/topic", OVE_MQTT_QOS0) != OVE_OK ||
+        ove_mqtt_publish(mqtt, "my/topic", "hello", 5, OVE_MQTT_QOS1) != OVE_OK)
+        OVE_LOG_WRN("MQTT subscribe/publish failed");
 
     /* Call periodically to process incoming messages and send keep-alive */
-    ove_mqtt_loop(mqtt, OVE_MS(500));
+    if (ove_mqtt_loop(mqtt, OVE_MS(500)) != OVE_OK)
+        OVE_LOG_WRN("MQTT connection lost");
 
     ove_mqtt_disconnect(mqtt);
     ove_mqtt_client_deinit(mqtt);
@@ -394,7 +403,8 @@ Requires `CONFIG_OVE_NET_HTTPD`. Single-threaded HTTP/1.1 server with path-based
 <!-- ove:body -->
 ```c
 ove_httpd_config_t cfg = { .port = 80, .max_body_size = 1024 };
-ove_httpd_start(&cfg);
+if (ove_httpd_start(&cfg) != OVE_OK)
+    return;
 ove_httpd_register_builtin_routes();  /* /api/info, /api/leds, /api/gpio, etc. */
 ```
 
@@ -408,9 +418,9 @@ static int my_handler(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
     return ove_httpd_resp_json(resp, 200, "{\"status\":\"ok\"}");
 }
 
-void register_routes(void)
+int register_routes(void)
 {
-    ove_httpd_route("GET", "/api/items/*", my_handler);
+    return ove_httpd_route("GET", "/api/items/*", my_handler);
 }
 ```
 
@@ -462,12 +472,14 @@ static void ws_on_message(ove_httpd_ws_conn_t *conn,
                           const void *data, size_t len)
 {
     /* Echo back */
-    ove_httpd_ws_send(conn, data, len);
+    if (ove_httpd_ws_send(conn, data, len) != OVE_OK)
+        OVE_LOG_WRN("ws echo failed");
 }
 
 void register_ws(void)
 {
-    ove_httpd_ws_route("/ws", ws_on_message, NULL);
+    if (ove_httpd_ws_route("/ws", ws_on_message, NULL) != OVE_OK)
+        return;
     ove_httpd_ws_broadcast("/ws", "hello", 5);
 }
 ```
@@ -479,15 +491,15 @@ Requires `CONFIG_OVE_NET_SNTP`. Performs a single NTP query to get UTC time.
 <!-- ove:body -->
 ```c
 ove_sntp_config_t cfg = { .server = "pool.ntp.org", .timeout_ns = OVE_SEC(5) };
-ove_sntp_sync(&cfg);
+if (ove_sntp_sync(&cfg) != OVE_OK)
+    return;
 /* Passing NULL uses the built-in defaults (pool.ntp.org, 5 s timeout). */
 
-uint32_t utc_s;
-ove_sntp_get_utc(&utc_s);    /* seconds since 1970-01-01 */
-
-int64_t offset_us;
-ove_sntp_get_offset_us(&offset_us);  /* microseconds offset between local
-                                        clock and the last successful sync */
+uint32_t utc_s;     /* seconds since 1970-01-01 */
+int64_t offset_us;  /* microseconds between the local clock and the last successful sync */
+if (ove_sntp_get_utc(&utc_s) == OVE_OK && ove_sntp_get_offset_us(&offset_us) == OVE_OK) {
+    /* use utc_s and offset_us */
+}
 ```
 
 ## Zero-Heap Networking

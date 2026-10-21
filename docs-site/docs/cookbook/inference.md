@@ -49,9 +49,14 @@ static void inference_fn(void *arg)
     }
 
     struct ove_tensor_info in, out;
-    ove_model_input(model, 0, &in);
+    if (ove_model_input(model, 0, &in) != OVE_OK || ove_model_output(model, 0, &out) != OVE_OK) {
+        OVE_LOG_ERR("model has no input or output tensor 0");
+        ove_model_deinit(model);
+        return;
+    }
     if (in.type != OVE_TENSOR_INT8) {
         OVE_LOG_ERR("expected an int8 input, got type %d", (int)in.type);
+        ove_model_deinit(model);
         return;
     }
 
@@ -61,7 +66,6 @@ static void inference_fn(void *arg)
             OVE_LOG_ERR("invoke failed");
             continue;
         }
-        ove_model_output(model, 0, &out);
         const int8_t *scores = (const int8_t *)out.data;
         size_t best = 0;
         for (size_t i = 1; i < out.size; i++) {

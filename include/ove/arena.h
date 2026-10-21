@@ -78,7 +78,7 @@ typedef struct ove_arena {
  *         OVE_ERR_NO_MEMORY if the buffer is too small to host one block.
  * @note Requires @c CONFIG_OVE_ARENA.
  */
-int ove_arena_init(ove_arena_t *arena, void *buf, size_t size);
+OVE_NODISCARD int ove_arena_init(ove_arena_t *arena, void *buf, size_t size);
 
 /**
  * @brief Allocate an @c OVE_ARENA_ALIGN-aligned block.

@@ -78,7 +78,7 @@ typedef bool (*ove_lvgl_encoder_read_fn_t)(int16_t *diff, bool *pressed);
  * @param[in] cb Callback supplying keypad state, or @c NULL to deregister.
  * @return OVE_OK on success.
  */
-int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb);
+OVE_NODISCARD int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb);
 
 /**
  * @brief Register an encoder input device with LVGL.
@@ -86,7 +86,7 @@ int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb);
  * Same semantics as ove_lvgl_register_keypad() but for rotary encoder
  * (+ push) input.
  */
-int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb);
+OVE_NODISCARD int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb);
 
 /**
  * @brief Returns the keypad LVGL input device handle (`lv_indev_t *`
@@ -114,7 +114,7 @@ void *ove_lvgl_get_encoder_indev(void);
  *
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_lvgl_init(void);
+OVE_NODISCARD int ove_lvgl_init(void);
 
 /**
  * @brief Acquire the LVGL mutex before calling any LVGL API.
@@ -154,7 +154,7 @@ void ove_lvgl_handler(void);
 typedef bool (*ove_lvgl_keypad_read_fn_t)(uint32_t *key, bool *pressed);
 typedef bool (*ove_lvgl_encoder_read_fn_t)(int16_t *diff, bool *pressed);
 
-static inline int ove_lvgl_init(void)
+OVE_NODISCARD static inline int ove_lvgl_init(void)
 {
 	return OVE_ERR_NOT_SUPPORTED;
 }
@@ -171,12 +171,12 @@ static inline void ove_lvgl_tick(uint32_t ms)
 static inline void ove_lvgl_handler(void)
 {
 }
-static inline int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb)
+OVE_NODISCARD static inline int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb)
 {
 	(void)cb;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb)
+OVE_NODISCARD static inline int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb)
 {
 	(void)cb;
 	return OVE_ERR_NOT_SUPPORTED;

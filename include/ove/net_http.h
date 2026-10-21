@@ -69,7 +69,8 @@ typedef struct {
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_http_client_init(ove_http_client_t *client, ove_http_client_storage_t *storage);
+OVE_NODISCARD int ove_http_client_init(ove_http_client_t *client,
+				       ove_http_client_storage_t *storage);
 
 /**
  * @brief De-initialise an HTTP client.
@@ -86,7 +87,8 @@ void ove_http_client_deinit(ove_http_client_t client);
  * @param[out] resp   Response filled on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_http_get(ove_http_client_t client, const char *url, ove_http_response_t *resp);
+OVE_NODISCARD int ove_http_get(ove_http_client_t client, const char *url,
+			       ove_http_response_t *resp);
 
 /**
  * @brief Perform an HTTP POST request.
@@ -99,8 +101,8 @@ int ove_http_get(ove_http_client_t client, const char *url, ove_http_response_t 
  * @param[out] resp         Response filled on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_http_post(ove_http_client_t client, const char *url, const char *content_type,
-		  const void *body, size_t body_len, ove_http_response_t *resp);
+OVE_NODISCARD int ove_http_post(ove_http_client_t client, const char *url, const char *content_type,
+				const void *body, size_t body_len, ove_http_response_t *resp);
 
 /**
  * @brief Perform a generic HTTP request.
@@ -114,9 +116,9 @@ int ove_http_post(ove_http_client_t client, const char *url, const char *content
  * @param[out] resp         Response filled on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_http_request(ove_http_client_t client, ove_http_method_t method, const char *url,
-		     const char *content_type, const void *body, size_t body_len,
-		     ove_http_response_t *resp);
+OVE_NODISCARD int ove_http_request(ove_http_client_t client, ove_http_method_t method,
+				   const char *url, const char *content_type, const void *body,
+				   size_t body_len, ove_http_response_t *resp);
 
 /**
  * @brief Perform an HTTP request with custom headers.
@@ -132,10 +134,10 @@ int ove_http_request(ove_http_client_t client, ove_http_method_t method, const c
  * @param[out] resp         Response filled on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, const char *url,
-			const char *content_type, const void *body, size_t body_len,
-			const ove_http_header_t *headers, size_t header_count,
-			ove_http_response_t *resp);
+OVE_NODISCARD int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method,
+				      const char *url, const char *content_type, const void *body,
+				      size_t body_len, const ove_http_header_t *headers,
+				      size_t header_count, ove_http_response_t *resp);
 
 /**
  * @brief Free resources in an HTTP response.
@@ -167,7 +169,7 @@ void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allo
  * @param[out] client Handle written on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_http_client_create(ove_http_client_t *client);
+OVE_NODISCARD int ove_http_client_create(ove_http_client_t *client);
 
 /**
  * @brief Destroy a heap-allocated HTTP client.
@@ -186,8 +188,8 @@ typedef struct {
 } ove_http_client_storage_t;
 #endif
 
-static inline int ove_http_client_init(ove_http_client_t *client,
-				       ove_http_client_storage_t *storage)
+OVE_NODISCARD static inline int ove_http_client_init(ove_http_client_t *client,
+						     ove_http_client_storage_t *storage)
 {
 	(void)client;
 	(void)storage;
@@ -197,15 +199,17 @@ static inline void ove_http_client_deinit(ove_http_client_t client)
 {
 	(void)client;
 }
-static inline int ove_http_get(ove_http_client_t client, const char *url, ove_http_response_t *resp)
+OVE_NODISCARD static inline int ove_http_get(ove_http_client_t client, const char *url,
+					     ove_http_response_t *resp)
 {
 	(void)client;
 	(void)url;
 	(void)resp;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_http_post(ove_http_client_t client, const char *url, const char *content_type,
-				const void *body, size_t body_len, ove_http_response_t *resp)
+OVE_NODISCARD static inline int ove_http_post(ove_http_client_t client, const char *url,
+					      const char *content_type, const void *body,
+					      size_t body_len, ove_http_response_t *resp)
 {
 	(void)client;
 	(void)url;
@@ -215,9 +219,10 @@ static inline int ove_http_post(ove_http_client_t client, const char *url, const
 	(void)resp;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_http_request(ove_http_client_t client, ove_http_method_t method,
-				   const char *url, const char *content_type, const void *body,
-				   size_t body_len, ove_http_response_t *resp)
+OVE_NODISCARD static inline int ove_http_request(ove_http_client_t client, ove_http_method_t method,
+						 const char *url, const char *content_type,
+						 const void *body, size_t body_len,
+						 ove_http_response_t *resp)
 {
 	(void)client;
 	(void)method;
@@ -228,10 +233,12 @@ static inline int ove_http_request(ove_http_client_t client, ove_http_method_t m
 	(void)resp;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method,
-				      const char *url, const char *content_type, const void *body,
-				      size_t body_len, const ove_http_header_t *headers,
-				      size_t header_count, ove_http_response_t *resp)
+OVE_NODISCARD static inline int ove_http_request_ex(ove_http_client_t client,
+						    ove_http_method_t method, const char *url,
+						    const char *content_type, const void *body,
+						    size_t body_len,
+						    const ove_http_header_t *headers,
+						    size_t header_count, ove_http_response_t *resp)
 {
 	(void)client;
 	(void)method;

@@ -15,7 +15,7 @@
 static void test_led_set(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	OVE_TEST_ASSERT_OK(
 		ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
@@ -29,7 +29,7 @@ static void test_led_set(void **state)
 static void test_led_toggle(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	OVE_TEST_ASSERT_OK(
 		ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
@@ -43,7 +43,7 @@ static void test_led_toggle(void **state)
 static void test_led_count(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	assert_int_equal(ove_led_count(), OVE_LED_COUNT);
 }
 

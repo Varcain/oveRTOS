@@ -34,6 +34,7 @@
 #include "ove/board.h"
 #include "ove/gpio.h"
 #include "ove/led.h"
+#include "ove/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,7 +72,7 @@ typedef void (*ove_gpio_irq_cb)(unsigned int port, unsigned int pin, void *user_
  *
  * @return OVE_OK on success, negative error code on failure.
  */
-static inline int ove_bsp_board_init(void)
+OVE_NODISCARD static inline int ove_bsp_board_init(void)
 {
 	return ove_board_init();
 }
@@ -125,7 +126,7 @@ static inline int ove_bsp_gpio_set(unsigned int port, unsigned int pin, int valu
  * @param[in] pin   GPIO pin index within the port.
  * @return 1 if high, 0 if low, negative error code on failure.
  */
-static inline int ove_bsp_gpio_get(unsigned int port, unsigned int pin)
+OVE_NODISCARD static inline int ove_bsp_gpio_get(unsigned int port, unsigned int pin)
 {
 	return ove_gpio_get(port, pin);
 }
@@ -142,9 +143,9 @@ static inline int ove_bsp_gpio_get(unsigned int port, unsigned int pin)
  * @param[in] user_data Opaque pointer forwarded to @p callback.
  * @return OVE_OK on success, negative error code on failure.
  */
-static inline int ove_bsp_gpio_irq_register(unsigned int port, unsigned int pin,
-					    ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,
-					    void *user_data)
+OVE_NODISCARD static inline int ove_bsp_gpio_irq_register(unsigned int port, unsigned int pin,
+							  ove_gpio_irq_mode_t mode,
+							  ove_gpio_irq_cb callback, void *user_data)
 {
 	return ove_gpio_irq_register(port, pin, mode, callback, user_data);
 }
@@ -189,7 +190,7 @@ static inline int ove_bsp_gpio_irq_unregister(unsigned int port, unsigned int pi
 
 #else /* !CONFIG_OVE_BSP */
 
-static inline int ove_bsp_board_init(void)
+OVE_NODISCARD static inline int ove_bsp_board_init(void)
 {
 	return OVE_OK;
 }
@@ -209,15 +210,15 @@ static inline int ove_bsp_gpio_set(unsigned int port, unsigned int pin, int valu
 	(void)value;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_bsp_gpio_get(unsigned int port, unsigned int pin)
+OVE_NODISCARD static inline int ove_bsp_gpio_get(unsigned int port, unsigned int pin)
 {
 	(void)port;
 	(void)pin;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_bsp_gpio_irq_register(unsigned int port, unsigned int pin,
-					    ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,
-					    void *user_data)
+OVE_NODISCARD static inline int ove_bsp_gpio_irq_register(unsigned int port, unsigned int pin,
+							  ove_gpio_irq_mode_t mode,
+							  ove_gpio_irq_cb callback, void *user_data)
 {
 	(void)port;
 	(void)pin;

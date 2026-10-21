@@ -51,7 +51,7 @@ typedef struct {
  * @param[in] cfg Configuration (NULL for defaults: pool.ntp.org, 5s timeout).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_sntp_sync(const ove_sntp_config_t *cfg);
+OVE_NODISCARD int ove_sntp_sync(const ove_sntp_config_t *cfg);
 
 /**
  * @brief Get the UTC offset computed by the last successful sync.
@@ -62,7 +62,7 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg);
  * @param[out] offset_us UTC offset in microseconds.
  * @return OVE_OK if a sync has been performed, OVE_ERR_NOT_SUPPORTED otherwise.
  */
-int ove_sntp_get_offset_us(int64_t *offset_us);
+OVE_NODISCARD int ove_sntp_get_offset_us(int64_t *offset_us);
 
 /**
  * @brief Get the current UTC time in seconds since Unix epoch.
@@ -72,22 +72,22 @@ int ove_sntp_get_offset_us(int64_t *offset_us);
  * @param[out] utc_s UTC seconds since 1970-01-01 00:00:00.
  * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if no sync done.
  */
-int ove_sntp_get_utc(uint32_t *utc_s);
+OVE_NODISCARD int ove_sntp_get_utc(uint32_t *utc_s);
 
 #else /* !CONFIG_OVE_NET_SNTP */
 
 /** @cond INTERNAL */
-static inline int ove_sntp_sync(const ove_sntp_config_t *cfg)
+OVE_NODISCARD static inline int ove_sntp_sync(const ove_sntp_config_t *cfg)
 {
 	(void)cfg;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_sntp_get_offset_us(int64_t *o)
+OVE_NODISCARD static inline int ove_sntp_get_offset_us(int64_t *o)
 {
 	(void)o;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_sntp_get_utc(uint32_t *u)
+OVE_NODISCARD static inline int ove_sntp_get_utc(uint32_t *u)
 {
 	(void)u;
 	return OVE_ERR_NOT_SUPPORTED;

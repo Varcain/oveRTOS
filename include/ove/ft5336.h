@@ -9,6 +9,8 @@
 #ifndef OVE_FT5336_H
 #define OVE_FT5336_H
 
+#include "ove/types.h"
+
 /**
  * @defgroup ove_ft5336 FT5336 capacitive touch
  * @brief Minimal driver for the FT5336 controller on the STM32F746-Discovery.
@@ -24,7 +26,7 @@ extern "C" {
 #endif
 
 /** @brief Bring up the touch controller (i2c bus + probe). Returns 0, or <0. */
-int ove_ft5336_init(void);
+OVE_NODISCARD int ove_ft5336_init(void);
 
 /** @brief Release the I2C instance acquired by @ref ove_ft5336_init. */
 void ove_ft5336_deinit(void);
@@ -36,7 +38,7 @@ void ove_ft5336_deinit(void);
  * @param[out] pressed  1 if a finger is down, 0 otherwise.
  * @return 0 on a successful read (pressed reflects contact), <0 on an i2c error.
  */
-int ove_ft5336_read(int *x, int *y, int *pressed);
+OVE_NODISCARD int ove_ft5336_read(int *x, int *y, int *pressed);
 
 #ifdef __cplusplus
 }

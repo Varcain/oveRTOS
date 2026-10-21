@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "ove/lxp_launch.h"
+#include "ove/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,7 @@ extern "C" {
 typedef void (*ove_lxp_rt_scope_write_fn)(const char *text);
 
 /* Start the configured two-channel host real-time probe. */
-int ove_lxp_rt_scope_start(ove_lxp_rt_scope_write_fn write_fn);
+OVE_NODISCARD int ove_lxp_rt_scope_start(ove_lxp_rt_scope_write_fn write_fn);
 
 /** Bind the RT-scope proc provider to an otherwise caller-owned launch
  * configuration. Other launch policy is left unchanged. */

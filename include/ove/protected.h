@@ -65,7 +65,7 @@ typedef enum ove_ptask_result {
  *         OVE_ERR_INVALID_PARAM if @p entry is NULL.
  * @note Requires @c CONFIG_OVE_PROTECTED.
  */
-int ove_ptask_run(ove_ptask_fn entry, void *arg, ove_ptask_result_t *result);
+OVE_NODISCARD int ove_ptask_run(ove_ptask_fn entry, void *arg, ove_ptask_result_t *result);
 
 /** @brief Number of faults contained since process start (diagnostics). */
 unsigned long ove_ptask_fault_count(void);

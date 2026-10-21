@@ -19,7 +19,7 @@ static void test_board_init(void **state)
 static void test_board_name(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	const char *name = ove_board_name();
 	assert_non_null(name);
 }
@@ -27,7 +27,7 @@ static void test_board_name(void **state)
 static void test_board_desc(void **state)
 {
 	(void)state;
-	ove_board_init();
+	OVE_TEST_ASSERT_OK(ove_board_init());
 	const struct ove_board_desc *desc = ove_board_desc();
 	assert_non_null(desc);
 	assert_non_null(desc->name);

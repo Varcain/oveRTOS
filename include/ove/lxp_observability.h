@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "ove/lxp_host.h"
+#include "ove/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -115,7 +116,7 @@ typedef struct ove_lxp_host_observation {
 void ove_lxp_run_health_snapshot(ove_lxp_run_health_t *out);
 
 /** Copy one complete, quiescent observation after ove_lxp_host_run() returns. */
-int ove_lxp_host_observe(const ove_lxp_host_t *host, ove_lxp_host_observation_t *out);
+OVE_NODISCARD int ove_lxp_host_observe(const ove_lxp_host_t *host, ove_lxp_host_observation_t *out);
 
 /** Record a host-side latency sample with LXP's canonical bounded histogram. */
 void ove_lxp_latency_record(ove_lxp_latency_stat_t *stat, uint64_t ns);

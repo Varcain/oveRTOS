@@ -109,8 +109,8 @@ struct ove_model_config {
  *
  * @see ove_model_deinit, ove_model_create
  */
-int ove_model_init(ove_model_t *model, ove_model_storage_t *storage, void *arena,
-		   const struct ove_model_config *cfg);
+OVE_NODISCARD int ove_model_init(ove_model_t *model, ove_model_storage_t *storage, void *arena,
+				 const struct ove_model_config *cfg);
 
 /**
  * @brief Release resources held by a model initialised with ove_model_init().
@@ -139,7 +139,7 @@ void ove_model_deinit(ove_model_t model);
  *
  * @see ove_model_destroy, ove_model_init
  */
-int ove_model_create(ove_model_t *model, const struct ove_model_config *cfg);
+OVE_NODISCARD int ove_model_create(ove_model_t *model, const struct ove_model_config *cfg);
 
 /**
  * @brief Destroy and free a model allocated with ove_model_create().
@@ -163,7 +163,7 @@ void ove_model_destroy(ove_model_t model);
  *
  * @see ove_model_input, ove_model_output
  */
-int ove_model_invoke(ove_model_t model);
+OVE_NODISCARD int ove_model_invoke(ove_model_t model);
 
 /**
  * @brief Get a descriptor for an input tensor.
@@ -179,7 +179,8 @@ int ove_model_invoke(ove_model_t model);
  *
  * @see ove_model_output, ove_model_invoke
  */
-int ove_model_input(ove_model_t model, unsigned int index, struct ove_tensor_info *info);
+OVE_NODISCARD int ove_model_input(ove_model_t model, unsigned int index,
+				  struct ove_tensor_info *info);
 
 /**
  * @brief Get a descriptor for an output tensor.
@@ -195,7 +196,8 @@ int ove_model_input(ove_model_t model, unsigned int index, struct ove_tensor_inf
  *
  * @see ove_model_input, ove_model_invoke
  */
-int ove_model_output(ove_model_t model, unsigned int index, struct ove_tensor_info *info);
+OVE_NODISCARD int ove_model_output(ove_model_t model, unsigned int index,
+				   struct ove_tensor_info *info);
 
 /**
  * @brief Return inference time of the last ove_model_invoke() in microseconds.
@@ -214,7 +216,7 @@ uint64_t ove_model_last_inference_us(ove_model_t model);
 /* No _init/_deinit stubs here: OVE_MODEL_DEFINE_STATIC is itself gated by
  * #ifdef CONFIG_OVE_INFER in storage.h, so callers can't reach _init when
  * the subsystem is off — and ove_model_storage_t isn't declared either. */
-static inline int ove_model_create(ove_model_t *m, const struct ove_model_config *c)
+OVE_NODISCARD static inline int ove_model_create(ove_model_t *m, const struct ove_model_config *c)
 {
 	(void)m;
 	(void)c;
@@ -224,19 +226,21 @@ static inline void ove_model_destroy(ove_model_t m)
 {
 	(void)m;
 }
-static inline int ove_model_invoke(ove_model_t m)
+OVE_NODISCARD static inline int ove_model_invoke(ove_model_t m)
 {
 	(void)m;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_model_input(ove_model_t m, unsigned int i, struct ove_tensor_info *t)
+OVE_NODISCARD static inline int ove_model_input(ove_model_t m, unsigned int i,
+						struct ove_tensor_info *t)
 {
 	(void)m;
 	(void)i;
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_model_output(ove_model_t m, unsigned int i, struct ove_tensor_info *t)
+OVE_NODISCARD static inline int ove_model_output(ove_model_t m, unsigned int i,
+						 struct ove_tensor_info *t)
 {
 	(void)m;
 	(void)i;
