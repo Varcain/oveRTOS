@@ -512,14 +512,14 @@ template <typename T> class StaticCell
 	 */
 	template <typename... Args> T &init(Args &&...args)
 	{
-		uint8_t expected = EMPTY;
-		if (!state_.compare_exchange_strong(expected, CONSTRUCTING,
+		state expected = state::empty;
+		if (!state_.compare_exchange_strong(expected, state::constructing,
 						    std::memory_order_relaxed)) {
 			OVE_STATIC_INIT_ASSERT(false && "StaticCell already initialized");
 			__builtin_trap();
 		}
 		T *obj = ::new (static_cast<void *>(storage_)) T(std::forward<Args>(args)...);
-		state_.store(READY, std::memory_order_release);
+		state_.store(state::ready, std::memory_order_release);
 		return *obj;
 	}
 
@@ -565,7 +565,7 @@ template <typename T> class StaticCell
 	 */
 	bool is_initialized() const
 	{
-		return state_.load(std::memory_order_acquire) == READY;
+		return state_.load(std::memory_order_acquire) == state::ready;
 	}
 
 	StaticCell() = default;
@@ -583,7 +583,8 @@ template <typename T> class StaticCell
 	StaticCell &operator=(StaticCell &&) = delete;
 
       private:
-	enum : uint8_t { EMPTY, CONSTRUCTING, READY };
+	/* Lower-case scoped names: Zephyr defines an EMPTY macro. */
+	enum class state : uint8_t { empty, constructing, ready };
 
 	T *object()
 	{
@@ -595,7 +596,7 @@ template <typename T> class StaticCell
 	}
 
 	alignas(T) uint8_t storage_[sizeof(T)]{};
-	std::atomic<uint8_t> state_{EMPTY};
+	std::atomic<state> state_{state::empty};
 };
 
 /**
