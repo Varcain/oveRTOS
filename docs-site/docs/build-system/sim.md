@@ -49,7 +49,7 @@ Plugins implement virtual peripherals using a vtable interface (`struct ove_sim_
 | `init` | Yes | Initialise the plugin instance |
 | `deinit` | No | Tear down and release resources |
 | `handle_cmd` | No | Process a command from the dashboard |
-| `tick` | No | Periodic callback (~1 kHz) |
+| `tick` | No | Periodic callback; not called today: `ove_sim_plugin_tick_all()` has no in-tree caller, and the consolidated sim-debug pump (a nominal 50 ms sleep between passes) does not invoke it |
 | `get_state` | No | Serialise current state for dashboard polling |
 
 ### Plugin Types
@@ -116,7 +116,7 @@ The browser bundle (`web` variant of the QEMU board) uses the guest transport un
 | Operation | Direction | Description |
 |-----------|-----------|-------------|
 | `send_event` | Firmware → Dashboard | Push a plugin event |
-| `recv_cmd` | Dashboard → Firmware | Receive a command (blocking with timeout) |
+| `recv_cmd` | Dashboard → Firmware | Receive a command (the interface takes a timeout; the guest transport polls and ignores it) |
 | `flush_display` | Firmware → Dashboard | Send framebuffer pixel data (XRGB8888) |
 | `push_audio` | Firmware → Dashboard | Send PCM audio samples for playback |
 | `pull_audio` | Dashboard → Firmware | Receive PCM audio samples (microphone / file injection) |
@@ -178,8 +178,8 @@ Both are drained by the consolidated sim-debug pump and forwarded by the bridge;
 
 ### Sampling modes
 
-- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry still lands on a tick boundary. When the sampler preempts another handler, the interrupted handler's exception frame is read from the MSP and the sample is attributed to `[ISR n]` (exception number) instead of a thread.
-- **Wall-clock (NuttX)**: a watchdog-timed high-priority work item walks every registered thread with `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`). Blocked and ready threads are sampled too, so the dashboard can filter to runnable states. It has no on-CPU view, so handler (ISR) time is not attributed on NuttX.
+- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling does not lock to periodic work. Zephyr's `k_timer` expiry still lands on a tick boundary, so when the mean period is only one or two ticks the jitter rounds away. When the sampler preempts another handler, the interrupted handler's exception frame is read from the MSP and the sample is attributed to `[ISR n]` (exception number) instead of a thread.
+- **Wall-clock (NuttX)**: a watchdog-timed high-priority work item walks the registered threads that have started and are running, ready or blocked (up to 32 per sample) with `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`). Blocked and ready threads are sampled too, so the dashboard can filter to runnable states. It has no on-CPU view, so handler (ISR) time is not attributed on NuttX.
 - FreeRTOS and Zephyr share the saved-`{r7, lr}` walker in `backends/common/ove_arm_backtrace.c`; NuttX uses its own unwinder.
 - Sampling rate is changed from the dashboard (`SET_RATE`, payload `uint32_t` Hz) and echoed in the caps event. The ceiling is `CONFIG_OVE_PROFILER_HZ` (250 Hz by default); on Zephyr and NuttX it is further clamped to the kernel tick rate, so the effective maximum is the lower of the two.
 
@@ -190,8 +190,8 @@ Plugin event types and command types use disjoint per-plugin bases (`ove/sim/ove
 **Trace** (`OVE_SIM_TRACE_EVT_STREAM` = 10, `..._DESCRIPTORS` = 11). Envelope:
 
 ```
-u8  sub_type      0 = descriptors, 1 = stream
-u8  version       1
+u8  sub_type      0 = descriptors, 1 = stream, 2 = names
+u8  version       3
 u16 count
 u32 dropped       records lost since the previous batch
 ```

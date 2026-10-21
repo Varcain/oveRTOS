@@ -591,6 +591,12 @@ add_test(NAME ove_config_matrix_python
 add_test(NAME ove_ci_workflow_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_ci_workflow.py)
+# docs-site/docs/build-system/sim.md must agree with the code: the profiler
+# ceiling, the trace/profiler wire formats, the plugin vtable and the
+# Kconfig defaults.
+add_test(NAME ove_sim_docs_consistency_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_sim_docs_consistency.py)
 add_test(NAME ove_build_type_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

@@ -145,7 +145,9 @@ struct ove_sim_plugin_ops {
 	/**
 	 * @brief Periodic tick callback.
 	 *
-	 * Called from the sim tick thread at approximately 1 kHz.
+	 * Not currently called: ove_sim_plugin_tick_all() has no in-tree
+	 * caller, and the consolidated sim-debug pump (a nominal 50 ms sleep
+	 * between passes) does not invoke it.
 	 *
 	 * @param[in] ctx         Plugin-private context.
 	 * @param[in] elapsed_ms  Milliseconds since last tick.
