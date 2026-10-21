@@ -36,7 +36,7 @@ static void thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
 	ove_thread_t th;
-	ove_thread_create(&th, "bench_tmp", dummy_thread, NULL, OVE_PRIO_LOW, 1024);
+	bench_check(ove_thread_create(&th, "bench_tmp", dummy_thread, NULL, OVE_PRIO_LOW, 1024));
 	ove_thread_destroy(th);
 }
 #endif
@@ -88,8 +88,8 @@ static void ctx_switch_setup(void *ctx)
 	ctx_switch_done = 0;
 	bench_check(ove_sem_init(&ping_sem, &ping_sem_storage, 0, 1));
 	bench_check(ove_sem_init(&pong_sem, &pong_sem_storage, 0, 1));
-	ove_thread_init(&bench_th, &bench_th_storage, "pong", pong_thread, NULL, OVE_PRIO_NORMAL,
-			sizeof(bench_th_stack), bench_th_stack);
+	bench_check(ove_thread_init(&bench_th, &bench_th_storage, "pong", pong_thread, NULL,
+				    OVE_PRIO_NORMAL, sizeof(bench_th_stack), bench_th_stack));
 }
 
 static void ctx_switch_run(void *ctx)

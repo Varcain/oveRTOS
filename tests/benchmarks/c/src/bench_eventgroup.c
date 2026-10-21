@@ -17,7 +17,7 @@ static ove_eventgroup_storage_t bench_eg_storage;
 static void eg_set_get_setup(void *ctx)
 {
 	(void)ctx;
-	ove_eventgroup_init(&bench_eg, &bench_eg_storage);
+	bench_check(ove_eventgroup_init(&bench_eg, &bench_eg_storage));
 }
 
 static void eg_set_get_run(void *ctx)
@@ -41,7 +41,7 @@ static void eg_create_destroy_run(void *ctx)
 	(void)ctx;
 	ove_eventgroup_t eg;
 
-	ove_eventgroup_create(&eg);
+	bench_check(ove_eventgroup_create(&eg));
 	ove_eventgroup_destroy(eg);
 }
 
@@ -50,7 +50,7 @@ static ove_eventgroup_t mem_eg;
 static void eg_memory_run(void *ctx)
 {
 	(void)ctx;
-	ove_eventgroup_create(&mem_eg);
+	bench_check(ove_eventgroup_create(&mem_eg));
 }
 
 static void eg_memory_teardown(void *ctx)

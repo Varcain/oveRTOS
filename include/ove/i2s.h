@@ -89,8 +89,8 @@ struct ove_i2s_cfg {
  * @param[in]  cfg        I2S configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage, void *tx_dma_buf, void *rx_dma_buf,
-		 const struct ove_i2s_cfg *cfg);
+OVE_NODISCARD int ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage, void *tx_dma_buf,
+			       void *rx_dma_buf, const struct ove_i2s_cfg *cfg);
 /** @brief Release an I2S handle previously created with `ove_i2s_init`. */
 void ove_i2s_deinit(ove_i2s_t i2s);
 
@@ -102,7 +102,7 @@ void ove_i2s_deinit(ove_i2s_t i2s);
  * @param[in]  cfg I2S configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_i2s_create(ove_i2s_t *i2s, const struct ove_i2s_cfg *cfg);
+OVE_NODISCARD int ove_i2s_create(ove_i2s_t *i2s, const struct ove_i2s_cfg *cfg);
 /** @brief Destroy an I2S handle previously created with `ove_i2s_create`. */
 void ove_i2s_destroy(ove_i2s_t i2s);
 #endif /* OVE_HEAP_I2S */
@@ -145,7 +145,7 @@ int ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
  * @param[in] i2s I2S handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_i2s_start(ove_i2s_t i2s);
+OVE_NODISCARD int ove_i2s_start(ove_i2s_t i2s);
 
 /**
  * @brief Stop I2S DMA streaming.
@@ -169,7 +169,7 @@ int ove_i2s_pause(ove_i2s_t i2s);
  * @param[in] i2s I2S handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_i2s_resume(ove_i2s_t i2s);
+OVE_NODISCARD int ove_i2s_resume(ove_i2s_t i2s);
 
 /* ── Buffer access ───────────────────────────────────────────────── */
 
@@ -218,7 +218,7 @@ void ove_i2s_tx_cplt_isr(ove_i2s_t i2s);
 
 /* No _init/_deinit stubs: OVE_I2S_DEFINE_STATIC is itself gated by
  * #ifdef CONFIG_OVE_I2S in storage.h. */
-static inline int ove_i2s_create(ove_i2s_t *i, const struct ove_i2s_cfg *c)
+OVE_NODISCARD static inline int ove_i2s_create(ove_i2s_t *i, const struct ove_i2s_cfg *c)
 {
 	(void)i;
 	(void)c;
@@ -242,7 +242,7 @@ static inline int ove_i2s_set_tx_callback(ove_i2s_t i, ove_i2s_cb_t cb, void *ud
 	(void)ud;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_i2s_start(ove_i2s_t i)
+OVE_NODISCARD static inline int ove_i2s_start(ove_i2s_t i)
 {
 	(void)i;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -257,7 +257,7 @@ static inline int ove_i2s_pause(ove_i2s_t i)
 	(void)i;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_i2s_resume(ove_i2s_t i)
+OVE_NODISCARD static inline int ove_i2s_resume(ove_i2s_t i)
 {
 	(void)i;
 	return OVE_ERR_NOT_SUPPORTED;

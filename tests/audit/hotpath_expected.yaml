@@ -128,7 +128,7 @@ stm32f746_freertos_benchmark_c:
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "stream_send_recv_run (C, ARM)"
       pattern: '^stream_send_recv_run$'
-      max_instructions: 40
+      max_instructions: 42
       allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for "]
 
@@ -550,7 +550,7 @@ stm32f746_freertos_benchmark_zeroheap_c:
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "stream_send_recv_run (C, ARM, zeroheap)"
       pattern: '^stream_send_recv_run$'
-      max_instructions: 40
+      max_instructions: 42
       allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for "]
 
@@ -876,7 +876,7 @@ stm32f746_nuttx_benchmark_c:
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "stream_send_recv_run (C, NuttX, ARM)"
       pattern: '^stream_send_recv_run$'
-      max_instructions: 40
+      max_instructions: 41
       allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for "]
 
@@ -1307,7 +1307,7 @@ stm32f746_zephyr_benchmark_c:
       forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "stream_send_recv_run (C, Zephyr, ARM)"
       pattern: '^stream_send_recv_run$'
-      max_instructions: 40
+      max_instructions: 41
       allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for "]
 

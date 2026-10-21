@@ -170,7 +170,10 @@ void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len)
 {
 	if (uart == NULL || data == NULL || len == 0)
 		return;
-	ove_stream_send_from_isr(uart->rx_stream, data, len, NULL);
+	/* A full RX stream drops the excess; the stream reports that only through
+	 * bytes_sent, never as an error, so there is nothing to act on here. */
+	int rc = ove_stream_send_from_isr(uart->rx_stream, data, len, NULL);
+	(void)rc;
 }
 
 int ove_uart_set_rx_notify(ove_uart_t uart, ove_notify_cb cb, void *user_data)

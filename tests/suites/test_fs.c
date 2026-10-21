@@ -105,7 +105,7 @@ static void test_fs_mount(void **state)
 static void test_fs_open_close(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	ove_file_t f = NULL;
 	int rc = fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE);
@@ -121,7 +121,7 @@ static void test_fs_open_close(void **state)
 static void test_fs_write_read(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	ove_file_t f = NULL;
 	fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_CREATE);
@@ -133,7 +133,7 @@ static void test_fs_write_read(void **state)
 	assert_int_equal(written, strlen(data));
 
 	/* Seek back to start */
-	ove_fs_seek(f, 0, OVE_FS_SEEK_SET);
+	OVE_TEST_ASSERT_OK(ove_fs_seek(f, 0, OVE_FS_SEEK_SET));
 
 	char buf[64] = {0};
 	size_t read_n = 0;
@@ -149,23 +149,23 @@ static void test_fs_write_read(void **state)
 static void test_fs_seek_tell(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	ove_file_t f = NULL;
 	fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_CREATE);
 
 	const char *data = "ABCDEFGH";
 	size_t written = 0;
-	ove_fs_write(f, data, 8, &written);
+	OVE_TEST_ASSERT_OK(ove_fs_write(f, data, 8, &written));
 
-	ove_fs_seek(f, 4, OVE_FS_SEEK_SET);
+	OVE_TEST_ASSERT_OK(ove_fs_seek(f, 4, OVE_FS_SEEK_SET));
 
 	long pos = ove_fs_tell(f);
 	assert_int_equal(pos, 4);
 
 	char buf[4] = {0};
 	size_t read_n = 0;
-	ove_fs_read(f, buf, 4, &read_n);
+	OVE_TEST_ASSERT_OK(ove_fs_read(f, buf, 4, &read_n));
 	assert_memory_equal(buf, "EFGH", 4);
 
 	fs_close(f);
@@ -175,14 +175,14 @@ static void test_fs_seek_tell(void **state)
 static void test_fs_file_size(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	ove_file_t f = NULL;
 	fs_open(&f, s_tmppath, OVE_FS_O_READ | OVE_FS_O_WRITE | OVE_FS_O_CREATE);
 
 	const char *data = "1234567890";
 	size_t written = 0;
-	ove_fs_write(f, data, 10, &written);
+	OVE_TEST_ASSERT_OK(ove_fs_write(f, data, 10, &written));
 
 	size_t sz = 0;
 	int rc = ove_fs_size(f, &sz);
@@ -196,7 +196,7 @@ static void test_fs_file_size(void **state)
 static void test_fs_opendir_readdir_closedir(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	ove_dir_t d = NULL;
 	int rc = fs_opendir(&d, s_tmpdir);
@@ -221,7 +221,7 @@ static void test_fs_opendir_readdir_closedir(void **state)
 static void test_fs_unlink(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	/* Create a file to unlink */
 	char unlinkpath[128];
@@ -244,7 +244,7 @@ static void test_fs_unlink(void **state)
 static void test_fs_rename(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	char srcpath[128];
 	snprintf(srcpath, sizeof(srcpath), "/tmp/ove_rename_src_XXXXXX");
@@ -267,7 +267,7 @@ static void test_fs_rename(void **state)
 static void test_fs_open_nonexistent(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 
 	ove_file_t f = NULL;
 	int rc = fs_open(&f, "/tmp/ove_nonexistent_file_xyz", OVE_FS_O_READ);
@@ -372,7 +372,7 @@ static void test_fs_volume_stat(void **state)
 static void test_fs_unmount(void **state)
 {
 	(void)state;
-	ove_fs_mount(NULL, NULL);
+	OVE_TEST_ASSERT_OK(ove_fs_mount(NULL, NULL));
 	/* Should not crash */
 	ove_fs_unmount(NULL);
 }

@@ -458,7 +458,9 @@ static int connect_bounded(ove_socket_t sock, const struct sockaddr_in *sin, uin
 		ret = OVE_ERR_TIMEOUT;
 		for (;;) {
 			unsigned re = 0;
-			(void)ove_socket_poll(sock, OVE_SOCK_POLLOUT, &re, 0);
+			/* Polled only to drive the connect; its outcome is read below. */
+			int prc = ove_socket_poll(sock, OVE_SOCK_POLLOUT, &re, 0);
+			(void)prc;
 			if (sock->connect_state != CONNECT_INFLIGHT) {
 				ret = ove_socket_get_error(sock);
 				break;

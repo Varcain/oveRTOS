@@ -362,7 +362,9 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	struct ove_thread_info threads[16];
 	size_t count = 0;
 
-	ove_thread_list(threads, 16, &count);
+	/* Best effort: a full table (OVE_ERR_QUEUE_FULL) still fills count entries. */
+	int rc = ove_thread_list(threads, 16, &count);
+	(void)rc;
 
 	char buf[4096];
 	int off = 0;

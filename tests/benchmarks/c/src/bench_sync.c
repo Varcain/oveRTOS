@@ -92,8 +92,9 @@ static void mutex_contention_setup(void *ctx)
 	contention_done = 0;
 	contention_count = 0;
 	bench_check(ove_mutex_init(&bench_mtx, &bench_mtx_storage));
-	ove_thread_init(&contention_th, &contention_th_storage, "contention", contention_thread,
-			NULL, OVE_PRIO_NORMAL, sizeof(contention_th_stack), contention_th_stack);
+	bench_check(ove_thread_init(&contention_th, &contention_th_storage, "contention",
+				    contention_thread, NULL, OVE_PRIO_NORMAL,
+				    sizeof(contention_th_stack), contention_th_stack));
 }
 
 static void mutex_contention_run(void *ctx)
@@ -208,8 +209,8 @@ static void event_signal_wait_setup(void *ctx)
 	evt_done = 0;
 	bench_check(ove_event_init(&bench_evt, &bench_evt_storage));
 	bench_check(ove_event_init(&bench_evt_ack, &bench_evt_ack_storage));
-	ove_thread_init(&evt_th, &evt_th_storage, "evt_sig", evt_signaler, NULL, OVE_PRIO_NORMAL,
-			sizeof(evt_th_stack), evt_th_stack);
+	bench_check(ove_thread_init(&evt_th, &evt_th_storage, "evt_sig", evt_signaler, NULL,
+				    OVE_PRIO_NORMAL, sizeof(evt_th_stack), evt_th_stack));
 }
 
 static void event_signal_wait_run(void *ctx)
@@ -280,8 +281,8 @@ static void condvar_signal_wait_setup(void *ctx)
 	cv_done = 0;
 	bench_check(ove_mutex_init(&bench_cv_mtx, &bench_cv_mtx_storage));
 	bench_check(ove_condvar_init(&bench_cv, &bench_cv_storage));
-	ove_thread_init(&cv_th, &cv_th_storage, "cv_sig", cv_signaler, NULL, OVE_PRIO_NORMAL,
-			sizeof(cv_th_stack), cv_th_stack);
+	bench_check(ove_thread_init(&cv_th, &cv_th_storage, "cv_sig", cv_signaler, NULL,
+				    OVE_PRIO_NORMAL, sizeof(cv_th_stack), cv_th_stack));
 }
 
 static void condvar_signal_wait_run(void *ctx)

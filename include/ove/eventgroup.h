@@ -71,7 +71,7 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_EVENTGROUP.
  */
-int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage);
+OVE_NODISCARD int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage);
 
 /**
  * @brief Deinitialise a statically-allocated event group.
@@ -94,7 +94,7 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg);
  * @note Requires @c CONFIG_OVE_EVENTGROUP and @c OVE_HEAP_EVENTGROUP.
  */
 #ifdef OVE_HEAP_EVENTGROUP
-int ove_eventgroup_create(ove_eventgroup_t *eg);
+OVE_NODISCARD int ove_eventgroup_create(ove_eventgroup_t *eg);
 
 /**
  * @brief Destroy a heap-allocated event group.
@@ -159,8 +159,9 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
  * @return OVE_OK if the wait condition was met, @c OVE_ERR_TIMEOUT on timeout,
  *         negative error code on failure.
  */
-int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
-			     uint64_t timeout_ns, ove_eventbits_t *result);
+OVE_NODISCARD int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits,
+					   uint32_t flags, uint64_t timeout_ns,
+					   ove_eventbits_t *result);
 
 /**
  * @brief Deadline-based variant of @ref ove_eventgroup_wait_bits.
@@ -181,9 +182,10 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT on deadline expiry,
  *         negative error code on failure.
  */
-static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t eg, ove_eventbits_t bits,
-						 uint32_t flags, uint64_t deadline_ns,
-						 ove_eventbits_t *result)
+OVE_NODISCARD static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t eg,
+							       ove_eventbits_t bits, uint32_t flags,
+							       uint64_t deadline_ns,
+							       ove_eventbits_t *result)
 {
 	return ove_eventgroup_wait_bits(eg, bits, flags,
 					ove_time_deadline_to_timeout_ns(deadline_ns), result);
@@ -216,7 +218,7 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
  * @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue
  *         had no room for the request.
  */
-int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
+OVE_NODISCARD int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
 
 /**
  * @brief Read the current bit value of the event group without blocking.
@@ -239,7 +241,8 @@ int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_
 
 /* P0-3: _init/_deinit stubs so OVE_EVENTGROUP_DEFINE_STATIC links cleanly
  * when CONFIG_OVE_EVENTGROUP=n. */
-static inline int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *s)
+OVE_NODISCARD static inline int ove_eventgroup_init(ove_eventgroup_t *eg,
+						    ove_eventgroup_storage_t *s)
 {
 	(void)eg;
 	(void)s;
@@ -250,7 +253,7 @@ static inline void ove_eventgroup_deinit(ove_eventgroup_t eg)
 	(void)eg;
 }
 
-static inline int ove_eventgroup_create(ove_eventgroup_t *eg)
+OVE_NODISCARD static inline int ove_eventgroup_create(ove_eventgroup_t *eg)
 {
 	(void)eg;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -271,9 +274,9 @@ static inline ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove
 	(void)bits;
 	return 0;
 }
-static inline int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits,
-					   uint32_t flags, uint64_t timeout_ns,
-					   ove_eventbits_t *result)
+OVE_NODISCARD static inline int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits,
+							 uint32_t flags, uint64_t timeout_ns,
+							 ove_eventbits_t *result)
 {
 	(void)eg;
 	(void)bits;
@@ -289,7 +292,8 @@ static inline ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t 
 	(void)bits;
 	return 0;
 }
-static inline int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
+OVE_NODISCARD static inline int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg,
+								   ove_eventbits_t bits)
 {
 	(void)eg;
 	(void)bits;

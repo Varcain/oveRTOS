@@ -70,7 +70,7 @@ typedef void (*ove_gpio_irq_cb)(unsigned int port, unsigned int pin, void *user_
  * @param[in] mode  Desired pin mode (@c ove_gpio_mode_t).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode);
+OVE_NODISCARD int ove_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode);
 
 /**
  * @brief Set the output level of a GPIO pin.
@@ -92,7 +92,7 @@ int ove_gpio_set(unsigned int port, unsigned int pin, int value);
  * @param[in] pin   GPIO pin index within the port.
  * @return 1 if the pin is high, 0 if low, negative error code on failure.
  */
-int ove_gpio_get(unsigned int port, unsigned int pin);
+OVE_NODISCARD int ove_gpio_get(unsigned int port, unsigned int pin);
 
 /**
  * @brief Register an interrupt callback for a GPIO pin.
@@ -108,8 +108,9 @@ int ove_gpio_get(unsigned int port, unsigned int pin);
  * @return OVE_OK on success, OVE_ERR_ALREADY_EXISTS if the line is already
  *         registered, or another negative error code on failure.
  */
-int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-			  ove_gpio_irq_cb callback, void *user_data);
+OVE_NODISCARD int ove_gpio_irq_register(unsigned int port, unsigned int pin,
+					ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,
+					void *user_data);
 
 /**
  * @brief Enable a previously registered GPIO interrupt.
@@ -147,7 +148,8 @@ int ove_gpio_irq_unregister(unsigned int port, unsigned int pin);
 
 #else /* !CONFIG_OVE_GPIO */
 
-static inline int ove_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
+OVE_NODISCARD static inline int ove_gpio_configure(unsigned int port, unsigned int pin,
+						   ove_gpio_mode_t mode)
 {
 	(void)port;
 	(void)pin;
@@ -161,15 +163,15 @@ static inline int ove_gpio_set(unsigned int port, unsigned int pin, int value)
 	(void)value;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_gpio_get(unsigned int port, unsigned int pin)
+OVE_NODISCARD static inline int ove_gpio_get(unsigned int port, unsigned int pin)
 {
 	(void)port;
 	(void)pin;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_gpio_irq_register(unsigned int port, unsigned int pin,
-					ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,
-					void *user_data)
+OVE_NODISCARD static inline int ove_gpio_irq_register(unsigned int port, unsigned int pin,
+						      ove_gpio_irq_mode_t mode,
+						      ove_gpio_irq_cb callback, void *user_data)
 {
 	(void)port;
 	(void)pin;

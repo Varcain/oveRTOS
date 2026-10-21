@@ -156,6 +156,7 @@ set(_compile_flags
   -Wno-unused-parameter
   -Wno-missing-field-initializers
   -Werror=nonnull-compare
+  -Werror=unused-result
 )
 set(_definitions "")
 

@@ -126,9 +126,9 @@ typedef enum {
  *
  * @see ove_thread_deinit, ove_thread_create
  */
-int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
-		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
-		    void *stack);
+OVE_NODISCARD int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
+				  const char *name, ove_thread_fn entry, void *arg,
+				  ove_prio_t priority, size_t stack_size, void *stack);
 
 /**
  * @brief Join and release a thread created with ove_thread_init().
@@ -169,8 +169,8 @@ int ove_thread_deinit(ove_thread_t handle);
  *
  * @see ove_thread_destroy
  */
-int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
-		      ove_prio_t priority, size_t stack_size);
+OVE_NODISCARD int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
+				    void *arg, ove_prio_t priority, size_t stack_size);
 
 /**
  * @brief Join and free a thread created with ove_thread_create().
@@ -314,7 +314,7 @@ bool ove_thread_should_stop(ove_thread_t handle);
  *
  * @see ove_thread_get_stack_usage
  */
-int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes);
+OVE_NODISCARD int ove_thread_get_stack_headroom(ove_thread_t handle, size_t *headroom_bytes);
 
 /**
  * @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).
@@ -357,7 +357,7 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle);
  *         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not
  *         provide runtime accounting.
  */
-int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats);
+OVE_NODISCARD int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats);
 
 /* ── System memory statistics ──────────────────────────────── */
 
@@ -377,7 +377,7 @@ struct ove_mem_stats {
  * @param[out] stats Caller-allocated structure to receive stats.
  * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable.
  */
-int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
+OVE_NODISCARD int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
 
 /* ── Thread enumeration ────────────────────────────────────── */
 
@@ -450,7 +450,8 @@ static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint3
  * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
  *         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.
  */
-int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
+OVE_NODISCARD int ove_thread_list(struct ove_thread_info *out, size_t max_count,
+				  size_t *actual_count);
 
 #ifdef __cplusplus
 }

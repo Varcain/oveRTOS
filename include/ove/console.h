@@ -50,7 +50,7 @@ typedef void (*ove_console_ready_fn)(const void *context);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_CONSOLE.
  */
-int ove_console_init(void);
+OVE_NODISCARD int ove_console_init(void);
 
 /**
  * @brief Read one character from the console.
@@ -63,7 +63,7 @@ int ove_console_init(void);
  *         available or an error occurred.
  * @note Requires @c CONFIG_OVE_CONSOLE.
  */
-int ove_console_getchar(void);
+OVE_NODISCARD int ove_console_getchar(void);
 
 /**
  * @brief Try to read one character without blocking.
@@ -76,7 +76,7 @@ int ove_console_getchar(void);
  *         available or the backend has no non-blocking input path.
  * @note Requires @c CONFIG_OVE_CONSOLE.
  */
-int ove_console_try_getchar(void);
+OVE_NODISCARD int ove_console_try_getchar(void);
 
 /**
  * @brief Write one character to the console.
@@ -118,15 +118,15 @@ int ove_console_set_ready_callback(ove_console_ready_fn callback, const void *co
 
 #else /* !CONFIG_OVE_CONSOLE */
 
-static inline int ove_console_init(void)
+OVE_NODISCARD static inline int ove_console_init(void)
 {
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_console_getchar(void)
+OVE_NODISCARD static inline int ove_console_getchar(void)
 {
 	return -1;
 }
-static inline int ove_console_try_getchar(void)
+OVE_NODISCARD static inline int ove_console_try_getchar(void)
 {
 	return -1;
 }

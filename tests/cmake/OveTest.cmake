@@ -338,6 +338,7 @@ endfunction()
 # nonnull-compare warning means the compiler is deleting a NULL check the API
 # promises (see OVE_NONNULL in include/ove/types.h); the lint rule
 # nonnull-public covers checks inside inlined helpers, which it cannot see.
+# An ignored OVE_NODISCARD result is an error too, as it is in the -Werror builds.
 if(TARGET app)
-    target_compile_options(app PRIVATE -Werror=nonnull-compare)
+    target_compile_options(app PRIVATE -Werror=nonnull-compare -Werror=unused-result)
 endif()

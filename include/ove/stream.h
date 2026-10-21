@@ -58,8 +58,8 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_STREAM.
  */
-int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *buffer, size_t size,
-		    size_t trigger);
+OVE_NODISCARD int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *buffer,
+				  size_t size, size_t trigger);
 
 /**
  * @brief Deinitialise a statically-allocated stream.
@@ -88,7 +88,7 @@ void ove_stream_deinit(ove_stream_t stream);
  * @note Requires @c CONFIG_OVE_STREAM and @c OVE_HEAP_STREAM.
  */
 #ifdef OVE_HEAP_STREAM
-int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger);
+OVE_NODISCARD int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger);
 
 /**
  * @brief Destroy a heap-allocated stream.
@@ -115,11 +115,14 @@ void ove_stream_destroy(ove_stream_t stream);
  * @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL if the caller does not need this value.
- * @return OVE_OK on success, negative error code on failure or timeout.
+ * @return OVE_OK when the call completed, including a timeout or a full stream
+ *         that left only part of @p data (or none of it) written: check
+ *         @p bytes_sent for how much was.  A negative error code means the
+ *         call itself failed (e.g. @c OVE_ERR_INVALID_PARAM).
  * @note Must not be called from an ISR; use @ref ove_stream_send_from_isr instead.
  */
-int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
-		    size_t *bytes_sent);
+OVE_NODISCARD int ove_stream_send(ove_stream_t stream, const void *data, size_t len,
+				  uint64_t timeout_ns, size_t *bytes_sent);
 
 /**
  * @brief Deadline-based variant of @ref ove_stream_send.
@@ -136,10 +139,12 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
  *                         or @c OVE_WAIT_FOREVER.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL.
- * @return OVE_OK on success, negative error code on failure.
+ * @return Same as @ref ove_stream_send: OVE_OK even when the deadline left the
+ *         data partly unsent, so check @p bytes_sent.
  */
-static inline int ove_stream_send_until(ove_stream_t stream, const void *data, size_t len,
-					uint64_t deadline_ns, size_t *bytes_sent)
+OVE_NODISCARD static inline int ove_stream_send_until(ove_stream_t stream, const void *data,
+						      size_t len, uint64_t deadline_ns,
+						      size_t *bytes_sent)
 {
 	return ove_stream_send(stream, data, len, ove_time_deadline_to_timeout_ns(deadline_ns),
 			       bytes_sent);
@@ -159,11 +164,14 @@ static inline int ove_stream_send_until(ove_stream_t stream, const void *data, s
  * @param[in]  timeout_ns      Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_received  Receives the number of bytes actually read, or
  *                             @c NULL if the caller does not need this value.
- * @return OVE_OK on success, negative error code on failure or timeout.
+ * @return OVE_OK when the call completed, including a timeout that delivered
+ *         fewer bytes than requested (or none): check @p bytes_received.  A
+ *         negative error code means the call itself failed (e.g.
+ *         @c OVE_ERR_INVALID_PARAM).
  * @note Must not be called from an ISR; use @ref ove_stream_receive_from_isr instead.
  */
-int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
-		       size_t *bytes_received);
+OVE_NODISCARD int ove_stream_receive(ove_stream_t stream, void *buf, size_t len,
+				     uint64_t timeout_ns, size_t *bytes_received);
 
 /**
  * @brief Deadline-based variant of @ref ove_stream_receive.
@@ -180,10 +188,12 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
  *                            or @c OVE_WAIT_FOREVER.
  * @param[out] bytes_received Receives the number of bytes actually read, or
  *                            @c NULL.
- * @return OVE_OK on success, negative error code on failure.
+ * @return Same as @ref ove_stream_receive: OVE_OK even when the deadline passed
+ *         with fewer bytes read, so check @p bytes_received.
  */
-static inline int ove_stream_receive_until(ove_stream_t stream, void *buf, size_t len,
-					   uint64_t deadline_ns, size_t *bytes_received)
+OVE_NODISCARD static inline int ove_stream_receive_until(ove_stream_t stream, void *buf, size_t len,
+							 uint64_t deadline_ns,
+							 size_t *bytes_received)
 {
 	return ove_stream_receive(stream, buf, len, ove_time_deadline_to_timeout_ns(deadline_ns),
 				  bytes_received);
@@ -200,9 +210,12 @@ static inline int ove_stream_receive_until(ove_stream_t stream, void *buf, size_
  * @param[in]  len         Number of bytes to send.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL if the caller does not need this value.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK when the call completed, including when a full stream took
+ *         only part of @p data or none of it: check @p bytes_sent.  A negative
+ *         error code means the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM).
  */
-int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent);
+OVE_NODISCARD int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len,
+					   size_t *bytes_sent);
 
 /**
  * @brief Receive bytes from the stream from an ISR.
@@ -215,9 +228,12 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
  * @param[in]  len             Maximum number of bytes to read.
  * @param[out] bytes_received  Receives the number of bytes actually read, or
  *                             @c NULL if the caller does not need this value.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK when the call completed, including when fewer bytes (or none)
+ *         were available: check @p bytes_received.  A negative error code means
+ *         the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM).
  */
-int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received);
+OVE_NODISCARD int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len,
+					      size_t *bytes_received);
 
 /**
  * @brief Discard all bytes currently held in the stream.
@@ -269,8 +285,8 @@ int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data
 
 /* P0-3: _init/_deinit stubs so OVE_STREAM_DEFINE_STATIC links cleanly when
  * CONFIG_OVE_STREAM=n. */
-static inline int ove_stream_init(ove_stream_t *s, ove_stream_storage_t *st, void *b, size_t sz,
-				  size_t t)
+OVE_NODISCARD static inline int ove_stream_init(ove_stream_t *s, ove_stream_storage_t *st, void *b,
+						size_t sz, size_t t)
 {
 	(void)s;
 	(void)st;
@@ -284,7 +300,7 @@ static inline void ove_stream_deinit(ove_stream_t s)
 	(void)s;
 }
 
-static inline int ove_stream_create(ove_stream_t *s, size_t sz, size_t t)
+OVE_NODISCARD static inline int ove_stream_create(ove_stream_t *s, size_t sz, size_t t)
 {
 	(void)s;
 	(void)sz;
@@ -295,7 +311,8 @@ static inline void ove_stream_destroy(ove_stream_t s)
 {
 	(void)s;
 }
-static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint64_t t, size_t *bs)
+OVE_NODISCARD static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint64_t t,
+						size_t *bs)
 {
 	(void)s;
 	(void)d;
@@ -304,7 +321,8 @@ static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint6
 	(void)bs;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_stream_receive(ove_stream_t s, void *b, size_t l, uint64_t t, size_t *br)
+OVE_NODISCARD static inline int ove_stream_receive(ove_stream_t s, void *b, size_t l, uint64_t t,
+						   size_t *br)
 {
 	(void)s;
 	(void)b;
@@ -313,7 +331,8 @@ static inline int ove_stream_receive(ove_stream_t s, void *b, size_t l, uint64_t
 	(void)br;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_stream_send_from_isr(ove_stream_t s, const void *d, size_t l, size_t *bs)
+OVE_NODISCARD static inline int ove_stream_send_from_isr(ove_stream_t s, const void *d, size_t l,
+							 size_t *bs)
 {
 	(void)s;
 	(void)d;
@@ -321,7 +340,8 @@ static inline int ove_stream_send_from_isr(ove_stream_t s, const void *d, size_t
 	(void)bs;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_stream_receive_from_isr(ove_stream_t s, void *b, size_t l, size_t *br)
+OVE_NODISCARD static inline int ove_stream_receive_from_isr(ove_stream_t s, void *b, size_t l,
+							    size_t *br)
 {
 	(void)s;
 	(void)b;

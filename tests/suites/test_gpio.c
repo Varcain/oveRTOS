@@ -70,7 +70,8 @@ static void test_gpio_get(void **state)
      * Renode STM32_GPIOPort model echoes ODR via IDR regardless, so
      * this configure call is essentially a no-op there but makes the
      * test pass on real silicon. */
-	ove_gpio_configure(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_MODE_OUTPUT_PP);
+	OVE_TEST_ASSERT_OK(
+		ove_gpio_configure(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_MODE_OUTPUT_PP));
 
 	ove_gpio_set(TEST_GPIO_PORT, TEST_GPIO_PIN, 1);
 
@@ -135,8 +136,8 @@ static void test_gpio_irq_enable_disable(void **state)
 	/* The gpio_irq_teardown registered on this test unregisters the line
 	 * afterwards, so registrations don't leak across suites and dispatch
 	 * reliably delivers to *this* file's handler — LED0 is safe to use. */
-	ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING, gpio_irq_handler,
-			      NULL);
+	OVE_TEST_ASSERT_OK(ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
+						 gpio_irq_handler, NULL));
 
 	int rc = ove_gpio_irq_enable(TEST_GPIO_PORT, TEST_GPIO_PIN);
 	assert_int_equal(rc, OVE_OK);

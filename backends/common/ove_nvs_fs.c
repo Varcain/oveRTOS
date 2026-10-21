@@ -98,7 +98,9 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 	}
 	ret = ove_fs_open(&f, path, flags);
 	if (ret == OVE_ERR_NOT_FOUND) {
-		(void)ove_fs_mkdir(OVE_NVS_FS_DIR);
+		/* The reopen below reports whatever mkdir could not fix. */
+		int mk = ove_fs_mkdir(OVE_NVS_FS_DIR);
+		(void)mk;
 		ret = ove_fs_open(&f, path, flags);
 	}
 	if (ret != OVE_OK) {

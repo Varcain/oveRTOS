@@ -170,7 +170,7 @@ static void test_timer_double_start(void **state)
 	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 30, 0));
 	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 	/* Start again while running — should not crash (return value unspecified). */
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(150);
 

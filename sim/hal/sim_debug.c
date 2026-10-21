@@ -56,11 +56,15 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 	struct ove_thread_info threads[OVE_SIM_DEBUG_MAX_THREADS];
 	size_t count = 0;
 
-	ove_thread_list(threads, OVE_SIM_DEBUG_MAX_THREADS, &count);
+	/* Best-effort snapshot: a truncated list (OVE_ERR_QUEUE_FULL) still fills
+	 * count entries, and unsupported memory stats leave the zeroed struct. */
+	int rc = ove_thread_list(threads, OVE_SIM_DEBUG_MAX_THREADS, &count);
+	(void)rc;
 
 	struct ove_mem_stats mem;
 	memset(&mem, 0, sizeof(mem));
-	ove_sys_get_mem_stats(&mem);
+	rc = ove_sys_get_mem_stats(&mem);
+	(void)rc;
 
 	uint8_t *p = buf;
 	uint8_t *end = buf + buf_size;

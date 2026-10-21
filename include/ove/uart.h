@@ -91,8 +91,8 @@ struct ove_uart_cfg {
  * @param[in]  cfg     UART configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage, void *rx_buf,
-		  const struct ove_uart_cfg *cfg);
+OVE_NODISCARD int ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage, void *rx_buf,
+				const struct ove_uart_cfg *cfg);
 
 /** @brief Release a UART handle previously created with `ove_uart_init`. */
 void ove_uart_deinit(ove_uart_t uart);
@@ -104,7 +104,7 @@ void ove_uart_deinit(ove_uart_t uart);
  * @param[in]  cfg  UART configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_create(ove_uart_t *uart, const struct ove_uart_cfg *cfg);
+OVE_NODISCARD int ove_uart_create(ove_uart_t *uart, const struct ove_uart_cfg *cfg);
 /** @brief Destroy a UART handle previously created with `ove_uart_create`. */
 void ove_uart_destroy(ove_uart_t uart);
 #endif /* OVE_HEAP_UART */
@@ -130,8 +130,8 @@ void ove_uart_destroy(ove_uart_t uart);
  * @param[out] bytes_written Actual bytes written (may be < @p len), or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
-		   size_t *bytes_written);
+OVE_NODISCARD int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
+				 size_t *bytes_written);
 
 /**
  * @brief Read data from the UART RX buffer.
@@ -145,7 +145,8 @@ int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint64_t timeo
  * @param[out] bytes_read   Actual bytes read, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_read);
+OVE_NODISCARD int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint64_t timeout_ns,
+				size_t *bytes_read);
 
 /**
  * @brief Query the number of bytes available in the RX buffer.
@@ -163,7 +164,7 @@ size_t ove_uart_bytes_available(ove_uart_t uart);
  * @param[in] uart  UART handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_flush(ove_uart_t uart);
+OVE_NODISCARD int ove_uart_flush(ove_uart_t uart);
 
 /* ── ISR helper (called by backend, not by application code) ─────── */
 
@@ -204,7 +205,7 @@ int ove_uart_set_rx_notify(ove_uart_t uart, ove_notify_cb cb, void *user_data);
 
 /* No _init/_deinit stubs: OVE_UART_DEFINE_STATIC is itself gated by
  * #ifdef CONFIG_OVE_UART in storage.h. */
-static inline int ove_uart_create(ove_uart_t *u, const struct ove_uart_cfg *c)
+OVE_NODISCARD static inline int ove_uart_create(ove_uart_t *u, const struct ove_uart_cfg *c)
 {
 	(void)u;
 	(void)c;
@@ -214,7 +215,8 @@ static inline void ove_uart_destroy(ove_uart_t u)
 {
 	(void)u;
 }
-static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint64_t t, size_t *bw)
+OVE_NODISCARD static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint64_t t,
+					       size_t *bw)
 {
 	(void)u;
 	(void)d;
@@ -223,7 +225,8 @@ static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint64_t
 	(void)bw;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_uart_read(ove_uart_t u, void *b, size_t l, uint64_t t, size_t *br)
+OVE_NODISCARD static inline int ove_uart_read(ove_uart_t u, void *b, size_t l, uint64_t t,
+					      size_t *br)
 {
 	(void)u;
 	(void)b;
@@ -244,7 +247,7 @@ static inline int ove_uart_set_rx_notify(ove_uart_t u, ove_notify_cb cb, void *u
 	(void)ud;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_uart_flush(ove_uart_t u)
+OVE_NODISCARD static inline int ove_uart_flush(ove_uart_t u)
 {
 	(void)u;
 	return OVE_ERR_NOT_SUPPORTED;
