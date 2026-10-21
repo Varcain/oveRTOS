@@ -236,10 +236,11 @@ void ove_sim_trace_tick(uint32_t elapsed_ms)
 		n = ove_trace_ring_drain(drain_batch, OVE_SIM_TRACE_MAX_BATCH);
 		uint32_t dropped = ove_trace_ring_dropped_get() + trace_refused;
 		trace_refused = 0;
-		/* A batch the transport refused is lost: carry its records and
-		 * the drops it reported into the next batch's count. */
-		if (emit_stream_batch(&trace_ctx, drain_batch, n, dropped) != OVE_OK)
+		/* Count the refused records as drops and leave the rest queued. */
+		if (emit_stream_batch(&trace_ctx, drain_batch, n, dropped) != OVE_OK) {
 			trace_refused = dropped + (uint32_t)n;
+			break;
+		}
 	} while (n == OVE_SIM_TRACE_MAX_BATCH);
 
 	/* Enumerate every tick so a thread start / storage reuse is reported

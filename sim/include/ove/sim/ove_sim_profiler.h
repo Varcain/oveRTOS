@@ -65,7 +65,7 @@ extern "C" {
 #define OVE_SIM_PROFILER_VERSION 1
 
 /** Drain period for samples (ms). */
-#define OVE_SIM_PROFILER_DRAIN_MS 200
+#define OVE_SIM_PROFILER_DRAIN_MS 50
 
 /**
  * @brief Register the profiler plugin.

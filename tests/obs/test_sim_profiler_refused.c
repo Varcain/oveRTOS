@@ -25,6 +25,10 @@
 
 static int failures;
 
+/* The drain sizes batches for full-depth samples at the host's word size. */
+static const unsigned batch_size = (OVE_SIM_EVENT_MAX_BYTES - sizeof(struct ove_sim_event) - 8) /
+				   (16 + CONFIG_OVE_PROFILER_MAX_DEPTH * sizeof(uintptr_t));
+
 #define CHECK(cond)                                                                              \
 	do {                                                                                     \
 		if (!(cond)) {                                                                   \
@@ -154,7 +158,27 @@ static void test_overflow_and_refusal_add_up(void)
 	ove_sim_profiler_tick();
 	ove_sim_profiler_tick();
 	CHECK(reported_samples + reported_dropped == pushed + 5);
-	CHECK(reported_samples == 5);
+	CHECK(reported_samples == CONFIG_OVE_PROFILER_RING_SIZE - batch_size + 5);
+}
+
+/* Stop at the first refusal and deliver the remaining samples on the next tick. */
+static void test_refusal_leaves_backlog_queued(void)
+{
+	reset_counts();
+	push(3 * batch_size);
+	refuse = 4; /* three batches plus any drop-only retry */
+	ove_sim_profiler_tick();
+	CHECK(accepted_samples == 0);
+	CHECK(refuse == 3);
+
+	refuse = 0;
+	ove_sim_profiler_tick();
+	CHECK(accepted_samples == 2);
+	CHECK(reported_samples == 2 * batch_size);
+	CHECK(reported_dropped == batch_size);
+
+	ove_sim_profiler_tick();
+	CHECK(accepted_samples == 2);
 }
 
 /* A refused caps announcement is sent again by the next tick. */
@@ -175,6 +199,7 @@ int main(void)
 	CHECK(ove_sim_profiler_register() >= 0);
 	test_refused_batch_reported_once();
 	test_overflow_and_refusal_add_up();
+	test_refusal_leaves_backlog_queued();
 	test_refused_caps_resent();
 
 	if (failures) {

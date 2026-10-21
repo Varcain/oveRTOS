@@ -161,10 +161,11 @@ void ove_sim_profiler_tick(void)
 		n = ove_profiler_ring_drain(drain_batch, PROFILE_MAX_BATCH);
 		uint32_t dropped = ove_profiler_ring_dropped_get() + profiler_refused;
 		profiler_refused = 0;
-		/* A batch the transport refused is lost: carry its samples and
-		 * the drops it reported into the next batch's count. */
-		if (emit_batch(&profiler_ctx, drain_batch, n, dropped) != OVE_OK)
+		/* Count the refused samples as drops and leave the rest queued. */
+		if (emit_batch(&profiler_ctx, drain_batch, n, dropped) != OVE_OK) {
 			profiler_refused = dropped + (uint32_t)n;
+			break;
+		}
 	} while (n == PROFILE_MAX_BATCH);
 }
 
