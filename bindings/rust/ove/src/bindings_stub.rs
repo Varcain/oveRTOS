@@ -839,7 +839,7 @@ unsafe extern "C" {
     pub fn ove_thread_destroy(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Return the handle of the currently executing thread.\n\n @return Handle of the calling thread."]
+    #[doc = " @brief Return the handle of the currently executing thread.\n\n Valid from the first statement of an entry started by ove_thread_init() or\n ove_thread_create(), even when the new thread preempts its creator before\n that call returns.\n\n Task context only, after the scheduler has started: the result is undefined\n in an ISR and before ove_thread_start_scheduler().\n\n @return Handle of the calling thread, or NULL on a thread oveRTOS did not\n         create (the startup or main thread, idle, RTOS service threads).\n         On NuttX a pthread started by an oveRTOS thread currently reports\n         that thread's handle.\n "]
     pub fn ove_thread_get_self() -> ove_thread_t;
 }
 unsafe extern "C" {
@@ -859,11 +859,11 @@ unsafe extern "C" {
     pub fn ove_thread_start_scheduler();
 }
 unsafe extern "C" {
-    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread remains suspended until ove_thread_resume() is called.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n\n @see ove_thread_resume"]
+    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread remains suspended until ove_thread_resume() is called.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n                    NULL is ignored.\n\n @see ove_thread_resume\n "]
     pub fn ove_thread_suspend(handle: ove_thread_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Resume a previously suspended thread.\n\n @param[in] handle  Thread to resume.  Must have been suspended with\n                    ove_thread_suspend().\n\n @see ove_thread_suspend"]
+    #[doc = " @brief Resume a previously suspended thread.\n\n @param[in] handle  Thread to resume.  Must have been suspended with\n                    ove_thread_suspend().  NULL is ignored.\n\n @see ove_thread_suspend\n "]
     pub fn ove_thread_resume(handle: ove_thread_t);
 }
 unsafe extern "C" {
@@ -886,11 +886,11 @@ unsafe extern "C" {
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the current execution state of a thread.\n\n @param[in] handle  Thread to inspect.\n @return One of the @c OVE_THREAD_STATE_* values."]
+    #[doc = " @brief Query the current execution state of a thread.\n\n @param[in] handle  Thread to inspect.\n @return One of the @c OVE_THREAD_STATE_* values; @c OVE_THREAD_STATE_UNKNOWN\n         for a NULL @p handle.\n "]
     pub fn ove_thread_get_state(handle: ove_thread_t) -> ove_thread_state_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_NOT_SUPPORTED if the backend\n         does not provide runtime accounting."]
+    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if @p handle or\n         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not\n         provide runtime accounting.\n "]
     pub fn ove_thread_get_runtime_stats(
         handle: ove_thread_t,
         stats: *mut ove_thread_stats,

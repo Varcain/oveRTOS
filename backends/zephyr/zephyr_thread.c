@@ -431,10 +431,10 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 
 int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
-#if defined(CONFIG_THREAD_RUNTIME_STATS)
-	if (handle == NULL) {
+	if (handle == NULL || stats == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+#if defined(CONFIG_THREAD_RUNTIME_STATS)
 
 	struct ove_thread *info = handle;
 	k_thread_runtime_stats_t rt;

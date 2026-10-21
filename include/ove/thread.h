@@ -193,7 +193,17 @@ int ove_thread_destroy(ove_thread_t handle);
 /**
  * @brief Return the handle of the currently executing thread.
  *
- * @return Handle of the calling thread.
+ * Valid from the first statement of an entry started by ove_thread_init() or
+ * ove_thread_create(), even when the new thread preempts its creator before
+ * that call returns.
+ *
+ * Task context only, after the scheduler has started: the result is undefined
+ * in an ISR and before ove_thread_start_scheduler().
+ *
+ * @return Handle of the calling thread, or NULL on a thread oveRTOS did not
+ *         create (the startup or main thread, idle, RTOS service threads).
+ *         On NuttX a pthread started by an oveRTOS thread currently reports
+ *         that thread's handle.
  */
 ove_thread_t ove_thread_get_self(void);
 
@@ -238,6 +248,7 @@ void ove_thread_start_scheduler(void);
  * The thread remains suspended until ove_thread_resume() is called.
  *
  * @param[in] handle  Thread to suspend.  May be the calling thread itself.
+ *                    NULL is ignored.
  *
  * @see ove_thread_resume
  */
@@ -247,7 +258,7 @@ void ove_thread_suspend(ove_thread_t handle);
  * @brief Resume a previously suspended thread.
  *
  * @param[in] handle  Thread to resume.  Must have been suspended with
- *                    ove_thread_suspend().
+ *                    ove_thread_suspend().  NULL is ignored.
  *
  * @see ove_thread_suspend
  */
@@ -328,7 +339,8 @@ size_t ove_thread_get_stack_usage(ove_thread_t handle);
  * @brief Query the current execution state of a thread.
  *
  * @param[in] handle  Thread to inspect.
- * @return One of the @c OVE_THREAD_STATE_* values.
+ * @return One of the @c OVE_THREAD_STATE_* values; @c OVE_THREAD_STATE_UNKNOWN
+ *         for a NULL @p handle.
  */
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle);
 
@@ -341,8 +353,9 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle);
  * @param[in]  handle  Thread to inspect.
  * @param[out] stats   Pointer to a caller-allocated structure that will
  *                     receive the statistics.
- * @return OVE_OK on success, @c OVE_ERR_NOT_SUPPORTED if the backend
- *         does not provide runtime accounting.
+ * @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if @p handle or
+ *         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not
+ *         provide runtime accounting.
  */
 int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats);
 

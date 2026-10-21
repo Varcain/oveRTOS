@@ -92,7 +92,7 @@ static size_t snapshot_runnable(struct snap_entry *out, size_t max, struct ove_t
 		    s != OVE_THREAD_STATE_BLOCKED)
 			continue;
 		out[n].t = t;
-		out[n].pid = t->pid;
+		out[n].pid = __atomic_load_n(&t->pid, __ATOMIC_RELAXED);
 		out[n].state = s;
 		n++;
 	}

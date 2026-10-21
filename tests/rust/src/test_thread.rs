@@ -150,8 +150,12 @@ fn test_raii_drop() {
 /* ── Debug impl ─────────────────────────────────────────────────── */
 
 fn test_thread_debug_format() {
-    let th = Thread::current();
-    let s = format!("{:?}", th);
+    KEEP_RUNNING.store(1, Ordering::SeqCst);
+    let jh = Thread::builder().name(c"dbgf").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let s = format!("{:?}", jh.thread());
+    KEEP_RUNNING.store(0, Ordering::SeqCst);
+    Thread::sleep_ms(20);
+    drop(jh);
     assert!(s.contains("Thread"), "debug output missing type name: {s}");
     assert!(s.contains("handle"), "debug output missing handle field: {s}");
 }
@@ -400,6 +404,19 @@ fn test_priority_between_anchors() {
     drop(th);
 }
 
+/* ── Thread::current() from a foreign thread ─────────────────────── */
+
+/// The harness main thread was not created through ove, so the substrate
+/// has no handle for it (`ove_thread_get_self()` returns NULL).
+/// `Thread::current()` must not hand back a `Thread` wrapping that NULL:
+/// every method on it (suspend, get_state, get_runtime_stats, ...)
+/// forwards the handle to the backend, and FreeRTOS dereferenced it.
+fn test_current_foreign_thread_is_none() {
+    let t = Thread::current();
+    println!("    Thread::current() on the foreign harness thread: {:?}", t);
+    assert!(t.is_none(), "Thread::current() on a foreign thread returned {:?}", t);
+}
+
 /* ── ThreadState derive exercise ────────────────────────────────── */
 
 fn test_thread_state_debug_eq() {
@@ -437,5 +454,6 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_priority_scale),
         test_entry!(test_priority_between_anchors),
         test_entry!(test_thread_state_debug_eq),
+        test_entry!(test_current_foreign_thread_is_none),
     ])
 }

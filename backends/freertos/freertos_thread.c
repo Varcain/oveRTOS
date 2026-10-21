@@ -99,10 +99,18 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	storage->task = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth, storage,
-					  ove_freertos_map_priority(priority), (StackType_t *)stack,
-					  &storage->static_task);
+	/* xTaskCreateStatic returns the TCB buffer as the handle.  Store it first:
+	 * a child that outranks its creator runs inside the call and may already
+	 * pass its own handle to suspend/get_state, which read ->task. */
+	storage->task = (TaskHandle_t)&storage->static_task;
+	TaskHandle_t created = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth,
+						 storage, ove_freertos_map_priority(priority),
+						 (StackType_t *)stack, &storage->static_task);
+	configASSERT(created == storage->task);
+	(void)created;
 
+	/* The wrapper tags itself too; this tag covers the time before the child's
+	 * first run, when trace switch-in and ove_thread_list already read it. */
 	vTaskSetApplicationTaskTag(storage->task, (TaskHookFunction_t)storage);
 	*handle = storage;
 	return OVE_OK;
@@ -193,17 +201,21 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 
 	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 
-	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth, wrapper,
-					  ove_freertos_map_priority(priority), wrapper->stack,
-					  &wrapper->static_task);
-	if (wrapper->task == NULL) {
+	/* See ove_thread_init: the handle must be in place before the child can run. */
+	wrapper->task = (TaskHandle_t)&wrapper->static_task;
+	TaskHandle_t created = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth,
+						 wrapper, ove_freertos_map_priority(priority),
+						 wrapper->stack, &wrapper->static_task);
+	if (created == NULL) {
 #if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
 		vPortFreeStack(wrapper->stack);
 #endif
 		OVE_BACKEND_FREE(wrapper);
 		return OVE_ERR_NO_MEMORY;
 	}
+	configASSERT(created == wrapper->task);
 
+	/* See ove_thread_init: covers trace and ove_thread_list before the first run. */
 	vTaskSetApplicationTaskTag(wrapper->task, (TaskHookFunction_t)wrapper);
 	*handle = wrapper;
 	return OVE_OK;
@@ -258,12 +270,14 @@ void ove_thread_start_scheduler(void)
 
 void ove_thread_suspend(ove_thread_t handle)
 {
-	vTaskSuspend(handle->task);
+	if (handle)
+		vTaskSuspend(handle->task);
 }
 
 void ove_thread_resume(ove_thread_t handle)
 {
-	vTaskResume(handle->task);
+	if (handle)
+		vTaskResume(handle->task);
 }
 
 void ove_thread_request_stop(ove_thread_t handle)
@@ -304,6 +318,8 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 	 * completion and parks itself until ove_thread_deinit() deletes the TCB.
 	 * Report the portable entry-returned state instead of leaking that backend
 	 * implementation detail as OVE_THREAD_STATE_SUSPENDED. */
+	if (!handle)
+		return OVE_THREAD_STATE_UNKNOWN;
 	if (__atomic_load_n(&handle->exited, __ATOMIC_ACQUIRE) != 0u)
 		return OVE_THREAD_STATE_TERMINATED;
 
@@ -327,6 +343,8 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 
 int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
+	if (!handle || !stats)
+		return OVE_ERR_INVALID_PARAM;
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	TaskStatus_t task_status;
 	vTaskGetInfo(handle->task, &task_status, pdFALSE, eInvalid);
@@ -337,8 +355,6 @@ int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *s
 	stats->cpu_percent_x100 = runtime_percent(task_status.ulRunTimeCounter, total);
 	return OVE_OK;
 #else
-	(void)handle;
-	(void)stats;
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }

@@ -42,6 +42,7 @@ A recurring difference is *how a scope-bound resource is released*:
 | Idempotent deinit | yes | yes | yes |
 | Cancellation flag | `stop_token::stop_requested()` | `StopToken::is_stopped()` | `StopToken.isStopped()` |
 | Request stop | `Thread::request_stop()` | `Thread::request_stop()` | `Thread.requestStop()` |
+| Current thread | `this_thread::self()` / `get_id()` (null handle on a thread oveRTOS did not create) | `Thread::current() -> Option<Thread>` (`None` there) | `getSelf()` (null there) |
 | Priority | `ove_prio_t` (C enum) + `ove::prio_above`/`prio_below` | `Priority` newtype (`u8` level, anchor consts, `above`/`below`) | `Priority` non-exhaustive `enum(c_uint)` (`above`/`below`) |
 | State | `ove_thread_state_t` (C enum) | `ThreadState` enum | `State` `enum(c_uint)` |
 

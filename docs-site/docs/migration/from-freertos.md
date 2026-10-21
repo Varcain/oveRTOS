@@ -19,7 +19,7 @@ Three differences worth knowing up front:
 | `vTaskDelete(h)` | cooperative `ove_thread_request_stop(h)` + `ove_thread_destroy(h)` | cooperative `ove_thread_request_stop(h)` + `ove_thread_deinit(h)` |
 | `vTaskDelay(pdMS_TO_TICKS(ms))` | `ove_thread_sleep_ms(ms)` | same |
 | `taskYIELD()` | `ove_thread_yield()` | same |
-| `xTaskGetCurrentTaskHandle()` | `ove_thread_get_self()` | same |
+| `xTaskGetCurrentTaskHandle()` | `ove_thread_get_self()` (NULL on tasks oveRTOS did not create) | same |
 | `vTaskPrioritySet(h, p)` | `ove_thread_set_priority(h, p)` | same |
 
 Priority levels map: `tskIDLE_PRIORITY` → `OVE_PRIO_IDLE`, and higher numbers win, as in FreeRTOS. oveRTOS priorities run from 0 to `OVE_PRIO_MAX` (31) with named anchors (`OVE_PRIO_LOW`, `OVE_PRIO_NORMAL`, `OVE_PRIO_HIGH`, `OVE_PRIO_CRITICAL`, …); `OVE_PRIO_ABOVE(p, n)` and `OVE_PRIO_BELOW(p, n)` reach the levels between them. On FreeRTOS each ove priority is the native priority of the same number. Use the names: Zephyr and NuttX number their priorities differently (lower wins in Zephyr), and the anchors keep their meaning on every backend.
