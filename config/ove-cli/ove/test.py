@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import venv
+from .build import (_drop_stale_cmake_cache, _shared_patched_tree,
+                    nuttx_patch_layers)
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
 from .appgen import generate_app_kconfig
 from .board_yaml import nuttx_board_config, zephyr_board
@@ -1202,6 +1204,161 @@ def _nuttx_fetch_sources(ove_dir):
     return nuttx_hash, apps_hash, cmocka_dl
 
 
+def _nuttx_patched_kernel(ove_dir, *, record_dir=None):
+    """The patched NuttX kernel tree the NuttX test paths must build against.
+
+    `ove build` compiles the backend against a patched kernel worktree
+    (build.py's _shared_patched_tree).  The backend's sched_note driver
+    uses a member that only the config/patches/nuttx layer adds, so a build
+    against the pristine dl/ clone does not compile once
+    CONFIG_OVE_THREAD_STATE_STATS is on.  The tree is named after its
+    content, so every path that applies the same layers shares one
+    checkout — the same mechanism `ove build` uses.
+
+    `record_dir` is the build directory the tree is recorded in, so
+    `ove clean --sources` keeps it.  It is required: a tree that nobody
+    records is a tree nobody cleans.
+    """
+    if record_dir is None:
+        raise ValueError(
+            "record_dir is required: the shared tree must be recorded for "
+            "`ove clean --sources`")
+    nuttx_dl, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
+    nuttx_src = _shared_patched_tree(None, nuttx_dl,
+                                     nuttx_patch_layers(ove_dir),
+                                     record_dir=record_dir)
+    return nuttx_src, apps_dl
+
+
+# The scheduler instrumentation the backend's note driver needs.  The same
+# set the `ove build` defconfig template emits for the feature
+# (config/templates/nuttx_defconfig.j2).
+_STATE_STATS_DEFCONFIG = """\
+# Per-thread state tracking (CONFIG_OVE_THREAD_STATE_STATS) follows the
+# scheduler through a sched_note driver, so the scheduler instrumentation and
+# the note driver must be on.
+CONFIG_SCHED_INSTRUMENTATION=y
+CONFIG_SCHED_INSTRUMENTATION_SWITCH=y
+CONFIG_DRIVERS_NOTE=y
+CONFIG_DRIVERS_NOTE_MAX=2
+CONFIG_DRIVERS_NOTERAM=n
+"""
+
+
+def _nuttx_state_stats_overlay(variant_dir, build_dir):
+    """The defconfig overlay the note driver needs, or None.
+
+    The test variants' static defconfigs do not enable the scheduler
+    instrumentation (the feature is off in every variant today), and the
+    note driver's ops only exist when it is on.  Deriving the overlay from
+    the variant's own ove_config.h keeps the variants' defconfigs untouched
+    while making CONFIG_OVE_THREAD_STATE_STATS usable in them.
+
+    The feature is not necessarily spelled out in the variant's *own*
+    header: the heap variants inherit it — tests/sim/nuttx-qemu/ove_config.h
+    #includes the shared tests/sim/nuttx/ove_config.h — and the backend's
+    translation unit sees the inherited define, because the variant
+    directory comes first in its include path.  Grepping one file would
+    miss it: the kernel would keep CONFIG_SCHED_INSTRUMENTATION_SWITCH off
+    while the backend expects the note driver's suspend/resume ops, and the
+    NuttX build would not compile.  The define is therefore resolved the
+    way the compiler resolves it — through the #include chain.
+
+    The chain is walked first (cheap, and it keeps the preprocessor out of
+    the way while the feature is off in every variant); when it mentions
+    the feature, the C preprocessor settles the question, because only it
+    evaluates the #ifdefs and the include guards the way the build does.
+    The chain is the one the variants use: the quoted includes of the
+    variant's own header (tests/sim/nuttx-qemu/ove_config.h includes
+    ../nuttx/ove_config.h).
+    """
+    # The imports are local on purpose: the helper is exec'd on its own by
+    # the regression test (tests/python/test_nuttx_patch_layers.py), which
+    # hands it a namespace with `os` and `re` only.
+    import shutil
+    import subprocess
+
+    feature = "CONFIG_OVE_THREAD_STATE_STATS"
+    config = os.path.join(variant_dir, "ove_config.h")
+    if not os.path.isfile(config):
+        return None
+
+    define_re = re.compile(r"^[ \t]*#[ \t]*define[ \t]+%s\b" % re.escape(feature),
+                           re.MULTILINE)
+    undef_re = re.compile(r"^[ \t]*#[ \t]*undef[ \t]+%s\b" % re.escape(feature),
+                          re.MULTILINE)
+    include_re = re.compile(r"^[ \t]*#[ \t]*include[ \t]+\"([^\"]+)\"",
+                            re.MULTILINE)
+
+    def spelled(path, state=None, depth=0):
+        """The feature's state after `path`, or None if it stays untouched.
+
+        The include chain is followed in the order the compiler reads it,
+        so a header that defines (or undefines) the feature has the same
+        effect here as it has in the build.  Conditionals are not
+        evaluated — the preprocessor does that.
+        """
+        if depth > 16:
+            return state
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            return state
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("#"):
+                continue
+            match = include_re.match(stripped)
+            if match:
+                included = os.path.join(os.path.dirname(path), match.group(1))
+                if os.path.isfile(included):
+                    state = spelled(included, state, depth + 1)
+                continue
+            if define_re.match(stripped):
+                state = True
+            elif undef_re.match(stripped):
+                state = False
+        return state
+
+    def preprocessed():
+        """Whether the preprocessor sees the feature defined, or None.
+
+        None means no preprocessor was available (or it refused the
+        header); the caller then falls back to the chain's spelling.
+        """
+        for program in ("cc", "gcc", "cpp", "clang"):
+            tool = shutil.which(program)
+            if not tool:
+                continue
+            proc = subprocess.run(
+                [tool, "-E", "-dM", "-x", "c", config],
+                capture_output=True, text=True, check=False)
+            if proc.returncode != 0:
+                continue
+            return bool(re.search(r"^#define[ \t]+%s\b" % re.escape(feature),
+                                  proc.stdout, re.MULTILINE))
+        return None
+
+    state = spelled(config)
+    if state is None:
+        # No header in the chain mentions the feature (every variant
+        # today): no preprocessor run.  A chain that mentions it at all,
+        # even only to #undef it, goes to the preprocessor, since an #undef
+        # may sit in an inactive branch.
+        return None
+    effective = preprocessed()
+    if effective is None:
+        effective = state
+    if not effective:
+        return None
+    os.makedirs(build_dir, exist_ok=True)
+    path = os.path.join(build_dir, "ove-state-stats-defconfig")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(_STATE_STATS_DEFCONFIG)
+    return path
+
+
 def _nuttx_variant_config_dir(ove_dir, app_subdir):
     """Resolve the per-variant tests/sim/<dir>/ that holds ove_config.h.
 
@@ -1270,6 +1427,11 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     if coverage:
         cmake_defs.append("-DOVE_COVERAGE=ON")
 
+    # The kernel tree is content-addressed: a patch edit (or the move off
+    # the pristine dl/ clone) changes it, and CMake refuses a build
+    # directory configured for another source tree.
+    _drop_stale_cmake_cache(build_dir, nuttx_src)
+
     logger.debug(f"cmake configure: {board_config} -> {build_dir}")
     # --no-warn-unused-cli silences "Manually-specified variables were not
     # used" for OVE_DIR / OVE_COVERAGE — they're consumed in the
@@ -1326,7 +1488,7 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
     logger.info("Building %s", label)
     os.makedirs(build_base, exist_ok=True)
 
-    nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
+    nuttx_src, apps_dl = _nuttx_patched_kernel(ove_dir, record_dir=build_base)
     if not os.path.isdir(apps_build):
         logger.debug("Copying NuttX apps to build tree...")
         shutil.copytree(apps_dl, apps_build, symlinks=True)
@@ -1335,18 +1497,24 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
     if coverage:
         _clean_gcda(ove_dir)
 
+    variant_dir = _nuttx_variant_config_dir(ove_dir, "nuttx")
+    overlays = [
+        os.path.join(ove_dir, "tests", "sim", "nuttx",
+                     "nuttx_sim_defconfig"),
+    ]
+    stats_overlay = _nuttx_state_stats_overlay(variant_dir, build_base)
+    if stats_overlay:
+        overlays.append(stats_overlay)
+
     _nuttx_cmake_build(
         ove_dir,
         nuttx_src=nuttx_src,
         apps_build=apps_build,
         build_dir=build_dir,
         board_config="sim:nsh",
-        defconfig_overlays=[
-            os.path.join(ove_dir, "tests", "sim", "nuttx",
-                         "nuttx_sim_defconfig"),
-        ],
+        defconfig_overlays=overlays,
         coverage=coverage,
-        variant_dir=_nuttx_variant_config_dir(ove_dir, "nuttx"),
+        variant_dir=variant_dir,
     )
 
     logger.info("Running %s", label)
@@ -1705,7 +1873,7 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
     logger.info(f"Building {label}")
     os.makedirs(build_base, exist_ok=True)
 
-    nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
+    nuttx_src, apps_dl = _nuttx_patched_kernel(ove_dir, record_dir=build_base)
     if not os.path.isdir(apps_build):
         shutil.copytree(apps_dl, apps_build, symlinks=True)
     _nuttx_register_test_app(ove_dir, apps_build, app_subdir)
@@ -1713,10 +1881,14 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
     extra_env = {
         "PATH": os.path.join(tc_dir, "bin") + os.pathsep + os.environ["PATH"],
     }
+    variant_dir = _nuttx_variant_config_dir(ove_dir, app_subdir)
     overlays = [
         os.path.join(ove_dir, "tests", "sim", app_subdir,
                      "nuttx_test_defconfig"),
     ]
+    stats_overlay = _nuttx_state_stats_overlay(variant_dir, build_base)
+    if stats_overlay:
+        overlays.append(stats_overlay)
 
     _nuttx_cmake_build(
         ove_dir,
@@ -1726,7 +1898,7 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
         board_config=nuttx_board_config(_board_dir(ove_dir, "stm32f746g-discovery")),
         defconfig_overlays=overlays,
         coverage=False,
-        variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
+        variant_dir=variant_dir,
         extra_env=extra_env,
     )
 
@@ -2104,7 +2276,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
     logger.info(f"Building {label}")
     os.makedirs(build_base, exist_ok=True)
 
-    nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
+    nuttx_src, apps_dl = _nuttx_patched_kernel(ove_dir, record_dir=build_base)
     if not os.path.isdir(apps_build):
         logger.debug("Copying NuttX apps to build tree...")
         shutil.copytree(apps_dl, apps_build, symlinks=True)
@@ -2115,6 +2287,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
         "PATH": os.path.join(tc_dir, "bin") + os.pathsep + os.environ["PATH"],
     }
 
+    variant_dir = _nuttx_variant_config_dir(ove_dir, app_subdir)
     overlays = [
         os.path.join(ove_dir, "tests", "sim", app_subdir,
                      "nuttx_test_defconfig"),
@@ -2122,6 +2295,9 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
     if coverage:
         overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
                                      "nuttx_test_coverage_defconfig"))
+    stats_overlay = _nuttx_state_stats_overlay(variant_dir, build_base)
+    if stats_overlay:
+        overlays.append(stats_overlay)
 
     _nuttx_cmake_build(
         ove_dir,
@@ -2131,7 +2307,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
         board_config=board_config,
         defconfig_overlays=overlays,
         coverage=coverage,
-        variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
+        variant_dir=variant_dir,
         extra_env=extra_env,
     )
 

@@ -52,6 +52,8 @@ set(_srcs
 
   # NuttX backend modules — pure POSIX, provided by NuttX kernel.
   ${_nuttx_be}/nuttx_thread.c
+  # Time source of CONFIG_OVE_THREAD_STATE_STATS; empty without it.
+  ${_nuttx_be}/nuttx_state_stats.c
   ${_nuttx_be}/nuttx_heap_lock.c
   ${_nuttx_be}/nuttx_sync.c
   ${_nuttx_be}/nuttx_queue.c

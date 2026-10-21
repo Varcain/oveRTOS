@@ -517,6 +517,13 @@ add_test(NAME ove_patch_worktree_python
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
         ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_patch_worktree.py)
+# The `ove test` NuttX build paths must compile the backend against the
+# patched kernel (the .ready note op only exists after the
+# config/patches/nuttx layer).  Static only - no NuttX checkout, no
+# toolchain, no network.
+add_test(NAME ove_nuttx_patch_layers_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nuttx_patch_layers.py)
 add_test(NAME ove_freertos_build_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli

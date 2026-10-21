@@ -257,8 +257,28 @@ def _prepare_patched_git_tree(source_dir, worktree, layers, *,
 _SOURCE_TREES_DIR = ".ove-worktrees"
 _SOURCE_TREES_RECORD = ".ove-source-trees"
 
+# The content key a shared tree's name ends with (see _shared_patched_tree).
+_TREE_KEY_RE = re.compile(r"-[0-9a-f]{16}$")
 
-def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
+
+def _tree_source_id(tree):
+    """The download a shared tree was made from, derived from its name.
+
+    The tree is named `<download basename>-<content key>`, so the name
+    without the key identifies the download.  Two trees of the same download
+    (one before and one after a patch edit) share it, and the newer one
+    supersedes the older.
+    """
+    return _TREE_KEY_RE.sub("", os.path.basename(tree))
+
+
+def _source_lock_path(root, source_dir):
+    """The lock that serializes the preparation of `source_dir`'s trees."""
+    return os.path.join(root, f"{os.path.basename(source_dir)}.source.lock")
+
+
+def _shared_patched_tree(ws, source_dir, layers, *, log_file=None,
+                         record_dir=None):
     """Return the patched source tree shared by every workspace with this patch set.
 
     The tree is named after its content (source revision plus the ordered patch
@@ -266,8 +286,19 @@ def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
     checkout. A build must not write into it (_check_source_trees_unchanged).
     A lock serializes its preparation, and the workspace records it for
     `ove clean --sources`.
+
+    `ws` may be None for a build that has no workspace (the `ove test` paths
+    run outside one); `record_dir` then names the build directory in which the
+    tree is recorded, so `ove clean --sources` keeps it. Exactly one of the
+    two must be given — both say where the tree is recorded, and a caller
+    that names neither would lose the `ove clean --sources` bookkeeping.
     """
     import fcntl
+
+    if (ws is None) == (record_dir is None):
+        raise ValueError(
+            "exactly one of ws and record_dir must be given: ws records the "
+            "tree in the workspace's build dir, record_dir in that dir")
 
     source_dir = os.path.realpath(source_dir)
     manifest = _patch_manifest(source_dir, _collect_patch_series(layers))
@@ -276,10 +307,21 @@ def _shared_patched_tree(ws, source_dir, layers, *, log_file=None):
     root = os.path.join(os.path.dirname(source_dir), _SOURCE_TREES_DIR)
     tree = os.path.join(root, f"{os.path.basename(source_dir)}-{key}")
     os.makedirs(root, exist_ok=True)
-    with open(tree + ".lock", "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        _prepare_patched_git_tree(source_dir, tree, layers, log_file=log_file)
-        _record_source_tree(ws, tree)
+    # Preparing a tree writes into the download's .git (git worktree add), so
+    # two trees derived from the same download — the global patch layer alone
+    # and the global + board layers, say — must not be prepared at the same
+    # time. The download's lock is taken first and the tree's second, so the
+    # order is the same everywhere.
+    with open(_source_lock_path(root, source_dir), "w") as source_lock:
+        fcntl.flock(source_lock, fcntl.LOCK_EX)
+        with open(tree + ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            _prepare_patched_git_tree(source_dir, tree, layers,
+                                      log_file=log_file)
+            if record_dir is not None:
+                _record_source_tree(record_dir, tree)
+            else:
+                _record_source_tree(ws.build_dir, tree)
     return tree
 
 
@@ -326,17 +368,25 @@ def _check_source_trees_unchanged(ws):
     sys.exit(1)
 
 
-def _record_source_tree(ws, tree):
-    """Note in the workspace that its build uses a shared source tree."""
-    record = os.path.join(ws.build_dir, _SOURCE_TREES_RECORD)
+def _record_source_tree(build_dir, tree):
+    """Note in a build directory that its build uses a shared source tree.
+
+    A tree that supersedes another one for the same download replaces it:
+    the superseded tree is no longer used by this build, and keeping it in
+    the record would keep it alive for `ove clean --sources` forever (the
+    old tree carries the old patch content and costs its full size on
+    disk).
+    """
+    record = os.path.join(build_dir, _SOURCE_TREES_RECORD)
     trees = set()
     if os.path.isfile(record):
         with open(record) as f:
             trees = {line.strip() for line in f if line.strip()}
-    if tree in trees:
-        return
+    source_id = _tree_source_id(tree)
+    trees = {path for path in trees
+             if path == tree or _tree_source_id(path) != source_id}
     trees.add(tree)
-    os.makedirs(ws.build_dir, exist_ok=True)
+    os.makedirs(build_dir, exist_ok=True)
     with open(record, "w") as f:
         f.writelines(f"{path}\n" for path in sorted(trees))
 
@@ -383,10 +433,17 @@ def discard_unreferenced_source_trees(ove_dir, dl_dir):
             path = os.path.join(root, name)
             if not os.path.isdir(path) or path in referenced:
                 continue
-            # The lock file stays: a build may be waiting on it.
-            with open(path + ".lock", "w") as lock:
+            # The lock file stays: a build may be waiting on it. The
+            # download's lock is taken first, like in _shared_patched_tree:
+            # the removal prunes the download's worktree registrations, which
+            # a concurrent preparation writes into.
+            source_lock = os.path.join(
+                root, f"{_tree_source_id(path)}.source.lock")
+            with open(source_lock, "w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX)
-                _discard_source_tree(path)
+                with open(path + ".lock", "w") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    _discard_source_tree(path)
             removed += 1
     return removed
 
@@ -623,6 +680,28 @@ def _nuttx_app_dir(ws):
     return os.path.join(ws.build_dir, "nuttx-app")
 
 
+def nuttx_patch_layers(ove_dir, board_dir=None, app_dir=None):
+    """The ordered NuttX patch layers: the global one, then board and app.
+
+    Every path that compiles the NuttX backend must apply the global layer:
+    it carries the sched-note extension the backend's note driver is built
+    against (config/patches/nuttx).  `ove build` and `ove test` therefore
+    build against the same patched kernel.  The board and app layers are
+    optional and only apply to the board/app a build targets.
+    """
+    layers = [("global patch",
+               os.path.join(ove_dir, "config", "patches", "nuttx"))]
+    if board_dir:
+        board_patches = os.path.join(board_dir, "nuttx", "patches")
+        if os.path.isdir(board_patches):
+            layers.append(("board patch", board_patches))
+    if app_dir:
+        app_patches = os.path.join(app_dir, "patches", "nuttx")
+        if os.path.isdir(app_patches):
+            layers.append(("app patch", app_patches))
+    return layers
+
+
 def _setup_nuttx_build_tree(ws, env, log_file=None):
     """Prepare the shared NuttX sources and this workspace's external app.
 
@@ -632,13 +711,7 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
     defconfig (_write_nuttx_defconfig) live in the workspace, which the
     oveRTOS NuttX patches point the build at.
     """
-    nuttx_layers = [
-        ("global patch", os.path.join(ws.ove_dir, "config", "patches", "nuttx")),
-        ("board patch", os.path.join(ws.board_dir, "nuttx", "patches")),
-    ]
-    if ws.app_dir:
-        nuttx_layers.append((
-            "app patch", os.path.join(ws.app_dir, "patches", "nuttx")))
+    nuttx_layers = nuttx_patch_layers(ws.ove_dir, ws.board_dir, ws.app_dir)
     nuttx_src = _shared_patched_tree(
         ws, os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_layers,
         log_file=log_file)

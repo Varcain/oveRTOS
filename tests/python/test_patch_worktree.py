@@ -6,10 +6,12 @@
 
 """Regression tests for content-addressed RTOS patch worktrees."""
 
+import fcntl
 import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from ove.build import (
     _check_source_trees_unchanged,
@@ -188,6 +190,66 @@ class SharedSourceTreeTest(_GitSourceCase):
         self.assertNotEqual(bravo, charlie)
         with open(os.path.join(bravo, "a.txt")) as f:
             self.assertEqual(f.read(), "bravo\n")
+
+    def test_a_superseded_tree_leaves_the_record(self):
+        """The record names the trees the build uses — and only those.
+
+        A tree that a patch edit superseded is not used any more, so it
+        must not stay in the record: `ove clean --sources` would keep it
+        alive (with its old patch content) forever.
+        """
+        ws = self._workspace("a")
+        self._patch_a("bravo")
+        bravo = self._shared(ws)
+        self._patch_a("charlie")
+        charlie = self._shared(ws)
+        self.assertNotEqual(bravo, charlie)
+        self.assertEqual(self._records(ws), [charlie])
+
+        self.assertEqual(
+            discard_unreferenced_source_trees(self.root, self.dl_dir), 1)
+        self.assertFalse(os.path.exists(bravo))
+        self.assertTrue(os.path.isdir(charlie))
+
+    def test_the_preparation_holds_the_downloads_lock(self):
+        """Two trees of one download must not be prepared at the same time.
+
+        The preparation writes into the download's .git (git worktree add),
+        so two trees derived from it — the global patch layer alone and the
+        global + board layers, say — must be serialized on the download.
+        """
+        seen = {}
+
+        def fake_prepare(source_dir, worktree, layers, *, log_file=None):
+            lock = os.path.join(
+                os.path.dirname(source_dir), ".ove-worktrees",
+                f"{os.path.basename(source_dir)}.source.lock")
+            seen["lock"] = lock
+            with open(lock, "w") as other:
+                try:
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    seen["held"] = True
+                else:
+                    seen["held"] = False
+            return worktree
+
+        with mock.patch("ove.build._prepare_patched_git_tree", fake_prepare):
+            _shared_patched_tree(self._workspace("a"), self.source,
+                                 [("test patch", self.patches)])
+        self.assertTrue(os.path.isfile(seen.get("lock", "")),
+                        "the download's lock was not taken")
+        self.assertTrue(seen.get("held"),
+                        "the download's lock was not held while preparing")
+
+    def test_the_record_needs_exactly_one_of_ws_and_record_dir(self):
+        """Both say where the tree is recorded — one of them must be given."""
+        layers = [("test patch", self.patches)]
+        with self.assertRaises(ValueError):
+            _shared_patched_tree(None, self.source, layers)
+        with self.assertRaises(ValueError):
+            _shared_patched_tree(self._workspace("a"), self.source, layers,
+                                 record_dir=self.root)
 
     def test_clean_sources_keeps_recorded_trees_only(self):
         kept, dropped = self._workspace("kept"), self._workspace("dropped")

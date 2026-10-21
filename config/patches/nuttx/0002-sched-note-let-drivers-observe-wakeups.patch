@@ -40,10 +40,25 @@ index 71cc45b3..3aa31750 100644
  {
    struct note_resume_s note;
 diff --git a/include/nuttx/note/note_driver.h b/include/nuttx/note/note_driver.h
-index 9b8496cf..5b5b6308 100644
+index 9b8496cf..fdf89da6 100644
 --- a/include/nuttx/note/note_driver.h
 +++ b/include/nuttx/note/note_driver.h
-@@ -107,6 +107,13 @@ struct note_driver_ops_s
+@@ -38,6 +38,14 @@
+  * Pre-processor Definitions
+  ****************************************************************************/
+ 
++/* oveRTOS: the `ready` note op below exists only in this patched tree
++ * (config/patches/nuttx/0002-sched-note-let-drivers-observe-wakeups.patch).
++ * The oveRTOS backend keys its `ready` op off this macro, so it also
++ * compiles against an unpatched kernel - without the ready edge.
++ */
++
++#define OVE_NUTTX_HAVE_SCHED_NOTE_READY 1
++
+ /****************************************************************************
+  * Public Types
+  ****************************************************************************/
+@@ -107,6 +115,13 @@ struct note_driver_ops_s
    CODE void (*vprintf)(FAR struct note_driver_s *drv, uintptr_t ip,
                         FAR const char *fmt, va_list va) printf_like(3, 0);
  #endif

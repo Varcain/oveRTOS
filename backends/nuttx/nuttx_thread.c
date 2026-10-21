@@ -968,6 +968,12 @@ static void obs_note_stop(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
 	leave_critical_section(flags);
 }
 
+/* The ready op is patched into the note driver ops (see
+ * config/patches/nuttx/0002-sched-note-let-drivers-observe-wakeups.patch),
+ * which defines OVE_NUTTX_HAVE_SCHED_NOTE_READY in note_driver.h.  An
+ * unpatched kernel has no such op, so the driver is built without it there
+ * — the backend still compiles, it just does not see the wake-up edge. */
+#ifdef OVE_NUTTX_HAVE_SCHED_NOTE_READY
 static void obs_note_ready(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
 {
 	(void)drv;
@@ -979,12 +985,15 @@ static void obs_note_ready(FAR struct note_driver_s *drv, FAR struct tcb_s *tcb)
 		ove_trace_emit_kthread_state((uintptr_t)tcb, OVE_THREAD_STATE_READY,
 					     OVE_TRACE_KT_FROM_WAITING);
 }
+#endif
 
 static const struct note_driver_ops_s obs_note_ops = {
 	.stop = obs_note_stop,
 	.suspend = obs_note_suspend,
 	.resume = obs_note_resume,
+#ifdef OVE_NUTTX_HAVE_SCHED_NOTE_READY
 	.ready = obs_note_ready,
+#endif
 };
 
 static struct note_driver_s obs_note_driver = {

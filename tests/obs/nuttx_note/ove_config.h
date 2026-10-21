@@ -24,4 +24,11 @@
 #define CONFIG_OVE_RTOS_NUTTX 1
 #define CONFIG_OVE_TRACE_RING_SIZE 4096
 
+/* The NuttX build always applies config/patches/nuttx/, which adds the
+ * `ready` note op and the macro that announces it (see the patch and
+ * dl/nuttx-24f210ef/include/nuttx/note/note_driver.h).  The stand-in in
+ * nuttx_note_shim.h mirrors that patched layout, so the ready op is
+ * compiled here exactly as it is in the firmware. */
+#define OVE_NUTTX_HAVE_SCHED_NOTE_READY 1
+
 #endif /* OVE_CONFIG_H */
