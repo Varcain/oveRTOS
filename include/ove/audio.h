@@ -29,6 +29,7 @@
 
 #include "ove/audio_node.h"
 #include "ove/storage.h"
+#include "ove/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,7 +133,7 @@ struct ove_audio_graph {
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_deinit
  */
-int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int frames_per_period);
+OVE_NODISCARD int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int frames_per_period);
 
 /**
  * @brief Release all resources held by an audio graph.
@@ -164,8 +165,9 @@ void ove_audio_graph_deinit(struct ove_audio_graph *g);
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_connect, ove_audio_graph_build
  */
-int ove_audio_graph_add_node(struct ove_audio_graph *g, const struct ove_audio_node_ops *ops,
-			     void *ctx, const char *name, enum ove_audio_node_type type);
+OVE_NODISCARD int ove_audio_graph_add_node(struct ove_audio_graph *g,
+					   const struct ove_audio_node_ops *ops, void *ctx,
+					   const char *name, enum ove_audio_node_type type);
 
 /**
  * @brief Connect two nodes with a directed edge.
@@ -182,7 +184,8 @@ int ove_audio_graph_add_node(struct ove_audio_graph *g, const struct ove_audio_n
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_add_node, ove_audio_graph_build
  */
-int ove_audio_graph_connect(struct ove_audio_graph *g, unsigned int from, unsigned int to);
+OVE_NODISCARD int ove_audio_graph_connect(struct ove_audio_graph *g, unsigned int from,
+					  unsigned int to);
 
 /**
  * @brief Provide caller-owned storage for inter-node audio buffers.
@@ -203,7 +206,8 @@ int ove_audio_graph_connect(struct ove_audio_graph *g, unsigned int from, unsign
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see OVE_AUDIO_GRAPH_STORAGE_BYTES
  */
-int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g, void *storage, size_t size);
+OVE_NODISCARD int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g, void *storage,
+						  size_t size);
 
 /**
  * @brief Conservative upper-bound byte count for graph buffer storage.
@@ -233,7 +237,7 @@ int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g, void *storage, si
  *
  * @see ove_audio_graph_create
  */
-int ove_audio_graph_create_(struct ove_audio_graph *g, unsigned int frames);
+OVE_NODISCARD int ove_audio_graph_create_(struct ove_audio_graph *g, unsigned int frames);
 
 /**
  * @brief Stop and tear down a graph created with @ref ove_audio_graph_create.
@@ -281,8 +285,9 @@ int ove_audio_graph_destroy(struct ove_audio_graph *g);
  * @code
  * OVE_AUDIO_GRAPH_DEFINE(g, 2, 512, 1, 2);
  *
- * ove_audio_graph_init(&g, 512);
- * ove_audio_graph_set_buf_storage(&g, g_buf, sizeof(g_buf));
+ * if (ove_audio_graph_init(&g, 512) != OVE_OK ||
+ *     ove_audio_graph_set_buf_storage(&g, g_buf, sizeof(g_buf)) != OVE_OK)
+ *     return;
  * @endcode
  *
  * Applications that do not need this level of control should prefer
@@ -309,7 +314,7 @@ int ove_audio_graph_destroy(struct ove_audio_graph *g);
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_start
  */
-int ove_audio_graph_build(struct ove_audio_graph *g);
+OVE_NODISCARD int ove_audio_graph_build(struct ove_audio_graph *g);
 
 /**
  * @brief Start the audio graph.
@@ -324,7 +329,7 @@ int ove_audio_graph_build(struct ove_audio_graph *g);
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_build, ove_audio_graph_stop
  */
-int ove_audio_graph_start(struct ove_audio_graph *g);
+OVE_NODISCARD int ove_audio_graph_start(struct ove_audio_graph *g);
 
 /**
  * @brief Stop the audio graph.
@@ -349,14 +354,15 @@ int ove_audio_graph_stop(struct ove_audio_graph *g);
  *
  * @param[in] g  Graph instance in @c OVE_AUDIO_GRAPH_READY or
  *               @c OVE_AUDIO_GRAPH_RUNNING state.
- * @return 0 on success, @c OVE_ERR_NOT_SUPPORTED if the graph has not
- *         been built, or another negative error code if any node reports
- *         an error.
+ * @return 0 on success, or @c OVE_ERR_NOT_SUPPORTED if the graph has not
+ *         been built.  A node whose @c process callback fails does not fail
+ *         the cycle: its output is zero-filled and the failure is counted in
+ *         @c ove_audio_graph_stats.node_errors.
  *
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_start
  */
-int ove_audio_graph_process(struct ove_audio_graph *g);
+OVE_NODISCARD int ove_audio_graph_process(struct ove_audio_graph *g);
 
 /**
  * @brief Retrieve a snapshot of graph runtime statistics.
@@ -373,7 +379,8 @@ int ove_audio_graph_process(struct ove_audio_graph *g);
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_stats
  */
-int ove_audio_graph_get_stats(const struct ove_audio_graph *g, struct ove_audio_graph_stats *stats);
+OVE_NODISCARD int ove_audio_graph_get_stats(const struct ove_audio_graph *g,
+					    struct ove_audio_graph_stats *stats);
 
 #else /* !CONFIG_OVE_AUDIO */
 
@@ -381,7 +388,7 @@ struct ove_audio_graph {
 	int _unused;
 };
 
-static inline int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int f)
+OVE_NODISCARD static inline int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int f)
 {
 	(void)g;
 	(void)f;

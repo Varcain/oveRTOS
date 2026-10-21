@@ -168,7 +168,7 @@ typedef void (*ove_pm_notify_fn)(ove_pm_event_t event, ove_pm_state_t from_state
  * @param[in] cfg  Configuration parameters.  Must not be NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_pm_init(const struct ove_pm_cfg *cfg);
+OVE_NODISCARD int ove_pm_init(const struct ove_pm_cfg *cfg);
 
 /**
  * @brief Tear down the PM subsystem and release resources.
@@ -181,7 +181,7 @@ void ove_pm_deinit(void);
  * @param[in] state  Target power state.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_pm_set_state(ove_pm_state_t state);
+OVE_NODISCARD int ove_pm_set_state(ove_pm_state_t state);
 
 /**
  * @brief Query the current power state.
@@ -207,9 +207,11 @@ void ove_pm_activity(void);
  * @brief Register a wake source.
  *
  * @param[in] src  Wake source descriptor.
- * @return OVE_OK on success, OVE_ERR_NO_MEMORY if table full.
+ * @return OVE_OK on success, OVE_ERR_NO_MEMORY if the table is full, or
+ *         OVE_ERR_INVALID_PARAM if @p src is NULL or @ref ove_pm_init has
+ *         not been called.
  */
-int ove_pm_wake_register(const struct ove_pm_wake_src *src);
+OVE_NODISCARD int ove_pm_wake_register(const struct ove_pm_wake_src *src);
 
 /**
  * @brief Unregister a previously registered wake source.
@@ -227,7 +229,7 @@ int ove_pm_wake_unregister(const struct ove_pm_wake_src *src);
  * @param[in] domain  Domain identifier.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_pm_domain_request(ove_pm_domain_t domain);
+OVE_NODISCARD int ove_pm_domain_request(ove_pm_domain_t domain);
 
 /**
  * @brief Decrement the reference count for a peripheral power domain.
@@ -245,7 +247,7 @@ int ove_pm_domain_release(ove_pm_domain_t domain);
  * @param[in] domain  Domain identifier.
  * @return Reference count (>= 0), or negative error code.
  */
-int ove_pm_domain_get_refcount(ove_pm_domain_t domain);
+OVE_NODISCARD int ove_pm_domain_get_refcount(ove_pm_domain_t domain);
 
 /**
  * @brief Register a custom power policy callback.
@@ -255,18 +257,21 @@ int ove_pm_domain_get_refcount(ove_pm_domain_t domain);
  *
  * @param[in] policy    Policy function, or NULL for default.
  * @param[in] user_data Opaque pointer forwarded to @p policy.
- * @return OVE_OK.
+ * @return OVE_OK, or @c OVE_ERR_INVALID_PARAM if @ref ove_pm_init has not been
+ *         called.
  */
-int ove_pm_set_policy(ove_pm_policy_fn policy, void *user_data);
+OVE_NODISCARD int ove_pm_set_policy(ove_pm_policy_fn policy, void *user_data);
 
 /**
  * @brief Register a transition notification callback.
  *
  * @param[in] cb        Callback invoked on PRE_SLEEP and POST_WAKE.
  * @param[in] user_data Opaque pointer forwarded to @p cb.
- * @return OVE_OK on success, OVE_ERR_NO_MEMORY if table full.
+ * @return OVE_OK on success, OVE_ERR_NO_MEMORY if the table is full, or
+ *         OVE_ERR_INVALID_PARAM if @p cb is NULL or @ref ove_pm_init has not
+ *         been called.
  */
-int ove_pm_notify_register(ove_pm_notify_fn cb, void *user_data);
+OVE_NODISCARD int ove_pm_notify_register(ove_pm_notify_fn cb, void *user_data);
 
 /**
  * @brief Unregister a transition notification callback.
@@ -283,7 +288,7 @@ int ove_pm_notify_unregister(ove_pm_notify_fn cb, void *user_data);
  * @param[out] stats  Receives current statistics snapshot.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_pm_get_stats(struct ove_pm_stats *stats);
+OVE_NODISCARD int ove_pm_get_stats(struct ove_pm_stats *stats);
 
 /**
  * @brief Reset all accumulated power statistics to zero.
@@ -296,7 +301,7 @@ void ove_pm_reset_stats(void);
  * @param[in] target_low_power_pct_x100  Target in hundredths of percent.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_pm_set_budget(uint32_t target_low_power_pct_x100);
+OVE_NODISCARD int ove_pm_set_budget(uint32_t target_low_power_pct_x100);
 
 /**
  * @brief Query actual low-power percentage vs. budget target.
@@ -304,7 +309,7 @@ int ove_pm_set_budget(uint32_t target_low_power_pct_x100);
  * @param[out] actual_pct_x100  Actual low-power % in hundredths.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_pm_get_budget_status(uint32_t *actual_pct_x100);
+OVE_NODISCARD int ove_pm_get_budget_status(uint32_t *actual_pct_x100);
 
 /**
  * @brief Process idle — called from RTOS idle context by the HAL.
@@ -317,7 +322,7 @@ void ove_pm_idle_process(void);
 
 #else /* !CONFIG_OVE_PM */
 
-static inline int ove_pm_init(const struct ove_pm_cfg *c)
+OVE_NODISCARD static inline int ove_pm_init(const struct ove_pm_cfg *c)
 {
 	(void)c;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -325,7 +330,7 @@ static inline int ove_pm_init(const struct ove_pm_cfg *c)
 static inline void ove_pm_deinit(void)
 {
 }
-static inline int ove_pm_set_state(ove_pm_state_t s)
+OVE_NODISCARD static inline int ove_pm_set_state(ove_pm_state_t s)
 {
 	(void)s;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -337,7 +342,7 @@ static inline ove_pm_state_t ove_pm_get_state(void)
 static inline void ove_pm_activity(void)
 {
 }
-static inline int ove_pm_wake_register(const struct ove_pm_wake_src *s)
+OVE_NODISCARD static inline int ove_pm_wake_register(const struct ove_pm_wake_src *s)
 {
 	(void)s;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -347,7 +352,7 @@ static inline int ove_pm_wake_unregister(const struct ove_pm_wake_src *s)
 	(void)s;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_pm_domain_request(ove_pm_domain_t d)
+OVE_NODISCARD static inline int ove_pm_domain_request(ove_pm_domain_t d)
 {
 	(void)d;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -357,18 +362,18 @@ static inline int ove_pm_domain_release(ove_pm_domain_t d)
 	(void)d;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_pm_domain_get_refcount(ove_pm_domain_t d)
+OVE_NODISCARD static inline int ove_pm_domain_get_refcount(ove_pm_domain_t d)
 {
 	(void)d;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_pm_set_policy(ove_pm_policy_fn p, void *u)
+OVE_NODISCARD static inline int ove_pm_set_policy(ove_pm_policy_fn p, void *u)
 {
 	(void)p;
 	(void)u;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_pm_notify_register(ove_pm_notify_fn c, void *u)
+OVE_NODISCARD static inline int ove_pm_notify_register(ove_pm_notify_fn c, void *u)
 {
 	(void)c;
 	(void)u;
@@ -380,7 +385,7 @@ static inline int ove_pm_notify_unregister(ove_pm_notify_fn c, void *u)
 	(void)u;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_pm_get_stats(struct ove_pm_stats *s)
+OVE_NODISCARD static inline int ove_pm_get_stats(struct ove_pm_stats *s)
 {
 	(void)s;
 	return OVE_ERR_NOT_SUPPORTED;
@@ -388,12 +393,12 @@ static inline int ove_pm_get_stats(struct ove_pm_stats *s)
 static inline void ove_pm_reset_stats(void)
 {
 }
-static inline int ove_pm_set_budget(uint32_t t)
+OVE_NODISCARD static inline int ove_pm_set_budget(uint32_t t)
 {
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_pm_get_budget_status(uint32_t *a)
+OVE_NODISCARD static inline int ove_pm_get_budget_status(uint32_t *a)
 {
 	(void)a;
 	return OVE_ERR_NOT_SUPPORTED;

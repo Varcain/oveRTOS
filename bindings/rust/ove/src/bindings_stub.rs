@@ -1542,7 +1542,7 @@ unsafe extern "C" {
     pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Execute one processing cycle (app-driven mode).\n\n Calls each node's @c process callback in topological order, passing\n inter-node buffers along the edges.  Intended for test or offline use;\n in sink-driven mode the hardware callback drives processing instead.\n\n @param[in] g  Graph instance in @c OVE_AUDIO_GRAPH_READY or\n               @c OVE_AUDIO_GRAPH_RUNNING state.\n @return 0 on success, @c OVE_ERR_NOT_SUPPORTED if the graph has not\n         been built, or another negative error code if any node reports\n         an error.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    #[doc = " @brief Execute one processing cycle (app-driven mode).\n\n Calls each node's @c process callback in topological order, passing\n inter-node buffers along the edges.  Intended for test or offline use;\n in sink-driven mode the hardware callback drives processing instead.\n\n @param[in] g  Graph instance in @c OVE_AUDIO_GRAPH_READY or\n               @c OVE_AUDIO_GRAPH_RUNNING state.\n @return 0 on success, or @c OVE_ERR_NOT_SUPPORTED if the graph has not\n         been built.  A node whose @c process callback fails does not fail\n         the cycle: its output is zero-filled and the failure is counted in\n         @c ove_audio_graph_stats.node_errors.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
     pub fn ove_audio_graph_process(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -4467,7 +4467,7 @@ unsafe extern "C" {
     pub fn ove_pm_activity();
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a wake source.\n\n @param[in] src  Wake source descriptor.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if table full."]
+    #[doc = " @brief Register a wake source.\n\n @param[in] src  Wake source descriptor.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if the table is full, or\n         OVE_ERR_INVALID_PARAM if @p src is NULL or @ref ove_pm_init has\n         not been called."]
     pub fn ove_pm_wake_register(src: *const ove_pm_wake_src) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -4487,14 +4487,14 @@ unsafe extern "C" {
     pub fn ove_pm_domain_get_refcount(domain: ove_pm_domain_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK."]
+    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK, or @c OVE_ERR_INVALID_PARAM if @ref ove_pm_init has not been\n         called."]
     pub fn ove_pm_set_policy(
         policy: ove_pm_policy_fn,
         user_data: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a transition notification callback.\n\n @param[in] cb        Callback invoked on PRE_SLEEP and POST_WAKE.\n @param[in] user_data Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if table full."]
+    #[doc = " @brief Register a transition notification callback.\n\n @param[in] cb        Callback invoked on PRE_SLEEP and POST_WAKE.\n @param[in] user_data Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if the table is full, or\n         OVE_ERR_INVALID_PARAM if @p cb is NULL or @ref ove_pm_init has not\n         been called."]
     pub fn ove_pm_notify_register(
         cb: ove_pm_notify_fn,
         user_data: *mut core::ffi::c_void,

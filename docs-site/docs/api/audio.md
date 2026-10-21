@@ -171,10 +171,12 @@ static uint8_t graph_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(
 
 static struct ove_audio_graph graph;
 
-void graph_setup(void)
+int graph_setup(void)
 {
-    ove_audio_graph_init(&graph, 512);
-    ove_audio_graph_set_buf_storage(&graph, graph_buf, sizeof(graph_buf));
+    int rc = ove_audio_graph_init(&graph, 512);
+    if (rc == OVE_OK)
+        rc = ove_audio_graph_set_buf_storage(&graph, graph_buf, sizeof(graph_buf));
+    return rc;
 }
 ```
 
@@ -201,7 +203,7 @@ extern const struct ove_audio_node_ops hiroic_dsp_ops;   /* your DSP node */
 
 static struct ove_audio_graph graph;
 
-void app_init(void)
+int app_init(void)
 {
     struct ove_audio_device_cfg dev_cfg = {
         .transport = OVE_AUDIO_TRANSPORT_I2S,
@@ -209,19 +211,29 @@ void app_init(void)
                  .sample_fmt = OVE_AUDIO_FMT_S16 },
     };
 
-    ove_audio_graph_init(&graph, 512);
+    int rc = ove_audio_graph_init(&graph, 512);
+    if (rc != OVE_OK)
+        return rc;
     /* In zero-heap mode call ove_audio_graph_set_buf_storage(&graph, …)
      * here with caller-provided storage; see "Buffer Storage" above. */
 
+    /* Node indices are non-negative; a negative value is the error code. */
     int src  = ove_audio_device_source(&graph, &dev_cfg, "i2s-in");
     int dsp  = ove_audio_graph_add_node(&graph, &hiroic_dsp_ops,
                                         NULL, "dsp", OVE_AUDIO_NODE_PROCESSOR);
     int sink = ove_audio_device_sink(&graph, &dev_cfg, "i2s-out");
-
-    ove_audio_graph_connect(&graph, src, dsp);
-    ove_audio_graph_connect(&graph, dsp, sink);
-    ove_audio_graph_build(&graph);
-    ove_audio_graph_start(&graph);
+    rc = src < 0 ? src : dsp < 0 ? dsp : sink < 0 ? sink : OVE_OK;
+    if (rc == OVE_OK)
+        rc = ove_audio_graph_connect(&graph, src, dsp);
+    if (rc == OVE_OK)
+        rc = ove_audio_graph_connect(&graph, dsp, sink);
+    if (rc == OVE_OK)
+        rc = ove_audio_graph_build(&graph);
+    if (rc == OVE_OK)
+        rc = ove_audio_graph_start(&graph);
+    if (rc != OVE_OK)
+        ove_audio_graph_deinit(&graph);
+    return rc;
 }
 
 void app_shutdown(void)

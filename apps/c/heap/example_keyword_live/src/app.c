@@ -405,8 +405,14 @@ void ove_main(void)
 		return;
 	}
 
-	ove_audio_graph_connect(&audio_graph, src, proc);
-	ove_audio_graph_connect(&audio_graph, proc, sink);
+	rc = ove_audio_graph_connect(&audio_graph, src, proc);
+	if (rc == OVE_OK)
+		rc = ove_audio_graph_connect(&audio_graph, proc, sink);
+	if (rc != OVE_OK) {
+		OVE_LOG_ERR("Audio graph connect failed: %d", rc);
+		ove_run();
+		return;
+	}
 
 	rc = ove_audio_graph_build(&audio_graph);
 	if (rc != OVE_OK) {

@@ -124,7 +124,8 @@ ove_pm_state_t my_policy(ove_pm_state_t current, uint32_t idle_ms,
     return current;
 }
 
-ove_pm_set_policy(my_policy, NULL);
+if (ove_pm_set_policy(my_policy, NULL) != OVE_OK)
+    OVE_LOG_ERR("call ove_pm_init() first");
 ```
 
 Pass `NULL` to restore the default policy. Pre-sleep / post-wake notifications are registered with `ove_pm_notify_register()`:
@@ -139,7 +140,8 @@ void my_notify(ove_pm_event_t event, ove_pm_state_t from,
         /* restore state after wake */;
 }
 
-ove_pm_notify_register(my_notify, NULL);
+if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
+    OVE_LOG_ERR("notify registration failed");
 ```
 
 ## Networking backends
