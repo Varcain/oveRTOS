@@ -310,17 +310,16 @@ impl Drop for ThunkGuard {
     }
 }
 
-/// `Thread::current()` and worker trampolines both need to wait for the
-/// substrate to publish the per-thread "self" handle before constructing
-/// a [`StopToken`] — on FreeRTOS the parent task-tag publish happens
-/// AFTER `xTaskCreate` returns and equal-priority workers can outrace it.
+/// The spawned thread's own handle, for its [`StopToken`].  Every engine
+/// publishes it before the entry runs, even when the new thread preempts
+/// its creator, so it is never NULL here.
 #[inline]
-unsafe fn wait_for_self() -> bindings::ove_thread_t {
-    let mut handle = unsafe { bindings::ove_thread_get_self() };
-    while handle.is_null() {
-        unsafe { bindings::ove_thread_yield() };
-        handle = unsafe { bindings::ove_thread_get_self() };
-    }
+fn spawned_self() -> bindings::ove_thread_t {
+    let handle = unsafe { bindings::ove_thread_get_self() };
+    debug_assert!(
+        !handle.is_null(),
+        "ove_thread_get_self() is NULL at thread entry"
+    );
     handle
 }
 
@@ -333,8 +332,9 @@ unsafe extern "C" fn fn_simple_trampoline(arg: *mut core::ffi::c_void) {
 
 unsafe extern "C" fn fn_cooperative_trampoline(arg: *mut core::ffi::c_void) {
     let entry: fn(StopToken) = unsafe { core::mem::transmute(arg) };
-    let handle = unsafe { wait_for_self() };
-    entry(StopToken { handle });
+    entry(StopToken {
+        handle: spawned_self(),
+    });
 }
 
 #[cfg(all(not(zero_heap), feature = "alloc"))]
@@ -342,8 +342,9 @@ unsafe extern "C" fn box_cooperative_trampoline(arg: *mut core::ffi::c_void) {
     // SAFETY: re-takes ownership of the box minted in Builder::spawn.
     let boxed: alloc::boxed::Box<ClosureBox> =
         unsafe { alloc::boxed::Box::from_raw(arg as *mut ClosureBox) };
-    let handle = unsafe { wait_for_self() };
-    (*boxed)(StopToken { handle });
+    (*boxed)(StopToken {
+        handle: spawned_self(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -380,10 +381,13 @@ impl Thread {
     }
 
     /// Get a non-owning handle to the currently running thread.
+    ///
+    /// Returns `None` on a thread oveRTOS did not create (the startup or
+    /// main thread, idle, RTOS service threads).  Task context only.
     #[inline]
-    pub fn current() -> Self {
+    pub fn current() -> Option<Self> {
         let handle = unsafe { bindings::ove_thread_get_self() };
-        Self { handle }
+        (!handle.is_null()).then_some(Self { handle })
     }
 
     /// Begin spawning a new thread.  Returns a fluent [`Builder`].

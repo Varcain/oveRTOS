@@ -17,7 +17,6 @@ OVE_TEST_STACK(s_th_stack, 4096);
 
 static atomic_int g_flag;
 static atomic_intptr_t g_arg_val;
-static atomic_intptr_t g_self_seen;
 static atomic_int g_keep_running;
 
 /* Bounded wait for an atomic_int flag — the stdatomic analogue of the
@@ -149,13 +148,6 @@ static void entry_capture_arg(void *arg)
 	atomic_store(&g_flag, 1); /* signal "arg captured" for wait_for_atomic */
 }
 
-static void entry_record_self(void *arg)
-{
-	(void)arg;
-	atomic_store(&g_self_seen, (intptr_t)ove_thread_get_self());
-	atomic_store(&g_flag, 1);
-}
-
 static void entry_spin(void *arg)
 {
 	(void)arg;
@@ -243,23 +235,90 @@ static void test_get_self(void **state)
 
 /* A thread that outranks its creator can start running inside the create call; it must
  * already resolve itself there, or ove_thread_should_stop(ove_thread_get_self()) could
- * never become true for it. */
+ * never become true for it.  The creator is a NORMAL-priority ove thread rather than the
+ * runner, whose native priority differs per target (Zephyr runs it as main() at priority
+ * 0, which outranks OVE_PRIO_HIGH, so a HIGH child created from it never preempts).  On a
+ * preemptive engine the HIGH child therefore runs to completion inside create; the host
+ * POSIX backend does not enforce priorities, so there only the identity is checked.
+ * The child also queries its own state there: the handle's backend fields (FreeRTOS task,
+ * NuttX pid) must already be in place, not only its identity. */
+OVE_TEST_STORAGE(ove_thread_storage_t, s_spawner_storage);
+OVE_TEST_STACK(s_spawner_stack, 4096);
+
+static atomic_int s_child_ran;
+static atomic_intptr_t s_child_self;
+static atomic_intptr_t s_child_handle;
+static atomic_int s_ran_at_return;
+static atomic_int s_spawn_rc;
+static atomic_int s_spawn_done;
+static atomic_int s_child_state;
+
+static void entry_child_self(void *arg)
+{
+	(void)arg;
+	ove_thread_t self = ove_thread_get_self();
+	atomic_store(&s_child_self, (intptr_t)self);
+	atomic_store(&s_child_state, (int)ove_thread_get_state(self));
+	atomic_store(&s_child_ran, 1);
+}
+
+static void entry_spawner(void *arg)
+{
+	(void)arg;
+	ove_thread_t child = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Start from never-used storage: earlier tests leave this block holding the
+	 * same backend fields a correct init would write, which would mask a field
+	 * the child reads before its creator's init has set it. */
+	memset(&s_th_storage, 0, sizeof(s_th_storage));
+	int rc = ove_thread_init(&child, &s_th_storage, "t_self", entry_child_self, NULL,
+				 OVE_PRIO_HIGH, 4096, s_th_stack);
+#else
+	int rc = ove_thread_create(&child, "t_self", entry_child_self, NULL, OVE_PRIO_HIGH, 4096);
+#endif
+	atomic_store(&s_ran_at_return, atomic_load(&s_child_ran));
+	atomic_store(&s_child_handle, (intptr_t)child);
+	atomic_store(&s_spawn_rc, rc);
+	atomic_store(&s_spawn_done, 1);
+}
+
 static void test_get_self_before_create_returns(void **state)
 {
 	(void)state;
-	atomic_store(&g_flag, 0);
-	atomic_store(&g_self_seen, 0);
-	ove_thread_t h = NULL;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "t_self", entry_record_self, NULL,
-					   OVE_PRIO_HIGH, 4096, s_th_stack));
-#else
-	OVE_TEST_ASSERT_OK(
-		ove_thread_create(&h, "t_self", entry_record_self, NULL, OVE_PRIO_HIGH, 4096));
+	atomic_store(&s_child_ran, 0);
+	atomic_store(&s_child_self, 0);
+	atomic_store(&s_child_handle, 0);
+	atomic_store(&s_ran_at_return, -1);
+	atomic_store(&s_spawn_rc, OVE_OK);
+	atomic_store(&s_spawn_done, 0);
+	atomic_store(&s_child_state, OVE_THREAD_STATE_UNKNOWN);
+
+	ove_thread_t spawner = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&spawner, &s_spawner_storage, "t_spawn",
+					       entry_spawner, NULL, s_spawner_stack, 4096));
+	int done = wait_for_atomic(&s_spawn_done, 1, 2000);
+	int ran = wait_for_atomic(&s_child_ran, 1, 2000);
+	ove_thread_t child = (ove_thread_t)atomic_load(&s_child_handle);
+	intptr_t self = atomic_load(&s_child_self);
+	int at_return = atomic_load(&s_ran_at_return);
+	int child_state = atomic_load(&s_child_state);
+	print_message("    child self=%p handle=%p, ran before create returned=%d, own state=%d\n",
+		      (void *)self, (void *)child, at_return, child_state);
+	if (child != NULL)
+		ove_test_thread_destroy(child);
+	ove_test_thread_destroy(spawner);
+
+	assert_true(done);
+	assert_int_equal(atomic_load(&s_spawn_rc), OVE_OK);
+	assert_true(ran);
+	assert_non_null(child);
+	assert_int_equal(self, (intptr_t)child);
+	/* Running, or ready where the engine keeps the current thread queued. */
+	assert_true(child_state == OVE_THREAD_STATE_RUNNING ||
+		    child_state == OVE_THREAD_STATE_READY);
+#ifndef CONFIG_OVE_RTOS_POSIX
+	assert_int_equal(at_return, 1);
 #endif
-	assert_true(wait_for_atomic(&g_flag, 1, 1000));
-	assert_int_equal(atomic_load(&g_self_seen), (intptr_t)h);
-	ove_test_thread_destroy(h);
 }
 
 /* 7. set_priority no crash */
@@ -406,6 +465,20 @@ static void test_destroy_null(void **state)
 	ove_thread_destroy(NULL);
 }
 #endif
+
+/* NULL handles: what Thread::current() and get_self() hand back on a thread
+ * oveRTOS did not create.  Every engine must reject them the same way; the
+ * FreeRTOS backend used to dereference them. */
+static void test_null_handle_queries(void **state)
+{
+	(void)state;
+	struct ove_thread_stats st;
+
+	ove_thread_suspend(NULL);
+	ove_thread_resume(NULL);
+	assert_int_equal(ove_thread_get_state(NULL), OVE_THREAD_STATE_UNKNOWN);
+	assert_int_equal(ove_thread_get_runtime_stats(NULL, &st), OVE_ERR_INVALID_PARAM);
+}
 
 /* 16. get_runtime_stats */
 static void test_runtime_stats(void **state)
@@ -668,6 +741,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_create_null_entry),
 #endif
 		cmocka_unit_test(test_suspend_resume),
+		cmocka_unit_test(test_null_handle_queries),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_destroy_null),
 #endif

@@ -505,6 +505,12 @@ void ove_thread_start_scheduler(void)
 void ove_thread_suspend(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
+	/* The calling thread may suspend itself before its creator has stored
+	 * tid and started (it can run before pthread_create returns). */
+	if (t && t == tls_current) {
+		pthread_kill(pthread_self(), SIGUSR1);
+		return;
+	}
 	if (t && __atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
 		pthread_kill(t->tid, SIGUSR1);
 		posix_sleep_ns(1000000ULL); /* 1 ms for signal delivery */
@@ -570,11 +576,10 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 
 int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
-	(void)handle;
-	if (stats != NULL) {
-		stats->runtime_us = 0;
-		stats->cpu_percent_x100 = 0;
-	}
+	if (handle == NULL || stats == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	stats->runtime_us = 0;
+	stats->cpu_percent_x100 = 0;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

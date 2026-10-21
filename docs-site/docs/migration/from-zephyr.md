@@ -19,7 +19,7 @@ Three notes up front:
 | `k_thread_abort(h)` | cooperative `ove_thread_request_stop(h)` + `ove_thread_destroy(h)` |
 | `k_sleep(K_MSEC(ms))` | `ove_thread_sleep_ms(ms)` |
 | `k_yield()` | `ove_thread_yield()` |
-| `k_current_get()` | `ove_thread_get_self()` |
+| `k_current_get()` | `ove_thread_get_self()` (NULL on threads oveRTOS did not create) |
 | `k_thread_priority_set(h, p)` | `ove_thread_set_priority(h, p)` |
 
 There is no portable getter for priority — keep your own copy if you need to read it back.

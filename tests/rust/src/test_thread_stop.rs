@@ -17,7 +17,7 @@
 use crate::framework::run_suite;
 use crate::test_entry;
 use ove::{Priority, StopToken, Thread};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 static OBSERVED_FALSE_BEFORE: AtomicI32 = AtomicI32::new(0);
 static OBSERVED_TRUE_AFTER: AtomicI32 = AtomicI32::new(0);
@@ -199,6 +199,55 @@ fn test_spawn_static_borrowed() {
     assert_eq!(EXITED.load(Ordering::Acquire), 1);
 }
 
+/// 9. The token a cooperative entry receives names the spawned thread
+/// itself (the same handle the JoinHandle holds), for both the
+/// `fn(StopToken)` and the boxed-closure trampolines.
+static TOKEN_HANDLE: AtomicUsize = AtomicUsize::new(0);
+
+fn token_handle_worker(tok: StopToken) {
+    TOKEN_HANDLE.store(tok.raw_handle() as usize, Ordering::Release);
+    while !tok.is_stopped() {
+        Thread::sleep_ms(2);
+    }
+}
+
+fn wait_nonzero(flag: &AtomicUsize, timeout_ms: u32) -> usize {
+    for _ in 0..timeout_ms {
+        let v = flag.load(Ordering::Acquire);
+        if v != 0 {
+            return v;
+        }
+        Thread::sleep_ms(1);
+    }
+    flag.load(Ordering::Acquire)
+}
+
+fn test_token_is_spawned_handle() {
+    for prio in [Priority::Normal, Priority::High] {
+        TOKEN_HANDLE.store(0, Ordering::Release);
+        let h = Thread::builder()
+            .name(c"tokfn")
+            .priority(prio)
+            .stack_size(4096)
+            .spawn_cooperative(token_handle_worker)
+            .expect("spawn_cooperative");
+        let seen = wait_nonzero(&TOKEN_HANDLE, 1000);
+        assert_eq!(seen, h.raw_handle() as usize, "fn token handle ({:?})", prio);
+
+        TOKEN_HANDLE.store(0, Ordering::Release);
+        let h2 = Thread::builder()
+            .name(c"tokcl")
+            .priority(prio)
+            .stack_size(4096)
+            .spawn(|tok: StopToken| token_handle_worker(tok))
+            .expect("spawn");
+        let seen2 = wait_nonzero(&TOKEN_HANDLE, 1000);
+        assert_eq!(seen2, h2.raw_handle() as usize, "closure token handle ({:?})", prio);
+        drop(h);
+        drop(h2);
+    }
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("ThreadStop", &[
         test_entry!(test_cooperative_drop_exits_cleanly),
@@ -208,6 +257,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_empty_stop_token),
         test_entry!(test_legacy_entry_unaffected),
         test_entry!(test_builder_defaults),
+        test_entry!(test_token_is_spawned_handle),
         #[cfg(zero_heap)]
         test_entry!(test_spawn_static_borrowed),
     ])

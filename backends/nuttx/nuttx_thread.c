@@ -169,6 +169,12 @@ static int task_wrapper(int argc, char *argv[])
 	(void)argc;
 	t = (struct ove_thread *)strtoul(argv[1], NULL, 0);
 	tls_set_current(t);
+	/* A child that outranks its creator runs before task_create_with_stack()
+	 * returns; publish what suspend/get_state/set_priority read so they work
+	 * on the thread's own handle from the first statement (the creator stores
+	 * the same values afterwards). */
+	__atomic_store_n(&t->pid, getpid(), __ATOMIC_RELAXED);
+	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Init the tracker in the owning task so last_ts_us is anchored at
@@ -252,7 +258,7 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 		}
 	}
 
-	t->pid = pid;
+	__atomic_store_n(&t->pid, pid, __ATOMIC_RELAXED);
 	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
@@ -380,7 +386,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 		return;
 	param.sched_priority = ove_nuttx_map_priority(prio);
 
-	pid_t pid = (handle != NULL) ? handle->pid : getpid();
+	pid_t pid = (handle != NULL) ? __atomic_load_n(&handle->pid, __ATOMIC_RELAXED) : getpid();
 	sched_setparam(pid, &param);
 }
 
@@ -419,7 +425,7 @@ void ove_thread_suspend(ove_thread_t handle)
 			nxsem_init(&handle->suspend_sem, 0, 0);
 			handle->suspend_inited = 1;
 		}
-		kill(handle->pid, SIGUSR1);
+		kill(__atomic_load_n(&handle->pid, __ATOMIC_RELAXED), SIGUSR1);
 		/* Wait briefly for the signal to be delivered */
 		usleep(1000);
 	}
@@ -478,13 +484,13 @@ size_t ove_thread_get_stack_usage(ove_thread_t handle)
 ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 {
 	if (handle == NULL) {
-		return OVE_THREAD_STATE_TERMINATED;
+		return OVE_THREAD_STATE_UNKNOWN;
 	}
 
 #ifdef __NuttX__
 	/* Quick liveness check — no procfs file I/O */
 	if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_RUNNING) {
-		if (kill(handle->pid, 0) != 0) {
+		if (kill(__atomic_load_n(&handle->pid, __ATOMIC_RELAXED), 0) != 0) {
 			return OVE_THREAD_STATE_TERMINATED;
 		}
 	}
@@ -495,7 +501,9 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 
 int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
-	(void)handle;
+	if (handle == NULL || stats == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	stats->runtime_us = 0;
 	stats->cpu_percent_x100 = 0;
 	return OVE_ERR_NOT_SUPPORTED;

@@ -1054,6 +1054,37 @@ fn testThreadStopTokenShareable() !void {
     t.deinit();
 }
 
+var token_handle: std.atomic.Value(usize) = std.atomic.Value(usize).init(0);
+
+fn tokenHandleWorker(stop: ove.StopToken) void {
+    token_handle.store(@intFromPtr(stop.rawHandle()), .release);
+    while (!stop.isStopped()) {
+        ove.thread.sleepMs(2);
+    }
+}
+
+fn waitNonZero(flag: *std.atomic.Value(usize), timeout_ms: u32) usize {
+    var i: u32 = 0;
+    while (i < timeout_ms) : (i += 1) {
+        const v = flag.load(.acquire);
+        if (v != 0) return v;
+        ove.thread.sleepMs(1);
+    }
+    return flag.load(.acquire);
+}
+
+// The token a cooperative entry receives names the spawned thread itself:
+// the same handle the Thread holds, whether or not it outranks its creator.
+fn testThreadStopTokenIsSpawnedHandle() !void {
+    inline for (.{ ove.Priority.normal, ove.Priority.high }) |prio| {
+        token_handle.store(0, .release);
+        var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "tokh", .priority = prio }, tokenHandleWorker, .{});
+        const seen = waitNonZero(&token_handle, 1000);
+        try std.testing.expectEqual(@intFromPtr(t.handle), seen);
+        t.deinit();
+    }
+}
+
 fn testThreadStopEmptyToken() !void {
     const tok = ove.StopToken.empty();
     try std.testing.expect(!tok.stopPossible());
@@ -2067,6 +2098,7 @@ pub fn main() void {
         .{ .name = "token_shareable", .func = testThreadStopTokenShareable },
         .{ .name = "empty_token", .func = testThreadStopEmptyToken },
         .{ .name = "legacy_entry_unaffected", .func = testThreadStopLegacyEntryUnaffected },
+        .{ .name = "token_is_spawned_handle", .func = testThreadStopTokenIsSpawnedHandle },
     });
 
     runSuite("EventGroup", &.{

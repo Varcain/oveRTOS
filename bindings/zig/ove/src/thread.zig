@@ -89,6 +89,7 @@
 //! to an instance.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
@@ -328,7 +329,8 @@ pub inline fn yieldCpu() void {
     c.ove_thread_yield();
 }
 
-/// Return the raw C handle of the currently executing thread.  Use only
+/// Return the raw C handle of the currently executing thread, or null on a
+/// thread oveRTOS did not create.  Task context only.  Use only
 /// for FFI — the wrapper type cannot be reconstructed from a bare handle
 /// because the storage is owned by a `Thread(N)` value somewhere.
 pub fn getSelf() c.ove_thread_t {
@@ -436,17 +438,11 @@ fn makeTrampoline(
         fn invoke(arg: ?*anyopaque) callconv(.c) void {
             const fn_info = @typeInfo(@TypeOf(entry)).@"fn";
             if (info.takes_token) {
-                // The substrate's per-thread "self" handle is published
-                // by the parent AFTER the substrate spawn call returns,
-                // on backends that need it (notably FreeRTOS via task
-                // tag).  An equal-priority worker can outrace the parent
-                // and see a null handle on first call — poll-yield until
-                // it shows up.
-                var h: c.ove_thread_t = c.ove_thread_get_self();
-                while (h == null) {
-                    c.ove_thread_yield();
-                    h = c.ove_thread_get_self();
-                }
+                // Every engine publishes the thread's own handle before
+                // the entry runs, even when it preempts its creator.
+                const h: c.ove_thread_t = c.ove_thread_get_self();
+                if (builtin.mode == .Debug and h == null)
+                    @panic("ove_thread_get_self() is NULL at thread entry");
                 const tok = StopToken{ .handle = h };
                 if (info.user_param_count == 0) {
                     entry(tok);

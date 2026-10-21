@@ -16,6 +16,7 @@
 #include <ove/thread.h>
 #include <ove/types.hpp>
 
+#include <cassert>
 #ifndef CONFIG_OVE_ZERO_HEAP
 #include <memory> /* std::unique_ptr in the capturing trampoline */
 #endif
@@ -305,21 +306,17 @@ namespace detail
  * supported target (function pointer and data pointer share width on
  * ARM Cortex-M, Xtensa and the 64-bit hosts the test suites run on).
  *
- * Token construction uses `ove_thread_get_self()` after a brief poll
- * loop: on some backends (notably FreeRTOS) the task-tag lookup that
- * powers `get_self` is populated by the spawning thread AFTER the new
- * thread starts running, so the first call may return NULL.  Yielding
- * lets the spawner finish the tag publish. */
+ * The token is the thread's own `ove_thread_get_self()` handle: every
+ * engine publishes it before the entry runs, even when the new thread
+ * preempts its creator, so it is never NULL here. */
 inline void stop_token_trampoline(void *ctx)
 {
 	static_assert(sizeof(void *) == sizeof(void (*)(stop_token)),
 		      "ove::stop_token trampoline requires function and data pointers "
 		      "to share width — fix by adding a per-target trampoline shim");
 	auto user_fn = reinterpret_cast<void (*)(stop_token)>(ctx);
-	ove_thread_t self;
-	while ((self = ove_thread_get_self()) == nullptr) {
-		ove_thread_yield();
-	}
+	ove_thread_t self = ove_thread_get_self();
+	assert(self != nullptr);
 	user_fn(stop_token{self});
 }
 
@@ -339,10 +336,8 @@ inline void stop_token_trampoline(void *ctx)
 template <typename F> inline void capturing_trampoline(void *ctx)
 {
 	std::unique_ptr<F> f{static_cast<F *>(ctx)};
-	ove_thread_t self;
-	while ((self = ove_thread_get_self()) == nullptr) {
-		ove_thread_yield();
-	}
+	ove_thread_t self = ove_thread_get_self();
+	assert(self != nullptr);
 	(*f)(stop_token{self});
 }
 #endif
@@ -948,13 +943,15 @@ inline void yield() noexcept
 	ove_thread_yield();
 }
 
-/** @return Raw C handle of the currently executing thread. */
+/** @return Raw C handle of the currently executing thread, or a null handle on
+ *          a thread oveRTOS did not create.  Task context only. */
 inline ove_thread_t self() noexcept
 {
 	return ove_thread_get_self();
 }
 
-/** @return @ref thread_id of the currently executing thread. */
+/** @return @ref thread_id of the currently executing thread; the default
+ *          (null) id on a thread oveRTOS did not create.  Task context only. */
 inline thread_id get_id() noexcept
 {
 	return thread_id{ove_thread_get_self()};
