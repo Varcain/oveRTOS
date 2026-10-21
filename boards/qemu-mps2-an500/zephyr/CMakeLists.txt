@@ -73,6 +73,7 @@ ove_zephyr_add_common_includes(
         ${OVE_DIR}/sim/include
         ${OVE_DIR}/sim/src
         ${OVE_BOARD_DIR}/../src
+        ${OVE_BOARD_DIR}/inc
 )
 
 # Redirect malloc/free to k_malloc/k_free so allocations go through

@@ -547,6 +547,12 @@ add_test(NAME ove_app_new_python
 add_test(NAME ove_profiler_bridge_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_profiler_bridge.py)
+# The profiler's sampling interrupt must outrank the driver interrupts whose
+# time it attributes (an interrupt of equal priority cannot preempt another
+# one) from a level the kernel's critical sections still mask.
+add_test(NAME ove_profiler_sampler_priority_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_profiler_sampler_priority.py)
 add_test(NAME ove_zig_struct_mirrors_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_zig_struct_mirrors.py)

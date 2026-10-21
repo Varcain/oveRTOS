@@ -12,15 +12,25 @@
  * Shape mirrors backends/freertos/freertos_profiler.c:
  *
  *   - Sampling runs in ISR context so PSP points at the interrupted
- *     task's hardware-stacked exception frame: a k_timer whose expiry
- *     function runs out of the system-clock interrupt handler (before
- *     any context switch). Reading PSP there gives us the interrupted
- *     thread's stack, not the timer's. Samples therefore land on a tick
- *     boundary, before the threads that tick wakes have run. If the
- *     system-clock ISR preempted another handler (RETTOBASE == 0), the
- *     frame is on the MSP instead; that path emits a tid-0 sample tagged
- *     with the interrupted handler's exception number ("[ISR n]" in the
- *     UI).
+ *     task's hardware-stacked exception frame. On a board that provides a
+ *     sampling timer (inc/ove_board_profiler.h) the samples are taken in
+ *     that timer's own interrupt; otherwise they are taken out of the
+ *     system-clock interrupt, where the k_timer expiry runs (so on a tick
+ *     boundary, before the threads that tick wakes have run). Either way
+ *     PSP points at the interrupted thread's stack, not the timer's. If
+ *     the sampler's interrupt preempted another handler (RETTOBASE == 0),
+ *     the frame is on the MSP instead; that path emits a tid-0 sample
+ *     tagged with the interrupted handler's exception number ("[ISR n]" in
+ *     the UI).
+ *
+ *   - The sampler only attributes the time of an interrupt it can
+ *     preempt: on Cortex-M an interrupt of equal priority cannot preempt
+ *     another one. The dedicated sampling interrupt is connected at
+ *     Zephyr priority 0, the most urgent ordinary level, so it preempts
+ *     every driver interrupt at a lower urgency - all of them on the
+ *     MPS2 boards, whose devicetree gives the devices priority 3 - and
+ *     irq_lock() still masks it, so the clock and kernel calls it makes
+ *     cannot interrupt the kernel's own. See "The sampling clock" below.
  *
  *   - Multi-frame unwinding is delegated to
  *     backends/common/ove_arm_backtrace.c — the same five-filter chain
@@ -48,9 +58,9 @@
  *   - Symbolication is host-side (same as FreeRTOS) via the dashboard
  *     bridge — arm-none-eabi-nm on the Zephyr ELF.
  *
- * Rate control: the k_timer runs one-shot and is re-armed from its expiry
- * with a period jittered around the mean (1 / rate) by +/-25%, so the
- * sampler cannot phase-lock with periodic work; set_rate() changes the
+ * Rate control: the sampling clock runs one-shot and is re-armed from its
+ * expiry with a period jittered around the mean (1 / rate) by +/-25%, so
+ * the sampler cannot phase-lock with periodic work; set_rate() changes the
  * mean for the next re-arm.
  */
 
@@ -70,6 +80,19 @@
 #include "ove/thread_state_stats.h"
 #include "ove/types.h"
 #include "ove_profiler_ring.h"
+
+/*
+ * Board bindings (optional): a dedicated sampling timer. A board that
+ * ships inc/ove_board_profiler.h - like the FreeRTOS side does - gets the
+ * sampler in that timer's own interrupt; boards without it fall back to
+ * the k_timer path, where the samples are taken in the system-clock
+ * interrupt.
+ */
+#if defined(__has_include)
+#if __has_include("ove_board_profiler.h")
+#include "ove_board_profiler.h"
+#endif
+#endif
 
 #ifndef CONFIG_OVE_PROFILER_HZ
 #define CONFIG_OVE_PROFILER_HZ 250
@@ -100,7 +123,6 @@ extern char __text_region_end[];
  * identical codegen on Cortex-M (aligned 4-byte load/store is a single
  * instruction). Same approach in backends/freertos/freertos_profiler.c. */
 static int profiler_running;
-static struct k_timer profiler_timer;
 
 static inline uint32_t read_psp(void)
 {
@@ -116,13 +138,18 @@ static inline uint32_t read_msp(void)
 	return msp;
 }
 
-/* The system-clock ISR preempted another exception handler (PendSV, or a
- * device IRQ of a lower urgency). Its stacked frame is on the
- * MSP; locate it and push a tid-0 sample tagged with the interrupted
- * handler's exception number. The PSP path handles thread-mode samples.
- * SysTick, exception 15, is the sampler itself. */
+/* The sampler's own exception, never the interrupted one: the board
+ * sampling timer's, or SysTick (15) on the k_timer fallback. */
+#ifdef OVE_BOARD_PROFILER_TIMER_BASE
+#define SAMPLER_EXC (16u + OVE_BOARD_PROFILER_TIMER_IRQ)
+#else
 #define SAMPLER_EXC 15u
+#endif
 
+/* The sampling interrupt preempted another exception handler (e.g. a driver
+ * IRQ at a lower urgency). Its stacked frame is on the MSP; locate it and
+ * push a tid-0 sample tagged with the interrupted handler's exception
+ * number. The PSP path handles thread-mode samples. */
 static void sample_interrupted_handler(void)
 {
 	const uint32_t *frame = ove_arm_find_exc_frame(read_msp(), OVE_SRAM_END, OVE_TEXT_BASE,
@@ -144,24 +171,24 @@ static void sample_interrupted_handler(void)
 }
 
 /*
- * Called from the k_timer expiry path, which Zephyr dispatches out of
- * the system-clock ISR after the timeout list has been processed. At
- * that point PSP still points at the interrupted thread's stacked
- * exception frame (r0-r3, r12, lr, pc, xpsr); we read PSP[OVE_ARM_EXC_PC]
- * for the leaf PC, then scan above the frame for saved {r7, lr} pairs.
+ * Called from the sampling interrupt (profiler_timer_isr() below, on a
+ * board that ships inc/ove_board_profiler.h) or - on a board without
+ * such a header - from the k_timer expiry path, which Zephyr dispatches
+ * out of the system-clock ISR after the timeout list has been processed.
+ * Either way the sampler runs in interrupt context, so PSP still points
+ * at the interrupted thread's stacked exception frame (r0-r3, r12, lr,
+ * pc, xpsr); we read PSP[OVE_ARM_EXC_PC] for the leaf PC, then scan
+ * above the frame for saved {r7, lr} pairs.
  */
 void ove_backend_profiler_on_tick(void)
 {
 	if (!__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
 		return;
 
-	/* RETTOBASE == 0: the system-clock exception is nested on top of
+	/* RETTOBASE == 0: the sampling exception is nested on top of
 	 * another handler, so the interrupted frame is on MSP, not PSP.
-	 * SysTick runs at _IRQ_PRIO_OFFSET, above PendSV. IRQ_CONNECT places
-	 * a device IRQ at its devicetree priority plus that offset, so SysTick
-	 * preempts the devices at devicetree priority 1 or more (all of them
-	 * on the QEMU mps2 boards); a priority-0 device, as most are on the
-	 * STM32F7, shares SysTick's level and its time is not attributed. */
+	 * This fires when the sampler preempts an interrupt of a lower
+	 * urgency (see "The sampling clock" below). */
 	if (!(SCB->ICSR & SCB_ICSR_RETTOBASE_Msk)) {
 		sample_interrupted_handler();
 		return;
@@ -248,7 +275,6 @@ void ove_backend_profiler_on_tick(void)
  * it always, or never). */
 static uint32_t mean_period_us;
 static uint32_t jitter_state = 0x2545F491u;
-static bool timer_initialised;
 
 static uint32_t next_period_us(void)
 {
@@ -262,6 +288,86 @@ static uint32_t next_period_us(void)
 	uint32_t us = mean - mean / 4u + (span ? x % span : 0u);
 	return us ? us : 1u;
 }
+
+/* ── The sampling clock ──────────────────────────────────────────────
+ * A board that provides a sampling timer (inc/ove_board_profiler.h) gets
+ * the sampler in that timer's own interrupt, connected at Zephyr
+ * priority 0. On Cortex-M an interrupt of equal priority cannot preempt
+ * another one, so the sampler attributes the time of the interrupts below
+ * that level - on the MPS2 boards every device, which the devicetree puts
+ * at priority 3 - but not of those that share it. The level is an
+ * ordinary one: irq_lock() masks it, so the timestamp the sampler reads
+ * (k_cycle_get_64() under the system timer driver's spinlock) and the
+ * ring it pushes to are never entered from inside the kernel's own use
+ * of them. Its period is drawn in timer cycles, so it is not tied to the
+ * kernel tick.
+ *
+ * Boards without the header fall back to the k_timer path, where the
+ * samples are taken in the system-clock interrupt: on a tick boundary,
+ * and at the system clock's level, so a device interrupt that shares it
+ * is not attributed. */
+#ifdef OVE_BOARD_PROFILER_TIMER_BASE
+
+/* CMSDK APB timer: 32-bit down-counter clocked by the system clock,
+ * interrupt and reload from RELOAD when it reaches zero. Base/IRQ come
+ * from the board header. */
+#define PROF_TIMER_BASE OVE_BOARD_PROFILER_TIMER_BASE
+#define PROF_TIMER_IRQ OVE_BOARD_PROFILER_TIMER_IRQ
+#define PROF_TIMER_CTRL (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x00u))
+#define PROF_TIMER_VALUE (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x04u))
+#define PROF_TIMER_RELOAD (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x08u))
+#define PROF_TIMER_INTCLEAR (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x0Cu))
+#define PROF_TIMER_CTRL_EN (1u << 0)
+#define PROF_TIMER_CTRL_IRQEN (1u << 3)
+
+/* The timer counts the system clock, so its period is a number of cycles
+ * of that clock. */
+static uint32_t next_period_cycles(void)
+{
+	uint64_t cycles = ((uint64_t)next_period_us() * sys_clock_hw_cycles_per_sec()) / 1000000u;
+	return cycles ? (uint32_t)cycles : 1u;
+}
+
+/* The sampler's own interrupt. */
+static void profiler_timer_isr(const void *arg)
+{
+	(void)arg;
+	PROF_TIMER_INTCLEAR = 1u;
+	/* Each period is drawn anew, so the sampler does not lock to
+	 * periodic work. */
+	uint32_t period = next_period_cycles();
+	PROF_TIMER_RELOAD = period;
+	PROF_TIMER_VALUE = period;
+	if (__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
+		ove_backend_profiler_on_tick();
+}
+
+/* Connect the interrupt at Zephyr priority 0 - see "The sampling clock"
+ * above. */
+static void profiler_clock_start(void)
+{
+	IRQ_CONNECT(PROF_TIMER_IRQ, 0, profiler_timer_isr, NULL, 0);
+
+	PROF_TIMER_CTRL = 0u;
+	PROF_TIMER_INTCLEAR = 1u;
+	uint32_t period = next_period_cycles();
+	PROF_TIMER_RELOAD = period;
+	PROF_TIMER_VALUE = period;
+	NVIC_ClearPendingIRQ((IRQn_Type)PROF_TIMER_IRQ);
+	NVIC_EnableIRQ((IRQn_Type)PROF_TIMER_IRQ);
+	PROF_TIMER_CTRL = PROF_TIMER_CTRL_EN | PROF_TIMER_CTRL_IRQEN;
+}
+
+static void profiler_clock_stop(void)
+{
+	PROF_TIMER_CTRL = 0u;
+	NVIC_DisableIRQ((IRQn_Type)PROF_TIMER_IRQ);
+}
+
+#else /* !OVE_BOARD_PROFILER_TIMER_BASE */
+
+static struct k_timer profiler_timer;
+static bool timer_initialised;
 
 /* The drawn period in whole ticks, rounded to the nearest one: K_USEC
  * rounds up, which lowered the mean rate by half a tick per period
@@ -281,24 +387,36 @@ static void profiler_timer_expiry(struct k_timer *timer)
 	k_timer_start(timer, next_period(), K_NO_WAIT);
 }
 
-int ove_backend_profiler_start(void)
+static void profiler_clock_start(void)
 {
 	if (!timer_initialised) {
 		k_timer_init(&profiler_timer, profiler_timer_expiry, NULL);
 		timer_initialised = true;
 	}
+	k_timer_start(&profiler_timer, next_period(), K_NO_WAIT);
+}
+
+static void profiler_clock_stop(void)
+{
+	if (timer_initialised)
+		k_timer_stop(&profiler_timer);
+}
+
+#endif /* OVE_BOARD_PROFILER_TIMER_BASE */
+
+int ove_backend_profiler_start(void)
+{
 	if (__atomic_load_n(&mean_period_us, __ATOMIC_RELAXED) == 0)
 		ove_backend_profiler_set_rate(ove_backend_profiler_get_max_hz());
 	__atomic_store_n(&profiler_running, 1, __ATOMIC_RELEASE);
-	k_timer_start(&profiler_timer, next_period(), K_NO_WAIT);
+	profiler_clock_start();
 	return OVE_OK;
 }
 
 void ove_backend_profiler_stop(void)
 {
 	__atomic_store_n(&profiler_running, 0, __ATOMIC_RELEASE);
-	if (timer_initialised)
-		k_timer_stop(&profiler_timer);
+	profiler_clock_stop();
 }
 
 /* Takes effect at the next re-arm; never starts a stopped profiler. */
@@ -319,8 +437,10 @@ uint32_t ove_backend_profiler_get_flags(void)
 
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
-	/* Capped by the system clock granularity. At 1 kHz tick rate
-	 * anything above 1 kHz collapses onto the tick anyway. */
+	/* Capped by the system clock rate: the k_timer fallback samples on
+	 * tick boundaries and cannot go faster, and the board timer keeps
+	 * the same ceiling so the rate offered does not depend on the
+	 * board. */
 	uint32_t cfg_hz = (uint32_t)CONFIG_OVE_PROFILER_HZ;
 	uint32_t tick_hz = (uint32_t)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
 	return (cfg_hz < tick_hz) ? cfg_hz : tick_hz;

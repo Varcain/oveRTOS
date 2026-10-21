@@ -109,12 +109,14 @@ config OVE_PROFILER
       to the dashboard for flat top-N and flame-graph rendering.
       FreeRTOS samples the interrupted task from a dedicated hardware
       timer (CMSDK TIMER1 on MPS2-AN500) and walks saved-{r7,lr} pairs
-      out of its stack; Zephyr does the same from a k_timer expiry and
-      shares the walker (backends/common/ove_arm_backtrace.c). Both
-      jitter each period by +/-25% so sampling cannot lock to periodic
-      work. The FreeRTOS timer is also independent of the kernel tick;
-      Zephyr's expiry lands on a tick, so when the mean period is only
-      one or two ticks (e.g. a 100 Hz tick) the jitter rounds away.
+      out of its stack; Zephyr does the same from the same board timer
+      where the board provides one (ove_board_profiler.h, the an500
+      does) and from a k_timer expiry otherwise, and shares the walker
+      (backends/common/ove_arm_backtrace.c). Both jitter each period by
+      +/-25% so sampling does not lock to periodic work. The board timer
+      is independent of the kernel tick; the k_timer expiry lands on a
+      tick, so when the mean period is only one or two ticks (e.g. a
+      100 Hz tick) the jitter rounds away.
       NuttX walks every thread with up_backtrace(tcb) from a
       watchdog-timed high-priority work item (CONFIG_SCHED_BACKTRACE,
       set in the generated NuttX defconfig).

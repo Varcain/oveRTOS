@@ -14,8 +14,9 @@
  * interrupted a thread, the hardware has stacked that task's exception
  * frame onto its PSP: we read the stacked PC from there, walk the stack
  * and push a sample attributed to the task. If it interrupted another
- * handler (SysTick or PendSV: interrupts at the timer's own priority, such
- * as the console UART, are never preempted), the frame is on the MSP; we
+ * handler (SysTick, PendSV, or a driver interrupt below the timer's
+ * priority such as the an500 console UART RX; one at the timer's own
+ * priority is never preempted), the frame is on the MSP; we
  * locate it and push a tid-0 sample tagged with the handler's exception
  * number, which the dashboard renders as "[ISR n]". That handler time is
  * attributed instead of silently vanishing from the profile.
@@ -24,7 +25,7 @@
  * sees work that the tick itself wakes (delays, timers, periodic loops) —
  * a thread using 41% of the CPU that way got 0.8% of the samples. The
  * timer runs independently of the tick, and each period is jittered by
- * +/-25% so the sampler cannot phase-lock with periodic work either.
+ * +/-25% so the sampler does not lock to periodic work either.
  *
  * Multi-frame unwinding: the stack-scan walker and the five heuristic
  * filters (Thumb bit, text range, bl/blx precedence, saved-r7 value
@@ -186,9 +187,10 @@ static int profiler_running;
  * the same task in thread mode. It stays above SysTick and PendSV also on
  * an NVIC with four priority bits, where the kernel priority and 0xff are
  * one level, so it can interrupt the kernel tick and the context switch;
- * those samples take the handler-mode path below. Interrupts at this same
- * priority, the console UART RX among them, cannot be preempted and are
- * not attributed. */
+ * those samples take the handler-mode path below. An interrupt at this
+ * same priority cannot be preempted and would not be attributed, so the
+ * board keeps its driver interrupts below it (the an500 console UART RX
+ * one kernel level lower, qemu_serial.c). */
 #define PROF_TIMER_BASE OVE_BOARD_PROFILER_TIMER_BASE
 #define PROF_TIMER_IRQ OVE_BOARD_PROFILER_TIMER_IRQ
 #define PROF_TIMER_CTRL (*(volatile uint32_t *)(PROF_TIMER_BASE + 0x00u))

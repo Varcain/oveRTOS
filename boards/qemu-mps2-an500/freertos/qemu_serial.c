@@ -74,9 +74,17 @@ void serial_init(void)
 	UART_BAUDDIV = 16u;
 	UART_CTRL = UART_CTRL_TX_EN | UART_CTRL_RX_EN | UART_CTRL_RX_INTEN;
 
-	/* The ready callback may give a FreeRTOS semaphore, so keep the line at
-	 * or below the kernel-call ceiling. */
-	NVIC_IPR[UART0_RX_IRQN] = configMAX_SYSCALL_INTERRUPT_PRIORITY;
+	/* The ready callback may give a FreeRTOS semaphore, so the line has to
+	 * sit at or below the kernel-call ceiling.  It sits one kernel level
+	 * below it: the profiler's sampling timer runs at the ceiling
+	 * (backends/freertos/freertos_profiler.c), and an interrupt cannot
+	 * preempt one of equal priority, so a line at the ceiling would never
+	 * have its time attributed. */
+	_Static_assert(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY <
+			       configLIBRARY_LOWEST_INTERRUPT_PRIORITY,
+		       "no kernel priority level below the syscall ceiling for UART0 RX");
+	NVIC_IPR[UART0_RX_IRQN] = (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1)
+				  << (8 - configPRIO_BITS);
 	NVIC_ISER0 = 1u << UART0_RX_IRQN;
 
 	mutex = xSemaphoreCreateMutexStatic(&mutex_storage);
