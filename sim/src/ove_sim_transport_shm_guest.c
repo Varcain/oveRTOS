@@ -218,8 +218,8 @@ static int guest_send_event(struct ove_sim_transport *t, const struct ove_sim_ev
 	 * doesn't fit in the free space, drop it, count it and tell the
 	 * caller, rather than overwriting unread batches (which used to
 	 * corrupt the host's view and silently lose the drop counts the
-	 * batches carry).  The caller folds what the lost event carried back
-	 * into its own drop counter, so a later event reports it.
+	 * batches carry).  The caller carries what the lost event held in a
+	 * loss count of its own, so a later event reports it.
 	 */
 	uint32_t rpos = sh_read_u32(p->sim_fd, offsetof(struct sim_shm_header, event_read_pos));
 	uint32_t used = p->event_wpos - rpos;

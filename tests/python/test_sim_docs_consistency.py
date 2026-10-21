@@ -44,6 +44,7 @@ TRACE_C = os.path.join(ROOT, "sim", "hal", "sim_trace.c")
 PROFILER_H = os.path.join(ROOT, "sim", "include", "ove", "sim", "ove_sim_profiler.h")
 PLUGIN_H = os.path.join(ROOT, "sim", "include", "ove", "sim", "ove_sim_plugin.h")
 DEBUG_C = os.path.join(ROOT, "sim", "hal", "sim_debug.c")
+SIM_PROFILER_C = os.path.join(ROOT, "sim", "hal", "sim_profiler.c")
 CONFIG_DEBUG = os.path.join(ROOT, "config", "Config.in.debug")
 CONFIG_MODULES = os.path.join(ROOT, "config", "Config.in.modules")
 AN500_BOARD = os.path.join(ROOT, "boards", "qemu-mps2-an500", "board.yaml")
@@ -271,6 +272,19 @@ class SimDocsConsistencyTest(unittest.TestCase):
         self.assertTrue(any(EFFECTIVE_WORD.search(s) for s in caps),
                         "the document does not say that the caps event carries the "
                         "effective (tick-clamped) maximum")
+        # max_hz is the backend's ceiling as sent: the sim lowers the
+        # selected rate (current_hz), never the advertised maximum.
+        emit = re.search(r"static void emit_caps\(.*?\n\}", read(SIM_PROFILER_C), re.S)
+        self.assertTrue(emit, "emit_caps() not found in sim/hal/sim_profiler.c")
+        self.assertRegex(emit.group(0),
+                         r"max_hz\s*=\s*ove_backend_profiler_get_max_hz\(\)",
+                         "the caps event no longer sends the backend's maximum")
+        described = re.findall(r"`u32 max_hz` \(([^)]*)\)", self.text)
+        self.assertTrue(described, "the document does not describe the caps max_hz field")
+        for text in described:
+            self.assertNotRegex(text, r"\blower",
+                                "the document says the sim lowers max_hz; it "
+                                "lowers current_hz")
 
     # -- trace wire format ----------------------------------------------
 

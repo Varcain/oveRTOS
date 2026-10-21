@@ -562,6 +562,11 @@ add_test(NAME ove_bridge_trace_descriptors_python
 add_test(NAME ove_sim_invariants_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_sim_invariants.py)
+# The sim pump's per-iteration event budget must be derived from the
+# shared-memory event ring, and the two drains must fit together.
+add_test(NAME ove_sim_pump_budget_python
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_sim_pump_budget.py)
 add_test(NAME ove_manifest_python
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_manifest.py)

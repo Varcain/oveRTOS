@@ -19,6 +19,7 @@
 
 #ifdef CONFIG_OVE_TRACE_STREAM
 
+#include "ove/sim/ove_sim_budget.h"
 #include "ove/sim/ove_sim_plugin.h"
 #include "ove/sim/ove_sim_trace.h"
 #include "ove/types.h"
@@ -46,6 +47,70 @@ static struct sim_trace_ctx trace_ctx;
 _Static_assert(sizeof(struct ove_sim_event) + STREAM_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
 	       "trace batch exceeds OVE_SIM_EVENT_MAX_BYTES");
 _Static_assert(sizeof(struct ove_trace_record) == 24, "trace record wire size is 24 bytes");
+
+/* Envelope (8 B) + per thread (4 tid + 4 generation + 1 len + up to 31 name). */
+#define DESC_PER_MAX (4 + 4 + 1 + OVE_SIM_TRACE_MAX_NAME)
+#define DESC_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
+
+_Static_assert(sizeof(struct ove_sim_event) + DESC_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
+	       "trace descriptor batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+
+/* User id -> name table. Sent on the descriptor cadence; the table is
+ * small (OVE_TRACE_NAME_MAX) and static, so re-sending it is cheap.  The
+ * size is defined unconditionally: the event budget below reserves room
+ * for the name table whether or not the markers are compiled in. */
+#define NAME_PER_MAX (2 + 1 + OVE_SIM_TRACE_MAX_NAME)
+#define NAMES_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_TRACE_NAME_MAX * NAME_PER_MAX)
+
+_Static_assert(sizeof(struct ove_sim_event) + NAMES_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
+	       "trace name batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+
+/*
+ * Per-pump-iteration event budget (see sim_profiler.c and
+ * sim/include/ove/sim/ove_sim_budget.h).
+ *
+ * One batch event occupies at most TRACE_EVENT_RING_BYTES of the
+ * shared-memory event ring: the 2-byte length prefix, the event
+ * header, the envelope and a full batch.  The number of batches one
+ * drain may emit is derived from the ring size instead of being
+ * guessed, and it follows OVE_SIM_TRACE_MAX_BATCH whenever that
+ * changes.
+ *
+ * The ring is shared with the profiler drain and with the debug
+ * plugin's snapshot, so "half of the ring" is not a budget - the
+ * trace's share comes from the split in ove_sim_budget.h.  The two
+ * events this plugin emits besides the stream batches (the thread
+ * descriptors and the name table) are charged to the trace's share as
+ * well: they are emitted from the same tick, so they would otherwise
+ * overrun the ring together with the batches.
+ *
+ * The sustained drain ceiling that follows from the cap: the trace
+ * moves TRACE_MAX_BATCHES_PER_TICK * OVE_SIM_TRACE_MAX_BATCH records
+ * per drain period, i.e.
+ *
+ *   5 * 128 / 0.1 s = 6 400 records/s
+ *
+ * with the default limits at the nominal 100 ms period (a pump that
+ * runs late, e.g. ~102 ms on NuttX where a sleep adds a tick, moves
+ * proportionally less).  That is the rate the trace's producer may not
+ * exceed: a workload that produces more fills the trace ring
+ * (CONFIG_OVE_TRACE_RING_SIZE records) and is reported by the ring's
+ * own drop counter.  The ring's size is backlog, not rate: a larger
+ * ring rides out a longer burst, it does not raise the ceiling.  A
+ * typical workload produces ~150 records/s, so the ceiling is 40x the
+ * real rate.
+ */
+#define TRACE_EVENT_RING_BYTES (SIM_EVENT_RING_OVERHEAD_BYTES + STREAM_BUF_BYTES)
+#define TRACE_DESC_EVENT_BYTES (SIM_EVENT_RING_OVERHEAD_BYTES + DESC_BUF_BYTES)
+#define TRACE_NAME_EVENT_BYTES (SIM_EVENT_RING_OVERHEAD_BYTES + NAMES_BUF_BYTES)
+#define TRACE_META_EVENT_BYTES (TRACE_DESC_EVENT_BYTES + TRACE_NAME_EVENT_BYTES)
+#define TRACE_EVENT_BUDGET_BYTES (SIM_EVENT_TRACE_BUDGET_BYTES - TRACE_META_EVENT_BYTES)
+#define TRACE_MAX_BATCHES_PER_TICK ((unsigned)(TRACE_EVENT_BUDGET_BYTES / TRACE_EVENT_RING_BYTES))
+
+_Static_assert(TRACE_EVENT_BUDGET_BYTES >= TRACE_EVENT_RING_BYTES,
+	       "the event-ring budget must hold at least one trace batch");
+_Static_assert(TRACE_META_EVENT_BYTES <= SIM_EVENT_TRACE_BUDGET_BYTES,
+	       "the trace's own descriptor and name events must fit in its share");
 
 /* Pump-scoped scratch. The trace plugin emits from the consolidated
  * sim-debug pump thread only, so these are single-threaded. Keeping them
@@ -90,12 +155,8 @@ static int emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_rec
 
 /* ── DESCRIPTORS emission ────────────────────────────────────────── */
 
-/* Envelope (8 B) + per thread (4 tid + 4 generation + 1 len + up to 31 name). */
-#define DESC_PER_MAX (4 + 4 + 1 + OVE_SIM_TRACE_MAX_NAME)
-#define DESC_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
-
-_Static_assert(sizeof(struct ove_sim_event) + DESC_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
-	       "trace descriptor batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+/* The descriptor layout (and its size) is defined with the budget
+ * above, which charges these events to the trace's share. */
 
 static uint8_t desc_ev_buf[sizeof(struct ove_sim_event) + DESC_BUF_BYTES];
 static struct ove_trace_thread_desc desc_scratch[OVE_SIM_TRACE_MAX_DESC];
@@ -134,13 +195,8 @@ static void descriptors_remember(size_t count)
 }
 
 #ifdef CONFIG_OVE_TRACE_MARKERS
-/* User id -> name table. Sent on the descriptor cadence; the table is
- * small (OVE_TRACE_NAME_MAX) and static, so re-sending it is cheap. */
-#define NAME_PER_MAX (2 + 1 + OVE_SIM_TRACE_MAX_NAME)
-#define NAMES_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_TRACE_NAME_MAX * NAME_PER_MAX)
-
-_Static_assert(sizeof(struct ove_sim_event) + NAMES_BUF_BYTES <= OVE_SIM_EVENT_MAX_BYTES,
-	       "trace name batch exceeds OVE_SIM_EVENT_MAX_BYTES");
+/* The name table layout (and its size) is defined with the budget
+ * above, which charges this event to the trace's share. */
 
 /* The name table truncates at registration, so the wire format never has
  * to: the two limits must agree. */
@@ -245,6 +301,7 @@ static struct ove_trace_record drain_batch[OVE_SIM_TRACE_MAX_BATCH];
 void ove_sim_trace_tick(uint32_t elapsed_ms)
 {
 	size_t n;
+	unsigned batches = 0;
 	do {
 		n = ove_trace_ring_drain(drain_batch, OVE_SIM_TRACE_MAX_BATCH);
 		uint32_t dropped = ove_trace_ring_dropped_get() + trace_refused;
@@ -253,7 +310,8 @@ void ove_sim_trace_tick(uint32_t elapsed_ms)
 		 * the drops it reported into the next batch's count. */
 		if (emit_stream_batch(&trace_ctx, drain_batch, n, dropped) != OVE_OK)
 			trace_refused = dropped + (uint32_t)n;
-	} while (n == OVE_SIM_TRACE_MAX_BATCH);
+		batches++;
+	} while (n == OVE_SIM_TRACE_MAX_BATCH && batches < TRACE_MAX_BATCHES_PER_TICK);
 
 	/* Enumerate every tick so a thread start / storage reuse is reported
 	 * immediately (a fresh generation starts a new dashboard lane) rather

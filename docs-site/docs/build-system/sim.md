@@ -209,7 +209,7 @@ u16 count
 u32 dropped
 ```
 
-Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interrupted handler's exception number, 0 for thread-mode samples), then `depth` PCs of `word_size` bytes. **Profiler caps** (event 21) carry `u32 max_hz` (the effective maximum, i.e. `CONFIG_OVE_PROFILER_HZ` clamped to the kernel tick rate where the backend applies such a clamp), `u32 current_hz`, `u32 flags` (bit 0 = wall-clock sampling). Symbol tables and the CFG pruner are host-side: the bridge resolves PCs from the firmware ELF with `nm`/`objdump`, so firmware images carry no symbol payload.
+Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interrupted handler's exception number, 0 for thread-mode samples), then `depth` PCs of `word_size` bytes. **Profiler caps** (event 21) carry `u32 max_hz` (the effective maximum, i.e. `CONFIG_OVE_PROFILER_HZ` clamped to the kernel tick rate where the backend applies such a clamp), `u32 current_hz` (the selected rate, which the sim lowers when a saturated drain still sees the sample ring overflow), `u32 flags` (bit 0 = wall-clock sampling). Symbol tables and the CFG pruner are host-side: the bridge resolves PCs from the firmware ELF with `nm`/`objdump`, so firmware images carry no symbol payload.
 
 ## Kconfig Options
 

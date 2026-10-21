@@ -171,7 +171,7 @@ static void emit_snapshot(struct sim_debug_ctx *d)
  * The pump only drains and reports — sampling runs on its own in every
  * profiler backend (tick hook, timer interrupt, timer-queued work). Its
  * tick just bounds dashboard command latency; the drains keep their own
- * cadence (trace 100 ms, profiler 200 ms, snapshots 500 ms), scheduled
+ * cadence (trace 100 ms, profiler 50 ms, snapshots 500 ms), scheduled
  * from measured time so a late or starved pump drains once on its next
  * pass instead of stretching every interval.
  */

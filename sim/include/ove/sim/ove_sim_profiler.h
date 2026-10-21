@@ -64,8 +64,24 @@ extern "C" {
 /** Envelope version. */
 #define OVE_SIM_PROFILER_VERSION 1
 
-/** Drain period for samples (ms). */
-#define OVE_SIM_PROFILER_DRAIN_MS 200
+/**
+ * Drain period for samples (ms).
+ *
+ * The consolidated sim-debug pump ticks every 50 ms, and the event
+ * budget the drain may spend is a *per pump iteration* budget (see
+ * sim/include/ove/sim/ove_sim_budget.h): a drain that runs less often
+ * than the pump leaves most of that budget unspent and halves the
+ * number of samples the transport can carry per second.  The drain
+ * therefore runs on every pump tick, and the sustained drain rate is
+ *
+ *   PROFILE_MAX_BATCHES_PER_TICK * PROFILE_MAX_BATCH * 1000 / OVE_SIM_PROFILER_DRAIN_MS
+ *
+ * samples/s (5 600/s at the default depth of 32), against the
+ * CONFIG_OVE_PROFILER_HZ (1 000/s) a single-sample-per-period backend
+ * produces and the `hz * threads` the NuttX wall-clock backend
+ * produces.
+ */
+#define OVE_SIM_PROFILER_DRAIN_MS 50
 
 /**
  * @brief Register the profiler plugin.
@@ -83,11 +99,13 @@ int ove_sim_profiler_register(void);
 void ove_sim_profiler_tick(void);
 
 /**
- * @brief Emit a capabilities event (max_hz, current_hz) to the dashboard.
+ * @brief Queue a capabilities event (max_hz, current_hz) for the dashboard.
  *
  * The dashboard uses max_hz to filter its rate dropdown down to
- * achievable values and current_hz to set the initial selection.
- * Called once after registration and after any rate change.
+ * achievable values and current_hz to set the initial selection.  The
+ * event is sent by the next ove_sim_profiler_tick(), which sends at most
+ * one per tick however often it was requested.  Called once after
+ * registration; rate changes queue one by themselves.
  */
 void ove_sim_profiler_announce_caps(void);
 
