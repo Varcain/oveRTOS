@@ -74,9 +74,16 @@ void serial_init(void)
 	UART_BAUDDIV = 16u;
 	UART_CTRL = UART_CTRL_TX_EN | UART_CTRL_RX_EN | UART_CTRL_RX_INTEN;
 
-	/* The ready callback may give a FreeRTOS semaphore, so keep the line at
-	 * or below the kernel-call ceiling. */
-	NVIC_IPR[UART0_RX_IRQN] = configMAX_SYSCALL_INTERRUPT_PRIORITY;
+	/* One level below the syscall ceiling lets the sampling timer preempt
+	 * UART0 RX while the ready callback can still give a semaphore from ISR. */
+	enum {
+		uart_rx_priority = (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1)
+				   << (8 - configPRIO_BITS),
+	};
+	_Static_assert(uart_rx_priority > configMAX_SYSCALL_INTERRUPT_PRIORITY &&
+			       uart_rx_priority <= configKERNEL_INTERRUPT_PRIORITY,
+		       "UART0 RX priority must be below the syscall ceiling and fit the NVIC");
+	NVIC_IPR[UART0_RX_IRQN] = uart_rx_priority;
 	NVIC_ISER0 = 1u << UART0_RX_IRQN;
 
 	mutex = xSemaphoreCreateMutexStatic(&mutex_storage);
