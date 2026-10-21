@@ -96,7 +96,7 @@ The browser bundle (`web` variant of the QEMU board) uses the guest transport un
 | Operation | Direction | Description |
 |-----------|-----------|-------------|
 | `send_event` | Firmware → Dashboard | Push a plugin event |
-| `recv_cmd` | Dashboard → Firmware | Receive a command (blocking with timeout) |
+| `recv_cmd` | Dashboard → Firmware | Receive a command. The interface takes a timeout, which the polling guest transport ignores. |
 | `flush_display` | Firmware → Dashboard | Send framebuffer pixel data (XRGB8888) |
 | `push_audio` | Firmware → Dashboard | Send PCM audio samples for playback |
 | `pull_audio` | Dashboard → Firmware | Receive PCM audio samples (microphone / file injection) |
@@ -158,8 +158,8 @@ Both are drained by the consolidated sim-debug pump and forwarded by the bridge;
 
 ### Sampling modes
 
-- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry still lands on a tick boundary. When the sampler preempts another handler, the interrupted handler's exception frame is read from the MSP and the sample is attributed to `[ISR n]` (exception number) instead of a thread.
-- **Wall-clock (NuttX)**: a watchdog-timed high-priority work item walks every registered thread with `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`). Blocked and ready threads are sampled too, so the dashboard can filter to runnable states. It has no on-CPU view, so handler (ISR) time is not attributed on NuttX.
+- **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry lands on a tick boundary, so when the mean period is only one or two ticks the jitter rounds away. When the sampler preempts another handler, the interrupted handler's exception frame is read from the MSP and the sample is attributed to `[ISR n]` (exception number) instead of a thread.
+- **Wall-clock (NuttX)**: for each sample, a watchdog-timed high-priority work item uses `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`) to walk up to 32 registered threads that are running, ready or blocked. Blocked and ready threads are sampled too, so the dashboard can filter to runnable states. It has no on-CPU view, so handler (ISR) time is not attributed on NuttX.
 - FreeRTOS and Zephyr share the saved-`{r7, lr}` walker in `backends/common/ove_arm_backtrace.c`; NuttX uses its own unwinder.
 - Sampling rate is changed from the dashboard (`SET_RATE`, payload `uint32_t` Hz) and echoed in the caps event. The ceiling is `CONFIG_OVE_PROFILER_HZ` (250 Hz by default); on Zephyr and NuttX it is further clamped to the kernel tick rate, so the effective maximum is the lower of the two.
 
