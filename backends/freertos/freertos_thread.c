@@ -379,23 +379,35 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 
 #define OVE_FRT_TASK_REGISTRY_MAX 32
 
-#if configUSE_TRACE_FACILITY
+/* The registry needs the traceTASK_CREATE/DELETE hooks in FreeRTOSConfig.h.
+ * The app template installs them along with configUSE_TRACE_FACILITY; a
+ * RAM-tight build can install them alone and define
+ * OVE_FREERTOS_TASK_REGISTRY to 1, since the trace facility grows every
+ * kernel object while the registry costs only its handles.  Without the
+ * trace facility the list reads each task field through its own getter. */
+#if configUSE_TRACE_FACILITY || (defined(OVE_FREERTOS_TASK_REGISTRY) && OVE_FREERTOS_TASK_REGISTRY)
+#define OVE_FRT_HAVE_TASK_REGISTRY 1
+#else
+#define OVE_FRT_HAVE_TASK_REGISTRY 0
+#endif
+#if OVE_FRT_HAVE_TASK_REGISTRY && !configUSE_TRACE_FACILITY &&                                \
+	(!INCLUDE_uxTaskPriorityGet || !(INCLUDE_eTaskGetState || INCLUDE_xTaskAbortDelay) || \
+	 !configUSE_APPLICATION_TASK_TAG)
+#error "OVE_FREERTOS_TASK_REGISTRY without configUSE_TRACE_FACILITY needs INCLUDE_uxTaskPriorityGet, INCLUDE_eTaskGetState (or INCLUDE_xTaskAbortDelay) and configUSE_APPLICATION_TASK_TAG"
+#endif
+
+#if OVE_FRT_HAVE_TASK_REGISTRY
 /*
  * uxTaskGetSystemState() suspends scheduling while it traverses every kernel
  * list and scans every task's untouched stack fill. On the STM32 personality
  * that took 368-532 us every 200 ms, directly creating the dispatch tail.
  *
  * FreeRTOS invokes traceTASK_CREATE/DELETE while its task-list critical section
- * is held. Maintain the handles and immutable names there, then take a bounded
- * no-stack-scan snapshot below. The registry has headroom above LXP's sixteen
+ * is held. Maintain the handles there, then take a bounded no-stack-scan
+ * snapshot below. The registry has headroom above LXP's sixteen
  * visible kernel-thread entries so temporary service tasks do not overflow it.
  */
-struct frt_task_registry_entry {
-	TaskHandle_t handle;
-	char name[configMAX_TASK_NAME_LEN];
-};
-
-static struct frt_task_registry_entry g_frt_tasks[OVE_FRT_TASK_REGISTRY_MAX];
+static TaskHandle_t g_frt_tasks[OVE_FRT_TASK_REGISTRY_MAX];
 static UBaseType_t g_frt_task_count;
 /* Live tasks created while the registry was full.  They stay unlisted while
  * they live, so ove_thread_list() reports QUEUE_FULL until they are gone. */
@@ -405,26 +417,18 @@ void ove_backend_freertos_task_created(void *task, const char *name)
 {
 	TaskHandle_t handle = (TaskHandle_t)task;
 
+	(void)name; /* ove_thread_list reads the name from the TCB */
 	if (handle == NULL)
 		return;
 	for (UBaseType_t i = 0; i < g_frt_task_count; ++i)
-		if (g_frt_tasks[i].handle == handle)
+		if (g_frt_tasks[i] == handle)
 			return;
 	if (g_frt_task_count >= OVE_FRT_TASK_REGISTRY_MAX) {
 		++g_frt_task_untracked;
 		return;
 	}
 
-	struct frt_task_registry_entry *entry = &g_frt_tasks[g_frt_task_count++];
-	entry->handle = handle;
-	size_t i = 0;
-	if (name != NULL) {
-		while (i + 1u < sizeof(entry->name) && name[i] != '\0') {
-			entry->name[i] = name[i];
-			++i;
-		}
-	}
-	entry->name[i] = '\0';
+	g_frt_tasks[g_frt_task_count++] = handle;
 }
 
 void ove_backend_freertos_task_deleted(void *task)
@@ -432,12 +436,12 @@ void ove_backend_freertos_task_deleted(void *task)
 	TaskHandle_t handle = (TaskHandle_t)task;
 
 	for (UBaseType_t i = 0; i < g_frt_task_count; ++i) {
-		if (g_frt_tasks[i].handle != handle)
+		if (g_frt_tasks[i] != handle)
 			continue;
 		--g_frt_task_count;
 		if (i != g_frt_task_count)
 			g_frt_tasks[i] = g_frt_tasks[g_frt_task_count];
-		g_frt_tasks[g_frt_task_count] = (struct frt_task_registry_entry){0};
+		g_frt_tasks[g_frt_task_count] = NULL;
 		return;
 	}
 	/* Every created task is either in the registry or counted as untracked,
@@ -484,9 +488,27 @@ int ove_lxp_thread_snapshot_metrics_take(struct ove_lxp_thread_snapshot_metrics 
 }
 #endif
 
-int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
+#if OVE_FRT_HAVE_TASK_REGISTRY
+/* The TCB fields ove_thread_list reads.  vTaskGetInfo needs
+ * configUSE_TRACE_FACILITY; without it, read them one by one. */
+static void frt_task_info(TaskHandle_t handle, TaskStatus_t *task)
 {
 #if configUSE_TRACE_FACILITY
+	vTaskGetInfo(handle, task, pdFALSE, eInvalid);
+#else
+	task->pcTaskName = pcTaskGetName(handle);
+	task->uxCurrentPriority = uxTaskPriorityGet(handle);
+	task->eCurrentState = eTaskGetState(handle);
+#if configGENERATE_RUN_TIME_STATS == 1
+	task->ulRunTimeCounter = ulTaskGetRunTimeCounter(handle);
+#endif
+#endif
+}
+#endif
+
+int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
+{
+#if OVE_FRT_HAVE_TASK_REGISTRY
 	UBaseType_t filled;
 #if configGENERATE_RUN_TIME_STATS == 1
 	configRUN_TIME_COUNTER_TYPE total_runtime;
@@ -513,12 +535,12 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	if (out != NULL) {
 		for (UBaseType_t i = 0; i < filled; ++i) {
 			TaskStatus_t task;
-			TaskHandle_t handle = g_frt_tasks[i].handle;
+			TaskHandle_t handle = g_frt_tasks[i];
 			struct ove_thread *wrapper =
 				(struct ove_thread *)xTaskGetApplicationTaskTag(handle);
 
-			vTaskGetInfo(handle, &task, pdFALSE, eInvalid);
-			out[i].name = g_frt_tasks[i].name;
+			frt_task_info(handle, &task);
+			ove_name_copy(out[i].name, sizeof(out[i].name), task.pcTaskName);
 			out[i].identity = (uintptr_t)handle;
 			out[i].priority = (int)ove_freertos_unmap_priority(task.uxCurrentPriority);
 			out[i].native_priority = (int)task.uxCurrentPriority;
@@ -579,5 +601,5 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	(void)max_count;
 	(void)actual_count;
 	return OVE_ERR_NOT_SUPPORTED;
-#endif /* configUSE_TRACE_FACILITY */
+#endif /* OVE_FRT_HAVE_TASK_REGISTRY */
 }

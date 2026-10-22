@@ -504,9 +504,8 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	}
 
 	struct ove_thread_info *info = &ctx->out[ctx->count];
-	info->name = k_thread_name_get((k_tid_t)thread);
-	if (!info->name)
-		info->name = "?";
+	const char *name = k_thread_name_get((k_tid_t)thread);
+	ove_name_copy(info->name, sizeof(info->name), name != NULL ? name : "?");
 	info->identity = (uintptr_t)thread;
 	info->state = _map_zephyr_state(thread->base.thread_state);
 	info->native_priority = k_thread_priority_get((k_tid_t)thread);

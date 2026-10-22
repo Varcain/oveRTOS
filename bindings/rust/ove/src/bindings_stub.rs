@@ -107,6 +107,7 @@ pub const OVE_THREAD_INFO_VALID_READY_TIME: u32 = 16;
 pub const OVE_THREAD_INFO_VALID_BLOCKED_TIME: u32 = 32;
 pub const OVE_THREAD_INFO_VALID_SUSPENDED_TIME: u32 = 64;
 pub const OVE_THREAD_INFO_VALID_STATE_TIMES: u32 = 120;
+pub const OVE_THREAD_NAME_MAX: u32 = 32;
 pub const OVE_AUDIO_MAX_CHANNELS: u32 = 8;
 pub const OVE_AUDIO_GRAPH_MAX_NODES: u32 = 16;
 pub const OVE_AUDIO_GRAPH_MAX_EDGES: u32 = 16;
@@ -954,8 +955,6 @@ const _: () = {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_thread_info {
-    #[doc = " Thread name, owned by the backend and short-lived: on NuttX valid\n until the next ove_thread_list call from any thread (it reuses one\n snapshot), on FreeRTOS until any task is created or deleted (it points\n into the shared registry, which moves entries), on Zephyr until the\n thread is destroyed.  Copy it to keep it."]
-    pub name: *const core::ffi::c_char,
     #[doc = "< Opaque native identity; equality only."]
     pub identity: usize,
     #[doc = "< Execution state."]
@@ -970,38 +969,40 @@ pub struct ove_thread_info {
     pub cpu_percent_x100: u32,
     #[doc = "< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags."]
     pub valid_fields: u32,
-    #[doc = "< Per-state cumulative time."]
-    pub state_times: ove_thread_state_times,
     #[doc = "< The backend's own priority value for the thread."]
     pub native_priority: core::ffi::c_int,
+    #[doc = "< Per-state cumulative time."]
+    pub state_times: ove_thread_state_times,
+    #[doc = " Thread name, copied and NUL-terminated (truncated if longer)."]
+    pub name: [core::ffi::c_char; 32usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 88usize];
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 112usize];
     ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
-    ["Offset of field: ove_thread_info::name"]
-        [core::mem::offset_of!(ove_thread_info, name) - 0usize];
     ["Offset of field: ove_thread_info::identity"]
-        [core::mem::offset_of!(ove_thread_info, identity) - 8usize];
+        [core::mem::offset_of!(ove_thread_info, identity) - 0usize];
     ["Offset of field: ove_thread_info::state"]
-        [core::mem::offset_of!(ove_thread_info, state) - 16usize];
+        [core::mem::offset_of!(ove_thread_info, state) - 8usize];
     ["Offset of field: ove_thread_info::priority"]
-        [core::mem::offset_of!(ove_thread_info, priority) - 20usize];
+        [core::mem::offset_of!(ove_thread_info, priority) - 12usize];
     ["Offset of field: ove_thread_info::stack_used"]
-        [core::mem::offset_of!(ove_thread_info, stack_used) - 24usize];
+        [core::mem::offset_of!(ove_thread_info, stack_used) - 16usize];
     ["Offset of field: ove_thread_info::stack_size"]
-        [core::mem::offset_of!(ove_thread_info, stack_size) - 32usize];
+        [core::mem::offset_of!(ove_thread_info, stack_size) - 24usize];
     ["Offset of field: ove_thread_info::cpu_percent_x100"]
-        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 40usize];
+        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 32usize];
     ["Offset of field: ove_thread_info::valid_fields"]
-        [core::mem::offset_of!(ove_thread_info, valid_fields) - 44usize];
+        [core::mem::offset_of!(ove_thread_info, valid_fields) - 36usize];
+    ["Offset of field: ove_thread_info::native_priority"]
+        [core::mem::offset_of!(ove_thread_info, native_priority) - 40usize];
     ["Offset of field: ove_thread_info::state_times"]
         [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
-    ["Offset of field: ove_thread_info::native_priority"]
-        [core::mem::offset_of!(ove_thread_info, native_priority) - 80usize];
+    ["Offset of field: ove_thread_info::name"]
+        [core::mem::offset_of!(ove_thread_info, name) - 80usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n How many threads can be listed depends on the engine.  FreeRTOS lists the\n tasks in a 32-entry registry and needs @c configUSE_TRACE_FACILITY\n (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX lists at most 32 threads per\n call, however large @p max_count is; Zephyr and the host test backend have\n no limit.  @c OVE_ERR_QUEUE_FULL means this call left a live thread out;\n on FreeRTOS that includes a task created while the registry was full,\n which stays unlisted while it lives.  A thread NuttX has no run-time\n accounting slot for is still listed, with its run-time valid bits clear.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]
+    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n How many threads can be listed depends on the engine.  FreeRTOS lists the\n tasks in a 32-entry registry kept by the @c traceTASK_CREATE and\n @c traceTASK_DELETE hooks, which its FreeRTOSConfig.h installs along with\n @c configUSE_TRACE_FACILITY, or with @c OVE_FREERTOS_TASK_REGISTRY set to\n 1 plus @c INCLUDE_uxTaskPriorityGet, @c INCLUDE_eTaskGetState and\n @c configUSE_APPLICATION_TASK_TAG (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX, Zephyr and the host test backend have\n no limit.  @c OVE_ERR_QUEUE_FULL means this call left a live thread out;\n on FreeRTOS that includes a task created while the registry was full,\n which stays unlisted while it lives.  A thread NuttX has no run-time\n accounting slot for is still listed, with its run-time valid bits clear.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]
     pub fn ove_thread_list(
         out: *mut ove_thread_info,
         max_count: usize,

@@ -359,14 +359,17 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 {
 	(void)req;
 
-	struct ove_thread_info threads[16];
+	/* Static, not on the stack: together they are over 5 KiB, more than the
+	 * 8 KiB httpd stack can spare with the send path below.  Every handler
+	 * runs on that one thread, so they are never in use twice. */
+	static struct ove_thread_info threads[16];
 	size_t count = 0;
 
 	/* Best effort: a full table (OVE_ERR_QUEUE_FULL) still fills count entries. */
 	int rc = ove_thread_list(threads, 16, &count);
 	(void)rc;
 
-	char buf[4096];
+	static char buf[4096];
 	int off = 0;
 
 	off += snprintf(buf + off, sizeof(buf) - (size_t)off, "{\"threads\":[");
@@ -378,8 +381,7 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 				"{\"name\":\"%s\",\"state\":\"%s\","
 				"\"priority\":%d,\"native_priority\":%d,\"valid_fields\":%u,"
 				"\"stack_used\":",
-				threads[i].name ? threads[i].name : "?",
-				state_str(threads[i].state), threads[i].priority,
+				threads[i].name, state_str(threads[i].state), threads[i].priority,
 				threads[i].native_priority, (unsigned int)threads[i].valid_fields);
 		if (ove_thread_info_has(&threads[i], OVE_THREAD_INFO_VALID_STACK_USED))
 			off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%zu",

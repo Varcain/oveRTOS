@@ -1118,7 +1118,6 @@ impl bindings::ove_thread_info {
     /// Deterministically empty snapshot, useful for fixed-size arrays.
     pub const fn empty() -> Self {
         Self {
-            name: core::ptr::null(),
             identity: 0,
             state: bindings::OVE_THREAD_STATE_UNKNOWN,
             priority: 0,
@@ -1126,13 +1125,14 @@ impl bindings::ove_thread_info {
             stack_size: 0,
             cpu_percent_x100: 0,
             valid_fields: 0,
+            native_priority: 0,
             state_times: bindings::ove_thread_state_times {
                 running_us: 0,
                 ready_us: 0,
                 blocked_us: 0,
                 suspended_us: 0,
             },
-            native_priority: 0,
+            name: [0; bindings::OVE_THREAD_NAME_MAX as usize],
         }
     }
 
@@ -1143,29 +1143,15 @@ impl bindings::ove_thread_info {
             .and_then(Priority::from_level)
     }
 
-    /// Thread name bytes without the trailing NUL.
-    ///
-    /// The bytes belong to the backend and are short-lived: on NuttX until
-    /// the next listing from any thread, on FreeRTOS until any task is
-    /// created or deleted, on Zephyr until the thread is destroyed. Copy
-    /// them to keep them.
+    /// Thread name bytes without the trailing NUL; a copy held in the entry.
     pub fn name(&self) -> &[u8] {
-        if self.name.is_null() {
-            return &[];
-        }
-
-        // SAFETY: the C snapshot supplies a NUL-terminated name whose
-        // lifetime is engine-dependent and short (see `ove_thread_info.name`);
-        // the returned slice borrows `self`, but that borrow cannot enforce
-        // it.
-        unsafe {
-            let p = self.name.cast::<u8>();
-            let mut len = 0;
-            while *p.add(len) != 0 {
-                len += 1;
-            }
-            core::slice::from_raw_parts(p, len)
-        }
+        // SAFETY: `c_char` and `u8` have the same size and alignment, and the
+        // slice covers exactly the inline array it borrows from `self`.
+        let bytes = unsafe {
+            core::slice::from_raw_parts(self.name.as_ptr().cast::<u8>(), self.name.len())
+        };
+        let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        &bytes[..len]
     }
 
     /// Typed execution state.
@@ -1263,9 +1249,9 @@ impl Default for bindings::ove_thread_info {
 /// # Errors
 /// Returns [`Error::QueueFull`] if the caller's buffer or the backend's native
 /// snapshot cannot hold every thread, or another error if enumeration is not
-/// supported.  FreeRTOS lists at most 32 tasks and NuttX 32 threads per call;
-/// `QueueFull` means a live thread was left out (on FreeRTOS, a task created
-/// while its registry was full stays unlisted while it lives).  A thread
+/// supported.  FreeRTOS lists at most 32 tasks; `QueueFull` means a live
+/// thread was left out (on FreeRTOS, a task created while its registry was
+/// full stays unlisted while it lives).  A thread
 /// NuttX has no run-time accounting slot for is still listed, with its
 /// run-time valid bits clear.
 pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {

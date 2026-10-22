@@ -130,6 +130,26 @@ static inline bool ove_nvs_key_is_valid(const char *key)
 }
 
 /**
+ * ove_name_copy - copy a name into a fixed-size buffer
+ * @dst:  destination, @size bytes
+ * @size: size of @dst, at least 1
+ * @src:  NUL-terminated name, or NULL for an empty one
+ *
+ * Copies at most @size - 1 characters and always NUL-terminates.
+ */
+static inline void ove_name_copy(char *dst, size_t size, const char *src)
+{
+	size_t i = 0;
+	if (src != NULL) {
+		while (i + 1u < size && src[i] != '\0') {
+			dst[i] = src[i];
+			++i;
+		}
+	}
+	dst[i] = '\0';
+}
+
+/**
  * ove_errno_to_ove - translate a POSIX errno to an ove error code
  * @e: errno value (typically captured after a failing syscall)
  *

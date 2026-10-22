@@ -88,7 +88,7 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 
 	/* per-thread entries */
 	for (size_t i = 0; i < count; i++) {
-		const char *name = threads[i].name ? threads[i].name : "?";
+		const char *name = threads[i].name;
 		size_t name_len = strlen(name);
 		if (name_len > OVE_SIM_DEBUG_MAX_NAME_LEN)
 			name_len = OVE_SIM_DEBUG_MAX_NAME_LEN;

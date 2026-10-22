@@ -287,16 +287,17 @@ void report_cpu(void)
 | `OVE_THREAD_INFO_VALID_SUSPENDED_TIME` | `state_times.suspended_us` |
 | `OVE_THREAD_INFO_VALID_STATE_TIMES` | All four state-time fields |
 
-Each entry's `name` belongs to the backend and is short-lived: on NuttX it is
-valid until the next `ove_thread_list()` call from any thread (one snapshot is
-reused), on FreeRTOS until any task is created or deleted (it points into the
-shared registry, which moves entries), on Zephyr until the thread is
-destroyed. Copy it to keep it.
+Each entry holds its own copy of the thread's name, up to
+`OVE_THREAD_NAME_MAX - 1` characters, so it stays valid however long the
+caller keeps the entry.
 
 How many threads one call can list depends on the engine. FreeRTOS lists the
-tasks in a 32-entry registry and needs `configUSE_TRACE_FACILITY`; NuttX lists
-at most 32 threads however large the buffer; Zephyr and the host test backend
-have no limit. `OVE_ERR_QUEUE_FULL` means the call left a live thread out; on
+tasks in a 32-entry registry kept by the `traceTASK_CREATE`/`traceTASK_DELETE`
+hooks, which its FreeRTOSConfig.h installs along with `configUSE_TRACE_FACILITY`,
+or with `OVE_FREERTOS_TASK_REGISTRY` set to 1 plus `INCLUDE_uxTaskPriorityGet`,
+`INCLUDE_eTaskGetState` and `configUSE_APPLICATION_TASK_TAG` (a RAM-tight build
+can skip the trace facility, which grows every kernel object); NuttX, Zephyr and
+the host test backend have no limit. `OVE_ERR_QUEUE_FULL` means the call left a live thread out; on
 FreeRTOS that includes a task created while the registry was full, which stays
 unlisted while it lives. A thread NuttX has no run-time accounting slot for is
 still listed, with its run-time valid bits clear.

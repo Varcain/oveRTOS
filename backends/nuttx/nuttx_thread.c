@@ -527,22 +527,9 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 
 struct _nuttx_list_ctx {
 	struct ove_thread_info *out;
-	struct _nuttx_list_snapshot *snapshot;
 	size_t max;
 	size_t count;
 	bool overflow;
-};
-
-/* nxsched_foreach() invokes its callback while interrupts are disabled. Keep
- * that callback to a bounded scalar snapshot: stack-color scanning can touch
- * hundreds of KiB for a personality task and clock_cpuload() takes another
- * scheduler lock. A TCB cannot be pinned across the traversal, so stack_used
- * remains zero (unknown) instead of dereferencing a possibly exited task. */
-struct _nuttx_list_snapshot {
-	pid_t pid;
-#if CONFIG_TASK_NAME_SIZE > 0
-	char name[CONFIG_TASK_NAME_SIZE + 1];
-#endif
 };
 
 #if defined(CONFIG_ARCH_PERF_EVENTS)
@@ -732,7 +719,6 @@ uint64_t ove_nuttx_runtime_cycles_to_us(uint64_t cycles)
 #define OVE_NX_CPUINT_MAX OVE_NX_RUNTIME_MAX
 #endif
 
-static struct _nuttx_list_snapshot g_nx_list_snapshot[OVE_NX_CPUINT_MAX];
 static mutex_t g_nx_list_lock = NXMUTEX_INITIALIZER;
 
 #if !defined(CONFIG_ARCH_PERF_EVENTS)
@@ -760,6 +746,11 @@ static uint32_t _runtime_percent(uint64_t part, uint64_t total)
 }
 #endif
 
+/* nxsched_foreach() invokes this callback with interrupts disabled, so it
+ * copies only bounded scalars and the name: stack-color scanning can touch
+ * hundreds of KiB for a personality task and clock_cpuload() takes another
+ * scheduler lock. A TCB cannot be pinned across the traversal, so stack_used
+ * remains zero (unknown) instead of dereferencing a possibly exited task. */
 static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 {
 	struct _nuttx_list_ctx *ctx = (struct _nuttx_list_ctx *)arg;
@@ -768,18 +759,13 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 		return;
 	}
 
-	size_t index = ctx->count;
-	struct ove_thread_info *info = &ctx->out[index];
-	struct _nuttx_list_snapshot *snapshot = &ctx->snapshot[index];
+	struct ove_thread_info *info = &ctx->out[ctx->count];
 
 #if CONFIG_TASK_NAME_SIZE > 0
-	memcpy(snapshot->name, tcb->name, sizeof(snapshot->name));
-	snapshot->name[sizeof(snapshot->name) - 1u] = '\0';
-	info->name = snapshot->name;
+	ove_name_copy(info->name, sizeof(info->name), tcb->name);
 #else
-	info->name = "?";
+	ove_name_copy(info->name, sizeof(info->name), "?");
 #endif
-	snapshot->pid = tcb->pid;
 	info->identity = (uintptr_t)(uint32_t)tcb->pid;
 
 	switch (tcb->task_state) {
@@ -834,14 +820,14 @@ static void _accounting_retain(void)
 #endif
 }
 
-static void _nuttx_list_finish(struct ove_thread_info *info,
-			       const struct _nuttx_list_snapshot *snapshot, uint64_t dt_us)
+static void _nuttx_list_finish(struct ove_thread_info *info, uint64_t dt_us)
 {
+	const pid_t pid = (pid_t)info->identity;
 #if defined(CONFIG_ARCH_PERF_EVENTS)
 	(void)dt_us;
 	uint64_t task_cycles;
 	uint64_t total_cycles;
-	if (ove_nuttx_runtime_get(snapshot->pid, &task_cycles, &total_cycles) == 0) {
+	if (ove_nuttx_runtime_get(pid, &task_cycles, &total_cycles) == 0) {
 		info->state_times.running_us = ove_nuttx_runtime_cycles_to_us(task_cycles);
 		info->cpu_percent_x100 = _runtime_percent(task_cycles, total_cycles);
 		info->valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT |
@@ -850,7 +836,7 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 #elif !defined(CONFIG_SCHED_CPULOAD_NONE)
 	{
 		struct cpuload_s cl;
-		if (clock_cpuload(snapshot->pid, &cl) == OK && cl.total > 0) {
+		if (clock_cpuload(pid, &cl) == OK && cl.total > 0) {
 			uint32_t pct = (uint32_t)((uint64_t)cl.active * 10000U / cl.total);
 			info->cpu_percent_x100 = pct;
 			info->valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT;
@@ -858,7 +844,7 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 			 * into a monotonic cumulative running_us (see the g_nx_cpuint note). */
 			int idx = -1, freeidx = -1;
 			for (int k = 0; k < OVE_NX_CPUINT_MAX; k++) {
-				if (g_nx_cpuint[k].used && g_nx_cpuint[k].pid == snapshot->pid) {
+				if (g_nx_cpuint[k].used && g_nx_cpuint[k].pid == pid) {
 					idx = k;
 					break;
 				}
@@ -868,7 +854,7 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 			if (idx < 0 && freeidx >= 0) {
 				idx = freeidx;
 				g_nx_cpuint[idx].used = true;
-				g_nx_cpuint[idx].pid = snapshot->pid;
+				g_nx_cpuint[idx].pid = pid;
 				g_nx_cpuint[idx].cum_us = 0;
 			}
 			if (idx >= 0) {
@@ -892,8 +878,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	nxmutex_lock(&g_nx_list_lock);
 	struct _nuttx_list_ctx ctx = {
 		.out = out,
-		.snapshot = g_nx_list_snapshot,
-		.max = max_count < OVE_NX_CPUINT_MAX ? max_count : OVE_NX_CPUINT_MAX,
+		.max = max_count,
 		.count = 0,
 	};
 
@@ -912,7 +897,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	nxsched_foreach(_nuttx_list_cb, &ctx);
 	_accounting_retain(); /* before a newly listed thread claims a slot */
 	for (size_t i = 0; i < ctx.count; i++)
-		_nuttx_list_finish(&out[i], &g_nx_list_snapshot[i], dt_us);
+		_nuttx_list_finish(&out[i], dt_us);
 
 	if (actual_count)
 		*actual_count = ctx.count;

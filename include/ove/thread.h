@@ -428,6 +428,9 @@ struct ove_thread_state_times {
 	 OVE_THREAD_INFO_VALID_BLOCKED_TIME | OVE_THREAD_INFO_VALID_SUSPENDED_TIME)
 /** @} */
 
+/** @brief Size of @c ove_thread_info.name, terminating NUL included. */
+#define OVE_THREAD_NAME_MAX 32
+
 /**
  * @brief Snapshot of a single thread's info.
  *
@@ -438,14 +441,6 @@ struct ove_thread_state_times {
  * value as the RTOS sees it.
  */
 struct ove_thread_info {
-	/**
-	 * Thread name, owned by the backend and short-lived: on NuttX valid
-	 * until the next ove_thread_list call from any thread (it reuses one
-	 * snapshot), on FreeRTOS until any task is created or deleted (it points
-	 * into the shared registry, which moves entries), on Zephyr until the
-	 * thread is destroyed.  Copy it to keep it.
-	 */
-	const char *name;
 	uintptr_t identity;	  /**< Opaque native identity; equality only. */
 	ove_thread_state_t state; /**< Execution state. */
 	int priority;	   /**< Priority on the ove scale, 0..OVE_PRIO_MAX (see ove_prio_t). */
@@ -453,8 +448,10 @@ struct ove_thread_info {
 	size_t stack_size; /**< Total stack allocation; valid when its flag is set. */
 	uint32_t cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
 	uint32_t valid_fields;	   /**< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags. */
+	int native_priority;	   /**< The backend's own priority value for the thread. */
 	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
-	int native_priority; /**< The backend's own priority value for the thread. */
+	/** Thread name, copied and NUL-terminated (truncated if longer). */
+	char name[OVE_THREAD_NAME_MAX];
 };
 
 /**
@@ -476,9 +473,11 @@ static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint3
  * just deterministic initialization, not a measurement.
  *
  * How many threads can be listed depends on the engine.  FreeRTOS lists the
- * tasks in a 32-entry registry and needs @c configUSE_TRACE_FACILITY
- * (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX lists at most 32 threads per
- * call, however large @p max_count is; Zephyr and the host test backend have
+ * tasks in a 32-entry registry kept by the @c traceTASK_CREATE and
+ * @c traceTASK_DELETE hooks, which its FreeRTOSConfig.h installs along with
+ * @c configUSE_TRACE_FACILITY, or with @c OVE_FREERTOS_TASK_REGISTRY set to
+ * 1 plus @c INCLUDE_uxTaskPriorityGet, @c INCLUDE_eTaskGetState and
+ * @c configUSE_APPLICATION_TASK_TAG (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX, Zephyr and the host test backend have
  * no limit.  @c OVE_ERR_QUEUE_FULL means this call left a live thread out;
  * on FreeRTOS that includes a task created while the registry was full,
  * which stays unlisted while it lives.  A thread NuttX has no run-time
