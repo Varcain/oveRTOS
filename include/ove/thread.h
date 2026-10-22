@@ -113,6 +113,10 @@ typedef enum {
  * @param[in]  storage     Pointer to statically allocated backend storage.
  *                         Must remain valid for the lifetime of the thread.
  * @param[in]  name        Human-readable thread name.  May be truncated.
+ *                         NuttX and Zephyr (for tracing) and the host
+ *                         test backend (for listing) keep this pointer
+ *                         rather than a copy, so the string must outlive
+ *                         the thread: a literal or a static buffer.
  * @param[in]  entry       Thread entry-point function.  Must not be NULL.
  * @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.
  * @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX
@@ -160,6 +164,10 @@ int ove_thread_deinit(ove_thread_t handle);
  *
  * @param[out] handle      Receives the opaque thread handle on success.
  * @param[in]  name        Human-readable thread name.  May be truncated.
+ *                         NuttX and Zephyr (for tracing) and the host
+ *                         test backend (for listing) keep this pointer
+ *                         rather than a copy, so the string must outlive
+ *                         the thread: a literal or a static buffer.
  * @param[in]  entry       Thread entry-point function.  Must not be NULL.
  * @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.
  * @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX
@@ -350,6 +358,10 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle);
  * Populates @p stats with the total CPU time and utilisation percentage
  * since the scheduler started.
  *
+ * Runtime accounting exists on FreeRTOS with @c configGENERATE_RUN_TIME_STATS
+ * and on Zephyr with @c CONFIG_THREAD_RUNTIME_STATS; NuttX and the host test
+ * backend always return @c OVE_ERR_NOT_SUPPORTED.
+ *
  * @param[in]  handle  Thread to inspect.
  * @param[out] stats   Pointer to a caller-allocated structure that will
  *                     receive the statistics.
@@ -417,7 +429,14 @@ struct ove_thread_state_times {
  * value as the RTOS sees it.
  */
 struct ove_thread_info {
-	const char *name;	  /**< Thread name (static, do not free). */
+	/**
+	 * Thread name, owned by the backend and short-lived: on NuttX valid
+	 * until the next ove_thread_list call from any thread (it reuses one
+	 * snapshot), on FreeRTOS until any task is created or deleted (it points
+	 * into the shared registry, which moves entries), on Zephyr until the
+	 * thread is destroyed.  Copy it to keep it.
+	 */
+	const char *name;
 	uintptr_t identity;	  /**< Opaque native identity; equality only. */
 	ove_thread_state_t state; /**< Execution state. */
 	int priority;	   /**< Priority on the ove scale, 0..OVE_PRIO_MAX (see ove_prio_t). */
@@ -446,6 +465,15 @@ static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint3
  * Optional metrics are valid only when their corresponding
  * @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise
  * just deterministic initialization, not a measurement.
+ *
+ * How many threads can be listed depends on the engine.  FreeRTOS lists the
+ * tasks in a 32-entry registry and needs @c configUSE_TRACE_FACILITY
+ * (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX lists at most 32 threads per
+ * call, however large @p max_count is; Zephyr and the host test backend have
+ * no limit.  Not guaranteed today: once FreeRTOS has created a task while its
+ * registry was full, or NuttX's per-thread accounting table has run out of
+ * slots, every later call returns @c OVE_ERR_QUEUE_FULL even when nothing
+ * was omitted (on NuttX builds with perf events, until a runtime reset).
  *
  * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
  *         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.

@@ -356,6 +356,10 @@ template <typename F> inline void capturing_trampoline(void *ctx)
  * are disabled.  On heap-enabled builds a non-zero `StackSize` is still
  * required because it is passed to the kernel at construction time.
  *
+ * Every constructor's @c name is kept by pointer on NuttX, Zephyr and the
+ * host test backend, so it must outlive the thread: pass a literal or a
+ * static buffer, not a temporary such as @c std::string::c_str().
+ *
  * @tparam StackSize Stack size in bytes for the thread (must be > 0).
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
@@ -378,7 +382,8 @@ template <size_t StackSize = 0> class Thread
 	 *                  thread entry point, with signature `void fn(void*)`.
 	 * @param[in] ctx   Opaque pointer passed as the argument to `entry`.
 	 * @param[in] prio  Thread priority as an `ove_prio_t` value.
-	 * @param[in] name  Human-readable name for the thread (for debugging).
+	 * @param[in] name  Human-readable name for the thread (for debugging);
+	 *                  must outlive the thread, see the class description.
 	 *
 	 * Asserts at startup if thread creation fails.
 	 */
@@ -881,7 +886,10 @@ enum class ThreadInfoField : uint32_t {
  *
  * If the caller's array or an internal backend snapshot cannot hold every
  * thread, the function returns @ref Error::QueueFull after writing the partial
- * snapshot and setting its count in the C API.
+ * snapshot and setting its count in the C API.  The engine caps, the
+ * short lifetime of each entry's @c name and the cases where QueueFull is not
+ * yet reliable are described at @ref ove_thread_list and
+ * @ref ove_thread_info.
  *
  * @param[out] out Array to fill with thread info.
  * @param[in]  max Maximum entries the @p out buffer can hold.

@@ -74,6 +74,9 @@ pub fn init() -> Result<()> {
 }
 
 /// Process a single input character through the shell.
+///
+/// Call it from thread context, never from an ISR: the matching command's
+/// handler runs inside the call that delivers the newline.
 pub fn process_char(c: i32) {
     unsafe { bindings::ove_shell_process_char(c) }
 }
@@ -163,6 +166,8 @@ unsafe fn cstr_ptr_to_slice<'a>(ptr: *const u8) -> &'a [u8] {
 }
 
 /// Process a complete input line through the shell (e.g. `c"help"`).
+///
+/// Like [`process_char`], call it from thread context only.
 pub fn process_line(line: &CStr) {
     unsafe { bindings::ove_shell_process_line(line.as_ptr()) }
 }

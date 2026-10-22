@@ -1144,14 +1144,20 @@ impl bindings::ove_thread_info {
     }
 
     /// Thread name bytes without the trailing NUL.
+    ///
+    /// The bytes belong to the backend and are short-lived: on NuttX until
+    /// the next listing from any thread, on FreeRTOS until any task is
+    /// created or deleted, on Zephyr until the thread is destroyed. Copy
+    /// them to keep them.
     pub fn name(&self) -> &[u8] {
         if self.name.is_null() {
             return &[];
         }
 
-        // SAFETY: the C snapshot contract supplies a static NUL-terminated
-        // name. The returned slice borrows `self`, avoiding an unjustified
-        // `'static` lifetime in the safe API.
+        // SAFETY: the C snapshot supplies a NUL-terminated name whose
+        // lifetime is engine-dependent and short (see `ove_thread_info.name`);
+        // the returned slice borrows `self`, but that borrow cannot enforce
+        // it.
         unsafe {
             let p = self.name.cast::<u8>();
             let mut len = 0;
@@ -1257,7 +1263,9 @@ impl Default for bindings::ove_thread_info {
 /// # Errors
 /// Returns [`Error::QueueFull`] if the caller's buffer or the backend's native
 /// snapshot cannot hold every thread, or another error if enumeration is not
-/// supported.
+/// supported.  FreeRTOS lists at most 32 tasks and NuttX 32 threads per call.
+/// Not yet reliable: once FreeRTOS or NuttX has overflowed its table, every
+/// later call returns `QueueFull` even when nothing was omitted.
 pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
     let mut actual: usize = 0;
     let rc = unsafe { bindings::ove_thread_list(buf.as_mut_ptr(), buf.len(), &mut actual) };
