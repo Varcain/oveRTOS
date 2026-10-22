@@ -247,11 +247,12 @@ macro_rules! eventgroup {
 
 /// Create a [`crate::audio::Graph`] that works in both heap and zero-heap modes.
 ///
-/// Mirrors the C `ove_audio_graph_create(pg, frames, nodes, channels,
-/// sample_bytes)` macro: in zero-heap mode emits a per-call-site `static`
-/// backing array sized by `nodes * frames * channels * sample_bytes` bytes
-/// and attaches it to the graph automatically; in heap mode just calls
-/// [`crate::audio::Graph::new`].  Yields a [`crate::Result`] wrapping a
+/// In zero-heap mode it does what C does with `OVE_AUDIO_GRAPH_DEFINE`,
+/// `ove_audio_graph_init` and `ove_audio_graph_set_buf_storage`: emits a
+/// per-call-site `static` backing array sized by
+/// `nodes * frames * channels * sample_bytes` bytes and attaches it to the
+/// graph; in heap mode it just calls [`crate::audio::Graph::new`], and
+/// `build()` allocates the buffers.  Yields a [`crate::Result`] wrapping a
 /// [`crate::audio::Graph`].
 ///
 /// All arguments must be constant expressions.

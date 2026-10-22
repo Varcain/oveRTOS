@@ -277,7 +277,12 @@ OVE_MAIN()
 	dev_cfg.fmt.sample_fmt = OVE_AUDIO_FMT_S16;
 	dev_cfg.i2s.input_device = 1;
 
-	(void)graph.init(512);
+	// 2 non-sink nodes x 512 frames x mono x S16
+	if (auto init_rc = graph.create<2, 512, 1, 2>(); !init_rc) {
+		OVE_LOG_ERR("Audio graph init failed: %d", static_cast<int>(init_rc.error()));
+		ove::run();
+		return;
+	}
 
 	auto src_r = graph.device_source(&dev_cfg, "dmic-in");
 	static DmicProcessor dmic_proc;
@@ -290,10 +295,18 @@ OVE_MAIN()
 		return;
 	}
 
-	(void)graph.connect(*src_r, *proc_r);
-	(void)graph.connect(*proc_r, *sink_r);
-	(void)graph.build();
-	(void)graph.start();
+	auto rc = graph.connect(*src_r, *proc_r);
+	if (rc)
+		rc = graph.connect(*proc_r, *sink_r);
+	if (rc)
+		rc = graph.build();
+	if (rc)
+		rc = graph.start();
+	if (!rc) {
+		OVE_LOG_ERR("Audio graph setup failed: %d", static_cast<int>(rc.error()));
+		ove::run();
+		return;
+	}
 	OVE_LOG_INF("Audio streaming: 16kHz mono, DMIC input");
 
 	// Inference thread — zero-heap mode: wrapper carries kernel storage

@@ -227,15 +227,20 @@ fn classifyKeyword(
 
 // ── Inference thread ───────────────────────────────────────────────────
 
+// The inference buffers (~66 KB) are far larger than the 8 KiB infer stack, so they
+// live in statics. Only the infer thread touches them.
+var infer_audio_window = [_]i16{0} ** audio_sample_freq;
+var infer_features = std.mem.zeroes([feature_count][feature_size]i8);
+var infer_storage: [arena_size]u8 align(16) = undefined;
+
 fn inferThread() void {
     std.log.info("Inference thread started — listening...", .{});
     ove.thread.sleepMs(2000);
     var prev_samples = samples_written.load(.monotonic);
 
-    // Thread-local state
-    var audio_window = [_]i16{0} ** audio_sample_freq;
-    var features = std.mem.zeroes([feature_count][feature_size]i8);
-    var storage: [arena_size]u8 align(16) = undefined;
+    const audio_window = &infer_audio_window;
+    const features = &infer_features;
+    const storage = &infer_storage;
     var dsp = DspState{};
 
     while (true) {
@@ -284,12 +289,12 @@ fn inferThread() void {
         std.log.info("  dc_peak={d}, gain={d}", .{ dc_peak, dsp.gain });
 
         // Inference pipeline
-        generateFeatures(audio_window[0..read_count], &features, &storage, dsp) catch {
+        generateFeatures(audio_window[0..read_count], features, storage, dsp) catch {
             std.log.err("Features failed", .{});
             continue;
         };
 
-        if (classifyKeyword(&features, &storage)) |result| {
+        if (classifyKeyword(features, storage)) |result| {
             if (result.index > 1 and result.confidence > confidence_threshold) {
                 std.log.info(">>> Keyword: \"{s}\" ({d:.0}%)", .{
                     labels[result.index],
@@ -357,6 +362,7 @@ fn appMain() void {
 
     infer_thread = ove.Thread(8192).spawn(app_allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
         std.log.err("Failed to spawn infer thread", .{});
+        ove.run();
         return;
     };
 

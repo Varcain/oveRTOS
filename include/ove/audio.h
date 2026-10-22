@@ -214,8 +214,8 @@ OVE_NODISCARD int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g, voi
  *
  * Computes the worst-case storage required for inter-node audio buffers:
  * every non-sink node produces one buffer of @p frames × @p channels ×
- * @p sample_bytes.  Used by @ref ove_audio_graph_create and
- * @ref OVE_AUDIO_GRAPH_DEFINE to size a zero-heap static backing array.
+ * @p sample_bytes.  Used by @ref OVE_AUDIO_GRAPH_DEFINE, and the C++ and
+ * Rust graph helpers, to size a static backing array.
  */
 #define OVE_AUDIO_GRAPH_STORAGE_BYTES(nodes, frames, channels, sample_bytes) \
 	((size_t)(nodes) * (size_t)(frames) * (size_t)(channels) * (size_t)(sample_bytes))
@@ -226,10 +226,10 @@ OVE_NODISCARD int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g, voi
 /**
  * @brief Internal heap-backed graph creation function.
  *
- * Prefer the @ref ove_audio_graph_create macro which works in both heap
- * and zero-heap mode.  This function is the underlying implementation used
- * in heap mode — inter-node buffers are allocated from the heap when
- * @ref ove_audio_graph_build runs.
+ * Use the @ref ove_audio_graph_create macro, which is defined in heap mode
+ * only.  Inter-node buffers are allocated from the heap when
+ * @ref ove_audio_graph_build runs, unless storage was attached with
+ * @ref ove_audio_graph_set_buf_storage.
  *
  * @param[out] g      Graph instance to initialise.
  * @param[in]  frames Per-period frame count.
@@ -290,9 +290,10 @@ int ove_audio_graph_destroy(struct ove_audio_graph *g);
  *     return;
  * @endcode
  *
- * Applications that do not need this level of control should prefer
- * @ref ove_audio_graph_create, which allocates and attaches storage in
- * one step.
+ * A zero-heap build needs this storage, or another caller buffer of that
+ * size: @ref ove_audio_graph_create is not defined there, and
+ * @ref ove_audio_graph_build fails with @c OVE_ERR_NO_MEMORY on a graph
+ * without storage.
  */
 #define OVE_AUDIO_GRAPH_DEFINE(name, nodes, frames, channels, sample_bytes)                  \
 	static uint8_t name##_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(                             \

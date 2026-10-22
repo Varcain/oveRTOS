@@ -434,6 +434,7 @@ void ove_main(void)
 	if (ove_thread_create(&infer_th, "infer", infer_thread, NULL, OVE_PRIO_NORMAL, 8192) !=
 	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn infer thread");
+		ove_run();
 		return;
 	}
 

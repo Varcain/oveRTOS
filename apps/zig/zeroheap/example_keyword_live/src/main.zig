@@ -14,8 +14,22 @@
 const std = @import("std");
 const ove = @import("ove");
 
-// FixedBufferAllocator over a static BSS buffer — zero-heap-compatible.
-var arena_bytes: [8192]u8 = undefined;
+// Zephyr's ove.Thread adds 128 B and rounds up to an aligned power of two, so ask for
+// 128 B less to keep the infer stack at 8 KB instead of 16 KB.
+const infer_stack = 8192 - 128;
+const InferThread = ove.Thread(infer_stack);
+
+// FixedBufferAllocator over a static BSS buffer — zero-heap-compatible. Its one
+// allocation is the infer thread's stack and control block, sized and aligned the way
+// ove.Thread lays them out (Zephyr rounds the stack up to an aligned power of two for
+// its MPU).
+var arena_bytes: [
+    std.mem.alignForward(
+        usize,
+        ove.thread.stackTotal(infer_stack) + @sizeOf(ove.ffi.ove_thread_storage_t),
+        ove.thread.stackAlign(infer_stack),
+    )
+]u8 align(ove.thread.stackAlign(infer_stack)) = undefined;
 var fba: std.heap.FixedBufferAllocator = undefined;
 
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
@@ -132,7 +146,9 @@ var dmic_proc: DmicProcessor = .{};
 // Audio graph + inference thread — zero-heap mode embeds kernel
 // storage and stack inline as struct members.
 var graph: ove.audio.Graph = undefined;
-var infer_thread: ove.Thread(8192) = undefined;
+var infer_thread: InferThread = undefined;
+// 2 non-sink nodes x 512 frames x mono x S16
+var graph_buf: [2 * 512 * 1 * 2]u8 align(4) = undefined;
 
 // ── DSP parameters ────────────────────────────────────────────────────
 
@@ -229,15 +245,20 @@ fn classifyKeyword(
 
 // ── Inference thread ───────────────────────────────────────────────────
 
+// The inference buffers (~66 KB) are far larger than the 8 KiB infer stack, so they
+// live in statics. Only the infer thread touches them.
+var infer_audio_window = [_]i16{0} ** audio_sample_freq;
+var infer_features = std.mem.zeroes([feature_count][feature_size]i8);
+var infer_storage: [arena_size]u8 align(16) = undefined;
+
 fn inferThread() void {
     std.log.info("Inference thread started — listening...", .{});
     ove.thread.sleepMs(2000);
     var prev_samples = samples_written.load(.monotonic);
 
-    // Thread-local state
-    var audio_window = [_]i16{0} ** audio_sample_freq;
-    var features = std.mem.zeroes([feature_count][feature_size]i8);
-    var storage: [arena_size]u8 align(16) = undefined;
+    const audio_window = &infer_audio_window;
+    const features = &infer_features;
+    const storage = &infer_storage;
     var dsp = DspState{};
 
     while (true) {
@@ -286,12 +307,12 @@ fn inferThread() void {
         std.log.info("  dc_peak={d}, gain={d}", .{ dc_peak, dsp.gain });
 
         // Inference pipeline
-        generateFeatures(audio_window[0..read_count], &features, &storage, dsp) catch {
+        generateFeatures(audio_window[0..read_count], features, storage, dsp) catch {
             std.log.err("Features failed", .{});
             continue;
         };
 
-        if (classifyKeyword(&features, &storage)) |result| {
+        if (classifyKeyword(features, storage)) |result| {
             if (result.index > 1 and result.confidence > confidence_threshold) {
                 std.log.info(">>> Keyword: \"{s}\" ({d:.0}%)", .{
                     labels[result.index],
@@ -316,6 +337,12 @@ fn appMain() void {
 
     graph.init(512) catch {
         std.log.err("Audio graph init failed", .{});
+        ove.run();
+        return;
+    };
+
+    graph.setBufStorage(&graph_buf) catch {
+        std.log.err("Audio graph storage failed", .{});
         ove.run();
         return;
     };
@@ -360,8 +387,9 @@ fn appMain() void {
     };
     std.log.info("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    infer_thread = ove.Thread(8192).spawn(allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
+    infer_thread = InferThread.spawn(allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
         std.log.err("Failed to init infer thread", .{});
+        ove.run();
         return;
     };
 

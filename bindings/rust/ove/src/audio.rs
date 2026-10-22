@@ -308,9 +308,9 @@ impl Graph {
 
     /// Create and initialize a graph, attaching caller-owned buffer storage.
     /// Required for `CONFIG_OVE_ZERO_HEAP` builds where `build()` cannot
-    /// `calloc` inter-node buffers.  In heap-mode builds the storage is
-    /// unused but harmless.  Prefer the [`crate::audio_graph!`] macro,
-    /// which emits the backing array automatically.
+    /// `calloc` inter-node buffers.  In heap-mode builds `build()` uses the
+    /// storage too instead of allocating.  Prefer the [`crate::audio_graph!`]
+    /// macro, which emits the backing array in zero-heap builds only.
     ///
     /// Same move policy as [`Graph::new`].
     pub fn new_with_storage(frames_per_period: u32, storage: &'static mut [u8]) -> Result<Self> {

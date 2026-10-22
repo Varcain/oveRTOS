@@ -6,10 +6,10 @@
 
 //! Live DMIC Keyword Detection — Rust implementation
 //!
-//! The only `unsafe` in this app is a single-producer/single-consumer
-//! audio ring buffer (interior mutability via `UnsafeCell`, sound under
-//! its SPSC access invariant); all RTOS/FFI bridging stays inside the
-//! `ove` crate's binding layer.
+//! The only `unsafe` in this app is static state with one stated owner:
+//! the single-producer/single-consumer audio ring buffer, the inference
+//! thread's buffers and the audio graph.  All RTOS/FFI bridging stays
+//! inside the `ove` crate's binding layer.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -215,15 +215,36 @@ fn classify_keyword(
 
 // ── Inference thread ───────────────────────────────────────────────────
 
+/// The inference buffers (~66 KB) are far larger than the 8 KiB infer
+/// stack, so they live in a static.  All-zero is a valid initial value for
+/// every field (`ModelStorage::new` zero-fills too), so the static is built
+/// in place and never copied through a stack frame.
+struct InferState {
+    audio_window: [i16; AUDIO_SAMPLE_FREQ as usize],
+    features: [[i8; FEATURE_SIZE]; FEATURE_COUNT],
+    storage: ove::infer::ModelStorage<ARENA_SIZE>,
+}
+
+struct InferCell(UnsafeCell<core::mem::MaybeUninit<InferState>>);
+
+// SAFETY: only the inference thread touches the state, once, in
+// `infer_thread`.
+unsafe impl Sync for InferCell {}
+
+static INFER: InferCell = InferCell(UnsafeCell::new(core::mem::MaybeUninit::zeroed()));
+
 fn infer_thread() {
     log::info!("Inference thread started — listening...");
     Thread::sleep_ms(2000);
     let mut prev_samples = SAMPLES_WRITTEN.load(Ordering::Relaxed);
 
-    // Thread-local state
-    let mut audio_window = [0i16; AUDIO_SAMPLE_FREQ as usize];
-    let mut features = [[0i8; FEATURE_SIZE]; FEATURE_COUNT];
-    let mut storage = ove::infer::ModelStorage::<ARENA_SIZE>::new();
+    // SAFETY: zeroed is a valid InferState (see above), and this thread is
+    // its only user.
+    let InferState {
+        audio_window,
+        features,
+        storage,
+    } = unsafe { (*INFER.0.get()).assume_init_mut() };
     let mut dsp = DspState {
         actual_rate: AUDIO_SAMPLE_FREQ,
         dc_offset: 0,
@@ -291,8 +312,8 @@ fn infer_thread() {
         // Inference pipeline
         if generate_features(
             &audio_window[..read_count],
-            &mut features,
-            &mut storage,
+            features,
+            storage,
             &dsp,
         )
         .is_err()
@@ -301,7 +322,7 @@ fn infer_thread() {
             continue;
         }
 
-        match classify_keyword(&features, &mut storage) {
+        match classify_keyword(features, storage) {
             Ok(pred) if pred.label > 1 && pred.confidence > CONFIDENCE_THRESHOLD => {
                 log::info!(
                     ">>> Keyword: \"{}\" ({:.0}%)",
@@ -319,6 +340,8 @@ fn infer_thread() {
 static DMIC_PROC: ove::audio::StaticProcessor<DmicProcessor> =
     ove::audio::StaticProcessor::new(DmicProcessor);
 
+static GRAPH: ove::InitMut<ove::audio::Graph> = ove::InitMut::new();
+
 #[ove::main]
 fn app_main() {
     ove::log::try_init();
@@ -329,7 +352,14 @@ fn app_main() {
         classifier_model().len()
     );
 
-    let mut graph = ove::audio::Graph::new(512).expect("audio graph: alloc");
+    // The graph lives in a static: on FreeRTOS this function's stack is the
+    // main stack, which the scheduler reuses for interrupts once it starts.
+    // 2 non-sink nodes x 512 frames x mono x S16.
+    GRAPH.init(ove::audio_graph!(512, 2, 1, 2).expect("audio graph: alloc"));
+    // SAFETY: this function is the only Rust user of the graph, and it does
+    // not touch it after start(), when the audio engine takes it over
+    // through C.
+    let graph = unsafe { GRAPH.get_mut() };
     let dev_cfg = ove::audio::device_cfg_i2s(16000, 1, 1);
 
     let src = graph
