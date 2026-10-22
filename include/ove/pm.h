@@ -139,10 +139,10 @@ struct ove_pm_stats {
  * @brief Power policy callback — returns recommended next state.
  *
  * Called on the PM thread, a low-priority thread each engine runs to drive
- * the state machine (not the idle hook), without the PM lock held.  After
+ * the state machine (not the idle hook), without the PM lock held.  Each call
+ * receives the @p user_data registered together with this policy.  After
  * ove_pm_set_policy() replaces it, a call that had already started can still
- * run once.  Not guaranteed today: a call racing ove_pm_set_policy() can
- * receive the other policy's @p user_data.
+ * run once, so its @p user_data must stay valid until then.
  *
  * @param[in] current         Current power state.
  * @param[in] idle_ms         Milliseconds since last activity.
@@ -267,7 +267,7 @@ OVE_NODISCARD int ove_pm_domain_get_refcount(ove_pm_domain_t domain);
  *
  * Replaces the default threshold-based policy.  Pass NULL to restore
  * the default policy.  See @ref ove_pm_policy_fn for when the policy runs and
- * what is not yet guaranteed while it is being replaced.
+ * what a replaced policy may still do.
  *
  * @param[in] policy    Policy function, or NULL for default.
  * @param[in] user_data Opaque pointer forwarded to @p policy.

@@ -502,8 +502,11 @@ int ove_pm_get_budget_status(uint32_t *actual_pct_x100)
 void ove_pm_idle_process(void)
 {
 	uint64_t now;
+	uint64_t last_activity_us;
 	uint32_t idle_ms;
 	uint32_t next_timeout_ms;
+	ove_pm_policy_fn policy_fn;
+	void *policy_user_data;
 	ove_pm_state_t recommended;
 	ove_pm_state_t old_state;
 	int i;
@@ -513,25 +516,34 @@ void ove_pm_idle_process(void)
 
 	/* Exchange avoids losing activity posted between a separate load and clear. */
 	if (__atomic_exchange_n(&pm_ctx.activity_flag, 0, __ATOMIC_ACQ_REL)) {
-		pm_ctx.last_activity_us = pm_now_us();
+		OVE_LOCK_INFINITE(pm_ctx.mtx);
+		now = pm_now_us();
+		pm_ctx.last_activity_us = now;
 		if (current_state_load() != OVE_PM_STATE_ACTIVE) {
-			OVE_LOCK_INFINITE(pm_ctx.mtx);
-			now = pm_now_us();
 			update_stats(current_state_load(), now);
 			current_state_store(OVE_PM_STATE_ACTIVE);
 			pm_ctx.transition_count[OVE_PM_STATE_ACTIVE]++;
-			ove_mutex_unlock(pm_ctx.mtx);
 		}
+		ove_mutex_unlock(pm_ctx.mtx);
 		return;
 	}
 
+	/* Take the policy and its user_data as one pair (ove_pm_set_policy()
+	 * may run concurrently), and last_activity_us whole (a 64-bit value
+	 * is two loads on 32-bit cores). The policy itself runs unlocked so
+	 * it may call PM APIs. */
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
+	policy_fn = pm_ctx.policy_fn;
+	policy_user_data = pm_ctx.policy_user_data;
+	last_activity_us = pm_ctx.last_activity_us;
+	ove_mutex_unlock(pm_ctx.mtx);
+
 	now = pm_now_us();
-	idle_ms = (uint32_t)((now - pm_ctx.last_activity_us) / 1000ULL);
+	idle_ms = (uint32_t)((now - last_activity_us) / 1000ULL);
 	next_timeout_ms = ove_hal_pm_get_next_timeout_ms();
 
 	/* Consult policy */
-	recommended = pm_ctx.policy_fn(current_state_load(), idle_ms, next_timeout_ms,
-				       pm_ctx.policy_user_data);
+	recommended = policy_fn(current_state_load(), idle_ms, next_timeout_ms, policy_user_data);
 
 	if (recommended >= OVE_PM_STATE_COUNT)
 		recommended = OVE_PM_STATE_ACTIVE;
@@ -542,7 +554,15 @@ void ove_pm_idle_process(void)
 	/* Transition to deeper sleep */
 	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
+	/* The policy decided on the snapshot: drop its choice if, while it ran,
+	 * ove_pm_set_state() went as deep or re-anchored the idle time, or
+	 * activity was posted (the next call handles that). */
 	old_state = current_state_load();
+	if (recommended <= old_state || pm_ctx.last_activity_us != last_activity_us ||
+	    __atomic_load_n(&pm_ctx.activity_flag, __ATOMIC_ACQUIRE)) {
+		ove_mutex_unlock(pm_ctx.mtx);
+		return;
+	}
 	now = pm_now_us();
 	update_stats(old_state, now);
 

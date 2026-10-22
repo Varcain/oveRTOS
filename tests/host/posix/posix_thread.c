@@ -132,10 +132,14 @@ void ove_backend_thread_registry_unlock(void)
 	pthread_mutex_unlock(&thread_list_lock);
 }
 
+/* first_thread is kept under the same lock: threads create and destroy
+ * other threads concurrently. */
 static void _register_thread(struct ove_thread *t)
 {
 	pthread_mutex_lock(&thread_list_lock);
 	ove_thread_registry_add(t);
+	if (first_thread == NULL)
+		first_thread = t;
 	pthread_mutex_unlock(&thread_list_lock);
 }
 
@@ -143,6 +147,8 @@ static void _unregister_thread(struct ove_thread *t)
 {
 	pthread_mutex_lock(&thread_list_lock);
 	ove_thread_registry_remove(t);
+	if (first_thread == t)
+		first_thread = NULL;
 	pthread_mutex_unlock(&thread_list_lock);
 }
 
@@ -253,10 +259,6 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
-	if (first_thread == NULL) {
-		first_thread = t;
-	}
-
 	*handle = t;
 	return OVE_OK;
 }
@@ -276,9 +278,6 @@ int ove_thread_deinit(ove_thread_t handle)
 		pthread_join(t->tid, NULL);
 	}
 	_unregister_thread(t);
-	if (first_thread == t) {
-		first_thread = NULL;
-	}
 	sem_destroy(&t->suspend_sem);
 	free(t->stack_base);
 	t->stack_base = NULL;
@@ -329,10 +328,6 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
-	if (first_thread == NULL) {
-		first_thread = t;
-	}
-
 	*handle = t;
 	return OVE_OK;
 }
@@ -355,9 +350,6 @@ int ove_thread_destroy(ove_thread_t handle)
 		pthread_join(t->tid, NULL);
 	}
 	_unregister_thread(t);
-	if (first_thread == t) {
-		first_thread = NULL;
-	}
 	sem_destroy(&t->suspend_sem);
 	free(t->stack_base);
 	t->stack_base = NULL;
@@ -497,8 +489,11 @@ void ove_thread_start_scheduler(void)
 	/* Block the main thread by joining the first app thread.
 	 * POSIX threads run immediately, but the caller (ove_app_run)
 	 * needs to block here to keep the process alive. */
-	if (first_thread != NULL) {
-		pthread_join(first_thread->tid, NULL);
+	pthread_mutex_lock(&thread_list_lock);
+	struct ove_thread *first = first_thread;
+	pthread_mutex_unlock(&thread_list_lock);
+	if (first != NULL) {
+		pthread_join(first->tid, NULL);
 	}
 }
 

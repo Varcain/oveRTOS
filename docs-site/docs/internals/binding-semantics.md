@@ -158,7 +158,7 @@ state it the same way, including where an engine does **not** guarantee it.
 | Timer | thread context: FreeRTOS timer task, Zephyr system work queue, NuttX HPWORK, host dispatcher thread | stop: one running or queued call may still run (FreeRTOS: more, if the caller outranks the timer task); deinit / destroy waits for a running call |
 | GPIO interrupt | interrupt context on every engine (host: the injecting thread) | disable / unregister from thread context: no call starts or is running (single core); not guaranteed from a higher-priority interrupt |
 | Work item | the work queue's thread, one item at a time | `ove_work_cancel` / deinit drain it |
-| PM policy | the engine's low-priority PM thread, without the PM lock | a call already started may run once more; not guaranteed today: a call racing `set_policy` may see the other policy's `user_data` |
+| PM policy | the engine's low-priority PM thread, without the PM lock, with the `user_data` registered alongside it | a call already started may run once more |
 | PM notifier | the PM thread, with the PM lock held | unregister waits for a running call; the notifier must not call other PM functions |
 | Audio node / tap | the thread driving the graph (audio thread, or the caller of `process`) | not guaranteed today: stop / deinit do not wait for a running cycle |
 | httpd handler / WebSocket | the single `httpd` thread, one at a time | stop waits for that thread; WebSocket `on_close` is not called for connections open at stop or dropped by a failed send |
@@ -169,8 +169,8 @@ state it the same way, including where an engine does **not** guarantee it.
 
 - A binding that wraps a callback in a safe API must not promise more than this
   table does. Where a row says "not guaranteed today", the wrapper documents
-  the gap rather than hiding it (Rust's `pm::set_policy` and Zig's
-  `pm.setPolicy` do).
+  the gap rather than hiding it (the audio `stop` / `deinit` docs in every
+  binding do).
 - Strings a callback API keeps by pointer (shell command names and help, thread
   names on NuttX, Zephyr and the host backend) must outlive the registration:
   Rust takes `&'static CStr`, Zig comptime or caller-owned names, C++ documents
