@@ -46,7 +46,7 @@ typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `ove_console_init` | `(void) → int` | Configure the serial peripheral (baud rate, framing) as defined by the BSP |
-| `ove_console_getchar` | `(void) → int` | Read one character; returns -1 if none is available or on error |
+| `ove_console_getchar` | `(void) → int` | Read one character. FreeRTOS returns -1 at once if none is buffered; Zephyr, NuttX and the host test backend wait (Zephyr on the STM32F746 board by busy-polling). Use `ove_console_try_getchar()` to never block. |
 | `ove_console_putchar` | `(c) → void` | Transmit one character; may block until the TX buffer has space |
 | `ove_console_write` | `(buf, len) → void` | Transmit exactly `len` raw bytes with no newline translation |
 

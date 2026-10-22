@@ -279,8 +279,8 @@ graph LR
 | `ove_stream_destroy` | `void (ove_stream_t stream)` | Free a heap-allocated stream. |
 | `ove_stream_send` | `int (ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns, size_t *bytes_sent)` | Send bytes; blocks up to `timeout_ns` if there is no space. Actual bytes written written to `*bytes_sent` (may be NULL). |
 | `ove_stream_receive` | `int (ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_received)` | Receive bytes; blocks until `trigger` bytes are available. |
-| `ove_stream_send_from_isr` | `int (ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)` | ISR-safe non-blocking send. |
-| `ove_stream_receive_from_isr` | `int (ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)` | ISR-safe non-blocking receive. |
+| `ove_stream_send_from_isr` | `int (ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)` | ISR-safe non-blocking send on FreeRTOS and Zephyr; not yet on NuttX, whose implementation takes a pthread mutex. |
+| `ove_stream_receive_from_isr` | `int (ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)` | ISR-safe non-blocking receive on FreeRTOS and Zephyr; not yet on NuttX, as for send. |
 | `ove_stream_reset` | `int (ove_stream_t stream)` | Discard all buffered bytes. |
 | `ove_stream_bytes_available` | `size_t (ove_stream_t stream)` | Bytes currently readable. |
 

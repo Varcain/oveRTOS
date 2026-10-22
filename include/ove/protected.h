@@ -21,10 +21,17 @@
  * Linux personality's unprivileged user tasks.
  *
  * Enforcement is per-backend:
- * - On target (Cortex-M) the task runs unprivileged with an MPU region table;
- *   a violation traps to the kernel fault handler.
+ * - NuttX (ARMv7-M): only an access to the backend's own 32-byte no-access
+ *   MPU guard region, armed for the run, is trapped (as a MemManage fault,
+ *   recovered by resuming at a thunk that longjmp()s back).  The entry stays
+ *   privileged with the default memory map, so any other stray load or
+ *   store goes through unchecked, and bus, usage and hard faults are not
+ *   contained: this exercises the mechanism, it is not a sandbox.  The
+ *   recovery state is global, so runs must not overlap.
  * - On the host test backend the process MMU enforces protection and a
- *   @c SIGSEGV / @c SIGBUS handler converts a violation into a contained fault.
+ *   @c SIGSEGV / @c SIGBUS handler converts a violation into a contained fault;
+ *   runs on different threads must not overlap either.
+ * - FreeRTOS and Zephyr have no implementation.
  *
  * Phase-0 scope: **fault containment** (a violation is caught, the supervisor
  * survives). Per-region MPU grants / the unprivileged-task model are layered
@@ -42,7 +49,13 @@
 extern "C" {
 #endif
 
-/** Entry function for a protected task. */
+/**
+ * Entry function for a protected task.
+ *
+ * Runs synchronously on the thread that calls ove_ptask_run().  A contained
+ * fault abandons it by longjmp, so anything it holds at that point (locks,
+ * allocations) stays held.
+ */
 typedef void (*ove_ptask_fn)(void *arg);
 
 /** Outcome of running a protected task. */

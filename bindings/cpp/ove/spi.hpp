@@ -26,6 +26,11 @@ namespace ove
  * @class Spi
  * @brief RAII wrapper around an oveRTOS SPI bus controller.
  *
+ * Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
+ * milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
+ * waits, with no timeout, for other transfers on the same bus (see the
+ * timeout note on @ref ove_spi).
+ *
  * Not copyable.  Move-only when heap allocation is enabled.
  */
 class Spi

@@ -38,9 +38,11 @@ config OVE_PROTECTED
     bool "Protected tasks (fault-contained execution)"
     default n
     help
-      Run untrusted/loaded code so a memory-protection fault is trapped and
-      contained instead of taking down the system. Target backends use the
-      unprivileged-task / MPU model.
+      Run code so a memory-protection fault is trapped and contained
+      instead of taking down the system. The host test backend traps any
+      fault through the process MMU; NuttX traps only accesses to its own
+      MPU guard region, so it is not a sandbox there; FreeRTOS and Zephyr
+      have no implementation.
 
 config OVE_LINUX
     bool "Linux personality (syscall surface for loaded programs)"

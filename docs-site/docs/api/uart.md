@@ -30,7 +30,7 @@ struct ove_uart_cfg {
 | `ove_uart_write()` | Blocking write with timeout |
 | `ove_uart_read()` | Blocking read from RX buffer with timeout |
 | `ove_uart_bytes_available()` | Query bytes in RX buffer |
-| `ove_uart_flush()` | Wait for TX hardware to drain |
+| `ove_uart_flush()` | Wait, with no timeout, for pending TX bytes to be sent; RX untouched. Zephyr returns at once, so the last byte may still be on the wire. |
 | `ove_uart_deinit()` / `ove_uart_destroy()` | Release resources |
 
 ## Example

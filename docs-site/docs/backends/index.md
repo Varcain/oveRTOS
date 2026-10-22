@@ -105,11 +105,13 @@ What each `ove_*` peripheral wrapper resolves to per backend. These are useful w
 
 Per-backend behaviour of `ove_pm_*`. The portable surface lives at [API → Power Management](../api/pm.md); this section covers what the wrapper resolves to per backend and how to plug in a non-default policy.
 
+Each engine drives the state machine from a low-priority PM thread, which also runs the policy and the notifiers. When the policy picks a low-power state, that thread blocks for the residency time and the kernel's own idle path does the sleeping. The chosen state reaches the kernel only with the kernel's own `CONFIG_PM`, which no in-tree board enables; otherwise the PM thread's block is a plain sleep and idle is the default WFI:
+
 | Backend | Idle entry | Wake sources | Default policy hook |
 |---|---|---|---|
-| FreeRTOS / STM32 | `__WFI()` from the idle hook | EXTI, RTC alarm, UART, USART RXNE | `freertos_pm.c` |
-| Zephyr | `pm_state_set()` integration | Subsystem-defined | `zephyr_pm.c` |
-| NuttX | `up_idle()` hook | Per-driver wake sources | `nuttx_pm.c` |
+| FreeRTOS / STM32 | PM thread at `OVE_PRIO_LOW` blocks in `vTaskDelay`; tickless idle runs `__WFI()` | EXTI, RTC alarm, UART, USART RXNE | `freertos_pm.c` |
+| Zephyr | PM thread blocks; with `CONFIG_PM` the kernel idle path enters the forced `pm_state` | Subsystem-defined | `zephyr_pm.c` |
+| NuttX | PM thread blocks; `up_idle()` runs WFI, and with `CONFIG_PM` `up_idlepm()` enters the chosen state | Per-driver wake sources | `nuttx_pm.c` |
 
 ### Power management policy
 

@@ -74,9 +74,13 @@ namespace ove::gpio
 
 /**
  * @brief Registers an interrupt callback for a GPIO pin.
+ *
+ * The callback runs in interrupt context on every engine; see
+ * @ref ove_gpio_irq_cb for what it may do and when it stops being called.
+ *
  * @param[in] port      GPIO port index.
  * @param[in] pin       Pin number within the port.
- * @param[in] mode      Trigger mode (rising, falling, both edges, etc.).
+ * @param[in] mode      Trigger mode: rising edge, falling edge, or both.
  * @param[in] callback  Function to call when the interrupt fires.
  * @param[in] user_data Opaque pointer forwarded to the callback.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error

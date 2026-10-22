@@ -121,7 +121,11 @@ template <size_t RxBufSize = 0> class Uart
 		return ove_uart_bytes_available(handle_);
 	}
 
-	/** @brief Block until all pending TX bytes have been drained. */
+	/**
+	 * @brief Wait, with no timeout, for pending TX bytes to be sent.
+	 *
+	 * On Zephyr it returns at once; see @ref ove_uart_flush.
+	 */
 	[[nodiscard]] Result<void> flush() noexcept
 	{
 		return from_rc(ove_uart_flush(handle_));

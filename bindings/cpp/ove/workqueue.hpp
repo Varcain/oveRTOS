@@ -222,6 +222,10 @@ class Work
 
 	/**
 	 * @brief Submits the work item to a workqueue for immediate execution.
+	 *
+	 * Call from thread context: it is not ISR-safe on FreeRTOS or NuttX.  On a full
+	 * queue FreeRTOS fails at once and NuttX waits; see @ref ove_work_submit.
+	 *
 	 * @tparam S Stack size of the target workqueue.
 	 * @param[in] wq The workqueue to submit this work item to.
 	 * @return Empty `Result<void>` on success; `unexpected`
@@ -234,6 +238,12 @@ class Work
 
 	/**
 	 * @brief Submits the work item to a workqueue with a delay.
+	 *
+	 * Call from thread context: it is not ISR-safe on FreeRTOS or NuttX.  Not
+	 * guaranteed today: FreeRTOS drops the item if the queue is full when
+	 * the delay expires, and NuttX sleeps the delay on the worker after
+	 * dequeue; see @ref ove_work_submit_delayed.
+	 *
 	 * @tparam S Stack size of the target workqueue.
 	 * @param[in] wq       The workqueue to submit this work item to.
 	 * @param[in] delay_ms Delay in milliseconds before the item is executed.

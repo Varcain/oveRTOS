@@ -692,6 +692,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 /**
  * @brief Declare and auto-initialise a static thread.
  *
+ * The thread starts at ove_run() on FreeRTOS, but on NuttX, Zephyr and the
+ * host test backend it can start as soon as the constructor creates it, before ove_main() has set
+ * anything up; an entry function that needs that setup must wait for it.
+ *
  * @param hname     Variable name for the resulting @c ove_thread_t handle.
  * @param stack_sz  Thread stack size in bytes.
  * @param fn        Thread entry function.

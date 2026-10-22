@@ -268,6 +268,12 @@ pub fn device_cfg_i2s(
 /// Wraps the C `ove_audio_graph` in a safe API.  All `unsafe` FFI calls
 /// are encapsulated — application code uses only safe methods.
 ///
+/// Not guaranteed today: [`Graph::stop`] and dropping the graph do not wait
+/// for a processing cycle running on the audio thread, and on Zephyr that
+/// thread keeps processing a stopped graph, so node callbacks and processor
+/// state can still be used after either returns.  Keep a running graph
+/// alive (for instance in a static) rather than dropping it.
+///
 /// # Example
 ///
 /// ```ignore
@@ -409,6 +415,9 @@ impl Graph {
     }
 
     /// Stop the graph.
+    ///
+    /// Not guaranteed today: a processing cycle can still run after this
+    /// returns (see [`Graph`]).
     pub fn stop(&mut self) -> Result<()> {
         self.tracker
             .assert_same(self as *const Self as *const (), "audio::Graph");

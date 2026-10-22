@@ -30,10 +30,20 @@
  * A failed transfer reports @c OVE_ERR_BUS_NACK when the device does not
  * acknowledge, @c OVE_ERR_TIMEOUT when it does not complete in time,
  * @c OVE_ERR_BUS_BUSY when another transfer on the controller is still in
- * flight or the bus is held, and @c OVE_ERR_BUS_ERROR for other bus faults (arbitration loss,
- * misplaced START/STOP, overrun).  Zephyr's STM32 driver reports a NACK,
+ * flight or the bus is held, and @c OVE_ERR_BUS_ERROR for other bus faults
+ * (arbitration loss, misplaced START/STOP, overrun).  Zephyr's STM32 driver reports a NACK,
  * arbitration loss and a timeout alike, so on Zephyr all three read as
  * @c OVE_ERR_BUS_NACK.
+ *
+ * Timeouts: only the FreeRTOS STM32 driver honours @c timeout_ns, rounded
+ * down to whole milliseconds (so anything under 1 ms times out at once).
+ * That driver does not support ove_i2c_write_read() with more than two
+ * bytes to write: the call fails with @c OVE_ERR_BUS_BUSY and leaves the
+ * controller busy, so every later transfer on the bus fails the same way
+ * until it is closed and reopened.  Zephyr and NuttX ignore @c timeout_ns
+ * and rely on their drivers' own timeouts.  On every engine the call first
+ * waits, with no timeout, for the bus lock held by any other transfer on the
+ * same bus.
  *
  * @note Requires @c CONFIG_OVE_I2C.  When the option is disabled every
  *       function is replaced by a no-op stub that returns

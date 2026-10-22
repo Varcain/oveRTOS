@@ -73,6 +73,8 @@ sequenceDiagram
     Sink-->>Drv: copies to DMA TX buffer
 ```
 
+Not guaranteed today: `ove_audio_graph_stop()` and `ove_audio_graph_deinit()` do not wait for a cycle that is running on the driver thread, and on Zephyr that thread keeps processing a stopped graph, so node callbacks (a tap's included) can still run after either returns.
+
 ### App-driven (testing / offline)
 
 The application calls `ove_audio_graph_process()` directly to pump one cycle. No hardware is involved -- useful for unit tests with mock source/sink nodes.
@@ -98,7 +100,7 @@ Format propagation happens in topological order during `build()`. If any node re
 | **Converter** | `ove_audio_node_converter()` | Sample format conversion (S16/S32/F32, all combinations) |
 | **Channel Map** | `ove_audio_node_channel_map()` | Remap, extract, or silence channels |
 | **Gain** | `ove_audio_node_gain()` | Volume control in dB (applies linear gain with clamping) |
-| **Tap** | `ove_audio_node_tap()` | Passthrough with observer callback (VU meters, ring buffers) |
+| **Tap** | `ove_audio_node_tap()` | Pass-through processor with an observer callback (VU meters, ring buffers), run on the thread that drives the graph |
 
 ## Device Nodes (Transports)
 

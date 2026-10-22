@@ -4,7 +4,7 @@ Header: `ove/spi.h` | Kconfig: `CONFIG_OVE_SPI` | Selects: `OVE_SYNC`, `OVE_GPIO
 
 ## Overview
 
-SPI master driver with configurable clock/mode, thread-safe bus locking, and portable chip-select management via GPIO.
+SPI master driver with configurable clock/mode, thread-safe bus locking, and portable chip-select management via GPIO. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (anything under 1 ms times out at once); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. Every call first waits, with no timeout, for the bus lock held by any other transfer on the same bus. In `ove_spi_transfer_seq()` the timeout applies to each segment, not the whole sequence.
 
 ## Configuration
 

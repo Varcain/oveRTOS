@@ -205,6 +205,8 @@ impl<const N: usize> Stream<N> {
 
     /// Send bytes from an ISR context (non-blocking, returns immediately).
     ///
+    /// Not yet ISR-safe on NuttX, whose implementation takes a pthread mutex.
+    ///
     /// Returns the number of bytes sent; may be less than `data.len()` if the buffer fills.
     ///
     /// # Errors
@@ -225,6 +227,8 @@ impl<const N: usize> Stream<N> {
     }
 
     /// Receive bytes from an ISR context (non-blocking, returns immediately).
+    ///
+    /// Not yet ISR-safe on NuttX, whose implementation takes a pthread mutex.
     ///
     /// Returns the number of bytes received; may be zero if no data is available.
     ///

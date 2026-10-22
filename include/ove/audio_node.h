@@ -159,6 +159,12 @@ struct ove_audio_node_ops {
      * - Processors: read from @p in, write to @p out (separate buffers).
      * - Sinks: read from @p in; @p out is NULL.
      *
+     * Runs on the thread that drives the graph: the engine's audio thread
+     * when a device sink drives it, or the caller of
+     * ove_audio_graph_process().  Not guaranteed today: stopping or
+     * deinitialising the graph does not wait for a running cycle (see
+     * ove_audio_graph_stop()).
+     *
      * @param[in]  ctx  Node context pointer.
      * @param[in]  in   Input buffer, or NULL for sources.
      * @param[out] out  Output buffer to fill, or NULL for sinks.
@@ -220,6 +226,12 @@ struct ove_audio_channel_map {
 
 /**
  * @brief Callback invoked by the tap node for every processed buffer.
+ *
+ * Runs in the tap node's @c process step, on the thread that drives the
+ * graph (see @ref ove_audio_node_ops); keep it short, as it delays the
+ * cycle.  Not guaranteed today: it can still run after
+ * ove_audio_graph_stop() or ove_audio_graph_deinit() returns, so keep
+ * @p user_data alive beyond the graph.
  *
  * @param[in] buf        Buffer containing the observed audio data.
  * @param[in] user_data  Opaque pointer supplied at node creation.
@@ -285,11 +297,11 @@ OVE_NODISCARD int ove_audio_node_channel_map(struct ove_audio_graph *g,
 OVE_NODISCARD int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *name);
 
 /**
- * @brief Add a tap (observer) sink node to the graph.
+ * @brief Add a tap (observer) node to the graph.
  *
- * Inserts a sink that calls @p fn for every audio buffer processed.
- * The callback receives a pointer to the upstream buffer; data must not
- * be stored beyond the duration of the callback.
+ * Inserts a pass-through processor that copies its input to its output and
+ * calls @p fn with the buffer every cycle.  The buffer is valid only for the
+ * duration of the callback; see @ref ove_audio_tap_fn for where it runs.
  *
  * @param[in] g          Graph to add the node to.
  * @param[in] fn         Callback invoked each processing cycle.

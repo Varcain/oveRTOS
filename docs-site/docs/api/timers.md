@@ -5,9 +5,9 @@ oveRTOS provides two complementary primitives for time-based and deferred execut
 | Primitive | Best for | Execution context |
 |-----------|----------|------------------|
 | **Timer** | Periodic or one-shot callbacks at a fixed interval | RTOS timer service (backend-specific) |
-| **WorkQueue** | Deferring work out of ISR context or off the hot path | Dedicated worker thread per queue |
+| **WorkQueue** | Deferring heavier work off a latency-sensitive thread | Dedicated worker thread per queue |
 
-Use a Timer when you need regular time-driven callbacks (polling, statistics, heartbeats). Use a WorkQueue when you need to run heavier work that was triggered from an ISR or a latency-sensitive thread.
+Use a Timer when you need regular time-driven callbacks (polling, statistics, heartbeats). Use a WorkQueue when you need to run heavier work that a latency-sensitive thread should not do itself. Submitting is not ISR-safe on FreeRTOS or NuttX: from an interrupt, wake a thread with a `_from_isr` call and submit from it.
 
 Both follow the standard oveRTOS allocation pattern: `_init` / `_deinit` work in zero-heap mode with caller-supplied storage, while `_create` / `_destroy` are heap-only. The matching `OVE_*_DEFINE_STATIC` macros in `ove/storage.h` combine declaration and init at file scope.
 
@@ -27,6 +27,8 @@ Where the callback runs, by backend:
 | FreeRTOS | timer service task | `CONFIG_FREERTOS_TIMER_TASK_PRIORITY`, `OVE_PRIO_ABOVE_NORMAL` by default |
 | Zephyr | system work queue | cooperative (-1, above every preemptible thread); `OVE_PRIO_NORMAL + 1` with the Linux personality |
 | NuttX | high-priority work queue (HPWORK) | native 224, above `OVE_PRIO_REALTIME` |
+
+The host test backend runs callbacks on a dispatcher thread. On Zephyr and NuttX, firings that pile up while a call is still pending may be merged into one. `ove_timer_stop()` may still let one call that is already running or queued run once (on FreeRTOS more, see the API table); `ove_timer_deinit()` and `ove_timer_destroy()` wait for a running call to finish, so never call them from the callback itself.
 
 ### State Machine
 
@@ -94,7 +96,7 @@ static void on_timer(ove_timer_t timer, void *user_data)
 | `ove_timer_create` | `int (ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms, int one_shot)` | Heap-allocate a timer in the stopped state. Requires `OVE_HEAP_TIMER`. |
 | `ove_timer_destroy` | `void (ove_timer_t timer)` | Stop and free a heap-allocated timer. |
 | `ove_timer_start` | `int (ove_timer_t timer)` | Arm the timer. If already running, restarts from the beginning of the period. |
-| `ove_timer_stop` | `int (ove_timer_t timer)` | Stop the timer without invoking the callback. |
+| `ove_timer_stop` | `int (ove_timer_t timer)` | Stop the timer. A callback already running or queued may still run once; on FreeRTOS, where stop only queues a command for the timer task, more than once if the caller outranks that task, and it returns `OVE_ERR_TIMEOUT` without stopping when the command queue is full. |
 | `ove_timer_reset` | `int (ove_timer_t timer)` | Atomically stop+start — useful for watchdog-style "kick" patterns. |
 
 Static-storage macro: `OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot)` (in `ove/storage.h`).
@@ -158,7 +160,7 @@ A WorkQueue is a dedicated worker thread that drains a queue of work items. Each
 ```mermaid
 graph LR
     subgraph Submitters
-        ISR["ISR / Thread"]
+        ISR["Thread"]
     end
 
     subgraph WQ["WorkQueue"]
@@ -207,11 +209,11 @@ stateDiagram-v2
 | `ove_work_deinit` | `void (ove_work_t work)` | Synchronously drain a static work item and release its RTOS resources. |
 | `ove_work_init` | `int (ove_work_t *work, ove_work_fn handler)` | Heap-allocate a work item. Requires `OVE_HEAP_WORKQUEUE`. |
 | `ove_work_free` | `void (ove_work_t work)` | Synchronously drain and free a heap-allocated work item. |
-| `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. Returns `OVE_ERR_BUSY` if already active. |
-| `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. Returns `OVE_ERR_BUSY` if already active. |
+| `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. Returns `OVE_ERR_BUSY` if already active. Thread context only on FreeRTOS and NuttX. On a full queue FreeRTOS returns `OVE_ERR_TIMEOUT`; NuttX waits for room. |
+| `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. Returns `OVE_ERR_BUSY` if already active. Thread context only on FreeRTOS and NuttX. Not guaranteed today: FreeRTOS drops the item if the queue is full when the delay expires; NuttX sleeps the delay on the worker after dequeue, holding up the items behind it. |
 | `ove_work_cancel` | `int (ove_work_t work)` | Synchronously remove a pending item, or wait for a running handler. Returns `OVE_ERR_INVAL` if the handler already began or the item was idle. |
 
-Handler signature: `typedef void (*ove_work_fn)(ove_work_t work)`. The handler receives the opaque work handle (not a struct pointer), so any per-item context must be associated externally — typically by deriving the work item from a wrapping `OVE_WORK_DEFINE_STATIC` plus a lookup table, or by handing the wrapping struct's pointer via a closure variable.
+Handler signature: `typedef void (*ove_work_fn)(ove_work_t work)`. The handler runs on the queue's own thread, one item at a time. The handle it receives is the item's storage (`ove_work_init_static()` writes `storage` itself as the handle), so embed the storage in your own struct and recover the struct from the handle with `container_of` to attach per-item context.
 
 Static-storage macros (in `ove/storage.h`):
 
@@ -222,7 +224,7 @@ Destroy or deinitialise work items before their queue. A handler cannot submit
 its own item while it is running; use a second item, timer, or an external
 submitter for recurring work.
 
-### Example: Deferred I/O from ISR Context
+### Example: Deferred I/O from an Interrupt
 
 ```c
 #include <ove/ove.h>
@@ -238,12 +240,27 @@ static void save_handler(ove_work_t work)
 }
 OVE_WORK_DEFINE_STATIC(g_save_work, save_handler);
 
+/* Submitting is not ISR-safe on FreeRTOS or NuttX, so the interrupt only
+ * wakes a thread, and the thread submits. */
+OVE_EVENT_DEFINE_STATIC(g_rx_done);
+
+static void rx_entry(void *arg)
+{
+    (void)arg;
+    while (1) {
+        if (ove_event_wait(g_rx_done, OVE_WAIT_FOREVER) != OVE_OK)
+            continue;
+        if (ove_work_submit(g_io_wq, g_save_work) != OVE_OK) {
+            /* OVE_ERR_BUSY: a save is already queued or running */
+        }
+    }
+}
+OVE_THREAD_DEFINE_STATIC(g_rx_thread, 1024, rx_entry, NULL, OVE_PRIO_HIGH, "rx");
+
 /* DMA RX complete ISR */
 void DMA1_Stream0_IRQHandler(void)
 {
-    if (ove_work_submit(g_io_wq, g_save_work) != OVE_OK) {
-        /* OVE_ERR_BUSY: a save is already queued or running */
-    }
+    ove_event_signal_from_isr(g_rx_done);
 }
 ```
 

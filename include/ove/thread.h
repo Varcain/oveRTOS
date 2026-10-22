@@ -35,6 +35,15 @@ extern "C" {
 /**
  * @brief Thread entry-point function prototype.
  *
+ * Runs on the new thread; ove_thread_get_self() returns its handle from the
+ * first statement.  Returning ends the thread, and ove_thread_deinit() or
+ * ove_thread_destroy() waits for that.
+ *
+ * A thread created before the scheduler runs, such as one from
+ * @c OVE_THREAD_DEFINE_STATIC, starts at ove_run() on FreeRTOS, but on NuttX,
+ * Zephyr and the host test backend it can start right away, before
+ * ove_main() has set anything up.
+ *
  * @param[in] arg  Caller-supplied context pointer passed at creation time.
  */
 typedef void (*ove_thread_fn)(void *arg);

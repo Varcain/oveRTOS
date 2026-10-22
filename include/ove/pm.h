@@ -138,6 +138,12 @@ struct ove_pm_stats {
 /**
  * @brief Power policy callback — returns recommended next state.
  *
+ * Called on the PM thread, a low-priority thread each engine runs to drive
+ * the state machine (not the idle hook), without the PM lock held.  After
+ * ove_pm_set_policy() replaces it, a call that had already started can still
+ * run once.  Not guaranteed today: a call racing ove_pm_set_policy() can
+ * receive the other policy's @p user_data.
+ *
  * @param[in] current         Current power state.
  * @param[in] idle_ms         Milliseconds since last activity.
  * @param[in] next_timeout_ms Milliseconds until next scheduled event.
@@ -149,6 +155,13 @@ typedef ove_pm_state_t (*ove_pm_policy_fn)(ove_pm_state_t current, uint32_t idle
 
 /**
  * @brief Transition notification callback.
+ *
+ * Called on the PM thread with the PM lock held, which stays held from the
+ * PRE_SLEEP call through the sleep to the POST_WAKE call.  A notifier must
+ * therefore not call ove_pm_* functions other than ove_pm_activity() and
+ * ove_pm_get_state(), which would deadlock.  ove_pm_notify_unregister() takes
+ * the same lock, so once it returns the callback is not running and will not
+ * run again.
  *
  * @param[in] event      PRE_SLEEP or POST_WAKE.
  * @param[in] from_state State being left.
@@ -253,7 +266,8 @@ OVE_NODISCARD int ove_pm_domain_get_refcount(ove_pm_domain_t domain);
  * @brief Register a custom power policy callback.
  *
  * Replaces the default threshold-based policy.  Pass NULL to restore
- * the default policy.
+ * the default policy.  See @ref ove_pm_policy_fn for when the policy runs and
+ * what is not yet guaranteed while it is being replaced.
  *
  * @param[in] policy    Policy function, or NULL for default.
  * @param[in] user_data Opaque pointer forwarded to @p policy.
@@ -312,11 +326,12 @@ OVE_NODISCARD int ove_pm_set_budget(uint32_t target_low_power_pct_x100);
 OVE_NODISCARD int ove_pm_get_budget_status(uint32_t *actual_pct_x100);
 
 /**
- * @brief Process idle — called from RTOS idle context by the HAL.
+ * @brief Drive the PM state machine once.
  *
- * This drives the state machine: checks activity, invokes policy,
- * arms wake sources, transitions state, fires notifications.
- * Not intended to be called by application code.
+ * Checks activity, invokes the policy, arms wake sources, transitions state
+ * and fires notifications.  Each engine calls it from its own low-priority
+ * PM thread, not from the idle hook; it takes the PM lock, so it cannot run
+ * in idle context.  Not intended to be called by application code.
  */
 void ove_pm_idle_process(void);
 

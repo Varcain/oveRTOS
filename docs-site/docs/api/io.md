@@ -41,7 +41,7 @@ typedef void (*ove_gpio_irq_cb)(unsigned int port, unsigned int pin,
                                 void *user_data);
 ```
 
-Callbacks may be invoked from interrupt context or a deferred work item depending on the backend. Keep handlers short and non-blocking.
+Callbacks run in interrupt context, from the GPIO interrupt handler, on every engine (the host test backend calls them from the thread that injects the edge). Keep handlers short and non-blocking, using only `_from_isr` APIs. Once `ove_gpio_irq_disable()` or `ove_gpio_irq_unregister()` has returned in thread context, no new call starts, and on a single core none is still running; nothing is guaranteed if they are called from an interrupt of higher priority than the GPIO one.
 
 ### Example: Button Interrupt Handler
 

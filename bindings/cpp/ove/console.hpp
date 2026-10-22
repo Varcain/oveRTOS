@@ -50,9 +50,14 @@ namespace ove::console
 #endif
 
 /**
- * @brief Reads one character from the console, blocking until one is available.
+ * @brief Reads one character from the console.
+ *
+ * Whether it waits depends on the engine: FreeRTOS returns -1 at once when
+ * nothing is buffered; Zephyr, NuttX and the host test backend wait (Zephyr
+ * on the STM32F746 board by busy-polling).  See @ref ove_console_getchar.
+ *
  * @return The character read as an `unsigned char` value cast to `int`, or -1
- *         on error.
+ *         when none is available (FreeRTOS) or on error.
  */
 inline int getchar()
 {

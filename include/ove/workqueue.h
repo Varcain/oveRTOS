@@ -47,10 +47,11 @@ extern "C" {
 /**
  * @brief Prototype for a work item handler function.
  *
- * Called by the work queue thread when the work item is executed. The
- * @p work handle may be used to identify the item. Submitting the same item
- * from its handler is rejected as busy; recurring work needs another item,
- * a timer, or an external submitter.
+ * Called on the work queue's own thread, one item at a time.  The @p work
+ * handle is the item's storage, so a handler recovers per-item context from
+ * it (see @ref ove_work_init_static).  Submitting the same item from its
+ * handler is rejected as busy; recurring work needs another item, a timer,
+ * or an external submitter.
  *
  * @param[in] work  Handle of the work item being executed.
  */
@@ -187,12 +188,21 @@ void ove_workqueue_destroy(ove_workqueue_t wq);
 /**
  * @brief Submit a work item for immediate execution on the work queue.
  *
- * Enqueues @p work for execution on @p wq. Returns @c OVE_ERR_BUSY when the
- * item is already queued, delayed, or running.
+ * Enqueues @p work for execution on @p wq.
+ *
+ * Call from thread context.  It is not ISR-safe on FreeRTOS and NuttX, which
+ * take blocking queue and lock paths here (Zephyr's is ISR-safe); from an
+ * interrupt, wake a thread with a @c _from_isr call and submit from it.
+ *
+ * On a full queue FreeRTOS fails at once, while NuttX waits, with no
+ * timeout, for room.
  *
  * @param[in] wq    Target work queue handle.
  * @param[in] work  Work item handle to submit.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, @c OVE_ERR_BUSY if the item is already queued,
+ *         delayed or running, @c OVE_ERR_TIMEOUT when the engine cannot
+ *         enqueue it (FreeRTOS: the queue is full; Zephyr: the queue is
+ *         draining or not started), or another negative error code.
  */
 OVE_NODISCARD int ove_work_submit(ove_workqueue_t wq, ove_work_t work);
 
@@ -203,10 +213,26 @@ OVE_NODISCARD int ove_work_submit(ove_workqueue_t wq, ove_work_t work);
  * have elapsed. The item may be cancelled before the delay expires using
  * @ref ove_work_cancel.
  *
+ * Call from thread context.  It is not ISR-safe on FreeRTOS and NuttX, which
+ * take blocking queue and lock paths here (Zephyr's is ISR-safe); from an
+ * interrupt, wake a thread with a @c _from_isr call and submit from it.
+ *
+ * Not guaranteed today: on FreeRTOS, if the queue is full when the delay
+ * expires, the item is dropped without running and without an error; on
+ * NuttX the delay is slept on the queue's single worker once the item is
+ * dequeued, so it starts then rather than at submission and holds up every
+ * item behind it.  Like ove_work_submit(), it waits with no timeout on a
+ * full queue on NuttX, and on FreeRTOS it waits with no timeout for room in
+ * the timer command queue once the scheduler runs (before that it can fail
+ * with @c OVE_ERR_TIMEOUT).
+ *
  * @param[in] wq        Target work queue handle.
  * @param[in] work      Work item handle to schedule.
  * @param[in] delay_ms  Minimum delay before execution in milliseconds.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, @c OVE_ERR_BUSY if the item is already queued,
+ *         delayed or running, @c OVE_ERR_TIMEOUT on Zephyr when the queue is
+ *         draining or not started (on FreeRTOS only before the scheduler
+ *         runs), or another negative error code.
  */
 OVE_NODISCARD int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms);
 

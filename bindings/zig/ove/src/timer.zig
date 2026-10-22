@@ -8,8 +8,12 @@
 //! `.periodic` or `.one_shot` mode.
 //!
 //! Wraps `ove/timer.h`. Callbacks run on the substrate's timer service thread
-//! (FreeRTOS timer task, Zephyr system workqueue, …) — they must be
-//! non-blocking. Available when `CONFIG_OVE_TIMER` is enabled.
+//! (FreeRTOS timer task, Zephyr system workqueue, NuttX HPWORK, a dispatcher
+//! thread on the host test backend) — they must be non-blocking. Stopping may
+//! still let one running or queued callback run (on FreeRTOS, more than one
+//! if the caller outranks the timer task); `deinit` waits for a running
+//! callback, so never call it from the callback. Available when
+//! `CONFIG_OVE_TIMER` is enabled.
 
 const std = @import("std");
 const c = @import("c.zig").raw;

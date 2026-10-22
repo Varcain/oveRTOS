@@ -243,7 +243,9 @@ struct Config {
  * @brief Starts the HTTP server.
  *
  * Spawns a background task that accepts connections on the configured port.
- * Routes may be registered before or after starting.
+ * Register routes before starting: the route tables are not locked against
+ * the server thread.  Handlers run one at a time on its single @c httpd
+ * thread (see @ref ove_httpd_handler_t).
  *
  * @param[in] cfg Server configuration (defaults: port 80, 1024-byte body).
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
@@ -257,6 +259,9 @@ struct Config {
 
 /**
  * @brief Stops the HTTP server and closes the listening socket.
+ *
+ * Waits for the server thread, so never call it from a handler.  Open
+ * WebSocket connections are not closed and their on_close is not called.
  */
 inline void stop()
 {
@@ -280,7 +285,8 @@ inline void stop()
 /**
  * @brief Registers the built-in dashboard routes (/api/info, /api/leds, etc.).
  *
- * Call after `start()` to add the standard device management API.
+ * Adds the standard device management API; like any route, best registered
+ * before `start()`.
  */
 inline void register_builtin_routes()
 {
@@ -344,6 +350,10 @@ class Connection
 
 	/**
 	 * @brief Send a text message to this connection.
+	 *
+	 * If the send fails the connection is closed and freed without its
+	 * on_close being called, so this object must not be used again.
+	 *
 	 * @param[in] data Message payload.
 	 * @param[in] len  Payload length in bytes.
 	 * @return Empty `Result<void>` on success; `unexpected`

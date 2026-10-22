@@ -9,6 +9,10 @@
 //! [`I2c`] wraps an opaque `ove_i2c_t` handle and exposes a method-shaped
 //! API.  An `embedded_hal::i2c::I2c` impl is provided when the
 //! `embedded-hal` Cargo feature is enabled.
+//!
+//! Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
+//! milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
+//! waits, with no timeout, for other transfers on the same bus.
 
 use crate::bindings;
 use crate::error::{Error, Result};

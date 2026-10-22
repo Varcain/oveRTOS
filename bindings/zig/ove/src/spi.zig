@@ -5,7 +5,9 @@
 // This file is part of oveRTOS.
 
 //! SPI master driver — full-duplex `transfer`, with explicit CS descriptor
-//! and per-call timeout.
+//! and per-call timeout. Only the FreeRTOS STM32 driver honours the timeout,
+//! in whole milliseconds rounded down; Zephyr and NuttX ignore it. Every call
+//! first waits, with no timeout, for other transfers on the same bus.
 //!
 //! Wraps `ove/spi.h`. Pass `null` for `tx` to do an RX-only transfer, or
 //! `null` for `rx` to do TX-only. Available when `CONFIG_OVE_SPI` is enabled.

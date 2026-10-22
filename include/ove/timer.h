@@ -47,8 +47,18 @@ typedef struct ove_timer *ove_timer_t;
 /**
  * @brief Timer expiry callback function prototype.
  *
- * Invoked by the RTOS timer service task (or equivalent) when the timer
- * period elapses.  Implementations must be non-blocking and short.
+ * Invoked when the timer period elapses, in thread context, on a thread the
+ * engine owns: the FreeRTOS timer service task, Zephyr's system work queue,
+ * NuttX's high-priority work queue (HPWORK), or a dispatcher thread on the
+ * host test backend.  Implementations must be non-blocking and short: they
+ * hold up every other timer, and other work, on that thread.  On Zephyr and
+ * NuttX, firings that pile up while a call is still pending may be merged
+ * into one.
+ *
+ * ove_timer_stop() may let one call that is already running or queued still
+ * run after it returns, and on FreeRTOS more than one (see there).
+ * ove_timer_deinit() and ove_timer_destroy() wait for a running call to
+ * finish, so never call them from the callback itself.
  *
  * @param[in] timer      Handle of the timer that fired.
  * @param[in] user_data  Opaque pointer supplied at timer creation time.
@@ -91,8 +101,10 @@ OVE_NODISCARD int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storag
  * @brief Stop and release resources held by a timer initialised with
  *        ove_timer_init().
  *
- * Stops the timer if it is running.  The static storage supplied at init
- * time is not freed.
+ * Stops the timer if it is running and waits for a callback that is running
+ * to return, so the storage can be reused once this returns.  Never call it
+ * from the timer's own callback, which would wait for itself.  The static
+ * storage supplied at init time is not freed.
  *
  * @note Requires @c CONFIG_OVE_TIMER.
  *
@@ -223,6 +235,9 @@ OVE_NODISCARD int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback,
 /**
  * @brief Stop and free a timer allocated with ove_timer_create().
  *
+ * Waits for a callback that is running to return before freeing, as
+ * ove_timer_deinit() does; never call it from the timer's own callback.
+ *
  * @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.
  *
  * @param[in] timer  Handle returned by ove_timer_create().
@@ -249,14 +264,20 @@ void ove_timer_destroy(ove_timer_t timer);
 OVE_NODISCARD int ove_timer_start(ove_timer_t timer);
 
 /**
- * @brief Stop a running timer without invoking its callback.
+ * @brief Stop a running timer.
  *
- * If the timer is already stopped, this function has no effect.
+ * On Zephyr, NuttX and the host test backend no new expiry starts after
+ * this returns, though one callback already running or queued can still run
+ * once.  On FreeRTOS it only queues a command for the timer task: until that
+ * task runs (at @c OVE_PRIO_ABOVE_NORMAL by default, so a higher-priority
+ * caller can keep it waiting) expiries continue, possibly more than one.  If
+ * the timer is already stopped, this function has no effect.
  *
  * @note Requires @c CONFIG_OVE_TIMER.
  *
  * @param[in] timer  Timer handle to stop.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, or @c OVE_ERR_TIMEOUT on FreeRTOS when its
+ *         timer command queue is full, in which case the timer keeps running.
  *
  * @see ove_timer_start, ove_timer_reset
  */

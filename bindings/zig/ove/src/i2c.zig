@@ -8,7 +8,10 @@
 //! `probe` helper for bus scanning.
 //!
 //! Wraps `ove/i2c.h`. Timeouts are nanoseconds; pass `OVE_WAIT_FOREVER` for an
-//! indefinite block. Available when `CONFIG_OVE_I2C` is enabled.
+//! indefinite block. Only the FreeRTOS STM32 driver honours them, in whole
+//! milliseconds rounded down; Zephyr and NuttX ignore them. Every call first
+//! waits, with no timeout, for other transfers on the same bus. Available
+//! when `CONFIG_OVE_I2C` is enabled.
 
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

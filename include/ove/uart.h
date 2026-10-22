@@ -159,10 +159,15 @@ size_t ove_uart_bytes_available(ove_uart_t uart);
 /**
  * @brief Flush the TX hardware buffer.
  *
- * Blocks until all pending TX bytes have been physically transmitted.
+ * Waits, with no timeout, for the bytes already handed to the driver to be
+ * sent; RX is untouched.  How far that goes depends on the engine: the
+ * FreeRTOS STM32 driver waits for the last byte to leave the shift register
+ * (transmission complete), NuttX waits in tcdrain(), and Zephyr returns at
+ * once, so the last byte may still be on the wire.  No engine reports a
+ * drain failure.
  *
  * @param[in] uart  UART handle.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK, or OVE_ERR_INVALID_PARAM for a NULL @p uart.
  */
 OVE_NODISCARD int ove_uart_flush(ove_uart_t uart);
 
