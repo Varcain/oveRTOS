@@ -51,8 +51,15 @@ typedef enum {
 /**
  * @brief GPIO interrupt callback type.
  *
- * Called from interrupt context (or a deferred work item, depending on
- * the backend) when the configured edge is detected.
+ * Called when the configured edge is detected.
+ *
+ * Called in interrupt context, from the GPIO interrupt handler, on every
+ * engine (the host test backend calls it from the thread that injects the
+ * edge).  Keep it short and non-blocking, using only @c _from_isr APIs.
+ * Once ove_gpio_irq_disable() or ove_gpio_irq_unregister() has returned in
+ * thread context, no new call starts, and on a single core none is still
+ * running; nothing is guaranteed if they are called from an interrupt of
+ * higher priority than the GPIO one.
  *
  * @param[in] port      GPIO port index that generated the interrupt.
  * @param[in] pin       GPIO pin index that generated the interrupt.

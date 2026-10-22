@@ -97,6 +97,10 @@ pub const ServerConfig = struct {
 };
 
 /// Start the HTTP server.
+///
+/// Register routes before starting: the route tables are not locked against
+/// the server thread.  Handlers run one at a time on its single `httpd`
+/// thread, so a slow handler delays every client.
 pub fn start(cfg: ServerConfig) Error!void {
     var cc: c.ove_httpd_config_t = std.mem.zeroes(c.ove_httpd_config_t);
     cc.port = cfg.port;
@@ -105,6 +109,10 @@ pub fn start(cfg: ServerConfig) Error!void {
 }
 
 /// Stop the HTTP server.
+///
+/// Waits for the server thread, so never call it from a handler.  Open
+/// WebSocket connections are not closed and their close callback is not
+/// called.
 pub fn stop() void {
     c.ove_httpd_stop();
 }
@@ -168,7 +176,9 @@ pub const ws = if (@hasDecl(c, "ove_httpd_ws_route")) struct {
         try err.fromCode(c.ove_httpd_ws_route(path_str.ptr, on_message, on_close));
     }
 
-    /// Send a message to a WebSocket connection.
+    /// Send a message to a WebSocket connection. If the send fails the
+    /// connection is closed and freed without its close callback being
+    /// called, so `conn` must not be used again.
     pub fn send(conn: *c.ove_httpd_ws_conn_t, data: []const u8) Error!void {
         try err.fromCode(c.ove_httpd_ws_send(conn, data.ptr, data.len));
     }

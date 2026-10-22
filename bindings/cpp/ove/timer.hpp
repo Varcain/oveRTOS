@@ -39,7 +39,9 @@ concept TimerCallback = std::convertible_to<F, ove_timer_fn>;
  *
  * A software timer calls a user-provided callback either once (`one_shot`)
  * or periodically at the specified interval.  The timer is created in the
- * stopped state; call `start()` to activate it.
+ * stopped state; call `start()` to activate it.  The callback runs in thread
+ * context on a thread the engine owns; see @ref ove_timer_fn for what it may
+ * do and how stop() and destruction interact with a running call.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  * @note `start()`, `stop()`, and `reset()` are marked `[[nodiscard]]` because
@@ -78,6 +80,9 @@ class Timer
 
 	/**
 	 * @brief Destroys the timer, stopping it if running and releasing the kernel resource.
+	 *
+	 * Waits for a running callback to return, so never let the timer be
+	 * destroyed from its own callback.
 	 */
 	~Timer() noexcept
 	{
@@ -135,6 +140,10 @@ class Timer
 
 	/**
 	 * @brief Stops the timer without resetting its period.
+	 *
+	 * A callback already running or queued may still run once, and on
+	 * FreeRTOS more than once if the caller outranks the timer task; see
+	 * @ref ove_timer_stop.
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */

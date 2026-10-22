@@ -9,6 +9,11 @@
 //! [`Spi`] wraps an opaque `ove_spi_t` handle and exposes a method-shaped
 //! API.  An `embedded_hal::spi::SpiBus` impl is provided when the
 //! `embedded-hal` Cargo feature is enabled.
+//!
+//! Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
+//! milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
+//! waits, with no timeout, for other transfers on the same bus.  In a
+//! multi-segment transfer the timeout applies to each segment.
 
 use crate::bindings;
 use crate::error::{Error, Result};

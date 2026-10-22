@@ -250,6 +250,8 @@ template <size_t BufSize = 0> class Stream
 	/**
 	 * @brief Sends bytes into the stream from an ISR context (non-blocking).
 	 *
+	 * Not yet ISR-safe on NuttX; see @ref ove_stream_send_from_isr.
+	 *
 	 * @param[out] bytes_sent Number of bytes actually written (may
 	 *                        be non-zero even on `Error::QueueFull`
 	 *                        when a partial commit succeeded before
@@ -265,6 +267,8 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Receives bytes from the stream from an ISR context (non-blocking).
+	 *
+	 * Not yet ISR-safe on NuttX; see @ref ove_stream_receive_from_isr.
 	 *
 	 * @param[out] bytes_received Number of bytes actually read (may
 	 *                            be non-zero even on a failure if

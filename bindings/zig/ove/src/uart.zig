@@ -34,7 +34,9 @@ pub fn bytesAvailable(uart: c.ove_uart_t) usize {
     return c.ove_uart_bytes_available(uart);
 }
 
-/// Flush the TX hardware buffer.
+/// Flush the TX hardware buffer: wait, with no timeout, for pending TX bytes
+/// to be sent. RX is untouched. On Zephyr it returns at once, so the last
+/// byte may still be on the wire.
 pub fn flush(uart: c.ove_uart_t) Error!void {
     try err.fromCode(c.ove_uart_flush(uart));
 }

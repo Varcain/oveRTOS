@@ -21,8 +21,10 @@ use crate::bindings;
 /// Read a single character from the console.
 ///
 /// Returns `Some(c)` where `c` is in `0..=255`, or `None` if no character
-/// is currently available. The call may block until a character arrives
-/// depending on the backend.
+/// is currently available or on error.  Whether it waits depends on the
+/// engine: FreeRTOS returns `None` at once when nothing is buffered; Zephyr,
+/// NuttX and the host test backend wait (Zephyr on the STM32F746 board by
+/// busy-polling).
 pub fn getchar() -> Option<i32> {
     let c = unsafe { bindings::ove_console_getchar() };
     if c < 0 { None } else { Some(c) }

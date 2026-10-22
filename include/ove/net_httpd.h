@@ -48,6 +48,11 @@ typedef struct ove_httpd_resp ove_httpd_resp_t;
 
 /**
  * @brief Route handler callback.
+ *
+ * Runs on the server's single @c httpd thread (8 KiB stack, OVE_PRIO_NORMAL),
+ * one request at a time, so a slow handler delays every client.  Must not
+ * call ove_httpd_stop(), which waits for that thread.
+ *
  * @return OVE_OK on success (response sent), negative error code on failure.
  */
 typedef int (*ove_httpd_handler_t)(ove_httpd_req_t *req, ove_httpd_resp_t *resp);
@@ -64,7 +69,9 @@ typedef struct {
  * @brief Start the HTTP server.
  *
  * Spawns a background task that accepts connections on the configured port.
- * Register routes with ove_httpd_route() before or after starting.
+ * Register routes with ove_httpd_route() before starting: the route tables
+ * are not locked against the server thread, so a route added while it runs
+ * is not guaranteed to be seen consistently.
  *
  * @param[in] cfg Server configuration (NULL for defaults).
  * @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another
@@ -74,11 +81,18 @@ OVE_NODISCARD int ove_httpd_start(const ove_httpd_config_t *cfg);
 
 /**
  * @brief Stop the HTTP server and close the listening socket.
+ *
+ * Waits for the server thread to exit, so no handler is running once this
+ * returns; never call it from a handler.  Not guaranteed today: open
+ * WebSocket connections are not closed and their @c on_close is not called.
  */
 void ove_httpd_stop(void);
 
 /**
  * @brief Register a route handler.
+ *
+ * The @p method and @p path strings are copied (truncated to the table's
+ * field sizes); only @p handler is kept.
  *
  * @param[in] method  HTTP method ("GET" or "POST").
  * @param[in] path    URL path prefix (e.g. "/api/leds").
@@ -91,7 +105,8 @@ OVE_NODISCARD int ove_httpd_route(const char *method, const char *path,
 /**
  * @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).
  *
- * Call after ove_httpd_start() to add the standard device management API.
+ * Adds the standard device management API; like any route, best registered
+ * before ove_httpd_start() (see there).
  */
 void ove_httpd_register_builtin_routes(void);
 
@@ -175,6 +190,8 @@ typedef struct ove_httpd_ws_conn ove_httpd_ws_conn_t;
 
 /**
  * @brief WebSocket message callback.
+ *
+ * Runs on the server's @c httpd thread, like the route handlers.
  * @param[in] conn Connection that sent the message.
  * @param[in] data Message payload (text or binary).
  * @param[in] len  Payload length in bytes.
@@ -183,6 +200,12 @@ typedef void (*ove_httpd_ws_handler_t)(ove_httpd_ws_conn_t *conn, const void *da
 
 /**
  * @brief WebSocket close callback.
+ *
+ * Runs on the server's @c httpd thread when it notices the connection has
+ * closed.  Not called for connections still open at ove_httpd_stop(), nor
+ * for one that a failed ove_httpd_ws_send() or ove_httpd_ws_broadcast()
+ * drops; that connection's slot can then go to a new client.
+ *
  * @param[in] conn Connection that was closed.
  */
 typedef void (*ove_httpd_ws_close_handler_t)(ove_httpd_ws_conn_t *conn);
@@ -192,7 +215,7 @@ typedef void (*ove_httpd_ws_close_handler_t)(ove_httpd_ws_conn_t *conn);
  *
  * When a client sends an HTTP upgrade request matching @p path, the
  * connection is upgraded to WebSocket.  Incoming messages are
- * dispatched to @p on_message.
+ * dispatched to @p on_message.  The @p path string is copied.
  *
  * @param[in] path       URL path prefix (e.g. "/ws/log").
  * @param[in] on_message Callback for incoming messages (may be NULL).
@@ -205,6 +228,9 @@ OVE_NODISCARD int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on
 /**
  * @brief Send a text message to a WebSocket connection.
  *
+ * If the send fails the connection is closed and freed without its
+ * @c on_close being called, so @p conn must not be used again.
+ *
  * @param[in] conn Target connection.
  * @param[in] data Message payload.
  * @param[in] len  Payload length in bytes.
@@ -214,6 +240,9 @@ OVE_NODISCARD int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn, const void *data,
 
 /**
  * @brief Broadcast a text message to all WebSocket connections on a path.
+ *
+ * A connection whose send fails is closed and freed without its
+ * @c on_close being called, as for ove_httpd_ws_send().
  *
  * @param[in] path Path filter (NULL for all connections).
  * @param[in] data Message payload.

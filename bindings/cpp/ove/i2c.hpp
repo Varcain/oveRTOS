@@ -26,6 +26,11 @@ namespace ove
  * @class I2c
  * @brief RAII wrapper around an oveRTOS I2C bus controller.
  *
+ * Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
+ * milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
+ * waits, with no timeout, for other transfers on the same bus (see the
+ * timeout note on @ref ove_i2c).
+ *
  * Not copyable.  Move-only when heap allocation is enabled.
  */
 class I2c

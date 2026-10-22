@@ -66,6 +66,12 @@ unsafe impl Sync for TimerStorage {}
 ///
 /// The timer stores a function pointer and generates an internal trampoline
 /// so the user callback is a plain `fn()` — no `unsafe`, no raw pointers.
+///
+/// The callback runs in thread context on a thread the engine owns (the
+/// FreeRTOS timer service task, Zephyr's system work queue, NuttX's HPWORK
+/// queue, a dispatcher thread on the host test backend); keep it short and
+/// non-blocking.  Dropping the timer waits for a running callback to return,
+/// so never drop it from its own callback.
 pub struct Timer {
     handle: bindings::ove_timer_t,
 }
@@ -155,6 +161,10 @@ impl Timer {
     }
 
     /// Stop the timer, preventing further callbacks until restarted.
+    ///
+    /// A callback that is already running or queued may still run once, and
+    /// on FreeRTOS, where stopping only queues a command for the timer task,
+    /// more than once if the caller outranks that task.
     ///
     /// # Errors
     /// Returns an error if the underlying RTOS call fails.

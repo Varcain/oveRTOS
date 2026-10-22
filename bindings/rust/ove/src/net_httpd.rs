@@ -253,7 +253,9 @@ impl fmt::Debug for Response<'_> {
 /// Start the HTTP server on the given port.
 ///
 /// Spawns a background task that accepts connections.  Register routes
-/// with [`route`] before or after starting.
+/// with [`route`] before starting: the route tables are not locked against
+/// the server thread.  Handlers run one at a time on its single `httpd`
+/// thread, so a slow handler delays every client.
 ///
 /// # Errors
 /// Returns an error if the server cannot bind or start.
@@ -267,6 +269,10 @@ pub fn start(port: u16, max_body: i32) -> Result<()> {
 }
 
 /// Stop the HTTP server and close the listening socket.
+///
+/// Waits for the server thread, so never call it from a handler.  Open
+/// WebSocket connections are not closed and their close callback is not
+/// called.
 pub fn stop() {
     unsafe { bindings::ove_httpd_stop() }
 }
@@ -291,7 +297,8 @@ pub fn route(method: &[u8], path: &[u8], handler: Handler) -> Result<()> {
 
 /// Register the built-in dashboard routes (`/api/info`, `/api/leds`, etc.).
 ///
-/// Call after [`start`] to add the standard device management API.
+/// Adds the standard device management API; like any route, best
+/// registered before [`start`].
 pub fn register_builtin_routes() {
     unsafe { bindings::ove_httpd_register_builtin_routes() }
 }
@@ -335,6 +342,9 @@ pub mod ws {
     }
 
     /// Send a text message to a WebSocket connection.
+    ///
+    /// If the send fails the connection is closed and freed without its close
+    /// callback being called, so `conn` must not be used again.
     ///
     /// # Errors
     /// Returns an error if the send fails.

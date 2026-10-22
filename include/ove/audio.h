@@ -142,6 +142,11 @@ OVE_NODISCARD int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int f
  * heap-allocated inter-node buffer block.  Caller-supplied buffer storage
  * registered via @ref ove_audio_graph_set_buf_storage is left intact.
  *
+ * Not guaranteed today: ove_audio_graph_stop() and ove_audio_graph_deinit()
+ * do not wait for a cycle that is running on the audio thread, and on Zephyr
+ * that thread keeps processing a stopped graph, so node callbacks can still
+ * run after either returns.
+ *
  * @param[in] g  Initialised graph instance.
  *
  * @note Requires @c CONFIG_OVE_AUDIO.
@@ -337,6 +342,11 @@ OVE_NODISCARD int ove_audio_graph_start(struct ove_audio_graph *g);
  *
  * Calls each node's @c stop callback in reverse topological order and
  * transitions the graph back to @c OVE_AUDIO_GRAPH_READY.
+ *
+ * Not guaranteed today: ove_audio_graph_stop() and ove_audio_graph_deinit()
+ * do not wait for a cycle that is running on the audio thread, and on Zephyr
+ * that thread keeps processing a stopped graph, so node callbacks can still
+ * run after either returns.
  *
  * @param[in] g  Running graph instance.
  * @return 0 on success, negative error code on failure.

@@ -204,6 +204,8 @@ OVE_NODISCARD static inline int ove_stream_receive_until(ove_stream_t stream, vo
  *
  * ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has
  * insufficient space the call returns immediately with a partial or zero count.
+ * Not guaranteed today on NuttX: its implementation takes a pthread mutex
+ * and signals a condition variable, which an interrupt handler must not do.
  *
  * @param[in]  stream      Stream handle.
  * @param[in]  data        Pointer to the data to send.
@@ -222,6 +224,8 @@ OVE_NODISCARD int ove_stream_send_from_isr(ove_stream_t stream, const void *data
  *
  * ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only
  * the bytes that are immediately available.
+ * Not guaranteed today on NuttX: its implementation takes a pthread mutex
+ * and signals a condition variable, which an interrupt handler must not do.
  *
  * @param[in]  stream          Stream handle.
  * @param[out] buf             Buffer to receive data.

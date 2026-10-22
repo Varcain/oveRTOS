@@ -99,6 +99,10 @@ pub fn get(pin: GpioPin) -> Result<i32> {
 
 /// Register a GPIO interrupt callback.
 ///
+/// The callback runs in interrupt context on every engine (the host test
+/// backend calls it from the thread that injects the edge): keep it short and
+/// use only ISR-safe calls.
+///
 /// # Safety
 /// The callback and user_data must remain valid for the lifetime of the
 /// registration.
@@ -142,7 +146,8 @@ pub fn irq_disable(pin: GpioPin) -> Result<()> {
 ///
 /// Disables the interrupt and frees the registration; the inverse of
 /// [`irq_register`].  The callback and user data are no longer used once this
-/// returns `Ok`.
+/// returns `Ok` in thread context (on a single core); nothing is guaranteed
+/// when it is called from a higher-priority interrupt.
 ///
 /// # Errors
 /// Returns an error if the pin has no registration.

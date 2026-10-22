@@ -33,9 +33,12 @@ pub fn putchar(ch: u8) void {
     c.ove_console_putchar(@intCast(ch));
 }
 
-/// Read one character from the console input. The backend may block.
+/// Read one character from the console input.
 ///
-/// Returns `null` on EOF or error.
+/// Whether it waits depends on the engine: FreeRTOS returns `null` at once
+/// when nothing is buffered; Zephyr, NuttX and the host test backend wait
+/// (Zephyr on the STM32F746 board by busy-polling). Returns `null` when no
+/// character is available (FreeRTOS), on EOF, or on error.
 pub fn getchar() ?u8 {
     const ch = c.ove_console_getchar();
     if (ch < 0) return null;

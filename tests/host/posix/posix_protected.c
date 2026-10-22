@@ -28,8 +28,8 @@
  *
  * The arm flag, jump buffer and saved dispositions are thread-local. Signal
  * dispositions are a process-global resource, so a host protected run must not
- * overlap another on a different thread (the target backend has no such
- * restriction).
+ * overlap another on a different thread (the NuttX backend's recovery state
+ * is global, so it cannot overlap at all).
  */
 
 static __thread sigjmp_buf t_jmp;

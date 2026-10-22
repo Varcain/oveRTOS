@@ -5,11 +5,12 @@
 // This file is part of oveRTOS.
 
 //! Workqueue — a dedicated thread that runs deferred `Work` items submitted
-//! from other threads or ISRs.
+//! from other threads.  Submitting is not ISR-safe on FreeRTOS or NuttX; from
+//! an interrupt, wake a thread and submit from it.
 //!
 //! Wraps `ove/workqueue.h`. Create one queue per priority class with
 //! `Workqueue.create(allocator, …)`, then `submit(wq, work)` to defer
-//! execution off the producer's stack. `submitDelayed` schedules the work to
+//! execution off the producer's stack. `submitDelayedFor` schedules the work to
 //! run after a `Duration`. Available when `CONFIG_OVE_WORKQUEUE` is enabled.
 
 const std = @import("std");
@@ -89,13 +90,18 @@ pub fn Workqueue(comptime stack_size: usize) type {
             }
         }
 
-        /// Enqueue `work` for execution by the workqueue thread.
+        /// Enqueue `work` for execution by the workqueue thread. Not ISR-safe
+        /// on FreeRTOS or NuttX; on a full queue FreeRTOS fails at once and
+        /// NuttX waits for room.
         pub fn submit(self: Self, work: *Work) Error!void {
             try err.fromCode(c.ove_work_submit(self.handle, work.handle));
         }
 
         /// Submit `work` with a delay.  Substrate takes the delay as
-        /// milliseconds; saturating-cast from the `Duration` ns count.
+        /// milliseconds; saturating-cast from the `Duration` ns count.  Not
+        /// guaranteed today: FreeRTOS drops the item if the queue is full when
+        /// the delay expires, and NuttX sleeps the delay on the worker after
+        /// dequeue, holding up the items behind it.
         pub fn submitDelayedFor(self: Self, work: *Work, d: Duration) Error!void {
             const ms: u32 = if (d.ns / std.time.ns_per_ms > std.math.maxInt(u32))
                 std.math.maxInt(u32)

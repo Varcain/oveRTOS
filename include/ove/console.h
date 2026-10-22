@@ -56,8 +56,11 @@ OVE_NODISCARD int ove_console_init(void);
  * @brief Read one character from the console.
  *
  * Returns the next available character from the console receive buffer.
- * The call may block until a character is available depending on the
- * backend implementation.
+ * Whether it waits for one depends on the engine: FreeRTOS returns -1 at
+ * once when nothing is buffered; Zephyr waits, on the STM32F746 board by
+ * busy-polling, which keeps the CPU; NuttX and the host test backend wait in
+ * getchar().  Code that must not block, or must behave alike everywhere,
+ * should poll ove_console_try_getchar() instead.
  *
  * @return Character value in the range [0, 255], or -1 if no character is
  *         available or an error occurred.
@@ -71,6 +74,8 @@ OVE_NODISCARD int ove_console_getchar(void);
  * Claims any backend-specific non-blocking input path on first use and returns
  * immediately. This is suitable for event loops that must not hold an RTOS
  * worker or coordinator while the console is idle.
+ *
+ * On Zephyr only the STM32F746 board has a non-blocking input path.
  *
  * @return Character value in the range [0, 255], or -1 when no character is
  *         available or the backend has no non-blocking input path.

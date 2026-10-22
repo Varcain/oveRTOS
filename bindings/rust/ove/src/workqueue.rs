@@ -128,6 +128,9 @@ impl Work {
 
     /// Submit this work item to `wq` for immediate execution.
     ///
+    /// Call from thread context: it is not ISR-safe on FreeRTOS or NuttX.  On
+    /// a full queue FreeRTOS fails at once and NuttX waits for room.
+    ///
     /// # Errors
     /// Returns an error if the workqueue is shutting down or the item is already pending.
     pub fn submit(&self, wq: &Workqueue) -> Result<()> {
@@ -136,6 +139,11 @@ impl Work {
     }
 
     /// Submit this work item to `wq` for execution after `delay_ms` milliseconds.
+    ///
+    /// Call from thread context: it is not ISR-safe on FreeRTOS or NuttX.  Not
+    /// guaranteed today: FreeRTOS drops the item if the queue is full when the
+    /// delay expires, and NuttX sleeps the delay on the worker after dequeue,
+    /// holding up the items behind it.
     ///
     /// # Errors
     /// Returns an error if the workqueue is shutting down or the item is already pending.

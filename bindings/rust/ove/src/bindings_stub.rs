@@ -404,11 +404,11 @@ unsafe extern "C" {
     pub fn ove_console_init() -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Read one character from the console.\n\n Returns the next available character from the console receive buffer.\n The call may block until a character is available depending on the\n backend implementation.\n\n @return Character value in the range [0, 255], or -1 if no character is\n         available or an error occurred.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    #[doc = " @brief Read one character from the console.\n\n Returns the next available character from the console receive buffer.\n Whether it waits for one depends on the engine: FreeRTOS returns -1 at\n once when nothing is buffered; Zephyr waits, on the STM32F746 board by\n busy-polling, which keeps the CPU; NuttX and the host test backend wait in\n getchar().  Code that must not block, or must behave alike everywhere,\n should poll ove_console_try_getchar() instead.\n\n @return Character value in the range [0, 255], or -1 if no character is\n         available or an error occurred.\n @note Requires @c CONFIG_OVE_CONSOLE."]
     pub fn ove_console_getchar() -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Try to read one character without blocking.\n\n Claims any backend-specific non-blocking input path on first use and returns\n immediately. This is suitable for event loops that must not hold an RTOS\n worker or coordinator while the console is idle.\n\n @return Character value in the range [0, 255], or -1 when no character is\n         available or the backend has no non-blocking input path.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    #[doc = " @brief Try to read one character without blocking.\n\n Claims any backend-specific non-blocking input path on first use and returns\n immediately. This is suitable for event loops that must not hold an RTOS\n worker or coordinator while the console is idle.\n\n On Zephyr only the STM32F746 board has a non-blocking input path.\n\n @return Character value in the range [0, 255], or -1 when no character is\n         available or the backend has no non-blocking input path.\n @note Requires @c CONFIG_OVE_CONSOLE."]
     pub fn ove_console_try_getchar() -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -433,7 +433,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ove_shell_log_tee(data: *const core::ffi::c_char, len: usize);
 }
-#[doc = " @brief Thread entry-point function prototype.\n\n @param[in] arg  Caller-supplied context pointer passed at creation time."]
+#[doc = " @brief Thread entry-point function prototype.\n\n Runs on the new thread; ove_thread_get_self() returns its handle from the\n first statement.  Returning ends the thread, and ove_thread_deinit() or\n ove_thread_destroy() waits for that.\n\n A thread created before the scheduler runs, such as one from\n @c OVE_THREAD_DEFINE_STATIC, starts at ove_run() on FreeRTOS, but on NuttX,\n Zephyr and the host test backend it can start right away, before\n ove_main() has set anything up.\n\n @param[in] arg  Caller-supplied context pointer passed at creation time."]
 pub type ove_thread_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
 #[doc = "< @brief Currently executing on the CPU."]
 pub const OVE_THREAD_STATE_RUNNING: ove_thread_state_t = 0;
@@ -1251,7 +1251,7 @@ pub struct ove_audio_node_ops {
     pub start: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
     #[doc = " @brief Stop the node (called on graph stop).  NULL = no-op.\n\n @param[in] ctx  Node context pointer.\n @return 0 on success, negative error code on failure."]
     pub stop: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
-    #[doc = " @brief Process one buffer period.\n\n Called in topological order each graph cycle:\n - Sources: @p in is NULL; the node must fill @p out.\n - Processors: read from @p in, write to @p out (separate buffers).\n - Sinks: read from @p in; @p out is NULL.\n\n @param[in]  ctx  Node context pointer.\n @param[in]  in   Input buffer, or NULL for sources.\n @param[out] out  Output buffer to fill, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
+    #[doc = " @brief Process one buffer period.\n\n Called in topological order each graph cycle:\n - Sources: @p in is NULL; the node must fill @p out.\n - Processors: read from @p in, write to @p out (separate buffers).\n - Sinks: read from @p in; @p out is NULL.\n\n Runs on the thread that drives the graph: the engine's audio thread\n when a device sink drives it, or the caller of\n ove_audio_graph_process().  Not guaranteed today: stopping or\n deinitialising the graph does not wait for a running cycle (see\n ove_audio_graph_stop()).\n\n @param[in]  ctx  Node context pointer.\n @param[in]  in   Input buffer, or NULL for sources.\n @param[out] out  Output buffer to fill, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
     pub process: Option<
         unsafe extern "C" fn(
             ctx: *mut core::ffi::c_void,
@@ -1330,7 +1330,7 @@ const _: () = {
     ["Offset of field: ove_audio_channel_map::map"]
         [core::mem::offset_of!(ove_audio_channel_map, map) - 4usize];
 };
-#[doc = " @brief Callback invoked by the tap node for every processed buffer.\n\n @param[in] buf        Buffer containing the observed audio data.\n @param[in] user_data  Opaque pointer supplied at node creation."]
+#[doc = " @brief Callback invoked by the tap node for every processed buffer.\n\n Runs in the tap node's @c process step, on the thread that drives the\n graph (see @ref ove_audio_node_ops); keep it short, as it delays the\n cycle.  Not guaranteed today: it can still run after\n ove_audio_graph_stop() or ove_audio_graph_deinit() returns, so keep\n @p user_data alive beyond the graph.\n\n @param[in] buf        Buffer containing the observed audio data.\n @param[in] user_data  Opaque pointer supplied at node creation."]
 pub type ove_audio_tap_fn =
     Option<unsafe extern "C" fn(buf: *const ove_audio_buf, user_data: *mut core::ffi::c_void)>;
 unsafe extern "C" {
@@ -1358,7 +1358,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Add a tap (observer) sink node to the graph.\n\n Inserts a sink that calls @p fn for every audio buffer processed.\n The callback receives a pointer to the upstream buffer; data must not\n be stored beyond the duration of the callback.\n\n @param[in] g          Graph to add the node to.\n @param[in] fn         Callback invoked each processing cycle.\n @param[in] user_data  Opaque pointer forwarded to @p fn.\n @param[in] name       Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_gain"]
+    #[doc = " @brief Add a tap (observer) node to the graph.\n\n Inserts a pass-through processor that copies its input to its output and\n calls @p fn with the buffer every cycle.  The buffer is valid only for the\n duration of the callback; see @ref ove_audio_tap_fn for where it runs.\n\n @param[in] g          Graph to add the node to.\n @param[in] fn         Callback invoked each processing cycle.\n @param[in] user_data  Opaque pointer forwarded to @p fn.\n @param[in] name       Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_gain"]
     pub fn ove_audio_node_tap(
         g: *mut ove_audio_graph,
         fn_: ove_audio_tap_fn,
@@ -1489,7 +1489,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Release all resources held by an audio graph.\n\n Stops the graph (if running), tears down each node, and frees the\n heap-allocated inter-node buffer block.  Caller-supplied buffer storage\n registered via @ref ove_audio_graph_set_buf_storage is left intact.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
+    #[doc = " @brief Release all resources held by an audio graph.\n\n Stops the graph (if running), tears down each node, and frees the\n heap-allocated inter-node buffer block.  Caller-supplied buffer storage\n registered via @ref ove_audio_graph_set_buf_storage is left intact.\n\n Not guaranteed today: ove_audio_graph_stop() and ove_audio_graph_deinit()\n do not wait for a cycle that is running on the audio thread, and on Zephyr\n that thread keeps processing a stopped graph, so node callbacks can still\n run after either returns.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
     pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
 }
 unsafe extern "C" {
@@ -1538,7 +1538,7 @@ unsafe extern "C" {
     pub fn ove_audio_graph_start(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop the audio graph.\n\n Calls each node's @c stop callback in reverse topological order and\n transitions the graph back to @c OVE_AUDIO_GRAPH_READY.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    #[doc = " @brief Stop the audio graph.\n\n Calls each node's @c stop callback in reverse topological order and\n transitions the graph back to @c OVE_AUDIO_GRAPH_READY.\n\n Not guaranteed today: ove_audio_graph_stop() and ove_audio_graph_deinit()\n do not wait for a cycle that is running on the audio thread, and on Zephyr\n that thread keeps processing a stopped graph, so node callbacks can still\n run after either returns.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
     pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -2047,7 +2047,7 @@ pub struct ove_timer {
 }
 #[doc = " @brief Opaque handle for a software timer object."]
 pub type ove_timer_t = *mut ove_timer;
-#[doc = " @brief Timer expiry callback function prototype.\n\n Invoked by the RTOS timer service task (or equivalent) when the timer\n period elapses.  Implementations must be non-blocking and short.\n\n @param[in] timer      Handle of the timer that fired.\n @param[in] user_data  Opaque pointer supplied at timer creation time."]
+#[doc = " @brief Timer expiry callback function prototype.\n\n Invoked when the timer period elapses, in thread context, on a thread the\n engine owns: the FreeRTOS timer service task, Zephyr's system work queue,\n NuttX's high-priority work queue (HPWORK), or a dispatcher thread on the\n host test backend.  Implementations must be non-blocking and short: they\n hold up every other timer, and other work, on that thread.  On Zephyr and\n NuttX, firings that pile up while a call is still pending may be merged\n into one.\n\n ove_timer_stop() may let one call that is already running or queued still\n run after it returns, and on FreeRTOS more than one (see there).\n ove_timer_deinit() and ove_timer_destroy() wait for a running call to\n finish, so never call them from the callback itself.\n\n @param[in] timer      Handle of the timer that fired.\n @param[in] user_data  Opaque pointer supplied at timer creation time."]
 pub type ove_timer_fn =
     Option<unsafe extern "C" fn(timer: ove_timer_t, user_data: *mut core::ffi::c_void)>;
 unsafe extern "C" {
@@ -2062,7 +2062,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop and release resources held by a timer initialised with\n        ove_timer_init().\n\n Stops the timer if it is running.  The static storage supplied at init\n time is not freed.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Handle returned by ove_timer_init().\n\n @see ove_timer_init"]
+    #[doc = " @brief Stop and release resources held by a timer initialised with\n        ove_timer_init().\n\n Stops the timer if it is running and waits for a callback that is running\n to return, so the storage can be reused once this returns.  Never call it\n from the timer's own callback, which would wait for itself.  The static\n storage supplied at init time is not freed.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Handle returned by ove_timer_init().\n\n @see ove_timer_init"]
     pub fn ove_timer_deinit(timer: ove_timer_t);
 }
 unsafe extern "C" {
@@ -2101,7 +2101,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop and free a timer allocated with ove_timer_create().\n\n @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.\n\n @param[in] timer  Handle returned by ove_timer_create().\n\n @see ove_timer_create"]
+    #[doc = " @brief Stop and free a timer allocated with ove_timer_create().\n\n Waits for a callback that is running to return before freeing, as\n ove_timer_deinit() does; never call it from the timer's own callback.\n\n @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.\n\n @param[in] timer  Handle returned by ove_timer_create().\n\n @see ove_timer_create"]
     pub fn ove_timer_destroy(timer: ove_timer_t);
 }
 unsafe extern "C" {
@@ -2109,7 +2109,7 @@ unsafe extern "C" {
     pub fn ove_timer_start(timer: ove_timer_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop a running timer without invoking its callback.\n\n If the timer is already stopped, this function has no effect.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to stop.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_start, ove_timer_reset"]
+    #[doc = " @brief Stop a running timer.\n\n On Zephyr, NuttX and the host test backend no new expiry starts after\n this returns, though one callback already running or queued can still run\n once.  On FreeRTOS it only queues a command for the timer task: until that\n task runs (at @c OVE_PRIO_ABOVE_NORMAL by default, so a higher-priority\n caller can keep it waiting) expiries continue, possibly more than one.  If\n the timer is already stopped, this function has no effect.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to stop.\n @return OVE_OK on success, or @c OVE_ERR_TIMEOUT on FreeRTOS when its\n         timer command queue is full, in which case the timer keeps running.\n\n @see ove_timer_start, ove_timer_reset"]
     pub fn ove_timer_stop(timer: ove_timer_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -2298,7 +2298,7 @@ pub const OVE_GPIO_IRQ_FALLING: ove_gpio_irq_mode_t = 2;
 pub const OVE_GPIO_IRQ_BOTH: ove_gpio_irq_mode_t = 3;
 #[doc = " @brief GPIO interrupt trigger edge selection."]
 pub type ove_gpio_irq_mode_t = core::ffi::c_uint;
-#[doc = " @brief GPIO interrupt callback type.\n\n Called from interrupt context (or a deferred work item, depending on\n the backend) when the configured edge is detected.\n\n @param[in] port      GPIO port index that generated the interrupt.\n @param[in] pin       GPIO pin index that generated the interrupt.\n @param[in] user_data Opaque pointer supplied at registration time."]
+#[doc = " @brief GPIO interrupt callback type.\n\n Called when the configured edge is detected.\n\n Called in interrupt context, from the GPIO interrupt handler, on every\n engine (the host test backend calls it from the thread that injects the\n edge).  Keep it short and non-blocking, using only @c _from_isr APIs.\n Once ove_gpio_irq_disable() or ove_gpio_irq_unregister() has returned in\n thread context, no new call starts, and on a single core none is still\n running; nothing is guaranteed if they are called from an interrupt of\n higher priority than the GPIO one.\n\n @param[in] port      GPIO port index that generated the interrupt.\n @param[in] pin       GPIO pin index that generated the interrupt.\n @param[in] user_data Opaque pointer supplied at registration time."]
 pub type ove_gpio_irq_cb = Option<
     unsafe extern "C" fn(
         port: core::ffi::c_uint,
@@ -2474,7 +2474,7 @@ unsafe extern "C" {
         user_data: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
-#[doc = " @brief Prototype for a work item handler function.\n\n Called by the work queue thread when the work item is executed. The\n @p work handle may be used to identify the item. Submitting the same item\n from its handler is rejected as busy; recurring work needs another item,\n a timer, or an external submitter.\n\n @param[in] work  Handle of the work item being executed."]
+#[doc = " @brief Prototype for a work item handler function.\n\n Called on the work queue's own thread, one item at a time.  The @p work\n handle is the item's storage, so a handler recovers per-item context from\n it (see @ref ove_work_init_static).  Submitting the same item from its\n handler is rejected as busy; recurring work needs another item, a timer,\n or an external submitter.\n\n @param[in] work  Handle of the work item being executed."]
 pub type ove_work_fn = Option<unsafe extern "C" fn(work: ove_work_t)>;
 unsafe extern "C" {
     #[doc = " @brief Initialise a work queue using caller-provided static storage.\n\n Creates the underlying RTOS thread with the given @p name, @p priority,\n @p stack_size, and pre-allocated @p stack buffer. The queue begins\n dispatching items as soon as the first work item is submitted.\n\n @param[out] wq          Receives the initialised work queue handle.\n @param[in]  storage     Pointer to statically-allocated work queue storage.\n @param[in]  name        Human-readable name for the underlying thread.\n @param[in]  priority    Thread priority for the work queue thread, at most\n                         @ref OVE_PRIO_MAX (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Size of the thread stack in bytes.\n @param[in]  stack       Pointer to the pre-allocated stack buffer.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
@@ -2524,11 +2524,11 @@ unsafe extern "C" {
     pub fn ove_workqueue_destroy(wq: ove_workqueue_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit a work item for immediate execution on the work queue.\n\n Enqueues @p work for execution on @p wq. Returns @c OVE_ERR_BUSY when the\n item is already queued, delayed, or running.\n\n @param[in] wq    Target work queue handle.\n @param[in] work  Work item handle to submit.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Submit a work item for immediate execution on the work queue.\n\n Enqueues @p work for execution on @p wq.\n\n Call from thread context.  It is not ISR-safe on FreeRTOS and NuttX, which\n take blocking queue and lock paths here (Zephyr's is ISR-safe); from an\n interrupt, wake a thread with a @c _from_isr call and submit from it.\n\n On a full queue FreeRTOS fails at once, while NuttX waits, with no\n timeout, for room.\n\n @param[in] wq    Target work queue handle.\n @param[in] work  Work item handle to submit.\n @return OVE_OK on success, @c OVE_ERR_BUSY if the item is already queued,\n         delayed or running, @c OVE_ERR_TIMEOUT when the engine cannot\n         enqueue it (FreeRTOS: the queue is full; Zephyr: the queue is\n         draining or not started), or another negative error code."]
     pub fn ove_work_submit(wq: ove_workqueue_t, work: ove_work_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit a work item for execution after a delay.\n\n Schedules @p work to run on @p wq after at least @p delay_ms milliseconds\n have elapsed. The item may be cancelled before the delay expires using\n @ref ove_work_cancel.\n\n @param[in] wq        Target work queue handle.\n @param[in] work      Work item handle to schedule.\n @param[in] delay_ms  Minimum delay before execution in milliseconds.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Submit a work item for execution after a delay.\n\n Schedules @p work to run on @p wq after at least @p delay_ms milliseconds\n have elapsed. The item may be cancelled before the delay expires using\n @ref ove_work_cancel.\n\n Call from thread context.  It is not ISR-safe on FreeRTOS and NuttX, which\n take blocking queue and lock paths here (Zephyr's is ISR-safe); from an\n interrupt, wake a thread with a @c _from_isr call and submit from it.\n\n Not guaranteed today: on FreeRTOS, if the queue is full when the delay\n expires, the item is dropped without running and without an error; on\n NuttX the delay is slept on the queue's single worker once the item is\n dequeued, so it starts then rather than at submission and holds up every\n item behind it.  Like ove_work_submit(), it waits with no timeout on a\n full queue on NuttX, and on FreeRTOS it waits with no timeout for room in\n the timer command queue once the scheduler runs (before that it can fail\n with @c OVE_ERR_TIMEOUT).\n\n @param[in] wq        Target work queue handle.\n @param[in] work      Work item handle to schedule.\n @param[in] delay_ms  Minimum delay before execution in milliseconds.\n @return OVE_OK on success, @c OVE_ERR_BUSY if the item is already queued,\n         delayed or running, @c OVE_ERR_TIMEOUT on Zephyr when the queue is\n         draining or not started (on FreeRTOS only before the scheduler\n         runs), or another negative error code."]
     pub fn ove_work_submit_delayed(
         wq: ove_workqueue_t,
         work: ove_work_t,
@@ -2585,7 +2585,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send bytes into the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has\n insufficient space the call returns immediately with a partial or zero count.\n\n @param[in]  stream      Stream handle.\n @param[in]  data        Pointer to the data to send.\n @param[in]  len         Number of bytes to send.\n @param[out] bytes_sent  Receives the number of bytes actually written, or\n                         @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when a full stream took\n         only part of @p data or none of it: check @p bytes_sent.  A negative\n         error code means the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
+    #[doc = " @brief Send bytes into the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has\n insufficient space the call returns immediately with a partial or zero count.\n Not guaranteed today on NuttX: its implementation takes a pthread mutex\n and signals a condition variable, which an interrupt handler must not do.\n\n @param[in]  stream      Stream handle.\n @param[in]  data        Pointer to the data to send.\n @param[in]  len         Number of bytes to send.\n @param[out] bytes_sent  Receives the number of bytes actually written, or\n                         @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when a full stream took\n         only part of @p data or none of it: check @p bytes_sent.  A negative\n         error code means the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
     pub fn ove_stream_send_from_isr(
         stream: ove_stream_t,
         data: *const core::ffi::c_void,
@@ -2594,7 +2594,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Receive bytes from the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only\n the bytes that are immediately available.\n\n @param[in]  stream          Stream handle.\n @param[out] buf             Buffer to receive data.\n @param[in]  len             Maximum number of bytes to read.\n @param[out] bytes_received  Receives the number of bytes actually read, or\n                             @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when fewer bytes (or none)\n         were available: check @p bytes_received.  A negative error code means\n         the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
+    #[doc = " @brief Receive bytes from the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only\n the bytes that are immediately available.\n Not guaranteed today on NuttX: its implementation takes a pthread mutex\n and signals a condition variable, which an interrupt handler must not do.\n\n @param[in]  stream          Stream handle.\n @param[out] buf             Buffer to receive data.\n @param[in]  len             Maximum number of bytes to read.\n @param[out] bytes_received  Receives the number of bytes actually read, or\n                             @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when fewer bytes (or none)\n         were available: check @p bytes_received.  A negative error code means\n         the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
     pub fn ove_stream_receive_from_isr(
         stream: ove_stream_t,
         buf: *mut core::ffi::c_void,
@@ -3532,7 +3532,7 @@ pub struct ove_httpd_resp {
 }
 #[doc = " @brief Opaque HTTP response."]
 pub type ove_httpd_resp_t = ove_httpd_resp;
-#[doc = " @brief Route handler callback.\n @return OVE_OK on success (response sent), negative error code on failure."]
+#[doc = " @brief Route handler callback.\n\n Runs on the server's single @c httpd thread (8 KiB stack, OVE_PRIO_NORMAL),\n one request at a time, so a slow handler delays every client.  Must not\n call ove_httpd_stop(), which waits for that thread.\n\n @return OVE_OK on success (response sent), negative error code on failure."]
 pub type ove_httpd_handler_t = Option<
     unsafe extern "C" fn(
         req: *mut ove_httpd_req_t,
@@ -3558,15 +3558,15 @@ const _: () = {
         [core::mem::offset_of!(ove_httpd_config_t, max_body_size) - 4usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Register routes with ove_httpd_route() before or after starting.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another\n         negative error code on failure."]
+    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Register routes with ove_httpd_route() before starting: the route tables\n are not locked against the server thread, so a route added while it runs\n is not guaranteed to be seen consistently.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another\n         negative error code on failure."]
     pub fn ove_httpd_start(cfg: *const ove_httpd_config_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop the HTTP server and close the listening socket."]
+    #[doc = " @brief Stop the HTTP server and close the listening socket.\n\n Waits for the server thread to exit, so no handler is running once this\n returns; never call it from a handler.  Not guaranteed today: open\n WebSocket connections are not closed and their @c on_close is not called."]
     pub fn ove_httpd_stop();
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a route handler.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
+    #[doc = " @brief Register a route handler.\n\n The @p method and @p path strings are copied (truncated to the table's\n field sizes); only @p handler is kept.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
     pub fn ove_httpd_route(
         method: *const core::ffi::c_char,
         path: *const core::ffi::c_char,
@@ -3574,7 +3574,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).\n\n Call after ove_httpd_start() to add the standard device management API."]
+    #[doc = " @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).\n\n Adds the standard device management API; like any route, best registered\n before ove_httpd_start() (see there)."]
     pub fn ove_httpd_register_builtin_routes();
 }
 unsafe extern "C" {
@@ -3668,7 +3668,7 @@ pub struct ove_httpd_ws_conn {
 }
 #[doc = " @brief Opaque WebSocket connection handle."]
 pub type ove_httpd_ws_conn_t = ove_httpd_ws_conn;
-#[doc = " @brief WebSocket message callback.\n @param[in] conn Connection that sent the message.\n @param[in] data Message payload (text or binary).\n @param[in] len  Payload length in bytes."]
+#[doc = " @brief WebSocket message callback.\n\n Runs on the server's @c httpd thread, like the route handlers.\n @param[in] conn Connection that sent the message.\n @param[in] data Message payload (text or binary).\n @param[in] len  Payload length in bytes."]
 pub type ove_httpd_ws_handler_t = Option<
     unsafe extern "C" fn(
         conn: *mut ove_httpd_ws_conn_t,
@@ -3676,11 +3676,11 @@ pub type ove_httpd_ws_handler_t = Option<
         len: usize,
     ),
 >;
-#[doc = " @brief WebSocket close callback.\n @param[in] conn Connection that was closed."]
+#[doc = " @brief WebSocket close callback.\n\n Runs on the server's @c httpd thread when it notices the connection has\n closed.  Not called for connections still open at ove_httpd_stop(), nor\n for one that a failed ove_httpd_ws_send() or ove_httpd_ws_broadcast()\n drops; that connection's slot can then go to a new client.\n\n @param[in] conn Connection that was closed."]
 pub type ove_httpd_ws_close_handler_t =
     Option<unsafe extern "C" fn(conn: *mut ove_httpd_ws_conn_t)>;
 unsafe extern "C" {
-    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
+    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.  The @p path string is copied.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
     pub fn ove_httpd_ws_route(
         path: *const core::ffi::c_char,
         on_message: ove_httpd_ws_handler_t,
@@ -3688,7 +3688,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send a text message to a WebSocket connection.\n\n @param[in] conn Target connection.\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Send a text message to a WebSocket connection.\n\n If the send fails the connection is closed and freed without its\n @c on_close being called, so @p conn must not be used again.\n\n @param[in] conn Target connection.\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_httpd_ws_send(
         conn: *mut ove_httpd_ws_conn_t,
         data: *const core::ffi::c_void,
@@ -3696,7 +3696,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Number of connections the message was sent to."]
+    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n A connection whose send fails is closed and freed without its\n @c on_close being called, as for ove_httpd_ws_send().\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Number of connections the message was sent to."]
     pub fn ove_httpd_ws_broadcast(
         path: *const core::ffi::c_char,
         data: *const core::ffi::c_void,
@@ -3823,7 +3823,7 @@ unsafe extern "C" {
     pub fn ove_uart_bytes_available(uart: ove_uart_t) -> usize;
 }
 unsafe extern "C" {
-    #[doc = " @brief Flush the TX hardware buffer.\n\n Blocks until all pending TX bytes have been physically transmitted.\n\n @param[in] uart  UART handle.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Flush the TX hardware buffer.\n\n Waits, with no timeout, for the bytes already handed to the driver to be\n sent; RX is untouched.  How far that goes depends on the engine: the\n FreeRTOS STM32 driver waits for the last byte to leave the shift register\n (transmission complete), NuttX waits in tcdrain(), and Zephyr returns at\n once, so the last byte may still be on the wire.  No engine reports a\n drain failure.\n\n @param[in] uart  UART handle.\n @return OVE_OK, or OVE_ERR_INVALID_PARAM for a NULL @p uart."]
     pub fn ove_uart_flush(uart: ove_uart_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -3975,7 +3975,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Multi-segment SPI transfer under a single CS assertion.\n\n Executes @p num_xfers transfer segments sequentially without\n releasing CS between them.  Useful for protocols that require\n command + address + data in one transaction.\n\n @param[in] spi        SPI handle.\n @param[in] cs         Chip-select descriptor, or NULL.\n @param[in] xfers      Array of transfer segments.\n @param[in] num_xfers  Number of segments.\n @param[in] timeout_ns Maximum wait time for the entire sequence.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Multi-segment SPI transfer under a single CS assertion.\n\n Executes @p num_xfers transfer segments sequentially without\n releasing CS between them.  Useful for protocols that require\n command + address + data in one transaction.\n\n @param[in] spi        SPI handle.\n @param[in] cs         Chip-select descriptor, or NULL.\n @param[in] xfers      Array of transfer segments.\n @param[in] num_xfers  Number of segments.\n @param[in] timeout_ns Maximum wait time for each segment, not the whole\n                       sequence (see the timeout note on @ref ove_spi).\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_spi_transfer_seq(
         spi: ove_spi_t,
         cs: *const ove_spi_cs,
@@ -4428,7 +4428,7 @@ const _: () = {
     ["Offset of field: ove_pm_stats::active_pct_x100"]
         [core::mem::offset_of!(ove_pm_stats, active_pct_x100) - 56usize];
 };
-#[doc = " @brief Power policy callback — returns recommended next state.\n\n @param[in] current         Current power state.\n @param[in] idle_ms         Milliseconds since last activity.\n @param[in] next_timeout_ms Milliseconds until next scheduled event.\n @param[in] user_data       Opaque pointer from ove_pm_set_policy().\n @return Recommended next power state."]
+#[doc = " @brief Power policy callback — returns recommended next state.\n\n Called on the PM thread, a low-priority thread each engine runs to drive\n the state machine (not the idle hook), without the PM lock held.  After\n ove_pm_set_policy() replaces it, a call that had already started can still\n run once.  Not guaranteed today: a call racing ove_pm_set_policy() can\n receive the other policy's @p user_data.\n\n @param[in] current         Current power state.\n @param[in] idle_ms         Milliseconds since last activity.\n @param[in] next_timeout_ms Milliseconds until next scheduled event.\n @param[in] user_data       Opaque pointer from ove_pm_set_policy().\n @return Recommended next power state."]
 pub type ove_pm_policy_fn = Option<
     unsafe extern "C" fn(
         current: ove_pm_state_t,
@@ -4437,7 +4437,7 @@ pub type ove_pm_policy_fn = Option<
         user_data: *mut core::ffi::c_void,
     ) -> ove_pm_state_t,
 >;
-#[doc = " @brief Transition notification callback.\n\n @param[in] event      PRE_SLEEP or POST_WAKE.\n @param[in] from_state State being left.\n @param[in] to_state   State being entered.\n @param[in] user_data  Opaque pointer from ove_pm_notify_register()."]
+#[doc = " @brief Transition notification callback.\n\n Called on the PM thread with the PM lock held, which stays held from the\n PRE_SLEEP call through the sleep to the POST_WAKE call.  A notifier must\n therefore not call ove_pm_* functions other than ove_pm_activity() and\n ove_pm_get_state(), which would deadlock.  ove_pm_notify_unregister() takes\n the same lock, so once it returns the callback is not running and will not\n run again.\n\n @param[in] event      PRE_SLEEP or POST_WAKE.\n @param[in] from_state State being left.\n @param[in] to_state   State being entered.\n @param[in] user_data  Opaque pointer from ove_pm_notify_register()."]
 pub type ove_pm_notify_fn = Option<
     unsafe extern "C" fn(
         event: ove_pm_event_t,
@@ -4487,7 +4487,7 @@ unsafe extern "C" {
     pub fn ove_pm_domain_get_refcount(domain: ove_pm_domain_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK, or @c OVE_ERR_INVALID_PARAM if @ref ove_pm_init has not been\n         called."]
+    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.  See @ref ove_pm_policy_fn for when the policy runs and\n what is not yet guaranteed while it is being replaced.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK, or @c OVE_ERR_INVALID_PARAM if @ref ove_pm_init has not been\n         called."]
     pub fn ove_pm_set_policy(
         policy: ove_pm_policy_fn,
         user_data: *mut core::ffi::c_void,
@@ -4524,7 +4524,7 @@ unsafe extern "C" {
     pub fn ove_pm_get_budget_status(actual_pct_x100: *mut u32) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Process idle — called from RTOS idle context by the HAL.\n\n This drives the state machine: checks activity, invokes policy,\n arms wake sources, transitions state, fires notifications.\n Not intended to be called by application code."]
+    #[doc = " @brief Drive the PM state machine once.\n\n Checks activity, invokes the policy, arms wake sources, transitions state\n and fires notifications.  Each engine calls it from its own low-priority\n PM thread, not from the idle hook; it takes the PM lock, so it cannot run\n in idle context.  Not intended to be called by application code."]
     pub fn ove_pm_idle_process();
 }
 #[doc = " @brief Arena control block.\n\n Allocate one per managed buffer. The fields are exposed so the control\n block can live in static storage (zero-heap), but they are an\n implementation detail — use the accessor functions rather than reading\n them directly."]
@@ -4779,7 +4779,7 @@ unsafe extern "C" {
         copy_text: core::ffi::c_int,
     ) -> core::ffi::c_int;
 }
-#[doc = " Entry function for a protected task."]
+#[doc = " Entry function for a protected task.\n\n Runs synchronously on the thread that calls ove_ptask_run().  A contained\n fault abandons it by longjmp, so anything it holds at that point (locks,\n allocations) stays held."]
 pub type ove_ptask_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
 #[doc = "< Entry returned normally."]
 pub const OVE_PTASK_OK: ove_ptask_result = 0;

@@ -49,7 +49,8 @@ pub const Graph = struct {
     }
 
     /// Not idempotent — the graph is an embedded C struct torn down in
-    /// place (no nullable handle to clear), so call exactly once.  The
+    /// place (no nullable handle to clear), so call exactly once.  Like
+    /// `stop`, it does not wait for a running processing cycle.  The
     /// `pin.Tracker` catches a use-after-deinit in Debug builds.
     pub fn deinit(self: *Graph) void {
         self.tracker.assertSame(self, "ove.audio.Graph");
@@ -81,6 +82,10 @@ pub const Graph = struct {
         try err.fromCode(c.ove_audio_graph_start(&self.raw));
     }
 
+    /// Not guaranteed today: `stop` and `deinit` do not wait for a processing
+    /// cycle running on the audio thread, and on Zephyr that thread keeps
+    /// processing a stopped graph, so node callbacks and processor state can
+    /// still be used after either returns.
     pub fn stop(self: *Graph) Error!void {
         try err.fromCode(c.ove_audio_graph_stop(&self.raw));
     }

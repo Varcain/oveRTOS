@@ -141,6 +141,40 @@ directly.
 
 - A timer is created **stopped**; `start()` arms it. Dropping the handle stops
   and destroys the underlying timer. `reset()` restarts the period from now.
+- Dropping or deinitialising the handle waits for a callback that is running,
+  so none of the three may do it from the timer's own callback.
+
+---
+
+## Callbacks
+
+Every binding hands the C layer a trampoline, so the context a callback runs in,
+and how long its data must live, are the C contract. Each wrapper's docs must
+state it the same way, including where an engine does **not** guarantee it.
+
+| Callback | Runs in | After unregister / stop / deinit returns |
+|---|---|---|
+| Thread entry | the new thread; returning ends it | deinit / destroy waits for the return |
+| Timer | thread context: FreeRTOS timer task, Zephyr system work queue, NuttX HPWORK, host dispatcher thread | stop: one running or queued call may still run (FreeRTOS: more, if the caller outranks the timer task); deinit / destroy waits for a running call |
+| GPIO interrupt | interrupt context on every engine (host: the injecting thread) | disable / unregister from thread context: no call starts or is running (single core); not guaranteed from a higher-priority interrupt |
+| Work item | the work queue's thread, one item at a time | `ove_work_cancel` / deinit drain it |
+| PM policy | the engine's low-priority PM thread, without the PM lock | a call already started may run once more; not guaranteed today: a call racing `set_policy` may see the other policy's `user_data` |
+| PM notifier | the PM thread, with the PM lock held | unregister waits for a running call; the notifier must not call other PM functions |
+| Audio node / tap | the thread driving the graph (audio thread, or the caller of `process`) | not guaranteed today: stop / deinit do not wait for a running cycle |
+| httpd handler / WebSocket | the single `httpd` thread, one at a time | stop waits for that thread; WebSocket `on_close` is not called for connections open at stop or dropped by a failed send |
+| Shell command | the thread that feeds `process_char` / `process_line` | — (never feed the shell from an ISR) |
+| Protected task | the caller's thread, synchronously | a contained fault abandons it by longjmp |
+
+**Contract notes**
+
+- A binding that wraps a callback in a safe API must not promise more than this
+  table does. Where a row says "not guaranteed today", the wrapper documents
+  the gap rather than hiding it (Rust's `pm::set_policy` and Zig's
+  `pm.setPolicy` do).
+- Strings a callback API keeps by pointer (shell command names and help, thread
+  names on NuttX, Zephyr and the host backend) must outlive the registration:
+  Rust takes `&'static CStr`, Zig comptime or caller-owned names, C++ documents
+  the rule.
 
 ---
 

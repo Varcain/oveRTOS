@@ -168,6 +168,10 @@ inline void activity()
 
 /**
  * @brief Register a custom power policy callback.
+ *
+ * The policy runs on the PM thread; see @ref ove_pm_policy_fn for its
+ * context and what is not yet guaranteed while it is being replaced.
+ *
  * @param[in] policy Policy function, or nullptr for default.
  * @param[in] user_data Opaque pointer forwarded to the policy.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
@@ -183,6 +187,11 @@ inline void activity()
 
 /**
  * @brief Register a transition notification callback.
+ *
+ * The callback runs on the PM thread with the PM lock held, so it must not
+ * call PM functions other than activity() and get_state(); see
+ * @ref ove_pm_notify_fn.
+ *
  * @param[in] cb Callback invoked on PRE_SLEEP and POST_WAKE.
  * @param[in] user_data Opaque pointer forwarded to the callback.
  * @return Empty `Result<void>` on success; `unexpected`
@@ -257,10 +266,10 @@ inline void reset_stats()
 /* ── Idle processing ────────────────────────────────────────────────── */
 
 /**
- * @brief Process idle — drive the PM state machine.
+ * @brief Drive the PM state machine once.
  *
- * Called internally from the RTOS idle hook.  Not normally called by
- * application code.
+ * Called internally from each engine's low-priority PM thread (not the idle
+ * hook).  Not normally called by application code.
  */
 inline void idle_process()
 {

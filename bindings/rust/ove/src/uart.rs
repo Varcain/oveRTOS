@@ -115,7 +115,9 @@ impl Uart {
         unsafe { bindings::ove_uart_bytes_available(self.handle) }
     }
 
-    /// Flush the TX hardware buffer.
+    /// Flush the TX hardware buffer: wait, with no timeout, for pending TX
+    /// bytes to be sent.  RX is untouched.  On Zephyr it returns at once, so
+    /// the last byte may still be on the wire.
     pub fn flush(&self) -> Result<()> {
         let rc = unsafe { bindings::ove_uart_flush(self.handle) };
         Error::from_code(rc)

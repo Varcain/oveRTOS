@@ -107,9 +107,9 @@ void ove_hal_pm_idle_hook(void)
  * chosen state for the whole interval, so update_stats() on wake sees
  * the right delta.
  *
- * tskIDLE_PRIORITY + 1 sits one step above the kernel idle task so the
- * poller only runs when no real work is ready, but is still pre-empted
- * by every application thread.
+ * OVE_PRIO_LOW keeps the poller below every application thread at the
+ * default priority, so it runs only when no real work is ready, and above
+ * the kernel idle task.
  */
 #define PM_IDLE_STACK_DEPTH (configMINIMAL_STACK_SIZE * 4)
 static StackType_t pm_idle_stack[PM_IDLE_STACK_DEPTH];

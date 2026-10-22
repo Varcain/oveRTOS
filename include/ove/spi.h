@@ -23,6 +23,12 @@
  * - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
  *   modes.  See @c OVE_SPI_DEFINE_STATIC for a one-step static helper.
  *
+ * Timeouts: only the FreeRTOS STM32 driver honours @c timeout_ns, rounded
+ * down to whole milliseconds (so anything under 1 ms times out at once).
+ * Zephyr and NuttX ignore it and rely on their drivers' own timeouts.  On
+ * every engine the call first waits, with no timeout, for the bus lock held
+ * by any other transfer on the same bus.
+ *
  * @note Requires @c CONFIG_OVE_SPI.
  * @{
  */
@@ -178,7 +184,8 @@ OVE_NODISCARD int ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs, void 
  * @param[in] cs         Chip-select descriptor, or NULL.
  * @param[in] xfers      Array of transfer segments.
  * @param[in] num_xfers  Number of segments.
- * @param[in] timeout_ns Maximum wait time for the entire sequence.
+ * @param[in] timeout_ns Maximum wait time for each segment, not the whole
+ *                       sequence (see the timeout note on @ref ove_spi).
  * @return OVE_OK on success, negative error code on failure.
  */
 OVE_NODISCARD int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,

@@ -96,23 +96,23 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain);
 uint32_t ove_hal_pm_get_next_timeout_ms(void);
 
 /**
- * @brief Idle hook entry point — registered with the RTOS idle mechanism.
+ * @brief Idle hook entry point, for a backend that drives PM from the RTOS
+ *        idle mechanism.
  *
- * The backend registers this function with the RTOS idle task (e.g.
- * vApplicationIdleHook on FreeRTOS, pm_notifier on Zephyr).  It calls
- * ove_pm_idle_process() in the portable layer to drive the PM state
- * machine.
+ * Every in-tree backend defines it, but none registers it: FreeRTOS, Zephyr
+ * and NuttX all call ove_pm_idle_process() from a low-priority PM thread
+ * that ove_hal_pm_setup() starts, because it takes a lock and so cannot run
+ * in idle context.
  */
 void ove_hal_pm_idle_hook(void);
 
 /**
  * @brief Initialise backend-side PM machinery.
  *
- * Called by ove_pm_init() once the portable state has been set up.
- * Backends that drive ove_pm_idle_process() from a kernel idle hook
- * (e.g. FreeRTOS vApplicationIdleHook) can leave this as a no-op;
- * backends without an auto-fired idle hook (NuttX, Zephyr) use
- * it to spawn a low-priority polling thread.
+ * Called by ove_pm_init() once the portable state has been set up.  Every
+ * in-tree backend uses it to start the low-priority PM thread that calls
+ * ove_pm_idle_process(); that thread then blocks in
+ * ove_hal_pm_enter_state() while the kernel's own idle path sleeps.
  *
  * @return OVE_OK on success, negative error code on failure.
  */

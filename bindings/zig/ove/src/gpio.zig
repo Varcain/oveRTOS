@@ -45,11 +45,13 @@ pub fn get(port: u32, pin: u32) Error!bool {
     return val != 0;
 }
 
-/// Register an interrupt callback for a GPIO pin edge or level event.
+/// Register an interrupt callback for a GPIO pin edge event.
 ///
-/// `mode` selects the trigger (rising edge, falling edge, both, level, etc.).
+/// `mode` selects the trigger: rising edge, falling edge, or both.
 /// `callback` receives the `port` and `pin` of the triggering pin and must not
-/// perform any blocking RTOS operations (it runs in interrupt context).
+/// perform any blocking RTOS operations: it runs in interrupt context on every
+/// engine (the host test backend calls it from the thread that injects the
+/// edge).
 ///
 /// Returns `Error` if the pin does not support interrupts or registration fails.
 pub fn irqRegister(
@@ -120,7 +122,8 @@ pub fn irqDisable(port: u32, pin: u32) Error!void {
 ///
 /// Disables the interrupt and frees the registration; the inverse of
 /// `irqRegister()`. A context passed to `irqRegisterWithContext()` is no
-/// longer referenced once this returns.
+/// longer referenced once this returns in thread context (on a single core);
+/// nothing is guaranteed when called from a higher-priority interrupt.
 /// Returns `Error` if the pin has no registration.
 pub fn irqUnregister(port: u32, pin: u32) Error!void {
     try err.fromCode(c.ove_gpio_irq_unregister(port, pin));

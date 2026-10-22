@@ -398,14 +398,14 @@ void mqtt_demo(void)
 
 ## HTTP Server
 
-Requires `CONFIG_OVE_NET_HTTPD`. Single-threaded HTTP/1.1 server with path-based routing and a built-in Tasmota-style web dashboard.
+Requires `CONFIG_OVE_NET_HTTPD`. Single-threaded HTTP/1.1 server with path-based routing and a built-in Tasmota-style web dashboard. Handlers, WebSocket ones included, run one at a time on the server's single `httpd` thread (8 KiB stack), so a slow handler delays every client. Register routes before `ove_httpd_start()`: the route tables are not locked against that thread.
 
 <!-- ove:body -->
 ```c
+ove_httpd_register_builtin_routes();  /* /api/info, /api/leds, /api/gpio, etc. */
 ove_httpd_config_t cfg = { .port = 80, .max_body_size = 1024 };
 if (ove_httpd_start(&cfg) != OVE_OK)
     return;
-ove_httpd_register_builtin_routes();  /* /api/info, /api/leds, /api/gpio, etc. */
 ```
 
 ### Custom Routes
@@ -444,7 +444,7 @@ int register_routes(void)
 | Function | Description |
 |----------|-------------|
 | `ove_httpd_start` | Start the HTTP server. |
-| `ove_httpd_stop` | Stop the server. |
+| `ove_httpd_stop` | Stop the server and wait for its thread, so never call it from a handler. Open WebSocket connections are not closed and their `on_close` is not called. |
 | `ove_httpd_set_netif` | Bind the server to a specific network interface for the `/api/network` route. |
 | `ove_httpd_set_audio_graph` | Register an `ove_audio_graph` for the `/api/audio/stats` route (requires `CONFIG_OVE_AUDIO`). |
 | `ove_httpd_set_model` | Register an `ove_model_t` for the `/api/infer/stats` route (requires `CONFIG_OVE_INFER`). |
