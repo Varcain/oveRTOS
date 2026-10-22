@@ -41,6 +41,11 @@ namespace ove::shell
 
 /**
  * @brief Registers a shell command.
+ *
+ * The descriptor is copied, but the @c name and @c help strings are not:
+ * they must stay valid while the command is registered. Registering a name
+ * again replaces that command, even when the table is full.
+ *
  * @param[in] cmd Pointer to the command descriptor structure.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
@@ -53,7 +58,9 @@ namespace ove::shell
 /**
  * @brief Feeds a single character into the shell input processor.
  *
- * Typically called from the console receive path.
+ * Call it from thread context, typically the console input task, never
+ * from an ISR: the matching command's handler runs inside this call. Feed
+ * the shell from one thread at a time (process_line included).
  *
  * @param[in] c The character received from the console.
  */
@@ -64,6 +71,10 @@ inline void process_char(int c)
 
 /**
  * @brief Process a complete input line through the shell.
+ *
+ * The same thread-context and one-thread-at-a-time rules as process_char
+ * apply.
+ *
  * @param[in] line NUL-terminated command line.
  */
 inline void process_line(const char *line)

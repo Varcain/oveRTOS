@@ -678,6 +678,51 @@ static void test_thread_list_priority(void **state)
 	assert_int_equal(after_set, moved);
 }
 
+/* 21. A buffer too small for every thread is filled and reported as
+ * truncated; one large enough is not.  Two spinners keep at least two threads
+ * listed even where only oveRTOS-created threads are (the host backend); the
+ * second borrows the self-race storage, which is idle by now. */
+static void test_thread_list_truncates(void **state)
+{
+	(void)state;
+	/* Static, as runner stacks are small; 16 entries hold every thread the
+	 * test targets run and keep the STM32F746 image inside its RAM. */
+	static struct ove_thread_info info[16];
+	size_t n = 0;
+	if (ove_thread_list(info, 1, &n) == OVE_ERR_NOT_SUPPORTED)
+		skip();
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	ove_thread_t h2 = NULL;
+	/* No assert until both spinners are gone: one left running would be
+	 * re-initialised by the next test that uses its storage. */
+	int rc1 =
+		ove_test_thread_run(&h, &s_th_storage, "tlist", entry_spin, NULL, s_th_stack, 4096);
+	int rc2 = rc1 == OVE_OK ? ove_test_thread_run(&h2, &s_race_storage[0], "tlist2", entry_spin,
+						      NULL, s_race_stack0, SELF_RACE_STACK)
+				: OVE_OK;
+	test_msleep(20);
+
+	n = 0;
+	int small = ove_thread_list(info, 1, &n);
+	size_t small_n = n;
+	int full = ove_thread_list(info, sizeof(info) / sizeof(info[0]), &n);
+	if (full != OVE_OK)
+		print_message("ove_thread_list(%u): rc %d, %u entries\n",
+			      (unsigned)(sizeof(info) / sizeof(info[0])), full, (unsigned)n);
+
+	atomic_store(&g_keep_running, 0);
+	if (rc2 == OVE_OK && h2 != NULL)
+		ove_test_thread_destroy(h2);
+	if (rc1 == OVE_OK)
+		ove_test_thread_destroy(h);
+	OVE_TEST_ASSERT_OK(rc1);
+	OVE_TEST_ASSERT_OK(rc2);
+	assert_int_equal(small, OVE_ERR_QUEUE_FULL);
+	assert_int_equal(small_n, 1);
+	assert_int_equal(full, OVE_OK);
+}
+
 /* errno belongs to each thread: values set on either side of a context
  * switch must not leak into the other thread. */
 static atomic_int g_errno_main_set;
@@ -754,6 +799,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_create_priority_out_of_range),
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_priority, teardown_stop_spin),
+		cmocka_unit_test_teardown(test_thread_list_truncates, teardown_stop_spin),
 		cmocka_unit_test(test_errno_per_thread),
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),

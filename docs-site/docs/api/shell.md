@@ -7,7 +7,7 @@ The oveRTOS shell and console subsystems provide an interactive command-line int
 ```mermaid
 graph LR
     UART["Serial RX<br/><small>UART / USB CDC</small>"]
-    GETCHAR["ove_console_getchar()<br/><small>or ISR / DMA callback</small>"]
+    GETCHAR["ove_console_getchar()<br/><small>input task</small>"]
     PROCESS["ove_shell_process_char()<br/><small>line buffer + backspace</small>"]
     LOOKUP["command lookup<br/><small>registered ove_shell_cmd table</small>"]
     HANDLER["handler(argc, argv)<br/><small>application command function</small>"]
@@ -23,15 +23,15 @@ graph LR
     style OUTPUT fill:#4a9,stroke:#333,color:#fff
 ```
 
-Characters arrive one at a time from `ove_console_getchar()` or directly from an ISR/DMA callback and are fed into `ove_shell_process_char()`. The shell accumulates them into a line buffer, handling backspace and other editing characters transparently. On newline, the line is split into whitespace-delimited tokens (up to `OVE_SHELL_MAX_ARGS` = 8) and dispatched to the matching registered handler.
+Characters arrive one at a time from `ove_console_getchar()` in an input task and are fed into `ove_shell_process_char()`. Feed it from thread context, never from an ISR: the matching handler runs inside the call, and the shell is not reentrant, so one thread at a time (`ove_shell_process_line()` included). The shell accumulates them into a line buffer, handling backspace and other editing characters transparently. On newline, the line is split into whitespace-delimited tokens (up to `OVE_SHELL_MAX_ARGS` = 8) and dispatched to the matching registered handler.
 
 ## Shell API
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `ove_shell_init` | `(void) → int` | Initialise the shell and register built-in commands (e.g. `help`). |
-| `ove_shell_register_cmd` | `(const struct ove_shell_cmd *cmd) → int` | Add a command to the dispatch table; the descriptor must remain valid for the system lifetime. |
-| `ove_shell_process_char` | `(char c) → void` | Feed one raw character into the shell; call from console RX task or ISR. |
+| `ove_shell_register_cmd` | `(const struct ove_shell_cmd *cmd) → int` | Copy a command into the dispatch table (16 entries including `help`); the `name` and `help` strings must stay valid while it is registered. Re-registering a name replaces that command, even when the table is full. |
+| `ove_shell_process_char` | `(char c) → void` | Feed one raw character into the shell; call from the console input task, never an ISR. |
 | `ove_shell_process_line` | `(const char *line) → void` | Process a complete already-buffered input line through the shell (useful for piping non-UART input like HTTP). |
 | `ove_shell_set_output_hook` | `(ove_shell_output_hook_t hook) → void` | Install a hook that also receives each `OVE_LOG_*` line a command handler emits from its own thread while it runs, newline included — the httpd web terminal uses it to send command output to the browser. Pass `NULL` to clear. |
 
@@ -52,7 +52,7 @@ typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
 
 ## Command Descriptor
 
-Each registered command is described by a persistent `ove_shell_cmd` structure. Pass a pointer to `ove_shell_register_cmd`; the struct must remain valid (e.g. declared `static`) after registration.
+Each command is described by an `ove_shell_cmd` structure. Pass a pointer to `ove_shell_register_cmd`, which copies it, so it may live on the stack; the strings its `name` and `help` point to are not copied and must stay valid while the command is registered.
 
 <!-- ove:fragment -->
 ```c

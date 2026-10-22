@@ -60,9 +60,10 @@ typedef void (*ove_shell_cmd_fn)(int argc, const char *argv[]);
 /**
  * @brief Descriptor for a single shell command.
  *
- * Passed by pointer to @ref ove_shell_register_cmd. The structure must
- * remain valid (e.g. declared @c static) for the entire system lifetime
- * after registration.
+ * Passed by pointer to @ref ove_shell_register_cmd, which copies the
+ * structure, so it may be an automatic variable. The strings @c name and
+ * @c help point to are not copied: they must stay valid for as long as the
+ * command is registered (string literals or static buffers).
  */
 struct ove_shell_cmd {
 	const char *name; /**< @brief Command name used to match input tokens. */
@@ -94,12 +95,15 @@ OVE_NODISCARD int ove_shell_init(void);
 /**
  * @brief Register a command with the shell.
  *
- * Adds the command described by @p cmd to the shell's dispatch table. The
- * @c name field is used for matching; duplicate names produce
- * implementation-defined behavior.
+ * Copies @p cmd into the shell's dispatch table, which holds 16 commands
+ * including the built-in @c help. The @c name field is used for matching.
+ * Registering a name that is already registered replaces that command in
+ * place, even when the table is full.
  *
- * @param[in] cmd  Pointer to a persistent @ref ove_shell_cmd descriptor.
- * @return OVE_OK on success, negative error code on failure (e.g. table full).
+ * @param[in] cmd  Command descriptor; copied, see @ref ove_shell_cmd.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p cmd, its @c name or
+ *         its @c handler is NULL, OVE_ERR_NO_MEMORY if the table is full, or
+ *         OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_SHELL.
  * @note Requires @c CONFIG_OVE_SHELL.
  */
 OVE_NODISCARD int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
@@ -112,8 +116,11 @@ OVE_NODISCARD int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
  * command handler, or an error message is printed if no match is found.
  * Backspace and other editing characters are handled transparently.
  *
- * This function is typically called from a console receive ISR, a DMA
- * callback, or a dedicated input task.
+ * Call it from thread context, typically a dedicated input task, never from
+ * an ISR: the matching command's handler runs synchronously inside this
+ * call, along with its log output and console writes. The shell is not
+ * reentrant; feed it from one thread at a time, which includes
+ * @ref ove_shell_process_line callers, as both use the same line buffer.
  *
  * @param[in] c  Character to process (raw byte from the console).
  * @note Requires @c CONFIG_OVE_SHELL.
@@ -126,6 +133,7 @@ void ove_shell_process_char(int c);
  * Tokenises @p line and dispatches to the matching command handler.
  * Equivalent to feeding each character of the line via process_char,
  * but more convenient for programmatic use (e.g. WebSocket terminal).
+ * The same thread-context and reentrancy rules apply.
  *
  * @param[in] line NUL-terminated input line (without trailing newline).
  */

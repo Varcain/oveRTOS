@@ -679,6 +679,10 @@ pub const ThreadInfo = extern struct {
         return Priority.fromLevel(@intCast(self.priority));
     }
 
+    /// The thread's name. The bytes belong to the backend and are short-lived:
+    /// on NuttX until the next `threadList` call from any thread, on FreeRTOS
+    /// until any task is created or deleted, on Zephyr until the thread is
+    /// destroyed. Copy them to keep them.
     pub fn name(self: *const ThreadInfo) []const u8 {
         if (self.name_ptr == null) return "";
         return std.mem.span(@as([*:0]const u8, @ptrCast(self.name_ptr)));
@@ -736,6 +740,9 @@ comptime {
 ///
 /// The binding imposes no capacity limit. Returns `error.QueueFull` if the
 /// caller buffer or backend-native snapshot cannot hold every thread.
+/// FreeRTOS lists at most 32 tasks and NuttX 32 threads per call. Not yet
+/// reliable: once FreeRTOS or NuttX has overflowed its table, every later
+/// call returns `error.QueueFull` even when nothing was omitted.
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     var actual: usize = 0;
     const raw: [*c]c.struct_ove_thread_info = if (buf.len == 0) null else @ptrCast(buf.ptr);

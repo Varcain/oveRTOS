@@ -184,9 +184,9 @@ int start_worker(void)
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a thread from caller-supplied static storage and stack. |
+| `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a thread from caller-supplied static storage and stack. `name` must outlive the thread: NuttX, Zephyr and the host test backend keep the pointer. |
 | `ove_thread_deinit` | `int (ove_thread_t handle)` | Join and release a thread created with `ove_thread_init()`. Static storage is not freed. |
-| `ove_thread_create` | `int (ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size)` | Heap-allocate and start a thread. Requires `OVE_HEAP_THREAD` (not declared in zero-heap mode). |
+| `ove_thread_create` | `int (ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size)` | Heap-allocate and start a thread. Requires `OVE_HEAP_THREAD` (not declared in zero-heap mode). `name` must outlive the thread, as for `ove_thread_init`. |
 | `ove_thread_destroy` | `int (ove_thread_t handle)` | Join and free a thread created with `ove_thread_create()`. Heap mode only. |
 | `ove_thread_get_self` | `ove_thread_t (void)` | Return the handle of the currently executing thread: valid from the first statement of an oveRTOS thread's entry, NULL on a thread oveRTOS did not create. Task context only. |
 | `ove_thread_set_priority` | `void (ove_thread_t handle, ove_prio_t prio)` | Change the scheduling priority of a thread at runtime. |
@@ -228,7 +228,9 @@ graph LR
 ```
 
 `ove_thread_get_runtime_stats()` returns `OVE_ERR_NOT_SUPPORTED` when the
-backend does not provide CPU accounting. Stack profiling follows the same
+backend does not provide CPU accounting: FreeRTOS provides it with
+`configGENERATE_RUN_TIME_STATS`, Zephyr with `CONFIG_THREAD_RUNTIME_STATS`,
+and NuttX and the host test backend never do. Stack profiling follows the same
 explicit convention: `ove_thread_get_stack_headroom()` returns
 `OVE_ERR_NOT_SUPPORTED` instead of conflating unavailable data with a real
 zero-byte margin. FreeRTOS, Zephyr with stack initialization enabled, and
@@ -284,6 +286,21 @@ void report_cpu(void)
 | `OVE_THREAD_INFO_VALID_BLOCKED_TIME` | `state_times.blocked_us` |
 | `OVE_THREAD_INFO_VALID_SUSPENDED_TIME` | `state_times.suspended_us` |
 | `OVE_THREAD_INFO_VALID_STATE_TIMES` | All four state-time fields |
+
+Each entry's `name` belongs to the backend and is short-lived: on NuttX it is
+valid until the next `ove_thread_list()` call from any thread (one snapshot is
+reused), on FreeRTOS until any task is created or deleted (it points into the
+shared registry, which moves entries), on Zephyr until the thread is
+destroyed. Copy it to keep it.
+
+How many threads one call can list depends on the engine. FreeRTOS lists the
+tasks in a 32-entry registry and needs `configUSE_TRACE_FACILITY`; NuttX lists
+at most 32 threads however large the buffer; Zephyr and the host test backend
+have no limit. `OVE_ERR_QUEUE_FULL` is not yet a reliable truncation signal:
+once FreeRTOS has created a task while its registry was full, or NuttX's
+per-thread accounting table has run out of slots, every later call returns it
+even when nothing was omitted (on NuttX builds with perf events, until a
+runtime reset).
 
 The flags are deliberately granular. For example, FreeRTOS, NuttX, and
 Zephyr can report cumulative running time without pretending that

@@ -807,7 +807,7 @@ const _: () = {
         [core::mem::offset_of!(ove_i2s_storage_t, _opaque) - 0usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a thread using caller-supplied static storage and stack.\n\n Creates a new thread without any heap allocation.  The caller must\n provide a backend @p storage object and a @p stack buffer of @p stack_size\n bytes.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  storage     Pointer to statically allocated backend storage.\n                         Must remain valid for the lifetime of the thread.\n @param[in]  name        Human-readable thread name.  May be truncated.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX\n                         (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @param[in]  stack       Pointer to caller-allocated stack buffer.  Must be\n                         8-byte aligned (ARM AAPCS).  Use the\n                         @c OVE_THREAD_STACK_DEFINE_ family of helpers in\n                         @c include/ove/storage.h.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_deinit, ove_thread_create"]
+    #[doc = " @brief Initialise a thread using caller-supplied static storage and stack.\n\n Creates a new thread without any heap allocation.  The caller must\n provide a backend @p storage object and a @p stack buffer of @p stack_size\n bytes.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  storage     Pointer to statically allocated backend storage.\n                         Must remain valid for the lifetime of the thread.\n @param[in]  name        Human-readable thread name.  May be truncated.\n                         NuttX and Zephyr (for tracing) and the host\n                         test backend (for listing) keep this pointer\n                         rather than a copy, so the string must outlive\n                         the thread: a literal or a static buffer.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX\n                         (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @param[in]  stack       Pointer to caller-allocated stack buffer.  Must be\n                         8-byte aligned (ARM AAPCS).  Use the\n                         @c OVE_THREAD_STACK_DEFINE_ family of helpers in\n                         @c include/ove/storage.h.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_deinit, ove_thread_create"]
     pub fn ove_thread_init(
         handle: *mut ove_thread_t,
         storage: *mut ove_thread_storage_t,
@@ -824,7 +824,7 @@ unsafe extern "C" {
     pub fn ove_thread_deinit(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and start a heap-backed thread.\n\n Both the backend storage and the stack are allocated from the RTOS heap.\n\n @note Requires @c OVE_HEAP_THREAD.  In zero-heap mode this function is\n       not declared; use @c ove_thread_init() or\n       @c OVE_THREAD_DEFINE_STATIC() instead.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  name        Human-readable thread name.  May be truncated.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX\n                         (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_destroy"]
+    #[doc = " @brief Allocate and start a heap-backed thread.\n\n Both the backend storage and the stack are allocated from the RTOS heap.\n\n @note Requires @c OVE_HEAP_THREAD.  In zero-heap mode this function is\n       not declared; use @c ove_thread_init() or\n       @c OVE_THREAD_DEFINE_STATIC() instead.\n\n @param[out] handle      Receives the opaque thread handle on success.\n @param[in]  name        Human-readable thread name.  May be truncated.\n                         NuttX and Zephyr (for tracing) and the host\n                         test backend (for listing) keep this pointer\n                         rather than a copy, so the string must outlive\n                         the thread: a literal or a static buffer.\n @param[in]  entry       Thread entry-point function.  Must not be NULL.\n @param[in]  arg         Opaque argument forwarded to @p entry.  May be NULL.\n @param[in]  priority    Scheduling priority, at most @ref OVE_PRIO_MAX\n                         (larger values return OVE_ERR_INVALID_PARAM).\n @param[in]  stack_size  Stack size in bytes.  Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_destroy"]
     pub fn ove_thread_create(
         handle: *mut ove_thread_t,
         name: *const core::ffi::c_char,
@@ -890,7 +890,7 @@ unsafe extern "C" {
     pub fn ove_thread_get_state(handle: ove_thread_t) -> ove_thread_state_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if @p handle or\n         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not\n         provide runtime accounting."]
+    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n Runtime accounting exists on FreeRTOS with @c configGENERATE_RUN_TIME_STATS\n and on Zephyr with @c CONFIG_THREAD_RUNTIME_STATS; NuttX and the host test\n backend always return @c OVE_ERR_NOT_SUPPORTED.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if @p handle or\n         @p stats is NULL, @c OVE_ERR_NOT_SUPPORTED if the backend does not\n         provide runtime accounting."]
     pub fn ove_thread_get_runtime_stats(
         handle: ove_thread_t,
         stats: *mut ove_thread_stats,
@@ -954,7 +954,7 @@ const _: () = {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_thread_info {
-    #[doc = "< Thread name (static, do not free)."]
+    #[doc = " Thread name, owned by the backend and short-lived: on NuttX valid\n until the next ove_thread_list call from any thread (it reuses one\n snapshot), on FreeRTOS until any task is created or deleted (it points\n into the shared registry, which moves entries), on Zephyr until the\n thread is destroyed.  Copy it to keep it."]
     pub name: *const core::ffi::c_char,
     #[doc = "< Opaque native identity; equality only."]
     pub identity: usize,
@@ -1001,7 +1001,7 @@ const _: () = {
         [core::mem::offset_of!(ove_thread_info, native_priority) - 80usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]
+    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n How many threads can be listed depends on the engine.  FreeRTOS lists the\n tasks in a 32-entry registry and needs @c configUSE_TRACE_FACILITY\n (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX lists at most 32 threads per\n call, however large @p max_count is; Zephyr and the host test backend have\n no limit.  Not guaranteed today: once FreeRTOS has created a task while its\n registry was full, or NuttX's per-thread accounting table has run out of\n slots, every later call returns @c OVE_ERR_QUEUE_FULL even when nothing\n was omitted (on NuttX builds with perf events, until a runtime reset).\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable."]
     pub fn ove_thread_list(
         out: *mut ove_thread_info,
         max_count: usize,
@@ -2681,7 +2681,7 @@ unsafe extern "C" {
 #[doc = " @brief Prototype for a shell command handler function.\n\n Called by the shell when the user enters a matching command. @p argc is the\n total number of tokens (including the command name in @p argv[0]) and is\n always at least 1. @p argv is a @c NULL-terminated array of pointers to\n the individual tokens within the line buffer; the strings are valid only\n for the duration of the call.\n\n @param[in] argc  Number of arguments (including the command name).\n @param[in] argv  Array of @p argc argument strings, terminated by @c NULL."]
 pub type ove_shell_cmd_fn =
     Option<unsafe extern "C" fn(argc: core::ffi::c_int, argv: *mut *const core::ffi::c_char)>;
-#[doc = " @brief Descriptor for a single shell command.\n\n Passed by pointer to @ref ove_shell_register_cmd. The structure must\n remain valid (e.g. declared @c static) for the entire system lifetime\n after registration."]
+#[doc = " @brief Descriptor for a single shell command.\n\n Passed by pointer to @ref ove_shell_register_cmd, which copies the\n structure, so it may be an automatic variable. The strings @c name and\n @c help point to are not copied: they must stay valid for as long as the\n command is registered (string literals or static buffers)."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_shell_cmd {
@@ -2709,15 +2709,15 @@ unsafe extern "C" {
     pub fn ove_shell_init() -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a command with the shell.\n\n Adds the command described by @p cmd to the shell's dispatch table. The\n @c name field is used for matching; duplicate names produce\n implementation-defined behavior.\n\n @param[in] cmd  Pointer to a persistent @ref ove_shell_cmd descriptor.\n @return OVE_OK on success, negative error code on failure (e.g. table full).\n @note Requires @c CONFIG_OVE_SHELL."]
+    #[doc = " @brief Register a command with the shell.\n\n Copies @p cmd into the shell's dispatch table, which holds 16 commands\n including the built-in @c help. The @c name field is used for matching.\n Registering a name that is already registered replaces that command in\n place, even when the table is full.\n\n @param[in] cmd  Command descriptor; copied, see @ref ove_shell_cmd.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p cmd, its @c name or\n         its @c handler is NULL, OVE_ERR_NO_MEMORY if the table is full, or\n         OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_SHELL.\n @note Requires @c CONFIG_OVE_SHELL."]
     pub fn ove_shell_register_cmd(cmd: *const ove_shell_cmd) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Feed one character into the shell input processor.\n\n Appends @p c to the internal line buffer. On receipt of a newline the\n accumulated line is tokenised and dispatched to the matching registered\n command handler, or an error message is printed if no match is found.\n Backspace and other editing characters are handled transparently.\n\n This function is typically called from a console receive ISR, a DMA\n callback, or a dedicated input task.\n\n @param[in] c  Character to process (raw byte from the console).\n @note Requires @c CONFIG_OVE_SHELL."]
+    #[doc = " @brief Feed one character into the shell input processor.\n\n Appends @p c to the internal line buffer. On receipt of a newline the\n accumulated line is tokenised and dispatched to the matching registered\n command handler, or an error message is printed if no match is found.\n Backspace and other editing characters are handled transparently.\n\n Call it from thread context, typically a dedicated input task, never from\n an ISR: the matching command's handler runs synchronously inside this\n call, along with its log output and console writes. The shell is not\n reentrant; feed it from one thread at a time, which includes\n @ref ove_shell_process_line callers, as both use the same line buffer.\n\n @param[in] c  Character to process (raw byte from the console).\n @note Requires @c CONFIG_OVE_SHELL."]
     pub fn ove_shell_process_char(c: core::ffi::c_int);
 }
 unsafe extern "C" {
-    #[doc = " @brief Process a complete input line through the shell.\n\n Tokenises @p line and dispatches to the matching command handler.\n Equivalent to feeding each character of the line via process_char,\n but more convenient for programmatic use (e.g. WebSocket terminal).\n\n @param[in] line NUL-terminated input line (without trailing newline)."]
+    #[doc = " @brief Process a complete input line through the shell.\n\n Tokenises @p line and dispatches to the matching command handler.\n Equivalent to feeding each character of the line via process_char,\n but more convenient for programmatic use (e.g. WebSocket terminal).\n The same thread-context and reentrancy rules apply.\n\n @param[in] line NUL-terminated input line (without trailing newline)."]
     pub fn ove_shell_process_line(line: *const core::ffi::c_char);
 }
 unsafe extern "C" {

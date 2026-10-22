@@ -30,6 +30,10 @@ pub fn init() Error!void {
 /// - `handler`: called when the command is entered. Receives standard `argc`/`argv`
 ///   arguments. Must not block indefinitely.
 ///
+/// The shell keeps the `name_` and `help` pointers, not copies: both strings
+/// must stay valid while the command is registered. Registering a name again
+/// replaces that command, even when the table is full.
+///
 /// Returns `Error` if registration fails (e.g. command table is full).
 pub fn registerCmd(
     name_: [*:0]const u8,
@@ -52,9 +56,10 @@ pub fn registerCmd(
 
 /// Feed a single character into the shell input parser.
 ///
-/// Call this from a console receive callback or polling loop. The shell
-/// accumulates characters and executes the registered command handler when
-/// a newline is received.
+/// Call this from thread context, typically a console polling loop, never
+/// from an ISR: the shell accumulates characters and runs the matching
+/// command handler inside the call that delivers the newline. Feed the shell
+/// from one thread at a time (`processLine` included).
 pub fn processChar(ch: u8) void {
     c.ove_shell_process_char(@intCast(ch));
 }
@@ -63,6 +68,7 @@ pub fn processChar(ch: u8) void {
 ///
 /// Tokenises the line and dispatches to the matching command handler.
 /// More convenient than `processChar` for programmatic use (e.g. WebSocket terminal).
+/// The same thread-context and one-thread-at-a-time rules apply.
 pub fn processLine(line: [*:0]const u8) void {
     c.ove_shell_process_line(line);
 }

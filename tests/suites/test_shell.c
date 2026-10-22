@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include <stdio.h>
 #include <string.h>
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
@@ -271,6 +272,62 @@ static void test_shell_argv_null_terminated(void **state)
 	assert_true(s_argv_terminated);
 }
 
+/* The table keeps a copy of the descriptor: overwriting the caller's struct
+ * after registration does not affect the command.  The struct is static so
+ * the overwrite cannot be optimised away; an automatic one going out of scope
+ * is the same case. */
+static void test_shell_register_copies_descriptor(void **state)
+{
+	(void)state;
+	static struct ove_shell_cmd cmd;
+	OVE_TEST_ASSERT_OK(ove_shell_init());
+	cmd = (struct ove_shell_cmd){
+		.name = "ovecopy",
+		.help = "copy",
+		.handler = test_first_handler,
+	};
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&cmd));
+	memset(&cmd, 0xA5, sizeof(cmd));
+
+	s_first_calls = 0;
+	s_second_calls = 0;
+	ove_shell_process_line("ovecopy");
+	assert_int_equal(s_first_calls, 1);
+	assert_int_equal(s_second_calls, 0);
+}
+
+/* A full table still accepts re-registering a name already in it. */
+static void test_shell_reregister_when_full(void **state)
+{
+	(void)state;
+	static char names[20][8];	      /* more than the table holds */
+	OVE_TEST_ASSERT_OK(ove_shell_init()); /* registers "help" */
+
+	int rc = OVE_OK;
+	for (size_t i = 0; i < sizeof(names) / sizeof(names[0]) && rc == OVE_OK; i++) {
+		snprintf(names[i], sizeof(names[i]), "f%02u", (unsigned)i);
+		struct ove_shell_cmd c = {
+			.name = names[i],
+			.help = "fill",
+			.handler = test_first_handler,
+		};
+		rc = ove_shell_register_cmd(&c);
+	}
+	assert_int_equal(rc, OVE_ERR_NO_MEMORY);
+
+	struct ove_shell_cmd again = {
+		.name = "f03",
+		.help = "replaced",
+		.handler = test_second_handler,
+	};
+	s_first_calls = 0;
+	s_second_calls = 0;
+	assert_int_equal(ove_shell_register_cmd(&again), OVE_OK);
+	ove_shell_process_line("f03");
+	assert_int_equal(s_first_calls, 0);
+	assert_int_equal(s_second_calls, 1);
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_shell_run(void)
@@ -286,6 +343,8 @@ int test_shell_run(void)
 		cmocka_unit_test(test_shell_output_hook),
 		cmocka_unit_test(test_shell_process_line_terminates),
 		cmocka_unit_test(test_shell_reregister_replaces),
+		cmocka_unit_test(test_shell_register_copies_descriptor),
+		cmocka_unit_test(test_shell_reregister_when_full),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
