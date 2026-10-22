@@ -1252,7 +1252,7 @@ pub struct ove_audio_node_ops {
     pub start: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
     #[doc = " @brief Stop the node (called on graph stop).  NULL = no-op.\n\n @param[in] ctx  Node context pointer.\n @return 0 on success, negative error code on failure."]
     pub stop: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
-    #[doc = " @brief Process one buffer period.\n\n Called in topological order each graph cycle:\n - Sources: @p in is NULL; the node must fill @p out.\n - Processors: read from @p in, write to @p out (separate buffers).\n - Sinks: read from @p in; @p out is NULL.\n\n Runs on the thread that drives the graph: the engine's audio thread\n when a device sink drives it, or the caller of\n ove_audio_graph_process().  ove_audio_graph_stop() and\n ove_audio_graph_deinit() wait for a running cycle, so neither may be\n called from here; see ove_audio_graph_stop() for the native drivers\n where this is not yet guaranteed.\n\n @param[in]  ctx  Node context pointer.\n @param[in]  in   Input buffer, or NULL for sources.\n @param[out] out  Output buffer to fill, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
+    #[doc = " @brief Process one buffer period.\n\n Called in topological order each graph cycle:\n - Sources: @p in is NULL; the node must fill @p out.\n - Processors: read from @p in, write to @p out (separate buffers).\n - Sinks: read from @p in; @p out is NULL.\n\n Runs on the thread that drives the graph: the engine's audio thread\n when a device sink drives it, or the caller of\n ove_audio_graph_process().  ove_audio_graph_stop() and\n ove_audio_graph_deinit() wait for a running cycle, so neither may be\n called from here.\n\n @param[in]  ctx  Node context pointer.\n @param[in]  in   Input buffer, or NULL for sources.\n @param[out] out  Output buffer to fill, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
     pub process: Option<
         unsafe extern "C" fn(
             ctx: *mut core::ffi::c_void,
@@ -1331,7 +1331,7 @@ const _: () = {
     ["Offset of field: ove_audio_channel_map::map"]
         [core::mem::offset_of!(ove_audio_channel_map, map) - 4usize];
 };
-#[doc = " @brief Callback invoked by the tap node for every processed buffer.\n\n Runs in the tap node's @c process step, on the thread that drives the\n graph (see @ref ove_audio_node_ops); keep it short, as it delays the\n cycle.  ove_audio_graph_stop() and ove_audio_graph_deinit() wait for a\n running call, so @p user_data must stay valid until either returns, and the\n callback must not call them.  Not guaranteed today with the native drivers\n listed at ove_audio_graph_stop().\n\n @param[in] buf        Buffer containing the observed audio data.\n @param[in] user_data  Opaque pointer supplied at node creation."]
+#[doc = " @brief Callback invoked by the tap node for every processed buffer.\n\n Runs in the tap node's @c process step, on the thread that drives the\n graph (see @ref ove_audio_node_ops); keep it short, as it delays the\n cycle.  ove_audio_graph_stop() and ove_audio_graph_deinit() wait for a\n running call, so @p user_data must stay valid until either returns, and the\n callback must not call them.\n\n @param[in] buf        Buffer containing the observed audio data.\n @param[in] user_data  Opaque pointer supplied at node creation."]
 pub type ove_audio_tap_fn =
     Option<unsafe extern "C" fn(buf: *const ove_audio_buf, user_data: *mut core::ffi::c_void)>;
 unsafe extern "C" {
@@ -1498,7 +1498,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Release all resources held by an audio graph.\n\n Stops the graph (if running) and waits for a cycle the application is\n running in ove_audio_graph_process(), as ove_audio_graph_stop() does, then\n tears down each node and frees the heap-allocated inter-node buffer block.\n Caller-supplied buffer storage registered via\n @ref ove_audio_graph_set_buf_storage is left intact.  Call it from thread\n context, never from a node or tap callback, and start no cycle once it has\n begun: the graph is cleared when it returns.  See ove_audio_graph_stop()\n for the native drivers where this is not yet guaranteed.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
+    #[doc = " @brief Release all resources held by an audio graph.\n\n Stops the graph (if running) and waits for a cycle the application is\n running in ove_audio_graph_process(), as ove_audio_graph_stop() does, then\n tears down each node and frees the heap-allocated inter-node buffer block.\n Caller-supplied buffer storage registered via\n @ref ove_audio_graph_set_buf_storage is left intact.  Call it from thread\n context, never from a node or tap callback, and start no cycle once it has\n begun: the graph is cleared when it returns.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
     pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
 }
 unsafe extern "C" {
@@ -1547,7 +1547,7 @@ unsafe extern "C" {
     pub fn ove_audio_graph_start(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop the audio graph.\n\n Refuses new cycles and waits for one already running in\n ove_audio_graph_process(), on any thread, then calls each node's @c stop\n callback in reverse topological order and transitions the graph back to\n @c OVE_AUDIO_GRAPH_READY.  A device sink's @c stop joins or parks the\n thread that drives the graph, so once this returns no node or tap callback\n is running or starts until the next ove_audio_graph_start().  Call it from thread context, never from a node or tap callback:\n it would wait for its own cycle.\n\n Not guaranteed today with the NuttX native audio driver: its audio thread is\n not joined and keeps driving the stopped graph (and touching it after\n ove_audio_graph_deinit()), which can, rarely, leave a later stop or deinit\n waiting forever.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    #[doc = " @brief Stop the audio graph.\n\n Refuses new cycles and waits for one already running in\n ove_audio_graph_process(), on any thread, then calls each node's @c stop\n callback in reverse topological order and transitions the graph back to\n @c OVE_AUDIO_GRAPH_READY.  A device sink's @c stop joins or parks the\n thread that drives the graph, so once this returns no node or tap callback\n is running or starts until the next ove_audio_graph_start().  Call it from\n thread context, never from a node or tap callback: it would wait for its\n own cycle.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
     pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1664,7 +1664,7 @@ const _: () = {
         [core::mem::offset_of!(ove_audio_device_cfg, thread_stack_size) - 24usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Add a hardware audio source node to the graph.\n\n Creates a source node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node captures audio\n from the selected transport and exposes it as graph output each cycle.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_sink, ove_audio_graph_connect"]
+    #[doc = " @brief Add a hardware audio source node to the graph.\n\n Creates a source node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node captures audio\n from the selected transport and exposes it as graph output each cycle.\n With the native I2S drivers, a source for another graph returns\n @c OVE_ERR_BUSY while a graph holding the device sink exists (see\n ove_audio_device_sink()).\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_sink, ove_audio_graph_connect"]
     pub fn ove_audio_device_source(
         g: *mut ove_audio_graph,
         cfg: *const ove_audio_device_cfg,
@@ -1672,7 +1672,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Add a hardware audio sink node to the graph.\n\n Creates a sink node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node consumes audio\n from its upstream connection and delivers it to the selected transport\n each processing cycle.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_source, ove_audio_graph_connect"]
+    #[doc = " @brief Add a hardware audio sink node to the graph.\n\n Creates a sink node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node consumes audio\n from its upstream connection and delivers it to the selected transport\n each processing cycle.  The native I2S drivers drive one sink: until the\n graph that holds it is deinitialised, another returns @c OVE_ERR_BUSY.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_source, ove_audio_graph_connect"]
     pub fn ove_audio_device_sink(
         g: *mut ove_audio_graph,
         cfg: *const ove_audio_device_cfg,

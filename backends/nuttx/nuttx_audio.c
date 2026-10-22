@@ -21,6 +21,7 @@
 #include <semaphore.h>
 #include <sched.h>
 #include <errno.h>
+#include <time.h>
 #include <mqueue.h>
 #include <sys/ioctl.h>
 #include <nuttx/audio/audio.h>
@@ -41,6 +42,12 @@
  * pthread's stack rather than the heap.  Matches configs seen in practice
  * and is enforced at audio graph setup. */
 #define MAX_NUM_BUFFERS 16
+/* Sent by the sink's stop to end the audio pthread. */
+#define AUDIO_MSG_OVE_QUIT AUDIO_MSG_USER
+/* How long the stopping pthread waits for the device to hand its buffers
+ * back before it gives up on those still out. */
+#define AUDIO_QUIT_TIMEOUT_S 1
+#define AUDIO_MQ_NAME "/" CONFIG_OVE_APP_NAME "_audio"
 
 /* ========================================================================= */
 /* SOURCE CONTEXT                                                            */
@@ -74,6 +81,10 @@ struct nuttx_sink_ctx {
 	int play_fd;
 	mqd_t audio_mq;
 	pthread_t audio_tid;
+	bool thread_started;
+	bool rec_mq_registered;
+	bool play_mq_registered;
+	volatile bool running; /* cleared by stop: no buffer is queued again */
 
 	/* Stashed TX buffer pointer — set by the audio pthread before calling
      * ove_audio_graph_process(), consumed by nuttx_sink_process(). */
@@ -99,6 +110,11 @@ static void *audio_thread_fn(void *arg)
      * The MAX_NUM_BUFFERS cap is enforced when the sink is created. */
 	struct ap_buffer_s *rec_bufs[MAX_NUM_BUFFERS] = {0};
 	struct ap_buffer_s *play_bufs[MAX_NUM_BUFFERS] = {0};
+	/* Buffers the device has handed back; only these are freed. */
+	bool rec_home[MAX_NUM_BUFFERS];
+	bool play_home[MAX_NUM_BUFFERS];
+	int nhome;
+	bool quit = false;
 	struct audio_msg_s msg;
 	unsigned int prio;
 	int rec_nbuffers;
@@ -149,6 +165,11 @@ static void *audio_thread_fn(void *arg)
      * heap allocation needed.  The num-buffers cap was enforced at sink
      * creation, so the counts here always fit. */
 
+	for (i = 0; i < MAX_NUM_BUFFERS; i++) {
+		rec_home[i] = true;
+		play_home[i] = true;
+	}
+
 	/* Allocate NuttX audio buffers */
 
 	for (i = 0; i < rec_nbuffers; i++) {
@@ -185,7 +206,9 @@ static void *audio_thread_fn(void *arg)
 		play_bufs[i]->flags = AUDIO_APB_PLAY;
 		buf_desc.numbytes = play_buf_size;
 		buf_desc.u.buffer = play_bufs[i];
-		ioctl(sc->play_fd, AUDIOIOC_ENQUEUEBUFFER, (unsigned long)&buf_desc);
+		if (ioctl(sc->play_fd, AUDIOIOC_ENQUEUEBUFFER, (unsigned long)&buf_desc) >= 0) {
+			play_home[i] = false;
+		}
 	}
 
 	ioctl(sc->play_fd, AUDIOIOC_START, 0);
@@ -198,20 +221,56 @@ static void *audio_thread_fn(void *arg)
 		rec_bufs[i]->flags = AUDIO_APB_RECORD;
 		buf_desc.numbytes = rec_buf_size;
 		buf_desc.u.buffer = rec_bufs[i];
-		ioctl(sc->record_fd, AUDIOIOC_ENQUEUEBUFFER, (unsigned long)&buf_desc);
+		if (ioctl(sc->record_fd, AUDIOIOC_ENQUEUEBUFFER, (unsigned long)&buf_desc) >= 0) {
+			rec_home[i] = false;
+		}
 	}
 
 	ioctl(sc->record_fd, AUDIOIOC_START, 0);
 
 	printf("NuttX audio thread running\n");
 
-	/* Main audio processing loop */
+	/* Main audio processing loop: runs until stop has sent the quit
+	 * message and the device has handed every buffer back, or has not
+	 * done so within AUDIO_QUIT_TIMEOUT_S. */
 
 	for (;;) {
 		ssize_t size;
 
-		size = mq_receive(sc->audio_mq, (char *)&msg, sizeof(msg), &prio);
+		if (quit) {
+			nhome = 0;
+			for (i = 0; i < rec_nbuffers; i++)
+				nhome += rec_home[i];
+			for (i = 0; i < play_nbuffers; i++)
+				nhome += play_home[i];
+			if (nhome == rec_nbuffers + play_nbuffers)
+				break;
+
+			struct timespec deadline;
+			clock_gettime(CLOCK_REALTIME, &deadline);
+			deadline.tv_sec += AUDIO_QUIT_TIMEOUT_S;
+			size = mq_timedreceive(sc->audio_mq, (char *)&msg, sizeof(msg), &prio,
+					       &deadline);
+		} else {
+			size = mq_receive(sc->audio_mq, (char *)&msg, sizeof(msg), &prio);
+		}
+		if (size < 0) {
+			if (errno == EINTR)
+				continue;
+			break; /* timed out after quit, or the queue is gone */
+		}
 		if (size != sizeof(msg)) {
+			continue;
+		}
+
+		/* The devices are started here, so they are stopped here too:
+		 * a STOP from the stopping thread could land before the START. */
+		if (msg.msg_id == AUDIO_MSG_OVE_QUIT) {
+			if (!quit) {
+				ioctl(sc->record_fd, AUDIOIOC_STOP, 0);
+				ioctl(sc->play_fd, AUDIOIOC_STOP, 0);
+			}
+			quit = true;
 			continue;
 		}
 
@@ -238,11 +297,18 @@ static void *audio_thread_fn(void *arg)
 			}
 
 			if (is_play) {
+				play_home[j] = true;
 				apb->curbyte = 0;
 				dq_addlast(&apb->dq_entry, &play_avail);
 			} else if (is_rec) {
+				rec_home[j] = true;
 				apb->curbyte = 0;
 				dq_addlast(&apb->dq_entry, &rec_done);
+			}
+
+			/* Stopped: keep what comes back instead of queueing it. */
+			if (!sc->running) {
+				continue;
 			}
 
 			/* Process all paired RX/TX buffers */
@@ -286,8 +352,13 @@ static void *audio_thread_fn(void *arg)
 				rec_apb->flags = AUDIO_APB_RECORD;
 				buf_desc.numbytes = rec_buf_size;
 				buf_desc.u.buffer = rec_apb;
-				ioctl(sc->record_fd, AUDIOIOC_ENQUEUEBUFFER,
-				      (unsigned long)&buf_desc);
+				if (ioctl(sc->record_fd, AUDIOIOC_ENQUEUEBUFFER,
+					  (unsigned long)&buf_desc) >= 0) {
+					for (j = 0; j < rec_nbuffers; j++) {
+						if (rec_bufs[j] == rec_apb)
+							rec_home[j] = false;
+					}
+				}
 
 				/* Enqueue playback buffer with processed audio */
 
@@ -296,22 +367,29 @@ static void *audio_thread_fn(void *arg)
 				play_apb->flags = AUDIO_APB_PLAY;
 				buf_desc.numbytes = (int)play_apb->nbytes;
 				buf_desc.u.buffer = play_apb;
-				ioctl(sc->play_fd, AUDIOIOC_ENQUEUEBUFFER,
-				      (unsigned long)&buf_desc);
+				if (ioctl(sc->play_fd, AUDIOIOC_ENQUEUEBUFFER,
+					  (unsigned long)&buf_desc) >= 0) {
+					for (j = 0; j < play_nbuffers; j++) {
+						if (play_bufs[j] == play_apb)
+							play_home[j] = false;
+					}
+				}
 			}
 		}
 	}
 
+	/* A buffer the device still holds is left to it rather than freed
+	 * under it. */
 err_out:
 	for (i = 0; i < rec_nbuffers; i++) {
-		if (rec_bufs[i] != NULL) {
+		if (rec_bufs[i] != NULL && rec_home[i]) {
 			buf_desc.u.buffer = rec_bufs[i];
 			ioctl(sc->record_fd, AUDIOIOC_FREEBUFFER, (unsigned long)&buf_desc);
 		}
 	}
 
 	for (i = 0; i < play_nbuffers; i++) {
-		if (play_bufs[i] != NULL) {
+		if (play_bufs[i] != NULL && play_home[i]) {
 			buf_desc.u.buffer = play_bufs[i];
 			ioctl(sc->play_fd, AUDIOIOC_FREEBUFFER, (unsigned long)&buf_desc);
 		}
@@ -374,6 +452,39 @@ static int nuttx_sink_configure(void *ctx, const struct ove_audio_fmt *in,
 	return OVE_OK;
 }
 
+/* Undo what start opened: the queue, the reservations and both devices. */
+static void nuttx_sink_release(struct nuttx_sink_ctx *sc)
+{
+	/* Registering the queue takes a reference on it that only
+	 * AUDIOIOC_UNREGISTERMQ drops; closing the device does not. */
+	if (sc->rec_mq_registered) {
+		ioctl(sc->record_fd, AUDIOIOC_UNREGISTERMQ, (unsigned long)sc->audio_mq);
+		sc->rec_mq_registered = false;
+	}
+	if (sc->play_mq_registered) {
+		ioctl(sc->play_fd, AUDIOIOC_UNREGISTERMQ, (unsigned long)sc->audio_mq);
+		sc->play_mq_registered = false;
+	}
+
+	if (sc->audio_mq != (mqd_t)-1) {
+		mq_close(sc->audio_mq);
+		mq_unlink(AUDIO_MQ_NAME);
+		sc->audio_mq = (mqd_t)-1;
+	}
+
+	if (sc->record_fd >= 0) {
+		ioctl(sc->record_fd, AUDIOIOC_RELEASE, 0);
+		close(sc->record_fd);
+		sc->record_fd = -1;
+	}
+
+	if (sc->play_fd >= 0) {
+		ioctl(sc->play_fd, AUDIOIOC_RELEASE, 0);
+		close(sc->play_fd);
+		sc->play_fd = -1;
+	}
+}
+
 static int nuttx_sink_start(void *ctx)
 {
 	struct nuttx_sink_ctx *sc = (struct nuttx_sink_ctx *)ctx;
@@ -432,23 +543,24 @@ static int nuttx_sink_start(void *ctx)
 
 	/* Create message queue */
 
+	/* Room for every buffer coming back plus the COMPLETEs while the
+	 * pthread sits in AUDIOIOC_STOP: a full queue would block the lower
+	 * half's worker that the STOP waits for. */
 	mq_attr_s.mq_maxmsg = sc->num_buffers * 4;
 	mq_attr_s.mq_msgsize = sizeof(struct audio_msg_s);
 	mq_attr_s.mq_curmsgs = 0;
 	mq_attr_s.mq_flags = 0;
 
-	sc->audio_mq =
-		mq_open("/" CONFIG_OVE_APP_NAME "_audio", O_RDWR | O_CREAT, 0644, &mq_attr_s);
+	sc->audio_mq = mq_open(AUDIO_MQ_NAME, O_RDWR | O_CREAT, 0644, &mq_attr_s);
 	if (sc->audio_mq == (mqd_t)-1) {
-		close(sc->record_fd);
-		close(sc->play_fd);
-		sc->record_fd = -1;
-		sc->play_fd = -1;
+		nuttx_sink_release(sc);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
-	ioctl(sc->record_fd, AUDIOIOC_REGISTERMQ, (unsigned long)sc->audio_mq);
-	ioctl(sc->play_fd, AUDIOIOC_REGISTERMQ, (unsigned long)sc->audio_mq);
+	sc->rec_mq_registered =
+		ioctl(sc->record_fd, AUDIOIOC_REGISTERMQ, (unsigned long)sc->audio_mq) >= 0;
+	sc->play_mq_registered =
+		ioctl(sc->play_fd, AUDIOIOC_REGISTERMQ, (unsigned long)sc->audio_mq) >= 0;
 
 	/* Spawn audio pthread */
 
@@ -459,36 +571,41 @@ static int nuttx_sink_start(void *ctx)
 	pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
 	pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
 
+	sc->running = true;
 	ret = pthread_create(&sc->audio_tid, &attr, audio_thread_fn, sc);
 	pthread_attr_destroy(&attr);
 
 	if (ret != 0) {
-		mq_close(sc->audio_mq);
-		mq_unlink("/" CONFIG_OVE_APP_NAME "_audio");
-		close(sc->record_fd);
-		close(sc->play_fd);
-		sc->audio_mq = (mqd_t)-1;
-		sc->record_fd = -1;
-		sc->play_fd = -1;
+		sc->running = false;
+		nuttx_sink_release(sc);
 		return OVE_ERR_NO_MEMORY;
 	}
+	sc->thread_started = true;
 
 	pthread_setname_np(sc->audio_tid, CONFIG_OVE_APP_NAME "_audio");
 	return OVE_OK;
 }
 
+/* Has the audio pthread stop the devices, collect the buffers they hand
+ * back, free them and exit, and joins it before releasing what start
+ * opened, so a later start begins from nothing. */
 static int nuttx_sink_stop(void *ctx)
 {
 	struct nuttx_sink_ctx *sc = (struct nuttx_sink_ctx *)ctx;
+	struct audio_msg_s quit;
 
-	if (sc->record_fd >= 0) {
-		ioctl(sc->record_fd, AUDIOIOC_STOP, 0);
+	if (!sc->thread_started) {
+		return OVE_OK;
 	}
 
-	if (sc->play_fd >= 0) {
-		ioctl(sc->play_fd, AUDIOIOC_STOP, 0);
-	}
+	sc->running = false;
+	memset(&quit, 0, sizeof(quit));
+	quit.msg_id = AUDIO_MSG_OVE_QUIT;
+	(void)mq_send(sc->audio_mq, (const char *)&quit, sizeof(quit), 0);
+	pthread_join(sc->audio_tid, NULL);
+	sc->thread_started = false;
 
+	nuttx_sink_release(sc);
 	return OVE_OK;
 }
 
@@ -516,21 +633,9 @@ static void nuttx_sink_destroy(void *ctx)
 {
 	struct nuttx_sink_ctx *sc = (struct nuttx_sink_ctx *)ctx;
 
-	if (sc->audio_mq != (mqd_t)-1) {
-		mq_close(sc->audio_mq);
-		mq_unlink("/" CONFIG_OVE_APP_NAME "_audio");
-		sc->audio_mq = (mqd_t)-1;
-	}
-
-	if (sc->record_fd >= 0) {
-		close(sc->record_fd);
-		sc->record_fd = -1;
-	}
-
-	if (sc->play_fd >= 0) {
-		close(sc->play_fd);
-		sc->play_fd = -1;
-	}
+	(void)nuttx_sink_stop(sc);
+	nuttx_sink_release(sc);
+	sc->graph = NULL;
 }
 
 static const struct ove_audio_node_ops nuttx_sink_ops = {
@@ -556,6 +661,11 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
+	/* The source context is shared too: leave a running graph's alone. */
+	if (g_sink_ctx.graph != NULL && g_sink_ctx.graph != g) {
+		return OVE_ERR_BUSY;
+	}
+
 	struct nuttx_source_ctx *ctx = &g_source_ctx;
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->fmt = cfg->fmt;
@@ -575,6 +685,12 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
+	/* One audio pthread and device pair: a second sink would take them
+	 * from the first. */
+	if (g_sink_ctx.graph != NULL) {
+		return OVE_ERR_BUSY;
+	}
+
 	struct nuttx_sink_ctx *ctx = &g_sink_ctx;
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->fmt = cfg->fmt;
@@ -592,6 +708,9 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	ctx->audio_mq = (mqd_t)-1;
 
 	int idx = ove_audio_graph_add_node(g, &nuttx_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+	if (idx < 0) {
+		ctx->graph = NULL;
+	}
 	return idx;
 }
 

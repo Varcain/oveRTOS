@@ -147,8 +147,7 @@ OVE_NODISCARD int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int f
  * Caller-supplied buffer storage registered via
  * @ref ove_audio_graph_set_buf_storage is left intact.  Call it from thread
  * context, never from a node or tap callback, and start no cycle once it has
- * begun: the graph is cleared when it returns.  See ove_audio_graph_stop()
- * for the native drivers where this is not yet guaranteed.
+ * begun: the graph is cleared when it returns.
  *
  * @param[in] g  Initialised graph instance.
  *
@@ -348,13 +347,9 @@ OVE_NODISCARD int ove_audio_graph_start(struct ove_audio_graph *g);
  * callback in reverse topological order and transitions the graph back to
  * @c OVE_AUDIO_GRAPH_READY.  A device sink's @c stop joins or parks the
  * thread that drives the graph, so once this returns no node or tap callback
- * is running or starts until the next ove_audio_graph_start().  Call it from thread context, never from a node or tap callback:
- * it would wait for its own cycle.
- *
- * Not guaranteed today with the NuttX native audio driver: its audio thread is
- * not joined and keeps driving the stopped graph (and touching it after
- * ove_audio_graph_deinit()), which can, rarely, leave a later stop or deinit
- * waiting forever.
+ * is running or starts until the next ove_audio_graph_start().  Call it from
+ * thread context, never from a node or tap callback: it would wait for its
+ * own cycle.
  *
  * @param[in] g  Running graph instance.
  * @return 0 on success, negative error code on failure.

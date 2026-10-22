@@ -270,9 +270,7 @@ pub fn device_cfg_i2s(
 ///
 /// [`Graph::stop`] and dropping the graph wait for a processing cycle that is
 /// running and, with a device sink, stop the thread that drives the graph;
-/// never call them from a node or tap callback.  Not guaranteed today with
-/// the native NuttX audio driver (see `ove_audio_graph_stop`): there, keep a
-/// running graph alive (for instance in a static) rather than dropping it.
+/// never call them from a node or tap callback (see `ove_audio_graph_stop`).
 ///
 /// # Example
 ///
@@ -338,6 +336,9 @@ impl Graph {
     }
 
     /// Add a hardware audio source node.  Returns the node index.
+    ///
+    /// Fails with `Error::Busy` while another graph holds the native I2S sink
+    /// (see [`Graph::device_sink`]).
     pub fn device_source(
         &mut self,
         cfg: &bindings::ove_audio_device_cfg,
@@ -354,6 +355,9 @@ impl Graph {
     }
 
     /// Add a hardware audio sink node.  Returns the node index.
+    ///
+    /// The native I2S drivers drive one sink: until the graph holding it is
+    /// dropped, another fails with `Error::Busy`.
     pub fn device_sink(
         &mut self,
         cfg: &bindings::ove_audio_device_cfg,

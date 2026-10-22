@@ -73,7 +73,7 @@ sequenceDiagram
     Sink-->>Drv: copies to DMA TX buffer
 ```
 
-`ove_audio_graph_stop()` and `ove_audio_graph_deinit()` refuse new cycles (`ove_audio_graph_process()` returns `OVE_ERR_NOT_SUPPORTED` and skips the cycle) and wait for a running one, and the device sink's `stop` joins or parks the driver thread, so no node callback (a tap's included) runs after either returns. Call them from thread context, never from a node or tap callback. Not guaranteed today with the NuttX native driver: its driver thread is not joined and keeps driving the stopped graph.
+`ove_audio_graph_stop()` and `ove_audio_graph_deinit()` refuse new cycles (`ove_audio_graph_process()` returns `OVE_ERR_NOT_SUPPORTED` and skips the cycle) and wait for a running one, and the device sink's `stop` joins or parks the driver thread, so no node callback (a tap's included) runs after either returns. Call them from thread context, never from a node or tap callback.
 
 ### App-driven (testing / offline)
 
@@ -120,6 +120,8 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 |-----------|--------|------|---------|
 | `OVE_AUDIO_TRANSPORT_I2S` | Yes | Yes | FreeRTOS (STM32 SAI/DMA), Zephyr (device tree), NuttX (`/dev/audio`) |
 | `OVE_AUDIO_TRANSPORT_PDM` | Yes | No | FreeRTOS (STM32 DFSDM), Zephyr |
+
+The native I2S drivers drive one sink: until the graph holding it is deinitialised, another device sink, or a device source for another graph, returns `OVE_ERR_BUSY`.
 
 ## Custom Nodes
 

@@ -79,6 +79,9 @@ struct ove_audio_device_cfg {
  * Creates a source node backed by the hardware device described in
  * @p cfg and registers it with the graph.  The node captures audio
  * from the selected transport and exposes it as graph output each cycle.
+ * With the native I2S drivers, a source for another graph returns
+ * @c OVE_ERR_BUSY while a graph holding the device sink exists (see
+ * ove_audio_device_sink()).
  *
  * @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.
  * @param[in] cfg   Device configuration describing the transport and format.
@@ -97,7 +100,8 @@ OVE_NODISCARD int ove_audio_device_source(struct ove_audio_graph *g,
  * Creates a sink node backed by the hardware device described in
  * @p cfg and registers it with the graph.  The node consumes audio
  * from its upstream connection and delivers it to the selected transport
- * each processing cycle.
+ * each processing cycle.  The native I2S drivers drive one sink: until the
+ * graph that holds it is deinitialised, another returns @c OVE_ERR_BUSY.
  *
  * @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.
  * @param[in] cfg   Device configuration describing the transport and format.
