@@ -295,6 +295,63 @@ static void test_graph_build_simple(void **state)
 	ove_audio_graph_deinit(&g);
 }
 
+/* src -> proc -> sink: the sink gets no buffer, so two mono S16 buffers. */
+#define CHAIN_FRAMES 256
+#define CHAIN_BYTES OVE_AUDIO_GRAPH_STORAGE_BYTES(2, CHAIN_FRAMES, 1, 2)
+
+OVE_NODISCARD static int add_chain(struct ove_audio_graph *g)
+{
+	int src = ove_audio_graph_add_node(g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
+	int proc =
+		ove_audio_graph_add_node(g, &mock_proc_ops, NULL, "proc", OVE_AUDIO_NODE_PROCESSOR);
+	int sink = ove_audio_graph_add_node(g, &mock_sink_ops, NULL, "sink", OVE_AUDIO_NODE_SINK);
+	if (src < 0 || proc < 0 || sink < 0)
+		return OVE_ERR_INVALID_PARAM;
+	int r = ove_audio_graph_connect(g, src, proc);
+	if (r == OVE_OK)
+		r = ove_audio_graph_connect(g, proc, sink);
+	return r;
+}
+
+static void test_graph_build_storage_too_small(void **state)
+{
+	(void)state;
+	static uint8_t buf[CHAIN_BYTES] __attribute__((aligned(4)));
+	memset(&g, 0, sizeof(g));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_init(&g, CHAIN_FRAMES));
+	OVE_TEST_ASSERT_OK(add_chain(&g));
+
+	/* One byte short fails and leaves the graph buildable... */
+	OVE_TEST_ASSERT_OK(ove_audio_graph_set_buf_storage(&g, buf, sizeof(buf) - 1));
+	assert_int_equal(ove_audio_graph_build(&g), OVE_ERR_NO_MEMORY);
+	assert_int_equal(g.state, OVE_AUDIO_GRAPH_IDLE);
+
+	/* ...and exactly the size OVE_AUDIO_GRAPH_STORAGE_BYTES gives is enough. */
+	OVE_TEST_ASSERT_OK(ove_audio_graph_set_buf_storage(&g, buf, sizeof(buf)));
+	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+
+	ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_build_without_storage(void **state)
+{
+	(void)state;
+	memset(&g, 0, sizeof(g));
+	OVE_TEST_ASSERT_OK(ove_audio_graph_init(&g, CHAIN_FRAMES));
+	OVE_TEST_ASSERT_OK(add_chain(&g));
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* No heap to fall back on: build refuses until storage is attached. */
+	assert_int_equal(ove_audio_graph_build(&g), OVE_ERR_NO_MEMORY);
+	assert_int_equal(g.state, OVE_AUDIO_GRAPH_IDLE);
+	OVE_TEST_ASSERT_OK(ove_audio_graph_set_buf_storage(&g, audio_graph_test_buf,
+							   sizeof(audio_graph_test_buf)));
+#endif
+	assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+
+	ove_audio_graph_deinit(&g);
+}
+
 static void test_graph_build_cycle_rejected(void **state)
 {
 	(void)state;
@@ -1450,6 +1507,8 @@ int test_audio_run(void)
 		cmocka_unit_test_setup(test_graph_connect_sink_output_rejected, audio_setup),
 		cmocka_unit_test_setup(test_graph_connect_source_input_rejected, audio_setup),
 		cmocka_unit_test_setup(test_graph_build_simple, audio_setup),
+		cmocka_unit_test_setup(test_graph_build_storage_too_small, audio_setup),
+		cmocka_unit_test_setup(test_graph_build_without_storage, audio_setup),
 		cmocka_unit_test_setup(test_graph_build_cycle_rejected, audio_setup),
 		cmocka_unit_test_setup(test_graph_build_format_mismatch, audio_setup),
 		cmocka_unit_test_setup(test_graph_data_flow, audio_setup),

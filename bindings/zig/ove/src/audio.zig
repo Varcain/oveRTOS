@@ -27,8 +27,8 @@ const pin = @import("pin.zig");
 /// try graph.setBufStorage(&sample_pool);
 /// ```
 ///
-/// In heap mode `setBufStorage` is unnecessary — the engine allocates
-/// per-edge buffers internally.
+/// In heap mode `setBufStorage` is optional: without it the engine allocates
+/// the buffers internally; with it, `build` uses the caller's storage.
 pub const Graph = struct {
     raw: c.struct_ove_audio_graph,
     tracker: pin.Tracker,
@@ -41,7 +41,8 @@ pub const Graph = struct {
     }
 
     /// Attach caller-supplied scratch storage for inter-node sample buffers.
-    /// Required under `CONFIG_OVE_ZERO_HEAP=y`; ignored in heap mode.
+    /// Required under `CONFIG_OVE_ZERO_HEAP=y`; in heap mode `build` uses it
+    /// instead of allocating.
     pub fn setBufStorage(self: *Graph, bytes: []u8) Error!void {
         self.tracker.assertSame(self, "ove.audio.Graph");
         try err.fromCode(c.ove_audio_graph_set_buf_storage(&self.raw, bytes.ptr, bytes.len));

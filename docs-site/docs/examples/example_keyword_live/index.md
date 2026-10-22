@@ -8,10 +8,8 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 |----------|--------|--------------|
 | [C](c.md) | `apps/c/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_heap){:target="_blank"}** |
 | [C++](cpp.md) | `apps/cpp/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_cpp_heap){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/heap/example_keyword_live/` | — |
-| [Zig](zig.md) | `apps/zig/heap/example_keyword_live/` | — |
-
-No browser demo for Rust and Zig: this variant does not start under QEMU yet (its inference thread overflows its stack).
+| [Rust](rust.md) | `apps/rust/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_rust_heap){:target="_blank"}** |
+| [Zig](zig.md) | `apps/zig/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_zig_heap){:target="_blank"}** |
 
 Zero-heap variants live under `apps/<lang>/zeroheap/example_keyword_live/`.
 

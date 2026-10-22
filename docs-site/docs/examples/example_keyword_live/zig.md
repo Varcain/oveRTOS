@@ -1,6 +1,6 @@
 # Keyword Detection (Live Audio + ML) — Zig
 
-Source: `apps/zig/heap/example_keyword_live/src/main.zig` (also `apps/zig/zeroheap/example_keyword_live/src/main.zig`) | *No browser demo — this variant does not start under QEMU yet (its inference thread overflows its stack)*
+Source: `apps/zig/heap/example_keyword_live/src/main.zig` (also `apps/zig/zeroheap/example_keyword_live/src/main.zig`) | **[Browser demo](demo:example_keyword_live_zig_heap){:target="_blank"}**
 
 Real-time 'yes'/'no' keyword detection using on-board microphones and the TensorFlow Lite Micro micro_speech model. Audio is captured via I2S DMA, spectral features are extracted, and a neural network classifier runs inference every ~1 second.
 

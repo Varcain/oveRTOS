@@ -91,12 +91,15 @@ class Graph
 	}
 
 	/// Initialise the graph in a way that works for both heap and zero-heap
-	/// builds.  In zero-heap mode, emits a per-call-site static backing array
-	/// sized by `OVE_AUDIO_GRAPH_STORAGE_BYTES(Nodes, Frames, Channels,
-	/// SampleBytes)` and attaches it via `set_buf_storage()`.  Mirrors the
-	/// C `ove_audio_graph_create` macro — callers can use `.init()` + manual
-	/// `set_buf_storage()` for dynamic sizing, or this helper for the common
-	/// statically-known case.
+	/// builds.  In zero-heap mode, attaches a static backing array sized by
+	/// `OVE_AUDIO_GRAPH_STORAGE_BYTES(Nodes, Frames, Channels, SampleBytes)`
+	/// via `ove_audio_graph_set_buf_storage()`, as C does with
+	/// `OVE_AUDIO_GRAPH_DEFINE`.  The array belongs to the template
+	/// instantiation, not the graph: two graphs created with the same
+	/// arguments share it, and building one clears the other's buffers.  A
+	/// graph that is alive while another one with the same arguments is
+	/// created needs its own storage: `.init()` +
+	/// `ove_audio_graph_set_buf_storage(raw(), ...)`.
 	///
 	/// All template arguments must be compile-time constants.
 	template <unsigned Nodes, unsigned Frames, unsigned Channels = 1, unsigned SampleBytes = 2>

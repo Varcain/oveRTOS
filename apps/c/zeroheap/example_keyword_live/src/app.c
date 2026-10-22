@@ -377,7 +377,8 @@ void ove_main(void)
 	ring_buffer_init(&audio_ring);
 
 	/* Initialize audio graph: I2S DMIC → processor → I2S headphone */
-	static struct ove_audio_graph audio_graph;
+	/* 2 non-sink nodes (dmic-in, dmic-proc) x 512 frames x mono x S16 */
+	OVE_AUDIO_GRAPH_DEFINE(audio_graph, 2, 512, 1, 2);
 	struct ove_audio_device_cfg dev_cfg = {
 		.transport = OVE_AUDIO_TRANSPORT_I2S,
 		.fmt =
@@ -390,6 +391,9 @@ void ove_main(void)
 	};
 
 	int rc = ove_audio_graph_init(&audio_graph, 512); /* 32ms at 16kHz */
+	if (rc == OVE_OK)
+		rc = ove_audio_graph_set_buf_storage(&audio_graph, audio_graph_buf,
+						     sizeof(audio_graph_buf));
 	if (rc != OVE_OK) {
 		OVE_LOG_ERR("Audio graph init failed: %d", rc);
 		ove_run();

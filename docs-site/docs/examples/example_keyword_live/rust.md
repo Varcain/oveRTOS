@@ -1,6 +1,6 @@
 # Keyword Detection (Live Audio + ML) — Rust
 
-Source: `apps/rust/heap/example_keyword_live/src/lib.rs` (also `apps/rust/zeroheap/example_keyword_live/src/lib.rs`) | *No browser demo — this variant does not start under QEMU yet (its inference thread overflows its stack)*
+Source: `apps/rust/heap/example_keyword_live/src/lib.rs` (also `apps/rust/zeroheap/example_keyword_live/src/lib.rs`) | **[Browser demo](demo:example_keyword_live_rust_heap){:target="_blank"}**
 
 Real-time 'yes'/'no' keyword detection using on-board microphones and the TensorFlow Lite Micro micro_speech model. Audio is captured via I2S DMA, spectral features are extracted, and a neural network classifier runs inference every ~1 second.
 

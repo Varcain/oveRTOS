@@ -1519,7 +1519,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Internal heap-backed graph creation function.\n\n Prefer the @ref ove_audio_graph_create macro which works in both heap\n and zero-heap mode.  This function is the underlying implementation used\n in heap mode — inter-node buffers are allocated from the heap when\n @ref ove_audio_graph_build runs.\n\n @param[out] g      Graph instance to initialise.\n @param[in]  frames Per-period frame count.\n @return 0 on success, negative error code on failure.\n\n @see ove_audio_graph_create"]
+    #[doc = " @brief Internal heap-backed graph creation function.\n\n Use the @ref ove_audio_graph_create macro, which is defined in heap mode\n only.  Inter-node buffers are allocated from the heap when\n @ref ove_audio_graph_build runs, unless storage was attached with\n @ref ove_audio_graph_set_buf_storage.\n\n @param[out] g      Graph instance to initialise.\n @param[in]  frames Per-period frame count.\n @return 0 on success, negative error code on failure.\n\n @see ove_audio_graph_create"]
     pub fn ove_audio_graph_create_(
         g: *mut ove_audio_graph,
         frames: core::ffi::c_uint,
