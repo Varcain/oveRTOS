@@ -296,11 +296,10 @@ destroyed. Copy it to keep it.
 How many threads one call can list depends on the engine. FreeRTOS lists the
 tasks in a 32-entry registry and needs `configUSE_TRACE_FACILITY`; NuttX lists
 at most 32 threads however large the buffer; Zephyr and the host test backend
-have no limit. `OVE_ERR_QUEUE_FULL` is not yet a reliable truncation signal:
-once FreeRTOS has created a task while its registry was full, or NuttX's
-per-thread accounting table has run out of slots, every later call returns it
-even when nothing was omitted (on NuttX builds with perf events, until a
-runtime reset).
+have no limit. `OVE_ERR_QUEUE_FULL` means the call left a live thread out; on
+FreeRTOS that includes a task created while the registry was full, which stays
+unlisted while it lives. A thread NuttX has no run-time accounting slot for is
+still listed, with its run-time valid bits clear.
 
 The flags are deliberately granular. For example, FreeRTOS, NuttX, and
 Zephyr can report cumulative running time without pretending that

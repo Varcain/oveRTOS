@@ -740,9 +740,11 @@ comptime {
 ///
 /// The binding imposes no capacity limit. Returns `error.QueueFull` if the
 /// caller buffer or backend-native snapshot cannot hold every thread.
-/// FreeRTOS lists at most 32 tasks and NuttX 32 threads per call. Not yet
-/// reliable: once FreeRTOS or NuttX has overflowed its table, every later
-/// call returns `error.QueueFull` even when nothing was omitted.
+/// FreeRTOS lists at most 32 tasks and NuttX 32 threads per call;
+/// `error.QueueFull` means a live thread was left out (on FreeRTOS, a task
+/// created while its registry was full stays unlisted while it lives). A
+/// thread NuttX has no run-time accounting slot for is still listed, with its
+/// run-time valid bits clear.
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     var actual: usize = 0;
     const raw: [*c]c.struct_ove_thread_info = if (buf.len == 0) null else @ptrCast(buf.ptr);

@@ -479,10 +479,10 @@ static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint3
  * tasks in a 32-entry registry and needs @c configUSE_TRACE_FACILITY
  * (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX lists at most 32 threads per
  * call, however large @p max_count is; Zephyr and the host test backend have
- * no limit.  Not guaranteed today: once FreeRTOS has created a task while its
- * registry was full, or NuttX's per-thread accounting table has run out of
- * slots, every later call returns @c OVE_ERR_QUEUE_FULL even when nothing
- * was omitted (on NuttX builds with perf events, until a runtime reset).
+ * no limit.  @c OVE_ERR_QUEUE_FULL means this call left a live thread out;
+ * on FreeRTOS that includes a task created while the registry was full,
+ * which stays unlisted while it lives.  A thread NuttX has no run-time
+ * accounting slot for is still listed, with its run-time valid bits clear.
  *
  * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
  *         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.

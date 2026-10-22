@@ -397,7 +397,9 @@ struct frt_task_registry_entry {
 
 static struct frt_task_registry_entry g_frt_tasks[OVE_FRT_TASK_REGISTRY_MAX];
 static UBaseType_t g_frt_task_count;
-static bool g_frt_task_overflow;
+/* Live tasks created while the registry was full.  They stay unlisted while
+ * they live, so ove_thread_list() reports QUEUE_FULL until they are gone. */
+static UBaseType_t g_frt_task_untracked;
 
 void ove_backend_freertos_task_created(void *task, const char *name)
 {
@@ -409,7 +411,7 @@ void ove_backend_freertos_task_created(void *task, const char *name)
 		if (g_frt_tasks[i].handle == handle)
 			return;
 	if (g_frt_task_count >= OVE_FRT_TASK_REGISTRY_MAX) {
-		g_frt_task_overflow = true;
+		++g_frt_task_untracked;
 		return;
 	}
 
@@ -436,8 +438,12 @@ void ove_backend_freertos_task_deleted(void *task)
 		if (i != g_frt_task_count)
 			g_frt_tasks[i] = g_frt_tasks[g_frt_task_count];
 		g_frt_tasks[g_frt_task_count] = (struct frt_task_registry_entry){0};
-		break;
+		return;
 	}
+	/* Every created task is either in the registry or counted as untracked,
+	 * so one that is not in the registry was untracked. */
+	if (handle != NULL && g_frt_task_untracked > 0u)
+		--g_frt_task_untracked;
 }
 #endif
 
@@ -557,6 +563,9 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 #endif
 		}
 	}
+	/* Decide while the registry is still the one listed: a task deleted once
+	 * the scheduler resumes must not turn a truncated listing into OVE_OK. */
+	const bool omitted = g_frt_task_untracked > 0u || g_frt_task_count > (UBaseType_t)max_count;
 	(void)xTaskResumeAll();
 #if defined(CONFIG_OVE_LINUX_RT_SCOPE)
 	snapshot_metrics_record(DWT->CYCCNT - snapshot_start);
@@ -564,9 +573,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	if (actual_count)
 		*actual_count = (size_t)filled;
 
-	return (g_frt_task_overflow || g_frt_task_count > (UBaseType_t)max_count)
-		       ? OVE_ERR_QUEUE_FULL
-		       : OVE_OK;
+	return omitted ? OVE_ERR_QUEUE_FULL : OVE_OK;
 #else
 	(void)out;
 	(void)max_count;

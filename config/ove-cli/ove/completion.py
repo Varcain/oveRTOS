@@ -35,7 +35,7 @@ _APP_TEMPLATES = ["hello", "lvgl", "net", "audio"]
 _TEST_NAMES = [
     "stub", "cpp", "rust", "zig", "freertos", "nuttx", "zephyr",
     "qemu", "qemu-freertos", "qemu-freertos-zeroheap",
-    "qemu-nuttx", "qemu-nuttx-zeroheap",
+    "qemu-nuttx", "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
     "qemu-zephyr", "qemu-zephyr-zeroheap",
     "sim", "all",
 ]

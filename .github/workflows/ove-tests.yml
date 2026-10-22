@@ -509,6 +509,9 @@ jobs:
       - name: Run zeroheap tests
         run: timeout 900 make test-qemu-nuttx-zeroheap
 
+      - name: Run cpuload tests
+        run: timeout 900 make test-qemu-nuttx-cpuload
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

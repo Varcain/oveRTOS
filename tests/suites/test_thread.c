@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
@@ -723,6 +725,178 @@ static void test_thread_list_truncates(void **state)
 	assert_int_equal(full, OVE_OK);
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* 22. QUEUE_FULL means this call left a live thread out, nothing else.
+ * Regression: FreeRTOS and NuttX kept returning it for good once more
+ * threads had come and gone than their tables hold (32 entries), even with
+ * every live thread listed.  Two batches that fill 32 entries, then 33 live
+ * threads, then none: only the 33 may be truncated, and only truthfully. */
+#define CHURN_MAX 40
+#define CHURN_STACK 1024
+struct churn {
+	ove_thread_t th[CHURN_MAX];
+	char name[CHURN_MAX][8];
+	struct ove_thread_info info[CHURN_MAX];
+};
+
+static atomic_int g_churn_run;
+
+static void entry_churn(void *arg)
+{
+	(void)arg;
+	while (atomic_load(&g_churn_run))
+		test_msleep(5);
+}
+
+static int churn_start(struct churn *c, char tag, int count)
+{
+	int made = 0;
+	atomic_store(&g_churn_run, 1);
+	for (int i = 0; i < count && i < CHURN_MAX; i++) {
+		snprintf(c->name[i], sizeof(c->name[i]), "%c%02d", tag, i);
+		if (ove_thread_create(&c->th[i], c->name[i], entry_churn, NULL, OVE_PRIO_NORMAL,
+				      CHURN_STACK) != OVE_OK)
+			break;
+		made++;
+	}
+	test_msleep(30);
+	return made;
+}
+
+static void churn_stop(struct churn *c, int made)
+{
+	atomic_store(&g_churn_run, 0);
+	for (int i = 0; i < made; i++)
+		ove_thread_destroy(c->th[i]);
+}
+
+static void test_thread_list_after_churn(void **state)
+{
+	(void)state;
+	/* Heap-allocated: the lists are too big for the F746 test image's RAM. */
+	struct churn *c = calloc(1, sizeof(*c));
+	assert_non_null(c);
+	size_t base = 0;
+	if (ove_thread_list(c->info, CHURN_MAX, &base) == OVE_ERR_NOT_SUPPORTED) {
+		free(c);
+		skip();
+	}
+	const int fill = 32 - (int)base;
+	size_t na = 0, nb = 0, nc = 0, nd = 0, ne = 0;
+
+	int made_a = churn_start(c, 'a', fill);
+	int rc_a = ove_thread_list(c->info, 32, &na);
+	churn_stop(c, made_a);
+	int made_b = churn_start(c, 'b', fill);
+#if defined(CONFIG_OVE_RTOS_NUTTX) && !defined(CONFIG_ARCH_PERF_EVENTS) && \
+	!defined(CONFIG_SCHED_CPULOAD_NONE)
+	/* A listing too small for every thread must still free the dead batch's
+	 * run-time slots, or the new batch would go unaccounted for good. */
+	size_t ns = 0;
+	int b_listed = 0, b_accounted = 0;
+	int rc_small = ove_thread_list(c->info, 16, &ns);
+	for (size_t i = 0; i < ns; i++) {
+		if (c->info[i].name[0] != 'b')
+			continue;
+		b_listed++;
+		if (ove_thread_info_has(&c->info[i], OVE_THREAD_INFO_VALID_RUNNING_TIME))
+			b_accounted++;
+	}
+#endif
+	int rc_b = ove_thread_list(c->info, 32, &nb);
+	churn_stop(c, made_b);
+	int rc_c = ove_thread_list(c->info, CHURN_MAX, &nc);
+	int made_d = churn_start(c, 'd', fill + 1);
+	int rc_d = ove_thread_list(c->info, CHURN_MAX, &nd);
+	churn_stop(c, made_d);
+	int rc_e = ove_thread_list(c->info, CHURN_MAX, &ne);
+	free(c);
+
+	assert_int_equal(made_a, fill);
+	assert_int_equal(made_b, fill);
+	assert_int_equal(made_d, fill + 1);
+	assert_int_equal(rc_a, OVE_OK);
+	assert_int_equal(na, 32);
+	assert_int_equal(rc_b, OVE_OK);
+	assert_int_equal(nb, 32);
+#if defined(CONFIG_OVE_RTOS_NUTTX) && !defined(CONFIG_ARCH_PERF_EVENTS) && \
+	!defined(CONFIG_SCHED_CPULOAD_NONE)
+	assert_int_equal(rc_small, OVE_ERR_QUEUE_FULL);
+	assert_true(b_listed > 0);
+	assert_int_equal(b_accounted, b_listed);
+#endif
+	assert_int_equal(rc_c, OVE_OK);
+	assert_int_equal(nc, base);
+	/* 33 live: all listed, or a truncation to the 32-entry tables that says so. */
+	assert_true((rc_d == OVE_OK && nd == 33) || (rc_d == OVE_ERR_QUEUE_FULL && nd == 32));
+	assert_int_equal(rc_e, OVE_OK);
+	assert_int_equal(ne, base);
+}
+#endif /* !CONFIG_OVE_ZERO_HEAP */
+
+#if defined(CONFIG_OVE_RTOS_NUTTX) && defined(CONFIG_ARCH_PERF_EVENTS)
+#include <unistd.h>
+
+void ove_nuttx_runtime_switch(pid_t next_pid);
+void ove_nuttx_runtime_reset(pid_t current_pid);
+
+static atomic_int g_slot_pid;
+
+static void entry_slot(void *arg)
+{
+	(void)arg;
+	atomic_store(&g_slot_pid, (int)getpid());
+	entry_spin(NULL);
+}
+
+/* 23. The DWT run-time table (32 slots) gets a slot for every pid the
+ * context-switch hook sees; only LXP's start, stop and reset used to give one
+ * back.  Every listing now frees the slots of pids that no longer exist, even
+ * one too small for every thread, so a later thread is accounted again.
+ * Outside the Linux personality nothing calls the hook, so the test drives
+ * it: 40 pids that never exist, then a real thread. */
+static void test_thread_list_reclaims_runtime_slots(void **state)
+{
+	(void)state;
+	static struct ove_thread_info info[32];
+	size_t n = 0;
+
+	for (pid_t pid = 30000; pid < 30040; pid++)
+		ove_nuttx_runtime_switch(pid);
+	ove_nuttx_runtime_switch(getpid());
+
+	atomic_store(&g_slot_pid, -1);
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	int rc_new =
+		ove_test_thread_run(&h, &s_th_storage, "tslot", entry_slot, NULL, s_th_stack, 4096);
+	test_msleep(20);
+	const pid_t pid = (pid_t)atomic_load(&g_slot_pid);
+	/* A one-entry buffer cannot hold every thread, yet must free the slots. */
+	int rc_small = ove_thread_list(info, 1, &n);
+	if (pid >= 0) {
+		ove_nuttx_runtime_switch(pid);
+		ove_nuttx_runtime_switch(getpid());
+	}
+	int rc_list = ove_thread_list(info, 32, &n);
+	bool accounted = false;
+	for (size_t i = 0; i < n; i++)
+		if ((pid_t)info[i].identity == pid)
+			accounted =
+				ove_thread_info_has(&info[i], OVE_THREAD_INFO_VALID_RUNNING_TIME);
+	atomic_store(&g_keep_running, 0);
+	if (rc_new == OVE_OK)
+		ove_test_thread_destroy(h);
+	ove_nuttx_runtime_reset(-1);
+
+	OVE_TEST_ASSERT_OK(rc_new);
+	assert_true(pid >= 0);
+	assert_int_equal(rc_small, OVE_ERR_QUEUE_FULL);
+	assert_int_equal(rc_list, OVE_OK);
+	assert_true(accounted);
+}
+#endif
+
 /* errno belongs to each thread: values set on either side of a context
  * switch must not leak into the other thread. */
 static atomic_int g_errno_main_set;
@@ -800,6 +974,13 @@ int test_thread_run(void)
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_priority, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_truncates, teardown_stop_spin),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_thread_list_after_churn),
+#endif
+#if defined(CONFIG_OVE_RTOS_NUTTX) && defined(CONFIG_ARCH_PERF_EVENTS)
+		cmocka_unit_test_teardown(test_thread_list_reclaims_runtime_slots,
+					  teardown_stop_spin),
+#endif
 		cmocka_unit_test(test_errno_per_thread),
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),

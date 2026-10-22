@@ -1263,9 +1263,11 @@ impl Default for bindings::ove_thread_info {
 /// # Errors
 /// Returns [`Error::QueueFull`] if the caller's buffer or the backend's native
 /// snapshot cannot hold every thread, or another error if enumeration is not
-/// supported.  FreeRTOS lists at most 32 tasks and NuttX 32 threads per call.
-/// Not yet reliable: once FreeRTOS or NuttX has overflowed its table, every
-/// later call returns `QueueFull` even when nothing was omitted.
+/// supported.  FreeRTOS lists at most 32 tasks and NuttX 32 threads per call;
+/// `QueueFull` means a live thread was left out (on FreeRTOS, a task created
+/// while its registry was full stays unlisted while it lives).  A thread
+/// NuttX has no run-time accounting slot for is still listed, with its
+/// run-time valid bits clear.
 pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
     let mut actual: usize = 0;
     let rc = unsafe { bindings::ove_thread_list(buf.as_mut_ptr(), buf.len(), &mut actual) };
