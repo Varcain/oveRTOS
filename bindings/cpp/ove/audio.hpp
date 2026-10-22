@@ -69,7 +69,7 @@ inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t
  * Provides RAII-style init/deinit and forwarding to the C graph API.
  *
  * stop() and destruction wait for a processing cycle that is running and, with
- * a device sink, join the thread that drives the graph; never call them from a
+ * a device sink, stop the thread that drives the graph; never call them from a
  * node or tap callback.  Not guaranteed today with the native drivers listed
  * at @ref ove_audio_graph_stop.
  */

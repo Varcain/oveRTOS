@@ -269,11 +269,10 @@ pub fn device_cfg_i2s(
 /// are encapsulated — application code uses only safe methods.
 ///
 /// [`Graph::stop`] and dropping the graph wait for a processing cycle that is
-/// running and, with a device sink, join the thread that drives the graph;
+/// running and, with a device sink, stop the thread that drives the graph;
 /// never call them from a node or tap callback.  Not guaranteed today with
-/// the native audio drivers of Zephyr and NuttX (see `ove_audio_graph_stop`):
-/// there, keep a running graph alive (for instance in a static) rather than
-/// dropping it.
+/// the native NuttX audio driver (see `ove_audio_graph_stop`): there, keep a
+/// running graph alive (for instance in a static) rather than dropping it.
 ///
 /// # Example
 ///

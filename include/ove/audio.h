@@ -346,15 +346,15 @@ OVE_NODISCARD int ove_audio_graph_start(struct ove_audio_graph *g);
  * Refuses new cycles and waits for one already running in
  * ove_audio_graph_process(), on any thread, then calls each node's @c stop
  * callback in reverse topological order and transitions the graph back to
- * @c OVE_AUDIO_GRAPH_READY.  A device sink's @c stop joins the thread that
- * drives the graph, so once this returns no node or tap callback is running
- * or starts.  Call it from thread context, never from a node or tap callback:
+ * @c OVE_AUDIO_GRAPH_READY.  A device sink's @c stop joins or parks the
+ * thread that drives the graph, so once this returns no node or tap callback
+ * is running or starts until the next ove_audio_graph_start().  Call it from thread context, never from a node or tap callback:
  * it would wait for its own cycle.
  *
- * Not guaranteed today with the Zephyr and NuttX native audio drivers: their
- * audio thread is not joined and keeps driving the stopped graph (and touching
- * it after ove_audio_graph_deinit()), which can, rarely, leave a later stop or
- * deinit waiting forever.
+ * Not guaranteed today with the NuttX native audio driver: its audio thread is
+ * not joined and keeps driving the stopped graph (and touching it after
+ * ove_audio_graph_deinit()), which can, rarely, leave a later stop or deinit
+ * waiting forever.
  *
  * @param[in] g  Running graph instance.
  * @return 0 on success, negative error code on failure.
