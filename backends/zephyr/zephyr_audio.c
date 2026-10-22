@@ -70,6 +70,8 @@ static unsigned int g_i2s_rate;	    /* the app's sample rate; one SAI serves bot
 static unsigned int g_input_device; /* the source's ove_audio_device_cfg.i2s.input_device */
 
 static K_SEM_DEFINE(i2s_ready_sem, 0, 1);
+static K_SEM_DEFINE(audio_parked_sem, 0, 1);
+static atomic_t audio_running;
 
 /* ── I2S Source Node ────────────────────────────────────────────── */
 
@@ -143,15 +145,19 @@ static void zephyr_audio_thread_fn(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	k_sem_take(&i2s_ready_sem, K_FOREVER);
-	printk("Audio graph thread running\n");
-
+	/* Each start releases the thread; stop parks it here again. */
 	for (;;) {
-		/* Walk the entire graph: source reads I2S RX,
-		 * processors transform, sink writes I2S TX */
-		int ret = ove_audio_graph_process(g_zephyr_sink_ctx.graph);
-		if (ret != OVE_OK)
-			k_sleep(K_MSEC(50));
+		k_sem_take(&i2s_ready_sem, K_FOREVER);
+		printk("Audio graph thread running\n");
+
+		while (atomic_get(&audio_running)) {
+			/* Walk the entire graph: source reads I2S RX,
+			 * processors transform, sink writes I2S TX */
+			int ret = ove_audio_graph_process(g_zephyr_sink_ctx.graph);
+			if (ret != OVE_OK)
+				k_sleep(K_MSEC(50));
+		}
+		k_sem_give(&audio_parked_sem);
 	}
 }
 
@@ -238,8 +244,10 @@ static bool start_i2s_streams(unsigned int initial_blocks)
 			return false;
 		memset(mem_block, 0, BLOCK_SIZE);
 		ret = i2s_write(dev_tx, mem_block, BLOCK_SIZE);
-		if (ret < 0)
+		if (ret < 0) {
+			k_mem_slab_free(&audio_slab, mem_block);
 			return false;
+		}
 	}
 
 	if (dev_rx == dev_tx) {
@@ -258,6 +266,29 @@ static bool start_i2s_streams(unsigned int initial_blocks)
 		return false;
 
 	return true;
+}
+
+/* Stop one direction, wait for the block in flight to finish, then free
+ * what is queued.  DROP before the stream is READY would lose the block the
+ * DMA still owns; a stream already READY or in ERROR is only dropped. */
+static void stop_stream(const struct device *dev, enum i2s_dir dir, unsigned int wait_ms)
+{
+	if (i2s_trigger(dev, dir, I2S_TRIGGER_STOP) == 0)
+		k_msleep(wait_ms);
+	(void)i2s_trigger(dev, dir, I2S_TRIGGER_DROP);
+}
+
+/* RX first: on the SAI it runs off the TX clock and finishes its block
+ * only while TX still plays, so TX stops second. */
+static void stop_i2s_streams(unsigned int wait_ms)
+{
+	if (dev_rx == dev_tx && i2s_trigger(dev_rx, I2S_DIR_BOTH, I2S_TRIGGER_STOP) != -ENOSYS) {
+		k_msleep(wait_ms);
+		(void)i2s_trigger(dev_rx, I2S_DIR_BOTH, I2S_TRIGGER_DROP);
+		return;
+	}
+	stop_stream(dev_rx, I2S_DIR_RX, wait_ms);
+	stop_stream(dev_tx, I2S_DIR_TX, wait_ms);
 }
 
 #if HAVE_STM32_SAI
@@ -320,28 +351,49 @@ static void zephyr_audio_hw_start(void)
 #endif
 }
 
+/* Two block periods: the one in flight and some slack. */
+static unsigned int block_wait_ms(const struct zephyr_i2s_sink_ctx *sc)
+{
+	return 2u * (sc->frames_per_period * 1000u / g_i2s_rate) + 10u;
+}
+
 static int zephyr_sink_start(void *ctx)
 {
 	struct zephyr_i2s_sink_ctx *sc = (struct zephyr_i2s_sink_ctx *)ctx;
 
 	zephyr_audio_hw_start();
-	if (!start_i2s_streams(sc->initial_blocks))
+	if (!start_i2s_streams(sc->initial_blocks)) {
+		stop_i2s_streams(block_wait_ms(sc));
 		return OVE_ERR_NOT_SUPPORTED;
+	}
 
+	k_sem_reset(&audio_parked_sem);
+	atomic_set(&audio_running, 1);
 	k_sem_give(&i2s_ready_sem);
 	return OVE_OK;
 }
 
+/* Parks the audio thread before stopping the streams, so it starts no cycle
+ * until the next start and no longer touches the graph. */
 static int zephyr_sink_stop(void *ctx)
 {
-	(void)ctx;
-	if (dev_rx == dev_tx) {
-		i2s_trigger(dev_rx, I2S_DIR_BOTH, I2S_TRIGGER_STOP);
-	} else {
-		i2s_trigger(dev_rx, I2S_DIR_RX, I2S_TRIGGER_STOP);
-		i2s_trigger(dev_tx, I2S_DIR_TX, I2S_TRIGGER_STOP);
-	}
+	struct zephyr_i2s_sink_ctx *sc = (struct zephyr_i2s_sink_ctx *)ctx;
+
+	if (!atomic_cas(&audio_running, 1, 0))
+		return OVE_OK;
+	k_wakeup(zephyr_audio_thread);
+	k_sem_take(&audio_parked_sem, K_FOREVER);
+
+	stop_i2s_streams(block_wait_ms(sc));
 	return OVE_OK;
+}
+
+static void zephyr_sink_destroy(void *ctx)
+{
+	struct zephyr_i2s_sink_ctx *sc = (struct zephyr_i2s_sink_ctx *)ctx;
+
+	(void)zephyr_sink_stop(ctx);
+	sc->graph = NULL;
 }
 
 static const struct ove_audio_node_ops zephyr_sink_ops = {
@@ -349,6 +401,7 @@ static const struct ove_audio_node_ops zephyr_sink_ops = {
 	.start = zephyr_sink_start,
 	.stop = zephyr_sink_stop,
 	.process = zephyr_sink_process,
+	.destroy = zephyr_sink_destroy,
 };
 
 /* ========================================================================= */
