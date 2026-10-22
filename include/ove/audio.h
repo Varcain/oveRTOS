@@ -351,12 +351,10 @@ OVE_NODISCARD int ove_audio_graph_start(struct ove_audio_graph *g);
  * or starts.  Call it from thread context, never from a node or tap callback:
  * it would wait for its own cycle.
  *
- * Not guaranteed today with the engines' native audio drivers (Zephyr, NuttX,
- * and FreeRTOS on STM32): Zephyr's and NuttX's audio thread is not joined and
- * keeps driving the stopped graph (and touching it after
- * ove_audio_graph_deinit()), and FreeRTOS deletes its audio task instead of
- * joining it.  Either can, rarely, leave a later stop or deinit waiting
- * forever.
+ * Not guaranteed today with the Zephyr and NuttX native audio drivers: their
+ * audio thread is not joined and keeps driving the stopped graph (and touching
+ * it after ove_audio_graph_deinit()), which can, rarely, leave a later stop or
+ * deinit waiting forever.
  *
  * @param[in] g  Running graph instance.
  * @return 0 on success, negative error code on failure.
