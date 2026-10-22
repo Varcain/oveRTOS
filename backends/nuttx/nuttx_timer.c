@@ -23,12 +23,35 @@
 
 #include "ove/timer.h"
 #include "ove/storage.h"
+#include "ove_backend_common.h"
 #include "ove_ns_to_ticks.h"
 #include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
 #include <string.h>
 
 #define OVE_TIMER_WORKQUEUE HPWORK
+
+/* Convert a period to watchdog ticks.  A sub-tick period still arms (a
+ * zero-tick delay would fire immediately or be rejected; the Embassy time
+ * driver never schedules zero-delay deadlines, but this also guards stale
+ * reprogram state).  wd_start refuses a delay of WDOG_MAX_DELAY ticks or
+ * more, about 12.4 days at a 1 ms tick without CONFIG_SYSTEM_TIME64, so
+ * such a period is refused here, where the caller set it.  With
+ * CONFIG_SYSTEM_TIME64 that limit is far larger, but ove_ns_to_ticks
+ * saturates at UINT32_MAX ticks, and a saturated count would fire early. */
+static int period_to_ticks(uint64_t period_ns, clock_t *ticks)
+{
+	clock_t t = ove_ns_to_ticks(period_ns);
+
+	if (t == 0) {
+		t = 1;
+	}
+	if (t >= WDOG_MAX_DELAY || t >= (clock_t)UINT32_MAX) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	*ticks = t;
+	return OVE_OK;
+}
 
 /* Thread-context half of a firing: runs the user callback. */
 static void timer_work_handler(void *arg)
@@ -47,10 +70,9 @@ static void timer_wd_expiry(wdparm_t arg)
 	/* Re-arm before queuing the work so the period isn't skewed by the
 	 * callback's run time. */
 	if (!ctx->one_shot) {
-		clock_t ticks = ove_ns_to_ticks(ctx->period_ns);
-		if (ticks == 0) {
-			ticks = 1;
-		}
+		/* The period was checked when it was set, so this cannot fail. */
+		clock_t ticks = 1;
+		(void)period_to_ticks(ctx->period_ns, &ticks);
 		wd_start(&ctx->wdog, ticks, timer_wd_expiry, (wdparm_t)ctx);
 	}
 
@@ -86,6 +108,11 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
 		return OVE_ERR_INVALID_PARAM;
 	}
 
+	clock_t ticks;
+	if (period_to_ticks(period_ns, &ticks) != OVE_OK) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+
 	timer_setup(storage, callback, user_data, period_ns, one_shot);
 	*timer = storage;
 	return OVE_OK;
@@ -105,16 +132,14 @@ int ove_timer_start(ove_timer_t timer)
 	DEBUGASSERT(timer != NULL);
 	struct ove_timer *ctx = timer;
 
-	clock_t ticks = ove_ns_to_ticks(ctx->period_ns);
-	/* A zero-tick delay would fire immediately / be rejected; clamp so a
-	 * sub-tick period still arms.  The Embassy time driver never schedules
-	 * zero-delay deadlines, but this also guards stale reprogram state. */
-	if (ticks == 0) {
-		ticks = 1;
+	clock_t ticks;
+	int ret = period_to_ticks(ctx->period_ns, &ticks);
+	if (ret != OVE_OK) {
+		return ret;
 	}
 
-	int ret = wd_start(&ctx->wdog, ticks, timer_wd_expiry, (wdparm_t)ctx);
-	return ret == 0 ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+	ret = wd_start(&ctx->wdog, ticks, timer_wd_expiry, (wdparm_t)ctx);
+	return ret == 0 ? OVE_OK : ove_errno_to_ove(-ret);
 }
 
 int ove_timer_stop(ove_timer_t timer)
@@ -141,6 +166,11 @@ int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
 {
 	struct ove_timer *ctx = timer;
 	if (ctx == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	/* Refuse before touching the timer, which keeps its old period. */
+	clock_t ticks;
+	if (period_to_ticks(period_ns, &ticks) != OVE_OK) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	ctx->period_ns = period_ns;

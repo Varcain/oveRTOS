@@ -52,7 +52,8 @@ pub const Error = error{
     NetClosed,
     /// Bus peripheral: device did not acknowledge.
     BusNack,
-    /// Bus peripheral: bus is busy / arbitration lost.
+    /// Bus or controller busy: a transfer is already in flight, or the bus is
+    /// held; retry later.
     BusBusy,
     /// Bus peripheral: generic bus error.
     BusError,

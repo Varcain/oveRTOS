@@ -63,9 +63,11 @@ static void test_renode_i2c_ft5336_probe(void **state)
 	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, OVE_MS(100));
 	assert_int_equal(rc, OVE_OK);
 
-	/* Probe a non-existent address — expect a NACK / timeout, not OK. */
+	/* Read from a non-existent address.  Renode's I2C model never NACKs an
+	 * unknown slave, so the HAL waits out the 100 ms and reports a timeout
+	 * (silicon would report the NACK). */
 	rc = ove_i2c_read(i2c, 0x77, &out, 1, OVE_MS(100));
-	assert_int_not_equal(rc, OVE_OK);
+	assert_int_equal(rc, OVE_ERR_TIMEOUT);
 
 	ove_i2c_deinit(i2c);
 }

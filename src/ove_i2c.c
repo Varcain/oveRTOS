@@ -17,7 +17,7 @@
 
 #include <string.h>
 
-/* Speed enum → Hz for storage */
+/* Speed enum → Hz for storage; 0 for a value outside the enum */
 static uint32_t speed_to_hz(ove_i2c_speed_t speed)
 {
 	switch (speed) {
@@ -28,7 +28,7 @@ static uint32_t speed_to_hz(ove_i2c_speed_t speed)
 	case OVE_I2C_SPEED_FAST_PLUS:
 		return 1000000;
 	default:
-		return 100000;
+		return 0;
 	}
 }
 
@@ -41,8 +41,12 @@ int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2
 	if (i2c == NULL || storage == NULL || cfg == NULL)
 		return OVE_ERR_INVALID_PARAM;
 
+	uint32_t speed_hz = speed_to_hz(cfg->speed);
+	if (speed_hz == 0)
+		return OVE_ERR_INVALID_PARAM;
+
 	storage->instance = cfg->instance;
-	storage->speed_hz = speed_to_hz(cfg->speed);
+	storage->speed_hz = speed_hz;
 #ifdef CONFIG_OVE_ASYNC
 	storage->async_busy = 0;
 	storage->pending_cb = NULL;

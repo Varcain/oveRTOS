@@ -27,6 +27,14 @@
  * All addresses are 7-bit (e.g. 0x50 for a typical EEPROM).  The HAL
  * shifts left and adds the R/W bit internally.
  *
+ * A failed transfer reports @c OVE_ERR_BUS_NACK when the device does not
+ * acknowledge, @c OVE_ERR_TIMEOUT when it does not complete in time,
+ * @c OVE_ERR_BUS_BUSY when another transfer on the controller is still in
+ * flight or the bus is held, and @c OVE_ERR_BUS_ERROR for other bus faults (arbitration loss,
+ * misplaced START/STOP, overrun).  Zephyr's STM32 driver reports a NACK,
+ * arbitration loss and a timeout alike, so on Zephyr all three read as
+ * @c OVE_ERR_BUS_NACK.
+ *
  * @note Requires @c CONFIG_OVE_I2C.  When the option is disabled every
  *       function is replaced by a no-op stub that returns
  *       @c OVE_ERR_NOT_SUPPORTED.
@@ -72,7 +80,8 @@ struct ove_i2c_cfg {
  * @param[out] i2c     Receives the initialised I2C handle.
  * @param[in]  storage Pointer to statically-allocated I2C storage.
  * @param[in]  cfg     Bus configuration descriptor.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a NULL argument or a
+ *         speed outside @ref ove_i2c_speed_t, or another negative error code.
  */
 OVE_NODISCARD int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage,
 			       const struct ove_i2c_cfg *cfg);
@@ -89,7 +98,8 @@ void ove_i2c_deinit(ove_i2c_t i2c);
  *
  * @param[out] i2c  Receives the created I2C handle.
  * @param[in]  cfg  Bus configuration descriptor.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a NULL argument or a
+ *         speed outside @ref ove_i2c_speed_t, or another negative error code.
  */
 #ifdef OVE_HEAP_I2C
 OVE_NODISCARD int ove_i2c_create(ove_i2c_t *i2c, const struct ove_i2c_cfg *cfg);

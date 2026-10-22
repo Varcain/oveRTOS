@@ -20,6 +20,14 @@
  *    @c OVE_HEAP_TIMER is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
  *  - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
  *    modes.  See @c OVE_TIMER_DEFINE_STATIC for a one-step static helper.
+ *
+ * The longest period depends on the engine.  NuttX refuses one beyond its
+ * watchdog's range (@c WDOG_MAX_DELAY ticks, about 12.4 days at a 1 ms
+ * tick), and
+ * FreeRTOS one whose tick count does not fit @c TickType_t (about 49.7 days
+ * at a 1 kHz tick); Zephyr takes any period.  A refused period fails the
+ * init or create call, or @ref ove_timer_set_period_ns, with
+ * @c OVE_ERR_INVALID_PARAM, and leaves a running timer as it was.
  * @{
  */
 
@@ -69,7 +77,9 @@ typedef void (*ove_timer_fn)(ove_timer_t timer, void *user_data);
  * @param[in]  one_shot   Non-zero to create a one-shot timer (fires once
  *                        then stops automatically); zero for a periodic
  *                        timer that reloads automatically.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a NULL argument or a
+ *         period longer than the engine supports (see @ref ove_timer), or
+ *         another negative error code.
  *
  * @see ove_timer_deinit, ove_timer_create, ove_timer_start
  */
@@ -118,7 +128,9 @@ void ove_timer_deinit(ove_timer_t timer);
  * @param[in]  user_data  Opaque pointer forwarded to @p callback.
  * @param[in]  period_ns  Timer period in nanoseconds.  Must be > 0.
  * @param[in]  one_shot   Non-zero for one-shot, zero for periodic.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a NULL argument or a
+ *         period longer than the engine supports (see @ref ove_timer), or
+ *         another negative error code.
  *
  * @see ove_timer_init, ove_timer_create_ns
  */
@@ -140,14 +152,16 @@ OVE_NODISCARD int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *sto
  *  - FreeRTOS: @c xTimerChangePeriod (atomic period change + arm).
  *  - host test backend: @c timer_settime with a new @c itimerspec.
  *  - Zephyr:   @c k_timer_start with the new period.
- *  - NuttX:    @c timer_settime.
+ *  - NuttX:    @c wd_start (a watchdog; the callback runs on HPWORK).
  *
  * @note Requires @c CONFIG_OVE_TIMER.
  *
  * @param[in] timer      Timer handle to reprogram.
  * @param[in] period_ns  New period in nanoseconds. Must be > 0;
  *                       backends round up to the resolution floor.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a period longer than
+ *         the engine supports (see @ref ove_timer), or another negative
+ *         error code.
  *
  * @see ove_timer_init_ns, ove_timer_start, ove_timer_stop
  */
@@ -172,7 +186,9 @@ OVE_NODISCARD int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
  * @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.
  * @param[in]  one_shot   Non-zero to create a one-shot timer; zero for a
  *                        periodic auto-reloading timer.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a NULL argument or a
+ *         period longer than the engine supports (see @ref ove_timer), or
+ *         another negative error code.
  *
  * @see ove_timer_destroy, ove_timer_init, ove_timer_start
  */
@@ -195,7 +211,9 @@ OVE_NODISCARD int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, vo
  * @param[in]  user_data  Opaque pointer forwarded to @p callback.
  * @param[in]  period_ns  Timer period in nanoseconds.  Must be > 0.
  * @param[in]  one_shot   Non-zero for one-shot, zero for periodic.
- * @return OVE_OK on success, or a negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for a NULL argument or a
+ *         period longer than the engine supports (see @ref ove_timer), or
+ *         another negative error code.
  *
  * @see ove_timer_create, ove_timer_init_ns
  */

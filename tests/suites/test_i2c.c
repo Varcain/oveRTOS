@@ -104,6 +104,16 @@ static void test_i2c_probe_null_handle(void **state)
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 }
 
+static void test_i2c_unknown_speed(void **state)
+{
+	(void)state;
+	static ove_i2c_storage_t st;
+	ove_i2c_t i2c = NULL;
+	struct ove_i2c_cfg cfg = {.instance = 0, .speed = (ove_i2c_speed_t)42};
+
+	assert_int_equal(ove_i2c_init(&i2c, &st, &cfg), OVE_ERR_INVALID_PARAM);
+}
+
 #else /* !CONFIG_OVE_I2C */
 
 static void test_i2c_skipped(void **state)
@@ -125,6 +135,7 @@ int test_i2c_run(void)
 		cmocka_unit_test(test_i2c_write_null_handle),
 		cmocka_unit_test(test_i2c_read_null_buf),
 		cmocka_unit_test(test_i2c_probe_null_handle),
+		cmocka_unit_test(test_i2c_unknown_speed),
 	};
 #else
 	const struct CMUnitTest tests[] = {

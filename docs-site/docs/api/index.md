@@ -87,6 +87,6 @@ All functions that can fail return `int`. A return value of `OVE_OK` (0) indicat
 | `OVE_ERR_NET_DNS_FAIL` | -12 | DNS name resolution failed |
 | `OVE_ERR_NET_CLOSED` | -13 | Connection closed by peer |
 | `OVE_ERR_BUS_NACK` | -14 | Bus device did not acknowledge (I2C NACK) |
-| `OVE_ERR_BUS_BUSY` | -15 | Bus arbitration lost (multi-master) |
+| `OVE_ERR_BUS_BUSY` | -15 | Bus or controller busy: a transfer is already in flight, or the bus is held (retry later) |
 | `OVE_ERR_BUS_ERROR` | -16 | Framing, parity, or hardware error on a serial bus |
 | `OVE_ERR_NET_ADDR_NOT_AVAILABLE` | -22 | Requested local address is not configured |

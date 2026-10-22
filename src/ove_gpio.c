@@ -134,6 +134,10 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
 
+	if (validate_port_pin(port, pin) != OVE_OK) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
 		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
 			    GPIO_IRQ_REGISTERED &&
@@ -145,12 +149,16 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 			return OVE_OK;
 		}
 	}
-	return OVE_ERR_NOT_SUPPORTED;
+	return OVE_ERR_NOT_FOUND;
 }
 
 int ove_gpio_irq_disable(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
+
+	if (validate_port_pin(port, pin) != OVE_OK) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
 		if (atomic_load_explicit(&irq_table[i].registered, memory_order_acquire) ==
@@ -160,12 +168,16 @@ int ove_gpio_irq_disable(unsigned int port, unsigned int pin)
 			return ove_hal_gpio_irq_hw_disable(port, pin);
 		}
 	}
-	return OVE_ERR_NOT_SUPPORTED;
+	return OVE_ERR_NOT_FOUND;
 }
 
 int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
+
+	if (validate_port_pin(port, pin) != OVE_OK) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
 		int expected = GPIO_IRQ_REGISTERED;
@@ -192,7 +204,7 @@ int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 			return ret;
 		}
 	}
-	return OVE_ERR_NOT_SUPPORTED;
+	return OVE_ERR_NOT_FOUND;
 }
 
 /* Called by backend HAL when a GPIO interrupt fires */
