@@ -160,7 +160,7 @@ state it the same way, including where an engine does **not** guarantee it.
 | Work item | the work queue's thread, one item at a time | `ove_work_cancel` / deinit drain it |
 | PM policy | the engine's low-priority PM thread, without the PM lock, with the `user_data` registered alongside it | a call already started may run once more |
 | PM notifier | the PM thread, with the PM lock held | unregister waits for a running call; the notifier must not call other PM functions |
-| Audio node / tap | the thread driving the graph (audio thread, or the caller of `process`) | stop / deinit wait for a running cycle and join the device sink's thread (never call them from a callback); not guaranteed today with the native Zephyr, NuttX and FreeRTOS-on-STM32 drivers |
+| Audio node / tap | the thread driving the graph (audio thread, or the caller of `process`) | stop / deinit wait for a running cycle and join the device sink's thread (never call them from a callback); not guaranteed today with the native Zephyr and NuttX drivers |
 | httpd handler / WebSocket | the single `httpd` thread, one at a time | stop waits for that thread; WebSocket `on_close` is not called for connections open at stop or dropped by a failed send |
 | Shell command | the thread that feeds `process_char` / `process_line` | — (never feed the shell from an ISR) |
 | Protected task | the caller's thread, synchronously | a contained fault abandons it by longjmp |

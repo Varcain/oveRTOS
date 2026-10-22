@@ -73,7 +73,7 @@ sequenceDiagram
     Sink-->>Drv: copies to DMA TX buffer
 ```
 
-`ove_audio_graph_stop()` and `ove_audio_graph_deinit()` refuse new cycles (`ove_audio_graph_process()` returns `OVE_ERR_NOT_SUPPORTED` and skips the cycle) and wait for a running one, and the device sink's `stop` joins the driver thread, so no node callback (a tap's included) runs after either returns. Call them from thread context, never from a node or tap callback. Not guaranteed today with the engines' native drivers (Zephyr, NuttX, and FreeRTOS on STM32): Zephyr's and NuttX's driver thread is not joined and keeps driving the stopped graph, and FreeRTOS deletes its audio task instead of joining it.
+`ove_audio_graph_stop()` and `ove_audio_graph_deinit()` refuse new cycles (`ove_audio_graph_process()` returns `OVE_ERR_NOT_SUPPORTED` and skips the cycle) and wait for a running one, and the device sink's `stop` joins the driver thread, so no node callback (a tap's included) runs after either returns. Call them from thread context, never from a node or tap callback. Not guaranteed today with the Zephyr and NuttX native drivers: their driver thread is not joined and keeps driving the stopped graph.
 
 ### App-driven (testing / offline)
 

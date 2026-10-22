@@ -86,8 +86,7 @@ pub const Graph = struct {
     /// `stop` and `deinit` wait for a processing cycle that is running and,
     /// with a device sink, join the thread that drives the graph; never call
     /// them from a node or tap callback.  Not guaranteed today with the native
-    /// audio drivers of Zephyr, NuttX and FreeRTOS on STM32 (see
-    /// `ove_audio_graph_stop`).
+    /// audio drivers of Zephyr and NuttX (see `ove_audio_graph_stop`).
     pub fn stop(self: *Graph) Error!void {
         try err.fromCode(c.ove_audio_graph_stop(&self.raw));
     }

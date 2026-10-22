@@ -55,7 +55,10 @@ struct i2s_sink_ctx {
 	unsigned int frames_per_period;
 	unsigned int thread_priority;
 	unsigned int thread_stack_size;
-	TaskHandle_t task_handle;
+	TaskHandle_t task_handle; /* what the RX ISR notifies; NULL when stopped */
+	TaskHandle_t task;	  /* the engine task, until stop deletes it */
+	volatile int stop_req;
+	volatile int parked;
 	ove_i2s_t i2s;
 	unsigned int tx_slots[2];   /* slot indices for L, R */
 	unsigned int tx_slot_count; /* total slots per DMA frame */
@@ -184,20 +187,21 @@ static int i2s_sink_process(void *ctx, const struct ove_audio_buf *in, struct ov
 static void audio_rx_complete_callback(ove_i2s_t i2s, void *user_data)
 {
 	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)user_data;
-	if (sc->task_handle == NULL)
+	TaskHandle_t task = __atomic_load_n(&sc->task_handle, __ATOMIC_ACQUIRE);
+	if (task == NULL)
 		return;
 
 	sc->current_rx_phase = (buffer_phase_t)i2s->rx_completed_half;
 
 	BaseType_t yield_required = pdFALSE;
-	vTaskNotifyGiveFromISR(sc->task_handle, &yield_required);
+	vTaskNotifyGiveFromISR(task, &yield_required);
 	portYIELD_FROM_ISR(yield_required);
 }
 
 static void audio_tx_complete_callback(ove_i2s_t i2s, void *user_data)
 {
 	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)user_data;
-	if (sc->task_handle == NULL)
+	if (__atomic_load_n(&sc->task_handle, __ATOMIC_ACQUIRE) == NULL)
 		return;
 
 	sc->current_tx_phase = (buffer_phase_t)i2s->tx_completed_half;
@@ -214,6 +218,12 @@ static void audio_engine_task(void *pvParameters)
 	buffer_phase_t last_tx_phase = BUFFER_SECOND_HALF;
 	for (;;) {
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+		/* Park between cycles, holding nothing, until stop deletes us. */
+		if (sc->stop_req) {
+			sc->parked = 1;
+			vTaskSuspend(NULL);
+		}
 
 		buffer_phase_t process_rx_phase = sc->current_rx_phase;
 		buffer_phase_t process_tx_phase = sc->current_tx_phase;
@@ -242,36 +252,66 @@ static void audio_engine_task(void *pvParameters)
 
 /* ── Start / Stop ───────────────────────────────────────────────── */
 
+static int i2s_sink_stop(void *ctx);
+
 static int i2s_sink_start(void *ctx)
 {
 	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)ctx;
 
+	sc->stop_req = 0;
+	sc->parked = 0;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	sc->task_handle = xTaskCreateStatic(audio_engine_task, "Audio", DEFAULT_AUDIO_STACK, sc,
-					    sc->thread_priority, sc->task_stack, &sc->task_tcb);
-	if (sc->task_handle == NULL)
+	sc->task = xTaskCreateStatic(audio_engine_task, "Audio", DEFAULT_AUDIO_STACK, sc,
+				     sc->thread_priority, sc->task_stack, &sc->task_tcb);
+	if (sc->task == NULL)
 		return OVE_ERR_NO_MEMORY;
 #else
-	BaseType_t ret = xTaskCreate(audio_engine_task, "Audio", sc->thread_stack_size, sc,
-				     sc->thread_priority, &sc->task_handle);
-	if (ret != pdPASS)
+	if (xTaskCreate(audio_engine_task, "Audio", sc->thread_stack_size, sc, sc->thread_priority,
+			&sc->task) != pdPASS) {
+		sc->task = NULL;
 		return OVE_ERR_NO_MEMORY;
+	}
 #endif
+	__atomic_store_n(&sc->task_handle, sc->task, __ATOMIC_RELEASE);
 
-	return ove_i2s_start(sc->i2s);
+	/* The graph rolls back only the nodes started before this one. */
+	int ret = ove_i2s_start(sc->i2s);
+	if (ret != OVE_OK)
+		(void)i2s_sink_stop(sc);
+	return ret;
 }
 
+/* Stops the SAI rather than pausing it, which would leave the HAL handle
+ * busy and fail the next start, then deletes the engine task once it has
+ * parked: a static TCB can be reused only after another task deletes it. */
 static int i2s_sink_stop(void *ctx)
 {
 	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)ctx;
+	TaskHandle_t task = sc->task;
 
-	ove_i2s_pause(sc->i2s);
+	if (task == NULL)
+		return OVE_OK;
 
-	if (sc->task_handle != NULL) {
-		vTaskDelete(sc->task_handle);
-		sc->task_handle = NULL;
-	}
+	__atomic_store_n(&sc->task_handle, NULL, __ATOMIC_RELEASE);
+	(void)ove_i2s_stop(sc->i2s);
+
+	sc->stop_req = 1;
+	xTaskNotifyGive(task);
+	while (!sc->parked)
+		vTaskDelay(1);
+	vTaskDelete(task);
+	sc->task = NULL;
 	return OVE_OK;
+}
+
+static void i2s_sink_destroy(void *ctx)
+{
+	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)ctx;
+
+	(void)i2s_sink_stop(sc);
+	ove_i2s_deinit(sc->i2s);
+	sc->i2s = NULL;
+	sc->graph = NULL;
 }
 
 static const struct ove_audio_node_ops i2s_sink_ops = {
@@ -279,6 +319,7 @@ static const struct ove_audio_node_ops i2s_sink_ops = {
 	.start = i2s_sink_start,
 	.stop = i2s_sink_stop,
 	.process = i2s_sink_process,
+	.destroy = i2s_sink_destroy,
 };
 
 #endif /* CONFIG_OVE_I2S */
