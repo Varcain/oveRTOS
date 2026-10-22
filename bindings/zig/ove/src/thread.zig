@@ -662,7 +662,6 @@ pub fn getMemStats() Error!MemStats {
 /// the C record lets `threadList` use all caller-provided entries without a
 /// binding-owned temporary array or allocator.
 pub const ThreadInfo = extern struct {
-    name_ptr: [*c]const u8,
     identity: usize,
     state: State,
     priority: i32,
@@ -670,8 +669,9 @@ pub const ThreadInfo = extern struct {
     stack_size_raw: usize,
     cpu_percent_x100_raw: u32,
     valid_fields: u32,
-    state_times: c.struct_ove_thread_state_times,
     native_priority: i32,
+    state_times: c.struct_ove_thread_state_times,
+    name_buf: [c.OVE_THREAD_NAME_MAX]u8,
 
     /// The thread's priority on the ove scale.
     pub fn prio(self: *const ThreadInfo) ?Priority {
@@ -679,13 +679,9 @@ pub const ThreadInfo = extern struct {
         return Priority.fromLevel(@intCast(self.priority));
     }
 
-    /// The thread's name. The bytes belong to the backend and are short-lived:
-    /// on NuttX until the next `threadList` call from any thread, on FreeRTOS
-    /// until any task is created or deleted, on Zephyr until the thread is
-    /// destroyed. Copy them to keep them.
+    /// The thread's name: a copy held in the entry, without the trailing NUL.
     pub fn name(self: *const ThreadInfo) []const u8 {
-        if (self.name_ptr == null) return "";
-        return std.mem.span(@as([*:0]const u8, @ptrCast(self.name_ptr)));
+        return std.mem.sliceTo(&self.name_buf, 0);
     }
 
     pub fn has(self: *const ThreadInfo, fields: u32) bool {
@@ -724,7 +720,6 @@ pub const ThreadInfo = extern struct {
 comptime {
     std.debug.assert(@sizeOf(ThreadInfo) == @sizeOf(c.struct_ove_thread_info));
     std.debug.assert(@alignOf(ThreadInfo) == @alignOf(c.struct_ove_thread_info));
-    std.debug.assert(@offsetOf(ThreadInfo, "name_ptr") == @offsetOf(c.struct_ove_thread_info, "name"));
     std.debug.assert(@offsetOf(ThreadInfo, "identity") == @offsetOf(c.struct_ove_thread_info, "identity"));
     std.debug.assert(@offsetOf(ThreadInfo, "state") == @offsetOf(c.struct_ove_thread_info, "state"));
     std.debug.assert(@offsetOf(ThreadInfo, "priority") == @offsetOf(c.struct_ove_thread_info, "priority"));
@@ -734,17 +729,17 @@ comptime {
     std.debug.assert(@offsetOf(ThreadInfo, "cpu_percent_x100_raw") == @offsetOf(c.struct_ove_thread_info, "cpu_percent_x100"));
     std.debug.assert(@offsetOf(ThreadInfo, "valid_fields") == @offsetOf(c.struct_ove_thread_info, "valid_fields"));
     std.debug.assert(@offsetOf(ThreadInfo, "state_times") == @offsetOf(c.struct_ove_thread_info, "state_times"));
+    std.debug.assert(@offsetOf(ThreadInfo, "name_buf") == @offsetOf(c.struct_ove_thread_info, "name"));
 }
 
 /// Fill the complete caller-provided buffer with thread snapshots.
 ///
 /// The binding imposes no capacity limit. Returns `error.QueueFull` if the
 /// caller buffer or backend-native snapshot cannot hold every thread.
-/// FreeRTOS lists at most 32 tasks and NuttX 32 threads per call;
-/// `error.QueueFull` means a live thread was left out (on FreeRTOS, a task
-/// created while its registry was full stays unlisted while it lives). A
-/// thread NuttX has no run-time accounting slot for is still listed, with its
-/// run-time valid bits clear.
+/// FreeRTOS lists at most 32 tasks; `error.QueueFull` means a live thread was
+/// left out (on FreeRTOS, a task created while its registry was full stays
+/// unlisted while it lives). A thread NuttX has no run-time accounting slot
+/// for is still listed, with its run-time valid bits clear.
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     var actual: usize = 0;
     const raw: [*c]c.struct_ove_thread_info = if (buf.len == 0) null else @ptrCast(buf.ptr);

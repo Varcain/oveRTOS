@@ -76,6 +76,17 @@
 /* Run-time stats (disabled for test) */
 #define configGENERATE_RUN_TIME_STATS 0
 #define configUSE_TRACE_FACILITY 0
+/* The bounded task registry ove_thread_list() reads, without the trace
+ * facility: it would grow every kernel object past this image's RAM. */
+#define OVE_FREERTOS_TASK_REGISTRY 1
+#ifndef __ASSEMBLER__
+void ove_backend_freertos_task_created(void *task, const char *name);
+void ove_backend_freertos_task_deleted(void *task);
+#endif
+#define traceTASK_CREATE(pxNewTCB)                            \
+	ove_backend_freertos_task_created((void *)(pxNewTCB), \
+					  (const char *)((pxNewTCB)->pcTaskName))
+#define traceTASK_DELETE(pxTCB) ove_backend_freertos_task_deleted((void *)(pxTCB))
 #define configUSE_STATS_FORMATTING_FUNCTIONS 0
 
 /* Include API functions */

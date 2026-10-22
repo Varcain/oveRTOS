@@ -505,6 +505,12 @@ static void test_runtime_stats(void **state)
 	ove_test_thread_destroy(h);
 }
 
+/* Static, as runner stacks are small; 16 entries hold every thread the test
+ * targets run and keep the STM32F746 image inside its RAM.  Shared by the
+ * listing tests. */
+#define LIST_INFO_MAX 16
+static struct ove_thread_info s_list_info[LIST_INFO_MAX];
+
 /* 17. enumeration exposes a stable native identity. Personality ownership is
  * derived by the personality adapter rather than stored in the generic API. */
 static void test_thread_list_identity(void **state)
@@ -516,13 +522,13 @@ static void test_thread_list_identity(void **state)
 					       s_th_stack, 4096));
 	test_msleep(20);
 
-	struct ove_thread_info info[32];
+	struct ove_thread_info *info = s_list_info;
 	size_t count = 0;
-	int rc = ove_thread_list(info, 32, &count);
+	int rc = ove_thread_list(info, LIST_INFO_MAX, &count);
 
-	/* Check while the spinner is alive (names may point into its TCB), but
-	 * assert only after stopping it: a failed assert must not leave it
-	 * running on storage the next test reuses. */
+	/* Check while the spinner is alive, but assert only after stopping it: a
+	 * failed assert must not leave it running on storage the next test
+	 * reuses. */
 	const uint32_t known_fields =
 		OVE_THREAD_INFO_VALID_STACK_USED | OVE_THREAD_INFO_VALID_STACK_SIZE |
 		OVE_THREAD_INFO_VALID_CPU_PERCENT | OVE_THREAD_INFO_VALID_STATE_TIMES;
@@ -639,9 +645,9 @@ static void test_priority_between_anchors(void **state)
 /* The priority ove_thread_list reports for the thread named @p name, or -1. */
 static int listed_priority(const char *name)
 {
-	struct ove_thread_info info[32];
+	struct ove_thread_info *info = s_list_info;
 	size_t count = 0;
-	if (ove_thread_list(info, 32, &count) != OVE_OK)
+	if (ove_thread_list(info, LIST_INFO_MAX, &count) != OVE_OK)
 		return -1;
 	for (size_t i = 0; i < count; i++) {
 		if (strcmp(info[i].name, name) == 0)
@@ -687,9 +693,7 @@ static void test_thread_list_priority(void **state)
 static void test_thread_list_truncates(void **state)
 {
 	(void)state;
-	/* Static, as runner stacks are small; 16 entries hold every thread the
-	 * test targets run and keep the STM32F746 image inside its RAM. */
-	static struct ove_thread_info info[16];
+	struct ove_thread_info *info = s_list_info;
 	size_t n = 0;
 	if (ove_thread_list(info, 1, &n) == OVE_ERR_NOT_SUPPORTED)
 		skip();
@@ -708,10 +712,10 @@ static void test_thread_list_truncates(void **state)
 	n = 0;
 	int small = ove_thread_list(info, 1, &n);
 	size_t small_n = n;
-	int full = ove_thread_list(info, sizeof(info) / sizeof(info[0]), &n);
+	int full = ove_thread_list(info, LIST_INFO_MAX, &n);
 	if (full != OVE_OK)
-		print_message("ove_thread_list(%u): rc %d, %u entries\n",
-			      (unsigned)(sizeof(info) / sizeof(info[0])), full, (unsigned)n);
+		print_message("ove_thread_list(%u): rc %d, %u entries\n", (unsigned)LIST_INFO_MAX,
+			      full, (unsigned)n);
 
 	atomic_store(&g_keep_running, 0);
 	if (rc2 == OVE_OK && h2 != NULL)
@@ -723,6 +727,53 @@ static void test_thread_list_truncates(void **state)
 	assert_int_equal(small, OVE_ERR_QUEUE_FULL);
 	assert_int_equal(small_n, 1);
 	assert_int_equal(full, OVE_OK);
+}
+
+/* 24. Each entry holds its own copy of the thread's name.  Regression: the
+ * name pointed into backend memory that the next listing (NuttX), any task
+ * create or delete (FreeRTOS) or the thread's destruction (Zephyr) reused, so
+ * a listed name could change under the caller. */
+static void test_thread_list_names_are_copies(void **state)
+{
+	(void)state;
+	struct ove_thread_info *first = s_list_info;
+	struct ove_thread_info kept = {0};
+	size_t n = 0, n2 = 0;
+	if (ove_thread_list(first, 1, &n) == OVE_ERR_NOT_SUPPORTED)
+		skip();
+
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t a = NULL, b = NULL;
+	int rc_a = ove_test_thread_run(&a, &s_th_storage, "tnameA", entry_spin, NULL, s_th_stack,
+				       4096);
+	test_msleep(20);
+	int rc_1 = ove_thread_list(first, LIST_INFO_MAX, &n);
+	int k = -1;
+	for (size_t i = 0; i < n; i++)
+		if (strcmp(first[i].name, "tnameA") == 0)
+			k = (int)i;
+	if (k >= 0)
+		kept = first[k]; /* the caller's copy of the entry */
+	atomic_store(&g_keep_running, 0);
+	if (rc_a == OVE_OK)
+		ove_test_thread_destroy(a);
+
+	/* Reuse what the first thread had: its storage, and a new listing. */
+	atomic_store(&g_keep_running, 1);
+	int rc_b = ove_test_thread_run(&b, &s_th_storage, "tnameB_other", entry_spin, NULL,
+				       s_th_stack, 4096);
+	test_msleep(20);
+	int rc_2 = ove_thread_list(s_list_info, LIST_INFO_MAX, &n2);
+	atomic_store(&g_keep_running, 0);
+	if (rc_b == OVE_OK)
+		ove_test_thread_destroy(b);
+
+	OVE_TEST_ASSERT_OK(rc_a);
+	OVE_TEST_ASSERT_OK(rc_b);
+	OVE_TEST_ASSERT_OK(rc_1);
+	OVE_TEST_ASSERT_OK(rc_2);
+	assert_true(k >= 0);
+	assert_string_equal(kept.name, "tnameA");
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -827,8 +878,14 @@ static void test_thread_list_after_churn(void **state)
 #endif
 	assert_int_equal(rc_c, OVE_OK);
 	assert_int_equal(nc, base);
-	/* 33 live: all listed, or a truncation to the 32-entry tables that says so. */
-	assert_true((rc_d == OVE_OK && nd == 33) || (rc_d == OVE_ERR_QUEUE_FULL && nd == 32));
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+	/* 33 live: one is beyond the 32-entry registry, and the listing says so. */
+	assert_int_equal(rc_d, OVE_ERR_QUEUE_FULL);
+	assert_int_equal(nd, 32);
+#else
+	assert_int_equal(rc_d, OVE_OK);
+	assert_int_equal(nd, 33);
+#endif
 	assert_int_equal(rc_e, OVE_OK);
 	assert_int_equal(ne, base);
 }
@@ -974,6 +1031,7 @@ int test_thread_run(void)
 		cmocka_unit_test_teardown(test_priority_between_anchors, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_priority, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_thread_list_truncates, teardown_stop_spin),
+		cmocka_unit_test_teardown(test_thread_list_names_are_copies, teardown_stop_spin),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_thread_list_after_churn),
 #endif

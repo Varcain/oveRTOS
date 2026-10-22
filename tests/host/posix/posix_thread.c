@@ -652,7 +652,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			t->cpu_prev_ns = cpu_ns;
 		}
 
-		out[count].name = t->name ? t->name : "?";
+		ove_name_copy(out[count].name, sizeof(out[count].name), t->name ? t->name : "?");
 		out[count].identity = (uintptr_t)t;
 		ove_thread_state_t state =
 			(ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
