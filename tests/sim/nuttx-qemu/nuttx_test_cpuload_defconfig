@@ -1,0 +1,11 @@
+# NuttX defconfig overlay for the qemu-nuttx-cpuload test lane.
+# Applied on top of nuttx_test_defconfig.
+#
+# The default lane accounts thread run time with DWT perf events (via
+# SCHED_IRQMONITOR). Apps built from config/templates/nuttx_defconfig.j2
+# on the an500 use the decayed cpuload instead, which ove_thread_list()
+# integrates in a per-thread table of its own; this lane builds that path.
+# CONFIG_SCHED_IRQMONITOR is not set
+# CONFIG_ARCH_PERF_EVENTS is not set
+# CONFIG_SCHED_CPULOAD_NONE is not set
+CONFIG_SCHED_CPULOAD_SYSCLK=y

@@ -101,3 +101,7 @@ make test-qemu-freertos-zeroheap
 make test-qemu-nuttx-zeroheap
 make test-qemu-zephyr-zeroheap
 ```
+
+`make test-qemu-nuttx-cpuload` runs the NuttX suite with the thread run-time
+accounting NuttX apps use on the AN500 (decayed CPU load rather than DWT
+cycle counts).

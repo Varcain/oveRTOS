@@ -563,7 +563,6 @@ static int g_nx_runtime_current_index = -1;
 static uint32_t g_nx_runtime_last;
 static uint64_t g_nx_runtime_total;
 static bool g_nx_runtime_ready;
-static bool g_nx_runtime_overflow;
 
 static int _runtime_find(pid_t pid, bool create)
 {
@@ -575,11 +574,8 @@ static int _runtime_find(pid_t pid, bool create)
 		if (!g_nx_runtime[i].used && freeidx < 0)
 			freeidx = i;
 	}
-	if (!create || freeidx < 0) {
-		if (create)
-			g_nx_runtime_overflow = true;
+	if (!create || freeidx < 0)
 		return -1;
-	}
 	g_nx_runtime[freeidx].used = true;
 	g_nx_runtime[freeidx].pid = pid;
 	g_nx_runtime[freeidx].cycles = 0;
@@ -610,7 +606,6 @@ void ove_nuttx_runtime_reset(pid_t current_pid)
 	g_nx_runtime_total = 0;
 	g_nx_runtime_last = (uint32_t)up_perf_gettime();
 	g_nx_runtime_ready = true;
-	g_nx_runtime_overflow = false;
 	leave_critical_section(flags);
 }
 
@@ -729,8 +724,8 @@ uint64_t ove_nuttx_runtime_cycles_to_us(uint64_t cycles)
  * charges DELTAS of running_us expecting it cumulative, so a decayed value plateaus at steady state
  * → per-proc %CPU reads 0. Rebuild a MONOTONIC cumulative running_us by integrating each thread's
  * load fraction (cpu_percent_x100) over the wall-time between ove_thread_list() calls. Keyed by pid;
- * a slot whose thread wasn't seen in a pass is reclaimed, so recreated/exited threads neither leak
- * a slot nor carry a stale total. */
+ * every listing frees the slots of threads that no longer exist before any new thread takes one,
+ * so recreated/exited threads neither leak a slot nor carry a stale total. */
 #if !defined(CONFIG_ARCH_PERF_EVENTS)
 #define OVE_NX_CPUINT_MAX 32
 #else
@@ -745,10 +740,8 @@ static struct {
 	uint64_t cum_us; /* first: 16 bytes an entry instead of 24 */
 	pid_t pid;
 	bool used;
-	bool seen;
 } g_nx_cpuint[OVE_NX_CPUINT_MAX];
 static clock_t g_nx_cpuint_last;
-static bool g_nx_cpuint_overflow;
 #endif
 
 #if defined(CONFIG_ARCH_PERF_EVENTS)
@@ -816,6 +809,31 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	ctx->count++;
 }
 
+/* Free the accounting slots of threads that no longer exist.  Every listing
+ * does this, complete or not, so a caller whose buffer cannot hold every thread
+ * does not leak slots; liveness comes from the scheduler, not the snapshot, so
+ * a thread created since the snapshot keeps its slot.  A dead pid's slot can
+ * otherwise only go back through LXP's start, stop and reset, so a thread that
+ * exits while LXP's note hooks are off would keep it until the next reset. */
+static void _accounting_retain(void)
+{
+#if defined(CONFIG_ARCH_PERF_EVENTS)
+	/* The context-switch hook writes this table with interrupts masked. */
+	irqstate_t flags = enter_critical_section();
+	for (int k = 0; k < OVE_NX_RUNTIME_MAX; k++) {
+		if (g_nx_runtime[k].used && k != g_nx_runtime_current_index &&
+		    nxsched_get_tcb(g_nx_runtime[k].pid) == NULL)
+			memset(&g_nx_runtime[k], 0, sizeof(g_nx_runtime[k]));
+	}
+	leave_critical_section(flags);
+#else
+	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++) {
+		if (g_nx_cpuint[k].used && nxsched_get_tcb(g_nx_cpuint[k].pid) == NULL)
+			g_nx_cpuint[k].used = false;
+	}
+#endif
+}
+
 static void _nuttx_list_finish(struct ove_thread_info *info,
 			       const struct _nuttx_list_snapshot *snapshot, uint64_t dt_us)
 {
@@ -853,10 +871,7 @@ static void _nuttx_list_finish(struct ove_thread_info *info,
 				g_nx_cpuint[idx].pid = snapshot->pid;
 				g_nx_cpuint[idx].cum_us = 0;
 			}
-			if (idx < 0)
-				g_nx_cpuint_overflow = true;
 			if (idx >= 0) {
-				g_nx_cpuint[idx].seen = true;
 				g_nx_cpuint[idx].cum_us += (uint64_t)pct * dt_us / 10000U;
 				info->state_times.running_us = g_nx_cpuint[idx].cum_us;
 				info->valid_fields |= OVE_THREAD_INFO_VALID_RUNNING_TIME;
@@ -889,33 +904,20 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 	uint64_t dt_us =
 		(g_nx_cpuint_last == 0) ? 0 : (uint64_t)(now - g_nx_cpuint_last) * USEC_PER_TICK;
 	g_nx_cpuint_last = now;
-	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
-		g_nx_cpuint[k].seen = false;
 #else
 	uint64_t dt_us = 0;
 #endif
 
 	ove_nuttx_runtime_snapshot();
 	nxsched_foreach(_nuttx_list_cb, &ctx);
+	_accounting_retain(); /* before a newly listed thread claims a slot */
 	for (size_t i = 0; i < ctx.count; i++)
 		_nuttx_list_finish(&out[i], &g_nx_list_snapshot[i], dt_us);
-
-#if !defined(CONFIG_ARCH_PERF_EVENTS)
-	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
-		if (g_nx_cpuint[k].used && !g_nx_cpuint[k].seen)
-			g_nx_cpuint[k].used = false;
-#endif
 
 	if (actual_count)
 		*actual_count = ctx.count;
 	nxmutex_unlock(&g_nx_list_lock);
-	return (ctx.overflow
-#if defined(CONFIG_ARCH_PERF_EVENTS)
-		|| g_nx_runtime_overflow
-#else
-		|| g_nx_cpuint_overflow
-#endif
-		)
-		       ? OVE_ERR_QUEUE_FULL
-		       : OVE_OK;
+	/* A thread with no accounting slot is still listed, with its runtime
+	 * valid bits clear, so only an omitted thread makes this QUEUE_FULL. */
+	return ctx.overflow ? OVE_ERR_QUEUE_FULL : OVE_OK;
 }

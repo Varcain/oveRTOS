@@ -191,7 +191,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap \
               zig zig-zeroheap zig-debug lvgl-compile nuttx zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
-              qemu-nuttx qemu-nuttx-zeroheap \
+              qemu-nuttx qemu-nuttx-zeroheap qemu-nuttx-cpuload \
               qemu-zephyr qemu-zephyr-zeroheap \
               qemu-freertos-linux-segv qemu-nuttx-linux-segv \
               qemu-freertos-linux-hardfloat linux-abi-switch \
@@ -626,6 +626,7 @@ help:
 	@echo "  test-qemu-freertos-zeroheap - FreeRTOS QEMU ARM tests (zero-heap)"
 	@echo "  test-qemu-nuttx         - NuttX QEMU ARM tests"
 	@echo "  test-qemu-nuttx-zeroheap  - NuttX QEMU ARM tests (zero-heap)"
+	@echo "  test-qemu-nuttx-cpuload - NuttX QEMU ARM tests (cpuload accounting, as apps)"
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
 	@echo "  test-renode             - All Renode STM32F746 targets (FreeRTOS / Zephyr / NuttX)"

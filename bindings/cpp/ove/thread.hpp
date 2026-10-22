@@ -886,10 +886,9 @@ enum class ThreadInfoField : uint32_t {
  *
  * If the caller's array or an internal backend snapshot cannot hold every
  * thread, the function returns @ref Error::QueueFull after writing the partial
- * snapshot and setting its count in the C API.  The engine caps, the
- * short lifetime of each entry's @c name and the cases where QueueFull is not
- * yet reliable are described at @ref ove_thread_list and
- * @ref ove_thread_info.
+ * snapshot and setting its count in the C API.  The engine caps and the
+ * short lifetime of each entry's @c name are described at
+ * @ref ove_thread_list and @ref ove_thread_info.
  *
  * @param[out] out Array to fill with thread info.
  * @param[in]  max Maximum entries the @p out buffer can hold.

@@ -2057,14 +2057,15 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
 def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
-                    board_config=None):
+                    board_config=None, overlay=None):
     """Build and run a NuttX QEMU ARM test variant via CMake.
 
     `app_subdir` is the tests/sim/<dir>/ holding nuttx_app/ and
     nuttx_test_defconfig (e.g. "nuttx-qemu" or "nuttx-qemu-zeroheap").
     `board_config` selects the NuttX base config — the an500's board.yaml one
     (mps2-an500:nsh, flat) by default, or "mps2-an500:knsh" for the
-    CONFIG_BUILD_PROTECTED variant.
+    CONFIG_BUILD_PROTECTED variant.  `overlay` names a further defconfig
+    overlay in the same tests/sim/<dir>/, applied last.
     """
     if board_config is None:
         board_config = nuttx_board_config(_board_dir(ove_dir, "qemu-mps2-an500"))
@@ -2095,6 +2096,9 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
     if coverage:
         overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
                                      "nuttx_test_coverage_defconfig"))
+    if overlay:
+        overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
+                                     overlay))
 
     _nuttx_cmake_build(
         ove_dir,
@@ -2207,6 +2211,14 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     return _run_nuttx_qemu(ove_dir, output_dir,
                            app_subdir="nuttx-qemu-zeroheap",
                            label="qemu-nuttx-zeroheap")
+
+
+def test_qemu_nuttx_cpuload(ove_dir, output_dir):
+    """Build and run NuttX QEMU ARM tests with the cpuload accounting apps use."""
+    return _run_nuttx_qemu(ove_dir, output_dir,
+                           app_subdir="nuttx-qemu",
+                           label="qemu-nuttx-cpuload",
+                           overlay="nuttx_test_cpuload_defconfig")
 
 
 def test_qemu_nuttx_coverage(ove_dir, output_dir):
@@ -2865,6 +2877,7 @@ TEST_TARGETS = {
     "qemu-freertos-coverage": test_qemu_freertos_coverage,
     "qemu-nuttx": test_qemu_nuttx,
     "qemu-nuttx-zeroheap": test_qemu_nuttx_zeroheap,
+    "qemu-nuttx-cpuload": test_qemu_nuttx_cpuload,
     "qemu-nuttx-coverage": test_qemu_nuttx_coverage,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
@@ -2901,7 +2914,7 @@ TEST_TARGETS = {
 # Grouped test sets
 SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
-               "qemu-nuttx-zeroheap",
+               "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
                "qemu-zephyr", "qemu-zephyr-zeroheap"]
 RENODE_TESTS = ["renode-stm32f746-freertos",
                 "renode-stm32f746-freertos-zeroheap",
