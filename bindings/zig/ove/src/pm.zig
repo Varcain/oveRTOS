@@ -139,9 +139,9 @@ pub fn domainGetRefcount(domain: Domain) Error!i32 {
 /// Register a custom power policy callback.
 ///
 /// Pass `null` for `policy` to restore the default threshold-based policy.
-/// The policy runs on the PM thread, a low-priority thread each engine runs;
-/// a call already started can run once after it is replaced, and (not yet
-/// guaranteed) a call racing the replacement can see the other `user_data`.
+/// The policy runs on the PM thread, a low-priority thread each engine runs,
+/// and always receives the `user_data` registered with it; a call already
+/// started can run once after it is replaced.
 pub fn setPolicy(
     policy: ?*const fn (State, u32, u32, ?*anyopaque) callconv(.c) State,
     user_data: ?*anyopaque,

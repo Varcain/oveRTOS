@@ -107,6 +107,75 @@ static void domain_stress_entry(void *arg)
 	TEST_FLAG_SET(domain_thread_done, 1);
 }
 
+/* Two policies, each bound to its own identity token: a policy called with
+ * the other one's token means the idle path paired one ove_pm_set_policy()'s
+ * function with another's user_data.  The counters are touched only by the
+ * runner thread (the policy runs inside its ove_pm_idle_process() call). */
+static const char pol_tag_a;
+static const char pol_tag_b;
+static int pol_torn;
+static int pol_seen_a;
+static int pol_seen_b;
+static volatile int pol_flip_stop;
+static volatile int pol_flip_done;
+static volatile int pol_flip_fail;
+
+static ove_pm_state_t pol_a(ove_pm_state_t current, uint32_t idle_ms, uint32_t next_timeout_ms,
+			    void *user_data)
+{
+	(void)current;
+	(void)idle_ms;
+	(void)next_timeout_ms;
+	if (user_data != &pol_tag_a)
+		pol_torn++;
+	else
+		pol_seen_a++;
+	return OVE_PM_STATE_ACTIVE;
+}
+
+static ove_pm_state_t pol_b(ove_pm_state_t current, uint32_t idle_ms, uint32_t next_timeout_ms,
+			    void *user_data)
+{
+	(void)current;
+	(void)idle_ms;
+	(void)next_timeout_ms;
+	if (user_data != &pol_tag_b)
+		pol_torn++;
+	else
+		pol_seen_b++;
+	return OVE_PM_STATE_ACTIVE;
+}
+
+static void policy_flip_entry(void *arg)
+{
+	(void)arg;
+	int fail = 0;
+	while (!__atomic_load_n(&pol_flip_stop, __ATOMIC_ACQUIRE)) {
+		if (ove_pm_set_policy(pol_a, (void *)&pol_tag_a) != OVE_OK)
+			fail++;
+		if (ove_pm_set_policy(pol_b, (void *)&pol_tag_b) != OVE_OK)
+			fail++;
+	}
+	__atomic_store_n(&pol_flip_fail, fail, __ATOMIC_RELAXED);
+	TEST_FLAG_SET(pol_flip_done, 1);
+}
+
+/* Races ove_pm_set_state(), which writes last_activity_us, against the
+ * runner's ove_pm_idle_process(), which writes and reads it. */
+static void state_flip_entry(void *arg)
+{
+	(void)arg;
+	int fail = 0;
+	while (!__atomic_load_n(&pol_flip_stop, __ATOMIC_ACQUIRE)) {
+		if (ove_pm_set_state(OVE_PM_STATE_STANDBY) != OVE_OK)
+			fail++;
+		if (ove_pm_set_state(OVE_PM_STATE_ACTIVE) != OVE_OK)
+			fail++;
+	}
+	__atomic_store_n(&pol_flip_fail, fail, __ATOMIC_RELAXED);
+	TEST_FLAG_SET(pol_flip_done, 1);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  1. LIFECYCLE TESTS
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -696,6 +765,87 @@ static void test_pm_policy_with_userdata(void **state)
 	ove_pm_deinit();
 }
 
+/* The idle path must call each policy with the user_data registered alongside
+ * it.  A flipper thread swaps between two policies while the runner drives
+ * ove_pm_idle_process(); every call must see a matching {fn, user_data}. */
+static void test_pm_policy_pair_not_torn(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(pol_a, (void *)&pol_tag_a));
+
+	pol_torn = 0;
+	pol_seen_a = 0;
+	pol_seen_b = 0;
+	__atomic_store_n(&pol_flip_stop, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&pol_flip_done, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&pol_flip_fail, 0, __ATOMIC_RELAXED);
+
+	OVE_TEST_STORAGE(ove_thread_storage_t, t_stor);
+	OVE_TEST_STACK(t_stack, 2048);
+	ove_thread_t th;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &t_stor, "pol_flip", policy_flip_entry, NULL,
+					       t_stack, 2048));
+
+	/* Drive the idle path until both policies have run and 200000 calls
+	 * are made, or 2 s pass (a loaded host may start the flipper late);
+	 * count rather than assert while the flipper runs. */
+	uint64_t start_us = 0, now_us = 0;
+	int rc_t = ove_time_get_us(&start_us);
+	int i;
+	for (i = 0; rc_t == OVE_OK; i++) {
+		ove_pm_idle_process();
+		if ((i & 1023) == 0) {
+			if (i >= 200000 && pol_seen_a > 0 && pol_seen_b > 0)
+				break;
+			rc_t = ove_time_get_us(&now_us);
+			if (now_us - start_us > 2000000u)
+				break;
+		}
+	}
+
+	TEST_FLAG_SET(pol_flip_stop, 1);
+	int done = wait_for_flag(&pol_flip_done, 1, 5000);
+	ove_test_thread_destroy(th);
+	OVE_TEST_ASSERT_OK(ove_pm_set_policy(NULL, NULL));
+	ove_pm_deinit();
+
+	OVE_TEST_ASSERT_OK(rc_t);
+	assert_true(done);
+	assert_int_equal(__atomic_load_n(&pol_flip_fail, __ATOMIC_RELAXED), 0);
+	assert_true(pol_seen_a > 0 && pol_seen_b > 0);
+	assert_int_equal(pol_torn, 0);
+}
+
+/* Run under TSan (make test-stub-tsan) this catches last_activity_us being
+ * touched outside the PM lock; elsewhere it only checks the calls succeed. */
+static void test_pm_last_activity_concurrent(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_pm_init(&default_cfg));
+	__atomic_store_n(&pol_flip_stop, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&pol_flip_done, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&pol_flip_fail, 0, __ATOMIC_RELAXED);
+
+	OVE_TEST_STORAGE(ove_thread_storage_t, t_stor);
+	OVE_TEST_STACK(t_stack, 2048);
+	ove_thread_t th;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &t_stor, "st_flip", state_flip_entry, NULL,
+					       t_stack, 2048));
+	int i;
+	for (i = 0; i < 20000; i++) {
+		ove_pm_activity();
+		ove_pm_idle_process();
+		ove_pm_idle_process();
+	}
+	TEST_FLAG_SET(pol_flip_stop, 1);
+	int done = wait_for_flag(&pol_flip_done, 1, 5000);
+	ove_test_thread_destroy(th);
+	ove_pm_deinit();
+	assert_true(done);
+	assert_int_equal(__atomic_load_n(&pol_flip_fail, __ATOMIC_RELAXED), 0);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  6. NOTIFICATION TESTS
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -1038,6 +1188,8 @@ int test_pm_run(void)
 		cmocka_unit_test_setup(test_pm_custom_policy, pm_setup),
 		cmocka_unit_test_setup(test_pm_restore_default_policy, pm_setup),
 		cmocka_unit_test_setup(test_pm_policy_with_userdata, pm_setup),
+		cmocka_unit_test_setup(test_pm_last_activity_concurrent, pm_setup),
+		cmocka_unit_test_setup(test_pm_policy_pair_not_torn, pm_setup),
 
 		/* 6. Notifications */
 		cmocka_unit_test_setup(test_pm_notify_register_unregister, pm_setup),

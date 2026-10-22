@@ -4429,7 +4429,7 @@ const _: () = {
     ["Offset of field: ove_pm_stats::active_pct_x100"]
         [core::mem::offset_of!(ove_pm_stats, active_pct_x100) - 56usize];
 };
-#[doc = " @brief Power policy callback — returns recommended next state.\n\n Called on the PM thread, a low-priority thread each engine runs to drive\n the state machine (not the idle hook), without the PM lock held.  After\n ove_pm_set_policy() replaces it, a call that had already started can still\n run once.  Not guaranteed today: a call racing ove_pm_set_policy() can\n receive the other policy's @p user_data.\n\n @param[in] current         Current power state.\n @param[in] idle_ms         Milliseconds since last activity.\n @param[in] next_timeout_ms Milliseconds until next scheduled event.\n @param[in] user_data       Opaque pointer from ove_pm_set_policy().\n @return Recommended next power state."]
+#[doc = " @brief Power policy callback — returns recommended next state.\n\n Called on the PM thread, a low-priority thread each engine runs to drive\n the state machine (not the idle hook), without the PM lock held.  Each call\n receives the @p user_data registered together with this policy.  After\n ove_pm_set_policy() replaces it, a call that had already started can still\n run once, so its @p user_data must stay valid until then.\n\n @param[in] current         Current power state.\n @param[in] idle_ms         Milliseconds since last activity.\n @param[in] next_timeout_ms Milliseconds until next scheduled event.\n @param[in] user_data       Opaque pointer from ove_pm_set_policy().\n @return Recommended next power state."]
 pub type ove_pm_policy_fn = Option<
     unsafe extern "C" fn(
         current: ove_pm_state_t,
@@ -4488,7 +4488,7 @@ unsafe extern "C" {
     pub fn ove_pm_domain_get_refcount(domain: ove_pm_domain_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.  See @ref ove_pm_policy_fn for when the policy runs and\n what is not yet guaranteed while it is being replaced.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK, or @c OVE_ERR_INVALID_PARAM if @ref ove_pm_init has not been\n         called."]
+    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.  See @ref ove_pm_policy_fn for when the policy runs and\n what a replaced policy may still do.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK, or @c OVE_ERR_INVALID_PARAM if @ref ove_pm_init has not been\n         called."]
     pub fn ove_pm_set_policy(
         policy: ove_pm_policy_fn,
         user_data: *mut core::ffi::c_void,

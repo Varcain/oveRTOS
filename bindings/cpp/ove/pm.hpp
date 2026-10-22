@@ -170,7 +170,7 @@ inline void activity()
  * @brief Register a custom power policy callback.
  *
  * The policy runs on the PM thread; see @ref ove_pm_policy_fn for its
- * context and what is not yet guaranteed while it is being replaced.
+ * context and what a replaced policy may still do.
  *
  * @param[in] policy Policy function, or nullptr for default.
  * @param[in] user_data Opaque pointer forwarded to the policy.

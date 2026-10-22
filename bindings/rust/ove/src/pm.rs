@@ -322,10 +322,9 @@ unsafe extern "C" fn policy_trampoline<T: Send + Sync + 'static>(
 /// Register a typed-context power policy handler.
 ///
 /// The handler runs on the PM thread, a low-priority thread each engine runs
-/// to drive the state machine.  A call that had already started can still run
-/// once after it is replaced.  Not guaranteed today: replacing a handler while
-/// the PM thread is consulting the policy can pass the old trampoline the new
-/// handler, which is unsound when their `T` differ.
+/// to drive the state machine.  Each call gets the handler it was registered
+/// with; a call that had already started can still run once after it is
+/// replaced.
 pub fn set_policy<T: Send + Sync + 'static>(handler: &'static PolicyHandler<T>) -> Result<()> {
     let rc = unsafe {
         bindings::ove_pm_set_policy(
