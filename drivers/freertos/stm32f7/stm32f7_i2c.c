@@ -46,6 +46,35 @@ static uint32_t speed_to_timing(uint32_t speed_hz)
 	return 0x10C0ECFF;	   /* Standard-mode 100 kHz */
 }
 
+/* Translate a HAL status into an ove code.  The F7 I2C HAL never returns
+ * HAL_TIMEOUT: a timeout is HAL_ERROR with HAL_I2C_ERROR_TIMEOUT in
+ * ErrorCode, so the cause is read from there.  AF is checked first because a
+ * NACKed transfer whose STOP never arrives reports TIMEOUT as well.  Reads
+ * the handle only, so the error callback can use it in interrupt context. */
+static int hal_i2c_to_ove(const I2C_HandleTypeDef *hi2c, HAL_StatusTypeDef status)
+{
+	if (status == HAL_OK)
+		return OVE_OK;
+	if (status == HAL_BUSY)
+		return OVE_ERR_BUS_BUSY;
+	if (hi2c->ErrorCode & HAL_I2C_ERROR_AF)
+		return OVE_ERR_BUS_NACK;
+	if (hi2c->ErrorCode & HAL_I2C_ERROR_TIMEOUT)
+		return OVE_ERR_TIMEOUT;
+	return OVE_ERR_BUS_ERROR;
+}
+
+/* The blocking HAL calls wait for a free bus before they reset ErrorCode,
+ * and only OR into it, so if that wait times out on a wedged bus the AF of
+ * an earlier NACK would still be set and the timeout would read as a NACK.
+ * Clear it first, unless a transfer is in flight: the HAL call then returns
+ * HAL_BUSY without touching it, and the running transfer still owns it. */
+static void clear_stale_error(I2C_HandleTypeDef *hi2c)
+{
+	if (hi2c->State == HAL_I2C_STATE_READY)
+		hi2c->ErrorCode = HAL_I2C_ERROR_NONE;
+}
+
 int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	I2C_TypeDef *periph = instance_to_periph(cfg->instance);
@@ -65,7 +94,7 @@ int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 
 	hal_ret = HAL_I2C_Init(&i2c->hal_handle);
 	if (hal_ret != HAL_OK)
-		return OVE_ERR_NOT_SUPPORTED;
+		return OVE_ERR_IO;
 
 	return OVE_OK;
 }
@@ -80,32 +109,20 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len
 {
 	HAL_StatusTypeDef ret;
 
+	clear_stale_error(&i2c->hal_handle);
 	ret = HAL_I2C_Master_Transmit(&i2c->hal_handle, (uint16_t)(addr << 1), (uint8_t *)data,
 				      (uint16_t)len, stm32f7_ns_to_hal_ms(timeout_ns));
-	switch (ret) {
-	case HAL_OK:
-		return OVE_OK;
-	case HAL_TIMEOUT:
-		return OVE_ERR_TIMEOUT;
-	default:
-		return OVE_ERR_BUS_NACK;
-	}
+	return hal_i2c_to_ove(&i2c->hal_handle, ret);
 }
 
 int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
 {
 	HAL_StatusTypeDef ret;
 
+	clear_stale_error(&i2c->hal_handle);
 	ret = HAL_I2C_Master_Receive(&i2c->hal_handle, (uint16_t)(addr << 1), buf, (uint16_t)len,
 				     stm32f7_ns_to_hal_ms(timeout_ns));
-	switch (ret) {
-	case HAL_OK:
-		return OVE_OK;
-	case HAL_TIMEOUT:
-		return OVE_ERR_TIMEOUT;
-	default:
-		return OVE_ERR_BUS_NACK;
-	}
+	return hal_i2c_to_ove(&i2c->hal_handle, ret);
 }
 
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
@@ -128,6 +145,7 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t 
 			mem_size = I2C_MEMADD_SIZE_16BIT;
 		}
 
+		clear_stale_error(&i2c->hal_handle);
 		ret = HAL_I2C_Mem_Read(&i2c->hal_handle, (uint16_t)(addr << 1), mem_addr, mem_size,
 				       rx, (uint16_t)rx_len, stm32f7_ns_to_hal_ms(timeout_ns));
 	} else {
@@ -144,14 +162,7 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t 
 	}
 
 err:
-	switch (ret) {
-	case HAL_OK:
-		return OVE_OK;
-	case HAL_TIMEOUT:
-		return OVE_ERR_TIMEOUT;
-	default:
-		return OVE_ERR_BUS_NACK;
-	}
+	return hal_i2c_to_ove(&i2c->hal_handle, ret);
 }
 
 #ifdef CONFIG_OVE_ASYNC
@@ -206,7 +217,7 @@ int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, s
 							    I2C_FIRST_FRAME);
 		if (ret != HAL_OK) {
 			s_active_i2c[i2c->instance] = NULL;
-			return (ret == HAL_BUSY) ? OVE_ERR_BUS_BUSY : OVE_ERR_BUS_ERROR;
+			return hal_i2c_to_ove(&i2c->hal_handle, ret);
 		}
 		ret = HAL_I2C_Master_Sequential_Receive_IT(&i2c->hal_handle, (uint16_t)(addr << 1),
 							   rx, (uint16_t)rx_len, I2C_LAST_FRAME);
@@ -214,7 +225,7 @@ int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, s
 
 	if (ret != HAL_OK) {
 		s_active_i2c[i2c->instance] = NULL;
-		return (ret == HAL_BUSY) ? OVE_ERR_BUS_BUSY : OVE_ERR_BUS_ERROR;
+		return hal_i2c_to_ove(&i2c->hal_handle, ret);
 	}
 	return OVE_OK;
 }
@@ -245,7 +256,7 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
 
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-	i2c_async_done(hi2c, OVE_ERR_BUS_NACK);
+	i2c_async_done(hi2c, hal_i2c_to_ove(hi2c, HAL_ERROR));
 }
 
 #endif /* CONFIG_OVE_ASYNC */

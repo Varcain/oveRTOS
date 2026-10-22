@@ -197,6 +197,26 @@ static void test_gpio_set_invalid_port(void **state)
 	assert_int_not_equal(rc, OVE_OK);
 }
 
+static void test_gpio_irq_ops_on_unregistered_pin(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_board_init());
+
+	assert_int_equal(ove_gpio_irq_enable(TEST_GPIO_PORT, TEST_GPIO_PIN), OVE_ERR_NOT_FOUND);
+	assert_int_equal(ove_gpio_irq_disable(TEST_GPIO_PORT, TEST_GPIO_PIN), OVE_ERR_NOT_FOUND);
+	assert_int_equal(ove_gpio_irq_unregister(TEST_GPIO_PORT, TEST_GPIO_PIN), OVE_ERR_NOT_FOUND);
+}
+
+static void test_gpio_irq_ops_invalid_pin(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_board_init());
+
+	assert_int_equal(ove_gpio_irq_enable(9999, 9999), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_gpio_irq_disable(9999, 9999), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_gpio_irq_unregister(9999, 9999), OVE_ERR_INVALID_PARAM);
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_gpio_run(void)
@@ -212,6 +232,8 @@ int test_gpio_run(void)
 		cmocka_unit_test_teardown(test_gpio_irq_enable_disable, gpio_irq_teardown),
 		cmocka_unit_test(test_gpio_irq_retains_owner_when_unregister_fails),
 		cmocka_unit_test(test_gpio_set_invalid_port),
+		cmocka_unit_test(test_gpio_irq_ops_on_unregistered_pin),
+		cmocka_unit_test(test_gpio_irq_ops_invalid_pin),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

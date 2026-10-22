@@ -22,6 +22,26 @@
 
 #include <nuttx/i2c/i2c_master.h>
 
+/* Translate the errno of a failed I2CIOC_TRANSFER.  The STM32F7 driver
+ * reports a NACK as EADDRNOTAVAIL (address) or ECOMM (data), never ENXIO;
+ * ENXIO is what other NuttX I2C drivers use.  Arbitration loss (EAGAIN)
+ * and a bus still busy after the transfer (EBUSY) are bus faults, not a
+ * transfer in flight. */
+static int i2c_errno_to_ove(int e)
+{
+	switch (e) {
+	case ENXIO:
+	case EADDRNOTAVAIL:
+	case ECOMM:
+		return OVE_ERR_BUS_NACK;
+	case ETIMEDOUT:
+	case ETIME:
+		return OVE_ERR_TIMEOUT;
+	default:
+		return OVE_ERR_BUS_ERROR;
+	}
+}
+
 int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	char path[32];
@@ -62,11 +82,8 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len
 	};
 
 	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER, (unsigned long)&xfer);
-	if (ret < 0) {
-		if (errno == ENXIO)
-			return OVE_ERR_BUS_NACK;
-		return OVE_ERR_BUS_ERROR;
-	}
+	if (ret < 0)
+		return i2c_errno_to_ove(errno);
 	return OVE_OK;
 }
 
@@ -87,11 +104,8 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 	};
 
 	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER, (unsigned long)&xfer);
-	if (ret < 0) {
-		if (errno == ENXIO)
-			return OVE_ERR_BUS_NACK;
-		return OVE_ERR_BUS_ERROR;
-	}
+	if (ret < 0)
+		return i2c_errno_to_ove(errno);
 	return OVE_OK;
 }
 
@@ -122,11 +136,8 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t 
 	};
 
 	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER, (unsigned long)&xfer);
-	if (ret < 0) {
-		if (errno == ENXIO)
-			return OVE_ERR_BUS_NACK;
-		return OVE_ERR_BUS_ERROR;
-	}
+	if (ret < 0)
+		return i2c_errno_to_ove(errno);
 	return OVE_OK;
 }
 

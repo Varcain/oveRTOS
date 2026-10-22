@@ -85,7 +85,7 @@ int ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg)
 
 	hal_ret = HAL_SPI_Init(&spi->hal_handle);
 	if (hal_ret != HAL_OK)
-		return OVE_ERR_NOT_SUPPORTED;
+		return OVE_ERR_IO;
 
 	return OVE_OK;
 }
@@ -114,6 +114,8 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 		return OVE_OK;
 	case HAL_TIMEOUT:
 		return OVE_ERR_TIMEOUT;
+	case HAL_BUSY:
+		return OVE_ERR_BUS_BUSY;
 	default:
 		return OVE_ERR_BUS_ERROR;
 	}

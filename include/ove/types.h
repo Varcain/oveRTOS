@@ -126,7 +126,10 @@ typedef enum ove_err {
 	/** Bus device did not acknowledge (I2C NACK). */
 	OVE_ERR_BUS_NACK = -14,
 
-	/** Bus arbitration lost (multi-master). */
+	/**
+	 * Bus or controller busy: a transfer is already in flight, or the bus is
+	 * held (retry later).
+	 */
 	OVE_ERR_BUS_BUSY = -15,
 
 	/** Framing, parity, or hardware error on a serial bus. */

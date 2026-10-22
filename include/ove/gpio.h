@@ -117,7 +117,9 @@ OVE_NODISCARD int ove_gpio_irq_register(unsigned int port, unsigned int pin,
  *
  * @param[in] port  GPIO port index.
  * @param[in] pin   GPIO pin index within the port.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for an out-of-range
+ *         @p port or @p pin, OVE_ERR_NOT_FOUND if the pin has no
+ *         registration, or another negative error code from the backend.
  */
 int ove_gpio_irq_enable(unsigned int port, unsigned int pin);
 
@@ -129,7 +131,9 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin);
  *
  * @param[in] port  GPIO port index.
  * @param[in] pin   GPIO pin index within the port.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for an out-of-range
+ *         @p port or @p pin, OVE_ERR_NOT_FOUND if the pin has no
+ *         registration, or another negative error code from the backend.
  */
 int ove_gpio_irq_disable(unsigned int port, unsigned int pin);
 
@@ -142,7 +146,9 @@ int ove_gpio_irq_disable(unsigned int port, unsigned int pin);
  *
  * @param[in] port  GPIO port index.
  * @param[in] pin   GPIO pin index within the port.
- * @return OVE_OK on success, negative error code if no matching registration.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for an out-of-range
+ *         @p port or @p pin, OVE_ERR_NOT_FOUND if the pin has no
+ *         registration, or another negative error code from the backend.
  */
 int ove_gpio_irq_unregister(unsigned int port, unsigned int pin);
 

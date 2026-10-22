@@ -39,6 +39,26 @@ static uint32_t speed_to_zephyr(uint32_t speed_hz)
 	return I2C_SPEED_STANDARD;
 }
 
+/* Translate a negative errno from a Zephyr I2C transfer.  The STM32 driver
+ * reports NACK, arbitration loss and timeout all as -EIO, so -EIO stays a
+ * NACK: the common case, and the one ove_i2c_probe relies on. */
+static int i2c_errno_to_ove(int ret)
+{
+	switch (ret) {
+	case 0:
+		return OVE_OK;
+	case -EIO:
+	case -ENXIO:
+		return OVE_ERR_BUS_NACK;
+	case -ETIMEDOUT:
+		return OVE_ERR_TIMEOUT;
+	case -EBUSY:
+		return OVE_ERR_BUS_BUSY;
+	default:
+		return OVE_ERR_BUS_ERROR;
+	}
+}
+
 int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	const struct device *dev = instance_to_dev(cfg->instance);
@@ -51,7 +71,7 @@ int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 	uint32_t i2c_cfg = I2C_MODE_CONTROLLER | I2C_SPEED_SET(speed_to_zephyr(i2c->speed_hz));
 	int ret = i2c_configure(dev, i2c_cfg);
 	if (ret != 0)
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-ret);
 
 	return OVE_OK;
 }
@@ -67,9 +87,7 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len
 	(void)timeout_ns;
 
 	int ret = i2c_write(i2c->dev, data, len, addr);
-	if (ret == -EIO)
-		return OVE_ERR_BUS_NACK;
-	return (ret == 0) ? OVE_OK : OVE_ERR_BUS_ERROR;
+	return i2c_errno_to_ove(ret);
 }
 
 int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
@@ -77,9 +95,7 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 	(void)timeout_ns;
 
 	int ret = i2c_read(i2c->dev, buf, len, addr);
-	if (ret == -EIO)
-		return OVE_ERR_BUS_NACK;
-	return (ret == 0) ? OVE_OK : OVE_ERR_BUS_ERROR;
+	return i2c_errno_to_ove(ret);
 }
 
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
@@ -88,9 +104,7 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t 
 	(void)timeout_ns;
 
 	int ret = i2c_write_read(i2c->dev, addr, tx, tx_len, rx, rx_len);
-	if (ret == -EIO)
-		return OVE_ERR_BUS_NACK;
-	return (ret == 0) ? OVE_OK : OVE_ERR_BUS_ERROR;
+	return i2c_errno_to_ove(ret);
 }
 
 #ifdef CONFIG_OVE_ASYNC

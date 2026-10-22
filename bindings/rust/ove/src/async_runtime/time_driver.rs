@@ -94,6 +94,10 @@ impl Driver for OveTimeDriver {
     }
 }
 
+/// Longest single alarm the driver arms: one hour, far inside every
+/// engine's timer range.  Longer waits are covered by re-arming.
+const MAX_ALARM_NS: u64 = 3_600 * 1_000_000_000;
+
 impl OveTimeDriver {
     /// Re-arm the alarm to fire at absolute deadline `at_us` (in
     /// microseconds), given the current time `now_us`. If `at_us` is
@@ -117,10 +121,15 @@ impl OveTimeDriver {
         }
 
         // Compute the delay. Saturating sub guards against the wake
-        // being already overdue (in which case we want to fire ASAP,
-        // clamped to at least 1 ns by the backend).
+        // being already overdue (in which case we want to fire ASAP, so
+        // the delay is clamped to at least 1 ns below).
+        // Cap the wait at MAX_ALARM_NS: engines refuse periods beyond
+        // their tick range (NuttX about 12.4 days, FreeRTOS about 49.7 at
+        // a 1 ms tick), which would leave the alarm unarmed and the
+        // waiter asleep for good.  A capped alarm fires early, finds the
+        // deadline not yet due and re-arms for the rest.
         let delay_us = at_us.saturating_sub(now_us);
-        let delay_ns: u64 = delay_us.saturating_mul(1_000).max(1);
+        let delay_ns: u64 = delay_us.saturating_mul(1_000).clamp(1, MAX_ALARM_NS);
 
         // SAFETY: ove_timer_set_period_ns atomically changes the
         // timer's period and rearms it with the new period — no
@@ -128,9 +137,8 @@ impl OveTimeDriver {
         // approach of init_ns + start corrupted FreeRTOS's timer list
         // because xTimerCreateStatic was called on a slot the kernel
         // still held in its daemon-task list).
-        unsafe {
-            let _ = bindings::ove_timer_set_period_ns(handle, delay_ns);
-        }
+        let rc = unsafe { bindings::ove_timer_set_period_ns(handle, delay_ns) };
+        debug_assert_eq!(rc, 0, "alarm re-arm refused");
     }
 
     /// Lazily construct the alarm timer.

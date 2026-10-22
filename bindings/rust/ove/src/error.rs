@@ -49,7 +49,8 @@ pub enum Error {
     NetClosed,
     /// Bus peripheral: device did not acknowledge (`OVE_ERR_BUS_NACK`).
     BusNack,
-    /// Bus peripheral: bus is busy / arbitration lost (`OVE_ERR_BUS_BUSY`).
+    /// Bus or controller busy: a transfer is already in flight, or the bus
+    /// is held; retry later (`OVE_ERR_BUS_BUSY`).
     BusBusy,
     /// Bus peripheral: generic bus error (`OVE_ERR_BUS_ERROR`).
     BusError,

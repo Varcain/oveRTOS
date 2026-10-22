@@ -238,6 +238,61 @@ static void test_timer_callback_user_data(void **state)
 	ove_test_timer_destroy(t);
 }
 
+/* The longest period depends on the engine (see timer.h): NuttX refuses
+ * WDOG_MAX_DELAY ticks or more (about 12.4 days at a 1 ms tick) and FreeRTOS
+ * a tick count beyond TickType_t (about 49.7 days at 1 kHz).  12 days fits
+ * everywhere.  A longer period is either refused up front with
+ * OVE_ERR_INVALID_PARAM or accepted, and an accepted one must start; the
+ * last one is beyond both of those engines' range at any tick rate. */
+static void test_timer_long_periods(void **state)
+{
+	(void)state;
+	const uint64_t day_ns = 86400ULL * 1000000000ULL;
+	const uint64_t periods[] = {12 * day_ns, 13 * day_ns, 50 * day_ns, UINT64_MAX / 2};
+
+	for (size_t i = 0; i < sizeof(periods) / sizeof(periods[0]); i++) {
+		ove_timer_t t = NULL;
+		int rc = ove_test_timer_create_ns(&t, &s_tmr_storage, periodic_cb, NULL, periods[i],
+						  0);
+		if (i == 0)
+			OVE_TEST_ASSERT_OK(rc);
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_NUTTX)
+		if (i == sizeof(periods) / sizeof(periods[0]) - 1)
+			assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+#endif
+		if (rc != OVE_OK) {
+			assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+			continue;
+		}
+		OVE_TEST_ASSERT_OK(ove_timer_start(t));
+		OVE_TEST_ASSERT_OK(ove_timer_stop(t));
+		ove_test_timer_destroy(t);
+	}
+}
+
+/* A refused ove_timer_set_period_ns leaves the timer running as it was. */
+static void test_timer_set_period_refused_keeps_period(void **state)
+{
+	(void)state;
+	ove_timer_t t = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 20, 0));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
+
+	int rc = ove_timer_set_period_ns(t, UINT64_MAX / 2);
+#if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_NUTTX)
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+#endif
+	if (rc != OVE_OK) {
+		assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+		s_periodic_count = 0;
+		test_msleep(150);
+		assert_true(s_periodic_count >= 2);
+	}
+
+	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
+	ove_test_timer_destroy(t);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void test_timer_create_null_handle(void **state)
 {
@@ -284,6 +339,8 @@ int test_timer_run(void)
 		cmocka_unit_test_setup(test_timer_destroy_while_running, timer_setup),
 		cmocka_unit_test_setup(test_timer_destroy_waits_for_active_callback, timer_setup),
 		cmocka_unit_test_setup(test_timer_callback_user_data, timer_setup),
+		cmocka_unit_test_setup(test_timer_long_periods, timer_setup),
+		cmocka_unit_test_setup(test_timer_set_period_refused_keeps_period, timer_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_timer_create_null_handle, timer_setup),
 		cmocka_unit_test_setup(test_timer_create_null_callback, timer_setup),
