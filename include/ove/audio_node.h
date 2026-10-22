@@ -163,8 +163,7 @@ struct ove_audio_node_ops {
      * when a device sink drives it, or the caller of
      * ove_audio_graph_process().  ove_audio_graph_stop() and
      * ove_audio_graph_deinit() wait for a running cycle, so neither may be
-     * called from here; see ove_audio_graph_stop() for the native drivers
-     * where this is not yet guaranteed.
+     * called from here.
      *
      * @param[in]  ctx  Node context pointer.
      * @param[in]  in   Input buffer, or NULL for sources.
@@ -232,8 +231,7 @@ struct ove_audio_channel_map {
  * graph (see @ref ove_audio_node_ops); keep it short, as it delays the
  * cycle.  ove_audio_graph_stop() and ove_audio_graph_deinit() wait for a
  * running call, so @p user_data must stay valid until either returns, and the
- * callback must not call them.  Not guaranteed today with the native drivers
- * listed at ove_audio_graph_stop().
+ * callback must not call them.
  *
  * @param[in] buf        Buffer containing the observed audio data.
  * @param[in] user_data  Opaque pointer supplied at node creation.

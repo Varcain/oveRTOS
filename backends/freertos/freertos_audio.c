@@ -336,6 +336,9 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 
 #ifdef CONFIG_OVE_I2S
 	if (cfg->transport == OVE_AUDIO_TRANSPORT_I2S) {
+		/* The source's slots are shared too: leave a running graph's alone. */
+		if (g_sink_ctx.graph != NULL && g_sink_ctx.graph != g)
+			return OVE_ERR_BUSY;
 		struct i2s_source_ctx *ctx = &g_source_ctx;
 		memset(ctx, 0, sizeof(*ctx));
 		ctx->fmt = cfg->fmt;
@@ -370,6 +373,9 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 		/* The DMA buffers below hold board.yaml's buffer_samples frames. */
 		if (g->frames_per_period > OVE_AUDIO_I2S_BUFFER_SAMPLES)
 			return OVE_ERR_INVALID_PARAM;
+		/* One SAI: a second sink would take it from the first. */
+		if (g_sink_ctx.graph != NULL)
+			return OVE_ERR_BUSY;
 		struct i2s_sink_ctx *ctx = &g_sink_ctx;
 		memset(ctx, 0, sizeof(*ctx));
 		ctx->fmt = cfg->fmt;
@@ -415,8 +421,10 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 #else
 		int ret = ove_i2s_init(&ctx->i2s, &ctx->i2s_storage, tx_dma, rx_dma, &i2s_cfg);
 #endif
-		if (ret != OVE_OK)
+		if (ret != OVE_OK) {
+			ctx->graph = NULL;
 			return ret;
+		}
 
 		/* Board-specific codec init (WM8994 etc.) */
 		ove_board_audio_codec_init(cfg->fmt.sample_rate, cfg->i2s.input_device);
@@ -427,6 +435,11 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 
 		int idx =
 			ove_audio_graph_add_node(g, &i2s_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+		if (idx < 0) {
+			ove_i2s_deinit(ctx->i2s);
+			ctx->i2s = NULL;
+			ctx->graph = NULL;
+		}
 		return idx;
 	}
 #endif

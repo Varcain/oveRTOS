@@ -70,8 +70,7 @@ inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t
  *
  * stop() and destruction wait for a processing cycle that is running and, with
  * a device sink, stop the thread that drives the graph; never call them from a
- * node or tap callback.  Not guaranteed today with the native drivers listed
- * at @ref ove_audio_graph_stop.
+ * node or tap callback; see @ref ove_audio_graph_stop.
  */
 class Graph
 {
@@ -176,7 +175,8 @@ class Graph
 		return from_rc(rc, stats);
 	}
 
-	/// Add an audio input device as a source node.
+	/// Add an audio input device as a source node.  Fails with Error::Busy
+	/// while another graph holds the native I2S sink (see device_sink()).
 	/// @return On success, the assigned node index.
 	[[nodiscard]] Result<int> device_source(const struct ove_audio_device_cfg *cfg,
 						const char *name) noexcept
@@ -187,7 +187,9 @@ class Graph
 		return std::unexpected{static_cast<Error>(rc)};
 	}
 
-	/// Add an audio output device as a sink node.
+	/// Add an audio output device as a sink node.  The native I2S drivers
+	/// drive one sink: until the graph holding it is deinitialised, another
+	/// fails with Error::Busy.
 	/// @return On success, the assigned node index.
 	[[nodiscard]] Result<int> device_sink(const struct ove_audio_device_cfg *cfg,
 					      const char *name) noexcept

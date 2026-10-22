@@ -351,10 +351,13 @@ static void zephyr_audio_hw_start(void)
 #endif
 }
 
-/* Two block periods: the one in flight and some slack. */
-static unsigned int block_wait_ms(const struct zephyr_i2s_sink_ctx *sc)
+/* Two I2S block periods, the one in flight and some slack.  RX blocks and the
+ * TX prefill hold BLOCK_SIZE whatever the graph's period. */
+static unsigned int block_wait_ms(void)
 {
-	return 2u * (sc->frames_per_period * 1000u / g_i2s_rate) + 10u;
+	unsigned int rate = g_i2s_rate ? g_i2s_rate : 8000u;
+
+	return 2u * (OVE_AUDIO_I2S_BUFFER_SAMPLES * 1000u / rate) + 10u;
 }
 
 static int zephyr_sink_start(void *ctx)
@@ -363,7 +366,7 @@ static int zephyr_sink_start(void *ctx)
 
 	zephyr_audio_hw_start();
 	if (!start_i2s_streams(sc->initial_blocks)) {
-		stop_i2s_streams(block_wait_ms(sc));
+		stop_i2s_streams(block_wait_ms());
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
@@ -377,14 +380,13 @@ static int zephyr_sink_start(void *ctx)
  * until the next start and no longer touches the graph. */
 static int zephyr_sink_stop(void *ctx)
 {
-	struct zephyr_i2s_sink_ctx *sc = (struct zephyr_i2s_sink_ctx *)ctx;
-
+	(void)ctx;
 	if (!atomic_cas(&audio_running, 1, 0))
 		return OVE_OK;
 	k_wakeup(zephyr_audio_thread);
 	k_sem_take(&audio_parked_sem, K_FOREVER);
 
-	stop_i2s_streams(block_wait_ms(sc));
+	stop_i2s_streams(block_wait_ms());
 	return OVE_OK;
 }
 
@@ -440,6 +442,10 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	if (g->frames_per_period > OVE_AUDIO_I2S_BUFFER_SAMPLES)
 		return OVE_ERR_INVALID_PARAM;
 
+	/* The input and the thread priority are shared: leave a running graph's alone. */
+	if (g_zephyr_sink_ctx.graph != NULL && g_zephyr_sink_ctx.graph != g)
+		return OVE_ERR_BUSY;
+
 	int ret = zephyr_i2s_init_once(cfg->fmt.sample_rate);
 	if (ret != OVE_OK)
 		return ret;
@@ -470,15 +476,26 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	if (ret != OVE_OK)
 		return ret;
 
+	/* One audio thread and SAI: a second sink would take them from the first. */
+	if (g_zephyr_sink_ctx.graph != NULL)
+		return OVE_ERR_BUSY;
 	struct zephyr_i2s_sink_ctx *ctx = &g_zephyr_sink_ctx;
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->fmt = cfg->fmt;
 	ctx->graph = g;
 	ctx->frames_per_period = g->frames_per_period;
 	ctx->initial_blocks = cfg->num_buffers ? cfg->num_buffers : DEFAULT_INITIAL_BLOCKS;
+#ifdef CONFIG_I2S_STM32_SAI_BLOCK_COUNT
+	/* The SAI's TX queue drops (and leaks) a prefill block it has no room for. */
+	if (ctx->initial_blocks > CONFIG_I2S_STM32_SAI_BLOCK_COUNT)
+		ctx->initial_blocks = CONFIG_I2S_STM32_SAI_BLOCK_COUNT;
+#endif
 	ctx->thread_priority = cfg->thread_priority ? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY;
 
-	return ove_audio_graph_add_node(g, &zephyr_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+	int idx = ove_audio_graph_add_node(g, &zephyr_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+	if (idx < 0)
+		ctx->graph = NULL;
+	return idx;
 }
 
 #else /* !HAVE_I2S_NODES */

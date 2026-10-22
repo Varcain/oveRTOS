@@ -85,8 +85,7 @@ pub const Graph = struct {
 
     /// `stop` and `deinit` wait for a processing cycle that is running and,
     /// with a device sink, stop the thread that drives the graph; never call
-    /// them from a node or tap callback.  Not guaranteed today with the native
-    /// NuttX audio driver (see `ove_audio_graph_stop`).
+    /// them from a node or tap callback (see `ove_audio_graph_stop`).
     pub fn stop(self: *Graph) Error!void {
         try err.fromCode(c.ove_audio_graph_stop(&self.raw));
     }
@@ -97,6 +96,8 @@ pub const Graph = struct {
         try err.fromCode(c.ove_audio_graph_process(&self.raw));
     }
 
+    /// Fails with `error.Busy` while another graph holds the native I2S sink
+    /// (see `deviceSink`).
     pub fn deviceSource(
         self: *Graph,
         cfg: *const c.struct_ove_audio_device_cfg,
@@ -107,6 +108,8 @@ pub const Graph = struct {
         return rc;
     }
 
+    /// The native I2S drivers drive one sink: until the graph holding it is
+    /// deinitialised, another fails with `error.Busy`.
     pub fn deviceSink(
         self: *Graph,
         cfg: *const c.struct_ove_audio_device_cfg,
