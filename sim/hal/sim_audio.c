@@ -129,6 +129,13 @@ struct sim_source_ctx {
 	struct ove_sim_audio_fmt sim_fmt;
 };
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+/* Zero-heap mode: picolibc / Zephyr / NuttX zh disable malloc/calloc.
+ * One sim source per app; destroy frees the slot for the next graph. */
+static struct sim_source_ctx g_source_storage;
+static int g_source_used;
+#endif
+
 static int sim_source_configure(void *ctx, const struct ove_audio_fmt *in,
 				struct ove_audio_fmt *out)
 {
@@ -151,7 +158,8 @@ static int sim_source_process(void *ctx, const struct ove_audio_buf *in, struct 
 static void sim_source_destroy(void *ctx)
 {
 #ifdef CONFIG_OVE_ZERO_HEAP
-	(void)ctx; /* static storage — see ove_audio_device_source */
+	(void)ctx;
+	g_source_used = 0;
 #else
 	free(ctx);
 #endif
@@ -174,8 +182,16 @@ struct sim_sink_ctx {
 	struct ove_audio_graph *graph;
 	unsigned int frames_per_period;
 	ove_thread_t pump_thread;
-	volatile int running;
+	int running;
 };
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+/* See g_source_storage. */
+static struct sim_sink_ctx g_sink_storage;
+static int g_sink_used;
+static ove_thread_storage_t g_pump_th_storage;
+static uint8_t __attribute__((aligned(8))) g_pump_th_stack[4096];
+#endif
 
 static void sim_sink_pump(void *arg)
 {
@@ -184,9 +200,10 @@ static void sim_sink_pump(void *arg)
 	if (period_ms < 1)
 		period_ms = 1;
 
-	while (sc->running) {
-		/* Fails only for a graph that is not built, which this pump never
-		 * sees; a failing node is counted in the graph's stats instead. */
+	while (__atomic_load_n(&sc->running, __ATOMIC_ACQUIRE)) {
+		/* Fails only for a graph that is not built or is being stopped,
+		 * when the cycle is skipped; a failing node is counted in the
+		 * graph's stats instead. */
 		int rc = ove_audio_graph_process(sc->graph);
 		(void)rc;
 		ove_thread_sleep_ms(period_ms);
@@ -196,24 +213,37 @@ static void sim_sink_pump(void *arg)
 static int sim_sink_start(void *ctx)
 {
 	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
-	sc->running = 1;
-#ifdef OVE_HEAP_THREAD
-	return ove_thread_create(&sc->pump_thread, "audio-pump", sim_sink_pump, sc, OVE_PRIO_HIGH,
-				 4096);
+	int rc;
+
+	__atomic_store_n(&sc->running, 1, __ATOMIC_RELEASE);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	rc = ove_thread_init(&sc->pump_thread, &g_pump_th_storage, "audio-pump", sim_sink_pump, sc,
+			     OVE_PRIO_HIGH, sizeof(g_pump_th_stack), g_pump_th_stack);
 #else
-	static ove_thread_storage_t pump_th_storage;
-	static uint8_t __attribute__((aligned(8))) pump_th_stack[4096];
-	return ove_thread_init(&sc->pump_thread, &pump_th_storage, "audio-pump", sim_sink_pump, sc,
-			       OVE_PRIO_HIGH, sizeof(pump_th_stack), pump_th_stack);
+	rc = ove_thread_create(&sc->pump_thread, "audio-pump", sim_sink_pump, sc, OVE_PRIO_HIGH,
+			       4096);
 #endif
+	if (rc != OVE_OK) {
+		__atomic_store_n(&sc->running, 0, __ATOMIC_RELAXED);
+		sc->pump_thread = NULL;
+	}
+	return rc;
 }
 
+/* Joins the pump, so no cycle starts after the graph has stopped. */
 static int sim_sink_stop(void *ctx)
 {
 	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
-	sc->running = 0;
-	/* Thread will exit on next sleep; give it time. */
-	ove_thread_sleep_ms(50);
+	if (!sc->pump_thread)
+		return OVE_OK;
+
+	__atomic_store_n(&sc->running, 0, __ATOMIC_RELEASE);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_thread_deinit(sc->pump_thread);
+#else
+	ove_thread_destroy(sc->pump_thread);
+#endif
+	sc->pump_thread = NULL;
 	return OVE_OK;
 }
 
@@ -240,11 +270,9 @@ static int sim_sink_process(void *ctx, const struct ove_audio_buf *in, struct ov
 
 static void sim_sink_destroy(void *ctx)
 {
-	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
-	if (sc->running)
-		sim_sink_stop(ctx);
+	(void)sim_sink_stop(ctx);
 #ifdef CONFIG_OVE_ZERO_HEAP
-		/* static storage — see ove_audio_device_sink */
+	g_sink_used = 0;
 #else
 	free(ctx);
 #endif
@@ -280,15 +308,11 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 		/* Accept both sim and I2S transport -- sim handles both. */
 
 #ifdef CONFIG_OVE_ZERO_HEAP
-	/* Zero-heap mode: picolibc / Zephyr / NuttX zh disable malloc/calloc.
-	 * One sim source per app — file-scope static storage suffices. */
-	static struct sim_source_ctx _ctx_storage;
-	static int _ctx_used;
-	if (_ctx_used)
+	if (g_source_used)
 		return OVE_ERR_NO_MEMORY;
-	struct sim_source_ctx *ctx = &_ctx_storage;
+	struct sim_source_ctx *ctx = &g_source_storage;
 	memset(ctx, 0, sizeof(*ctx));
-	_ctx_used = 1;
+	g_source_used = 1;
 #else
 	struct sim_source_ctx *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx)
@@ -301,7 +325,7 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	int idx = ove_audio_graph_add_node(g, &sim_source_ops, ctx, name, OVE_AUDIO_NODE_SOURCE);
 	if (idx < 0) {
 #ifdef CONFIG_OVE_ZERO_HEAP
-		_ctx_used = 0;
+		g_source_used = 0;
 #else
 		free(ctx);
 #endif
@@ -316,14 +340,11 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 		return OVE_ERR_INVALID_PARAM;
 
 #ifdef CONFIG_OVE_ZERO_HEAP
-	/* Zero-heap mode: see ove_audio_device_source comment. */
-	static struct sim_sink_ctx _ctx_storage;
-	static int _ctx_used;
-	if (_ctx_used)
+	if (g_sink_used)
 		return OVE_ERR_NO_MEMORY;
-	struct sim_sink_ctx *ctx = &_ctx_storage;
+	struct sim_sink_ctx *ctx = &g_sink_storage;
 	memset(ctx, 0, sizeof(*ctx));
-	_ctx_used = 1;
+	g_sink_used = 1;
 #else
 	struct sim_sink_ctx *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx)
@@ -338,7 +359,7 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	int idx = ove_audio_graph_add_node(g, &sim_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
 	if (idx < 0) {
 #ifdef CONFIG_OVE_ZERO_HEAP
-		_ctx_used = 0;
+		g_sink_used = 0;
 #else
 		free(ctx);
 #endif

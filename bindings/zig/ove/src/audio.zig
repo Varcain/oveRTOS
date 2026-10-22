@@ -50,8 +50,9 @@ pub const Graph = struct {
 
     /// Not idempotent — the graph is an embedded C struct torn down in
     /// place (no nullable handle to clear), so call exactly once.  Like
-    /// `stop`, it does not wait for a running processing cycle.  The
-    /// `pin.Tracker` catches a use-after-deinit in Debug builds.
+    /// `stop`, it waits for a processing cycle that is running; never call
+    /// it from a node or tap callback.  The `pin.Tracker` catches a
+    /// use-after-deinit in Debug builds.
     pub fn deinit(self: *Graph) void {
         self.tracker.assertSame(self, "ove.audio.Graph");
         c.ove_audio_graph_deinit(&self.raw);
@@ -82,14 +83,17 @@ pub const Graph = struct {
         try err.fromCode(c.ove_audio_graph_start(&self.raw));
     }
 
-    /// Not guaranteed today: `stop` and `deinit` do not wait for a processing
-    /// cycle running on the audio thread, and on Zephyr that thread keeps
-    /// processing a stopped graph, so node callbacks and processor state can
-    /// still be used after either returns.
+    /// `stop` and `deinit` wait for a processing cycle that is running and,
+    /// with a device sink, join the thread that drives the graph; never call
+    /// them from a node or tap callback.  Not guaranteed today with the native
+    /// audio drivers of Zephyr, NuttX and FreeRTOS on STM32 (see
+    /// `ove_audio_graph_stop`).
     pub fn stop(self: *Graph) Error!void {
         try err.fromCode(c.ove_audio_graph_stop(&self.raw));
     }
 
+    /// Fails with `NotSupported`, skipping the cycle, on a graph that is not
+    /// built or while `stop` or `deinit` waits for a running cycle.
     pub fn process(self: *Graph) Error!void {
         try err.fromCode(c.ove_audio_graph_process(&self.raw));
     }

@@ -268,11 +268,12 @@ pub fn device_cfg_i2s(
 /// Wraps the C `ove_audio_graph` in a safe API.  All `unsafe` FFI calls
 /// are encapsulated — application code uses only safe methods.
 ///
-/// Not guaranteed today: [`Graph::stop`] and dropping the graph do not wait
-/// for a processing cycle running on the audio thread, and on Zephyr that
-/// thread keeps processing a stopped graph, so node callbacks and processor
-/// state can still be used after either returns.  Keep a running graph
-/// alive (for instance in a static) rather than dropping it.
+/// [`Graph::stop`] and dropping the graph wait for a processing cycle that is
+/// running and, with a device sink, join the thread that drives the graph;
+/// never call them from a node or tap callback.  Not guaranteed today with
+/// the native audio drivers of Zephyr, NuttX and FreeRTOS on STM32 (see
+/// `ove_audio_graph_stop`): there, keep a running graph alive (for instance
+/// in a static) rather than dropping it.
 ///
 /// # Example
 ///
@@ -416,8 +417,7 @@ impl Graph {
 
     /// Stop the graph.
     ///
-    /// Not guaranteed today: a processing cycle can still run after this
-    /// returns (see [`Graph`]).
+    /// Waits for a processing cycle that is running (see [`Graph`]).
     pub fn stop(&mut self) -> Result<()> {
         self.tracker
             .assert_same(self as *const Self as *const (), "audio::Graph");
@@ -425,6 +425,9 @@ impl Graph {
     }
 
     /// Process one cycle (app-driven mode).
+    ///
+    /// Fails with `NotSupported`, skipping the cycle, on a graph that is not
+    /// built or while a stop or deinit waits for a running cycle.
     pub fn process(&mut self) -> Result<()> {
         self.tracker
             .assert_same(self as *const Self as *const (), "audio::Graph");
@@ -439,8 +442,9 @@ impl Drop for Graph {
 }
 
 // SAFETY: the C-side graph object is safe to hand off between threads once
-// built — audio-thread callbacks only read immutable node state, and control
-// APIs (`connect`, `start`, `stop`) are serialised by the caller.  Required
+// built — a cycle writes only the graph's buffers and stats, which no `&self`
+// method reads, `stop` and drop wait for a running cycle, and control APIs
+// (`connect`, `start`, `stop`) are serialised by the caller.  Required
 // so `Graph` can live inside `InitCell` / `InitMut` for FreeRTOS main-stack
 // survival (see the hiroic apps' `GRAPH` static).
 unsafe impl Send for Graph {}

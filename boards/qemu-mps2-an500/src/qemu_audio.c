@@ -191,8 +191,9 @@ static void audio_engine_loop(void *arg)
 		period_ms = 1;
 
 	while (!ove_thread_should_stop(self)) {
-		/* Fails only for a graph that is not built, which this pump never
-		 * sees; a failing node is counted in the graph's stats instead. */
+		/* Fails only for a graph that is not built or is being stopped,
+		 * when the cycle is skipped; a failing node is counted in the
+		 * graph's stats instead. */
 		int rc = ove_audio_graph_process(sc->graph);
 		(void)rc;
 		ove_thread_sleep_ms(period_ms);

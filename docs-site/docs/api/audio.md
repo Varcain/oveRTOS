@@ -48,7 +48,7 @@ stateDiagram-v2
 3. **READY** -- Graph is immutable. Start begins hardware streaming.
 4. **RUNNING** -- Hardware callbacks drive `process()` each buffer period.
 
-`ove_audio_graph_deinit()` must be called only after stopping the graph. It frees the heap-allocated buffer storage; storage attached with `ove_audio_graph_set_buf_storage()` is left untouched.
+`ove_audio_graph_deinit()` stops the graph first if it is running. It frees the heap-allocated buffer storage; storage attached with `ove_audio_graph_set_buf_storage()` is left untouched.
 
 ## Execution Modes
 
@@ -73,7 +73,7 @@ sequenceDiagram
     Sink-->>Drv: copies to DMA TX buffer
 ```
 
-Not guaranteed today: `ove_audio_graph_stop()` and `ove_audio_graph_deinit()` do not wait for a cycle that is running on the driver thread, and on Zephyr that thread keeps processing a stopped graph, so node callbacks (a tap's included) can still run after either returns.
+`ove_audio_graph_stop()` and `ove_audio_graph_deinit()` refuse new cycles (`ove_audio_graph_process()` returns `OVE_ERR_NOT_SUPPORTED` and skips the cycle) and wait for a running one, and the device sink's `stop` joins the driver thread, so no node callback (a tap's included) runs after either returns. Call them from thread context, never from a node or tap callback. Not guaranteed today with the engines' native drivers (Zephyr, NuttX, and FreeRTOS on STM32): Zephyr's and NuttX's driver thread is not joined and keeps driving the stopped graph, and FreeRTOS deletes its audio task instead of joining it.
 
 ### App-driven (testing / offline)
 

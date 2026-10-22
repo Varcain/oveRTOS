@@ -132,11 +132,12 @@ static void reset_start_stop_counters(void)
  * storage via ove_audio_graph_set_buf_storage() before build().  Every
  * test here shares one conservatively sized static buffer — wrapping
  * init + set_buf_storage in graph_init() keeps each test body free of
- * the #ifdef.
+ * the #ifdef.  Every node may be an S16 stereo 256-frame producer; the
+ * F32 graphs use a few frames only.
  */
 #ifdef CONFIG_OVE_ZERO_HEAP
 static uint8_t audio_graph_test_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(OVE_AUDIO_GRAPH_MAX_NODES, 256, 2,
-								  4)] __attribute__((aligned(4)));
+								  2)] __attribute__((aligned(4)));
 #endif
 
 OVE_NODISCARD static int graph_init(struct ove_audio_graph *g, unsigned int frames)
@@ -1479,6 +1480,202 @@ static void test_fmt_equal_different(void **state)
 	assert_false(ove_audio_fmt_equal(&base, &diff_fmt));
 }
 
+/* ── Stop / deinit vs. a processing cycle in flight ─────────────────
+ *
+ * A slow processor node marks itself in-cycle, signals that it has been
+ * entered, sleeps, then finishes writing its output buffer.  While a
+ * worker thread is inside ove_audio_graph_process(), the test thread
+ * calls ove_audio_graph_stop() / ove_audio_graph_deinit() and checks that
+ * neither returns (nor runs a node's stop/destroy op) while the cycle is
+ * still running.
+ */
+
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define AG_INFLIGHT_LATE_WRITE 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#define AG_INFLIGHT_LATE_WRITE 1
+#endif
+#endif
+
+#define AG_INFLIGHT_SLEEP_MS 100u
+#define AG_INFLIGHT_STACK 2048
+
+static int ag_slow_in_cycle;
+static int ag_slow_entered;
+static int ag_slow_done;
+static int ag_in_cycle_in_stop_op = -1;
+static int ag_in_cycle_in_destroy_op = -1;
+static int ag_worker_ret = 1;
+static int ag_late_write;
+
+/* Heap builds create the worker with its own stack, so only zero-heap
+ * builds reserve one: the STM32F746 heap test image has no room for it. */
+#ifdef CONFIG_OVE_ZERO_HEAP
+OVE_TEST_STORAGE(ove_thread_storage_t, s_ag_th_storage);
+OVE_TEST_STACK(s_ag_th_stack, AG_INFLIGHT_STACK);
+#define AG_TH_STORAGE (&s_ag_th_storage)
+#define AG_TH_STACK s_ag_th_stack
+#else
+#define AG_TH_STORAGE NULL
+#define AG_TH_STACK NULL
+#endif
+
+static int slow_proc_process(void *ctx, const struct ove_audio_buf *in, struct ove_audio_buf *out)
+{
+	(void)ctx;
+	(void)in;
+	/* A real node fetches its buffer pointer at entry and works on it for
+	 * the whole cycle. */
+	uint8_t *dst = out ? (uint8_t *)out->data : NULL;
+	size_t n = out ? (size_t)out->frames * sizeof(int16_t) : 0;
+
+	__atomic_store_n(&ag_slow_in_cycle, 1, __ATOMIC_SEQ_CST);
+	TEST_FLAG_SET(ag_slow_entered, 1);
+	ove_thread_sleep_ms(AG_INFLIGHT_SLEEP_MS);
+	if (dst && __atomic_load_n(&ag_late_write, __ATOMIC_ACQUIRE))
+		memset(dst, 0x5a, n);
+	__atomic_store_n(&ag_slow_in_cycle, 0, __ATOMIC_SEQ_CST);
+	__atomic_fetch_add(&ag_slow_done, 1, __ATOMIC_SEQ_CST);
+	return OVE_OK;
+}
+
+static void slow_proc_destroy(void *ctx)
+{
+	(void)ctx;
+	__atomic_store_n(&ag_in_cycle_in_destroy_op,
+			 __atomic_load_n(&ag_slow_in_cycle, __ATOMIC_SEQ_CST), __ATOMIC_SEQ_CST);
+}
+
+static int recording_sink_stop(void *ctx)
+{
+	(void)ctx;
+	__atomic_store_n(&ag_in_cycle_in_stop_op,
+			 __atomic_load_n(&ag_slow_in_cycle, __ATOMIC_SEQ_CST), __ATOMIC_SEQ_CST);
+	return OVE_OK;
+}
+
+static int noop_start(void *ctx)
+{
+	(void)ctx;
+	return OVE_OK;
+}
+
+static const struct ove_audio_node_ops slow_proc_ops = {
+	.configure = mock_proc_configure,
+	.process = slow_proc_process,
+	.destroy = slow_proc_destroy,
+};
+
+static const struct ove_audio_node_ops recording_sink_ops = {
+	.configure = mock_sink_configure,
+	.process = mock_process,
+	.start = noop_start,
+	.stop = recording_sink_stop,
+};
+
+static void ag_inflight_worker(void *arg)
+{
+	struct ove_audio_graph *gp = (struct ove_audio_graph *)arg;
+	__atomic_store_n(&ag_worker_ret, ove_audio_graph_process(gp), __ATOMIC_SEQ_CST);
+}
+
+static void ag_inflight_reset(void)
+{
+	__atomic_store_n(&ag_slow_in_cycle, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&ag_slow_entered, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&ag_slow_done, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&ag_in_cycle_in_stop_op, -1, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&ag_in_cycle_in_destroy_op, -1, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&ag_worker_ret, 1, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&ag_late_write, 0, __ATOMIC_SEQ_CST);
+}
+
+/* source -> slow proc -> recording sink, built and started */
+OVE_NODISCARD static int ag_inflight_build_and_start(void)
+{
+	int r = graph_init(&g, 64);
+	int src =
+		ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src", OVE_AUDIO_NODE_SOURCE);
+	int proc = ove_audio_graph_add_node(&g, &slow_proc_ops, NULL, "slow",
+					    OVE_AUDIO_NODE_PROCESSOR);
+	int sink = ove_audio_graph_add_node(&g, &recording_sink_ops, NULL, "sink",
+					    OVE_AUDIO_NODE_SINK);
+	if (r == OVE_OK && (src < 0 || proc < 0 || sink < 0))
+		r = OVE_ERR_INVALID_PARAM;
+	if (r == OVE_OK)
+		r = ove_audio_graph_connect(&g, (unsigned int)src, (unsigned int)proc);
+	if (r == OVE_OK)
+		r = ove_audio_graph_connect(&g, (unsigned int)proc, (unsigned int)sink);
+	if (r == OVE_OK)
+		r = ove_audio_graph_build(&g);
+	if (r == OVE_OK)
+		r = ove_audio_graph_start(&g);
+	return r;
+}
+
+static void test_graph_stop_waits_for_inflight_cycle(void **state)
+{
+	(void)state;
+	memset(&g, 0, sizeof(g));
+	ag_inflight_reset();
+	OVE_TEST_ASSERT_OK(ag_inflight_build_and_start());
+
+	ove_thread_t th = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, AG_TH_STORAGE, "agproc", ag_inflight_worker, &g,
+					       AG_TH_STACK, AG_INFLIGHT_STACK));
+	int entered = wait_for_flag(&ag_slow_entered, 1, 2000);
+
+	int stop_ret = ove_audio_graph_stop(&g);
+	int in_cycle_at_return = __atomic_load_n(&ag_slow_in_cycle, __ATOMIC_SEQ_CST);
+
+	/* Join before asserting: the worker still references g. */
+	OVE_TEST_ASSERT_OK(ove_test_thread_join_destroy(th, 2000));
+	int in_stop_op = __atomic_load_n(&ag_in_cycle_in_stop_op, __ATOMIC_SEQ_CST);
+	ove_audio_graph_deinit(&g);
+
+	assert_true(entered);
+	assert_int_equal(stop_ret, OVE_OK);
+	assert_int_equal(in_cycle_at_return, 0);
+	assert_int_equal(in_stop_op, 0);
+	/* The cycle that was running finishes normally. */
+	assert_int_equal(__atomic_load_n(&ag_worker_ret, __ATOMIC_SEQ_CST), OVE_OK);
+	assert_int_equal(__atomic_load_n(&ag_slow_done, __ATOMIC_SEQ_CST), 1);
+}
+
+static void test_graph_deinit_waits_for_inflight_cycle(void **state)
+{
+	(void)state;
+	memset(&g, 0, sizeof(g));
+	ag_inflight_reset();
+#ifdef AG_INFLIGHT_LATE_WRITE
+	/* Only under a sanitizer: the late write lands in the buffer block
+	 * deinit just freed — let ASan/TSan name it rather than corrupt a
+	 * target heap. */
+	__atomic_store_n(&ag_late_write, 1, __ATOMIC_SEQ_CST);
+#endif
+	OVE_TEST_ASSERT_OK(ag_inflight_build_and_start());
+
+	ove_thread_t th = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, AG_TH_STORAGE, "agproc", ag_inflight_worker, &g,
+					       AG_TH_STACK, AG_INFLIGHT_STACK));
+	int entered = wait_for_flag(&ag_slow_entered, 1, 2000);
+
+	ove_audio_graph_deinit(&g);
+	int in_cycle_at_return = __atomic_load_n(&ag_slow_in_cycle, __ATOMIC_SEQ_CST);
+
+	OVE_TEST_ASSERT_OK(ove_test_thread_join_destroy(th, 2000));
+	int in_stop_op = __atomic_load_n(&ag_in_cycle_in_stop_op, __ATOMIC_SEQ_CST);
+	int in_destroy_op = __atomic_load_n(&ag_in_cycle_in_destroy_op, __ATOMIC_SEQ_CST);
+
+	assert_true(entered);
+	assert_int_equal(in_cycle_at_return, 0);
+	assert_int_equal(in_stop_op, 0);
+	assert_int_equal(in_destroy_op, 0);
+	assert_int_equal(__atomic_load_n(&ag_worker_ret, __ATOMIC_SEQ_CST), OVE_OK);
+	assert_int_equal(__atomic_load_n(&ag_slow_done, __ATOMIC_SEQ_CST), 1);
+}
+
 /* ── setup/teardown ──────────────────────────────────────────────────── */
 
 static int audio_setup(void **state)
@@ -1540,6 +1737,9 @@ int test_audio_run(void)
 		cmocka_unit_test_setup(test_graph_stats_null_params, audio_setup),
 		/* Multiple process cycles */
 		cmocka_unit_test_setup(test_graph_process_multiple_cycles, audio_setup),
+		/* Stop / deinit vs. a cycle in flight */
+		cmocka_unit_test_setup(test_graph_stop_waits_for_inflight_cycle, audio_setup),
+		cmocka_unit_test_setup(test_graph_deinit_waits_for_inflight_cycle, audio_setup),
 #ifdef OVE_HEAP_AUDIO
 		/* Built-in node factory tests (heap-mode only) */
 		cmocka_unit_test_setup(test_converter_f32_to_s16, audio_setup),

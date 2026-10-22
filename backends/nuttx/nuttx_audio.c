@@ -268,9 +268,9 @@ static void *audio_thread_fn(void *arg)
 				/* Drive the entire graph: source copies RX, processors
                  * transform, sink writes TX */
 
-				/* Fails only for a graph that is not built, which this
-				 * pump never sees; a failing node is counted in the
-				 * graph's stats instead. */
+				/* Fails only for a graph that is not built or is
+				 * being stopped, when the cycle is skipped; a failing
+				 * node is counted in the graph's stats instead. */
 				int rc = ove_audio_graph_process(sc->graph);
 				(void)rc;
 

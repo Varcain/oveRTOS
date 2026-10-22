@@ -116,6 +116,9 @@ struct ove_audio_graph {
 	enum ove_audio_graph_state state; /**< @brief Current lifecycle state. */
 
 	struct ove_audio_graph_stats stats; /**< @brief Accumulated runtime diagnostics. */
+
+	int busy;     /**< @brief Cycles running in ove_audio_graph_process() (internal). */
+	int stopping; /**< @brief Set while stop or deinit waits for them (internal). */
 };
 
 /* ── Graph API ──────────────────────────────────────────────────── */
@@ -138,14 +141,14 @@ OVE_NODISCARD int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int f
 /**
  * @brief Release all resources held by an audio graph.
  *
- * Stops the graph (if running), tears down each node, and frees the
- * heap-allocated inter-node buffer block.  Caller-supplied buffer storage
- * registered via @ref ove_audio_graph_set_buf_storage is left intact.
- *
- * Not guaranteed today: ove_audio_graph_stop() and ove_audio_graph_deinit()
- * do not wait for a cycle that is running on the audio thread, and on Zephyr
- * that thread keeps processing a stopped graph, so node callbacks can still
- * run after either returns.
+ * Stops the graph (if running) and waits for a cycle the application is
+ * running in ove_audio_graph_process(), as ove_audio_graph_stop() does, then
+ * tears down each node and frees the heap-allocated inter-node buffer block.
+ * Caller-supplied buffer storage registered via
+ * @ref ove_audio_graph_set_buf_storage is left intact.  Call it from thread
+ * context, never from a node or tap callback, and start no cycle once it has
+ * begun: the graph is cleared when it returns.  See ove_audio_graph_stop()
+ * for the native drivers where this is not yet guaranteed.
  *
  * @param[in] g  Initialised graph instance.
  *
@@ -340,13 +343,20 @@ OVE_NODISCARD int ove_audio_graph_start(struct ove_audio_graph *g);
 /**
  * @brief Stop the audio graph.
  *
- * Calls each node's @c stop callback in reverse topological order and
- * transitions the graph back to @c OVE_AUDIO_GRAPH_READY.
+ * Refuses new cycles and waits for one already running in
+ * ove_audio_graph_process(), on any thread, then calls each node's @c stop
+ * callback in reverse topological order and transitions the graph back to
+ * @c OVE_AUDIO_GRAPH_READY.  A device sink's @c stop joins the thread that
+ * drives the graph, so once this returns no node or tap callback is running
+ * or starts.  Call it from thread context, never from a node or tap callback:
+ * it would wait for its own cycle.
  *
- * Not guaranteed today: ove_audio_graph_stop() and ove_audio_graph_deinit()
- * do not wait for a cycle that is running on the audio thread, and on Zephyr
- * that thread keeps processing a stopped graph, so node callbacks can still
- * run after either returns.
+ * Not guaranteed today with the engines' native audio drivers (Zephyr, NuttX,
+ * and FreeRTOS on STM32): Zephyr's and NuttX's audio thread is not joined and
+ * keeps driving the stopped graph (and touching it after
+ * ove_audio_graph_deinit()), and FreeRTOS deletes its audio task instead of
+ * joining it.  Either can, rarely, leave a later stop or deinit waiting
+ * forever.
  *
  * @param[in] g  Running graph instance.
  * @return 0 on success, negative error code on failure.
@@ -365,8 +375,10 @@ int ove_audio_graph_stop(struct ove_audio_graph *g);
  *
  * @param[in] g  Graph instance in @c OVE_AUDIO_GRAPH_READY or
  *               @c OVE_AUDIO_GRAPH_RUNNING state.
- * @return 0 on success, or @c OVE_ERR_NOT_SUPPORTED if the graph has not
- *         been built.  A node whose @c process callback fails does not fail
+ * @return 0 on success, or @c OVE_ERR_NOT_SUPPORTED, with no node called,
+ *         if the graph has not been built or while ove_audio_graph_stop() or
+ *         ove_audio_graph_deinit() waits for a running cycle.  A node whose
+ *         @c process callback fails does not fail
  *         the cycle: its output is zero-filled and the failure is counted in
  *         @c ove_audio_graph_stats.node_errors.
  *
