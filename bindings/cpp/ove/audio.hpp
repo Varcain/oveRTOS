@@ -68,10 +68,10 @@ inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t
  *
  * Provides RAII-style init/deinit and forwarding to the C graph API.
  *
- * Not guaranteed today: stop() and destruction do not wait for a processing
- * cycle running on the audio thread, and on Zephyr that thread keeps
- * processing a stopped graph, so node callbacks (and a processor's context)
- * can still be used after either returns; see @ref ove_audio_graph_stop.
+ * stop() and destruction wait for a processing cycle that is running and, with
+ * a device sink, join the thread that drives the graph; never call them from a
+ * node or tap callback.  Not guaranteed today with the native drivers listed
+ * at @ref ove_audio_graph_stop.
  */
 class Graph
 {
@@ -158,7 +158,9 @@ class Graph
 		return from_rc(ove_audio_graph_stop(&g_));
 	}
 
-	/// Run one processing period through the graph.
+	/// Run one processing period through the graph.  Fails with
+	/// NotSupported, skipping the cycle, on a graph that is not built or
+	/// while stop() or destruction waits for a running cycle.
 	[[nodiscard]] Result<void> process() noexcept
 	{
 		return from_rc(ove_audio_graph_process(&g_));

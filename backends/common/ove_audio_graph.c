@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ove/types.h"
 #include "ove/audio.h"
+#include "ove/thread.h"
 #ifdef CONFIG_OVE_TIME
 #include "ove/time.h"
 #endif
@@ -28,6 +29,16 @@ static int find_upstream(const struct ove_audio_graph *g, unsigned int node)
 	return -1;
 }
 
+/* Refuse new cycles and wait for the running ones, on whichever thread
+ * drives the graph, so that no node callback runs while the nodes are
+ * stopped or destroyed.  Called from a node callback it waits for itself. */
+static void graph_quiesce(struct ove_audio_graph *g)
+{
+	__atomic_store_n(&g->stopping, 1, __ATOMIC_SEQ_CST);
+	while (__atomic_load_n(&g->busy, __ATOMIC_SEQ_CST) != 0)
+		ove_thread_sleep_ms(1);
+}
+
 /* ── Init / Deinit ──────────────────────────────────────────────── */
 
 int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int frames_per_period)
@@ -48,6 +59,8 @@ void ove_audio_graph_deinit(struct ove_audio_graph *g)
 
 	if (g->state == OVE_AUDIO_GRAPH_RUNNING)
 		ove_audio_graph_stop(g);
+	/* A READY graph can still be in a cycle the application drives. */
+	graph_quiesce(g);
 
 	for (unsigned int i = 0; i < g->node_count; i++) {
 		if (g->nodes[i].ops && g->nodes[i].ops->destroy)
@@ -289,11 +302,8 @@ int ove_audio_graph_build(struct ove_audio_graph *g)
 
 /* ── Execution ──────────────────────────────────────────────────── */
 
-int ove_audio_graph_process(struct ove_audio_graph *g)
+static int graph_run_cycle(struct ove_audio_graph *g)
 {
-	if (!g || g->state < OVE_AUDIO_GRAPH_READY)
-		return OVE_ERR_NOT_SUPPORTED;
-
 #ifdef CONFIG_OVE_TIME
 	uint64_t t_start = 0;
 	ove_time_get_us(&t_start);
@@ -343,6 +353,22 @@ int ove_audio_graph_process(struct ove_audio_graph *g)
 	return OVE_OK;
 }
 
+int ove_audio_graph_process(struct ove_audio_graph *g)
+{
+	if (!g)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	/* Announce the cycle before checking stopping: graph_quiesce() sets
+	 * stopping before reading busy, so one of the two sees the other. */
+	__atomic_fetch_add(&g->busy, 1, __ATOMIC_SEQ_CST);
+	int ret = OVE_ERR_NOT_SUPPORTED;
+	if (!__atomic_load_n(&g->stopping, __ATOMIC_SEQ_CST) &&
+	    __atomic_load_n(&g->state, __ATOMIC_ACQUIRE) >= OVE_AUDIO_GRAPH_READY)
+		ret = graph_run_cycle(g);
+	__atomic_fetch_sub(&g->busy, 1, __ATOMIC_SEQ_CST);
+	return ret;
+}
+
 /* ── Start / Stop ───────────────────────────────────────────────── */
 
 int ove_audio_graph_start(struct ove_audio_graph *g)
@@ -366,7 +392,8 @@ int ove_audio_graph_start(struct ove_audio_graph *g)
 		}
 	}
 
-	g->state = OVE_AUDIO_GRAPH_RUNNING;
+	/* A device sink's start may already be driving cycles. */
+	__atomic_store_n(&g->state, OVE_AUDIO_GRAPH_RUNNING, __ATOMIC_RELEASE);
 	return OVE_OK;
 }
 
@@ -375,13 +402,17 @@ int ove_audio_graph_stop(struct ove_audio_graph *g)
 	if (!g || g->state != OVE_AUDIO_GRAPH_RUNNING)
 		return OVE_ERR_NOT_SUPPORTED;
 
+	/* The nodes stop with no cycle running; a device sink's stop then
+	 * joins its thread, so none starts once stopping is cleared. */
+	graph_quiesce(g);
 	for (int i = (int)g->exec_count - 1; i >= 0; i--) {
 		struct ove_audio_node *node = &g->nodes[g->exec_order[i]];
 		if (node->ops->stop)
 			node->ops->stop(node->ctx);
 	}
 
-	g->state = OVE_AUDIO_GRAPH_READY;
+	__atomic_store_n(&g->state, OVE_AUDIO_GRAPH_READY, __ATOMIC_RELEASE);
+	__atomic_store_n(&g->stopping, 0, __ATOMIC_SEQ_CST);
 	return OVE_OK;
 }
 
