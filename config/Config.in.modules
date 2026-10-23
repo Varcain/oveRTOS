@@ -854,9 +854,12 @@ config OVE_NET_TLS
     bool "TLS (mbedTLS)"
     default n
     depends on OVE_NET
+    select OVE_SYNC
     help
       Portable TLS layer using mbedTLS. Provides encrypted
-      sockets for HTTPS and secure MQTT.
+      sockets for HTTPS and secure MQTT. Sessions on different
+      threads may run at once: mbedTLS's shared state is guarded
+      by one oveRTOS mutex, hence OVE_SYNC.
 
 config OVE_NET_HTTP
     bool "HTTP/1.1 client"

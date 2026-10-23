@@ -24,6 +24,18 @@
  * UTC from @ref ove_sntp_sync, so peer verification fails until SNTP has
  * synced once.
  *
+ * Sessions on different threads may run at the same time: mbedTLS's shared
+ * state (the PSA key store, its random generator and, in zero-heap builds,
+ * the @c CONFIG_OVE_NET_TLS_HEAP_SIZE pool) is guarded by one oveRTOS mutex,
+ * held only inside mbedTLS and never across socket I/O.  It is held for a
+ * whole RSA operation, though (verifying an RSA certificate chain, signing
+ * with an RSA client key), so those make every other session wait; and on
+ * NuttX, built without CONFIG_PRIORITY_INHERITANCE, a high-priority session
+ * can wait behind a low-priority one for as long as threads in between
+ * run.  One session must not be used from two threads at once.  The guard is set up at startup by
+ * this module, so code that calls mbedTLS directly must link ove_net_tls
+ * (any ove_tls_* call does).
+ *
  * @note Requires @c CONFIG_OVE_NET_TLS (implies @c CONFIG_OVE_NET).
  *       When disabled every function is replaced by a no-op stub
  *       that returns @c OVE_ERR_NOT_SUPPORTED.
@@ -73,7 +85,8 @@ typedef struct {
  *         hold the mbedTLS contexts (heap builds); @c OVE_ERR_NOT_SUPPORTED
  *         when the random generator cannot be seeded, from a failing
  *         entropy source or mbedTLS out of memory (it does not say which;
- *         the mbedTLS code is logged).
+ *         the mbedTLS code is logged), or when the mutex guarding mbedTLS
+ *         could not be created.
  */
 OVE_NODISCARD int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage);
 

@@ -27,6 +27,8 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/error.h"
+#include "mbedtls/aes.h"
+#include "mbedtls/threading.h"
 #include "mbedtls/asn1.h"
 #include "mbedtls/bignum.h"
 #include "mbedtls/cipher.h"
@@ -46,8 +48,77 @@
 #define CONFIG_OVE_NET_TLS_HEAP_SIZE 49152
 #endif
 static unsigned char s_mbedtls_heap[CONFIG_OVE_NET_TLS_HEAP_SIZE];
-static int s_mbedtls_heap_initialized;
 #endif
+
+/* ---------- One lock for mbedTLS's shared state ---------- */
+
+/*
+ * Sessions on different threads share the PSA key store and random
+ * generator, the lazily built AES and cipher-suite tables and, in zero-heap
+ * builds, the memory pool.  mbedTLS guards its shared state with mutexes
+ * (MBEDTLS_THREADING_ALT, ove_mbedtls_config.h); all of them are this one
+ * recursive mutex, since mbedTLS takes some inside others (the key store's
+ * around an allocation, the random generator's around reseeding).  It is
+ * held only inside mbedTLS, never across socket I/O, so an idle session
+ * blocks no other; the longest hold is an RSA private-key operation.
+ */
+static ove_mutex_storage_t s_lock_storage;
+static ove_mutex_t s_lock;
+static int s_tls_ready;
+
+static void tls_mutex_init(mbedtls_threading_mutex_t *m)
+{
+	(void)m;
+}
+
+static void tls_mutex_free(mbedtls_threading_mutex_t *m)
+{
+	(void)m;
+}
+
+static int tls_mutex_lock(mbedtls_threading_mutex_t *m)
+{
+	(void)m;
+	return ove_recursive_mutex_lock(s_lock, OVE_WAIT_FOREVER) == OVE_OK
+		       ? 0
+		       : MBEDTLS_ERR_THREADING_MUTEX_ERROR;
+}
+
+static int tls_mutex_unlock(mbedtls_threading_mutex_t *m)
+{
+	(void)m;
+	ove_recursive_mutex_unlock(s_lock);
+	return 0;
+}
+
+/*
+ * Before any thread can start a session: until mbedtls_threading_set_alt(),
+ * every mbedTLS lock fails; the pool must exist before the first
+ * allocation; and the tables mbedTLS builds on first use are built here, as
+ * nothing guards their construction.  A constructor, so no session can race
+ * it; ove_tls_init() runs it too, for a session set up by another
+ * constructor (OVE_TLS_DEFINE_STATIC) that the linker ordered first.  Both
+ * happen before any thread starts, so the flag needs no lock.
+ */
+__attribute__((used, constructor)) static void tls_global_init(void)
+{
+	if (s_tls_ready)
+		return;
+	if (ove_recursive_mutex_init(&s_lock, &s_lock_storage) != OVE_OK)
+		return; /* ove_tls_init() reports it */
+	mbedtls_threading_set_alt(tls_mutex_init, tls_mutex_free, tls_mutex_lock, tls_mutex_unlock);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	mbedtls_memory_buffer_alloc_init(s_mbedtls_heap, sizeof(s_mbedtls_heap));
+#endif
+	mbedtls_aes_context aes;
+	static const unsigned char zero_key[16];
+	mbedtls_aes_init(&aes);
+	(void)mbedtls_aes_setkey_enc(&aes, zero_key, 128); /* AES tables, AES-NI probe */
+	mbedtls_aes_free(&aes);
+	(void)mbedtls_ecp_grp_id_list();
+	(void)mbedtls_ssl_list_ciphersuites();
+	s_tls_ready = 1;
+}
 
 /* ---------- BIO callbacks for mbedTLS ---------- */
 
@@ -162,16 +233,15 @@ int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
 {
 	if (!tls || !storage)
 		return OVE_ERR_INVALID_PARAM;
+	tls_global_init();
+	if (!s_tls_ready) {
+		OVE_LOG_ERR("TLS: could not create the lock that guards mbedTLS");
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	struct ove_tls *t = (struct ove_tls *)storage;
 	memset(t, 0, sizeof(*t));
 
 #ifdef CONFIG_OVE_ZERO_HEAP
-	/* Initialize mbedTLS static buffer allocator (once) */
-	if (!s_mbedtls_heap_initialized) {
-		mbedtls_memory_buffer_alloc_init(s_mbedtls_heap, sizeof(s_mbedtls_heap));
-		s_mbedtls_heap_initialized = 1;
-	}
-
 	mbedtls_entropy_context *entropy = &t->_entropy;
 	mbedtls_ctr_drbg_context *ctr_drbg = &t->_ctr_drbg;
 	mbedtls_ssl_config *conf = &t->_conf;

@@ -314,6 +314,7 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
         ${POSIX_CORE_DIR}/posix_net.c
         ${POSIX_CORE_DIR}/posix_time.c
         ${POSIX_CORE_DIR}/posix_console.c
+        ${POSIX_CORE_DIR}/posix_sync.c
         ${OVE_SRC}/ove_net.c
         ${OVE_ROOT}/backends/common/ove_net_tls.c
         ${OVE_ROOT}/backends/common/ove_net_http.c
@@ -329,6 +330,7 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
     )
     target_compile_definitions(ove_test_net_tls PRIVATE
         CONFIG_OVE_NET=1
+        CONFIG_OVE_SYNC=1
         CONFIG_OVE_NET_TLS=1
         CONFIG_OVE_NET_HTTP=1
         CONFIG_OVE_NET_HTTP_MAX_RESPONSE=8192
@@ -359,6 +361,7 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
             ${POSIX_CORE_DIR}/posix_net.c
             ${POSIX_CORE_DIR}/posix_time.c
             ${POSIX_CORE_DIR}/posix_console.c
+            ${POSIX_CORE_DIR}/posix_sync.c
             ${OVE_SRC}/ove_net.c
             ${OVE_ROOT}/backends/common/ove_net_tls.c
         )
@@ -372,17 +375,19 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
         target_compile_definitions(ove_test_net_tls_zh PRIVATE
             CONFIG_OVE_ZERO_HEAP=1
             CONFIG_OVE_NET=1
+            CONFIG_OVE_SYNC=1
             CONFIG_OVE_NET_TLS=1
-            # Twice the default: the sweep hands a session one contiguous
-            # run, and the host's 64-bit structures are larger.
-            CONFIG_OVE_NET_TLS_HEAP_SIZE=98304
+            # Larger than the default: the sweep hands a session one
+            # contiguous run, the concurrency test runs four sessions from
+            # the one pool, and the host's 64-bit structures are larger.
+            CONFIG_OVE_NET_TLS_HEAP_SIZE=262144
             CONFIG_OVE_NET_SNTP=1
             "OVE_TEST_TLS_PKI_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/net_tls/pki\""
         )
         target_compile_options(ove_test_net_tls_zh PRIVATE
             -Wall -Wextra -Werror ${OVE_TEST_NET_TLS_SAN})
         target_link_options(ove_test_net_tls_zh PRIVATE ${OVE_TEST_NET_TLS_SAN})
-        target_link_libraries(ove_test_net_tls_zh PRIVATE ove_mbedtls cmocka-static)
+        target_link_libraries(ove_test_net_tls_zh PRIVATE ove_mbedtls cmocka-static pthread)
         set_target_properties(ove_test_net_tls_zh PROPERTIES EXPORT_COMPILE_COMMANDS OFF)
     endfunction()
     ove_test_add_net_tls_zh()

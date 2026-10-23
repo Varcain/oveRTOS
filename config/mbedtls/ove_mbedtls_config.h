@@ -47,4 +47,16 @@ time_t ove_mbedtls_time(time_t *timer);
 #define MBEDTLS_SSL_OUT_CONTENT_LEN 4096
 #endif
 
+/* TLS sessions on different threads share mbedTLS's global state: the PSA
+ * key store and random generator, and in zero-heap builds the memory pool.
+ * Every mbedTLS mutex maps onto one recursive oveRTOS mutex, installed
+ * before anything else runs (ove_net_tls.c); threading_alt.h holds the
+ * per-object type, which needs no state of its own. */
+#define MBEDTLS_THREADING_C
+#define MBEDTLS_THREADING_ALT
+
+/* The self-tests are never run, and their global counters (ecp.c) would be
+ * updated by every session without a lock. */
+#undef MBEDTLS_SELF_TEST
+
 #endif /* OVE_MBEDTLS_CONFIG_H */
