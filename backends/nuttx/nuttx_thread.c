@@ -864,6 +864,10 @@ static void _nuttx_list_finish(struct ove_thread_info *info, uint64_t dt_us)
 			}
 		}
 	}
+#else
+	/* Neither accounting source is built in: no run-time figures. */
+	(void)pid;
+	(void)dt_us;
 #endif
 }
 
