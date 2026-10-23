@@ -14,6 +14,9 @@ fn main() {
     println!("cargo:rustc-link-lib=static:+whole-archive=ove_stub");
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=rt");
+    // Cargo does not track the C library, so without this a rebuilt
+    // libove_stub.a is not relinked and the tests run the old C code.
+    println!("cargo:rerun-if-changed={}/libove_stub.a", stub_lib_dir);
 
     // Mirror bindings/rust/ove/build.rs: enable the `zero_heap` cfg (which
     // gates the test crate's zero-heap suite) when OVE_GEN_DIR/ove_config.h
