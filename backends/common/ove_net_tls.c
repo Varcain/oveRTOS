@@ -251,11 +251,29 @@ void ove_tls_deinit(ove_tls_t tls)
 	memset(t, 0, sizeof(*t));
 }
 
+/* Every mbedTLS failure maps to OVE_ERR_NOT_SUPPORTED; the log keeps the
+ * code that says which one it was. */
+static int tls_failed(const char *what, int ret)
+{
+	if (ret > 0) /* a PEM bundle in which this many certificates failed */
+		OVE_LOG_ERR("TLS: %s failed for %d certificate(s)", what, ret);
+	else
+		OVE_LOG_ERR("TLS: %s failed: -0x%04x", what, (unsigned int)-ret);
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
 int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg)
 {
 	if (!tls || !sock)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_tls *t = tls;
+
+	int have_cert = cfg && cfg->client_cert && cfg->client_cert_len > 0;
+	int have_key = cfg && cfg->client_key && cfg->client_key_len > 0;
+	if (have_cert != have_key) {
+		OVE_LOG_ERR("TLS: client certificate and key must be given together");
+		return OVE_ERR_INVALID_PARAM;
+	}
 
 	mbedtls_ssl_config *conf = t->conf;
 	mbedtls_ssl_context *ssl = t->ssl;
@@ -274,7 +292,7 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 	if (cfg && cfg->ca_cert && cfg->ca_cert_len > 0) {
 		ret = mbedtls_x509_crt_parse(t->cacert, cfg->ca_cert, cfg->ca_cert_len);
 		if (ret != 0)
-			return OVE_ERR_NOT_SUPPORTED;
+			return tls_failed("CA certificate parse", ret);
 		mbedtls_ssl_conf_ca_chain(conf, t->cacert, NULL);
 		mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 	} else if (cfg && cfg->allow_insecure) {
@@ -286,26 +304,40 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 	}
 
 	/* Client certificate for mutual TLS (mTLS) */
-	if (cfg && cfg->client_cert && cfg->client_cert_len > 0 && cfg->client_key &&
-	    cfg->client_key_len > 0) {
+	if (have_cert) {
 		ret = mbedtls_x509_crt_parse(t->client_cert, cfg->client_cert,
 					     cfg->client_cert_len);
 		if (ret != 0)
-			return OVE_ERR_NOT_SUPPORTED;
+			return tls_failed("client certificate parse", ret);
 
 		ret = mbedtls_pk_parse_key(t->client_key, cfg->client_key, cfg->client_key_len,
 					   NULL, 0, mbedtls_ctr_drbg_random, t->ctr_drbg);
 		if (ret != 0)
-			return OVE_ERR_NOT_SUPPORTED;
+			return tls_failed("client key parse", ret);
+
+		/* Otherwise only the server notices, and over TLS 1.3 only after
+		 * the handshake, on the first read. */
+		const mbedtls_x509_crt *crt = t->client_cert;
+		ret = mbedtls_pk_check_pair(&crt->pk, t->client_key, mbedtls_ctr_drbg_random,
+					    t->ctr_drbg);
+		if (ret == MBEDTLS_ERR_PK_ALLOC_FAILED || ret == MBEDTLS_ERR_MPI_ALLOC_FAILED) {
+			OVE_LOG_ERR("TLS: out of memory checking the client key");
+			return OVE_ERR_NO_MEMORY;
+		}
+		if (ret != 0) {
+			OVE_LOG_ERR("TLS: client key does not match the certificate (-0x%04x)",
+				    (unsigned int)-ret);
+			return OVE_ERR_INVALID_PARAM;
+		}
 
 		ret = mbedtls_ssl_conf_own_cert(conf, t->client_cert, t->client_key);
 		if (ret != 0)
-			return OVE_ERR_NOT_SUPPORTED;
+			return tls_failed("client certificate setup", ret);
 	}
 
 	ret = mbedtls_ssl_setup(ssl, conf);
 	if (ret != 0)
-		return OVE_ERR_NOT_SUPPORTED;
+		return tls_failed("session setup", ret);
 
 	/* SNI hostname */
 	if (cfg && cfg->hostname) {
@@ -319,7 +351,7 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 	/* Perform handshake */
 	while ((ret = mbedtls_ssl_handshake(ssl)) != 0) {
 		if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
-			return OVE_ERR_NOT_SUPPORTED;
+			return tls_failed("handshake", ret);
 	}
 
 	return OVE_OK;

@@ -155,12 +155,35 @@ void ove_http_response_free(ove_http_response_t *resp);
  * explicitly opt into insecure TLS.
  *
  * @param[in] ca_cert        PEM/DER CA certificate to verify the peer against
- *                           (NULL leaves it unset).
+ *                           (NULL clears it).
  * @param[in] ca_cert_len    Length of @p ca_cert in bytes (incl. NUL for PEM).
  * @param[in] allow_insecure Non-zero permits unverified TLS (no CA) — do not
  *                           use in production.
  */
 void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allow_insecure);
+
+/**
+ * @brief Set the process-wide client certificate for HTTPS (mutual TLS).
+ *
+ * Presented to servers that ask for one.  Like ove_http_set_tls(), call it
+ * at startup, before issuing requests (there is no locking), and keep both
+ * buffers alive while requests may run: they are used in place, not copied.
+ * A PEM certificate may hold a chain, leaf first; DER holds one certificate.
+ * The key must be an unencrypted RSA or EC key.  A PEM length counts its terminating NUL, as mbedTLS
+ * requires.  Whether the key matches the certificate is checked when a
+ * request connects, which then fails with @c OVE_ERR_INVALID_PARAM.
+ *
+ * @param[in] cert      PEM or DER client certificate, or NULL with @p key
+ *                      NULL to stop presenting one.
+ * @param[in] cert_len  Length of @p cert in bytes.
+ * @param[in] key       PEM or DER private key for @p cert.
+ * @param[in] key_len   Length of @p key in bytes.
+ * @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM when only one of the
+ *         two is given (or given with a zero length), or
+ *         @c OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_NET_TLS.
+ */
+OVE_NODISCARD int ove_http_set_client_cert(const unsigned char *cert, size_t cert_len,
+					   const unsigned char *key, size_t key_len);
 
 #ifdef OVE_HEAP_NET_HTTP
 /**
@@ -261,6 +284,15 @@ static inline void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert
 	(void)ca_cert;
 	(void)ca_cert_len;
 	(void)allow_insecure;
+}
+OVE_NODISCARD static inline int ove_http_set_client_cert(const unsigned char *cert, size_t cert_len,
+							 const unsigned char *key, size_t key_len)
+{
+	(void)cert;
+	(void)cert_len;
+	(void)key;
+	(void)key_len;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 /** @endcond */
 

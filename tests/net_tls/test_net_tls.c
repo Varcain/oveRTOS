@@ -95,7 +95,7 @@ static struct pem load_pem(const char *name)
 	return p;
 }
 
-static struct pem s_ca, s_srv_cert, s_srv_key;
+static struct pem s_ca, s_srv_cert, s_srv_key, s_cli_cert, s_cli_key, s_other_key;
 
 /* ── In-process TLS server ─────────────────────────────────────────── */
 
@@ -322,6 +322,117 @@ static void test_https_get_verifies_server(void **state)
 	assert_string_equal(body, "none");
 }
 
+/* GET https://localhost:<port>/ with the process-wide TLS policy; the
+ * server answers with the client certificate's CN, or "none". */
+static int https_get(uint16_t port, int *status, char *body, size_t body_size)
+{
+	ove_http_client_storage_t st;
+	ove_http_client_t c = NULL;
+	assert_int_equal(ove_http_client_init(&c, &st), OVE_OK);
+	char url[64];
+	(void)snprintf(url, sizeof(url), "https://localhost:%u/", port);
+	ove_http_response_t resp = {0};
+	int rc = ove_http_get(c, url, &resp);
+	*status = resp.status;
+	body[0] = '\0';
+	if (rc == OVE_OK && resp.body)
+		(void)snprintf(body, body_size, "%s", resp.body);
+	ove_http_response_free(&resp);
+	ove_http_client_deinit(c);
+	return rc;
+}
+
+static void test_https_presents_client_cert(void **state)
+{
+	(void)state;
+	struct srv s;
+	srv_start(&s, SRV_HTTP, 1);
+	ove_http_set_tls(s_ca.data, s_ca.len, 0);
+	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, s_cli_cert.len, s_cli_key.data,
+						  s_cli_key.len),
+			 OVE_OK);
+
+	int status = 0;
+	char body[32];
+	int rc = https_get(s.port, &status, body, sizeof(body));
+	assert_int_equal(ove_http_set_client_cert(NULL, 0, NULL, 0), OVE_OK);
+	srv_join(&s);
+
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(status, 200);
+	assert_int_equal(s.handshake_rc, 0);
+	assert_string_equal(s.peer_cn, "ove-client");
+	assert_string_equal(body, "ove-client");
+}
+
+static void test_https_without_client_cert_is_refused(void **state)
+{
+	(void)state;
+	struct srv s;
+	srv_start(&s, SRV_HTTP, 1);
+	ove_http_set_tls(s_ca.data, s_ca.len, 0);
+
+	int status = 0;
+	char body[32];
+	int rc = https_get(s.port, &status, body, sizeof(body));
+	srv_join(&s);
+
+	assert_int_not_equal(rc, OVE_OK);
+	assert_int_not_equal(s.handshake_rc, 0);
+}
+
+static void test_http_set_client_cert_needs_both(void **state)
+{
+	(void)state;
+	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, s_cli_cert.len, NULL, 0),
+			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_http_set_client_cert(NULL, 0, s_cli_key.data, s_cli_key.len),
+			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, 0, s_cli_key.data,
+						  s_cli_key.len),
+			 OVE_ERR_INVALID_PARAM);
+}
+
+/* Caught on the device before the handshake, not by the server. */
+static void test_https_mismatched_client_key(void **state)
+{
+	(void)state;
+	struct srv s;
+	srv_start(&s, SRV_HTTP, 1);
+	ove_http_set_tls(s_ca.data, s_ca.len, 0);
+	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, s_cli_cert.len, s_other_key.data,
+						  s_other_key.len),
+			 OVE_OK);
+
+	int status = 0;
+	char body[32];
+	int rc = https_get(s.port, &status, body, sizeof(body));
+	assert_int_equal(ove_http_set_client_cert(NULL, 0, NULL, 0), OVE_OK);
+	srv_join(&s);
+
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+}
+
+/* mbedTLS reads a buffer as PEM only when its length counts the NUL. */
+static void test_https_pem_length_without_nul(void **state)
+{
+	(void)state;
+	struct srv s;
+	srv_start(&s, SRV_HTTP, 1);
+	ove_http_set_tls(s_ca.data, s_ca.len, 0);
+	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, s_cli_cert.len - 1,
+						  s_cli_key.data, s_cli_key.len),
+			 OVE_OK);
+
+	int status = 0;
+	char body[32];
+	int rc = https_get(s.port, &status, body, sizeof(body));
+	assert_int_equal(ove_http_set_client_cert(NULL, 0, NULL, 0), OVE_OK);
+	srv_join(&s);
+
+	assert_int_equal(rc, OVE_ERR_NOT_SUPPORTED);
+}
+
 /* The session outlives ove_mqtt_connect(): every later send must still find
  * its TLS state (ASan reports it if that state lived on connect's stack). */
 static void test_mqtt_tls_connect_publish(void **state)
@@ -362,15 +473,26 @@ int main(void)
 	s_ca = load_pem("ca.pem");
 	s_srv_cert = load_pem("srv.pem");
 	s_srv_key = load_pem("srv.key");
+	s_cli_cert = load_pem("cli.pem");
+	s_cli_key = load_pem("cli.key");
+	s_other_key = load_pem("other.key");
 
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_https_get_verifies_server),
 		cmocka_unit_test(test_mqtt_tls_connect_publish),
+		cmocka_unit_test(test_https_presents_client_cert),
+		cmocka_unit_test(test_https_without_client_cert_is_refused),
+		cmocka_unit_test(test_http_set_client_cert_needs_both),
+		cmocka_unit_test(test_https_mismatched_client_key),
+		cmocka_unit_test(test_https_pem_length_without_nul),
 	};
 	int failed = cmocka_run_group_tests_name("net_tls", tests, NULL, NULL);
 
 	free(s_ca.data);
 	free(s_srv_cert.data);
 	free(s_srv_key.data);
+	free(s_cli_cert.data);
+	free(s_cli_key.data);
+	free(s_other_key.data);
 	return failed;
 }

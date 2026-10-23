@@ -320,3 +320,27 @@ pub fn set_tls(ca_cert: Option<&'static [u8]>, allow_insecure: bool) {
     // the pointer for use during later TLS handshakes (it does not copy).
     unsafe { bindings::ove_http_set_tls(ptr, len, allow_insecure as i32) };
 }
+
+/// Set the process-wide HTTPS client certificate for mutual TLS (see
+/// `ove_http_set_client_cert`); `None` stops presenting one.
+///
+/// `Some((cert, key))` is a certificate (PEM may hold a chain, leaf first;
+/// DER holds one) and its unencrypted RSA or EC key.  A PEM slice must
+/// include its terminating NUL, as mbedTLS requires — `include_bytes!` does
+/// not add one.  Call at startup, before issuing requests; the bytes are used
+/// in place, hence the `'static` bound.  A key that does not match fails the
+/// request, not this call, with [`Error::InvalidParam`].
+///
+/// # Errors
+/// [`Error::InvalidParam`] when either slice is empty (use `None` to clear);
+/// [`Error::NotSupported`] without TLS support (`CONFIG_OVE_NET_TLS`).
+pub fn set_client_cert(pair: Option<(&'static [u8], &'static [u8])>) -> Result<()> {
+    let (cert, cert_len, key, key_len) = match pair {
+        Some((c, k)) => (c.as_ptr(), c.len(), k.as_ptr(), k.len()),
+        None => (core::ptr::null(), 0, core::ptr::null(), 0),
+    };
+    // SAFETY: `'static` slices outlive every request; the C side keeps the
+    // pointers for later handshakes (it does not copy).
+    let rc = unsafe { bindings::ove_http_set_client_cert(cert, cert_len, key, key_len) };
+    Error::from_code(rc)
+}

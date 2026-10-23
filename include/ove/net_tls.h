@@ -50,11 +50,12 @@ typedef struct {
 	const unsigned char *ca_cert; /**< PEM or DER CA certificate (NULL to skip verify). */
 	size_t ca_cert_len;	      /**< Length of ca_cert in bytes (incl. NUL for PEM). */
 	const char *hostname;	      /**< Expected server hostname for SNI/verify (may be NULL). */
+	const unsigned char *
+		client_cert; /**< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip). */
+	size_t client_cert_len; /**< Length of client_cert in bytes (incl. NUL for PEM). */
 	const unsigned char
-		*client_cert;	/**< PEM or DER client certificate for mTLS (NULL to skip). */
-	size_t client_cert_len; /**< Length of client_cert in bytes. */
-	const unsigned char *client_key; /**< PEM or DER client private key (NULL to skip). */
-	size_t client_key_len;		 /**< Length of client_key in bytes. */
+		*client_key;   /**< PEM or DER unencrypted client private key (NULL to skip). */
+	size_t client_key_len; /**< Length of client_key in bytes (incl. NUL for PEM). */
 	int allow_insecure; /**< Non-zero to allow NULL @c ca_cert (disables peer verify — do not use in production). */
 } ove_tls_config_t;
 
@@ -84,7 +85,12 @@ void ove_tls_deinit(ove_tls_t tls);
  * @param[in] tls  TLS handle.
  * @param[in] sock Connected socket to wrap.
  * @param[in] cfg  TLS configuration (certs, hostname).
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of
+ *         @c client_cert and @c client_key is set, when the key does not
+ *         match the certificate, or without a CA and @c allow_insecure;
+ *         @c OVE_ERR_NO_MEMORY when that key check runs out of memory;
+ *         otherwise a negative error code (mbedTLS failures are
+ *         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged).
  */
 OVE_NODISCARD int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg);
 

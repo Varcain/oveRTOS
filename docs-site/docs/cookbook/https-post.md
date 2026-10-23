@@ -1,6 +1,6 @@
 # POST telemetry to HTTPS
 
-**Pattern** — periodically push a JSON document to an HTTPS endpoint, using oveRTOS's `ove_net_http` client over `ove_net_tls` (mbedTLS). Works against any TLS server that does not ask for a client certificate.
+**Pattern** — periodically push a JSON document to an HTTPS endpoint, using oveRTOS's `ove_net_http` client over `ove_net_tls` (mbedTLS). For servers that also ask for a client certificate, see [Client certificate](#client-certificate-mutual-tls).
 
 **What to enable** (in your `app.yaml`'s `defconfig:` list):
 
@@ -113,6 +113,27 @@ void ove_main(void)
 ## Trust store
 
 There is no built-in CA bundle. Until `ove_http_set_tls()` installs a trust anchor, every `https://` request fails closed, because the server cannot be verified. Pass your server's CA (or the CA that signed it) as PEM including the terminating NUL, or as DER. The third argument, `allow_insecure`, skips verification for bring-up on a test bench only; never ship with it set.
+
+## Client certificate (mutual TLS)
+
+When the server also authenticates the device, install its certificate and private key once at startup, next to the CA:
+
+```c
+#include "ove/net_http.h"
+
+/* PEM bytes followed by their terminating NUL, which the lengths count. */
+extern const unsigned char device_cert[];
+extern const size_t device_cert_len;
+extern const unsigned char device_key[];
+extern const size_t device_key_len;
+
+int install_device_identity(void)
+{
+    return ove_http_set_client_cert(device_cert, device_cert_len, device_key, device_key_len);
+}
+```
+
+Every later `https://` request presents it to servers that ask. The buffers are used in place, so keep them for as long as requests run. A PEM certificate may hold a chain, leaf first; DER holds a single certificate. The key must be an unencrypted RSA or EC key. Passing only one of the two returns `OVE_ERR_INVALID_PARAM`, and so does a request whose key does not match the certificate. Pass `NULL` for both to stop presenting one.
 
 ## Memory and stack
 
