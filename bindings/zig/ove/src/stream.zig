@@ -137,8 +137,6 @@ pub fn Stream(comptime size: usize) type {
 
         /// Push bytes from an ISR.  Non-blocking; returns actually-
         /// written count (may be 0 if the ring is full).
-        /// Not yet ISR-safe on NuttX, whose implementation takes a pthread
-        /// mutex.
         pub fn sendFromIsr(self: Self, data: []const u8) SendError!usize {
             var sent: usize = 0;
             const rc = c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent);
@@ -148,8 +146,6 @@ pub fn Stream(comptime size: usize) type {
 
         /// Pull bytes from an ISR.  Non-blocking; returns actually-
         /// read count (may be 0 if the ring is empty).
-        /// Not yet ISR-safe on NuttX, whose implementation takes a pthread
-        /// mutex.
         pub fn receiveFromIsr(self: Self, buf: []u8) RecvError!usize {
             var received: usize = 0;
             const rc = c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received);

@@ -250,14 +250,14 @@ template <size_t BufSize = 0> class Stream
 	/**
 	 * @brief Sends bytes into the stream from an ISR context (non-blocking).
 	 *
-	 * Not yet ISR-safe on NuttX; see @ref ove_stream_send_from_isr.
+	 * Never blocks; see @ref ove_stream_send_from_isr.
 	 *
-	 * @param[out] bytes_sent Number of bytes actually written (may
-	 *                        be non-zero even on `Error::QueueFull`
-	 *                        when a partial commit succeeded before
-	 *                        the buffer filled).
-	 * @return Empty `Result<void>` on full success; `unexpected`
-	 *         with the appropriate @ref Error variant otherwise.
+	 * @param[out] bytes_sent Number of bytes actually written: fewer than
+	 *                        @p len, or 0, when the stream had too little
+	 *                        room, which is not an error.
+	 * @return Empty `Result<void>` on success, also for a partial or
+	 *         empty write; `unexpected` @ref Error for an invalid
+	 *         argument.
 	 */
 	[[nodiscard]] Result<void> send_from_isr(const void *data, size_t len,
 						 size_t &bytes_sent) noexcept
@@ -268,13 +268,14 @@ template <size_t BufSize = 0> class Stream
 	/**
 	 * @brief Receives bytes from the stream from an ISR context (non-blocking).
 	 *
-	 * Not yet ISR-safe on NuttX; see @ref ove_stream_receive_from_isr.
+	 * Never blocks; see @ref ove_stream_receive_from_isr.
 	 *
-	 * @param[out] bytes_received Number of bytes actually read (may
-	 *                            be non-zero even on a failure if
-	 *                            partial data was available).
-	 * @return Empty `Result<void>` on full success; `unexpected`
-	 *         with the appropriate @ref Error variant otherwise.
+	 * @param[out] bytes_received Number of bytes actually read: what was
+	 *                            there, up to @p len, possibly 0, which
+	 *                            is not an error.
+	 * @return Empty `Result<void>` on success, also when fewer bytes or
+	 *         none were available; `unexpected` @ref Error for an
+	 *         invalid argument.
 	 */
 	[[nodiscard]] Result<void> receive_from_isr(void *buf, size_t len,
 						    size_t &bytes_received) noexcept

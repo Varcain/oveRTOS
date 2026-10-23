@@ -175,9 +175,8 @@ struct ove_stream {
 	size_t trigger;
 	ove_notify_cb notify_cb;
 	void *notify_ud;
-	pthread_mutex_t lock;
-	pthread_cond_t not_empty;
-	pthread_cond_t not_full;
+	sem_t data_sem;	 /* hint: the trigger level was reached */
+	sem_t space_sem; /* hint: a read freed room */
 };
 
 typedef struct ove_stream ove_stream_storage_t;

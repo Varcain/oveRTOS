@@ -205,12 +205,11 @@ impl<const N: usize> Stream<N> {
 
     /// Send bytes from an ISR context (non-blocking, returns immediately).
     ///
-    /// Not yet ISR-safe on NuttX, whose implementation takes a pthread mutex.
-    ///
-    /// Returns the number of bytes sent; may be less than `data.len()` if the buffer fills.
+    /// Returns the number of bytes sent; may be less than `data.len()`, or 0,
+    /// if the buffer fills, which is not an error.
     ///
     /// # Errors
-    /// Returns an error if the stream is full.
+    /// Returns an error only for an invalid stream handle.
     #[inline]
     pub fn send_from_isr(&self, data: &[u8]) -> Result<usize> {
         let mut bytes_sent: usize = 0;
@@ -228,12 +227,11 @@ impl<const N: usize> Stream<N> {
 
     /// Receive bytes from an ISR context (non-blocking, returns immediately).
     ///
-    /// Not yet ISR-safe on NuttX, whose implementation takes a pthread mutex.
-    ///
-    /// Returns the number of bytes received; may be zero if no data is available.
+    /// Returns the number of bytes received; may be zero if no data is
+    /// available, which is not an error.
     ///
     /// # Errors
-    /// Returns an error if the stream is empty.
+    /// Returns an error only for an invalid stream handle.
     #[inline]
     pub fn receive_from_isr(&self, buf: &mut [u8]) -> Result<usize> {
         let mut bytes_received: usize = 0;

@@ -2623,7 +2623,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send bytes into the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has\n insufficient space the call returns immediately with a partial or zero count.\n Not guaranteed today on NuttX: its implementation takes a pthread mutex\n and signals a condition variable, which an interrupt handler must not do.\n\n @param[in]  stream      Stream handle.\n @param[in]  data        Pointer to the data to send.\n @param[in]  len         Number of bytes to send.\n @param[out] bytes_sent  Receives the number of bytes actually written, or\n                         @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when a full stream took\n         only part of @p data or none of it: check @p bytes_sent.  A negative\n         error code means the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
+    #[doc = " @brief Send bytes into the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has\n insufficient space the call returns immediately with a partial or zero count.\n\n @param[in]  stream      Stream handle.\n @param[in]  data        Pointer to the data to send.\n @param[in]  len         Number of bytes to send.\n @param[out] bytes_sent  Receives the number of bytes actually written, or\n                         @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when a full stream took\n         only part of @p data or none of it: check @p bytes_sent.  A negative\n         error code means the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
     pub fn ove_stream_send_from_isr(
         stream: ove_stream_t,
         data: *const core::ffi::c_void,
@@ -2632,7 +2632,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Receive bytes from the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only\n the bytes that are immediately available.\n Not guaranteed today on NuttX: its implementation takes a pthread mutex\n and signals a condition variable, which an interrupt handler must not do.\n\n @param[in]  stream          Stream handle.\n @param[out] buf             Buffer to receive data.\n @param[in]  len             Maximum number of bytes to read.\n @param[out] bytes_received  Receives the number of bytes actually read, or\n                             @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when fewer bytes (or none)\n         were available: check @p bytes_received.  A negative error code means\n         the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
+    #[doc = " @brief Receive bytes from the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only\n the bytes that are immediately available.\n\n @param[in]  stream          Stream handle.\n @param[out] buf             Buffer to receive data.\n @param[in]  len             Maximum number of bytes to read.\n @param[out] bytes_received  Receives the number of bytes actually read, or\n                             @c NULL if the caller does not need this value.\n @return OVE_OK when the call completed, including when fewer bytes (or none)\n         were available: check @p bytes_received.  A negative error code means\n         the call itself failed (e.g. @c OVE_ERR_INVALID_PARAM)."]
     pub fn ove_stream_receive_from_isr(
         stream: ove_stream_t,
         buf: *mut core::ffi::c_void,
@@ -2645,11 +2645,11 @@ unsafe extern "C" {
     pub fn ove_stream_reset(stream: ove_stream_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the number of bytes currently available in the stream.\n\n Returns the count of bytes that can be read without blocking.\n\n @note Call it from thread context: it enters a task-level critical\n       section on FreeRTOS and takes a pthread mutex on NuttX.\n\n @param[in] stream  Stream handle.\n @return Number of bytes available; 0 if the stream is empty or invalid.\n @see ove_stream_space_available"]
+    #[doc = " @brief Query the number of bytes currently available in the stream.\n\n Returns the count of bytes that can be read without blocking.\n\n @note On FreeRTOS call it from thread context, as it enters a task-level\n       critical section there; elsewhere any context.\n\n @param[in] stream  Stream handle.\n @return Number of bytes available; 0 if the stream is empty or invalid.\n @see ove_stream_space_available"]
     pub fn ove_stream_bytes_available(stream: ove_stream_t) -> usize;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the free space in the stream.\n\n Returns the number of bytes ove_stream_send() could deposit right now\n without blocking.  A snapshot, like ove_stream_bytes_available().\n\n @note Call it from thread context: it enters a task-level critical\n       section on FreeRTOS and takes a pthread mutex on NuttX.\n\n @param[in] stream  Stream handle.\n @return Free bytes; 0 if the stream is full or invalid.\n @see ove_stream_bytes_available"]
+    #[doc = " @brief Query the free space in the stream.\n\n Returns the number of bytes ove_stream_send() could deposit right now\n without blocking.  A snapshot, like ove_stream_bytes_available().\n\n @note On FreeRTOS call it from thread context, as it enters a task-level\n       critical section there; elsewhere any context.\n\n @param[in] stream  Stream handle.\n @return Free bytes; 0 if the stream is full or invalid.\n @see ove_stream_bytes_available"]
     pub fn ove_stream_space_available(stream: ove_stream_t) -> usize;
 }
 unsafe extern "C" {
