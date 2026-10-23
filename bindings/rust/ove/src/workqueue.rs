@@ -162,6 +162,14 @@ impl Work {
         let rc = unsafe { bindings::ove_work_cancel(self.handle) };
         Error::from_code(rc)
     }
+
+    /// Whether the item is queued or delayed and its handler has not started
+    /// (a snapshot).  `false` while the handler runs, when a submit still
+    /// fails with [`Error::Busy`].
+    #[inline]
+    pub fn is_pending(&self) -> bool {
+        unsafe { bindings::ove_work_is_pending(self.handle) }
+    }
 }
 
 impl Drop for Work {

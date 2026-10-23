@@ -216,3 +216,14 @@ int ove_work_cancel(ove_work_t work)
 	/* Contract: OVE_ERR_INVAL when the item was not pending. */
 	return was_pending ? OVE_OK : OVE_ERR_INVAL;
 }
+
+/* pending is cleared as the handler starts; a delayed item keeps it through
+ * the worker's delay. */
+bool ove_work_is_pending(ove_work_t work)
+{
+	struct ove_work *w = work;
+	if (!w) {
+		return false;
+	}
+	return __atomic_load_n(&w->pending, __ATOMIC_ACQUIRE) != 0;
+}

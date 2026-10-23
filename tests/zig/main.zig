@@ -719,6 +719,12 @@ fn testTimerCreateDestroyPeriodic() !void {
     t.deinit();
 }
 
+fn testTimerPeriod() !void {
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 100, .mode = .periodic }, timerCallback, .{});
+    defer t.deinit();
+    try expectEqual(u64, 100_000_000, t.period().ns);
+}
+
 fn testTimerDeinitIdempotent() !void {
     var t = try ove.Timer.create(test_allocator, .{ .period_ms = 100, .mode = .one_shot }, timerCallback, .{});
     t.deinit();
@@ -1875,6 +1881,18 @@ fn testWorkSubmitDelayed() !void {
     try expectEqual(u32, 1, wq_count);
 }
 
+fn testWorkIsPending() !void {
+    var wq = try ove.Workqueue(4096).create(test_allocator, "pnd\x00", .normal);
+    defer wq.deinit();
+    var work = try ove.Work.create(test_allocator, workHandler);
+    defer work.deinit();
+    try expect(!work.isPending());
+    try wq.submitDelayedFor(&work, .millis(200));
+    try expect(work.isPending());
+    try work.cancel();
+    try expect(!work.isPending());
+}
+
 fn testWorkCancel() !void {
     var wq = try ove.Workqueue(4096).create(test_allocator, "can\x00", .normal);
     defer wq.deinit();
@@ -2091,6 +2109,7 @@ pub fn main() void {
     runSuite("Timer", &.{
         .{ .name = "create_destroy_oneshot", .func = testTimerCreateDestroyOneshot },
         .{ .name = "create_destroy_periodic", .func = testTimerCreateDestroyPeriodic },
+        .{ .name = "period", .func = testTimerPeriod },
         .{ .name = "deinit_idempotent", .func = testTimerDeinitIdempotent },
         .{ .name = "oneshot_fires_once", .func = testTimerOneshotFiresOnce },
         .{ .name = "periodic_fires_multiple", .func = testTimerPeriodicFiresMultiple },
@@ -2270,6 +2289,7 @@ pub fn main() void {
         .{ .name = "submit", .func = testWorkSubmit },
         .{ .name = "submit_delayed", .func = testWorkSubmitDelayed },
         .{ .name = "cancel", .func = testWorkCancel },
+        .{ .name = "is_pending", .func = testWorkIsPending },
         .{ .name = "raii_drop", .func = testWorkqueueRaiiDrop },
         .{ .name = "context_per_item", .func = testWorkContextPerItem },
     });

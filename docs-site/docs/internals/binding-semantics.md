@@ -135,6 +135,7 @@ directly.
 | Mode | `one_shot` bool | `one_shot` bool | `cfg.mode = .periodic / .one_shot` |
 | Callback shape | `ove_timer_fn` | `fn()` | `fn()` / `fn(*Ctx)` |
 | start / stop / reset | `Result<void>` | `Result<()>` | `Error!void` |
+| Period (as requested) | `period() -> std::chrono::nanoseconds` | `period() -> Duration` | `period() -> Duration` |
 | Drop / deinit | `~Timer` → destroy/deinit | `Drop` → destroy/deinit | `deinit()` → deinit |
 | Idempotent deinit | yes | yes | yes |
 

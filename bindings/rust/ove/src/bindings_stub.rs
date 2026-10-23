@@ -2137,6 +2137,10 @@ unsafe extern "C" {
     #[doc = " @brief Restart a timer's countdown from the beginning of its period.\n\n Equivalent to stopping and then starting the timer, but performed\n atomically with respect to the RTOS timer service.  Useful for\n implementing watchdog-style \"kick\" patterns.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to reset.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_start, ove_timer_stop"]
     pub fn ove_timer_reset(timer: ove_timer_t) -> core::ffi::c_int;
 }
+unsafe extern "C" {
+    #[doc = " @brief The timer's period, as last requested.\n\n Returns the period given to the init or create call or to the last\n successful ove_timer_set_period_ns(), not the engine's rounded one (see\n the resolution note at @ref ove_timer_init_ns), so it reads back exactly\n what was set — at once, even where the engine applies the change later\n (FreeRTOS defers it to the timer task).  It survives ove_timer_stop().\n Callable from any context.  With ove_timer_set_period_ns() racing itself\n on one timer (say a thread and an ISR), FreeRTOS can report the period\n whose store landed last rather than the one the timer task applied last.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle.\n @return The period in nanoseconds; 0 for a NULL handle.\n\n @see ove_timer_set_period_ns"]
+    pub fn ove_timer_get_period_ns(timer: ove_timer_t) -> u64;
+}
 #[doc = " @brief Descriptor for a single on-board LED.\n\n Identifies the GPIO pin that drives the LED and its polarity."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2559,6 +2563,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Cancel a pending work item before it executes.\n\n Synchronously removes @p work before its handler is called. If the handler\n is already executing, waits for it to finish. After return, the work item's\n storage is no longer referenced asynchronously and may be deinitialised.\n\n @param[in] work  Work item handle to cancel.\n @return OVE_OK if the item was successfully cancelled, @c OVE_ERR_INVAL\n         if the item was not pending, or another negative error code on failure."]
     pub fn ove_work_cancel(work: ove_work_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Whether a work item is waiting to run.\n\n True while the item is queued or its submit_delayed delay is running —\n the state ove_work_cancel() removes it from — and false once its handler\n has started, so @c false does not mean a submit would succeed: an item\n whose handler is running still gets @c OVE_ERR_BUSY.  A snapshot; callable\n from any context.\n\n @param[in] work  Work item handle.\n @return @c true while queued or delayed; @c false otherwise or for NULL.\n\n @see ove_work_cancel, ove_work_submit"]
+    pub fn ove_work_is_pending(work: ove_work_t) -> bool;
 }
 unsafe extern "C" {
     #[doc = " @brief Initialise a stream using caller-provided static storage.\n\n Constructs a stream object in @p storage and associates the raw byte\n buffer @p buffer of @p size bytes with it. The stream will not unblock\n a waiting receiver until at least @p trigger bytes are present.\n\n @param[out] stream   Receives the initialised stream handle.\n @param[in]  storage  Pointer to statically-allocated stream storage.\n @param[in]  buffer   Pointer to the backing byte buffer.\n @param[in]  size     Size of @p buffer in bytes.\n @param[in]  trigger  Minimum bytes available before a blocked receiver wakes.\n                      A value of 0 is treated as 1 by every backend.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_STREAM."]

@@ -19,6 +19,7 @@ const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const Duration = @import("time.zig").Duration;
 
 /// Mode for `create()`'s `mode` arg.  `.periodic` re-fires every period;
 /// `.one_shot` fires once and stops.
@@ -162,5 +163,11 @@ pub const Timer = struct {
     /// Re-arm a running timer; the period restart counts from now.
     pub inline fn reset(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_reset(self.handle));
+    }
+
+    /// The period as last requested, not rounded to the engine's tick.
+    /// Kept while the timer is stopped.
+    pub fn period(self: Timer) Duration {
+        return .{ .ns = c.ove_timer_get_period_ns(self.handle) };
     }
 };

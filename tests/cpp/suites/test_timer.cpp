@@ -40,6 +40,13 @@ static void test_cpp_timer_create_destroy_periodic(void **state)
 	assert_true(t.valid());
 }
 
+static void test_cpp_timer_period(void **state)
+{
+	(void)state;
+	ove::Timer t(cpp_periodic_cb, nullptr, 100, false);
+	assert_true(t.period() == std::chrono::milliseconds{100});
+}
+
 static void test_cpp_timer_oneshot_fires_once(void **state)
 {
 	(void)state;
@@ -183,6 +190,7 @@ int test_cpp_timer_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_cpp_timer_create_destroy_oneshot),
 		cmocka_unit_test(test_cpp_timer_create_destroy_periodic),
+		cmocka_unit_test(test_cpp_timer_period),
 		cmocka_unit_test(test_cpp_timer_oneshot_fires_once),
 		cmocka_unit_test(test_cpp_timer_periodic_fires_multiple),
 		cmocka_unit_test(test_cpp_timer_stop_prevents_callbacks),

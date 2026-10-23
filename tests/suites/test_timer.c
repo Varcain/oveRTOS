@@ -284,6 +284,7 @@ static void test_timer_set_period_refused_keeps_period(void **state)
 #endif
 	if (rc != OVE_OK) {
 		assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+		assert_int_equal(ove_timer_get_period_ns(t), OVE_MS(20));
 		s_periodic_count = 0;
 		test_msleep(150);
 		assert_true(s_periodic_count >= 2);
@@ -291,6 +292,30 @@ static void test_timer_set_period_refused_keeps_period(void **state)
 
 	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
 	ove_test_timer_destroy(t);
+}
+
+/* The getter returns the period as requested, at once and unrounded,
+ * whether or not the timer runs. */
+static void test_timer_get_period(void **state)
+{
+	(void)state;
+	ove_timer_t t = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 100, 0));
+	assert_int_equal(ove_timer_get_period_ns(t), OVE_MS(100));
+
+	OVE_TEST_ASSERT_OK(ove_timer_set_period_ns(t, OVE_MS(50)));
+	assert_int_equal(ove_timer_get_period_ns(t), OVE_MS(50));
+
+	/* Finer than a tick on every engine's test lane. */
+	OVE_TEST_ASSERT_OK(ove_timer_set_period_ns(t, 1500000));
+	assert_int_equal(ove_timer_get_period_ns(t), 1500000);
+
+	OVE_TEST_ASSERT_OK(ove_timer_set_period_ns(t, OVE_MS(80)));
+	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
+	assert_int_equal(ove_timer_get_period_ns(t), OVE_MS(80));
+	ove_test_timer_destroy(t);
+
+	assert_int_equal(ove_timer_get_period_ns(NULL), 0);
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -341,6 +366,7 @@ int test_timer_run(void)
 		cmocka_unit_test_setup(test_timer_callback_user_data, timer_setup),
 		cmocka_unit_test_setup(test_timer_long_periods, timer_setup),
 		cmocka_unit_test_setup(test_timer_set_period_refused_keeps_period, timer_setup),
+		cmocka_unit_test_setup(test_timer_get_period, timer_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_timer_create_null_handle, timer_setup),
 		cmocka_unit_test_setup(test_timer_create_null_callback, timer_setup),

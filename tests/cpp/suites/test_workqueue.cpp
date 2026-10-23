@@ -55,6 +55,19 @@ static void test_cpp_work_submit_delayed(void **state)
 	assert_int_equal(s_wq_count, 1);
 }
 
+static void test_cpp_work_is_pending(void **state)
+{
+	(void)state;
+	ove::Workqueue<4096> wq("pnd_wq", OVE_PRIO_NORMAL);
+	ove::Work w(test_wq_handler);
+
+	assert_false(w.is_pending());
+	OVE_TEST_ASSERT_OK(w.submit_delayed(wq, 200));
+	assert_true(w.is_pending());
+	OVE_TEST_ASSERT_OK(w.cancel());
+	assert_false(w.is_pending());
+}
+
 static void test_cpp_work_cancel(void **state)
 {
 	(void)state;
@@ -109,6 +122,7 @@ int test_cpp_workqueue_run(void)
 		cmocka_unit_test(test_cpp_work_submit),
 		cmocka_unit_test(test_cpp_work_submit_delayed),
 		cmocka_unit_test(test_cpp_work_cancel),
+		cmocka_unit_test(test_cpp_work_is_pending),
 		cmocka_unit_test(test_cpp_workqueue_raii_destroy),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_workqueue_move_construct),

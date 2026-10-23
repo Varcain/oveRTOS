@@ -13,7 +13,8 @@
  *
  * @note All functions in this group require @c CONFIG_OVE_TIMER to be defined.
  *       When @c CONFIG_OVE_TIMER is not set, every function is replaced by a
- *       static inline stub that returns @c OVE_ERR_NOT_SUPPORTED.
+ *       static inline stub that returns @c OVE_ERR_NOT_SUPPORTED, or 0 for
+ *       ove_timer_get_period_ns().
  *
  * Two allocation strategies are available:
  *  - @c _create() / @c _destroy() — heap-allocated.  Available only when
@@ -299,6 +300,27 @@ int ove_timer_stop(ove_timer_t timer);
  */
 OVE_NODISCARD int ove_timer_reset(ove_timer_t timer);
 
+/**
+ * @brief The timer's period, as last requested.
+ *
+ * Returns the period given to the init or create call or to the last
+ * successful ove_timer_set_period_ns(), not the engine's rounded one (see
+ * the resolution note at @ref ove_timer_init_ns), so it reads back exactly
+ * what was set — at once, even where the engine applies the change later
+ * (FreeRTOS defers it to the timer task).  It survives ove_timer_stop().
+ * Callable from any context.  With ove_timer_set_period_ns() racing itself
+ * on one timer (say a thread and an ISR), FreeRTOS can report the period
+ * whose store landed last rather than the one the timer task applied last.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[in] timer  Timer handle.
+ * @return The period in nanoseconds; 0 for a NULL handle.
+ *
+ * @see ove_timer_set_period_ns
+ */
+uint64_t ove_timer_get_period_ns(ove_timer_t timer);
+
 #else /* !CONFIG_OVE_TIMER */
 
 /* P0-3: _init/_deinit stubs so OVE_TIMER_DEFINE_STATIC links cleanly when
@@ -374,6 +396,11 @@ OVE_NODISCARD static inline int ove_timer_reset(ove_timer_t t)
 {
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline uint64_t ove_timer_get_period_ns(ove_timer_t t)
+{
+	(void)t;
+	return 0;
 }
 
 #endif /* CONFIG_OVE_TIMER */

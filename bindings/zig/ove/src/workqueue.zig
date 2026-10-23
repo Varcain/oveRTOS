@@ -189,4 +189,11 @@ pub const Work = struct {
     pub fn cancel(self: Work) Error!void {
         try err.fromCode(c.ove_work_cancel(self.handle));
     }
+
+    /// Whether the item is queued or delayed and has not started (a
+    /// snapshot).  `false` while the handler runs, when a submit still
+    /// fails with `error.Busy`.
+    pub fn isPending(self: Work) bool {
+        return c.ove_work_is_pending(self.handle);
+    }
 };

@@ -216,3 +216,14 @@ int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
 	pthread_mutex_unlock(&t->lock);
 	return OVE_OK;
 }
+
+uint64_t ove_timer_get_period_ns(ove_timer_t timer)
+{
+	struct ove_timer *t = timer;
+	if (!t)
+		return 0;
+	pthread_mutex_lock(&t->lock);
+	uint64_t period_ns = t->period_ns;
+	pthread_mutex_unlock(&t->lock);
+	return period_ns;
+}

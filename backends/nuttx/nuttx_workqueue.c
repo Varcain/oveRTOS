@@ -327,3 +327,14 @@ int ove_work_cancel(ove_work_t work)
 	wait_for_completion(nw);
 	return cancelled ? OVE_OK : OVE_ERR_INVAL;
 }
+
+/* WORK_QUEUED covers both queued and delayed items: the worker sleeps a
+ * delay out before it starts the handler. */
+bool ove_work_is_pending(ove_work_t work)
+{
+	struct ove_work *nw = work;
+	if (nw == NULL) {
+		return false;
+	}
+	return __atomic_load_n(&nw->state, __ATOMIC_ACQUIRE) == WORK_QUEUED;
+}

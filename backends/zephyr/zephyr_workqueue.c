@@ -162,3 +162,12 @@ int ove_work_cancel(ove_work_t work)
 		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
 	return result;
 }
+
+/* WORK_PENDING covers both queued and delayed items. */
+bool ove_work_is_pending(ove_work_t work)
+{
+	if (work == NULL) {
+		return false;
+	}
+	return __atomic_load_n(&work->state, __ATOMIC_ACQUIRE) == WORK_PENDING;
+}
