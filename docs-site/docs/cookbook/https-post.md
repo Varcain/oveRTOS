@@ -133,7 +133,7 @@ int install_device_identity(void)
 }
 ```
 
-Every later `https://` request presents it to servers that ask. The buffers are used in place, so keep them for as long as requests run. A PEM certificate may hold a chain, leaf first; DER holds a single certificate. The key must be an unencrypted RSA or EC key. Passing only one of the two returns `OVE_ERR_INVALID_PARAM`, and so does a request whose key does not match the certificate. Pass `NULL` for both to stop presenting one.
+Every later `https://` request presents it to servers that ask. The buffers are used in place, so keep them for as long as requests run. A PEM certificate may hold a chain, leaf first; DER holds a single certificate. The certificate or chain goes out in one TLS record, so it must fit `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN`, 4 KB by default, which holds a P-256 leaf and an intermediate; raise it for a long RSA chain, at the cost of the same amount of memory in every session. The key must be an unencrypted RSA or EC key. Passing only one of the two returns `OVE_ERR_INVALID_PARAM`, and so does a request whose key does not match the certificate. Pass `NULL` for both to stop presenting one.
 
 ## Memory and stack
 

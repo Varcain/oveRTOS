@@ -901,14 +901,33 @@ config OVE_NET_SNTP
 
 config OVE_NET_TLS_HEAP_SIZE
     int "TLS static heap size (bytes)"
-    default 32768
+    default 49152
     depends on OVE_NET_TLS
     help
       Size of the BSS-resident buffer mbedTLS allocates from in
-      zero-heap mode (mbedtls_memory_buffer_alloc_init).  32 KB is
-      sufficient for TLS 1.2 with RSA-2048; budget ~24 KB peak per
-      concurrent session.  Pool exhaustion returns OVE_ERR_NO_MEMORY,
-      never spills to libc malloc.
+      zero-heap mode (mbedtls_memory_buffer_alloc_init).  One session
+      peaked at ~34 KB on an STM32F746 (TLS 1.3, P-256 certificates,
+      with or without a client certificate), most of it the 16 KB
+      incoming and 4 KB outgoing record buffers (OVE_NET_TLS_OUT_CONTENT_LEN);
+      RSA chains need more.
+      Budget the peak per concurrent session.  Pool exhaustion fails
+      the handshake with OVE_ERR_NO_MEMORY, or OVE_ERR_NOT_SUPPORTED
+      where mbedTLS reports it as another failure (see
+      ove_tls_handshake()); it never spills to libc malloc.
+
+config OVE_NET_TLS_OUT_CONTENT_LEN
+    int "Largest outgoing TLS record (bytes)"
+    default 4096
+    range 1024 16384
+    depends on OVE_NET_TLS
+    help
+      mbedTLS's outgoing record buffer (MBEDTLS_SSL_OUT_CONTENT_LEN),
+      allocated per session.  ove_tls_send() sends at most this much per
+      call, and mbedTLS does not split handshake messages, so a client
+      certificate chain must fit it: 4096 holds a P-256 leaf and an
+      intermediate, not a long RSA chain.  Each byte above the default
+      adds a byte to every session's memory (see OVE_NET_TLS_HEAP_SIZE).
+      Incoming records are always up to 16 KB, as servers may send them.
 
 config OVE_NET_RX_READY_NOTIFY
     bool

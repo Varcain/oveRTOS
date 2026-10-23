@@ -3175,7 +3175,7 @@ pub struct ove_tls_config_t {
     pub ca_cert_len: usize,
     #[doc = "< Expected server hostname for SNI/verify (may be NULL)."]
     pub hostname: *const core::ffi::c_char,
-    #[doc = "< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip)."]
+    #[doc = "< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip). Sent in one record, so the chain must fit CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN (4 KB by default)."]
     pub client_cert: *const core::ffi::c_uchar,
     #[doc = "< Length of client_cert in bytes (incl. NUL for PEM)."]
     pub client_cert_len: usize,
@@ -3208,7 +3208,7 @@ const _: () = {
         [core::mem::offset_of!(ove_tls_config_t, allow_insecure) - 56usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a TLS session from caller-supplied storage.\n\n @param[out] tls     Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Initialise a TLS session from caller-supplied storage.\n\n @param[out] tls     Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success; @c OVE_ERR_NO_MEMORY when the heap cannot\n         hold the mbedTLS contexts (heap builds); @c OVE_ERR_NOT_SUPPORTED\n         when the random generator cannot be seeded, from a failing\n         entropy source or mbedTLS out of memory (it does not say which;\n         the mbedTLS code is logged)."]
     pub fn ove_tls_init(tls: *mut ove_tls_t, storage: *mut ove_tls_storage_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -3216,7 +3216,7 @@ unsafe extern "C" {
     pub fn ove_tls_deinit(tls: ove_tls_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of\n         @c client_cert and @c client_key is set, when the key does not\n         match the certificate, or without a CA and @c allow_insecure;\n         @c OVE_ERR_NO_MEMORY when that key check runs out of memory;\n         otherwise a negative error code (mbedTLS failures are\n         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged)."]
+    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of\n         @c client_cert and @c client_key is set, when the key does not\n         match the certificate, or without a CA and @c allow_insecure;\n         @c OVE_ERR_NO_MEMORY when mbedTLS runs out of memory (the heap,\n         or the CONFIG_OVE_NET_TLS_HEAP_SIZE pool in zero-heap builds);\n         otherwise a negative error code (other mbedTLS failures are\n         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged).  Some\n         shortfalls mbedTLS itself reports as other failures, and they\n         return @c OVE_ERR_NOT_SUPPORTED too: while parsing the client key\n         (as a key in no known format), in the TLS 1.3 key schedule (a\n         generic error), while verifying the server's certificate (as a\n         certificate that failed verification) and while verifying the\n         server's handshake signature (as a handshake failure)."]
     pub fn ove_tls_handshake(
         tls: ove_tls_t,
         sock: ove_socket_t,
@@ -3224,7 +3224,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send data over an encrypted TLS session.\n\n @param[in]  tls  TLS handle (after successful handshake).\n @param[in]  data Pointer to data to send.\n @param[in]  len  Number of bytes to send.\n @param[out] sent Number of bytes actually sent (may be NULL).\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Send data over an encrypted TLS session.\n\n Sends at most one record, CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN bytes\n (4 KB by default), per call: when @p len is larger, @p sent is less\n than @p len and the caller sends the rest with further calls.\n\n @param[in]  tls  TLS handle (after successful handshake).\n @param[in]  data Pointer to data to send.\n @param[in]  len  Number of bytes to send.\n @param[out] sent Number of bytes actually sent (may be NULL only when\n                  @p len fits one record).\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_tls_send(
         tls: ove_tls_t,
         data: *const core::ffi::c_void,
@@ -3382,7 +3382,7 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = " @brief Set the process-wide client certificate for HTTPS (mutual TLS).\n\n Presented to servers that ask for one.  Like ove_http_set_tls(), call it\n at startup, before issuing requests (there is no locking), and keep both\n buffers alive while requests may run: they are used in place, not copied.\n A PEM certificate may hold a chain, leaf first; DER holds one certificate.\n The key must be an unencrypted RSA or EC key.  A PEM length counts its terminating NUL, as mbedTLS\n requires.  Whether the key matches the certificate is checked when a\n request connects, which then fails with @c OVE_ERR_INVALID_PARAM.\n\n @param[in] cert      PEM or DER client certificate, or NULL with @p key\n                      NULL to stop presenting one.\n @param[in] cert_len  Length of @p cert in bytes.\n @param[in] key       PEM or DER private key for @p cert.\n @param[in] key_len   Length of @p key in bytes.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM when only one of the\n         two is given (or given with a zero length), or\n         @c OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_NET_TLS."]
+    #[doc = " @brief Set the process-wide client certificate for HTTPS (mutual TLS).\n\n Presented to servers that ask for one.  Like ove_http_set_tls(), call it\n at startup, before issuing requests (there is no locking), and keep both\n buffers alive while requests may run: they are used in place, not copied.\n A PEM certificate may hold a chain, leaf first; DER holds one certificate.\n The certificate or chain goes out in one TLS record, so it must fit\n CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN (4 KB by default; a longer one fails\n every handshake).  The key must be an unencrypted RSA or EC key.  A PEM\n length counts its terminating NUL, as mbedTLS requires.  Whether the key\n matches the certificate is checked when a request connects, which then\n fails with @c OVE_ERR_INVALID_PARAM.\n\n @param[in] cert      PEM or DER client certificate, or NULL with @p key\n                      NULL to stop presenting one.\n @param[in] cert_len  Length of @p cert in bytes.\n @param[in] key       PEM or DER private key for @p cert.\n @param[in] key_len   Length of @p key in bytes.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM when only one of the\n         two is given (or given with a zero length), or\n         @c OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_NET_TLS."]
     pub fn ove_http_set_client_cert(
         cert: *const core::ffi::c_uchar,
         cert_len: usize,

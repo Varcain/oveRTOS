@@ -36,6 +36,14 @@ macro(ove_build_mbedtls)
         "MBEDTLS_USER_CONFIG_FILE=\"ove_mbedtls_config.h\""
     )
 
+    # Outgoing record size (CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN); without it
+    # ove_mbedtls_config.h's 4 KB default applies.
+    if(DEFINED OVE_NET_TLS_OUT_CONTENT_LEN)
+        target_compile_definitions(ove_mbedtls PUBLIC
+            MBEDTLS_SSL_OUT_CONTENT_LEN=${OVE_NET_TLS_OUT_CONTENT_LEN}
+        )
+    endif()
+
     set_target_properties(ove_mbedtls PROPERTIES
         C_STANDARD 99
         C_STANDARD_REQUIRED ON
@@ -47,10 +55,11 @@ macro(ove_build_mbedtls)
     # profiler's frame pointer (OveCommon.cmake) would take r7 from it.
     target_compile_options(ove_mbedtls PRIVATE -fomit-frame-pointer)
 
-    # Zero-heap: use mbedTLS static buffer allocator instead of libc calloc
+    # Zero-heap: use mbedTLS static buffer allocator instead of libc calloc.
+    # (MBEDTLS_PLATFORM_C, which both need, is on in mbedTLS's own config;
+    # defining it here as well is a redefinition that -Werror rejects.)
     if(OVE_ZERO_HEAP)
         target_compile_definitions(ove_mbedtls PUBLIC
-            MBEDTLS_PLATFORM_C
             MBEDTLS_PLATFORM_MEMORY
             MBEDTLS_MEMORY_BUFFER_ALLOC_C
         )

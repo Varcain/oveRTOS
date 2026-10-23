@@ -68,7 +68,8 @@ Each layer only depends on the layer directly below it. The socket layer is the 
 | `CONFIG_OVE_NET_HTTPD` | n | Embedded HTTP server |
 | `CONFIG_OVE_NET_HTTPD_WS` | n | WebSocket support for HTTPD |
 | `CONFIG_OVE_NET_SNTP` | n | Simple NTP time sync |
-| `CONFIG_OVE_NET_TLS_HEAP_SIZE` | 32768 | Static TLS heap size (zero-heap mode) |
+| `CONFIG_OVE_NET_TLS_HEAP_SIZE` | 49152 | Static TLS heap size (zero-heap mode) |
+| `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` | 4096 | Largest outgoing TLS record (bytes) |
 | `CONFIG_OVE_NET_HTTP_MAX_RESPONSE` | 8192 | Max HTTP response buffer |
 | `CONFIG_OVE_NET_HTTPD_MAX_BODY` | 1024 | Max POST body for HTTPD |
 | `CONFIG_OVE_NET_MQTT_RX_BUF` | 1024 | MQTT receive buffer |
@@ -286,6 +287,8 @@ void tls_get(ove_socket_t sock)
 ```
 
 For certificate verification, set `cfg.ca_cert` and `cfg.ca_cert_len` to a PEM or DER certificate.
+
+`ove_tls_send` sends at most one record, `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` bytes (4 KB by default), per call, so `sent` can come back smaller than the length asked for; send the rest with further calls, as the HTTP and MQTT clients do. A client certificate (`cfg.client_cert`) also goes out in one record and must fit it. Incoming records are always up to 16 KB, since servers may send full-size ones.
 
 ## HTTP Client
 
@@ -511,7 +514,7 @@ When `CONFIG_OVE_ZERO_HEAP` is enabled, the entire networking stack operates wit
 - **lwIP** (FreeRTOS): Uses static memory pools for PCBs, packet buffers, and ARP entries
 - **mbedTLS**: Uses `MBEDTLS_MEMORY_BUFFER_ALLOC_C` with a static buffer (`CONFIG_OVE_NET_TLS_HEAP_SIZE`)
 - **HTTP client**: Response buffer embedded in the client storage struct
-- **MQTT client**: Socket storage embedded in the client struct
+- **MQTT client**: Socket storage, and with `CONFIG_OVE_NET_TLS` the TLS session's mbedTLS contexts (~2.1 KB on a Cortex-M7), embedded in the client struct
 - **All sockets**: Use `_init()`/`_deinit()` with caller-supplied `ove_*_storage_t`
 
 The `_create()`/`_destroy()` convenience macros automatically expand to static storage in zero-heap mode (see [Allocation Strategies](index.md#allocation-strategies)).

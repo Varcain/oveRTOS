@@ -387,15 +387,17 @@ def test_stub(ove_dir, output_dir):
     _cmake_build(os.path.join(ove_dir, "tests"), build)
     logger.info("Running stub tests")
     results = _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
-    # TLS client tests: a binary of their own (tests/CMakeLists.txt).
-    net_tls = os.path.join(build, "ove_test_net_tls")
-    if os.path.exists(net_tls):
-        logger.info("Running TLS client tests")
-        tls = _run_test_binary([net_tls], "stub", cwd=build)
-        results.passed += tls.passed
-        results.failed += tls.failed
-        results.skipped += tls.skipped
-        results.failed_names += tls.failed_names
+    # TLS client tests, heap and zero-heap: binaries of their own
+    # (tests/CMakeLists.txt).
+    for name in ("ove_test_net_tls", "ove_test_net_tls_zh"):
+        net_tls = os.path.join(build, name)
+        if os.path.exists(net_tls):
+            logger.info("Running %s", name)
+            tls = _run_test_binary([net_tls], "stub", cwd=build)
+            results.passed += tls.passed
+            results.failed += tls.failed
+            results.skipped += tls.skipped
+            results.failed_names += tls.failed_names
     return results
 
 

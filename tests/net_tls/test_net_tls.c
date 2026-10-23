@@ -111,6 +111,7 @@ struct srv {
 	int handshake_rc;
 	char peer_cn[64];
 	char publish_topic[32];
+	size_t publish_payload_len;
 };
 
 static int bio_send(void *ctx, const unsigned char *buf, size_t len)
@@ -134,26 +135,36 @@ static int drbg_entropy(void *ctx, unsigned char *buf, size_t len)
 	return ove_hal_entropy_fill(buf, len) == OVE_OK ? 0 : -1;
 }
 
-/* Reads one MQTT control packet (fixed header + remaining length). */
-static int read_mqtt_packet(mbedtls_ssl_context *ssl, unsigned char *buf, size_t size)
+static int read_exact(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len)
 {
 	size_t got = 0;
-	while (got < 2) {
-		int n = mbedtls_ssl_read(ssl, buf + got, 2 - got);
+	while (got < len) {
+		int n = mbedtls_ssl_read(ssl, buf + got, len - got);
 		if (n <= 0)
 			return -1;
 		got += (size_t)n;
 	}
-	size_t want = 2 + buf[1];
-	if (want > size)
+	return 0;
+}
+
+/* Reads one MQTT control packet; returns the length of its fixed header
+ * (type byte + remaining length) and sets *total to the whole packet's. */
+static int read_mqtt_packet(mbedtls_ssl_context *ssl, unsigned char *buf, size_t size,
+			    size_t *total)
+{
+	size_t hdr = 1, remaining = 0, shift = 0;
+	if (read_exact(ssl, buf, 1) != 0)
 		return -1;
-	while (got < want) {
-		int n = mbedtls_ssl_read(ssl, buf + got, want - got);
-		if (n <= 0)
+	do {
+		if (hdr > 4 || read_exact(ssl, buf + hdr, 1) != 0)
 			return -1;
-		got += (size_t)n;
-	}
-	return (int)got;
+		remaining |= (size_t)(buf[hdr] & 0x7F) << shift;
+		shift += 7;
+	} while (buf[hdr++] & 0x80);
+	if (hdr + remaining > size || read_exact(ssl, buf + hdr, remaining) != 0)
+		return -1;
+	*total = hdr + remaining;
+	return (int)hdr;
 }
 
 static void serve(struct srv *s, mbedtls_ssl_context *ssl)
@@ -179,18 +190,22 @@ static void serve(struct srv *s, mbedtls_ssl_context *ssl)
 				   strlen(who), who);
 		(void)mbedtls_ssl_write(ssl, (const unsigned char *)resp, (size_t)len);
 	} else {
-		unsigned char pkt[256];
-		if (read_mqtt_packet(ssl, pkt, sizeof(pkt)) < 0 || pkt[0] != 0x10)
+		static unsigned char pkt[8192]; /* one server at a time */
+		size_t total = 0;
+		if (read_mqtt_packet(ssl, pkt, sizeof(pkt), &total) < 0 || pkt[0] != 0x10)
 			return;
 		static const unsigned char connack[] = {0x20, 0x02, 0x00, 0x00};
 		if (mbedtls_ssl_write(ssl, connack, sizeof(connack)) != sizeof(connack))
 			return;
-		int n = read_mqtt_packet(ssl, pkt, sizeof(pkt));
-		if (n < 4 || (pkt[0] & 0xF0) != 0x30)
+		int hdr = read_mqtt_packet(ssl, pkt, sizeof(pkt), &total);
+		if (hdr < 0 || (pkt[0] & 0xF0) != 0x30 || total < (size_t)hdr + 2)
 			return;
-		size_t tlen = ((size_t)pkt[2] << 8) | pkt[3];
-		if (tlen < sizeof(s->publish_topic) && 4 + tlen <= (size_t)n)
-			memcpy(s->publish_topic, pkt + 4, tlen);
+		size_t tlen = ((size_t)pkt[hdr] << 8) | pkt[hdr + 1];
+		if (tlen < sizeof(s->publish_topic) && (size_t)hdr + 2 + tlen <= total) {
+			memcpy(s->publish_topic, pkt + hdr + 2, tlen);
+			/* QoS 0: no packet identifier, the rest is payload. */
+			s->publish_payload_len = total - (size_t)hdr - 2 - tlen;
+		}
 	}
 }
 
@@ -465,6 +480,41 @@ static void test_mqtt_tls_connect_publish(void **state)
 	assert_string_equal(s.publish_topic, "ove/t");
 }
 
+/* A packet larger than one TLS record (4 KB, ove_mbedtls_config.h) must
+ * reach the broker whole. */
+static void test_mqtt_tls_publish_spans_records(void **state)
+{
+	(void)state;
+	struct srv s;
+	srv_start(&s, SRV_MQTT, 0);
+
+	ove_mqtt_client_storage_t st;
+	ove_mqtt_client_t c = NULL;
+	assert_int_equal(ove_mqtt_client_init(&c, &st), OVE_OK);
+	ove_mqtt_config_t cfg = {
+		.host = "localhost",
+		.port = s.port,
+		.client_id = "ove-test",
+		.use_tls = 1,
+		.tls_ca_cert = s_ca.data,
+		.tls_ca_cert_len = s_ca.len,
+	};
+	static char payload[6000];
+	memset(payload, 'p', sizeof(payload));
+	int rc_connect = ove_mqtt_connect(c, &cfg);
+	int rc_publish = rc_connect == OVE_OK ? ove_mqtt_publish(c, "ove/big", payload,
+								 sizeof(payload), OVE_MQTT_QOS0)
+					      : rc_connect;
+	ove_mqtt_disconnect(c);
+	ove_mqtt_client_deinit(c);
+	srv_join(&s);
+
+	assert_int_equal(rc_connect, OVE_OK);
+	assert_int_equal(rc_publish, OVE_OK);
+	assert_string_equal(s.publish_topic, "ove/big");
+	assert_int_equal(s.publish_payload_len, sizeof(payload));
+}
+
 int main(void)
 {
 	/* A handshake that never completes must not hang the test run. */
@@ -480,6 +530,7 @@ int main(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_https_get_verifies_server),
 		cmocka_unit_test(test_mqtt_tls_connect_publish),
+		cmocka_unit_test(test_mqtt_tls_publish_spans_records),
 		cmocka_unit_test(test_https_presents_client_cert),
 		cmocka_unit_test(test_https_without_client_cert_is_refused),
 		cmocka_unit_test(test_http_set_client_cert_needs_both),
