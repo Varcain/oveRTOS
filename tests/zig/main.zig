@@ -2013,6 +2013,20 @@ fn testErrorsUnknownCodeGracefulInRelease() !void {
     try expectErrorIs(ove.err.fromCodeInt(-999), error.UnknownErrorCode);
 }
 
+fn testVersionStringSpellsNumbers() !void {
+    var buf: [16]u8 = undefined;
+    const spelled = try std.fmt.bufPrint(&buf, "{d}.{d}.{d}", .{ ove.version.major, ove.version.minor, ove.version.patch });
+    try expect(std.mem.eql(u8, spelled, ove.version.string));
+}
+
+fn testVersionPackingOrders() !void {
+    const v = ove.version;
+    try expect(v.packed_version == v.number(v.major, v.minor, v.patch));
+    try expect(v.number(0, 9, 9) < v.number(1, 0, 0));
+    try expect(v.number(1, 2, 255) < v.number(1, 3, 0));
+    try expect(v.semantic.order(.{ .major = 0, .minor = 1, .patch = 0 }) != .lt);
+}
+
 fn testErrorsFromCodeIntPositiveIsValue() !void {
     // fromCodeInt must pass non-negative codes through unchanged.  Random
     // sample over the non-negative i32 range to catch any future logic
@@ -2299,6 +2313,11 @@ pub fn main() void {
         .{ .name = "zero_is_ok", .func = testErrorsZeroIsOk },
         .{ .name = "from_code_int_positive_passthrough", .func = testErrorsFromCodeIntPositiveIsValue },
         .{ .name = "unknown_code_graceful_in_release", .func = testErrorsUnknownCodeGracefulInRelease },
+    });
+
+    runSuite("Version", &.{
+        .{ .name = "string_spells_numbers", .func = testVersionStringSpellsNumbers },
+        .{ .name = "packing_orders", .func = testVersionPackingOrders },
     });
 
     // Every primitive constructed above should have been deinit'd, so the

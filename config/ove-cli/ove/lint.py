@@ -27,6 +27,7 @@ import sys
 from . import lint_backend_struct
 from . import lint_doc_snippets
 from . import lint_error_codes
+from . import lint_version
 from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
@@ -800,6 +801,16 @@ def _error_code_pinning(ove_dir, check):
     return ("error-code-pin", "FAIL", detail)
 
 
+def _version_pinning(ove_dir, check):
+    """Every package manifest carries the version in include/ove/version.h."""
+    del check  # read-only
+    violations = lint_version.check(ove_dir)
+    if not violations:
+        return ("version-pin", "OK", "manifests and stub match include/ove/version.h")
+    detail = lint_version.format_violations(violations)
+    return ("version-pin", "FAIL", detail)
+
+
 def _nonnull_public(ove_dir, check):
     """No public declaration may carry OVE_NONNULL.
 
@@ -861,6 +872,7 @@ def _run_all(check, include_lint=True):
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
             _error_code_pinning(ove_dir, check),
+            _version_pinning(ove_dir, check),
             _nonnull_public(ove_dir, check),
             _doc_snippets(ove_dir, check),
             _doc_names(ove_dir, check),

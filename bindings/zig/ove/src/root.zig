@@ -141,6 +141,9 @@ pub const Error = err.Error;
 /// the C FFI layer directly.
 pub const wait_forever = err.wait_forever;
 
+/// oveRTOS release version (`ove/version.h`).
+pub const version = @import("version.zig");
+
 /// Synchronization primitives: Mutex, RecursiveMutex, Semaphore, Event, CondVar.
 pub const sync = @import("sync.zig");
 /// Non-recursive mutual exclusion lock.

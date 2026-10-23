@@ -778,6 +778,7 @@ fn main() {
     println!("cargo:rerun-if-changed={ove_dir}/include/ove/eventgroup.h");
     println!("cargo:rerun-if-changed={ove_dir}/include/ove/time.h");
     println!("cargo:rerun-if-changed={ove_dir}/include/ove/ove.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/version.h");
     println!("cargo:rerun-if-env-changed=LV_CONF_PATH");
     println!("cargo:rerun-if-env-changed=LVGL_INCLUDE_PATH");
     println!("cargo:rerun-if-env-changed=LVGL_PARENT_PATH");

@@ -351,6 +351,7 @@ pub mod time;
 pub mod timer;
 #[cfg(has_uart)]
 pub mod uart;
+pub mod version;
 #[cfg(has_watchdog)]
 pub mod watchdog;
 #[cfg(has_workqueue)]

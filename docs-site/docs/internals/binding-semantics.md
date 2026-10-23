@@ -239,6 +239,29 @@ lowers that into its language's error type.
 
 ---
 
+## Version
+
+The oveRTOS version (`include/ove/version.h`) is exposed as compile-time
+constants in every binding; see [Versioning](versioning.md).
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| Numbers | `ove::version::major` / `minor` / `patch` | `ove::version::MAJOR` / `MINOR` / `PATCH` | `ove.version.major` / `minor` / `patch` |
+| Packed, for comparisons | `ove::version::packed`, `number()` | `ove::version::VERSION`, `number()` | `ove.version.packed_version`, `number()` |
+| String | `ove::version::string` (`std::string_view`) | `ove::version::VERSION_STR` (`&str`) | `ove.version.string` (`[]const u8`) |
+| Checked against its package manifest | — (no manifest) | at compile time: `Cargo.toml` must match the header | — (the firmware build does not read `build.zig.zon`) |
+
+**Contract notes**
+
+- All three take their values from the C macros (C++ directly, Rust through
+  bindgen, Zig through `@cImport`), so none can disagree with the header. The
+  exception is a docs.rs build of the Rust crate, which reads hand-kept copies
+  in `bindings_stub.rs`. The `version-pin` lint (`make lint`) keeps those and
+  the manifests (`Cargo.toml`, `build.zig.zon`, the CLI's `pyproject.toml`) in
+  step with the header.
+
+---
+
 ## Maintaining this contract
 
 When you add or change a binding API, update this page in the same change so the
