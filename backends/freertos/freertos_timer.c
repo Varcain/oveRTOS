@@ -47,6 +47,15 @@ static int ns_to_ticks_ceil(uint64_t period_ns, TickType_t *ticks)
 	return OVE_OK;
 }
 
+/* Callable from a task or an ISR, as ove_timer_set_period_ns is. */
+static void store_period(ove_timer_t timer, uint64_t period_ns)
+{
+	UBaseType_t mask = taskENTER_CRITICAL_FROM_ISR();
+	timer->period_ns_lo = (uint32_t)period_ns;
+	timer->period_ns_hi = (uint32_t)(period_ns >> 32);
+	taskEXIT_CRITICAL_FROM_ISR(mask);
+}
+
 int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
 		      void *user_data, uint64_t period_ns, int one_shot)
 {
@@ -61,6 +70,7 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
 
 	storage->callback = callback;
 	storage->user_data = user_data;
+	store_period(storage, period_ns);
 
 	storage->handle = xTimerCreateStatic("ove", ticks, one_shot ? pdFALSE : pdTRUE,
 					     (void *)storage, freertos_timer_callback,
@@ -149,5 +159,17 @@ int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
 			return OVE_ERR_TIMEOUT;
 		}
 	}
+	store_period(timer, period_ns);
 	return OVE_OK;
+}
+
+uint64_t ove_timer_get_period_ns(ove_timer_t timer)
+{
+	if (timer == NULL) {
+		return 0;
+	}
+	UBaseType_t mask = taskENTER_CRITICAL_FROM_ISR();
+	uint64_t period_ns = ((uint64_t)timer->period_ns_hi << 32) | timer->period_ns_lo;
+	taskEXIT_CRITICAL_FROM_ISR(mask);
+	return period_ns;
 }

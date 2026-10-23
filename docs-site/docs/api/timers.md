@@ -98,6 +98,7 @@ static void on_timer(ove_timer_t timer, void *user_data)
 | `ove_timer_start` | `int (ove_timer_t timer)` | Arm the timer. If already running, restarts from the beginning of the period. |
 | `ove_timer_stop` | `int (ove_timer_t timer)` | Stop the timer. A callback already running or queued may still run once; on FreeRTOS, where stop only queues a command for the timer task, more than once if the caller outranks that task, and it returns `OVE_ERR_TIMEOUT` without stopping when the command queue is full. |
 | `ove_timer_reset` | `int (ove_timer_t timer)` | Atomically stop+start — useful for watchdog-style "kick" patterns. |
+| `ove_timer_get_period_ns` | `uint64_t (ove_timer_t timer)` | The period as last requested (at init or create, or by the last successful `ove_timer_set_period_ns`), not rounded to the engine's tick, and at once even where the engine applies a change later. Kept while stopped; 0 for NULL. Any context. |
 
 Static-storage macro: `OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot)` (in `ove/storage.h`).
 
@@ -212,6 +213,7 @@ stateDiagram-v2
 | `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. Returns `OVE_ERR_BUSY` if already active. Thread context only on FreeRTOS and NuttX. On a full queue FreeRTOS returns `OVE_ERR_TIMEOUT`; NuttX waits for room. |
 | `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. Returns `OVE_ERR_BUSY` if already active. Thread context only on FreeRTOS and NuttX. Not guaranteed today: FreeRTOS drops the item if the queue is full when the delay expires; NuttX sleeps the delay on the worker after dequeue, holding up the items behind it. |
 | `ove_work_cancel` | `int (ove_work_t work)` | Synchronously remove a pending item, or wait for a running handler. Returns `OVE_ERR_INVAL` if the handler already began or the item was idle. |
+| `ove_work_is_pending` | `bool (ove_work_t work)` | `true` while the item is queued or its delay runs (the PENDING state above), `false` once the handler starts — when a submit still returns `OVE_ERR_BUSY` — or for NULL. A snapshot; any context. |
 
 Handler signature: `typedef void (*ove_work_fn)(ove_work_t work)`. The handler runs on the queue's own thread, one item at a time. The handle it receives is the item's storage (`ove_work_init_static()` writes `storage` itself as the handle), so embed the storage in your own struct and recover the struct from the handle with `container_of` to attach per-item context.
 
@@ -307,12 +309,12 @@ int housekeeping_start(void)
 | `CONFIG_OVE_TIMER` | `n` | Enable software timer subsystem. |
 | `CONFIG_OVE_WORKQUEUE` | `n` | Enable WorkQueue subsystem. |
 
-When the corresponding `CONFIG_OVE_*` is unset, every function in that subsystem becomes a static inline stub returning `OVE_ERR_NOT_SUPPORTED`.
+When the corresponding `CONFIG_OVE_*` is unset, every function in that subsystem becomes a static inline stub: those returning a status return `OVE_ERR_NOT_SUPPORTED`, and the value getters `ove_timer_get_period_ns` and `ove_work_is_pending` return 0 and `false`.
 
 ## Headers
 
 | Header | Contents |
 |--------|----------|
-| `ove/timer.h` | Timer handle, `ove_timer_fn` callback typedef, init/deinit, create/destroy, start/stop/reset. |
-| `ove/workqueue.h` | WorkQueue and work item handles, `ove_work_fn` typedef, queue and item init/deinit/create/destroy/submit/cancel APIs. |
+| `ove/timer.h` | Timer handle, `ove_timer_fn` callback typedef, init/deinit, create/destroy, start/stop/reset, set/get period. |
+| `ove/workqueue.h` | WorkQueue and work item handles, `ove_work_fn` typedef, queue and item init/deinit/create/destroy/submit/cancel APIs, is_pending. |
 | `ove/storage.h` | `OVE_TIMER_DEFINE_STATIC`, `OVE_WORKQUEUE_DEFINE_STATIC`, `OVE_WORK_DEFINE_STATIC`. |

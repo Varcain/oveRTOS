@@ -177,6 +177,11 @@ struct ove_timer {
 	TimerHandle_t handle;
 	void (*callback)(struct ove_timer *, void *);
 	void *user_data;
+	/* Requested period for ove_timer_get_period_ns: the daemon applies a
+	 * change later, and in whole ticks.  Two halves keep the struct's
+	 * alignment at 4; read and written in a critical section. */
+	uint32_t period_ns_lo;
+	uint32_t period_ns_hi;
 };
 
 typedef struct ove_timer ove_timer_storage_t;

@@ -28,6 +28,11 @@ fn test_create_destroy_periodic() {
     let _t = Timer::new(periodic_cb, 50, false).unwrap();
 }
 
+fn test_period() {
+    let t = Timer::new(periodic_cb, 100, false).unwrap();
+    assert_eq!(t.period(), core::time::Duration::from_millis(100));
+}
+
 fn test_oneshot_fires_once() {
     ONESHOT_COUNT.store(0, Ordering::SeqCst);
     let t = Timer::new(oneshot_cb, 30, true).unwrap();
@@ -106,6 +111,7 @@ pub fn run() -> (usize, usize) {
     run_suite("Timer", &[
         test_entry!(test_create_destroy_oneshot),
         test_entry!(test_create_destroy_periodic),
+        test_entry!(test_period),
         test_entry!(test_oneshot_fires_once),
         test_entry!(test_periodic_fires_multiple),
         test_entry!(test_stop_prevents_callbacks),

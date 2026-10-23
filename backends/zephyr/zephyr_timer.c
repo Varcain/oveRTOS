@@ -100,6 +100,21 @@ int ove_timer_reset(ove_timer_t timer)
 int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
 {
 	__ASSERT(timer != NULL, "NULL timer handle");
+	/* 64 bits are two stores on a 32-bit core: keep a reader from
+	 * seeing half of each. */
+	unsigned int key = irq_lock();
 	timer->period_ns = period_ns;
+	irq_unlock(key);
 	return ove_timer_start(timer);
+}
+
+uint64_t ove_timer_get_period_ns(ove_timer_t timer)
+{
+	if (timer == NULL) {
+		return 0;
+	}
+	unsigned int key = irq_lock();
+	uint64_t period_ns = timer->period_ns;
+	irq_unlock(key);
+	return period_ns;
 }

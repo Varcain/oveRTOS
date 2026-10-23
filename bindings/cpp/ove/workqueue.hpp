@@ -270,6 +270,18 @@ class Work
 	}
 
 	/**
+	 * @brief Whether the item is queued or delayed and has not started.
+	 *
+	 * A snapshot; `false` while the handler runs, when a submit still fails
+	 * with Error::Busy.  See @ref ove_work_is_pending.
+	 * @return `true` while queued or delayed.
+	 */
+	bool is_pending() const
+	{
+		return ove_work_is_pending(handle_);
+	}
+
+	/**
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the work item was successfully initialised.
 	 */

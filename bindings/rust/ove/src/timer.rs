@@ -186,6 +186,13 @@ impl Timer {
         Error::from_code(rc)
     }
 
+    /// The period as last requested — at creation or by the last successful
+    /// period change — not rounded to the engine's tick.  Kept while stopped.
+    #[inline]
+    pub fn period(&self) -> core::time::Duration {
+        core::time::Duration::from_nanos(unsafe { bindings::ove_timer_get_period_ns(self.handle) })
+    }
+
     /// Internal trampoline that converts the C callback into a safe Rust call.
     unsafe extern "C" fn trampoline(
         _timer: bindings::ove_timer_t,

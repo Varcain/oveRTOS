@@ -36,6 +36,8 @@
 #ifndef OVE_WORKQUEUE_H
 #define OVE_WORKQUEUE_H
 
+#include <stdbool.h>
+
 #include "ove/types.h"
 #include "ove/thread.h"
 #include "ove_config.h"
@@ -249,6 +251,22 @@ OVE_NODISCARD int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, u
  */
 int ove_work_cancel(ove_work_t work);
 
+/**
+ * @brief Whether a work item is waiting to run.
+ *
+ * True while the item is queued or its submit_delayed delay is running —
+ * the state ove_work_cancel() removes it from — and false once its handler
+ * has started, so @c false does not mean a submit would succeed: an item
+ * whose handler is running still gets @c OVE_ERR_BUSY.  A snapshot; callable
+ * from any context.
+ *
+ * @param[in] work  Work item handle.
+ * @return @c true while queued or delayed; @c false otherwise or for NULL.
+ *
+ * @see ove_work_cancel, ove_work_submit
+ */
+bool ove_work_is_pending(ove_work_t work);
+
 #else /* !CONFIG_OVE_WORKQUEUE */
 
 /* P0-3: _init/_deinit stubs so OVE_WORKQUEUE_DEFINE_STATIC links cleanly
@@ -323,6 +341,11 @@ static inline int ove_work_cancel(ove_work_t w)
 {
 	(void)w;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline bool ove_work_is_pending(ove_work_t w)
+{
+	(void)w;
+	return false;
 }
 
 #endif /* CONFIG_OVE_WORKQUEUE */

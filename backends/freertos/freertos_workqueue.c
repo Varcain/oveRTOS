@@ -277,3 +277,12 @@ int ove_work_cancel(ove_work_t work)
 		return OVE_ERR_INVAL;
 	}
 }
+
+bool ove_work_is_pending(ove_work_t work)
+{
+	if (work == NULL) {
+		return false;
+	}
+	int state = __atomic_load_n(&work->state, __ATOMIC_ACQUIRE);
+	return state == WORK_DELAYED || state == WORK_QUEUED;
+}

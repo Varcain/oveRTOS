@@ -25,6 +25,7 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "ove_ns_to_ticks.h"
+#include <nuttx/irq.h>
 #include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
 #include <string.h>
@@ -173,6 +174,22 @@ int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
 	if (period_to_ticks(period_ns, &ticks) != OVE_OK) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	/* The watchdog reads it in interrupt context, and 64 bits are two
+	 * stores on a 32-bit core. */
+	irqstate_t flags = enter_critical_section();
 	ctx->period_ns = period_ns;
+	leave_critical_section(flags);
 	return ove_timer_start(ctx);
+}
+
+uint64_t ove_timer_get_period_ns(ove_timer_t timer)
+{
+	struct ove_timer *ctx = timer;
+	if (ctx == NULL) {
+		return 0;
+	}
+	irqstate_t flags = enter_critical_section();
+	uint64_t period_ns = ctx->period_ns;
+	leave_critical_section(flags);
+	return period_ns;
 }

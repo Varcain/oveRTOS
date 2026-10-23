@@ -292,6 +292,53 @@ static void test_wq_cancel_waits_for_running_handler(void **state)
 	ove_test_workqueue_destroy(wq);
 }
 
+/* Pending means queued or delayed and not yet started: the state
+ * ove_work_cancel() removes an item from, and not the running one, which a
+ * submit refuses with OVE_ERR_BUSY. */
+static void test_wq_work_is_pending(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "pend_wq", OVE_PRIO_NORMAL,
+						     2048, s_wq_stack));
+
+	ove_work_t w = NULL;
+	ove_work_t w2 = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, running_handler));
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w2, &s_work_storages[0], counting_handler));
+#else
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, running_handler));
+	OVE_TEST_ASSERT_OK(ove_work_init(&w2, counting_handler));
+#endif
+	assert_false(ove_work_is_pending(w));
+
+	OVE_TEST_ASSERT_OK(ove_work_submit_delayed(wq, w, 200));
+	assert_true(ove_work_is_pending(w));
+	OVE_TEST_ASSERT_OK(ove_work_cancel(w));
+	assert_false(ove_work_is_pending(w));
+
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w));
+	assert_true(wait_for_flag(&s_work_called, 1, 500));
+	assert_false(ove_work_is_pending(w));
+	assert_int_equal(ove_work_submit(wq, w), OVE_ERR_BUSY);
+
+	/* Queued behind the running handler on the single worker. */
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w2));
+	assert_true(ove_work_is_pending(w2));
+
+	assert_true(wait_for_flag(&s_work_finished, 1, 500));
+	for (int i = 0; i < 500 && atomic_load(&s_work_count) == 0; i++)
+		test_msleep(1);
+	assert_int_equal(atomic_load(&s_work_count), 1);
+	assert_false(ove_work_is_pending(w2));
+	assert_false(ove_work_is_pending(NULL));
+
+	ove_test_work_destroy(w2);
+	ove_test_work_destroy(w);
+	ove_test_workqueue_destroy(wq);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void test_wq_destroy_null(void **state)
 {
@@ -372,6 +419,7 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_resubmit_after_cancel, wq_setup),
 		cmocka_unit_test_setup(test_wq_rejects_duplicate_submission, wq_setup),
 		cmocka_unit_test_setup(test_wq_cancel_waits_for_running_handler, wq_setup),
+		cmocka_unit_test_setup(test_wq_work_is_pending, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif

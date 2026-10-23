@@ -45,6 +45,16 @@ fn test_work_submit_delayed() {
     assert_eq!(WQ_COUNT.load(Ordering::SeqCst), 1);
 }
 
+fn test_work_is_pending() {
+    let wq = Workqueue::new(c"pnd", Priority::Normal, 4096).unwrap();
+    let w = Work::new(Some(test_work_handler)).unwrap();
+    assert!(!w.is_pending());
+    w.submit_delayed(&wq, 200).unwrap();
+    assert!(w.is_pending());
+    w.cancel().unwrap();
+    assert!(!w.is_pending());
+}
+
 fn test_work_cancel() {
     let wq = Workqueue::new(c"can", Priority::Normal, 4096).unwrap();
     let w = Work::new(Some(test_work_handler)).unwrap();
@@ -69,6 +79,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_work_submit),
         test_entry!(test_work_submit_delayed),
         test_entry!(test_work_cancel),
+        test_entry!(test_work_is_pending),
         test_entry!(test_raii_drop),
     ])
 }

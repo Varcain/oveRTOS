@@ -163,6 +163,18 @@ class Timer
 	}
 
 	/**
+	 * @brief The period as last requested, not rounded to the engine's tick.
+	 *
+	 * Kept while the timer is stopped; see @ref ove_timer_get_period_ns.
+	 * @return The period.
+	 */
+	std::chrono::nanoseconds period() const
+	{
+		return std::chrono::nanoseconds{static_cast<std::chrono::nanoseconds::rep>(
+			ove_timer_get_period_ns(handle_))};
+	}
+
+	/**
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the timer was successfully initialised.
 	 */
