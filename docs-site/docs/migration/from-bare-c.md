@@ -129,7 +129,9 @@ static void button_isr(unsigned int port, unsigned int pin, void *_) {
 
 /* Option B: post to a work queue (a workqueue handle is required) */
 static void button_isr(unsigned int port, unsigned int pin, void *_) {
-    ove_work_submit(my_wq, button_work);
+    if (ove_work_submit_from_isr(my_wq, button_work) != OVE_OK) {
+        /* OVE_ERR_BUSY: already queued; OVE_ERR_QUEUE_FULL: no room */
+    }
 }
 ```
 

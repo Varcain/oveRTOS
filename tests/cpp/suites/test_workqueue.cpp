@@ -36,6 +36,19 @@ static void test_cpp_work_submit(void **state)
 	assert_int_equal(s_wq_count, 1);
 }
 
+/* The interrupt-safe submit, called here from a thread: it queues the item
+ * like submit().  The C suite covers real interrupt context and refusals. */
+static void test_cpp_work_submit_from_isr(void **state)
+{
+	(void)state;
+	s_wq_count = 0;
+	ove::Workqueue<4096> wq("isr_wq", OVE_PRIO_NORMAL);
+	ove::Work w(test_wq_handler);
+	OVE_TEST_ASSERT_OK(w.submit_from_isr(wq));
+	test_msleep(100);
+	assert_int_equal(s_wq_count, 1);
+}
+
 static void test_cpp_work_submit_delayed(void **state)
 {
 	(void)state;
@@ -120,6 +133,7 @@ int test_cpp_workqueue_run(void)
 		cmocka_unit_test(test_cpp_workqueue_create_destroy),
 		cmocka_unit_test(test_cpp_work_init_free),
 		cmocka_unit_test(test_cpp_work_submit),
+		cmocka_unit_test(test_cpp_work_submit_from_isr),
 		cmocka_unit_test(test_cpp_work_submit_delayed),
 		cmocka_unit_test(test_cpp_work_cancel),
 		cmocka_unit_test(test_cpp_work_is_pending),

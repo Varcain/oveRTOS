@@ -100,7 +100,7 @@ Each work item is submitted to a specific workqueue; oveRTOS does not expose a g
 |---|---|
 | `K_WORK_DEFINE(w, handler)` | `OVE_WORK_DEFINE_STATIC(w, handler)` |
 | `k_work_init(&w, handler)` | `ove_work_init(&w, handler)` (heap) or `ove_work_init_static(&w, &storage, handler)`; pair static init with `ove_work_deinit()` |
-| `k_work_submit_to_queue(&q, &w)` | `ove_work_submit(wq, w)` |
+| `k_work_submit_to_queue(&q, &w)` | `ove_work_submit(wq, w)` from a thread; from an interrupt `ove_work_submit_from_isr(wq, w)` (unlike Zephyr's, `ove_work_submit` is not interrupt-safe on every engine) |
 | `k_work_submit(&w)` (system queue) | not exposed — submit to a workqueue you've created |
 
 Delayable work (`k_work_delayable`) is not a separate type — use `ove_work_submit_delayed(wq, w, delay_ms)`.

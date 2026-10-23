@@ -7,7 +7,7 @@ oveRTOS provides two complementary primitives for time-based and deferred execut
 | **Timer** | Periodic or one-shot callbacks at a fixed interval | RTOS timer service (backend-specific) |
 | **WorkQueue** | Deferring heavier work off a latency-sensitive thread | Dedicated worker thread per queue |
 
-Use a Timer when you need regular time-driven callbacks (polling, statistics, heartbeats). Use a WorkQueue when you need to run heavier work that a latency-sensitive thread should not do itself. Submitting is not ISR-safe on FreeRTOS or NuttX: from an interrupt, wake a thread with a `_from_isr` call and submit from it.
+Use a Timer when you need regular time-driven callbacks (polling, statistics, heartbeats). Use a WorkQueue when you need to run heavier work that a latency-sensitive thread should not do itself. `ove_work_submit` is not ISR-safe on FreeRTOS or NuttX: from an interrupt, use `ove_work_submit_from_isr`.
 
 Both follow the standard oveRTOS allocation pattern: `_init` / `_deinit` work in zero-heap mode with caller-supplied storage, while `_create` / `_destroy` are heap-only. The matching `OVE_*_DEFINE_STATIC` macros in `ove/storage.h` combine declaration and init at file scope.
 
@@ -161,7 +161,7 @@ A WorkQueue is a dedicated worker thread that drains a queue of work items. Each
 ```mermaid
 graph LR
     subgraph Submitters
-        ISR["Thread"]
+        ISR["Thread / ISR"]
     end
 
     subgraph WQ["WorkQueue"]
@@ -171,7 +171,7 @@ graph LR
         FIFO -->|"dequeue"| WORKER
     end
 
-    ISR -->|"ove_work_submit(wq, work)"| FIFO
+    ISR -->|"ove_work_submit(wq, work)\nove_work_submit_from_isr(wq, work)"| FIFO
     ISR -->|"ove_work_submit_delayed(wq, work, ms)"| FIFO
 
     WORKER -->|"handler(work)"| HANDLER["Handler\nFunction"]
@@ -211,6 +211,7 @@ stateDiagram-v2
 | `ove_work_init` | `int (ove_work_t *work, ove_work_fn handler)` | Heap-allocate a work item. Requires `OVE_HEAP_WORKQUEUE`. |
 | `ove_work_free` | `void (ove_work_t work)` | Synchronously drain and free a heap-allocated work item. |
 | `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. Returns `OVE_ERR_BUSY` if already active. Thread context only on FreeRTOS and NuttX. On a full queue FreeRTOS returns `OVE_ERR_TIMEOUT`; NuttX waits for room. |
+| `ove_work_submit_from_isr` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution from an interrupt. Never waits: `OVE_ERR_BUSY` if already active or the queue is stopping, `OVE_ERR_QUEUE_FULL` if the queue has no room (Zephyr's cannot fill). |
 | `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. Returns `OVE_ERR_BUSY` if already active. Thread context only on FreeRTOS and NuttX. Not guaranteed today: FreeRTOS drops the item if the queue is full when the delay expires; NuttX sleeps the delay on the worker after dequeue, holding up the items behind it. |
 | `ove_work_cancel` | `int (ove_work_t work)` | Synchronously remove a pending item, or wait for a running handler. Returns `OVE_ERR_INVAL` if the handler already began or the item was idle. |
 | `ove_work_is_pending` | `bool (ove_work_t work)` | `true` while the item is queued or its delay runs (the PENDING state above), `false` once the handler starts — when a submit still returns `OVE_ERR_BUSY` — or for NULL. A snapshot; any context. |
@@ -242,27 +243,13 @@ static void save_handler(ove_work_t work)
 }
 OVE_WORK_DEFINE_STATIC(g_save_work, save_handler);
 
-/* Submitting is not ISR-safe on FreeRTOS or NuttX, so the interrupt only
- * wakes a thread, and the thread submits. */
-OVE_EVENT_DEFINE_STATIC(g_rx_done);
-
-static void rx_entry(void *arg)
-{
-    (void)arg;
-    while (1) {
-        if (ove_event_wait(g_rx_done, OVE_WAIT_FOREVER) != OVE_OK)
-            continue;
-        if (ove_work_submit(g_io_wq, g_save_work) != OVE_OK) {
-            /* OVE_ERR_BUSY: a save is already queued or running */
-        }
-    }
-}
-OVE_THREAD_DEFINE_STATIC(g_rx_thread, 1024, rx_entry, NULL, OVE_PRIO_HIGH, "rx");
-
-/* DMA RX complete ISR */
+/* DMA RX complete ISR: the interrupt-safe submit never waits. */
 void DMA1_Stream0_IRQHandler(void)
 {
-    ove_event_signal_from_isr(g_rx_done);
+    if (ove_work_submit_from_isr(g_io_wq, g_save_work) != OVE_OK) {
+        /* OVE_ERR_BUSY: a save is already queued or running;
+         * OVE_ERR_QUEUE_FULL: no room, try on the next interrupt */
+    }
 }
 ```
 

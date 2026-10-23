@@ -128,13 +128,27 @@ impl Work {
 
     /// Submit this work item to `wq` for immediate execution.
     ///
-    /// Call from thread context: it is not ISR-safe on FreeRTOS or NuttX.  On
-    /// a full queue FreeRTOS fails at once and NuttX waits for room.
+    /// Call from thread context: it is not ISR-safe on FreeRTOS or NuttX (from
+    /// an interrupt use [`submit_from_isr`](Self::submit_from_isr)).  On a full
+    /// queue FreeRTOS fails at once and NuttX waits for room.
     ///
     /// # Errors
     /// Returns an error if the workqueue is shutting down or the item is already pending.
     pub fn submit(&self, wq: &Workqueue) -> Result<()> {
         let rc = unsafe { bindings::ove_work_submit(wq.handle(), self.handle) };
+        Error::from_code(rc)
+    }
+
+    /// Submit this work item to `wq` for immediate execution from an interrupt.
+    ///
+    /// Never waits; the handler still runs on the workqueue's thread.
+    ///
+    /// # Errors
+    /// [`Error::Busy`] if the item is already pending or running or the
+    /// workqueue is stopping; [`Error::QueueFull`] if the queue has no room
+    /// (Zephyr's cannot fill).
+    pub fn submit_from_isr(&self, wq: &Workqueue) -> Result<()> {
+        let rc = unsafe { bindings::ove_work_submit_from_isr(wq.handle(), self.handle) };
         Error::from_code(rc)
     }
 

@@ -192,9 +192,10 @@ void ove_workqueue_destroy(ove_workqueue_t wq);
  *
  * Enqueues @p work for execution on @p wq.
  *
- * Call from thread context.  It is not ISR-safe on FreeRTOS and NuttX, which
- * take blocking queue and lock paths here (Zephyr's is ISR-safe); from an
- * interrupt, wake a thread with a @c _from_isr call and submit from it.
+ * Call from thread context.  It is not ISR-safe on FreeRTOS, which enters a
+ * task-level critical section here, or on NuttX, which may wait for room in
+ * the queue (Zephyr's is ISR-safe); from an
+ * interrupt, use ove_work_submit_from_isr().
  *
  * On a full queue FreeRTOS fails at once, while NuttX waits, with no
  * timeout, for room.
@@ -209,14 +210,35 @@ void ove_workqueue_destroy(ove_workqueue_t wq);
 OVE_NODISCARD int ove_work_submit(ove_workqueue_t wq, ove_work_t work);
 
 /**
+ * @brief Submit a work item for immediate execution from an interrupt.
+ *
+ * Non-blocking ISR-safe variant of ove_work_submit(): it never waits, and a
+ * queue with no room fails at once.  The handler still runs on the work
+ * queue's thread.  On FreeRTOS, call it only from interrupts at or below
+ * @c configMAX_SYSCALL_INTERRUPT_PRIORITY, like every @c _from_isr call.
+ * There is no interrupt-safe delayed submit or cancel.
+ *
+ * @param[in] wq    Target work queue handle.
+ * @param[in] work  Work item handle to submit.
+ * @return OVE_OK on success, @c OVE_ERR_BUSY if the item is already queued,
+ *         delayed or running or the queue is stopping, @c OVE_ERR_QUEUE_FULL
+ *         if the queue has no room (FreeRTOS, NuttX and the host test
+ *         backend; Zephyr's queue cannot fill), or @c OVE_ERR_INVALID_PARAM.
+ *
+ * @see ove_work_submit
+ */
+OVE_NODISCARD int ove_work_submit_from_isr(ove_workqueue_t wq, ove_work_t work);
+
+/**
  * @brief Submit a work item for execution after a delay.
  *
  * Schedules @p work to run on @p wq after at least @p delay_ms milliseconds
  * have elapsed. The item may be cancelled before the delay expires using
  * @ref ove_work_cancel.
  *
- * Call from thread context.  It is not ISR-safe on FreeRTOS and NuttX, which
- * take blocking queue and lock paths here (Zephyr's is ISR-safe); from an
+ * Call from thread context.  It is not ISR-safe on FreeRTOS, which enters a
+ * task-level critical section here, or on NuttX, which may wait for room in
+ * the queue (Zephyr's is ISR-safe); from an
  * interrupt, wake a thread with a @c _from_isr call and submit from it.
  *
  * Not guaranteed today: on FreeRTOS, if the queue is full when the delay
@@ -244,6 +266,7 @@ OVE_NODISCARD int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, u
  * Synchronously removes @p work before its handler is called. If the handler
  * is already executing, waits for it to finish. After return, the work item's
  * storage is no longer referenced asynchronously and may be deinitialised.
+ * Call from thread context: it may wait, so never from an interrupt.
  *
  * @param[in] work  Work item handle to cancel.
  * @return OVE_OK if the item was successfully cancelled, @c OVE_ERR_INVAL
@@ -324,6 +347,12 @@ static inline void ove_work_free(ove_work_t w)
 	(void)w;
 }
 OVE_NODISCARD static inline int ove_work_submit(ove_workqueue_t wq, ove_work_t w)
+{
+	(void)wq;
+	(void)w;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+OVE_NODISCARD static inline int ove_work_submit_from_isr(ove_workqueue_t wq, ove_work_t w)
 {
 	(void)wq;
 	(void)w;

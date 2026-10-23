@@ -5,8 +5,8 @@
 // This file is part of oveRTOS.
 
 //! Workqueue — a dedicated thread that runs deferred `Work` items submitted
-//! from other threads.  Submitting is not ISR-safe on FreeRTOS or NuttX; from
-//! an interrupt, wake a thread and submit from it.
+//! from other threads.  `submit` is not ISR-safe on FreeRTOS or NuttX; from an
+//! interrupt use `submitFromIsr`.
 //!
 //! Wraps `ove/workqueue.h`. Create one queue per priority class with
 //! `Workqueue.create(allocator, …)`, then `submit(wq, work)` to defer
@@ -91,10 +91,18 @@ pub fn Workqueue(comptime stack_size: usize) type {
         }
 
         /// Enqueue `work` for execution by the workqueue thread. Not ISR-safe
-        /// on FreeRTOS or NuttX; on a full queue FreeRTOS fails at once and
-        /// NuttX waits for room.
+        /// on FreeRTOS or NuttX (from an interrupt use `submitFromIsr`); on a
+        /// full queue FreeRTOS fails at once and NuttX waits for room.
         pub fn submit(self: Self, work: *Work) Error!void {
             try err.fromCode(c.ove_work_submit(self.handle, work.handle));
+        }
+
+        /// Enqueue `work` from an interrupt.  Never waits; the handler still
+        /// runs on the workqueue thread.  `error.Busy` if the item is already
+        /// pending or running or the queue is stopping, `error.QueueFull` if
+        /// the queue has no room (Zephyr's cannot fill).
+        pub fn submitFromIsr(self: Self, work: *Work) Error!void {
+            try err.fromCode(c.ove_work_submit_from_isr(self.handle, work.handle));
         }
 
         /// Submit `work` with a delay.  Substrate takes the delay as
