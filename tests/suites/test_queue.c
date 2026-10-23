@@ -386,6 +386,83 @@ static void test_queue_create_null_out_rejected(void **state)
 }
 #endif
 
+static void test_queue_count_and_capacity(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 4));
+
+	assert_int_equal(ove_queue_count(q), 0);
+	assert_int_equal(ove_queue_count_from_isr(q), 0);
+	assert_int_equal(ove_queue_capacity(q), 4);
+
+	int v = 0;
+	for (int i = 0; i < 3; i++)
+		OVE_TEST_ASSERT_OK(ove_queue_send(q, &i, 0));
+	assert_int_equal(ove_queue_count(q), 3);
+	assert_int_equal(ove_queue_count_from_isr(q), 3);
+
+	OVE_TEST_ASSERT_OK(ove_queue_receive(q, &v, 0));
+	assert_int_equal(ove_queue_count(q), 2);
+
+	OVE_TEST_ASSERT_OK(ove_queue_send(q, &v, 0));
+	OVE_TEST_ASSERT_OK(ove_queue_send(q, &v, 0));
+	assert_int_equal(ove_queue_count(q), 4);
+	assert_int_equal(ove_queue_capacity(q), 4);
+
+	for (int i = 0; i < 4; i++)
+		OVE_TEST_ASSERT_OK(ove_queue_receive(q, &v, 0));
+	assert_int_equal(ove_queue_count(q), 0);
+	ove_test_queue_destroy(q);
+
+	assert_int_equal(ove_queue_count(NULL), 0);
+	assert_int_equal(ove_queue_count_from_isr(NULL), 0);
+	assert_int_equal(ove_queue_capacity(NULL), 0);
+}
+
+struct parked_rx {
+	ove_queue_t q;
+	volatile int parked;
+	volatile int done;
+};
+
+static void parked_receiver(void *arg)
+{
+	struct parked_rx *p = arg;
+	int v = 0;
+	TEST_FLAG_SET(p->parked, 1);
+	int rc = ove_queue_receive(p->q, &v, OVE_WAIT_FOREVER);
+	TEST_FLAG_SET(p->done, rc == OVE_OK ? 1 : -1);
+}
+
+/* A receiver blocked on an empty queue must not show up as a count (NuttX
+ * counts items with a semaphore that goes negative for each waiter). */
+static void test_queue_count_with_waiting_receiver(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 4));
+
+	struct parked_rx p = {.q = q};
+	ove_thread_t th = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_th_storage, "qcnt_rx", parked_receiver, &p,
+					       s_th_stack, 4096));
+	assert_true(wait_for_flag(&p.parked, 1, 500));
+	test_msleep(50);
+	size_t waiting = ove_queue_count(q);
+	size_t waiting_isr = ove_queue_count_from_isr(q);
+
+	int v = 42;
+	OVE_TEST_ASSERT_OK(ove_queue_send(q, &v, 0));
+	int done = wait_for_flag(&p.done, 1, 1000);
+	OVE_TEST_ASSERT_OK(ove_test_thread_join_destroy(th, 1000));
+	ove_test_queue_destroy(q);
+
+	assert_int_equal(waiting, 0);
+	assert_int_equal(waiting_isr, 0);
+	assert_true(done);
+}
+
 int test_queue_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -416,6 +493,8 @@ int test_queue_run(void)
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_queue_create_null_out_rejected),
 #endif
+		cmocka_unit_test(test_queue_count_and_capacity),
+		cmocka_unit_test(test_queue_count_with_waiting_receiver),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

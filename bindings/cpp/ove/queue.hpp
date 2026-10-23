@@ -280,6 +280,56 @@ template <typename T, size_t MaxItems = 0> class Queue
 	}
 
 	/**
+	 * @brief Number of items in the queue right now (a snapshot).
+	 *
+	 * Not for ISR context — use size_from_isr() there; see
+	 * @ref ove_queue_count.
+	 * @return Items in the queue.
+	 */
+	size_t size() const
+	{
+		return ove_queue_count(handle_);
+	}
+
+	/**
+	 * @brief ISR-safe size().
+	 * @return Items in the queue.
+	 */
+	size_t size_from_isr() const
+	{
+		return ove_queue_count_from_isr(handle_);
+	}
+
+	/**
+	 * @brief Maximum number of items the queue holds.
+	 * @return The queue's capacity in items.
+	 */
+	size_t capacity() const
+	{
+		return ove_queue_capacity(handle_);
+	}
+
+	/**
+	 * @brief Whether the queue holds no item right now (a snapshot).
+	 * @return `true` when size() is 0.
+	 */
+	bool empty() const
+	{
+		return size() == 0;
+	}
+
+	/**
+	 * @brief Whether the queue is full right now (a snapshot).
+	 * @return `true` when size() has reached capacity(); `false` for an
+	 *         invalid (moved-from) queue, whose capacity() is 0.
+	 */
+	bool full() const
+	{
+		const size_t cap = capacity();
+		return cap != 0 && size() >= cap;
+	}
+
+	/**
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the queue was successfully initialised.
 	 */

@@ -153,3 +153,34 @@ int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
 	leave_critical_section(flags);
 	return OVE_OK;
 }
+
+/* not_empty counts the queued items; it goes negative while receivers wait
+ * on an empty queue. */
+size_t ove_queue_count(ove_queue_t q)
+{
+	struct ove_queue *nq = q;
+	int value = 0;
+
+	if (nq == NULL) {
+		return 0;
+	}
+	if (nxsem_get_value(&nq->not_empty, &value) < 0 || value < 0) {
+		return 0;
+	}
+	return (size_t)value;
+}
+
+size_t ove_queue_count_from_isr(ove_queue_t q)
+{
+	return ove_queue_count(q);
+}
+
+size_t ove_queue_capacity(ove_queue_t q)
+{
+	struct ove_queue *nq = q;
+
+	if (nq == NULL) {
+		return 0;
+	}
+	return nq->max_items;
+}

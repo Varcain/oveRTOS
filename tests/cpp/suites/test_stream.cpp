@@ -39,6 +39,22 @@ static void test_cpp_stream_bytes_available(void **state)
 	assert_true(s.bytes_available() >= 3);
 }
 
+static void test_cpp_stream_space_available(void **state)
+{
+	(void)state;
+	ove::Stream<256> s(1);
+
+	assert_int_equal(s.space_available(), 256);
+
+	const uint8_t data[40] = {0};
+	size_t sent = 0;
+	OVE_TEST_ASSERT_OK(
+		s.try_send_for(data, sizeof(data), std::chrono::milliseconds{100}, sent));
+	assert_int_equal(sent, sizeof(data));
+	assert_int_equal(s.space_available(), 256 - sizeof(data));
+	assert_int_equal(s.space_available() + s.bytes_available(), 256);
+}
+
 static void test_cpp_stream_reset(void **state)
 {
 	(void)state;
@@ -177,6 +193,7 @@ int test_cpp_stream_run(void)
 		cmocka_unit_test(test_cpp_stream_create_destroy),
 		cmocka_unit_test(test_cpp_stream_send_receive),
 		cmocka_unit_test(test_cpp_stream_bytes_available),
+		cmocka_unit_test(test_cpp_stream_space_available),
 		cmocka_unit_test(test_cpp_stream_reset),
 		cmocka_unit_test(test_cpp_stream_send_from_isr),
 		cmocka_unit_test(test_cpp_stream_receive_from_isr),

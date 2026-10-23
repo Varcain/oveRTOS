@@ -111,3 +111,24 @@ int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
 	q->notify_ud = user_data;
 	return OVE_OK;
 }
+
+size_t ove_queue_count(ove_queue_t q)
+{
+	if (q == NULL) {
+		return 0;
+	}
+	return k_msgq_num_used_get(&q->msgq);
+}
+
+size_t ove_queue_count_from_isr(ove_queue_t q)
+{
+	return ove_queue_count(q);
+}
+
+size_t ove_queue_capacity(ove_queue_t q)
+{
+	if (q == NULL) {
+		return 0;
+	}
+	return q->msgq.max_msgs;
+}

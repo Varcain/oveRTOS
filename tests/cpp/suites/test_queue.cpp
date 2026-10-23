@@ -336,6 +336,29 @@ static void test_cpp_queue_return_type_shape(void **state)
 			       ove::Result<void>>);
 }
 
+static void test_cpp_queue_size_and_capacity(void **state)
+{
+	(void)state;
+	ove::Queue<int, 4> q;
+
+	assert_int_equal(q.capacity(), 4);
+	assert_int_equal(q.size(), 0);
+	assert_true(q.empty());
+	assert_false(q.full());
+
+	for (int i = 0; i < 4; i++)
+		assert_true(q.try_send(i));
+	assert_int_equal(q.size(), 4);
+	assert_int_equal(q.size_from_isr(), 4);
+	assert_true(q.full());
+
+	int v = 0;
+	assert_true(q.try_receive(v));
+	assert_int_equal(q.size(), 3);
+	assert_false(q.empty());
+	assert_false(q.full());
+}
+
 int test_cpp_queue_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -358,6 +381,7 @@ int test_cpp_queue_run(void)
 		cmocka_unit_test(test_cpp_queue_trivially_copyable_constraint),
 		cmocka_unit_test(test_cpp_queue_try_receive_value),
 		cmocka_unit_test(test_cpp_queue_return_type_shape),
+		cmocka_unit_test(test_cpp_queue_size_and_capacity),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

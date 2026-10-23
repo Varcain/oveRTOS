@@ -33,6 +33,16 @@ fn test_bytes_available() {
     assert!(s.bytes_available() >= 3);
 }
 
+fn test_space_available() {
+    let s = Stream::<256>::new(1).unwrap();
+    assert_eq!(s.space_available(), 256);
+
+    let data = [1u8; 40];
+    s.try_send_for(&data, core::time::Duration::from_millis(100)).unwrap();
+    assert_eq!(s.space_available(), 256 - 40);
+    assert_eq!(s.space_available() + s.bytes_available(), 256);
+}
+
 fn test_reset() {
     let s = Stream::<256>::new(1).unwrap();
     let data = [1u8, 2, 3];
@@ -73,6 +83,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_create_destroy),
         test_entry!(test_send_receive),
         test_entry!(test_bytes_available),
+        test_entry!(test_space_available),
         test_entry!(test_reset),
         test_entry!(test_send_from_isr),
         test_entry!(test_receive_from_isr),

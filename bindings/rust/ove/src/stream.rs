@@ -259,10 +259,18 @@ impl<const N: usize> Stream<N> {
         Error::from_code(rc)
     }
 
-    /// Return the number of bytes currently available for reading.
+    /// Return the number of bytes currently available for reading.  Not for
+    /// ISR context.
     #[inline]
     pub fn bytes_available(&self) -> usize {
         unsafe { bindings::ove_stream_bytes_available(self.handle) }
+    }
+
+    /// Return the number of bytes that could be sent right now without
+    /// blocking.  A snapshot; not for ISR context.
+    #[inline]
+    pub fn space_available(&self) -> usize {
+        unsafe { bindings::ove_stream_space_available(self.handle) }
     }
 
     /// Register a notify callback fired after every successful send.

@@ -258,6 +258,39 @@ impl<T: Copy, const N: usize> Queue<T, N> {
         Ok(unsafe { item.assume_init() })
     }
 
+    /// Number of items in the queue right now.  A snapshot: other threads
+    /// can change it before you act on it.  Not for ISR context — use
+    /// [`len_from_isr`](Self::len_from_isr) there.
+    #[inline]
+    pub fn len(&self) -> usize {
+        unsafe { bindings::ove_queue_count(self.handle) }
+    }
+
+    /// ISR-safe [`len`](Self::len).
+    #[inline]
+    pub fn len_from_isr(&self) -> usize {
+        unsafe { bindings::ove_queue_count_from_isr(self.handle) }
+    }
+
+    /// Maximum number of items the queue holds (`N`).
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        unsafe { bindings::ove_queue_capacity(self.handle) }
+    }
+
+    /// Whether the queue holds no item right now (snapshot, like [`len`](Self::len)).
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether the queue is full right now (snapshot, like [`len`](Self::len)).
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        let cap = self.capacity();
+        cap != 0 && self.len() >= cap
+    }
+
     /// Register a notify callback fired after every successful send.
     /// Wraps the C-level `ove_queue_set_notify`. Reach for
     /// [`AsyncQueue`](crate::async_runtime::AsyncQueue) instead of using

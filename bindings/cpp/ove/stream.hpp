@@ -294,11 +294,24 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Returns the number of bytes currently available to read.
+	 *
+	 * Not for ISR context; see @ref ove_stream_bytes_available.
 	 * @return Number of readable bytes in the stream buffer.
 	 */
 	size_t bytes_available() const
 	{
 		return ove_stream_bytes_available(handle_);
+	}
+
+	/**
+	 * @brief Returns the number of bytes that could be sent without blocking.
+	 *
+	 * A snapshot; not for ISR context.  See @ref ove_stream_space_available.
+	 * @return Free bytes in the stream buffer.
+	 */
+	size_t space_available() const
+	{
+		return ove_stream_space_available(handle_);
 	}
 
 	/**

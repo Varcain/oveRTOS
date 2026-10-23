@@ -269,6 +269,45 @@ OVE_NODISCARD int ove_queue_receive_from_isr(ove_queue_t q, void *buf);
  */
 int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data);
 
+/**
+ * @brief Number of items currently in the queue.
+ *
+ * A snapshot: senders and receivers on other threads can change it before the
+ * caller acts on it, and an item being copied in or out may not be counted
+ * yet, so it plus the free slots need not add up to the capacity at any one
+ * instant.
+ *
+ * @note Must not be called from an ISR (on FreeRTOS it enters a task-level
+ *       critical section) — use ove_queue_count_from_isr() instead.
+ *
+ * @param[in] q  Queue handle.
+ * @return Items in the queue; 0 for a NULL handle.
+ * @see ove_queue_count_from_isr, ove_queue_capacity
+ */
+size_t ove_queue_count(ove_queue_t q);
+
+/**
+ * @brief ISR-safe variant of ove_queue_count().
+ *
+ * Callable from an interrupt service routine and from thread context.
+ *
+ * @param[in] q  Queue handle.
+ * @return Items in the queue; 0 for a NULL handle.
+ * @see ove_queue_count
+ */
+size_t ove_queue_count_from_isr(ove_queue_t q);
+
+/**
+ * @brief Maximum number of items the queue can hold.
+ *
+ * The @c max_items the queue was created with.  Callable from any context.
+ *
+ * @param[in] q  Queue handle.
+ * @return The queue's capacity in items; 0 for a NULL handle.
+ * @see ove_queue_count
+ */
+size_t ove_queue_capacity(ove_queue_t q);
+
 #else /* !CONFIG_OVE_QUEUE */
 
 /* P0-3: _init/_deinit stubs so OVE_QUEUE_DEFINE_STATIC links cleanly
@@ -331,6 +370,21 @@ static inline int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *ud
 	(void)cb;
 	(void)ud;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline size_t ove_queue_count(ove_queue_t q)
+{
+	(void)q;
+	return 0;
+}
+static inline size_t ove_queue_count_from_isr(ove_queue_t q)
+{
+	(void)q;
+	return 0;
+}
+static inline size_t ove_queue_capacity(ove_queue_t q)
+{
+	(void)q;
+	return 0;
 }
 
 #endif /* CONFIG_OVE_QUEUE */

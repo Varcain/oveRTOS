@@ -161,8 +161,15 @@ pub fn Stream(comptime size: usize) type {
             try err.fromCode(c.ove_stream_reset(self.handle));
         }
 
+        /// Bytes that can be read without blocking.  Not for ISR context.
         pub fn bytesAvailable(self: Self) usize {
             return c.ove_stream_bytes_available(self.handle);
+        }
+
+        /// Bytes that could be sent right now without blocking (a
+        /// snapshot).  Not for ISR context.
+        pub fn spaceAvailable(self: Self) usize {
+            return c.ove_stream_space_available(self.handle);
         }
 
         // ----- std.io.GenericReader / GenericWriter integration -----

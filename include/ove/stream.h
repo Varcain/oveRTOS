@@ -256,10 +256,29 @@ int ove_stream_reset(ove_stream_t stream);
  *
  * Returns the count of bytes that can be read without blocking.
  *
+ * @note Call it from thread context: it enters a task-level critical
+ *       section on FreeRTOS and takes a pthread mutex on NuttX.
+ *
  * @param[in] stream  Stream handle.
  * @return Number of bytes available; 0 if the stream is empty or invalid.
+ * @see ove_stream_space_available
  */
 size_t ove_stream_bytes_available(ove_stream_t stream);
+
+/**
+ * @brief Query the free space in the stream.
+ *
+ * Returns the number of bytes ove_stream_send() could deposit right now
+ * without blocking.  A snapshot, like ove_stream_bytes_available().
+ *
+ * @note Call it from thread context: it enters a task-level critical
+ *       section on FreeRTOS and takes a pthread mutex on NuttX.
+ *
+ * @param[in] stream  Stream handle.
+ * @return Free bytes; 0 if the stream is full or invalid.
+ * @see ove_stream_bytes_available
+ */
+size_t ove_stream_space_available(ove_stream_t stream);
 
 /**
  * @brief Register a notify callback fired after every successful send.
@@ -359,6 +378,11 @@ static inline int ove_stream_reset(ove_stream_t s)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline size_t ove_stream_bytes_available(ove_stream_t s)
+{
+	(void)s;
+	return 0;
+}
+static inline size_t ove_stream_space_available(ove_stream_t s)
 {
 	(void)s;
 	return 0;
