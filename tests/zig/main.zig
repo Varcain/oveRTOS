@@ -1868,6 +1868,19 @@ fn testWorkSubmit() !void {
     try expectEqual(u32, 1, wq_count);
 }
 
+// The interrupt-safe submit, called here from a thread: it queues the item
+// like submit().  The C suite covers real interrupt context.
+fn testWorkSubmitFromIsr() !void {
+    wq_count = 0;
+    var wq = try ove.Workqueue(4096).create(test_allocator, "isr\x00", .normal);
+    defer wq.deinit();
+    var work = try ove.Work.create(test_allocator, workHandler);
+    defer work.deinit();
+    try wq.submitFromIsr(&work);
+    ove.thread.sleepMs(100);
+    try expectEqual(u32, 1, wq_count);
+}
+
 fn testWorkSubmitDelayed() !void {
     wq_count = 0;
     var wq = try ove.Workqueue(4096).create(test_allocator, "del\x00", .normal);
@@ -2301,6 +2314,7 @@ pub fn main() void {
         .{ .name = "work_create_destroy", .func = testWorkCreateDestroy },
         .{ .name = "work_deinit_idempotent", .func = testWorkDeinitIdempotent },
         .{ .name = "submit", .func = testWorkSubmit },
+        .{ .name = "submit_from_isr", .func = testWorkSubmitFromIsr },
         .{ .name = "submit_delayed", .func = testWorkSubmitDelayed },
         .{ .name = "cancel", .func = testWorkCancel },
         .{ .name = "is_pending", .func = testWorkIsPending },

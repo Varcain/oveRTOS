@@ -32,6 +32,17 @@ fn test_work_submit() {
     assert_eq!(WQ_COUNT.load(Ordering::SeqCst), 1);
 }
 
+// The interrupt-safe submit, called here from a thread: it queues the item
+// like submit().  The C suite covers real interrupt context.
+fn test_work_submit_from_isr() {
+    WQ_COUNT.store(0, Ordering::SeqCst);
+    let wq = Workqueue::new(c"isr", Priority::Normal, 4096).unwrap();
+    let w = Work::new(Some(test_work_handler)).unwrap();
+    w.submit_from_isr(&wq).unwrap();
+    Thread::sleep_ms(100);
+    assert_eq!(WQ_COUNT.load(Ordering::SeqCst), 1);
+}
+
 fn test_work_submit_delayed() {
     WQ_COUNT.store(0, Ordering::SeqCst);
     let wq = Workqueue::new(c"del", Priority::Normal, 4096).unwrap();
@@ -77,6 +88,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_workqueue_create_destroy),
         test_entry!(test_work_create_destroy),
         test_entry!(test_work_submit),
+        test_entry!(test_work_submit_from_isr),
         test_entry!(test_work_submit_delayed),
         test_entry!(test_work_cancel),
         test_entry!(test_work_is_pending),

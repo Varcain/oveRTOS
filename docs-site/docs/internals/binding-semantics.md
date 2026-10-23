@@ -148,6 +148,22 @@ directly.
 
 ---
 
+## Work queue
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| Submit (thread context) | `work.submit(wq)` | `work.submit(&wq)` | `wq.submit(&work)` |
+| Submit from an interrupt | `work.submit_from_isr(wq)` | `work.submit_from_isr(&wq)` | `wq.submitFromIsr(&work)` |
+| Already pending or running | `Error::Busy` | `Error::Busy` | `error.Busy` |
+| No room (interrupt submit) | `Error::QueueFull` | `Error::QueueFull` | `error.QueueFull` |
+
+**Contract notes**
+
+- The interrupt submit never waits; the handler still runs on the queue's
+  thread. There is no interrupt-safe delayed submit or cancel.
+
+---
+
 ## Callbacks
 
 Every binding hands the C layer a trampoline, so the context a callback runs in,

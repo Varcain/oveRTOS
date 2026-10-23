@@ -223,8 +223,9 @@ class Work
 	/**
 	 * @brief Submits the work item to a workqueue for immediate execution.
 	 *
-	 * Call from thread context: it is not ISR-safe on FreeRTOS or NuttX.  On a full
-	 * queue FreeRTOS fails at once and NuttX waits; see @ref ove_work_submit.
+	 * Call from thread context: it is not ISR-safe on FreeRTOS or NuttX (from an
+	 * interrupt use submit_from_isr()).  On a full queue FreeRTOS fails at once
+	 * and NuttX waits; see @ref ove_work_submit.
 	 *
 	 * @tparam S Stack size of the target workqueue.
 	 * @param[in] wq The workqueue to submit this work item to.
@@ -234,6 +235,23 @@ class Work
 	template <size_t S> [[nodiscard]] Result<void> submit(Workqueue<S> &wq) noexcept
 	{
 		return from_rc(ove_work_submit(wq.handle(), handle_));
+	}
+
+	/**
+	 * @brief Submits the work item for immediate execution from an interrupt.
+	 *
+	 * Never waits: an item already pending or running fails with
+	 * Error::Busy, a queue with no room with Error::QueueFull (Zephyr's cannot
+	 * fill); see @ref ove_work_submit_from_isr.
+	 *
+	 * @tparam S Stack size of the target workqueue.
+	 * @param[in] wq The workqueue to submit this work item to.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
+	 */
+	template <size_t S> [[nodiscard]] Result<void> submit_from_isr(Workqueue<S> &wq) noexcept
+	{
+		return from_rc(ove_work_submit_from_isr(wq.handle(), handle_));
 	}
 
 	/**

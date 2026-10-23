@@ -9,7 +9,7 @@
 #include "ove/workqueue.h"
 #include "ove/storage.h"
 #include "ove_nuttx_priority.h"
-#include <nuttx/mutex.h>
+#include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
 #include <sched.h>
@@ -28,6 +28,7 @@ static int wq_task_fn(int argc, char *argv[])
 {
 	struct ove_workqueue *nwq;
 	struct ove_work *work;
+	irqstate_t flags;
 
 	(void)argc;
 	nwq = (struct ove_workqueue *)strtoul(argv[1], NULL, 0);
@@ -41,42 +42,39 @@ static int wq_task_fn(int argc, char *argv[])
 			break;
 		}
 
-		while (nxmutex_lock(&nwq->lock) == -EINTR)
-			;
+		flags = enter_critical_section();
 		if (nwq->count == 0) {
-			nxmutex_unlock(&nwq->lock);
+			leave_critical_section(flags);
 			continue;
 		}
 		work = nwq->ring[nwq->tail];
 		nwq->tail = (nwq->tail + 1) % OVE_WQ_QUEUE_DEPTH;
 		nwq->count--;
 		nwq->active_work = work;
-		nxmutex_unlock(&nwq->lock);
+		leave_critical_section(flags);
 		nxsem_post(&nwq->not_full);
 
 		if (work == NULL) {
 			break; /* poison pill */
 		}
 
-		while (nxmutex_lock(&nwq->lock) == -EINTR)
-			;
+		flags = enter_critical_section();
 		int delay = work->delay_ms > 0 && nwq->running &&
 			    __atomic_load_n(&work->state, __ATOMIC_ACQUIRE) == WORK_QUEUED;
 		nwq->active_delaying = delay;
-		nxmutex_unlock(&nwq->lock);
+		leave_critical_section(flags);
 		if (delay) {
 			/* Sleep via tick wait on never-posted semaphore;
 			 * interruptible by destroy posting delay_sem */
 			nxsem_tickwait(&nwq->delay_sem, MSEC2TICK(work->delay_ms));
 		}
-		while (nxmutex_lock(&nwq->lock) == -EINTR)
-			;
+		flags = enter_critical_section();
 		nwq->active_delaying = 0;
 		/* A cancel may have posted after the timeout expired but before
-		 * acquiring this lock. Do not let that stale wake shorten the next
+		 * this critical section. Do not let that stale wake shorten the next
 		 * delayed item handled by this single worker. */
 		(void)nxsem_trywait(&nwq->delay_sem);
-		nxmutex_unlock(&nwq->lock);
+		leave_critical_section(flags);
 		work->delay_ms = 0;
 
 		int expected = WORK_QUEUED;
@@ -86,12 +84,11 @@ static int wq_task_fn(int argc, char *argv[])
 			work->handler(work);
 		}
 
-		while (nxmutex_lock(&nwq->lock) == -EINTR)
-			;
+		flags = enter_critical_section();
 		nwq->active_work = NULL;
 		work->wq = NULL;
 		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
-		nxmutex_unlock(&nwq->lock);
+		leave_critical_section(flags);
 		if (work->completion_sem_inited) {
 			nxsem_post(&work->completion_sem);
 		}
@@ -119,9 +116,15 @@ static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t prio
 	char addr_str[20];
 	int pid;
 
-	nxmutex_init(&nwq->lock);
 	nxsem_init(&nwq->not_full, 0, OVE_WQ_QUEUE_DEPTH);
 	nxsem_init(&nwq->not_empty, 0, 0);
+#ifdef CONFIG_PRIORITY_INHERITANCE
+	/* Counting semaphores an interrupt takes or gives must not track holders
+	 * (nxsem_init already leaves them so; this keeps it if that changes),
+	 * or an interrupt's try-wait would record the task it preempted. */
+	nxsem_set_protocol(&nwq->not_full, SEM_PRIO_NONE);
+	nxsem_set_protocol(&nwq->not_empty, SEM_PRIO_NONE);
+#endif
 	nxsem_init(&nwq->delay_sem, 0, 0);
 	nxsem_init(&nwq->stopped_sem, 0, 0);
 	nwq->running = 1;
@@ -143,7 +146,6 @@ static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t prio
 					     (int)stack_size, wq_task_fn, argv_args);
 	}
 	if (pid < 0) {
-		nxmutex_destroy(&nwq->lock);
 		nxsem_destroy(&nwq->not_full);
 		nxsem_destroy(&nwq->not_empty);
 		nxsem_destroy(&nwq->delay_sem);
@@ -157,6 +159,8 @@ static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t prio
 
 static void wq_stop(struct ove_workqueue *nwq)
 {
+	irqstate_t flags;
+
 	nwq->running = 0;
 	/* Wake thread from delay sleep */
 	nxsem_post(&nwq->delay_sem);
@@ -166,8 +170,7 @@ static void wq_stop(struct ove_workqueue *nwq)
 	task_delete(nwq->worker_pid);
 
 	/* Publish completion for entries the stopped worker never dequeued. */
-	while (nxmutex_lock(&nwq->lock) == -EINTR)
-		;
+	flags = enter_critical_section();
 	while (nwq->count > 0) {
 		struct ove_work *work = nwq->ring[nwq->tail];
 		nwq->tail = (nwq->tail + 1) % OVE_WQ_QUEUE_DEPTH;
@@ -177,8 +180,7 @@ static void wq_stop(struct ove_workqueue *nwq)
 		if (work->completion_sem_inited)
 			nxsem_post(&work->completion_sem);
 	}
-	nxmutex_unlock(&nwq->lock);
-	nxmutex_destroy(&nwq->lock);
+	leave_critical_section(flags);
 	nxsem_destroy(&nwq->not_full);
 	nxsem_destroy(&nwq->not_empty);
 	nxsem_destroy(&nwq->delay_sem);
@@ -251,6 +253,7 @@ static int submit_with_delay(ove_workqueue_t wq, ove_work_t work, uint32_t delay
 {
 	struct ove_workqueue *nwq = wq;
 	struct ove_work *nw = work;
+	irqstate_t flags;
 	if (nwq == NULL || nw == NULL)
 		return OVE_ERR_INVALID_PARAM;
 	if (!nwq->running)
@@ -270,10 +273,9 @@ static int submit_with_delay(ove_workqueue_t wq, ove_work_t work, uint32_t delay
 		return OVE_ERR_TIMEOUT;
 	}
 
-	while (nxmutex_lock(&nwq->lock) == -EINTR)
-		;
+	flags = enter_critical_section();
 	if (!nwq->running) {
-		nxmutex_unlock(&nwq->lock);
+		leave_critical_section(flags);
 		nxsem_post(&nwq->not_full);
 		nw->wq = NULL;
 		__atomic_store_n(&nw->state, WORK_IDLE, __ATOMIC_RELEASE);
@@ -282,7 +284,7 @@ static int submit_with_delay(ove_workqueue_t wq, ove_work_t work, uint32_t delay
 	nwq->ring[nwq->head] = nw;
 	nwq->head = (nwq->head + 1) % OVE_WQ_QUEUE_DEPTH;
 	nwq->count++;
-	nxmutex_unlock(&nwq->lock);
+	leave_critical_section(flags);
 
 	nxsem_post(&nwq->not_empty);
 	return OVE_OK;
@@ -291,6 +293,47 @@ static int submit_with_delay(ove_workqueue_t wq, ove_work_t work, uint32_t delay
 int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 {
 	return submit_with_delay(wq, work, 0);
+}
+
+/* The thread path above without its one wait: a free slot is taken with a
+ * try-wait, and the ring is guarded by a critical section, which an
+ * interrupt can enter, not a mutex. */
+int ove_work_submit_from_isr(ove_workqueue_t wq, ove_work_t work)
+{
+	struct ove_workqueue *nwq = wq;
+	struct ove_work *nw = work;
+	if (nwq == NULL || nw == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!nwq->running)
+		return OVE_ERR_BUSY;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&nw->state, &expected, WORK_QUEUED, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
+	nw->delay_ms = 0;
+	nw->wq = nwq;
+
+	if (nxsem_trywait(&nwq->not_full) < 0) {
+		nw->wq = NULL;
+		__atomic_store_n(&nw->state, WORK_IDLE, __ATOMIC_RELEASE);
+		return OVE_ERR_QUEUE_FULL;
+	}
+
+	irqstate_t flags = enter_critical_section();
+	if (!nwq->running) {
+		leave_critical_section(flags);
+		nxsem_post(&nwq->not_full);
+		nw->wq = NULL;
+		__atomic_store_n(&nw->state, WORK_IDLE, __ATOMIC_RELEASE);
+		return OVE_ERR_BUSY;
+	}
+	nwq->ring[nwq->head] = nw;
+	nwq->head = (nwq->head + 1) % OVE_WQ_QUEUE_DEPTH;
+	nwq->count++;
+	leave_critical_section(flags);
+
+	nxsem_post(&nwq->not_empty);
+	return OVE_OK;
 }
 
 int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)
@@ -317,10 +360,9 @@ int ove_work_cancel(ove_work_t work)
 
 	struct ove_workqueue *nwq = nw->wq;
 	if (cancelled && nwq != NULL) {
-		while (nxmutex_lock(&nwq->lock) == -EINTR)
-			;
+		irqstate_t flags = enter_critical_section();
 		int active = nwq->active_work == nw && nwq->active_delaying;
-		nxmutex_unlock(&nwq->lock);
+		leave_critical_section(flags);
 		if (active)
 			nxsem_post(&nwq->delay_sem);
 	}

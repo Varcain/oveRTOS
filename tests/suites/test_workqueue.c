@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include "../framework/ove_test_isr.h"
 #include <stdatomic.h>
 
 OVE_TEST_STORAGE(ove_workqueue_storage_t, s_wq_storage);
@@ -344,6 +345,123 @@ static void test_wq_busy_resubmit_keeps_delay(void **state)
 	ove_test_workqueue_destroy(wq);
 }
 
+/* Submitting from an interrupt: on FreeRTOS ove_work_submit asserted there,
+ * on NuttX it could block the interrupted task.  The item runs on the
+ * queue's thread; while it is still queued, a second submit is refused. */
+struct isr_submit {
+	ove_workqueue_t wq;
+	ove_work_t work;
+	int rc1;
+	int rc2;
+};
+
+static void isr_submit_twice(void *arg)
+{
+	struct isr_submit *s = arg;
+	s->rc1 = ove_work_submit_from_isr(s->wq, s->work);
+	s->rc2 = ove_work_submit_from_isr(s->wq, s->work);
+}
+
+static void test_wq_submit_from_isr(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "isr_wq", OVE_PRIO_NORMAL,
+						     2048, s_wq_stack));
+	ove_work_t w = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, work_handler));
+#else
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, work_handler));
+#endif
+	struct isr_submit s = {.wq = wq, .work = w, .rc1 = -1, .rc2 = -1};
+	bool in_isr = ove_test_run_in_isr(isr_submit_twice, &s);
+#ifndef CONFIG_OVE_RTOS_POSIX
+	assert_true(in_isr);
+	/* The worker cannot run while the interrupt does. */
+	assert_int_equal(s.rc2, OVE_ERR_BUSY);
+#else
+	(void)in_isr;
+#endif
+	assert_int_equal(s.rc1, OVE_OK);
+	assert_true(wait_for_flag(&s_work_called, 1, 500));
+	assert_ptr_equal((void *)atomic_load(&s_received_handle_raw), (void *)w);
+
+	ove_test_work_destroy(w);
+	ove_test_workqueue_destroy(wq);
+}
+
+#if !defined(CONFIG_OVE_ZERO_HEAP) && !defined(CONFIG_OVE_RTOS_ZEPHYR)
+/* With no room left, the interrupt-safe submit fails at once.  Zephyr's
+ * queue is a list and cannot fill; the engines with a fixed queue hold 16
+ * items (64 on the host). */
+enum { FILL_MAX = 72 };
+
+/* Holds the worker until the test sets s_work_finished to 2 (at most 3 s). */
+static void gated_handler(ove_work_t work)
+{
+	(void)work;
+	TEST_FLAG_SET(s_work_called, 1);
+	for (int i = 0; i < 3000 && __atomic_load_n(&s_work_finished, __ATOMIC_ACQUIRE) != 2; i++)
+		test_msleep(1);
+}
+
+static void isr_submit_once(void *arg)
+{
+	struct isr_submit *s = arg;
+	s->rc1 = ove_work_submit_from_isr(s->wq, s->work);
+}
+
+static void test_wq_submit_from_isr_full_queue(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "full_wq", OVE_PRIO_NORMAL,
+						     2048, s_wq_stack));
+	ove_work_t blocker = NULL;
+	OVE_TEST_ASSERT_OK(ove_work_init(&blocker, gated_handler));
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, blocker));
+	assert_true(wait_for_flag(&s_work_called, 1, 500)); /* busy until released */
+
+	ove_work_t fill[FILL_MAX] = {0};
+	int n = 0;
+	int rc = OVE_OK;
+	for (; n < FILL_MAX; n++) {
+		OVE_TEST_ASSERT_OK(ove_work_init(&fill[n], counting_handler));
+		rc = ove_work_submit_from_isr(wq, fill[n]);
+		if (rc != OVE_OK)
+			break;
+	}
+	assert_int_equal(rc, OVE_ERR_QUEUE_FULL);
+	assert_true(n < FILL_MAX);
+
+	struct isr_submit s = {.wq = wq, .work = fill[n], .rc1 = -1};
+	bool in_isr = ove_test_run_in_isr(isr_submit_once, &s);
+#ifndef CONFIG_OVE_RTOS_POSIX
+	assert_true(in_isr);
+#else
+	(void)in_isr;
+#endif
+	assert_int_equal(s.rc1, OVE_ERR_QUEUE_FULL);
+	assert_false(ove_work_is_pending(fill[n]));
+	TEST_FLAG_SET(s_work_finished, 2); /* release the worker */
+
+	/* Every queued item still runs once the worker is free. */
+	uint64_t start_us = 0;
+	uint64_t now_us = 0;
+	(void)ove_time_get_us(&start_us);
+	while (atomic_load(&s_work_count) < n) {
+		test_msleep(5);
+		(void)ove_time_get_us(&now_us);
+		assert_true(now_us - start_us < 2000000);
+	}
+	for (int i = 0; i <= n; i++)
+		ove_test_work_destroy(fill[i]);
+	ove_test_work_destroy(blocker);
+	ove_test_workqueue_destroy(wq);
+}
+#endif
+
 /* Pending means queued or delayed and not yet started: the state
  * ove_work_cancel() removes an item from, and not the running one, which a
  * submit refuses with OVE_ERR_BUSY. */
@@ -474,6 +592,10 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_cancel_waits_for_running_handler, wq_setup),
 		cmocka_unit_test_setup(test_wq_work_is_pending, wq_setup),
 		cmocka_unit_test_setup(test_wq_busy_resubmit_keeps_delay, wq_setup),
+		cmocka_unit_test_setup(test_wq_submit_from_isr, wq_setup),
+#if !defined(CONFIG_OVE_ZERO_HEAP) && !defined(CONFIG_OVE_RTOS_ZEPHYR)
+		cmocka_unit_test_setup(test_wq_submit_from_isr_full_queue, wq_setup),
+#endif
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif

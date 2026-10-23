@@ -194,6 +194,27 @@ int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 	return OVE_OK;
 }
 
+int ove_work_submit_from_isr(ove_workqueue_t wq, ove_work_t work)
+{
+	if (wq == NULL || work == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (!wq->running)
+		return OVE_ERR_BUSY;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_QUEUED, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
+	work->target_wq = wq;
+	BaseType_t yield_required = pdFALSE;
+	if (xQueueSendFromISR(wq->queue, &work, &yield_required) != pdPASS) {
+		work->target_wq = NULL;
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
+		return OVE_ERR_QUEUE_FULL;
+	}
+	portYIELD_FROM_ISR(yield_required);
+	return OVE_OK;
+}
+
 static void delay_timer_cb(TimerHandle_t xTimer)
 {
 	struct ove_work *fw = pvTimerGetTimerID(xTimer);

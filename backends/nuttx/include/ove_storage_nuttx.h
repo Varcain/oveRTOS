@@ -158,7 +158,6 @@ struct ove_workqueue {
 	unsigned int count;
 	struct ove_work *active_work;
 	int active_delaying;
-	mutex_t lock;
 	sem_t not_full;
 	sem_t not_empty;
 	sem_t delay_sem;

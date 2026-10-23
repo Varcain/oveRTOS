@@ -123,6 +123,24 @@ int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
+/* Zephyr's work API is interrupt-safe: the same path as ove_work_submit,
+ * with a draining queue reported as busy, as the other engines do. */
+int ove_work_submit_from_isr(ove_workqueue_t wq, ove_work_t work)
+{
+	if (wq == NULL || work == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	int expected = WORK_IDLE;
+	if (!__atomic_compare_exchange_n(&work->state, &expected, WORK_PENDING, 0, __ATOMIC_ACQ_REL,
+					 __ATOMIC_ACQUIRE))
+		return OVE_ERR_BUSY;
+	int ret = k_work_schedule_for_queue(&wq->work_q, &work->dwork, K_NO_WAIT);
+	if (ret < 0) {
+		__atomic_store_n(&work->state, WORK_IDLE, __ATOMIC_RELEASE);
+		return OVE_ERR_BUSY;
+	}
+	return OVE_OK;
+}
+
 int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)
 {
 	if (wq == NULL || work == NULL)

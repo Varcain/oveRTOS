@@ -95,6 +95,20 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 }
 
 /* FreeRTOS hooks and exception handlers */
+/* Interrupt context for the tests' _from_isr cases (ove_test_run_in_isr(),
+ * framework/ove_test_isr.h): the SysTick tick hook runs one queued call. */
+void (*volatile ove_test_tick_fn)(void *);
+void *volatile ove_test_tick_arg;
+
+void vApplicationTickHook(void)
+{
+	void (*fn)(void *) = ove_test_tick_fn;
+	if (fn) {
+		ove_test_tick_fn = NULL;
+		fn(ove_test_tick_arg);
+	}
+}
+
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
 	(void)xTask;

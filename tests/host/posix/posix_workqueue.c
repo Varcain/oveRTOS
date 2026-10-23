@@ -154,6 +154,33 @@ int ove_work_submit(ove_workqueue_t wqh, ove_work_t work)
 	return OVE_OK;
 }
 
+/* The host has no interrupts; this keeps the API's contract (never waits,
+ * OVE_ERR_QUEUE_FULL when there is no room) for the tests. */
+int ove_work_submit_from_isr(ove_workqueue_t wqh, ove_work_t work)
+{
+	struct ove_workqueue *wq = wqh;
+	struct ove_work *w = work;
+	if (!wq || !w) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	pthread_mutex_lock(&wq->lock);
+	if (!wq->running || w->wq != NULL || w->pending || w->in_progress) {
+		pthread_mutex_unlock(&wq->lock);
+		return OVE_ERR_BUSY;
+	}
+	if (wq->count >= OVE_WQ_MAX_PENDING) {
+		pthread_mutex_unlock(&wq->lock);
+		return OVE_ERR_QUEUE_FULL;
+	}
+	w->delay_ms = 0;
+	w->wq = wq; /* backpointer for cancel/free synchronization */
+	__atomic_store_n(&w->pending, 1, __ATOMIC_RELEASE);
+	wq->queue[wq->count++] = w;
+	pthread_cond_signal(&wq->cond);
+	pthread_mutex_unlock(&wq->lock);
+	return OVE_OK;
+}
+
 int ove_work_submit_delayed(ove_workqueue_t wqh, ove_work_t work, uint32_t delay_ms)
 {
 	struct ove_workqueue *wq = wqh;
