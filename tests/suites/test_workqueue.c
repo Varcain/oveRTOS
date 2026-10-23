@@ -39,6 +39,17 @@ static void delayed_handler(ove_work_t work)
 	TEST_FLAG_SET(s_work_called, 1);
 }
 
+static _Atomic uint32_t s_ran_ms; /* ove_time_get_us() / 1000 when it ran */
+
+static void timestamp_handler(ove_work_t work)
+{
+	(void)work;
+	uint64_t now_us = 0;
+	(void)ove_time_get_us(&now_us);
+	atomic_store(&s_ran_ms, (uint32_t)(now_us / 1000));
+	TEST_FLAG_SET(s_work_finished, 1);
+}
+
 static void running_handler(ove_work_t work)
 {
 	(void)work;
@@ -292,6 +303,47 @@ static void test_wq_cancel_waits_for_running_handler(void **state)
 	ove_test_workqueue_destroy(wq);
 }
 
+/* A submit refused because the item is already pending must not change it:
+ * on NuttX it used to overwrite the item's delay, so a delayed item queued
+ * behind a busy worker ran at once after an ove_work_submit() that returned
+ * OVE_ERR_BUSY.  The delay counts from the submit on FreeRTOS and Zephyr and
+ * from the worker taking the item on NuttX and the host; either way it has
+ * passed by the time the item runs. */
+static void test_wq_busy_resubmit_keeps_delay(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "busy_wq", OVE_PRIO_NORMAL,
+						     2048, s_wq_stack));
+	ove_work_t blocker = NULL;
+	ove_work_t x = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&blocker, &s_work_storages[0], running_handler));
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&x, &s_work_storages[1], timestamp_handler));
+#else
+	OVE_TEST_ASSERT_OK(ove_work_init(&blocker, running_handler));
+	OVE_TEST_ASSERT_OK(ove_work_init(&x, timestamp_handler));
+#endif
+	/* The worker is busy for ~50 ms, so x waits in the queue. */
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, blocker));
+	assert_true(wait_for_flag(&s_work_called, 1, 500));
+
+	uint64_t submit_us = 0;
+	(void)ove_time_get_us(&submit_us);
+	OVE_TEST_ASSERT_OK(ove_work_submit_delayed(wq, x, 300));
+	assert_int_equal(ove_work_submit(wq, x), OVE_ERR_BUSY);
+
+	assert_true(wait_for_flag(&s_work_finished, 1, 1000)); /* the blocker */
+	TEST_FLAG_SET(s_work_finished, 0);
+	assert_true(wait_for_flag(&s_work_finished, 1, 1500)); /* x */
+	uint32_t waited_ms = atomic_load(&s_ran_ms) - (uint32_t)(submit_us / 1000);
+	assert_true(waited_ms >= 290);
+
+	ove_test_work_destroy(x);
+	ove_test_work_destroy(blocker);
+	ove_test_workqueue_destroy(wq);
+}
+
 /* Pending means queued or delayed and not yet started: the state
  * ove_work_cancel() removes an item from, and not the running one, which a
  * submit refuses with OVE_ERR_BUSY. */
@@ -400,6 +452,7 @@ static int wq_setup(void **state)
 	s_work_finished = 0;
 	atomic_store(&s_work_count, 0);
 	atomic_store(&s_received_handle_raw, (intptr_t)NULL);
+	atomic_store(&s_ran_ms, 0);
 	return 0;
 }
 
@@ -420,6 +473,7 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_rejects_duplicate_submission, wq_setup),
 		cmocka_unit_test_setup(test_wq_cancel_waits_for_running_handler, wq_setup),
 		cmocka_unit_test_setup(test_wq_work_is_pending, wq_setup),
+		cmocka_unit_test_setup(test_wq_busy_resubmit_keeps_delay, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif

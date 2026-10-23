@@ -256,11 +256,11 @@ static int submit_with_delay(ove_workqueue_t wq, ove_work_t work, uint32_t delay
 	if (!nwq->running)
 		return OVE_ERR_BUSY;
 
-	nw->delay_ms = delay_ms;
 	int expected = WORK_IDLE;
 	if (!__atomic_compare_exchange_n(&nw->state, &expected, WORK_QUEUED, 0, __ATOMIC_ACQ_REL,
 					 __ATOMIC_ACQUIRE))
-		return OVE_ERR_BUSY;
+		return OVE_ERR_BUSY; /* not ours: leave its delay alone */
+	nw->delay_ms = delay_ms;
 	nw->wq = nwq;
 
 	int ret = nxsem_wait_uninterruptible(&nwq->not_full);
