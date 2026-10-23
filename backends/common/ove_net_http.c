@@ -397,7 +397,7 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 	if (status_end) {
 		char *sp = strchr(buf, ' ');
 		if (sp)
-			resp->status = atoi(sp + 1);
+			resp->status = (int)strtol(sp + 1, NULL, 10);
 	}
 
 	/* Split headers and body */

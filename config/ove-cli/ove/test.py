@@ -386,7 +386,17 @@ def test_stub(ove_dir, output_dir):
     logger.info("Building stub tests")
     _cmake_build(os.path.join(ove_dir, "tests"), build)
     logger.info("Running stub tests")
-    return _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
+    results = _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
+    # TLS client tests: a binary of their own (tests/CMakeLists.txt).
+    net_tls = os.path.join(build, "ove_test_net_tls")
+    if os.path.exists(net_tls):
+        logger.info("Running TLS client tests")
+        tls = _run_test_binary([net_tls], "stub", cwd=build)
+        results.passed += tls.passed
+        results.failed += tls.failed
+        results.skipped += tls.skipped
+        results.failed_names += tls.failed_names
+    return results
 
 
 def _sanitize_extra_args(flags):

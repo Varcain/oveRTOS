@@ -267,10 +267,85 @@ if(OVE_TEST_BUILD_COVERAGE)
     target_compile_definitions(ove_test_stub_coverage_zh PRIVATE CONFIG_OVE_ZERO_HEAP=1)
 endif()
 
+# --- TLS client tests (ove_test_net_tls) ---
+# The HTTP and MQTT clients and the shared TLS layer against an in-process
+# mbedTLS server (tests/net_tls).  A separate binary so CONFIG_OVE_NET_TLS
+# and friends stay off the global tests/ove_config.h, built with ASan so a
+# TLS session outliving its storage is caught.  mbedTLS comes from
+# dl/mbedtls after `make download`, otherwise from upstream at the
+# manifest's tag (CI fetches cmocka the same way).
+option(OVE_TEST_BUILD_NET_TLS "Build ove_test_net_tls (needs mbedTLS)" ON)
+# Sanitizer builds of this tree set their own -fsanitize flags, which ASan
+# here would clash with; the plain stub build runs these tests.
+if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
+    set(OVE_TEST_MBEDTLS_DIR ${OVE_ROOT}/dl/mbedtls)
+    if(NOT EXISTS ${OVE_TEST_MBEDTLS_DIR}/library/ssl_tls.c)
+        FetchContent_Declare(
+            ove_test_mbedtls
+            GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+            GIT_TAG        v3.6.2 # keep in step with manifest.yaml's mbedtls
+            GIT_SHALLOW    TRUE
+            GIT_SUBMODULES ""
+            # Sources only: built below with the oveRTOS user config.
+            SOURCE_SUBDIR  ove-no-cmake
+        )
+        FetchContent_MakeAvailable(ove_test_mbedtls)
+        set(OVE_TEST_MBEDTLS_DIR ${ove_test_mbedtls_SOURCE_DIR})
+    endif()
+
+    file(GLOB OVE_TEST_MBEDTLS_SRC CONFIGURE_DEPENDS ${OVE_TEST_MBEDTLS_DIR}/library/*.c)
+    add_library(ove_test_mbedtls STATIC ${OVE_TEST_MBEDTLS_SRC})
+    # SYSTEM: clang-tidy (make lint) reads this build and should not
+    # analyse mbedTLS's own headers.
+    target_include_directories(ove_test_mbedtls SYSTEM PUBLIC ${OVE_TEST_MBEDTLS_DIR}/include)
+    target_include_directories(ove_test_mbedtls PUBLIC ${OVE_ROOT}/config/mbedtls)
+    target_include_directories(ove_test_mbedtls PRIVATE ${OVE_TEST_MBEDTLS_DIR}/library)
+    target_compile_definitions(ove_test_mbedtls PUBLIC
+        "MBEDTLS_USER_CONFIG_FILE=\"ove_mbedtls_config.h\""
+    )
+    target_compile_options(ove_test_mbedtls PRIVATE -w)
+
+    set(OVE_TEST_NET_TLS_SAN -fsanitize=address,undefined -fno-omit-frame-pointer
+        -fno-sanitize-recover=all -g)
+    add_executable(ove_test_net_tls
+        ${CMAKE_CURRENT_SOURCE_DIR}/net_tls/test_net_tls.c
+        ${POSIX_CORE_DIR}/posix_net.c
+        ${POSIX_CORE_DIR}/posix_time.c
+        ${POSIX_CORE_DIR}/posix_console.c
+        ${OVE_SRC}/ove_net.c
+        ${OVE_ROOT}/backends/common/ove_net_tls.c
+        ${OVE_ROOT}/backends/common/ove_net_http.c
+        ${OVE_ROOT}/backends/common/ove_net_mqtt.c
+        ${OVE_ROOT}/backends/common/ove_mqtt_topic.c
+    )
+    target_include_directories(ove_test_net_tls PRIVATE
+        ${OVE_INCLUDE}
+        ${OVE_ROOT}/backends/common
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${POSIX_CORE_DIR}/include
+        ${cmocka_SOURCE_DIR}/include
+    )
+    target_compile_definitions(ove_test_net_tls PRIVATE
+        CONFIG_OVE_NET=1
+        CONFIG_OVE_NET_TLS=1
+        CONFIG_OVE_NET_HTTP=1
+        CONFIG_OVE_NET_HTTP_MAX_RESPONSE=8192
+        CONFIG_OVE_NET_MQTT=1
+        CONFIG_OVE_NET_SNTP=1
+        "OVE_TEST_TLS_PKI_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/net_tls/pki\""
+    )
+    target_compile_options(ove_test_net_tls PRIVATE ${OVE_TEST_NET_TLS_SAN})
+    target_link_options(ove_test_net_tls PRIVATE ${OVE_TEST_NET_TLS_SAN})
+    target_link_libraries(ove_test_net_tls PRIVATE ove_test_mbedtls cmocka-static pthread)
+endif()
+
 # --- CTest registration ---
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
+if(TARGET ove_test_net_tls)
+    add_test(NAME ove_net_tls_tests COMMAND ove_test_net_tls)
+endif()
 add_test(NAME ove_patch_worktree_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
