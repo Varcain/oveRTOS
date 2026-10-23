@@ -103,6 +103,33 @@ directly.
 
 ---
 
+## Stream
+
+A stream moves bytes, so its calls report how many moved rather than failing
+when a full stream or a timeout moved fewer than asked. The wrappers pass the C
+result through; the C contract (see the [IPC reference](../api/ipc.md)) is that
+only an invalid call is an error.
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| Blocking send / receive | `send` / `receive` (abort on fail) | `send` / `recv -> Result<usize>` | `send` / `recv -> usize` (panic on fail) |
+| Non-blocking | `try_send` / `try_receive -> bool` + count | `try_send` / `try_recv -> Result<usize>` | `sendFor` / `recvFor` with a zero duration |
+| Bounded wait | `try_send_for/until` / `try_receive_for/until -> Result<void>` + count | `try_send_for/until` / `try_recv_for/until -> Result<usize>` | `sendFor/Until` / `recvFor/Until -> …!usize` |
+| From an interrupt | `send_from_isr` / `receive_from_isr -> Result<void>` + count | `send_from_isr` / `receive_from_isr -> Result<usize>` | `sendFromIsr` / `receiveFromIsr -> …!usize` |
+| Full stream, timeout, nothing there | success, count 0 or short | `Ok(0)` or short | 0 or short |
+| Empty buffer (`len` 0) | success, count 0, never waits | `Ok(0)`, never waits | 0, never waits |
+
+**Contract notes**
+
+- A receive waits for the stream's trigger level, then takes up to the buffer's
+  length; the interrupt receive takes whatever is there.
+- An empty buffer never waits, even on a forever wait, and a NULL pointer with a
+  length of 0 is accepted, so an empty C++ `std::vector`'s `data()` is fine.
+- Zig's `SendError` / `RecvError` (`error.Timeout`) and the async `read`'s
+  `WouldBlock` / `Timeout` arms are never produced by the C layer today.
+
+---
+
 ## Mutex
 
 | Contract | C++ | Rust | Zig |

@@ -52,8 +52,14 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 		    size_t *bytes_sent)
 {
 	struct ove_stream *s = stream;
-	if (!s || !data || len == 0) {
+	if (!s || (!data && len > 0)) {
 		return OVE_ERR_INVALID_PARAM;
+	}
+	if (len == 0) {
+		if (bytes_sent) {
+			*bytes_sent = 0;
+		}
+		return OVE_OK;
 	}
 	const uint8_t *src = data;
 	size_t sent = 0;
@@ -105,8 +111,14 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 		       size_t *bytes_received)
 {
 	struct ove_stream *s = stream;
-	if (!s || !buf || len == 0) {
+	if (!s || (!buf && len > 0)) {
 		return OVE_ERR_INVALID_PARAM;
+	}
+	if (len == 0) {
+		if (bytes_received) {
+			*bytes_received = 0;
+		}
+		return OVE_OK;
 	}
 	uint8_t *dst = buf;
 	size_t received = 0;
@@ -149,9 +161,27 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
 	return ove_stream_send(stream, data, len, 0, bytes_sent);
 }
 
+/* Takes whatever is there, like the engines' interrupt path: the trigger
+ * level only gates a waiting receive. */
 int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)
 {
-	return ove_stream_receive(stream, buf, len, 0, bytes_received);
+	struct ove_stream *s = stream;
+	if (!s || (!buf && len > 0)) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	size_t received = 0;
+	if (len > 0) {
+		pthread_mutex_lock(&s->lock);
+		received = ove_ring_read(&s->ring, buf, len);
+		if (received > 0) {
+			pthread_cond_signal(&s->space_avail);
+		}
+		pthread_mutex_unlock(&s->lock);
+	}
+	if (bytes_received) {
+		*bytes_received = received;
+	}
+	return OVE_OK;
 }
 
 int ove_stream_reset(ove_stream_t stream)
@@ -162,6 +192,7 @@ int ove_stream_reset(ove_stream_t stream)
 	}
 	pthread_mutex_lock(&s->lock);
 	ove_ring_clear(&s->ring);
+	pthread_cond_signal(&s->space_avail); /* wake a blocked sender, as the engines do */
 	pthread_mutex_unlock(&s->lock);
 	return OVE_OK;
 }

@@ -13,9 +13,10 @@
 //!   1. The wrapper owns an `AtomicWaker`.
 //!   2. On construction it registers a C callback against the underlying
 //!      stream; the callback is `AtomicWaker::wake` via a void* user_data.
-//!   3. `recv_async` polls the non-blocking `Stream::try_recv` first,
-//!      and on `WouldBlock` registers `cx.waker()` into the AtomicWaker,
-//!      then re-checks (avoids lost-wake races against the producer).
+//!   3. `read` polls the non-blocking `Stream::try_recv` first, and
+//!      when that reads nothing registers `cx.waker()` into the
+//!      AtomicWaker, then re-checks (avoids lost-wake races against the
+//!      producer).
 //!
 //! Lifetime constraint: the C callback retains a pointer to the
 //! AtomicWaker, so the AsyncStream's address must be stable for its
@@ -72,8 +73,8 @@ impl<const N: usize> AsyncStream<N> {
         }
     }
 
-    /// Receive up to `buf.len()` bytes. Awaits until at least one byte
-    /// is available, then returns the number of bytes copied.
+    /// Receive up to `buf.len()` bytes. Awaits until the stream's trigger
+    /// level is buffered, then returns the number of bytes copied.
     ///
     /// Returns `Ok(0)` only if `buf.is_empty()`.
     pub async fn read(&'static self, buf: &mut [u8]) -> Result<usize> {

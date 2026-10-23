@@ -78,6 +78,17 @@ fn test_raii_drop() {
     }
 }
 
+fn test_empty_slices() {
+    // An empty slice moves nothing and never waits, not even for the
+    // trigger level.
+    let s = Stream::<256>::new(4).unwrap();
+    assert_eq!(s.try_send(&[]), Ok(0));
+    assert_eq!(s.try_recv(&mut []), Ok(0));
+    assert_eq!(s.recv(&mut []), Ok(0));
+    assert_eq!(s.send_from_isr(&[]), Ok(0));
+    assert_eq!(s.receive_from_isr(&mut []), Ok(0));
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("Stream", &[
         test_entry!(test_create_destroy),
@@ -88,5 +99,6 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_send_from_isr),
         test_entry!(test_receive_from_isr),
         test_entry!(test_raii_drop),
+        test_entry!(test_empty_slices),
     ])
 }

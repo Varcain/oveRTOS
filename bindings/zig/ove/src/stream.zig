@@ -110,9 +110,9 @@ pub fn Stream(comptime size: usize) type {
             return sent;
         }
 
-        /// Forever-blocking receive.  Returns the number of bytes
-        /// actually read (≥ the stream's `trigger` setting — the
-        /// substrate only wakes once at least that many are available).
+        /// Forever-blocking receive.  Waits until the stream's `trigger`
+        /// level is buffered, then returns the number of bytes read: up
+        /// to `buf.len`, so fewer than `trigger` when `buf` is smaller.
         pub inline fn recv(self: Self, buf: []u8) usize {
             var received: usize = 0;
             const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, WAIT_FOREVER, &received);

@@ -603,6 +603,181 @@ static void test_stream_isr_null_args(void **state)
 	ove_test_stream_destroy(s);
 }
 
+/* ── zero-length calls, receive_from_isr, reset ──────────────────────── */
+
+static uint64_t now_us(void)
+{
+	uint64_t t = 0;
+	(void)ove_time_get_us(&t);
+	return t;
+}
+
+/* A zero-length call moves nothing and never waits, not even for the
+ * trigger level, and takes a NULL pointer: FreeRTOS and Zephyr waited out
+ * the timeout, the host refused len 0, and every engine refused (NULL, 0),
+ * which is what an empty C++ std::vector passes. */
+static void test_stream_zero_len_never_waits(void **state)
+{
+	(void)state;
+	ove_stream_t s = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 4));
+	static const uint8_t two[2] = {1, 2};
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, two, sizeof(two), 0, NULL));
+
+	uint8_t rx[16];
+	size_t n = 99;
+	uint64_t t0 = now_us();
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, rx, 0, OVE_MS(300), &n));
+	assert_true(now_us() - t0 < 50000);
+	assert_int_equal(n, 0);
+
+	n = 99;
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, two, 0, OVE_MS(300), &n));
+	assert_int_equal(n, 0);
+	n = 99;
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, NULL, 0, 0, &n));
+	assert_int_equal(n, 0);
+	n = 99;
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, NULL, 0, 0, &n));
+	assert_int_equal(n, 0);
+
+	assert_int_equal(ove_stream_bytes_available(s), 2);
+	ove_test_stream_destroy(s);
+
+	/* A zero length does not excuse a NULL stream. */
+	assert_int_equal(ove_stream_send(NULL, NULL, 0, 0, NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_stream_receive(NULL, NULL, 0, 0, NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_stream_send_from_isr(NULL, NULL, 0, NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_stream_receive_from_isr(NULL, NULL, 0, NULL), OVE_ERR_INVALID_PARAM);
+}
+
+static void isr_zero_len(void *arg)
+{
+	struct isr_stream_call *c = arg;
+	c->rc_send = ove_stream_send_from_isr(c->s, c->data, 0, &c->sent);
+	c->rc_recv = ove_stream_receive_from_isr(c->s, c->buf, 0, &c->received);
+}
+
+static void test_stream_zero_len_from_isr(void **state)
+{
+	(void)state;
+	ove_stream_t s = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 4));
+	static const uint8_t two[2] = {1, 2};
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, two, sizeof(two), 0, NULL));
+
+	uint8_t rx[16];
+	struct isr_stream_call c = {.s = s,
+				    .data = two,
+				    .buf = rx,
+				    .sent = 99,
+				    .received = 99,
+				    .rc_send = -1,
+				    .rc_recv = -1};
+	bool in_isr = ove_test_run_in_isr(isr_zero_len, &c);
+#ifndef CONFIG_OVE_RTOS_POSIX
+	assert_true(in_isr);
+#endif
+	assert_int_equal(c.rc_send, OVE_OK);
+	assert_int_equal(c.sent, 0);
+	assert_int_equal(c.rc_recv, OVE_OK);
+	assert_int_equal(c.received, 0);
+
+	c = (struct isr_stream_call){
+		.s = s, .sent = 99, .received = 99, .rc_send = -1, .rc_recv = -1};
+	in_isr = ove_test_run_in_isr(isr_zero_len, &c); /* NULL data and buf */
+#ifndef CONFIG_OVE_RTOS_POSIX
+	assert_true(in_isr);
+#else
+	(void)in_isr;
+#endif
+	assert_int_equal(c.rc_send, OVE_OK);
+	assert_int_equal(c.sent, 0);
+	assert_int_equal(c.rc_recv, OVE_OK);
+	assert_int_equal(c.received, 0);
+
+	assert_int_equal(ove_stream_bytes_available(s), 2);
+	ove_test_stream_destroy(s);
+}
+
+static void isr_receive(void *arg)
+{
+	struct isr_stream_call *c = arg;
+	c->rc_recv = ove_stream_receive_from_isr(c->s, c->buf, c->buf_len, &c->received);
+}
+
+/* An interrupt receive takes what is there, below the trigger level too:
+ * the host test backend applied the trigger and returned nothing. */
+static void test_stream_receive_from_isr_ignores_trigger(void **state)
+{
+	(void)state;
+	ove_stream_t s = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 4));
+	static const uint8_t two[2] = {0xB1, 0xB2};
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, two, sizeof(two), 0, NULL));
+
+	uint8_t rx[16] = {0};
+	struct isr_stream_call c = {.s = s, .buf = rx, .buf_len = sizeof(rx), .rc_recv = -1};
+	bool in_isr = ove_test_run_in_isr(isr_receive, &c);
+#ifndef CONFIG_OVE_RTOS_POSIX
+	assert_true(in_isr);
+#else
+	(void)in_isr;
+#endif
+	assert_int_equal(c.rc_recv, OVE_OK);
+	assert_int_equal(c.received, 2);
+	assert_memory_equal(rx, two, sizeof(two));
+	ove_test_stream_destroy(s);
+}
+
+struct reset_sender {
+	ove_stream_t s;
+	int rc;
+	size_t sent;
+	uint64_t us;
+	int done;
+};
+
+static void reset_sender_fn(void *arg)
+{
+	struct reset_sender *w = arg;
+	static const uint8_t four[4] = {0xC1, 0xC2, 0xC3, 0xC4};
+	uint64_t t0 = now_us();
+	w->rc = ove_stream_send(w->s, four, sizeof(four), OVE_MS(500), &w->sent);
+	w->us = now_us() - t0;
+	__atomic_store_n(&w->done, 1, __ATOMIC_RELEASE);
+}
+
+/* A reset wakes a sender blocked on a full stream, which then writes: the
+ * host test backend left it asleep until its timeout. */
+static void test_stream_reset_wakes_sender(void **state)
+{
+	(void)state;
+	ove_stream_t s = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage_tiny, s_strm_buf_tiny, 8, 1));
+	static const uint8_t fill[8] = {0};
+	size_t n = 0;
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, fill, sizeof(fill), 0, &n));
+	assert_int_equal(n, 8);
+
+	struct reset_sender w = {.s = s, .rc = -1};
+	ove_thread_t th = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_th_storage, "rst_send", reset_sender_fn, &w,
+					       s_th_stack, 4096));
+	test_msleep(50); /* the sender is blocked on the full stream */
+	OVE_TEST_ASSERT_OK(ove_stream_reset(s));
+	for (int i = 0; i < 2000 && !__atomic_load_n(&w.done, __ATOMIC_ACQUIRE); i++)
+		test_msleep(1);
+
+	assert_true(__atomic_load_n(&w.done, __ATOMIC_ACQUIRE));
+	assert_int_equal(w.rc, OVE_OK);
+	assert_int_equal(w.sent, 4);
+	assert_true(w.us < 250000);
+	assert_int_equal(ove_stream_bytes_available(s), 4);
+	ove_test_thread_destroy(th);
+	ove_test_stream_destroy(s);
+}
+
 static void test_stream_space_available(void **state)
 {
 	(void)state;
@@ -651,6 +826,10 @@ int test_stream_run(void)
 		cmocka_unit_test(test_stream_isr_partial_send_and_drain),
 		cmocka_unit_test(test_stream_isr_send_while_thread_streams),
 		cmocka_unit_test(test_stream_isr_null_args),
+		cmocka_unit_test(test_stream_zero_len_never_waits),
+		cmocka_unit_test(test_stream_zero_len_from_isr),
+		cmocka_unit_test(test_stream_receive_from_isr_ignores_trigger),
+		cmocka_unit_test(test_stream_reset_wakes_sender),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

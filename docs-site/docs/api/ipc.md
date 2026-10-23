@@ -280,15 +280,25 @@ graph LR
 | `ove_stream_deinit` | `void (ove_stream_t stream)` | Release the stream. |
 | `ove_stream_create` | `int (ove_stream_t *stream, size_t size, size_t trigger)` | Heap-allocate. Requires `OVE_HEAP_STREAM`. |
 | `ove_stream_destroy` | `void (ove_stream_t stream)` | Free a heap-allocated stream. |
-| `ove_stream_send` | `int (ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns, size_t *bytes_sent)` | Send bytes; blocks up to `timeout_ns` if there is no space. Actual bytes written written to `*bytes_sent` (may be NULL). |
-| `ove_stream_receive` | `int (ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_received)` | Receive bytes; blocks until `trigger` bytes are available. |
+| `ove_stream_send` | `int (ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns, size_t *bytes_sent)` | Send bytes; blocks up to `timeout_ns` if there is no space. Actual bytes written to `*bytes_sent` (may be NULL). |
+| `ove_stream_receive` | `int (ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_received)` | Receive bytes; blocks up to `timeout_ns` until `trigger` bytes are available, then takes up to `len`. |
 | `ove_stream_send_from_isr` | `int (ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)` | ISR-safe non-blocking send. |
-| `ove_stream_receive_from_isr` | `int (ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)` | ISR-safe non-blocking receive. |
-| `ove_stream_reset` | `int (ove_stream_t stream)` | Discard all buffered bytes. |
+| `ove_stream_receive_from_isr` | `int (ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)` | ISR-safe non-blocking receive; takes what is there, even below `trigger`. |
+| `ove_stream_reset` | `int (ove_stream_t stream)` | Discard all buffered bytes; wakes a sender blocked on a full stream. |
 | `ove_stream_bytes_available` | `size_t (ove_stream_t stream)` | Bytes currently readable. Thread context only on FreeRTOS. |
 | `ove_stream_space_available` | `size_t (ove_stream_t stream)` | Bytes that could be sent now without blocking (a snapshot). Thread context only on FreeRTOS. |
 
 Static-storage macro: `OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger)` (in `ove/storage.h`).
+
+The same rules hold on every engine:
+
+- Send, receive and their `_from_isr` forms return `OVE_OK` whenever the call
+  itself was valid, also when a full stream or a timeout moved fewer bytes than
+  asked, or none: `*bytes_sent` / `*bytes_received` say how many.
+- A `len` of 0 moves nothing and returns `OVE_OK` at once, without waiting for
+  space or for the trigger level; `data` / `buf` may then be NULL.
+- A NULL stream, or a NULL `data` / `buf` with a non-zero `len`, returns
+  `OVE_ERR_INVALID_PARAM`.
 
 ### Example: Serial Data Buffering
 
