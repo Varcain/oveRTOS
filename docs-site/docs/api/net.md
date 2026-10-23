@@ -434,7 +434,7 @@ int register_routes(void)
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/` | GET | Web dashboard (HTML/CSS/JS) |
-| `/api/info` | GET | Device info (RTOS, board, uptime, memory) |
+| `/api/info` | GET | Device info (board, RTOS, uptime, IP, oveRTOS version) |
 | `/api/leds` | GET/POST | LED state query and control |
 | `/api/gpio` | GET/POST | GPIO pin read/write |
 | `/api/network` | GET | Network interface status |

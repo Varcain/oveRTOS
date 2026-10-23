@@ -69,6 +69,7 @@
 
 #pragma once
 
+#include <ove/version.hpp>
 #include <ove/types.hpp>
 #include <ove/error.hpp>
 #include <ove/sync.hpp>

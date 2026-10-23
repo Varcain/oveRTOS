@@ -155,7 +155,7 @@ static int handle_info(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	snprintf(buf, sizeof(buf),
 		 "{\"board\":\"%s\",\"rtos\":\"%s\","
 		 "\"uptime\":%lu,\"ip\":\"%s\","
-		 "\"version\":\"0.0.0\"}",
+		 "\"version\":\"" OVE_VERSION_STRING "\"}",
 		 ove_board_name(), OVE_RTOS_NAME, uptime_s, ip_str);
 
 	return ove_httpd_resp_json(resp, 200, buf);

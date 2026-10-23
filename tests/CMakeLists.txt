@@ -411,6 +411,11 @@ add_test(NAME ove_allconfigs_python
         PYTHONPATH=${OVE_ROOT}/config/ove-cli
         ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/python/test_allconfigs.py)
+add_test(NAME ove_lint_version_python
+    COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=${OVE_ROOT}/config/ove-cli
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/python/test_lint_version.py)
 add_test(NAME ove_app_new_python
     COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=${OVE_ROOT}/config/ove-cli

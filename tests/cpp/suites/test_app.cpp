@@ -1,5 +1,7 @@
 #include "../framework/ove_test.hpp"
 
+#include <string>
+
 /* ── Test: OVE_MAIN() macro generates valid extern "C" ove_main ── */
 
 /*
@@ -39,11 +41,27 @@ static void test_cpp_app_ove_main_macro(void **state)
 	assert_non_null(reinterpret_cast<void *>(fn));
 }
 
+/* ove::version mirrors ove/version.h: the string spells the numbers, and
+ * the packed form orders versions the way they compare. */
+static void test_cpp_app_version(void **state)
+{
+	(void)state;
+	std::string spelled = std::to_string(ove::version::major) + "." +
+			      std::to_string(ove::version::minor) + "." +
+			      std::to_string(ove::version::patch);
+	assert_true(spelled == ove::version::string);
+	assert_int_equal(ove::version::packed, OVE_VERSION);
+	static_assert(ove::version::number(0, 9, 9) < ove::version::number(1, 0, 0));
+	static_assert(ove::version::number(1, 2, 255) < ove::version::number(1, 3, 0));
+	static_assert(ove::version::packed >= ove::version::number(0, 1, 0));
+}
+
 int test_cpp_app_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_cpp_app_run_callable),
 		cmocka_unit_test(test_cpp_app_ove_main_macro),
+		cmocka_unit_test(test_cpp_app_version),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

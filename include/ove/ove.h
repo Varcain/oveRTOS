@@ -31,6 +31,7 @@
  *
  * | Header                  | Subsystem                                  |
  * |-------------------------|--------------------------------------------|
+ * | ove/version.h           | oveRTOS release version                    |
  * | ove/types.h             | Common types and error codes               |
  * | ove/irq.h               | Critical sections and ISR-context detection|
  * | ove/log.h               | Logging                                    |
@@ -120,6 +121,7 @@
 #ifndef OVE_H
 #define OVE_H
 
+#include "ove/version.h"
 #include "ove/types.h"
 /* heap_assert.h must come AFTER any system header that declares libc
  * allocators (stdlib.h pulled in by types.h).  In zero-heap mode it
