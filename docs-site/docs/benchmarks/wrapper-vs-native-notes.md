@@ -56,8 +56,8 @@ oveRTOS queue on NuttX is a user-space ring buffer over
 `pthread_mutex+cond` — semantically narrower than `mq_*`.  Large
 negative Δ on `Queue *` rows reflects that semantic asymmetry, not
 wrapper magic.  `Stream *` rows have no native peer at all: oveRTOS
-stream on NuttX is itself a user-space ring buffer over
-`pthread_mutex+cond`, and NuttX has no kernel byte-stream primitive
+stream on NuttX is itself a user-space ring buffer under a critical
+section, with semaphores to wake waiters, and NuttX has no kernel byte-stream primitive
 that would be apples-to-apples (its closest, pipes, is a different
 abstraction with VFS overhead).  Event groups and workqueues
 likewise have no NuttX equivalent and are absent.

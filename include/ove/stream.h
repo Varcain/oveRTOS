@@ -204,8 +204,6 @@ OVE_NODISCARD static inline int ove_stream_receive_until(ove_stream_t stream, vo
  *
  * ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has
  * insufficient space the call returns immediately with a partial or zero count.
- * Not guaranteed today on NuttX: its implementation takes a pthread mutex
- * and signals a condition variable, which an interrupt handler must not do.
  *
  * @param[in]  stream      Stream handle.
  * @param[in]  data        Pointer to the data to send.
@@ -224,8 +222,6 @@ OVE_NODISCARD int ove_stream_send_from_isr(ove_stream_t stream, const void *data
  *
  * ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only
  * the bytes that are immediately available.
- * Not guaranteed today on NuttX: its implementation takes a pthread mutex
- * and signals a condition variable, which an interrupt handler must not do.
  *
  * @param[in]  stream          Stream handle.
  * @param[out] buf             Buffer to receive data.
@@ -256,8 +252,8 @@ int ove_stream_reset(ove_stream_t stream);
  *
  * Returns the count of bytes that can be read without blocking.
  *
- * @note Call it from thread context: it enters a task-level critical
- *       section on FreeRTOS and takes a pthread mutex on NuttX.
+ * @note On FreeRTOS call it from thread context, as it enters a task-level
+ *       critical section there; elsewhere any context.
  *
  * @param[in] stream  Stream handle.
  * @return Number of bytes available; 0 if the stream is empty or invalid.
@@ -271,8 +267,8 @@ size_t ove_stream_bytes_available(ove_stream_t stream);
  * Returns the number of bytes ove_stream_send() could deposit right now
  * without blocking.  A snapshot, like ove_stream_bytes_available().
  *
- * @note Call it from thread context: it enters a task-level critical
- *       section on FreeRTOS and takes a pthread mutex on NuttX.
+ * @note On FreeRTOS call it from thread context, as it enters a task-level
+ *       critical section there; elsewhere any context.
  *
  * @param[in] stream  Stream handle.
  * @return Free bytes; 0 if the stream is full or invalid.
