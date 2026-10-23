@@ -358,9 +358,10 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 	/* TLS if requested */
 #ifdef CONFIG_OVE_NET_TLS
 	if (cfg->use_tls) {
-		ove_tls_storage_t tls_storage;
+		/* The session outlives this call, so its storage lives in the
+		 * client, like the socket's. */
 		ove_tls_t tls = NULL;
-		ret = ove_tls_init(&tls, &tls_storage);
+		ret = ove_tls_init(&tls, &c->tls_storage);
 		if (ret != OVE_OK) {
 			ove_socket_close(c->sock);
 			c->sock = NULL;
@@ -420,6 +421,7 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 	/* Protocol name */
 	put_u16(p, 4);
 	p += 2;
+	/* NOLINTNEXTLINE(bugprone-not-null-terminated-result): length-prefixed on the wire */
 	memcpy(p, "MQTT", 4);
 	p += 4;
 	*p++ = 0x04; /* protocol level 3.1.1 */
@@ -531,6 +533,7 @@ int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *pa
 
 	put_u16(p, (uint16_t)topic_len);
 	p += 2;
+	/* NOLINTNEXTLINE(bugprone-not-null-terminated-result): length-prefixed on the wire */
 	memcpy(p, topic, topic_len);
 	p += topic_len;
 
@@ -584,6 +587,7 @@ int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos
 
 	put_u16(p, (uint16_t)topic_len);
 	p += 2;
+	/* NOLINTNEXTLINE(bugprone-not-null-terminated-result): length-prefixed on the wire */
 	memcpy(p, topic, topic_len);
 	p += topic_len;
 	*p++ = (uint8_t)qos;
@@ -631,6 +635,7 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 
 	put_u16(p, (uint16_t)topic_len);
 	p += 2;
+	/* NOLINTNEXTLINE(bugprone-not-null-terminated-result): length-prefixed on the wire */
 	memcpy(p, topic, topic_len);
 	p += topic_len;
 

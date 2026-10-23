@@ -308,6 +308,9 @@ struct ove_mqtt_client {
 	ove_socket_t sock;
 	ove_socket_storage_t sock_storage;
 	void *tls; /* ove_tls_t or NULL */
+#ifdef CONFIG_OVE_NET_TLS
+	ove_tls_storage_t tls_storage; /* tls points here once connected */
+#endif
 	uint8_t *rx_buf;
 	size_t rx_size;
 	uint8_t *tx_buf;
