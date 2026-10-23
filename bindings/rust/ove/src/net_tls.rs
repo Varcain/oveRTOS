@@ -44,11 +44,13 @@ use crate::net::TcpStream;
 /// TLS session configuration.
 ///
 /// `hostname` must be a null-terminated byte slice when provided (used for
-/// SNI and certificate verification).
+/// SNI and certificate verification). A `ca_cert` needs a `hostname`: the
+/// handshake fails with [`Error::InvalidParam`] without one.
 pub struct TlsConfig<'a> {
     /// PEM or DER CA certificate for server verification (`None` to skip).
     pub ca_cert: Option<&'a [u8]>,
-    /// Expected server hostname for SNI/verify (null-terminated, or `None`).
+    /// Server name for SNI and certificate verification (null-terminated);
+    /// required with `ca_cert`, `None` only when the peer is not verified.
     pub hostname: Option<&'a [u8]>,
 }
 

@@ -283,7 +283,7 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
         FetchContent_Declare(
             ove_test_mbedtls
             GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
-            GIT_TAG        v3.6.2 # keep in step with manifest.yaml's mbedtls
+            GIT_TAG        v3.6.6 # keep in step with manifest.yaml's mbedtls
             GIT_SHALLOW    TRUE
             GIT_SUBMODULES ""
             # Sources only: built below with the oveRTOS user config.

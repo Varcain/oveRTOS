@@ -37,7 +37,8 @@ namespace ove::tls
 struct Config {
 	const unsigned char *ca_cert{}; /**< PEM/DER CA certificate (nullptr to skip). */
 	size_t ca_cert_len{};		/**< Certificate length (incl NUL for PEM). */
-	const char *hostname{};		/**< SNI hostname (may be nullptr). */
+	const char *
+		hostname{}; /**< Server name for SNI and certificate verification; required with ca_cert (nullptr only when not verifying). */
 	const unsigned char *
 		client_cert{}; /**< PEM (chain, leaf first) or DER (one) client cert for mTLS, with client_key or neither (nullptr to skip); handshake() fails with Error::InvalidParam for one without the other or a key that does not match. */
 	size_t client_cert_len{}; /**< Client certificate length (incl NUL for PEM). */
