@@ -155,10 +155,11 @@ kconfig: |
   	default 44100
 ```
 
-Access these in C via the generated `ove_config.h`:
+Access these in C via the generated `ove_config.h`, which `ove/ove.h` already
+includes; the `generated/` directory itself is on the include path:
 
 ```c
-#include "generated/ove_config.h"
+#include "ove_config.h"
 
 static int16_t buf[CONFIG_DSP_BUFFER_SIZE];
 ```
