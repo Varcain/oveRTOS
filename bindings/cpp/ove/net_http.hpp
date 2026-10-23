@@ -312,7 +312,7 @@ class Client
  * requests fail closed.  Call once at startup before issuing requests; the
  * CA bytes must outlive every request.
  *
- * @param[in] ca_cert        PEM/DER CA certificate (nullptr leaves it unset).
+ * @param[in] ca_cert        PEM/DER CA certificate (nullptr clears it).
  * @param[in] ca_cert_len    Length of @p ca_cert in bytes.
  * @param[in] allow_insecure Permit unverified TLS — do not use in production.
  */
@@ -320,6 +320,26 @@ inline void set_tls(const unsigned char *ca_cert, size_t ca_cert_len,
 		    bool allow_insecure = false) noexcept
 {
 	ove_http_set_tls(ca_cert, ca_cert_len, allow_insecure ? 1 : 0);
+}
+
+/**
+ * @brief Set the process-wide HTTPS client certificate for mutual TLS (see
+ *        @c ove_http_set_client_cert).
+ *
+ * A certificate (PEM may hold a chain, leaf first; DER holds one) and its
+ * unencrypted RSA or EC key; a PEM length counts its terminating NUL.  Pass
+ * nullptr for both to stop presenting one.  Call at startup before issuing
+ * requests; both buffers must outlive every request.  A key that does not
+ * match fails the request, not this call, with Error::InvalidParam.
+ *
+ * @return Empty `Result<void>` on success; `unexpected` Error::InvalidParam
+ *         when only one of the two is given (or with a zero length), or
+ *         Error::NotSupported without TLS support (CONFIG_OVE_NET_TLS).
+ */
+[[nodiscard]] inline Result<void> set_client_cert(const unsigned char *cert, size_t cert_len,
+						  const unsigned char *key, size_t key_len) noexcept
+{
+	return from_rc(ove_http_set_client_cert(cert, cert_len, key, key_len));
 }
 
 } /* namespace ove::http */

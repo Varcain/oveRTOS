@@ -30,6 +30,11 @@
 static const unsigned char *s_tls_ca_cert;
 static size_t s_tls_ca_cert_len;
 static int s_tls_allow_insecure;
+/* Client certificate for mutual TLS, set by ove_http_set_client_cert(). */
+static const unsigned char *s_tls_client_cert;
+static size_t s_tls_client_cert_len;
+static const unsigned char *s_tls_client_key;
+static size_t s_tls_client_key_len;
 #endif
 
 void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allow_insecure)
@@ -42,6 +47,28 @@ void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allo
 	(void)ca_cert;
 	(void)ca_cert_len;
 	(void)allow_insecure;
+#endif
+}
+
+int ove_http_set_client_cert(const unsigned char *cert, size_t cert_len, const unsigned char *key,
+			     size_t key_len)
+{
+#ifdef CONFIG_OVE_NET_TLS
+	int have_cert = cert != NULL && cert_len > 0;
+	int have_key = key != NULL && key_len > 0;
+	if (have_cert != have_key || (cert != NULL && !have_cert) || (key != NULL && !have_key))
+		return OVE_ERR_INVALID_PARAM;
+	s_tls_client_cert = cert;
+	s_tls_client_cert_len = have_cert ? cert_len : 0;
+	s_tls_client_key = key;
+	s_tls_client_key_len = have_key ? key_len : 0;
+	return OVE_OK;
+#else
+	(void)cert;
+	(void)cert_len;
+	(void)key;
+	(void)key_len;
+	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }
 
@@ -248,6 +275,10 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 			.ca_cert = s_tls_ca_cert,
 			.ca_cert_len = s_tls_ca_cert_len,
 			.hostname = c->host,
+			.client_cert = s_tls_client_cert,
+			.client_cert_len = s_tls_client_cert_len,
+			.client_key = s_tls_client_key,
+			.client_key_len = s_tls_client_key_len,
 			.allow_insecure = s_tls_allow_insecure,
 		};
 		ret = ove_tls_handshake(tls, c->sock, &tls_cfg);

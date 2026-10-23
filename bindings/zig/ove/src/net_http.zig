@@ -113,6 +113,25 @@ pub fn setTls(ca_cert: []const u8, allow_insecure: bool) void {
     );
 }
 
+/// Set the process-wide HTTPS client certificate for mutual TLS (see
+/// `ove_http_set_client_cert`); empty slices for both stop presenting one.
+///
+/// A certificate (PEM may hold a chain, leaf first; DER holds one) and its
+/// unencrypted RSA or EC key.  A PEM slice must include its terminating NUL,
+/// as mbedTLS requires — for `@embedFile` data use `pem[0 .. pem.len + 1]`.
+/// Call at startup before issuing requests; both must outlive every request.
+/// Only one of the two given is `error.InvalidParam`, as is, at request time,
+/// a key that does not match; without TLS support (`CONFIG_OVE_NET_TLS`) it
+/// is `error.NotSupported`.
+pub fn setClientCert(cert: []const u8, key: []const u8) Error!void {
+    try err.fromCode(c.ove_http_set_client_cert(
+        if (cert.len == 0) null else cert.ptr,
+        cert.len,
+        if (key.len == 0) null else key.ptr,
+        key.len,
+    ));
+}
+
 const HeapClient = struct {
     handle: c.ove_http_client_t,
 

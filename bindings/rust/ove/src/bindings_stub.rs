@@ -3175,13 +3175,13 @@ pub struct ove_tls_config_t {
     pub ca_cert_len: usize,
     #[doc = "< Expected server hostname for SNI/verify (may be NULL)."]
     pub hostname: *const core::ffi::c_char,
-    #[doc = "< PEM or DER client certificate for mTLS (NULL to skip)."]
+    #[doc = "< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip)."]
     pub client_cert: *const core::ffi::c_uchar,
-    #[doc = "< Length of client_cert in bytes."]
+    #[doc = "< Length of client_cert in bytes (incl. NUL for PEM)."]
     pub client_cert_len: usize,
-    #[doc = "< PEM or DER client private key (NULL to skip)."]
+    #[doc = "< PEM or DER unencrypted client private key (NULL to skip)."]
     pub client_key: *const core::ffi::c_uchar,
-    #[doc = "< Length of client_key in bytes."]
+    #[doc = "< Length of client_key in bytes (incl. NUL for PEM)."]
     pub client_key_len: usize,
     #[doc = "< Non-zero to allow NULL @c ca_cert (disables peer verify — do not use in production)."]
     pub allow_insecure: core::ffi::c_int,
@@ -3216,7 +3216,7 @@ unsafe extern "C" {
     pub fn ove_tls_deinit(tls: ove_tls_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of\n         @c client_cert and @c client_key is set, when the key does not\n         match the certificate, or without a CA and @c allow_insecure;\n         @c OVE_ERR_NO_MEMORY when that key check runs out of memory;\n         otherwise a negative error code (mbedTLS failures are\n         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged)."]
     pub fn ove_tls_handshake(
         tls: ove_tls_t,
         sock: ove_socket_t,
@@ -3374,12 +3374,21 @@ unsafe extern "C" {
     pub fn ove_http_response_free(resp: *mut ove_http_response_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Configure the process-wide TLS policy for HTTPS requests.\n\n Secure by default: with no CA configured and @p allow_insecure zero,\n `https://` requests fail closed (the peer cannot be verified).  Call once\n at startup, before issuing requests, to install a trust anchor or to\n explicitly opt into insecure TLS.\n\n @param[in] ca_cert        PEM/DER CA certificate to verify the peer against\n                           (NULL leaves it unset).\n @param[in] ca_cert_len    Length of @p ca_cert in bytes (incl. NUL for PEM).\n @param[in] allow_insecure Non-zero permits unverified TLS (no CA) — do not\n                           use in production."]
+    #[doc = " @brief Configure the process-wide TLS policy for HTTPS requests.\n\n Secure by default: with no CA configured and @p allow_insecure zero,\n `https://` requests fail closed (the peer cannot be verified).  Call once\n at startup, before issuing requests, to install a trust anchor or to\n explicitly opt into insecure TLS.\n\n @param[in] ca_cert        PEM/DER CA certificate to verify the peer against\n                           (NULL clears it).\n @param[in] ca_cert_len    Length of @p ca_cert in bytes (incl. NUL for PEM).\n @param[in] allow_insecure Non-zero permits unverified TLS (no CA) — do not\n                           use in production."]
     pub fn ove_http_set_tls(
         ca_cert: *const core::ffi::c_uchar,
         ca_cert_len: usize,
         allow_insecure: core::ffi::c_int,
     );
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the process-wide client certificate for HTTPS (mutual TLS).\n\n Presented to servers that ask for one.  Like ove_http_set_tls(), call it\n at startup, before issuing requests (there is no locking), and keep both\n buffers alive while requests may run: they are used in place, not copied.\n A PEM certificate may hold a chain, leaf first; DER holds one certificate.\n The key must be an unencrypted RSA or EC key.  A PEM length counts its terminating NUL, as mbedTLS\n requires.  Whether the key matches the certificate is checked when a\n request connects, which then fails with @c OVE_ERR_INVALID_PARAM.\n\n @param[in] cert      PEM or DER client certificate, or NULL with @p key\n                      NULL to stop presenting one.\n @param[in] cert_len  Length of @p cert in bytes.\n @param[in] key       PEM or DER private key for @p cert.\n @param[in] key_len   Length of @p key in bytes.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM when only one of the\n         two is given (or given with a zero length), or\n         @c OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_NET_TLS."]
+    pub fn ove_http_set_client_cert(
+        cert: *const core::ffi::c_uchar,
+        cert_len: usize,
+        key: *const core::ffi::c_uchar,
+        key_len: usize,
+    ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Heap-allocate and initialise an HTTP client.\n\n @param[out] client Handle written on success.\n @return OVE_OK on success, negative error code on failure."]

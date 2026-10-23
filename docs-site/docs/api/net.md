@@ -332,6 +332,8 @@ ove_http_client_deinit(client);
 | `ove_http_request` | Generic request with method, body, content type |
 | `ove_http_request_ex` | Extended request with custom headers |
 | `ove_http_response_free` | Free response body/header buffers |
+| `ove_http_set_tls` | Set the process-wide CA and insecure opt-in for `https://` (fails closed without either) |
+| `ove_http_set_client_cert` | Set the process-wide client certificate and key presented for mutual TLS |
 
 ## MQTT Client
 
