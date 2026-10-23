@@ -169,9 +169,12 @@ void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allo
  * at startup, before issuing requests (there is no locking), and keep both
  * buffers alive while requests may run: they are used in place, not copied.
  * A PEM certificate may hold a chain, leaf first; DER holds one certificate.
- * The key must be an unencrypted RSA or EC key.  A PEM length counts its terminating NUL, as mbedTLS
- * requires.  Whether the key matches the certificate is checked when a
- * request connects, which then fails with @c OVE_ERR_INVALID_PARAM.
+ * The certificate or chain goes out in one TLS record, so it must fit
+ * CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN (4 KB by default; a longer one fails
+ * every handshake).  The key must be an unencrypted RSA or EC key.  A PEM
+ * length counts its terminating NUL, as mbedTLS requires.  Whether the key
+ * matches the certificate is checked when a request connects, which then
+ * fails with @c OVE_ERR_INVALID_PARAM.
  *
  * @param[in] cert      PEM or DER client certificate, or NULL with @p key
  *                      NULL to stop presenting one.

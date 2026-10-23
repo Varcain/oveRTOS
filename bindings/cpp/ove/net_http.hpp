@@ -328,9 +328,11 @@ inline void set_tls(const unsigned char *ca_cert, size_t ca_cert_len,
  *
  * A certificate (PEM may hold a chain, leaf first; DER holds one) and its
  * unencrypted RSA or EC key; a PEM length counts its terminating NUL.  Pass
- * nullptr for both to stop presenting one.  Call at startup before issuing
- * requests; both buffers must outlive every request.  A key that does not
- * match fails the request, not this call, with Error::InvalidParam.
+ * nullptr for both to stop presenting one.  The certificate or chain goes
+ * out in one TLS record, so it must fit CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN
+ * (4 KB by default).  Call at startup before issuing requests; both buffers
+ * must outlive every request.  A key that does not match fails the request,
+ * not this call, with Error::InvalidParam.
  *
  * @return Empty `Result<void>` on success; `unexpected` Error::InvalidParam
  *         when only one of the two is given (or with a zero length), or

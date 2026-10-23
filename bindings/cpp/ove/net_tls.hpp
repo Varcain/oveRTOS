@@ -100,6 +100,10 @@ class Session
 	/**
 	 * @brief Send encrypted bytes over the TLS session.
 	 *
+	 * Sends at most one TLS record, CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN
+	 * bytes (4 KB by default), per call; call again with the rest until
+	 * all @p len bytes are sent.
+	 *
 	 * @param[in] data Buffer to send.
 	 * @param[in] len  Buffer length in bytes.
 	 * @return On success, the number of bytes actually sent.  On

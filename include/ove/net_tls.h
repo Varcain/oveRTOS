@@ -51,7 +51,7 @@ typedef struct {
 	size_t ca_cert_len;	      /**< Length of ca_cert in bytes (incl. NUL for PEM). */
 	const char *hostname;	      /**< Expected server hostname for SNI/verify (may be NULL). */
 	const unsigned char *
-		client_cert; /**< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip). */
+		client_cert; /**< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip). Sent in one record, so the chain must fit CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN (4 KB by default). */
 	size_t client_cert_len; /**< Length of client_cert in bytes (incl. NUL for PEM). */
 	const unsigned char
 		*client_key;   /**< PEM or DER unencrypted client private key (NULL to skip). */
@@ -68,7 +68,11 @@ typedef struct {
  *
  * @param[out] tls     Handle written on success.
  * @param[in]  storage Caller-allocated storage.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success; @c OVE_ERR_NO_MEMORY when the heap cannot
+ *         hold the mbedTLS contexts (heap builds); @c OVE_ERR_NOT_SUPPORTED
+ *         when the random generator cannot be seeded, from a failing
+ *         entropy source or mbedTLS out of memory (it does not say which;
+ *         the mbedTLS code is logged).
  */
 OVE_NODISCARD int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage);
 
@@ -88,19 +92,31 @@ void ove_tls_deinit(ove_tls_t tls);
  * @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of
  *         @c client_cert and @c client_key is set, when the key does not
  *         match the certificate, or without a CA and @c allow_insecure;
- *         @c OVE_ERR_NO_MEMORY when that key check runs out of memory;
- *         otherwise a negative error code (mbedTLS failures are
- *         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged).
+ *         @c OVE_ERR_NO_MEMORY when mbedTLS runs out of memory (the heap,
+ *         or the CONFIG_OVE_NET_TLS_HEAP_SIZE pool in zero-heap builds);
+ *         otherwise a negative error code (other mbedTLS failures are
+ *         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged).  Some
+ *         shortfalls mbedTLS itself reports as other failures, and they
+ *         return @c OVE_ERR_NOT_SUPPORTED too: while parsing the client key
+ *         (as a key in no known format), in the TLS 1.3 key schedule (a
+ *         generic error), while verifying the server's certificate (as a
+ *         certificate that failed verification) and while verifying the
+ *         server's handshake signature (as a handshake failure).
  */
 OVE_NODISCARD int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg);
 
 /**
  * @brief Send data over an encrypted TLS session.
  *
+ * Sends at most one record, CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN bytes
+ * (4 KB by default), per call: when @p len is larger, @p sent is less
+ * than @p len and the caller sends the rest with further calls.
+ *
  * @param[in]  tls  TLS handle (after successful handshake).
  * @param[in]  data Pointer to data to send.
  * @param[in]  len  Number of bytes to send.
- * @param[out] sent Number of bytes actually sent (may be NULL).
+ * @param[out] sent Number of bytes actually sent (may be NULL only when
+ *                  @p len fits one record).
  * @return OVE_OK on success, negative error code on failure.
  */
 OVE_NODISCARD int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent);

@@ -37,15 +37,28 @@
 
 /* ---------- I/O helpers ---------- */
 
+/* Sends the whole packet: a TLS record (4 KB, see ove_mbedtls_config.h) or
+ * a socket can take less than asked. */
 static int mqtt_send(struct ove_mqtt_client *c, const void *data, size_t len)
 {
-	size_t sent = 0;
+	const uint8_t *p = data;
+	while (len > 0) {
+		size_t sent = 0;
+		int ret;
 #ifdef CONFIG_OVE_NET_TLS
-	if (c->tls) {
-		return ove_tls_send(c->tls, data, len, &sent);
-	}
+		if (c->tls)
+			ret = ove_tls_send(c->tls, p, len, &sent);
+		else
 #endif
-	return ove_socket_send(c->sock, data, len, &sent);
+			ret = ove_socket_send(c->sock, p, len, &sent);
+		if (ret != OVE_OK)
+			return ret;
+		if (sent == 0)
+			return OVE_ERR_NET_CLOSED;
+		p += sent;
+		len -= sent;
+	}
+	return OVE_OK;
 }
 
 static int mqtt_recv(struct ove_mqtt_client *c, void *buf, size_t len, size_t *received,

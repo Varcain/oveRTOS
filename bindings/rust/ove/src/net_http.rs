@@ -327,9 +327,11 @@ pub fn set_tls(ca_cert: Option<&'static [u8]>, allow_insecure: bool) {
 /// `Some((cert, key))` is a certificate (PEM may hold a chain, leaf first;
 /// DER holds one) and its unencrypted RSA or EC key.  A PEM slice must
 /// include its terminating NUL, as mbedTLS requires — `include_bytes!` does
-/// not add one.  Call at startup, before issuing requests; the bytes are used
-/// in place, hence the `'static` bound.  A key that does not match fails the
-/// request, not this call, with [`Error::InvalidParam`].
+/// not add one.  The certificate or chain goes out in one TLS record, so it
+/// must fit `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` (4 KB by default).  Call at
+/// startup, before issuing requests; the bytes are used in place, hence the
+/// `'static` bound.  A key that does not match fails the request, not this
+/// call, with [`Error::InvalidParam`].
 ///
 /// # Errors
 /// [`Error::InvalidParam`] when either slice is empty (use `None` to clear);

@@ -111,7 +111,9 @@ impl Session {
 
     /// Send data over the encrypted session.
     ///
-    /// Returns the number of bytes actually sent.
+    /// Returns the number of bytes actually sent: at most one TLS record,
+    /// `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` bytes (4 KB by default), per
+    /// call, so call again with the rest until all of `data` is sent.
     ///
     /// # Errors
     /// Returns an error if the send fails.

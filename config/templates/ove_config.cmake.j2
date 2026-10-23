@@ -66,6 +66,10 @@ set(OVE_{{ mod }} OFF)
 {% endif %}
 {% endfor %}
 
+{% if config.get("CONFIG_OVE_NET_TLS") == True %}
+set(OVE_NET_TLS_OUT_CONTENT_LEN {{ config.get('CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN', 4096) }})
+{% endif %}
+
 # -fstack-protector-strong on our (non-vendored) sources when enabled; consumed in
 # cmake/OveCommon.cmake alongside the -Werror pass. Off by default (opt-in hardening).
 {% if config.get("CONFIG_OVE_STACK_CANARIES") == True %}

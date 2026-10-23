@@ -119,6 +119,8 @@ pub fn setTls(ca_cert: []const u8, allow_insecure: bool) void {
 /// A certificate (PEM may hold a chain, leaf first; DER holds one) and its
 /// unencrypted RSA or EC key.  A PEM slice must include its terminating NUL,
 /// as mbedTLS requires — for `@embedFile` data use `pem[0 .. pem.len + 1]`.
+/// The certificate or chain goes out in one TLS record, so it must fit
+/// `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` (4 KB by default).
 /// Call at startup before issuing requests; both must outlive every request.
 /// Only one of the two given is `error.InvalidParam`, as is, at request time,
 /// a key that does not match; without TLS support (`CONFIG_OVE_NET_TLS`) it

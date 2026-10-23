@@ -50,10 +50,10 @@ a 2048-byte derived receive window.
 
 For a device serving ~5 concurrent HTTPS sessions plus MQTT and a small HTTPD:
 
-- TLS: 5 × ~24 KB peak per session → `CONFIG_OVE_NET_TLS_HEAP_SIZE=131072`
+- TLS: 5 × ~34 KB peak per session (measured on the STM32F746 with P-256 certificates; RSA chains need more) → `CONFIG_OVE_NET_TLS_HEAP_SIZE=196608`
 - lwIP heap: 5 TLS + 1 MQTT + 4 HTTPD listen + slack → `CONFIG_OVE_NET_LWIP_MEM_SIZE=32768`
 - TCP PCBs: same → `CONFIG_OVE_NET_LWIP_NUM_TCP_PCB=12`
 - pbufs: 16 RX + outbound TLS chunks → `CONFIG_OVE_NET_LWIP_PBUF_POOL_SIZE=24`
 - HTTP response borrow buffer: largest expected response → `CONFIG_OVE_NET_HTTP_MAX_RESPONSE=16384`
 
-Total static cost: ~200 KB, all in BSS, no runtime growth.
+Total static cost: ~265 KB, all in BSS, no runtime growth.

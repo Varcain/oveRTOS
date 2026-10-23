@@ -27,6 +27,14 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/error.h"
+#include "mbedtls/asn1.h"
+#include "mbedtls/bignum.h"
+#include "mbedtls/cipher.h"
+#include "mbedtls/dhm.h"
+#include "mbedtls/ecp.h"
+#include "mbedtls/md.h"
+#include "mbedtls/pem.h"
+#include "psa/crypto.h"
 #ifdef CONFIG_OVE_ZERO_HEAP
 #include "mbedtls/memory_buffer_alloc.h"
 #endif
@@ -35,7 +43,7 @@
 
 #ifdef CONFIG_OVE_ZERO_HEAP
 #ifndef CONFIG_OVE_NET_TLS_HEAP_SIZE
-#define CONFIG_OVE_NET_TLS_HEAP_SIZE 32768
+#define CONFIG_OVE_NET_TLS_HEAP_SIZE 49152
 #endif
 static unsigned char s_mbedtls_heap[CONFIG_OVE_NET_TLS_HEAP_SIZE];
 static int s_mbedtls_heap_initialized;
@@ -114,6 +122,42 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 	return (mbedtls_ms_time_t)(us / 1000u);
 }
 
+/* Whether a negative mbedTLS code means it ran out of memory: the heap, or
+ * the zero-heap pool.  A code is a module's high-level error (bits 7-14)
+ * plus the low-level one beneath it (bits 0-6), so a certificate parse that
+ * failed allocating in ASN.1 or bignum reports X.509 and the cause.  PSA
+ * statuses (-128 to -255) are not built that way and pass through some
+ * paths as they are. */
+static int tls_out_of_memory(int ret)
+{
+	if (ret <= -0x80 && ret >= -0xFF)
+		return ret == PSA_ERROR_INSUFFICIENT_MEMORY;
+	unsigned int high = (unsigned int)-ret & 0xFF80u;
+	unsigned int low = (unsigned int)-ret & 0x007Fu;
+	return high == (unsigned int)-MBEDTLS_ERR_SSL_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_X509_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_PK_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_PEM_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_ECP_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_DHM_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_CIPHER_ALLOC_FAILED ||
+	       high == (unsigned int)-MBEDTLS_ERR_MD_ALLOC_FAILED ||
+	       low == (unsigned int)-MBEDTLS_ERR_MPI_ALLOC_FAILED ||
+	       low == (unsigned int)-MBEDTLS_ERR_ASN1_ALLOC_FAILED;
+}
+
+/* An mbedTLS failure: OVE_ERR_NO_MEMORY when it ran out of memory, otherwise
+ * OVE_ERR_NOT_SUPPORTED; the log keeps the code that says which it was. */
+static int tls_failed(const char *what, int ret)
+{
+	if (ret > 0) { /* a PEM bundle in which this many certificates failed */
+		OVE_LOG_ERR("TLS: %s failed for %d certificate(s)", what, ret);
+		return OVE_ERR_NOT_SUPPORTED;
+	}
+	OVE_LOG_ERR("TLS: %s failed: -0x%04x", what, (unsigned int)-ret);
+	return tls_out_of_memory(ret) ? OVE_ERR_NO_MEMORY : OVE_ERR_NOT_SUPPORTED;
+}
+
 int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
 {
 	if (!tls || !storage)
@@ -182,7 +226,7 @@ int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
 		OVE_BACKEND_FREE(clicert);
 		OVE_BACKEND_FREE(clikey);
 #endif
-		return OVE_ERR_NOT_SUPPORTED;
+		return tls_failed("random generator seed", ret);
 	}
 
 	t->ssl = ssl;
@@ -251,17 +295,6 @@ void ove_tls_deinit(ove_tls_t tls)
 	memset(t, 0, sizeof(*t));
 }
 
-/* Every mbedTLS failure maps to OVE_ERR_NOT_SUPPORTED; the log keeps the
- * code that says which one it was. */
-static int tls_failed(const char *what, int ret)
-{
-	if (ret > 0) /* a PEM bundle in which this many certificates failed */
-		OVE_LOG_ERR("TLS: %s failed for %d certificate(s)", what, ret);
-	else
-		OVE_LOG_ERR("TLS: %s failed: -0x%04x", what, (unsigned int)-ret);
-	return OVE_ERR_NOT_SUPPORTED;
-}
-
 int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg)
 {
 	if (!tls || !sock)
@@ -282,7 +315,7 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 					      MBEDTLS_SSL_TRANSPORT_STREAM,
 					      MBEDTLS_SSL_PRESET_DEFAULT);
 	if (ret != 0)
-		return OVE_ERR_NOT_SUPPORTED;
+		return tls_failed("configuration", ret);
 
 	mbedtls_ssl_conf_rng(conf, mbedtls_ctr_drbg_random, t->ctr_drbg);
 
@@ -320,7 +353,7 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 		const mbedtls_x509_crt *crt = t->client_cert;
 		ret = mbedtls_pk_check_pair(&crt->pk, t->client_key, mbedtls_ctr_drbg_random,
 					    t->ctr_drbg);
-		if (ret == MBEDTLS_ERR_PK_ALLOC_FAILED || ret == MBEDTLS_ERR_MPI_ALLOC_FAILED) {
+		if (ret < 0 && tls_out_of_memory(ret)) {
 			OVE_LOG_ERR("TLS: out of memory checking the client key");
 			return OVE_ERR_NO_MEMORY;
 		}
