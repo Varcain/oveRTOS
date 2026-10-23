@@ -75,6 +75,9 @@ graph LR
 | `ove_queue_receive` | `int (ove_queue_t q, void *buf, uint64_t timeout_ns)` | Copy the oldest item out of the queue. Blocks if empty. |
 | `ove_queue_send_from_isr` | `int (ove_queue_t q, const void *data)` | ISR-safe non-blocking send. Returns `OVE_ERR_QUEUE_FULL` if no space. |
 | `ove_queue_receive_from_isr` | `int (ove_queue_t q, void *buf)` | ISR-safe non-blocking receive. |
+| `ove_queue_count` | `size_t (ove_queue_t q)` | Items in the queue now (a snapshot); 0 for NULL. Thread context only — on FreeRTOS it enters a task-level critical section. |
+| `ove_queue_count_from_isr` | `size_t (ove_queue_t q)` | ISR-safe `ove_queue_count`. |
+| `ove_queue_capacity` | `size_t (ove_queue_t q)` | The `max_items` the queue was created with; 0 for NULL. Any context. |
 
 Static-storage macro: `OVE_QUEUE_DEFINE_STATIC(name, item_sz, max)` (in `ove/storage.h`).
 
@@ -282,7 +285,8 @@ graph LR
 | `ove_stream_send_from_isr` | `int (ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)` | ISR-safe non-blocking send on FreeRTOS and Zephyr; not yet on NuttX, whose implementation takes a pthread mutex. |
 | `ove_stream_receive_from_isr` | `int (ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)` | ISR-safe non-blocking receive on FreeRTOS and Zephyr; not yet on NuttX, as for send. |
 | `ove_stream_reset` | `int (ove_stream_t stream)` | Discard all buffered bytes. |
-| `ove_stream_bytes_available` | `size_t (ove_stream_t stream)` | Bytes currently readable. |
+| `ove_stream_bytes_available` | `size_t (ove_stream_t stream)` | Bytes currently readable. Thread context only on FreeRTOS and NuttX. |
+| `ove_stream_space_available` | `size_t (ove_stream_t stream)` | Bytes that could be sent now without blocking (a snapshot). Thread context only on FreeRTOS and NuttX. |
 
 Static-storage macro: `OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger)` (in `ove/storage.h`).
 
@@ -340,13 +344,13 @@ static void uart_task(void *arg)
 | `CONFIG_OVE_EVENTGROUP` | `n` | Enable EventGroup primitive. |
 | `CONFIG_OVE_STREAM` | `n` | Enable Stream primitive (adds ring-buffer memory overhead). |
 
-When the corresponding `CONFIG_OVE_*` is unset, every function in that subsystem becomes a static inline stub returning `OVE_ERR_NOT_SUPPORTED`.
+When the corresponding `CONFIG_OVE_*` is unset, every function in that subsystem becomes a static inline stub: those returning a status return `OVE_ERR_NOT_SUPPORTED`, and the value getters (`ove_queue_count`, `ove_queue_capacity`, `ove_stream_bytes_available`, …) return 0.
 
 ## Headers
 
 | Header | Contents |
 |--------|----------|
-| `ove/queue.h` | Queue handle type, init/deinit, create/destroy, send/receive (incl. ISR variants). |
+| `ove/queue.h` | Queue handle type, init/deinit, create/destroy, send/receive (incl. ISR variants), count/capacity. |
 | `ove/eventgroup.h` | EventGroup handle, `ove_eventbits_t`, bit-manipulation API, wait flags. |
-| `ove/stream.h` | Stream handle, init/deinit, create/destroy, send/receive, reset, bytes_available. |
+| `ove/stream.h` | Stream handle, init/deinit, create/destroy, send/receive, reset, bytes_available, space_available. |
 | `ove/storage.h` | `OVE_QUEUE_DEFINE_STATIC`, `OVE_EVENTGROUP_DEFINE_STATIC`, `OVE_STREAM_DEFINE_STATIC`. |

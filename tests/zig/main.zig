@@ -604,6 +604,24 @@ fn testQueueSendFromIsr() !void {
     try expectEqual(i32, 99, received);
 }
 
+fn testQueueLenAndCapacity() !void {
+    var q = try Q5.create(test_allocator);
+    defer q.deinit();
+    try expect(q.capacity() == 5);
+    try expect(q.len() == 0);
+    try expect(q.isEmpty());
+    var i: i32 = 0;
+    while (i < 5) : (i += 1) {
+        try q.sendFor(&i, .millis(1000));
+    }
+    try expect(q.len() == 5);
+    try expect(q.lenFromIsr() == 5);
+    try expect(q.isFull());
+    _ = try q.recvFor(.{ .ns = 1000 });
+    try expect(q.len() == 4);
+    try expect(!q.isFull());
+}
+
 fn testQueueReceiveFromIsr() !void {
     var q = try Q5.create(test_allocator);
     defer q.deinit();
@@ -1759,6 +1777,15 @@ fn testStreamBytesAvailable() !void {
     try expect(s.bytesAvailable() >= 3);
 }
 
+fn testStreamSpaceAvailable() !void {
+    var s = try ove.Stream(256).create(test_allocator, 1);
+    defer s.deinit();
+    try expect(s.spaceAvailable() == 256);
+    _ = try s.sendFor("abcdef", .millis(1000));
+    try expect(s.spaceAvailable() == 250);
+    try expect(s.spaceAvailable() + s.bytesAvailable() == 256);
+}
+
 fn testStreamReset() !void {
     var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
@@ -2058,6 +2085,7 @@ pub fn main() void {
         .{ .name = "send_wait_forever", .func = testQueueSendWaitForever },
         .{ .name = "raii_drop", .func = testQueueRaiiDrop },
         .{ .name = "type_safety", .func = testQueueTypeSafety },
+        .{ .name = "len_and_capacity", .func = testQueueLenAndCapacity },
     });
 
     runSuite("Timer", &.{
@@ -2227,6 +2255,7 @@ pub fn main() void {
         .{ .name = "deinit_idempotent", .func = testStreamDeinitIdempotent },
         .{ .name = "send_receive", .func = testStreamSendReceive },
         .{ .name = "bytes_available", .func = testStreamBytesAvailable },
+        .{ .name = "space_available", .func = testStreamSpaceAvailable },
         .{ .name = "reset", .func = testStreamReset },
         .{ .name = "send_from_isr", .func = testStreamSendFromIsr },
         .{ .name = "receive_from_isr", .func = testStreamReceiveFromIsr },

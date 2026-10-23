@@ -85,6 +85,7 @@ directly.
 | Queue empty (non-blocking) | `Error::QueueEmpty` | `Error::QueueEmpty` | `null` | `TryRecvError::Empty` |
 | Queue full | `Error::QueueFull` | `Error::QueueFull` | `error.QueueFull` | `Error::Timeout` / `Error::NetClosed` |
 | Peer closed | n/a (no peers) | n/a (no peers) | n/a (no peers) | `NetClosed` (recv) / `TryRecvError::Disconnected` (try_recv) |
+| Occupancy (snapshot) | `size()` / `size_from_isr()` / `capacity()` / `empty()` / `full()` | `len()` / `len_from_isr()` / `capacity()` / `is_empty()` / `is_full()` | `len()` / `lenFromIsr()` / `capacity()` / `isEmpty()` / `isFull()` | — |
 
 **Contract notes**
 

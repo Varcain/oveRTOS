@@ -178,6 +178,18 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 	return avail;
 }
 
+size_t ove_stream_space_available(ove_stream_t stream)
+{
+	struct ove_stream *s = stream;
+	if (!s) {
+		return 0;
+	}
+	pthread_mutex_lock(&s->lock);
+	size_t space = s->ring.size - s->ring.count;
+	pthread_mutex_unlock(&s->lock);
+	return space;
+}
+
 int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data)
 {
 	struct ove_stream *s = stream;

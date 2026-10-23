@@ -150,6 +150,26 @@ fn test_type_safety() {
     assert_eq!(v32, 0xDEADBEEF);
 }
 
+fn test_len_and_capacity() {
+    let q = Queue::<i32, 4>::new().unwrap();
+    assert_eq!(q.capacity(), 4);
+    assert_eq!(q.len(), 0);
+    assert!(q.is_empty());
+    assert!(!q.is_full());
+
+    for i in 0..3 {
+        q.try_send(&i).unwrap();
+    }
+    assert_eq!(q.len(), 3);
+    assert_eq!(q.len_from_isr(), 3);
+
+    q.try_send(&3).unwrap();
+    assert!(q.is_full());
+    q.try_recv().unwrap();
+    assert_eq!(q.len(), 3);
+    assert!(!q.is_empty());
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("Queue", &[
         test_entry!(test_create_destroy),
@@ -164,5 +184,6 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_send_wait_forever),
         test_entry!(test_raii_drop),
         test_entry!(test_type_safety),
+        test_entry!(test_len_and_capacity),
     ])
 }

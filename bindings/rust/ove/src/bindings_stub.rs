@@ -2049,6 +2049,18 @@ unsafe extern "C" {
         user_data: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
+unsafe extern "C" {
+    #[doc = " @brief Number of items currently in the queue.\n\n A snapshot: senders and receivers on other threads can change it before the\n caller acts on it, and an item being copied in or out may not be counted\n yet, so it plus the free slots need not add up to the capacity at any one\n instant.\n\n @note Must not be called from an ISR (on FreeRTOS it enters a task-level\n       critical section) — use ove_queue_count_from_isr() instead.\n\n @param[in] q  Queue handle.\n @return Items in the queue; 0 for a NULL handle.\n @see ove_queue_count_from_isr, ove_queue_capacity"]
+    pub fn ove_queue_count(q: ove_queue_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief ISR-safe variant of ove_queue_count().\n\n Callable from an interrupt service routine and from thread context.\n\n @param[in] q  Queue handle.\n @return Items in the queue; 0 for a NULL handle.\n @see ove_queue_count"]
+    pub fn ove_queue_count_from_isr(q: ove_queue_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Maximum number of items the queue can hold.\n\n The @c max_items the queue was created with.  Callable from any context.\n\n @param[in] q  Queue handle.\n @return The queue's capacity in items; 0 for a NULL handle.\n @see ove_queue_count"]
+    pub fn ove_queue_capacity(q: ove_queue_t) -> usize;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_timer {
@@ -2616,8 +2628,12 @@ unsafe extern "C" {
     pub fn ove_stream_reset(stream: ove_stream_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query the number of bytes currently available in the stream.\n\n Returns the count of bytes that can be read without blocking.\n\n @param[in] stream  Stream handle.\n @return Number of bytes available; 0 if the stream is empty or invalid."]
+    #[doc = " @brief Query the number of bytes currently available in the stream.\n\n Returns the count of bytes that can be read without blocking.\n\n @note Call it from thread context: it enters a task-level critical\n       section on FreeRTOS and takes a pthread mutex on NuttX.\n\n @param[in] stream  Stream handle.\n @return Number of bytes available; 0 if the stream is empty or invalid.\n @see ove_stream_space_available"]
     pub fn ove_stream_bytes_available(stream: ove_stream_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the free space in the stream.\n\n Returns the number of bytes ove_stream_send() could deposit right now\n without blocking.  A snapshot, like ove_stream_bytes_available().\n\n @note Call it from thread context: it enters a task-level critical\n       section on FreeRTOS and takes a pthread mutex on NuttX.\n\n @param[in] stream  Stream handle.\n @return Free bytes; 0 if the stream is full or invalid.\n @see ove_stream_bytes_available"]
+    pub fn ove_stream_space_available(stream: ove_stream_t) -> usize;
 }
 unsafe extern "C" {
     #[doc = " @brief Register a notify callback fired after every successful send.\n\n The callback is invoked at the tail of @ref ove_stream_send and\n @ref ove_stream_send_from_isr — once data has actually been deposited.\n Only one callback slot per stream; a later call replaces an earlier\n registration. Pass @c cb=NULL to clear.\n\n Designed for higher-level async runtimes that need a wake hook:\n the Rust binding registers a callback that calls\n @c AtomicWaker::wake on a task suspended on @c Stream::recv_async.\n\n The callback runs in whatever context the originating send used\n (thread or ISR).  Implementations must therefore be ISR-safe and\n non-blocking — typically a single store + waker poke.\n\n @param[in] stream     Stream handle.\n @param[in] cb         Callback to invoke after successful sends, or\n                       @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]

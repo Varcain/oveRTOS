@@ -166,3 +166,29 @@ int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
 	pthread_mutex_unlock(&sq->lock);
 	return OVE_OK;
 }
+
+size_t ove_queue_count(ove_queue_t q)
+{
+	struct ove_queue *sq = q;
+	if (!sq) {
+		return 0;
+	}
+	pthread_mutex_lock(&sq->lock);
+	size_t count = sq->count;
+	pthread_mutex_unlock(&sq->lock);
+	return count;
+}
+
+size_t ove_queue_count_from_isr(ove_queue_t q)
+{
+	return ove_queue_count(q);
+}
+
+size_t ove_queue_capacity(ove_queue_t q)
+{
+	struct ove_queue *sq = q;
+	if (!sq) {
+		return 0;
+	}
+	return sq->max_items;
+}

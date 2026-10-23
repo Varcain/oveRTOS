@@ -303,6 +303,29 @@ static void test_stream_cross_thread(void **state)
 
 /* ── runner ──────────────────────────────────────────────────────────── */
 
+static void test_stream_space_available(void **state)
+{
+	(void)state;
+	ove_stream_t s = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 1));
+	assert_int_equal(ove_stream_space_available(s), 256);
+
+	uint8_t d[40] = {0};
+	size_t n = 0;
+	OVE_TEST_ASSERT_OK(ove_stream_send(s, d, sizeof(d), 0, &n));
+	assert_int_equal(n, sizeof(d));
+	assert_int_equal(ove_stream_space_available(s), 256 - sizeof(d));
+
+	OVE_TEST_ASSERT_OK(ove_stream_receive(s, d, 15, 0, &n));
+	assert_int_equal(n, 15);
+	assert_int_equal(ove_stream_bytes_available(s), sizeof(d) - 15);
+	assert_int_equal(ove_stream_space_available(s), 256 - (sizeof(d) - 15));
+	ove_test_stream_destroy(s);
+
+	assert_int_equal(ove_stream_space_available(NULL), 0);
+	assert_int_equal(ove_stream_bytes_available(NULL), 0);
+}
+
 int test_stream_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -321,6 +344,7 @@ int test_stream_run(void)
 #endif
 		cmocka_unit_test(test_stream_send_from_isr),
 		cmocka_unit_test(test_stream_receive_from_isr),
+		cmocka_unit_test(test_stream_space_available),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

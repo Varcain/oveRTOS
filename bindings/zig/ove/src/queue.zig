@@ -198,5 +198,32 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
             if (rc < 0) return mapRecvError("Queue.receiveFromIsr", rc);
             return val;
         }
+
+        /// Number of items in the queue right now (a snapshot).  Not for
+        /// ISR context — use `lenFromIsr` there.
+        pub fn len(self: Self) usize {
+            return c.ove_queue_count(self.handle);
+        }
+
+        /// ISR-safe `len`.
+        pub fn lenFromIsr(self: Self) usize {
+            return c.ove_queue_count_from_isr(self.handle);
+        }
+
+        /// Maximum number of items the queue holds.
+        pub fn capacity(self: Self) usize {
+            return c.ove_queue_capacity(self.handle);
+        }
+
+        /// Whether the queue holds no item right now (a snapshot).
+        pub fn isEmpty(self: Self) bool {
+            return self.len() == 0;
+        }
+
+        /// Whether the queue is full right now (a snapshot).
+        pub fn isFull(self: Self) bool {
+            const cap = self.capacity();
+            return cap != 0 and self.len() >= cap;
+        }
     };
 }

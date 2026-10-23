@@ -118,3 +118,24 @@ int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
 	q->notify_ud = user_data;
 	return OVE_OK;
 }
+
+size_t ove_queue_count(ove_queue_t q)
+{
+	if (q == NULL)
+		return 0;
+	return (size_t)uxQueueMessagesWaiting(q->queue);
+}
+
+size_t ove_queue_count_from_isr(ove_queue_t q)
+{
+	if (q == NULL)
+		return 0;
+	return (size_t)uxQueueMessagesWaitingFromISR(q->queue);
+}
+
+size_t ove_queue_capacity(ove_queue_t q)
+{
+	if (q == NULL)
+		return 0;
+	return (size_t)uxQueueGetQueueLength(q->queue);
+}

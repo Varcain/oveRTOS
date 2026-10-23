@@ -209,6 +209,18 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 	return count;
 }
 
+size_t ove_stream_space_available(ove_stream_t stream)
+{
+	if (stream == NULL) {
+		return 0;
+	}
+
+	k_spinlock_key_t key = k_spin_lock(&stream->lock);
+	size_t space = stream->ring.size - stream->ring.count;
+	k_spin_unlock(&stream->lock, key);
+	return space;
+}
+
 int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data)
 {
 	if (stream == NULL) {
