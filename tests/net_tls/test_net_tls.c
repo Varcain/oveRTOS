@@ -11,10 +11,8 @@
  * layer, talking to an in-process mbedTLS server on 127.0.0.1 that uses the
  * test PKI in pki/ (CA, server "localhost", client "ove-client").
  *
- * The server is capped at TLS 1.2.  mbedTLS is built without
- * MBEDTLS_THREADING_C, and TLS 1.3 runs its key exchange through PSA, whose
- * key store is process-global; keeping the server on TLS 1.2 leaves PSA to
- * the client thread alone.
+ * Client and server threads share one mbedTLS, so every handshake here also
+ * runs two TLS 1.3 sessions at once, on mbedTLS's process-global PSA state.
  */
 
 #include <stdarg.h>
@@ -245,7 +243,6 @@ static void *srv_main(void *arg)
 	    mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM,
 					MBEDTLS_SSL_PRESET_DEFAULT) == 0) {
 		mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &drbg);
-		mbedtls_ssl_conf_max_tls_version(&conf, MBEDTLS_SSL_VERSION_TLS1_2);
 		mbedtls_ssl_conf_ca_chain(&conf, &ca, NULL);
 		mbedtls_ssl_conf_authmode(&conf, s->require_client_cert
 							 ? MBEDTLS_SSL_VERIFY_REQUIRED
@@ -288,20 +285,30 @@ static void *srv_main(void *arg)
 	return NULL;
 }
 
-static void srv_start(struct srv *s, enum srv_mode mode, int require_client_cert)
+/* Without asserts, for callers off the main thread: 0 or -1. */
+static int srv_try_start(struct srv *s, enum srv_mode mode, int require_client_cert)
 {
 	memset(s, 0, sizeof(*s));
 	s->mode = mode;
 	s->require_client_cert = require_client_cert;
 	s->lfd = socket(AF_INET, SOCK_STREAM, 0);
-	assert_true(s->lfd >= 0);
+	if (s->lfd < 0)
+		return -1;
 	struct sockaddr_in a = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
-	assert_int_equal(bind(s->lfd, (struct sockaddr *)&a, sizeof(a)), 0);
-	assert_int_equal(listen(s->lfd, 1), 0);
 	socklen_t alen = sizeof(a);
-	assert_int_equal(getsockname(s->lfd, (struct sockaddr *)&a, &alen), 0);
+	if (bind(s->lfd, (struct sockaddr *)&a, sizeof(a)) != 0 || listen(s->lfd, 1) != 0 ||
+	    getsockname(s->lfd, (struct sockaddr *)&a, &alen) != 0 ||
+	    pthread_create(&s->tid, NULL, srv_main, s) != 0) {
+		close(s->lfd);
+		return -1;
+	}
 	s->port = ntohs(a.sin_port);
-	assert_int_equal(pthread_create(&s->tid, NULL, srv_main, s), 0);
+	return 0;
+}
+
+static void srv_start(struct srv *s, enum srv_mode mode, int require_client_cert)
+{
+	assert_int_equal(srv_try_start(s, mode, require_client_cert), 0);
 }
 
 static void srv_join(struct srv *s)
@@ -345,13 +352,16 @@ static int https_get(uint16_t port, int *status, char *body, size_t body_size)
 {
 	ove_http_client_storage_t st;
 	ove_http_client_t c = NULL;
-	assert_int_equal(ove_http_client_init(&c, &st), OVE_OK);
+	*status = 0;
+	body[0] = '\0';
+	int rc = ove_http_client_init(&c, &st);
+	if (rc != OVE_OK)
+		return rc; /* no assert: the concurrency test calls this off the main thread */
 	char url[64];
 	(void)snprintf(url, sizeof(url), "https://localhost:%u/", port);
 	ove_http_response_t resp = {0};
-	int rc = ove_http_get(c, url, &resp);
+	rc = ove_http_get(c, url, &resp);
 	*status = resp.status;
-	body[0] = '\0';
 	if (rc == OVE_OK && resp.body)
 		(void)snprintf(body, body_size, "%s", resp.body);
 	ove_http_response_free(&resp);
@@ -408,6 +418,66 @@ static void test_http_set_client_cert_needs_both(void **state)
 	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, 0, s_cli_key.data,
 						  s_cli_key.len),
 			 OVE_ERR_INVALID_PARAM);
+}
+
+/* Several clients at once, each against its own server thread, so eight TLS
+ * 1.3 sessions share mbedTLS's global state (PSA key store, random
+ * generator).  Unguarded, about 1 in 100 handshakes failed with
+ * MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED. */
+enum { CONC_THREADS = 4, CONC_ROUNDS = 10 };
+
+struct conc_result {
+	int ok;
+	int failed;
+	int last_rc;
+};
+
+static void *conc_client(void *arg)
+{
+	struct conc_result *r = arg;
+	for (int i = 0; i < CONC_ROUNDS; i++) {
+		struct srv s;
+		if (srv_try_start(&s, SRV_HTTP, 1) != 0) {
+			r->failed++;
+			r->last_rc = -1;
+			continue;
+		}
+		int status = 0;
+		char body[32];
+		int rc = https_get(s.port, &status, body, sizeof(body));
+		srv_join(&s);
+		if (rc == OVE_OK && status == 200 && s.handshake_rc == 0 &&
+		    strcmp(body, "ove-client") == 0) {
+			r->ok++;
+		} else {
+			r->failed++;
+			r->last_rc = rc != OVE_OK ? rc : s.handshake_rc;
+		}
+	}
+	return NULL;
+}
+
+static void test_https_concurrent_sessions(void **state)
+{
+	(void)state;
+	ove_http_set_tls(s_ca.data, s_ca.len, 0);
+	assert_int_equal(ove_http_set_client_cert(s_cli_cert.data, s_cli_cert.len, s_cli_key.data,
+						  s_cli_key.len),
+			 OVE_OK);
+	pthread_t th[CONC_THREADS];
+	struct conc_result res[CONC_THREADS] = {{0}};
+	for (int i = 0; i < CONC_THREADS; i++)
+		assert_int_equal(pthread_create(&th[i], NULL, conc_client, &res[i]), 0);
+	for (int i = 0; i < CONC_THREADS; i++)
+		assert_int_equal(pthread_join(th[i], NULL), 0);
+	assert_int_equal(ove_http_set_client_cert(NULL, 0, NULL, 0), OVE_OK);
+
+	for (int i = 0; i < CONC_THREADS; i++) {
+		if (res[i].failed)
+			fail_msg("client %d: %d of %d requests failed, last rc %d", i,
+				 res[i].failed, CONC_ROUNDS, res[i].last_rc);
+		assert_int_equal(res[i].ok, CONC_ROUNDS);
+	}
 }
 
 /* A CA without the name to check the server against is refused before any
@@ -593,6 +663,7 @@ int main(void)
 		cmocka_unit_test(test_https_pem_length_without_nul),
 		cmocka_unit_test(test_tls_ca_without_hostname_is_refused),
 		cmocka_unit_test(test_psa_mac_compute_over_dirty_stack),
+		cmocka_unit_test(test_https_concurrent_sessions),
 	};
 	int failed = cmocka_run_group_tests_name("net_tls", tests, NULL, NULL);
 

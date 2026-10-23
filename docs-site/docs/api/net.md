@@ -288,6 +288,8 @@ void tls_get(ove_socket_t sock)
 
 For certificate verification, set `cfg.ca_cert` and `cfg.ca_cert_len` to a PEM or DER certificate, and `cfg.hostname` to the name the server's certificate must carry: a CA without a hostname would verify the chain but not whose certificate it is, so the handshake refuses it with `OVE_ERR_INVALID_PARAM`.
 
+Sessions on different threads may run at the same time: mbedTLS's shared state (the PSA key store and random generator, and the zero-heap pool) is guarded by one oveRTOS mutex, held only inside mbedTLS and never while a session waits for the network. It is held for a whole RSA operation, though (verifying an RSA certificate chain, signing with an RSA client key), which makes every other session wait; on NuttX, which is built without `CONFIG_PRIORITY_INHERITANCE`, a high-priority session can then also wait for the threads that preempt a low-priority one. A single session must not be used from two threads at once.
+
 `ove_tls_send` sends at most one record, `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` bytes (4 KB by default), per call, so `sent` can come back smaller than the length asked for; send the rest with further calls, as the HTTP and MQTT clients do. A client certificate (`cfg.client_cert`) also goes out in one record and must fit it. Incoming records are always up to 16 KB, since servers may send full-size ones.
 
 ## HTTP Client

@@ -10,10 +10,12 @@
  * Zero-heap TLS on the host: the shared TLS layer built as zero-heap
  * firmware builds it (cmake/OveMbedtls.cmake), mbedTLS allocating from the
  * CONFIG_OVE_NET_TLS_HEAP_SIZE pool.  Running out of that pool must fail
- * the handshake with OVE_ERR_NO_MEMORY wherever it happens.
+ * the handshake with OVE_ERR_NO_MEMORY wherever it happens, and sessions on
+ * several threads must share it safely.
  *
  * The pool is the process's only mbedTLS allocator, so the server runs in
- * a forked child with a pool of its own, and TLS 1.3 like a real server.
+ * a forked child, whose copy of the pool is its own, and TLS 1.3 like a
+ * real server.
  */
 
 #include <stdarg.h>
@@ -40,6 +42,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,7 +61,9 @@ int ove_hal_entropy_fill(void *buf, size_t len)
 {
 	unsigned char *p = buf;
 	while (len > 0) {
-		uint64_t z = (s_rng_state += 0x9e3779b97f4a7c15u);
+		/* atomic: the concurrency test calls it from several threads */
+		uint64_t z =
+			__atomic_add_fetch(&s_rng_state, 0x9e3779b97f4a7c15u, __ATOMIC_RELAXED);
 		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9u;
 		z = (z ^ (z >> 27)) * 0x94d049bb133111ebu;
 		z ^= z >> 31;
@@ -72,13 +77,16 @@ int ove_hal_entropy_fill(void *buf, size_t len)
 
 /* The last line logged: the mbedTLS code behind a failed handshake. */
 static char s_last_log[160];
+static pthread_mutex_t s_log_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void ove_shell_log_tee(const char *data, size_t len)
 {
 	if (len >= sizeof(s_last_log))
 		len = sizeof(s_last_log) - 1;
+	(void)pthread_mutex_lock(&s_log_lock);
 	memcpy(s_last_log, data, len);
 	s_last_log[len] = '\0';
+	(void)pthread_mutex_unlock(&s_log_lock);
 }
 
 /* Inside the test certificates' validity, as in test_net_tls.c. */
@@ -133,12 +141,30 @@ static int drbg_entropy(void *ctx, unsigned char *buf, size_t len)
 	return ove_hal_entropy_fill(buf, len) == OVE_OK ? 0 : -1;
 }
 
+static void srv_serve(mbedtls_ssl_config *conf, int fd)
+{
+	mbedtls_ssl_context ssl;
+	mbedtls_ssl_init(&ssl);
+	if (mbedtls_ssl_setup(&ssl, conf) == 0) {
+		mbedtls_ssl_set_bio(&ssl, &fd, bio_send, bio_recv, NULL);
+		int rc;
+		do {
+			rc = mbedtls_ssl_handshake(&ssl);
+		} while (rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE);
+		if (rc == 0)
+			(void)mbedtls_ssl_close_notify(&ssl);
+	}
+	mbedtls_ssl_free(&ssl);
+}
+
 /* Handshakes every client that connects, requiring its certificate, until
  * none comes for 10 s.  Runs in the child, so it never returns. */
-static void srv_run(int lfd)
+static void srv_run(int lfd, bool fork_each)
 {
-	static unsigned char pool[1024 * 1024];
-	mbedtls_memory_buffer_alloc_init(pool, sizeof(pool));
+	/* The pool, a copy of the client's from the fork on, stays as it is:
+	 * swapping in another would strand what mbedTLS already allocated from
+	 * it (PSA's state, if the client has run a session), which mbedTLS
+	 * frees when it reseeds PSA in a forked process. */
 	s_rng_state ^= 0x5345525645520000u; /* not the client's stream */
 	if (psa_crypto_init() != PSA_SUCCESS)
 		_exit(2);
@@ -166,6 +192,8 @@ static void srv_run(int lfd)
 	if (mbedtls_ssl_conf_own_cert(&conf, &cert, &key) != 0)
 		_exit(2);
 
+	if (fork_each)
+		(void)signal(SIGCHLD, SIG_IGN);
 	for (;;) {
 		struct pollfd pfd = {.fd = lfd, .events = POLLIN};
 		if (poll(&pfd, 1, 10000) <= 0)
@@ -173,24 +201,22 @@ static void srv_run(int lfd)
 		int fd = accept(lfd, NULL, NULL);
 		if (fd < 0)
 			_exit(2);
-		mbedtls_ssl_context ssl;
-		mbedtls_ssl_init(&ssl);
-		if (mbedtls_ssl_setup(&ssl, &conf) == 0) {
-			mbedtls_ssl_set_bio(&ssl, &fd, bio_send, bio_recv, NULL);
-			int rc;
-			do {
-				rc = mbedtls_ssl_handshake(&ssl);
-			} while (rc == MBEDTLS_ERR_SSL_WANT_READ ||
-				 rc == MBEDTLS_ERR_SSL_WANT_WRITE);
-			if (rc == 0)
-				(void)mbedtls_ssl_close_notify(&ssl);
+		if (fork_each) {
+			pid_t c = fork();
+			if (c == 0) {
+				srv_serve(&conf, fd);
+				_exit(0);
+			}
+		} else {
+			srv_serve(&conf, fd);
 		}
-		mbedtls_ssl_free(&ssl);
 		close(fd);
 	}
 }
 
-static pid_t srv_start(uint16_t *port)
+/* @p fork_each: serve each connection in a process of its own, so clients
+ * can handshake at the same time. */
+static pid_t srv_start(uint16_t *port, bool fork_each)
 {
 	int lfd = socket(AF_INET, SOCK_STREAM, 0);
 	assert_true(lfd >= 0);
@@ -203,7 +229,7 @@ static pid_t srv_start(uint16_t *port)
 	pid_t pid = fork();
 	assert_true(pid >= 0);
 	if (pid == 0)
-		srv_run(lfd);
+		srv_run(lfd, fork_each);
 	close(lfd);
 	return pid;
 }
@@ -216,6 +242,16 @@ static void srv_stop(pid_t pid)
 
 /* ── Tests ─────────────────────────────────────────────────────────── */
 
+/* Set up by a constructor that the linker runs before ove_net_tls.c's, which
+ * sets up mbedTLS's lock and pool: ove_tls_init must do that itself then. */
+OVE_TLS_DEFINE_STATIC(s_static_tls);
+
+static void test_static_session_before_tls_setup(void **state)
+{
+	(void)state;
+	assert_non_null(s_static_tls);
+}
+
 /* One mutual-TLS handshake against the server; the session is torn down
  * before returning, so all it leaves in the pool is mbedTLS's global state. */
 static int handshake(uint16_t port)
@@ -223,9 +259,14 @@ static int handshake(uint16_t port)
 	ove_socket_storage_t sock_st;
 	ove_socket_t sock = NULL;
 	int rc = ove_socket_open(&sock, &sock_st, OVE_AF_INET, OVE_SOCK_STREAM);
-	assert_int_equal(rc, OVE_OK);
+	if (rc != OVE_OK)
+		return rc; /* no assert: the concurrency test calls this off the main thread */
 	ove_sockaddr_t addr = {.family = OVE_AF_INET, .port = port, .addr = {127, 0, 0, 1}};
-	assert_int_equal(ove_socket_connect(sock, &addr, OVE_MS(5000)), OVE_OK);
+	rc = ove_socket_connect(sock, &addr, OVE_MS(5000));
+	if (rc != OVE_OK) {
+		ove_socket_close(sock);
+		return rc;
+	}
 
 	ove_tls_storage_t tls_st;
 	ove_tls_t tls = NULL;
@@ -306,7 +347,7 @@ static void test_pool_exhaustion_is_no_memory(void **state)
 {
 	(void)state;
 	uint16_t port;
-	pid_t srv = srv_start(&port);
+	pid_t srv = srv_start(&port, false);
 
 	assert_int_equal(handshake(port), OVE_OK);
 
@@ -341,6 +382,39 @@ static void test_pool_exhaustion_is_no_memory(void **state)
 	assert_true(out_of_memory > 0);
 }
 
+/* Four clients handshaking at once, every session allocating from the one
+ * pool (and sharing the PSA key store).  Unguarded, two were enough to
+ * corrupt the pool in every run: mbedTLS's allocator checks then call
+ * exit(1). */
+enum { CONC_THREADS = 4, CONC_ROUNDS = 5 };
+static uint16_t s_conc_port;
+
+static void *conc_client(void *arg)
+{
+	int *failed = arg;
+	for (int i = 0; i < CONC_ROUNDS; i++)
+		if (handshake(s_conc_port) != OVE_OK)
+			(*failed)++;
+	return NULL;
+}
+
+static void test_concurrent_sessions_share_the_pool(void **state)
+{
+	(void)state;
+	pid_t srv = srv_start(&s_conc_port, true);
+	pthread_t th[CONC_THREADS];
+	int failed[CONC_THREADS] = {0};
+	for (int i = 0; i < CONC_THREADS; i++)
+		assert_int_equal(pthread_create(&th[i], NULL, conc_client, &failed[i]), 0);
+	for (int i = 0; i < CONC_THREADS; i++)
+		assert_int_equal(pthread_join(th[i], NULL), 0);
+	srv_stop(srv);
+	for (int i = 0; i < CONC_THREADS; i++)
+		if (failed[i])
+			fail_msg("client %d: %d of %d handshakes failed", i, failed[i],
+				 CONC_ROUNDS);
+}
+
 int main(void)
 {
 	alarm(120);
@@ -352,7 +426,9 @@ int main(void)
 	load_pem(&s_cli_key, "cli.key");
 
 	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_static_session_before_tls_setup),
 		cmocka_unit_test(test_pool_exhaustion_is_no_memory),
+		cmocka_unit_test(test_concurrent_sessions_share_the_pool),
 	};
 	return cmocka_run_group_tests_name("net_tls_zh", tests, NULL, NULL);
 }
