@@ -286,7 +286,7 @@ void tls_get(ove_socket_t sock)
 }
 ```
 
-For certificate verification, set `cfg.ca_cert` and `cfg.ca_cert_len` to a PEM or DER certificate.
+For certificate verification, set `cfg.ca_cert` and `cfg.ca_cert_len` to a PEM or DER certificate, and `cfg.hostname` to the name the server's certificate must carry: a CA without a hostname would verify the chain but not whose certificate it is, so the handshake refuses it with `OVE_ERR_INVALID_PARAM`.
 
 `ove_tls_send` sends at most one record, `CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN` bytes (4 KB by default), per call, so `sent` can come back smaller than the length asked for; send the rest with further calls, as the HTTP and MQTT clients do. A client certificate (`cfg.client_cert`) also goes out in one record and must fit it. Incoming records are always up to 16 KB, since servers may send full-size ones.
 

@@ -3178,7 +3178,7 @@ pub struct ove_tls_config_t {
     pub ca_cert: *const core::ffi::c_uchar,
     #[doc = "< Length of ca_cert in bytes (incl. NUL for PEM)."]
     pub ca_cert_len: usize,
-    #[doc = "< Expected server hostname for SNI/verify (may be NULL)."]
+    #[doc = "< Server name, sent as SNI and checked against the server's certificate; required with @c ca_cert (NULL only when the peer is not verified)."]
     pub hostname: *const core::ffi::c_char,
     #[doc = "< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip). Sent in one record, so the chain must fit CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN (4 KB by default)."]
     pub client_cert: *const core::ffi::c_uchar,
@@ -3221,7 +3221,7 @@ unsafe extern "C" {
     pub fn ove_tls_deinit(tls: ove_tls_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of\n         @c client_cert and @c client_key is set, when the key does not\n         match the certificate, or without a CA and @c allow_insecure;\n         @c OVE_ERR_NO_MEMORY when mbedTLS runs out of memory (the heap,\n         or the CONFIG_OVE_NET_TLS_HEAP_SIZE pool in zero-heap builds);\n         otherwise a negative error code (other mbedTLS failures are\n         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged).  Some\n         shortfalls mbedTLS itself reports as other failures, and they\n         return @c OVE_ERR_NOT_SUPPORTED too: while parsing the client key\n         (as a key in no known format), in the TLS 1.3 key schedule (a\n         generic error), while verifying the server's certificate (as a\n         certificate that failed verification) and while verifying the\n         server's handshake signature (as a handshake failure)."]
+    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of\n         @c client_cert and @c client_key is set, when the key does not\n         match the certificate, without a CA and @c allow_insecure, or\n         with a CA but no @c hostname;\n         @c OVE_ERR_NO_MEMORY when mbedTLS runs out of memory (the heap,\n         or the CONFIG_OVE_NET_TLS_HEAP_SIZE pool in zero-heap builds);\n         otherwise a negative error code (other mbedTLS failures are\n         @c OVE_ERR_NOT_SUPPORTED, with the mbedTLS code logged).  Some\n         shortfalls mbedTLS itself reports as other failures, and they\n         return @c OVE_ERR_NOT_SUPPORTED too: while parsing the client key\n         (as a key in no known format), in the TLS 1.3 key schedule (a\n         generic error), while verifying the server's certificate (as a\n         certificate that failed verification) and while verifying the\n         server's handshake signature (as a handshake failure)."]
     pub fn ove_tls_handshake(
         tls: ove_tls_t,
         sock: ove_socket_t,

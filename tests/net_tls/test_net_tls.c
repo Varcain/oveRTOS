@@ -28,6 +28,7 @@
 #include "ove/net_http.h"
 #include "ove/net_mqtt.h"
 #include "ove/net_sntp.h"
+#include "ove/net_tls.h"
 #include "ove/hal/hal_entropy.h"
 
 #include "mbedtls/ssl.h"
@@ -35,6 +36,7 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/oid.h"
+#include "psa/crypto.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -408,6 +410,59 @@ static void test_http_set_client_cert_needs_both(void **state)
 			 OVE_ERR_INVALID_PARAM);
 }
 
+/* A CA without the name to check the server against is refused before any
+ * I/O (mbedTLS 3.6.3+ would fail the handshake with an unmapped code). */
+static void test_tls_ca_without_hostname_is_refused(void **state)
+{
+	(void)state;
+	ove_socket_storage_t sock_st;
+	ove_socket_t sock = NULL;
+	assert_int_equal(ove_socket_open(&sock, &sock_st, OVE_AF_INET, OVE_SOCK_STREAM), OVE_OK);
+	ove_tls_storage_t tls_st;
+	ove_tls_t tls = NULL;
+	assert_int_equal(ove_tls_init(&tls, &tls_st), OVE_OK);
+	ove_tls_config_t cfg = {.ca_cert = s_ca.data, .ca_cert_len = s_ca.len};
+	assert_int_equal(ove_tls_handshake(tls, sock, &cfg), OVE_ERR_INVALID_PARAM);
+	ove_tls_deinit(tls);
+	ove_socket_close(sock);
+}
+
+/* Fills this much of the stack below the caller with 0xA5, so the next call
+ * at the same depth finds those bytes in its uninitialised locals. */
+static __attribute__((noinline)) void dirty_stack(void)
+{
+	volatile unsigned char junk[16384];
+	for (size_t i = 0; i < sizeof(junk); i++)
+		junk[i] = 0xA5;
+}
+
+/* mbedTLS before 3.6.4 initialised its one-shot MAC operation with "{0}",
+ * which GCC 15+ does not extend past a union's first member: over a dirty
+ * stack the HMAC's hash id was garbage and psa_mac_compute returned
+ * PSA_ERROR_BAD_STATE, failing every TLS 1.3 Finished computation. */
+static void test_psa_mac_compute_over_dirty_stack(void **state)
+{
+	(void)state;
+	assert_int_equal(psa_crypto_init(), PSA_SUCCESS);
+	psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+	psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+	psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
+	psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+	static const uint8_t key_bytes[32] = {1, 2, 3};
+	psa_key_id_t key = 0;
+	assert_int_equal(psa_import_key(&attr, key_bytes, sizeof(key_bytes), &key), PSA_SUCCESS);
+
+	static const uint8_t msg[] = "finished";
+	uint8_t mac[32];
+	size_t mac_len = 0;
+	dirty_stack();
+	psa_status_t st = psa_mac_compute(key, PSA_ALG_HMAC(PSA_ALG_SHA_256), msg, sizeof(msg), mac,
+					  sizeof(mac), &mac_len);
+	assert_int_equal(psa_destroy_key(key), PSA_SUCCESS);
+	assert_int_equal(st, PSA_SUCCESS);
+	assert_int_equal(mac_len, sizeof(mac));
+}
+
 /* Caught on the device before the handshake, not by the server. */
 static void test_https_mismatched_client_key(void **state)
 {
@@ -536,6 +591,8 @@ int main(void)
 		cmocka_unit_test(test_http_set_client_cert_needs_both),
 		cmocka_unit_test(test_https_mismatched_client_key),
 		cmocka_unit_test(test_https_pem_length_without_nul),
+		cmocka_unit_test(test_tls_ca_without_hostname_is_refused),
+		cmocka_unit_test(test_psa_mac_compute_over_dirty_stack),
 	};
 	int failed = cmocka_run_group_tests_name("net_tls", tests, NULL, NULL);
 

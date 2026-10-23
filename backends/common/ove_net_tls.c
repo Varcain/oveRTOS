@@ -307,6 +307,13 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 		OVE_LOG_ERR("TLS: client certificate and key must be given together");
 		return OVE_ERR_INVALID_PARAM;
 	}
+	/* Verifying a certificate says nothing about whose it is without the
+	 * name to check it against; mbedTLS (since 3.6.3) fails such a
+	 * handshake, so refuse it here, with a clear error, before any I/O. */
+	if (cfg && cfg->ca_cert && cfg->ca_cert_len > 0 && !cfg->hostname) {
+		OVE_LOG_ERR("TLS: a CA certificate needs a hostname to verify against");
+		return OVE_ERR_INVALID_PARAM;
+	}
 
 	mbedtls_ssl_config *conf = t->conf;
 	mbedtls_ssl_context *ssl = t->ssl;
@@ -372,9 +379,11 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *
 	if (ret != 0)
 		return tls_failed("session setup", ret);
 
-	/* SNI hostname */
+	/* SNI, and the name the server's certificate is checked against */
 	if (cfg && cfg->hostname) {
-		mbedtls_ssl_set_hostname(ssl, cfg->hostname);
+		ret = mbedtls_ssl_set_hostname(ssl, cfg->hostname);
+		if (ret != 0)
+			return tls_failed("hostname", ret);
 	}
 
 	/* Wire BIO callbacks to our socket */

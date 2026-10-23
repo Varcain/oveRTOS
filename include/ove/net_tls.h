@@ -49,7 +49,8 @@ extern "C" {
 typedef struct {
 	const unsigned char *ca_cert; /**< PEM or DER CA certificate (NULL to skip verify). */
 	size_t ca_cert_len;	      /**< Length of ca_cert in bytes (incl. NUL for PEM). */
-	const char *hostname;	      /**< Expected server hostname for SNI/verify (may be NULL). */
+	const char *
+		hostname; /**< Server name, sent as SNI and checked against the server's certificate; required with @c ca_cert (NULL only when the peer is not verified). */
 	const unsigned char *
 		client_cert; /**< PEM (may hold a chain, leaf first) or DER (one certificate) client certificate for mTLS, with @c client_key or neither (NULL to skip). Sent in one record, so the chain must fit CONFIG_OVE_NET_TLS_OUT_CONTENT_LEN (4 KB by default). */
 	size_t client_cert_len; /**< Length of client_cert in bytes (incl. NUL for PEM). */
@@ -91,7 +92,8 @@ void ove_tls_deinit(ove_tls_t tls);
  * @param[in] cfg  TLS configuration (certs, hostname).
  * @return OVE_OK on success; @c OVE_ERR_INVALID_PARAM when only one of
  *         @c client_cert and @c client_key is set, when the key does not
- *         match the certificate, or without a CA and @c allow_insecure;
+ *         match the certificate, without a CA and @c allow_insecure, or
+ *         with a CA but no @c hostname;
  *         @c OVE_ERR_NO_MEMORY when mbedTLS runs out of memory (the heap,
  *         or the CONFIG_OVE_NET_TLS_HEAP_SIZE pool in zero-heap builds);
  *         otherwise a negative error code (other mbedTLS failures are
