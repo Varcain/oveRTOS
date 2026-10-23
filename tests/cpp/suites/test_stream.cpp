@@ -121,6 +121,26 @@ static void test_cpp_stream_move_construct(void **state)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
+/* An empty buffer, as an empty std::vector's (nullptr, 0), moves nothing
+ * and never waits, even on the forever forms. */
+static void test_cpp_stream_empty_buffer(void **state)
+{
+	(void)state;
+	ove::Stream<64> s(4);
+	size_t n = 99;
+	s.send(nullptr, 0, n);
+	assert_int_equal(n, 0);
+	n = 99;
+	s.receive(nullptr, 0, n);
+	assert_int_equal(n, 0);
+	n = 99;
+	OVE_TEST_ASSERT_OK(s.try_send_for(nullptr, 0, std::chrono::milliseconds{100}, n));
+	assert_int_equal(n, 0);
+	n = 99;
+	OVE_TEST_ASSERT_OK(s.send_from_isr(nullptr, 0, n));
+	assert_int_equal(n, 0);
+}
+
 static void test_cpp_stream_not_copyable(void **state)
 {
 	(void)state;
@@ -201,6 +221,7 @@ int test_cpp_stream_run(void)
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_stream_move_construct),
 #endif
+		cmocka_unit_test(test_cpp_stream_empty_buffer),
 		cmocka_unit_test(test_cpp_stream_not_copyable),
 		cmocka_unit_test(test_cpp_stream_return_type_shape),
 	};

@@ -119,11 +119,11 @@ impl<const N: usize> Stream<N> {
         self.send_with_timeout(data, u64::MAX)
     }
 
-    /// Non-blocking send.  Returns the number of bytes actually sent.
+    /// Non-blocking send.  Returns the number of bytes actually sent:
+    /// `Ok(0)` when the buffer is full, which is not an error.
     ///
     /// # Errors
-    /// Returns [`Error::WouldBlock`] if the buffer is full and no
-    /// bytes could be written.
+    /// Returns an error only for an invalid stream handle.
     #[inline]
     pub fn try_send(&self, data: &[u8]) -> Result<usize> {
         self.send_with_timeout(data, 0)
@@ -166,10 +166,12 @@ impl<const N: usize> Stream<N> {
         self.recv_with_timeout(buf, u64::MAX)
     }
 
-    /// Non-blocking receive.  Returns the number of bytes read.
+    /// Non-blocking receive.  Returns the number of bytes read: `Ok(0)`
+    /// when fewer bytes than the trigger level are buffered, which is not
+    /// an error.
     ///
     /// # Errors
-    /// Returns [`Error::WouldBlock`] if no bytes are available.
+    /// Returns an error only for an invalid stream handle.
     #[inline]
     pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
         self.recv_with_timeout(buf, 0)

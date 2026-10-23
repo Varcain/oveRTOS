@@ -67,8 +67,14 @@ void ove_stream_deinit(ove_stream_t stream)
 int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent)
 {
-	if (stream == NULL || data == NULL) {
+	if (stream == NULL || (data == NULL && len > 0)) {
 		return OVE_ERR_INVALID_PARAM;
+	}
+	if (len == 0) {
+		if (bytes_sent != NULL) {
+			*bytes_sent = 0;
+		}
+		return OVE_OK;
 	}
 
 	const unsigned char *src = (const unsigned char *)data;
@@ -106,8 +112,14 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received)
 {
-	if (stream == NULL || buf == NULL) {
+	if (stream == NULL || (buf == NULL && len > 0)) {
 		return OVE_ERR_INVALID_PARAM;
+	}
+	if (len == 0) {
+		if (bytes_received != NULL) {
+			*bytes_received = 0;
+		}
+		return OVE_OK;
 	}
 
 	size_t received = 0;
@@ -143,8 +155,14 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 
 int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)
 {
-	if (stream == NULL || data == NULL) {
+	if (stream == NULL || (data == NULL && len > 0)) {
 		return OVE_ERR_INVALID_PARAM;
+	}
+	if (len == 0) {
+		if (bytes_sent != NULL) {
+			*bytes_sent = 0;
+		}
+		return OVE_OK;
 	}
 
 	k_spinlock_key_t key = k_spin_lock(&stream->lock);
@@ -166,8 +184,14 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
 
 int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)
 {
-	if (stream == NULL || buf == NULL) {
+	if (stream == NULL || (buf == NULL && len > 0)) {
 		return OVE_ERR_INVALID_PARAM;
+	}
+	if (len == 0) {
+		if (bytes_received != NULL) {
+			*bytes_received = 0;
+		}
+		return OVE_OK;
 	}
 
 	k_spinlock_key_t key = k_spin_lock(&stream->lock);

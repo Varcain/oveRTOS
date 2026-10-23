@@ -129,9 +129,12 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Non-blocking send.
-	 * @param[out] bytes_sent Number of bytes actually written
-	 *                        (may be < @p len even on success).
-	 * @return `true` if any bytes were written, `false` if the buffer was full.
+	 * @param[out] bytes_sent Number of bytes actually written: fewer than
+	 *                        @p len, or 0, when the stream had too little
+	 *                        room.
+	 * @return `true` when the call completed, also when a full stream took
+	 *         nothing (check @p bytes_sent); `false` only for an invalid
+	 *         argument.
 	 */
 	[[nodiscard]] bool try_send(const void *data, size_t len, size_t &bytes_sent)
 	{
@@ -145,14 +148,12 @@ template <size_t BufSize = 0> class Stream
 	 * @param[in]  len        Number of bytes to send.
 	 * @param[in]  rel        Relative timeout (any
 	 *                        `std::chrono::duration` unit).
-	 * @param[out] bytes_sent Number of bytes actually written (the
-	 *                        substrate may write a non-zero count
-	 *                        even on a `Timeout` failure if some
-	 *                        bytes committed before the deadline —
-	 *                        always inspect this).
-	 * @return Empty `Result<void>` on success; `unexpected`
-	 *         @ref Error::Timeout if the deadline elapsed; `unexpected`
-	 *         with another @ref Error value on backend failure.
+	 * @param[out] bytes_sent Number of bytes actually written: fewer
+	 *                        than @p len, or 0, when the timeout
+	 *                        passed first — always inspect this.
+	 * @return Empty `Result<void>` on success, also when the timeout left
+	 *         the data partly or wholly unsent; `unexpected` @ref Error
+	 *         only for an invalid argument.
 	 */
 	template <class Rep, class Period>
 	[[nodiscard]] Result<void> try_send_for(const void *data, size_t len,
@@ -201,7 +202,9 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Non-blocking receive.
-	 * @return `true` if any bytes were read, `false` if the buffer was empty.
+	 * @return `true` when the call completed, also when fewer bytes than the
+	 *         trigger level were there and none were read (check
+	 *         @p bytes_received); `false` only for an invalid argument.
 	 */
 	[[nodiscard]] bool try_receive(void *buf, size_t len, size_t &bytes_received)
 	{
@@ -214,13 +217,12 @@ template <size_t BufSize = 0> class Stream
 	 * @param[out] buf            Destination buffer.
 	 * @param[in]  len            Maximum bytes to read.
 	 * @param[in]  rel            Relative timeout.
-	 * @param[out] bytes_received Number of bytes actually read (may
-	 *                            be non-zero even on a `Timeout`
-	 *                            failure if some bytes arrived before
-	 *                            the deadline).
-	 * @return Empty `Result<void>` on success; `unexpected`
-	 *         @ref Error::Timeout / `Error::Eof` /
-	 *         backend-specific @ref Error otherwise.
+	 * @param[out] bytes_received Number of bytes actually read; 0 when
+	 *                            the timeout passed before the trigger
+	 *                            level was reached.
+	 * @return Empty `Result<void>` on success, also when the timeout
+	 *         passed with nothing read; `unexpected` @ref Error only for
+	 *         an invalid argument.
 	 */
 	template <class Rep, class Period>
 	[[nodiscard]] Result<void> try_receive_for(void *buf, size_t len,

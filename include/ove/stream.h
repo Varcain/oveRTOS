@@ -110,8 +110,10 @@ void ove_stream_destroy(ove_stream_t stream);
  * number of bytes accepted is written to @p bytes_sent when not @c NULL.
  *
  * @param[in]  stream      Stream handle.
- * @param[in]  data        Pointer to the data to send.
- * @param[in]  len         Number of bytes to send.
+ * @param[in]  data        Pointer to the data to send; may be @c NULL when
+ *                         @p len is 0.
+ * @param[in]  len         Number of bytes to send.  0 sends nothing and
+ *                         returns OVE_OK at once, without waiting.
  * @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL if the caller does not need this value.
@@ -159,8 +161,11 @@ OVE_NODISCARD static inline int ove_stream_send_until(ove_stream_t stream, const
  * @c NULL.
  *
  * @param[in]  stream          Stream handle.
- * @param[out] buf             Buffer to receive data.
- * @param[in]  len             Maximum number of bytes to read.
+ * @param[out] buf             Buffer to receive data; may be @c NULL when
+ *                             @p len is 0.
+ * @param[in]  len             Maximum number of bytes to read.  0 reads
+ *                             nothing and returns OVE_OK at once, without
+ *                             waiting for the trigger level.
  * @param[in]  timeout_ns      Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_received  Receives the number of bytes actually read, or
  *                             @c NULL if the caller does not need this value.
@@ -206,8 +211,9 @@ OVE_NODISCARD static inline int ove_stream_receive_until(ove_stream_t stream, vo
  * insufficient space the call returns immediately with a partial or zero count.
  *
  * @param[in]  stream      Stream handle.
- * @param[in]  data        Pointer to the data to send.
- * @param[in]  len         Number of bytes to send.
+ * @param[in]  data        Pointer to the data to send; may be @c NULL when
+ *                         @p len is 0.
+ * @param[in]  len         Number of bytes to send; 0 sends nothing.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL if the caller does not need this value.
  * @return OVE_OK when the call completed, including when a full stream took
@@ -221,11 +227,13 @@ OVE_NODISCARD int ove_stream_send_from_isr(ove_stream_t stream, const void *data
  * @brief Receive bytes from the stream from an ISR.
  *
  * ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only
- * the bytes that are immediately available.
+ * the bytes that are immediately available, even fewer than the trigger
+ * level.
  *
  * @param[in]  stream          Stream handle.
- * @param[out] buf             Buffer to receive data.
- * @param[in]  len             Maximum number of bytes to read.
+ * @param[out] buf             Buffer to receive data; may be @c NULL when
+ *                             @p len is 0.
+ * @param[in]  len             Maximum number of bytes to read; 0 reads nothing.
  * @param[out] bytes_received  Receives the number of bytes actually read, or
  *                             @c NULL if the caller does not need this value.
  * @return OVE_OK when the call completed, including when fewer bytes (or none)
@@ -239,8 +247,9 @@ OVE_NODISCARD int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, si
  * @brief Discard all bytes currently held in the stream.
  *
  * Resets the stream to the empty state without deallocating resources.
- * Any task blocked in @ref ove_stream_receive may remain blocked after this
- * call until new data is written.
+ * A task blocked in @ref ove_stream_send on a full stream is woken and
+ * goes on writing; one blocked in @ref ove_stream_receive stays blocked
+ * until new data is written.
  *
  * @param[in] stream  Stream handle.
  * @return OVE_OK on success, negative error code on failure.
@@ -286,7 +295,7 @@ size_t ove_stream_space_available(ove_stream_t stream);
  *
  * Designed for higher-level async runtimes that need a wake hook:
  * the Rust binding registers a callback that calls
- * @c AtomicWaker::wake on a task suspended on @c Stream::recv_async.
+ * @c AtomicWaker::wake on a task suspended in @c AsyncStream::read.
  *
  * The callback runs in whatever context the originating send used
  * (thread or ISR).  Implementations must therefore be ISR-safe and
