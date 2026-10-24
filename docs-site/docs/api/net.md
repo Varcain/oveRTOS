@@ -451,7 +451,7 @@ int register_routes(void)
 | Function | Description |
 |----------|-------------|
 | `ove_httpd_start` | Start the HTTP server. |
-| `ove_httpd_stop` | Stop the server and wait for its thread, so never call it from a handler. Open WebSocket connections are not closed and their `on_close` is not called. |
+| `ove_httpd_stop` | Stop the server and wait for its thread, so never call it from a handler. Open WebSocket connections get a close frame (1001) and their `on_close`. |
 | `ove_httpd_set_netif` | Bind the server to a specific network interface for the `/api/network` route. |
 | `ove_httpd_set_audio_graph` | Register an `ove_audio_graph` for the `/api/audio/stats` route (requires `CONFIG_OVE_AUDIO`). |
 | `ove_httpd_set_model` | Register an `ove_model_t` for the `/api/infer/stats` route (requires `CONFIG_OVE_INFER`). |
@@ -472,7 +472,7 @@ int register_routes(void)
 
 ### WebSocket Support
 
-When `CONFIG_OVE_NET_HTTPD_WS` is enabled, the server supports RFC 6455 WebSocket connections. Both handlers return `void`; the third argument to `ove_httpd_ws_route` is an `ove_httpd_ws_close_handler_t` invoked on disconnect (pass `NULL` if not needed).
+When `CONFIG_OVE_NET_HTTPD_WS` is enabled, the server supports RFC 6455 WebSocket connections. Both handlers return `void` and run on the `httpd` thread; the third argument to `ove_httpd_ws_route` is an `ove_httpd_ws_close_handler_t` (pass `NULL` if not needed), called once for every connection: when the client closes it, after a send to it fails, and at `ove_httpd_stop()`. A connection handle stays valid until its `on_close` returns, so drop every copy of it there. `ove_httpd_ws_send()` and `ove_httpd_ws_broadcast()` may be called from any thread.
 
 ```c
 static void ws_on_message(ove_httpd_ws_conn_t *conn,

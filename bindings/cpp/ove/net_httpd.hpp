@@ -261,7 +261,7 @@ struct Config {
  * @brief Stops the HTTP server and closes the listening socket.
  *
  * Waits for the server thread, so never call it from a handler.  Open
- * WebSocket connections are not closed and their on_close is not called.
+ * WebSocket connections get a close frame (1001) and their on_close.
  */
 inline void stop()
 {
@@ -351,8 +351,11 @@ class Connection
 	/**
 	 * @brief Send a text message to this connection.
 	 *
-	 * If the send fails the connection is closed and freed without its
-	 * on_close being called, so this object must not be used again.
+	 * Any thread may call it.  If the send fails the connection is
+	 * closing: later sends fail, and its on_close runs on the httpd thread
+	 * shortly after, which is when this object stops being valid.  A frame
+	 * the client does not take within a second fails the send, and every
+	 * other sender waits for it meanwhile.
 	 *
 	 * @param[in] data Message payload.
 	 * @param[in] len  Payload length in bytes.
@@ -406,6 +409,10 @@ using CloseHandler = ove_httpd_ws_close_handler_t;
 
 /**
  * @brief Broadcast a message to all WebSocket connections on a path.
+ *
+ * Any thread may call it; a connection whose send fails is closing, as for
+ * Connection::send().
+ *
  * @param[in] path Path filter (nullptr for all connections).
  * @param[in] data Message payload.
  * @param[in] len  Payload length in bytes.

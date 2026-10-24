@@ -18,6 +18,7 @@
 #include "ove/ove.h"
 #include "ove/net_httpd.h"
 #include "ove_backend_common.h"
+#include "ove_net_httpd_ws_internal.h"
 
 #include <errno.h>
 #include <string.h>
@@ -54,7 +55,7 @@ static size_t json_escape(const char *in, char *out, size_t out_cap)
 		else if (c == '\f')
 			esc = "\\f";
 		else if (c < 0x20) {
-			snprintf(uesc, sizeof(uesc), "\\u%04x", c);
+			(void)snprintf(uesc, sizeof(uesc), "\\u%04x", c);
 			esc = uesc;
 		}
 
@@ -551,6 +552,9 @@ static void httpd_task(void *arg)
 		ove_socket_close(client);
 	}
 
+#ifdef CONFIG_OVE_NET_HTTPD_WS
+	ove_httpd_ws_close_all();
+#endif
 	ove_socket_close(s_server_sock);
 }
 
@@ -563,8 +567,16 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 
 	s_port = (cfg && cfg->port) ? cfg->port : 80;
 
+#ifdef CONFIG_OVE_NET_HTTPD_WS
+	int ret = ove_httpd_ws_init();
+	if (ret != OVE_OK)
+		return ret;
+#else
+	int ret;
+#endif
+
 	/* Open server socket */
-	int ret = ove_socket_open(&s_server_sock, &s_server_storage, OVE_AF_INET, OVE_SOCK_STREAM);
+	ret = ove_socket_open(&s_server_sock, &s_server_storage, OVE_AF_INET, OVE_SOCK_STREAM);
 	if (ret != OVE_OK)
 		return ret;
 

@@ -111,8 +111,7 @@ pub fn start(cfg: ServerConfig) Error!void {
 /// Stop the HTTP server.
 ///
 /// Waits for the server thread, so never call it from a handler.  Open
-/// WebSocket connections are not closed and their close callback is not
-/// called.
+/// WebSocket connections get a close frame (1001) and their close callback.
 pub fn stop() void {
     c.ove_httpd_stop();
 }
@@ -176,14 +175,17 @@ pub const ws = if (@hasDecl(c, "ove_httpd_ws_route")) struct {
         try err.fromCode(c.ove_httpd_ws_route(path_str.ptr, on_message, on_close));
     }
 
-    /// Send a message to a WebSocket connection. If the send fails the
-    /// connection is closed and freed without its close callback being
-    /// called, so `conn` must not be used again.
+    /// Send a message to a WebSocket connection, from any thread. If the
+    /// send fails the connection is closing: later sends fail, and its close
+    /// callback runs on the httpd thread shortly after, which is when `conn`
+    /// stops being valid. A frame the client does not take within a second
+    /// fails the send, and every other sender waits for it meanwhile.
     pub fn send(conn: *c.ove_httpd_ws_conn_t, data: []const u8) Error!void {
         try err.fromCode(c.ove_httpd_ws_send(conn, data.ptr, data.len));
     }
 
-    /// Broadcast a message to all WebSocket connections on a path.
+    /// Broadcast a message to all WebSocket connections on a path, from any
+    /// thread; a connection whose send fails is closing, as for `send`.
     ///
     /// Returns the number of connections the message was sent to.
     pub fn broadcast(path_str: [:0]const u8, data: []const u8) c_int {
