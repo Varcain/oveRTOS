@@ -14,7 +14,9 @@
 
 static volatile int s_cmd_executed;
 static volatile int s_argc_received;
-static const char *s_argv_received[8];
+/* Copies: argv is valid only during the call.  Same size as the eight
+ * pointers it replaced, for the F746 test images' RAM. */
+static char s_argv_received[4][8];
 static int s_argv_terminated;
 
 static void test_cmd_handler(int argc, const char *argv[])
@@ -27,8 +29,9 @@ static void test_cmd_handler(int argc, const char *argv[])
 static void test_argv_handler(int argc, const char *argv[])
 {
 	s_argc_received = argc;
-	for (int i = 0; i < argc && i < 8; i++) {
-		s_argv_received[i] = argv[i];
+	for (int i = 0; i < argc && i < 4; i++) {
+		strncpy(s_argv_received[i], argv[i], sizeof(s_argv_received[i]) - 1);
+		s_argv_received[i][sizeof(s_argv_received[i]) - 1] = '\0';
 	}
 	s_argv_terminated = argv[argc] == NULL;
 }
@@ -328,6 +331,173 @@ static void test_shell_reregister_when_full(void **state)
 	assert_int_equal(s_second_calls, 1);
 }
 
+/* ── locking and nested dispatch ─────────────────────────────────────── */
+
+static void nested_inner(int argc, const char *argv[])
+{
+	(void)argc;
+	(void)argv;
+	s_first_calls++;
+}
+
+/* Registers a command and dispatches it from inside a command: the shell's
+ * lock is held across the handler, so it must be recursive, and the nested
+ * line must not overwrite the line the outer argv points into (it used the
+ * same buffer, so "hello" became "inner"). */
+static void nested_outer(int argc, const char *argv[])
+{
+	static const struct ove_shell_cmd inner = {
+		.name = "inner",
+		.help = "nested",
+		.handler = nested_inner,
+	};
+	if (ove_shell_register_cmd(&inner) != OVE_OK || argc < 2)
+		return;
+	ove_shell_process_line("inner XXXXXXXX YYYYYYYY");
+	s_second_calls = strcmp(argv[1], "hello") == 0;
+}
+
+static void test_shell_nested_dispatch(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_shell_init());
+	static const struct ove_shell_cmd outer = {
+		.name = "outer",
+		.help = "nests",
+		.handler = nested_outer,
+	};
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&outer));
+	s_first_calls = 0;
+	s_second_calls = 0;
+
+	ove_shell_process_line("outer hello");
+	assert_int_equal(s_first_calls, 1);
+	assert_int_equal(s_second_calls, 1);
+}
+
+#ifdef CONFIG_OVE_RTOS_POSIX
+/* Two threads using the shell at once.  Host only: these need a thread
+ * stack the F746 test images have no RAM for, and TSan (stub-tsan) is what
+ * catches an unlocked table or line here. */
+
+OVE_TEST_STORAGE(ove_thread_storage_t, s_race_th_storage);
+OVE_TEST_STACK(s_race_th_stack, 4096);
+
+#define RACE_ITERS 2000
+
+static int s_race_done;
+static int s_race_reg_errs;
+static int s_race_main_calls;
+static int s_race_other_calls;
+static ove_thread_t s_race_main;
+
+static void race_handler(int argc, const char *argv[])
+{
+	(void)argc;
+	(void)argv;
+}
+
+static const char *const s_race_fnames[] = {
+	"f00", "f01", "f02", "f03", "f04", "f05", "f06",
+	"f07", "f08", "f09", "f10", "f11", "f12", "f13",
+};
+
+static void race_register(const struct ove_shell_cmd *cmd)
+{
+	if (ove_shell_register_cmd(cmd) != OVE_OK)
+		__atomic_fetch_add(&s_race_reg_errs, 1, __ATOMIC_RELAXED);
+}
+
+static void race_registrar_entry(void *arg)
+{
+	(void)arg;
+	for (int i = 0; i < RACE_ITERS; i++) {
+		struct ove_shell_cmd c = {.name = "race", .help = "race", .handler = race_handler};
+		race_register(&c);
+		if ((i % 8) == 0) {
+			if (ove_shell_init() != OVE_OK)
+				__atomic_fetch_add(&s_race_reg_errs, 1, __ATOMIC_RELAXED);
+			for (size_t k = 0; k < sizeof(s_race_fnames) / sizeof(s_race_fnames[0]);
+			     k++) {
+				struct ove_shell_cmd f = {.name = s_race_fnames[k],
+							  .help = "fill",
+							  .handler = race_handler};
+				race_register(&f);
+			}
+		}
+	}
+	__atomic_store_n(&s_race_done, 1, __ATOMIC_RELEASE);
+}
+
+/* Registering and re-initialising on one thread while another dispatches. */
+static void test_shell_concurrent_register_dispatch(void **state)
+{
+	(void)state;
+	ove_thread_t th = NULL;
+	OVE_TEST_ASSERT_OK(ove_shell_init());
+	__atomic_store_n(&s_race_done, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&s_race_reg_errs, 0, __ATOMIC_RELAXED);
+
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_race_th_storage, "shreg",
+					       race_registrar_entry, NULL, s_race_th_stack, 4096));
+	while (!__atomic_load_n(&s_race_done, __ATOMIC_ACQUIRE)) {
+		ove_shell_process_line("race");
+		ove_shell_process_line("f07");
+	}
+	ove_test_thread_destroy(th);
+	assert_int_equal(__atomic_load_n(&s_race_reg_errs, __ATOMIC_RELAXED), 0);
+}
+
+static void help_counter(int argc, const char *argv[])
+{
+	(void)argc;
+	(void)argv;
+	if (ove_thread_get_self() == s_race_main)
+		__atomic_fetch_add(&s_race_main_calls, 1, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&s_race_other_calls, 1, __ATOMIC_RELAXED);
+}
+
+static void race_feeder_entry(void *arg)
+{
+	(void)arg;
+	for (int i = 0; !__atomic_load_n(&s_race_done, __ATOMIC_ACQUIRE); i++) {
+		ove_shell_process_char('h');
+		ove_shell_process_char('e');
+		if ((i % 32) == 31)
+			ove_shell_process_char('\n');
+	}
+}
+
+/* Typing on one thread while another dispatches whole lines: process_line
+ * shared the typed line's buffer, so lines were lost and the typist ran the
+ * other thread's command. */
+static void test_shell_process_line_beside_typing(void **state)
+{
+	(void)state;
+	ove_thread_t th = NULL;
+	OVE_TEST_ASSERT_OK(ove_shell_init());
+	static const struct ove_shell_cmd h = {
+		.name = "help", .help = "count", .handler = help_counter};
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&h));
+	s_race_main = ove_thread_get_self();
+	__atomic_store_n(&s_race_done, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&s_race_main_calls, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&s_race_other_calls, 0, __ATOMIC_RELAXED);
+
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_race_th_storage, "shfeed", race_feeder_entry,
+					       NULL, s_race_th_stack, 4096));
+	for (int i = 0; i < RACE_ITERS; i++)
+		ove_shell_process_line("help");
+	__atomic_store_n(&s_race_done, 1, __ATOMIC_RELEASE);
+	ove_test_thread_destroy(th);
+	ove_shell_process_char('\n'); /* drop the half-typed line */
+
+	assert_int_equal(__atomic_load_n(&s_race_main_calls, __ATOMIC_RELAXED), RACE_ITERS);
+	assert_int_equal(__atomic_load_n(&s_race_other_calls, __ATOMIC_RELAXED), 0);
+}
+#endif /* CONFIG_OVE_RTOS_POSIX */
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_shell_run(void)
@@ -345,6 +515,11 @@ int test_shell_run(void)
 		cmocka_unit_test(test_shell_reregister_replaces),
 		cmocka_unit_test(test_shell_register_copies_descriptor),
 		cmocka_unit_test(test_shell_reregister_when_full),
+		cmocka_unit_test(test_shell_nested_dispatch),
+#ifdef CONFIG_OVE_RTOS_POSIX
+		cmocka_unit_test(test_shell_concurrent_register_dispatch),
+		cmocka_unit_test(test_shell_process_line_beside_typing),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -15,8 +15,14 @@
  * Implements a simple line-editing shell that tokenises input lines and
  * dispatches them to registered command handlers. Commands are registered
  * at run time via @ref ove_shell_register_cmd and driven character-by-character
- * through @ref ove_shell_process_char (typically called from a console
- * receive callback or a dedicated task).
+ * through @ref ove_shell_process_char (typically from a dedicated input
+ * task) or a line at a time through @ref ove_shell_process_line.
+ *
+ * Every call is thread-safe and none is ISR-safe.  Commands run one at a
+ * time: the shell holds a lock while a handler runs, so a line dispatched
+ * from another thread waits for it.  A handler may register commands or
+ * dispatch a line itself, but must not wait for another thread that is
+ * using the shell.
  *
  * The maximum number of space-separated tokens per line is
  * @ref OVE_SHELL_MAX_ARGS.
@@ -49,8 +55,8 @@ extern "C" {
  * Called by the shell when the user enters a matching command. @p argc is the
  * total number of tokens (including the command name in @p argv[0]) and is
  * always at least 1. @p argv is a @c NULL-terminated array of pointers to
- * the individual tokens within the line buffer; the strings are valid only
- * for the duration of the call.
+ * the individual tokens of the line; the strings are valid only for the
+ * duration of the call.
  *
  * @param[in] argc  Number of arguments (including the command name).
  * @param[in] argv  Array of @p argc argument strings, terminated by @c NULL.
@@ -87,7 +93,9 @@ typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
  * Must be called before @ref ove_shell_register_cmd or
  * @ref ove_shell_process_char.
  *
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, or the error from creating the shell's lock on
+ *         first use (OVE_ERR_NO_MEMORY when a heap build cannot allocate
+ *         it).
  * @note Requires @c CONFIG_OVE_SHELL.
  */
 OVE_NODISCARD int ove_shell_init(void);
@@ -102,7 +110,8 @@ OVE_NODISCARD int ove_shell_init(void);
  *
  * @param[in] cmd  Command descriptor; copied, see @ref ove_shell_cmd.
  * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p cmd, its @c name or
- *         its @c handler is NULL, OVE_ERR_NO_MEMORY if the table is full, or
+ *         its @c handler is NULL, OVE_ERR_NO_MEMORY if the table is full (or,
+ *         on first use, a heap build cannot allocate the shell's lock), or
  *         OVE_ERR_NOT_SUPPORTED without @c CONFIG_OVE_SHELL.
  * @note Requires @c CONFIG_OVE_SHELL.
  */
@@ -118,9 +127,10 @@ OVE_NODISCARD int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
  *
  * Call it from thread context, typically a dedicated input task, never from
  * an ISR: the matching command's handler runs synchronously inside this
- * call, along with its log output and console writes. The shell is not
- * reentrant; feed it from one thread at a time, which includes
- * @ref ove_shell_process_line callers, as both use the same line buffer.
+ * call, along with its log output and console writes.  The line being
+ * typed is one shared buffer, so characters from two threads interleave;
+ * feed it from one thread.  @ref ove_shell_process_line does not touch it.
+ * If the shell's lock cannot be created on first use, @p c is dropped.
  *
  * @param[in] c  Character to process (raw byte from the console).
  * @note Requires @c CONFIG_OVE_SHELL.
@@ -132,8 +142,10 @@ void ove_shell_process_char(int c);
  *
  * Tokenises @p line and dispatches to the matching command handler.
  * Equivalent to feeding each character of the line via process_char,
- * but more convenient for programmatic use (e.g. WebSocket terminal).
- * The same thread-context and reentrancy rules apply.
+ * but more convenient for programmatic use (e.g. WebSocket terminal), and
+ * independent of the line being typed there.  Thread context only; any
+ * thread, and a command handler too.  At most 127 characters are used.  If
+ * the shell's lock cannot be created on first use, the line is dropped.
  *
  * @param[in] line NUL-terminated input line (without trailing newline).
  */
@@ -144,7 +156,9 @@ void ove_shell_process_line(const char *line);
  *
  * When set, each OVE_LOG_* line a command handler emits from its own
  * thread while it runs (newline included) is passed to this hook as well
- * as to the console.  Pass NULL to remove.
+ * as to the console.  Pass NULL to remove.  The hook runs on the command's
+ * thread with the shell's lock held, so it must not wait for another thread
+ * that is using the shell.
  *
  * @param[in] hook Output hook function (or NULL).
  */

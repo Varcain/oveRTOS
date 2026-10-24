@@ -635,6 +635,8 @@ config OVE_SHELL
     bool "Interactive shell"
     default n
     depends on OVE_CONSOLE
+    # Registration and dispatch share the command table under a mutex.
+    select OVE_SYNC
 
 config OVE_NVS
     bool "Non-volatile storage"
