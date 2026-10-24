@@ -243,9 +243,9 @@ struct Config {
  * @brief Starts the HTTP server.
  *
  * Spawns a background task that accepts connections on the configured port.
- * Register routes before starting: the route tables are not locked against
- * the server thread.  Handlers run one at a time on its single @c httpd
- * thread (see @ref ove_httpd_handler_t).
+ * Routes may be registered before or after starting, from any thread.
+ * Handlers run one at a time on its single @c httpd thread (see
+ * @ref ove_httpd_handler_t).
  *
  * @param[in] cfg Server configuration (defaults: port 80, 1024-byte body).
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
@@ -285,8 +285,7 @@ inline void stop()
 /**
  * @brief Registers the built-in dashboard routes (/api/info, /api/leds, etc.).
  *
- * Adds the standard device management API; like any route, best registered
- * before `start()`.
+ * Adds the standard device management API, before or after `start()`.
  */
 inline void register_builtin_routes()
 {

@@ -75,12 +75,23 @@ pub fn processLine(line: [*:0]const u8) void {
     c.ove_shell_process_line(line);
 }
 
+/// Process a line, passing its command's output to `hook`: for this one
+/// command it takes the place of the hook set with `setOutputHook`, getting
+/// each log line the command emits from its own thread while it runs, and
+/// no other command's. The hook runs on the calling thread with the shell's
+/// lock held. A hook the command itself sets with `setOutputHook` stays
+/// afterwards, unless it is `hook` itself.
+pub fn processLineWithHook(line: [*:0]const u8, hook: c.ove_shell_output_hook_t) void {
+    c.ove_shell_process_line_with_hook(line, hook);
+}
+
 /// Set a hook to capture shell output.
 ///
 /// When set, shell command output (normally printed to console) is also
-/// forwarded to the hook. Pass `null` to remove. The hook runs on the
-/// command's thread with the shell's lock held, so it must not wait for
-/// another thread that is using the shell.
+/// forwarded to the hook. Pass `null` to remove. Setting it takes the shell's
+/// lock, so it waits for a running command (thread context only). The hook
+/// runs on the command's thread with the shell's lock held, so it must not
+/// wait for another thread that is using the shell.
 pub fn setOutputHook(hook: c.ove_shell_output_hook_t) void {
     c.ove_shell_set_output_hook(hook);
 }

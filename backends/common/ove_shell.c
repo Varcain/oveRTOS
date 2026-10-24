@@ -259,9 +259,28 @@ void ove_shell_process_line(const char *line)
 	shell_unlock();
 }
 
+/* Swaps the hook in for this one dispatch: commands run one at a time
+ * under the lock, so only this command's lines reach it.  A hook the
+ * command itself set stays. */
+void ove_shell_process_line_with_hook(const char *line, ove_shell_output_hook_t hook)
+{
+	if (!line || shell_lock() != OVE_OK)
+		return;
+	ove_shell_output_hook_t prev = __atomic_load_n(&s_output_hook, __ATOMIC_RELAXED);
+	__atomic_store_n(&s_output_hook, hook, __ATOMIC_RELEASE);
+	shell_dispatch(line, strlen(line));
+	if (__atomic_load_n(&s_output_hook, __ATOMIC_RELAXED) == hook)
+		__atomic_store_n(&s_output_hook, prev, __ATOMIC_RELEASE);
+	shell_unlock();
+}
+
 void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
 {
+	/* Under the lock, so it is not lost to a dispatch's swap. */
+	int locked = shell_lock() == OVE_OK;
 	__atomic_store_n(&s_output_hook, hook, __ATOMIC_RELEASE);
+	if (locked)
+		shell_unlock();
 }
 
 void ove_shell_log_tee(const char *data, size_t len)

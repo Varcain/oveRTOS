@@ -26,13 +26,10 @@
 #include "ove/infer.h"
 #endif
 
-#ifdef CONFIG_OVE_SYNC
 #include "ove/sync.h"
-#endif
 
 #include "ove_backend_common.h"
 
-#include <assert.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,38 +77,58 @@ static int query_netif_addr(ove_sockaddr_t *ip, ove_sockaddr_t *gw, ove_sockaddr
 static char log_ring[LOG_RING_LINES][LOG_LINE_MAX];
 static int log_ring_head;
 
-#ifdef CONFIG_OVE_SYNC
 static ove_mutex_t s_log_mutex;
+#ifndef OVE_HEAP_SYNC
 static ove_mutex_storage_t s_log_mutex_storage;
-static int s_log_mutex_inited;
-
-static void log_lock(void)
-{
-	if (s_log_mutex_inited)
-		OVE_LOCK_INFINITE(s_log_mutex);
-}
-
-static void log_unlock(void)
-{
-	if (s_log_mutex_inited)
-		ove_mutex_unlock(s_log_mutex);
-}
-#else
-static void log_lock(void)
-{
-}
-static void log_unlock(void)
-{
-}
 #endif
+
+enum { LOG_LOCK_NONE, LOG_LOCK_CREATING, LOG_LOCK_READY };
+static int s_log_lock_state;
+
+/* Every thread logs, from before the server starts, so the mutex is created
+ * by the first line that needs it; a thread that finds another creating it
+ * waits a tick at a time.  False if it cannot be created. */
+static int log_lock(void)
+{
+	for (;;) {
+		int state = __atomic_load_n(&s_log_lock_state, __ATOMIC_ACQUIRE);
+		int expected = LOG_LOCK_NONE;
+
+		if (state == LOG_LOCK_READY)
+			break;
+		if (state == LOG_LOCK_CREATING) {
+			ove_thread_sleep_ms(1);
+			continue;
+		}
+		if (!__atomic_compare_exchange_n(&s_log_lock_state, &expected, LOG_LOCK_CREATING, 0,
+						 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+			continue;
+#ifdef OVE_HEAP_SYNC
+		int rc = ove_mutex_create(&s_log_mutex);
+#else
+		int rc = ove_mutex_init(&s_log_mutex, &s_log_mutex_storage);
+#endif
+		__atomic_store_n(&s_log_lock_state, rc == OVE_OK ? LOG_LOCK_READY : LOG_LOCK_NONE,
+				 __ATOMIC_RELEASE);
+		if (rc != OVE_OK)
+			return 0;
+	}
+	return ove_mutex_lock(s_log_mutex, OVE_WAIT_FOREVER) == OVE_OK;
+}
+
+static void log_unlock(void)
+{
+	ove_mutex_unlock(s_log_mutex);
+}
 
 void ove_httpd_log_append(const char *line)
 {
-	log_lock();
-	strncpy(log_ring[log_ring_head], line, LOG_LINE_MAX - 1);
-	log_ring[log_ring_head][LOG_LINE_MAX - 1] = '\0';
-	log_ring_head = (log_ring_head + 1) % LOG_RING_LINES;
-	log_unlock();
+	if (log_lock()) {
+		strncpy(log_ring[log_ring_head], line, LOG_LINE_MAX - 1);
+		log_ring[log_ring_head][LOG_LINE_MAX - 1] = '\0';
+		log_ring_head = (log_ring_head + 1) % LOG_RING_LINES;
+		log_unlock();
+	}
 
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 	ove_httpd_ws_broadcast("/ws/log", line, strlen(line));
@@ -422,7 +439,8 @@ static int handle_log(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 
 	off += snprintf(buf + off, sizeof(buf) - (size_t)off, "{\"lines\":[");
 
-	log_lock();
+	if (!log_lock())
+		return ove_httpd_resp_error(resp, 500, "log unavailable");
 	int first = 1;
 	for (int i = 0; i < LOG_RING_LINES; i++) {
 		int idx = (log_ring_head + i) % LOG_RING_LINES;
@@ -511,37 +529,29 @@ static int handle_infer_stats(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 #if defined(CONFIG_OVE_NET_HTTPD_WS) && defined(CONFIG_OVE_SHELL)
 #include "ove/shell.h"
 
+/* The connection whose command is running.  Only the httpd thread touches
+ * it: the command runs there, inside on_message, and so does its output. */
 static ove_httpd_ws_conn_t *s_shell_ws_conn;
 
 static void ws_shell_output(const char *data, size_t len)
 {
-	if (s_shell_ws_conn) {
-		/* An output hook cannot report a failed write; a closed connection is
-		 * cleared by ws_shell_on_close. */
-		int rc = ove_httpd_ws_send(s_shell_ws_conn, data, len);
-		(void)rc;
-	}
+	/* An output hook cannot report a failed write; the connection is then
+	 * closing, and the next poll frees it. */
+	int rc = ove_httpd_ws_send(s_shell_ws_conn, data, len);
+	(void)rc;
 }
 
 static void ws_shell_on_message(ove_httpd_ws_conn_t *conn, const void *data, size_t len)
 {
-	s_shell_ws_conn = conn;
-	ove_shell_set_output_hook(ws_shell_output);
-
 	char line[128];
 	size_t copy = len < sizeof(line) - 1 ? len : sizeof(line) - 1;
 	memcpy(line, data, copy);
 	line[copy] = '\0';
 
-	ove_shell_process_line(line);
-}
-
-static void ws_shell_on_close(ove_httpd_ws_conn_t *conn)
-{
-	if (s_shell_ws_conn == conn) {
-		s_shell_ws_conn = NULL;
-		ove_shell_set_output_hook(NULL);
-	}
+	/* Only this command's own output goes back to this client. */
+	s_shell_ws_conn = conn;
+	ove_shell_process_line_with_hook(line, ws_shell_output);
+	s_shell_ws_conn = NULL;
 }
 #endif /* CONFIG_OVE_NET_HTTPD_WS && CONFIG_OVE_SHELL */
 
@@ -566,15 +576,6 @@ static void builtin_ws_route(const char *path, ove_httpd_ws_handler_t on_message
 
 void ove_httpd_register_builtin_routes(void)
 {
-#ifdef CONFIG_OVE_SYNC
-	if (!s_log_mutex_inited) {
-		int _rc = ove_mutex_init(&s_log_mutex, &s_log_mutex_storage);
-		assert(_rc == OVE_OK);
-		(void)_rc;
-		s_log_mutex_inited = 1;
-	}
-#endif
-
 	builtin_route("GET", "/", handle_index);
 	builtin_route("GET", "/api/info", handle_info);
 	builtin_route("GET", "/api/leds", handle_leds_get);
@@ -596,7 +597,7 @@ void ove_httpd_register_builtin_routes(void)
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 	builtin_ws_route("/ws/log", NULL, NULL);
 #ifdef CONFIG_OVE_SHELL
-	builtin_ws_route("/ws/shell", ws_shell_on_message, ws_shell_on_close);
+	builtin_ws_route("/ws/shell", ws_shell_on_message, NULL);
 #endif
 #endif
 }

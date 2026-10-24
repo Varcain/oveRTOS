@@ -98,9 +98,9 @@ pub const ServerConfig = struct {
 
 /// Start the HTTP server.
 ///
-/// Register routes before starting: the route tables are not locked against
-/// the server thread.  Handlers run one at a time on its single `httpd`
-/// thread, so a slow handler delays every client.
+/// Routes may be registered before or after starting, from any thread.
+/// Handlers run one at a time on its single `httpd` thread, so a slow
+/// handler delays every client.
 pub fn start(cfg: ServerConfig) Error!void {
     var cc: c.ove_httpd_config_t = std.mem.zeroes(c.ove_httpd_config_t);
     cc.port = cfg.port;

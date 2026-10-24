@@ -1092,6 +1092,8 @@ config OVE_NET_HTTPD
     bool "Embedded HTTP server"
     default n
     depends on OVE_NET
+    # Every thread's log lines go into the server's log ring under a mutex.
+    select OVE_SYNC
     help
       Lightweight single-threaded HTTP server with REST API
       routing and a built-in web dashboard for device management

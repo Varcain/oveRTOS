@@ -151,11 +151,23 @@ pub fn process_line(line: &CStr) {
     unsafe { bindings::ove_shell_process_line(line.as_ptr()) }
 }
 
+/// Process a line, passing its command's output to `hook`.
+///
+/// For this one command `hook` takes the place of the hook set with
+/// [`set_output_hook`]: it gets each log line the command emits from its own
+/// thread while it runs, and no other command's. The hook runs on the calling
+/// thread with the shell's lock held. A hook the command itself sets with
+/// [`set_output_hook`] stays afterwards, unless it is `hook` itself.
+pub fn process_line_with_hook(line: &CStr, hook: bindings::ove_shell_output_hook_t) {
+    unsafe { bindings::ove_shell_process_line_with_hook(line.as_ptr(), hook) }
+}
+
 /// Set a hook to capture shell output.
 ///
-/// Pass `None` to remove a previously set hook. The hook runs on the
-/// command's thread with the shell's lock held, so it must not wait for
-/// another thread that is using the shell.
+/// Pass `None` to remove a previously set hook. Setting it takes the shell's
+/// lock, so it waits for a running command (thread context only). The hook
+/// runs on the command's thread with the shell's lock held, so it must not
+/// wait for another thread that is using the shell.
 pub fn set_output_hook(hook: bindings::ove_shell_output_hook_t) {
     unsafe { bindings::ove_shell_set_output_hook(hook) }
 }

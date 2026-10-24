@@ -20,6 +20,7 @@
 #include "ove/ove.h"
 #include "ove/net.h"
 #include "ove/net_httpd.h"
+#include "ove/shell.h"
 
 #include <setjmp.h>
 #include <stdarg.h>
@@ -70,6 +71,17 @@ static void sleep_ms(unsigned ms)
 {
 	struct timespec ts = {.tv_sec = ms / 1000, .tv_nsec = (long)(ms % 1000) * 1000000L};
 	nanosleep(&ts, NULL);
+}
+
+/* The console writes to stdout; cases whose own output is noise send it
+ * away (the PROVE-style notes go to stderr). */
+static void quiet_stdout(void)
+{
+	int devnull = open("/dev/null", O_WRONLY);
+	if (devnull >= 0) {
+		dup2(devnull, STDOUT_FILENO);
+		close(devnull);
+	}
 }
 
 /* ---------- Server-side hooks ---------- */
@@ -473,13 +485,7 @@ static int case_send_while_churning(int via_log)
 	pthread_t t;
 
 	if (via_log) {
-		/* The log lines themselves are noise here: only their broadcast to
-		 * /ws/log matters, and the console writes to stdout. */
-		int devnull = open("/dev/null", O_WRONLY);
-		if (devnull >= 0) {
-			dup2(devnull, STDOUT_FILENO);
-			close(devnull);
-		}
+		quiet_stdout(); /* only the lines' broadcast to /ws/log matters */
 		ove_httpd_register_builtin_routes();
 	} else if (ove_httpd_ws_route("/ws/echo", echo_on_message, echo_on_close) != OVE_OK)
 		return 2;
@@ -576,6 +582,209 @@ static int case_stalled_client(int unused)
 	return !served || close_count() != 1 || stop_ms > 3000;
 }
 
+/* ---------- The web terminal ---------- */
+
+/* Frames that arrive within @p ms (then 300 ms after each); the first one's
+ * first line in @p first. */
+static int shell_frames(int ws, unsigned ms, char *first, size_t cap)
+{
+	char buf[256];
+	int n = 0;
+	uint64_t end = now_ms() + 2 * ms + 200; /* a busy console can stream on */
+	first[0] = '\0';
+	while (now_ms() < end) {
+		int r = ws_recv(ws, buf, sizeof(buf), ms);
+		if (r != 1)
+			break;
+		if (n++ == 0) {
+			(void)snprintf(first, cap, "%s", buf);
+			first[strcspn(first, "\n")] = '\0';
+		}
+		ms = 300;
+	}
+	return n;
+}
+
+static void *console_help(void *arg)
+{
+	(void)arg;
+	ove_shell_process_line("help");
+	return NULL;
+}
+
+/* The terminal set a global output hook, so every later command's output,
+ * the console's too, went to the last browser that had typed one. */
+static int case_shell_output_scoped(int unused)
+{
+	char first[128];
+	(void)unused;
+
+	quiet_stdout();
+	ove_httpd_register_builtin_routes();
+	if (ove_shell_init() != OVE_OK || start_server() != OVE_OK)
+		return 2;
+	int ws = ws_open("/ws/shell");
+	if (ws < 0)
+		return 2;
+	ws_send_text(ws, "help");
+	int own = shell_frames(ws, 2000, first, sizeof(first));
+	say("terminal: its own 'help' gave %d frame(s), first '%s'", own, first);
+
+	pthread_t t;
+	pthread_create(&t, NULL, console_help, NULL);
+	pthread_join(t, NULL);
+	int leaked = shell_frames(ws, 1000, first, sizeof(first));
+	say("terminal: the console's 'help' gave it %d frame(s)", leaked);
+	close(ws);
+	ove_httpd_stop();
+	return own == 0 || leaked != 0;
+}
+
+static void *console_loop(void *arg)
+{
+	(void)arg;
+	while (!__atomic_load_n(&g_stop, __ATOMIC_ACQUIRE)) {
+		ove_shell_process_line("help");
+		sleep_ms(5);
+	}
+	return NULL;
+}
+
+/* The console typing commands while browsers open the terminal, type and
+ * leave: the terminal's connection pointer was shared across threads. */
+static int case_console_beside_terminal(int unused)
+{
+	(void)unused;
+	quiet_stdout();
+	ove_httpd_register_builtin_routes();
+	if (ove_shell_init() != OVE_OK || start_server() != OVE_OK)
+		return 2;
+	pthread_t t;
+	pthread_create(&t, NULL, console_loop, NULL);
+	int opens = 0;
+	uint64_t end = now_ms() + 2000;
+	for (int i = 0; now_ms() < end; i++) {
+		int ws = ws_open("/ws/shell");
+		if (ws < 0) {
+			sleep_ms(5);
+			continue;
+		}
+		opens++;
+		ws_send_text(ws, "help");
+		char buf[256];
+		while (ws_recv(ws, buf, sizeof(buf), 5) == 1)
+			; /* take what has come, without waiting for the rest */
+		if (i & 1)
+			cli_abort(ws);
+		else
+			close(ws);
+	}
+	__atomic_store_n(&g_stop, 1, __ATOMIC_RELEASE);
+	pthread_join(t, NULL);
+	ove_httpd_stop();
+	say("terminal: %d sessions beside the console", opens);
+	return opens == 0;
+}
+
+/* ---------- Routes and the log while the server runs ---------- */
+
+static int ok_route(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
+{
+	(void)req;
+	return ove_httpd_resp_json(resp, 200, "{}");
+}
+
+#define LATE_ROUTES 8
+
+static void *route_adder(void *arg)
+{
+	static char paths[LATE_ROUTES][16];
+	(void)arg;
+	for (int i = 0; i < LATE_ROUTES; i++) {
+		(void)snprintf(paths[i], sizeof(paths[i]), "/r%d", i);
+		if (ove_httpd_route("GET", paths[i], ok_route) != OVE_OK)
+			__atomic_add_fetch(&g_close_count, 100,
+					   __ATOMIC_RELAXED); /* flags a failure */
+		sleep_ms(50);
+	}
+	return NULL;
+}
+
+static int http_status(const char *path)
+{
+	int g = cli_connect();
+	char req[64];
+	int n = snprintf(req, sizeof(req), "GET %s HTTP/1.1\r\n\r\n", path);
+	(void)send(g, req, (size_t)n, MSG_NOSIGNAL);
+	uint8_t b[64];
+	int eof;
+	size_t got = cli_read(g, b, sizeof(b) - 1, 1000, &eof);
+	close(g);
+	b[got] = '\0';
+	return got >= 12 ? (int)strtol((char *)b + 9, NULL, 10) : -1;
+}
+
+/* Routes added while requests are served: the table had no lock. */
+static int case_routes_while_running(int unused)
+{
+	(void)unused;
+	if (start_server() != OVE_OK)
+		return 2;
+	pthread_t t;
+	pthread_create(&t, NULL, route_adder, NULL);
+	int gets = 0;
+	uint64_t end = now_ms() + 600;
+	while (now_ms() < end) {
+		char path[16];
+		(void)snprintf(path, sizeof(path), "/r%d", gets % LATE_ROUTES);
+		(void)http_status(path);
+		gets++;
+	}
+	pthread_join(t, NULL);
+	int served = 0;
+	for (int i = 0; i < LATE_ROUTES; i++) {
+		char path[16];
+		(void)snprintf(path, sizeof(path), "/r%d", i);
+		served += http_status(path) == 200;
+	}
+	ove_httpd_stop();
+	say("routes: %d requests while adding; %d/%d late routes served after", gets, served,
+	    LATE_ROUTES);
+	return served != LATE_ROUTES || close_count() != 0;
+}
+
+static void *early_logger(void *arg)
+{
+	(void)arg;
+	while (!__atomic_load_n(&g_stop, __ATOMIC_ACQUIRE)) {
+		OVE_LOG_INF("early");
+		sleep_ms(1);
+	}
+	return NULL;
+}
+
+/* Threads logging before the built-in routes created the log ring's mutex
+ * raced its unlocked flag (and could unlock a mutex they never took). */
+static int case_log_before_routes(int unused)
+{
+	pthread_t t[3];
+	(void)unused;
+	quiet_stdout();
+	for (int i = 0; i < 3; i++)
+		pthread_create(&t[i], NULL, early_logger, NULL);
+	sleep_ms(50);
+	ove_httpd_register_builtin_routes();
+	if (start_server() != OVE_OK)
+		return 2;
+	int status = http_status("/api/log");
+	__atomic_store_n(&g_stop, 1, __ATOMIC_RELEASE);
+	for (int i = 0; i < 3; i++)
+		pthread_join(t[i], NULL);
+	ove_httpd_stop();
+	say("log: /api/log answered %d while threads logged", status);
+	return status != 200;
+}
+
 /* ---------- Runner ---------- */
 
 /* A port nothing listens on now. */
@@ -667,7 +876,32 @@ static void test_ws_stalled_client_does_not_stall_server(void **state)
 	assert_int_equal(run_case(case_stalled_client, 0), 0);
 }
 
-int main(void)
+static void test_terminal_shows_only_its_commands(void **state)
+{
+	(void)state;
+	assert_int_equal(run_case(case_shell_output_scoped, 0), 0);
+}
+
+static void test_console_beside_terminal(void **state)
+{
+	(void)state;
+	assert_int_equal(run_case(case_console_beside_terminal, 0), 0);
+}
+
+static void test_routes_added_while_running(void **state)
+{
+	(void)state;
+	assert_int_equal(run_case(case_routes_while_running, 0), 0);
+}
+
+static void test_log_before_builtin_routes(void **state)
+{
+	(void)state;
+	assert_int_equal(run_case(case_log_before_routes, 0), 0);
+}
+
+/* An optional argument picks the tests to run by name (cmocka pattern). */
+int main(int argc, char **argv)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_ws_survives_http_request),
@@ -679,6 +913,12 @@ int main(void)
 		cmocka_unit_test(test_ws_broadcast_while_clients_churn),
 		cmocka_unit_test(test_ws_log_while_clients_churn),
 		cmocka_unit_test(test_ws_stalled_client_does_not_stall_server),
+		cmocka_unit_test(test_terminal_shows_only_its_commands),
+		cmocka_unit_test(test_console_beside_terminal),
+		cmocka_unit_test(test_routes_added_while_running),
+		cmocka_unit_test(test_log_before_builtin_routes),
 	};
+	if (argc > 1)
+		cmocka_set_test_filter(argv[1]);
 	return cmocka_run_group_tests_name("httpd_ws", tests, NULL, NULL);
 }

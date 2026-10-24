@@ -85,10 +85,29 @@ inline void process_line(const char *line)
 }
 
 /**
+ * @brief Process a line, passing its command's output to @p hook.
+ *
+ * For this one command @p hook takes the place of the hook set with
+ * set_output_hook(): it gets each log line the command emits from its own
+ * thread while it runs, and no other command's.  The hook runs on the
+ * calling thread with the shell's lock held.  A hook the command itself
+ * sets with set_output_hook() stays afterwards, unless it is @p hook.
+ *
+ * @param[in] line NUL-terminated command line.
+ * @param[in] hook Output hook for this command (nullptr for none).
+ */
+inline void process_line_with_hook(const char *line, ove_shell_output_hook_t hook)
+{
+	ove_shell_process_line_with_hook(line, hook);
+}
+
+/**
  * @brief Set a hook to capture shell output.
  *
- * The hook runs on the command's thread with the shell's lock held, so it
- * must not wait for another thread that is using the shell.
+ * Setting it takes the shell's lock, so it waits for a running command
+ * (thread context only).  The hook runs on the command's thread with the
+ * shell's lock held, so it must not wait for another thread that is using
+ * the shell.
  *
  * @param[in] hook Output hook function (nullptr to remove).
  */

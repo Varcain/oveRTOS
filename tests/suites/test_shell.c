@@ -210,6 +210,63 @@ static void test_shell_output_hook(void **state)
 	assert_int_equal(s_hook_calls, 1);
 }
 
+static void count_hook(const char *data, size_t len)
+{
+	(void)data;
+	(void)len;
+	s_first_calls++;
+}
+
+static void set_hook_handler(int argc, const char *argv[])
+{
+	(void)argc;
+	(void)argv;
+	ove_shell_set_output_hook(capture_hook);
+}
+
+/* A line run with its own hook: only that hook gets the command's output,
+ * the global one is back afterwards, NULL means none, and a hook the
+ * command sets itself stays. */
+static void test_shell_process_line_with_hook(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_shell_init());
+	static const struct ove_shell_cmd out = {
+		.name = "oveout",
+		.help = "emit output",
+		.handler = test_output_handler,
+	};
+	static const struct ove_shell_cmd sethook = {
+		.name = "ovesethook",
+		.help = "set the global hook",
+		.handler = set_hook_handler,
+	};
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&out));
+	OVE_TEST_ASSERT_OK(ove_shell_register_cmd(&sethook));
+
+	reset_hook_capture();
+	s_first_calls = 0;
+	ove_shell_set_output_hook(capture_hook);
+	ove_shell_process_line_with_hook("oveout mine", count_hook);
+	assert_int_equal(s_first_calls, 1);
+	assert_int_equal(s_hook_calls, 0);
+
+	ove_shell_process_line("oveout global");
+	assert_int_equal(s_hook_calls, 1);
+	assert_string_equal(s_hook_buf, "global");
+
+	ove_shell_process_line_with_hook("oveout none", NULL);
+	assert_int_equal(s_first_calls, 1);
+	assert_int_equal(s_hook_calls, 1);
+
+	ove_shell_set_output_hook(NULL);
+	ove_shell_process_line_with_hook("ovesethook", count_hook);
+	ove_shell_process_line("oveout kept");
+	assert_int_equal(s_hook_calls, 2);
+
+	ove_shell_set_output_hook(NULL);
+}
+
 static void test_shell_process_line_terminates(void **state)
 {
 	(void)state;
@@ -511,6 +568,7 @@ int test_shell_run(void)
 		cmocka_unit_test(test_shell_argv_parsing),
 		cmocka_unit_test(test_shell_argv_null_terminated),
 		cmocka_unit_test(test_shell_output_hook),
+		cmocka_unit_test(test_shell_process_line_with_hook),
 		cmocka_unit_test(test_shell_process_line_terminates),
 		cmocka_unit_test(test_shell_reregister_replaces),
 		cmocka_unit_test(test_shell_register_copies_descriptor),

@@ -66,7 +66,7 @@ Then over the console:
 >
 ```
 
-Handlers print with `OVE_LOG_*` (or raw text with `ove_console_write()`). While a handler runs, the log lines it emits from its own thread also reach the hook set with `ove_shell_set_output_hook()`, which is how the HTTP dashboard's terminal shows command output.
+Handlers print with `OVE_LOG_*` (or raw text with `ove_console_write()`). While a handler runs, the log lines it emits from its own thread also reach the hook set with `ove_shell_set_output_hook()`, or the one passed to `ove_shell_process_line_with_hook()` for that command alone, which is how the HTTP dashboard's terminal shows command output.
 
 ## Commands with arguments
 

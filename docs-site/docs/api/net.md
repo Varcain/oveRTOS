@@ -405,7 +405,7 @@ void mqtt_demo(void)
 
 ## HTTP Server
 
-Requires `CONFIG_OVE_NET_HTTPD`. Single-threaded HTTP/1.1 server with path-based routing and a built-in Tasmota-style web dashboard. Handlers, WebSocket ones included, run one at a time on the server's single `httpd` thread (8 KiB stack), so a slow handler delays every client. Register routes before `ove_httpd_start()`: the route tables are not locked against that thread.
+Requires `CONFIG_OVE_NET_HTTPD`. Single-threaded HTTP/1.1 server with path-based routing and a built-in Tasmota-style web dashboard. Handlers, WebSocket ones included, run one at a time on the server's single `httpd` thread (8 KiB stack), so a slow handler delays every client. Routes may be registered before or after `ove_httpd_start()`, from any thread.
 
 <!-- ove:body -->
 ```c
