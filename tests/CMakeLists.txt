@@ -397,6 +397,44 @@ endif()
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
+# --- httpd WebSocket connection lifetime (ove_test_httpd_ws) ---
+# The real httpd and WebSocket server on the POSIX socket backend, driven by
+# raw-socket clients.  Its own ove_config.h (tests/net_httpd) keeps the
+# server, built-in routes and shell without audio, LVGL or the Linux
+# personality.
+add_executable(ove_test_httpd_ws
+    ${CMAKE_CURRENT_SOURCE_DIR}/net_httpd/test_httpd_ws.c
+    ${POSIX_CORE_DIR}/posix_net.c
+    ${POSIX_CORE_DIR}/posix_time.c
+    ${POSIX_CORE_DIR}/posix_console.c
+    ${POSIX_CORE_DIR}/posix_sync.c
+    ${POSIX_CORE_DIR}/posix_thread.c
+    ${OVE_SRC}/ove_sync.c
+    ${OVE_SRC}/ove_net.c
+    ${OVE_SRC}/ove_board.c
+    ${OVE_SRC}/ove_gpio.c
+    ${OVE_SRC}/ove_led.c
+    ${STUB_DIR}/stub_gpio.c
+    ${STUB_DIR}/stub_board.c
+    ${OVE_ROOT}/backends/common/ove_net_httpd.c
+    ${OVE_ROOT}/backends/common/ove_net_httpd_ws.c
+    ${OVE_ROOT}/backends/common/ove_net_httpd_routes.c
+    ${OVE_ROOT}/backends/common/ove_shell.c
+    ${OVE_ROOT}/backends/common/ove_sha1.c
+    ${OVE_ROOT}/backends/common/ove_base64.c
+)
+target_include_directories(ove_test_httpd_ws BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/net_httpd
+)
+target_include_directories(ove_test_httpd_ws PRIVATE
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/backends/common
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${POSIX_CORE_DIR}/include
+    ${cmocka_SOURCE_DIR}/include
+)
+target_link_libraries(ove_test_httpd_ws PRIVATE cmocka-static pthread rt m)
+
 if(TARGET ove_test_net_tls)
     add_test(NAME ove_net_tls_tests COMMAND ove_test_net_tls)
     add_test(NAME ove_net_tls_zh_tests COMMAND ove_test_net_tls_zh)

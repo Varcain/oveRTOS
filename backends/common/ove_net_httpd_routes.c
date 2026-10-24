@@ -54,8 +54,8 @@ void ove_httpd_set_netif(ove_netif_t netif)
 
 static void fmt_ip(char *buf, size_t len, const ove_sockaddr_t *addr)
 {
-	snprintf(buf, len, "%u.%u.%u.%u", addr->addr[0], addr->addr[1], addr->addr[2],
-		 addr->addr[3]);
+	(void)snprintf(buf, len, "%u.%u.%u.%u", addr->addr[0], addr->addr[1], addr->addr[2],
+		       addr->addr[3]);
 }
 
 static int query_netif_addr(ove_sockaddr_t *ip, ove_sockaddr_t *gw, ove_sockaddr_t *nm)
@@ -152,11 +152,11 @@ static int handle_info(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 		fmt_ip(ip_str, sizeof(ip_str), &ip_addr);
 
 	char buf[256];
-	snprintf(buf, sizeof(buf),
-		 "{\"board\":\"%s\",\"rtos\":\"%s\","
-		 "\"uptime\":%lu,\"ip\":\"%s\","
-		 "\"version\":\"" OVE_VERSION_STRING "\"}",
-		 ove_board_name(), OVE_RTOS_NAME, uptime_s, ip_str);
+	(void)snprintf(buf, sizeof(buf),
+		       "{\"board\":\"%s\",\"rtos\":\"%s\","
+		       "\"uptime\":%lu,\"ip\":\"%s\","
+		       "\"version\":\"" OVE_VERSION_STRING "\"}",
+		       ove_board_name(), OVE_RTOS_NAME, uptime_s, ip_str);
 
 	return ove_httpd_resp_json(resp, 200, buf);
 }
@@ -197,7 +197,7 @@ static int handle_leds_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	if (!seg)
 		return ove_httpd_resp_error(resp, 400, "missing led id");
 
-	int id = atoi(seg);
+	int id = (int)strtol(seg, NULL, 10);
 	if (id < 0 || (unsigned int)id >= ove_led_count() || id >= LED_MAX)
 		return ove_httpd_resp_error(resp, 404, "invalid led id");
 
@@ -222,7 +222,7 @@ static int handle_leds_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	led_state[id] = val;
 
 	char buf[64];
-	snprintf(buf, sizeof(buf), "{\"id\":%d,\"on\":%s}", id, val ? "true" : "false");
+	(void)snprintf(buf, sizeof(buf), "{\"id\":%d,\"on\":%s}", id, val ? "true" : "false");
 	return ove_httpd_resp_json(resp, 200, buf);
 #else
 	(void)req;
@@ -240,15 +240,15 @@ static int handle_gpio_get(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	if (!seg_port || !seg_pin)
 		return ove_httpd_resp_error(resp, 400, "missing port or pin");
 
-	unsigned int port = (unsigned int)atoi(seg_port);
-	unsigned int pin = (unsigned int)atoi(seg_pin);
+	unsigned int port = (unsigned int)strtol(seg_port, NULL, 10);
+	unsigned int pin = (unsigned int)strtol(seg_pin, NULL, 10);
 
 	int value = ove_gpio_get(port, pin);
 	if (value < 0)
 		return ove_httpd_resp_error(resp, 500, "gpio read failed");
 
 	char buf[128];
-	snprintf(buf, sizeof(buf), "{\"port\":%u,\"pin\":%u,\"value\":%d}", port, pin, value);
+	(void)snprintf(buf, sizeof(buf), "{\"port\":%u,\"pin\":%u,\"value\":%d}", port, pin, value);
 	return ove_httpd_resp_json(resp, 200, buf);
 #else
 	(void)req;
@@ -266,8 +266,8 @@ static int handle_gpio_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	if (!seg_port || !seg_pin)
 		return ove_httpd_resp_error(resp, 400, "missing port or pin");
 
-	unsigned int port = (unsigned int)atoi(seg_port);
-	unsigned int pin = (unsigned int)atoi(seg_pin);
+	unsigned int port = (unsigned int)strtol(seg_port, NULL, 10);
+	unsigned int pin = (unsigned int)strtol(seg_pin, NULL, 10);
 
 	const char *body = ove_httpd_req_body(req);
 	if (!body)
@@ -277,14 +277,14 @@ static int handle_gpio_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	if (!val_key)
 		return ove_httpd_resp_error(resp, 400, "missing \"value\" field");
 
-	int value = atoi(val_key + 8); /* skip "value": */
+	int value = (int)strtol(val_key + 8, NULL, 10); /* skip "value": */
 
 	int ret = ove_gpio_set(port, pin, value);
 	if (ret != OVE_OK)
 		return ove_httpd_resp_error(resp, 500, "gpio write failed");
 
 	char buf[128];
-	snprintf(buf, sizeof(buf), "{\"port\":%u,\"pin\":%u,\"value\":%d}", port, pin, value);
+	(void)snprintf(buf, sizeof(buf), "{\"port\":%u,\"pin\":%u,\"value\":%d}", port, pin, value);
 	return ove_httpd_resp_json(resp, 200, buf);
 #else
 	(void)req;
@@ -310,10 +310,10 @@ static int handle_network(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	}
 
 	char buf[256];
-	snprintf(buf, sizeof(buf),
-		 "{\"ip\":\"%s\",\"gateway\":\"%s\","
-		 "\"netmask\":\"%s\"}",
-		 ip_str, gw_str, nm_str);
+	(void)snprintf(buf, sizeof(buf),
+		       "{\"ip\":\"%s\",\"gateway\":\"%s\","
+		       "\"netmask\":\"%s\"}",
+		       ip_str, gw_str, nm_str);
 
 	return ove_httpd_resp_json(resp, 200, buf);
 }
@@ -329,8 +329,8 @@ static int handle_system_memory(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 		return ove_httpd_resp_error(resp, 501, "not supported");
 
 	char buf[128];
-	snprintf(buf, sizeof(buf), "{\"total\":%zu,\"free\":%zu,\"used\":%zu,\"peak\":%zu}",
-		 ms.total, ms.free, ms.used, ms.peak_used);
+	(void)snprintf(buf, sizeof(buf), "{\"total\":%zu,\"free\":%zu,\"used\":%zu,\"peak\":%zu}",
+		       ms.total, ms.free, ms.used, ms.peak_used);
 
 	return ove_httpd_resp_json(resp, 200, buf);
 }

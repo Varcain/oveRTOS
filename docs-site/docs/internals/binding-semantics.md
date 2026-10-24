@@ -206,7 +206,7 @@ state it the same way, including where an engine does **not** guarantee it.
 | PM policy | the engine's low-priority PM thread, without the PM lock, with the `user_data` registered alongside it | a call already started may run once more |
 | PM notifier | the PM thread, with the PM lock held | unregister waits for a running call; the notifier must not call other PM functions |
 | Audio node / tap | the thread driving the graph (audio thread, or the caller of `process`) | stop / deinit wait for a running cycle and stop the device sink's thread (never call them from a callback) |
-| httpd handler / WebSocket | the single `httpd` thread, one at a time | stop waits for that thread; WebSocket `on_close` is not called for connections open at stop or dropped by a failed send |
+| httpd handler / WebSocket | the single `httpd` thread, one at a time | stop waits for that thread, which closes open WebSocket connections and calls their `on_close`; a connection handle is valid until its `on_close` returns |
 | Shell command | the thread that feeds `process_char` / `process_line`, one command at a time under the shell's lock | — (never feed the shell from an ISR; a handler must not wait for another thread using the shell) |
 | Protected task | the caller's thread, synchronously | a contained fault abandons it by longjmp |
 
@@ -214,8 +214,8 @@ state it the same way, including where an engine does **not** guarantee it.
 
 - A binding that wraps a callback in a safe API must not promise more than this
   table does. Where a row names a gap, the wrapper documents it rather than
-  hiding it (the httpd `stop` docs in every binding say WebSocket
-  connections are not closed and their close callback is not called).
+  hiding it (the shell docs in every binding say a handler must not wait for
+  another thread using the shell).
 - Strings a callback API keeps by pointer (shell command names and help, thread
   names on NuttX, Zephyr and the host backend) must outlive the registration:
   Rust takes `&'static CStr`, Zig comptime or caller-owned names, C++ documents

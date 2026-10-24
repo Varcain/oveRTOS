@@ -3613,7 +3613,7 @@ unsafe extern "C" {
     pub fn ove_httpd_start(cfg: *const ove_httpd_config_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop the HTTP server and close the listening socket.\n\n Waits for the server thread to exit, so no handler is running once this\n returns; never call it from a handler.  Not guaranteed today: open\n WebSocket connections are not closed and their @c on_close is not called."]
+    #[doc = " @brief Stop the HTTP server and close the listening socket.\n\n Waits for the server thread to exit, so no handler is running once this\n returns; never call it from a handler.  On its way out the server thread\n sends each open WebSocket connection a close frame (1001, going away),\n calls its @c on_close and closes it."]
     pub fn ove_httpd_stop();
 }
 unsafe extern "C" {
@@ -3727,7 +3727,7 @@ pub type ove_httpd_ws_handler_t = Option<
         len: usize,
     ),
 >;
-#[doc = " @brief WebSocket close callback.\n\n Runs on the server's @c httpd thread when it notices the connection has\n closed.  Not called for connections still open at ove_httpd_stop(), nor\n for one that a failed ove_httpd_ws_send() or ove_httpd_ws_broadcast()\n drops; that connection's slot can then go to a new client.\n\n @param[in] conn Connection that was closed."]
+#[doc = " @brief WebSocket close callback.\n\n Runs on the server's @c httpd thread once for every connection that\n closes: when the client closes it or breaks the protocol, on the poll\n after a send to it fails, and at ove_httpd_stop().  The @p conn handle\n stays valid until this returns; afterwards its slot can go to a new\n client, so drop every copy of it here.\n\n @param[in] conn Connection that was closed."]
 pub type ove_httpd_ws_close_handler_t =
     Option<unsafe extern "C" fn(conn: *mut ove_httpd_ws_conn_t)>;
 unsafe extern "C" {
@@ -3739,7 +3739,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send a text message to a WebSocket connection.\n\n If the send fails the connection is closed and freed without its\n @c on_close being called, so @p conn must not be used again.\n\n @param[in] conn Target connection.\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Send a text message to a WebSocket connection.\n\n Any thread may call it; frames from different threads never interleave.\n If the send fails the connection is closing: later sends to it fail, and\n its @c on_close runs on the @c httpd thread shortly after, which is when\n @p conn stops being valid.  A frame the client does not take within a\n second fails the send, and every other sender waits for it meanwhile.\n\n @param[in] conn Target connection.\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return OVE_OK on success, OVE_ERR_NET_CLOSED if the connection is closing,\n         or another negative error code if the send failed."]
     pub fn ove_httpd_ws_send(
         conn: *mut ove_httpd_ws_conn_t,
         data: *const core::ffi::c_void,
@@ -3747,7 +3747,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n A connection whose send fails is closed and freed without its\n @c on_close being called, as for ove_httpd_ws_send().\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Number of connections the message was sent to."]
+    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n Any thread may call it.  A connection whose send fails is closing, as\n for ove_httpd_ws_send().\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Number of connections the message was sent to."]
     pub fn ove_httpd_ws_broadcast(
         path: *const core::ffi::c_char,
         data: *const core::ffi::c_void,

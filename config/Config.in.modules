@@ -1101,6 +1101,8 @@ config OVE_NET_HTTPD_WS
     bool "WebSocket support"
     default n
     depends on OVE_NET_HTTPD
+    # Any thread may send; one mutex covers the connection pool.
+    select OVE_SYNC
     help
       Adds RFC 6455 WebSocket upgrade and frame parsing to the
       embedded HTTP server.  Enables real-time bidirectional push

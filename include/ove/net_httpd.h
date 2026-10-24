@@ -83,8 +83,9 @@ OVE_NODISCARD int ove_httpd_start(const ove_httpd_config_t *cfg);
  * @brief Stop the HTTP server and close the listening socket.
  *
  * Waits for the server thread to exit, so no handler is running once this
- * returns; never call it from a handler.  Not guaranteed today: open
- * WebSocket connections are not closed and their @c on_close is not called.
+ * returns; never call it from a handler.  On its way out the server thread
+ * sends each open WebSocket connection a close frame (1001, going away),
+ * calls its @c on_close and closes it.
  */
 void ove_httpd_stop(void);
 
@@ -201,10 +202,11 @@ typedef void (*ove_httpd_ws_handler_t)(ove_httpd_ws_conn_t *conn, const void *da
 /**
  * @brief WebSocket close callback.
  *
- * Runs on the server's @c httpd thread when it notices the connection has
- * closed.  Not called for connections still open at ove_httpd_stop(), nor
- * for one that a failed ove_httpd_ws_send() or ove_httpd_ws_broadcast()
- * drops; that connection's slot can then go to a new client.
+ * Runs on the server's @c httpd thread once for every connection that
+ * closes: when the client closes it or breaks the protocol, on the poll
+ * after a send to it fails, and at ove_httpd_stop().  The @p conn handle
+ * stays valid until this returns; afterwards its slot can go to a new
+ * client, so drop every copy of it here.
  *
  * @param[in] conn Connection that was closed.
  */
@@ -228,21 +230,25 @@ OVE_NODISCARD int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on
 /**
  * @brief Send a text message to a WebSocket connection.
  *
- * If the send fails the connection is closed and freed without its
- * @c on_close being called, so @p conn must not be used again.
+ * Any thread may call it; frames from different threads never interleave.
+ * If the send fails the connection is closing: later sends to it fail, and
+ * its @c on_close runs on the @c httpd thread shortly after, which is when
+ * @p conn stops being valid.  A frame the client does not take within a
+ * second fails the send, and every other sender waits for it meanwhile.
  *
  * @param[in] conn Target connection.
  * @param[in] data Message payload.
  * @param[in] len  Payload length in bytes.
- * @return OVE_OK on success, negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_NET_CLOSED if the connection is closing,
+ *         or another negative error code if the send failed.
  */
 OVE_NODISCARD int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn, const void *data, size_t len);
 
 /**
  * @brief Broadcast a text message to all WebSocket connections on a path.
  *
- * A connection whose send fails is closed and freed without its
- * @c on_close being called, as for ove_httpd_ws_send().
+ * Any thread may call it.  A connection whose send fails is closing, as
+ * for ove_httpd_ws_send().
  *
  * @param[in] path Path filter (NULL for all connections).
  * @param[in] data Message payload.

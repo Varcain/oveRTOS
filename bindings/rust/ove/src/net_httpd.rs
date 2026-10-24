@@ -271,8 +271,7 @@ pub fn start(port: u16, max_body: i32) -> Result<()> {
 /// Stop the HTTP server and close the listening socket.
 ///
 /// Waits for the server thread, so never call it from a handler.  Open
-/// WebSocket connections are not closed and their close callback is not
-/// called.
+/// WebSocket connections get a close frame (1001) and their close callback.
 pub fn stop() {
     unsafe { bindings::ove_httpd_stop() }
 }
@@ -343,8 +342,11 @@ pub mod ws {
 
     /// Send a text message to a WebSocket connection.
     ///
-    /// If the send fails the connection is closed and freed without its close
-    /// callback being called, so `conn` must not be used again.
+    /// Any thread may call it.  If the send fails the connection is closing:
+    /// later sends fail, and its close callback runs on the httpd thread
+    /// shortly after, which is when `conn` stops being valid.  A frame the
+    /// client does not take within a second fails the send, and every other
+    /// sender waits for it meanwhile.
     ///
     /// # Errors
     /// Returns an error if the send fails.
@@ -354,7 +356,8 @@ pub mod ws {
         Error::from_code(rc)
     }
 
-    /// Broadcast a message to all WebSocket connections on a path.
+    /// Broadcast a message to all WebSocket connections on a path, from any
+    /// thread; a connection whose send fails is closing, as for [`send`].
     ///
     /// `path` must be a null-terminated byte string.
     ///

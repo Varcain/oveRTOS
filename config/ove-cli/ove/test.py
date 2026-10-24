@@ -387,18 +387,26 @@ def test_stub(ove_dir, output_dir):
     _cmake_build(os.path.join(ove_dir, "tests"), build)
     logger.info("Running stub tests")
     results = _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
-    # TLS client tests, heap and zero-heap: binaries of their own
-    # (tests/CMakeLists.txt).
-    for name in ("ove_test_net_tls", "ove_test_net_tls_zh"):
-        net_tls = os.path.join(build, name)
-        if os.path.exists(net_tls):
-            logger.info("Running %s", name)
-            tls = _run_test_binary([net_tls], "stub", cwd=build)
-            results.passed += tls.passed
-            results.failed += tls.failed
-            results.skipped += tls.skipped
-            results.failed_names += tls.failed_names
+    # TLS client tests (heap and zero-heap) and the httpd WebSocket tests:
+    # binaries of their own (tests/CMakeLists.txt).
+    _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
+                                "ove_test_httpd_ws"), "stub", results)
     return results
+
+
+def _run_extra_binaries(build, names, suite, results, env=None):
+    """Run the stub tree's other test binaries that exist, adding their
+    results to @p results."""
+    for name in names:
+        path = os.path.join(build, name)
+        if not os.path.exists(path):
+            continue
+        logger.info("Running %s", name)
+        extra = _run_test_binary([path], suite, cwd=build, env=env)
+        results.passed += extra.passed
+        results.failed += extra.failed
+        results.skipped += extra.skipped
+        results.failed_names += extra.failed_names
 
 
 def _sanitize_extra_args(flags):
@@ -437,8 +445,10 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
     env = dict(os.environ)
     env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
-    return _run_test_binary(
+    results = _run_test_binary(
         [os.path.join(build, "ove_test_stub")], label, env=env)
+    _run_extra_binaries(build, ("ove_test_httpd_ws",), label, results, env=env)
+    return results
 
 
 def test_stub_sanitize(ove_dir, output_dir):
@@ -488,8 +498,12 @@ def test_stub_tsan(ove_dir, output_dir):
     # remain on.
     env["TSAN_OPTIONS"] = ("halt_on_error=1:second_deadlock_stack=1:"
                            "report_thread_leaks=0")
-    return _run_test_binary(
+    results = _run_test_binary(
         [os.path.join(build, "ove_test_stub")], "stub-tsan", env=env)
+    # The httpd WebSocket tests send from other threads on purpose.
+    _run_extra_binaries(build, ("ove_test_httpd_ws",), "stub-tsan", results,
+                        env=env)
+    return results
 
 
 def test_stub_msan(ove_dir, output_dir):
