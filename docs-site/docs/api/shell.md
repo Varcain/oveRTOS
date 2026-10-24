@@ -33,7 +33,8 @@ Characters arrive one at a time from `ove_console_getchar()` in an input task an
 | `ove_shell_register_cmd` | `(const struct ove_shell_cmd *cmd) → int` | Copy a command into the dispatch table (16 entries including `help`); the `name` and `help` strings must stay valid while it is registered. Re-registering a name replaces that command, even when the table is full. |
 | `ove_shell_process_char` | `(char c) → void` | Feed one raw character into the shell; call from the console input task, never an ISR. |
 | `ove_shell_process_line` | `(const char *line) → void` | Process a complete input line (up to 127 characters) through the shell, independently of the line being typed (useful for piping non-UART input like HTTP). |
-| `ove_shell_set_output_hook` | `(ove_shell_output_hook_t hook) → void` | Install a hook that also receives each `OVE_LOG_*` line a command handler emits from its own thread while it runs, newline included — the httpd web terminal uses it to send command output to the browser. Pass `NULL` to clear. |
+| `ove_shell_process_line_with_hook` | `(const char *line, ove_shell_output_hook_t hook) → void` | Process a line, sending that one command's log lines to `hook` instead of the global hook; the httpd web terminal uses it so it shows only its own commands. |
+| `ove_shell_set_output_hook` | `(ove_shell_output_hook_t hook) → void` | Install a hook that also receives each `OVE_LOG_*` line a command handler emits from its own thread while it runs, newline included. Pass `NULL` to clear. It takes the shell's lock, so it waits for a running command; thread context only. |
 
 Output-hook prototype:
 

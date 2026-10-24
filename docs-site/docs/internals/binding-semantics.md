@@ -207,7 +207,7 @@ state it the same way, including where an engine does **not** guarantee it.
 | PM notifier | the PM thread, with the PM lock held | unregister waits for a running call; the notifier must not call other PM functions |
 | Audio node / tap | the thread driving the graph (audio thread, or the caller of `process`) | stop / deinit wait for a running cycle and stop the device sink's thread (never call them from a callback) |
 | httpd handler / WebSocket | the single `httpd` thread, one at a time | stop waits for that thread, which closes open WebSocket connections and calls their `on_close`; a connection handle is valid until its `on_close` returns |
-| Shell command | the thread that feeds `process_char` / `process_line`, one command at a time under the shell's lock | — (never feed the shell from an ISR; a handler must not wait for another thread using the shell) |
+| Shell command | the thread that feeds `process_char` / `process_line` / `process_line_with_hook`, one command at a time under the shell's lock | — (never feed the shell from an ISR; a handler must not wait for another thread using the shell) |
 | Protected task | the caller's thread, synchronously | a contained fault abandons it by longjmp |
 
 **Contract notes**

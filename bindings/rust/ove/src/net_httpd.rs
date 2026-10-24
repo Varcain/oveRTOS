@@ -252,10 +252,10 @@ impl fmt::Debug for Response<'_> {
 
 /// Start the HTTP server on the given port.
 ///
-/// Spawns a background task that accepts connections.  Register routes
-/// with [`route`] before starting: the route tables are not locked against
-/// the server thread.  Handlers run one at a time on its single `httpd`
-/// thread, so a slow handler delays every client.
+/// Spawns a background task that accepts connections.  Routes may be
+/// registered with [`route`] before or after starting, from any thread.
+/// Handlers run one at a time on its single `httpd` thread, so a slow
+/// handler delays every client.
 ///
 /// # Errors
 /// Returns an error if the server cannot bind or start.
@@ -296,8 +296,7 @@ pub fn route(method: &[u8], path: &[u8], handler: Handler) -> Result<()> {
 
 /// Register the built-in dashboard routes (`/api/info`, `/api/leds`, etc.).
 ///
-/// Adds the standard device management API; like any route, best
-/// registered before [`start`].
+/// Adds the standard device management API, before or after [`start`].
 pub fn register_builtin_routes() {
     unsafe { bindings::ove_httpd_register_builtin_routes() }
 }

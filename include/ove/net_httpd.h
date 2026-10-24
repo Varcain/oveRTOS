@@ -69,9 +69,8 @@ typedef struct {
  * @brief Start the HTTP server.
  *
  * Spawns a background task that accepts connections on the configured port.
- * Register routes with ove_httpd_route() before starting: the route tables
- * are not locked against the server thread, so a route added while it runs
- * is not guaranteed to be seen consistently.
+ * Routes may be registered before or after starting, from any thread; a
+ * route added while the server runs serves the requests after it.
  *
  * @param[in] cfg Server configuration (NULL for defaults).
  * @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another
@@ -98,7 +97,8 @@ void ove_httpd_stop(void);
  * @param[in] method  HTTP method ("GET" or "POST").
  * @param[in] path    URL path prefix (e.g. "/api/leds").
  * @param[in] handler Callback function.
- * @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if an argument is NULL,
+ *         OVE_ERR_NO_MEMORY if the route table is full.
  */
 OVE_NODISCARD int ove_httpd_route(const char *method, const char *path,
 				  ove_httpd_handler_t handler);
@@ -106,8 +106,8 @@ OVE_NODISCARD int ove_httpd_route(const char *method, const char *path,
 /**
  * @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).
  *
- * Adds the standard device management API; like any route, best registered
- * before ove_httpd_start() (see there).
+ * Adds the standard device management API, before or after
+ * ove_httpd_start().
  */
 void ove_httpd_register_builtin_routes(void);
 
@@ -222,7 +222,8 @@ typedef void (*ove_httpd_ws_close_handler_t)(ove_httpd_ws_conn_t *conn);
  * @param[in] path       URL path prefix (e.g. "/ws/log").
  * @param[in] on_message Callback for incoming messages (may be NULL).
  * @param[in] on_close   Callback when connection closes (may be NULL).
- * @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full.
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p path is NULL,
+ *         OVE_ERR_NO_MEMORY if the route table is full.
  */
 OVE_NODISCARD int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
 				     ove_httpd_ws_close_handler_t on_close);

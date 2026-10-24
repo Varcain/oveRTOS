@@ -152,13 +152,31 @@ void ove_shell_process_char(int c);
 void ove_shell_process_line(const char *line);
 
 /**
+ * @brief Process a line, passing its command's output to @p hook.
+ *
+ * Like ove_shell_process_line(), and for the time of this one command
+ * @p hook takes the place of the hook set with ove_shell_set_output_hook():
+ * it gets each OVE_LOG_* line the command emits from its own thread while
+ * it runs.  Commands run one at a time, so no other command's lines reach
+ * it; the httpd web terminal uses it so it shows only its own commands.
+ * The hook runs on the calling thread with the shell's lock held.  If the
+ * command itself sets a hook with ove_shell_set_output_hook(), that one
+ * stays afterwards, unless it is @p hook itself.
+ *
+ * @param[in] line NUL-terminated input line (without trailing newline).
+ * @param[in] hook Output hook for this command (NULL for none).
+ */
+void ove_shell_process_line_with_hook(const char *line, ove_shell_output_hook_t hook);
+
+/**
  * @brief Set a hook to capture shell output.
  *
  * When set, each OVE_LOG_* line a command handler emits from its own
  * thread while it runs (newline included) is passed to this hook as well
  * as to the console.  Pass NULL to remove.  The hook runs on the command's
  * thread with the shell's lock held, so it must not wait for another thread
- * that is using the shell.
+ * that is using the shell.  Setting it takes that lock too: it waits for a
+ * running command, and must be called from thread context.
  *
  * @param[in] hook Output hook function (or NULL).
  */
@@ -182,6 +200,11 @@ static inline void ove_shell_process_char(int c)
 static inline void ove_shell_process_line(const char *l)
 {
 	(void)l;
+}
+static inline void ove_shell_process_line_with_hook(const char *l, ove_shell_output_hook_t h)
+{
+	(void)l;
+	(void)h;
 }
 static inline void ove_shell_set_output_hook(ove_shell_output_hook_t h)
 {

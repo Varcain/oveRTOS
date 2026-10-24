@@ -77,10 +77,14 @@ static size_t json_escape(const char *in, char *out, size_t out_cap)
 
 /* ---------- Internal data structures ---------- */
 
+/* Routes may be added while the server runs: a registrant claims a slot
+ * by advancing s_route_count, fills it and then sets ready, and the server
+ * skips a slot until it is ready.  A slot never changes once ready. */
 struct ove_httpd_route {
 	char method[8]; /* "GET" or "POST" */
 	char path[64];	/* URL path prefix */
 	ove_httpd_handler_t handler;
+	int ready;
 };
 
 struct ove_httpd_req {
@@ -135,16 +139,23 @@ static const char *status_str(int code)
 
 int ove_httpd_route(const char *method, const char *path, ove_httpd_handler_t handler)
 {
-	if (s_route_count >= OVE_HTTPD_MAX_ROUTES)
-		return OVE_ERR_NO_MEMORY;
+	if (!method || !path || !handler)
+		return OVE_ERR_INVALID_PARAM;
 
-	struct ove_httpd_route *r = &s_routes[s_route_count];
+	int idx = __atomic_load_n(&s_route_count, __ATOMIC_RELAXED);
+	do {
+		if (idx >= OVE_HTTPD_MAX_ROUTES)
+			return OVE_ERR_NO_MEMORY;
+	} while (!__atomic_compare_exchange_n(&s_route_count, &idx, idx + 1, 0, __ATOMIC_RELAXED,
+					      __ATOMIC_RELAXED));
+
+	struct ove_httpd_route *r = &s_routes[idx];
 	strncpy(r->method, method, sizeof(r->method) - 1);
 	r->method[sizeof(r->method) - 1] = '\0';
 	strncpy(r->path, path, sizeof(r->path) - 1);
 	r->path[sizeof(r->path) - 1] = '\0';
 	r->handler = handler;
-	s_route_count++;
+	__atomic_store_n(&r->ready, 1, __ATOMIC_RELEASE);
 
 	return OVE_OK;
 }
@@ -245,9 +256,12 @@ static struct ove_httpd_route *match_route(struct ove_httpd_req *req)
 	struct ove_httpd_route *best = NULL;
 	size_t best_len = 0;
 
-	for (int i = 0; i < s_route_count; i++) {
+	int count = __atomic_load_n(&s_route_count, __ATOMIC_RELAXED);
+	for (int i = 0; i < count; i++) {
 		struct ove_httpd_route *r = &s_routes[i];
 
+		if (!__atomic_load_n(&r->ready, __ATOMIC_ACQUIRE))
+			continue;
 		if (strcmp(r->method, req->method) != 0)
 			continue;
 

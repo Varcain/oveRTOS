@@ -2763,7 +2763,14 @@ unsafe extern "C" {
     pub fn ove_shell_process_line(line: *const core::ffi::c_char);
 }
 unsafe extern "C" {
-    #[doc = " @brief Set a hook to capture shell output.\n\n When set, each OVE_LOG_* line a command handler emits from its own\n thread while it runs (newline included) is passed to this hook as well\n as to the console.  Pass NULL to remove.  The hook runs on the command's\n thread with the shell's lock held, so it must not wait for another thread\n that is using the shell.\n\n @param[in] hook Output hook function (or NULL)."]
+    #[doc = " @brief Process a line, passing its command's output to @p hook.\n\n Like ove_shell_process_line(), and for the time of this one command\n @p hook takes the place of the hook set with ove_shell_set_output_hook():\n it gets each OVE_LOG_* line the command emits from its own thread while\n it runs.  Commands run one at a time, so no other command's lines reach\n it; the httpd web terminal uses it so it shows only its own commands.\n The hook runs on the calling thread with the shell's lock held.  If the\n command itself sets a hook with ove_shell_set_output_hook(), that one\n stays afterwards, unless it is @p hook itself.\n\n @param[in] line NUL-terminated input line (without trailing newline).\n @param[in] hook Output hook for this command (NULL for none)."]
+    pub fn ove_shell_process_line_with_hook(
+        line: *const core::ffi::c_char,
+        hook: ove_shell_output_hook_t,
+    );
+}
+unsafe extern "C" {
+    #[doc = " @brief Set a hook to capture shell output.\n\n When set, each OVE_LOG_* line a command handler emits from its own\n thread while it runs (newline included) is passed to this hook as well\n as to the console.  Pass NULL to remove.  The hook runs on the command's\n thread with the shell's lock held, so it must not wait for another thread\n that is using the shell.  Setting it takes that lock too: it waits for a\n running command, and must be called from thread context.\n\n @param[in] hook Output hook function (or NULL)."]
     pub fn ove_shell_set_output_hook(hook: ove_shell_output_hook_t);
 }
 unsafe extern "C" {
@@ -3609,7 +3616,7 @@ const _: () = {
         [core::mem::offset_of!(ove_httpd_config_t, max_body_size) - 4usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Register routes with ove_httpd_route() before starting: the route tables\n are not locked against the server thread, so a route added while it runs\n is not guaranteed to be seen consistently.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another\n         negative error code on failure."]
+    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Routes may be registered before or after starting, from any thread; a\n route added while the server runs serves the requests after it.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, @c OVE_ERR_BUSY if already running, or another\n         negative error code on failure."]
     pub fn ove_httpd_start(cfg: *const ove_httpd_config_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -3617,7 +3624,7 @@ unsafe extern "C" {
     pub fn ove_httpd_stop();
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a route handler.\n\n The @p method and @p path strings are copied (truncated to the table's\n field sizes); only @p handler is kept.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
+    #[doc = " @brief Register a route handler.\n\n The @p method and @p path strings are copied (truncated to the table's\n field sizes); only @p handler is kept.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if an argument is NULL,\n         OVE_ERR_NO_MEMORY if the route table is full."]
     pub fn ove_httpd_route(
         method: *const core::ffi::c_char,
         path: *const core::ffi::c_char,
@@ -3625,7 +3632,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).\n\n Adds the standard device management API; like any route, best registered\n before ove_httpd_start() (see there)."]
+    #[doc = " @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).\n\n Adds the standard device management API, before or after\n ove_httpd_start()."]
     pub fn ove_httpd_register_builtin_routes();
 }
 unsafe extern "C" {
@@ -3731,7 +3738,7 @@ pub type ove_httpd_ws_handler_t = Option<
 pub type ove_httpd_ws_close_handler_t =
     Option<unsafe extern "C" fn(conn: *mut ove_httpd_ws_conn_t)>;
 unsafe extern "C" {
-    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.  The @p path string is copied.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
+    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.  The @p path string is copied.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p path is NULL,\n         OVE_ERR_NO_MEMORY if the route table is full."]
     pub fn ove_httpd_ws_route(
         path: *const core::ffi::c_char,
         on_message: ove_httpd_ws_handler_t,

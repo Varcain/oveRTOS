@@ -35,7 +35,7 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | LED | `ove/led.h` | 3 | On-board LEDs: set, toggle, count. [Guide](io.md#led) |
 | NVS | `ove/nvs.h` | 5 | Non-volatile key-value store. [Guide](nvs.md) |
 | Watchdog | `ove/watchdog.h` | 7 | Hardware watchdog with feed timeout. [Guide](io.md#watchdog) |
-| Shell | `ove/shell.h` | 5 | Interactive CLI: init, register command, process character/line, install output hook. [Guide](shell.md) |
+| Shell | `ove/shell.h` | 6 | Interactive CLI: init, register command, process character/line (optionally with a hook for that command's output), install output hook. [Guide](shell.md) |
 | Infer | `ove/infer.h` | 8 | ML inference engine for TFLite Micro models. [Guide](infer.md) |
 | Net | `ove/net.h` | 21 | BSD-like sockets, network interface, DNS resolution. [Guide](net.md) |
 | Net HTTP | `ove/net_http.h` | 9 | HTTP/1.1 client (GET/POST/PUT/DELETE/PATCH). [Guide](net.md#http-client) |

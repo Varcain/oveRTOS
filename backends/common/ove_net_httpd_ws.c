@@ -114,10 +114,13 @@ static void ws_unlock(void)
 
 #define WS_MAX_ROUTES 4
 
+/* Added at any time, as the HTTP routes are: claim a slot, fill it, then
+ * set ready. */
 struct ws_route {
 	char path[64];
 	ove_httpd_ws_handler_t on_message;
 	ove_httpd_ws_close_handler_t on_close;
+	int ready;
 };
 
 static struct ws_route s_ws_routes[WS_MAX_ROUTES];
@@ -170,15 +173,22 @@ int ove_httpd_ws_active_count(void)
 int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
 		       ove_httpd_ws_close_handler_t on_close)
 {
-	if (s_ws_route_count >= WS_MAX_ROUTES)
-		return OVE_ERR_NO_MEMORY;
+	if (!path)
+		return OVE_ERR_INVALID_PARAM;
 
-	struct ws_route *r = &s_ws_routes[s_ws_route_count];
+	int idx = __atomic_load_n(&s_ws_route_count, __ATOMIC_RELAXED);
+	do {
+		if (idx >= WS_MAX_ROUTES)
+			return OVE_ERR_NO_MEMORY;
+	} while (!__atomic_compare_exchange_n(&s_ws_route_count, &idx, idx + 1, 0, __ATOMIC_RELAXED,
+					      __ATOMIC_RELAXED));
+
+	struct ws_route *r = &s_ws_routes[idx];
 	strncpy(r->path, path, sizeof(r->path) - 1);
 	r->path[sizeof(r->path) - 1] = '\0';
 	r->on_message = on_message;
 	r->on_close = on_close;
-	s_ws_route_count++;
+	__atomic_store_n(&r->ready, 1, __ATOMIC_RELEASE);
 
 	return OVE_OK;
 }
@@ -188,7 +198,10 @@ static struct ws_route *ws_match_route(const char *path)
 	struct ws_route *best = NULL;
 	size_t best_len = 0;
 
-	for (int i = 0; i < s_ws_route_count; i++) {
+	int count = __atomic_load_n(&s_ws_route_count, __ATOMIC_RELAXED);
+	for (int i = 0; i < count; i++) {
+		if (!__atomic_load_n(&s_ws_routes[i].ready, __ATOMIC_ACQUIRE))
+			continue;
 		size_t rlen = strlen(s_ws_routes[i].path);
 		if (strncmp(path, s_ws_routes[i].path, rlen) == 0 && rlen > best_len) {
 			best = &s_ws_routes[i];
