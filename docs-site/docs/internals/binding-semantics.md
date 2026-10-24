@@ -220,6 +220,11 @@ state it the same way, including where an engine does **not** guarantee it.
   names on NuttX, Zephyr and the host backend) must outlive the registration:
   Rust takes `&'static CStr`, Zig comptime or caller-owned names, C++ documents
   the rule.
+- No binding keeps a shell command table of its own, so registration is as
+  thread-safe as the C shell: C++ passes the C descriptor through, Zig makes a
+  trampoline per handler at comptime, and Rust takes a `Send + Sync`
+  function item or closure that captures nothing and monomorphises a
+  trampoline per handler (a function pointer value does not build).
 
 ---
 

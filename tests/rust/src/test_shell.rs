@@ -200,6 +200,58 @@ fn test_reinit_frees_command_table() {
     assert!(rc.is_ok(), "register after re-init should succeed, got {rc:?}");
 }
 
+/// A handler that dispatches a line keeps its own arguments: the nested
+/// line used to overwrite the buffer they point into ("hello" became
+/// "XXXXX").
+fn test_nested_dispatch_keeps_args() {
+    static INNER: AtomicI32 = AtomicI32::new(0);
+    static INTACT: AtomicI32 = AtomicI32::new(0);
+
+    fn inner(_args: &[&[u8]]) {
+        INNER.fetch_add(1, Ordering::Relaxed);
+    }
+    fn outer(args: &[&[u8]]) {
+        ove::shell::register_cmd(c"inner", c"nested", inner).unwrap();
+        ove::shell::process_line(c"inner XXXXXXXX YYYYYYYY");
+        INTACT.store(i32::from(args.get(1) == Some(&&b"hello"[..])), Ordering::Relaxed);
+    }
+
+    ove::shell::init().unwrap();
+    INNER.store(0, Ordering::SeqCst);
+    INTACT.store(0, Ordering::SeqCst);
+    ove::shell::register_cmd(c"outer", c"nests", outer).unwrap();
+    ove::shell::process_line(c"outer hello");
+    assert_eq!(INNER.load(Ordering::SeqCst), 1);
+    assert_eq!(INTACT.load(Ordering::SeqCst), 1);
+}
+
+/// Registering and dispatching from two threads through the safe API: the
+/// binding keeps no table of its own to race on.
+fn test_threads_register_and_dispatch() {
+    static HITS: AtomicI32 = AtomicI32::new(0);
+
+    fn hit(_args: &[&[u8]]) {
+        HITS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    ove::shell::init().unwrap();
+    HITS.store(0, Ordering::SeqCst);
+    ove::shell::register_cmd(c"hit", c"count", hit).unwrap();
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            for _ in 0..500 {
+                ove::shell::register_cmd(c"hit", c"count again", hit).unwrap();
+            }
+        });
+        s.spawn(|| {
+            for _ in 0..500 {
+                ove::shell::process_line(c"hit");
+            }
+        });
+    });
+    assert_eq!(HITS.load(Ordering::SeqCst), 500);
+}
+
 pub fn run() -> (usize, usize) {
     run_suite(
         "Shell",
@@ -214,6 +266,8 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_register_same_name_replaces_handler),
             test_entry!(test_register_cmd_table_overflow),
             test_entry!(test_reinit_frees_command_table),
+            test_entry!(test_nested_dispatch_keeps_args),
+            test_entry!(test_threads_register_and_dispatch),
         ],
     )
 }
