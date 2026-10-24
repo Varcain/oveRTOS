@@ -60,7 +60,8 @@ namespace ove::shell
  *
  * Call it from thread context, typically the console input task, never
  * from an ISR: the matching command's handler runs inside this call. Feed
- * the shell from one thread at a time (process_line included).
+ * characters from one thread, as the line being typed is shared;
+ * process_line has its own copy and may run on any thread.
  *
  * @param[in] c The character received from the console.
  */
@@ -72,8 +73,9 @@ inline void process_char(int c)
 /**
  * @brief Process a complete input line through the shell.
  *
- * The same thread-context and one-thread-at-a-time rules as process_char
- * apply.
+ * Thread context only, from any thread or a command handler; it does not
+ * touch the line process_char is building. At most 127 characters are
+ * used.
  *
  * @param[in] line NUL-terminated command line.
  */
@@ -84,6 +86,10 @@ inline void process_line(const char *line)
 
 /**
  * @brief Set a hook to capture shell output.
+ *
+ * The hook runs on the command's thread with the shell's lock held, so it
+ * must not wait for another thread that is using the shell.
+ *
  * @param[in] hook Output hook function (nullptr to remove).
  */
 inline void set_output_hook(ove_shell_output_hook_t hook)

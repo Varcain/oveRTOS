@@ -58,8 +58,9 @@ pub fn registerCmd(
 ///
 /// Call this from thread context, typically a console polling loop, never
 /// from an ISR: the shell accumulates characters and runs the matching
-/// command handler inside the call that delivers the newline. Feed the shell
-/// from one thread at a time (`processLine` included).
+/// command handler inside the call that delivers the newline. Feed
+/// characters from one thread, as the line being typed is shared;
+/// `processLine` has its own copy and may run on any thread.
 pub fn processChar(ch: u8) void {
     c.ove_shell_process_char(@intCast(ch));
 }
@@ -68,7 +69,8 @@ pub fn processChar(ch: u8) void {
 ///
 /// Tokenises the line and dispatches to the matching command handler.
 /// More convenient than `processChar` for programmatic use (e.g. WebSocket terminal).
-/// The same thread-context and one-thread-at-a-time rules apply.
+/// Thread context only, from any thread or a command handler; it does not
+/// touch the line `processChar` is building. At most 127 characters are used.
 pub fn processLine(line: [*:0]const u8) void {
     c.ove_shell_process_line(line);
 }
@@ -76,7 +78,9 @@ pub fn processLine(line: [*:0]const u8) void {
 /// Set a hook to capture shell output.
 ///
 /// When set, shell command output (normally printed to console) is also
-/// forwarded to the hook. Pass `null` to remove.
+/// forwarded to the hook. Pass `null` to remove. The hook runs on the
+/// command's thread with the shell's lock held, so it must not wait for
+/// another thread that is using the shell.
 pub fn setOutputHook(hook: c.ove_shell_output_hook_t) void {
     c.ove_shell_set_output_hook(hook);
 }
