@@ -398,6 +398,62 @@ static void test_destroy_waits_for_exit(void **state)
 	assert_true(listed == -1 || listed == -2 || listed == OVE_THREAD_STATE_TERMINATED);
 }
 
+/* Wait up to @p timeout_ms for @p h to reach @p expected; returns whether
+ * it did. */
+static int wait_for_state(ove_thread_t h, ove_thread_state_t expected, uint32_t timeout_ms)
+{
+	uint64_t start = 0, now = 0;
+	(void)ove_time_get_us(&start);
+	uint64_t deadline = start + (uint64_t)timeout_ms * 1000u;
+	while (ove_thread_get_state(h) != expected) {
+		(void)ove_time_get_us(&now);
+		if (now >= deadline)
+			return ove_thread_get_state(h) == expected;
+		test_msleep(1);
+	}
+	return 1;
+}
+
+/* 14d. ove_thread_list reports a parked thread as SUSPENDED, as
+ * ove_thread_get_state() does, and stops after the resume.  NuttX has no
+ * suspended task state, so its list takes the suspension from the thread
+ * itself, with or without the state tracker. */
+static void test_suspend_listed_state(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	atomic_store(&g_progress, 0);
+	ove_thread_t h = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t14d", entry_count_progress,
+					       NULL, s_th_stack, 4096));
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	test_msleep(20);
+
+	/* The suspension can land asynchronously (POSIX delivers a signal):
+	 * wait for it, or a park that comes after the resume below would
+	 * outlive it.  Without it the thread is left alone and the test fails:
+	 * a late park would hang any join. */
+	ove_thread_suspend(h);
+	if (!wait_for_state(h, OVE_THREAD_STATE_SUSPENDED, 1000)) {
+		atomic_store(&g_keep_running, 0);
+		fail_msg("t14d did not reach SUSPENDED");
+	}
+	int parked = listed_state("t14d");
+	ove_thread_resume(h);
+	test_msleep(20);
+	int resumed = listed_state("t14d");
+
+	atomic_store(&g_keep_running, 0);
+	ove_test_thread_destroy(h);
+
+	if (parked == -2)
+		return; /* no thread enumeration in this build */
+	assert_int_equal(parked, OVE_THREAD_STATE_SUSPENDED);
+	assert_int_not_equal(resumed, -1);
+	assert_int_not_equal(resumed, OVE_THREAD_STATE_SUSPENDED);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 /* 15. destroy NULL is safe */
 static void test_destroy_null(void **state)
@@ -724,6 +780,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_suspend_resume),
 		cmocka_unit_test(test_suspend_resume_back_to_back),
 		cmocka_unit_test(test_destroy_waits_for_exit),
+		cmocka_unit_test(test_suspend_listed_state),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_destroy_null),
 #endif

@@ -1460,6 +1460,30 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	ctx->count++;
 }
 
+/* NuttX has no "suspended" task state: a thread parked in the SIGUSR1
+ * suspend loop waits on a semaphore (TSTATE_WAIT_SEM), so the scheduler
+ * walk lists it as BLOCKED, while FreeRTOS and Zephyr report SUSPENDED.
+ * The suspension is taken from the ove thread's own state, found through
+ * the registry by pid.  This runs in task context after the walk: the
+ * walk's callback runs with interrupts off and cannot take the registry
+ * mutex. */
+static void _nuttx_list_mark_suspended(struct ove_thread_info *out,
+				       const struct _nuttx_list_snapshot *snapshot, size_t count)
+{
+	nxmutex_lock(&thread_list_lock);
+	for (struct ove_thread *t = ove_backend_thread_registry_head; t; t = t->next) {
+		if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) != OVE_THREAD_STATE_SUSPENDED)
+			continue;
+		for (size_t i = 0; i < count; i++) {
+			if (snapshot[i].pid == t->pid) {
+				out[i].state = OVE_THREAD_STATE_SUSPENDED;
+				break;
+			}
+		}
+	}
+	nxmutex_unlock(&thread_list_lock);
+}
+
 static void _nuttx_list_finish(struct ove_thread_info *info,
 			       const struct _nuttx_list_snapshot *snapshot, uint64_t dt_us)
 {
@@ -1561,6 +1585,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 	ove_nuttx_runtime_snapshot();
 	nxsched_foreach(_nuttx_list_cb, &ctx);
+	_nuttx_list_mark_suspended(out, g_nx_list_snapshot, ctx.count);
 	for (size_t i = 0; i < ctx.count; i++)
 		_nuttx_list_finish(&out[i], &g_nx_list_snapshot[i], dt_us);
 
