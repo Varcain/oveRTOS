@@ -360,6 +360,44 @@ static void test_suspend_resume_back_to_back(void **state)
 	assert_int_equal(bad, 0);
 }
 
+/* The state ove_thread_list reports for the thread named @p name: -1 if it
+ * is not listed, -2 if the backend cannot list threads. */
+static int listed_state(const char *name)
+{
+	struct ove_thread_info info[32];
+	size_t count = 0;
+	if (ove_thread_list(info, 32, &count) == OVE_ERR_NOT_SUPPORTED)
+		return -2;
+	for (size_t i = 0; i < count; i++) {
+		if (strcmp(info[i].name, name) == 0)
+			return (int)info[i].state;
+	}
+	return -1;
+}
+
+/* 14c. destroy returns once the thread is gone, not only its entry
+ * function: the caller may reuse the storage and the stack right away
+ * (zero-heap).  The thread runs below the caller, so on its way out it is
+ * preempted as soon as it wakes the caller; a destroy that only waits for
+ * that wake-up returns while the thread still runs on its stack, and the
+ * thread is still listed. */
+static void test_destroy_waits_for_exit(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	atomic_store(&g_keep_running, 1);
+	ove_thread_t h = NULL;
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t14c", entry_count_progress,
+					       NULL, s_th_stack, 4096));
+	ove_thread_set_priority(h, OVE_PRIO_LOW);
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+
+	atomic_store(&g_keep_running, 0);
+	ove_test_thread_destroy(h);
+	int listed = listed_state("t14c");
+	assert_true(listed == -1 || listed == -2 || listed == OVE_THREAD_STATE_TERMINATED);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 /* 15. destroy NULL is safe */
 static void test_destroy_null(void **state)
@@ -685,6 +723,7 @@ int test_thread_run(void)
 #endif
 		cmocka_unit_test(test_suspend_resume),
 		cmocka_unit_test(test_suspend_resume_back_to_back),
+		cmocka_unit_test(test_destroy_waits_for_exit),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_destroy_null),
 #endif

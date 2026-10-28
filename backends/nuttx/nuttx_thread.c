@@ -528,6 +528,23 @@ int ove_thread_deinit(ove_thread_t handle)
 		    OVE_THREAD_STATE_TERMINATED) {
 			nxsem_wait_uninterruptible(&handle->done_sem);
 		}
+		/* done_sem is posted from the task's last lines: the task then
+		 * still runs NuttX's exit path on its stack, and a task below
+		 * the caller is preempted by the post right there.  The caller
+		 * may reuse the storage and the stack as soon as this returns
+		 * (ove_thread_init() takes both from it), so wait until the TCB
+		 * is released: on one CPU, _exit() releases it and switches
+		 * away in one critical section.  kill(pid, 0) cannot tell: it
+		 * fails as soon as the exit starts, and the exit hooks can
+		 * block.  The pid still names this task: NuttX hands pids out
+		 * in increasing order and reuses one only after the counter
+		 * wraps. */
+#ifdef CONFIG_SMP
+#error "ove_thread_deinit(): a released TCB does not prove the stack is free on SMP"
+#endif
+		while (nxsched_get_tcb(handle->pid) != NULL) {
+			usleep(1000);
+		}
 	}
 
 	_unregister_thread(handle);
