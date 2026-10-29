@@ -4,7 +4,7 @@ Header: `ove/i2c.h` | Kconfig: `CONFIG_OVE_I2C` | Selects: `OVE_SYNC`
 
 ## Overview
 
-I2C master driver with configurable bus speed, thread-safe bus locking, register-level convenience functions, and device probing. All addresses are 7-bit. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (anything under 1 ms times out at once); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. Every call first waits, with no timeout, for the bus lock held by any other transfer on the same bus. The FreeRTOS STM32 driver does not support `ove_i2c_write_read()` with more than two bytes to write: it fails with `OVE_ERR_BUS_BUSY` and leaves the controller busy, so later transfers on that bus fail too until it is reopened.
+I2C master driver with configurable bus speed, thread-safe bus locking, register-level convenience functions, and device probing. All addresses are 7-bit. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (anything under 1 ms times out at once); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. Every call first waits, with no timeout, for the bus lock held by any other transfer on the same bus. A transfer the FreeRTOS STM32 driver abandons on a timeout or an error leaves the bus released. Before the scheduler starts, that driver refuses `ove_i2c_write_read()` with more than two bytes to write (`OVE_ERR_NOT_SUPPORTED`): it runs on interrupts, which FreeRTOS keeps masked until then. `ove_i2c_write_read()` with nothing to write is a plain read.
 
 ## Configuration
 

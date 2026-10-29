@@ -144,8 +144,13 @@ int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_l
 	if (i2c == NULL || (tx == NULL && tx_len > 0) || rx == NULL || rx_len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
+	/* Nothing to write is a plain read on every engine, rather than a
+	 * zero-length write each backend treats its own way. */
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len, rx, rx_len, timeout_ns);
+	if (tx_len == 0)
+		ret = ove_hal_i2c_read(i2c, addr, rx, rx_len, timeout_ns);
+	else
+		ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len, rx, rx_len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;

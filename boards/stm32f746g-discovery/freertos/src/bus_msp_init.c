@@ -112,7 +112,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 	GPIO_InitTypeDef gpio = {0};
 
 	if (hi2c->Instance == I2C1) {
-		/* I2C1: PB8 (SCL), PB9 (SDA) — Arduino header & audio codec */
+		/* I2C1: PB8 (SCL), PB9 (SDA) — Arduino header (the codec and touch are on I2C3) */
 		__HAL_RCC_I2C1_CLK_ENABLE();
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 

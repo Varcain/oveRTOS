@@ -36,11 +36,12 @@
  * @c OVE_ERR_BUS_NACK.
  *
  * Timeouts: only the FreeRTOS STM32 driver honours @c timeout_ns, rounded
- * down to whole milliseconds (so anything under 1 ms times out at once).
- * That driver does not support ove_i2c_write_read() with more than two
- * bytes to write: the call fails with @c OVE_ERR_BUS_BUSY and leaves the
- * controller busy, so every later transfer on the bus fails the same way
- * until it is closed and reopened.  Zephyr and NuttX ignore @c timeout_ns
+ * down to whole milliseconds (so anything under 1 ms times out at once); a
+ * transfer it abandons on a timeout or an error leaves the bus released.
+ * Before the scheduler starts, that driver refuses ove_i2c_write_read()
+ * with more than two bytes to write with @c OVE_ERR_NOT_SUPPORTED: it runs
+ * on interrupts, which FreeRTOS keeps masked until then.
+ * Zephyr and NuttX ignore @c timeout_ns
  * and rely on their drivers' own timeouts.  On every engine the call first
  * waits, with no timeout, for the bus lock held by any other transfer on the
  * same bus.
@@ -159,8 +160,10 @@ OVE_NODISCARD int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t l
  *
  * @param[in]  i2c        I2C handle.
  * @param[in]  addr       7-bit device address.
- * @param[in]  tx         Transmit buffer (e.g. register address).
- * @param[in]  tx_len     Number of bytes to write.
+ * @param[in]  tx         Transmit buffer (e.g. register address); may be
+ *                        @c NULL when @p tx_len is 0.
+ * @param[in]  tx_len     Number of bytes to write; 0 makes this a plain
+ *                        ove_i2c_read().
  * @param[out] rx         Receive buffer.
  * @param[in]  rx_len     Number of bytes to read.
  * @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.

@@ -4119,7 +4119,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Combined write-then-read with I2C repeated start.\n\n Writes @p tx_len bytes from @p tx, then reads @p rx_len bytes into\n @p rx without releasing the bus (repeated start condition).  This is\n the standard pattern for register reads on I2C sensors and codecs.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  tx         Transmit buffer (e.g. register address).\n @param[in]  tx_len     Number of bytes to write.\n @param[out] rx         Receive buffer.\n @param[in]  rx_len     Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Combined write-then-read with I2C repeated start.\n\n Writes @p tx_len bytes from @p tx, then reads @p rx_len bytes into\n @p rx without releasing the bus (repeated start condition).  This is\n the standard pattern for register reads on I2C sensors and codecs.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  tx         Transmit buffer (e.g. register address); may be\n                        @c NULL when @p tx_len is 0.\n @param[in]  tx_len     Number of bytes to write; 0 makes this a plain\n                        ove_i2c_read().\n @param[out] rx         Receive buffer.\n @param[in]  rx_len     Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2c_write_read(
         i2c: ove_i2c_t,
         addr: u16,
