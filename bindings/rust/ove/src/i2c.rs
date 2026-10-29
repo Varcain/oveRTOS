@@ -102,7 +102,8 @@ impl I2c {
         Error::from_code(rc)
     }
 
-    /// Combined write-then-read with I2C repeated start.
+    /// Combined write-then-read with I2C repeated start. An empty `tx`
+    /// makes it a plain [`read`](Self::read).
     pub fn write_read(
         &self,
         addr: u16,

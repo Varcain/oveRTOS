@@ -493,38 +493,103 @@ static void async_i2c_cb(int result, void *user_data)
 	atomic_store(&s_async_i2c_done, 1);
 }
 
+#ifdef OVE_RENODE_STM32F746
+/* The STM32F746 images: I2C3 carries the FT5336 touch controller, whose
+ * register 0xA8 holds its chip id, 0x51. */
+#define ASYNC_I2C_INSTANCE 2
+#define ASYNC_I2C_ADDR 0x38
+#define ASYNC_I2C_CHIP_ID 0x51
+#include "FreeRTOS.h"
+#include "task.h"
+#include "stm32f7xx_hal.h"
+#else
+#define ASYNC_I2C_INSTANCE 0
+#define ASYNC_I2C_ADDR 0x42
+#endif
+
+static int async_i2c_submit(ove_i2c_t i2c, const uint8_t *tx, size_t tx_len, uint8_t *rx,
+			    size_t rx_len, int *marker)
+{
+	atomic_store(&s_async_i2c_done, 0);
+	s_async_i2c_result = -1;
+	*marker = 0;
+	return ove_i2c_write_read_async(i2c, ASYNC_I2C_ADDR, tx, tx_len, rx, rx_len, async_i2c_cb,
+					marker);
+}
+
+static int async_i2c_wait(void)
+{
+	for (int i = 0; i < 1000 && !atomic_load(&s_async_i2c_done); i++)
+		ove_thread_sleep_ms(1);
+	return atomic_load(&s_async_i2c_done) ? s_async_i2c_result : OVE_ERR_TIMEOUT;
+}
+
+static int async_i2c_run(ove_i2c_t i2c, const uint8_t *tx, size_t tx_len, uint8_t *rx,
+			 size_t rx_len, int *marker)
+{
+	int rc = async_i2c_submit(i2c, tx, tx_len, rx, rx_len, marker);
+	return rc == OVE_OK ? async_i2c_wait() : rc;
+}
+
 static void test_async_i2c_write_read_completion_fires(void **state)
 {
 	(void)state;
-	atomic_store(&s_async_i2c_done, 0);
-	s_async_i2c_result = -1;
 	int marker = 0;
 
 	ove_i2c_storage_t storage;
 	ove_i2c_t i2c = NULL;
 	struct ove_i2c_cfg cfg = {
-		.instance = 0,
-		.speed = OVE_I2C_SPEED_FAST,
+		.instance = ASYNC_I2C_INSTANCE,
+		.speed = OVE_I2C_SPEED_STANDARD,
 	};
 	int rc = ove_i2c_init(&i2c, &storage, &cfg);
 	assert_int_equal(rc, OVE_OK);
 
-	uint8_t tx[2] = {0xAA, 0xBB};
+	/* A write then a repeated-start read.  On the STM32F746 FreeRTOS
+	 * driver the write's completion interrupt starts the read; that
+	 * driver never serviced its I2C interrupts, so no completion came. */
+	static const uint8_t three[3] = {0xA4, 0x00, 0x00};
 	uint8_t rx[3] = {0};
-	rc = ove_i2c_write_read_async(i2c, 0x42, tx, sizeof(tx), rx, sizeof(rx), async_i2c_cb,
-				      &marker);
+	rc = async_i2c_run(i2c, three, sizeof(three), rx, sizeof(rx), &marker);
 	assert_int_equal(rc, OVE_OK);
-
-	for (int i = 0; i < 1000 && !atomic_load(&s_async_i2c_done); i++)
-		ove_thread_sleep_ms(1);
-	if (!atomic_load(&s_async_i2c_done)) {
-		/* No I2C peripheral attached — Renode skips completion. */
-		ove_i2c_deinit(i2c);
-		skip();
-		return;
-	}
 	assert_int_equal(marker, 1);
-	assert_int_equal(s_async_i2c_result, OVE_OK);
+
+#ifdef OVE_RENODE_STM32F746
+	/* The device still answers: a blocking chip-id read. */
+	const uint8_t reg = 0xA8;
+	uint8_t id = 0;
+	rc = ove_i2c_write_read(i2c, ASYNC_I2C_ADDR, &reg, 1, &id, 1, OVE_MS(100));
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(id, ASYNC_I2C_CHIP_ID);
+
+	/* A blocking call while an asynchronous transfer is in flight is
+	 * refused and leaves it alone: the asynchronous completion still
+	 * arrives, and no notification is left behind in this task.  The
+	 * event interrupt is held off meanwhile, so the transfer is still in
+	 * flight when the blocking call is made. */
+	uint8_t rx2[3] = {0};
+	HAL_NVIC_DisableIRQ(I2C3_EV_IRQn);
+	rc = async_i2c_submit(i2c, three, sizeof(three), rx, sizeof(rx), &marker);
+	int blocking = ove_i2c_write_read(i2c, ASYNC_I2C_ADDR, three, sizeof(three), rx2,
+					  sizeof(rx2), OVE_MS(100));
+	HAL_NVIC_EnableIRQ(I2C3_EV_IRQn);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(blocking, OVE_ERR_BUS_BUSY);
+	assert_int_equal(async_i2c_wait(), OVE_OK);
+	assert_int_equal(marker, 1);
+	assert_int_equal(ulTaskNotifyValueClear(NULL, 0), 0);
+#endif
+
+#ifdef OVE_HW
+	/* A one-byte register address.  Renode 1.16.1's I2C model never
+	 * completes a one-byte write whose byte the HAL loaded into TXDR
+	 * before START, so this runs on silicon only. */
+	id = 0;
+	rc = async_i2c_run(i2c, &reg, 1, &id, 1, &marker);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(marker, 1);
+	assert_int_equal(id, ASYNC_I2C_CHIP_ID);
+#endif
 
 	ove_i2c_deinit(i2c);
 }

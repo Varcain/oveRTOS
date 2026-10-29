@@ -32,7 +32,18 @@
 
 #if OVE_OBS_AVAILABLE
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 /* ── 1. I2C against the FT5336 touchscreen ────────────────────────── */
+
+/* Notifications left in the calling task's slot.  An I2C completion the
+ * driver did not wait for must not stay there: it would end the task's
+ * next wait, a thread join for one.  The value is read, not cleared. */
+static uint32_t pending_notifications(void)
+{
+	return ulTaskNotifyValueClear(NULL, 0);
+}
 
 /* The FT5336 chip-id register (offset 0xA8) returns 0x51 for the variant
  * Renode models.  We don't depend on the exact value — any successful
@@ -63,13 +74,62 @@ static void test_renode_i2c_ft5336_probe(void **state)
 	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, OVE_MS(100));
 	assert_int_equal(rc, OVE_OK);
 
-	/* Read from a non-existent address.  Renode's I2C model never NACKs an
-	 * unknown slave, so the HAL waits out the 100 ms and reports a timeout
-	 * (silicon would report the NACK). */
+	/* A write of more than two bytes then a repeated-start read: the
+	 * FreeRTOS driver started it on interrupts nothing serviced, returned
+	 * OVE_ERR_BUS_BUSY and left the controller busy, so the chip id read
+	 * after it failed too. */
+	static const uint8_t three[3] = {0xA4, 0x00, 0x00};
+	uint8_t rx3[3] = {0};
+	rc = ove_i2c_write_read(i2c, FT5336_ADDR, three, sizeof(three), rx3, sizeof(rx3),
+				OVE_MS(100));
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(pending_notifications(), 0);
+	out = 0;
+	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, OVE_MS(100));
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(out, 0x51);
+
+	/* Nothing to write is a plain read (the FreeRTOS driver sent two bytes
+	 * read from address 0 as a register address first). */
+	rc = ove_i2c_write_read(i2c, FT5336_ADDR, NULL, 0, &out, 1, OVE_MS(100));
+	assert_int_equal(rc, OVE_OK);
+
+	/* Nobody at 0x77.  Silicon NACKs the address; Renode's I2C model
+	 * never answers, so the call waits out its 100 ms. */
+#ifdef OVE_HW
+	const int absent = OVE_ERR_BUS_NACK;
+#else
+	const int absent = OVE_ERR_TIMEOUT;
+#endif
 	rc = ove_i2c_read(i2c, 0x77, &out, 1, OVE_MS(100));
-	assert_int_equal(rc, OVE_ERR_TIMEOUT);
+	assert_int_equal(rc, absent);
+
+	/* The same for a write of more than two bytes then a read, which runs
+	 * on interrupts: the abandoned transfer must leave the bus released,
+	 * so the chip id still reads afterwards. */
+	rc = ove_i2c_write_read(i2c, 0x77, three, sizeof(three), rx3, sizeof(rx3), OVE_MS(100));
+	assert_int_equal(rc, absent);
+	assert_int_equal(pending_notifications(), 0);
+	out = 0;
+	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, OVE_MS(100));
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(out, 0x51);
 
 	ove_i2c_deinit(i2c);
+}
+
+/* sim_main.c used the bus before creating the first task.  The polled
+ * transfers work then; the long write-then-read runs on interrupts, which
+ * FreeRTOS keeps masked until the scheduler starts, so it is refused
+ * rather than waiting on a task that does not exist yet. */
+extern int g_i2c_boot_rc[3];
+
+static void test_renode_i2c_before_scheduler(void **state)
+{
+	(void)state;
+	assert_int_equal(g_i2c_boot_rc[0], OVE_OK);
+	assert_int_equal(g_i2c_boot_rc[1], OVE_OK);
+	assert_int_equal(g_i2c_boot_rc[2], OVE_ERR_NOT_SUPPORTED);
 }
 
 /* ── 2. UART tx observable in USART2 register state ───────────────── */
@@ -212,14 +272,8 @@ int test_renode_stm32_periph_run(void)
 	return 0;
 #else
 	const struct CMUnitTest tests[] = {
-#ifndef OVE_HW
-		/* On Renode the FT5336 model responds without a real GPIO
-		 * MSP setup; on HW the I2C3 pins (PH7/PH8) need configuring
-		 * before any transaction can land — defer enabling this on
-		 * silicon until we link the production board's
-		 * bus_msp_init.c into the HW build. */
 		cmocka_unit_test(test_renode_i2c_ft5336_probe),
-#endif
+		cmocka_unit_test(test_renode_i2c_before_scheduler),
 		cmocka_unit_test(test_renode_uart_tx_completes),
 #ifndef OVE_HW
 		/* SPILoopback is a Renode-only peripheral.  On the real

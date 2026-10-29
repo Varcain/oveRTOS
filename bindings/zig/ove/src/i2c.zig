@@ -27,7 +27,8 @@ pub fn read(i2c: c.ove_i2c_t, addr: u16, buf: []u8, timeout_ns: u64) Error!void 
     try err.fromCode(c.ove_i2c_read(i2c, addr, buf.ptr, buf.len, timeout_ns));
 }
 
-/// Combined write-then-read with I2C repeated start.
+/// Combined write-then-read with I2C repeated start. An empty `tx` makes
+/// it a plain `read`.
 pub fn writeRead(i2c: c.ove_i2c_t, addr: u16, tx: []const u8, rx: []u8, timeout_ns: u64) Error!void {
     try err.fromCode(c.ove_i2c_write_read(i2c, addr, tx.ptr, tx.len, rx.ptr, rx.len, timeout_ns));
 }

@@ -481,10 +481,14 @@ struct ove_i2c {
 	ove_mutex_storage_t bus_mtx_storage;
 	ove_mutex_t bus_mtx;
 	I2C_HandleTypeDef hal_handle;
+	void *volatile waiter; /* task waiting for an interrupt-driven transfer */
 #ifdef CONFIG_OVE_ASYNC
 	ove_dma_complete_cb pending_cb;
 	void *pending_ud;
 	volatile int async_busy;
+	void *async_rx; /* read phase still to start after the write phase */
+	uint16_t async_rx_len;
+	uint16_t async_addr;
 #endif
 };
 

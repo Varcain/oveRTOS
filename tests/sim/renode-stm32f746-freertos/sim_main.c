@@ -52,6 +52,57 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
 	HAL_GPIO_Init(GPIOG, &gpio);
 }
 
+/* HAL_I2C_MspInit — the board's lives in bus_msp_init.c, which this image
+ * does not link.  I2C3 (PH7 SCL, PH8 SDA) carries the FT5336 touch
+ * controller the I2C tests talk to; Renode needs none of this, silicon
+ * needs the clock and the pins. */
+void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
+{
+	if (hi2c->Instance != I2C3)
+		return;
+	__HAL_RCC_I2C3_CLK_ENABLE();
+	__HAL_RCC_GPIOH_CLK_ENABLE();
+
+	GPIO_InitTypeDef gpio = {0};
+	gpio.Pin = GPIO_PIN_7 | GPIO_PIN_8;
+	gpio.Mode = GPIO_MODE_AF_OD;
+	gpio.Pull = GPIO_PULLUP;
+	gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+	gpio.Alternate = GPIO_AF4_I2C3;
+	HAL_GPIO_Init(GPIOH, &gpio);
+}
+
+#ifdef CONFIG_OVE_I2C
+#include "ove/i2c.h"
+
+/* Results of I2C calls made before the scheduler starts, checked by
+ * test_renode_i2c_before_scheduler: init, a register read, and a long
+ * write-then-read.  In DTCM, as main RAM has no room left; so is the
+ * handle's storage, which would not fit on main()'s small stack. */
+__attribute__((section(".dsp_bss"))) int g_i2c_boot_rc[3];
+__attribute__((section(".dsp_bss"))) static ove_i2c_storage_t boot_i2c_storage;
+
+static void i2c_before_scheduler(void)
+{
+	static const uint8_t three[3] = {0xA4, 0x00, 0x00};
+	const uint8_t reg = 0xA8;
+	uint8_t rx[3] = {0};
+	ove_i2c_t i2c = NULL;
+	struct ove_i2c_cfg cfg = {
+		.instance = 2,
+		.speed = OVE_I2C_SPEED_STANDARD,
+	};
+
+	g_i2c_boot_rc[0] = ove_i2c_init(&i2c, &boot_i2c_storage, &cfg);
+	if (g_i2c_boot_rc[0] != OVE_OK)
+		return;
+	g_i2c_boot_rc[1] = ove_i2c_write_read(i2c, 0x38, &reg, 1, rx, 1, OVE_MS(100));
+	g_i2c_boot_rc[2] =
+		ove_i2c_write_read(i2c, 0x38, three, sizeof(three), rx, sizeof(rx), OVE_MS(100));
+	ove_i2c_deinit(i2c);
+}
+#endif
+
 static void test_runner_task(void *arg)
 {
 	int failures = 0;
@@ -206,6 +257,9 @@ int main(void)
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+#ifdef CONFIG_OVE_I2C
+	i2c_before_scheduler(); /* before any task exists */
+#endif
 	xTaskCreateStatic(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
 			  tskIDLE_PRIORITY + 1, runner_stack, &runner_tcb);
 	vTaskStartScheduler();

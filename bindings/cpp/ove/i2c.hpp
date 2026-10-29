@@ -100,7 +100,11 @@ class I2c
 		return from_rc(ove_i2c_read(handle_, addr, buf, len, to_timeout_ns(timeout)));
 	}
 
-	/** @brief Combined write-then-read transaction with a repeated start. */
+	/**
+	 * @brief Combined write-then-read transaction with a repeated start.
+	 *
+	 * A @p tx_len of 0 makes it a plain read().
+	 */
 	[[nodiscard]] Result<void>
 	write_read(uint16_t addr, const void *tx, size_t tx_len, void *rx, size_t rx_len,
 		   std::chrono::nanoseconds timeout = wait_forever) noexcept
