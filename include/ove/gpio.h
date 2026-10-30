@@ -107,10 +107,10 @@ OVE_NODISCARD int ove_gpio_get(unsigned int port, unsigned int pin);
  * The interrupt is registered but not enabled; call ove_gpio_irq_enable()
  * to arm it.
  *
- * On STM32 one interrupt line serves pin N of every port, so only one port
- * at a time can have an interrupt on a given pin number.  The FreeRTOS
- * and NuttX backends refuse the other ports with @c OVE_ERR_BUSY until that
- * pin is unregistered.
+ * On most STM32 parts (the STM32F7 among them) one EXTI line serves pin N of
+ * every port, so only one port at a time can have an interrupt on a given
+ * pin number: the backends refuse the other ports with @c OVE_ERR_BUSY until
+ * that pin is unregistered.
  *
  * @param[in] port      GPIO port index.
  * @param[in] pin       GPIO pin index within the port.

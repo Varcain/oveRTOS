@@ -84,15 +84,25 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     ${STUB_DIR}/stub_bsp.c
     ${STUB_DIR}/stub_board.c
-    ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_lvgl.c
 )
 
 # --- Test suites (list sourced from cmake/OveTest.cmake) ---
 ove_test_common_suite_sources(SUITE_SOURCES ${SUITE_DIR})
 
+# GPIO: the real Zephyr backend on the board's STM32 EXTI driver rather than
+# stub_gpio.c, with stm32f7_exti_gpio_hooks.c answering test_gpio's backend
+# questions; OVE_TEST_STM32_EXTI turns on its tests of the EXTI lines that pin
+# N of every port shares.
+set(GPIO_SOURCES
+    ${ZEPHYR_BACKEND}/zephyr_gpio.c
+    ${TESTS_ROOT}/backends/stm32f7/stm32f7_exti_gpio_hooks.c
+)
+zephyr_ld_options(-Wl,--wrap=ove_hal_gpio_irq_hw_unregister)
+
 target_sources(app PRIVATE
     src/main.c
+    ${GPIO_SOURCES}
     ${ZEPHYR_BACKEND_SOURCES}
     ${CORE_SOURCES}
     ${STUB_SOURCES}
@@ -109,7 +119,7 @@ target_include_directories(app PRIVATE
     ${cmocka_SOURCE_DIR}/include
 )
 
-target_compile_definitions(app PRIVATE OVE_QEMU_ARM CONFIG_OVE_ZERO_HEAP=1 HAVE_UINTPTR_T
+target_compile_definitions(app PRIVATE OVE_QEMU_ARM OVE_TEST_STM32_EXTI=1 CONFIG_OVE_ZERO_HEAP=1 HAVE_UINTPTR_T
     # OVE_HW propagated to main.c — see heap sibling.
     $<$<BOOL:${OVE_HW}>:OVE_HW>)
 zephyr_link_libraries(cmocka_lib m)

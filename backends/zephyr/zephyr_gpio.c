@@ -10,7 +10,12 @@
 #include "ove_backend_common.h"
 #include <stdatomic.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/spinlock.h>
 #include "board_desc.h"
+
+#ifdef CONFIG_GPIO_INTC_STM32
+#include <zephyr/drivers/interrupt_controller/intc_exti_stm32.h>
+#endif
 
 /* port_to_dev() covers ports gpioa-gpioi of 16 pins: board.yaml's gpio must fit. */
 BUILD_ASSERT(OVE_GPIO_PORT_COUNT <= 9 && OVE_GPIO_PINS_PER_PORT <= 16,
@@ -31,6 +36,45 @@ struct zephyr_irq_entry {
 };
 
 static struct zephyr_irq_entry zephyr_irq_table[GPIO_IRQ_MAX];
+
+/* Guards picking a slot and publishing its port and pin, so the ownership
+ * check below sees registrations still in progress.  Driver calls run
+ * outside it: they may sleep. */
+static struct k_spinlock zephyr_irq_lock;
+
+/*
+ * With STM32's GPIO interrupt controller, EXTI line N serves pin N of every
+ * port, one port at a time.  A line belongs to the port with a slot for that
+ * pin, from the start of registration until unregistration succeeds, armed
+ * or not; the driver itself only arbitrates while a line is enabled.  Lines
+ * that Zephyr's own drivers take are not seen here.  Other interrupt
+ * controllers (STM32WB0 among them) give every port and pin a line of its
+ * own.  Call with zephyr_irq_lock held.
+ */
+static int line_check_owner(unsigned int port, unsigned int pin)
+{
+#ifdef CONFIG_GPIO_INTC_STM32
+	for (unsigned int i = 0; i < GPIO_IRQ_MAX; i++) {
+		if (atomic_load_explicit(&zephyr_irq_table[i].registered, memory_order_acquire) !=
+			    GPIO_IRQ_FREE &&
+		    zephyr_irq_table[i].pin == (gpio_pin_t)pin && zephyr_irq_table[i].port != port)
+			return OVE_ERR_BUSY;
+	}
+#else
+	(void)port;
+	(void)pin;
+#endif
+	return OVE_OK;
+}
+
+/* What enable, disable and unregister report for a pin with no slot. */
+static int no_slot(unsigned int port, unsigned int pin)
+{
+	k_spinlock_key_t key = k_spin_lock(&zephyr_irq_lock);
+	int ret = line_check_owner(port, pin);
+	k_spin_unlock(&zephyr_irq_lock, key);
+	return ret == OVE_OK ? OVE_ERR_NOT_FOUND : ret;
+}
 
 static const struct device *port_to_dev(unsigned int port)
 {
@@ -143,17 +187,26 @@ int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_i
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		int expected = GPIO_IRQ_FREE;
-		if (atomic_compare_exchange_strong_explicit(
-			    &zephyr_irq_table[i].registered, &expected, GPIO_IRQ_RESERVING,
-			    memory_order_acq_rel, memory_order_acquire)) {
-			break;
+	k_spinlock_key_t key = k_spin_lock(&zephyr_irq_lock);
+	ret = line_check_owner(port, pin);
+	if (ret == OVE_OK) {
+		for (i = 0; i < GPIO_IRQ_MAX; i++) {
+			if (atomic_load_explicit(&zephyr_irq_table[i].registered,
+						 memory_order_acquire) == GPIO_IRQ_FREE)
+				break;
+		}
+		if (i < GPIO_IRQ_MAX) {
+			zephyr_irq_table[i].port = port;
+			zephyr_irq_table[i].pin = (gpio_pin_t)pin;
+			atomic_store_explicit(&zephyr_irq_table[i].registered, GPIO_IRQ_RESERVING,
+					      memory_order_release);
+		} else {
+			ret = OVE_ERR_NO_MEMORY;
 		}
 	}
-	if (i >= GPIO_IRQ_MAX) {
-		return OVE_ERR_NO_MEMORY;
-	}
+	k_spin_unlock(&zephyr_irq_lock, key);
+	if (ret != OVE_OK)
+		return ret;
 
 	ret = gpio_pin_configure(dev, pin, GPIO_INPUT);
 	if (ret != 0) {
@@ -169,9 +222,14 @@ int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_i
 		return ove_errno_to_ove(-ret);
 	}
 
+#ifdef CONFIG_GPIO_INTC_STM32
+	/* The line may hold an edge latched for the port that had it before
+	 * (disabling it there removed its triggers but not the pending flag):
+	 * drop it, or this pin's callback would run for it once armed. */
+	(void)stm32_exti_clear_pending(pin);
+#endif
+
 	zephyr_irq_table[i].dev = dev;
-	zephyr_irq_table[i].pin = (gpio_pin_t)pin;
-	zephyr_irq_table[i].port = port;
 	zephyr_irq_table[i].irq_flags = flags;
 	gpio_init_callback(&zephyr_irq_table[i].cb_data, zephyr_gpio_irq_handler, BIT(pin));
 	ret = gpio_add_callback(dev, &zephyr_irq_table[i].cb_data);
@@ -201,7 +259,7 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
 			return ret == 0 ? OVE_OK : ove_errno_to_ove(-ret);
 		}
 	}
-	return OVE_ERR_NOT_FOUND;
+	return no_slot(port, pin);
 }
 
 int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
@@ -218,7 +276,7 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 			return ret == 0 ? OVE_OK : ove_errno_to_ove(-ret);
 		}
 	}
-	return OVE_ERR_NOT_FOUND;
+	return no_slot(port, pin);
 }
 
 int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
@@ -246,5 +304,5 @@ int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 			return OVE_OK;
 		}
 	}
-	return OVE_ERR_NOT_FOUND;
+	return no_slot(port, pin);
 }

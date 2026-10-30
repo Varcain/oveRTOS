@@ -141,7 +141,7 @@ if(_OVE_ZERO_HEAP)
 endif()
 
 # The STM32F746G-DISCO variants test the board's real GPIO HAL (on NuttX's
-# EXTI driver) rather than stub_gpio.c, with stm32f7_nuttx_gpio_hooks.c
+# EXTI driver) rather than stub_gpio.c, with stm32f7_exti_gpio_hooks.c
 # answering test_gpio's backend questions; OVE_TEST_STM32_EXTI turns on its
 # tests of the EXTI lines that pin N of every port shares.
 if(CONFIG_ARCH_BOARD_STM32F746G_DISCO)
@@ -149,7 +149,7 @@ if(CONFIG_ARCH_BOARD_STM32F746G_DISCO)
   list(REMOVE_ITEM _srcs ${_stub_dir}/stub_gpio.c)
   list(APPEND _srcs
     ${OVE_DIR}/boards/stm32f746g-discovery/nuttx/src/gpio.c
-    ${_tests_root}/backends/stm32f7/stm32f7_nuttx_gpio_hooks.c)
+    ${_tests_root}/backends/stm32f7/stm32f7_exti_gpio_hooks.c)
 else()
   set(_ove_stm32f746 OFF)
 endif()
@@ -176,6 +176,11 @@ set(_definitions "")
 
 if(_ove_stm32f746)
   list(APPEND _definitions OVE_TEST_STM32_EXTI=1)
+endif()
+
+# Set by the hardware runners (hw-stm32f746-nuttx*): the app runs on silicon.
+if(OVE_HW)
+  list(APPEND _definitions OVE_HW=1)
 endif()
 
 if(_OVE_ZERO_HEAP)
