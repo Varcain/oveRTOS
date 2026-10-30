@@ -7,13 +7,14 @@
  */
 
 /*
- * test_gpio hooks for the STM32F746 NuttX test images, which link the
- * board's GPIO HAL (boards/stm32f746g-discovery/nuttx/src/gpio.c) instead
- * of stub_gpio.c; the NuttX twin of stm32f7_gpio_hooks.c.
+ * test_gpio hooks for the STM32F746 NuttX and Zephyr test images, which link
+ * the real GPIO HAL (boards/stm32f746g-discovery/nuttx/src/gpio.c,
+ * backends/zephyr/zephyr_gpio.c) instead of stub_gpio.c; the twin of
+ * stm32f7_gpio_hooks.c, without the STM32 HAL headers.
  *
- * "Is this line's interrupt armed?" reads the EXTI interrupt mask NuttX's
- * EXTI driver programs, and "make hw_unregister fail" interposes on the HAL
- * entry point — link with --wrap=ove_hal_gpio_irq_hw_unregister.
+ * "Is this line's interrupt armed?" reads the EXTI interrupt mask the
+ * engine's EXTI driver programs, and "make hw_unregister fail" interposes on
+ * the HAL entry point — link with --wrap=ove_hal_gpio_irq_hw_unregister.
  */
 
 #include <stdint.h>

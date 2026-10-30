@@ -103,9 +103,8 @@ pub fn get(pin: GpioPin) -> Result<i32> {
 /// backend calls it from the thread that injects the edge): keep it short and
 /// use only ISR-safe calls.
 ///
-/// On STM32 pin N of every port shares one interrupt line: the FreeRTOS and
-/// NuttX backends fail with [`Error::Busy`] while another port's pin N holds
-/// it.
+/// On most STM32 parts pin N of every port shares one EXTI line: this fails
+/// with [`Error::Busy`] while another port's pin N holds it.
 ///
 /// # Safety
 /// The callback and user_data must remain valid for the lifetime of the

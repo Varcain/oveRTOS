@@ -1239,7 +1239,7 @@ def _nuttx_register_test_app(ove_dir, apps_build, app_subdir):
 
 def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
                        board_config, defconfig_overlays, coverage,
-                       variant_dir, extra_env=None):
+                       variant_dir, extra_env=None, hw=False):
     """Configure + build a NuttX target via CMake. Two-phase to thread our
     test defconfig overlays through Kconfig:
 
@@ -1270,6 +1270,10 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     ]
     if coverage:
         cmake_defs.append("-DOVE_COVERAGE=ON")
+    if hw:
+        # Tells the test app it runs on silicon (OVE_HW), as the FreeRTOS
+        # and Zephyr hardware builds do.
+        cmake_defs.append("-DOVE_HW=ON")
 
     logger.debug(f"cmake configure: {board_config} -> {build_dir}")
     # --no-warn-unused-cli silences "Manually-specified variables were not
@@ -1692,11 +1696,13 @@ def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
                            label=label, elf=elf, resc=resc)
 
 
-def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
+def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label,
+                                  hw=False):
     """Build a NuttX stm32f746g-disco firmware via CMake. Returns the path
     to the produced ELF (NuttX names it `nuttx`, no suffix). The HW
-    runner reuses this verbatim — NuttX's stm32f7 backend already writes
-    via USART1 by default, so no extra knobs."""
+    runner reuses this with `hw=True`, which only defines OVE_HW for the
+    test app — NuttX's stm32f7 backend already writes via USART1 by
+    default."""
     tc_dir = _ensure_arm_toolchain(ove_dir)
     build_base = os.path.join(output_dir, "tests", label)
     apps_build = os.path.join(build_base, "nuttx-apps")
@@ -1728,6 +1734,7 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
         coverage=False,
         variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
         extra_env=extra_env,
+        hw=hw,
     )
 
     return os.path.join(build_dir, "nuttx")
@@ -2033,7 +2040,7 @@ def test_hw_stm32f746_nuttx(ove_dir, output_dir):
     """Flash + run the STM32F746 NuttX heap firmware on real hardware."""
     elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
         app_subdir="renode-stm32f746-nuttx",
-        label="hw-stm32f746-nuttx")
+        label="hw-stm32f746-nuttx", hw=True)
     return _run_hw_stm32f746(ove_dir, output_dir,
                              label="hw-stm32f746-nuttx", elf=elf)
 
@@ -2042,7 +2049,7 @@ def test_hw_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
     """Flash + run the STM32F746 NuttX zero-heap firmware on hardware."""
     elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
         app_subdir="renode-stm32f746-nuttx-zeroheap",
-        label="hw-stm32f746-nuttx-zeroheap")
+        label="hw-stm32f746-nuttx-zeroheap", hw=True)
     return _run_hw_stm32f746(ove_dir, output_dir,
                              label="hw-stm32f746-nuttx-zeroheap", elf=elf)
 
