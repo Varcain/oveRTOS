@@ -191,6 +191,30 @@ only an invalid call is an error.
 
 ---
 
+## Inference
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| Session, heap-allocated (heap mode) | `ove::Model<> m(cfg)` | `Model::new(&cfg)` | `Model.create(&cfg)` |
+| Reusable static storage + arena | `static ove::ModelStorage<N> s` | `ModelStorage::<N>::new()` (static) | `var arena: [N]u8 align(16)` |
+| Load a model into it | `auto m = s.load(data, size)` | `let m = s.load(data)?` | `try m.init(&arena, &cfg)` (zero-heap only) |
+| Session end | destructor | `Drop` | `defer m.deinit()` |
+| Bad model / arena too small | `Error::MlFailed` | `Error::MlFailed` | `error.MlFailed` |
+
+**Contract notes**
+
+- The arena is the bulk of a session's memory, so it lives in caller storage
+  meant to be static, never inside an object that may land on a thread's
+  stack. A zero-heap C++ `ove::Model<N>` with `N > 0` still embeds its arena,
+  for compatibility; prefer `ModelStorage`.
+- One model session at a time: the backend shares one interpreter between
+  sessions, so a pipeline loads its models into one storage in turn, ending
+  each session before loading the next.
+- Asymmetry: Zig has no heap-mode form that borrows caller storage; its heap
+  build allocates per session with `Model.create`.
+
+---
+
 ## Callbacks
 
 Every binding hands the C layer a trampoline, so the context a callback runs in,

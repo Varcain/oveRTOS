@@ -6,7 +6,7 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 
 ## Language-specific patterns
 
-This example uses C++20 RAII wrappers. Objects are declared at file scope — constructors handle initialization, destructors handle cleanup. Templates provide compile-time type safety.
+This example uses C++20 RAII wrappers: constructors handle initialization, destructors handle cleanup, and templates provide compile-time type safety. Both models share one static `ove::ModelStorage<32768>`; each stage loads its model into it, and the session ends at the end of the stage, before the next model is loaded. The 32 KiB arena stays out of the inference thread's 8 KiB stack.
 
 See the [overview](index.md) for architecture details and the full API list.
 

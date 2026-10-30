@@ -8,8 +8,8 @@
  * Live DMIC Keyword Detection — C++ implementation
  *
  * Uses the C++ audio graph template wrapper (add_processor<T>) and the
- * RAII Model<ArenaSize> class.  No raw function pointers or void* in
- * application code.
+ * RAII ove::Model sessions loaded into a static ove::ModelStorage.  No raw
+ * function pointers or void* in application code.
  */
 
 #include <ove/ove.hpp>
@@ -108,20 +108,24 @@ struct DmicProcessor {
 
 // ── Feature extraction ─────────────────────────────────────────────────
 
+// Both models run in one static arena, one after the other: the inference
+// backend runs one model at a time, and a 32 KiB arena would not fit on the
+// inference thread's stack.
+static ove::ModelStorage<ARENA_SIZE> model_storage;
+
 static int generate_features(const int16_t *audio, unsigned len)
 {
-	ove::Model<ARENA_SIZE> preproc({
-		g_audio_preprocessor_int8_model_data,
-		g_audio_preprocessor_int8_model_data_size,
-		ARENA_SIZE,
-	});
+	auto preproc = model_storage.load(g_audio_preprocessor_int8_model_data,
+					  g_audio_preprocessor_int8_model_data_size);
+	if (!preproc)
+		return static_cast<int>(preproc.error());
 
 	unsigned actual_window = FEATURE_DURATION_MS * g_actual_rate / 1000;
 	unsigned actual_stride = FEATURE_STRIDE_MS * g_actual_rate / 1000;
 
 	unsigned frame = 0, offset = 0;
 	while (offset + actual_window <= len && frame < FEATURE_COUNT) {
-		auto *input = preproc.input_data<int16_t>(0);
+		auto *input = preproc->input_data<int16_t>(0);
 
 		for (unsigned i = 0; i < AUDIO_DURATION_SAMPLES; i++) {
 			unsigned src_idx = offset + (i * g_actual_rate / AUDIO_SAMPLE_FREQ);
@@ -135,10 +139,10 @@ static int generate_features(const int16_t *audio, unsigned len)
 			input[i] = static_cast<int16_t>(s);
 		}
 
-		if (auto r = preproc.invoke(); !r)
+		if (auto r = preproc->invoke(); !r)
 			return static_cast<int>(r.error());
 
-		std::memcpy(features[frame], preproc.output_data<int8_t>(0), FEATURE_SIZE);
+		std::memcpy(features[frame], preproc->output_data<int8_t>(0), FEATURE_SIZE);
 		frame++;
 		offset += actual_stride;
 	}
@@ -149,18 +153,17 @@ static int generate_features(const int16_t *audio, unsigned len)
 
 static int classify_keyword(int &prediction, float &confidence)
 {
-	ove::Model<ARENA_SIZE> classifier({
-		g_micro_speech_quantized_model_data,
-		g_micro_speech_quantized_model_data_size,
-		ARENA_SIZE,
-	});
+	auto classifier = model_storage.load(g_micro_speech_quantized_model_data,
+					     g_micro_speech_quantized_model_data_size);
+	if (!classifier)
+		return static_cast<int>(classifier.error());
 
-	std::memcpy(classifier.input_data<int8_t>(0), features, FEATURE_ELEMENTS);
+	std::memcpy(classifier->input_data<int8_t>(0), features, FEATURE_ELEMENTS);
 
-	if (auto r = classifier.invoke(); !r)
+	if (auto r = classifier->invoke(); !r)
 		return static_cast<int>(r.error());
 
-	auto *scores = classifier.output_data<int8_t>(0);
+	auto *scores = classifier->output_data<int8_t>(0);
 	unsigned int best = 0;
 	for (unsigned int i = 1; i < CATEGORY_COUNT; i++)
 		if (scores[i] > scores[best])
