@@ -68,6 +68,9 @@ int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t 
  *
  * Called by ove_gpio_irq_register().  The HAL must configure the pin and
  * retain any callback-routing state, but leave the interrupt line masked.
+ * Where one interrupt line serves several ports' pins, it returns
+ * OVE_ERR_BUSY while another port holds the line, and leaves that port's
+ * configuration untouched.
  *
  * @param[in] port      GPIO port index.
  * @param[in] pin       GPIO pin index within the port.

@@ -107,13 +107,19 @@ OVE_NODISCARD int ove_gpio_get(unsigned int port, unsigned int pin);
  * The interrupt is registered but not enabled; call ove_gpio_irq_enable()
  * to arm it.
  *
+ * On STM32 one interrupt line serves pin N of every port, so only one port
+ * at a time can have an interrupt on a given pin number.  The FreeRTOS
+ * backend refuses the other ports with @c OVE_ERR_BUSY until that pin is
+ * unregistered.
+ *
  * @param[in] port      GPIO port index.
  * @param[in] pin       GPIO pin index within the port.
  * @param[in] mode      Edge(s) that should trigger the interrupt.
  * @param[in] callback  Function called when the interrupt fires; must not be NULL.
  * @param[in] user_data Opaque pointer forwarded to @p callback.
- * @return OVE_OK on success, OVE_ERR_ALREADY_EXISTS if the line is already
- *         registered, or another negative error code on failure.
+ * @return OVE_OK on success, OVE_ERR_ALREADY_EXISTS if this pin is already
+ *         registered, OVE_ERR_BUSY if its interrupt line is held by the same
+ *         pin of another port, or another negative error code on failure.
  */
 OVE_NODISCARD int ove_gpio_irq_register(unsigned int port, unsigned int pin,
 					ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,

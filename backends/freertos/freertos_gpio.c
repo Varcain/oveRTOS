@@ -128,6 +128,27 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return HAL_GPIO_ReadPin(gpio, (uint16_t)(1U << pin)) == GPIO_PIN_SET ? 1 : 0;
 }
 
+/*
+ * EXTI line N serves pin N of every port, routed to one port at a time by
+ * SYSCFG.  The hardware records the owner, so no table is kept: a line is
+ * in use while it has an edge selected (HAL_GPIO_Init selects one for every
+ * interrupt mode and HAL_GPIO_DeInit clears both, so this holds from
+ * registration to unregistration, armed or not), and its owner is the port
+ * it is routed to.
+ */
+static unsigned int exti_port(unsigned int pin)
+{
+	return (SYSCFG->EXTICR[pin >> 2] >> (4U * (pin & 3U))) & 0xFU;
+}
+
+/* OVE_ERR_BUSY while another port holds the line of @p pin. */
+static int exti_check_owner(unsigned int port, unsigned int pin)
+{
+	if (((EXTI->RTSR | EXTI->FTSR) & (1U << pin)) != 0U && exti_port(pin) != port)
+		return OVE_ERR_BUSY;
+	return OVE_OK;
+}
+
 int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode)
 {
 	GPIO_TypeDef *gpio;
@@ -159,8 +180,13 @@ int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_i
 	}
 
 	key = gpio_irq_lock();
+	if (exti_check_owner(port, pin) != OVE_OK) {
+		gpio_irq_unlock(key);
+		return OVE_ERR_BUSY;
+	}
 	HAL_GPIO_Init(gpio, &gpio_init);
 	EXTI->IMR &= ~(1U << pin);
+	EXTI->PR = 1U << pin; /* an edge latched for the line's previous owner */
 	HAL_NVIC_SetPriority(pin_to_irqn(pin), 5, 0);
 	HAL_NVIC_EnableIRQ(pin_to_irqn(pin));
 	gpio_irq_unlock(key);
@@ -173,9 +199,11 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
 		return OVE_ERR_INVALID_PARAM;
 
 	uint32_t key = gpio_irq_lock();
-	EXTI->IMR |= 1U << pin;
+	int ret = exti_check_owner(port, pin);
+	if (ret == OVE_OK)
+		EXTI->IMR |= 1U << pin;
 	gpio_irq_unlock(key);
-	return OVE_OK;
+	return ret;
 }
 
 int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
@@ -186,9 +214,11 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	/* EXTI5..9 and EXTI10..15 share NVIC vectors.  Mask only this line;
 	 * disabling the vector would also silence unrelated registered pins. */
 	uint32_t key = gpio_irq_lock();
-	EXTI->IMR &= ~(1U << pin);
+	int ret = exti_check_owner(port, pin);
+	if (ret == OVE_OK)
+		EXTI->IMR &= ~(1U << pin);
 	gpio_irq_unlock(key);
-	return OVE_OK;
+	return ret;
 }
 
 int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
@@ -210,13 +240,6 @@ int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 /* HAL EXTI callback — dispatches to shared IRQ dispatch */
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 
-/* Weak pin→port mapper. Boards with EXTI on multiple ports override this. */
-__attribute__((weak)) unsigned int ove_board_gpio_exti_port(unsigned int pin)
-{
-	(void)pin;
-	return 0;
-}
-
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	/* Reconstruct pin number from bitmask */
@@ -228,9 +251,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		pin++;
 	}
 
-	/* STM32 EXTI hardware reports only the pin, not the port. The board
-	 * overrides ove_board_gpio_exti_port() to resolve the port from the
-	 * EXTI configuration it owns (typical CubeMX boards use one port per
-	 * EXTI line). Default weak impl returns port 0. */
-	ove_gpio_irq_dispatch(ove_board_gpio_exti_port(pin), pin);
+	/* EXTI reports only the line; the port is the one it is routed to. */
+	ove_gpio_irq_dispatch(exti_port(pin), pin);
 }
