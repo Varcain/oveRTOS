@@ -9,6 +9,11 @@
 #include "../framework/ove_test.h"
 #include "board_desc.h"
 
+#ifdef OVE_TEST_STM32_EXTI
+#include "ove/hal/hal_gpio.h"
+#include "ove/irq.h"
+#endif
+
 /* test_gpio_get does a read-after-write check that depends on the pin
  * not having an external pull resistor.  Reuse the LED0 pin (PI1 on
  * the STM32F746G-Discovery) — it has no external pull, so IDR follows
@@ -217,6 +222,160 @@ static void test_gpio_irq_ops_invalid_pin(void **state)
 	assert_int_equal(ove_gpio_irq_unregister(9999, 9999), OVE_ERR_INVALID_PARAM);
 }
 
+#ifdef OVE_TEST_STM32_EXTI
+/* STM32: EXTI line N serves pin N of every port, one port at a time.  PI11
+ * (the user button, pulled down, so safe to arm on silicon) owns line 11
+ * here; PA11 is the other port's pin on it. */
+#define EXTI_OWNER_PORT 8U
+#define EXTI_OTHER_PORT 0U
+#define EXTI_PIN 11U
+
+static void test_gpio_irq_shared_line_one_port_at_a_time(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_board_init());
+
+	/* Another port's pin on a line in use is refused, before and after
+	 * the owner was armed, and gets the line once the owner is gone. */
+	assert_int_equal(ove_gpio_irq_register(EXTI_OWNER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					       gpio_irq_handler, NULL),
+			 OVE_OK);
+	int idle = ove_gpio_irq_register(EXTI_OTHER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					 gpio_irq_handler, NULL);
+	if (idle == OVE_OK)
+		(void)ove_gpio_irq_unregister(EXTI_OTHER_PORT, EXTI_PIN);
+	int armed = ove_gpio_irq_enable(EXTI_OWNER_PORT, EXTI_PIN);
+	int owner_armed = stub_gpio_irq_is_armed(EXTI_OWNER_PORT, EXTI_PIN);
+	int disarmed = ove_gpio_irq_disable(EXTI_OWNER_PORT, EXTI_PIN);
+	int again = ove_gpio_irq_register(EXTI_OTHER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					  gpio_irq_handler, NULL);
+	if (again == OVE_OK)
+		(void)ove_gpio_irq_unregister(EXTI_OTHER_PORT, EXTI_PIN);
+	(void)ove_gpio_irq_unregister(EXTI_OWNER_PORT, EXTI_PIN);
+
+	assert_int_equal(idle, OVE_ERR_BUSY);
+	assert_int_equal(armed, OVE_OK);
+	assert_int_equal(owner_armed, 1);
+	assert_int_equal(disarmed, OVE_OK);
+	assert_int_equal(again, OVE_ERR_BUSY);
+
+	assert_int_equal(ove_gpio_irq_register(EXTI_OTHER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					       gpio_irq_handler, NULL),
+			 OVE_OK);
+	assert_int_equal(ove_gpio_irq_unregister(EXTI_OTHER_PORT, EXTI_PIN), OVE_OK);
+}
+
+static void test_gpio_irq_shared_line_other_port_leaves_it_alone(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_board_init());
+
+	/* With the owner holding the line, the other port's enable and
+	 * disable (on the backend: the public API no longer lets it register)
+	 * leave the owner's interrupt as it was. */
+	assert_int_equal(ove_gpio_irq_register(EXTI_OWNER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					       gpio_irq_handler, NULL),
+			 OVE_OK);
+	assert_int_equal(ove_gpio_irq_enable(EXTI_OWNER_PORT, EXTI_PIN), OVE_OK);
+	int off = ove_hal_gpio_irq_hw_disable(EXTI_OTHER_PORT, EXTI_PIN);
+	int still_armed = stub_gpio_irq_is_armed(EXTI_OWNER_PORT, EXTI_PIN);
+	(void)ove_gpio_irq_disable(EXTI_OWNER_PORT, EXTI_PIN);
+	int on = ove_hal_gpio_irq_hw_enable(EXTI_OTHER_PORT, EXTI_PIN);
+	int still_disarmed = !stub_gpio_irq_is_armed(EXTI_OWNER_PORT, EXTI_PIN);
+	int gone = ove_hal_gpio_irq_hw_unregister(EXTI_OTHER_PORT, EXTI_PIN);
+	(void)ove_gpio_irq_unregister(EXTI_OWNER_PORT, EXTI_PIN);
+
+	assert_int_equal(off, OVE_ERR_BUSY);
+	assert_int_equal(still_armed, 1);
+	assert_int_equal(on, OVE_ERR_BUSY);
+	assert_int_equal(still_disarmed, 1);
+	assert_int_equal(gone, OVE_ERR_BUSY);
+}
+#define STM32F7_EXTI_SWIER (*(volatile uint32_t *)0x40013C10u)
+#define NVIC_ISPR0 (*(volatile uint32_t *)0xE000E200u)
+#define NVIC_ICPR0 (*(volatile uint32_t *)0xE000E280u)
+#define NVIC_EXTI0 6U /* EXTI0_IRQn */
+
+static volatile unsigned int s_irq_hits_owner;
+
+static void owner_irq_handler(unsigned int port, unsigned int pin, void *user_data)
+{
+	(void)user_data;
+	if (port == EXTI_OWNER_PORT && pin == EXTI_PIN)
+		s_irq_hits_owner++;
+}
+
+static void test_gpio_irq_shared_line_handoff_drops_old_edge(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_board_init());
+
+	/* An edge latched for the port that held the line must not reach the
+	 * next holder's callback.  The edge is latched in software (SWIER)
+	 * while interrupts are held off, then the line changes hands. */
+	s_irq_hits_owner = 0;
+	assert_int_equal(ove_gpio_irq_register(EXTI_OTHER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					       gpio_irq_handler, NULL),
+			 OVE_OK);
+	ove_irq_key_t key = ove_irq_lock();
+	int armed = ove_gpio_irq_enable(EXTI_OTHER_PORT, EXTI_PIN);
+	STM32F7_EXTI_SWIER = 1U << EXTI_PIN;
+	(void)ove_gpio_irq_disable(EXTI_OTHER_PORT, EXTI_PIN);
+	int released = ove_gpio_irq_unregister(EXTI_OTHER_PORT, EXTI_PIN);
+	int taken = ove_gpio_irq_register(EXTI_OWNER_PORT, EXTI_PIN, OVE_GPIO_IRQ_RISING,
+					  owner_irq_handler, NULL);
+	int owner_armed = ove_gpio_irq_enable(EXTI_OWNER_PORT, EXTI_PIN);
+	ove_irq_unlock(key);
+	ove_thread_sleep_ms(10);
+	unsigned int hits = s_irq_hits_owner;
+	(void)ove_gpio_irq_unregister(EXTI_OWNER_PORT, EXTI_PIN);
+
+	assert_int_equal(armed, OVE_OK);
+	assert_int_equal(released, OVE_OK);
+	assert_int_equal(taken, OVE_OK);
+	assert_int_equal(owner_armed, OVE_OK);
+	assert_int_equal(hits, 0);
+}
+
+static void test_gpio_irq_dedicated_line_handoff_drops_old_edge(void **state)
+{
+	(void)state;
+	OVE_TEST_ASSERT_OK(ove_board_init());
+
+	/* Lines 0-4 have interrupt vectors of their own, and an edge latched
+	 * for the old holder leaves that vector pending too: registering the
+	 * next holder must clear it, or the vector would run the next holder's
+	 * callback.  PA0 and PI0 are floating header pins, so only the old
+	 * holder is armed, and only while interrupts are held off. */
+	const unsigned int pin = 0;
+	const uint32_t vector = 1U << (NVIC_EXTI0 + pin);
+
+	assert_int_equal(ove_gpio_irq_register(EXTI_OTHER_PORT, pin, OVE_GPIO_IRQ_RISING,
+					       gpio_irq_handler, NULL),
+			 OVE_OK);
+	ove_irq_key_t key = ove_irq_lock();
+	int armed = ove_gpio_irq_enable(EXTI_OTHER_PORT, pin);
+	STM32F7_EXTI_SWIER = 1U << pin;
+	(void)STM32F7_EXTI_SWIER; /* let the write land before looking */
+	__asm__ volatile("dsb" ::: "memory");
+	int latched = (NVIC_ISPR0 & vector) != 0U;
+	(void)ove_gpio_irq_disable(EXTI_OTHER_PORT, pin);
+	int released = ove_gpio_irq_unregister(EXTI_OTHER_PORT, pin);
+	int taken = ove_gpio_irq_register(EXTI_OWNER_PORT, pin, OVE_GPIO_IRQ_RISING,
+					  gpio_irq_handler, NULL);
+	int still_pending = (NVIC_ISPR0 & vector) != 0U;
+	(void)ove_gpio_irq_unregister(EXTI_OWNER_PORT, pin);
+	NVIC_ICPR0 = vector; /* whatever the outcome, nothing is left to run */
+	ove_irq_unlock(key);
+
+	assert_int_equal(armed, OVE_OK);
+	assert_int_equal(latched, 1);
+	assert_int_equal(released, OVE_OK);
+	assert_int_equal(taken, OVE_OK);
+	assert_int_equal(still_pending, 0);
+}
+#endif /* OVE_TEST_STM32_EXTI */
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_gpio_run(void)
@@ -234,6 +393,12 @@ int test_gpio_run(void)
 		cmocka_unit_test(test_gpio_set_invalid_port),
 		cmocka_unit_test(test_gpio_irq_ops_on_unregistered_pin),
 		cmocka_unit_test(test_gpio_irq_ops_invalid_pin),
+#ifdef OVE_TEST_STM32_EXTI
+		cmocka_unit_test(test_gpio_irq_shared_line_one_port_at_a_time),
+		cmocka_unit_test(test_gpio_irq_shared_line_other_port_leaves_it_alone),
+		cmocka_unit_test(test_gpio_irq_shared_line_handoff_drops_old_edge),
+		cmocka_unit_test(test_gpio_irq_dedicated_line_handoff_drops_old_edge),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

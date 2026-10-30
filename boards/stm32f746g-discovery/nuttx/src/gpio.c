@@ -39,6 +39,11 @@ extern int stm32_gpiosetevent(uint32_t pinset, bool risingedge, bool fallingedge
 #define PIN_OUTPUT_CLEAR 0u		       /* GPIO_OUTPUT_CLEAR */
 #define PIN_PORT(port) ((uint32_t)(port) << 4) /* GPIO_PORT_SHIFT, GPIO_PORTA = 0 */
 #define PIN_NUM(pin) ((uint32_t)(pin) << 0)    /* GPIO_PIN_SHIFT */
+#define PIN_EXTI (1u << 8)		       /* GPIO_EXTI: route the EXTI line here */
+
+#define EXTI_PR (*(volatile uint32_t *)0x40013C14u)    /* STM32_EXTI_PR */
+#define NVIC_ICPR0 (*(volatile uint32_t *)0xE000E280u) /* NVIC_IRQ0_31_CLRPEND */
+#define NVIC_EXTI0 6U				       /* STM32_IRQ_EXTI0 - STM32_IRQ_FIRST */
 
 /* NuttX's STM32F7 GPIO driver covers ports A-K of 16 pins. */
 _Static_assert(OVE_GPIO_PORT_COUNT <= 11 && OVE_GPIO_PINS_PER_PORT <= 16,
@@ -120,6 +125,20 @@ static int irq_config(unsigned int port, unsigned int pin, xcpt_t handler)
 		       : OVE_ERR_INVALID_PARAM;
 }
 
+/* EXTI line N serves pin N of every port, one port at a time, and NuttX's
+ * EXTI driver keeps one handler per line: another port's pin would replace
+ * the owner's handler and route.  A line belongs to the port whose pin has
+ * a registered mode, from registration to unregistration, armed or not.
+ * Interrupts set up by NuttX's own drivers are not seen here. */
+static int line_check_owner(unsigned int port, unsigned int pin)
+{
+	for (unsigned int p = 0; p < OVE_GPIO_PORT_COUNT; p++) {
+		if (p != port && g_irq_mode[p][pin] != 0)
+			return OVE_ERR_BUSY;
+	}
+	return OVE_OK;
+}
+
 int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode)
 {
 	if (!pin_valid(port, pin))
@@ -127,29 +146,77 @@ int ove_hal_gpio_irq_hw_register(unsigned int port, unsigned int pin, ove_gpio_i
 	if (mode != OVE_GPIO_IRQ_RISING && mode != OVE_GPIO_IRQ_FALLING &&
 	    mode != OVE_GPIO_IRQ_BOTH)
 		return OVE_ERR_INVALID_PARAM;
-	g_irq_mode[port][pin] = mode;
-	return irq_config(port, pin, NULL);
+
+	irqstate_t flags = enter_critical_section();
+	int ret = line_check_owner(port, pin);
+	if (ret == OVE_OK) {
+		g_irq_mode[port][pin] = mode;
+		ret = irq_config(port, pin, NULL);
+		if (ret != OVE_OK) {
+			g_irq_mode[port][pin] = 0;
+		} else {
+			/* The masked line may still be routed to the port that held
+			 * it before, and may hold an edge latched for it: route it
+			 * here, then drop that edge, so it cannot reach this pin's
+			 * callback once armed.  Lines 0-4 have vectors of their own,
+			 * whose NuttX handlers run the callback without looking at
+			 * the pending register, so their vector's pending state goes
+			 * too; the shared vectors of lines 5-15 check it. */
+			(void)stm32_configgpio(pinset(port, pin) | PIN_INPUT | PIN_FLOAT |
+					       PIN_EXTI);
+			EXTI_PR = 1U << pin;
+			if (pin < 5U) {
+				/* Let the clear land first, or the line could pend the
+				 * vector again after it is cleared. */
+				(void)EXTI_PR;
+				__asm__ volatile("dsb" ::: "memory");
+				NVIC_ICPR0 = 1U << (NVIC_EXTI0 + pin);
+			}
+		}
+	}
+	leave_critical_section(flags);
+	return ret;
 }
 
 int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin)
 {
-	if (!pin_valid(port, pin) || g_irq_mode[port][pin] == 0)
+	if (!pin_valid(port, pin))
 		return OVE_ERR_INVALID_PARAM;
-	return irq_config(port, pin, gpio_isr);
+
+	irqstate_t flags = enter_critical_section();
+	int ret = line_check_owner(port, pin);
+	if (ret == OVE_OK)
+		ret = g_irq_mode[port][pin] != 0 ? irq_config(port, pin, gpio_isr)
+						 : OVE_ERR_INVALID_PARAM;
+	leave_critical_section(flags);
+	return ret;
 }
 
 int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 {
 	if (!pin_valid(port, pin))
 		return OVE_ERR_INVALID_PARAM;
-	return irq_config(port, pin, NULL);
+
+	irqstate_t flags = enter_critical_section();
+	int ret = line_check_owner(port, pin);
+	if (ret == OVE_OK)
+		ret = irq_config(port, pin, NULL);
+	leave_critical_section(flags);
+	return ret;
 }
 
 int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 {
-	int ret = ove_hal_gpio_irq_hw_disable(port, pin);
+	if (!pin_valid(port, pin))
+		return OVE_ERR_INVALID_PARAM;
 
-	if (ret == OVE_OK)
-		g_irq_mode[port][pin] = 0;
+	irqstate_t flags = enter_critical_section();
+	int ret = line_check_owner(port, pin);
+	if (ret == OVE_OK) {
+		ret = irq_config(port, pin, NULL);
+		if (ret == OVE_OK)
+			g_irq_mode[port][pin] = 0;
+	}
+	leave_critical_section(flags);
 	return ret;
 }

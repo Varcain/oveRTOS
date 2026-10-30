@@ -54,8 +54,8 @@ pub fn get(port: u32, pin: u32) Error!bool {
 /// edge).
 ///
 /// Returns `Error` if the pin does not support interrupts or registration fails.
-/// On STM32 pin N of every port shares one interrupt line: the FreeRTOS
-/// backend fails with `error.Busy` while another port's pin N holds it.
+/// On STM32 pin N of every port shares one interrupt line: the FreeRTOS and
+/// NuttX backends fail with `error.Busy` while another port's pin N holds it.
 pub fn irqRegister(
     port: u32,
     pin: u32,

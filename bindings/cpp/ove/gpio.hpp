@@ -77,8 +77,8 @@ namespace ove::gpio
  *
  * The callback runs in interrupt context on every engine; see
  * @ref ove_gpio_irq_cb for what it may do and when it stops being called.
- * On STM32 pin N of every port shares one interrupt line: the FreeRTOS
- * backend fails with Error::Busy while another port's pin N holds it.
+ * On STM32 pin N of every port shares one interrupt line: the FreeRTOS and
+ * NuttX backends fail with Error::Busy while another port's pin N holds it.
  *
  * @param[in] port      GPIO port index.
  * @param[in] pin       Pin number within the port.
