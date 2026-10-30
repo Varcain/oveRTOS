@@ -140,6 +140,20 @@ if(_OVE_ZERO_HEAP)
   list(APPEND _srcs ${OVE_DIR}/backends/common/ove_heap_lock.c)
 endif()
 
+# The STM32F746G-DISCO variants test the board's real GPIO HAL (on NuttX's
+# EXTI driver) rather than stub_gpio.c, with stm32f7_nuttx_gpio_hooks.c
+# answering test_gpio's backend questions; OVE_TEST_STM32_EXTI turns on its
+# tests of the EXTI lines that pin N of every port shares.
+if(CONFIG_ARCH_BOARD_STM32F746G_DISCO)
+  set(_ove_stm32f746 ON)
+  list(REMOVE_ITEM _srcs ${_stub_dir}/stub_gpio.c)
+  list(APPEND _srcs
+    ${OVE_DIR}/boards/stm32f746g-discovery/nuttx/src/gpio.c
+    ${_tests_root}/backends/stm32f7/stm32f7_nuttx_gpio_hooks.c)
+else()
+  set(_ove_stm32f746 OFF)
+endif()
+
 # NVS: the heap variants run the product's file NVS over stub_fs (plain POSIX
 # on NuttX) in tmpfs. stub_fs has no zero-heap ove_fs_open, so the zero-heap
 # variants use the RAM NVS.
@@ -159,6 +173,10 @@ set(_compile_flags
   -Werror=unused-result
 )
 set(_definitions "")
+
+if(_ove_stm32f746)
+  list(APPEND _definitions OVE_TEST_STM32_EXTI=1)
+endif()
 
 if(_OVE_ZERO_HEAP)
   list(APPEND _definitions CONFIG_OVE_ZERO_HEAP=1)
@@ -206,6 +224,10 @@ nuttx_add_application(
 # to seed Kconfig) and once in the `apps` pass (after the nuttx target
 # exists). Guarding on `if(TARGET nuttx)` skips the first pass cleanly;
 # the second pass applies the wrappers to the kernel link.
+if(_ove_stm32f746 AND TARGET nuttx)
+  target_link_options(nuttx PRIVATE -Wl,--wrap=ove_hal_gpio_irq_hw_unregister)
+endif()
+
 if(_OVE_ZERO_HEAP AND TARGET nuttx)
   target_link_options(nuttx PRIVATE
     -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc
