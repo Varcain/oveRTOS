@@ -117,6 +117,8 @@ int load_model(ove_model_t *model)
 }
 ```
 
+Only one model session can exist at a time: the backend shares one interpreter between sessions. A pipeline with several models (such as the keyword example below) loads them one after the other into the same storage and arena, deinitialising each before loading the next. The C++, Rust and Zig bindings wrap this pattern; see [Binding Semantics](../internals/binding-semantics.md#inference).
+
 **Heap-mode — `create` / `destroy`:**
 
 `ove_model_create()` is heap-mode only — it allocates storage and arena from the RTOS heap. In zero-heap builds the symbol is unavailable; use `ove_model_init()` with a caller-supplied arena, or `OVE_MODEL_DEFINE_STATIC()` at file scope (which works in both modes).
