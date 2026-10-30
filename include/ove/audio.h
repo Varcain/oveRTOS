@@ -165,7 +165,9 @@ void ove_audio_graph_deinit(struct ove_audio_graph *g);
  * @param[in] g     Graph instance.
  * @param[in] ops   Vtable providing the node implementation.
  * @param[in] ctx   Opaque context pointer forwarded to every vtable call.
- * @param[in] name  Human-readable node name for diagnostics.
+ * @param[in] name  Human-readable node name for diagnostics.  The graph keeps
+ *                  the pointer, not a copy: it must stay valid until the
+ *                  graph is deinitialised (a string literal, typically).
  * @param[in] type  Role of the node: source, processor, or sink.
  * @return Non-negative node index on success, negative error code on failure.
  *

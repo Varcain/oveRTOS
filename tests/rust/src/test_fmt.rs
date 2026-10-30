@@ -127,6 +127,35 @@ fn test_as_cstr_includes_null() {
     assert_eq!(cstr[cstr.len() - 1], 0);
 }
 
+/* ── as_c_str: checked C string for &CStr APIs ──────────────────── */
+
+fn test_as_c_str_returns_content() {
+    let mut buf = [0u8; 16];
+    let mut w = FmtBuf::new(&mut buf);
+    write!(w, "/log/{}.txt", 7).unwrap();
+    assert_eq!(w.as_c_str().unwrap(), c"/log/7.txt");
+}
+
+fn test_as_c_str_rejects_truncated() {
+    let mut buf = [0u8; 4]; // room for 3 bytes
+    let mut w = FmtBuf::new(&mut buf);
+    write!(w, "abcd").unwrap();
+    assert_eq!(w.as_c_str(), Err(ove::Error::InvalidParam));
+}
+
+fn test_as_c_str_rejects_interior_nul() {
+    let mut buf = [0u8; 16];
+    let mut w = FmtBuf::new(&mut buf);
+    write!(w, "ab\0cd").unwrap();
+    assert_eq!(w.as_c_str(), Err(ove::Error::InvalidParam));
+}
+
+fn test_as_c_str_empty_buffer() {
+    let mut buf = [0u8; 0];
+    let w = FmtBuf::new(&mut buf);
+    assert_eq!(w.as_c_str(), Err(ove::Error::InvalidParam));
+}
+
 /* ── log::Log backend ───────────────────────────────────────────── */
 // These emit to the oveRTOS console (POSIX backend = stdout). We can't
 // intercept the output here without a capture hook, so we just exercise
@@ -172,6 +201,10 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_write_after_full_is_noop),
             test_entry!(test_as_bytes_excludes_null),
             test_entry!(test_as_cstr_includes_null),
+            test_entry!(test_as_c_str_returns_content),
+            test_entry!(test_as_c_str_rejects_truncated),
+            test_entry!(test_as_c_str_rejects_interior_nul),
+            test_entry!(test_as_c_str_empty_buffer),
             test_entry!(test_log_inf_basic),
             test_entry!(test_log_inf_with_args),
             test_entry!(test_log_wrn_basic),

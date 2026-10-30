@@ -21,6 +21,8 @@
 //! cipher suites we ship here (AES-128/256-GCM, ChaCha20-Poly1305).
 //! See [`crate::async_net`]'s module docs for the full pairing recipe.
 
+use core::ffi::CStr;
+
 use crate::bindings;
 use crate::error::{Error, Result};
 use crate::net::TcpStream;
@@ -43,15 +45,15 @@ use crate::net::TcpStream;
 
 /// TLS session configuration.
 ///
-/// `hostname` must be a null-terminated byte slice when provided (used for
-/// SNI and certificate verification). A `ca_cert` needs a `hostname`: the
+/// `hostname` is the server name used for SNI and certificate verification,
+/// e.g. `Some(c"example.com")`. A `ca_cert` needs a `hostname`: the
 /// handshake fails with [`Error::InvalidParam`] without one.
 pub struct TlsConfig<'a> {
     /// PEM or DER CA certificate for server verification (`None` to skip).
     pub ca_cert: Option<&'a [u8]>,
-    /// Server name for SNI and certificate verification (null-terminated);
-    /// required with `ca_cert`, `None` only when the peer is not verified.
-    pub hostname: Option<&'a [u8]>,
+    /// Server name for SNI and certificate verification; required with
+    /// `ca_cert`, `None` only when the peer is not verified.
+    pub hostname: Option<&'a CStr>,
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +106,7 @@ impl Session {
             c.ca_cert_len = cert.len();
         }
         if let Some(host) = cfg.hostname {
-            c.hostname = host.as_ptr() as *const _;
+            c.hostname = host.as_ptr();
         }
 
         let rc = unsafe { bindings::ove_tls_handshake(self.handle, sock.handle(), &c) };

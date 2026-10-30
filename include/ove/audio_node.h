@@ -252,7 +252,9 @@ typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf, void *user_dat
  *
  * @param[in] g           Graph to add the node to.
  * @param[in] target_fmt  Desired output sample format.
- * @param[in] name        Human-readable name for the node.
+ * @param[in] name        Human-readable name for the node.  The graph keeps
+ *                        the pointer, not a copy: it must stay valid until the
+ *                        graph is deinitialised (a string literal, typically).
  * @return Non-negative node index on success, negative error code on failure.
  *
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
@@ -270,7 +272,9 @@ OVE_NODISCARD int ove_audio_node_converter(struct ove_audio_graph *g,
  *
  * @param[in] g     Graph to add the node to.
  * @param[in] map   Channel routing descriptor.
- * @param[in] name  Human-readable name for the node.
+ * @param[in] name  Human-readable name for the node.  The graph keeps
+ *                  the pointer, not a copy: it must stay valid until the
+ *                  graph is deinitialised (a string literal, typically).
  * @return Non-negative node index on success, negative error code on failure.
  *
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
@@ -289,7 +293,9 @@ OVE_NODISCARD int ove_audio_node_channel_map(struct ove_audio_graph *g,
  *
  * @param[in] g        Graph to add the node to.
  * @param[in] gain_db  Gain in decibels (e.g. -6.0f for -6 dB).
- * @param[in] name     Human-readable name for the node.
+ * @param[in] name     Human-readable name for the node.  The graph keeps
+ *                     the pointer, not a copy: it must stay valid until the
+ *                     graph is deinitialised (a string literal, typically).
  * @return Non-negative node index on success, negative error code on failure.
  *
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
@@ -306,7 +312,9 @@ OVE_NODISCARD int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, 
  * @param[in] g          Graph to add the node to.
  * @param[in] fn         Callback invoked each processing cycle.
  * @param[in] user_data  Opaque pointer forwarded to @p fn.
- * @param[in] name       Human-readable name for the node.
+ * @param[in] name       Human-readable name for the node.  The graph keeps
+ *                       the pointer, not a copy: it must stay valid until the
+ *                       graph is deinitialised (a string literal, typically).
  * @return Non-negative node index on success, negative error code on failure.
  *
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.

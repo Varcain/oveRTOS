@@ -85,7 +85,9 @@ struct ove_audio_device_cfg {
  *
  * @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.
  * @param[in] cfg   Device configuration describing the transport and format.
- * @param[in] name  Human-readable node name for diagnostics.
+ * @param[in] name  Human-readable node name for diagnostics.  The graph keeps
+ *                  the pointer, not a copy: it must stay valid until the
+ *                  graph is deinitialised (a string literal, typically).
  * @return Non-negative node index on success, negative error code on failure.
  *
  * @note Requires @c CONFIG_OVE_AUDIO.
@@ -105,7 +107,9 @@ OVE_NODISCARD int ove_audio_device_source(struct ove_audio_graph *g,
  *
  * @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.
  * @param[in] cfg   Device configuration describing the transport and format.
- * @param[in] name  Human-readable node name for diagnostics.
+ * @param[in] name  Human-readable node name for diagnostics.  The graph keeps
+ *                  the pointer, not a copy: it must stay valid until the
+ *                  graph is deinitialised (a string literal, typically).
  * @return Non-negative node index on success, negative error code on failure.
  *
  * @note Requires @c CONFIG_OVE_AUDIO.

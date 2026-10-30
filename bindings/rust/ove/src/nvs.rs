@@ -6,8 +6,10 @@
 
 //! Non-Volatile Storage (NVS) subsystem for oveRTOS.
 //!
-//! Provides key-value persistence backed by flash or EEPROM. All keys must be
-//! null-terminated byte slices (e.g. `b"my_key\0"`).
+//! Provides key-value persistence backed by flash or EEPROM. Keys are C
+//! strings, e.g. `c"my_key"`; values are bytes.
+
+use core::ffi::CStr;
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -35,7 +37,7 @@ pub fn init() -> Result<()> {
     Error::from_code(rc)
 }
 
-/// Read a value from NVS into `buf`. `key` must be `\0`-terminated.
+/// Read the value stored under `key` into `buf`.
 ///
 /// Returns the stored length of the value. When it exceeds `buf.len()` the
 /// value was truncated to fit; only `buf.len()` bytes were copied.
@@ -43,11 +45,11 @@ pub fn init() -> Result<()> {
 /// # Errors
 /// Returns [`Error::NotFound`] if the key does not exist, or another error
 /// if the read fails.
-pub fn read(key: &[u8], buf: &mut [u8]) -> Result<usize> {
+pub fn read(key: &CStr, buf: &mut [u8]) -> Result<usize> {
     let mut out_len: usize = 0;
     let rc = unsafe {
         bindings::ove_nvs_read(
-            key.as_ptr() as *const _,
+            key.as_ptr(),
             buf.as_mut_ptr() as *mut _,
             buf.len(),
             &mut out_len,
@@ -57,31 +59,26 @@ pub fn read(key: &[u8], buf: &mut [u8]) -> Result<usize> {
     Ok(out_len)
 }
 
-/// Write `data` under `key` in NVS. `key` must be `\0`-terminated.
+/// Write `data` under `key` in NVS.
 ///
 /// If the key already exists its value is replaced.
 ///
 /// # Errors
 /// Returns [`Error::NoMemory`] if storage is full, or another error on failure.
-pub fn write(key: &[u8], data: &[u8]) -> Result<()> {
-    let rc = unsafe {
-        bindings::ove_nvs_write(
-            key.as_ptr() as *const _,
-            data.as_ptr() as *const _,
-            data.len(),
-        )
-    };
+pub fn write(key: &CStr, data: &[u8]) -> Result<()> {
+    let rc =
+        unsafe { bindings::ove_nvs_write(key.as_ptr(), data.as_ptr() as *const _, data.len()) };
     Error::from_code(rc)
 }
 
-/// Erase the entry for `key` from NVS. `key` must be `\0`-terminated.
+/// Erase the entry for `key` from NVS.
 ///
 /// No-op when the key does not exist (the C API treats erase-of-missing
 /// as success).
 ///
 /// # Errors
 /// Returns an error if the underlying storage backend reports a failure.
-pub fn erase(key: &[u8]) -> Result<()> {
-    let rc = unsafe { bindings::ove_nvs_erase(key.as_ptr() as *const _) };
+pub fn erase(key: &CStr) -> Result<()> {
+    let rc = unsafe { bindings::ove_nvs_erase(key.as_ptr()) };
     Error::from_code(rc)
 }
