@@ -1340,7 +1340,7 @@ const _: () = {
 pub type ove_audio_tap_fn =
     Option<unsafe extern "C" fn(buf: *const ove_audio_buf, user_data: *mut core::ffi::c_void)>;
 unsafe extern "C" {
-    #[doc = " @brief Add a sample-format converter processor node to the graph.\n\n Inserts a processor that converts any upstream sample format to\n @p target_fmt while preserving sample rate and channel count.\n\n @param[in] g           Graph to add the node to.\n @param[in] target_fmt  Desired output sample format.\n @param[in] name        Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_graph_add_node, ove_audio_graph_connect"]
+    #[doc = " @brief Add a sample-format converter processor node to the graph.\n\n Inserts a processor that converts any upstream sample format to\n @p target_fmt while preserving sample rate and channel count.\n\n @param[in] g           Graph to add the node to.\n @param[in] target_fmt  Desired output sample format.\n @param[in] name        Human-readable name for the node.  The graph keeps\n                        the pointer, not a copy: it must stay valid until the\n                        graph is deinitialised (a string literal, typically).\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_graph_add_node, ove_audio_graph_connect"]
     pub fn ove_audio_node_converter(
         g: *mut ove_audio_graph,
         target_fmt: ove_audio_sample_fmt,
@@ -1348,7 +1348,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Add a channel-mapping processor node to the graph.\n\n Inserts a processor that reorders, duplicates, or silences channels\n according to @p map.  The output channel count equals\n @c map->out_channels.\n\n @param[in] g     Graph to add the node to.\n @param[in] map   Channel routing descriptor.\n @param[in] name  Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_converter"]
+    #[doc = " @brief Add a channel-mapping processor node to the graph.\n\n Inserts a processor that reorders, duplicates, or silences channels\n according to @p map.  The output channel count equals\n @c map->out_channels.\n\n @param[in] g     Graph to add the node to.\n @param[in] map   Channel routing descriptor.\n @param[in] name  Human-readable name for the node.  The graph keeps\n                  the pointer, not a copy: it must stay valid until the\n                  graph is deinitialised (a string literal, typically).\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_converter"]
     pub fn ove_audio_node_channel_map(
         g: *mut ove_audio_graph,
         map: *const ove_audio_channel_map,
@@ -1356,7 +1356,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Add a gain processor node to the graph.\n\n Inserts a processor that applies a fixed gain of @p gain_db decibels\n to every sample.  Positive values amplify; negative values attenuate.\n The output format is identical to the input format.\n\n @param[in] g        Graph to add the node to.\n @param[in] gain_db  Gain in decibels (e.g. -6.0f for -6 dB).\n @param[in] name     Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO."]
+    #[doc = " @brief Add a gain processor node to the graph.\n\n Inserts a processor that applies a fixed gain of @p gain_db decibels\n to every sample.  Positive values amplify; negative values attenuate.\n The output format is identical to the input format.\n\n @param[in] g        Graph to add the node to.\n @param[in] gain_db  Gain in decibels (e.g. -6.0f for -6 dB).\n @param[in] name     Human-readable name for the node.  The graph keeps\n                     the pointer, not a copy: it must stay valid until the\n                     graph is deinitialised (a string literal, typically).\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO."]
     pub fn ove_audio_node_gain(
         g: *mut ove_audio_graph,
         gain_db: f32,
@@ -1364,7 +1364,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Add a tap (observer) node to the graph.\n\n Inserts a pass-through processor that copies its input to its output and\n calls @p fn with the buffer every cycle.  The buffer is valid only for the\n duration of the callback; see @ref ove_audio_tap_fn for where it runs.\n\n @param[in] g          Graph to add the node to.\n @param[in] fn         Callback invoked each processing cycle.\n @param[in] user_data  Opaque pointer forwarded to @p fn.\n @param[in] name       Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_gain"]
+    #[doc = " @brief Add a tap (observer) node to the graph.\n\n Inserts a pass-through processor that copies its input to its output and\n calls @p fn with the buffer every cycle.  The buffer is valid only for the\n duration of the callback; see @ref ove_audio_tap_fn for where it runs.\n\n @param[in] g          Graph to add the node to.\n @param[in] fn         Callback invoked each processing cycle.\n @param[in] user_data  Opaque pointer forwarded to @p fn.\n @param[in] name       Human-readable name for the node.  The graph keeps\n                       the pointer, not a copy: it must stay valid until the\n                       graph is deinitialised (a string literal, typically).\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_gain"]
     pub fn ove_audio_node_tap(
         g: *mut ove_audio_graph,
         fn_: ove_audio_tap_fn,
@@ -1507,7 +1507,7 @@ unsafe extern "C" {
     pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a new node in the graph.\n\n Appends a node entry to the graph's node table.  Nodes may only be\n added while the graph is in the @c OVE_AUDIO_GRAPH_IDLE state.\n\n @param[in] g     Graph instance.\n @param[in] ops   Vtable providing the node implementation.\n @param[in] ctx   Opaque context pointer forwarded to every vtable call.\n @param[in] name  Human-readable node name for diagnostics.\n @param[in] type  Role of the node: source, processor, or sink.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_connect, ove_audio_graph_build"]
+    #[doc = " @brief Register a new node in the graph.\n\n Appends a node entry to the graph's node table.  Nodes may only be\n added while the graph is in the @c OVE_AUDIO_GRAPH_IDLE state.\n\n @param[in] g     Graph instance.\n @param[in] ops   Vtable providing the node implementation.\n @param[in] ctx   Opaque context pointer forwarded to every vtable call.\n @param[in] name  Human-readable node name for diagnostics.  The graph keeps\n                  the pointer, not a copy: it must stay valid until the\n                  graph is deinitialised (a string literal, typically).\n @param[in] type  Role of the node: source, processor, or sink.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_connect, ove_audio_graph_build"]
     pub fn ove_audio_graph_add_node(
         g: *mut ove_audio_graph,
         ops: *const ove_audio_node_ops,
@@ -1669,7 +1669,7 @@ const _: () = {
         [core::mem::offset_of!(ove_audio_device_cfg, thread_stack_size) - 24usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Add a hardware audio source node to the graph.\n\n Creates a source node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node captures audio\n from the selected transport and exposes it as graph output each cycle.\n With the native I2S drivers, a source for another graph returns\n @c OVE_ERR_BUSY while a graph holding the device sink exists (see\n ove_audio_device_sink()).\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_sink, ove_audio_graph_connect"]
+    #[doc = " @brief Add a hardware audio source node to the graph.\n\n Creates a source node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node captures audio\n from the selected transport and exposes it as graph output each cycle.\n With the native I2S drivers, a source for another graph returns\n @c OVE_ERR_BUSY while a graph holding the device sink exists (see\n ove_audio_device_sink()).\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.  The graph keeps\n                  the pointer, not a copy: it must stay valid until the\n                  graph is deinitialised (a string literal, typically).\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_sink, ove_audio_graph_connect"]
     pub fn ove_audio_device_source(
         g: *mut ove_audio_graph,
         cfg: *const ove_audio_device_cfg,
@@ -1677,7 +1677,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Add a hardware audio sink node to the graph.\n\n Creates a sink node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node consumes audio\n from its upstream connection and delivers it to the selected transport\n each processing cycle.  The native I2S drivers drive one sink: until the\n graph that holds it is deinitialised, another returns @c OVE_ERR_BUSY.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_source, ove_audio_graph_connect"]
+    #[doc = " @brief Add a hardware audio sink node to the graph.\n\n Creates a sink node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node consumes audio\n from its upstream connection and delivers it to the selected transport\n each processing cycle.  The native I2S drivers drive one sink: until the\n graph that holds it is deinitialised, another returns @c OVE_ERR_BUSY.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.  The graph keeps\n                  the pointer, not a copy: it must stay valid until the\n                  graph is deinitialised (a string literal, typically).\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_source, ove_audio_graph_connect"]
     pub fn ove_audio_device_sink(
         g: *mut ove_audio_graph,
         cfg: *const ove_audio_device_cfg,

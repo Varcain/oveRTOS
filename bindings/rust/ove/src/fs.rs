@@ -7,8 +7,11 @@
 //! Filesystem abstraction for oveRTOS.
 //!
 //! Provides RAII [`File`] and [`Dir`] handles for reading, writing, and
-//! directory traversal. All paths must be null-terminated byte slices
-//! (e.g. `b"/data/config.bin\0"`).
+//! directory traversal. Paths are C strings: `c"/data/config.bin"` for a
+//! constant one, or [`FmtBuf::as_c_str`](crate::fmt::FmtBuf::as_c_str) for one
+//! built at run time.
+
+use core::ffi::CStr;
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -61,9 +64,9 @@ pub struct Metadata {
 /// Pass `None` for both to mount the board's volume: the only form that means
 /// the same on every engine. `Some` values are backend-native names (see
 /// `ove_fs_mount()`). File paths are relative to the mounted volume.
-pub fn mount(dev: Option<&[u8]>, mnt: Option<&[u8]>) -> Result<()> {
-    let dev_ptr = dev.map_or(core::ptr::null(), |d| d.as_ptr() as *const _);
-    let mnt_ptr = mnt.map_or(core::ptr::null(), |m| m.as_ptr() as *const _);
+pub fn mount(dev: Option<&CStr>, mnt: Option<&CStr>) -> Result<()> {
+    let dev_ptr = dev.map_or(core::ptr::null(), CStr::as_ptr);
+    let mnt_ptr = mnt.map_or(core::ptr::null(), CStr::as_ptr);
     let rc = unsafe { bindings::ove_fs_mount(dev_ptr, mnt_ptr) };
     Error::from_code(rc)
 }
@@ -71,8 +74,8 @@ pub fn mount(dev: Option<&[u8]>, mnt: Option<&[u8]>) -> Result<()> {
 /// Unmount the volume mounted at `mnt` (`None` for the board's volume).
 ///
 /// Close every [`File`] and [`Dir`] on it first.
-pub fn unmount(mnt: Option<&[u8]>) {
-    let mnt_ptr = mnt.map_or(core::ptr::null(), |m| m.as_ptr() as *const _);
+pub fn unmount(mnt: Option<&CStr>) {
+    let mnt_ptr = mnt.map_or(core::ptr::null(), CStr::as_ptr);
     unsafe { bindings::ove_fs_unmount(mnt_ptr) };
 }
 
@@ -82,10 +85,10 @@ pub struct File {
 }
 
 impl File {
-    /// Open a file. `path` must be `\0`-terminated.
-    pub fn open(path: &[u8], flags: i32) -> Result<Self> {
+    /// Open the file at `path`.
+    pub fn open(path: &CStr, flags: i32) -> Result<Self> {
         let mut handle: bindings::ove_file_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_fs_open(&mut handle, path.as_ptr() as *const _, flags) };
+        let rc = unsafe { bindings::ove_fs_open(&mut handle, path.as_ptr(), flags) };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }
@@ -204,10 +207,10 @@ pub struct Dir {
 }
 
 impl Dir {
-    /// Open a directory. `path` must be `\0`-terminated.
-    pub fn open(path: &[u8]) -> Result<Self> {
+    /// Open the directory at `path`.
+    pub fn open(path: &CStr) -> Result<Self> {
         let mut handle: bindings::ove_dir_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_fs_opendir(&mut handle, path.as_ptr() as *const _) };
+        let rc = unsafe { bindings::ove_fs_opendir(&mut handle, path.as_ptr()) };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }
@@ -253,10 +256,10 @@ fn cstr_to_slice(buf: &[u8]) -> &[u8] {
     &buf[..len]
 }
 
-/// Query metadata for `path`. `path` must be `\0`-terminated.
-pub fn stat(path: &[u8]) -> Result<Metadata> {
+/// Query metadata for `path`.
+pub fn stat(path: &CStr) -> Result<Metadata> {
     let mut raw: bindings::ove_fs_stat = unsafe { core::mem::zeroed() };
-    let rc = unsafe { bindings::ove_fs_stat(path.as_ptr() as *const _, &mut raw) };
+    let rc = unsafe { bindings::ove_fs_stat(path.as_ptr(), &mut raw) };
     Error::from_code(rc)?;
     Ok(Metadata {
         size: raw.size,
@@ -265,28 +268,26 @@ pub fn stat(path: &[u8]) -> Result<Metadata> {
     })
 }
 
-/// Create a directory. `path` must be `\0`-terminated.
-pub fn mkdir(path: &[u8]) -> Result<()> {
-    let rc = unsafe { bindings::ove_fs_mkdir(path.as_ptr() as *const _) };
+/// Create a directory.
+pub fn mkdir(path: &CStr) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_mkdir(path.as_ptr()) };
     Error::from_code(rc)
 }
 
-/// Remove an empty directory. `path` must be `\0`-terminated.
-pub fn rmdir(path: &[u8]) -> Result<()> {
-    let rc = unsafe { bindings::ove_fs_rmdir(path.as_ptr() as *const _) };
+/// Remove an empty directory.
+pub fn rmdir(path: &CStr) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_rmdir(path.as_ptr()) };
     Error::from_code(rc)
 }
 
-/// Delete a file. `path` must be `\0`-terminated.
-pub fn unlink(path: &[u8]) -> Result<()> {
-    let rc = unsafe { bindings::ove_fs_unlink(path.as_ptr() as *const _) };
+/// Delete a file.
+pub fn unlink(path: &CStr) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_unlink(path.as_ptr()) };
     Error::from_code(rc)
 }
 
-/// Rename a file or directory. Both paths must be `\0`-terminated.
-pub fn rename(old_path: &[u8], new_path: &[u8]) -> Result<()> {
-    let rc = unsafe {
-        bindings::ove_fs_rename(old_path.as_ptr() as *const _, new_path.as_ptr() as *const _)
-    };
+/// Rename a file or directory.
+pub fn rename(old_path: &CStr, new_path: &CStr) -> Result<()> {
+    let rc = unsafe { bindings::ove_fs_rename(old_path.as_ptr(), new_path.as_ptr()) };
     Error::from_code(rc)
 }

@@ -28,6 +28,26 @@ A recurring difference is *how a scope-bound resource is released*:
 
 ---
 
+## Strings passed to C
+
+| Contract | C++ | Rust | Zig |
+|---|---|---|---|
+| C reads it as a C string, during the call (paths, NVS keys, routes, content types, TLS hostname) | `const char *` | `&CStr`, e.g. `c"/data/log.txt"` | `[:0]const u8` / `[*:0]const u8` |
+| C keeps the pointer (audio node names, shell command names) | `const char *` that outlives the object | `&'static CStr` | comptime or caller-owned sentinel string |
+| Built at run time, no heap | `snprintf` into a buffer | `ove::fmt::FmtBuf` + `as_c_str()` | `std.fmt.bufPrintZ` |
+| Data with an explicit length (bodies, payloads, NVS values) | pointer + length | `&[u8]` | `[]const u8` |
+
+**Contract notes**
+
+- A Rust `&[u8]` never stands in for a C string: C would read past its end
+  looking for the terminator, and an embedded NUL would cut it short.
+  `FmtBuf::as_c_str()` fails with `InvalidParam` when the text holds a NUL or
+  did not fit, rather than hand C a shortened path or key.
+- Rust `ove::net_httpd::ws::send` is `unsafe`: its connection handle is a raw
+  pointer that stops being valid once the connection's close callback runs.
+
+---
+
 ## Thread
 
 | Contract | C++ | Rust | Zig |

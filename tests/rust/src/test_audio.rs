@@ -242,18 +242,18 @@ fn build_pipeline(g: &mut ffi::ove_audio_graph) {
             g,
             &SRC_OPS,
             core::ptr::null_mut(),
-            b"src\0".as_ptr() as *const _,
+            c"src".as_ptr() as *const _,
             ffi::OVE_AUDIO_NODE_SOURCE,
         )
     };
     assert!(src >= 0, "add source failed: {src}");
-    let prc = graph_add_processor(g, PROC.get_mut(), b"prc\0").unwrap();
+    let prc = graph_add_processor(g, PROC.get_mut(), c"prc").unwrap();
     let snk = unsafe {
         ffi::ove_audio_graph_add_node(
             g,
             &SINK_OPS,
             core::ptr::null_mut(),
-            b"snk\0".as_ptr() as *const _,
+            c"snk".as_ptr() as *const _,
             ffi::OVE_AUDIO_NODE_SINK,
         )
     };
@@ -316,7 +316,7 @@ fn test_full_pipeline_stop_before_start_fails() {
 fn test_graph_add_node_free_fn_ok() {
     let mut g: ffi::ove_audio_graph = unsafe { core::mem::zeroed() };
     graph_init(&mut g, 128).unwrap();
-    let name = core::ffi::CStr::from_bytes_with_nul(b"free_src\0").unwrap();
+    let name = c"free_src";
     let idx = ove::audio::graph_add_node(
         &mut g,
         &SRC_OPS,
@@ -333,7 +333,7 @@ fn test_graph_add_node_free_fn_error_after_build() {
     let mut g: ffi::ove_audio_graph = unsafe { core::mem::zeroed() };
     graph_init(&mut g, 128).unwrap();
     graph_build(&mut g).unwrap(); // graph leaves IDLE → READY
-    let name = core::ffi::CStr::from_bytes_with_nul(b"too_late\0").unwrap();
+    let name = c"too_late";
     let result = ove::audio::graph_add_node(
         &mut g,
         &SRC_OPS,
@@ -350,7 +350,7 @@ fn test_graph_add_processor_error_after_build() {
     graph_init(&mut g, 128).unwrap();
     graph_build(&mut g).unwrap();
     // After build() the graph is READY; add_processor requires IDLE → error branch.
-    let result = graph_add_processor(&mut g, PROC.get_mut(), b"late\0");
+    let result = graph_add_processor(&mut g, PROC.get_mut(), c"late");
     assert!(result.is_err());
     graph_deinit(&mut g);
 }
@@ -367,13 +367,13 @@ fn test_graph_add_processor_error_after_build() {
 fn test_graph_wrapper_device_source_ok() {
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let _ = g.device_source(&cfg, b"mic\0").unwrap();
+    let _ = g.device_source(&cfg, c"mic").unwrap();
 }
 
 fn test_graph_wrapper_device_sink_ok() {
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let _ = g.device_sink(&cfg, b"spk\0").unwrap();
+    let _ = g.device_sink(&cfg, c"spk").unwrap();
 }
 
 fn test_graph_wrapper_device_source_err() {
@@ -381,14 +381,14 @@ fn test_graph_wrapper_device_source_err() {
     // INVALID_PARAM, exercising the `if rc < 0 { Err(...) }` branch.
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let result = g.device_source(&cfg, b"\0");
+    let result = g.device_source(&cfg, c"");
     assert!(matches!(result, Err(Error::InvalidParam)), "got {:?}", result);
 }
 
 fn test_graph_wrapper_device_sink_err() {
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let result = g.device_sink(&cfg, b"\0");
+    let result = g.device_sink(&cfg, c"");
     assert!(matches!(result, Err(Error::InvalidParam)), "got {:?}", result);
 }
 

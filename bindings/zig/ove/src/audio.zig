@@ -29,6 +29,9 @@ const pin = @import("pin.zig");
 ///
 /// In heap mode `setBufStorage` is optional: without it the engine allocates
 /// the buffers internally; with it, `build` uses the caller's storage.
+///
+/// The graph keeps every node `name` it is given, not a copy: pass strings
+/// that outlive it (literals, typically).
 pub const Graph = struct {
     raw: c.struct_ove_audio_graph,
     tracker: pin.Tracker,

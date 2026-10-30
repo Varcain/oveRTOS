@@ -7,8 +7,13 @@
 //! Stack-allocated formatting buffer for `no_std` environments.
 //!
 //! [`FmtBuf`] implements [`core::fmt::Write`] so you can use `write!` macros
-//! without heap allocation, then pass the result to C APIs as a null-terminated
-//! byte slice via [`FmtBuf::as_cstr`].
+//! without heap allocation, then pass the result to C APIs as a C string via
+//! [`FmtBuf::as_c_str`] (or as a null-terminated byte slice via
+//! [`FmtBuf::as_cstr`]).
+
+use core::ffi::CStr;
+
+use crate::error::{Error, Result};
 
 /// Zero-allocation stack buffer that implements [`core::fmt::Write`].
 ///
@@ -17,6 +22,7 @@
 pub struct FmtBuf<'a> {
     buf: &'a mut [u8],
     pos: usize,
+    truncated: bool,
 }
 
 impl<'a> FmtBuf<'a> {
@@ -28,7 +34,11 @@ impl<'a> FmtBuf<'a> {
         if !buf.is_empty() {
             buf[0] = 0;
         }
-        Self { buf, pos: 0 }
+        Self {
+            buf,
+            pos: 0,
+            truncated: false,
+        }
     }
 
     /// Returns the formatted content as a byte slice (no null terminator).
@@ -42,6 +52,20 @@ impl<'a> FmtBuf<'a> {
         // Null terminator is maintained by write_str after every write.
         &self.buf[..=self.pos]
     }
+
+    /// Returns the formatted content as a C string, for APIs that take a
+    /// `&CStr` (file paths, NVS keys, routes) built at run time.
+    ///
+    /// # Errors
+    /// [`Error::InvalidParam`] if the content holds a NUL byte, or if it did
+    /// not all fit: writes past `buf.len() - 1` bytes are dropped, and a
+    /// silently shortened path or key would name something else.
+    pub fn as_c_str(&self) -> Result<&CStr> {
+        if self.truncated || self.buf.is_empty() {
+            return Err(Error::InvalidParam);
+        }
+        CStr::from_bytes_with_nul(&self.buf[..=self.pos]).map_err(|_| Error::InvalidParam)
+    }
 }
 
 impl core::fmt::Write for FmtBuf<'_> {
@@ -50,6 +74,7 @@ impl core::fmt::Write for FmtBuf<'_> {
         let cap = self.buf.len().saturating_sub(1); // reserve 1 for null
         let avail = cap.saturating_sub(self.pos);
         let to_copy = bytes.len().min(avail);
+        self.truncated |= to_copy < bytes.len();
         self.buf[self.pos..self.pos + to_copy].copy_from_slice(&bytes[..to_copy]);
         self.pos += to_copy;
         self.buf[self.pos] = 0; // maintain null invariant

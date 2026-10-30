@@ -20,6 +20,7 @@
 //! Macro-driven routing, JSON via `serde`, optional WebSocket upgrade.
 //! See [`crate::async_net`]'s module docs for the full pairing recipe.
 
+use core::ffi::CStr;
 use core::fmt;
 use core::marker::PhantomData;
 
@@ -164,16 +165,12 @@ impl<'a> Response<'a> {
         }
     }
 
-    /// Send a JSON response.
-    ///
-    /// `json` must be a null-terminated byte string.
+    /// Send a JSON response: `json` is the whole body, as bytes.
     ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
     pub fn json(&self, status: i32, json: &[u8]) -> Result<()> {
-        let rc =
-            unsafe { bindings::ove_httpd_resp_json(self.raw, status, json.as_ptr() as *const _) };
-        Error::from_code(rc)
+        self.send(status, c"application/json", json)
     }
 
     /// Send an HTML response.
@@ -189,16 +186,14 @@ impl<'a> Response<'a> {
 
     /// Send a response with arbitrary content type.
     ///
-    /// `content_type` must be a null-terminated byte string.
-    ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn send(&self, status: i32, content_type: &[u8], body: &[u8]) -> Result<()> {
+    pub fn send(&self, status: i32, content_type: &CStr, body: &[u8]) -> Result<()> {
         let rc = unsafe {
             bindings::ove_httpd_resp_send(
                 self.raw,
                 status,
-                content_type.as_ptr() as *const _,
+                content_type.as_ptr(),
                 body.as_ptr() as *const _,
                 body.len(),
             )
@@ -206,30 +201,25 @@ impl<'a> Response<'a> {
         Error::from_code(rc)
     }
 
-    /// Send a JSON error response.
-    ///
-    /// `msg` must be a null-terminated byte string.
+    /// Send a JSON error response carrying `msg`.
     ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn error(&self, status: i32, msg: &[u8]) -> Result<()> {
-        let rc =
-            unsafe { bindings::ove_httpd_resp_error(self.raw, status, msg.as_ptr() as *const _) };
+    pub fn error(&self, status: i32, msg: &CStr) -> Result<()> {
+        let rc = unsafe { bindings::ove_httpd_resp_error(self.raw, status, msg.as_ptr()) };
         Error::from_code(rc)
     }
 
     /// Send a pre-gzipped response (adds `Content-Encoding: gzip`).
     ///
-    /// `content_type` must be a null-terminated byte string.
-    ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn send_gz(&self, status: i32, content_type: &[u8], body: &[u8]) -> Result<()> {
+    pub fn send_gz(&self, status: i32, content_type: &CStr, body: &[u8]) -> Result<()> {
         let rc = unsafe {
             bindings::ove_httpd_resp_send_gz(
                 self.raw,
                 status,
-                content_type.as_ptr() as *const _,
+                content_type.as_ptr(),
                 body.as_ptr() as *const _,
                 body.len(),
             )
@@ -276,21 +266,14 @@ pub fn stop() {
     unsafe { bindings::ove_httpd_stop() }
 }
 
-/// Register a route handler.
+/// Register a route handler, e.g. `route(c"GET", c"/api/leds", handler)`.
 ///
-/// `method` and `path` must be null-terminated byte strings
-/// (e.g. `b"GET\0"`, `b"/api/leds\0"`).
+/// The method and path are copied (up to 7 and 63 bytes).
 ///
 /// # Errors
 /// Returns an error if the route table is full.
-pub fn route(method: &[u8], path: &[u8], handler: Handler) -> Result<()> {
-    let rc = unsafe {
-        bindings::ove_httpd_route(
-            method.as_ptr() as *const _,
-            path.as_ptr() as *const _,
-            handler,
-        )
-    };
+pub fn route(method: &CStr, path: &CStr, handler: Handler) -> Result<()> {
+    let rc = unsafe { bindings::ove_httpd_route(method.as_ptr(), path.as_ptr(), handler) };
     Error::from_code(rc)
 }
 
@@ -304,8 +287,8 @@ pub fn register_builtin_routes() {
 /// Append a log line to the httpd log ring buffer.
 ///
 /// Call from a log output hook to capture lines for `GET /api/log`.
-pub fn log_append(line: &[u8]) {
-    unsafe { bindings::ove_httpd_log_append(line.as_ptr() as *const _) }
+pub fn log_append(line: &CStr) {
+    unsafe { bindings::ove_httpd_log_append(line.as_ptr()) }
 }
 
 /// Bind the HTTP server to a specific network interface.
@@ -319,23 +302,23 @@ pub fn set_netif(handle: bindings::ove_netif_t) {
 
 #[cfg(has_net_httpd_ws)]
 pub mod ws {
+    use core::ffi::CStr;
+
     use crate::bindings;
     use crate::error::{Error, Result};
 
-    /// Register a WebSocket route.
+    /// Register a WebSocket route, e.g. `route(c"/ws", on_message, on_close)`.
     ///
-    /// `path` must be a null-terminated byte string (e.g. `b"/ws\0"`).
+    /// The path is copied (up to 63 bytes).
     ///
     /// # Errors
     /// Returns an error if the route table is full.
     pub fn route(
-        path: &[u8],
+        path: &CStr,
         on_message: bindings::ove_httpd_ws_handler_t,
         on_close: bindings::ove_httpd_ws_close_handler_t,
     ) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_httpd_ws_route(path.as_ptr() as *const _, on_message, on_close)
-        };
+        let rc = unsafe { bindings::ove_httpd_ws_route(path.as_ptr(), on_message, on_close) };
         Error::from_code(rc)
     }
 
@@ -349,7 +332,12 @@ pub mod ws {
     ///
     /// # Errors
     /// Returns an error if the send fails.
-    pub fn send(conn: *mut bindings::ove_httpd_ws_conn_t, data: &[u8]) -> Result<()> {
+    ///
+    /// # Safety
+    /// `conn` must be a connection handle the httpd passed to a handler of
+    /// this route, and its close callback must not have run yet: the handle
+    /// is not valid after that.
+    pub unsafe fn send(conn: *mut bindings::ove_httpd_ws_conn_t, data: &[u8]) -> Result<()> {
         let rc =
             unsafe { bindings::ove_httpd_ws_send(conn, data.as_ptr() as *const _, data.len()) };
         Error::from_code(rc)
@@ -358,16 +346,10 @@ pub mod ws {
     /// Broadcast a message to all WebSocket connections on a path, from any
     /// thread; a connection whose send fails is closing, as for [`send`].
     ///
-    /// `path` must be a null-terminated byte string.
-    ///
     /// Returns the number of connections the message was sent to.
-    pub fn broadcast(path: &[u8], data: &[u8]) -> i32 {
+    pub fn broadcast(path: &CStr, data: &[u8]) -> i32 {
         unsafe {
-            bindings::ove_httpd_ws_broadcast(
-                path.as_ptr() as *const _,
-                data.as_ptr() as *const _,
-                data.len(),
-            )
+            bindings::ove_httpd_ws_broadcast(path.as_ptr(), data.as_ptr() as *const _, data.len())
         }
     }
 

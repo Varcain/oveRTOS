@@ -71,6 +71,9 @@ inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t
  * stop() and destruction wait for a processing cycle that is running and, with
  * a device sink, stop the thread that drives the graph; never call them from a
  * node or tap callback; see @ref ove_audio_graph_stop.
+ *
+ * The graph keeps every node `name` it is given, not a copy: pass strings
+ * that outlive it (literals, typically).
  */
 class Graph
 {
