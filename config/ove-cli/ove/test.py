@@ -710,6 +710,25 @@ def test_rust(ove_dir, output_dir):
         [os.path.join(target_dir, "release", "ove-tests")], "rust")
 
 
+def test_rust_lvgl(ove_dir, output_dir):
+    """Exercise Rust text ownership against the vendored LVGL allocator."""
+    target_dir = os.path.join(output_dir, "tests", "rust_lvgl")
+    _, env = _rust_test_env(ove_dir, output_dir, target_dir)
+    native = os.path.join(output_dir, "tests", "rust_lvgl_c")
+    _cmake_build(os.path.join(ove_dir, "tests", "rust_lvgl"), native)
+    env.update({
+        "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "dl", "lvgl"),
+        "LVGL_PARENT_PATH": os.path.join(ove_dir, "dl"),
+        "OVE_LVGL_TEST_LIB": native,
+    })
+    result = subprocess.run(
+        ["cargo", "test", "--manifest-path",
+         os.path.join(ove_dir, "tests", "rust_lvgl", "Cargo.toml"),
+         "--", "--test-threads=1"], env=env, timeout=180)
+    return TestResults(suite="rust-lvgl", passed=int(result.returncode == 0),
+                       failed=int(result.returncode != 0))
+
+
 def test_rust_zeroheap(ove_dir, output_dir):
     """Build and run the Rust tests in zero-heap (static-storage) mode.
 
@@ -2896,6 +2915,7 @@ TEST_TARGETS = {
     "cpp-tsan": test_cpp_tsan,
     "rust": test_rust,
     "rust-zeroheap": test_rust_zeroheap,
+    "rust-lvgl": test_rust_lvgl,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
     "zig-zeroheap": test_zig_zeroheap,
@@ -2945,7 +2965,7 @@ TEST_TARGETS = {
 }
 
 # Grouped test sets
-SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
+SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "rust-lvgl", "zig", "nuttx", "zephyr"]
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
                "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
                "qemu-zephyr", "qemu-zephyr-zeroheap"]

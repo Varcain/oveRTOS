@@ -47,7 +47,7 @@ impl<'a> FmtBuf<'a> {
     }
 
     /// Returns the formatted content as a null-terminated byte slice,
-    /// suitable for passing to C APIs like LVGL.
+    /// suitable for low-level FFI calls with a C-string contract.
     pub fn as_cstr(&self) -> &[u8] {
         // Null terminator is maintained by write_str after every write.
         &self.buf[..=self.pos]

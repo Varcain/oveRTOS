@@ -93,7 +93,6 @@ zig group create  # cpp/zig Group::create; rust names it new
 zig group deinit  # zig explicit deinit; rust/cpp release via RAII
 rust group new  # rust Group::new; cpp/zig name the factory create
 rust label set_text  # rust non-fluent duplicate of text
-rust label set_text_static  # rust non-fluent duplicate of text_static
 zig lvgl_guard deinit  # zig explicit release; rust/cpp via RAII
 rust msgbox create_modal  # rust/zig named ctor; cpp create(null parent)
 zig msgbox create_modal  # rust/zig named ctor; cpp create(null parent)
@@ -207,3 +206,16 @@ cpp state set  # rust/zig State<T> generic — extractor attribution artifact
 cpp style get  # cpp .get() returns the raw lv_style_t* (rust ptr/zig raw)
 cpp timer get  # cpp .get() returns the raw lv_timer_t* (rust as_raw/zig .raw field)
 
+
+# Rust owns retained text storage and formats through core::fmt. The raw
+# static-string methods are represented by its storage/copying methods.
+cpp label text_static  # rust uses text_buffered with lifecycle-managed storage
+zig label text_static  # rust uses text_buffered with lifecycle-managed storage
+cpp checkbox text_static  # rust text copies ordinary &str
+zig checkbox text_static  # rust text copies ordinary &str
+cpp dropdown options_static  # rust options copies ordinary &str
+zig dropdown options_static  # rust options copies ordinary &str
+rust label set_text_fmt  # Rust core::fmt arguments, privately converted
+rust label text_buffered  # Rust stable fixed-capacity storage owner
+rust label text_status  # Rust reactive formatter error status
+rust table cell_value_fmt  # Rust core::fmt arguments, privately converted

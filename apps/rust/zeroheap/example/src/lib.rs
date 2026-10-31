@@ -27,55 +27,37 @@
 //! a sys_heap of CONFIG_ZEPHYR_LV_MEM_POOL_SIZE), so no allocation ever
 //! falls back to the system malloc.  All widget creation
 //! happens once in `create_ui()` before `ove::run()`; label text uses
-//! `set_text_static` with caller-owned buffers so updates don't realloc.
+//! binding-managed `TextStorage` so updates allocate no text memory.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{JoinHandle, Priority, Queue, InitCell, Thread, Timer};
+use ove::lvgl::{self, Bar, BufferedLabel, Color, Label, Layout, Styleable, TextStorage};
+use ove::{InitCell, JoinHandle, Priority, Queue, Thread, Timer};
 
 // ---------------------------------------------------------------------------
 // Constants and shared state
 // ---------------------------------------------------------------------------
 
 #[cfg(rtos_freertos)]
-const APP_TITLE: &[u8] = b"oveRTOS(FreeRTOS) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(FreeRTOS) Rust Demo";
 #[cfg(rtos_nuttx)]
-const APP_TITLE: &[u8] = b"oveRTOS(NuttX) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(NuttX) Rust Demo";
 #[cfg(rtos_zephyr)]
-const APP_TITLE: &[u8] = b"oveRTOS(Zephyr) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(Zephyr) Rust Demo";
 #[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr)))]
-const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS Rust Demo";
 
 // `ove::shared!` is `static <NAME>: InitCell<T> = InitCell::new();`.
 // In zero-heap mode it parks a wrapper whose internal storage is
 // caller-owned (see app_main).
 ove::shared!(QUEUE: Queue<u32, 8>);
 ove::shared!(UI_TIMER: Timer);
-ove::shared!(COUNTER_LABEL: Label);
+ove::shared!(COUNTER_LABEL: BufferedLabel<24>);
 ove::shared!(BAR: Bar);
 static LAST_VALUE: AtomicU32 = AtomicU32::new(0);
 
-// Counter label text buffer — caller-owned, pinned via `set_text_static`
-// so LVGL stores the pointer rather than copying into its pool.  Wrapped
-// in a `SyncUnsafeCell`-style cell so we can hand out a `&'static [u8]`
-// pointer to LVGL while we mutate the contents from the timer callback.
-#[repr(transparent)]
-struct CountBuf(core::cell::UnsafeCell<[u8; 24]>);
-// SAFETY: the only writer is the UI timer callback, which runs single-
-// threaded under the LVGL lock; readers (LVGL render path) only run
-// under the same lock.
-unsafe impl Sync for CountBuf {}
-static COUNT_BUF: CountBuf =
-    CountBuf(core::cell::UnsafeCell::new(*b"Count: 0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"));
-
-fn count_buf_view() -> &'static [u8] {
-    // SAFETY: we hand out a 'static reference; the buffer's address is
-    // 'static (file-scope), and contents are only mutated under the
-    // LVGL lock we hold elsewhere.
-    unsafe { &*COUNT_BUF.0.get() }
-}
+static COUNT_TEXT: TextStorage<24> = TextStorage::new();
 
 // Thread handles live in static cells; their TCB + stack come from
 // `ove::ThreadStorage<N>` that the `ove::thread!` macro emits as a
@@ -96,19 +78,19 @@ fn create_ui() {
     screen.bg_color(Color::black());
 
     Label::create(screen)
-        .text_static(APP_TITLE)
+        .text(APP_TITLE)
+        .expect("LVGL text")
         .font(lvgl::font_montserrat_32())
         .color(Color::white())
         .align(lvgl::ALIGN_TOP_MID, 0, 16);
 
-    // Pin the counter label's text to our caller-owned buffer.  After
-    // create_ui() returns we only ever rewrite COUNT_BUF in place — the
-    // `set_text_static` call in the timer just triggers a redraw.
-    let counter = Label::create(screen)
-        .text_static(count_buf_view())
+    let label = Label::create(screen)
         .font(lvgl::font_montserrat_14())
         .color(Color::white())
         .align(lvgl::ALIGN_TOP_MID, 0, 64);
+    let counter = label
+        .text_buffered(&COUNT_TEXT, format_args!("Count: 0"))
+        .expect("LVGL text");
 
     let bar = Bar::create(screen)
         .size(200, 16)
@@ -123,24 +105,13 @@ fn create_ui() {
 }
 
 fn ui_timer_cb() {
-    use core::fmt::Write;
     let val = LAST_VALUE.load(Ordering::Relaxed);
 
     let _g = lvgl::lock();
     if let Some(label) = COUNTER_LABEL.try_get() {
-        // Refresh COUNT_BUF in place.  LVGL stored its pointer once at
-        // create_ui() time via `text_static`; calling `set_text_static`
-        // again with the *same* 'static buffer just triggers a redraw
-        // — no allocation, no copy.
-        // SAFETY: the timer callback is the only mutator of COUNT_BUF;
-        // LVGL only reads from it under the LVGL lock we currently hold.
-        let buf: &'static mut [u8; 24] = unsafe { &mut *COUNT_BUF.0.get() };
-        for b in buf.iter_mut() {
-            *b = 0;
-        }
-        let mut w = ove::FmtBuf::new(&mut buf[..]);
-        let _ = write!(w, "Count: {}", val);
-        label.set_text_static(count_buf_view());
+        label
+            .set_text_fmt(format_args!("Count: {val}"))
+            .expect("LVGL text");
     }
     if let Some(bar) = BAR.try_get() {
         bar.set_value((val % 101) as i32, true);
@@ -262,4 +233,3 @@ fn app_main() {
 
     log::info!("Rust example (zero-heap mode): shutdown");
 }
-

@@ -32,6 +32,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "ove/lvgl_text_internal.h"
 
 #ifdef __cplusplus
 extern "C" {

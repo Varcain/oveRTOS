@@ -52,13 +52,13 @@ use ove::{InitCell, Priority, Thread, Timer};
 // ---------------------------------------------------------------------------
 
 #[cfg(rtos_freertos)]
-const APP_TITLE: &[u8] = b"oveRTOS(FreeRTOS) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(FreeRTOS) Rust Demo";
 #[cfg(rtos_nuttx)]
-const APP_TITLE: &[u8] = b"oveRTOS(NuttX) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(NuttX) Rust Demo";
 #[cfg(rtos_zephyr)]
-const APP_TITLE: &[u8] = b"oveRTOS(Zephyr) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(Zephyr) Rust Demo";
 #[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr)))]
-const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS Rust Demo";
 
 // LVGL widgets and the timer cannot be captured into closures spawned
 // before they're created (chicken-and-egg with create_ui), so we still
@@ -81,12 +81,14 @@ fn create_ui() {
 
     Label::create(screen)
         .text(APP_TITLE)
+        .expect("LVGL text")
         .font(lvgl::font_montserrat_32())
         .color(Color::white())
         .align(lvgl::ALIGN_TOP_MID, 0, 16);
 
     let counter = Label::create(screen)
-        .text(b"Count: 0\0")
+        .text("Count: 0")
+        .expect("LVGL text")
         .font(lvgl::font_montserrat_14())
         .color(Color::white())
         .align(lvgl::ALIGN_TOP_MID, 0, 64);
@@ -104,15 +106,13 @@ fn create_ui() {
 }
 
 fn ui_timer_cb() {
-    use core::fmt::Write;
     let val = LAST_VALUE.load(Ordering::Relaxed);
 
     let _g = lvgl::lock();
     if let Some(label) = COUNTER_LABEL.try_get() {
-        let mut buf = [0u8; 24];
-        let mut w = ove::FmtBuf::new(&mut buf);
-        let _ = write!(w, "Count: {}", val);
-        label.set_text(w.as_cstr());
+        label
+            .set_text_fmt(format_args!("Count: {}", val))
+            .expect("LVGL text");
     }
     if let Some(bar) = BAR.try_get() {
         bar.set_value((val % 101) as i32, true);
@@ -136,64 +136,76 @@ fn app_main() {
     let last_value: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 
     let tx_p = tx.clone();
-    let producer = Thread::builder().name(c"producer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
-        log::info!("Producer started");
-        let mut count: u32 = 0;
-        loop {
-            count += 1;
-            match tx_p.try_send(count) {
-                Ok(()) => {}
-                Err(ove::Error::Timeout) | Err(ove::Error::QueueFull) => {
-                    log::warn!("Producer: queue full, dropped {}", count)
+    let producer = Thread::builder()
+        .name(c"producer")
+        .priority(Priority::Normal)
+        .stack_size(4096)
+        .spawn(move |_tok| {
+            log::info!("Producer started");
+            let mut count: u32 = 0;
+            loop {
+                count += 1;
+                match tx_p.try_send(count) {
+                    Ok(()) => {}
+                    Err(ove::Error::Timeout) | Err(ove::Error::QueueFull) => {
+                        log::warn!("Producer: queue full, dropped {}", count)
+                    }
+                    Err(ove::Error::NetClosed) => {
+                        log::warn!("Producer: receivers gone");
+                        break;
+                    }
+                    Err(_) => log::error!("Producer: unexpected send error"),
                 }
-                Err(ove::Error::NetClosed) => {
-                    log::warn!("Producer: receivers gone");
-                    break;
-                }
-                Err(_) => log::error!("Producer: unexpected send error"),
+                Thread::sleep_ms(500);
             }
-            Thread::sleep_ms(500);
-        }
-    })
-    .expect("producer spawn");
+        })
+        .expect("producer spawn");
 
     let lv = Arc::clone(&last_value);
-    let consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
-        log::info!("Consumer started");
-        loop {
-            match rx.recv() {
-                Ok(val) => {
-                    lv.store(val, Ordering::Relaxed);
-                    LAST_VALUE.store(val, Ordering::Relaxed);
-                    if val % 5 == 0 {
-                        log::info!("Consumer: count = {}", val);
+    let consumer = Thread::builder()
+        .name(c"consumer")
+        .priority(Priority::Normal)
+        .stack_size(4096)
+        .spawn(move |_tok| {
+            log::info!("Consumer started");
+            loop {
+                match rx.recv() {
+                    Ok(val) => {
+                        lv.store(val, Ordering::Relaxed);
+                        LAST_VALUE.store(val, Ordering::Relaxed);
+                        if val % 5 == 0 {
+                            log::info!("Consumer: count = {}", val);
+                        }
                     }
+                    Err(ove::Error::NetClosed) => {
+                        log::warn!("Consumer: senders gone");
+                        break;
+                    }
+                    Err(_) => log::error!("Consumer: receive error"),
                 }
-                Err(ove::Error::NetClosed) => {
-                    log::warn!("Consumer: senders gone");
-                    break;
-                }
-                Err(_) => log::error!("Consumer: receive error"),
             }
-        }
-    })
-    .expect("consumer spawn");
+        })
+        .expect("consumer spawn");
 
-    let graphics = Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(move |_tok| {
-        let mut last_us = ove::time::get_us().unwrap_or(0);
-        loop {
-            let now_us = ove::time::get_us().unwrap_or(last_us);
-            let elapsed_ms = ((now_us - last_us) / 1000) as u32;
-            last_us = now_us;
-            {
-                let _g = lvgl::lock();
-                lvgl::tick(elapsed_ms);
-                lvgl::handler();
+    let graphics = Thread::builder()
+        .name(c"graphics")
+        .priority(Priority::High)
+        .stack_size(4096)
+        .spawn(move |_tok| {
+            let mut last_us = ove::time::get_us().unwrap_or(0);
+            loop {
+                let now_us = ove::time::get_us().unwrap_or(last_us);
+                let elapsed_ms = ((now_us - last_us) / 1000) as u32;
+                last_us = now_us;
+                {
+                    let _g = lvgl::lock();
+                    lvgl::tick(elapsed_ms);
+                    lvgl::handler();
+                }
+                Thread::sleep_ms(33);
             }
-            Thread::sleep_ms(33);
-        }
-    })
-    .expect("graphics spawn");
+        })
+        .expect("graphics spawn");
 
     UI_TIMER.init(Timer::new(ui_timer_cb, 200, false).expect("timer create"));
 
@@ -230,4 +242,3 @@ fn app_main() {
 
     log::info!("Rust example (heap mode): shutdown");
 }
-

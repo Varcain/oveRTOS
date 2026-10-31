@@ -226,6 +226,15 @@ jobs:
       - name: Run zero-heap tests
         run: make test-rust-zeroheap
 
+      - name: Fetch LVGL (manifest-pinned) into dl/lvgl
+        run: |
+          LVGL_URL=$(python3 scripts/manifest_query.py libraries.lvgl.url)
+          LVGL_TAG=$(python3 scripts/manifest_query.py libraries.lvgl.version)
+          git clone --depth 1 --branch "$LVGL_TAG" "$LVGL_URL" dl/lvgl
+
+      - name: Run real LVGL text tests
+        run: make test-rust-lvgl
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

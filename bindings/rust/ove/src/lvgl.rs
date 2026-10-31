@@ -16,6 +16,10 @@
 //! - **RAII** — `LvglGuard` for lock/unlock, `Style` with `Drop`
 //! - **`no_std` compatible** — no allocator needed
 
+mod text;
+use text::with_text;
+pub use text::{BufferedLabel, TextFormatter, TextStorage};
+
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -1058,28 +1062,36 @@ impl Label {
         Self { raw }
     }
 
-    /// Set text from a null-terminated byte slice.
-    pub fn set_text(self, text: &[u8]) {
-        unsafe { bindings::lv_label_set_text(self.raw, text.as_ptr() as *const _) };
+    /// Set copied UTF-8 text. Interior NUL and conversion allocation failures
+    /// are reported before changing the label. LVGL's own allocation policy applies.
+    pub fn set_text(self, text: &str) -> Result<()> {
+        with_text(text, |ptr| unsafe {
+            bindings::ove_lvgl_text_set(self.raw.cast(), ptr);
+        })
     }
 
-    /// Set text by pointer — caller-owned buffer must outlive the label.
-    /// LVGL stores the pointer instead of duplicating, so re-rendering
-    /// with the same buffer triggers a redraw without reallocation.
-    pub fn set_text_static(self, text: &'static [u8]) {
-        unsafe { bindings::lv_label_set_text_static(self.raw, text.as_ptr() as *const _) };
+    /// Format copied text using Rust formatting, without a global allocator.
+    pub fn set_text_fmt(self, args: core::fmt::Arguments<'_>) -> Result<()> {
+        let watch = text::Watch::new(self)?;
+        let buffer = text::TextBuffer::formatted(args)?;
+        watch.check()?;
+        unsafe { bindings::ove_lvgl_text_set(self.raw.cast(), buffer.as_ptr()) };
+        Ok(())
     }
 
-    /// Fluent: set text (copies string).
-    pub fn text(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_label_set_text(self.raw, txt.as_ptr() as *const _) };
-        self
+    /// Fluent: set copied text.
+    pub fn text(self, text: &str) -> Result<Self> {
+        self.set_text(text)?;
+        Ok(self)
     }
 
-    /// Fluent: set static text (pointer must remain valid).
-    pub fn text_static(self, txt: &'static [u8]) -> Self {
-        unsafe { bindings::lv_label_set_text_static(self.raw, txt.as_ptr() as *const _) };
-        self
+    /// Attach stable storage for updates with no text allocation.
+    pub fn text_buffered<const N: usize>(
+        self,
+        storage: &'static TextStorage<N>,
+        args: core::fmt::Arguments<'_>,
+    ) -> Result<BufferedLabel<N>> {
+        storage.attach(self, args)
     }
 
     /// Fluent: set font shorthand.
@@ -1430,15 +1442,11 @@ impl Checkbox {
     }
 
     /// Fluent: set the label text (LVGL copies into its own buffer).
-    pub fn text(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_checkbox_set_text(self.raw, txt.as_ptr() as *const _) };
-        self
-    }
-
-    /// Fluent: set the label text from a persistent static string (no copy).
-    pub fn text_static(self, txt: &'static [u8]) -> Self {
-        unsafe { bindings::lv_checkbox_set_text_static(self.raw, txt.as_ptr() as *const _) };
-        self
+    pub fn text(self, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_checkbox_set_text(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: set the checked state.
@@ -1592,15 +1600,19 @@ impl Msgbox {
     }
 
     /// Fluent: add a title in the header.
-    pub fn add_title(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_msgbox_add_title(self.raw, txt.as_ptr() as *const _) };
-        self
+    pub fn add_title(self, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_msgbox_add_title(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: add body text.
-    pub fn add_text(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_msgbox_add_text(self.raw, txt.as_ptr() as *const _) };
-        self
+    pub fn add_text(self, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_msgbox_add_text(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: add a close (X) button in the header.
@@ -1611,10 +1623,11 @@ impl Msgbox {
 
     /// Add a footer button with the given text. Returns the raw button
     /// handle for event handler attachment.
-    pub fn add_footer_button(self, txt: &[u8]) -> Obj {
-        let btn =
-            unsafe { bindings::lv_msgbox_add_footer_button(self.raw, txt.as_ptr() as *const _) };
-        unsafe { Obj::from_raw(btn) }
+    pub fn add_footer_button(self, txt: &str) -> Result<Obj> {
+        with_text(txt, |text_ptr| {
+            let raw = unsafe { bindings::lv_msgbox_add_footer_button(self.raw, text_ptr) };
+            unsafe { Obj::from_raw(raw) }
+        })
     }
 
     /// Returns the content container.
@@ -2083,10 +2096,26 @@ impl Table {
         Self { raw }
     }
 
-    /// Fluent: set a cell's text (null-terminated byte slice).
-    pub fn cell_value(self, row: u32, col: u32, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_table_set_cell_value(self.raw, row, col, txt.as_ptr() as *const _) };
-        self
+    /// Fluent: set a cell's text (copied).
+    pub fn cell_value(self, row: u32, col: u32, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_table_set_cell_value(self.raw, row, col, text_ptr);
+        })?;
+        Ok(self)
+    }
+
+    /// Format a cell using Rust formatting and checked binding-owned storage.
+    pub fn cell_value_fmt(
+        self,
+        row: u32,
+        col: u32,
+        args: core::fmt::Arguments<'_>,
+    ) -> Result<Self> {
+        let watch = text::Watch::new(self)?;
+        let buffer = text::TextBuffer::formatted(args)?;
+        watch.check()?;
+        unsafe { bindings::lv_table_set_cell_value(self.raw, row, col, buffer.as_ptr()) };
+        Ok(self)
     }
 
     /// Fluent: set the row count.
@@ -2160,15 +2189,19 @@ impl Tabview {
     }
 
     /// Add a new tab and return its content container as an [`Obj`].
-    pub fn add_tab(self, name: &[u8]) -> Obj {
-        let raw = unsafe { bindings::lv_tabview_add_tab(self.raw, name.as_ptr() as *const _) };
-        unsafe { Obj::from_raw(raw) }
+    pub fn add_tab(self, name: &str) -> Result<Obj> {
+        with_text(name, |text_ptr| {
+            let raw = unsafe { bindings::lv_tabview_add_tab(self.raw, text_ptr) };
+            unsafe { Obj::from_raw(raw) }
+        })
     }
 
     /// Fluent: rename an existing tab by index.
-    pub fn rename_tab(self, idx: u32, name: &[u8]) -> Self {
-        unsafe { bindings::lv_tabview_set_tab_text(self.raw, idx, name.as_ptr() as *const _) };
-        self
+    pub fn rename_tab(self, idx: u32, name: &str) -> Result<Self> {
+        with_text(name, |text_ptr| unsafe {
+            bindings::lv_tabview_set_tab_text(self.raw, idx, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: set the active tab index. `anim` = true to animate the switch.
@@ -2240,17 +2273,21 @@ impl List {
     }
 
     /// Add a text heading row. Returns the label as an [`Obj`].
-    pub fn add_text(self, text: &[u8]) -> Obj {
-        let raw = unsafe { bindings::lv_list_add_text(self.raw, text.as_ptr() as *const _) };
-        unsafe { Obj::from_raw(raw) }
+    pub fn add_text(self, text: &str) -> Result<Obj> {
+        with_text(text, |text_ptr| {
+            let raw = unsafe { bindings::lv_list_add_text(self.raw, text_ptr) };
+            unsafe { Obj::from_raw(raw) }
+        })
     }
 
     /// Add a button row with an optional icon. Returns the button as an [`Obj`].
-    pub fn add_button(self, icon: Option<ImageSrc>, text: &[u8]) -> Obj {
-        let icon_ptr = icon.map_or(core::ptr::null(), ImageSrc::raw_ptr);
-        let raw =
-            unsafe { bindings::lv_list_add_button(self.raw, icon_ptr, text.as_ptr() as *const _) };
-        unsafe { Obj::from_raw(raw) }
+    pub fn add_button(self, icon: Option<ImageSrc<'_>>, text: &str) -> Result<Obj> {
+        with_text(text, |text_ptr| {
+            let apply = |icon_ptr| unsafe {
+                Obj::from_raw(bindings::lv_list_add_button(self.raw, icon_ptr, text_ptr))
+            };
+            icon.map_or_else(|| Ok(apply(core::ptr::null())), |icon| icon.with_ptr(apply))
+        })?
     }
 
     /// Returns a list button's text as a raw C pointer owned by LVGL. The
@@ -2291,22 +2328,28 @@ impl Textarea {
         Self { raw }
     }
 
-    /// Fluent: replace the text (null-terminated byte slice).
-    pub fn text(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_textarea_set_text(self.raw, txt.as_ptr() as *const _) };
-        self
+    /// Fluent: replace the text (copied).
+    pub fn text(self, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_textarea_set_text(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: append text.
-    pub fn add_text(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_textarea_add_text(self.raw, txt.as_ptr() as *const _) };
-        self
+    pub fn add_text(self, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_textarea_add_text(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: set placeholder shown while empty.
-    pub fn placeholder(self, txt: &[u8]) -> Self {
-        unsafe { bindings::lv_textarea_set_placeholder_text(self.raw, txt.as_ptr() as *const _) };
-        self
+    pub fn placeholder(self, txt: &str) -> Result<Self> {
+        with_text(txt, |text_ptr| unsafe {
+            bindings::lv_textarea_set_placeholder_text(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: toggle single-line mode.
@@ -2328,9 +2371,11 @@ impl Textarea {
     }
 
     /// Fluent: restrict input to characters in `list` (null pointer = any).
-    pub fn accepted_chars(self, list: &[u8]) -> Self {
-        unsafe { bindings::lv_textarea_set_accepted_chars(self.raw, list.as_ptr() as *const _) };
-        self
+    pub fn accepted_chars(self, list: &str) -> Result<Self> {
+        with_text(list, |text_ptr| unsafe {
+            bindings::lv_textarea_set_accepted_chars(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: move cursor to character position.
@@ -2410,21 +2455,19 @@ impl Dropdown {
     }
 
     /// Fluent: set options from a newline-separated string (LVGL copies it).
-    pub fn options(self, opts: &[u8]) -> Self {
-        unsafe { bindings::lv_dropdown_set_options(self.raw, opts.as_ptr() as *const _) };
-        self
-    }
-
-    /// Fluent: set options from a persistent newline-separated string (no copy).
-    pub fn options_static(self, opts: &'static [u8]) -> Self {
-        unsafe { bindings::lv_dropdown_set_options_static(self.raw, opts.as_ptr() as *const _) };
-        self
+    pub fn options(self, opts: &str) -> Result<Self> {
+        with_text(opts, |text_ptr| unsafe {
+            bindings::lv_dropdown_set_options(self.raw, text_ptr);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: insert a single option at `pos`.
-    pub fn add_option(self, opt: &[u8], pos: u32) -> Self {
-        unsafe { bindings::lv_dropdown_add_option(self.raw, opt.as_ptr() as *const _, pos) };
-        self
+    pub fn add_option(self, opt: &str, pos: u32) -> Result<Self> {
+        with_text(opt, |text_ptr| unsafe {
+            bindings::lv_dropdown_add_option(self.raw, text_ptr, pos);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: clear the entire option list.
@@ -2455,8 +2498,13 @@ impl Dropdown {
         unsafe { bindings::lv_dropdown_get_option_count(self.raw) }
     }
 
-    /// Fills `buf` with the currently selected option text.
+    /// Fills `buf` with the currently selected option text, cut to fit
+    /// and NUL-terminated.  Does nothing with an empty `buf` (LVGL would
+    /// take a size of 0 as unlimited).
     pub fn get_selected_str(self, buf: &mut [u8]) {
+        if buf.is_empty() {
+            return;
+        }
         unsafe {
             bindings::lv_dropdown_get_selected_str(
                 self.raw,
@@ -2532,9 +2580,11 @@ impl Roller {
 
     /// Fluent: set options and scroll mode. Use [`ROLLER_MODE_NORMAL`] or
     /// [`ROLLER_MODE_INFINITE`].
-    pub fn options(self, opts: &[u8], mode: u32) -> Self {
-        unsafe { bindings::lv_roller_set_options(self.raw, opts.as_ptr() as *const _, mode as _) };
-        self
+    pub fn options(self, opts: &str, mode: u32) -> Result<Self> {
+        with_text(opts, |text_ptr| unsafe {
+            bindings::lv_roller_set_options(self.raw, text_ptr, mode as _);
+        })?;
+        Ok(self)
     }
 
     /// Fluent: set selected index. `anim` = true to animate the scroll.
@@ -2562,8 +2612,13 @@ impl Roller {
         unsafe { bindings::lv_roller_get_option_count(self.raw) }
     }
 
-    /// Fills `buf` with the currently selected option text.
+    /// Fills `buf` with the currently selected option text, cut to fit
+    /// and NUL-terminated.  Does nothing with an empty `buf` (LVGL would
+    /// take a size of 0 as unlimited).
     pub fn get_selected_str(self, buf: &mut [u8]) {
+        if buf.is_empty() {
+            return;
+        }
         unsafe {
             bindings::lv_roller_get_selected_str(
                 self.raw,
@@ -3129,9 +3184,10 @@ unsafe impl Sync for Timer {}
 /// `lv_subject_t` keeps a linked list of observer references, so the
 /// `State` address must be stable from the moment any observer attaches.
 /// The intended usage is inside a static slot — either a raw `static`
-/// declared by the user, or via the `ove::shared!` macro. Dropping a
-/// `State` while observers are still attached will corrupt the observer
-/// list. `PhantomPinned` prevents move after construction.
+/// declared by the user, or via the `ove::shared!` macro. A pinned owner is
+/// another option. Do not move a state after attaching observers; the
+/// `PhantomPinned` marker makes it `!Unpin` but does not pin it by itself.
+/// Dropping it at its stable address detaches its observers.
 ///
 /// ```ignore
 /// use ove::lvgl::{State, Label};
@@ -3139,7 +3195,7 @@ unsafe impl Sync for Timer {}
 /// // init once:
 /// COUNTER.init(State::new(0));
 /// // bind:
-/// Label::create(screen).bind_text(COUNTER.get_ref(), b"Count: %d\0");
+/// Label::create(screen).bind_text(COUNTER.get_ref(), |value, out| write!(out, "Count: {value}"))?;
 /// // update from anywhere:
 /// COUNTER.get_ref().set(42);  // label updates automatically
 /// ```
@@ -3201,24 +3257,92 @@ impl<T: Copy> Drop for State<T> {
 unsafe impl<T: Copy + Send> Send for State<T> {}
 unsafe impl<T: Copy + Send> Sync for State<T> {}
 
+#[cfg(all(test, docsrs))]
+mod selected_str_tests {
+    use core::ffi::c_char;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::{Dropdown, Roller, bindings};
+
+    static FFI_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    // The docs stub supplies declarations but no LVGL implementation. These
+    // sentinels observe whether the wrapper crosses the FFI boundary; they
+    // never dereference the dummy widget pointer.
+    unsafe fn selected_str(buf: *mut c_char, size: u32) {
+        FFI_CALLS.fetch_add(1, Ordering::Relaxed);
+        if size > 0 {
+            // SAFETY: the wrapper passes a mutable slice and its length.
+            unsafe {
+                *buf = b'X' as c_char;
+                *buf.add(size as usize - 1) = 0;
+            }
+        }
+    }
+
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn lv_dropdown_get_selected_str(
+        _obj: *mut bindings::lv_obj_t,
+        buf: *mut c_char,
+        size: u32,
+    ) {
+        // SAFETY: this sentinel is called only by the slice-based wrapper.
+        unsafe { selected_str(buf, size) };
+    }
+
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn lv_roller_get_selected_str(
+        _obj: *mut bindings::lv_obj_t,
+        buf: *mut c_char,
+        size: u32,
+    ) {
+        // SAFETY: this sentinel is called only by the slice-based wrapper.
+        unsafe { selected_str(buf, size) };
+    }
+
+    #[test]
+    fn empty_selected_string_buffers_do_not_reach_lvgl() {
+        let dropdown = Dropdown {
+            raw: core::ptr::null_mut(),
+        };
+        let roller = Roller {
+            raw: core::ptr::null_mut(),
+        };
+        dropdown.get_selected_str(&mut []);
+        roller.get_selected_str(&mut []);
+        assert_eq!(FFI_CALLS.load(Ordering::Relaxed), 0);
+
+        let mut buf = [0xa5; 4];
+        dropdown.get_selected_str(&mut buf[1..3]);
+        assert_eq!(buf, [0xa5, b'X', 0, 0xa5]);
+        buf.fill(0xa5);
+        roller.get_selected_str(&mut buf[1..3]);
+        assert_eq!(buf, [0xa5, b'X', 0, 0xa5]);
+        assert_eq!(FFI_CALLS.load(Ordering::Relaxed), 2);
+    }
+}
+
 // Widget bind methods — only the widgets with native LVGL bind_* calls
 // get these. Bar/Checkbox/Switch/Spinbox users must wire observers
 // manually via `lv_subject_add_observer_obj` (not yet wrapped).
 
 impl Label {
-    /// Bind this label's text to a reactive state with a printf-style format.
-    ///
-    /// `fmt` must be a null-terminated byte slice containing a format
-    /// string (e.g. `b"Count: %d\0"`).
+    /// Bind text using a noncapturing Rust formatter. Formatting errors preserve
+    /// the displayed text and are available from `text_status`. A recursive
+    /// state change that invalidates the rendered value reports `Error::Busy`.
+    /// State must remain at a stable address, as for other LVGL bindings.
     pub fn bind_text<T: Copy + Into<i32> + TryFrom<i32>>(
         self,
         state: &State<T>,
-        fmt: &'static [u8],
-    ) -> Self {
-        unsafe {
-            bindings::lv_label_bind_text(self.raw(), state.subject_ptr(), fmt.as_ptr() as *const _);
-        }
-        self
+        formatter: TextFormatter,
+    ) -> Result<Self> {
+        text::bind(self, state.subject_ptr(), formatter)?;
+        Ok(self)
+    }
+
+    /// Status of the most recent reactive text update, or `NotFound` if unbound.
+    pub fn text_status(self) -> Result<()> {
+        Error::from_code(unsafe { bindings::ove_lvgl_text_status(self.raw.cast()) })
     }
 }
 
@@ -3773,17 +3897,14 @@ pub fn layer_top() -> Obj {
 /// Measure the rendered size of `text` using `font`. Returns `(width, height)`
 /// in pixels.
 ///
-/// `text` must be NUL-terminated (LVGL reads C strings).
-pub fn text_size(text: &[u8], font: *const bindings::lv_font_t) -> (i32, i32) {
-    debug_assert!(
-        text.last() == Some(&0),
-        "text_size: text must be NUL-terminated"
-    );
-    let mut p = bindings::lv_point_t { x: 0, y: 0 };
-    unsafe {
-        bindings::lv_text_get_size(&mut p, text.as_ptr() as *const _, font, 0, 0, i32::MAX, 0);
-    }
-    (p.x, p.y)
+pub fn text_size(text: &str, font: *const bindings::lv_font_t) -> Result<(i32, i32)> {
+    with_text(text, |text_ptr| {
+        let mut p = bindings::lv_point_t { x: 0, y: 0 };
+        unsafe {
+            bindings::lv_text_get_size(&mut p, text_ptr, font, 0, 0, i32::MAX, 0);
+        }
+        (p.x, p.y)
+    })
 }
 
 // =========================================================================
@@ -3959,51 +4080,47 @@ pub use crate::cell::{LvCell, LvRefCell};
 //  ImageSrc — typed safe image source for Image::source
 // =========================================================================
 
-/// A safe LVGL image source, constructible only from `'static` data.
-///
-/// LVGL recognizes three flavours of source pointer: an image descriptor
-/// (`lv_image_dsc_t`), a built-in symbol byte string (`LV_SYMBOL_*`), and
-/// a NUL-terminated filesystem path (FS driver required). All three are
-/// covered with type-safe constructors.
+/// An LVGL image descriptor, borrowed symbol, or borrowed filesystem path.
+/// String sources are checked and copied by the consuming widget.
 #[derive(Clone, Copy)]
-pub struct ImageSrc {
-    raw: *const core::ffi::c_void,
+pub enum ImageSrc<'a> {
+    Descriptor(*const ImageDsc),
+    Symbol(&'a str),
+    Path(&'a str),
 }
 
-// SAFETY: the inner pointer is always `'static` and read-only.
-unsafe impl Send for ImageSrc {}
-unsafe impl Sync for ImageSrc {}
-
-impl ImageSrc {
-    /// Wrap an LVGL image descriptor by pointer. The pointed-to data must
-    /// outlive any widget using this source — `'static` in practice.
-    ///
-    /// Typical call: `ImageSrc::from_dsc(core::ptr::addr_of!(images::badge))`
-    /// where `images::badge` is a generated `extern "C" static` image.
+impl<'a> ImageSrc<'a> {
+    /// The descriptor and its pixels must outlive every widget using it.
     pub fn from_dsc(dsc: *const ImageDsc) -> Self {
-        Self {
-            raw: dsc as *const _,
-        }
+        Self::Descriptor(dsc)
+    }
+    pub fn from_symbol(sym: &'a str) -> Self {
+        Self::Symbol(sym)
+    }
+    pub fn from_path(path: &'a str) -> Self {
+        Self::Path(path)
     }
 
-    /// Wrap a NUL-terminated symbol byte string (e.g. `LV_SYMBOL_OK`).
-    pub fn from_symbol(sym: &'static [u8]) -> Self {
-        debug_assert!(sym.last() == Some(&0), "ImageSrc::from_symbol: missing NUL");
-        Self {
-            raw: sym.as_ptr() as *const _,
+    fn with_ptr<T>(self, apply: impl FnOnce(*const core::ffi::c_void) -> T) -> Result<T> {
+        match self {
+            Self::Descriptor(ptr) => Ok(apply(ptr.cast())),
+            Self::Symbol(text) => {
+                if text.as_bytes().first().is_none_or(|byte| *byte < 0x80) {
+                    return Err(Error::InvalidParam);
+                }
+                with_text(text, |ptr| apply(ptr.cast()))
+            }
+            Self::Path(text) => {
+                if !text
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|byte| (0x20..0x80).contains(byte))
+                {
+                    return Err(Error::InvalidParam);
+                }
+                with_text(text, |ptr| apply(ptr.cast()))
+            }
         }
-    }
-
-    /// Wrap a NUL-terminated filesystem path (LVGL FS driver must be registered).
-    pub fn from_path(path: &'static [u8]) -> Self {
-        debug_assert!(path.last() == Some(&0), "ImageSrc::from_path: missing NUL");
-        Self {
-            raw: path.as_ptr() as *const _,
-        }
-    }
-
-    pub(crate) fn raw_ptr(self) -> *const core::ffi::c_void {
-        self.raw
     }
 }
 
@@ -4014,10 +4131,10 @@ pub type ImageDsc = bindings::lv_image_dsc_t;
 
 impl Image {
     /// Safe replacement for the legacy [`Image::src`] — accepts a typed
-    /// [`ImageSrc`] guaranteeing the underlying memory is `'static`.
-    pub fn source(self, src: ImageSrc) -> Self {
-        unsafe { bindings::lv_image_set_src(self.raw, src.raw) };
-        self
+    /// [`ImageSrc`]. Borrowed strings are copied by LVGL.
+    pub fn source(self, src: ImageSrc<'_>) -> Result<Self> {
+        src.with_ptr(|ptr| unsafe { bindings::lv_image_set_src(self.raw, ptr) })?;
+        Ok(self)
     }
 
     /// Set the inner alignment of the image content (`LV_IMAGE_ALIGN_*`).

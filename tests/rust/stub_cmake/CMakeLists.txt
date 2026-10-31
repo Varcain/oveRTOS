@@ -55,11 +55,13 @@ add_library(ove_stub STATIC
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_lvgl.c
+    ${OVE_SRC}/ove_lvgl_text.c
     ${STUB_DIR}/stub_pm.c
     ${STUB_DIR}/stub_audio_device.c
 )
 
 target_include_directories(ove_stub PRIVATE
+    ${STUB_DIR}
     ${OVE_INCLUDE}
     ${OVE_ROOT}/backends/common
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
