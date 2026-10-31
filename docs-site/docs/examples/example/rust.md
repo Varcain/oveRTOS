@@ -127,19 +127,37 @@ fn app_main() {
 }
 ```
 
+## Label updates
+
+Normal text uses Rust strings: `label.set_text("Ready")?`. Runtime values
+use `label.set_text_fmt(format_args!("Count: {count}"))?`; applications do
+not build C strings. For a counter that allocates no text memory per update,
+attach binding-managed static storage once under the LVGL lock:
+
+```rust
+use ove::lvgl::TextStorage;
+static COUNT_TEXT: TextStorage<24> = TextStorage::new();
+let counter = label.text_buffered(&COUNT_TEXT, format_args!("Count: 0"))?;
+counter.set_text_fmt(format_args!("Count: {count}"))?;
+```
+
+The capacity includes the terminator. Overflow and embedded NUL fail without
+changing the displayed text. Deleting the label or replacing its text
+invalidates the buffered handle.
+
 ## Compile-time RTOS detection
 
 `build.rs` emits `rtos_freertos`, `rtos_nuttx`, `rtos_zephyr` as `cfg` flags based on the substrate's `ove_config.h`:
 
 ```rust
 #[cfg(rtos_freertos)]
-const APP_TITLE: &[u8] = b"oveRTOS(FreeRTOS) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(FreeRTOS) Rust Demo";
 #[cfg(rtos_nuttx)]
-const APP_TITLE: &[u8] = b"oveRTOS(NuttX) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(NuttX) Rust Demo";
 #[cfg(rtos_zephyr)]
-const APP_TITLE: &[u8] = b"oveRTOS(Zephyr) Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS(Zephyr) Rust Demo";
 #[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr)))]
-const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
+const APP_TITLE: &str = "oveRTOS Rust Demo";
 ```
 
 ## Logging

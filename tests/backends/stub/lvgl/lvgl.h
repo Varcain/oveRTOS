@@ -11,6 +11,7 @@
 
 #ifndef LVGL_H
 #define LVGL_H
+#define OVE_LVGL_STUB 1
 
 #include <stdint.h>
 #include <stdbool.h>

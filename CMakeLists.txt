@@ -38,6 +38,7 @@ set(_OVE_CORE_SOURCES
     ${OVE_DIR}/src/ove_fb_stub.c
     ${OVE_DIR}/src/ove_ft5336.c
     ${OVE_DIR}/src/ove_lvgl_indev.c
+    ${OVE_DIR}/src/ove_lvgl_text.c
     ${OVE_DIR}/src/ove_uart.c
     ${OVE_DIR}/src/ove_spi.c
     ${OVE_DIR}/src/ove_i2c.c

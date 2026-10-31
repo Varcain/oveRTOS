@@ -15,7 +15,6 @@
 
 use ove_allocator as _;
 
-use core::fmt::Write;
 use core::ptr::addr_of;
 use core::sync::atomic::{AtomicI32, Ordering};
 
@@ -25,7 +24,7 @@ use ove::lvgl::{
     Label, Layout, Led, List, LvCell, Msgbox, Obj, PART_MAIN, Roller, Series, Slider, Spinbox,
     Spinner, State, Styleable, Switch, TEXT_ALIGN_CENTER, Table, Tabview, Textarea,
 };
-use ove::{FmtBuf, Priority, Thread, Timer};
+use ove::{Priority, Thread, Timer};
 
 // Auto-generated glue module — carries the lone `unsafe extern "C"` block
 // for linking against LVGL-formatted C image assets. Narrowly scoped.
@@ -115,8 +114,10 @@ fn on_next(nav: &LvCell<NavState>, _e: EventCtx<'_>) {
 
 fn on_alert_click(_e: EventCtx<'_>) {
     let _ = Msgbox::create_modal()
-        .add_title(b"Hello\0")
-        .add_text(b"Message box from the gallery.\0")
+        .add_title("Hello")
+        .expect("LVGL text")
+        .add_text("Message box from the gallery.")
+        .expect("LVGL text")
         .add_close_button();
 }
 
@@ -131,7 +132,8 @@ type PageFn = fn(Obj);
 
 fn p_label(c: Obj) {
     let lbl = Label::create(c)
-        .text(b"Hello, oveRTOS!\0")
+        .text("Hello, oveRTOS!")
+        .expect("LVGL text")
         .font(lvgl::font_montserrat_32())
         .color(Color::white())
         .center();
@@ -140,14 +142,18 @@ fn p_label(c: Obj) {
         Label::create(c)
             .color(Color::hex(0x888888))
             .font(lvgl::font_montserrat_14())
-            .bind_text(state, b"Tick: %d\0")
+            .bind_text(state, |value, out| write!(out, "Tick: {value}"))
+            .expect("LVGL text")
             .align(lvgl::ALIGN_BOTTOM_MID, 0, -16);
     }
 }
 
 fn p_button(c: Obj) {
     let btn = Button::create(c).size(160, 48).toggle_mode(true);
-    Label::create(btn).text(b"Toggle me\0").center();
+    Label::create(btn)
+        .text("Toggle me")
+        .expect("LVGL text")
+        .center();
     btn.center();
 }
 
@@ -156,7 +162,8 @@ fn p_switch(c: Obj) {
 }
 fn p_checkbox(c: Obj) {
     Checkbox::create(c)
-        .text(b"Enable option\0")
+        .text("Enable option")
+        .expect("LVGL text")
         .checked(true)
         .text_color(Color::white())
         .center();
@@ -206,7 +213,8 @@ fn p_led(c: Obj) {
 }
 fn p_dropdown(c: Obj) {
     Dropdown::create(c)
-        .options_static(b"Red\nGreen\nBlue\nYellow\0")
+        .options("Red\nGreen\nBlue\nYellow")
+        .expect("LVGL text")
         .selected(2)
         .width(200)
         .center();
@@ -214,9 +222,10 @@ fn p_dropdown(c: Obj) {
 fn p_roller(c: Obj) {
     Roller::create(c)
         .options(
-            b"Mon\nTue\nWed\nThu\nFri\nSat\nSun\0",
+            "Mon\nTue\nWed\nThu\nFri\nSat\nSun",
             lvgl::ROLLER_MODE_NORMAL,
         )
+        .expect("LVGL text")
         .visible_row_count(4)
         .width(140)
         .center();
@@ -235,7 +244,8 @@ fn p_textarea(c: Obj) {
     c.flex_flow(FlexFlow::Column).pad_gap(8);
     let ta = Textarea::create(c)
         .one_line(true)
-        .placeholder(b"Type here...\0")
+        .placeholder("Type here...")
+        .expect("LVGL text")
         .max_length(40)
         .width(400);
     Keyboard::create(c).size(400, 140).attach(ta);
@@ -259,30 +269,39 @@ fn p_table(c: Obj) {
     let t = Table::create(c).column_count(2).row_count(4);
     t.column_width(0, 120)
         .column_width(1, 120)
-        .cell_value(0, 0, b"Key\0")
-        .cell_value(0, 1, b"Value\0")
-        .cell_value(1, 0, b"Language\0")
-        .cell_value(1, 1, b"Rust\0")
-        .cell_value(2, 0, b"LVGL\0")
-        .cell_value(2, 1, b"9.2\0")
-        .cell_value(3, 0, b"RTOS\0")
-        .cell_value(3, 1, b"oveRTOS\0");
+        .cell_value(0, 0, "Key")
+        .expect("LVGL text")
+        .cell_value(0, 1, "Value")
+        .expect("LVGL text")
+        .cell_value(1, 0, "Language")
+        .expect("LVGL text")
+        .cell_value(1, 1, "Rust")
+        .expect("LVGL text")
+        .cell_value(2, 0, "LVGL")
+        .expect("LVGL text")
+        .cell_value(2, 1, "9.2")
+        .expect("LVGL text")
+        .cell_value(3, 0, "RTOS")
+        .expect("LVGL text")
+        .cell_value(3, 1, "oveRTOS")
+        .expect("LVGL text");
     t.center();
 }
 
 fn p_list(c: Obj) {
     let l = List::create(c).size(240, 160);
-    l.add_text(b"Navigation\0");
-    l.add_button(None, b"Settings\0");
-    l.add_button(None, b"About\0");
-    l.add_button(None, b"Help\0");
-    l.add_button(None, b"Quit\0");
+    l.add_text("Navigation").expect("LVGL text");
+    l.add_button(None, "Settings").expect("LVGL text");
+    l.add_button(None, "About").expect("LVGL text");
+    l.add_button(None, "Help").expect("LVGL text");
+    l.add_button(None, "Quit").expect("LVGL text");
     l.center();
 }
 
 fn p_image(c: Obj) {
     Image::create(c)
         .source(ImageSrc::from_dsc(addr_of!(images::badge)))
+        .expect("LVGL text")
         .center();
 }
 
@@ -322,7 +341,10 @@ fn p_calendar(c: Obj) {
 
 fn p_msgbox(c: Obj) {
     let btn = Button::create(c).size(200, 48).on_clicked(on_alert_click);
-    Label::create(btn).text(b"Show Msgbox\0").center();
+    Label::create(btn)
+        .text("Show Msgbox")
+        .expect("LVGL text")
+        .center();
     btn.center();
 }
 
@@ -341,39 +363,45 @@ fn p_box(c: Obj) {
 fn p_tabview(c: Obj) {
     let tv = Tabview::create(c).size(380, 180).center();
     tv.tab_bar_size(32);
-    let t1 = tv.add_tab(b"Tab A\0");
-    Label::create(t1).text(b"Content A\0").center();
-    let t2 = tv.add_tab(b"Tab B\0");
-    Label::create(t2).text(b"Content B\0").center();
+    let t1 = tv.add_tab("Tab A").expect("LVGL text");
+    Label::create(t1)
+        .text("Content A")
+        .expect("LVGL text")
+        .center();
+    let t2 = tv.add_tab("Tab B").expect("LVGL text");
+    Label::create(t2)
+        .text("Content B")
+        .expect("LVGL text")
+        .center();
 }
 
 // ---------------------------------------------------------------------------
 // Page directory
 // ---------------------------------------------------------------------------
 
-static PAGES: &[(&[u8], PageFn)] = &[
-    (b"Label\0", p_label),
-    (b"Button\0", p_button),
-    (b"Switch\0", p_switch),
-    (b"Checkbox\0", p_checkbox),
-    (b"Bar\0", p_bar),
-    (b"Slider\0", p_slider),
-    (b"Arc\0", p_arc),
-    (b"Spinner\0", p_spinner),
-    (b"Led\0", p_led),
-    (b"Dropdown\0", p_dropdown),
-    (b"Roller\0", p_roller),
-    (b"Spinbox\0", p_spinbox),
-    (b"Text+Kbd\0", p_textarea),
-    (b"Chart\0", p_chart),
-    (b"Table\0", p_table),
-    (b"List\0", p_list),
-    (b"Image\0", p_image),
-    (b"Canvas\0", p_canvas),
-    (b"Calendar\0", p_calendar),
-    (b"Msgbox\0", p_msgbox),
-    (b"Box\0", p_box),
-    (b"Tabview\0", p_tabview),
+static PAGES: &[(&str, PageFn)] = &[
+    ("Label", p_label),
+    ("Button", p_button),
+    ("Switch", p_switch),
+    ("Checkbox", p_checkbox),
+    ("Bar", p_bar),
+    ("Slider", p_slider),
+    ("Arc", p_arc),
+    ("Spinner", p_spinner),
+    ("Led", p_led),
+    ("Dropdown", p_dropdown),
+    ("Roller", p_roller),
+    ("Spinbox", p_spinbox),
+    ("Text+Kbd", p_textarea),
+    ("Chart", p_chart),
+    ("Table", p_table),
+    ("List", p_list),
+    ("Image", p_image),
+    ("Canvas", p_canvas),
+    ("Calendar", p_calendar),
+    ("Msgbox", p_msgbox),
+    ("Box", p_box),
+    ("Tabview", p_tabview),
 ];
 
 const N_PAGES: i32 = 22;
@@ -404,11 +432,9 @@ fn rebuild_page() {
     }
 
     if let Some(lbl) = nav.title {
-        let mut buf = [0u8; 48];
-        let mut w = FmtBuf::new(&mut buf);
-        let name = core::str::from_utf8(&PAGES[page].0[..PAGES[page].0.len() - 1]).unwrap_or("?");
-        let _ = write!(w, "{} ({}/{})", name, nav.page + 1, N_PAGES);
-        lbl.set_text(w.as_cstr());
+        let name = PAGES[page].0;
+        lbl.set_text_fmt(format_args!("{} ({}/{})", name, nav.page + 1, N_PAGES))
+            .expect("LVGL text");
     }
 }
 
@@ -437,17 +463,18 @@ fn create_ui() {
         .pad_right(4);
 
     let prev = Button::create(nav).size(40, 32).on_clicked_with(&NAV_PREV);
-    Label::create(prev).text(b"<\0").center();
+    Label::create(prev).text("<").expect("LVGL text").center();
 
     let title = Label::create(nav)
-        .text(b"\0")
+        .text("")
+        .expect("LVGL text")
         .color(Color::white())
         .font(lvgl::font_montserrat_14())
         .flex_grow(1)
         .text_align(TEXT_ALIGN_CENTER, PART_MAIN);
 
     let next = Button::create(nav).size(40, 32).on_clicked_with(&NAV_NEXT);
-    Label::create(next).text(b">\0").center();
+    Label::create(next).text(">").expect("LVGL text").center();
 
     // ── Content ──
     let content = Box::create(screen)
@@ -505,11 +532,15 @@ fn app_main() {
     // binding's recommended fire-and-forget over `core::mem::forget`.
     // 16 KB: the gallery's pages (charts, canvas, image transforms) recurse
     // deep in LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display.
-    ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(16384).spawn(|_tok| {
-        graphics_entry();
-    })
-    .expect("graphics thread spawn")
-    .detach();
+    ove::Thread::builder()
+        .name(c"graphics")
+        .priority(Priority::High)
+        .stack_size(16384)
+        .spawn(|_tok| {
+            graphics_entry();
+        })
+        .expect("graphics thread spawn")
+        .detach();
 
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));
@@ -531,4 +562,3 @@ fn app_main() {
     log::info!("LVGL gallery (Rust): ready");
     ove::run();
 }
-

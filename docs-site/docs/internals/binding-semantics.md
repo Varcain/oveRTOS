@@ -34,6 +34,9 @@ A recurring difference is *how a scope-bound resource is released*:
 |---|---|---|---|
 | C reads it as a C string, during the call (paths, NVS keys, routes, content types, TLS hostname) | `const char *` | `&CStr`, e.g. `c"/data/log.txt"` | `[:0]const u8` / `[*:0]const u8` |
 | C keeps the pointer (audio node names, shell command names) | `const char *` that outlives the object | `&'static CStr` | comptime or caller-owned sentinel string |
+| Copied LVGL text, image paths and symbols | `const char *` | `&str`, checked and converted privately | sentinel string |
+| Retained LVGL label text | caller-owned persistent buffer | static `TextStorage<N>` + `BufferedLabel<N>` | caller-owned sentinel buffer |
+| Reactive LVGL label formatting | persistent printf format | noncapturing Rust formatter function | persistent printf format |
 | Built at run time, no heap | `snprintf` into a buffer | `ove::fmt::FmtBuf` + `as_c_str()` | `std.fmt.bufPrintZ` |
 | Data with an explicit length (bodies, payloads, NVS values) | pointer + length | `&[u8]` | `[]const u8` |
 
@@ -43,6 +46,25 @@ A recurring difference is *how a scope-bound resource is released*:
   looking for the terminator, and an embedded NUL would cut it short.
   `FmtBuf::as_c_str()` fails with `InvalidParam` when the text holds a NUL or
   did not fit, rather than hand C a shortened path or key.
+- Rust LVGL string methods return `Result`: embedded NUL is `InvalidParam`,
+  conversion pool exhaustion is `NoMemory`. Short conversions use stack
+  scratch; longer ones use LVGL's fixed pool without a Rust global allocator.
+  `set_text_fmt(format_args!(...))` and `cell_value_fmt` accept Rust formatting.
+  They preserve text on preparation errors; LVGL's own void setters still
+  follow its configured assertion policy for internal allocation failures.
+- `Label::text_buffered` attaches a static `TextStorage<N>` once. Its
+  `BufferedLabel` updates allocate no text memory; capacity includes NUL.
+  Overflow returns `NoSpace` without truncating UTF-8 or changing the text.
+  Replacement and deletion invalidate old tokens; storage can then be reused.
+- `Label::bind_text` accepts `fn(i32, &mut dyn core::fmt::Write) -> fmt::Result`.
+  The binding owns observer context until replacement, deletion, or subject
+  teardown. `text_status()` reports asynchronous formatting errors and
+  `NotFound` when unbound. Recursive state changes that invalidate a render
+  report `Busy` unless LVGL dispatches a fresh render of the latest value.
+- All LVGL operations, including conversion allocation and storage updates,
+  require initialized LVGL and its existing lock. Callbacks already holding
+  that lock must not reacquire it. Image strings are borrowed only until the
+  widget copies them; image descriptors and pixels must remain alive.
 - Rust `ove::net_httpd::ws::send` is `unsafe`: its connection handle is a raw
   pointer that stops being valid once the connection's close callback runs.
 

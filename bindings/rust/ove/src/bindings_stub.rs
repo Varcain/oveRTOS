@@ -2397,6 +2397,101 @@ unsafe extern "C" {
     #[doc = " @brief Return the number of LEDs available on the current board.\n\n @return Number of LEDs, or 0 if none are defined."]
     pub fn ove_led_count() -> core::ffi::c_uint;
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_lvgl_text_watch {
+    _unused: [u8; 0],
+}
+pub type ove_lvgl_text_watch_t = ove_lvgl_text_watch;
+pub type ove_lvgl_text_release_fn = Option<unsafe extern "C" fn(data: *mut core::ffi::c_void)>;
+pub type ove_lvgl_text_render_fn = Option<
+    unsafe extern "C" fn(
+        obj: *mut core::ffi::c_void,
+        cookie: u32,
+        value: i32,
+        context: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int,
+>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_lvgl_text_binding_t {
+    pub render: ove_lvgl_text_render_fn,
+    pub cookie: u32,
+    pub status: core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_lvgl_text_binding_t"][core::mem::size_of::<ove_lvgl_text_binding_t>() - 16usize];
+    ["Alignment of ove_lvgl_text_binding_t"]
+        [core::mem::align_of::<ove_lvgl_text_binding_t>() - 8usize];
+    ["Offset of field: ove_lvgl_text_binding_t::render"]
+        [core::mem::offset_of!(ove_lvgl_text_binding_t, render) - 0usize];
+    ["Offset of field: ove_lvgl_text_binding_t::cookie"]
+        [core::mem::offset_of!(ove_lvgl_text_binding_t, cookie) - 8usize];
+    ["Offset of field: ove_lvgl_text_binding_t::status"]
+        [core::mem::offset_of!(ove_lvgl_text_binding_t, status) - 12usize];
+};
+unsafe extern "C" {
+    pub fn ove_lvgl_text_alloc(size: usize) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_realloc(
+        ptr: *mut core::ffi::c_void,
+        size: usize,
+    ) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_free(ptr: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_watch(
+        obj: *mut core::ffi::c_void,
+        data: *mut core::ffi::c_void,
+        release: ove_lvgl_text_release_fn,
+    ) -> *mut ove_lvgl_text_watch_t;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_watch_valid(watch: *mut ove_lvgl_text_watch_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_watch_end(watch: *mut ove_lvgl_text_watch_t);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_static(
+        obj: *mut core::ffi::c_void,
+        text: *const core::ffi::c_char,
+        data: *mut core::ffi::c_void,
+        release: ove_lvgl_text_release_fn,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_set(obj: *mut core::ffi::c_void, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_bind(
+        obj: *mut core::ffi::c_void,
+        subject: *mut core::ffi::c_void,
+        context: *mut ove_lvgl_text_binding_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_current(
+        obj: *mut core::ffi::c_void,
+        cookie: u32,
+        value: i32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_status(obj: *mut core::ffi::c_void) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_text_publish(
+        obj: *mut core::ffi::c_void,
+        cookie: u32,
+        value: i32,
+        text: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
 #[doc = " @brief Keypad read callback — the user implements this to deliver\n        key events to LVGL via ove_lvgl_register_keypad().\n\n @param[out] key      Filled with the current LV_KEY_* code if a key\n                      is pressed.\n @param[out] pressed  Filled with @c true if currently pressed,\n                      @c false if released.\n @return @c true if the callback wrote `key` and `pressed` (LVGL\n         should use them), @c false to indicate no new input."]
 pub type ove_lvgl_keypad_read_fn_t =
     Option<unsafe extern "C" fn(key: *mut u32, pressed: *mut bool) -> bool>;

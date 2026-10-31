@@ -16,15 +16,13 @@
 
 use ove_allocator as _;
 
-use core::fmt::Write;
-
 use ove::lvgl::{
     self, ANIM_REPEAT_INFINITE, Animation, Arc, Button, Calendar, Chart, Checkbox, Color, Dropdown,
     FlexAlign, FlexFlow, Image, ImageSrc, Label, Layout, LayoutKind, LvCell, Obj, PART_INDICATOR,
     PART_ITEMS, PART_KNOB, PART_MAIN, Palette, Roller, SCALE_MODE_ROUND_OUTER, Scale, Slider,
     Spinbox, Style, Styleable, Switch, Table, Tabview, Textarea,
 };
-use ove::{FmtBuf, Priority, Thread};
+use ove::{Priority, Thread};
 
 // =========================================================================
 //  Perf FFI — thin `#[allow(unsafe_code)]` glue for app-private C helpers
@@ -39,10 +37,8 @@ mod perf_ffi {
 
     use super::{PerfMetrics, SCENE, SCENES};
     use core::ffi::c_void;
-    use core::fmt::Write;
     use core::ptr::addr_of;
     use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
-    use ove::FmtBuf;
     use ove::lvgl::{self, Animation, ImageDsc, ImageSrc, Label, Layout, Obj, Tabview};
 
     // Generated C image descriptors (shipped by the LVGL C demo).
@@ -55,13 +51,13 @@ mod perf_ffi {
         fn benchmark_extract_perf_metrics(info: *const c_void, out: *mut PerfMetrics);
     }
 
-    pub fn logo_rgb() -> ImageSrc {
+    pub fn logo_rgb() -> ImageSrc<'static> {
         ImageSrc::from_dsc(addr_of!(img_benchmark_lvgl_logo_rgb))
     }
-    pub fn logo_argb() -> ImageSrc {
+    pub fn logo_argb() -> ImageSrc<'static> {
         ImageSrc::from_dsc(addr_of!(img_benchmark_lvgl_logo_argb))
     }
-    pub fn avatar() -> ImageSrc {
+    pub fn avatar() -> ImageSrc<'static> {
         ImageSrc::from_dsc(addr_of!(img_benchmark_avatar))
     }
 
@@ -104,38 +100,32 @@ mod perf_ffi {
         let label_ptr = OVERLAY_LABEL.load(Ordering::Acquire);
         if !label_ptr.is_null() {
             let label = unsafe { Label::from_raw(label_ptr) };
-            let mut buf = [0u8; 192];
-            let mut w = FmtBuf::new(&mut buf);
             let scene_idx = SCENE.get().get().current as usize;
             if scene_idx < 15 {
-                let name_bytes = SCENES[scene_idx].name;
-                let name_len = name_bytes
-                    .iter()
-                    .position(|&b| b == 0)
-                    .unwrap_or(name_bytes.len());
-                let name = core::str::from_utf8(&name_bytes[..name_len]).unwrap_or("?");
-                let _ = write!(
-                    w,
-                    "{}: {} FPS, {}% CPU\nrefr. {} ms = {} ms render + {} ms flush",
-                    name,
-                    m.fps,
-                    m.cpu,
-                    m.render_avg_time + m.flush_avg_time,
-                    m.render_avg_time,
-                    m.flush_avg_time
-                );
+                let name = SCENES[scene_idx].name;
+                label
+                    .set_text_fmt(format_args!(
+                        "{}: {} FPS, {}% CPU\nrefr. {} ms = {} ms render + {} ms flush",
+                        name,
+                        m.fps,
+                        m.cpu,
+                        m.render_avg_time + m.flush_avg_time,
+                        m.render_avg_time,
+                        m.flush_avg_time
+                    ))
+                    .expect("LVGL text");
             } else {
-                let _ = write!(
-                    w,
-                    "{} FPS, {}% CPU\nrefr. {} ms = {} ms render + {} ms flush",
-                    m.fps,
-                    m.cpu,
-                    m.render_avg_time + m.flush_avg_time,
-                    m.render_avg_time,
-                    m.flush_avg_time
-                );
+                label
+                    .set_text_fmt(format_args!(
+                        "{} FPS, {}% CPU\nrefr. {} ms = {} ms render + {} ms flush",
+                        m.fps,
+                        m.cpu,
+                        m.render_avg_time + m.flush_avg_time,
+                        m.render_avg_time,
+                        m.flush_avg_time
+                    ))
+                    .expect("LVGL text");
             }
-            label.set_text(w.as_cstr());
         }
 
         let fn_ptr = OVERLAY_FN.load(Ordering::Acquire);
@@ -289,13 +279,13 @@ fn lv_dpx(n: i32) -> i32 {
 
 #[derive(Clone, Copy)]
 struct SceneDsc {
-    name: &'static [u8],
+    name: &'static str,
     create_cb: fn(),
     scene_time: u32,
 }
 
 impl SceneDsc {
-    const fn new(name: &'static [u8], create_cb: fn(), scene_time: u32) -> Self {
+    const fn new(name: &'static str, create_cb: fn(), scene_time: u32) -> Self {
         Self {
             name,
             create_cb,
@@ -314,35 +304,31 @@ struct SceneStats {
 }
 
 static SCENES: [SceneDsc; 17] = [
-    SceneDsc::new(b"Empty screen\0", empty_screen_cb, 3000),
-    SceneDsc::new(b"Moving wallpaper\0", moving_wallpaper_cb, 3000),
-    SceneDsc::new(b"Single rectangle\0", single_rectangle_cb, 3000),
-    SceneDsc::new(b"Multiple rectangles\0", multiple_rectangles_cb, 3000),
-    SceneDsc::new(b"Multiple RGB images\0", multiple_rgb_images_cb, 3000),
-    SceneDsc::new(b"Multiple ARGB images\0", multiple_argb_images_cb, 3000),
-    SceneDsc::new(b"Rotated ARGB images\0", rotated_argb_images_cb, 3000),
-    SceneDsc::new(b"Multiple labels\0", multiple_labels_cb, 3000),
-    SceneDsc::new(b"Screen sized text\0", screen_sized_text_cb, 5000),
-    SceneDsc::new(b"Multiple arcs\0", multiple_arcs_cb, 3000),
-    SceneDsc::new(b"Containers\0", containers_cb, 3000),
+    SceneDsc::new("Empty screen", empty_screen_cb, 3000),
+    SceneDsc::new("Moving wallpaper", moving_wallpaper_cb, 3000),
+    SceneDsc::new("Single rectangle", single_rectangle_cb, 3000),
+    SceneDsc::new("Multiple rectangles", multiple_rectangles_cb, 3000),
+    SceneDsc::new("Multiple RGB images", multiple_rgb_images_cb, 3000),
+    SceneDsc::new("Multiple ARGB images", multiple_argb_images_cb, 3000),
+    SceneDsc::new("Rotated ARGB images", rotated_argb_images_cb, 3000),
+    SceneDsc::new("Multiple labels", multiple_labels_cb, 3000),
+    SceneDsc::new("Screen sized text", screen_sized_text_cb, 5000),
+    SceneDsc::new("Multiple arcs", multiple_arcs_cb, 3000),
+    SceneDsc::new("Containers", containers_cb, 3000),
+    SceneDsc::new("Containers with overlay", containers_with_overlay_cb, 3000),
+    SceneDsc::new("Containers with opa", containers_with_opa_cb, 3000),
     SceneDsc::new(
-        b"Containers with overlay\0",
-        containers_with_overlay_cb,
-        3000,
-    ),
-    SceneDsc::new(b"Containers with opa\0", containers_with_opa_cb, 3000),
-    SceneDsc::new(
-        b"Containers with opa_layer\0",
+        "Containers with opa_layer",
         containers_with_opa_layer_cb,
         3000,
     ),
     SceneDsc::new(
-        b"Containers with scrolling\0",
+        "Containers with scrolling",
         containers_with_scrolling_cb,
         5000,
     ),
-    SceneDsc::new(b"Widgets demo\0", widgets_demo_cb, 20000),
-    SceneDsc::new(b"\0", empty_screen_cb, 0),
+    SceneDsc::new("Widgets demo", widgets_demo_cb, 20000),
+    SceneDsc::new("", empty_screen_cb, 0),
 ];
 
 // =========================================================================
@@ -415,17 +401,20 @@ fn card_create() -> Obj {
 
     Image::create(panel)
         .source(perf_ffi::avatar())
+        .expect("LVGL text")
         .align(lvgl::ALIGN_LEFT_MID, 0, 0);
 
-    let name = Label::create(panel).text(b"John Smith\0");
+    let name = Label::create(panel).text("John Smith").expect("LVGL text");
     name.pos(100, 0);
 
-    let desc = Label::create(panel).text(b"A DIY enthusiast\0");
+    let desc = Label::create(panel)
+        .text("A DIY enthusiast")
+        .expect("LVGL text");
     desc.pos(100, 30);
 
     let btn = Button::create(panel);
     btn.pos(100, 50);
-    Label::create(btn).text(b"Connect\0");
+    Label::create(btn).text("Connect").expect("LVGL text");
 
     panel
 }
@@ -453,6 +442,7 @@ fn moving_wallpaper_cb() {
     let img = Image::create(scr)
         .size(lv_pct(150), lv_pct(150))
         .source(perf_ffi::logo_rgb())
+        .expect("LVGL text")
         .inner_align(LV_IMAGE_ALIGN_TILE);
     let vres = lvgl::display::height();
     shake_anim(*img, -vres / 3);
@@ -484,7 +474,7 @@ fn multiple_rectangles_cb() {
     }
 }
 
-fn images_grid(scr: Obj, src: ImageSrc, rotate: bool) {
+fn images_grid(scr: Obj, src: ImageSrc<'_>, rotate: bool) {
     set_row_wrap(
         scr,
         FlexAlign::SpaceEvenly,
@@ -498,7 +488,7 @@ fn images_grid(scr: Obj, src: ImageSrc, rotate: bool) {
     let ver = core::cmp::max((vres - 116) / 116, 1);
     for _y in 0..ver {
         for x in 0..hor {
-            let img = Image::create(scr).source(src);
+            let img = Image::create(scr).source(src).expect("LVGL text");
             if rotate {
                 img.rotation(rnd_next(100, 3500));
             }
@@ -533,13 +523,13 @@ fn multiple_labels_cb() {
     scr.pad_row(80);
 
     let font = lvgl::font_montserrat_14();
-    let (tw, th) = lvgl::text_size(b"Hello LVGL!\0", font);
+    let (tw, th) = lvgl::text_size("Hello LVGL!", font).expect("LVGL text");
     let hres = lvgl::display::width();
     let vres = lvgl::display::height();
     let cnt = core::cmp::max(((hres - 16) / (tw + 30)) * ((vres - 200) / (th + 50)), 1);
 
     for _ in 0..cnt {
-        let lbl = Label::create(scr).text(b"Hello LVGL!\0");
+        let lbl = Label::create(scr).text("Hello LVGL!").expect("LVGL text");
         color_anim(*lbl);
     }
 }
@@ -549,7 +539,7 @@ fn screen_sized_text_cb() {
     let lbl = Label::create(scr);
     lbl.width(lv_pct(100));
     lbl.text(
-        b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. \
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. \
 Nulla nec rhoncus arcu, in consectetur orci. Sed vitae dolor \
 sed nisi ultrices vehicula quis ac dolor. Vivamus hendrerit \
 hendrerit lectus, sed tempus velit suscipit in. Fusce eu \
@@ -580,8 +570,9 @@ finibus nibh vehicula elementum maximus.\n\n\
 Fusce dignissim turpis massa, eget semper purus semper at. \
 Ut et augue vitae metus laoreet auctor. Morbi tincidunt, \
 neque vel tincidunt interdum, sapien nibh finibus lorem, eu \
-eleifend diam ipsum et eros.\0",
-    );
+eleifend diam ipsum et eros.",
+    )
+    .expect("LVGL text");
     scr.update_layout();
     let scroll_bottom = scr.scroll_bottom();
     scroll_anim(scr, scroll_bottom);
@@ -727,24 +718,29 @@ fn widgets_demo_cb() {
 
     let tv = Tabview::create(scr);
     tv.tab_bar_size(40);
-    let tab1 = tv.add_tab(b"Form\0");
-    let tab2 = tv.add_tab(b"Gauges\0");
-    let tab3 = tv.add_tab(b"Pickers\0");
+    let tab1 = tv.add_tab("Form").expect("LVGL text");
+    let tab2 = tv.add_tab("Gauges").expect("LVGL text");
+    let tab3 = tv.add_tab("Pickers").expect("LVGL text");
 
     // Tab 1: Form
     tab1.flex_flow(FlexFlow::Column).pad_row(10).pad_column(10);
     Textarea::create(tab1)
         .one_line(true)
-        .placeholder(b"Username\0")
+        .placeholder("Username")
+        .expect("LVGL text")
         .width(lv_pct(90));
     Dropdown::create(tab1)
-        .options_static(b"Option A\nOption B\nOption C\0")
+        .options("Option A\nOption B\nOption C")
+        .expect("LVGL text")
         .width(lv_pct(90));
     Slider::create(tab1).value(40).width(lv_pct(90));
     Switch::create(tab1).checked(true);
-    Checkbox::create(tab1).text(b"I agree\0");
+    Checkbox::create(tab1).text("I agree").expect("LVGL text");
     let btn = Button::create(tab1).width(lv_pct(90));
-    Label::create(btn).text(b"Submit\0").center();
+    Label::create(btn)
+        .text("Submit")
+        .expect("LVGL text")
+        .center();
 
     // Tab 2: Gauges
     tab2.flex_flow(FlexFlow::RowWrap)
@@ -851,9 +847,10 @@ fn widgets_demo_cb() {
         .showed(2026, 4);
     Roller::create(tab3)
         .options(
-            b"Mon\nTue\nWed\nThu\nFri\nSat\nSun\0",
+            "Mon\nTue\nWed\nThu\nFri\nSat\nSun",
             lvgl::ROLLER_MODE_NORMAL,
         )
+        .expect("LVGL text")
         .visible_row_count(3);
     Spinbox::create(tab3).range(0, 100).value(42).step(1);
 
@@ -959,10 +956,14 @@ fn summary_create() {
 
     table
         .column_count(4)
-        .cell_value(0, 0, b"Name\0")
-        .cell_value(0, 1, b"Avg. CPU\0")
-        .cell_value(0, 2, b"Avg. FPS\0")
-        .cell_value(0, 3, b"Avg. time (render + flush)\0");
+        .cell_value(0, 0, "Name")
+        .expect("LVGL text")
+        .cell_value(0, 1, "Avg. CPU")
+        .expect("LVGL text")
+        .cell_value(0, 2, "Avg. FPS")
+        .expect("LVGL text")
+        .cell_value(0, 3, "Avg. time (render + flush)")
+        .expect("LVGL text");
 
     log::info!("Benchmark Summary");
     log::info!("Name, Avg. CPU, Avg. FPS, Avg. time, render, flush");
@@ -983,13 +984,16 @@ fn summary_create() {
     for i in 0..15u32 {
         let idx = i as usize;
         let name = SCENES[idx].name;
-        table.cell_value(i + 2, 0, name);
+        table.cell_value(i + 2, 0, name).expect("LVGL text");
 
         if stats[idx].measurement_cnt <= 1 {
             table
-                .cell_value(i + 2, 1, b"N/A\0")
-                .cell_value(i + 2, 2, b"N/A\0")
-                .cell_value(i + 2, 3, b"N/A\0");
+                .cell_value(i + 2, 1, "N/A")
+                .expect("LVGL text")
+                .cell_value(i + 2, 2, "N/A")
+                .expect("LVGL text")
+                .cell_value(i + 2, 3, "N/A")
+                .expect("LVGL text");
         } else {
             let cnt = stats[idx].measurement_cnt - 1;
             let cpu = stats[idx].cpu_avg_usage / cnt;
@@ -997,23 +1001,23 @@ fn summary_create() {
             let render = stats[idx].render_avg_time / cnt;
             let flush = stats[idx].flush_avg_time / cnt;
 
-            let mut buf1 = [0u8; 32];
-            let mut w1 = FmtBuf::new(&mut buf1);
-            let _ = write!(w1, "{} %", cpu);
-            table.cell_value(i + 2, 1, w1.as_cstr());
+            table
+                .cell_value_fmt(i + 2, 1, format_args!("{} %", cpu))
+                .expect("LVGL text");
 
-            let mut buf2 = [0u8; 32];
-            let mut w2 = FmtBuf::new(&mut buf2);
-            let _ = write!(w2, "{} FPS", fps);
-            table.cell_value(i + 2, 2, w2.as_cstr());
+            table
+                .cell_value_fmt(i + 2, 2, format_args!("{} FPS", fps))
+                .expect("LVGL text");
 
-            let mut buf3 = [0u8; 48];
-            let mut w3 = FmtBuf::new(&mut buf3);
-            let _ = write!(w3, "{} ms ({} + {})", render + flush, render, flush);
-            table.cell_value(i + 2, 3, w3.as_cstr());
+            table
+                .cell_value_fmt(
+                    i + 2,
+                    3,
+                    format_args!("{} ms ({} + {})", render + flush, render, flush),
+                )
+                .expect("LVGL text");
 
-            let name_len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-            let name_str = core::str::from_utf8(&name[..name_len]).unwrap_or("?");
+            let name_str = name;
             log::info!(
                 "{}, {}%, {}, {}, {}, {}",
                 name_str,
@@ -1032,38 +1036,43 @@ fn summary_create() {
         }
     }
 
-    table.cell_value(1, 0, b"All scenes avg.\0");
+    table
+        .cell_value(1, 0, "All scenes avg.")
+        .expect("LVGL text");
     if valid < 1 {
         table
-            .cell_value(1, 1, b"N/A\0")
-            .cell_value(1, 2, b"N/A\0")
-            .cell_value(1, 3, b"N/A\0");
+            .cell_value(1, 1, "N/A")
+            .expect("LVGL text")
+            .cell_value(1, 2, "N/A")
+            .expect("LVGL text")
+            .cell_value(1, 3, "N/A")
+            .expect("LVGL text");
     } else {
         let avg_cpu = total_cpu / valid;
         let avg_fps = total_fps / valid;
         let avg_render = total_render / valid;
         let avg_flush = total_flush / valid;
 
-        let mut buf1 = [0u8; 32];
-        let mut w1 = FmtBuf::new(&mut buf1);
-        let _ = write!(w1, "{} %", avg_cpu);
-        table.cell_value(1, 1, w1.as_cstr());
+        table
+            .cell_value_fmt(1, 1, format_args!("{} %", avg_cpu))
+            .expect("LVGL text");
 
-        let mut buf2 = [0u8; 32];
-        let mut w2 = FmtBuf::new(&mut buf2);
-        let _ = write!(w2, "{} FPS", avg_fps);
-        table.cell_value(1, 2, w2.as_cstr());
+        table
+            .cell_value_fmt(1, 2, format_args!("{} FPS", avg_fps))
+            .expect("LVGL text");
 
-        let mut buf3 = [0u8; 48];
-        let mut w3 = FmtBuf::new(&mut buf3);
-        let _ = write!(
-            w3,
-            "{} ms ({} + {})",
-            avg_render + avg_flush,
-            avg_render,
-            avg_flush
-        );
-        table.cell_value(1, 3, w3.as_cstr());
+        table
+            .cell_value_fmt(
+                1,
+                3,
+                format_args!(
+                    "{} ms ({} + {})",
+                    avg_render + avg_flush,
+                    avg_render,
+                    avg_flush
+                ),
+            )
+            .expect("LVGL text");
 
         log::info!(
             "All avg, {}%, {}, {}, {}, {}",
@@ -1164,11 +1173,12 @@ fn app_main() {
         SCENE_TIMER.init(lvgl::Timer::new_fn(next_scene_tick, scene_time));
 
         if !perf_ffi::register_perf_overlay(title, perf_tick) {
-            title.set_text(b"Perf monitor unavailable\0");
+            title
+                .set_text("Perf monitor unavailable")
+                .expect("LVGL text");
         }
     }
 
     log::info!("LVGL benchmark (Rust): running");
     ove::run();
 }
-

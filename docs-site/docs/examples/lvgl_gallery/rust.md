@@ -2,7 +2,7 @@
 
 Source: `apps/rust/heap/lvgl_gallery/src/lib.rs`.
 
-The Rust port uses `ove::lvgl::*` safe wrappers and `ove::lvgl::lock()` for the build phase. The `alloc` feature is enabled so that the `Vec<Page>` storage and any closure-based callbacks (`on_change`, `on_click`) can be allocated on the heap.
+The Rust port uses `ove::lvgl::*` safe wrappers and `ove::lvgl::lock()` for the build phase. Widget text uses ordinary `&str`. The binding checks and converts it privately; formatted text uses `format_args!` and reports preparation failures through `Result`.
 
 ## Build
 
@@ -13,48 +13,59 @@ make && make run
 
 ## Page builders
 
+Each page is a plain `fn(Obj)` that builds widgets into the content area:
+
 ```rust
-fn build_slider_page(parent: &lvgl::Object) {
-    let slider = lvgl::Slider::new(parent);
-    slider.set_size(200, 12).center();
-    slider.set_range(0, 100).set_value(42);
-    slider.on_change(|v| { /* … */ });
+fn p_slider(c: Obj) {
+    Slider::create(c)
+        .size(300, 20)
+        .range(0, 100)
+        .value(50)
+        .indicator_color(Color::hex(0x4CAF50))
+        .center();
 }
 ```
-
-The `on_change` closure captures by move; the binding boxes it and stores the box inside the LVGL widget's user data. Drop ordering: dropping the wrapper unregisters the callback before freeing the box, so there's no use-after-free.
 
 ## Page table
 
 ```rust
-struct Page {
-    name: &'static str,
-    build: fn(&lvgl::Object),
-}
+type PageFn = fn(Obj);
 
-static PAGES: &[Page] = &[
-    Page { name: "Object", build: build_object_page },
-    Page { name: "Label",  build: build_label_page  },
-    Page { name: "Slider", build: build_slider_page },
+static PAGES: &[(&str, PageFn)] = &[
+    ("Label", p_label),
+    ("Button", p_button),
+    ("Slider", p_slider),
     /* … */
 ];
 ```
 
-`'static` references everywhere — no allocator pressure for the table itself.
+`'static` string names and function pointers: no allocator pressure for
+the table itself. Showing a page builds it and puts its name in the title
+label, formatted by the binding:
+
+```rust
+let name = PAGES[page].0;
+lbl.set_text_fmt(format_args!("{} ({}/{})", name, nav.page + 1, N_PAGES))
+    .expect("title text");
+```
 
 ## Entry point
+
+`app_main` builds the UI under `ove::lvgl::lock()`. A detached graphics
+thread runs LVGL's tick and handler:
 
 ```rust
 #[ove::main]
 fn app_main() {
-    let _guard = ove::lvgl::lock();
-    let screen = lvgl::Object::active_screen();
-    let tabs = lvgl::TabView::new(&screen, lvgl::Direction::Top, 40);
-    for page in PAGES {
-        let tab = tabs.add_tab(page.name);
-        (page.build)(&tab);
-    }
-    drop(_guard);   /* release before run() */
+    ove::log::try_init();
+    ove::Thread::builder()
+        .name(c"graphics")
+        .priority(Priority::High)
+        .stack_size(16384)
+        .spawn(|_tok| graphics_entry())
+        .expect("graphics thread spawn")
+        .detach();
+    /* … create the UI, then */
     ove::run();
 }
 ```
@@ -65,13 +76,12 @@ fn app_main() {
 
 ```toml
 [dependencies]
-ove = { path = "../../../../bindings/rust/ove",
-        features = ["alloc", "lvgl"] }
+ove = { path = "../../../../bindings/rust/ove", features = ["alloc"] }
 ove-allocator = { path = "../../../../bindings/rust/ove-allocator",
                   default-features = false }
 ```
 
-The `alloc` feature is required for closure capture; the `lvgl` feature pulls in the widget wrappers.
+The LVGL widget wrappers come with the build's `CONFIG_OVE_LVGL`, not a Cargo feature.
 
 ## Where to next
 
