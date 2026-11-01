@@ -178,6 +178,14 @@ OVE_NODISCARD int ove_audio_graph_add_node(struct ove_audio_graph *g,
 					   const struct ove_audio_node_ops *ops, void *ctx,
 					   const char *name, enum ove_audio_node_type type);
 
+/** Register a borrowed counted diagnostic name, retained until deinit.
+ * Name must be non-NULL, contain no NUL within name_len bytes, and remain
+ * alive while registered. Empty names are allowed. No byte copy/allocation. */
+OVE_NODISCARD int ove_audio_graph_add_node_n(struct ove_audio_graph *g,
+					     const struct ove_audio_node_ops *ops, void *ctx,
+					     const char *name, size_t name_len,
+					     enum ove_audio_node_type type);
+
 /**
  * @brief Connect two nodes with a directed edge.
  *

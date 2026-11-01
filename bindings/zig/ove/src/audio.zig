@@ -31,7 +31,8 @@ const pin = @import("pin.zig");
 /// the buffers internally; with it, `build` uses the caller's storage.
 ///
 /// The graph keeps every node `name` it is given, not a copy: pass strings
-/// that outlive it (literals, typically).
+/// that outlive it (literals, typically). Native descriptors store counted
+/// `name_span.data/len`; counted callers need no NUL, so readers use the length.
 pub const Graph = struct {
     raw: c.struct_ove_audio_graph,
     tracker: pin.Tracker,

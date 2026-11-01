@@ -43,6 +43,25 @@
 #include <time.h>
 #include <unistd.h>
 
+/* Inject a transport failure after preparation to observe fallback behavior. */
+static int send_fault, send_calls;
+int __real_ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent);
+int __wrap_ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent)
+{
+	int fault = __atomic_load_n(&send_fault, __ATOMIC_ACQUIRE);
+	if (fault) {
+		__atomic_add_fetch(&send_calls, 1, __ATOMIC_ACQ_REL);
+		if (fault == 2) {
+			__atomic_store_n(&send_fault, 1, __ATOMIC_RELEASE);
+			return __real_ove_socket_send(sock, data, len < 7 ? len : 7, sent);
+		}
+		__atomic_store_n(&send_fault, 0, __ATOMIC_RELEASE);
+		*sent = 0;
+		return OVE_ERR_NOT_SUPPORTED;
+	}
+	return __real_ove_socket_send(sock, data, len, sent);
+}
+
 static int g_port;
 static unsigned long g_httpd_tid;
 static int g_close_count;
@@ -900,10 +919,249 @@ static void test_log_before_builtin_routes(void **state)
 	assert_int_equal(run_case(case_log_before_routes, 0), 0);
 }
 
+static int case_route_bounds(int websocket)
+{
+	char long_path[65];
+	memset(long_path, 'p', sizeof(long_path) - 1);
+	long_path[0] = '/';
+	long_path[64] = 0;
+	if (websocket) {
+		if (ove_httpd_ws_route(long_path, NULL, NULL) != OVE_ERR_NAME_TOO_LONG)
+			return 1;
+	} else {
+		if (ove_httpd_route("TOOLONG!", "/ok", ok_route) != OVE_ERR_NAME_TOO_LONG ||
+		    ove_httpd_route("GET", long_path, ok_route) != OVE_ERR_NAME_TOO_LONG)
+			return 1;
+	}
+	for (unsigned i = 0; i < (websocket ? 4u : OVE_HTTPD_MAX_ROUTES); ++i) {
+		long_path[63] = 0;
+		long_path[62] = (char)('a' + i);
+		int rc = websocket ? ove_httpd_ws_route(long_path, NULL, NULL)
+				   : ove_httpd_route("METHOD7", long_path, ok_route);
+		if (rc != OVE_OK)
+			return 2;
+	}
+	return 0;
+}
+
+static void test_route_bounds_before_claim(void **state)
+{
+	(void)state;
+	for (int websocket = 0; websocket < 2; ++websocket) {
+		pid_t child = fork();
+		assert_true(child >= 0);
+		if (child == 0) {
+			alarm(5);
+			_exit(case_route_bounds(websocket));
+		}
+		int status = 0;
+		assert_int_equal(waitpid(child, &status, 0), child);
+		assert_true(WIFEXITED(status));
+		assert_int_equal(WEXITSTATUS(status), 0);
+	}
+}
+
+static int response_mode, response_result;
+static int counted_response(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
+{
+	(void)req;
+	static const char body[] = {'A', 0, 'B'};
+	char text[256];
+	memset(text, 'x', sizeof(text));
+	int rc;
+	switch (response_mode) {
+	case 0:
+		rc = ove_httpd_resp_send_n(resp, 200, "application/octet-streamsuffix", 24, body,
+					   sizeof(body));
+		break;
+	case 1:
+		rc = ove_httpd_resp_send_gz_n(resp, 200, "application/octet-streamsuffix", 24, body,
+					      sizeof(body));
+		break;
+	case 2:
+		rc = ove_httpd_resp_send_n(resp, 200, "text/plain\0suffix", 17, body, sizeof(body));
+		break;
+	case 3:
+		rc = ove_httpd_resp_send_n(resp, 200, text, sizeof(text), body, sizeof(body));
+		break;
+	case 4:
+		text[0] = '"'; /* two encoded bytes plus 189 = the exact 191-byte limit */
+		rc = ove_httpd_resp_error_n(resp, 400, text, 190);
+		break;
+	case 5:
+		text[0] = '"';
+		rc = ove_httpd_resp_error_n(resp, 400, text, 191);
+		break;
+	case 6:
+		rc = ove_httpd_resp_error_n(resp, 400, "bad\0tail", 8);
+		if (rc == OVE_ERR_INVALID_PARAM)
+			rc = ove_httpd_resp_send_n(resp, 200, "application/octet-stream", 24, body,
+						   sizeof(body));
+		break;
+	case 11:
+	case 14:
+	case 15:
+		rc = ove_httpd_resp_send_n(resp, 200, "text/plain\0suffix", 17, body, sizeof(body));
+		if (response_mode >= 14)
+			__atomic_store_n(&send_fault, response_mode == 14 ? 1 : 2,
+					 __ATOMIC_RELEASE);
+		break;
+	case 12:
+		rc = ove_httpd_resp_send_n(resp, 200, text, sizeof(text), body, sizeof(body));
+		break;
+	case 13:
+		rc = ove_httpd_resp_error_n(resp, 400, text, 192);
+		break;
+	case 9:
+		rc = ove_httpd_resp_error_n(resp, 400, "é\\\n\001", 5);
+		break;
+	case 10: {
+		static const char prefix[] = "HTTP/1.1 200 OK\r\nContent-Type: ";
+		static const char suffix[] =
+			"\r\nContent-Length: 3\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+		size_t max_type =
+			OVE_HTTPD_HEADER_SIZE - 1 - (sizeof(prefix) - 1) - (sizeof(suffix) - 1);
+		rc = ove_httpd_resp_send_n(resp, 200, text, max_type + 1, body, sizeof(body));
+		if (rc == OVE_ERR_NO_MEMORY)
+			rc = ove_httpd_resp_send_n(resp, 200, text, max_type, body, sizeof(body));
+		break;
+	}
+	default:
+		__atomic_store_n(&send_fault, response_mode == 7 ? 1 : 2, __ATOMIC_RELEASE);
+		rc = ove_httpd_resp_json(resp, 200, "{}");
+		break;
+	}
+	__atomic_store_n(&response_result, rc, __ATOMIC_RELEASE);
+	return response_mode >= 11 ? rc : OVE_OK;
+}
+
+static int case_counted_response(int mode)
+{
+	response_mode = mode;
+	if (ove_httpd_route("GET", "/counted", counted_response) != OVE_OK ||
+	    start_server() != OVE_OK)
+		return 2;
+	int fd = cli_connect();
+	static const char request[] = "GET /counted HTTP/1.1\r\nHost: localhost\r\n\r\n";
+	if (fd < 0 || send(fd, request, sizeof(request) - 1, MSG_NOSIGNAL) != sizeof(request) - 1)
+		return 2;
+	uint8_t bytes[1024];
+	int eof;
+	size_t len = cli_read(fd, bytes, sizeof(bytes) - 1, 3000, &eof);
+	close(fd);
+	ove_httpd_stop();
+	bytes[len] = 0;
+	int rc = __atomic_load_n(&response_result, __ATOMIC_ACQUIRE);
+	if (mode >= 14)
+		return rc != OVE_ERR_INVALID_PARAM || len != (mode == 14 ? 0u : 7u) ||
+		       __atomic_load_n(&send_calls, __ATOMIC_ACQUIRE) != (mode == 14 ? 1 : 2);
+	if (mode >= 11) {
+		int expected = mode == 11   ? OVE_ERR_INVALID_PARAM
+			       : mode == 12 ? OVE_ERR_NO_MEMORY
+					    : OVE_ERR_NO_SPACE;
+		const char body[] = "{\"error\":\"internal error\"}";
+		char *delimiter = strstr((char *)bytes, "\r\n\r\n");
+		return rc != expected || strncmp((char *)bytes, "HTTP/1.1 500", 12) != 0 ||
+		       !delimiter ||
+		       len - (size_t)(delimiter + 4 - (char *)bytes) != sizeof(body) - 1 ||
+		       memcmp(delimiter + 4, body, sizeof(body) - 1) != 0;
+	}
+	if (mode == 7 || mode == 8)
+		return rc != OVE_ERR_NOT_SUPPORTED || len != (mode == 7 ? 0u : 7u) ||
+		       __atomic_load_n(&send_calls, __ATOMIC_ACQUIRE) != (mode == 7 ? 1 : 2);
+	if (mode == 2 || mode == 3 || mode == 5) {
+		int expected = mode == 2   ? OVE_ERR_INVALID_PARAM
+			       : mode == 3 ? OVE_ERR_NO_MEMORY
+					   : OVE_ERR_NO_SPACE;
+		return rc != expected || strncmp((char *)bytes, "HTTP/1.1 404", 12) != 0;
+	}
+	if (rc != OVE_OK)
+		return 3;
+	char *body = strstr((char *)bytes, "\r\n\r\n");
+	if (!body)
+		return 4;
+	body += 4;
+	size_t body_len = len - (size_t)(body - (char *)bytes);
+	if (mode == 9) {
+		const char expected[] = "{\"error\":\"é\\\\\\n\\u0001\"}";
+		return body_len != sizeof(expected) - 1 ||
+		       memcmp(body, expected, sizeof(expected) - 1) != 0;
+	}
+	if (mode == 10)
+		return (size_t)(body - (char *)bytes) != 255 || body_len != 3 ||
+		       memcmp(body, "A\0B", 3) != 0;
+	if (mode == 4)
+		return body_len != 203 || memcmp(body, "{\"error\":\"\\\"", 12) != 0 ||
+		       memcmp(body + body_len - 2, "\"}", 2) != 0;
+	const char *header =
+		mode == 1
+			? "Content-Type: application/octet-stream\r\nContent-Encoding: gzip\r\nContent-Length: 3\r\n"
+			: "Content-Type: application/octet-stream\r\nContent-Length: 3\r\n";
+	return !strstr((char *)bytes, header) || body_len != 3 || memcmp(body, "A\0B", 3) != 0;
+}
+
+static void test_counted_responses(void **state)
+{
+	(void)state;
+	for (int mode = 0; mode < 16; ++mode) {
+		say("counted response mode=%d", mode);
+		assert_int_equal(run_case(case_counted_response, mode), 0);
+	}
+}
+
+static int case_counted_log(int unused)
+{
+	(void)unused;
+	ove_httpd_register_builtin_routes();
+	if (start_server() != OVE_OK)
+		return 2;
+	int fd = ws_open("/ws/log");
+	if (fd < 0)
+		return 2;
+	char text[601], frame[1024];
+	memset(text, 'L', 600);
+	text[600] = 'T'; /* no trailing NUL; only the counted prefix is a log line */
+	if (ove_httpd_log_append_n(text, 600) != OVE_OK ||
+	    ws_recv(fd, frame, sizeof(frame), 2000) != 1 || strlen(frame) != 600 ||
+	    memcmp(frame, text, 600) != 0)
+		return 3;
+	text[599] = 0;
+	if (ove_httpd_log_append_n(text, 600) != OVE_ERR_INVALID_PARAM ||
+	    ws_recv(fd, frame, sizeof(frame), 100) != -1)
+		return 4;
+	close(fd);
+	int client = cli_connect();
+	const char req[] = "GET /api/log HTTP/1.1\r\nHost: localhost\r\n\r\n";
+	if (client < 0 || send(client, req, sizeof(req) - 1, MSG_NOSIGNAL) != sizeof(req) - 1)
+		return 2;
+	uint8_t ring[8192];
+	int eof;
+	size_t n = cli_read(client, ring, sizeof(ring) - 1, 3000, &eof);
+	ring[n] = 0;
+	close(client);
+	ove_httpd_stop();
+	char needle[129];
+	memset(needle, 'L', 128);
+	needle[128] = 0;
+	if (strstr((char *)ring, needle))
+		return 5;
+	needle[127] = 0;
+	return strstr((char *)ring, needle) == NULL;
+}
+
+static void test_counted_log_ring_and_websocket(void **state)
+{
+	(void)state;
+	assert_int_equal(run_case(case_counted_log, 0), 0);
+}
+
 /* An optional argument picks the tests to run by name (cmocka pattern). */
 int main(int argc, char **argv)
 {
 	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_route_bounds_before_claim),
+		cmocka_unit_test(test_counted_responses),
+		cmocka_unit_test(test_counted_log_ring_and_websocket),
 		cmocka_unit_test(test_ws_survives_http_request),
 		cmocka_unit_test(test_ws_survives_queued_http_request),
 		cmocka_unit_test(test_ws_failed_send_calls_on_close),

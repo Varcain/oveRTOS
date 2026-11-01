@@ -135,6 +135,8 @@ pub const OVE_BLOCK_F_MEDIA_PRESENT: u32 = 4;
 pub const OVE_BLOCK_OPEN_WRITE: u32 = 1;
 pub const OVE_EG_WAIT_ALL: u32 = 1;
 pub const OVE_EG_CLEAR_ON_EXIT: u32 = 2;
+#[doc = " Upper staging envelope including NUL, shared with file-backed NVS paths."]
+pub const OVE_NVS_KEY_BUFFER_SIZE: u32 = 96;
 pub const OVE_SHELL_MAX_ARGS: u32 = 8;
 pub const OVE_SOCK_POLLIN: u32 = 1;
 pub const OVE_SOCK_POLLOUT: u32 = 4;
@@ -148,6 +150,11 @@ pub const OVE_NETIF_FLAG_BROADCAST: u32 = 2;
 pub const OVE_NETIF_FLAG_LOOPBACK: u32 = 4;
 pub const OVE_NETIF_FLAG_RUNNING: u32 = 8;
 pub const OVE_NETIF_FLAG_MULTICAST: u32 = 16;
+#[doc = " Native string/output capacities, in bytes including terminators."]
+pub const OVE_HTTPD_METHOD_SIZE: u32 = 8;
+pub const OVE_HTTPD_ROUTE_SIZE: u32 = 64;
+pub const OVE_HTTPD_HEADER_SIZE: u32 = 256;
+pub const OVE_HTTPD_ERROR_ESCAPED_SIZE: u32 = 192;
 pub const OVE_HTTPD_MAX_ROUTES: u32 = 16;
 pub const OVE_HTTPD_MAX_SEGMENTS: u32 = 8;
 pub const OVE_I2C_REG_WRITE_MAX: u32 = 32;
@@ -433,7 +440,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Feed a log line into the httpd log ring buffer.\n\n Call from the log output hook to capture lines for GET /api/log."]
+    #[doc = " @brief Feed a log line into the httpd log ring buffer.\n\n Call from the log output hook to capture lines for GET /api/log. The ring\n keeps a 127-byte prefix; WebSocket clients receive the complete line.\n This void adapter does not report validation or delivery failures."]
     pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
 }
 unsafe extern "C" {
@@ -1291,12 +1298,11 @@ pub const OVE_AUDIO_NODE_PROCESSOR: ove_audio_node_type = 1;
 pub const OVE_AUDIO_NODE_SINK: ove_audio_node_type = 2;
 #[doc = " @brief Role of a node within the audio graph."]
 pub type ove_audio_node_type = core::ffi::c_uint;
-#[doc = " @brief Descriptor for a single node in the audio graph.\n\n Populated by ove_audio_graph_add_node() and stored inside\n @c ove_audio_graph::nodes[]."]
+#[doc = " @brief Descriptor for a single node in the audio graph.\n\n Populated by ove_audio_graph_add_node() and stored inside\n @c ove_audio_graph::nodes[]. The public descriptor now represents names\n as name_span.data/len rather than a C-string pointer: readers must use\n the byte count, not strlen or %s. This changes its source layout and ABI;\n rebuild consumers together. Names remain borrowed until graph deinit."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_audio_node {
-    #[doc = "< @brief Human-readable node name."]
-    pub name: *const core::ffi::c_char,
+    pub name_span: ove_audio_node__bindgen_ty_1,
     #[doc = "< @brief Source, processor, or sink."]
     pub type_: ove_audio_node_type,
     #[doc = "< @brief Vtable for this node."]
@@ -1306,17 +1312,37 @@ pub struct ove_audio_node {
     #[doc = "< @brief Output format resolved during graph build."]
     pub out_fmt: ove_audio_fmt,
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_node__bindgen_ty_1 {
+    #[doc = "< Borrowed diagnostic bytes; not necessarily terminated."]
+    pub data: *const core::ffi::c_char,
+    #[doc = "< Byte length, excluding any C terminator."]
+    pub len: usize,
+}
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_audio_node"][core::mem::size_of::<ove_audio_node>() - 48usize];
+    ["Size of ove_audio_node__bindgen_ty_1"]
+        [core::mem::size_of::<ove_audio_node__bindgen_ty_1>() - 16usize];
+    ["Alignment of ove_audio_node__bindgen_ty_1"]
+        [core::mem::align_of::<ove_audio_node__bindgen_ty_1>() - 8usize];
+    ["Offset of field: ove_audio_node__bindgen_ty_1::data"]
+        [core::mem::offset_of!(ove_audio_node__bindgen_ty_1, data) - 0usize];
+    ["Offset of field: ove_audio_node__bindgen_ty_1::len"]
+        [core::mem::offset_of!(ove_audio_node__bindgen_ty_1, len) - 8usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_node"][core::mem::size_of::<ove_audio_node>() - 56usize];
     ["Alignment of ove_audio_node"][core::mem::align_of::<ove_audio_node>() - 8usize];
-    ["Offset of field: ove_audio_node::name"][core::mem::offset_of!(ove_audio_node, name) - 0usize];
+    ["Offset of field: ove_audio_node::name_span"]
+        [core::mem::offset_of!(ove_audio_node, name_span) - 0usize];
     ["Offset of field: ove_audio_node::type_"]
-        [core::mem::offset_of!(ove_audio_node, type_) - 8usize];
-    ["Offset of field: ove_audio_node::ops"][core::mem::offset_of!(ove_audio_node, ops) - 16usize];
-    ["Offset of field: ove_audio_node::ctx"][core::mem::offset_of!(ove_audio_node, ctx) - 24usize];
+        [core::mem::offset_of!(ove_audio_node, type_) - 16usize];
+    ["Offset of field: ove_audio_node::ops"][core::mem::offset_of!(ove_audio_node, ops) - 24usize];
+    ["Offset of field: ove_audio_node::ctx"][core::mem::offset_of!(ove_audio_node, ctx) - 32usize];
     ["Offset of field: ove_audio_node::out_fmt"]
-        [core::mem::offset_of!(ove_audio_node, out_fmt) - 32usize];
+        [core::mem::offset_of!(ove_audio_node, out_fmt) - 40usize];
 };
 #[doc = " @brief Channel routing table used by ove_audio_node_channel_map().\n\n Describes a remapping from any number of input channels to\n @c out_channels output channels.  Each entry in @c map gives the\n zero-based input channel index for the corresponding output channel;\n a value of -1 produces silence on that output channel."]
 #[repr(C)]
@@ -1464,36 +1490,36 @@ pub struct ove_audio_graph {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_audio_graph"][core::mem::size_of::<ove_audio_graph>() - 1416usize];
+    ["Size of ove_audio_graph"][core::mem::size_of::<ove_audio_graph>() - 1544usize];
     ["Alignment of ove_audio_graph"][core::mem::align_of::<ove_audio_graph>() - 8usize];
     ["Offset of field: ove_audio_graph::nodes"]
         [core::mem::offset_of!(ove_audio_graph, nodes) - 0usize];
     ["Offset of field: ove_audio_graph::node_count"]
-        [core::mem::offset_of!(ove_audio_graph, node_count) - 768usize];
+        [core::mem::offset_of!(ove_audio_graph, node_count) - 896usize];
     ["Offset of field: ove_audio_graph::edges"]
-        [core::mem::offset_of!(ove_audio_graph, edges) - 772usize];
+        [core::mem::offset_of!(ove_audio_graph, edges) - 900usize];
     ["Offset of field: ove_audio_graph::edge_count"]
-        [core::mem::offset_of!(ove_audio_graph, edge_count) - 900usize];
+        [core::mem::offset_of!(ove_audio_graph, edge_count) - 1028usize];
     ["Offset of field: ove_audio_graph::exec_order"]
-        [core::mem::offset_of!(ove_audio_graph, exec_order) - 904usize];
+        [core::mem::offset_of!(ove_audio_graph, exec_order) - 1032usize];
     ["Offset of field: ove_audio_graph::exec_count"]
-        [core::mem::offset_of!(ove_audio_graph, exec_count) - 968usize];
+        [core::mem::offset_of!(ove_audio_graph, exec_count) - 1096usize];
     ["Offset of field: ove_audio_graph::buffers"]
-        [core::mem::offset_of!(ove_audio_graph, buffers) - 976usize];
+        [core::mem::offset_of!(ove_audio_graph, buffers) - 1104usize];
     ["Offset of field: ove_audio_graph::buf_storage"]
-        [core::mem::offset_of!(ove_audio_graph, buf_storage) - 1360usize];
+        [core::mem::offset_of!(ove_audio_graph, buf_storage) - 1488usize];
     ["Offset of field: ove_audio_graph::buf_storage_size"]
-        [core::mem::offset_of!(ove_audio_graph, buf_storage_size) - 1368usize];
+        [core::mem::offset_of!(ove_audio_graph, buf_storage_size) - 1496usize];
     ["Offset of field: ove_audio_graph::frames_per_period"]
-        [core::mem::offset_of!(ove_audio_graph, frames_per_period) - 1376usize];
+        [core::mem::offset_of!(ove_audio_graph, frames_per_period) - 1504usize];
     ["Offset of field: ove_audio_graph::state"]
-        [core::mem::offset_of!(ove_audio_graph, state) - 1380usize];
+        [core::mem::offset_of!(ove_audio_graph, state) - 1508usize];
     ["Offset of field: ove_audio_graph::stats"]
-        [core::mem::offset_of!(ove_audio_graph, stats) - 1384usize];
+        [core::mem::offset_of!(ove_audio_graph, stats) - 1512usize];
     ["Offset of field: ove_audio_graph::busy"]
-        [core::mem::offset_of!(ove_audio_graph, busy) - 1408usize];
+        [core::mem::offset_of!(ove_audio_graph, busy) - 1536usize];
     ["Offset of field: ove_audio_graph::stopping"]
-        [core::mem::offset_of!(ove_audio_graph, stopping) - 1412usize];
+        [core::mem::offset_of!(ove_audio_graph, stopping) - 1540usize];
 };
 unsafe extern "C" {
     #[doc = " @brief Initialise an audio graph.\n\n Sets up internal state and records the processing period size.  Must\n be called before any other graph function.\n\n @param[in] g                  Graph instance to initialise.\n @param[in] frames_per_period  Number of audio frames processed per cycle.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_deinit"]
@@ -1513,6 +1539,17 @@ unsafe extern "C" {
         ops: *const ove_audio_node_ops,
         ctx: *mut core::ffi::c_void,
         name: *const core::ffi::c_char,
+        type_: ove_audio_node_type,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Register a borrowed counted diagnostic name, retained until deinit.\n Name must be non-NULL, contain no NUL within name_len bytes, and remain\n alive while registered. Empty names are allowed. No byte copy/allocation."]
+    pub fn ove_audio_graph_add_node_n(
+        g: *mut ove_audio_graph,
+        ops: *const ove_audio_node_ops,
+        ctx: *mut core::ffi::c_void,
+        name: *const core::ffi::c_char,
+        name_len: usize,
         type_: ove_audio_node_type,
     ) -> core::ffi::c_int;
 }
@@ -1682,6 +1719,24 @@ unsafe extern "C" {
         g: *mut ove_audio_graph,
         cfg: *const ove_audio_device_cfg,
         name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Counted device factory variants. The graph retains the validated name\n span until deinit; it need not have a trailing NUL."]
+    pub fn ove_audio_device_source_n(
+        g: *mut ove_audio_graph,
+        cfg: *const ove_audio_device_cfg,
+        name: *const core::ffi::c_char,
+        name_len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Counted sink factory; same retained-name contract as\n ove_audio_device_source_n(). Empty names are allowed; NUL is invalid."]
+    pub fn ove_audio_device_sink_n(
+        g: *mut ove_audio_graph,
+        cfg: *const ove_audio_device_cfg,
+        name: *const core::ffi::c_char,
+        name_len: usize,
     ) -> core::ffi::c_int;
 }
 #[doc = " @brief Directory entry descriptor returned by @ref ove_fs_readdir."]
@@ -2617,7 +2672,7 @@ unsafe extern "C" {
     pub fn ove_workqueue_deinit(wq: ove_workqueue_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a work item using caller-provided static storage.\n\n Associates the @p handler function with the work item. The item must be\n initialised before it can be submitted to a work queue.\n\n @param[out] work     Receives the initialised work handle.\n @param[in]  storage  Pointer to statically-allocated work item storage.\n @param[in]  handler  Function to call when the work item is executed.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
+    #[doc = " @brief Initialise a work item using caller-provided static storage.\n\n Associates the @p handler function with the work item. The item must be\n initialised before it can be submitted to a work queue.\n\n The handle written to @p work is @p storage itself, and that same handle is\n passed to @p handler.  A caller that embeds @p storage in its own structure\n can therefore recover that structure from the handler argument\n (container_of), which is how per-item context is attached.\n\n @param[out] work     Receives the initialised work handle.\n @param[in]  storage  Pointer to statically-allocated work item storage.\n @param[in]  handler  Function to call when the work item is executed.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
     pub fn ove_work_init_static(
         work: *mut ove_work_t,
         storage: *mut ove_work_storage_t,
@@ -2814,6 +2869,33 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Delete a key-value pair from non-volatile storage.\n\n Permanently removes the entry identified by @p key. Has no effect if the\n key does not exist.\n\n @param[in] key  Null-terminated key string to erase.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_NVS."]
     pub fn ove_nvs_erase(key: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Maximum accepted key payload length for this selected backend/prefix."]
+    pub fn ove_nvs_key_max_len() -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read by a counted key, borrowed only during this call.\n No terminator is required. Invalid grammar, NUL or overlength returns\n OVE_ERR_INVALID_PARAM before storage access. Value/size-query semantics\n match ove_nvs_read()."]
+    pub fn ove_nvs_read_n(
+        key: *const core::ffi::c_char,
+        key_len: usize,
+        buf: *mut core::ffi::c_void,
+        buf_len: usize,
+        out_len: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Write by a counted key; validation matches ove_nvs_read_n().\n Values remain binary; no key bytes are retained from the caller."]
+    pub fn ove_nvs_write_n(
+        key: *const core::ffi::c_char,
+        key_len: usize,
+        data: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Erase by a counted key; validation matches ove_nvs_read_n().\n A valid missing key remains a successful no-op."]
+    pub fn ove_nvs_erase_n(key: *const core::ffi::c_char, key_len: usize) -> core::ffi::c_int;
 }
 #[doc = " @brief Prototype for a shell command handler function.\n\n Called by the shell when the user enters a matching command. @p argc is the\n total number of tokens (including the command name in @p argv[0]) and is\n always at least 1. @p argv is a @c NULL-terminated array of pointers to\n the individual tokens of the line; the strings are valid only for the\n duration of the call.\n\n @param[in] argc  Number of arguments (including the command name).\n @param[in] argv  Array of @p argc argument strings, terminated by @c NULL."]
 pub type ove_shell_cmd_fn =
@@ -3319,7 +3401,7 @@ const _: () = {
         [core::mem::offset_of!(ove_tls_config_t, allow_insecure) - 56usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a TLS session from caller-supplied storage.\n\n @param[out] tls     Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success; @c OVE_ERR_NO_MEMORY when the heap cannot\n         hold the mbedTLS contexts (heap builds); @c OVE_ERR_NOT_SUPPORTED\n         when the random generator cannot be seeded, from a failing\n         entropy source or mbedTLS out of memory (it does not say which;\n         the mbedTLS code is logged)."]
+    #[doc = " @brief Initialise a TLS session from caller-supplied storage.\n\n @param[out] tls     Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success; @c OVE_ERR_NO_MEMORY when the heap cannot\n         hold the mbedTLS contexts (heap builds); @c OVE_ERR_NOT_SUPPORTED\n         when the random generator cannot be seeded, from a failing\n         entropy source or mbedTLS out of memory (it does not say which;\n         the mbedTLS code is logged), or when the mutex guarding mbedTLS\n         could not be created."]
     pub fn ove_tls_init(tls: *mut ove_tls_t, storage: *mut ove_tls_storage_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -3719,7 +3801,7 @@ unsafe extern "C" {
     pub fn ove_httpd_stop();
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a route handler.\n\n The @p method and @p path strings are copied (truncated to the table's\n field sizes); only @p handler is kept.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if an argument is NULL,\n         OVE_ERR_NO_MEMORY if the route table is full."]
+    #[doc = " @brief Register a route handler.\n\n Copies method (at most 7 bytes) and path (at most 63 bytes). Longer\n identifiers fail before claiming a slot; only @p handler is retained.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if an argument is NULL,\n         OVE_ERR_NAME_TOO_LONG if an identifier exceeds its field, or\n         OVE_ERR_NO_MEMORY if the route table is full."]
     pub fn ove_httpd_route(
         method: *const core::ffi::c_char,
         path: *const core::ffi::c_char,
@@ -3770,7 +3852,7 @@ unsafe extern "C" {
     ) -> *const core::ffi::c_char;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send a JSON response."]
+    #[doc = " @brief Send a NUL-terminated JSON response.\n Response helpers prepare the complete header/body metadata before I/O.\n Preparation errors leave the response unsent and permit retry/fallback.\n Once the first socket write is attempted the response remains sent, even\n on partial writes or failure. Bodies with explicit lengths remain binary."]
     pub fn ove_httpd_resp_json(
         resp: *mut ove_httpd_resp_t,
         status: core::ffi::c_int,
@@ -3787,7 +3869,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send a response with arbitrary content type."]
+    #[doc = " @brief Send a response with arbitrary C-string content type.\n Returns OVE_ERR_NO_MEMORY if the complete header does not fit 256 bytes\n including its terminator. No partial header is sent on this error."]
     pub fn ove_httpd_resp_send(
         resp: *mut ove_httpd_resp_t,
         status: core::ffi::c_int,
@@ -3807,11 +3889,42 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Send a JSON error response."]
+    #[doc = " @brief Send a JSON error response.\n Escaping must fit 191 bytes plus NUL; overflow returns OVE_ERR_NO_SPACE\n before I/O. The message is never silently clipped."]
     pub fn ove_httpd_resp_error(
         resp: *mut ove_httpd_resp_t,
         status: core::ffi::c_int,
         message: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Counted response metadata. Text spans exclude NUL; bodies remain binary.\n Preparation errors leave the response unsent. Once I/O starts it remains\n sent even if a partial write fails. NUL returns OVE_ERR_INVALID_PARAM;\n complete header overflow returns OVE_ERR_NO_MEMORY. Metadata is borrowed\n only during the call and need not be terminated."]
+    pub fn ove_httpd_resp_send_n(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        content_type: *const core::ffi::c_char,
+        content_type_len: usize,
+        body: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Counted content type with gzip encoding; same validation,\n header capacity and preparation/sent-state rules as ove_httpd_resp_send_n."]
+    pub fn ove_httpd_resp_send_gz_n(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        content_type: *const core::ffi::c_char,
+        content_type_len: usize,
+        body: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Counted error text; NUL returns OVE_ERR_INVALID_PARAM and escaped\n output over 191 bytes returns OVE_ERR_NO_SPACE before I/O. NULL+0 is empty.\n The complete span is escaped without clipping; text is borrowed for the call."]
+    pub fn ove_httpd_resp_error_n(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        message: *const core::ffi::c_char,
+        message_len: usize,
     ) -> core::ffi::c_int;
 }
 #[repr(C)]
@@ -3833,7 +3946,7 @@ pub type ove_httpd_ws_handler_t = Option<
 pub type ove_httpd_ws_close_handler_t =
     Option<unsafe extern "C" fn(conn: *mut ove_httpd_ws_conn_t)>;
 unsafe extern "C" {
-    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.  The @p path string is copied.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p path is NULL,\n         OVE_ERR_NO_MEMORY if the route table is full."]
+    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.  The @p path string is copied.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p path is NULL,\n         OVE_ERR_NAME_TOO_LONG if an identifier exceeds its field, or\n         OVE_ERR_NO_MEMORY if the route table is full."]
     pub fn ove_httpd_ws_route(
         path: *const core::ffi::c_char,
         on_message: ove_httpd_ws_handler_t,
@@ -3849,7 +3962,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n Any thread may call it.  A connection whose send fails is closing, as\n for ove_httpd_ws_send().\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Number of connections the message was sent to."]
+    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n Any thread may call it.  A connection whose send fails is closing, as\n for ove_httpd_ws_send().\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Nonnegative count, or a negative validation error. A non-NULL\n         path is limited to 63 bytes; NULL selects all, empty selects empty."]
     pub fn ove_httpd_ws_broadcast(
         path: *const core::ffi::c_char,
         data: *const core::ffi::c_void,
@@ -3865,6 +3978,15 @@ unsafe extern "C" {
     pub fn ove_httpd_ws_is_upgrade(headers: *const core::ffi::c_char) -> core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " Counted path broadcast. A NULL path with zero length selects all clients;\n an empty non-NULL path selects only that path. Negative errors are distinct\n from a successful zero-connection count. Payload bytes are unchanged.\n NUL or invalid pointer/length pairs return OVE_ERR_INVALID_PARAM; a path\n over 63 bytes returns OVE_ERR_NAME_TOO_LONG, before any sends."]
+    pub fn ove_httpd_ws_broadcast_n(
+        path: *const core::ffi::c_char,
+        path_len: usize,
+        data: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Complete the WebSocket upgrade handshake on `sock`.\n\n Invoked by the httpd accept loop after `ove_httpd_ws_is_upgrade()` returns\n true.  On success the connection is handed off to the WS subsystem."]
     pub fn ove_httpd_ws_handshake(
         headers: *const core::ffi::c_char,
@@ -3877,6 +3999,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Drive the WS subsystem from the httpd task's poll loop."]
     pub fn ove_httpd_ws_poll();
+}
+unsafe extern "C" {
+    #[doc = " @brief Append counted text without a temporary input-size limit.\n NUL or NULL with nonzero length returns OVE_ERR_INVALID_PARAM before\n publication; NULL+0 is an empty line.\n Retains a 127-byte ring prefix and broadcasts the full span with WS enabled.\n OVE_OK reports validation/dispatch, not guaranteed ring or peer delivery."]
+    pub fn ove_httpd_log_append_n(line: *const core::ffi::c_char, len: usize) -> core::ffi::c_int;
 }
 pub const OVE_UART_PARITY_NONE: ove_uart_parity_t = 0;
 pub const OVE_UART_PARITY_ODD: ove_uart_parity_t = 1;

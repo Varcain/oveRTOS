@@ -35,17 +35,17 @@ struct nvs_entry {
 static struct nvs_entry nvs_store[OVE_NVS_RAM_ENTRIES];
 
 /* A key must fit whole: truncating it would let two keys share an entry. */
-static int nvs_key_ok(const char *key)
+size_t ove_nvs_key_max_len(void)
 {
-	return ove_nvs_key_is_valid(key) && memchr(key, '\0', NVS_MAX_KEY_LEN) != NULL;
+	return NVS_MAX_KEY_LEN - 1;
 }
 
-static struct nvs_entry *nvs_find(const char *key)
+static struct nvs_entry *nvs_find(const char *key, size_t len)
 {
 	for (int i = 0; i < OVE_NVS_RAM_ENTRIES; i++) {
-		if (nvs_store[i].used && strcmp(nvs_store[i].key, key) == 0) {
+		if (nvs_store[i].used && strlen(nvs_store[i].key) == len &&
+		    memcmp(nvs_store[i].key, key, len) == 0)
 			return &nvs_store[i];
-		}
 	}
 	return NULL;
 }
@@ -59,12 +59,13 @@ void ove_nvs_deinit(void)
 {
 }
 
-int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
+int ove_nvs_read_n(const char *key, size_t key_len, void *buf, size_t buf_len, size_t *out_len)
 {
-	if (!nvs_key_ok(key) || (!buf && buf_len)) {
+	if (!(key_len <= ove_nvs_key_max_len() && ove_nvs_key_is_valid_n(key, key_len)) ||
+	    (!buf && buf_len)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	struct nvs_entry *e = nvs_find(key);
+	struct nvs_entry *e = nvs_find(key, key_len);
 	if (!e) {
 		return OVE_ERR_NOT_FOUND;
 	}
@@ -78,12 +79,13 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 	return OVE_OK;
 }
 
-int ove_nvs_write(const char *key, const void *data, size_t len)
+int ove_nvs_write_n(const char *key, size_t key_len, const void *data, size_t len)
 {
-	if (!nvs_key_ok(key) || (!data && len) || len > NVS_MAX_VAL_LEN) {
+	if (!(key_len <= ove_nvs_key_max_len() && ove_nvs_key_is_valid_n(key, key_len)) ||
+	    (!data && len) || len > NVS_MAX_VAL_LEN) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	struct nvs_entry *e = nvs_find(key);
+	struct nvs_entry *e = nvs_find(key, key_len);
 	if (!e) {
 		for (int i = 0; i < OVE_NVS_RAM_ENTRIES; i++) {
 			if (!nvs_store[i].used) {
@@ -94,7 +96,8 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 		if (!e) {
 			return OVE_ERR_NO_MEMORY;
 		}
-		memcpy(e->key, key, strlen(key) + 1); /* fits: nvs_key_ok() */
+		memcpy(e->key, key, key_len);
+		e->key[key_len] = 0;
 		e->used = 1;
 	}
 	if (len) {
@@ -104,14 +107,27 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 	return OVE_OK;
 }
 
-int ove_nvs_erase(const char *key)
+int ove_nvs_erase_n(const char *key, size_t key_len)
 {
-	if (!nvs_key_ok(key)) {
+	if (!(key_len <= ove_nvs_key_max_len() && ove_nvs_key_is_valid_n(key, key_len))) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	struct nvs_entry *e = nvs_find(key);
+	struct nvs_entry *e = nvs_find(key, key_len);
 	if (e) {
 		memset(e, 0, sizeof(*e));
 	}
 	return OVE_OK;
+}
+
+int ove_nvs_read(const char *key, void *buf, size_t len, size_t *out_len)
+{
+	return key ? ove_nvs_read_n(key, strlen(key), buf, len, out_len) : OVE_ERR_INVALID_PARAM;
+}
+int ove_nvs_write(const char *key, const void *data, size_t len)
+{
+	return key ? ove_nvs_write_n(key, strlen(key), data, len) : OVE_ERR_INVALID_PARAM;
+}
+int ove_nvs_erase(const char *key)
+{
+	return key ? ove_nvs_erase_n(key, strlen(key)) : OVE_ERR_INVALID_PARAM;
 }

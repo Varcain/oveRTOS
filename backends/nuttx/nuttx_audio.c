@@ -650,10 +650,10 @@ static const struct ove_audio_node_ops nuttx_sink_ops = {
 /* DEVICE NODE FACTORIES                                                     */
 /* ========================================================================= */
 
-int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			    const char *name)
+int ove_audio_device_source_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			      const char *name, size_t name_len)
 {
-	if (!g || !cfg || !name) {
+	if (!g || !cfg || !name || memchr(name, 0, name_len)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -670,14 +670,15 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->fmt = cfg->fmt;
 
-	int idx = ove_audio_graph_add_node(g, &nuttx_source_ops, ctx, name, OVE_AUDIO_NODE_SOURCE);
+	int idx = ove_audio_graph_add_node_n(g, &nuttx_source_ops, ctx, name, name_len,
+					     OVE_AUDIO_NODE_SOURCE);
 	return idx;
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			  const char *name)
+int ove_audio_device_sink_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name, size_t name_len)
 {
-	if (!g || !cfg || !name) {
+	if (!g || !cfg || !name || memchr(name, 0, name_len)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -707,11 +708,22 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	ctx->play_fd = -1;
 	ctx->audio_mq = (mqd_t)-1;
 
-	int idx = ove_audio_graph_add_node(g, &nuttx_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+	int idx = ove_audio_graph_add_node_n(g, &nuttx_sink_ops, ctx, name, name_len,
+					     OVE_AUDIO_NODE_SINK);
 	if (idx < 0) {
 		ctx->graph = NULL;
 	}
 	return idx;
 }
 
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name)
+{
+	return name ? ove_audio_device_source_n(g, cfg, name, strlen(name)) : OVE_ERR_INVALID_PARAM;
+}
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			  const char *name)
+{
+	return name ? ove_audio_device_sink_n(g, cfg, name, strlen(name)) : OVE_ERR_INVALID_PARAM;
+}
 #endif /* CONFIG_OVE_AUDIO */

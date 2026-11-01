@@ -21,17 +21,25 @@
 #ifndef OVE_NVS_FS_DIR
 #define OVE_NVS_FS_DIR "/nvs"
 #endif
-#define NVS_PATH_MAX 96
+#define NVS_PATH_MAX OVE_NVS_KEY_BUFFER_SIZE
+#include <string.h>
 
-static int nvs_make_path(char *buf, size_t buf_len, const char *key)
+size_t ove_nvs_key_max_len(void)
 {
-	if (!ove_nvs_key_is_valid(key)) {
+	const size_t prefix = sizeof(OVE_NVS_FS_DIR) - 1;
+	return prefix + 2 < NVS_PATH_MAX ? NVS_PATH_MAX - prefix - 2 : 0;
+}
+
+static int nvs_make_path(char *buf, size_t buf_len, const char *key, size_t key_len)
+{
+	const size_t prefix = sizeof(OVE_NVS_FS_DIR) - 1;
+	if (key_len > ove_nvs_key_max_len() || !ove_nvs_key_is_valid_n(key, key_len) ||
+	    prefix >= buf_len || key_len >= buf_len - prefix - 1)
 		return OVE_ERR_INVALID_PARAM;
-	}
-	int len = snprintf(buf, buf_len, "%s/%s", OVE_NVS_FS_DIR, key);
-	if (len < 0 || (size_t)len >= buf_len) {
-		return OVE_ERR_INVALID_PARAM;
-	}
+	memcpy(buf, OVE_NVS_FS_DIR, prefix);
+	buf[prefix] = '/';
+	memcpy(buf + prefix + 1, key, key_len);
+	buf[prefix + 1 + key_len] = 0;
 	return OVE_OK;
 }
 
@@ -46,7 +54,7 @@ void ove_nvs_deinit(void)
 {
 }
 
-int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
+int ove_nvs_read_n(const char *key, size_t key_len, void *buf, size_t buf_len, size_t *out_len)
 {
 	char path[NVS_PATH_MAX];
 	ove_file_t f;
@@ -55,7 +63,7 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 	if (buf == NULL && buf_len != 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int ret = nvs_make_path(path, sizeof(path), key);
+	int ret = nvs_make_path(path, sizeof(path), key, key_len);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -83,7 +91,7 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 	return ret;
 }
 
-int ove_nvs_write(const char *key, const void *data, size_t len)
+int ove_nvs_write_n(const char *key, size_t key_len, const void *data, size_t len)
 {
 	char path[NVS_PATH_MAX];
 	ove_file_t f;
@@ -92,7 +100,7 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 	if (data == NULL && len != 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	int ret = nvs_make_path(path, sizeof(path), key);
+	int ret = nvs_make_path(path, sizeof(path), key, key_len);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -123,15 +131,28 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 	return close_ret;
 }
 
-int ove_nvs_erase(const char *key)
+int ove_nvs_erase_n(const char *key, size_t key_len)
 {
 	char path[NVS_PATH_MAX];
 
-	int ret = nvs_make_path(path, sizeof(path), key);
+	int ret = nvs_make_path(path, sizeof(path), key, key_len);
 	if (ret != OVE_OK) {
 		return ret;
 	}
 	ret = ove_fs_unlink(path);
 	/* Erasing a key that is not stored has no effect. */
 	return ret == OVE_ERR_NOT_FOUND ? OVE_OK : ret;
+}
+
+int ove_nvs_read(const char *key, void *buf, size_t len, size_t *out_len)
+{
+	return key ? ove_nvs_read_n(key, strlen(key), buf, len, out_len) : OVE_ERR_INVALID_PARAM;
+}
+int ove_nvs_write(const char *key, const void *data, size_t len)
+{
+	return key ? ove_nvs_write_n(key, strlen(key), data, len) : OVE_ERR_INVALID_PARAM;
+}
+int ove_nvs_erase(const char *key)
+{
+	return key ? ove_nvs_erase_n(key, strlen(key)) : OVE_ERR_INVALID_PARAM;
 }

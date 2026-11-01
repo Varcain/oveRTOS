@@ -2,6 +2,20 @@
 
 The NVS module provides a key-value store backed by non-volatile storage: one file per key on the mounted volume, on every engine. The QEMU boards have no storage device and keep values in RAM.
 
+## String contracts
+
+Keys are nonempty ASCII `[A-Za-z0-9_.-]` without a leading dot. Invalid,
+NUL-containing counted, or overlong keys return `InvalidParam` before effects.
+`ove_nvs_key_max_len()` reports the selected backend limit: RAM63 bytes;
+file96 minus directory prefix, slash and NUL (default `/nvs`:90). The shared
+`OVE_NVS_KEY_BUFFER_SIZE` is a staging envelope, not a universal key limit.
+`ove_nvs_read_n`, `ove_nvs_write_n` and `ove_nvs_erase_n` accept counted keys;
+binary values, size queries and missing-key erase semantics are unchanged.
+Rust uses `nvs::write("volume", &[7])?` or single-pass checked
+`nvs::write_fmt(format_args!("slot{slot}"), value)?`, without an app CStr or
+allocator. Formatting/NUL/capacity failure is `InvalidParam` with no partial key.
+
+
 ## Architecture
 
 ```mermaid

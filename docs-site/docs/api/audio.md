@@ -2,6 +2,18 @@
 
 The oveRTOS audio engine is a graph-based processing framework. Audio flows through a directed acyclic graph (DAG) of typed nodes, validated at build time and executed in topological order.
 
+## String contracts
+
+Node descriptors store borrowed `name_span.data` / `name_span.len`, replacing
+the old C-string field. This is a public source/ABI change: rebuild all
+consumers and use the byte count when reading names. Counted
+`ove_audio_graph_add_node_n`, `ove_audio_device_source_n` and
+`ove_audio_device_sink_n` retain the supplied span until graph deinit, reject
+NUL, and require no terminator, name allocation or new length cap. Legacy C
+factories measure their C strings and delegate. Rust accepts ordinary static
+literals such as `graph.device_source(&cfg, "mic")?`; the static borrow remains.
+
+
 ## Architecture
 
 ```mermaid

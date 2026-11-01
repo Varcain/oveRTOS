@@ -434,6 +434,7 @@ target_include_directories(ove_test_httpd_ws PRIVATE
     ${cmocka_SOURCE_DIR}/include
 )
 target_link_libraries(ove_test_httpd_ws PRIVATE cmocka-static pthread rt m)
+target_link_options(ove_test_httpd_ws PRIVATE "LINKER:--wrap=ove_socket_send")
 
 if(TARGET ove_test_net_tls)
     add_test(NAME ove_net_tls_tests COMMAND ove_test_net_tls)
@@ -535,3 +536,23 @@ if(OVE_TEST_BUILD_COVERAGE)
         ove_test_stub_coverage
         ove_test_stub_coverage_zh)
 endif()
+
+# Native file-key composition uses the selected directory's actual byte count.
+foreach(_nvs_variant default custom full)
+    set(_nvs_prefix "/nvs")
+    if(_nvs_variant STREQUAL "custom")
+        set(_nvs_prefix "/tmp/ove-nvs")
+    elseif(_nvs_variant STREQUAL "full")
+        string(REPEAT "p" 94 _nvs_prefix)
+    endif()
+    add_executable(ove_test_nvs_${_nvs_variant}
+        ${CMAKE_CURRENT_SOURCE_DIR}/rust_strings/test_nvs_limits.c
+        ${OVE_ROOT}/backends/common/ove_nvs_fs.c)
+    target_include_directories(ove_test_nvs_${_nvs_variant} PRIVATE
+        ${OVE_INCLUDE} ${OVE_ROOT}/backends/common ${CMAKE_CURRENT_SOURCE_DIR}
+        ${POSIX_CORE_DIR}/include)
+    target_compile_definitions(ove_test_nvs_${_nvs_variant} PRIVATE
+        OVE_NVS_FS_DIR="${_nvs_prefix}" OVE_TEST_NVS_PREFIX="${_nvs_prefix}")
+    target_compile_options(ove_test_nvs_${_nvs_variant} PRIVATE -UNDEBUG)
+    add_test(NAME ove_nvs_${_nvs_variant}_limits COMMAND ove_test_nvs_${_nvs_variant})
+endforeach()

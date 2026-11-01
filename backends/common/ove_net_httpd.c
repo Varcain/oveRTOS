@@ -25,54 +25,61 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-/* ---------- JSON string escaping ----------
- *
- * Escapes minimal JSON required by RFC 8259: '"', '\' and controls <0x20.
- * Writes at most @out_cap-1 bytes plus NUL, truncating safely on overflow.
- */
-static size_t json_escape(const char *in, char *out, size_t out_cap)
+/* Escape a complete counted JSON string, reserving one trailing NUL. */
+static int json_escape_n(const char *in, size_t len, char *out, size_t cap)
 {
-	size_t n = 0;
-	if (out_cap == 0)
-		return 0;
-	for (const unsigned char *p = (const unsigned char *)in; *p; p++) {
-		unsigned char c = *p;
-		const char *esc = NULL;
-		char uesc[8];
-
-		if (c == '"')
-			esc = "\\\"";
-		else if (c == '\\')
-			esc = "\\\\";
-		else if (c == '\n')
-			esc = "\\n";
-		else if (c == '\r')
-			esc = "\\r";
-		else if (c == '\t')
-			esc = "\\t";
-		else if (c == '\b')
-			esc = "\\b";
-		else if (c == '\f')
-			esc = "\\f";
-		else if (c < 0x20) {
-			(void)snprintf(uesc, sizeof(uesc), "\\u%04x", c);
-			esc = uesc;
+	size_t used = 0;
+	if (!cap || (!in && len) || (len && memchr(in, 0, len)))
+		return OVE_ERR_INVALID_PARAM;
+	for (size_t i = 0; i < len; ++i) {
+		unsigned char c = (unsigned char)in[i];
+		const char *part = &in[i];
+		size_t count = 1;
+		char escaped[7];
+		switch (c) {
+		case '"':
+			part = "\\\"";
+			count = 2;
+			break;
+		case '\\':
+			part = "\\\\";
+			count = 2;
+			break;
+		case '\n':
+			part = "\\n";
+			count = 2;
+			break;
+		case '\r':
+			part = "\\r";
+			count = 2;
+			break;
+		case '\t':
+			part = "\\t";
+			count = 2;
+			break;
+		case '\b':
+			part = "\\b";
+			count = 2;
+			break;
+		case '\f':
+			part = "\\f";
+			count = 2;
+			break;
+		default:
+			if (c < 0x20) {
+				(void)snprintf(escaped, sizeof(escaped), "\\u%04x", c);
+				part = escaped;
+				count = 6;
+			}
+			break;
 		}
-
-		if (esc) {
-			size_t el = strlen(esc);
-			if (n + el >= out_cap - 1)
-				break;
-			memcpy(out + n, esc, el);
-			n += el;
-		} else {
-			if (n >= out_cap - 1)
-				break;
-			out[n++] = (char)c;
-		}
+		if (count > cap - 1 - used)
+			return OVE_ERR_NO_SPACE;
+		memcpy(out + used, part, count);
+		used += count;
 	}
-	out[n] = '\0';
-	return n;
+	out[used] = 0;
+	return OVE_OK;
 }
 
 /* ---------- Internal data structures ---------- */
@@ -81,8 +88,8 @@ static size_t json_escape(const char *in, char *out, size_t out_cap)
  * by advancing s_route_count, fills it and then sets ready, and the server
  * skips a slot until it is ready.  A slot never changes once ready. */
 struct ove_httpd_route {
-	char method[8]; /* "GET" or "POST" */
-	char path[64];	/* URL path prefix */
+	char method[OVE_HTTPD_METHOD_SIZE];
+	char path[OVE_HTTPD_ROUTE_SIZE];
 	ove_httpd_handler_t handler;
 	int ready;
 };
@@ -141,6 +148,9 @@ int ove_httpd_route(const char *method, const char *path, ove_httpd_handler_t ha
 {
 	if (!method || !path || !handler)
 		return OVE_ERR_INVALID_PARAM;
+	if (strnlen(method, OVE_HTTPD_METHOD_SIZE) >= OVE_HTTPD_METHOD_SIZE ||
+	    strnlen(path, OVE_HTTPD_ROUTE_SIZE) >= OVE_HTTPD_ROUTE_SIZE)
+		return OVE_ERR_NAME_TOO_LONG;
 
 	int idx = __atomic_load_n(&s_route_count, __ATOMIC_RELAXED);
 	do {
@@ -287,117 +297,108 @@ static struct ove_httpd_route *match_route(struct ove_httpd_req *req)
 
 /* ---------- Response sending ---------- */
 
-static int send_response(ove_socket_t sock, int status, const char *content_type, const void *body,
-			 size_t body_len)
+static int send_all(ove_socket_t sock, const void *data, size_t len)
 {
-	char header[256];
-	int hlen = snprintf(header, sizeof(header),
-			    "HTTP/1.1 %s\r\n"
-			    "Content-Type: %s\r\n"
-			    "Content-Length: %zu\r\n"
-			    "Connection: close\r\n"
-			    "Access-Control-Allow-Origin: *\r\n"
-			    "\r\n",
-			    status_str(status), content_type, body_len);
-
-	if (hlen < 0 || (size_t)hlen >= sizeof(header))
-		return OVE_ERR_NO_MEMORY;
-
-	int ret = ove_socket_send(sock, header, (size_t)hlen, NULL);
-	if (ret != OVE_OK)
-		return ret;
-
-	if (body && body_len > 0) {
-		const uint8_t *p = (const uint8_t *)body;
-		size_t remaining = body_len;
-		while (remaining > 0) {
-			size_t sent = 0;
-			ret = ove_socket_send(sock, p, remaining, &sent);
-			if (ret != OVE_OK)
-				return ret;
-			if (sent == 0)
-				return OVE_ERR_NOT_SUPPORTED;
-			p += sent;
-			remaining -= sent;
-		}
+	const unsigned char *p = data;
+	while (len) {
+		size_t sent = 0;
+		int rc = ove_socket_send(sock, p, len, &sent);
+		if (rc != OVE_OK)
+			return rc;
+		if (!sent || sent > len)
+			return OVE_ERR_NOT_SUPPORTED;
+		p += sent;
+		len -= sent;
 	}
-
-	return ret;
+	return OVE_OK;
 }
 
-/* ---------- Response helpers ---------- */
+static int send_response_n(ove_httpd_resp_t *resp, ove_socket_t sock, int status,
+			   const char *content_type, size_t type_len, const void *body,
+			   size_t body_len, int gzip)
+{
+	if (!content_type || (!body && body_len) || (type_len && memchr(content_type, 0, type_len)))
+		return OVE_ERR_INVALID_PARAM;
+	char header[OVE_HTTPD_HEADER_SIZE];
+	int prefix = snprintf(header, sizeof(header),
+			      "HTTP/1.1 %s\r\nContent-Type: ", status_str(status));
+	if (prefix < 0 || (size_t)prefix >= sizeof(header))
+		return OVE_ERR_NO_MEMORY;
+	size_t used = (size_t)prefix;
+	if (type_len >= sizeof(header) - used)
+		return OVE_ERR_NO_MEMORY;
+	memcpy(header + used, content_type, type_len);
+	used += type_len;
+	int rest = snprintf(
+		header + used, sizeof(header) - used,
+		"\r\n%sContent-Length: %zu\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
+		gzip ? "Content-Encoding: gzip\r\n" : "", body_len);
+	if (rest < 0 || (size_t)rest >= sizeof(header) - used)
+		return OVE_ERR_NO_MEMORY;
+	used += (size_t)rest;
+	if (resp)
+		resp->sent = 1;
+	int rc = send_all(sock, header, used);
+	return rc == OVE_OK ? send_all(sock, body, body_len) : rc;
+}
 
+static int send_response(ove_socket_t sock, int status, const char *type, const void *body,
+			 size_t len)
+{
+	return type ? send_response_n(NULL, sock, status, type, strlen(type), body, len, 0)
+		    : OVE_ERR_INVALID_PARAM;
+}
+
+int ove_httpd_resp_send_n(ove_httpd_resp_t *resp, int status, const char *type, size_t type_len,
+			  const void *body, size_t len)
+{
+	return resp ? send_response_n(resp, resp->sock, status, type, type_len, body, len, 0)
+		    : OVE_ERR_INVALID_PARAM;
+}
+int ove_httpd_resp_send_gz_n(ove_httpd_resp_t *resp, int status, const char *type, size_t type_len,
+			     const void *body, size_t len)
+{
+	return resp ? send_response_n(resp, resp->sock, status, type, type_len, body, len, 1)
+		    : OVE_ERR_INVALID_PARAM;
+}
+int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *type, const void *body,
+			size_t len)
+{
+	return type ? ove_httpd_resp_send_n(resp, status, type, strlen(type), body, len)
+		    : OVE_ERR_INVALID_PARAM;
+}
+int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status, const char *type, const void *body,
+			   size_t len)
+{
+	return type ? ove_httpd_resp_send_gz_n(resp, status, type, strlen(type), body, len)
+		    : OVE_ERR_INVALID_PARAM;
+}
 int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status, const char *json)
 {
-	resp->sent = 1;
-	return send_response(resp->sock, status, "application/json", json, strlen(json));
+	return json ? ove_httpd_resp_send(resp, status, "application/json", json, strlen(json))
+		    : OVE_ERR_INVALID_PARAM;
 }
-
 int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status, const char *html, size_t len)
 {
-	resp->sent = 1;
-	return send_response(resp->sock, status, "text/html", html, len);
+	return ove_httpd_resp_send(resp, status, "text/html", html, len);
 }
-
-int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *content_type,
-			const void *body, size_t len)
+int ove_httpd_resp_error_n(ove_httpd_resp_t *resp, int status, const char *message, size_t len)
 {
-	resp->sent = 1;
-	return send_response(resp->sock, status, content_type, body, len);
+	char escaped[OVE_HTTPD_ERROR_ESCAPED_SIZE];
+	char body[256];
+	if (!resp)
+		return OVE_ERR_INVALID_PARAM;
+	int rc = json_escape_n(message, len, escaped, sizeof(escaped));
+	if (rc != OVE_OK)
+		return rc;
+	int n = snprintf(body, sizeof(body), "{\"error\":\"%s\"}", escaped);
+	if (n < 0 || (size_t)n >= sizeof(body))
+		return OVE_ERR_NO_SPACE;
+	return ove_httpd_resp_send(resp, status, "application/json", body, (size_t)n);
 }
-
-int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status, const char *content_type,
-			   const void *body, size_t body_len)
-{
-	resp->sent = 1;
-
-	char header[256];
-	int hlen = snprintf(header, sizeof(header),
-			    "HTTP/1.1 %s\r\n"
-			    "Content-Type: %s\r\n"
-			    "Content-Encoding: gzip\r\n"
-			    "Content-Length: %zu\r\n"
-			    "Connection: close\r\n"
-			    "Access-Control-Allow-Origin: *\r\n"
-			    "\r\n",
-			    status_str(status), content_type, body_len);
-
-	if (hlen < 0 || (size_t)hlen >= sizeof(header))
-		return OVE_ERR_NO_MEMORY;
-
-	int ret = ove_socket_send(resp->sock, header, (size_t)hlen, NULL);
-	if (ret != OVE_OK)
-		return ret;
-
-	if (body && body_len > 0) {
-		const uint8_t *p = (const uint8_t *)body;
-		size_t remaining = body_len;
-		while (remaining > 0) {
-			size_t sent = 0;
-			ret = ove_socket_send(resp->sock, p, remaining, &sent);
-			if (ret != OVE_OK)
-				return ret;
-			if (sent == 0)
-				return OVE_ERR_NOT_SUPPORTED;
-			p += sent;
-			remaining -= sent;
-		}
-	}
-
-	return ret;
-}
-
 int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status, const char *message)
 {
-	char esc[192];
-	char buf[256];
-	json_escape(message ? message : "", esc, sizeof(esc));
-	int n = snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", esc);
-	if (n < 0)
-		n = 0;
-
-	resp->sent = 1;
-	return send_response(resp->sock, status, "application/json", buf, (size_t)n);
+	return ove_httpd_resp_error_n(resp, status, message, message ? strlen(message) : 0);
 }
 
 /* ---------- Request accessors ---------- */
@@ -547,14 +548,15 @@ static void httpd_task(void *arg)
 		if (route) {
 			int hret = route->handler(&req, &resp);
 			if (hret != OVE_OK && !resp.sent) {
-				send_response(client, 500, "application/json",
-					      "{\"error\":\"internal error\"}", 26);
+				int send_rc = ove_httpd_resp_json(&resp, 500,
+								  "{\"error\":\"internal error\"}");
+				(void)send_rc;
 			}
 		}
 
 		if (!resp.sent) {
-			send_response(client, 404, "application/json", "{\"error\":\"not found\"}",
-				      20);
+			int send_rc = ove_httpd_resp_json(&resp, 404, "{\"error\":\"not found\"}");
+			(void)send_rc;
 		}
 
 		/* Clean up */

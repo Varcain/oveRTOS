@@ -9,7 +9,13 @@
 //! Provides safe wrappers around the C graph API: build a DAG of audio nodes
 //! (sources, processors, sinks), validate formats, and execute in topological
 //! order.
-
+//!
+//! Node names use ordinary `&'static str`, retained as native counted spans
+//! until graph deinit. No terminator, name allocation or length cap is needed;
+//! NUL returns `InvalidParam` before registration. Descriptor readers use
+//! `name_span.data/len`; the bytes are not necessarily C-terminated. Processor
+//! context and graph address lifetime requirements remain independent.
+//!
 use crate::bindings;
 use crate::error::{Error, Result};
 use core::ffi::c_void;
@@ -22,7 +28,7 @@ use core::ffi::c_void;
 // memory valid for the duration of the call; the C side copies whatever it
 // retains and does not alias them past return (verified against the
 // signatures in `include/ove/*.h`), except node names, which the graph keeps:
-// those are `&'static CStr`. Blocks that deviate — `transmute`, raw
+// those are counted `&'static str` spans. Blocks that deviate — `transmute`, raw
 // pointer casts from user data, slice reconstruction via `from_raw_parts`,
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
@@ -169,7 +175,7 @@ pub fn graph_deinit(graph: &mut bindings::ove_audio_graph) {
 
 /// Add a node to the graph. Returns the node index.
 ///
-/// The graph keeps `name` (it is not copied), hence `'static`.
+/// The graph keeps `name` as a counted span (no copy), hence `'static`.
 ///
 /// # Errors
 /// Returns an error if the graph is full or not in IDLE state.
@@ -177,9 +183,37 @@ pub fn graph_add_node(
     graph: &mut bindings::ove_audio_graph,
     ops: &bindings::ove_audio_node_ops,
     ctx: *mut c_void,
-    name: &'static core::ffi::CStr,
+    name: &'static str,
     node_type: bindings::ove_audio_node_type,
 ) -> core::result::Result<i32, Error> {
+    crate::cstring::validate(name.as_bytes())?;
+    let rc = unsafe {
+        bindings::ove_audio_graph_add_node_n(
+            graph,
+            ops,
+            ctx,
+            name.as_ptr().cast(),
+            name.len(),
+            node_type,
+        )
+    };
+    if rc < 0 {
+        Err(Error::from_code(rc).unwrap_err())
+    } else {
+        Ok(rc)
+    }
+}
+
+/// Native C-string name compatibility for low-level graph registration.
+/// The native adapter measures the static bytes once and retains their span
+/// until graph deinit, with no copy or allocation.
+pub fn graph_add_node_cstr(
+    graph: &mut bindings::ove_audio_graph,
+    ops: &bindings::ove_audio_node_ops,
+    ctx: *mut c_void,
+    name: &'static core::ffi::CStr,
+    node_type: bindings::ove_audio_node_type,
+) -> Result<i32> {
     let rc =
         unsafe { bindings::ove_audio_graph_add_node(graph, ops, ctx, name.as_ptr(), node_type) };
     if rc < 0 {
@@ -280,9 +314,9 @@ pub fn device_cfg_i2s(
 /// ```ignore
 /// let mut g = Graph::new(512)?;
 /// let dev = device_cfg_i2s(16000, 1, 1);
-/// let src  = g.device_source(&dev, c"mic")?;
-/// let proc = g.add_processor(PROC.get_mut(), c"dsp")?;
-/// let sink = g.device_sink(&dev, c"spk")?;
+/// let src  = g.device_source(&dev, "mic")?;
+/// let proc = g.add_processor(PROC.get_mut(), "dsp")?;
+/// let sink = g.device_sink(&dev, "spk")?;
 /// g.connect(src, proc)?;
 /// g.connect(proc, sink)?;
 /// g.build()?;
@@ -343,12 +377,29 @@ impl Graph {
     /// The graph keeps `name`, hence `'static`.  Fails with `Error::Busy`
     /// while another graph holds the native I2S sink (see
     /// [`Graph::device_sink`]).
+    ///
+    /// Temporary names cannot be retained by the graph:
+    /// ```compile_fail
+    /// fn register(graph: &mut ove::audio::Graph) {
+    ///     let cfg = ove::audio::device_cfg_i2s(16000, 1, 0);
+    ///     let name = String::from("mic");
+    ///     graph.device_source(&cfg, &name).unwrap();
+    /// }
+    /// ```
     pub fn device_source(
         &mut self,
         cfg: &bindings::ove_audio_device_cfg,
-        name: &'static core::ffi::CStr,
+        name: &'static str,
     ) -> core::result::Result<u32, Error> {
-        let rc = unsafe { bindings::ove_audio_device_source(&mut self.inner, cfg, name.as_ptr()) };
+        crate::cstring::validate(name.as_bytes())?;
+        let rc = unsafe {
+            bindings::ove_audio_device_source_n(
+                &mut self.inner,
+                cfg,
+                name.as_ptr().cast(),
+                name.len(),
+            )
+        };
         if rc < 0 {
             Err(Error::from_code(rc).unwrap_err())
         } else {
@@ -364,9 +415,17 @@ impl Graph {
     pub fn device_sink(
         &mut self,
         cfg: &bindings::ove_audio_device_cfg,
-        name: &'static core::ffi::CStr,
+        name: &'static str,
     ) -> core::result::Result<u32, Error> {
-        let rc = unsafe { bindings::ove_audio_device_sink(&mut self.inner, cfg, name.as_ptr()) };
+        crate::cstring::validate(name.as_bytes())?;
+        let rc = unsafe {
+            bindings::ove_audio_device_sink_n(
+                &mut self.inner,
+                cfg,
+                name.as_ptr().cast(),
+                name.len(),
+            )
+        };
         if rc < 0 {
             Err(Error::from_code(rc).unwrap_err())
         } else {
@@ -383,7 +442,7 @@ impl Graph {
     pub fn add_processor<T: AudioProcessor>(
         &mut self,
         processor: &'static mut T,
-        name: &'static core::ffi::CStr,
+        name: &'static str,
     ) -> core::result::Result<u32, Error> {
         graph_add_processor(&mut self.inner, processor, name).map(|i| i as u32)
     }
@@ -556,15 +615,15 @@ pub trait AudioProcessor {
 /// // SAFETY: single owner — `MY_PROC` is only ever handed to the audio
 /// // graph; no other code touches it.
 /// let p: &'static mut MyProc = unsafe { MY_PROC.get_mut() };
-/// graph.add_processor(p, c"my")?;
+/// graph.add_processor(p, "my")?;
 ///
 /// // Heap-only:
 /// let p: &'static mut MyProc = Box::leak(Box::new(MyProc::new()));
-/// graph.add_processor(p, c"my")?;
+/// graph.add_processor(p, "my")?;
 ///
 /// // Older style, no allocator dependency:
 /// static mut PROC: MyProc = MyProc::new();
-/// graph.add_processor(unsafe { &mut PROC }, c"my")?;
+/// graph.add_processor(unsafe { &mut PROC }, "my")?;
 /// ```
 ///
 /// ## Anti-patterns (compile but break the contract)
@@ -575,7 +634,7 @@ pub trait AudioProcessor {
 ///   ```ignore
 ///   fn install(g: &mut Graph, p: &mut MyProc) -> Result<u32, Error> {
 ///       // WRONG — `p` likely dies before the audio thread next runs:
-///       g.add_processor(unsafe { core::mem::transmute(p) }, c"p")
+///       g.add_processor(unsafe { core::mem::transmute(p) }, "p")
 ///   }
 ///   let mut local = MyProc::new();
 ///   install(&mut g, &mut local)?;          // `local` drops at scope end
@@ -606,7 +665,7 @@ pub trait AudioProcessor {
 pub fn graph_add_processor<T: AudioProcessor>(
     graph: &mut bindings::ove_audio_graph,
     processor: &'static mut T,
-    name: &'static core::ffi::CStr,
+    name: &'static str,
 ) -> core::result::Result<i32, Error> {
     unsafe extern "C" fn configure_trampoline(
         _ctx: *mut c_void,
@@ -647,13 +706,15 @@ pub fn graph_add_processor<T: AudioProcessor>(
         };
     }
 
+    crate::cstring::validate(name.as_bytes())?;
     let ctx = processor as *mut T as *mut c_void;
     let rc = unsafe {
-        bindings::ove_audio_graph_add_node(
+        bindings::ove_audio_graph_add_node_n(
             graph,
             &OpsHolder::<T>::OPS,
             ctx,
-            name.as_ptr(),
+            name.as_ptr().cast(),
+            name.len(),
             bindings::OVE_AUDIO_NODE_PROCESSOR,
         )
     };
@@ -671,7 +732,7 @@ pub fn graph_add_processor<T: AudioProcessor>(
 ///
 /// ```ignore
 /// static PROC: StaticProcessor<MyProc> = StaticProcessor::new(MyProc);
-/// let idx = graph_add_processor(&mut graph, PROC.get_mut(), c"my-proc")?;
+/// let idx = graph_add_processor(&mut graph, PROC.get_mut(), "my-proc")?;
 /// ```
 pub struct StaticProcessor<T> {
     inner: core::cell::UnsafeCell<T>,

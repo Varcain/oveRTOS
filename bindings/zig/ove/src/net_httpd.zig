@@ -70,7 +70,9 @@ pub const ResponseWriter = struct {
         try err.fromCode(c.ove_httpd_resp_html(self.raw, status_code, html_str.ptr, html_str.len));
     }
 
-    /// Send a response with explicit content type.
+    /// Send a response with explicit content type. Full-header overflow is
+    /// NoMemory before I/O, permitting retry/fallback. Any socket attempt keeps
+    /// the response sent, even after a partial write or failure.
     pub fn send(self: ResponseWriter, status_code: i32, content_type: [:0]const u8, body_data: []const u8) Error!void {
         try err.fromCode(c.ove_httpd_resp_send(self.raw, status_code, content_type.ptr, body_data.ptr, body_data.len));
     }
@@ -80,7 +82,8 @@ pub const ResponseWriter = struct {
         try err.fromCode(c.ove_httpd_resp_send_gz(self.raw, status_code, content_type.ptr, body_data.ptr, body_data.len));
     }
 
-    /// Send an error response.
+    /// Send an error response; escaped output over 191 bytes is NoSpace
+    /// before I/O, without clipping or suppressing fallback.
     pub fn errResponse(self: ResponseWriter, status_code: i32, message: [:0]const u8) Error!void {
         try err.fromCode(c.ove_httpd_resp_error(self.raw, status_code, message.ptr));
     }
@@ -119,7 +122,8 @@ pub fn stop() void {
 /// Register a route with a typed Zig handler.
 ///
 /// The handler is wrapped in a comptime trampoline that converts the
-/// raw C pointers into `Request` and `ResponseWriter` values.
+/// raw C pointers into `Request` and `ResponseWriter` values. Method over
+/// 7 bytes or path over 63 bytes is NameTooLong before slot reservation.
 pub fn route(
     method_str: [:0]const u8,
     path_str: [:0]const u8,
@@ -153,7 +157,8 @@ pub fn setNetif(handle: c.ove_netif_t) void {
     c.ove_httpd_set_netif(handle);
 }
 
-/// Append a log line to the httpd log ring buffer.
+/// Append a log line: the ring keeps 127 bytes and WS receives the full line.
+/// This void adapter cannot report validation or delivery failures.
 pub fn logAppend(line: [:0]const u8) void {
     c.ove_httpd_log_append(line.ptr);
 }
@@ -166,7 +171,8 @@ pub fn logAppend(line: [:0]const u8) void {
 pub const ws = if (@hasDecl(c, "ove_httpd_ws_route")) struct {
     /// Register a WebSocket route.
     ///
-    /// `on_message` and `on_close` may be null.
+    /// `on_message` and `on_close` may be null. Path over 63 bytes returns
+    /// NameTooLong before consuming a route slot.
     pub fn route(
         path_str: [:0]const u8,
         on_message: c.ove_httpd_ws_handler_t,
@@ -187,7 +193,8 @@ pub const ws = if (@hasDecl(c, "ove_httpd_ws_route")) struct {
     /// Broadcast a message to all WebSocket connections on a path, from any
     /// thread; a connection whose send fails is closing, as for `send`.
     ///
-    /// Returns the number of connections the message was sent to.
+    /// Returns a nonnegative sent count or negative native validation error.
+    /// Path is at most 63 bytes; an empty path filters only empty paths.
     pub fn broadcast(path_str: [:0]const u8, data: []const u8) c_int {
         return c.ove_httpd_ws_broadcast(path_str.ptr, data.ptr, data.len);
     }

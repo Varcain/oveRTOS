@@ -172,6 +172,8 @@ class Response
 
 	/**
 	 * @brief Sends a response with an arbitrary content type.
+	 * Full-header overflow returns NoMemory before I/O. Preparation errors
+	 * permit retry/fallback; any socket attempt keeps the response sent.
 	 * @param[in] status       HTTP status code.
 	 * @param[in] content_type Content-Type header value.
 	 * @param[in] body         Response body.
@@ -202,6 +204,7 @@ class Response
 
 	/**
 	 * @brief Sends a JSON error response.
+	 * Escaping beyond 191 bytes returns NoSpace before I/O, without clipping.
 	 * @param[in] status HTTP status code (e.g. 404, 500).
 	 * @param[in] msg    Error message string.
 	 * @return Empty `Result<void>` on success; `unexpected`
@@ -274,7 +277,8 @@ inline void stop()
  * @param[in] path    URL path prefix (e.g. "/api/leds").
  * @param[in] handler Callback function invoked when the route matches.
  * @return Empty `Result<void>` on success; `unexpected`
- *         @ref Error::NoMemory if the route table is full.
+ *         @ref Error::NameTooLong for method over 7 or path over 63 bytes,
+ *         before slot reservation; @ref Error::NoMemory when full.
  */
 [[nodiscard]] inline Result<void> route(const char *method, const char *path,
 					Handler handler) noexcept
@@ -398,7 +402,8 @@ using CloseHandler = ove_httpd_ws_close_handler_t;
  * @param[in] on_message Callback for incoming messages.
  * @param[in] on_close   Callback when connection closes (may be nullptr).
  * @return Empty `Result<void>` on success; `unexpected`
- *         @ref Error::NoMemory if the route table is full.
+ *         @ref Error::NameTooLong for path over 63 bytes,
+ *         before slot reservation; @ref Error::NoMemory when full.
  */
 [[nodiscard]] inline Result<void> route(const char *path, Handler on_message,
 					CloseHandler on_close = nullptr) noexcept
@@ -415,7 +420,8 @@ using CloseHandler = ove_httpd_ws_close_handler_t;
  * @param[in] path Path filter (nullptr for all connections).
  * @param[in] data Message payload.
  * @param[in] len  Payload length in bytes.
- * @return Number of connections the message was sent to.
+ * @return Nonnegative sent count or negative native validation error.
+ *         Path is at most 63 bytes; nullptr means all, empty means empty.
  */
 inline int broadcast(const char *path, const void *data, size_t len)
 {
@@ -426,7 +432,8 @@ inline int broadcast(const char *path, const void *data, size_t len)
  * @brief Broadcast a string_view to all connections on a path.
  * @param[in] path Path filter (nullptr for all connections).
  * @param[in] sv   String view to send.
- * @return Number of connections the message was sent to.
+ * @return Nonnegative sent count or negative native validation error.
+ *         Path is at most 63 bytes; nullptr means all, empty means empty.
  */
 inline int broadcast(const char *path, std::string_view sv)
 {

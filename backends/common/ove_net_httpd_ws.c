@@ -175,6 +175,8 @@ int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
 {
 	if (!path)
 		return OVE_ERR_INVALID_PARAM;
+	if (strnlen(path, OVE_HTTPD_ROUTE_SIZE) >= OVE_HTTPD_ROUTE_SIZE)
+		return OVE_ERR_NAME_TOO_LONG;
 
 	int idx = __atomic_load_n(&s_ws_route_count, __ATOMIC_RELAXED);
 	do {
@@ -415,23 +417,30 @@ int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn_opaque, const void *data, size_t
 
 /* ---------- Broadcast to all connections on a path ---------- */
 
-int ove_httpd_ws_broadcast(const char *path, const void *data, size_t len)
+int ove_httpd_ws_broadcast_n(const char *path, size_t path_len, const void *data, size_t len)
 {
+	if ((!path && path_len) || (!data && len) || (path && memchr(path, 0, path_len)))
+		return OVE_ERR_INVALID_PARAM;
+	if (path && path_len >= OVE_HTTPD_ROUTE_SIZE)
+		return OVE_ERR_NAME_TOO_LONG;
 	int sent = 0;
-
-	if ((!data && len > 0) || !ws_lock())
+	if (!ws_lock())
 		return 0;
-	for (int i = 0; i < CONFIG_OVE_NET_HTTPD_WS_MAX_CONNS; i++) {
+	for (int i = 0; i < CONFIG_OVE_NET_HTTPD_WS_MAX_CONNS; ++i) {
 		struct ove_httpd_ws_conn *c = &s_ws_pool[i];
 		if (c->state != WS_OPEN)
 			continue;
-		if (path && strcmp(c->path, path) != 0)
+		if (path && (strlen(c->path) != path_len || memcmp(c->path, path, path_len) != 0))
 			continue;
 		if (ws_send_locked(c, data, len) == OVE_OK)
-			sent++;
+			++sent;
 	}
 	ws_unlock();
 	return sent;
+}
+int ove_httpd_ws_broadcast(const char *path, const void *data, size_t len)
+{
+	return ove_httpd_ws_broadcast_n(path, path ? strlen(path) : 0, data, len);
 }
 
 /* ---------- Frame receiving (client → server, masked) ---------- */

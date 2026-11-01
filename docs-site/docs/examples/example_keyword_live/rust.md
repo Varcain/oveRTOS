@@ -17,3 +17,6 @@ See the [overview](index.md) for architecture details and the full API list.
 make qemu.freertos.example_keyword_live_rust
 make configure && make download && make && make run
 ```
+
+Audio node names are ordinary static Rust string literals, retained as native
+counted spans without app C-string conversion or name allocation.

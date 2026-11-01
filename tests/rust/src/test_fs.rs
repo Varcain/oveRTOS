@@ -14,12 +14,11 @@ fn test_mount() {
 fn test_file_write_read_roundtrip() {
     ove::fs::mount(None, None).unwrap();
 
-    let path = c"/tmp/ove_test_rw.txt";
+    let path = "/tmp/ove_test_rw.txt";
 
     // Write
     {
-        let file =
-            ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE).unwrap();
+        let file = ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE).unwrap();
         let written = file.write(b"hello ove").unwrap();
         assert_eq!(written, 9);
     } // File dropped — closed via RAII
@@ -39,10 +38,10 @@ fn test_file_write_read_roundtrip() {
 
 fn test_file_seek_tell_size() {
     ove::fs::mount(None, None).unwrap();
-    let path = c"/tmp/ove_test_seek.txt";
+    let path = "/tmp/ove_test_seek.txt";
 
-    let file = ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE | ove::fs::O_READ)
-        .unwrap();
+    let file =
+        ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE | ove::fs::O_READ).unwrap();
     file.write(b"hello ove").unwrap();
     assert_eq!(file.size().unwrap(), 9);
     assert_eq!(file.tell().unwrap(), 9);
@@ -61,17 +60,16 @@ fn test_file_seek_tell_size() {
 
 fn test_unmount_then_mount() {
     ove::fs::mount(None, None).unwrap();
-    ove::fs::unmount(None);
+    ove::fs::unmount(None).unwrap();
     ove::fs::mount(None, None).unwrap();
 }
 
 fn test_file_raii_close() {
     ove::fs::mount(None, None).unwrap();
-    let path = c"/tmp/ove_test_raii.txt";
+    let path = "/tmp/ove_test_raii.txt";
 
     {
-        let file =
-            ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE).unwrap();
+        let file = ove::fs::File::open(path, ove::fs::O_WRITE | ove::fs::O_CREATE).unwrap();
         file.write(b"raii").unwrap();
         // Drop here — should close cleanly
     }
@@ -89,7 +87,7 @@ fn test_file_raii_close() {
 }
 
 fn test_open_nonexistent_fails() {
-    let result = ove::fs::File::open(c"/tmp/no_such_file_xyz", ove::fs::O_READ);
+    let result = ove::fs::File::open("/tmp/no_such_file_xyz", ove::fs::O_READ);
     assert!(result.is_err(), "opening nonexistent file should fail");
 }
 
@@ -102,7 +100,7 @@ fn test_dir_open_read() {
 
     ove::fs::mount(None, None).unwrap();
 
-    let mut dir = ove::fs::Dir::open(c"/tmp/ove_test_dir").unwrap();
+    let mut dir = ove::fs::Dir::open("/tmp/ove_test_dir").unwrap();
     let mut names = Vec::new();
 
     loop {
@@ -143,7 +141,7 @@ fn test_dir_entry_name() {
     std::fs::create_dir_all(dir_path).ok();
     std::fs::write(format!("{}/test.wav", dir_path), "wav data").ok();
 
-    let mut dir = ove::fs::Dir::open(c"/tmp/ove_test_entry").unwrap();
+    let mut dir = ove::fs::Dir::open("/tmp/ove_test_entry").unwrap();
     let mut found = false;
 
     loop {
@@ -166,7 +164,7 @@ fn test_dir_entry_name() {
 }
 
 fn test_dir_open_nonexistent_fails() {
-    let result = ove::fs::Dir::open(c"/tmp/no_such_dir_xyz");
+    let result = ove::fs::Dir::open("/tmp/no_such_dir_xyz");
     assert!(result.is_err(), "opening nonexistent dir should fail");
 }
 
@@ -174,7 +172,7 @@ fn test_dir_end_returns_none() {
     let dir_path = "/tmp/ove_test_empty";
     std::fs::create_dir_all(dir_path).ok();
 
-    let mut dir = ove::fs::Dir::open(c"/tmp/ove_test_empty").unwrap();
+    let mut dir = ove::fs::Dir::open("/tmp/ove_test_empty").unwrap();
 
     // Drain all entries
     let mut count = 0;

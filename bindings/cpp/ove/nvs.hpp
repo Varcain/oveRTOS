@@ -27,7 +27,9 @@ namespace ove::nvs
  * @brief Thin C++ wrappers around the oveRTOS non-volatile storage API.
  *
  * Available when `CONFIG_OVE_NVS` is enabled.  Keys are null-terminated
- * strings; values are arbitrary byte buffers.
+ * strings; values are arbitrary byte buffers. Keys use nonempty ASCII
+ * [A-Za-z0-9_.-] with no leading dot; invalid/overlong keys are InvalidParam.
+ * ove_nvs_key_max_len() reports RAM63 or the selected file-prefix limit.
  */
 
 /**
@@ -82,7 +84,7 @@ inline void deinit()
  * @brief Erases the value associated with a key from NVS.
  * @param[in] key The null-terminated key string.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
- *         on failure (`Error::NotFound` if no such key).
+ *         on storage failure. Missing keys are successful no-ops.
  */
 [[nodiscard]] inline Result<void> erase(const char *key) noexcept
 {

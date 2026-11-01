@@ -11,7 +11,10 @@
 //! [`Handler`] callbacks that receive a [`Request`] / [`Response`] pair.
 //!
 //! The server is a singleton (one per process), so start/stop/route are
-//! free functions rather than methods on a struct.
+//! free functions rather than methods on a struct. Ordinary text inputs need
+//! no C-string conversion. Counted metadata is borrowed during the call only.
+//! Preparation errors leave responses unsent for retry/fallback; after the
+//! first socket write is attempted they stay sent even on failure.
 //!
 //! ## Async alternative
 //!
@@ -20,6 +23,7 @@
 //! Macro-driven routing, JSON via `serde`, optional WebSocket upgrade.
 //! See [`crate::async_net`]'s module docs for the full pairing recipe.
 
+use crate::cstring::Buffer;
 use core::ffi::CStr;
 use core::fmt;
 use core::marker::PhantomData;
@@ -170,7 +174,7 @@ impl<'a> Response<'a> {
     /// # Errors
     /// Returns an error if the response cannot be sent.
     pub fn json(&self, status: i32, json: &[u8]) -> Result<()> {
-        self.send(status, c"application/json", json)
+        self.send(status, "application/json", json)
     }
 
     /// Send an HTML response.
@@ -184,16 +188,18 @@ impl<'a> Response<'a> {
         Error::from_code(rc)
     }
 
-    /// Send a response with arbitrary content type.
+    /// Send a response with arbitrary content type. NUL returns `InvalidParam`;
+    /// a complete header exceeding 255 bytes returns `NoMemory` before I/O.
     ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn send(&self, status: i32, content_type: &CStr, body: &[u8]) -> Result<()> {
+    pub fn send(&self, status: i32, content_type: &str, body: &[u8]) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_httpd_resp_send(
+            bindings::ove_httpd_resp_send_n(
                 self.raw,
                 status,
-                content_type.as_ptr(),
+                content_type.as_ptr().cast(),
+                content_type.len(),
                 body.as_ptr() as *const _,
                 body.len(),
             )
@@ -201,25 +207,58 @@ impl<'a> Response<'a> {
         Error::from_code(rc)
     }
 
-    /// Send a JSON error response carrying `msg`.
+    /// Send a JSON error response carrying `msg`. NUL is `InvalidParam`;
+    /// escaped output over 191 bytes is `NoSpace` before I/O, without clipping.
     ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn error(&self, status: i32, msg: &CStr) -> Result<()> {
-        let rc = unsafe { bindings::ove_httpd_resp_error(self.raw, status, msg.as_ptr()) };
+    pub fn error(&self, status: i32, msg: &str) -> Result<()> {
+        let rc = unsafe {
+            bindings::ove_httpd_resp_error_n(self.raw, status, msg.as_ptr().cast(), msg.len())
+        };
         Error::from_code(rc)
     }
 
-    /// Send a pre-gzipped response (adds `Content-Encoding: gzip`).
-    ///
-    /// # Errors
-    /// Returns an error if the response cannot be sent.
-    pub fn send_gz(&self, status: i32, content_type: &CStr, body: &[u8]) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_httpd_resp_send_gz(
+    /// Format diagnostic text once, without an allocator or partial publication.
+    /// NUL/formatter failure is `InvalidParam`. Raw or escaped output over
+    /// 191 bytes is `NoSpace`; escaping may expand the staged raw text further.
+    pub fn error_fmt(&self, status: i32, args: fmt::Arguments<'_>) -> Result<()> {
+        let text = Buffer::<{ bindings::OVE_HTTPD_ERROR_ESCAPED_SIZE as usize }>::formatted(
+            args,
+            bindings::OVE_HTTPD_ERROR_ESCAPED_SIZE as usize - 1,
+            Error::NoSpace,
+        )?;
+        Error::from_code(unsafe {
+            bindings::ove_httpd_resp_error_n(self.raw, status, text.as_ptr(), text.as_bytes().len())
+        })
+    }
+
+    /// Native C-string response metadata compatibility; body remains binary.
+    pub fn send_cstr(&self, status: i32, content_type: &CStr, body: &[u8]) -> Result<()> {
+        Error::from_code(unsafe {
+            bindings::ove_httpd_resp_send(
                 self.raw,
                 status,
                 content_type.as_ptr(),
+                body.as_ptr().cast(),
+                body.len(),
+            )
+        })
+    }
+
+    /// Send a pre-gzipped response (adds `Content-Encoding: gzip`).
+    /// Metadata NUL is `InvalidParam`; full-header overflow is `NoMemory`,
+    /// before I/O and with the same sent-state contract as [`Self::send`].
+    ///
+    /// # Errors
+    /// Returns an error if the response cannot be sent.
+    pub fn send_gz(&self, status: i32, content_type: &str, body: &[u8]) -> Result<()> {
+        let rc = unsafe {
+            bindings::ove_httpd_resp_send_gz_n(
+                self.raw,
+                status,
+                content_type.as_ptr().cast(),
+                content_type.len(),
                 body.as_ptr() as *const _,
                 body.len(),
             )
@@ -266,15 +305,23 @@ pub fn stop() {
     unsafe { bindings::ove_httpd_stop() }
 }
 
-/// Register a route handler, e.g. `route(c"GET", c"/api/leds", handler)`.
+/// Register a route handler, e.g. `route("GET", "/api/leds", handler)`.
 ///
-/// The method and path are copied (up to 7 and 63 bytes).
+/// The method/path are copied whole; more than 7/63 bytes is rejected.
 ///
 /// # Errors
-/// Returns an error if the route table is full.
-pub fn route(method: &CStr, path: &CStr, handler: Handler) -> Result<()> {
-    let rc = unsafe { bindings::ove_httpd_route(method.as_ptr(), path.as_ptr(), handler) };
-    Error::from_code(rc)
+/// NUL is `InvalidParam`; method over 7 or path over 63 bytes is
+/// `NameTooLong`, before any slot is claimed. Full tables return `NoMemory`.
+pub fn route(method: &str, path: &str, handler: Handler) -> Result<()> {
+    let method =
+        Buffer::<{ bindings::OVE_HTTPD_METHOD_SIZE as usize }>::from_bytes(method.as_bytes())?;
+    let path = Buffer::<{ bindings::OVE_HTTPD_ROUTE_SIZE as usize }>::from_bytes(path.as_bytes())?;
+    Error::from_code(unsafe { bindings::ove_httpd_route(method.as_ptr(), path.as_ptr(), handler) })
+}
+
+/// Native C-string route registration, with identical strict native bounds.
+pub fn route_cstr(method: &CStr, path: &CStr, handler: Handler) -> Result<()> {
+    Error::from_code(unsafe { bindings::ove_httpd_route(method.as_ptr(), path.as_ptr(), handler) })
 }
 
 /// Register the built-in dashboard routes (`/api/info`, `/api/leds`, etc.).
@@ -284,11 +331,21 @@ pub fn register_builtin_routes() {
     unsafe { bindings::ove_httpd_register_builtin_routes() }
 }
 
-/// Append a log line to the httpd log ring buffer.
+/// Append text with no temporary input-size ceiling. NUL is `InvalidParam`
+/// before publication. The ring keeps 127 bytes; WS receives the full line.
+/// Success means validation/dispatch, not guaranteed ring or peer delivery.
 ///
 /// Call from a log output hook to capture lines for `GET /api/log`.
-pub fn log_append(line: &CStr) {
-    unsafe { bindings::ove_httpd_log_append(line.as_ptr()) }
+pub fn log_append(line: &str) -> Result<()> {
+    Error::from_code(unsafe { bindings::ove_httpd_log_append_n(line.as_ptr().cast(), line.len()) })
+}
+
+/// Native C-string log compatibility. Only validation/dispatch is reported;
+/// ring insertion and delivery follow the native log/WS policies.
+pub fn log_append_cstr(line: &CStr) -> Result<()> {
+    Error::from_code(unsafe {
+        bindings::ove_httpd_log_append_n(line.as_ptr(), line.to_bytes().len())
+    })
 }
 
 /// Bind the HTTP server to a specific network interface.
@@ -302,22 +359,26 @@ pub fn set_netif(handle: bindings::ove_netif_t) {
 
 #[cfg(has_net_httpd_ws)]
 pub mod ws {
+    use crate::cstring::Buffer;
     use core::ffi::CStr;
 
     use crate::bindings;
     use crate::error::{Error, Result};
 
-    /// Register a WebSocket route, e.g. `route(c"/ws", on_message, on_close)`.
+    /// Register a WebSocket route, e.g. `route("/ws", on_message, on_close)`.
     ///
-    /// The path is copied (up to 63 bytes).
+    /// The path is copied whole; more than 63 bytes is rejected.
     ///
     /// # Errors
-    /// Returns an error if the route table is full.
+    /// NUL is `InvalidParam`; path over 63 bytes is `NameTooLong`, before
+    /// any slot is claimed. Full tables return `NoMemory`.
     pub fn route(
-        path: &CStr,
+        path: &str,
         on_message: bindings::ove_httpd_ws_handler_t,
         on_close: bindings::ove_httpd_ws_close_handler_t,
     ) -> Result<()> {
+        let path =
+            Buffer::<{ bindings::OVE_HTTPD_ROUTE_SIZE as usize }>::from_bytes(path.as_bytes())?;
         let rc = unsafe { bindings::ove_httpd_ws_route(path.as_ptr(), on_message, on_close) };
         Error::from_code(rc)
     }
@@ -346,10 +407,31 @@ pub mod ws {
     /// Broadcast a message to all WebSocket connections on a path, from any
     /// thread; a connection whose send fails is closing, as for [`send`].
     ///
-    /// Returns the number of connections the message was sent to.
-    pub fn broadcast(path: &CStr, data: &[u8]) -> i32 {
-        unsafe {
-            bindings::ove_httpd_ws_broadcast(path.as_ptr(), data.as_ptr() as *const _, data.len())
+    /// Returns the sent connection count. NUL is `InvalidParam`; path over
+    /// 63 bytes is `NameTooLong`, before any sends. Empty selects the empty
+    /// path; [`broadcast_all`] selects every connection instead.
+    pub fn broadcast(path: &str, data: &[u8]) -> Result<usize> {
+        broadcast_span(path.as_ptr().cast(), path.len(), data)
+    }
+
+    /// Broadcast to every open connection, distinct from an empty path.
+    pub fn broadcast_all(data: &[u8]) -> Result<usize> {
+        broadcast_span(core::ptr::null(), 0, data)
+    }
+
+    /// Native C-string broadcast compatibility, with the same route bound.
+    pub fn broadcast_cstr(path: &CStr, data: &[u8]) -> Result<usize> {
+        broadcast_span(path.as_ptr(), path.to_bytes().len(), data)
+    }
+
+    fn broadcast_span(path: *const core::ffi::c_char, len: usize, data: &[u8]) -> Result<usize> {
+        let rc = unsafe {
+            bindings::ove_httpd_ws_broadcast_n(path, len, data.as_ptr().cast(), data.len())
+        };
+        if rc < 0 {
+            Err(Error::from_code(rc).unwrap_err())
+        } else {
+            Ok(rc as usize)
         }
     }
 

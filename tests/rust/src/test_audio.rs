@@ -7,13 +7,13 @@
 use crate::framework::run_suite;
 use crate::test_entry;
 use core::ffi::{c_int, c_void};
+use ove::Error;
 use ove::audio::{
-    device_cfg_i2s, graph_add_processor, graph_build, graph_connect, graph_deinit, graph_init,
-    graph_process, graph_start, graph_stop, AudioBuf, AudioProcessor, Graph, SampleFmt,
-    StaticProcessor,
+    AudioBuf, AudioProcessor, Graph, SampleFmt, StaticProcessor, device_cfg_i2s,
+    graph_add_processor, graph_build, graph_connect, graph_deinit, graph_init, graph_process,
+    graph_start, graph_stop,
 };
 use ove::ffi;
-use ove::Error;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /* ── Existing low-level tests ───────────────────────────────────── */
@@ -247,7 +247,7 @@ fn build_pipeline(g: &mut ffi::ove_audio_graph) {
         )
     };
     assert!(src >= 0, "add source failed: {src}");
-    let prc = graph_add_processor(g, PROC.get_mut(), c"prc").unwrap();
+    let prc = graph_add_processor(g, PROC.get_mut(), "prc").unwrap();
     let snk = unsafe {
         ffi::ove_audio_graph_add_node(
             g,
@@ -316,7 +316,7 @@ fn test_full_pipeline_stop_before_start_fails() {
 fn test_graph_add_node_free_fn_ok() {
     let mut g: ffi::ove_audio_graph = unsafe { core::mem::zeroed() };
     graph_init(&mut g, 128).unwrap();
-    let name = c"free_src";
+    let name = "free_src";
     let idx = ove::audio::graph_add_node(
         &mut g,
         &SRC_OPS,
@@ -333,7 +333,7 @@ fn test_graph_add_node_free_fn_error_after_build() {
     let mut g: ffi::ove_audio_graph = unsafe { core::mem::zeroed() };
     graph_init(&mut g, 128).unwrap();
     graph_build(&mut g).unwrap(); // graph leaves IDLE → READY
-    let name = c"too_late";
+    let name = "too_late";
     let result = ove::audio::graph_add_node(
         &mut g,
         &SRC_OPS,
@@ -350,7 +350,7 @@ fn test_graph_add_processor_error_after_build() {
     graph_init(&mut g, 128).unwrap();
     graph_build(&mut g).unwrap();
     // After build() the graph is READY; add_processor requires IDLE → error branch.
-    let result = graph_add_processor(&mut g, PROC.get_mut(), c"late");
+    let result = graph_add_processor(&mut g, PROC.get_mut(), "late");
     assert!(result.is_err());
     graph_deinit(&mut g);
 }
@@ -358,8 +358,8 @@ fn test_graph_add_processor_error_after_build() {
 /* ── Graph::device_source / device_sink ───────────────────────────
  *
  * Backed by `tests/backends/stub/stub_audio_device.c`, which validates
- * args and returns a dummy node index (0) on success or INVALID_PARAM
- * when the C name string is empty.  The real implementation in
+ * args and registers an inert node with normal NotSupported callbacks.
+ * Embedded NUL is rejected by the safe Rust facade. The implementation in
  * sim/hal/sim_audio.c depends on miniaudio and is not linked in
  * ove_stub.
  */
@@ -367,29 +367,36 @@ fn test_graph_add_processor_error_after_build() {
 fn test_graph_wrapper_device_source_ok() {
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let _ = g.device_source(&cfg, c"mic").unwrap();
+    let _ = g.device_source(&cfg, "mic").unwrap();
 }
 
 fn test_graph_wrapper_device_sink_ok() {
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let _ = g.device_sink(&cfg, c"spk").unwrap();
+    let _ = g.device_sink(&cfg, "spk").unwrap();
 }
 
 fn test_graph_wrapper_device_source_err() {
-    // Empty C string (first byte is NUL) — the stub rejects it with
-    // INVALID_PARAM, exercising the `if rc < 0 { Err(...) }` branch.
+    // Embedded NUL is rejected before native node publication.
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let result = g.device_source(&cfg, c"");
-    assert!(matches!(result, Err(Error::InvalidParam)), "got {:?}", result);
+    let result = g.device_source(&cfg, "bad\0name");
+    assert!(
+        matches!(result, Err(Error::InvalidParam)),
+        "got {:?}",
+        result
+    );
 }
 
 fn test_graph_wrapper_device_sink_err() {
     let mut g = Graph::new(128).unwrap();
     let cfg = device_cfg_i2s(16_000, 1, 0);
-    let result = g.device_sink(&cfg, c"");
-    assert!(matches!(result, Err(Error::InvalidParam)), "got {:?}", result);
+    let result = g.device_sink(&cfg, "bad\0name");
+    assert!(
+        matches!(result, Err(Error::InvalidParam)),
+        "got {:?}",
+        result
+    );
 }
 
 pub fn run() -> (usize, usize) {

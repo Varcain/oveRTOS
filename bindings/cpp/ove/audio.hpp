@@ -63,6 +63,9 @@ inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t
 	return cfg;
 }
 
+/** Native node descriptors retain name_span.data/len; counted registrations
+ * need no terminator. These wrappers still accept C strings that outlive the
+ * graph. Readers must use the stored length; rebuild for the new descriptor ABI. */
 /**
  * @brief C++ wrapper around ove_audio_graph.
  *
