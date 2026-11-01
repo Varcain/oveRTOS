@@ -384,6 +384,8 @@ struct ove_spi {
 	void *pending_rx;
 	size_t pending_len;
 	const struct ove_spi_cs *pending_cs;
+	struct ove_spi *retire_next;
+	int async_result;
 	volatile int async_busy;
 #endif
 };

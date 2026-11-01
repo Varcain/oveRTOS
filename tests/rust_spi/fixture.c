@@ -191,6 +191,14 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 	}
 	return OVE_OK;
 }
+int ove_hal_spi_async_prepare(void)
+{
+	return OVE_OK;
+}
+void ove_hal_spi_async_retire(ove_spi_t spi)
+{
+	ove_spi_async_retired(spi);
+}
 int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t len)
 {
 	(void)spi;

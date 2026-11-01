@@ -127,7 +127,15 @@ struct ove_spi_xfer {
  */
 OVE_NODISCARD int ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage,
 			       const struct ove_spi_cfg *cfg);
-/** @brief Release an SPI bus handle previously created with `ove_spi_init`. */
+/** @brief Release an SPI bus handle previously created with `ove_spi_init`.
+ * Thread context only. Consumes the handle: coordinate existing/new callers
+ * externally. An accepted async operation defers cleanup until native retirement;
+ * missing completion retains the backing. Keep storage and callback userdata
+ * alive through BOTH this call returning and final callback completion. A late
+ * concurrent close may overlap callback dispatch; callback alone does not prove
+ * an independently active close call has returned. Do not reuse the consumed
+ * handle from its callback. Synchronous callers must already be quiescent.
+ */
 void ove_spi_deinit(ove_spi_t spi);
 
 #ifdef OVE_HEAP_SPI
@@ -138,7 +146,11 @@ void ove_spi_deinit(ove_spi_t spi);
  * @return OVE_OK on success, negative error code on failure.
  */
 OVE_NODISCARD int ove_spi_create(ove_spi_t *spi, const struct ove_spi_cfg *cfg);
-/** @brief Destroy an SPI bus handle previously created with `ove_spi_create`. */
+/** @brief Destroy a heap-created handle; same consumed-handle and pending
+ * retirement obligations as ove_spi_deinit(). Native heap storage is freed
+ * only after outstanding provider/submission accesses end. Callback userdata
+ * must be separately valid through callback completion.
+ */
 void ove_spi_destroy(ove_spi_t spi);
 #endif /* OVE_HEAP_SPI */
 
@@ -220,15 +232,36 @@ OVE_NODISCARD int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *c
  * transfer has been accepted by the backend — completion is signalled
  * via @p cb.
  *
- * Completion context is backend-dependent:
- *  - STM32F7 + FreeRTOS: DMA TC ISR (callable from interrupt context).
- *  - Zephyr: poll signal handler (typically a system workqueue thread).
- *  - NuttX: a worker thread that runs the blocking transfer
- *    and invokes @p cb on return.  No real DMA — provides the async
- *    surface for testing.
+ * Submit from thread context. Final notification runs in task context after
+ * the submission and provider's last controller access. FreeRTOS uses its timer
+ * daemon after IT completion; Zephyr uses its system workqueue after the
+ * embedded transfer work's kernel tail; NuttX/host use the final worker or
+ * submitter access. A callback can precede this function's return, but neither
+ * the native submission nor provider touches retained backing afterward.
+ * Callbacks must be non-blocking. STM32 callbacks previously assuming ISR
+ * context must migrate unconditional FromISR-only calls to task APIs.
+ * These SPI rules do not change I2C or other DMA callback contexts.
  *
- * The callback must be non-blocking and ISR-safe.  Higher-level
- * bindings (Rust @c AsyncSpi) wrap this with @c AtomicWaker.
+ * Buffers, CS and userdata remain valid through final callback completion and
+ * every active API call returning. Callback notification alone does not
+ * authorize releasing backing while a concurrent close call is still active.
+ * A callback may submit another operation on a live, unconsumed handle.
+ * The backend must signal exactly one result for accepted work and none for
+ * rejection. A never-completing operation retains one live controller.
+ *
+ * FreeRTOS and Zephyr lazily start one static 10ms retry timer (rounded up to
+ * at least one tick). Coalesced daemon notifications are the FreeRTOS fast path; queue-full
+ * leaves retained nodes for the periodic pump. Each visit drains a bounded
+ * batch. This adds an idle O(1) check per period and no task stack reservation;
+ * daemon/worker starvation has no hard retirement deadline. Zephyr retains
+ * rejected notifications while its system queue is draining/plugged and retries
+ * once that queue becomes available. Preparation can fail
+ * before publication if that service cannot be established.
+ * NuttX workers allocate a native TCB/stack per submission. Release zero-heap
+ * builds use the configured reserved heap and can return allocation failure;
+ * zero-heap builds with CONFIG_DEBUG_ASSERTIONS are unsupported because their
+ * post-lock allocation policy asserts before reserved allocation. Preparation
+ * returns OVE_ERR_NOT_SUPPORTED before publishing work in that configuration.
  *
  * Whole-frame/alignment/overlap rules also apply here. The STM32 FreeRTOS
  * adapter accepts at most 65535 native frames in one async submission (65535
@@ -253,7 +286,19 @@ OVE_NODISCARD int ove_spi_transfer_async(ove_spi_t spi, const struct ove_spi_cs 
 					 void *rx, size_t len, ove_dma_complete_cb cb,
 					 void *user_data);
 
+/** Prepare async completion dispatch from thread context, without publishing
+ * an operation. Optional for C callers (submission prepares automatically);
+ * ownership bindings may call this before constructing an owner. Requires
+ * CONFIG_OVE_ASYNC. Returns OVE_OK or a negative setup error.
+ */
+OVE_NODISCARD int ove_spi_async_prepare(void);
+
 #else /* !CONFIG_OVE_SPI */
+
+OVE_NODISCARD static inline int ove_spi_async_prepare(void)
+{
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 /* No _init/_deinit stubs: OVE_SPI_DEFINE_STATIC is itself gated by
  * #ifdef CONFIG_OVE_SPI in storage.h. */

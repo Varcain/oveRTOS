@@ -86,11 +86,12 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
  * layer beforehand.
  *
  * Backends must call @ref ove_spi_async_complete with the transfer
- * result when the operation finishes. The portable layer then
- * deasserts CS, clears the busy flag, and invokes the user callback.
+ * result when I/O finishes. This records the result and deasserts software
+ * CS. Admission remains held until the submission/provider rendezvous and
+ * final task-context retirement; recording a result does not notify users.
  *
  * Backends without native DMA support may implement this via a
- * worker thread (NuttX), Zephyr signal API, or return
+ * worker thread (NuttX), a system-workqueue operation (Zephyr), or return
  * @c OVE_ERR_NOT_SUPPORTED in zero-heap modes that cannot allocate
  * the worker resources.
  *
@@ -105,12 +106,33 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
  */
 int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t len);
 
+/** Establish task-context completion dispatch before accepting async work.
+ * Called from thread context. Failure must leave no operation retained.
+ */
+int ove_hal_spi_async_prepare(void);
+
+/** Retire a completed operation after the common submission rendezvous.
+ * The provider must dispatch ove_spi_async_retired() in task context after
+ * its final controller access, including embedded kernel-work tails. Queues
+ * must unlink/cache every controller reference first. After notifying, the
+ * controller may have been destroyed; no further access is permitted.
+ */
+void ove_hal_spi_async_retire(ove_spi_t spi);
+
+/** Final task-context notification; provider retention has ended.
+ * Internal to HAL implementations. Calls the cached user callback and may
+ * finish an already requested close. No provider may access spi afterward.
+ */
+void ove_spi_async_retired(ove_spi_t spi);
+
 /**
  * @brief Completion notification from the HAL.
  *
  * Called by the HAL backend (from worker thread or DMA ISR) when an
- * async transfer finishes. The portable layer takes care of CS
- * deassert, busy-flag clear, and user callback dispatch.
+ * async I/O finishes. The portable layer deasserts CS and records the result.
+ * Its atomic submission/result rendezvous transfers exactly one retirement
+ * request to the provider hook. That hook must establish the provider-tail
+ * barrier before final task notification; busy is not cleared here.
  *
  * Safe to call from ISR context (no mutex unlock, no allocation).
  *

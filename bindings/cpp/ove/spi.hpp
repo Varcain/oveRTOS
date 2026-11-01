@@ -35,6 +35,16 @@ namespace ove
  * serializes one ove handle; supplied software CS spans a sequence, while
  * native hardware CS/controller locking may end between segments.
  *
+ * Async use through handle() follows the C retention contract: final callbacks
+ * run in task context after native submission/provider accesses retire. Keep
+ * buffers, CS and userdata valid through callback completion and active calls.
+ * A pending close consumes the handle and defers cleanup; callback completion
+ * does not join a concurrent close call. In zero-heap mode, this object's
+ * embedded storage must also remain alive until both obligations finish.
+ * Prepare can fail before admission; NuttX debug zero-heap async is unsupported.
+ * FreeRTOS/Zephyr use permanent retry timers without adding a task stack;
+ * callbacks must not block their daemon/system workqueue.
+ *
  * Not copyable.  Move-only when heap allocation is enabled.
  */
 class Spi

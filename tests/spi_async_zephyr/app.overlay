@@ -1,0 +1,6 @@
+/ {
+    spi1: spi-retirement {
+        compatible = "test,spi-retirement";
+        status = "okay";
+    };
+};

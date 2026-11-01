@@ -440,7 +440,12 @@ struct ove_spi {
 #ifdef CONFIG_OVE_ASYNC
 	ove_dma_complete_cb pending_cb;
 	void *pending_ud;
+	const void *pending_tx;
+	void *pending_rx;
+	size_t pending_len;
 	const struct ove_spi_cs *pending_cs;
+	struct ove_spi *retire_next;
+	int async_result;
 	volatile int async_busy;
 #endif
 };

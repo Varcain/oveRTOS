@@ -114,6 +114,9 @@ static void test_runner_task(void *arg)
 #include "framework/suites.inc"
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
+	printf("FreeRTOS heap: configured=%lu free=%lu minimum=%lu bytes\n",
+	       (unsigned long)configTOTAL_HEAP_SIZE, (unsigned long)xPortGetFreeHeapSize(),
+	       (unsigned long)xPortGetMinimumEverFreeHeapSize());
 
 #ifdef OVE_HW
 	/* See zero-heap sibling for rationale — bkpt #0xab faults on bare

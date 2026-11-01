@@ -840,6 +840,79 @@ def test_rust_spi(ove_dir, output_dir):
     return result
 
 
+def test_spi_retirement_freertos(ove_dir, output_dir):
+    """Exercise real FreeRTOS daemon/queue retirement with STM32 dependencies."""
+    import hashlib
+    manifest = load_manifest(ove_dir)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    url = get_component(manifest, "rtos", "freertos", "kernel", "url")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = os.path.join(ove_dir, "dl", "FreeRTOS-Kernel-" + digest)
+    if not os.path.isdir(kernel):
+        run(["git", "clone", "--depth", "1", "--branch", revision, url, kernel])
+    build = os.path.join(output_dir, "tests", "spi_async_freertos")
+    _cmake_build(os.path.join(ove_dir, "tests", "spi_async_freertos"), build,
+                 extra_args=["-DFREERTOS_PATH=" + kernel])
+    rc = _run_owned_test_process([os.path.join(build, "ove_test_spi_freertos")],
+                                 env=dict(os.environ), timeout=30)
+    result = TestResults(suite="spi-retirement-freertos", passed=int(rc == 0), failed=int(rc != 0))
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    arm_build = os.path.join(output_dir, "tests", "spi_async_freertos_arm")
+    _cmake_build(os.path.join(ove_dir, "tests", "spi_async_freertos"), arm_build,
+                 extra_args=["-DFREERTOS_PATH=" + kernel, "-DOVE_ARM=ON",
+                             "-DOVE_TOOLCHAIN_DIR=" + toolchain,
+                             "-DCMAKE_TOOLCHAIN_FILE=" + os.path.join(
+                                 ove_dir, "boards", "qemu-mps2-an500", "cmake", "arm-none-eabi.cmake")])
+    rc = _run_owned_test_process(["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7",
+                                 "-m", "16", "-nographic", "-semihosting", "-kernel",
+                                 os.path.join(arm_build, "ove_test_spi_freertos")],
+                                 env=dict(os.environ), timeout=30)
+    result.passed += int(rc == 0)
+    result.failed += int(rc != 0)
+    return result
+
+
+def test_spi_retirement_zephyr(ove_dir, output_dir):
+    """Exercise retirement against the actual Zephyr workqueue kernel."""
+    return _run_zephyr_native_sim(
+        ove_dir, output_dir, build_subdir="spi_async_zephyr", label="spi-retirement-zephyr",
+        source_dir=os.path.join(ove_dir, "tests", "spi_async_zephyr"), owned_timeout=30)
+
+
+def test_spi_retirement_nuttx(ove_dir, output_dir):
+    """Exercise real native pthread/descriptor and reserved-heap retirement."""
+    kernel, applications, _ = _nuttx_fetch_sources(ove_dir)
+    fixture = os.path.join(ove_dir, "tests", "sim", "spi-retirement-nuttx")
+    result = TestResults(suite="spi-retirement-nuttx")
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    for mode in ("heap", "zeroheap", "debug-zeroheap"):
+        base = os.path.join(output_dir, "tests", "spi_async_nuttx_qemu_" + mode)
+        apps = os.path.join(base, "nuttx-apps")
+        if not os.path.isdir(apps):
+            shutil.copytree(applications, apps, symlinks=True)
+        _nuttx_register_test_app(ove_dir, apps, "spi-retirement-nuttx")
+        overlays = [os.path.join(ove_dir, "tests", "sim", "nuttx-qemu", "nuttx_test_defconfig"),
+                    os.path.join(fixture, "retirement_defconfig")]
+        if mode == "debug-zeroheap":
+            overlays.append(os.path.join(fixture, "debug_defconfig"))
+        build = os.path.join(base, "build")
+        _nuttx_cmake_build(
+            ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
+            board_config="mps2-an500:nsh", defconfig_overlays=overlays, coverage=False,
+            extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
+            variant_dir=fixture, cmake_extra_args=[
+                "-DOVE_SPI_ZERO_HEAP=" + ("OFF" if mode == "heap" else "ON")])
+        rc = _run_owned_test_process(["qemu-system-arm", "-M", "mps2-an500",
+                                     "-cpu", "cortex-m7", "-m", "16", "-nographic",
+                                     "-semihosting", "-kernel", os.path.join(build, "nuttx")],
+                                     env=dict(os.environ), timeout=30)
+        result.passed += int(rc == 0)
+        result.failed += int(rc != 0)
+        if rc != 0:
+            result.failed_names.append(mode)
+    return result
+
+
 def test_rust_zeroheap(ove_dir, output_dir):
     """Build and run the Rust tests in zero-heap (static-storage) mode.
 
@@ -1369,7 +1442,7 @@ def _nuttx_register_test_app(ove_dir, apps_build, app_subdir):
 
 def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
                        board_config, defconfig_overlays, coverage,
-                       variant_dir, extra_env=None, hw=False):
+                       variant_dir, extra_env=None, hw=False, cmake_extra_args=None):
     """Configure + build a NuttX target via CMake. Two-phase to thread our
     test defconfig overlays through Kconfig:
 
@@ -1404,6 +1477,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
         # Tells the test app it runs on silicon (OVE_HW), as the FreeRTOS
         # and Zephyr hardware builds do.
         cmake_defs.append("-DOVE_HW=ON")
+    cmake_defs.extend(cmake_extra_args or [])
 
     logger.debug(f"cmake configure: {board_config} -> {build_dir}")
     # --no-warn-unused-cli silences "Manually-specified variables were not
@@ -1556,7 +1630,7 @@ def test_nuttx_coverage(ove_dir, output_dir):
 
 
 def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
-                            extra_conf=None):
+                            extra_conf=None, source_dir=None, owned_timeout=None):
     """Shared driver for test_zephyr and test_zephyr_coverage.
 
     `extra_conf` is applied as Zephyr's EXTRA_CONF_FILE so Kconfig overlays
@@ -1596,13 +1670,17 @@ def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
         west, "build",
         "-b", "native_sim/native/64",
         "-d", build,
-        os.path.join(ove_dir, "tests", "sim", "zephyr"),
+        source_dir or os.path.join(ove_dir, "tests", "sim", "zephyr"),
     ]
     if extra_conf:
         build_cmd.extend(["--", f"-DEXTRA_CONF_FILE={extra_conf}"])
     run(build_cmd, env=env)
 
     logger.info("Running Zephyr native_sim tests (%s)", label)
+    if owned_timeout is not None:
+        rc = _run_owned_test_process([os.path.join(build, "zephyr", "zephyr.exe")],
+                                     env=env, timeout=owned_timeout)
+        return TestResults(suite=label, passed=int(rc == 0), failed=int(rc != 0))
     return _run_test_binary(
         [os.path.join(build, "zephyr", "zephyr.exe")], label)
 
@@ -3029,6 +3107,9 @@ TEST_TARGETS = {
     "rust-lvgl": test_rust_lvgl,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
+    "spi-retirement-freertos": test_spi_retirement_freertos,
+    "spi-retirement-zephyr": test_spi_retirement_zephyr,
+    "spi-retirement-nuttx": test_spi_retirement_nuttx,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
     "zig-zeroheap": test_zig_zeroheap,

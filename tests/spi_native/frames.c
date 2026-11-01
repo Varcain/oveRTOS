@@ -12,6 +12,7 @@
 #include "ove/hal/hal_spi.h"
 #include "ove/gpio.h"
 #include "ove/sync.h"
+#include "ove/irq.h"
 #ifdef OVE_TEST_SPI_STM32
 #include "stm32f7xx_hal.h"
 #else
@@ -32,7 +33,7 @@ static struct {
 	unsigned int calls, invalid, locked, selected, workers;
 	unsigned int adapter_calls;
 	unsigned int error_call, completions;
-	int result, asynchronous;
+	int result, asynchronous, delay_completion;
 	uint32_t tick, spent, timeouts[8];
 	size_t native_words[8];
 	const void *native_tx[8];
@@ -40,6 +41,72 @@ static struct {
 	char trace[64];
 	size_t trace_len;
 } probe;
+
+#ifdef OVE_TEST_SPI_STM32
+static TimerCallbackFunction_t retry_callback;
+static TimerHandle_t retry_timer;
+static int create_failure, start_failure, pend_failure, fake_isr;
+static int prepare_reentry;
+static unsigned timer_creates, timer_starts, isr_pends, task_pends;
+static TickType_t retry_period;
+ove_irq_key_t ove_irq_lock(void)
+{
+	return 0;
+}
+void ove_irq_unlock(ove_irq_key_t key)
+{
+	(void)key;
+}
+bool ove_is_in_isr(void)
+{
+	return fake_isr != 0;
+}
+TimerHandle_t xTimerCreateStatic(const char *name, TickType_t period, BaseType_t reload, void *id,
+				 TimerCallbackFunction_t callback, StaticTimer_t *backing)
+{
+	(void)name;
+	(void)id;
+	++timer_creates;
+	assert_int_equal(reload, pdTRUE);
+	prepare_reentry = ove_spi_async_prepare();
+	if (create_failure)
+		return NULL;
+	retry_callback = callback;
+	retry_timer = backing;
+	retry_period = period;
+	return backing;
+}
+BaseType_t xTimerStart(TimerHandle_t timer, TickType_t wait)
+{
+	assert_ptr_equal(timer, retry_timer);
+	assert_int_equal(wait, 0);
+	++timer_starts;
+	return start_failure ? pdFALSE : pdPASS;
+}
+BaseType_t xTimerPendFunctionCall(PendedFunction_t callback, void *arg, uint32_t value,
+				  TickType_t wait)
+{
+	assert_int_equal(wait, 0);
+	++task_pends;
+	if (pend_failure)
+		return pdFALSE;
+	callback(arg, value);
+	return pdPASS;
+}
+BaseType_t xTimerPendFunctionCallFromISR(PendedFunction_t callback, void *arg, uint32_t value,
+					 BaseType_t *wake)
+{
+	++isr_pends;
+	assert_true(fake_isr);
+	*wake = pdFALSE;
+	if (pend_failure)
+		return pdFALSE;
+	fake_isr = 0;
+	callback(arg, value);
+	fake_isr = 1;
+	return pdPASS;
+}
+#endif
 
 static void event(char value)
 {
@@ -193,7 +260,7 @@ HAL_StatusTypeDef HAL_SPI_TransmitReceive_IT(SPI_HandleTypeDef *handle, uint8_t 
 					     uint16_t words)
 {
 	HAL_StatusTypeDef result = HAL_SPI_TransmitReceive(handle, tx, rx, words, 0);
-	if (result == HAL_OK)
+	if (result == HAL_OK && !probe.delay_completion)
 		HAL_SPI_TxRxCpltCallback(handle);
 	return result;
 }
@@ -431,6 +498,48 @@ static void complete(int result, void *data)
 	probe.result = result;
 }
 
+#ifdef OVE_TEST_SPI_STM32
+static void test_retirement_service_start_and_retry(void **state)
+{
+	(void)state;
+	create_failure = 1;
+	assert_int_equal(ove_spi_async_prepare(), OVE_ERR_NO_MEMORY);
+	create_failure = 0;
+	start_failure = 1;
+	assert_int_equal(ove_spi_async_prepare(), OVE_ERR_NO_MEMORY);
+	start_failure = 0;
+	assert_int_equal(ove_spi_async_prepare(), OVE_OK);
+	assert_int_equal(prepare_reentry, OVE_ERR_BUSY);
+	assert_int_equal(timer_creates, 2);
+	assert_int_equal(timer_starts, 2);
+	assert_int_equal(retry_period, 10);
+}
+static void test_retirement_queue_failure_keeps_backing(void **state)
+{
+	(void)state;
+	prepare(8, tx_buffer, 4, rx_buffer, 4);
+	probe.asynchronous = 1;
+	probe.delay_completion = 1;
+	pend_failure = 1;
+	assert_int_equal(ove_spi_transfer_async(spi, &cs, tx_buffer, rx_buffer, 4, complete,
+						&probe),
+			 OVE_OK);
+	assert_int_equal(probe.completions, 0);
+	fake_isr = 1;
+	HAL_SPI_TxRxCpltCallback(&storage.hal_handle);
+	fake_isr = 0;
+	unsigned early = probe.completions;
+	assert_true(isr_pends > 0);
+	pend_failure = 0;
+	retry_callback(retry_timer);
+	assert_int_equal(early, 0);
+	assert_int_equal(probe.completions, 1);
+	assert_int_equal(storage.async_busy, 0);
+	assert_null(storage.pending_cb);
+	assert_int_equal(probe.invalid, 0);
+}
+#endif
+
 static void test_async_frames_and_admission(void **state)
 {
 	(void)state;
@@ -493,12 +602,18 @@ int main(int argc, char **argv)
 	if (argc > 1)
 		cmocka_set_test_filter(argv[1]);
 	const struct CMUnitTest tests[] = {
+#ifdef OVE_TEST_SPI_STM32
+		cmocka_unit_test(test_retirement_service_start_and_retry),
+#endif
 		cmocka_unit_test(test_native_counts_are_bytes),
 		cmocka_unit_test(test_invalid_frames_have_no_effects),
 		cmocka_unit_test(test_entire_sequence_is_preflighted),
 		cmocka_unit_test(test_large_native_count_is_preserved),
 		cmocka_unit_test(test_in_place_and_error_cleanup),
 		cmocka_unit_test(test_async_frames_and_admission),
+#ifdef OVE_TEST_SPI_STM32
+		cmocka_unit_test(test_retirement_queue_failure_keeps_backing),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
