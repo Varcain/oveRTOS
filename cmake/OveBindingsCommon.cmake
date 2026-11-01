@@ -30,7 +30,7 @@
 #       inheriting includes/defines/options from TARGET (or
 #       zephyr_interface when applicable).
 #
-#   _ove_binding_extract_sizes(SIZES_C OUT_ENV LIB_NAME COMMENT)
+#   _ove_binding_extract_sizes(OUT_ENV LIB_NAME COMMENT)
 #       Adds a custom_command that runs extract_storage_sizes.py on
 #       LIB_NAME's object output, producing OUT_ENV.
 #
@@ -219,7 +219,10 @@ function(_ove_binding_extract_sizes OUT_ENV LIB_NAME COMMENT)
         COMMAND python3
             ${OVE_DIR}/config/scripts/extract_storage_sizes.py
             $<TARGET_OBJECTS:${LIB_NAME}> ${OUT_ENV}
+        # The OBJECT target orders the build; its files track freshness.
         DEPENDS ${LIB_NAME}
+                $<TARGET_OBJECTS:${LIB_NAME}>
+                ${OVE_DIR}/config/scripts/extract_storage_sizes.py
                 ${OVE_DIR}/include/ove/storage.h
         COMMENT "${COMMENT}"
     )

@@ -469,6 +469,20 @@ add_test(NAME ove_arm_float_abi_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestArmFloatAbi.cmake)
+foreach(_sizes_variant make ninja)
+    set(_sizes_generator "Unix Makefiles")
+    if(_sizes_variant STREQUAL "ninja")
+        set(_sizes_generator "Ninja")
+    endif()
+    add_test(NAME ove_binding_sizes_${_sizes_variant}_cmake
+        COMMAND ${CMAKE_COMMAND}
+            -DOVE_ROOT=${OVE_ROOT}
+            "-DTEST_GENERATOR=${_sizes_generator}"
+            -DTEST_VARIANT=${_sizes_variant}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestBindingStorageSizes.cmake)
+    set_tests_properties(ove_binding_sizes_${_sizes_variant}_cmake PROPERTIES
+        TIMEOUT 180 SKIP_REGULAR_EXPRESSION "SKIP:")
+endforeach()
 add_test(NAME ove_freertos_bootstrap_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}

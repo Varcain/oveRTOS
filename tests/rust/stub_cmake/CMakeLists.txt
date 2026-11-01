@@ -11,6 +11,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(OVE_DIR ${OVE_ROOT})
+include(${OVE_ROOT}/cmake/OveBindingsCommon.cmake)
 set(OVE_INCLUDE ${OVE_ROOT}/include)
 set(OVE_SRC ${OVE_ROOT}/src)
 set(POSIX_CORE_DIR ${OVE_ROOT}/tests/host/posix)
@@ -128,14 +130,7 @@ target_include_directories(_ove_sizes PRIVATE
 )
 target_compile_options(_ove_sizes PRIVATE -w)
 
-add_custom_command(
-    OUTPUT ${SIZES_ENV}
-    COMMAND python3
-        ${OVE_ROOT}/config/scripts/extract_storage_sizes.py
-        $<TARGET_OBJECTS:_ove_sizes> ${SIZES_ENV}
-    DEPENDS _ove_sizes
-            ${OVE_ROOT}/include/ove/storage.h
-    COMMENT "Extracting storage type sizes for Rust bindings"
-)
+_ove_binding_extract_sizes(${SIZES_ENV} _ove_sizes
+    "Extracting storage type sizes for Rust bindings")
 
 add_custom_target(storage_sizes ALL DEPENDS ${SIZES_ENV})
