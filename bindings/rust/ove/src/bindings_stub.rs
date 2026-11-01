@@ -868,7 +868,7 @@ unsafe extern "C" {
     pub fn ove_thread_yield();
 }
 unsafe extern "C" {
-    #[doc = " @brief Start the RTOS scheduler.\n\n Must be called after all threads and resources have been created.\n Typically called indirectly through ove_run().  Does not return on\n most platforms.\n\n @see ove_run"]
+    #[doc = " @brief Start the RTOS scheduler.\n\n Must be called after all threads and resources have been created.\n Typically called indirectly through ove_run().  Does not return on\n most platforms.\n\n Call from application startup, not a thread entry or native pthread worker.\n NuttX ignores calls from those workers.\n\n @see ove_run"]
     pub fn ove_thread_start_scheduler();
 }
 unsafe extern "C" {
@@ -2955,7 +2955,7 @@ unsafe extern "C" {
     pub fn ove_main();
 }
 unsafe extern "C" {
-    #[doc = " @brief End the init phase: lock the heap (zero-heap mode) and launch\n        the RTOS scheduler.\n\n Call this from ove_main() after every static resource has been\n declared and every boot-time helper task spawned.  In zero-heap\n mode `ove_run` calls @ref ove_heap_lock immediately before kicking\n off the scheduler, so any subsequent malloc / kmm_malloc /\n pvPortMalloc traps via DEBUGASSERT (or returns NULL in test mode).\n Apps whose runtime structurally requires post-init dynamic\n allocation (the benchmark suite, dynamic worker pools, etc.) skip\n `ove_run` and call @ref ove_thread_start_scheduler directly to\n opt out of the lock.\n\n On most platforms the scheduler never returns and this function\n blocks forever.\n\n @see ove_main, ove_heap_lock, ove_thread_start_scheduler"]
+    #[doc = " @brief End the init phase: lock the heap (zero-heap mode) and launch\n        the RTOS scheduler.\n\n Call this from ove_main() after every static resource has been\n declared and every boot-time helper task spawned.  In zero-heap\n mode `ove_run` calls @ref ove_heap_lock immediately before kicking\n off the scheduler, so any subsequent malloc / kmm_malloc /\n pvPortMalloc traps via DEBUGASSERT (or returns NULL in test mode).\n Apps whose runtime structurally requires post-init dynamic\n allocation (the benchmark suite, dynamic worker pools, etc.) skip\n `ove_run` and call @ref ove_thread_start_scheduler directly to\n opt out of the lock.\n\n On most platforms the scheduler never returns and this function\n blocks forever.\n\n Call from application startup, not a thread entry or native pthread worker.\n NuttX ignores calls from those workers without locking the heap.\n\n @see ove_main, ove_heap_lock, ove_thread_start_scheduler"]
     pub fn ove_run();
 }
 unsafe extern "C" {

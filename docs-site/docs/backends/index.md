@@ -177,6 +177,12 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
 
 - Threads map to NuttX tasks created with `task_create_with_stack`, each with its own task group. Auxiliary native pthread workers share that group but have no oveRTOS thread identity. The named oveRTOS priorities keep fixed NuttX priorities (50..240); the levels between two of them spread evenly in between.
 - Filesystem operations delegate to the NuttX VFS layer.
+- Thread deinitialization waits for native task retirement before caller storage
+  and stacks can be reused. This retirement check targets the single-core
+  NuttX ports supported here.
+- Call `ove_run()` or `ove_thread_start_scheduler()` from application startup.
+  NuttX ignores calls from oveRTOS thread entries and native pthread workers;
+  `ove_run()` also leaves the heap policy alone in that case.
 
 ## Running in a browser
 

@@ -186,8 +186,37 @@ static int task_wrapper(int argc, char *argv[])
 	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 	t->entry(t->arg);
 	SET_STATE(t, OVE_THREAD_STATE_TERMINATED);
+	tls_set_current(NULL);
 	nxsem_post(&t->done_sem);
 	return 0;
+}
+
+/* On the supported single-core ports, native exit removes the PID and
+ * abandons the old stack before another task can enter this critical section.
+ * The private wrapper argument distinguishes a replacement after PID reuse. */
+static bool native_task_owned(struct ove_thread *t, const char *expected)
+{
+	char args[2 * sizeof(uintptr_t) + 4] = {0};
+	irqstate_t flags = enter_critical_section();
+	struct tcb_s *native = nxsched_get_tcb(__atomic_load_n(&t->pid, __ATOMIC_RELAXED));
+	bool owned = false;
+	if (native && native->task_state != TSTATE_TASK_INVALID &&
+	    native->task_state != TSTATE_TASK_INACTIVE &&
+	    (native->flags & TCB_FLAG_TTYPE_MASK) == TCB_FLAG_TTYPE_TASK &&
+	    native->entry.main == task_wrapper) {
+		(void)nxtask_argvstr(native, args, sizeof(args));
+		owned = strcmp(args, expected) == 0;
+	}
+	leave_critical_section(flags);
+	return owned;
+}
+
+static void wait_for_native_exit(struct ove_thread *t)
+{
+	char expected[2 * sizeof(uintptr_t) + 4];
+	(void)snprintf(expected, sizeof(expected), " 0x%lx", (unsigned long)(uintptr_t)t);
+	while (native_task_owned(t, expected))
+		usleep(1000);
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -210,6 +239,7 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	t->suspend_inited = 0;
 	t->name = name; /* caller-owned string, retained for trace descriptors */
 	nxsem_init(&t->done_sem, 0, 0);
+	(void)nxsem_set_protocol(&t->done_sem, SEM_PRIO_NONE);
 
 	ensure_sigusr1_handler();
 
@@ -264,9 +294,11 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
+	irqstate_t flags = enter_critical_section();
 	if (first_thread == NULL) {
 		first_thread = t;
 	}
+	leave_critical_section(flags);
 
 	return OVE_OK;
 }
@@ -305,6 +337,11 @@ int ove_thread_deinit(ove_thread_t handle)
 	int ret = ove_check_param(handle);
 	if (ret)
 		return ret;
+	irqstate_t flags = enter_critical_section();
+	handle->closing = 1;
+	if (first_thread == handle)
+		first_thread = NULL;
+	leave_critical_section(flags);
 
 	if (__atomic_load_n(&handle->started, __ATOMIC_ACQUIRE)) {
 		/* Resume if suspended so it can finish */
@@ -315,18 +352,21 @@ int ove_thread_deinit(ove_thread_t handle)
 				nxsem_post(&handle->suspend_sem);
 			}
 		}
-		/* Wait for thread to finish naturally (join) */
-		if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) !=
-		    OVE_THREAD_STATE_TERMINATED) {
-			nxsem_wait_uninterruptible(&handle->done_sem);
-		}
+		/* The completion notification precedes native stack retirement. */
+		wait_for_native_exit(handle);
+		/* Acquire the entry's final state publication before returning its data. */
+		(void)__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE);
 	}
 
+	for (;;) {
+		flags = enter_critical_section();
+		unsigned int observers = handle->scheduler_observers;
+		leave_critical_section(flags);
+		if (observers == 0)
+			break;
+		usleep(1000);
+	}
 	_unregister_thread(handle);
-
-	if (first_thread == handle) {
-		first_thread = NULL;
-	}
 
 	if (handle->suspend_inited) {
 		nxsem_destroy(&handle->suspend_sem);
@@ -410,11 +450,25 @@ void ove_thread_yield(void)
 void ove_thread_start_scheduler(void)
 {
 #ifdef __NuttX__
+	if (gettid() != getpid() || tls_get_current() != NULL)
+		return;
 	/* Block until first thread exits (keeps init task alive).
 	 * Threads were already created by ove_thread_init() via task_create;
 	 * they begin running once this task yields or blocks. */
-	if (first_thread != NULL) {
-		nxsem_wait_uninterruptible(&first_thread->done_sem);
+	irqstate_t flags = enter_critical_section();
+	struct ove_thread *t = first_thread;
+	if (t && !t->closing)
+		++t->scheduler_observers;
+	else
+		t = NULL;
+	leave_critical_section(flags);
+	if (t) {
+		nxsem_wait_uninterruptible(&t->done_sem);
+		/* Retain completion for other current or later observers. */
+		nxsem_post(&t->done_sem);
+		flags = enter_critical_section();
+		--t->scheduler_observers;
+		leave_critical_section(flags);
 	}
 #endif
 	/* On Linux, POSIX threads run immediately — no scheduler to start */

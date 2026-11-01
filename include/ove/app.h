@@ -67,6 +67,9 @@ extern void ove_main(void);
  * On most platforms the scheduler never returns and this function
  * blocks forever.
  *
+ * Call from application startup, not a thread entry or native pthread worker.
+ * NuttX ignores calls from those workers without locking the heap.
+ *
  * @see ove_main, ove_heap_lock, ove_thread_start_scheduler
  */
 void ove_run(void);

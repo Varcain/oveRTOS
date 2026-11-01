@@ -255,6 +255,9 @@ void ove_thread_yield(void);
  * Typically called indirectly through ove_run().  Does not return on
  * most platforms.
  *
+ * Call from application startup, not a thread entry or native pthread worker.
+ * NuttX ignores calls from those workers.
+ *
  * @see ove_run
  */
 void ove_thread_start_scheduler(void);
