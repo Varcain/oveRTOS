@@ -269,6 +269,28 @@ only an invalid call is an error.
 
 ---
 
+## MQTT clients
+
+C owns one reusable buffer pair for an initialized client and each attempt's
+socket/TLS session separately. Heap allocation of the pair is lazy and atomic;
+disconnect/failure releases transport, while deinit/destroy also frees the pair.
+Zero-heap pairs remain embedded. BUSY rejection preserves all live state; accepted
+reconnect resets local clean-session subscriptions. Complete CONNECT/RX preflight
+must precede effects. C storage ABI stays unchanged by this ownership policy.
+
+C++ callbacks use an instance field with `user_data=this`; its stable address
+and existing non-movability keep the context valid. Failed connect restores the
+previous callback, and independent clients route independently. Rust stores a
+function pointer in C user data; Zig uses its static/comptime trampoline or typed
+context. Owning cleanup in each binding releases an active transport through C.
+
+All operations on one client require caller serialization. A synchronous callback
+may disconnect without losing its packet views; it must return before reconnect,
+destructive cleanup or another packet operation on the same client. Views cannot
+escape callback return. Raw C destroy invalidates its handle; this does not
+promise redundant destruction through a stale handle or extend every wrapper's
+existing idempotence contract.
+
 ## Callbacks
 
 Every binding hands the C layer a trampoline, so the context a callback runs in,

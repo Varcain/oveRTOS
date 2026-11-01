@@ -390,6 +390,10 @@ def test_stub(ove_dir, output_dir):
     # TLS client tests (heap and zero-heap) and the httpd WebSocket tests:
     # binaries of their own (tests/CMakeLists.txt).
     _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
+                                "ove_test_mqtt_heap", "ove_test_mqtt_zh",
+                                "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",
+                                "ove_test_mqtt_wide", "ove_test_mqtt_varint",
+                                "ove_test_mqtt_small_rx", "ove_test_mqtt_zh_small_rx",
                                 "ove_test_httpd_ws", "ove_test_nvs_default",
                                 "ove_test_nvs_custom", "ove_test_nvs_full"), "stub", results)
     return results
@@ -448,7 +452,11 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
     results = _run_test_binary(
         [os.path.join(build, "ove_test_stub")], label, env=env)
-    _run_extra_binaries(build, ("ove_test_httpd_ws", "ove_test_nvs_default",
+    _run_extra_binaries(build, ("ove_test_mqtt_heap", "ove_test_mqtt_zh",
+                                "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",
+                                "ove_test_mqtt_wide", "ove_test_mqtt_varint",
+                                "ove_test_mqtt_small_rx", "ove_test_mqtt_zh_small_rx",
+                                "ove_test_httpd_ws", "ove_test_nvs_default",
                                 "ove_test_nvs_custom", "ove_test_nvs_full"),
                         label, results, env=env)
     return results

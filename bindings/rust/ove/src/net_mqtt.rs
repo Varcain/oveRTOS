@@ -11,7 +11,11 @@
 //! (same as [`crate::timer::Timer`]) converts the C callback into a safe
 //! Rust function call.
 //!
-//! Works in both heap and zero-heap modes.
+//! Works in both heap and zero-heap modes. Cleanup closes a live transport;
+//! heap buffers are retained/reused until client cleanup. Serialize operations
+//! on one client. Message views remain valid until callback return; callbacks
+//! may disconnect but must not reconnect, destroy the client or start another
+//! packet operation on the same client before returning.
 //!
 //! ## Async alternative
 //!
@@ -205,7 +209,12 @@ impl Client {
     /// `on_message` is called for each incoming publish (topic + payload).
     ///
     /// # Errors
-    /// Returns an error if the connection or MQTT handshake fails.
+    /// Returns `Busy` for an established client, preserving its session and
+    /// callback. Length/capacity preflight errors precede allocation/network
+    /// effects; later errors release transport and retain one reusable pair.
+    /// Each credential and the whole encoded CONNECT must fit configured
+    /// bounds; RX must hold at least four bytes. Successful reconnect starts
+    /// a clean session with no previous local subscriptions.
     pub fn connect(&mut self, cfg: &Config, on_message: MessageFn) -> Result<()> {
         let user_data = on_message as *mut core::ffi::c_void;
 
@@ -230,6 +239,10 @@ impl Client {
     }
 
     /// Disconnect from the MQTT broker.
+    ///
+    /// Releases transport even if the farewell fails, retaining buffers until
+    /// client cleanup. Callback packet views remain valid until callback return.
+    /// Repeated disconnect on a live client is harmless.
     pub fn disconnect(&mut self) {
         unsafe { bindings::ove_mqtt_disconnect(self.handle) }
     }

@@ -640,8 +640,12 @@ static void test_mqtt_tls_publish_spans_records(void **state)
 	assert_int_equal(s.publish_payload_len, sizeof(payload));
 }
 
-int main(void)
+#include "mqtt_lifecycle.h"
+
+int main(int argc, char **argv)
 {
+	if (argc > 1)
+		cmocka_set_test_filter(argv[1]);
 	/* A handshake that never completes must not hang the test run. */
 	alarm(120);
 
@@ -664,6 +668,7 @@ int main(void)
 		cmocka_unit_test(test_tls_ca_without_hostname_is_refused),
 		cmocka_unit_test(test_psa_mac_compute_over_dirty_stack),
 		cmocka_unit_test(test_https_concurrent_sessions),
+		cmocka_unit_test(test_mqtt_real_tls_reconnect_and_cleanup),
 	};
 	int failed = cmocka_run_group_tests_name("net_tls", tests, NULL, NULL);
 

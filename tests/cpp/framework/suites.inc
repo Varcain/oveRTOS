@@ -57,6 +57,7 @@ OVE_CPP_SUITE(static_cell,     "StaticCell")
 OVE_CPP_SUITE(infer,           "Infer")
 OVE_CPP_SUITE(error,           "Error")
 OVE_CPP_SUITE(net,             "Net")
+OVE_CPP_SUITE(net_mqtt,        "MQTT Callbacks")
 
 #ifdef _OVE_CPP_SUITES_INC_DEFAULTED
 #undef OVE_CPP_SUITE

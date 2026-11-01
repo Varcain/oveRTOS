@@ -415,8 +415,12 @@ static void test_concurrent_sessions_share_the_pool(void **state)
 				 CONC_ROUNDS);
 }
 
-int main(void)
+#include "mqtt_lifecycle.h"
+
+int main(int argc, char **argv)
 {
+	if (argc > 1)
+		cmocka_set_test_filter(argv[1]);
 	alarm(120);
 
 	load_pem(&s_ca, "ca.pem");
@@ -429,6 +433,7 @@ int main(void)
 		cmocka_unit_test(test_static_session_before_tls_setup),
 		cmocka_unit_test(test_pool_exhaustion_is_no_memory),
 		cmocka_unit_test(test_concurrent_sessions_share_the_pool),
+		cmocka_unit_test(test_mqtt_real_tls_reconnect_and_cleanup),
 	};
 	return cmocka_run_group_tests_name("net_tls_zh", tests, NULL, NULL);
 }

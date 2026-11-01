@@ -550,7 +550,7 @@ The `_create()`/`_destroy()` convenience macros automatically expand to static s
 
 ## Language Bindings
 
-All four languages provide equivalent networking APIs. Key type mappings:
+The language bindings provide networking wrappers with these type mappings:
 
 | Concept | C | C++ | Rust | Zig |
 |---------|---|-----|------|-----|
@@ -572,11 +572,31 @@ All four languages provide equivalent networking APIs. Key type mappings:
 - **Rust**: Automatic via `Drop` trait; `Result<T>` error handling
 - **Zig**: Explicit `destroy()` with `defer`; `Error!T` return types; comptime zero-heap dispatch
 
+### MQTT Client Lifetime
+
+An initialized client owns at most one RX/TX buffer pair, acquired lazily in
+heap mode and reused through failed connections and disconnects. Deinit/owning
+cleanup closes any live transport and releases that pair. An established
+connect returns `OVE_ERR_BUSY` with the original connection and callback intact.
+Disconnect before reconnecting; an accepted reconnect starts a clean session
+with no old local subscription filters.
+
+Each credential must fit its16-bit wire length, and the complete encoded CONNECT
+must fit `CONFIG_OVE_NET_MQTT_TX_BUF`; RX must hold at least four bytes.
+Preflight errors precede allocation/network effects. Later connection errors
+release transport while keeping the reusable buffer pair reachable.
+
+Serialize operations on one client. Callbacks run synchronously inside the
+receiving operation, and their views last until callback return. A callback may
+disconnect; reconnect, deinit/destroy or another packet operation on that same
+client must wait until it returns. Disconnect releases transport even if its
+best-effort farewell fails, and retains callback packet backing until cleanup.
+
 ### MQTT Callback Patterns
 
 | Language | Pattern |
 |----------|---------|
 | C | Function pointer: `void (*)(topic, topic_len, payload, payload_len, user_data)` |
-| C++ | `std::function<void(std::string_view topic, std::span<const uint8_t> payload)>` |
+| C++ | `void (*)(std::string_view topic, std::string_view payload)` per instance |
 | Rust | `fn(&str, &[u8])` via trampoline (zero `unsafe` in app code) |
 | Zig | `comptime fn([]const u8, []const u8) void` via trampoline, or `connectWithContext()` for typed state |
