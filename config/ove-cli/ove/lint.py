@@ -357,7 +357,10 @@ def _clang_tidy(ove_dir, check):
         return ("clang-tidy", "OK",
                 "no app/binding sources in active compile db")
 
-    cmd = ["clang-tidy", "--quiet", "-p", build_dir] + files
+    # Match backend analysis: Clang rejects the zero-heap allocator's
+    # error-attribute redeclarations. Analysis never emits a binary.
+    cmd = ["clang-tidy", "--quiet", "-p", build_dir,
+           "--extra-arg=-D__OVE_LINT__"] + files
     rc, out = _run(cmd, cwd=ove_dir)
     return ("clang-tidy", "OK" if rc == 0 else "FAIL",
             f"{len(files)} files" if rc == 0 else out.strip()[:200])

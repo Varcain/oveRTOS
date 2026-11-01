@@ -47,7 +47,10 @@ typedef enum {
  *
  * Invoked synchronously by the MQTT API call that receives the packet
  * (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).
- * The client does not create a background callback thread.
+ * The client does not create a background callback thread. Topic/payload views
+ * remain valid until this callback returns. The callback may disconnect its
+ * client; it must not reconnect, deinit/destroy it, or start another packet
+ * operation on that client before returning.
  *
  * @param[in] topic       Topic string (not NUL-terminated).
  * @param[in] topic_len   Topic length in bytes.
@@ -88,6 +91,13 @@ typedef struct {
 /**
  * @brief Initialise an MQTT client from caller-supplied storage.
  *
+ * Storage must be fresh or previously deinitialized, remain at a stable address,
+ * and outlive the client. Calls on one client require caller serialization,
+ * including connect, packet operations, disconnect and destruction. All are
+ * thread-context operations. Heap-mode buffers are acquired lazily on the first
+ * admitted connect and retained for reuse until deinit; zero-heap buffers are
+ * embedded in the storage.
+ *
  * @param[out] client  Handle written on success.
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
@@ -98,12 +108,28 @@ OVE_NODISCARD int ove_mqtt_client_init(ove_mqtt_client_t *client,
 /**
  * @brief De-initialise an MQTT client.
  *
+ * Closes any owned transport and frees retained heap buffers, including for a
+ * live or failed connection. Call disconnect first to send a best-effort MQTT
+ * farewell. Repeated deinit on still-valid caller storage is harmless. Do not
+ * call from this client's callback or concurrently with another client call.
+ *
  * @param[in] client Handle returned by ove_mqtt_client_init().
  */
 void ove_mqtt_client_deinit(ove_mqtt_client_t client);
 
 /**
  * @brief Connect to an MQTT broker.
+ *
+ * An established client returns OVE_ERR_BUSY without changing its connection,
+ * callback, subscriptions or packet sequence. Disconnect before reconnecting.
+ * Each credential must fit its 16-bit wire length, the whole CONNECT packet must
+ * fit CONFIG_OVE_NET_MQTT_TX_BUF, and CONFIG_OVE_NET_MQTT_RX_BUF must be at least
+ * four bytes. Invalid capacity/length is OVE_ERR_INVALID_PARAM; requesting TLS
+ * when unavailable is OVE_ERR_NOT_SUPPORTED. Preflight errors have no allocation
+ * or network effects. Later failures release the attempt's transport and keep
+ * at most one reachable buffer pair for reuse. Success starts a clean session,
+ * with a fresh callback/configuration and no old local subscription filters.
+ * The serialization and callback rules of ove_mqtt_client_init() apply.
  *
  * @param[in] client MQTT client handle.
  * @param[in] cfg    Connection configuration.
@@ -113,6 +139,12 @@ OVE_NODISCARD int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_conf
 
 /**
  * @brief Disconnect from the MQTT broker.
+ *
+ * Sends a best-effort farewell for an established session and releases any owned
+ * transport even if that send fails. Repeated disconnect is harmless for a live
+ * client. Buffers remain owned until deinit, so callback packet views survive a
+ * disconnect until the callback returns. The caller serializes client calls;
+ * disconnect is the permitted operation from the client's message callback.
  *
  * @param[in] client MQTT client handle.
  */
@@ -173,6 +205,10 @@ OVE_NODISCARD int ove_mqtt_client_create(ove_mqtt_client_t *client);
 
 /**
  * @brief Destroy a heap-allocated MQTT client.
+ *
+ * Performs complete deinit, including a live transport, then frees the client.
+ * NULL is ignored; a destroyed non-NULL handle is invalid. Caller serialization
+ * and the callback restrictions of ove_mqtt_client_init() apply.
  *
  * @param[in] client Handle returned by ove_mqtt_client_create().
  */

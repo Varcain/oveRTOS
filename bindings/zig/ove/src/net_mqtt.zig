@@ -47,7 +47,14 @@ fn fillConfig(cfg: Config) c.ove_mqtt_config_t {
     return cc;
 }
 
-/// MQTT client.
+/// MQTT client. Cleanup closes a live transport; heap buffers are reused until
+/// client cleanup. Serialize calls on one client. Callback views remain valid
+/// until return: disconnect is permitted, while reconnect, deinit and another
+/// packet operation on the same client must wait for the callback to return.
+/// An established connect returns Busy without changing session or callback;
+/// preflight rejects oversized credentials/CONNECT or RX below four bytes before
+/// allocation/network effects. Later failures release transport and retain one
+/// reusable buffer pair. A successful reconnect starts a clean session.
 ///
 /// Heap mode (value-returning):
 ///
@@ -136,6 +143,9 @@ const HeapClient = struct {
         try err.fromCode(c.ove_mqtt_connect(self.handle, &cc));
     }
 
+    /// Releases transport despite farewell failure, preserving callback views
+    /// and retained buffers until cleanup. Repeated disconnect on a live client
+    /// is harmless.
     pub fn disconnect(self: *Client) void {
         c.ove_mqtt_disconnect(self.handle);
     }
@@ -233,6 +243,9 @@ const ZeroHeapClient = struct {
         try err.fromCode(c.ove_mqtt_connect(self.handle, &cc));
     }
 
+    /// Releases transport despite farewell failure, preserving callback views
+    /// and retained buffers until cleanup. Repeated disconnect on a live client
+    /// is harmless.
     pub fn disconnect(self: *Client) void {
         self.tracker.assertSame(self, "ove.MqttClient");
         c.ove_mqtt_disconnect(self.handle);

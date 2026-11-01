@@ -101,9 +101,9 @@ static size_t remaining_length_bytes(size_t len)
 
 /* True if a packet whose Remaining Length is `remaining` fits c->tx_buf:
  * 1 (fixed header) + Remaining Length varint + the Remaining Length bytes. */
-static int mqtt_tx_frame_fits(const struct ove_mqtt_client *c, size_t remaining)
+static int mqtt_tx_frame_fits(size_t capacity, size_t remaining)
 {
-	return 1 + remaining_length_bytes(remaining) + remaining <= c->tx_size;
+	return 1 + remaining_length_bytes(remaining) + remaining <= capacity;
 }
 
 /*
@@ -259,11 +259,30 @@ static int mqtt_wait_for(struct ove_mqtt_client *c, uint8_t expected_type, uint6
 
 			if (pkt_type == MQTT_PUBLISH) {
 				dispatch_publish(c, c->rx_buf + offset, pkt_len);
+				if (!c->connected)
+					return OVE_ERR_NET_CLOSED;
 			}
 			offset += pkt_len;
 		}
 	}
 	return OVE_ERR_TIMEOUT;
+}
+
+/* Transport ownership is independent of receiving CONNACK. Buffers remain
+ * client-owned so a synchronous callback may disconnect and keep its view. */
+static void mqtt_release_transport(struct ove_mqtt_client *c)
+{
+	c->connected = 0;
+#ifdef CONFIG_OVE_NET_TLS
+	if (c->tls) {
+		ove_tls_deinit(c->tls);
+		c->tls = NULL;
+	}
+#endif
+	if (c->sock) {
+		ove_socket_close(c->sock);
+		c->sock = NULL;
+	}
 }
 
 /* ---------- MQTT client ---------- */
@@ -281,6 +300,7 @@ int ove_mqtt_client_init(ove_mqtt_client_t *client, ove_mqtt_client_storage_t *s
 void ove_mqtt_client_deinit(ove_mqtt_client_t client)
 {
 	if (client) {
+		mqtt_release_transport(client);
 #ifndef CONFIG_OVE_ZERO_HEAP
 		if (client->rx_buf)
 			OVE_BACKEND_FREE(client->rx_buf);
@@ -321,101 +341,36 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_mqtt_client *c = client;
 
-	/* Allocate buffers */
-#ifdef CONFIG_OVE_ZERO_HEAP
-	c->rx_buf = c->_rx_buf;
-	c->rx_size = sizeof(c->_rx_buf);
-	c->tx_buf = c->_tx_buf;
-	c->tx_size = sizeof(c->_tx_buf);
-#else
-#ifdef CONFIG_OVE_NET_MQTT_RX_BUF
-	c->rx_size = CONFIG_OVE_NET_MQTT_RX_BUF;
-#else
-	c->rx_size = 1024;
-#endif
-#ifdef CONFIG_OVE_NET_MQTT_TX_BUF
-	c->tx_size = CONFIG_OVE_NET_MQTT_TX_BUF;
-#else
-	c->tx_size = 512;
-#endif
-	c->rx_buf = OVE_BACKEND_MALLOC(c->rx_size);
-	c->tx_buf = OVE_BACKEND_MALLOC(c->tx_size);
-	if (!c->rx_buf || !c->tx_buf)
-		return OVE_ERR_NO_MEMORY;
-#endif
-
-	c->keep_alive_s = cfg->keep_alive_s ? cfg->keep_alive_s : 60;
-	c->on_message = cfg->on_message;
-	c->user_data = cfg->user_data;
-	c->pkt_id = 1;
-
-	/* DNS resolve */
-	ove_sockaddr_t addr;
-	int ret = ove_dns_resolve(cfg->host, &addr, OVE_MS(10000));
-	if (ret != OVE_OK)
-		return ret;
-	addr.port = cfg->port;
-
-	/* Open socket (use embedded storage so it survives function return) */
-	ret = ove_socket_open(&c->sock, &c->sock_storage, OVE_AF_INET, OVE_SOCK_STREAM);
-	if (ret != OVE_OK)
-		return ret;
-
-	ret = ove_socket_connect(c->sock, &addr, OVE_MS(10000));
-	if (ret != OVE_OK) {
-		ove_socket_close(c->sock);
-		c->sock = NULL;
-		return ret;
-	}
-
-	/* TLS if requested */
-#ifdef CONFIG_OVE_NET_TLS
-	if (cfg->use_tls) {
-		/* The session outlives this call, so its storage lives in the
-		 * client, like the socket's. */
-		ove_tls_t tls = NULL;
-		ret = ove_tls_init(&tls, &c->tls_storage);
-		if (ret != OVE_OK) {
-			ove_socket_close(c->sock);
-			c->sock = NULL;
-			return ret;
-		}
-		ove_tls_config_t tls_cfg = {
-			.ca_cert = cfg->tls_ca_cert,
-			.ca_cert_len = cfg->tls_ca_cert_len,
-			.hostname = cfg->host,
-			.allow_insecure = cfg->tls_allow_insecure,
-		};
-		ret = ove_tls_handshake(tls, c->sock, &tls_cfg);
-		if (ret != OVE_OK) {
-			ove_tls_deinit(tls);
-			ove_socket_close(c->sock);
-			c->sock = NULL;
-			return ret;
-		}
-		c->tls = tls;
-	}
-#else
-	if (cfg->use_tls) {
-		/* TLS requested but the TLS layer is not compiled in.  Fail
-		 * rather than silently connecting in plaintext (mirrors the
-		 * HTTP client's #ifndef CONFIG_OVE_NET_TLS rejection). */
-		ove_socket_close(c->sock);
-		c->sock = NULL;
+	if (c->connected)
+		return OVE_ERR_BUSY;
+#ifndef CONFIG_OVE_NET_TLS
+	if (cfg->use_tls)
 		return OVE_ERR_NOT_SUPPORTED;
-	}
 #endif
 
-	/* Build CONNECT packet */
 	size_t cid_len = strlen(cfg->client_id);
 	size_t usr_len = cfg->username ? strlen(cfg->username) : 0;
 	size_t pwd_len = cfg->password ? strlen(cfg->password) : 0;
-	/* Each is a uint16 length-prefixed field on the wire; reject rather
-	 * than silently truncate the length (which would desync the frame). */
-	if (cid_len > 0xFFFF || usr_len > 0xFFFF || pwd_len > 0xFFFF)
+	if (cid_len > UINT16_MAX || usr_len > UINT16_MAX || pwd_len > UINT16_MAX)
 		return OVE_ERR_INVALID_PARAM;
 
-	/* Variable header: protocol name(6) + level(1) + flags(1) + keepalive(2) = 10 */
+#ifdef CONFIG_OVE_ZERO_HEAP
+	size_t rx_size = sizeof(c->_rx_buf);
+	size_t tx_size = sizeof(c->_tx_buf);
+#else
+#ifdef CONFIG_OVE_NET_MQTT_RX_BUF
+	size_t rx_size = CONFIG_OVE_NET_MQTT_RX_BUF;
+#else
+	size_t rx_size = 1024;
+#endif
+#ifdef CONFIG_OVE_NET_MQTT_TX_BUF
+	size_t tx_size = CONFIG_OVE_NET_MQTT_TX_BUF;
+#else
+	size_t tx_size = 512;
+#endif
+#endif
+	/* Include every prefix and the variable-width fixed header before any
+	 * allocation or transport operation. Each bounded field fits size_t. */
 	size_t remaining = 10 + 2 + cid_len;
 	uint8_t flags = 0x02; /* clean session */
 	if (cfg->username) {
@@ -426,7 +381,65 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 		flags |= 0x40;
 		remaining += 2 + pwd_len;
 	}
+	if (rx_size < 4 || !mqtt_tx_frame_fits(tx_size, remaining))
+		return OVE_ERR_INVALID_PARAM;
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+	c->rx_buf = c->_rx_buf;
+	c->tx_buf = c->_tx_buf;
+#else
+	/* Publish only a complete pair, then reuse it until client deinit. */
+	if (!c->rx_buf) {
+		uint8_t *rx = OVE_BACKEND_MALLOC(rx_size);
+		uint8_t *tx = OVE_BACKEND_MALLOC(tx_size);
+		if (!rx || !tx) {
+			OVE_BACKEND_FREE(rx);
+			OVE_BACKEND_FREE(tx);
+			return OVE_ERR_NO_MEMORY;
+		}
+		c->rx_buf = rx;
+		c->tx_buf = tx;
+	}
+#endif
+	c->rx_size = rx_size;
+	c->tx_size = tx_size;
+	uint16_t keep_alive_s = cfg->keep_alive_s ? cfg->keep_alive_s : 60;
+
+	/* DNS resolve */
+	ove_sockaddr_t addr;
+	int ret = ove_dns_resolve(cfg->host, &addr, OVE_MS(10000));
+	if (ret != OVE_OK)
+		goto fail;
+	addr.port = cfg->port;
+
+	/* Open socket (use embedded storage so it survives function return) */
+	ret = ove_socket_open(&c->sock, &c->sock_storage, OVE_AF_INET, OVE_SOCK_STREAM);
+	if (ret != OVE_OK)
+		goto fail;
+	ret = ove_socket_connect(c->sock, &addr, OVE_MS(10000));
+	if (ret != OVE_OK)
+		goto fail;
+
+#ifdef CONFIG_OVE_NET_TLS
+	if (cfg->use_tls) {
+		ove_tls_t tls = NULL;
+		ret = ove_tls_init(&tls, &c->tls_storage);
+		if (ret != OVE_OK)
+			goto fail;
+		c->tls = tls;
+		ove_tls_config_t tls_cfg = {
+			.ca_cert = cfg->tls_ca_cert,
+			.ca_cert_len = cfg->tls_ca_cert_len,
+			.hostname = cfg->host,
+			.allow_insecure = cfg->tls_allow_insecure,
+		};
+		ret = ove_tls_handshake(tls, c->sock, &tls_cfg);
+		if (ret != OVE_OK)
+			goto fail;
+	}
+#endif
+
+	/* Build CONNECT packet */
 	uint8_t *p = c->tx_buf;
 	*p++ = MQTT_CONNECT;
 	p += encode_remaining_length(p, remaining);
@@ -439,7 +452,7 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 	p += 4;
 	*p++ = 0x04; /* protocol level 3.1.1 */
 	*p++ = flags;
-	put_u16(p, c->keep_alive_s);
+	put_u16(p, keep_alive_s);
 	p += 2;
 
 	/* Client ID */
@@ -477,41 +490,33 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 		goto fail;
 	}
 
+	c->keep_alive_s = keep_alive_s;
+	c->on_message = cfg->on_message;
+	c->user_data = cfg->user_data;
+	c->pkt_id = 1;
+	c->sub_count = 0;
 	c->connected = 1;
 	return OVE_OK;
 
 fail:
-#ifdef CONFIG_OVE_NET_TLS
-	if (c->tls) {
-		ove_tls_close(c->tls);
-		ove_tls_deinit(c->tls);
-		c->tls = NULL;
-	}
-#endif
-	ove_socket_close(c->sock);
-	c->sock = NULL;
+	mqtt_release_transport(c);
 	return ret;
 }
 
 void ove_mqtt_disconnect(ove_mqtt_client_t client)
 {
-	if (!client || !client->connected)
+	if (!client)
 		return;
 	struct ove_mqtt_client *c = client;
-
-	uint8_t pkt[2] = {MQTT_DISCONNECT, 0x00};
-	mqtt_send(c, pkt, 2);
-	c->connected = 0;
-
+	if (c->connected) {
+		uint8_t pkt[2] = {MQTT_DISCONNECT, 0x00};
+		(void)mqtt_send(c, pkt, sizeof(pkt));
 #ifdef CONFIG_OVE_NET_TLS
-	if (c->tls) {
-		ove_tls_close(c->tls);
-		ove_tls_deinit(c->tls);
-		c->tls = NULL;
-	}
+		if (c->tls)
+			ove_tls_close(c->tls);
 #endif
-	ove_socket_close(c->sock);
-	c->sock = NULL;
+	}
+	mqtt_release_transport(c);
 }
 
 int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload,
@@ -534,7 +539,7 @@ int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *pa
 		remaining += 2; /* packet ID */
 
 	/* Ensure the whole assembled frame fits before writing into tx_buf. */
-	if (!mqtt_tx_frame_fits(c, remaining))
+	if (!mqtt_tx_frame_fits(c->tx_size, remaining))
 		return OVE_ERR_INVALID_PARAM;
 
 	uint8_t *p = c->tx_buf;
@@ -586,7 +591,7 @@ int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos
 	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
 		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + 2 + topic_len + 1; /* pkt_id + topic + qos */
-	if (!mqtt_tx_frame_fits(c, remaining))
+	if (!mqtt_tx_frame_fits(c->tx_size, remaining))
 		return OVE_ERR_INVALID_PARAM;
 
 	uint8_t *p = c->tx_buf;
@@ -634,7 +639,7 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
 		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + 2 + topic_len; /* pkt_id + topic */
-	if (!mqtt_tx_frame_fits(c, remaining))
+	if (!mqtt_tx_frame_fits(c->tx_size, remaining))
 		return OVE_ERR_INVALID_PARAM;
 
 	uint8_t *p = c->tx_buf;

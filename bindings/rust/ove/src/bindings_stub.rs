@@ -3596,7 +3596,7 @@ pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
 #[doc = "< At least once."]
 pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
 pub type ove_mqtt_qos_t = core::ffi::c_uint;
-#[doc = " @brief MQTT message callback.\n\n Invoked synchronously by the MQTT API call that receives the packet\n (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).\n The client does not create a background callback thread.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
+#[doc = " @brief MQTT message callback.\n\n Invoked synchronously by the MQTT API call that receives the packet\n (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).\n The client does not create a background callback thread. Topic/payload views\n remain valid until this callback returns. The callback may disconnect its\n client; it must not reconnect, deinit/destroy it, or start another packet\n operation on that client before returning.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
 pub type ove_mqtt_msg_cb = Option<
     unsafe extern "C" fn(
         topic: *const core::ffi::c_char,
@@ -3665,25 +3665,25 @@ const _: () = {
         [core::mem::offset_of!(ove_mqtt_config_t, user_data) - 80usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise an MQTT client from caller-supplied storage.\n\n @param[out] client  Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Initialise an MQTT client from caller-supplied storage.\n\n Storage must be fresh or previously deinitialized, remain at a stable address,\n and outlive the client. Calls on one client require caller serialization,\n including connect, packet operations, disconnect and destruction. All are\n thread-context operations. Heap-mode buffers are acquired lazily on the first\n admitted connect and retained for reuse until deinit; zero-heap buffers are\n embedded in the storage.\n\n @param[out] client  Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_mqtt_client_init(
         client: *mut ove_mqtt_client_t,
         storage: *mut ove_mqtt_client_storage_t,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief De-initialise an MQTT client.\n\n @param[in] client Handle returned by ove_mqtt_client_init()."]
+    #[doc = " @brief De-initialise an MQTT client.\n\n Closes any owned transport and frees retained heap buffers, including for a\n live or failed connection. Call disconnect first to send a best-effort MQTT\n farewell. Repeated deinit on still-valid caller storage is harmless. Do not\n call from this client's callback or concurrently with another client call.\n\n @param[in] client Handle returned by ove_mqtt_client_init()."]
     pub fn ove_mqtt_client_deinit(client: ove_mqtt_client_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Connect to an MQTT broker.\n\n @param[in] client MQTT client handle.\n @param[in] cfg    Connection configuration.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Connect to an MQTT broker.\n\n An established client returns OVE_ERR_BUSY without changing its connection,\n callback, subscriptions or packet sequence. Disconnect before reconnecting.\n Each credential must fit its 16-bit wire length, the whole CONNECT packet must\n fit CONFIG_OVE_NET_MQTT_TX_BUF, and CONFIG_OVE_NET_MQTT_RX_BUF must be at least\n four bytes. Invalid capacity/length is OVE_ERR_INVALID_PARAM; requesting TLS\n when unavailable is OVE_ERR_NOT_SUPPORTED. Preflight errors have no allocation\n or network effects. Later failures release the attempt's transport and keep\n at most one reachable buffer pair for reuse. Success starts a clean session,\n with a fresh callback/configuration and no old local subscription filters.\n The serialization and callback rules of ove_mqtt_client_init() apply.\n\n @param[in] client MQTT client handle.\n @param[in] cfg    Connection configuration.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_mqtt_connect(
         client: ove_mqtt_client_t,
         cfg: *const ove_mqtt_config_t,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Disconnect from the MQTT broker.\n\n @param[in] client MQTT client handle."]
+    #[doc = " @brief Disconnect from the MQTT broker.\n\n Sends a best-effort farewell for an established session and releases any owned\n transport even if that send fails. Repeated disconnect is harmless for a live\n client. Buffers remain owned until deinit, so callback packet views survive a\n disconnect until the callback returns. The caller serializes client calls;\n disconnect is the permitted operation from the client's message callback.\n\n @param[in] client MQTT client handle."]
     pub fn ove_mqtt_disconnect(client: ove_mqtt_client_t);
 }
 unsafe extern "C" {
@@ -3720,7 +3720,7 @@ unsafe extern "C" {
     pub fn ove_mqtt_client_create(client: *mut ove_mqtt_client_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Destroy a heap-allocated MQTT client.\n\n @param[in] client Handle returned by ove_mqtt_client_create()."]
+    #[doc = " @brief Destroy a heap-allocated MQTT client.\n\n Performs complete deinit, including a live transport, then frees the client.\n NULL is ignored; a destroyed non-NULL handle is invalid. Caller serialization\n and the callback restrictions of ove_mqtt_client_init() apply.\n\n @param[in] client Handle returned by ove_mqtt_client_create()."]
     pub fn ove_mqtt_client_destroy(client: ove_mqtt_client_t);
 }
 #[doc = " @brief SNTP client configuration."]

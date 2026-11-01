@@ -45,7 +45,7 @@ enum class Qos : uint8_t {
  * @struct Config
  * @brief MQTT connection configuration.
  *
- * Mirrors `ove_mqtt_config_t` with C++ default member initialisers.
+ * Broker credentials and session settings with C++ default member initialisers.
  */
 struct Config {
 	const char *host{};	   /**< Broker hostname or IP. */
@@ -62,11 +62,12 @@ struct Config {
  * @brief RAII wrapper around an oveRTOS MQTT client handle.
  *
  * Constructs the underlying MQTT client on creation and destroys it on
- * destruction.  The message callback uses a static trampoline so that no
- * heap-allocated closure is required; this makes the `Client` inherently
- * per-instance and therefore non-movable even without `CONFIG_OVE_ZERO_HEAP`.
- *
- * @note Non-copyable and non-movable (static callback is per-instance).
+ * destruction. A static trampoline routes through this object's own callback
+ * field, without an allocated closure. The C context retains this object's
+ * address, so Client is non-copyable and non-movable in both allocation modes.
+ * Serialize calls on one client. Message views last until callback return;
+ * a callback may disconnect, but must not reconnect, destroy the client, or
+ * start another packet operation on it. Heap buffers are reused until cleanup.
  */
 class Client
 {
@@ -98,7 +99,8 @@ class Client
 	/**
 	 * @brief Destroys the MQTT client, releasing the underlying resource.
 	 *
-	 * If the handle is null the destructor is a no-op.
+	 * Closes a live transport and releases retained heap buffers. If the
+	 * handle is null the destructor is a no-op.
 	 */
 	~Client() noexcept
 	{
@@ -120,8 +122,12 @@ class Client
 	 * @brief Connects to an MQTT broker.
 	 *
 	 * Optionally registers a stateless message callback that is invoked
-	 * for every incoming PUBLISH.  The callback is stored in a static
-	 * variable and dispatched via an internal trampoline.
+	 * for every incoming PUBLISH. Each instance retains its own callback.
+	 * An established client returns Busy with its original callback and
+	 * session unchanged. Failed attempts release transport, retain one reusable
+	 * buffer pair, and preserve callback ownership. Success starts a clean session.
+	 * Credentials and the entire encoded CONNECT must fit configured bounds;
+	 * RX must hold at least four bytes. Calls require caller serialization.
 	 *
 	 * @param[in] cfg        Connection configuration.
 	 * @param[in] on_message Message callback (nullptr to disable).
@@ -130,7 +136,8 @@ class Client
 	 */
 	[[nodiscard]] Result<void> connect(const Config &cfg, MsgFn on_message = nullptr) noexcept
 	{
-		s_msg_fn_ = on_message;
+		MsgFn previous = msg_fn_;
+		msg_fn_ = on_message;
 		ove_mqtt_config_t c{};
 		c.host = cfg.host;
 		c.port = cfg.port;
@@ -140,12 +147,18 @@ class Client
 		c.keep_alive_s = cfg.keep_alive_s;
 		c.use_tls = cfg.use_tls ? 1 : 0;
 		c.on_message = on_message ? trampoline_ : nullptr;
-		c.user_data = nullptr;
-		return from_rc(ove_mqtt_connect(handle_, &c));
+		c.user_data = this;
+		int rc = ove_mqtt_connect(handle_, &c);
+		if (rc != OVE_OK)
+			msg_fn_ = previous;
+		return from_rc(rc);
 	}
 
 	/**
 	 * @brief Disconnects from the MQTT broker.
+	 * Releases transport even if the farewell fails; retains buffers until
+	 * cleanup. May be called inside the message callback without invalidating
+	 * its packet views. Repeated disconnect on a live client is harmless.
 	 */
 	void disconnect()
 	{
@@ -246,16 +259,17 @@ class Client
 	 *        signature to the C++ `MsgFn` type.
 	 */
 	static void trampoline_(const char *topic, size_t topic_len, const void *payload,
-				size_t payload_len, void * /*user_data*/)
+				size_t payload_len, void *user_data)
 	{
-		if (s_msg_fn_) {
-			s_msg_fn_(std::string_view(topic, topic_len),
-				  std::string_view(static_cast<const char *>(payload),
-						   payload_len));
+		auto *self = static_cast<Client *>(user_data);
+		if (self && self->msg_fn_) {
+			self->msg_fn_(std::string_view(topic, topic_len),
+				      std::string_view(static_cast<const char *>(payload),
+						       payload_len));
 		}
 	}
 
-	static inline MsgFn s_msg_fn_{};
+	MsgFn msg_fn_{};
 
 	ove_mqtt_client_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP

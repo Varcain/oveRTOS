@@ -275,9 +275,10 @@ endif()
 # dl/mbedtls after `make download`, otherwise from upstream at the
 # manifest's tag (CI fetches cmocka the same way).
 option(OVE_TEST_BUILD_NET_TLS "Build ove_test_net_tls (needs mbedTLS)" ON)
+option(OVE_TEST_BUILD_MQTT "Build production MQTT lifecycle tests" ON)
 # Sanitizer builds of this tree set their own -fsanitize flags, which ASan
 # here would clash with; the plain stub build runs these tests.
-if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
+if(OVE_TEST_BUILD_NET_TLS OR OVE_TEST_BUILD_MQTT)
     set(OVE_TEST_MBEDTLS_DIR ${OVE_ROOT}/dl/mbedtls)
     if(NOT EXISTS ${OVE_TEST_MBEDTLS_DIR}/library/ssl_tls.c)
         FetchContent_Declare(
@@ -295,6 +296,9 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
         set(OVE_TEST_MBEDTLS_DIR ${ove_test_mbedtls_SOURCE_DIR})
     endif()
 
+endif()
+
+if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
     file(GLOB OVE_TEST_MBEDTLS_SRC CONFIGURE_DEPENDS ${OVE_TEST_MBEDTLS_DIR}/library/*.c)
     add_library(ove_test_mbedtls STATIC ${OVE_TEST_MBEDTLS_SRC})
     # SYSTEM: clang-tidy (make lint) reads this build and should not
@@ -364,6 +368,8 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
             ${POSIX_CORE_DIR}/posix_sync.c
             ${OVE_SRC}/ove_net.c
             ${OVE_ROOT}/backends/common/ove_net_tls.c
+            ${OVE_ROOT}/backends/common/ove_net_mqtt.c
+            ${OVE_ROOT}/backends/common/ove_mqtt_topic.c
         )
         target_include_directories(ove_test_net_tls_zh PRIVATE
             ${OVE_INCLUDE}
@@ -377,6 +383,9 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
             CONFIG_OVE_NET=1
             CONFIG_OVE_SYNC=1
             CONFIG_OVE_NET_TLS=1
+            CONFIG_OVE_NET_MQTT=1
+            CONFIG_OVE_NET_MQTT_RX_BUF=1024
+            CONFIG_OVE_NET_MQTT_TX_BUF=512
             # Larger than the default: the sweep hands a session one
             # contiguous run, the concurrency test runs four sessions from
             # the one pool, and the host's 64-bit structures are larger.
@@ -397,6 +406,11 @@ endif()
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
+# Production MQTT lifecycle with scripted transport/allocator dependencies.
+if(OVE_TEST_BUILD_MQTT)
+    add_subdirectory(net_mqtt)
+endif()
+
 # --- httpd WebSocket connection lifetime (ove_test_httpd_ws) ---
 # The real httpd and WebSocket server on the POSIX socket backend, driven by
 # raw-socket clients.  Its own ove_config.h (tests/net_httpd) keeps the
