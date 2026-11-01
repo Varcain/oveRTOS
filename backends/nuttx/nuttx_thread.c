@@ -79,7 +79,9 @@ static struct ove_thread *tls_get_current(void)
 {
 	int idx = __atomic_load_n(&tls_index, __ATOMIC_RELAXED);
 
-	if (idx < 0) {
+	/* Every ove thread is its task-group leader. Native pthread workers
+     * share the group's slot, but do not own the handle stored there. */
+	if (idx < 0 || gettid() != getpid()) {
 		return NULL;
 	}
 	return (struct ove_thread *)(uintptr_t)task_tls_get_value(idx);

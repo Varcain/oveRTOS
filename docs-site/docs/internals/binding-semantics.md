@@ -97,6 +97,9 @@ A recurring difference is *how a scope-bound resource is released*:
 | Priority | `ove_prio_t` (C enum) + `ove::prio_above`/`prio_below` | `Priority` newtype (`u8` level, anchor consts, `above`/`below`) | `Priority` non-exhaustive `enum(c_uint)` (`above`/`below`) |
 | State | `ove_thread_state_t` (C enum) | `ThreadState` enum | `State` `enum(c_uint)` |
 
+Native pthread workers return no oveRTOS identity even when their creator is an
+oveRTOS task; they do not inherit its implicit stop flag or state attribution.
+
 **Contract notes**
 
 - A live thread handle **owns** the kernel thread. Letting the handle go out of

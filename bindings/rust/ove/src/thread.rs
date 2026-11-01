@@ -383,7 +383,8 @@ impl Thread {
     /// Get a non-owning handle to the currently running thread.
     ///
     /// Returns `None` on a thread oveRTOS did not create (the startup or
-    /// main thread, idle, RTOS service threads).  Task context only.
+    /// main thread, idle, RTOS service threads, or native pthread workers).
+    /// Native workers do not inherit their creator's identity. Task context only.
     #[inline]
     pub fn current() -> Option<Self> {
         let handle = unsafe { bindings::ove_thread_get_self() };
