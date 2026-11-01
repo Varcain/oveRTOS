@@ -596,10 +596,16 @@ pub fn Thread(comptime stack_size: usize) type {
             c.ove_thread_set_priority(self.handle, @intFromEnum(priority));
         }
 
+        /// NuttX reserves SIGUSR1: do not replace or permanently mask it.
+        /// Waits for acknowledgement or concurrent release/exit; native queue
+        /// failure can return without suspension. Call from thread context,
+        /// keep callers and their groups alive and coordinate calls with destruction.
         pub fn suspendThread(self: Self) void {
             c.ove_thread_suspend(self.handle);
         }
 
+        /// NuttX retains release before delivery and restores the prior state.
+        /// The thread-context and live-caller rules of suspendThread apply.
         pub fn resumeThread(self: Self) void {
             c.ove_thread_resume(self.handle);
         }

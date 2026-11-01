@@ -100,6 +100,7 @@ set(_srcs
   ${_suite_dir}/test_renode_stm32_net.c
   ${_suite_dir}/test_thread.c
   ${_tests_root}/backends/nuttx/thread_lifecycle.c
+  ${_tests_root}/backends/nuttx/thread_suspend.c
   ${_suite_dir}/test_thread_stop.c
   ${_suite_dir}/test_sync_mutex.c
   ${_suite_dir}/test_sync_sem.c
@@ -267,6 +268,8 @@ if(TARGET nuttx)
     nxsem_wait_uninterruptible=ove_test_nuttx_nxsem_wait_uninterruptible
     nxsched_get_tcb=ove_test_nuttx_nxsched_get_tcb
     nxtask_argvstr=ove_test_nuttx_nxtask_argvstr
+    sigaction=ove_test_nuttx_sigaction
+    nxsig_tgkill=ove_test_nuttx_tgkill
   )
   set_source_files_properties(${_nuttx_be}/nuttx_thread.c PROPERTIES
     COMPILE_DEFINITIONS "${_lifecycle_aliases}"

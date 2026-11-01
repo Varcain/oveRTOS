@@ -209,6 +209,20 @@ int start_worker(void)
 | `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Identity, state, and priority are always populated: `priority` is the ove-scale priority (a thread created at an ove priority reports that priority; an RTOS service thread reports the highest ove priority at or below its native one) and `native_priority` the value the RTOS uses. `valid_fields` identifies the optional metrics supplied by the backend. Returns `OVE_ERR_NOT_SUPPORTED` if enumeration itself is unavailable. |
 | `ove_sys_get_mem_stats` | `int (struct ove_mem_stats *stats)` | Query system heap totals: `total`, `free`, `used`, `peak_used` bytes. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
 
+On NuttX, suspension reserves `SIGUSR1` in the target group. Creation completes
+that setup before returning, without changing the creator's handler or mask.
+Do not replace or permanently block the reserved target signal. External
+suspension waits for acknowledgement or concurrent release, close or exit;
+multiple callers share one request. Resume retains an early release and the
+owner restores its previous logical state. A native signal-queue resource
+failure can return without suspension through the existing void API.
+
+Use these controls from thread context and keep native callers alive through
+return. A native group owner must join pthread workers before returning while
+they are in library calls. Coordinate initiating calls with destruction;
+deinitialization invalidates the handle. NuttX closes pending suspensions and
+waits for admitted callers and actual native retirement before releasing backing.
+
 ## Runtime Statistics and Stack Profiling
 
 ```mermaid

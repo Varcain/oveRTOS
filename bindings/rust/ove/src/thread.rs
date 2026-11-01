@@ -406,12 +406,20 @@ impl Thread {
     }
 
     /// Suspend this thread.
+    ///
+    /// NuttX reserves SIGUSR1; do not replace or permanently mask it. This
+    /// thread-context call waits for acknowledgement or concurrent release/exit;
+    /// queue failure can return without suspension. Keep native callers and their
+    /// groups alive through the call and coordinate new calls with destruction.
     #[inline]
     pub fn suspend(&self) {
         unsafe { bindings::ove_thread_suspend(self.handle) }
     }
 
     /// Resume this thread.
+    ///
+    /// NuttX retains release before delivery and restores the prior logical
+    /// state. The thread-context and live-caller rules of `suspend` apply.
     #[inline]
     pub fn resume(&self) {
         unsafe { bindings::ove_thread_resume(self.handle) }
@@ -987,6 +995,8 @@ impl<'storage, T> JoinHandleBorrowed<'storage, T> {
     // These let callers do `h.suspend()` instead of `h.thread().suspend()`.
 
     /// Suspend the running thread.  See [`Thread::suspend`].
+    /// NuttX uses reserved SIGUSR1; see `Thread::suspend` for its
+    /// acknowledgement, resource-failure and live-caller rules.
     #[inline]
     pub fn suspend(&self) {
         self.thread().suspend();

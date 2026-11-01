@@ -114,9 +114,10 @@ typedef enum {
 /**
  * @brief Initialise a thread using caller-supplied static storage and stack.
  *
- * Creates a new thread without any heap allocation.  The caller must
- * provide a backend @p storage object and a @p stack buffer of @p stack_size
- * bytes.
+ * The caller provides a backend @p storage object and a @p stack buffer of
+ * @p stack_size bytes. NuttX still allocates native task/group and signal-action
+ * resources; it completes target signal setup before publishing the handle.
+ * A reported setup error leaves @p handle unchanged.
  *
  * @param[out] handle      Receives the opaque thread handle on success.
  * @param[in]  storage     Pointer to statically allocated backend storage.
@@ -150,7 +151,11 @@ OVE_NODISCARD int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *st
  * resources.  This function neither requests cooperative stop nor forcibly
  * terminates the worker.  Signal a cooperative worker with
  * ove_thread_request_stop() before calling it.  The static storage supplied at
- * init time is not freed.
+ * init time is not freed. On NuttX, closing releases pending or acknowledged
+ * suspensions and waits for admitted control calls and native task retirement.
+ * Callers must remain alive through their API calls: a native group owner must
+ * join its pthread workers before returning while they are in library calls.
+ * Coordinate new calls with ownership; a completed deinit invalidates the handle.
  *
  * @param[in] handle  Handle returned by ove_thread_init().
  * @return OVE_OK on success, or a negative error code on failure.
@@ -267,6 +272,15 @@ void ove_thread_start_scheduler(void);
  *
  * The thread remains suspended until ove_thread_resume() is called.
  *
+ * NuttX reserves SIGUSR1 in each oveRTOS task group. Do not replace its action
+ * or permanently block it. An external call waits for owner acknowledgement,
+ * concurrent resume, close or entry return; multiple callers coalesce into one
+ * suspension. A native signal-queue resource failure can return without suspension
+ * because this void API cannot report it. Self-suspension waits for release.
+ * Native pthread callers are supported while their owner group stays alive;
+ * callers must not be forcibly canceled during a control call. These are
+ * thread-context operations. Coordinate starting calls with destruction.
+ *
  * @param[in] handle  Thread to suspend.  May be the calling thread itself.
  *                    NULL is ignored.
  *
@@ -276,6 +290,10 @@ void ove_thread_suspend(ove_thread_t handle);
 
 /**
  * @brief Resume a previously suspended thread.
+ *
+ * On NuttX, also releases a request whose signal has not arrived yet. The
+ * owner restores its prior logical state after release. The thread-context,
+ * caller-lifetime and reserved-signal rules of ove_thread_suspend() apply.
  *
  * @param[in] handle  Thread to resume.  Must have been suspended with
  *                    ove_thread_suspend().  NULL is ignored.
