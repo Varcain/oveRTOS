@@ -46,6 +46,14 @@ void ove_hal_spi_close(ove_spi_t spi)
 	spi->dev = NULL;
 }
 
+int ove_hal_spi_validate_transfer(ove_spi_t spi, size_t len, int asynchronous)
+{
+	(void)spi;
+	(void)len;
+	(void)asynchronous;
+	return OVE_OK;
+}
+
 int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
 	(void)timeout_ns;

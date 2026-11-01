@@ -12,8 +12,14 @@
 //!
 //! Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
 //! milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
-//! waits, with no timeout, for other transfers on the same bus.  In a
+//! waits, with no timeout, for synchronous transfers through the same handle. In a
 //! multi-segment transfer the timeout applies to each segment.
+//! Native counts are bytes; 16-bit mode requires even counts and buffers
+//! aligned for `u16`. Native TX/RX spans must be disjoint or exactly identical
+//! for in-place operation. The same-handle lock and supplied software CS span
+//! a sequence; native hardware selection/controller locking may end between
+//! segments. Read-only TX filler is backend-defined and can contain the initial
+//! RX contents. Use explicit TX data when its value matters.
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -128,7 +134,7 @@ impl Spi {
         Error::from_code(rc)
     }
 
-    /// Read-only SPI transfer (clocks out zeros).
+    /// Read-only SPI transfer with backend-defined TX filler.
     pub fn read(
         &self,
         cs: Option<&bindings::ove_spi_cs>,

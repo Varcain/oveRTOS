@@ -7,7 +7,11 @@
 //! SPI master driver — full-duplex `transfer`, with explicit CS descriptor
 //! and per-call timeout. Only the FreeRTOS STM32 driver honours the timeout,
 //! in whole milliseconds rounded down; Zephyr and NuttX ignore it. Every call
-//! first waits, with no timeout, for other transfers on the same bus.
+//! first waits, with no timeout, for synchronous transfers through the same handle.
+//! Native counts are bytes; 16-bit mode requires even counts and u16-aligned
+//! buffers. Native TX/RX spans must be disjoint or exactly identical in-place.
+//! The supplied software CS and same-handle lock span a sequence; native
+//! hardware selection/controller locking may end between segments.
 //!
 //! Wraps `ove/spi.h`. Pass `null` for `tx` to do an RX-only transfer, or
 //! `null` for `rx` to do TX-only. Available when `CONFIG_OVE_SPI` is enabled.
@@ -29,7 +33,7 @@ pub fn write(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, data: []const u8, timeo
     try err.fromCode(c.ove_spi_write(spi, cs, data.ptr, data.len, timeout_ns));
 }
 
-/// Read-only SPI transfer (clock out zeros, capture RX).
+/// Read-only SPI transfer with backend-defined TX filler, possibly initial RX contents.
 pub fn read(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, buf: []u8, timeout_ns: u64) Error!void {
     try err.fromCode(c.ove_spi_read(spi, cs, buf.ptr, buf.len, timeout_ns));
 }

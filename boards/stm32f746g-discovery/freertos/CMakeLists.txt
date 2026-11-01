@@ -31,6 +31,7 @@ ove_add_compile_definitions(
     USE_HAL_DRIVER
     ARM_MATH_CM7
     $<$<OR:$<BOOL:${OVE_NET}>,$<BOOL:${OVE_ASYNC_NET}>>:HAL_ETH_MODULE_ENABLED>
+    $<$<BOOL:${OVE_SPI}>:HAL_SPI_MODULE_ENABLED>
 )
 
 ove_add_compile_options(

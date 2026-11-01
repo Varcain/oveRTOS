@@ -28,8 +28,12 @@ namespace ove
  *
  * Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
  * milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
- * waits, with no timeout, for other transfers on the same bus (see the
- * timeout note on @ref ove_spi).
+ * waits, with no timeout, for synchronous transfers through the same handle (see the
+ * timeout note on @ref ove_spi). Counts are bytes; 16-bit mode requires even
+ * counts and uint16_t-aligned buffers. Raw buffers must cover the full count
+ * and be disjoint or exactly identical for in-place operation. The mutex
+ * serializes one ove handle; supplied software CS spans a sequence, while
+ * native hardware CS/controller locking may end between segments.
  *
  * Not copyable.  Move-only when heap allocation is enabled.
  */
@@ -101,7 +105,7 @@ class Spi
 		return from_rc(ove_spi_write(handle_, cs, data, len, to_timeout_ns(timeout)));
 	}
 
-	/** @brief Read-only transfer — transmit sends zeros. */
+	/** @brief Read-only transfer with backend-defined TX filler (possibly RX contents). */
 	[[nodiscard]] Result<void> read(const struct ove_spi_cs *cs, void *buf, size_t len,
 					std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{

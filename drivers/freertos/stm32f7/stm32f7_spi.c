@@ -95,30 +95,56 @@ void ove_hal_spi_close(ove_spi_t spi)
 	HAL_SPI_DeInit(&spi->hal_handle);
 }
 
+int ove_hal_spi_validate_transfer(ove_spi_t spi, size_t len, int asynchronous)
+{
+	size_t width = spi->word_size == 16 ? 2 : 1;
+	if (asynchronous && len / width > UINT16_MAX)
+		return OVE_ERR_INVALID_PARAM;
+	return OVE_OK;
+}
+
 int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
-	HAL_StatusTypeDef ret;
-	uint32_t hal_ms = stm32f7_ns_to_hal_ms(timeout_ns);
+	const uint8_t *txp = tx;
+	uint8_t *rxp = rx;
+	size_t width = spi->word_size == 16 ? 2 : 1;
+	size_t words = len / width;
+	uint32_t budget = stm32f7_ns_to_hal_ms(timeout_ns);
+	uint32_t started = HAL_GetTick();
+	int attempted = 0;
 
-	if (tx != NULL && rx != NULL) {
-		ret = HAL_SPI_TransmitReceive(&spi->hal_handle, (uint8_t *)tx, rx, (uint16_t)len,
-					      hal_ms);
-	} else if (tx != NULL) {
-		ret = HAL_SPI_Transmit(&spi->hal_handle, (uint8_t *)tx, (uint16_t)len, hal_ms);
-	} else {
-		ret = HAL_SPI_Receive(&spi->hal_handle, rx, (uint16_t)len, hal_ms);
+	while (words) {
+		uint16_t count = words > UINT16_MAX ? UINT16_MAX : (uint16_t)words;
+		uint32_t remaining = budget;
+		if (budget != HAL_MAX_DELAY) {
+			uint32_t elapsed = HAL_GetTick() - started;
+			if (elapsed >= budget && (attempted || elapsed))
+				return OVE_ERR_TIMEOUT;
+			remaining = budget - elapsed;
+		}
+		attempted = 1;
+		HAL_StatusTypeDef ret;
+		if (txp && rxp)
+			ret = HAL_SPI_TransmitReceive(&spi->hal_handle, (uint8_t *)txp, rxp, count,
+						      remaining);
+		else if (txp)
+			ret = HAL_SPI_Transmit(&spi->hal_handle, (uint8_t *)txp, count, remaining);
+		else
+			ret = HAL_SPI_Receive(&spi->hal_handle, rxp, count, remaining);
+		if (ret == HAL_TIMEOUT)
+			return OVE_ERR_TIMEOUT;
+		if (ret == HAL_BUSY)
+			return OVE_ERR_BUS_BUSY;
+		if (ret != HAL_OK)
+			return OVE_ERR_BUS_ERROR;
+		size_t bytes = (size_t)count * width;
+		if (txp)
+			txp += bytes;
+		if (rxp)
+			rxp += bytes;
+		words -= count;
 	}
-
-	switch (ret) {
-	case HAL_OK:
-		return OVE_OK;
-	case HAL_TIMEOUT:
-		return OVE_ERR_TIMEOUT;
-	case HAL_BUSY:
-		return OVE_ERR_BUS_BUSY;
-	default:
-		return OVE_ERR_BUS_ERROR;
-	}
+	return OVE_OK;
 }
 
 #ifdef CONFIG_OVE_ASYNC
@@ -160,16 +186,19 @@ static struct ove_spi *find_active(SPI_HandleTypeDef *hspi)
 int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t len)
 {
 	HAL_StatusTypeDef ret;
+	int valid = ove_hal_spi_validate_transfer(spi, len, 1);
+	if (valid != OVE_OK)
+		return valid;
+	uint16_t words = (uint16_t)(len / (spi->word_size == 16 ? 2 : 1));
 
 	register_active(spi);
 
 	if (tx != NULL && rx != NULL) {
-		ret = HAL_SPI_TransmitReceive_IT(&spi->hal_handle, (uint8_t *)tx, rx,
-						 (uint16_t)len);
+		ret = HAL_SPI_TransmitReceive_IT(&spi->hal_handle, (uint8_t *)tx, rx, words);
 	} else if (tx != NULL) {
-		ret = HAL_SPI_Transmit_IT(&spi->hal_handle, (uint8_t *)tx, (uint16_t)len);
+		ret = HAL_SPI_Transmit_IT(&spi->hal_handle, (uint8_t *)tx, words);
 	} else {
-		ret = HAL_SPI_Receive_IT(&spi->hal_handle, rx, (uint16_t)len);
+		ret = HAL_SPI_Receive_IT(&spi->hal_handle, rx, words);
 	}
 
 	if (ret != HAL_OK) {

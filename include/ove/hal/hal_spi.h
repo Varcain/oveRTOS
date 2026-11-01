@@ -42,10 +42,32 @@ int ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg);
 void ove_hal_spi_close(ove_spi_t spi);
 
 /**
+ * @brief Validate backend transfer limits without changing any state.
+ *
+ * The portable layer has checked pointer presence, nonzero whole-frame byte
+ * count, alignment and overlap. It calls this hook before taking its mutex,
+ * asserting software CS or publishing asynchronous transfer state, including
+ * every nonempty record of a sequence. Do not perform I/O, allocate, or retain
+ * arguments here. The configured SPI handle must remain stable across the
+ * validation and transfer. Implementations may reject a one-shot async count
+ * that their synchronous path can split into multiple native calls.
+ *
+ * @param[in] spi           Configured SPI handle.
+ * @param[in] len           Number of bytes, not native words.
+ * @param[in] asynchronous  Nonzero for an asynchronous submission.
+ * @return OVE_OK if admissible, otherwise a negative error code.
+ */
+int ove_hal_spi_validate_transfer(ove_spi_t spi, size_t len, int asynchronous);
+
+/**
  * @brief Full-duplex SPI data transfer.
  *
- * Called under the bus mutex, with CS already asserted by the
- * portable layer.  @p tx or @p rx may be NULL for half-duplex.
+ * The synchronous portable frontend calls under its bus mutex, with software
+ * CS asserted. Async worker adapters may reuse this function without that
+ * mutex after async admission. @p tx or @p rx may be NULL for half-duplex.
+ * Count bytes, converting to whole native frames where needed; exact in-place
+ * TX/RX is supported. The frontend has checked frame/alignment/overlap constraints
+ * and backend limits; the caller supplies the full valid memory spans.
  *
  * @param[in]  spi        SPI handle.
  * @param[in]  tx         Transmit buffer, or NULL.

@@ -4,9 +4,28 @@ Header: `ove/spi.h` | Kconfig: `CONFIG_OVE_SPI` | Selects: `OVE_SYNC`, `OVE_GPIO
 
 ## Overview
 
-SPI master driver with configurable clock/mode, thread-safe bus locking, and portable chip-select management via GPIO. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (anything under 1 ms times out at once); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. Every call first waits, with no timeout, for the bus lock held by any other transfer on the same bus. In `ove_spi_transfer_seq()` the timeout applies to each segment, not the whole sequence.
+SPI master driver with configurable clock/mode, thread-safe bus locking, and portable chip-select management via GPIO. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (submillisecond values give a zero HAL wait budget); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. Every call first waits, with no timeout, for the bus lock held by another synchronous transfer through the same ove handle. In `ove_spi_transfer_seq()` the timeout applies to each segment, not the whole sequence.
 
 ## Configuration
+
+Transfer lengths count bytes. In 16-bit mode, nonempty lengths must be even and
+buffers must be aligned for `uint16_t`. Every non-NULL buffer must cover the full
+count. TX/RX buffers may be disjoint or exactly identical for in-place transfers;
+partial overlap is rejected. All nonempty sequence records are validated before
+software CS or transfer state changes. Zero-length records are skipped.
+
+The mutex serializes synchronous calls through one ove handle. Coordinate
+synchronous and async use separately: async does not take that mutex. A sequence retains its supplied
+software CS, while native hardware CS and controller locking may end between
+segments on NuttX and Zephyr. Coordinate other handles and native driver users
+externally. Read-only transmit filler is backend-defined: it may be zero, all
+ones, or the initial RX contents. Supply explicit TX data when it matters.
+
+The STM32 FreeRTOS synchronous adapter splits large requests into whole-frame
+chunks under one per-segment timeout budget. Its one-shot asynchronous limit is
+65535 frames: 65535 bytes in 8-bit mode or 131070 in 16-bit mode. Larger async
+requests fail before CS or pending-state publication. These native count checks
+do not establish async binding buffer ownership or cancellation safety.
 
 <!-- ove:body -->
 ```c
