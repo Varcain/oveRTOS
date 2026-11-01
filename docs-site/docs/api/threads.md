@@ -1,6 +1,11 @@
 # Thread Management
 
-oveRTOS threads are portable wrappers around the native thread primitive of each supported backend: FreeRTOS tasks, Zephyr threads and NuttX pthreads (and pthreads on the host test backend). The same `ove/thread.h` API compiles unchanged for every backend — priority mapping, state reporting, and stack profiling are translated at compile time with no runtime indirection.
+oveRTOS threads are portable wrappers around the native thread primitive of each supported backend: FreeRTOS tasks, Zephyr threads and NuttX tasks (and pthreads on the host test backend). The same `ove/thread.h` API compiles unchanged for every backend — priority mapping, state reporting, and stack profiling are translated at compile time with no runtime indirection.
+
+`ove_thread_get_self()` identifies only threads created through oveRTOS, from
+their first entry statement. It returns NULL in native pthread workers even
+when an oveRTOS task created them. Worker sleeps and waits therefore do not
+update the owner's oveRTOS state, trace identity, or implicit stop token.
 
 !!! warning "`ove_main()` locals are UB after `ove_run()`"
     Anything in `ove_main()`'s automatic storage becomes dangling once the scheduler starts. Pass long-lived state to workers via `static` locals, file-scope variables, or heap allocation. See [Troubleshooting → `ove_main` locals](../getting-started/troubleshooting.md#ove_main-locals-are-ub-after-ove_run) for the full rule.

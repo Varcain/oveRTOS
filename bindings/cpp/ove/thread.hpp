@@ -950,7 +950,8 @@ inline void yield() noexcept
 }
 
 /** @return Raw C handle of the currently executing thread, or a null handle on
- *          a thread oveRTOS did not create.  Task context only. */
+ *          a thread oveRTOS did not create, including native pthread workers.
+ *          Workers do not inherit their creator's ove identity. Task context only. */
 inline ove_thread_t self() noexcept
 {
 	return ove_thread_get_self();

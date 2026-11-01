@@ -218,9 +218,9 @@ int ove_thread_destroy(ove_thread_t handle);
  * in an ISR and before ove_thread_start_scheduler().
  *
  * @return Handle of the calling thread, or NULL on a thread oveRTOS did not
- *         create (the startup or main thread, idle, RTOS service threads).
- *         On NuttX a pthread started by an oveRTOS thread currently reports
- *         that thread's handle.
+ *         create (the startup or main thread, idle, RTOS service threads,
+ *         and native pthread workers). Native workers do not inherit the
+ *         creating oveRTOS thread's identity.
  */
 ove_thread_t ove_thread_get_self(void);
 

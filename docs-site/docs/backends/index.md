@@ -175,7 +175,7 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
 
 ## NuttX backend notes
 
-- Threads map to NuttX `pthread` or `task_create` depending on configuration. The named oveRTOS priorities keep fixed NuttX priorities (50..240); the levels between two of them spread evenly in between.
+- Threads map to NuttX tasks created with `task_create_with_stack`, each with its own task group. Auxiliary native pthread workers share that group but have no oveRTOS thread identity. The named oveRTOS priorities keep fixed NuttX priorities (50..240); the levels between two of them spread evenly in between.
 - Filesystem operations delegate to the NuttX VFS layer.
 
 ## Running in a browser

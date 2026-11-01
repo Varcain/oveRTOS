@@ -330,7 +330,8 @@ pub inline fn yieldCpu() void {
 }
 
 /// Return the raw C handle of the currently executing thread, or null on a
-/// thread oveRTOS did not create.  Task context only.  Use only
+/// thread oveRTOS did not create, including native pthread workers. Workers
+/// do not inherit their creator's ove identity. Task context only. Use only
 /// for FFI — the wrapper type cannot be reconstructed from a bare handle
 /// because the storage is owned by a `Thread(N)` value somewhere.
 pub fn getSelf() c.ove_thread_t {

@@ -13,6 +13,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef CONFIG_OVE_RTOS_NUTTX
+#include <pthread.h>
+#include <unistd.h>
+#endif
 
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
 OVE_TEST_STACK(s_th_stack, 4096);
@@ -999,6 +1003,137 @@ static void test_errno_per_thread(void **state)
 	assert_int_equal(atomic_load(&g_errno_seen), 1111);
 }
 
+#ifdef CONFIG_OVE_RTOS_NUTTX
+struct native_identity_probe {
+	ove_thread_t owner;
+	ove_thread_t worker_before;
+	ove_thread_t worker_after;
+	ove_sem_t release_owner;
+	atomic_int worker_phase;
+	pthread_key_t key;
+	pid_t owner_pid;
+	pid_t worker_pid;
+	pid_t worker_tid;
+	int worker_stop;
+	int owner_state_during_sleep;
+	int worker_key_was_empty;
+	int worker_key_preserved;
+	int owner_key_preserved;
+	int error;
+	int owner_value;
+	int worker_value;
+};
+
+static void *native_identity_worker(void *arg)
+{
+	struct native_identity_probe *p = arg;
+	p->worker_pid = getpid();
+	p->worker_tid = gettid();
+	p->worker_before = ove_thread_get_self();
+	p->worker_stop = ove_thread_should_stop(p->worker_before);
+	p->worker_key_was_empty = pthread_getspecific(p->key) == NULL;
+	int rc = pthread_setspecific(p->key, &p->worker_value);
+	if (rc)
+		p->error = rc;
+	atomic_store(&p->worker_phase, 1);
+	ove_thread_sleep_ms(100);
+	p->worker_after = ove_thread_get_self();
+	p->worker_key_preserved = pthread_getspecific(p->key) == &p->worker_value;
+	atomic_store(&p->worker_phase, 2);
+	return NULL;
+}
+
+static void native_identity_owner(void *arg)
+{
+	struct native_identity_probe *p = arg;
+	p->owner = ove_thread_get_self();
+	p->owner_pid = getpid();
+	ove_thread_request_stop(p->owner);
+	int rc = pthread_key_create(&p->key, NULL);
+	if (rc) {
+		p->error = rc;
+		atomic_store(&p->worker_phase, 2);
+		return;
+	}
+	rc = pthread_setspecific(p->key, &p->owner_value);
+	pthread_t worker;
+	if (!rc)
+		rc = pthread_create(&worker, NULL, native_identity_worker, p);
+	if (rc) {
+		p->error = rc;
+		(void)pthread_key_delete(p->key);
+		atomic_store(&p->worker_phase, 2);
+		return;
+	}
+	while (atomic_load(&p->worker_phase) == 0)
+		usleep(1000);
+	/* Native sleep leaves the owner's ove state alone while its worker sleeps. */
+	usleep(10000);
+	p->owner_state_during_sleep = ove_thread_get_state(p->owner);
+	rc = ove_sem_take(p->release_owner, OVE_WAIT_FOREVER);
+	if (rc)
+		p->error = rc;
+	rc = pthread_join(worker, NULL);
+	if (rc)
+		p->error = rc;
+	p->owner_key_preserved = pthread_getspecific(p->key) == &p->owner_value;
+	rc = pthread_key_delete(p->key);
+	if (rc)
+		p->error = rc;
+}
+
+static void test_native_pthread_has_no_ove_identity(void **state)
+{
+	(void)state;
+	for (int cycle = 0; cycle < 2; ++cycle) {
+		struct native_identity_probe p = {0};
+		ove_sem_storage_t gate_storage;
+		OVE_TEST_ASSERT_OK(ove_test_sem_create(&p.release_owner, &gate_storage, 0, 1));
+		ove_thread_t owner = NULL;
+		int rc = ove_thread_init(&owner, &s_th_storage, "native-owner",
+					 native_identity_owner, &p, OVE_PRIO_NORMAL,
+					 sizeof(s_th_stack), s_th_stack);
+		if (rc != OVE_OK) {
+			ove_test_sem_destroy(p.release_owner);
+			assert_int_equal(rc, OVE_OK);
+		}
+		int finished = wait_for_atomic(&p.worker_phase, 2, 2000);
+		int state_after_worker = ove_thread_get_state(owner);
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+		uint64_t now = 0;
+		(void)ove_time_get_us(&now);
+		uint64_t deadline = now + 2000000;
+		while (state_after_worker != OVE_THREAD_STATE_BLOCKED && now < deadline) {
+			ove_thread_sleep_ms(1);
+			state_after_worker = ove_thread_get_state(owner);
+			(void)ove_time_get_us(&now);
+		}
+#endif
+		ove_sem_give(p.release_owner);
+		OVE_TEST_ASSERT_OK(ove_thread_deinit(owner));
+		int owner_matches = p.owner == owner;
+		ove_test_sem_destroy(p.release_owner);
+		assert_true(finished);
+		assert_int_equal(p.error, 0);
+		assert_true(owner_matches);
+		assert_int_equal(p.owner_pid, p.worker_pid);
+		assert_int_not_equal(p.worker_pid, p.worker_tid);
+		assert_null(p.worker_before);
+		assert_null(p.worker_after);
+		assert_false(p.worker_stop);
+		assert_int_equal(p.owner_state_during_sleep, OVE_THREAD_STATE_RUNNING);
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+		assert_int_equal(state_after_worker, OVE_THREAD_STATE_BLOCKED);
+#else
+		assert_int_equal(state_after_worker, OVE_THREAD_STATE_RUNNING);
+#endif
+		assert_true(p.worker_key_was_empty);
+		assert_true(p.worker_key_preserved);
+		assert_true(p.owner_key_preserved);
+	}
+}
+#endif
+
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -1011,6 +1146,9 @@ int test_thread_run(void)
 		cmocka_unit_test(test_start_scheduler),
 		cmocka_unit_test(test_get_self),
 		cmocka_unit_test(test_get_self_before_create_returns),
+#ifdef CONFIG_OVE_RTOS_NUTTX
+		cmocka_unit_test(test_native_pthread_has_no_ove_identity),
+#endif
 		cmocka_unit_test_teardown(test_set_priority, teardown_stop_spin),
 		cmocka_unit_test_teardown(test_get_state_running, teardown_stop_spin),
 		cmocka_unit_test(test_get_state_terminated),

@@ -852,7 +852,7 @@ unsafe extern "C" {
     pub fn ove_thread_destroy(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Return the handle of the currently executing thread.\n\n Valid from the first statement of an entry started by ove_thread_init() or\n ove_thread_create(), even when the new thread preempts its creator before\n that call returns.\n\n Task context only, after the scheduler has started: the result is undefined\n in an ISR and before ove_thread_start_scheduler().\n\n @return Handle of the calling thread, or NULL on a thread oveRTOS did not\n         create (the startup or main thread, idle, RTOS service threads).\n         On NuttX a pthread started by an oveRTOS thread currently reports\n         that thread's handle."]
+    #[doc = " @brief Return the handle of the currently executing thread.\n\n Valid from the first statement of an entry started by ove_thread_init() or\n ove_thread_create(), even when the new thread preempts its creator before\n that call returns.\n\n Task context only, after the scheduler has started: the result is undefined\n in an ISR and before ove_thread_start_scheduler().\n\n @return Handle of the calling thread, or NULL on a thread oveRTOS did not\n         create (the startup or main thread, idle, RTOS service threads,\n         and native pthread workers). Native workers do not inherit the\n         creating oveRTOS thread's identity."]
     pub fn ove_thread_get_self() -> ove_thread_t;
 }
 unsafe extern "C" {
