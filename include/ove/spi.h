@@ -24,10 +24,25 @@
  *   modes.  See @c OVE_SPI_DEFINE_STATIC for a one-step static helper.
  *
  * Timeouts: only the FreeRTOS STM32 driver honours @c timeout_ns, rounded
- * down to whole milliseconds (so anything under 1 ms times out at once).
+ * down to whole milliseconds (submillisecond values give a zero HAL wait budget).
  * Zephyr and NuttX ignore it and rely on their drivers' own timeouts.  On
  * every engine the call first waits, with no timeout, for the bus lock held
- * by any other transfer on the same bus.
+ * by another synchronous transfer through the same ove handle.
+ *
+ * Transfer counts are bytes in both 8-bit and 16-bit modes. In 16-bit mode
+ * every nonempty count must be even and every non-NULL buffer must be aligned
+ * for uint16_t. Each buffer must cover the entire byte count. TX/RX may be
+ * disjoint or exactly identical for in-place operation; partial overlap is
+ * rejected. Frame, pointer-presence, alignment, overlap and backend limits are
+ * checked before software CS or transfer state changes; all nonempty sequence
+ * records are checked first. The caller supplies the full valid memory spans.
+ *
+ * Locking excludes other synchronous calls through the same ove handle.
+ * Coordinate synchronous and asynchronous use: async does not take that mutex.
+ * A sequence retains its supplied software CS across segments; native hardware CS and native-global
+ * controller locking may end between segments (notably on NuttX and Zephyr).
+ * Independently initialized handles and native driver users need external
+ * coordination. Keep the handle's configuration stable during each call.
  *
  * @note Requires @c CONFIG_OVE_SPI.
  * @{
@@ -161,7 +176,10 @@ OVE_NODISCARD int ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs, cons
 				size_t len, uint64_t timeout_ns);
 
 /**
- * @brief Read-only SPI transfer (clock out zeros, capture RX).
+ * @brief Read-only SPI transfer with backend-defined transmit filler.
+ *
+ * Filler is not necessarily zero: it may be all ones or the initial contents
+ * of the RX buffer. Use an explicit TX buffer when transmitted values matter.
  *
  * @param[in]  spi        SPI handle.
  * @param[in]  cs         Chip-select descriptor, or NULL.
@@ -179,6 +197,8 @@ OVE_NODISCARD int ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs, void 
  * Executes @p num_xfers transfer segments sequentially without
  * releasing CS between them.  Useful for protocols that require
  * command + address + data in one transaction.
+ * Zero-length records are skipped. The supplied software CS and same-handle
+ * mutex span the sequence; native hardware selection/locking may not.
  *
  * @param[in] spi        SPI handle.
  * @param[in] cs         Chip-select descriptor, or NULL.
@@ -209,6 +229,12 @@ OVE_NODISCARD int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *c
  *
  * The callback must be non-blocking and ISR-safe.  Higher-level
  * bindings (Rust @c AsyncSpi) wrap this with @c AtomicWaker.
+ *
+ * Whole-frame/alignment/overlap rules also apply here. The STM32 FreeRTOS
+ * adapter accepts at most 65535 native frames in one async submission (65535
+ * bytes in 8-bit mode, 131070 in 16-bit mode); a larger request is rejected
+ * before CS or pending-state publication. Its synchronous path splits larger
+ * requests into whole-frame chunks under one per-segment timeout budget.
  *
  * @param[in] spi        SPI handle.
  * @param[in] cs         Chip-select descriptor, or NULL.

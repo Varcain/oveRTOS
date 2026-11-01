@@ -31,13 +31,21 @@ void ove_hal_spi_close(ove_spi_t spi)
 	spi->fd = -1;
 }
 
+int ove_hal_spi_validate_transfer(ove_spi_t spi, size_t len, int asynchronous)
+{
+	(void)spi;
+	(void)len;
+	(void)asynchronous;
+	return OVE_OK;
+}
+
 int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
 	(void)spi;
 	(void)timeout_ns;
 	/* Software loopback for tests that need a deterministic RX. */
 	if (rx != NULL && tx != NULL && len > 0)
-		memcpy(rx, tx, len);
+		memmove(rx, tx, len);
 	else if (rx != NULL && len > 0)
 		memset(rx, 0, len);
 	return OVE_OK;

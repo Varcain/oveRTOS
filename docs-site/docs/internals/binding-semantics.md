@@ -412,6 +412,18 @@ constants in every binding; see [Versioning](versioning.md).
 
 ## Maintaining this contract
 
+SPI's native boundary counts bytes in either word mode. In 16-bit mode it
+requires whole frames and `uint16_t`-aligned buffers. Raw TX/RX spans cover the
+full count and may be disjoint or exactly identical in-place; partial overlap
+is rejected. All nonempty sequence records and backend limits are checked
+before effects. Software CS and the mutex for one ove handle span a synchronous sequence;
+async use needs separate coordination because it does not take that mutex;
+native hardware selection/controller ownership may end between segments on
+NuttX and Zephyr. Read filler is backend-defined, possibly initial RX contents.
+STM32 synchronous chunks share one per-segment timeout budget; its one-shot
+async limit is 65535 frames. These native rules do not resolve separate binding
+slice adaptation or async retained-buffer ownership issues.
+
 When you add or change a binding API, update this page in the same change so the
 three languages stay aligned. The examples under `apps/{cpp,rust,zig}/` act as
 conformance tests for these semantics — if an example has to drop to raw FFI to

@@ -411,6 +411,8 @@ if(OVE_TEST_BUILD_MQTT)
     add_subdirectory(net_mqtt)
 endif()
 
+add_subdirectory(spi_native)
+
 # --- httpd WebSocket connection lifetime (ove_test_httpd_ws) ---
 # The real httpd and WebSocket server on the POSIX socket backend, driven by
 # raw-socket clients.  Its own ove_config.h (tests/net_httpd) keeps the

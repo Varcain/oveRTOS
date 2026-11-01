@@ -112,15 +112,32 @@ void ove_spi_destroy(ove_spi_t spi)
 
 /* ── Operations ──────────────────────────────────────────────────── */
 
+static int spi_validate_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len,
+				 int asynchronous)
+{
+	if (!spi || !len || (!tx && !rx))
+		return OVE_ERR_INVALID_PARAM;
+	if (spi->word_size != 8 && spi->word_size != 16)
+		return OVE_ERR_INVALID_PARAM;
+	if (spi->word_size == 16 &&
+	    ((len & 1) || (uintptr_t)tx % _Alignof(uint16_t) || (uintptr_t)rx % _Alignof(uint16_t)))
+		return OVE_ERR_INVALID_PARAM;
+	if (tx && rx && tx != rx) {
+		uintptr_t a = (uintptr_t)tx, b = (uintptr_t)rx;
+		if ((a < b ? b - a : a - b) < len)
+			return OVE_ERR_INVALID_PARAM;
+	}
+	return ove_hal_spi_validate_transfer(spi, len, asynchronous);
+}
+
 int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
 		     size_t len, uint64_t timeout_ns)
 {
 	int ret;
 
-	if (spi == NULL || len == 0)
-		return OVE_ERR_INVALID_PARAM;
-	if (tx == NULL && rx == NULL)
-		return OVE_ERR_INVALID_PARAM;
+	ret = spi_validate_transfer(spi, tx, rx, len, 0);
+	if (ret != OVE_OK)
+		return ret;
 
 	OVE_LOCK_INFINITE(spi->bus_mtx);
 	cs_assert(cs);
@@ -154,6 +171,13 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 
 	if (spi == NULL || xfers == NULL || num_xfers == 0)
 		return OVE_ERR_INVALID_PARAM;
+	for (i = 0; i < num_xfers; i++) {
+		if (!xfers[i].len)
+			continue;
+		ret = spi_validate_transfer(spi, xfers[i].tx, xfers[i].rx, xfers[i].len, 0);
+		if (ret != OVE_OK)
+			return ret;
+	}
 
 	OVE_LOCK_INFINITE(spi->bus_mtx);
 	cs_assert(cs);
@@ -189,10 +213,11 @@ int ove_spi_transfer_async(ove_spi_t spi, const struct ove_spi_cs *cs, const voi
 {
 	int ret;
 
-	if (spi == NULL || len == 0 || cb == NULL)
+	if (cb == NULL)
 		return OVE_ERR_INVALID_PARAM;
-	if (tx == NULL && rx == NULL)
-		return OVE_ERR_INVALID_PARAM;
+	ret = spi_validate_transfer(spi, tx, rx, len, 1);
+	if (ret != OVE_OK)
+		return ret;
 
 	if (spi->async_busy)
 		return OVE_ERR_BUS_BUSY;
