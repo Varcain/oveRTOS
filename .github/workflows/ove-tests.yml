@@ -226,6 +226,9 @@ jobs:
       - name: Run zero-heap tests
         run: make test-rust-zeroheap
 
+      - name: Run typed Rust SPI tests (both heap modes)
+        run: make test-rust-spi
+
       - name: Fetch LVGL (manifest-pinned) into dl/lvgl
         run: |
           LVGL_URL=$(python3 scripts/manifest_query.py libraries.lvgl.url)

@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -768,6 +769,74 @@ def test_rust_strings(ove_dir, output_dir):
              "--", "--test-threads=1"], env=env, timeout=180)
         result.passed += int(check.returncode == 0)
         result.failed += int(check.returncode != 0)
+    return result
+
+
+def _run_owned_test_process(command, *, env, timeout):
+    """Bound a native test and all children in its own process group."""
+    process = subprocess.Popen(command, env=env, start_new_session=True)
+    try:
+        return process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        logger.error("Test process exceeded %s seconds: %s", timeout, command)
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        return 124
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def test_rust_spi(ove_dir, output_dir):
+    """Exercise typed Rust SPI against the production C frontend and POSIX locks."""
+    result = TestResults(suite="rust-spi")
+    for zero_heap in (False, True):
+        suffix = "_zh" if zero_heap else ""
+        native = os.path.join(output_dir, "tests", "rust_spi_c" + suffix)
+        _cmake_build(os.path.join(ove_dir, "tests", "rust_spi"), native,
+                     extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero_heap else "OFF")])
+        env = dict(os.environ)
+        env.pop("DOCS_RS", None)
+        env.update({
+            "OVE_DIR": ove_dir,
+            "OVE_GEN_DIR": native,
+            "RUST_IS_NATIVE": "1",
+            "SPI_TEST_LIB_DIR": native,
+            "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
+            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
+            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
+            "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_spi" + suffix),
+        })
+        check = _run_owned_test_process(
+            ["cargo", "test", "--manifest-path",
+             os.path.join(ove_dir, "tests", "rust_spi", "Cargo.toml"),
+             "--", "--test-threads=1"], env=env, timeout=180)
+        result.passed += int(check == 0)
+        result.failed += int(check != 0)
+        if check != 0:
+            continue
+        for case in ("tx_short", "rx_short", "trait_rx_short"):
+            span = _run_owned_test_process(
+                [os.path.join(env["CARGO_TARGET_DIR"], "debug", "span-regression"), case],
+                env=env, timeout=30)
+            result.passed += int(span == 0)
+            result.failed += int(span != 0)
+        types = _run_owned_test_process(
+            [sys.executable, os.path.join(ove_dir, "tests", "rust_spi", "type_checks.py"),
+             os.path.join(output_dir, "tests", "rust_spi_types" + suffix)],
+            env=env, timeout=300)
+        result.passed += int(types == 0)
+        result.failed += int(types != 0)
     return result
 
 
@@ -2959,6 +3028,7 @@ TEST_TARGETS = {
     "rust-zeroheap": test_rust_zeroheap,
     "rust-lvgl": test_rust_lvgl,
     "rust-strings": test_rust_strings,
+    "rust-spi": test_rust_spi,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
     "zig-zeroheap": test_zig_zeroheap,
