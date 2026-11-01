@@ -1005,6 +1005,15 @@ static void test_errno_per_thread(void **state)
 
 #ifdef CONFIG_OVE_RTOS_NUTTX
 void ove_test_nuttx_thread_lifecycle(ove_thread_storage_t *storage, void *stack, size_t size);
+void ove_test_nuttx_thread_suspend(ove_thread_storage_t *storage, void *stack, size_t size,
+				   struct ove_thread_info *info, size_t capacity);
+
+static void test_native_thread_suspend(void **state)
+{
+	(void)state;
+	ove_test_nuttx_thread_suspend(&s_th_storage, s_th_stack, sizeof(s_th_stack), s_list_info,
+				      LIST_INFO_MAX);
+}
 
 static void test_native_thread_lifetime(void **state)
 {
@@ -1188,6 +1197,7 @@ int test_thread_run(void)
 		cmocka_unit_test(test_errno_per_thread),
 #ifdef CONFIG_OVE_RTOS_NUTTX
 		cmocka_unit_test(test_native_thread_lifetime),
+		cmocka_unit_test(test_native_thread_suspend),
 #endif
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),

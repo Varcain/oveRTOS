@@ -77,7 +77,15 @@ struct ove_thread {
 	int state;
 	sem_t suspend_sem;
 	sem_t done_sem;
-	int suspend_inited;
+	sem_t startup_sem;
+	int startup_status;
+	uint64_t suspend_generation;
+	unsigned int suspend_users;
+	int suspend_active;
+	int suspend_acked;
+	int suspend_handler;
+	int suspend_wake_pending;
+	int finished;
 	int started;
 	int closing;
 	unsigned int scheduler_observers;

@@ -625,6 +625,10 @@ template <size_t StackSize = 0> class Thread
 	 * @brief Suspends execution of the thread.
 	 *
 	 * The thread will not be scheduled until `resume()` is called.
+	 * NuttX reserves SIGUSR1; do not replace or permanently mask it. The
+	 * call waits for acknowledgement or concurrent release/exit; queue
+	 * failure can return without suspension. Use thread context, keep native
+	 * callers and their groups alive through return, and coordinate destruction.
 	 */
 	void suspend()
 	{
@@ -633,6 +637,8 @@ template <size_t StackSize = 0> class Thread
 
 	/**
 	 * @brief Resumes a previously suspended thread.
+	 * NuttX retains release before signal delivery and restores the prior
+	 * logical state. The caller-lifetime rules of suspend() apply.
 	 */
 	void resume()
 	{

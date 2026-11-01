@@ -176,6 +176,19 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
 ## NuttX backend notes
 
 - Threads map to NuttX tasks created with `task_create_with_stack`, each with its own task group. Auxiliary native pthread workers share that group but have no oveRTOS thread identity. The named oveRTOS priorities keep fixed NuttX priorities (50..240); the levels between two of them spread evenly in between.
+- Each target installs and unmasks reserved `SIGUSR1` before creation returns;
+  the creator's action and mask are preserved. Do not replace the target action
+  or permanently block that signal. Native signal-action setup can allocate
+  kernel memory in addition to the native task/group allocations. Reported
+  setup errors are cleaned up before return; persistent native action allocator
+  exhaustion can still stall inside the pinned kernel allocator.
+- Suspension acknowledges the owner and coalesces concurrent requests. Resume
+  also releases a request before signal delivery and restores its previous
+  logical state. A native signal-queue allocation failure can return from the
+  void suspension API without suspension. Control operations require thread
+  context and callers that remain alive through return. Native group owners
+  must join pthread workers before returning while they are in library calls;
+  coordinate new calls with destruction and never reuse an invalidated handle.
 - Filesystem operations delegate to the NuttX VFS layer.
 - Thread deinitialization waits for native task retirement before caller storage
   and stacks can be reused. This retirement check targets the single-core
