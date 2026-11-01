@@ -13,6 +13,16 @@
 //! The supplied software CS and same-handle lock span a sequence; native
 //! hardware selection/controller locking may end between segments.
 //!
+//! Async calls through the raw C API notify in task context after native
+//! submission/provider retirement. Keep controller backing, buffers, CS and
+//! userdata valid through callback completion and every active API call's
+//! return. A pending deinit/destroy consumes its handle and defers cleanup;
+//! callback completion alone does not join a concurrent close. Callbacks must
+//! not block. FreeRTOS/Zephyr use static periodic retry services on their
+//! existing daemon/system workqueue; starvation has no bounded completion time.
+//! NuttX allocates a worker TCB/stack per submission, using the bounded reserve
+//! in release zero-heap mode; debug zero-heap preparation returns NotSupported.
+//!
 //! Wraps `ove/spi.h`. Pass `null` for `tx` to do an RX-only transfer, or
 //! `null` for `rx` to do TX-only. Available when `CONFIG_OVE_SPI` is enabled.
 

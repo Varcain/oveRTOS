@@ -27,4 +27,18 @@ typedef void *TaskHandle_t;
 typedef void *QueueHandle_t;
 typedef void *TimerHandle_t;
 typedef void *EventGroupHandle_t;
+typedef uint32_t TickType_t;
+typedef int BaseType_t;
+typedef void (*TimerCallbackFunction_t)(TimerHandle_t);
+typedef void (*PendedFunction_t)(void *, uint32_t);
+#define configTICK_RATE_HZ 1000
+#define pdTRUE 1
+#define pdFALSE 0
+#define pdPASS 1
+#define portYIELD_FROM_ISR(wake) ((void)(wake))
+TimerHandle_t xTimerCreateStatic(const char *, TickType_t, BaseType_t, void *,
+				 TimerCallbackFunction_t, StaticTimer_t *);
+BaseType_t xTimerStart(TimerHandle_t, TickType_t);
+BaseType_t xTimerPendFunctionCall(PendedFunction_t, void *, uint32_t, TickType_t);
+BaseType_t xTimerPendFunctionCallFromISR(PendedFunction_t, void *, uint32_t, BaseType_t *);
 #endif

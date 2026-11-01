@@ -11,6 +11,20 @@
 //! C storage struct enforces single-in-flight transfers — concurrent
 //! submissions return [`Error::BusBusy`].
 //!
+//! Native final callbacks run in task context after submission/provider
+//! retirement. They may precede the native submit call's return. Buffers, CS,
+//! callback state and controller backing must remain alive through callback
+//! completion and every active API call returning. Pending native close consumes
+//! the handle and defers teardown; notification alone does not join a concurrent
+//! close call. FreeRTOS/Zephyr retry through their existing daemon/system
+//! workqueue and callbacks must not block. NuttX uses a native worker allocation
+//! per submission; release zero-heap uses its bounded reserve and debug
+//! zero-heap preparation returns [`Error::NotSupported`].
+//!
+//! This wrapper still retains borrowed application memory and inline callback
+//! state. Dropping or forgetting an active future does not cancel native I/O;
+//! native retirement alone does not establish cancellation safety for it.
+//!
 //! With the `embedded-hal-async` Cargo feature the wrapper additionally
 //! implements `embedded_hal_async::spi::SpiBus<u8>`, so any
 //! `embedded-hal-async`-aware sensor driver works on top of it.
@@ -27,8 +41,7 @@ use super::dma_slot::DmaSlot;
 
 unsafe extern "C" fn dma_complete_cb(result: ::core::ffi::c_int, user_data: *mut c_void) {
     // SAFETY: user_data is a `*const DmaSlot` we passed in below; the
-    // slot is owned by the future and outlives the callback because the
-    // future awaits before dropping it.
+    // slot belongs to AsyncSpi and must remain valid through callback completion.
     let slot = unsafe { &*(user_data as *const DmaSlot) };
     slot.result_store(result as i32);
     slot.wake();
@@ -65,8 +78,8 @@ impl AsyncSpi {
     /// Submit an async full-duplex transfer.
     ///
     /// `tx` and `rx` lengths must match the actual transfer size. The
-    /// future is `'a`-bound to the buffers so they can't be dropped
-    /// while in flight.
+    /// future borrows the buffers while it exists; dropping it does not cancel
+    /// native access to those buffers.
     pub async fn transfer<'a>(
         &'a self,
         cs: Option<&'a bindings::ove_spi_cs>,
@@ -89,9 +102,8 @@ impl AsyncSpi {
             rx.as_mut_ptr().cast()
         };
 
-        // SAFETY: slot is owned by us and lives for 'a (until the future
-        // is dropped). The C side stops accessing it once the callback
-        // fires, and the .await below blocks until that happens.
+        // The native callback retains this slot until it finishes. The normal
+        // await path waits for a result; dropping the future is not cancellation.
         let slot: &DmaSlot = unsafe { &*self.slot.get() };
         slot.reset();
 

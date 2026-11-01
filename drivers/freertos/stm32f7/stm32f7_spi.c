@@ -149,6 +149,113 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 
 #ifdef CONFIG_OVE_ASYNC
 
+#include "ove/irq.h"
+#include "FreeRTOS.h"
+#include "timers.h"
+
+static StaticTimer_t retire_timer_storage;
+static TimerHandle_t retire_timer;
+static ove_spi_t retire_head, retire_tail;
+static int retire_initializing, retire_ready, retire_kick_pending, retire_draining;
+
+static void retire_drain(int pended)
+{
+	ove_irq_key_t key = ove_irq_lock();
+	if (pended)
+		retire_kick_pending = 0;
+	retire_draining = 1;
+	ove_irq_unlock(key);
+	for (unsigned i = 0; i < 4; ++i) {
+		key = ove_irq_lock();
+		ove_spi_t spi = retire_head;
+		if (spi) {
+			retire_head = spi->retire_next;
+			if (!retire_head)
+				retire_tail = NULL;
+			spi->retire_next = NULL;
+		}
+		ove_irq_unlock(key);
+		if (!spi)
+			break;
+		ove_spi_async_retired(spi);
+	}
+	key = ove_irq_lock();
+	retire_draining = 0;
+	ove_irq_unlock(key);
+	/* Leave excess/reentrant work for the pre-started periodic pump. Do not
+	 * recursively refill the daemon command queue and starve other timers. */
+}
+
+static void retire_retry(TimerHandle_t timer)
+{
+	(void)timer;
+	retire_drain(0);
+}
+
+static void retire_pended(void *argument, uint32_t value)
+{
+	(void)argument;
+	(void)value;
+	retire_drain(1);
+}
+
+int ove_hal_spi_async_prepare(void)
+{
+	ove_irq_key_t key = ove_irq_lock();
+	if (retire_ready || retire_initializing) {
+		int rc = retire_ready ? OVE_OK : OVE_ERR_BUSY;
+		ove_irq_unlock(key);
+		return rc;
+	}
+	retire_initializing = 1;
+	ove_irq_unlock(key);
+	if (!retire_timer) {
+		TickType_t period =
+			(TickType_t)(((uint64_t)configTICK_RATE_HZ * 10u + 999u) / 1000u);
+		retire_timer = xTimerCreateStatic("spi-retire", period, pdTRUE, NULL, retire_retry,
+						  &retire_timer_storage);
+	}
+	int rc = retire_timer && xTimerStart(retire_timer, 0) == pdPASS ? OVE_OK
+									: OVE_ERR_NO_MEMORY;
+	key = ove_irq_lock();
+	retire_ready = rc == OVE_OK;
+	retire_initializing = 0;
+	ove_irq_unlock(key);
+	return rc;
+}
+
+void ove_hal_spi_async_retire(ove_spi_t spi)
+{
+	ove_irq_key_t key = ove_irq_lock();
+	spi->retire_next = NULL;
+	if (retire_tail)
+		retire_tail->retire_next = spi;
+	else
+		retire_head = spi;
+	retire_tail = spi;
+	int kick = !retire_kick_pending && !retire_draining;
+	if (kick)
+		retire_kick_pending = 1;
+	ove_irq_unlock(key);
+	if (!kick)
+		return;
+	BaseType_t rc;
+	if (ove_is_in_isr()) {
+		BaseType_t wake = pdFALSE;
+		rc = xTimerPendFunctionCallFromISR(retire_pended, NULL, 0, &wake);
+		portYIELD_FROM_ISR(wake);
+	} else {
+		rc = xTimerPendFunctionCall(retire_pended, NULL, 0, 0);
+	}
+	if (rc != pdPASS) {
+		key = ove_irq_lock();
+		retire_kick_pending = 0;
+		ove_irq_unlock(key);
+	}
+	/* No controller pointer escapes into daemon messages. A failed pend
+	 * retains its list node until the already-running retry timer visits. */
+}
+
 /*
  * IT-mode async transfer. Uses HAL_SPI_TransmitReceive_IT (and the
  * write-only / read-only variants); completion fires

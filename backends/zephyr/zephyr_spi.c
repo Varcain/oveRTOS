@@ -14,6 +14,10 @@
 #include "ove_backend_common.h"
 #include <zephyr/drivers/spi.h>
 
+#ifdef CONFIG_OVE_ASYNC
+static void zephyr_spi_async_work_handler(struct k_work *work);
+#endif
+
 static const struct device *instance_to_dev(unsigned int instance)
 {
 	switch (instance) {
@@ -38,6 +42,9 @@ int ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg)
 		return OVE_ERR_INVALID_PARAM;
 
 	spi->dev = dev;
+#ifdef CONFIG_OVE_ASYNC
+	k_work_init(&spi->async_work, zephyr_spi_async_work_handler);
+#endif
 	return OVE_OK;
 }
 
@@ -94,6 +101,87 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 
 #ifdef CONFIG_OVE_ASYNC
 
+static struct k_spinlock retire_lock;
+static ove_spi_t retire_head, retire_tail;
+static int retire_initializing, retire_ready;
+static void zephyr_spi_retire_dispatch(struct k_work *work);
+static K_WORK_DEFINE(retire_work, zephyr_spi_retire_dispatch);
+
+static void zephyr_spi_retire_retry(struct k_timer *timer)
+{
+	(void)timer;
+	k_spinlock_key_t key = k_spin_lock(&retire_lock);
+	int pending = retire_head != NULL;
+	k_spin_unlock(&retire_lock, key);
+	if (pending) {
+		int rc = k_work_submit(&retire_work);
+		(void)rc;
+	}
+}
+static K_TIMER_DEFINE(retire_retry, zephyr_spi_retire_retry, NULL);
+
+int ove_hal_spi_async_prepare(void)
+{
+	k_spinlock_key_t key = k_spin_lock(&retire_lock);
+	if (retire_ready || retire_initializing) {
+		int rc = retire_ready ? OVE_OK : OVE_ERR_BUSY;
+		k_spin_unlock(&retire_lock, key);
+		return rc;
+	}
+	retire_initializing = 1;
+	k_spin_unlock(&retire_lock, key);
+	k_timer_start(&retire_retry, K_MSEC(10), K_MSEC(10));
+	key = k_spin_lock(&retire_lock);
+	retire_ready = 1;
+	retire_initializing = 0;
+	k_spin_unlock(&retire_lock, key);
+	return OVE_OK;
+}
+
+void ove_hal_spi_async_retire(ove_spi_t spi)
+{
+	k_spinlock_key_t key = k_spin_lock(&retire_lock);
+	spi->retire_next = NULL;
+	if (retire_tail)
+		retire_tail->retire_next = spi;
+	else
+		retire_head = spi;
+	retire_tail = spi;
+	k_spin_unlock(&retire_lock, key);
+	/* Same-queue dispatch runs only after the transfer work's kernel tail.
+	 * Only this permanent work object survives in queued notifications. */
+	int rc = k_work_submit(&retire_work);
+	/* A plugged/draining system queue rejects notification. The stable
+	 * periodic retry preserves progress after it becomes available again. */
+	(void)rc;
+}
+
+static void zephyr_spi_retire_dispatch(struct k_work *work)
+{
+	(void)work;
+	for (unsigned i = 0; i < 4; ++i) {
+		k_spinlock_key_t key = k_spin_lock(&retire_lock);
+		ove_spi_t spi = retire_head;
+		if (spi) {
+			retire_head = spi->retire_next;
+			if (!retire_head)
+				retire_tail = NULL;
+			spi->retire_next = NULL;
+		}
+		k_spin_unlock(&retire_lock, key);
+		if (!spi)
+			return;
+		ove_spi_async_retired(spi);
+	}
+	k_spinlock_key_t key = k_spin_lock(&retire_lock);
+	int more = retire_head != NULL;
+	k_spin_unlock(&retire_lock, key);
+	if (more) {
+		int rc = k_work_submit(&retire_work);
+		(void)rc;
+	}
+}
+
 /*
  * Zephyr fallback: submit the transfer to the system workqueue. Avoids
  * depending on CONFIG_SPI_ASYNC (which requires per-driver signal support)
@@ -113,7 +201,6 @@ int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t l
 	spi->pending_tx = tx;
 	spi->pending_rx = rx;
 	spi->pending_len = len;
-	k_work_init(&spi->async_work, zephyr_spi_async_work_handler);
 	int ret = k_work_submit(&spi->async_work);
 	if (ret < 0)
 		return OVE_ERR_NO_MEMORY;

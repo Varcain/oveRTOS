@@ -52,6 +52,50 @@ struct ove_spi_cs {
 | `ove_spi_write()` | TX-only convenience wrapper |
 | `ove_spi_read()` | RX-only convenience wrapper |
 | `ove_spi_transfer_seq()` | Multi-segment transfer under single CS assertion |
+| `ove_spi_async_prepare()` | Prepare native completion dispatch without admitting work |
+| `ove_spi_transfer_async()` | Submit one transfer with final task-context notification |
+
+## Native asynchronous lifetime
+
+With `CONFIG_OVE_ASYNC`, submit from thread context. An accepted operation
+produces exactly one final callback in task context after the submission and
+provider's last controller access. The callback may run before submission
+returns, but neither native path accesses retained backing afterward. Rejected
+work produces no callback and retains no operation. Callbacks must not block.
+STM32 applications that previously called unconditional `FromISR` APIs from
+SPI callbacks must migrate those calls to task APIs. I2C and general DMA
+callback contexts are unchanged.
+
+Keep buffers, CS, userdata and controller backing valid through final callback
+completion and every active API call returning. Deinit/destroy consumes the
+handle; an accepted operation defers native cleanup until retirement. A missing
+completion retains the backing indefinitely. A callback can submit new work on
+a live handle, but cannot reuse a consumed handle. Callback completion alone
+does not join an independently active close call. Raw admission/destruction
+races and physical bus coordination remain caller responsibilities.
+
+FreeRTOS delivers callbacks on its existing timer daemon. A prestarted static
+10ms retry timer recovers from a full daemon queue, with at most four nodes per
+visit. Zephyr uses a permanent dispatcher on the same system queue as transfer
+work, so the kernel's embedded-work tail finishes first. A static 10ms timer
+retries if that queue is draining or plugged. Both services add permanent native
+state and periodic checks, without a new task or stack reservation. Tick
+rounding, queue delay and starvation prevent a hard notification deadline.
+Preparation runs before admission and can fail without publishing work.
+
+NuttX creates a detached native worker for each submission. Its native TCB and
+stack may outlive the callback until the thread exits and the kernel reclaims
+them. Release zero-heap builds draw from the existing configured reserved heap
+(16KiB by default); exhaustion returns `OVE_ERR_NO_MEMORY`. Zero-heap builds
+with `CONFIG_DEBUG_ASSERTIONS` return `OVE_ERR_NOT_SUPPORTED` at preparation,
+including before heap lock, because normal post-lock allocation asserts before
+reserved routing. Static application storage does not remove worker allocation.
+
+These native guarantees do not repair the existing Rust async wrapper's borrowed
+buffer/CS or inline callback-state retention when a future is dropped or
+forgotten. Its ownership and cancellation behavior requires a separate binding
+change. C++ inline static storage and raw Zig callers must honor the same native
+retention obligations.
 
 ## Example
 

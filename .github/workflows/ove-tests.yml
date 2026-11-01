@@ -57,6 +57,9 @@ jobs:
       - name: Run tests
         run: make test-stub
 
+      - name: Run native SPI retirement regression tests
+        run: ctest --test-dir output/tests/stub -R 'ove_test_spi_retire_' --output-on-failure
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -367,10 +370,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y cmake build-essential \
-            gperf genromfs xxd python3-pip python3-venv
+            gperf genromfs xxd python3-pip python3-venv qemu-system-arm
 
       - name: Run tests
         run: timeout 600 make test-nuttx
+
+      - name: Run native SPI retirement tests
+        run: timeout 600 make test-spi-retirement-nuttx
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -413,6 +419,9 @@ jobs:
             echo "Zephyr workspace restored from cache"
           fi
 
+      - name: Run real Zephyr SPI retirement tests
+        run: make test-spi-retirement-zephyr
+
       - name: Run tests
         run: timeout 600 make test-zephyr
 
@@ -454,6 +463,9 @@ jobs:
 
       - name: Run zeroheap tests
         run: timeout 1200 make test-qemu-freertos-zeroheap
+
+      - name: Run real FreeRTOS SPI retirement tests
+        run: timeout 1200 make test-spi-retirement-freertos
 
       - uses: actions/upload-artifact@v4
         if: failure()

@@ -33,16 +33,12 @@
 #define configIDLE_SHOULD_YIELD 1
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES 3
 
-/* Memory — heap mode. 96 KB of FreeRTOS heap, sized generously to leave
- * headroom for the handle tables the heap-mode _create() functions
- * allocate.  Static allocation kept on too so mixed code works. */
+/* Static allocation stays available alongside the test heap. */
 #define configSUPPORT_STATIC_ALLOCATION 1
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
-/* 80 KB rather than 96 KB — leaves room for lwIP's MEM_SIZE (24 KB) +
- * PBUF_POOL (24 KB) + memp pools without overflowing the linker's
- * _user_heap_stack region.  Heap-mode tests don't need 96 KB; the
- * larger value was inherited from a board image with no lwIP. */
-#define configTOTAL_HEAP_SIZE ((size_t)(80 * 1024))
+/* Budget lwIP pools and permanent native SPI retirement state before the
+ * linker's user heap/stack region. Report the exercised heap margin at exit. */
+#define configTOTAL_HEAP_SIZE ((size_t)(79 * 1024))
 
 /* Synchronization */
 #define configUSE_MUTEXES 1

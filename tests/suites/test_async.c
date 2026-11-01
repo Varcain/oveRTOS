@@ -30,6 +30,7 @@
 
 #include "ove/irq.h"
 #include <stdatomic.h>
+#include <string.h>
 
 OVE_TEST_STORAGE(ove_timer_storage_t, s_async_tmr_storage);
 
@@ -401,10 +402,20 @@ static void test_async_uart_set_rx_notify_delegates_to_stream(void **state)
 #ifdef CONFIG_OVE_SPI
 #include "ove/spi.h"
 
-/* Storage is stack-local inside each test to avoid growing .bss on
- * tight-RAM STM32 cmocka fixtures.  Test runner has plenty of stack. */
-static _Atomic int s_async_spi_done;
-static int s_async_spi_result;
+/* A missing device/completion may retain this operation after a skip.
+ * Keep every retained address stable; use the fixture's DTCM test region
+ * on STM32 FreeRTOS so this does not consume its tight main-RAM budget. */
+#if defined(CONFIG_OVE_RTOS_FREERTOS) && defined(STM32F746xx)
+#define SPI_TEST_STATIC __attribute__((section(".dsp_bss")))
+#else
+#define SPI_TEST_STATIC
+#endif
+static SPI_TEST_STATIC _Atomic int s_async_spi_done;
+static SPI_TEST_STATIC int s_async_spi_result;
+static SPI_TEST_STATIC int s_async_spi_marker;
+static int s_async_spi_retained;
+static SPI_TEST_STATIC ove_spi_storage_t s_async_spi_storage;
+static SPI_TEST_STATIC uint8_t s_async_spi_tx[4], s_async_spi_rx[4];
 
 static void async_spi_cb(int result, void *user_data)
 {
@@ -416,11 +427,14 @@ static void async_spi_cb(int result, void *user_data)
 static void test_async_spi_transfer_completion_fires(void **state)
 {
 	(void)state;
+	if (s_async_spi_retained) {
+		skip();
+		return;
+	}
 	atomic_store(&s_async_spi_done, 0);
 	s_async_spi_result = -1;
-	int marker = 0;
+	s_async_spi_marker = 0;
 
-	ove_spi_storage_t storage;
 	ove_spi_t spi = NULL;
 	struct ove_spi_cfg cfg = {
 		.instance = 0,
@@ -429,13 +443,20 @@ static void test_async_spi_transfer_completion_fires(void **state)
 		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 8,
 	};
-	int rc = ove_spi_init(&spi, &storage, &cfg);
+	int rc = ove_spi_init(&spi, &s_async_spi_storage, &cfg);
 	assert_int_equal(rc, OVE_OK);
 
-	uint8_t tx[4] = {0xDE, 0xAD, 0xBE, 0xEF};
-	uint8_t rx[4] = {0};
+	const uint8_t initial[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+	memcpy(s_async_spi_tx, initial, sizeof(initial));
+	memset(s_async_spi_rx, 0, sizeof(s_async_spi_rx));
 
-	rc = ove_spi_transfer_async(spi, NULL, tx, rx, sizeof(tx), async_spi_cb, &marker);
+	rc = ove_spi_transfer_async(spi, NULL, s_async_spi_tx, s_async_spi_rx,
+				    sizeof(s_async_spi_tx), async_spi_cb, &s_async_spi_marker);
+	if (rc == OVE_ERR_NOT_SUPPORTED) {
+		ove_spi_deinit(spi);
+		skip();
+		return;
+	}
 	assert_int_equal(rc, OVE_OK);
 
 	/* Worker-thread fallback completes asynchronously (stub: loopback
@@ -447,11 +468,12 @@ static void test_async_spi_transfer_completion_fires(void **state)
 	for (int i = 0; i < 1000 && !atomic_load(&s_async_spi_done); i++)
 		ove_thread_sleep_ms(1);
 	if (!atomic_load(&s_async_spi_done)) {
+		s_async_spi_retained = 1;
 		ove_spi_deinit(spi);
 		skip();
 		return;
 	}
-	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_spi_marker, 1);
 	assert_int_equal(s_async_spi_result, OVE_OK);
 
 	ove_spi_deinit(spi);

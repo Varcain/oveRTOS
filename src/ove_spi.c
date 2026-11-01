@@ -34,6 +34,17 @@ static void cs_deassert(const struct ove_spi_cs *cs)
 	ove_gpio_set(cs->gpio_port, cs->gpio_pin, cs->active_low ? 1 : 0);
 }
 
+#ifdef CONFIG_OVE_ASYNC
+enum {
+	SPI_ACTIVE = 1,
+	SPI_SUBMITTING = 2,
+	SPI_RESULT = 4,
+	SPI_CLOSING = 8,
+	SPI_DESTROY = 16,
+	SPI_COMPLETING = 32,
+};
+#endif
+
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
 int ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage, const struct ove_spi_cfg *cfg)
@@ -55,6 +66,11 @@ int ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage, const struct ove_sp
 	storage->pending_cb = NULL;
 	storage->pending_ud = NULL;
 	storage->pending_cs = NULL;
+	storage->pending_tx = NULL;
+	storage->pending_rx = NULL;
+	storage->pending_len = 0;
+	storage->retire_next = NULL;
+	storage->async_result = OVE_OK;
 #endif
 	*spi = storage;
 
@@ -71,12 +87,41 @@ int ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage, const struct ove_sp
 	return OVE_OK;
 }
 
+static void spi_deinit_now(ove_spi_t spi)
+{
+	ove_hal_spi_close(spi);
+	ove_mutex_deinit(spi->bus_mtx);
+}
+
+#ifdef CONFIG_OVE_ASYNC
+static int spi_request_close(ove_spi_t spi, int destroy)
+{
+	int previous = __atomic_fetch_or(
+		&spi->async_busy, SPI_CLOSING | (destroy ? SPI_DESTROY : 0), __ATOMIC_ACQ_REL);
+	return previous & (SPI_ACTIVE | SPI_CLOSING);
+}
+
+static void spi_finish_close(ove_spi_t spi, int flags)
+{
+	if (flags & SPI_CLOSING) {
+		spi_deinit_now(spi);
+#ifdef OVE_HEAP_SPI
+		if (flags & SPI_DESTROY)
+			OVE_BACKEND_FREE(spi);
+#endif
+	}
+}
+#endif
+
 void ove_spi_deinit(ove_spi_t spi)
 {
 	if (spi == NULL)
 		return;
-	ove_hal_spi_close(spi);
-	ove_mutex_deinit(spi->bus_mtx);
+#ifdef CONFIG_OVE_ASYNC
+	if (spi_request_close(spi, 0))
+		return;
+#endif
+	spi_deinit_now(spi);
 }
 
 #ifdef OVE_HEAP_SPI
@@ -105,7 +150,11 @@ void ove_spi_destroy(ove_spi_t spi)
 {
 	if (spi == NULL)
 		return;
-	ove_spi_deinit(spi);
+#ifdef CONFIG_OVE_ASYNC
+	if (spi_request_close(spi, 1))
+		return;
+#endif
+	spi_deinit_now(spi);
 	OVE_BACKEND_FREE(spi);
 }
 #endif /* OVE_HEAP_SPI */
@@ -198,52 +247,88 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 
 #ifdef CONFIG_OVE_ASYNC
 
-/*
- * Async transfer: serialised per-peripheral via the async_busy flag. The
- * caller (typically the Rust AsyncSpi wrapper) is responsible for further
- * serialisation across concurrent submissions — we surface OVE_ERR_BUS_BUSY
- * if a transfer is already in flight rather than blocking.
- *
- * The bus mutex is NOT taken because the HAL completion can fire from
- * ISR context (STM32 DMA) and mutex unlock is not ISR-safe.
- */
+int ove_spi_async_prepare(void)
+{
+	return ove_hal_spi_async_prepare();
+}
+
+static void spi_clear_pending(ove_spi_t spi)
+{
+	spi->pending_cb = NULL;
+	spi->pending_ud = NULL;
+	spi->pending_cs = NULL;
+	spi->pending_tx = NULL;
+	spi->pending_rx = NULL;
+	spi->pending_len = 0;
+}
 
 int ove_spi_transfer_async(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
 			   size_t len, ove_dma_complete_cb cb, void *user_data)
 {
-	int ret;
-
 	if (cb == NULL)
 		return OVE_ERR_INVALID_PARAM;
-	ret = spi_validate_transfer(spi, tx, rx, len, 1);
+	int ret = spi_validate_transfer(spi, tx, rx, len, 1);
 	if (ret != OVE_OK)
 		return ret;
-
-	if (spi->async_busy)
+	ret = ove_spi_async_prepare();
+	if (ret != OVE_OK)
+		return ret;
+	int idle = 0;
+	if (!__atomic_compare_exchange_n(&spi->async_busy, &idle, SPI_ACTIVE | SPI_SUBMITTING, 0,
+					 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
 		return OVE_ERR_BUS_BUSY;
-	spi->async_busy = 1;
-
 	spi->pending_cb = cb;
 	spi->pending_ud = user_data;
 	spi->pending_cs = cs;
-
+	spi->pending_tx = tx;
+	spi->pending_rx = rx;
+	spi->pending_len = len;
 	cs_assert(cs);
 	ret = ove_hal_spi_transfer_async(spi, tx, rx, len);
 	if (ret != OVE_OK) {
+		/* Rejection retains no provider state and produces no callback. */
 		cs_deassert(cs);
-		spi->async_busy = 0;
+		spi_clear_pending(spi);
+		int flags = __atomic_fetch_and(&spi->async_busy, SPI_CLOSING | SPI_DESTROY,
+					       __ATOMIC_ACQ_REL);
+		spi_finish_close(spi, flags);
+		return ret;
 	}
+	/* This RMW is the submitter's last access before handing off retirement.
+	 * Completion's paired RMW chooses exactly one finalizer, even when a
+	 * worker/IRQ finishes before the native submission call returns. */
+	int flags = __atomic_fetch_and(&spi->async_busy, ~SPI_SUBMITTING, __ATOMIC_ACQ_REL);
+	if (flags & SPI_RESULT)
+		ove_hal_spi_async_retire(spi);
 	return ret;
 }
 
 void ove_spi_async_complete(ove_spi_t spi, int result)
 {
+	int flags = __atomic_load_n(&spi->async_busy, __ATOMIC_ACQUIRE);
+	do {
+		if (!(flags & SPI_ACTIVE) || (flags & SPI_COMPLETING))
+			return;
+	} while (!__atomic_compare_exchange_n(&spi->async_busy, &flags, flags | SPI_COMPLETING, 0,
+					      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+	cs_deassert(spi->pending_cs);
+	spi->async_result = result;
+	flags = __atomic_fetch_or(&spi->async_busy, SPI_RESULT, __ATOMIC_ACQ_REL);
+	if (!(flags & SPI_SUBMITTING))
+		ove_hal_spi_async_retire(spi);
+}
+
+void ove_spi_async_retired(ove_spi_t spi)
+{
+	/* Provider queues have already unlinked this object. All arguments and
+	 * cleanup choices must be cached before dropping its final active state. */
 	ove_dma_complete_cb cb = spi->pending_cb;
 	void *user_data = spi->pending_ud;
-	const struct ove_spi_cs *cs = spi->pending_cs;
-
-	cs_deassert(cs);
-	spi->async_busy = 0;
+	int result = spi->async_result;
+	spi_clear_pending(spi);
+	int flags =
+		__atomic_fetch_and(&spi->async_busy, SPI_CLOSING | SPI_DESTROY, __ATOMIC_ACQ_REL);
+	spi_finish_close(spi, flags);
 	if (cb != NULL)
 		cb(result, user_data);
 }

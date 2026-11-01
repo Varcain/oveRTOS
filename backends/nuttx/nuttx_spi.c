@@ -79,6 +79,23 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 
 #ifdef CONFIG_OVE_ASYNC
 
+int ove_hal_spi_async_prepare(void)
+{
+#if defined(CONFIG_OVE_ZERO_HEAP) && defined(CONFIG_DEBUG_ASSERTIONS)
+	/* Worker creation allocates native TCB/stack memory. The debug heap-lock
+	 * policy asserts before its reserved allocator can service that request. */
+	return OVE_ERR_NOT_SUPPORTED;
+#else
+	return OVE_OK;
+#endif
+}
+
+void ove_hal_spi_async_retire(ove_spi_t spi)
+{
+	/* The detached worker has no controller access after completion. */
+	ove_spi_async_retired(spi);
+}
+
 #include <pthread.h>
 
 static void *nuttx_spi_async_worker(void *arg)

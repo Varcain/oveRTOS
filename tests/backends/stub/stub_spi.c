@@ -53,6 +53,17 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 
 #ifdef CONFIG_OVE_ASYNC
 
+int ove_hal_spi_async_prepare(void)
+{
+	return OVE_OK;
+}
+
+void ove_hal_spi_async_retire(ove_spi_t spi)
+{
+	/* The detached worker has no controller access after completion. */
+	ove_spi_async_retired(spi);
+}
+
 #include <pthread.h>
 #include "ove_backend_common.h"
 
