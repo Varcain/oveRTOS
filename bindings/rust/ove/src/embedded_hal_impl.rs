@@ -125,8 +125,7 @@ mod i2c_impl {
 #[cfg(has_spi)]
 mod spi_impl {
     use super::*;
-    use crate::Spi;
-    use crate::bindings;
+    use crate::spi::{Controller, Word};
     use embedded_hal::spi;
 
     impl spi::Error for Error {
@@ -135,13 +134,13 @@ mod spi_impl {
         }
     }
 
-    impl spi::ErrorType for Spi {
+    impl<W: Word> spi::ErrorType for Controller<W> {
         type Error = Error;
     }
 
-    impl spi::SpiBus<u8> for Spi {
-        fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
-            Spi::read(
+    impl<W: Word> spi::SpiBus<W> for Controller<W> {
+        fn read(&mut self, words: &mut [W]) -> Result<(), Self::Error> {
+            Controller::read(
                 self,
                 None,
                 words,
@@ -149,8 +148,8 @@ mod spi_impl {
             )
         }
 
-        fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
-            Spi::write(
+        fn write(&mut self, words: &[W]) -> Result<(), Self::Error> {
+            Controller::write(
                 self,
                 None,
                 words,
@@ -158,8 +157,8 @@ mod spi_impl {
             )
         }
 
-        fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
-            Spi::transfer(
+        fn transfer(&mut self, read: &mut [W], write: &[W]) -> Result<(), Self::Error> {
+            Controller::transfer(
                 self,
                 None,
                 write,
@@ -168,28 +167,18 @@ mod spi_impl {
             )
         }
 
-        fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
-            // Substrate accepts `tx_ptr == rx_ptr` — SPI hardware
-            // shifts bits through the same memory location.  No tmp
-            // buffer needed.
-            let len = words.len();
-            let p = words.as_mut_ptr();
-            let rc = unsafe {
-                bindings::ove_spi_transfer(
-                    self.raw(),
-                    core::ptr::null(),
-                    p as *const _,
-                    p as *mut _,
-                    len,
-                    u64::MAX,
-                )
-            };
-            Error::from_code(rc)
+        fn transfer_in_place(&mut self, words: &mut [W]) -> Result<(), Self::Error> {
+            Controller::transfer_in_place(
+                self,
+                None,
+                words,
+                core::time::Duration::from_secs(u64::MAX / 2),
+            )
         }
 
         fn flush(&mut self) -> Result<(), Self::Error> {
-            // Substrate transfers are synchronous — completion implies
-            // bus quiescence.
+            // This controller's synchronous calls have returned. Unrelated
+            // native/async users still require external bus coordination.
             Ok(())
         }
     }

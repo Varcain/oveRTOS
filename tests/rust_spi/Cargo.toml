@@ -1,0 +1,17 @@
+[package]
+name = "ove-spi-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+ove = { path = "../../bindings/rust/ove", default-features = false, features = ["std", "embedded-hal"] }
+embedded-hal = "1.0"
+
+[[test]]
+name = "spi"
+path = "spi.rs"
+
+[[bin]]
+name = "span-regression"
+path = "span_regression.rs"

@@ -421,8 +421,21 @@ async use needs separate coordination because it does not take that mutex;
 native hardware selection/controller ownership may end between segments on
 NuttX and Zephyr. Read filler is backend-defined, possibly initial RX contents.
 STM32 synchronous chunks share one per-segment timeout budget; its one-shot
-async limit is 65535 frames. These native rules do not resolve separate binding
-slice adaptation or async retained-buffer ownership issues.
+async limit is 65535 frames.
+
+Synchronous Rust SPI owners select their native word size: `Spi` uses `u8` and
+`Spi16` uses `u16`. Public `Config`, `ChipSelect` and borrow-retaining `Transfer`
+descriptions support ordinary calls without application FFI. Unequal slices
+become a full-duplex prefix and a half-duplex tail in one native sequence;
+neither buffer is published beyond its supplied span. Empty operations are
+no-ops. Every logical descriptor occupies two native records, with checked
+flattened count and no temporary array proportional to the sequence length.
+Heap owners use native create/destroy; static `SpiStorage::init` claims stable
+backing until native deinit finishes. Forgetting a static owner retains its
+claim; unsafe raw wrappers are nonowning. Owners are not Copy/Clone/Send/Sync.
+This synchronous contract does not establish async retained-buffer ownership,
+callback retirement or Zig slice adaptation. Native backend limits and
+coordination with separate handles remain the caller's responsibility.
 
 When you add or change a binding API, update this page in the same change so the
 three languages stay aligned. The examples under `apps/{cpp,rust,zig}/` act as

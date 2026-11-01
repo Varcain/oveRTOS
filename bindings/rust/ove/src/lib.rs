@@ -413,7 +413,7 @@ pub use ove_macros::{main, thread as thread_attr};
 #[cfg(has_queue)]
 pub use queue::{Queue, QueueStorage};
 #[cfg(has_spi)]
-pub use spi::Spi;
+pub use spi::{Spi, Spi16, SpiStorage};
 #[cfg(has_stream)]
 pub use stream::{Stream, StreamStorage};
 #[cfg(has_sync)]

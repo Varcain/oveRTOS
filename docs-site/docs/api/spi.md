@@ -81,4 +81,53 @@ if (ove_spi_transfer_seq(spi, &cs, xfers, 2, OVE_WAIT_FOREVER) == OVE_OK) {
 }
 ```
 
+## Rust synchronous ownership and transfers
+
+`Spi` owns an 8-bit controller and `Spi16` owns a 16-bit controller. In heap
+builds, `Spi::new(Config::default())` uses the native allocator, without a Rust
+allocator requirement. Static storage works in both allocation modes:
+
+```rust
+use core::time::Duration;
+use ove::{SpiStorage, spi::{ChipSelect, Config, Transfer}};
+use ove::gpio::{GpioMode, OutputPin};
+
+static SPI: SpiStorage = SpiStorage::new();
+let mut select = OutputPin::new(0, 4, GpioMode::OutputPP)?;
+select.set_high()?;
+let cs = ChipSelect::new(0, 4, true);
+let mut spi = SPI.init(Config::default())?;
+let tx = [0x9f, 0];
+let mut rx = [0; 4];
+spi.transfer_seq(Some(&cs), &mut [Transfer::duplex(&tx, &mut rx)],
+                 Duration::from_millis(20))?;
+```
+
+The common prefix transfers full duplex; the longer side uses a half-duplex
+tail. The example clocks four bytes, without reading beyond `tx`. Each logical
+description expands to two native records under one native sequence call and
+one supplied software CS interval. Empty operations have no native effects.
+`Transfer::write`, `read`, `duplex`, and `in_place` retain their source borrows;
+mutable descriptions cannot be copied. There is no fixed sequence length cap
+beyond representable native counts. Each native segment has its own timeout.
+
+For 16-bit words, declare `static SPI: SpiStorage<u16> = SpiStorage::new()`
+or use `Spi16::new(config)` in heap builds. Typed buffers establish whole-frame
+counts and alignment; the constructor sets the matching native word size.
+Both owners implement the matching `embedded_hal::spi::SpiBus` when enabled.
+
+Moving an owner keeps native backing stable. Drop completes native teardown
+before static backing becomes reusable. A busy static returns `Error::Busy`;
+forgetting an owner keeps its static claim occupied. Owners are neither
+Copy/Clone nor Send/Sync. `unsafe from_handle` creates a nonowning wrapper;
+the caller must preserve the external handle's lifetime, configuration and
+coordination, and Drop leaves it alone. Existing raw CS/record arguments must
+be migrated to the public typed descriptions.
+
+These are blocking thread-context operations. Reserve the physical bus against
+other handles and native/async users externally. Hardware CS, filler and timeout
+limits remain as described above. STM32 currently uses a fixed prescaler;
+NuttX does not apply the requested bit order. Async buffer ownership and Zig
+slice adaptation are separate work.
+
 > Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).
