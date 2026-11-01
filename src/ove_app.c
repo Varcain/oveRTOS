@@ -12,6 +12,9 @@
 #if defined(CONFIG_OVE_RTOS_POSIX)
 #include <stdlib.h>
 #endif
+#ifdef CONFIG_OVE_RTOS_NUTTX
+#include <unistd.h>
+#endif
 
 int ove_app_run(void)
 {
@@ -50,6 +53,10 @@ __attribute__((weak)) void ove_heap_lock(void)
 
 void ove_run(void)
 {
+#ifdef CONFIG_OVE_RTOS_NUTTX
+	if (gettid() != getpid() || ove_thread_get_self() != NULL)
+		return;
+#endif
 #ifdef CONFIG_OVE_ZERO_HEAP
 	/*
 	 * Boundary between init and run phases.  In zero-heap mode every

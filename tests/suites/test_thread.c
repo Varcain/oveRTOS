@@ -1004,6 +1004,14 @@ static void test_errno_per_thread(void **state)
 }
 
 #ifdef CONFIG_OVE_RTOS_NUTTX
+void ove_test_nuttx_thread_lifecycle(ove_thread_storage_t *storage, void *stack, size_t size);
+
+static void test_native_thread_lifetime(void **state)
+{
+	(void)state;
+	ove_test_nuttx_thread_lifecycle(&s_th_storage, s_th_stack, sizeof(s_th_stack));
+}
+
 struct native_identity_probe {
 	ove_thread_t owner;
 	ove_thread_t worker_before;
@@ -1178,6 +1186,9 @@ int test_thread_run(void)
 					  teardown_stop_spin),
 #endif
 		cmocka_unit_test(test_errno_per_thread),
+#ifdef CONFIG_OVE_RTOS_NUTTX
+		cmocka_unit_test(test_native_thread_lifetime),
+#endif
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),
 #endif

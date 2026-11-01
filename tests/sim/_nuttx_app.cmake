@@ -99,6 +99,7 @@ set(_srcs
   ${_suite_dir}/test_renode_stm32_periph.c
   ${_suite_dir}/test_renode_stm32_net.c
   ${_suite_dir}/test_thread.c
+  ${_tests_root}/backends/nuttx/thread_lifecycle.c
   ${_suite_dir}/test_thread_stop.c
   ${_suite_dir}/test_sync_mutex.c
   ${_suite_dir}/test_sync_sem.c
@@ -259,6 +260,34 @@ endif()
 # configures with -B build/ directly. In both cases add_executable(nuttx)
 # emits the ELF at ${CMAKE_BINARY_DIR}/nuttx.
 if(TARGET nuttx)
+  # Compile aliases work before the simulator's partial link and symbol rename.
+  set(_lifecycle_aliases
+    nxsem_post=ove_test_nuttx_nxsem_post
+    nxsem_destroy=ove_test_nuttx_nxsem_destroy
+    nxsem_wait_uninterruptible=ove_test_nuttx_nxsem_wait_uninterruptible
+    nxsched_get_tcb=ove_test_nuttx_nxsched_get_tcb
+    nxtask_argvstr=ove_test_nuttx_nxtask_argvstr
+  )
+  set_source_files_properties(${_nuttx_be}/nuttx_thread.c PROPERTIES
+    COMPILE_DEFINITIONS "${_lifecycle_aliases}"
+  )
+  set_source_files_properties(${OVE_DIR}/backends/common/ove_heap_lock.c PROPERTIES
+    COMPILE_DEFINITIONS "ove_heap_lock=ove_test_nuttx_real_heap_lock")
+  get_target_property(_libc_sources c SOURCES)
+  get_target_property(_libc_source_dir c SOURCE_DIR)
+  set(_startup_aliased FALSE)
+  foreach(_libc_source IN LISTS _libc_sources)
+    if(_libc_source MATCHES "(^|/)sched/task_startup\\.c$")
+      get_filename_component(_startup_source "${_libc_source}" ABSOLUTE
+        BASE_DIR "${_libc_source_dir}")
+      set_source_files_properties(${_startup_source} TARGET_DIRECTORY c PROPERTIES
+        COMPILE_DEFINITIONS "exit=ove_test_nuttx_exit")
+      set(_startup_aliased TRUE)
+    endif()
+  endforeach()
+  if(NOT _startup_aliased)
+    message(FATAL_ERROR "NuttX lifecycle test cannot identify libc task startup")
+  endif()
   include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
   set(_audit_args BINDING c ELF_PATH ${CMAKE_BINARY_DIR}/nuttx)
   if(_OVE_ZERO_HEAP)

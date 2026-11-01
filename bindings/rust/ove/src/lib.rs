@@ -448,13 +448,15 @@ pub fn log(msg: &[u8]) {
     }
 }
 
-/// Start audio (if enabled) and the RTOS scheduler. Blocks forever.
+/// Finish initialization and start the RTOS scheduler.
 ///
 /// This function must be called at the end of `ove_main` (or the function
 /// annotated with [`#[ove::main]`](main)). It transfers control to the RTOS
-/// and never returns.
+/// and does not return on most platforms.
+/// Call from application startup, not a thread entry or native pthread worker.
+/// NuttX ignores calls from those workers without locking the heap.
 pub fn run() {
-    // SAFETY: `ove_run` is the RTOS scheduler entry; it never returns.
+    // SAFETY: `ove_run` is the C scheduler entry, with no pointer arguments.
     unsafe {
         bindings::ove_run();
     }
@@ -469,7 +471,9 @@ pub fn run() {
 /// `kmm_zalloc(task_group_s)` to fail with `ENOMEM`. Calling this in place
 /// of [`run`] opts out of the lock.
 ///
-/// Like [`run`], this never returns.
+/// Like [`run`], this does not return on most platforms.
+/// Call from application startup, not a thread entry or native pthread worker.
+/// NuttX ignores calls from those workers.
 pub fn start_scheduler() {
     // SAFETY: kicks the scheduler entry; never returns on most platforms.
     unsafe {

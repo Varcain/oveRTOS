@@ -328,7 +328,9 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
     log.print(fmt, args);
 }
 
-/// Start audio (if enabled) and the RTOS scheduler. Blocks forever.
+/// Finish initialization and start the RTOS scheduler; blocks on most platforms.
+/// Call from application startup, not a thread entry or native pthread worker.
+/// NuttX ignores calls from those workers without locking the heap.
 pub fn run() void {
     ffi.ove_run();
 }
@@ -340,7 +342,9 @@ pub fn run() void {
 /// inside test setup paths after `ove_main` has returned.  On NuttX
 /// zero-heap builds, the heap lock would cause `pthread_create`'s
 /// `kmm_zalloc(task_group_s)` to fail with `ENOMEM`.  Calling this in
-/// place of `run` opts out of the lock.  Never returns.
+/// place of `run` opts out of the lock. Blocks on most platforms.
+/// Call from application startup, not a thread entry or native pthread worker.
+/// NuttX ignores calls from those workers.
 pub fn startScheduler() void {
     ffi.ove_thread_start_scheduler();
 }

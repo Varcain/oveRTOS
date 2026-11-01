@@ -24,6 +24,8 @@ namespace ove
  *
  * This function does not return under normal circumstances.  Call it at the
  * end of the C `ove_main()` entry point (or from `OVE_MAIN()`).
+ * Call from application startup, not a thread entry or native pthread worker.
+ * NuttX ignores calls from those workers without locking the heap.
  */
 inline void run()
 {
