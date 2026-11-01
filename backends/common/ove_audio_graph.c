@@ -104,10 +104,11 @@ int ove_audio_graph_destroy(struct ove_audio_graph *g)
 
 /* ── Add / Connect ──────────────────────────────────────────────── */
 
-int ove_audio_graph_add_node(struct ove_audio_graph *g, const struct ove_audio_node_ops *ops,
-			     void *ctx, const char *name, enum ove_audio_node_type type)
+int ove_audio_graph_add_node_n(struct ove_audio_graph *g, const struct ove_audio_node_ops *ops,
+			       void *ctx, const char *name, size_t name_len,
+			       enum ove_audio_node_type type)
 {
-	if (!g || !ops || !name)
+	if (!g || !ops || !name || memchr(name, 0, name_len))
 		return OVE_ERR_INVALID_PARAM;
 
 	if (g->state != OVE_AUDIO_GRAPH_IDLE)
@@ -118,13 +119,21 @@ int ove_audio_graph_add_node(struct ove_audio_graph *g, const struct ove_audio_n
 
 	unsigned int idx = g->node_count++;
 	struct ove_audio_node *n = &g->nodes[idx];
-	n->name = name;
+	n->name_span.data = name;
+	n->name_span.len = name_len;
 	n->type = type;
 	n->ops = ops;
 	n->ctx = ctx;
 	memset(&n->out_fmt, 0, sizeof(n->out_fmt));
 
 	return (int)idx;
+}
+
+int ove_audio_graph_add_node(struct ove_audio_graph *g, const struct ove_audio_node_ops *ops,
+			     void *ctx, const char *name, enum ove_audio_node_type type)
+{
+	return name ? ove_audio_graph_add_node_n(g, ops, ctx, name, strlen(name), type)
+		    : OVE_ERR_INVALID_PARAM;
 }
 
 int ove_audio_graph_connect(struct ove_audio_graph *g, unsigned int from, unsigned int to)

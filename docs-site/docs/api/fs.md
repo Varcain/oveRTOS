@@ -2,6 +2,18 @@
 
 The oveRTOS filesystem module maps POSIX-like file and directory operations onto the RTOS storage backend: FatFs on the SD card (FreeRTOS, Zephyr) or the NuttX VFS. `ove_fs_mount(NULL, NULL)` mounts the board's volume, and every path after that is relative to the volume root, so the same application code runs unchanged on all three engines.
 
+## String contracts
+
+Rust paths accept ordinary strings and byte slices, including non-UTF8
+directory entry names. Private staging permits255 payload bytes; NUL is
+`InvalidParam`, overflow is `NameTooLong`, before native effects. Both rename
+buffers live through the native call. `File::open_fmt(format_args!(...), flags)`
+formats once without an allocator or partial open. Mount/unmount use
+`Option<&str>` with the same portable envelope, preserving `None` versus empty.
+Typed `_cstr` methods retain native extensions. Close files/directories before
+unmount; Rust unmount success means validation/dispatch because native C is void.
+
+
 ## Architecture
 
 ```mermaid

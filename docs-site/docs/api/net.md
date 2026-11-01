@@ -4,6 +4,33 @@ The oveRTOS networking subsystem provides a portable BSD-like socket API, DNS re
 
 All networking modules require `CONFIG_OVE_NET`. When it is not set, every function is replaced by a static inline stub that returns `OVE_ERR_NOT_SUPPORTED`.
 
+## String contracts
+
+Rust TLS hostnames use `Option<&str>` (255 bytes, NUL rejected), with
+private termination and native copying during handshake; certificate bytes
+retain explicit lengths including NUL for PEM. `TlsConfigCStr` supports native
+interop. Verification requirements remain those of the native TLS API.
+
+HTTP route registration rejects method over7 or path over63 bytes before slot
+reservation; WS routes have the same63-byte path limit. Rust text inputs use
+ordinary strings. Counted `ove_httpd_resp_send_n` / `send_gz_n` borrow metadata;
+binary bodies keep explicit lengths. Complete headers must fit256 bytes
+including NUL (`NoMemory` on overflow). `ove_httpd_resp_error_n` checks full
+JSON escaping:191 encoded bytes fit, the next returns `NoSpace`, without
+clipping. NUL is `InvalidParam`. Preparation errors allow retry/fallback;
+after the first socket attempt the response stays sent even on partial failure.
+Rust `Response::json` preserves every body byte, including NUL.
+
+`ove_httpd_log_append_n` rejects NUL before publication, keeps127 ring bytes
+and broadcasts the full original span. Success means validation/dispatch,
+not guaranteed delivery. `ove_httpd_ws_broadcast_n` returns a nonnegative
+sent count or negative validation error, preserves binary payloads, and
+validates the63-byte path before sends. NULL+0 selects all; a non-NULL empty
+path selects empty. Rust exposes `broadcast(path, bytes)` and
+`broadcast_all(bytes)`, returning `Result<usize>`. Raw WS send remains unsafe
+because the connection handle expires at its close callback.
+
+
 ## Two stacks: blocking vs async
 
 oveRTOS exposes **two** TCP/IP stacks via separate Kconfig options. Pick one per build — they are mutually exclusive at the transport layer because both want to own the MAC + ARP cache + descriptor ring.

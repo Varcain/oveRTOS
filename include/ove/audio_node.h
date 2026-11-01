@@ -197,10 +197,16 @@ enum ove_audio_node_type {
  * @brief Descriptor for a single node in the audio graph.
  *
  * Populated by ove_audio_graph_add_node() and stored inside
- * @c ove_audio_graph::nodes[].
+ * @c ove_audio_graph::nodes[]. The public descriptor now represents names
+ * as name_span.data/len rather than a C-string pointer: readers must use
+ * the byte count, not strlen or %s. This changes its source layout and ABI;
+ * rebuild consumers together. Names remain borrowed until graph deinit.
  */
 struct ove_audio_node {
-	const char *name;		      /**< @brief Human-readable node name. */
+	struct {
+		const char *data; /**< Borrowed diagnostic bytes; not necessarily terminated. */
+		size_t len;	  /**< Byte length, excluding any C terminator. */
+	} name_span;
 	enum ove_audio_node_type type;	      /**< @brief Source, processor, or sink. */
 	const struct ove_audio_node_ops *ops; /**< @brief Vtable for this node. */
 	void *ctx;		      /**< @brief Opaque context forwarded to every vtable call. */

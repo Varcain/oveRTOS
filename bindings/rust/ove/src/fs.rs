@@ -7,13 +7,22 @@
 //! Filesystem abstraction for oveRTOS.
 //!
 //! Provides RAII [`File`] and [`Dir`] handles for reading, writing, and
-//! directory traversal. Paths are C strings: `c"/data/config.bin"` for a
-//! constant one, or [`FmtBuf::as_c_str`](crate::fmt::FmtBuf::as_c_str) for one
-//! built at run time.
-
+//! directory traversal.
+//!
+//! Ordinary path inputs accept strings and byte slices, including non-UTF8
+//! directory names. Private stack staging permits 255 payload bytes and rejects
+//! NUL with `InvalidParam`, or longer paths with `NameTooLong`, before native
+//! effects. Selected `_cstr` methods preserve native extensions without staging.
+//! `File::open_fmt` formats once into the same bound, without an allocator;
+//! failed formatting never opens a partial path.
+//!
 use core::ffi::CStr;
 
 use crate::bindings;
+use crate::cstring::Buffer;
+use core::fmt;
+
+const PATH_CAPACITY: usize = bindings::OVE_FS_PATH_MAX as usize;
 use crate::error::{Error, Result};
 
 // SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
@@ -64,19 +73,52 @@ pub struct Metadata {
 /// Pass `None` for both to mount the board's volume: the only form that means
 /// the same on every engine. `Some` values are backend-native names (see
 /// `ove_fs_mount()`). File paths are relative to the mounted volume.
-pub fn mount(dev: Option<&CStr>, mnt: Option<&CStr>) -> Result<()> {
-    let dev_ptr = dev.map_or(core::ptr::null(), CStr::as_ptr);
-    let mnt_ptr = mnt.map_or(core::ptr::null(), CStr::as_ptr);
-    let rc = unsafe { bindings::ove_fs_mount(dev_ptr, mnt_ptr) };
+/// Supplied names use a portable 255-byte envelope. NUL is `InvalidParam`;
+/// overflow is `NameTooLong`. `None` and `Some("")` remain distinct native
+/// arguments. Use [`mount_cstr`] for longer native extensions.
+pub fn mount(dev: Option<&str>, mnt: Option<&str>) -> Result<()> {
+    let dev = dev
+        .map(|s| Buffer::<PATH_CAPACITY>::from_bytes(s.as_bytes()))
+        .transpose()?;
+    let mnt = mnt
+        .map(|s| Buffer::<PATH_CAPACITY>::from_bytes(s.as_bytes()))
+        .transpose()?;
+    let rc = unsafe {
+        bindings::ove_fs_mount(
+            dev.as_ref().map_or(core::ptr::null(), Buffer::as_ptr),
+            mnt.as_ref().map_or(core::ptr::null(), Buffer::as_ptr),
+        )
+    };
     Error::from_code(rc)
 }
 
-/// Unmount the volume mounted at `mnt` (`None` for the board's volume).
+/// Backend-native mount options, including names outside the portable envelope.
+pub fn mount_cstr(dev: Option<&CStr>, mnt: Option<&CStr>) -> Result<()> {
+    Error::from_code(unsafe {
+        bindings::ove_fs_mount(
+            dev.map_or(core::ptr::null(), CStr::as_ptr),
+            mnt.map_or(core::ptr::null(), CStr::as_ptr),
+        )
+    })
+}
+
+/// Unmount by portable native name.
 ///
-/// Close every [`File`] and [`Dir`] on it first.
-pub fn unmount(mnt: Option<&CStr>) {
-    let mnt_ptr = mnt.map_or(core::ptr::null(), CStr::as_ptr);
-    unsafe { bindings::ove_fs_unmount(mnt_ptr) };
+/// Close every file/directory before unmounting. The optional name uses the
+/// same 255-byte/NUL policy as [`mount`], preserving `None` versus empty.
+/// `Ok(())` means validation and dispatch; the native void operation cannot
+/// report operational failure. [`unmount_cstr`] preserves native extensions.
+pub fn unmount(mnt: Option<&str>) -> Result<()> {
+    let mnt = mnt
+        .map(|s| Buffer::<PATH_CAPACITY>::from_bytes(s.as_bytes()))
+        .transpose()?;
+    unsafe { bindings::ove_fs_unmount(mnt.as_ref().map_or(core::ptr::null(), Buffer::as_ptr)) };
+    Ok(())
+}
+
+/// Unmount a backend-native C-string name.
+pub fn unmount_cstr(mnt: Option<&CStr>) {
+    unsafe { bindings::ove_fs_unmount(mnt.map_or(core::ptr::null(), CStr::as_ptr)) };
 }
 
 /// RAII file handle.
@@ -86,9 +128,25 @@ pub struct File {
 
 impl File {
     /// Open the file at `path`.
-    pub fn open(path: &CStr, flags: i32) -> Result<Self> {
+    pub fn open(path: impl AsRef<[u8]>, flags: i32) -> Result<Self> {
+        let path = Buffer::<PATH_CAPACITY>::from_bytes(path.as_ref())?;
+        Self::open_ptr(path.as_ptr(), flags)
+    }
+
+    /// Format a portable path once, without an allocator or C-string adapter.
+    pub fn open_fmt(args: fmt::Arguments<'_>, flags: i32) -> Result<Self> {
+        let path = Buffer::<PATH_CAPACITY>::formatted(args, PATH_CAPACITY - 1, Error::NameTooLong)?;
+        Self::open_ptr(path.as_ptr(), flags)
+    }
+
+    /// Open a backend-native C-string path, preserving native length extensions.
+    pub fn open_cstr(path: &CStr, flags: i32) -> Result<Self> {
+        Self::open_ptr(path.as_ptr(), flags)
+    }
+
+    fn open_ptr(path: *const core::ffi::c_char, flags: i32) -> Result<Self> {
         let mut handle: bindings::ove_file_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_fs_open(&mut handle, path.as_ptr(), flags) };
+        let rc = unsafe { bindings::ove_fs_open(&mut handle, path, flags) };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }
@@ -208,9 +266,19 @@ pub struct Dir {
 
 impl Dir {
     /// Open the directory at `path`.
-    pub fn open(path: &CStr) -> Result<Self> {
+    pub fn open(path: impl AsRef<[u8]>) -> Result<Self> {
+        let path = Buffer::<PATH_CAPACITY>::from_bytes(path.as_ref())?;
+        Self::open_ptr(path.as_ptr())
+    }
+
+    /// Open a backend-native C-string directory path.
+    pub fn open_cstr(path: &CStr) -> Result<Self> {
+        Self::open_ptr(path.as_ptr())
+    }
+
+    fn open_ptr(path: *const core::ffi::c_char) -> Result<Self> {
         let mut handle: bindings::ove_dir_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_fs_opendir(&mut handle, path.as_ptr()) };
+        let rc = unsafe { bindings::ove_fs_opendir(&mut handle, path) };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }
@@ -257,7 +325,14 @@ fn cstr_to_slice(buf: &[u8]) -> &[u8] {
 }
 
 /// Query metadata for `path`.
-pub fn stat(path: &CStr) -> Result<Metadata> {
+pub fn stat(path: impl AsRef<[u8]>) -> Result<Metadata> {
+    let path = Buffer::<PATH_CAPACITY>::from_bytes(path.as_ref())?;
+    // SAFETY: private storage is terminated and alive throughout the call.
+    stat_cstr(unsafe { CStr::from_ptr(path.as_ptr()) })
+}
+
+/// Backend-native C-string variant of `stat`.
+pub fn stat_cstr(path: &CStr) -> Result<Metadata> {
     let mut raw: bindings::ove_fs_stat = unsafe { core::mem::zeroed() };
     let rc = unsafe { bindings::ove_fs_stat(path.as_ptr(), &mut raw) };
     Error::from_code(rc)?;
@@ -269,25 +344,53 @@ pub fn stat(path: &CStr) -> Result<Metadata> {
 }
 
 /// Create a directory.
-pub fn mkdir(path: &CStr) -> Result<()> {
+pub fn mkdir(path: impl AsRef<[u8]>) -> Result<()> {
+    let path = Buffer::<PATH_CAPACITY>::from_bytes(path.as_ref())?;
+    // SAFETY: private storage is terminated and alive throughout the call.
+    mkdir_cstr(unsafe { CStr::from_ptr(path.as_ptr()) })
+}
+
+/// Backend-native C-string variant of `mkdir`.
+pub fn mkdir_cstr(path: &CStr) -> Result<()> {
     let rc = unsafe { bindings::ove_fs_mkdir(path.as_ptr()) };
     Error::from_code(rc)
 }
 
 /// Remove an empty directory.
-pub fn rmdir(path: &CStr) -> Result<()> {
+pub fn rmdir(path: impl AsRef<[u8]>) -> Result<()> {
+    let path = Buffer::<PATH_CAPACITY>::from_bytes(path.as_ref())?;
+    // SAFETY: private storage is terminated and alive throughout the call.
+    rmdir_cstr(unsafe { CStr::from_ptr(path.as_ptr()) })
+}
+
+/// Backend-native C-string variant of `rmdir`.
+pub fn rmdir_cstr(path: &CStr) -> Result<()> {
     let rc = unsafe { bindings::ove_fs_rmdir(path.as_ptr()) };
     Error::from_code(rc)
 }
 
 /// Delete a file.
-pub fn unlink(path: &CStr) -> Result<()> {
+pub fn unlink(path: impl AsRef<[u8]>) -> Result<()> {
+    let path = Buffer::<PATH_CAPACITY>::from_bytes(path.as_ref())?;
+    // SAFETY: private storage is terminated and alive throughout the call.
+    unlink_cstr(unsafe { CStr::from_ptr(path.as_ptr()) })
+}
+
+/// Backend-native C-string variant of `unlink`.
+pub fn unlink_cstr(path: &CStr) -> Result<()> {
     let rc = unsafe { bindings::ove_fs_unlink(path.as_ptr()) };
     Error::from_code(rc)
 }
 
 /// Rename a file or directory.
-pub fn rename(old_path: &CStr, new_path: &CStr) -> Result<()> {
+pub fn rename(old_path: impl AsRef<[u8]>, new_path: impl AsRef<[u8]>) -> Result<()> {
+    let old = Buffer::<PATH_CAPACITY>::from_bytes(old_path.as_ref())?;
+    let new = Buffer::<PATH_CAPACITY>::from_bytes(new_path.as_ref())?;
+    Error::from_code(unsafe { bindings::ove_fs_rename(old.as_ptr(), new.as_ptr()) })
+}
+
+/// Backend-native C-string rename; both names are passed whole to the backend.
+pub fn rename_cstr(old_path: &CStr, new_path: &CStr) -> Result<()> {
     let rc = unsafe { bindings::ove_fs_rename(old_path.as_ptr(), new_path.as_ptr()) };
     Error::from_code(rc)
 }

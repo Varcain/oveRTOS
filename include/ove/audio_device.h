@@ -118,6 +118,17 @@ OVE_NODISCARD int ove_audio_device_source(struct ove_audio_graph *g,
 OVE_NODISCARD int ove_audio_device_sink(struct ove_audio_graph *g,
 					const struct ove_audio_device_cfg *cfg, const char *name);
 
+/** Counted device factory variants. The graph retains the validated name
+ * span until deinit; it need not have a trailing NUL. */
+OVE_NODISCARD int ove_audio_device_source_n(struct ove_audio_graph *g,
+					    const struct ove_audio_device_cfg *cfg,
+					    const char *name, size_t name_len);
+/** @brief Counted sink factory; same retained-name contract as
+ * ove_audio_device_source_n(). Empty names are allowed; NUL is invalid. */
+OVE_NODISCARD int ove_audio_device_sink_n(struct ove_audio_graph *g,
+					  const struct ove_audio_device_cfg *cfg, const char *name,
+					  size_t name_len);
+
 #endif /* CONFIG_OVE_AUDIO */
 
 #ifdef __cplusplus

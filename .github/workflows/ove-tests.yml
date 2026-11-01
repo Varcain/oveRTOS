@@ -235,6 +235,15 @@ jobs:
       - name: Run real LVGL text tests
         run: make test-rust-lvgl
 
+      - name: Fetch mbedTLS (manifest-pinned) into dl/mbedtls
+        run: |
+          MBEDTLS_URL=$(python3 scripts/manifest_query.py libraries.mbedtls.url)
+          MBEDTLS_TAG=$(python3 scripts/manifest_query.py libraries.mbedtls.version)
+          git clone --depth 1 --branch "$MBEDTLS_TAG" --recurse-submodules --shallow-submodules "$MBEDTLS_URL" dl/mbedtls
+
+      - name: Run real native Rust string tests (both heap modes)
+        run: make test-rust-strings
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

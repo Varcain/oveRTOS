@@ -4,11 +4,14 @@
 //
 // This file is part of oveRTOS.
 
-//! Non-volatile key-value storage — get/set/erase/iter over a per-board
-//! backing (internal flash, littlefs, host file, …).
+//! Non-volatile key-value storage over the selected RAM or file provider.
 //!
 //! Wraps `ove/nvs.h`. Keys are null-terminated C strings; values are arbitrary
 //! byte blobs sized at write time. Available when `CONFIG_OVE_NVS` is enabled.
+//!
+//! Keys use nonempty ASCII [A-Za-z0-9_.-] without a leading dot. Invalid or
+//! overlong keys return InvalidParam. Native ove_nvs_key_max_len() reflects
+//! RAM63 or the file backend's configured directory prefix; values are binary.
 
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

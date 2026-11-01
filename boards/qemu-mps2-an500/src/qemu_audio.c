@@ -299,10 +299,10 @@ static int qemu_shm_init_once(const struct ove_audio_fmt *fmt, unsigned int fram
 	return OVE_OK;
 }
 
-int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			    const char *name)
+int ove_audio_device_source_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			      const char *name, size_t name_len)
 {
-	if (!g || !cfg || !name)
+	if (!g || !cfg || !name || (name_len && memchr(name, 0, name_len)))
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
 		return OVE_ERR_NOT_SUPPORTED;
@@ -314,13 +314,14 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	ctx->fmt = cfg->fmt;
 	ctx->graph = g;
 
-	return ove_audio_graph_add_node(g, &qemu_source_ops, ctx, name, OVE_AUDIO_NODE_SOURCE);
+	return ove_audio_graph_add_node_n(g, &qemu_source_ops, ctx, name, name_len,
+					  OVE_AUDIO_NODE_SOURCE);
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			  const char *name)
+int ove_audio_device_sink_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name, size_t name_len)
 {
-	if (!g || !cfg || !name)
+	if (!g || !cfg || !name || (name_len && memchr(name, 0, name_len)))
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
 		return OVE_ERR_NOT_SUPPORTED;
@@ -333,7 +334,8 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	ctx->graph = g;
 	ctx->frames_per_period = g->frames_per_period;
 
-	return ove_audio_graph_add_node(g, &qemu_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+	return ove_audio_graph_add_node_n(g, &qemu_sink_ops, ctx, name, name_len,
+					  OVE_AUDIO_NODE_SINK);
 }
 
 /* Stub for sim_board.c which calls this during init.  On QEMU the audio
@@ -346,6 +348,17 @@ int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels, uint16_t bit
 	(void)bit_depth;
 	(void)buffer_frames;
 	return 0;
+}
+
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name)
+{
+	return ove_audio_device_source_n(g, cfg, name, name ? strlen(name) : 0);
+}
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			  const char *name)
+{
+	return ove_audio_device_sink_n(g, cfg, name, name ? strlen(name) : 0);
 }
 
 #endif /* CONFIG_OVE_AUDIO */

@@ -363,13 +363,13 @@ fn app_main() {
     let dev_cfg = ove::audio::device_cfg_i2s(16000, 1, 1);
 
     let src = graph
-        .device_source(&dev_cfg, c"dmic-in")
+        .device_source(&dev_cfg, "dmic-in")
         .expect("audio graph: source");
     let proc = graph
-        .add_processor(DMIC_PROC.get_mut(), c"dmic-proc")
+        .add_processor(DMIC_PROC.get_mut(), "dmic-proc")
         .expect("audio graph: processor");
     let sink = graph
-        .device_sink(&dev_cfg, c"hp-out")
+        .device_sink(&dev_cfg, "hp-out")
         .expect("audio graph: sink");
 
     graph

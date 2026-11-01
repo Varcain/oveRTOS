@@ -5,6 +5,7 @@
 // This file is part of oveRTOS.
 
 mod framework;
+mod test_native_strings;
 
 // Heap-mode suites use the `::new()` heap constructors throughout, which do
 // not exist under CONFIG_OVE_ZERO_HEAP — compile them only in heap mode.  The
@@ -132,6 +133,10 @@ fn main() {
 
     #[cfg(zero_heap)]
     let suites: &[(&str, fn() -> (usize, usize))] = &[("ZeroHeapStatic", test_zero_heap::run)];
+
+    let (passed, failed) = test_native_strings::run();
+    total_passed += passed;
+    total_failed += failed;
 
     for (name, runner) in suites {
         println!("\n=== Rust {} Tests ===", name);

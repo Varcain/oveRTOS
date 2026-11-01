@@ -290,6 +290,8 @@ pub mod config;
 #[cfg(has_console)]
 pub mod console;
 pub mod containers;
+#[cfg(any(has_fs, has_nvs, has_net_tls, has_net_httpd, has_audio))]
+mod cstring;
 #[cfg(feature = "embedded-hal")]
 mod embedded_hal_impl;
 #[cfg(all(feature = "embedded-io-async", feature = "async", has_async))]

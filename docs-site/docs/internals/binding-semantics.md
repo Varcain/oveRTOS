@@ -32,20 +32,29 @@ A recurring difference is *how a scope-bound resource is released*:
 
 | Contract | C++ | Rust | Zig |
 |---|---|---|---|
-| C reads it as a C string, during the call (paths, NVS keys, routes, content types, TLS hostname) | `const char *` | `&CStr`, e.g. `c"/data/log.txt"` | `[:0]const u8` / `[*:0]const u8` |
-| C keeps the pointer (audio node names, shell command names) | `const char *` that outlives the object | `&'static CStr` | comptime or caller-owned sentinel string |
+| Transient core text (paths, keys, routes, metadata, TLS hostname) | `const char *` | `&str` / `Option<&str>`; FS also accepts byte paths | `[:0]const u8` / `[*:0]const u8` |
+| Retained audio names | persistent C string adapted to a span | `&'static str`, retained counted span | persistent sentinel string adapted to a span |
+| Retained shell/thread names | persistent C string | existing `&'static CStr` contract | persistent sentinel string |
 | Copied LVGL text, image paths and symbols | `const char *` | `&str`, checked and converted privately | sentinel string |
 | Retained LVGL label text | caller-owned persistent buffer | static `TextStorage<N>` + `BufferedLabel<N>` | caller-owned sentinel buffer |
 | Reactive LVGL label formatting | persistent printf format | noncapturing Rust formatter function | persistent printf format |
-| Built at run time, no heap | `snprintf` into a buffer | `ove::fmt::FmtBuf` + `as_c_str()` | `std.fmt.bufPrintZ` |
+| Built at run time, no heap | `snprintf` into a buffer | selected `_fmt(format_args!(...))` methods | `std.fmt.bufPrintZ` |
 | Data with an explicit length (bodies, payloads, NVS values) | pointer + length | `&[u8]` | `[]const u8` |
 
 **Contract notes**
 
-- A Rust `&[u8]` never stands in for a C string: C would read past its end
-  looking for the terminator, and an embedded NUL would cut it short.
-  `FmtBuf::as_c_str()` fails with `InvalidParam` when the text holds a NUL or
-  did not fit, rather than hand C a shortened path or key.
+- Rust privately terminates genuine bounded C-string inputs (FS255 bytes,
+  TLS hostname255, method7/path63) and passes counted inputs to native
+  NVS/response/log consumers. Byte slices must never be handed directly to a
+  terminator-reading consumer. NUL is rejected before effects. FS byte paths
+  preserve non-UTF8 directory names. Native `_cstr` compatibility remains.
+- Checked formatting runs once, latches errors, and publishes no partial key
+  or path. Core staging needs neither LVGL nor a Rust allocator.
+  `FmtBuf::as_c_str()` remains an optional low-level compatibility utility.
+- Audio retains static `name_span { data, len }` bytes without a terminator,
+  name cap or name allocation. This changes the public descriptor ABI;
+  rebuild all consumers and use length-aware readers. Shell/thread name
+  retention remains unchanged.
 - Rust LVGL string methods return `Result`: embedded NUL is `InvalidParam`,
   conversion pool exhaustion is `NoMemory`. Short conversions use stack
   scratch; longer ones use LVGL's fixed pool without a Rust global allocator.

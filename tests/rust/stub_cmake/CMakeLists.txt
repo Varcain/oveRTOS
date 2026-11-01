@@ -19,7 +19,11 @@ set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/stub)
 # Include test helper (provides ove_config.h location)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/OveTest.cmake)
 
+set(OVE_STUB_NVS_SOURCE "${OVE_ROOT}/backends/common/ove_nvs_ram.c" CACHE FILEPATH "NVS provider for host tests")
+set(OVE_STUB_CONFIG_DIR "" CACHE PATH "Optional generated host-test configuration")
+
 add_library(ove_stub STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../string_native.c
     ${POSIX_CORE_DIR}/posix_thread.c
     ${POSIX_CORE_DIR}/posix_sync.c
     ${OVE_SRC}/ove_sync.c
@@ -36,7 +40,7 @@ add_library(ove_stub STATIC
     ${POSIX_CORE_DIR}/posix_stream.c
     ${OVE_SRC}/ove_stream.c
     ${POSIX_CORE_DIR}/posix_watchdog.c
-    ${OVE_ROOT}/backends/common/ove_nvs_ram.c
+    ${OVE_STUB_NVS_SOURCE}
     ${OVE_ROOT}/backends/common/ove_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
     ${OVE_SRC}/ove_fs.c
@@ -60,6 +64,7 @@ add_library(ove_stub STATIC
     ${STUB_DIR}/stub_audio_device.c
 )
 
+target_include_directories(ove_stub BEFORE PRIVATE ${OVE_STUB_CONFIG_DIR})
 target_include_directories(ove_stub PRIVATE
     ${STUB_DIR}
     ${OVE_INCLUDE}
@@ -103,10 +108,18 @@ S(ove_work_storage_t)       A(ove_work_storage_t)\n\
 S(ove_stream_storage_t)     A(ove_stream_storage_t)\n\
 S(ove_watchdog_storage_t)   A(ove_watchdog_storage_t)\n\
 S(ove_file_storage_t)       A(ove_file_storage_t)\n\
-S(ove_dir_storage_t)        A(ove_dir_storage_t)\n"
+S(ove_dir_storage_t)        A(ove_dir_storage_t)\n\
+#ifdef CONFIG_OVE_NET\n\
+S(ove_socket_storage_t) A(ove_socket_storage_t)\n\
+S(ove_netif_storage_t) A(ove_netif_storage_t)\n\
+#endif\n\
+#ifdef CONFIG_OVE_NET_TLS\n\
+S(ove_tls_storage_t) A(ove_tls_storage_t)\n\
+#endif\n"
 )
 
 add_library(_ove_sizes OBJECT ${SIZES_C})
+target_include_directories(_ove_sizes BEFORE PRIVATE ${OVE_STUB_CONFIG_DIR})
 target_include_directories(_ove_sizes PRIVATE
     ${OVE_INCLUDE}
     ${OVE_ROOT}/backends/common

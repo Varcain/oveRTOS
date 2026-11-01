@@ -432,10 +432,10 @@ static int zephyr_i2s_init_once(unsigned int rate)
 	return OVE_OK;
 }
 
-int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			    const char *name)
+int ove_audio_device_source_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			      const char *name, size_t name_len)
 {
-	if (!g || !cfg || !name)
+	if (!g || !cfg || !name || memchr(name, 0, name_len))
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
 		return OVE_ERR_NOT_SUPPORTED;
@@ -458,14 +458,14 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	k_thread_priority_set(zephyr_audio_thread,
 			      cfg->thread_priority ? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY);
 
-	return ove_audio_graph_add_node(g, &zephyr_source_ops, &source_ctx, name,
-					OVE_AUDIO_NODE_SOURCE);
+	return ove_audio_graph_add_node_n(g, &zephyr_source_ops, &source_ctx, name, name_len,
+					  OVE_AUDIO_NODE_SOURCE);
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			  const char *name)
+int ove_audio_device_sink_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name, size_t name_len)
 {
-	if (!g || !cfg || !name)
+	if (!g || !cfg || !name || memchr(name, 0, name_len))
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
 		return OVE_ERR_NOT_SUPPORTED;
@@ -492,7 +492,8 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 #endif
 	ctx->thread_priority = cfg->thread_priority ? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY;
 
-	int idx = ove_audio_graph_add_node(g, &zephyr_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
+	int idx = ove_audio_graph_add_node_n(g, &zephyr_sink_ops, ctx, name, name_len,
+					     OVE_AUDIO_NODE_SINK);
 	if (idx < 0)
 		ctx->graph = NULL;
 	return idx;
@@ -500,23 +501,36 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 
 #else /* !HAVE_I2S_NODES */
 
-int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			    const char *name)
+int ove_audio_device_source_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			      const char *name, size_t name_len)
 {
 	(void)g;
 	(void)cfg;
 	(void)name;
+	(void)name_len;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
-			  const char *name)
+int ove_audio_device_sink_n(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name, size_t name_len)
 {
 	(void)g;
 	(void)cfg;
 	(void)name;
+	(void)name_len;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
 #endif /* HAVE_I2S_NODES */
+
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name)
+{
+	return name ? ove_audio_device_source_n(g, cfg, name, strlen(name)) : OVE_ERR_INVALID_PARAM;
+}
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			  const char *name)
+{
+	return name ? ove_audio_device_sink_n(g, cfg, name, strlen(name)) : OVE_ERR_INVALID_PARAM;
+}
 #endif /* CONFIG_OVE_AUDIO */

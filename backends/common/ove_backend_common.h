@@ -113,6 +113,19 @@ static inline void *ove_alloc_or_use(void *storage, size_t size)
  * files / current-directory), and any other byte. Returns true on a
  * safe key, false otherwise.
  */
+static inline bool ove_nvs_key_is_valid_n(const char *key, size_t len)
+{
+	if (!key || len == 0 || key[0] == '.')
+		return false;
+	for (size_t i = 0; i < len; ++i) {
+		unsigned char c = (unsigned char)key[i];
+		if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+		      c == '_' || c == '-' || c == '.'))
+			return false;
+	}
+	return true;
+}
+
 static inline bool ove_nvs_key_is_valid(const char *key)
 {
 	if (!key || !*key)

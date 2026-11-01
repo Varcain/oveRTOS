@@ -17,6 +17,11 @@
  * strings; values are arbitrary byte blobs of any size supported by the
  * backend.
  *
+ * Keys are nonempty ASCII [A-Za-z0-9_.-], without a leading dot. Invalid,
+ * NUL-containing counted, or overlong keys return OVE_ERR_INVALID_PARAM.
+ * RAM allows 63 bytes; file storage allows 96 minus directory-prefix bytes,
+ * slash and NUL (90 with /nvs). Query ove_nvs_key_max_len() for this build.
+ *
  * The subsystem must be initialised once with @ref ove_nvs_init before any
  * read, write, or erase operations are performed. Each key is a file in /nvs
  * on the volume mounted with @ref ove_fs_mount, which must happen first; the
@@ -35,6 +40,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Upper staging envelope including NUL, shared with file-backed NVS paths. */
+#define OVE_NVS_KEY_BUFFER_SIZE 96
 
 #ifdef CONFIG_OVE_NVS
 
@@ -106,6 +114,21 @@ OVE_NODISCARD int ove_nvs_write(const char *key, const void *data, size_t len);
  */
 OVE_NODISCARD int ove_nvs_erase(const char *key);
 
+/** Maximum accepted key payload length for this selected backend/prefix. */
+size_t ove_nvs_key_max_len(void);
+/** @brief Read by a counted key, borrowed only during this call.
+ * No terminator is required. Invalid grammar, NUL or overlength returns
+ * OVE_ERR_INVALID_PARAM before storage access. Value/size-query semantics
+ * match ove_nvs_read(). */
+OVE_NODISCARD int ove_nvs_read_n(const char *key, size_t key_len, void *buf, size_t buf_len,
+				 size_t *out_len);
+/** @brief Write by a counted key; validation matches ove_nvs_read_n().
+ * Values remain binary; no key bytes are retained from the caller. */
+OVE_NODISCARD int ove_nvs_write_n(const char *key, size_t key_len, const void *data, size_t len);
+/** @brief Erase by a counted key; validation matches ove_nvs_read_n().
+ * A valid missing key remains a successful no-op. */
+OVE_NODISCARD int ove_nvs_erase_n(const char *key, size_t key_len);
+
 #else /* !CONFIG_OVE_NVS */
 
 OVE_NODISCARD static inline int ove_nvs_init(void)
@@ -134,6 +157,36 @@ OVE_NODISCARD static inline int ove_nvs_write(const char *key, const void *data,
 OVE_NODISCARD static inline int ove_nvs_erase(const char *key)
 {
 	(void)key;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+static inline size_t ove_nvs_key_max_len(void)
+{
+	return 0;
+}
+OVE_NODISCARD static inline int ove_nvs_read_n(const char *key, size_t key_len, void *buf,
+					       size_t buf_len, size_t *out_len)
+{
+	(void)key;
+	(void)key_len;
+	(void)buf;
+	(void)buf_len;
+	(void)out_len;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+OVE_NODISCARD static inline int ove_nvs_write_n(const char *key, size_t key_len, const void *data,
+						size_t len)
+{
+	(void)key;
+	(void)key_len;
+	(void)data;
+	(void)len;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+OVE_NODISCARD static inline int ove_nvs_erase_n(const char *key, size_t key_len)
+{
+	(void)key;
+	(void)key_len;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

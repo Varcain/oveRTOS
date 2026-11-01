@@ -121,18 +121,28 @@ static void log_unlock(void)
 	ove_mutex_unlock(s_log_mutex);
 }
 
-void ove_httpd_log_append(const char *line)
+int ove_httpd_log_append_n(const char *line, size_t len)
 {
+	if ((!line && len) || (len && memchr(line, 0, len)))
+		return OVE_ERR_INVALID_PARAM;
 	if (log_lock()) {
-		strncpy(log_ring[log_ring_head], line, LOG_LINE_MAX - 1);
-		log_ring[log_ring_head][LOG_LINE_MAX - 1] = '\0';
+		size_t count = len < LOG_LINE_MAX - 1 ? len : LOG_LINE_MAX - 1;
+		if (count)
+			memcpy(log_ring[log_ring_head], line, count);
+		log_ring[log_ring_head][count] = 0;
 		log_ring_head = (log_ring_head + 1) % LOG_RING_LINES;
 		log_unlock();
 	}
-
 #ifdef CONFIG_OVE_NET_HTTPD_WS
-	ove_httpd_ws_broadcast("/ws/log", line, strlen(line));
+	int sent = ove_httpd_ws_broadcast_n("/ws/log", sizeof("/ws/log") - 1, line, len);
+	(void)sent;
 #endif
+	return OVE_OK;
+}
+void ove_httpd_log_append(const char *line)
+{
+	int rc = ove_httpd_log_append_n(line, line ? strlen(line) : 0);
+	(void)rc;
 }
 
 /* ── LED state tracking ────────────────────────────────────────── */

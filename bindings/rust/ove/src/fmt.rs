@@ -54,7 +54,8 @@ impl<'a> FmtBuf<'a> {
     }
 
     /// Returns the formatted content as a C string, for APIs that take a
-    /// `&CStr` (file paths, NVS keys, routes) built at run time.
+    /// `&CStr` for native compatibility or raw interop. Ordinary paths/keys
+    /// accept Rust text directly; selected `_fmt` methods own checked staging.
     ///
     /// # Errors
     /// [`Error::InvalidParam`] if the content holds a NUL byte, or if it did

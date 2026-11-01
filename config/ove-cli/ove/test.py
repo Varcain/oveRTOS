@@ -390,7 +390,8 @@ def test_stub(ove_dir, output_dir):
     # TLS client tests (heap and zero-heap) and the httpd WebSocket tests:
     # binaries of their own (tests/CMakeLists.txt).
     _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
-                                "ove_test_httpd_ws"), "stub", results)
+                                "ove_test_httpd_ws", "ove_test_nvs_default",
+                                "ove_test_nvs_custom", "ove_test_nvs_full"), "stub", results)
     return results
 
 
@@ -447,7 +448,9 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
     results = _run_test_binary(
         [os.path.join(build, "ove_test_stub")], label, env=env)
-    _run_extra_binaries(build, ("ove_test_httpd_ws",), label, results, env=env)
+    _run_extra_binaries(build, ("ove_test_httpd_ws", "ove_test_nvs_default",
+                                "ove_test_nvs_custom", "ove_test_nvs_full"),
+                        label, results, env=env)
     return results
 
 
@@ -727,6 +730,35 @@ def test_rust_lvgl(ove_dir, output_dir):
          "--", "--test-threads=1"], env=env, timeout=180)
     return TestResults(suite="rust-lvgl", passed=int(result.returncode == 0),
                        failed=int(result.returncode != 0))
+
+
+def test_rust_strings(ove_dir, output_dir):
+    """Exercise ordinary Rust strings against real HTTP/WS/TLS and file NVS."""
+    result = TestResults(suite="rust-strings")
+    for zero_heap in (False, True):
+        suffix = "_zh" if zero_heap else ""
+        native = os.path.join(output_dir, "tests", "rust_strings_c" + suffix)
+        _cmake_build(os.path.join(ove_dir, "tests", "rust_strings"), native,
+                     extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero_heap else "OFF")])
+        env = dict(os.environ)
+        env.update({
+            "OVE_DIR": ove_dir,
+            "OVE_GEN_DIR": native,
+            "RUST_IS_NATIVE": "1",
+            "OVE_STRING_TEST_LIB": native,
+            "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
+            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
+            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
+            "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_strings" + suffix),
+        })
+        check = subprocess.run(
+            ["cargo", "test", "--manifest-path",
+             os.path.join(ove_dir, "tests", "rust_strings", "Cargo.toml"),
+             "--", "--test-threads=1"], env=env, timeout=180)
+        result.passed += int(check.returncode == 0)
+        result.failed += int(check.returncode != 0)
+    return result
 
 
 def test_rust_zeroheap(ove_dir, output_dir):
@@ -2916,6 +2948,7 @@ TEST_TARGETS = {
     "rust": test_rust,
     "rust-zeroheap": test_rust_zeroheap,
     "rust-lvgl": test_rust_lvgl,
+    "rust-strings": test_rust_strings,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
     "zig-zeroheap": test_zig_zeroheap,

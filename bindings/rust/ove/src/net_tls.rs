@@ -21,6 +21,7 @@
 //! cipher suites we ship here (AES-128/256-GCM, ChaCha20-Poly1305).
 //! See [`crate::async_net`]'s module docs for the full pairing recipe.
 
+use crate::cstring::Buffer;
 use core::ffi::CStr;
 
 use crate::bindings;
@@ -46,13 +47,23 @@ use crate::net::TcpStream;
 /// TLS session configuration.
 ///
 /// `hostname` is the server name used for SNI and certificate verification,
-/// e.g. `Some(c"example.com")`. A `ca_cert` needs a `hostname`: the
+/// e.g. `Some("example.com")`. A `ca_cert` needs a `hostname`: the
 /// handshake fails with [`Error::InvalidParam`] without one.
 pub struct TlsConfig<'a> {
     /// PEM or DER CA certificate for server verification (`None` to skip).
     pub ca_cert: Option<&'a [u8]>,
     /// Server name for SNI and certificate verification; required with
-    /// `ca_cert`, `None` only when the peer is not verified.
+    /// `ca_cert`, `None` only when the peer is not verified. Ordinary hostnames
+    /// allow 255 bytes and no NUL; empty and `None` remain distinct. The binding
+    /// terminates privately and native TLS copies it during the handshake.
+    pub hostname: Option<&'a str>,
+}
+
+/// Native C-string configuration for compatibility with FFI callers.
+pub struct TlsConfigCStr<'a> {
+    /// Binary certificate, including the terminator for PEM.
+    pub ca_cert: Option<&'a [u8]>,
+    /// Native terminated hostname, borrowed for the handshake only.
     pub hostname: Option<&'a CStr>,
 }
 
@@ -96,11 +107,31 @@ impl Session {
     /// [`recv`](Session::recv) for encrypted I/O.
     ///
     /// # Errors
-    /// Returns an error if the handshake fails (certificate mismatch,
+    /// NUL is `InvalidParam`; over 255 hostname bytes is `NameTooLong`,
+    /// before native I/O. Returns an error if the handshake fails (certificate mismatch,
     /// protocol error, etc.).
     pub fn handshake(&self, sock: &TcpStream, cfg: &TlsConfig) -> Result<()> {
-        let mut c: bindings::ove_tls_config_t = unsafe { core::mem::zeroed() };
+        let hostname = cfg
+            .hostname
+            .map(|host| Buffer::<256>::from_bytes(host.as_bytes()))
+            .transpose()?;
+        // SAFETY: the optional terminated buffer outlives this synchronous
+        // handshake; mbedTLS copies the hostname into its own storage.
+        let hostname = hostname
+            .as_ref()
+            .map(|host| unsafe { CStr::from_ptr(host.as_ptr()) });
+        self.handshake_cstr(
+            sock,
+            &TlsConfigCStr {
+                ca_cert: cfg.ca_cert,
+                hostname,
+            },
+        )
+    }
 
+    /// Native C-string handshake; hostname and certificates are consumed by the call.
+    pub fn handshake_cstr(&self, sock: &TcpStream, cfg: &TlsConfigCStr<'_>) -> Result<()> {
+        let mut c: bindings::ove_tls_config_t = unsafe { core::mem::zeroed() };
         if let Some(cert) = cfg.ca_cert {
             c.ca_cert = cert.as_ptr();
             c.ca_cert_len = cert.len();
@@ -108,9 +139,7 @@ impl Session {
         if let Some(host) = cfg.hostname {
             c.hostname = host.as_ptr();
         }
-
-        let rc = unsafe { bindings::ove_tls_handshake(self.handle, sock.handle(), &c) };
-        Error::from_code(rc)
+        Error::from_code(unsafe { bindings::ove_tls_handshake(self.handle, sock.handle(), &c) })
     }
 
     /// Send data over the encrypted session.

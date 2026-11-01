@@ -34,6 +34,12 @@ extern "C" {
 
 #ifdef CONFIG_OVE_NET_HTTPD
 
+/** Native string/output capacities, in bytes including terminators. */
+#define OVE_HTTPD_METHOD_SIZE 8
+#define OVE_HTTPD_ROUTE_SIZE 64
+#define OVE_HTTPD_HEADER_SIZE 256
+#define OVE_HTTPD_ERROR_ESCAPED_SIZE 192
+
 /** @brief Maximum number of registered routes. */
 #define OVE_HTTPD_MAX_ROUTES 16
 
@@ -91,13 +97,14 @@ void ove_httpd_stop(void);
 /**
  * @brief Register a route handler.
  *
- * The @p method and @p path strings are copied (truncated to the table's
- * field sizes); only @p handler is kept.
+ * Copies method (at most 7 bytes) and path (at most 63 bytes). Longer
+ * identifiers fail before claiming a slot; only @p handler is retained.
  *
  * @param[in] method  HTTP method ("GET" or "POST").
  * @param[in] path    URL path prefix (e.g. "/api/leds").
  * @param[in] handler Callback function.
  * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if an argument is NULL,
+ *         OVE_ERR_NAME_TOO_LONG if an identifier exceeds its field, or
  *         OVE_ERR_NO_MEMORY if the route table is full.
  */
 OVE_NODISCARD int ove_httpd_route(const char *method, const char *path,
@@ -164,14 +171,20 @@ const char *ove_httpd_req_segment(ove_httpd_req_t *req, int idx);
 
 /* ── Response helpers ────────────────────────────────────────── */
 
-/** @brief Send a JSON response. */
+/** @brief Send a NUL-terminated JSON response.
+ * Response helpers prepare the complete header/body metadata before I/O.
+ * Preparation errors leave the response unsent and permit retry/fallback.
+ * Once the first socket write is attempted the response remains sent, even
+ * on partial writes or failure. Bodies with explicit lengths remain binary. */
 OVE_NODISCARD int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status, const char *json);
 
 /** @brief Send an HTML response. */
 OVE_NODISCARD int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status, const char *html,
 				      size_t len);
 
-/** @brief Send a response with arbitrary content type. */
+/** @brief Send a response with arbitrary C-string content type.
+ * Returns OVE_ERR_NO_MEMORY if the complete header does not fit 256 bytes
+ * including its terminator. No partial header is sent on this error. */
 OVE_NODISCARD int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *content_type,
 				      const void *body, size_t len);
 
@@ -179,8 +192,29 @@ OVE_NODISCARD int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const 
 OVE_NODISCARD int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
 					 const char *content_type, const void *body, size_t len);
 
-/** @brief Send a JSON error response. */
+/** @brief Send a JSON error response.
+ * Escaping must fit 191 bytes plus NUL; overflow returns OVE_ERR_NO_SPACE
+ * before I/O. The message is never silently clipped. */
 OVE_NODISCARD int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status, const char *message);
+
+/** Counted response metadata. Text spans exclude NUL; bodies remain binary.
+ * Preparation errors leave the response unsent. Once I/O starts it remains
+ * sent even if a partial write fails. NUL returns OVE_ERR_INVALID_PARAM;
+ * complete header overflow returns OVE_ERR_NO_MEMORY. Metadata is borrowed
+ * only during the call and need not be terminated. */
+OVE_NODISCARD int ove_httpd_resp_send_n(ove_httpd_resp_t *resp, int status,
+					const char *content_type, size_t content_type_len,
+					const void *body, size_t len);
+/** @brief Counted content type with gzip encoding; same validation,
+ * header capacity and preparation/sent-state rules as ove_httpd_resp_send_n. */
+OVE_NODISCARD int ove_httpd_resp_send_gz_n(ove_httpd_resp_t *resp, int status,
+					   const char *content_type, size_t content_type_len,
+					   const void *body, size_t len);
+/** @brief Counted error text; NUL returns OVE_ERR_INVALID_PARAM and escaped
+ * output over 191 bytes returns OVE_ERR_NO_SPACE before I/O. NULL+0 is empty.
+ * The complete span is escaped without clipping; text is borrowed for the call. */
+OVE_NODISCARD int ove_httpd_resp_error_n(ove_httpd_resp_t *resp, int status, const char *message,
+					 size_t message_len);
 
 /* ── WebSocket support ──────────────────────────────────────── */
 
@@ -223,6 +257,7 @@ typedef void (*ove_httpd_ws_close_handler_t)(ove_httpd_ws_conn_t *conn);
  * @param[in] on_message Callback for incoming messages (may be NULL).
  * @param[in] on_close   Callback when connection closes (may be NULL).
  * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if @p path is NULL,
+ *         OVE_ERR_NAME_TOO_LONG if an identifier exceeds its field, or
  *         OVE_ERR_NO_MEMORY if the route table is full.
  */
 OVE_NODISCARD int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
@@ -254,7 +289,8 @@ OVE_NODISCARD int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn, const void *data,
  * @param[in] path Path filter (NULL for all connections).
  * @param[in] data Message payload.
  * @param[in] len  Payload length in bytes.
- * @return Number of connections the message was sent to.
+ * @return Nonnegative count, or a negative validation error. A non-NULL
+ *         path is limited to 63 bytes; NULL selects all, empty selects empty.
  */
 int ove_httpd_ws_broadcast(const char *path, const void *data, size_t len);
 
@@ -265,6 +301,14 @@ int ove_httpd_ws_active_count(void);
 
 /** @brief Return non-zero if the HTTP headers request a WebSocket upgrade. */
 int ove_httpd_ws_is_upgrade(const char *headers);
+
+/** Counted path broadcast. A NULL path with zero length selects all clients;
+ * an empty non-NULL path selects only that path. Negative errors are distinct
+ * from a successful zero-connection count. Payload bytes are unchanged.
+ * NUL or invalid pointer/length pairs return OVE_ERR_INVALID_PARAM; a path
+ * over 63 bytes returns OVE_ERR_NAME_TOO_LONG, before any sends. */
+OVE_NODISCARD int ove_httpd_ws_broadcast_n(const char *path, size_t path_len, const void *data,
+					   size_t len);
 
 /**
  * @brief Complete the WebSocket upgrade handshake on `sock`.
@@ -285,9 +329,17 @@ void ove_httpd_ws_poll(void);
 /**
  * @brief Feed a log line into the httpd log ring buffer.
  *
- * Call from the log output hook to capture lines for GET /api/log.
+ * Call from the log output hook to capture lines for GET /api/log. The ring
+ * keeps a 127-byte prefix; WebSocket clients receive the complete line.
+ * This void adapter does not report validation or delivery failures.
  */
 void ove_httpd_log_append(const char *line);
+/** @brief Append counted text without a temporary input-size limit.
+ * NUL or NULL with nonzero length returns OVE_ERR_INVALID_PARAM before
+ * publication; NULL+0 is an empty line.
+ * Retains a 127-byte ring prefix and broadcasts the full span with WS enabled.
+ * OVE_OK reports validation/dispatch, not guaranteed ring or peer delivery. */
+OVE_NODISCARD int ove_httpd_log_append_n(const char *line, size_t len);
 
 #else /* !CONFIG_OVE_NET_HTTPD */
 
@@ -306,6 +358,12 @@ static inline void ove_httpd_register_builtin_routes(void)
 static inline void ove_httpd_log_append(const char *line)
 {
 	(void)line;
+}
+OVE_NODISCARD static inline int ove_httpd_log_append_n(const char *line, size_t len)
+{
+	(void)line;
+	(void)len;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 /** @endcond */
 

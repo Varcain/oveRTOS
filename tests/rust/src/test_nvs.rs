@@ -13,10 +13,10 @@ fn test_init() {
 
 fn test_write_read_roundtrip() {
     ove::nvs::init().unwrap();
-    ove::nvs::write(c"key1", b"hello").unwrap();
+    ove::nvs::write("key1", b"hello").unwrap();
 
     let mut buf = [0u8; 32];
-    let len = ove::nvs::read(c"key1", &mut buf).unwrap();
+    let len = ove::nvs::read("key1", &mut buf).unwrap();
     assert_eq!(len, 5);
     assert_eq!(&buf[..5], b"hello");
 }
@@ -24,61 +24,54 @@ fn test_write_read_roundtrip() {
 fn test_read_nonexistent_key() {
     ove::nvs::init().unwrap();
     let mut buf = [0u8; 32];
-    let result = ove::nvs::read(c"nokey", &mut buf);
+    let result = ove::nvs::read("nokey", &mut buf);
     assert!(result.is_err(), "reading missing key should fail");
 }
 
 fn test_overwrite() {
     ove::nvs::init().unwrap();
-    ove::nvs::write(c"over", b"first").unwrap();
-    ove::nvs::write(c"over", b"second").unwrap();
+    ove::nvs::write("over", b"first").unwrap();
+    ove::nvs::write("over", b"second").unwrap();
 
     let mut buf = [0u8; 32];
-    let len = ove::nvs::read(c"over", &mut buf).unwrap();
+    let len = ove::nvs::read("over", &mut buf).unwrap();
     assert_eq!(len, 6);
     assert_eq!(&buf[..6], b"second");
 }
 
 fn test_erase() {
     ove::nvs::init().unwrap();
-    ove::nvs::write(c"del", b"data").unwrap();
-    ove::nvs::erase(c"del").unwrap();
+    ove::nvs::write("del", b"data").unwrap();
+    ove::nvs::erase("del").unwrap();
 
     let mut buf = [0u8; 32];
-    let result = ove::nvs::read(c"del", &mut buf);
+    let result = ove::nvs::read("del", &mut buf);
     assert!(result.is_err(), "reading erased key should fail");
 }
 
 fn test_erase_nonexistent() {
     ove::nvs::init().unwrap();
-    let result = ove::nvs::erase(c"nope");
+    let result = ove::nvs::erase("nope");
     assert!(result.is_ok(), "erasing a missing key is a no-op");
 }
 
 fn test_binary_data() {
     ove::nvs::init().unwrap();
     let data: [u8; 4] = [0xFF, 0x00, 0xAB, 0x42];
-    ove::nvs::write(c"bin", &data).unwrap();
+    ove::nvs::write("bin", &data).unwrap();
 
     let mut buf = [0u8; 4];
-    let len = ove::nvs::read(c"bin", &mut buf).unwrap();
+    let len = ove::nvs::read("bin", &mut buf).unwrap();
     assert_eq!(len, 4);
     assert_eq!(buf, data);
 }
 
 fn test_runtime_key() {
-    use core::fmt::Write;
-
-    // A key built at run time, as a C string: the stored key is exactly
-    // the formatted text, no more.
     ove::nvs::init().unwrap();
-    let mut storage = [0u8; 16];
-    let mut key = ove::FmtBuf::new(&mut storage);
-    write!(key, "slot{}", 3).unwrap();
-    ove::nvs::write(key.as_c_str().unwrap(), b"v3").unwrap();
+    ove::nvs::write_fmt(format_args!("slot{}", 3), b"v3").unwrap();
 
     let mut buf = [0u8; 8];
-    let len = ove::nvs::read(c"slot3", &mut buf).unwrap();
+    let len = ove::nvs::read("slot3", &mut buf).unwrap();
     assert_eq!(&buf[..len], b"v3");
 }
 
