@@ -4,7 +4,21 @@ Header: `ove/i2c.h` | Kconfig: `CONFIG_OVE_I2C` | Selects: `OVE_SYNC`
 
 ## Overview
 
-I2C master driver with configurable bus speed, thread-safe bus locking, register-level convenience functions, and device probing. All addresses are 7-bit. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (anything under 1 ms times out at once); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. Every call first waits, with no timeout, for the bus lock held by any other transfer on the same bus. A transfer the FreeRTOS STM32 driver abandons on a timeout or an error leaves the bus released. Before the scheduler starts, that driver refuses `ove_i2c_write_read()` with more than two bytes to write (`OVE_ERR_NOT_SUPPORTED`): it runs on interrupts, which FreeRTOS keeps masked until then. `ove_i2c_write_read()` with nothing to write is a plain read.
+I2C master driver with configurable bus speed, thread-safe bus locking, register-level convenience functions, and device probing. All addresses are 7-bit. Only the FreeRTOS STM32 driver honours `timeout_ns`, in whole milliseconds rounded down (anything under 1 ms times out at once); Zephyr and NuttX ignore it and rely on their drivers' own timeouts. After validation, synchronous calls wait without a timeout for the bus lock held by another synchronous transfer through the same handle. A transfer the FreeRTOS STM32 driver abandons on a timeout or an error leaves the bus released. Before the scheduler starts, that driver refuses `ove_i2c_write_read()` with more than two bytes to write (`OVE_ERR_NOT_SUPPORTED`): it runs on interrupts, which FreeRTOS keeps masked until then. `ove_i2c_write_read()` with nothing to write is a plain read.
+
+
+Addresses above `0x7f` return `OVE_ERR_INVALID_PARAM` before locking, I/O or async
+publication. TX and RX have independent byte counts. STM32 FreeRTOS accepts up
+to 65535 bytes in each phase, Zephyr requires each to fit `uint32_t`, and NuttX
+requires each to fit both `ssize_t` and the supported F7 driver's `int` counter.
+Oversize requests fail before effects; transfers are never split to bypass a
+limit. Register writes include their extra prefix byte in the count.
+
+Zero-byte synchronous writes and probes retain the native address/ACK operation.
+A zero TX length in write-read selects a plain read. Async write-read also
+supports pure write when RX is empty, rejects both empty, and has no timeout
+argument or automatic watchdog. NuttX combined transfers mark the first message
+with `I2C_M_NOSTOP` to preserve the public repeated-start contract.
 
 ## Configuration
 

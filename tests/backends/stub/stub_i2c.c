@@ -18,6 +18,15 @@
 
 #include <string.h>
 
+int ove_hal_i2c_validate_transfer(ove_i2c_t i2c, size_t tx_len, size_t rx_len, int asynchronous)
+{
+	(void)i2c;
+	(void)asynchronous;
+	(void)tx_len;
+	(void)rx_len;
+	return OVE_OK;
+}
+
 int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	(void)cfg;
@@ -33,6 +42,12 @@ void ove_hal_i2c_close(ove_i2c_t i2c)
 int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
 		      uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, len, 0, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	(void)i2c;
 	(void)addr;
 	(void)data;
@@ -43,6 +58,12 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len
 
 int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, 0, len, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	(void)i2c;
 	(void)addr;
 	(void)timeout_ns;
@@ -54,6 +75,12 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
 			   size_t rx_len, uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	(void)i2c;
 	(void)addr;
 	(void)tx;
@@ -92,6 +119,12 @@ static void *stub_i2c_async_worker(void *arg)
 int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
 				 void *rx, size_t rx_len)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, 1);
+	if (validation != OVE_OK)
+		return validation;
+
 	pthread_t tid;
 	pthread_attr_t attr;
 	int rc;

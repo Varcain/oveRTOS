@@ -59,6 +59,15 @@ static int i2c_errno_to_ove(int ret)
 	}
 }
 
+int ove_hal_i2c_validate_transfer(ove_i2c_t i2c, size_t tx_len, size_t rx_len, int asynchronous)
+{
+	(void)i2c;
+	(void)asynchronous;
+	if (tx_len > UINT32_MAX || rx_len > UINT32_MAX)
+		return OVE_ERR_INVALID_PARAM;
+	return OVE_OK;
+}
+
 int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	const struct device *dev = instance_to_dev(cfg->instance);
@@ -84,26 +93,44 @@ void ove_hal_i2c_close(ove_i2c_t i2c)
 int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
 		      uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, len, 0, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	(void)timeout_ns;
 
-	int ret = i2c_write(i2c->dev, data, len, addr);
+	int ret = i2c_write(i2c->dev, data, (uint32_t)len, addr);
 	return i2c_errno_to_ove(ret);
 }
 
 int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, 0, len, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	(void)timeout_ns;
 
-	int ret = i2c_read(i2c->dev, buf, len, addr);
+	int ret = i2c_read(i2c->dev, buf, (uint32_t)len, addr);
 	return i2c_errno_to_ove(ret);
 }
 
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
 			   size_t rx_len, uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	(void)timeout_ns;
 
-	int ret = i2c_write_read(i2c->dev, addr, tx, tx_len, rx, rx_len);
+	int ret = i2c_write_read(i2c->dev, addr, tx, (uint32_t)tx_len, rx, (uint32_t)rx_len);
 	return i2c_errno_to_ove(ret);
 }
 
@@ -131,6 +158,12 @@ static void zephyr_i2c_async_work_handler(struct k_work *work)
 int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
 				 void *rx, size_t rx_len)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, 1);
+	if (validation != OVE_OK)
+		return validation;
+
 	i2c->pending_addr = addr;
 	i2c->pending_tx = tx;
 	i2c->pending_tx_len = tx_len;

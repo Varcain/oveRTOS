@@ -425,6 +425,9 @@ jobs:
       - name: Run real Zephyr SPI retirement tests
         run: make test-spi-retirement-zephyr
 
+      - name: Run native Zephyr I2C boundary tests
+        run: make test-i2c-native-zephyr
+
       - name: Run tests
         run: timeout 600 make test-zephyr
 
@@ -477,6 +480,9 @@ jobs:
 
       - name: Run Rust SPI and Embassy callback stack tests
         run: timeout 1200 make test-rust-async-spi-arm
+
+      - name: Run native STM32 I2C count tests
+        run: timeout 1200 make test-i2c-native-arm
 
       - uses: actions/upload-artifact@v4
         if: failure()

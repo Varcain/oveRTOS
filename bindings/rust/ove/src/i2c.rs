@@ -11,8 +11,14 @@
 //! `embedded-hal` Cargo feature is enabled.
 //!
 //! Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
-//! milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
-//! waits, with no timeout, for other transfers on the same bus.
+//! milliseconds rounded down; Zephyr and NuttX ignore them. After validation,
+//! synchronous calls wait without a timeout for other transfers through the same handle.
+//!
+//! Seven-bit addresses (0..127) and independent TX/RX byte counts are validated
+//! before bus effects. STM32 permits 65535 bytes per phase, Zephyr a `uint32_t`
+//! count, and NuttX the smaller of `ssize_t` and `INT_MAX`. Requests are not split
+//! to bypass these limits. Register writes include the prefix byte; zero-byte
+//! writes/probes preserve their native address/ACK path.
 
 use crate::bindings;
 use crate::error::{Error, Result};
