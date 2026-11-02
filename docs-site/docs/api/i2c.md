@@ -66,6 +66,46 @@ for (uint16_t addr = 0x08; addr < 0x78; addr++) {
 
 > Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).
 
+### Synchronous Rust ownership and traits
+
+Use ordinary Rust configuration and an exclusive owner; application FFI and a
+Rust allocator are unnecessary. Heap builds support `I2c::new(Config { ... })`.
+Static storage works in either allocation mode:
+
+```rust
+use core::time::Duration;
+use ove::{I2cStorage, i2c::{Config, Speed}};
+static BUS: I2cStorage = I2cStorage::new();
+
+fn read_sensor() -> ove::Result<()> {
+    let mut bus = BUS.init(Config { instance: 0, speed: Speed::Fast })?;
+    let mut data = [0; 7];
+    bus.write_read(0x42, &[1, 2, 3], &mut data, Duration::from_millis(20))?;
+    Ok(())
+}
+```
+
+Drop completes native cleanup before static reuse. A live or forgotten static
+owner keeps its claim, so another initialization returns `Busy`. Owners move
+without moving their native backing and are neither Copy/Clone nor Send/Sync.
+Unsafe `from_handle` wrappers remain nonowning and require external lifetime,
+exclusivity and quiescence coordination. Independent handles still need physical
+bus coordination. Raw async integration must finish before owned cleanup.
+
+With the `embedded-hal` feature, supported transaction shapes are an empty
+list, one write (including empty), one nonempty read, and nonempty write followed
+by nonempty read. Other shapes return `NotSupported` before effects. Empty reads
+in otherwise supported shapes return `InvalidParam`. An empty write followed by
+read, including explicit trait `write_read`, is unsupported because a plain read
+cannot preserve its write address phase. Inherent `write_read` keeps its native
+empty-prefix plain-read convenience. Pure empty writes/probes preserve native
+address/ACK behavior. Trait addresses are validated even for an empty list.
+
+I2C's relative durations work without `CONFIG_OVE_TIME`. SYNC APIs using a clock
+or absolute deadline require TIME; relative single-call waits remain available.
+Logging with CONSOLE disabled produces no output. These feature boundaries do
+not enable either optional module or change the native transfer timeout rules.
+
 ### Asynchronous completion and lifetime
 
 Submit, prepare, deinit and destroy from thread context. Final I2C callbacks run in task context after native submission and provider

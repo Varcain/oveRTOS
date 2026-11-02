@@ -232,6 +232,9 @@ jobs:
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi
 
+      - name: Run synchronous Rust I2C tests (both heap modes, optional clocks and console)
+        run: make test-rust-i2c
+
       - name: Run owned async Rust SPI tests (both heap modes)
         run: make test-rust-async-spi
 

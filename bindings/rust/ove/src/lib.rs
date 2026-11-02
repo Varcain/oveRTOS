@@ -292,6 +292,8 @@ pub mod console;
 pub mod containers;
 #[cfg(any(has_fs, has_nvs, has_net_tls, has_net_httpd, has_audio))]
 mod cstring;
+#[cfg(any(has_time, has_sync, has_i2c))]
+mod duration;
 #[cfg(feature = "embedded-hal")]
 mod embedded_hal_impl;
 #[cfg(all(feature = "embedded-io-async", feature = "async", has_async))]
@@ -405,7 +407,7 @@ pub use error::{Error, Result};
 pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, EventGroupStorage, WaitFlags};
 pub use fmt::FmtBuf;
 #[cfg(has_i2c)]
-pub use i2c::I2c;
+pub use i2c::{I2c, I2cStorage};
 pub use init_cell::{InitCell, InitMut};
 /// `#[ove::main]` proc-macro: marks the application entry point.
 /// Expands into the `extern "C" fn ove_main()` trampoline.
@@ -439,8 +441,11 @@ pub use watchdog::Watchdog;
 #[cfg(has_workqueue)]
 pub use workqueue::{Work, Workqueue};
 
-/// Write a message to the oveRTOS console.
+/// Write a message to the oveRTOS console; no output when CONSOLE is disabled.
 pub fn log(msg: &[u8]) {
+    #[cfg(not(has_console))]
+    let _ = msg;
+    #[cfg(has_console)]
     // SAFETY: `msg.as_ptr()` is valid for `msg.len()` bytes. The console
     // write is a synchronous one-shot that does not retain the pointer.
     unsafe {

@@ -844,6 +844,47 @@ def test_rust_spi(ove_dir, output_dir):
     return result
 
 
+def test_rust_i2c(ove_dir, output_dir):
+    """Exercise synchronous Rust I2C owners and honest trait dispatch."""
+    result = TestResults(suite="rust-i2c")
+    for zero_heap in (False, True):
+        for optional in (True, False):
+            suffix = ("_zh" if zero_heap else "") + ("" if optional else "_minimal")
+            native = os.path.join(output_dir, "tests", "rust_i2c_c" + suffix)
+            enabled = "ON" if optional else "OFF"
+            _cmake_build(os.path.join(ove_dir, "tests", "rust_i2c"), native,
+                         extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero_heap else "OFF"),
+                                     "-DOVE_TIME=" + enabled, "-DOVE_CONSOLE=" + enabled])
+            env = dict(os.environ)
+            env.pop("DOCS_RS", None)
+            env.update({
+                "OVE_DIR": ove_dir,
+                "OVE_GEN_DIR": native,
+                "RUST_IS_NATIVE": "1",
+                "I2C_TEST_LIB_DIR": native,
+                "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
+                "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
+                "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+                "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
+                "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_i2c" + suffix),
+            })
+            check = _run_owned_test_process(
+                ["cargo", "test", "--manifest-path",
+                 os.path.join(ove_dir, "tests", "rust_i2c", "Cargo.toml"),
+                 "--", "--test-threads=1"], env=env, timeout=180)
+            result.passed += int(check == 0)
+            result.failed += int(check != 0)
+            if check != 0:
+                continue
+            types = _run_owned_test_process(
+                [sys.executable, os.path.join(ove_dir, "tests", "rust_i2c", "type_checks.py"),
+                 os.path.join(output_dir, "tests", "rust_i2c_types" + suffix)],
+                env=env, timeout=300)
+            result.passed += int(types == 0)
+            result.failed += int(types != 0)
+    return result
+
+
 def test_rust_async_spi(ove_dir, output_dir):
     """Exercise owned Rust SPI staging, lifetime and public type contracts."""
     result = TestResults(suite="rust-async-spi")
@@ -3336,6 +3377,7 @@ TEST_TARGETS = {
     "rust-lvgl": test_rust_lvgl,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
+    "rust-i2c": test_rust_i2c,
     "rust-async-spi": test_rust_async_spi,
     "rust-async-spi-arm": test_rust_async_spi_arm,
     "i2c-retirement-freertos": test_i2c_retirement_freertos,
