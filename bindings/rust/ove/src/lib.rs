@@ -238,8 +238,6 @@ pub mod async_runtime;
 // exactly this — async on, most comm primitives off).
 #[cfg(all(feature = "async", has_async, has_eventgroup))]
 pub use async_runtime::AsyncEventGroup;
-#[cfg(all(feature = "async", has_async, has_i2c))]
-pub use async_runtime::AsyncI2c;
 #[cfg(all(feature = "async", has_async, has_gpio))]
 pub use async_runtime::AsyncInput;
 #[cfg(all(feature = "async", has_async, has_queue))]
@@ -252,6 +250,8 @@ pub use async_runtime::AsyncStream;
 pub use async_runtime::AsyncUart;
 #[cfg(all(feature = "async", has_async))]
 pub use async_runtime::Executor;
+#[cfg(all(feature = "async", has_async, has_i2c))]
+pub use async_runtime::{AsyncI2c, AsyncI2cStorage};
 #[cfg(all(feature = "async", has_async, has_spi))]
 pub use async_runtime::{AsyncSpi, AsyncSpi16, AsyncSpiStorage};
 // A compile-time error to catch the common misconfiguration where the

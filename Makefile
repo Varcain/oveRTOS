@@ -188,7 +188,7 @@ benchmarks-%: $(VENV_STAMP)
 # Single source of truth for `test-<name>` recipes — each delegates to
 # `ove test <name>`. Add new suites here, not as separate targets.
 TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
-              cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap rust-lvgl rust-strings rust-spi rust-i2c rust-async-spi rust-async-spi-arm \
+              cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap rust-lvgl rust-strings rust-spi rust-i2c rust-async-i2c rust-async-i2c-arm rust-async-spi rust-async-spi-arm \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
               i2c-native-arm i2c-native-zephyr \
               i2c-retirement-freertos i2c-retirement-zephyr i2c-retirement-nuttx \

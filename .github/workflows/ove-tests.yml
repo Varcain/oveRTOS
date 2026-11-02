@@ -237,6 +237,8 @@ jobs:
 
       - name: Run owned async Rust SPI tests (both heap modes)
         run: make test-rust-async-spi
+      - name: Rust async I2C ownership and staging
+        run: make test-rust-async-i2c
 
       - name: Fetch LVGL (manifest-pinned) into dl/lvgl
         run: |
@@ -489,6 +491,8 @@ jobs:
 
       - name: Run Rust SPI and Embassy callback stack tests
         run: timeout 1200 make test-rust-async-spi-arm
+      - name: Rust async I2C on Cortex-M7
+        run: timeout 1200 make test-rust-async-i2c-arm
 
       - name: Run native STM32 I2C count tests
         run: timeout 1200 make test-i2c-native-arm

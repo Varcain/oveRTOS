@@ -29,8 +29,6 @@
 // requires nightly. Skipped to keep the crate stable-only.
 
 pub(crate) mod critical_section;
-#[cfg(has_i2c)]
-mod dma_slot;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
 pub mod executor;
@@ -56,7 +54,7 @@ pub use executor::Executor;
 #[cfg(has_gpio)]
 pub use gpio::AsyncInput;
 #[cfg(has_i2c)]
-pub use i2c::AsyncI2c;
+pub use i2c::{AsyncI2c, AsyncI2cStorage};
 #[cfg(has_queue)]
 pub use queue::AsyncQueue;
 #[cfg(has_sync)]

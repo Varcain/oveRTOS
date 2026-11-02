@@ -129,3 +129,50 @@ drain batches. Queue/service starvation has no hard completion deadline. NuttX
 release zero-heap uses the existing native reserve for workers; debug zero-heap
 returns NotSupported before admission because its debug heap lock rejects native
 worker allocation. Native thread resource reclamation may outlast notification.
+
+### Owned asynchronous Rust I2C
+
+Enable the Rust `async` feature and native I2C, ASYNC, TIMER, SYNC and TIME.
+SPI, GPIO and CONSOLE are unnecessary. Use `AsyncI2c::new(Config)` in heap
+builds, or claimed static storage in either allocation mode:
+
+```rust
+use ove::{AsyncI2cStorage, i2c::Config};
+static BUS: AsyncI2cStorage<3, 7> = AsyncI2cStorage::new();
+
+async fn read_sensor() -> ove::Result<()> {
+    let mut bus = BUS.init(Config::default())?;
+    let mut rx = [0; 7];
+    bus.write_read(0x42, &[1, 2, 3], &mut rx).await?;
+    bus.flush().await?;
+    Ok(())
+}
+```
+
+The binding owns stable native backing and independent TX/RX byte staging;
+applications need no FFI, Rust allocator or manual pinning. Operations borrow
+`&mut self`. Owners and operation futures are neither Send nor Sync, and owners
+are neither Copy nor Clone. Moving an owner leaves native memory in place.
+Static capacity defaults to equal TX/RX sizes; either direction may have zero
+capacity. Exceeding either returns `NoSpace` before I/O. Heap staging grows
+fallibly, preserving each direction's high-water capacity and allocating the
+new pair before freeing the old pair. Native alignment overhead also applies.
+
+Drop or forget of a future releases application buffers without cancellation;
+native code retains only internal spans. Only a successful live future copies
+RX back. New work returns `BusBusy` while an orphan is active. Once complete,
+new work may replace its result; `flush().await` instead consumes the actual
+result without copyback. Owner Drop defers cleanup through native callback,
+wake and submission tails. A missing completion or forgotten owner retains one
+bounded context and its capacities/claim. No automatic watchdog, splitting or
+filler is introduced. Independent handles still require physical-bus coordination.
+
+The `embedded-hal-async` seven-bit trait supports an empty no-op list, one
+nonempty write/read, or one nonempty write followed by one nonempty read in one
+native transaction. Other whole lists return `NotSupported` before effects.
+Empty single phases and a nonempty write with empty read return `InvalidParam`; an empty
+write prefix before a read returns `NotSupported`, including trait
+`write_read`. Inherent `write_read` uses a plain read for empty TX, pure write
+for empty RX, and rejects both empty. Empty trait lists validate the address
+and do not flush an orphan. Provider limits and NuttX native worker/reserve
+qualifications described above still apply.

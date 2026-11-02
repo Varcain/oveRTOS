@@ -431,7 +431,42 @@ write followed by nonempty read. Other shapes, including an empty write prefix
 before read, fail without dispatch. Inherent empty-prefix write_read remains a
 plain read. Relative I2C/SYNC durations do not require TIME; clock-based SYNC
 methods do. With CONSOLE absent, the existing Rust log output is a no-op.
-These synchronous owners do not establish legacy Rust async buffer ownership.
+Synchronous owners require raw async users to retire before cleanup.
+
+Asynchronous Rust I2C uses the same Config with AsyncI2c::new in heap builds or
+claimed AsyncI2cStorage<TX, RX=TX> in either allocation mode. Stable native
+backing and independent TX/RX byte staging need no application FFI, Rust global
+allocator or manual pinning. Operations require &mut self. Owners and operation
+futures are neither Send nor Sync; owners are neither Copy nor Clone. Moving an
+owner keeps native backing in place. Either static capacity may be zero;
+exceeding either returns NoSpace before I/O. Heap growth preserves each phase's
+high-water capacity, checks the combined layout and allocates the new pair
+before freeing the old pair, with native alignment overhead.
+
+Dropping an operation detaches its waiter; forgetting it does not run Drop, so
+the waiter remains until completion, replacement or owner close. Both release
+application borrows without cancelling I/O: native code retains internal spans,
+and only a successful live future copies RX back. Active orphans return
+BusBusy for new work. A new operation can replace a ready orphan; flush awaits
+and consumes its actual result without RX copyback. Owner Drop defers cleanup
+through native callback, wake and submission tails; static claims reopen only
+after native deinit returns. Missing completion or a forgotten owner retains
+one bounded context/capacity or claim. There is no watchdog, filler or split.
+Separate handles still require physical-bus coordination.
+
+The embedded-hal-async seven-bit adapter preflights the entire list: [] is a
+no-op (address still checked; orphan not flushed), a nonempty write/read or
+nonempty write followed by nonempty read uses one native transaction. Other
+lists return NotSupported before effects. Empty single phases and a nonempty
+write with empty read return InvalidParam; an empty write prefix before read,
+including both-empty, returns NotSupported. Trait write_read follows that
+policy; inherent write_read uses empty TX as plain read, empty RX as pure write,
+and rejects both empty. Independent counts and provider limits apply unchanged.
+The minimal closure is native I2C, ASYNC, SYNC, TIMER and TIME plus Rust async;
+SPI/GPIO/CONSOLE are unnecessary. NuttX debug zero-heap preparation returns
+NotSupported; release zero-heap retains the native worker-reserve behavior,
+whose reclamation can outlast notification. Static Rust staging does not alter
+that native resource policy.
 
 SPI's native boundary counts bytes in either word mode. In 16-bit mode it
 requires whole frames and `uint16_t`-aligned buffers. Raw TX/RX spans cover the

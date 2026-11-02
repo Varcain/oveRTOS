@@ -46,3 +46,25 @@ endif()
 
 target_link_options(ove_test_i2c_stm32 PRIVATE
     -Wl,--wrap=HAL_I2C_Master_Seq_Receive_IT -Wl,--wrap=HAL_I2C_Master_Seq_Transmit_IT)
+
+option(OVE_RUST_I2C_TEST "Exercise the production Rust I2C/Embassy path" OFF)
+if(OVE_RUST_I2C_TEST)
+    target_link_options(ove_test_i2c_stm32 PRIVATE
+        -Wl,--wrap=HAL_I2C_Master_Transmit_IT -Wl,--wrap=HAL_I2C_Master_Receive_IT)
+    foreach(target ove_test_i2c_stm32 i2c_front)
+        target_compile_definitions(${target} PRIVATE OVE_RUST_I2C_TEST=1)
+    endforeach()
+    target_sources(ove_test_i2c_stm32 PRIVATE ${OVE_ROOT}/src/ove_sync.c)
+    set(OVE_DIR "${OVE_ROOT}")
+    set(OVE_I2C ON)
+    set(OVE_SYNC ON)
+    include(${OVE_ROOT}/cmake/OveBindingsCommon.cmake)
+    _ove_binding_write_sizes_probe("${CMAKE_BINARY_DIR}/ove_storage_sizes.c"
+        "#include \"ove/ove.h\"\n#include \"ove/storage.h\"\n")
+    _ove_binding_build_sizes_probe(_rust_i2c_sizes ove_test_i2c_stm32
+        "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
+    _ove_binding_extract_sizes("${CMAKE_BINARY_DIR}/ove_storage_sizes.env"
+        _rust_i2c_sizes "Extracting actual ARM fixture storage sizes")
+    add_custom_target(storage_sizes DEPENDS "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")
+    target_link_libraries(ove_test_i2c_stm32 PRIVATE "${OVE_RUST_I2C_LIBRARY}")
+endif()

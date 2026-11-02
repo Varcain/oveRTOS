@@ -272,6 +272,32 @@ OVE_NODISCARD int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_n
  * preparation may be retried. Requires CONFIG_OVE_ASYNC.
  */
 OVE_NODISCARD int ove_i2c_async_prepare(void);
+
+/** Validate a binding's seven-bit address and independent async byte counts.
+ * Internal binding support requiring a live configured handle and external
+ * lifetime/configuration coordination. Both counts zero is invalid. Checks
+ * existing provider limits before allocation or payload copying, without bus
+ * effects, preparation, admission or retained pointers.
+ */
+OVE_NODISCARD int ove_i2c_binding_check_lengths(ove_i2c_t i2c, uint16_t addr, size_t tx_len,
+						size_t rx_len);
+
+#ifdef OVE_HEAP_I2C
+/** Allocate stable I2C binding backing with power-of-two alignment.
+ * Internal binding support using the configured native allocator. Returns NULL
+ * on invalid/overflowing layout or allocation failure. Size must be nonzero;
+ * complete padded allocation must fit PTRDIFF_MAX. Padding includes one saved
+ * allocation pointer and at most alignment-1 bytes. No Rust allocator or pool
+ * is involved. Free only with ove_i2c_binding_free().
+ */
+OVE_NODISCARD void *ove_i2c_binding_alloc(size_t size, size_t alignment);
+
+/** Release only a live ove_i2c_binding_alloc allocation, or NULL.
+ * All users must retire before freeing; this helper provides no operation
+ * ownership, cancellation or reference counting.
+ */
+void ove_i2c_binding_free(void *pointer);
+#endif
 #endif
 
 /**

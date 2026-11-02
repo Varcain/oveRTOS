@@ -1,0 +1,23 @@
+[package]
+name = "ove-async-i2c-arm-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+path = "lib.rs"
+
+[dependencies]
+ove = { path = "../../../bindings/rust/ove", default-features = false, features = ["async", "embedded-hal-async"] }
+embedded-hal-async = "1.0"
+embassy-executor = { version = "0.7", default-features = false }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(zero_heap)"] }
