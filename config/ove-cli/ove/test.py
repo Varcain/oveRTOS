@@ -2063,6 +2063,52 @@ def test_nuttx(ove_dir, output_dir):
                           label="nuttx-sim")
 
 
+def test_nuttx_startup(ove_dir, output_dir):
+    """Check finite constructor reentry and native task startup admission."""
+    kernel, applications, _ = _nuttx_fetch_sources(ove_dir)
+    result = TestResults(suite="nuttx-startup")
+    for sanitize in (False, True):
+        build = os.path.join(output_dir, "tests", "nuttx_startup" + ("_san" if sanitize else ""))
+        _cmake_build(os.path.join(ove_dir, "tests", "nuttx_startup"), build,
+                     extra_args=["-DOVE_NUTTX_DIR=" + kernel,
+                                 "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")])
+        env = dict(os.environ)
+        if sanitize:
+            env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                       UBSAN_OPTIONS="halt_on_error=1")
+        cases = [("nuttx", [case]) for case in ("recursive", "acyclic", "empty", "nulls")]
+        cases.append(("guard_concurrent", []))
+        for binary, args in cases:
+            rc = _run_owned_test_process([os.path.join(build, binary), *args],
+                                         env=env, timeout=15)
+            result.passed += int(rc == 0)
+            result.failed += int(rc != 0)
+    fixture = os.path.join(ove_dir, "tests", "sim", "nuttx-startup")
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    for zero in (False, True):
+        base = os.path.join(output_dir, "tests", "nuttx_startup_qemu" + ("_zero" if zero else ""))
+        apps = os.path.join(base, "nuttx-apps")
+        if not os.path.isdir(apps):
+            shutil.copytree(applications, apps, symlinks=True)
+        _nuttx_register_test_app(ove_dir, apps, "nuttx-startup")
+        build = os.path.join(base, "build")
+        _nuttx_cmake_build(
+            ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
+            board_config="mps2-an500:nsh", coverage=False, variant_dir=fixture,
+            defconfig_overlays=[os.path.join(ove_dir, "tests", "sim", "nuttx-qemu",
+                                             "nuttx_test_defconfig"),
+                                os.path.join(fixture, "constructors_defconfig")],
+            extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
+            cmake_extra_args=["-DOVE_CTOR_ZERO_HEAP=" + ("ON" if zero else "OFF")])
+        rc = _run_owned_test_process(
+            ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
+             "-nographic", "-monitor", "none", "-semihosting", "-kernel",
+             os.path.join(build, "nuttx")], env=dict(os.environ), timeout=30)
+        result.passed += int(rc == 0)
+        result.failed += int(rc != 0)
+    return result
+
+
 def test_nuttx_coverage(ove_dir, output_dir):
     """NuttX sim tests with --coverage; emit lcov tracefile.
 
@@ -3595,6 +3641,7 @@ TEST_TARGETS = {
     "zig-debug": test_zig_debug,
     "zig-coverage": test_zig_coverage,
     "nuttx": test_nuttx,
+    "nuttx-startup": test_nuttx_startup,
     "nuttx-coverage": test_nuttx_coverage,
     "zephyr": test_zephyr,
     "zephyr-coverage": test_zephyr_coverage,

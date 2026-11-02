@@ -313,6 +313,9 @@ macro(ove_nuttx_register_app)
         INCLUDE_DIRECTORIES ${_OVE_NX_INCLUDE_DIRS}
     )
 
+    include(${OVE_DIR}/cmake/OveNuttXStartup.cmake)
+    ove_nuttx_guard_cxx_initialization()
+
     # The target created by nuttx_add_application is apps_<NAME>
     set(_OVE_NX_TARGET "apps_${CONFIG_EXTERNAL_OVE_APP_PROGNAME}")
 
