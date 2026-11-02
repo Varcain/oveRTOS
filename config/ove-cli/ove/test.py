@@ -931,6 +931,39 @@ def test_rust_async_spi(ove_dir, output_dir):
         result.failed += int(types != 0)
     return result
 
+def _test_infer_admission(ove_dir, output_dir, sanitize=False):
+    """Check native admission with real TFLM and guarded collaborators."""
+    from .download import download_tflm
+    suite = "infer-admission" + ("-sanitize" if sanitize else "")
+    result = TestResults(suite=suite)
+    if not download_tflm({}, os.path.join(ove_dir, "dl"), manifest=load_manifest(ove_dir)):
+        result.failed += 1
+        return result
+    for zero in (False, True):
+        suffix = ("-zero" if zero else "") + ("-san" if sanitize else "")
+        build = os.path.join(output_dir, "tests", "infer_admission" + suffix)
+        _cmake_build(os.path.join(ove_dir, "tests", "infer_admission"), build,
+                     extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                                 "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")])
+        command = [sys.executable, os.path.join(ove_dir, "tests", "infer_admission", "run.py"), build]
+        if zero:
+            command.append("--zero-heap")
+        if sanitize:
+            command.append("--sanitize")
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=180)
+        result.passed += int(rc == 0)
+        result.failed += int(rc != 0)
+    return result
+
+
+def test_infer_admission(ove_dir, output_dir):
+    return _test_infer_admission(ove_dir, output_dir)
+
+
+def test_infer_admission_sanitize(ove_dir, output_dir):
+    return _test_infer_admission(ove_dir, output_dir, sanitize=True)
+
+
 def test_rust_async_i2c(ove_dir, output_dir):
     """Exercise owned Rust I2C staging, lifetime and public type contracts."""
     result = TestResults(suite="rust-async-i2c")
@@ -3491,6 +3524,8 @@ TEST_TARGETS = {
     "rust-spi": test_rust_spi,
     "rust-i2c": test_rust_i2c,
     "rust-async-spi": test_rust_async_spi,
+    "infer-admission": test_infer_admission,
+    "infer-admission-sanitize": test_infer_admission_sanitize,
     "rust-async-i2c": test_rust_async_i2c,
     "rust-async-i2c-arm": test_rust_async_i2c_arm,
     "rust-async-spi-arm": test_rust_async_spi_arm,

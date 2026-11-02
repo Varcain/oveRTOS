@@ -115,20 +115,25 @@ static TfLiteStatus register_common_ops(OveOpResolver &resolver)
 static enum ove_tensor_type tflite_type_to_ove(TfLiteType t)
 {
 	switch (t) {
-	case kTfLiteFloat32: return OVE_TENSOR_FLOAT32;
-	case kTfLiteInt8:    return OVE_TENSOR_INT8;
-	case kTfLiteUInt8:   return OVE_TENSOR_UINT8;
-	case kTfLiteInt16:   return OVE_TENSOR_INT16;
-	case kTfLiteInt32:   return OVE_TENSOR_INT32;
-	default:             return OVE_TENSOR_FLOAT32;
+	case kTfLiteFloat32:
+		return OVE_TENSOR_FLOAT32;
+	case kTfLiteInt8:
+		return OVE_TENSOR_INT8;
+	case kTfLiteUInt8:
+		return OVE_TENSOR_UINT8;
+	case kTfLiteInt16:
+		return OVE_TENSOR_INT16;
+	case kTfLiteInt32:
+		return OVE_TENSOR_INT32;
+	default:
+		return OVE_TENSOR_FLOAT32;
 	}
 }
 
 /*
  * Internal: populate ove_tensor_info from a TfLiteTensor.
  */
-static void fill_tensor_info(const TfLiteTensor *tensor,
-			     struct ove_tensor_info *info)
+static void fill_tensor_info(const TfLiteTensor *tensor, struct ove_tensor_info *info)
 {
 	info->data = tensor->data.raw;
 	info->size = tensor->bytes;
@@ -149,10 +154,25 @@ static void fill_tensor_info(const TfLiteTensor *tensor,
  * is active at a time, so they can be reused.  This works in both heap
  * and zero-heap modes and avoids all dynamic allocation.
  */
-static uint8_t __attribute__((aligned(8)))
-	s_resolver_buf[sizeof(OveOpResolver)];
-static uint8_t __attribute__((aligned(8)))
-	s_interpreter_buf[sizeof(tflite::MicroInterpreter)];
+static uint8_t __attribute__((aligned(8))) s_resolver_buf[sizeof(OveOpResolver)];
+static uint8_t __attribute__((aligned(8))) s_interpreter_buf[sizeof(tflite::MicroInterpreter)];
+
+/* Admission owns both placement buffers through complete teardown. Keep only
+ * a boolean: a forgotten synchronous session must not leave an owner pointer
+ * that a later constructor could access after its backing has gone away. */
+static unsigned char s_model_claimed;
+
+static bool model_try_claim()
+{
+	unsigned char idle = 0;
+	return __atomic_compare_exchange_n(&s_model_claimed, &idle, 1, false, __ATOMIC_ACQUIRE,
+					   __ATOMIC_RELAXED);
+}
+
+static void model_release()
+{
+	__atomic_store_n(&s_model_claimed, 0, __ATOMIC_RELEASE);
+}
 
 /*
  * Internal: set up the TFLM interpreter inside a struct ove_model.
@@ -160,8 +180,7 @@ static uint8_t __attribute__((aligned(8)))
  */
 static int model_setup(struct ove_model *m)
 {
-	const tflite::Model *tfl_model =
-		tflite::GetModel(m->model_data);
+	const tflite::Model *tfl_model = tflite::GetModel(m->model_data);
 	if (!tfl_model)
 		return OVE_ERR_ML_FAILED;
 
@@ -172,8 +191,8 @@ static int model_setup(struct ove_model *m)
 	}
 	m->resolver = resolver;
 
-	auto *interpreter = new (s_interpreter_buf) tflite::MicroInterpreter(
-		tfl_model, *resolver, m->arena, m->arena_size);
+	auto *interpreter = new (s_interpreter_buf)
+		tflite::MicroInterpreter(tfl_model, *resolver, m->arena, m->arena_size);
 
 	TfLiteStatus status = interpreter->AllocateTensors();
 	if (status != kTfLiteOk) {
@@ -192,30 +211,34 @@ static int model_setup(struct ove_model *m)
  * Internal: tear down the TFLM interpreter objects.
  * Calls destructors but does not free memory (static buffers).
  */
-static void model_teardown(struct ove_model *m)
+static bool model_teardown(struct ove_model *m)
 {
-	if (m->interpreter) {
-		static_cast<tflite::MicroInterpreter *>(m->interpreter)
-			->~MicroInterpreter();
-		m->interpreter = nullptr;
-	}
-	if (m->resolver) {
-		static_cast<OveOpResolver *>(m->resolver)->~OveOpResolver();
-		m->resolver = nullptr;
-	}
+	if (!m->interpreter)
+		return false;
+	auto *interpreter = static_cast<tflite::MicroInterpreter *>(m->interpreter);
+	auto *resolver = static_cast<OveOpResolver *>(m->resolver);
+	/* Consume the published live session before calling its destructors.
+	 * Closing an already-closed static header cannot release another lease. */
+	m->interpreter = nullptr;
+	m->resolver = nullptr;
+	interpreter->~MicroInterpreter();
+	resolver->~OveOpResolver();
+	return true;
 }
 
 /* ── Public C API ────────────────────────────────────────────────────── */
 
 extern "C" {
 
-int ove_model_init(ove_model_t *model, ove_model_storage_t *storage,
-		   void *arena, const struct ove_model_config *cfg)
+int ove_model_init(ove_model_t *model, ove_model_storage_t *storage, void *arena,
+		   const struct ove_model_config *cfg)
 {
 	if (!model || !storage || !arena || !cfg || !cfg->model_data)
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->arena_size == 0 || cfg->model_size == 0)
 		return OVE_ERR_INVALID_PARAM;
+	if (!model_try_claim())
+		return OVE_ERR_BUSY;
 
 	struct ove_model *m = storage;
 	m->model_data = cfg->model_data;
@@ -227,8 +250,10 @@ int ove_model_init(ove_model_t *model, ove_model_storage_t *storage,
 	m->heap_allocated = 0;
 
 	int rc = model_setup(m);
-	if (rc != OVE_OK)
+	if (rc != OVE_OK) {
+		model_release();
 		return rc;
+	}
 
 	*model = m;
 	return OVE_OK;
@@ -238,28 +263,31 @@ void ove_model_deinit(ove_model_t model)
 {
 	if (!model)
 		return;
-	model_teardown(model);
+	if (model_teardown(model))
+		model_release();
 }
 
 #ifdef OVE_HEAP_INFER
 
-int ove_model_create(ove_model_t *model,
-		     const struct ove_model_config *cfg)
+int ove_model_create(ove_model_t *model, const struct ove_model_config *cfg)
 {
 	if (!model || !cfg || !cfg->model_data)
 		return OVE_ERR_INVALID_PARAM;
 	if (cfg->arena_size == 0 || cfg->model_size == 0)
 		return OVE_ERR_INVALID_PARAM;
+	if (!model_try_claim())
+		return OVE_ERR_BUSY;
 
-	auto *m = static_cast<struct ove_model *>(
-		OVE_BACKEND_MALLOC(sizeof(struct ove_model)));
-	if (!m)
+	auto *m = static_cast<struct ove_model *>(OVE_BACKEND_MALLOC(sizeof(struct ove_model)));
+	if (!m) {
+		model_release();
 		return OVE_ERR_NO_MEMORY;
+	}
 
-	auto *arena = static_cast<uint8_t *>(
-		OVE_BACKEND_MALLOC(cfg->arena_size));
+	auto *arena = static_cast<uint8_t *>(OVE_BACKEND_MALLOC(cfg->arena_size));
 	if (!arena) {
 		OVE_BACKEND_FREE(m);
+		model_release();
 		return OVE_ERR_NO_MEMORY;
 	}
 
@@ -275,6 +303,7 @@ int ove_model_create(ove_model_t *model,
 	if (rc != OVE_OK) {
 		OVE_BACKEND_FREE(arena);
 		OVE_BACKEND_FREE(m);
+		model_release();
 		return rc;
 	}
 
@@ -286,11 +315,15 @@ void ove_model_destroy(ove_model_t model)
 {
 	if (!model)
 		return;
-	model_teardown(model);
+	bool consumed = model_teardown(model);
 	if (model->heap_allocated) {
 		OVE_BACKEND_FREE(model->arena);
 		OVE_BACKEND_FREE(model);
 	}
+	/* No header access follows its free; even a competing initializer must
+	 * wait until every destructor and owned-allocation access has ended. */
+	if (consumed)
+		model_release();
 }
 
 #endif /* OVE_HEAP_INFER */
@@ -300,8 +333,7 @@ int ove_model_invoke(ove_model_t model)
 	if (!model || !model->interpreter)
 		return OVE_ERR_INVALID_PARAM;
 
-	auto *interp = static_cast<tflite::MicroInterpreter *>(
-		model->interpreter);
+	auto *interp = static_cast<tflite::MicroInterpreter *>(model->interpreter);
 
 	uint64_t start = 0;
 	ove_time_get_us(&start);
@@ -315,14 +347,12 @@ int ove_model_invoke(ove_model_t model)
 	return (status == kTfLiteOk) ? OVE_OK : OVE_ERR_ML_FAILED;
 }
 
-int ove_model_input(ove_model_t model, unsigned int index,
-		    struct ove_tensor_info *info)
+int ove_model_input(ove_model_t model, unsigned int index, struct ove_tensor_info *info)
 {
 	if (!model || !model->interpreter || !info)
 		return OVE_ERR_INVALID_PARAM;
 
-	auto *interp = static_cast<tflite::MicroInterpreter *>(
-		model->interpreter);
+	auto *interp = static_cast<tflite::MicroInterpreter *>(model->interpreter);
 
 	if (index >= (unsigned int)interp->inputs_size())
 		return OVE_ERR_INVALID_PARAM;
@@ -335,14 +365,12 @@ int ove_model_input(ove_model_t model, unsigned int index,
 	return OVE_OK;
 }
 
-int ove_model_output(ove_model_t model, unsigned int index,
-		     struct ove_tensor_info *info)
+int ove_model_output(ove_model_t model, unsigned int index, struct ove_tensor_info *info)
 {
 	if (!model || !model->interpreter || !info)
 		return OVE_ERR_INVALID_PARAM;
 
-	auto *interp = static_cast<tflite::MicroInterpreter *>(
-		model->interpreter);
+	auto *interp = static_cast<tflite::MicroInterpreter *>(model->interpreter);
 
 	if (index >= (unsigned int)interp->outputs_size())
 		return OVE_ERR_INVALID_PARAM;

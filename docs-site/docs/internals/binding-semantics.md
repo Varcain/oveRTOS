@@ -247,6 +247,18 @@ only an invalid call is an error.
 
 ## Inference
 
+The backend enforces one admitted session across handles: init/create returns
+`OVE_ERR_BUSY` before storage/output writes, allocation or interpreter setup.
+Admission covers constructor failure cleanup, destructors and final frees.
+Losing a session without closing it retains admission indefinitely; a new
+constructor does not recover it. Raw operations on one live handle must be
+externally serialized, and retained model bytes/storage/arena must outlive the
+final close call returning. An old handle cannot be reused after its storage
+is initialized for another session. This rule does not validate arbitrary
+model graphs or make arbitrary arena sizes safe; existing valid-model and
+sufficient-arena preconditions remain.
+
+
 | Contract | C++ | Rust | Zig |
 |---|---|---|---|
 | Session, heap-allocated (heap mode) | `ove::Model<> m(cfg)` | `Model::new(&cfg)` | `Model.create(&cfg)` |

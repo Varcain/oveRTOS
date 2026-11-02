@@ -32,6 +32,10 @@ pub const TensorInfo = struct {
     dims: [5]i32,
 };
 
+/// Native construction reports Busy while any session owns the shared backend,
+/// including setup and final cleanup. Forgetting a session retains admission.
+/// Retain model bytes/storage/arena through close returning; serialize operations.
+/// Admission does not validate arbitrary model bytes or arena requirements.
 /// ML inference model session.
 ///
 /// In heap mode the wrapper is a single handle; the kernel allocates the

@@ -177,7 +177,10 @@ class ModelBase
  * For an arena of any size, prefer a static @ref ModelStorage and load
  * each model into it as needed: the session object is then just a handle.
  * One model runs at a time: the backend shares its interpreter between
- * sessions.
+ * sessions. Native construction returns Busy while occupied, including setup
+ * and cleanup; constructors assert on error, while ModelStorage::load returns
+ * it. Retain model bytes/storage/arena through cleanup returning and serialize
+ * operations on one live handle. Admission does not validate model contents.
  *
  * @tparam ArenaSize  Tensor arena size in bytes embedded in zero-heap mode.
  */

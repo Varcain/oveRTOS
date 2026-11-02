@@ -3007,7 +3007,7 @@ const _: () = {
     ["Offset of field: ove_tensor_info::dims"]
         [core::mem::offset_of!(ove_tensor_info, dims) - 24usize];
 };
-#[doc = " @brief Configuration for an ML inference session.\n\n @c model_data must point to a valid @c .tflite FlatBuffer.  It is\n typically embedded as a @c const C array compiled into flash.\n @c arena_size controls how much memory is reserved for intermediate\n tensors; the actual requirement depends on the model.\n\n @warning The interpreter holds @c model_data by pointer for the entire\n          lifetime of the model session. The caller MUST ensure the\n          buffer remains valid and immutable from the successful\n          @c ove_model_init() / @c ove_model_create() call until\n          @c ove_model_deinit() / @c ove_model_destroy(). Passing a\n          stack-allocated or transient heap buffer will result in\n          silent memory corruption during @c ove_model_invoke()."]
+#[doc = " @brief Configuration for an ML inference session.\n\n @c model_data must point to a valid @c .tflite FlatBuffer.  It is\n typically embedded as a @c const C array compiled into flash.\n @c arena_size controls how much memory is reserved for intermediate\n tensors; the actual requirement depends on the model.\n\n @warning The interpreter holds @c model_data by pointer for the entire\n          lifetime of the model session. The caller MUST ensure the\n          buffer remains valid and immutable from the successful\n          @c ove_model_init() / @c ove_model_create() call until\n          @c ove_model_deinit() / @c ove_model_destroy() returning. Passing a\n          stack-allocated or transient heap buffer will result in\n          silent memory corruption during @c ove_model_invoke()."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_model_config {
@@ -3030,7 +3030,7 @@ const _: () = {
         [core::mem::offset_of!(ove_model_config, arena_size) - 16usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a model using caller-supplied storage and arena.\n\n No heap allocation is performed.  The @p arena must be at least\n @p cfg->arena_size bytes and remain valid for the lifetime of the model.\n It should be 16-byte aligned for optimal CMSIS-NN performance.\n\n @param[out] model    Receives the opaque model handle on success.\n @param[in]  storage  Pointer to caller-allocated backend storage.\n @param[in]  arena    Caller-allocated tensor arena buffer.\n @param[in]  cfg      Model configuration.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,\n         OVE_ERR_ML_FAILED if model parsing or tensor allocation fails.\n\n @see ove_model_deinit, ove_model_create"]
+    #[doc = " @brief Initialise a model using caller-supplied storage and arena.\n\n No heap allocation is performed.  The @p arena must be at least\n @p cfg->arena_size bytes and remain valid for the lifetime of the model.\n It should be 16-byte aligned for optimal CMSIS-NN performance.\n\n @param[out] model    Receives the opaque model handle on success.\n @param[in]  storage  Pointer to caller-allocated backend storage.\n @param[in]  arena    Caller-allocated tensor arena buffer.\n @param[in]  cfg      Model configuration.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,\n         OVE_ERR_ML_FAILED if model setup fails, OVE_ERR_BUSY while another\n         session owns the backend. Busy leaves the output handle, candidate\n         storage and arena unchanged and performs no allocation.\n\n @see ove_model_deinit, ove_model_create"]
     pub fn ove_model_init(
         model: *mut ove_model_t,
         storage: *mut ove_model_storage_t,
@@ -3039,18 +3039,18 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Release resources held by a model initialised with ove_model_init().\n\n The static storage and arena buffer supplied at init time are not freed.\n\n @param[in] model  Handle returned by ove_model_init().\n\n @see ove_model_init"]
+    #[doc = " @brief Release resources held by a model initialised with ove_model_init().\n\n The static storage and arena buffer supplied at init time are not freed.\n Admission is released only after complete teardown. Calls on an admitted\n live handle must be serialized; old handles cannot be used after its storage\n is reinitialized for another session.\n\n @param[in] model  Handle returned by ove_model_init().\n\n @see ove_model_init"]
     pub fn ove_model_deinit(model: ove_model_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a model from the heap.\n\n Both the backend storage and the tensor arena are allocated from\n the heap.  The arena size is taken from @p cfg->arena_size.\n\n @param[out] model  Receives the opaque model handle on success.\n @param[in]  cfg    Model configuration.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if allocation fails,\n         OVE_ERR_ML_FAILED if model parsing or tensor allocation fails.\n\n @see ove_model_destroy, ove_model_init"]
+    #[doc = " @brief Allocate and initialise a model from the heap.\n\n Both the backend storage and the tensor arena are allocated from\n the heap.  The arena size is taken from @p cfg->arena_size.\n\n @param[out] model  Receives the opaque model handle on success.\n @param[in]  cfg    Model configuration.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if allocation fails,\n         OVE_ERR_ML_FAILED on setup error, OVE_ERR_BUSY while another session\n         owns the backend. Busy preserves the output and does not allocate.\n\n @see ove_model_destroy, ove_model_init"]
     pub fn ove_model_create(
         model: *mut ove_model_t,
         cfg: *const ove_model_config,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Destroy and free a model allocated with ove_model_create().\n\n @param[in] model  Handle returned by ove_model_create().\n\n @see ove_model_create"]
+    #[doc = " @brief Destroy and free a model allocated with ove_model_create().\n\n Admission remains held through final teardown and all owned frees. A model\n over caller-supplied storage is deinitialized without freeing that storage.\n\n @param[in] model  Handle returned by ove_model_create().\n\n @see ove_model_create"]
     pub fn ove_model_destroy(model: ove_model_t);
 }
 unsafe extern "C" {

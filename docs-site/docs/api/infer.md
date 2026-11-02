@@ -119,6 +119,18 @@ int load_model(ove_model_t *model)
 
 Only one model session can exist at a time: the backend shares one interpreter between sessions. A pipeline with several models (such as the keyword example below) loads them one after the other into the same storage and arena, deinitialising each before loading the next. The C++, Rust and Zig bindings wrap this pattern; see [Binding Semantics](../internals/binding-semantics.md#inference).
 
+The backend enforces one admitted session across handles: init/create returns
+`OVE_ERR_BUSY` before storage/output writes, allocation or interpreter setup.
+Admission covers constructor failure cleanup, destructors and final frees.
+Losing a session without closing it retains admission indefinitely; a new
+constructor does not recover it. Raw operations on one live handle must be
+externally serialized, and retained model bytes/storage/arena must outlive the
+final close call returning. An old handle cannot be reused after its storage
+is initialized for another session. This rule does not validate arbitrary
+model graphs or make arbitrary arena sizes safe; existing valid-model and
+sufficient-arena preconditions remain.
+
+
 **Heap-mode — `create` / `destroy`:**
 
 `ove_model_create()` is heap-mode only — it allocates storage and arena from the RTOS heap. In zero-heap builds the symbol is unavailable; use `ove_model_init()` with a caller-supplied arena, or `OVE_MODEL_DEFINE_STATIC()` at file scope (which works in both modes).
