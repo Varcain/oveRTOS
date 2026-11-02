@@ -386,6 +386,9 @@ jobs:
       - name: Run tests
         run: timeout 600 make test-nuttx
 
+      - name: Run constructor startup tests
+        run: timeout 600 make test-nuttx-startup
+
       - name: Run native SPI retirement tests
         run: timeout 600 make test-spi-retirement-nuttx
 

@@ -222,6 +222,9 @@ nuttx_add_application(
   INCLUDE_DIRECTORIES ${_include_dirs}
 )
 
+include(${OVE_DIR}/cmake/OveNuttXStartup.cmake)
+ove_nuttx_guard_cxx_initialization()
+
 # Zero-heap mode traps kernel-mm allocations after init by --wrap'ing
 # malloc/free/etc.  These are LINK options, so they must attach to the
 # final `nuttx` executable target, not the apps_<NAME> archive.

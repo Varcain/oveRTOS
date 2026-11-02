@@ -192,7 +192,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
               i2c-native-arm i2c-native-zephyr infer-admission infer-admission-sanitize \
               i2c-retirement-freertos i2c-retirement-zephyr i2c-retirement-nuttx \
-              zig zig-zeroheap zig-debug lvgl-compile nuttx zephyr \
+              zig zig-zeroheap zig-debug lvgl-compile nuttx nuttx-startup zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
               qemu-nuttx qemu-nuttx-zeroheap qemu-nuttx-cpuload \
               qemu-zephyr qemu-zephyr-zeroheap \
