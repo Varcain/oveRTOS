@@ -25,20 +25,7 @@ use core::time::Duration;
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
 
-/// Convert a [`Duration`] to `u64` nanoseconds for the C ABI.
-///
-/// Saturates to `u64::MAX` if the duration overflows `u64` ns
-/// (~584 years). Used internally by every binding wrapper that
-/// passes a timeout to a substrate function taking `uint64_t timeout_ns`.
-#[inline]
-pub(crate) fn dur_to_ns(d: Duration) -> u64 {
-    let n = d.as_nanos();
-    if n > u64::MAX as u128 {
-        u64::MAX
-    } else {
-        n as u64
-    }
-}
+pub(crate) use crate::duration::dur_to_ns;
 
 /// Get the current monotonic time in microseconds since an arbitrary epoch.
 ///

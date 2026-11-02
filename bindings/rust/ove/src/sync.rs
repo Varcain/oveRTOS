@@ -10,6 +10,10 @@
 //! and condition variables. All types implement `Send + Sync` and work in both
 //! heap and zero-heap modes.
 
+//! Single-wait relative timeouts do not require the optional TIME API.
+//! Absolute-deadline methods and `CondVar::wait_while_for` require
+//! `CONFIG_OVE_TIME`; timed predicate waits preserve one overall deadline.
+
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
@@ -71,7 +75,7 @@ struct GuardNoSend(*mut ());
 ///   worse ergonomics than reporting only the backend errors that
 ///   can actually occur.
 /// - [`try_lock_for`](Self::try_lock_for) /
-///   [`try_lock_until`](Self::try_lock_until) variants for bounded
+///   `try_lock_until` (with TIME enabled) variants for bounded
 ///   waits.  Parking_lot has these; std does not.  Return
 ///   `Result<MutexGuard, Error>` (with [`Error::Timeout`] on
 ///   deadline elapsed), not parking_lot's `Option<MutexGuard>` —
@@ -241,7 +245,7 @@ impl<T: ?Sized> Mutex<T> {
     /// the duration.
     #[inline]
     pub fn try_lock_for(&self, d: core::time::Duration) -> Result<MutexGuard<'_, T>> {
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::time::dur_to_ns(d)) };
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::duration::dur_to_ns(d)) };
         Error::from_code(rc)?;
         Ok(MutexGuard {
             mutex: self,
@@ -258,6 +262,7 @@ impl<T: ?Sized> Mutex<T> {
     /// Returns [`Error::Timeout`] if the deadline elapses before the lock
     /// is acquired.
     #[inline]
+    #[cfg(has_time)]
     pub fn try_lock_until(&self, deadline: crate::time::Instant) -> Result<MutexGuard<'_, T>> {
         let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout) };
@@ -470,8 +475,9 @@ impl RecursiveMutex {
     /// Attempt to acquire the recursive mutex, waiting up to `d`.
     #[inline]
     pub fn try_lock_for(&self, d: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
-        let rc =
-            unsafe { bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(d)) };
+        let rc = unsafe {
+            bindings::ove_recursive_mutex_lock(self.handle, crate::duration::dur_to_ns(d))
+        };
         Error::from_code(rc)?;
         Ok(RecursiveMutexGuard {
             mutex: self,
@@ -483,6 +489,7 @@ impl RecursiveMutex {
     /// Use [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
     /// indefinite wait.
     #[inline]
+    #[cfg(has_time)]
     pub fn try_lock_until(
         &self,
         deadline: crate::time::Instant,
@@ -640,7 +647,7 @@ impl Semaphore {
     /// permit available.
     #[inline]
     pub fn try_acquire_for(&self, d: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_sem_take(self.handle, crate::time::dur_to_ns(d)) };
+        let rc = unsafe { bindings::ove_sem_take(self.handle, crate::duration::dur_to_ns(d)) };
         Error::from_code(rc)
     }
 
@@ -648,6 +655,7 @@ impl Semaphore {
     /// Use [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
     /// indefinite wait.
     #[inline]
+    #[cfg(has_time)]
     pub fn try_acquire_until(&self, deadline: crate::time::Instant) -> Result<()> {
         let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_sem_take(self.handle, timeout) };
@@ -788,7 +796,7 @@ impl Event {
     /// `d`.
     #[inline]
     pub fn wait_for(&self, d: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_event_wait(self.handle, crate::time::dur_to_ns(d)) };
+        let rc = unsafe { bindings::ove_event_wait(self.handle, crate::duration::dur_to_ns(d)) };
         Error::from_code(rc)
     }
 
@@ -800,6 +808,7 @@ impl Event {
     /// Returns [`Error::Timeout`] if the deadline elapses before the event
     /// is signalled.
     #[inline]
+    #[cfg(has_time)]
     pub fn wait_until(&self, deadline: crate::time::Instant) -> Result<()> {
         let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_event_wait(self.handle, timeout) };
@@ -953,7 +962,7 @@ impl CondVar {
         guard: MutexGuard<'a, T>,
         d: core::time::Duration,
     ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
-        self.wait_with_timeout(guard, crate::time::dur_to_ns(d))
+        self.wait_with_timeout(guard, crate::duration::dur_to_ns(d))
     }
 
     /// Atomically release the guarded mutex and wait by the given
@@ -961,6 +970,7 @@ impl CondVar {
     /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
     /// indefinite wait.
     #[inline]
+    #[cfg(has_time)]
     pub fn wait_until<'a, T: ?Sized>(
         &self,
         guard: MutexGuard<'a, T>,
@@ -1018,6 +1028,7 @@ impl CondVar {
     ///
     /// Returns `(guard, WaitTimeoutResult)` — `timed_out()` is `true`
     /// iff the predicate is still `true` at deadline.
+    #[cfg(has_time)]
     pub fn wait_while_for<'a, T: ?Sized, F>(
         &self,
         guard: MutexGuard<'a, T>,
@@ -1032,6 +1043,7 @@ impl CondVar {
     }
 
     /// `wait_while` with an absolute deadline.
+    #[cfg(has_time)]
     pub fn wait_while_until<'a, T: ?Sized, F>(
         &self,
         mut guard: MutexGuard<'a, T>,

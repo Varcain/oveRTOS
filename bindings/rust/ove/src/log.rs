@@ -23,7 +23,7 @@
 //! ```
 //!
 //! Trace/Debug both render as `[D]` since the C side has no separate
-//! trace prefix.
+//! trace prefix. Output is a no-op when CONFIG_OVE_CONSOLE is disabled.
 //!
 //! # Buffer size and truncation
 //!
@@ -42,7 +42,6 @@
 //! stderr atomically up to PIPE_BUF).
 
 use crate::FmtBuf;
-use crate::bindings;
 use crate::error::{Error, Result};
 
 /// `log::Log` implementation routing to `ove_console_write`.
@@ -83,15 +82,7 @@ impl log::Log for OveLogger {
         let _ = core::fmt::write(&mut w, *record.args());
         let _ = w.write_str("\n");
 
-        // SAFETY: `as_bytes()` returns the buffer slice excluding the
-        // null terminator; the substrate's `ove_console_write` takes a
-        // (ptr, len) pair and does not retain the pointer.
-        unsafe {
-            bindings::ove_console_write(
-                w.as_bytes().as_ptr() as *const _,
-                w.as_bytes().len() as u32,
-            );
-        }
+        crate::log(w.as_bytes());
     }
 
     fn flush(&self) {

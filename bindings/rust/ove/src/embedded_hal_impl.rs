@@ -53,67 +53,53 @@ mod i2c_impl {
 
     impl i2c::I2c for I2c {
         fn read(&mut self, address: u8, read: &mut [u8]) -> Result<(), Self::Error> {
-            I2c::read(
-                self,
-                address as u16,
-                read,
-                core::time::Duration::from_secs(u64::MAX / 2),
-            )
+            self.transaction(address, &mut [i2c::Operation::Read(read)])
         }
-
         fn write(&mut self, address: u8, write: &[u8]) -> Result<(), Self::Error> {
-            I2c::write(
-                self,
-                address as u16,
-                write,
-                core::time::Duration::from_secs(u64::MAX / 2),
-            )
+            self.transaction(address, &mut [i2c::Operation::Write(write)])
         }
-
         fn write_read(
             &mut self,
             address: u8,
             write: &[u8],
             read: &mut [u8],
         ) -> Result<(), Self::Error> {
-            I2c::write_read(
-                self,
-                address as u16,
-                write,
-                read,
-                core::time::Duration::from_secs(u64::MAX / 2),
+            self.transaction(
+                address,
+                &mut [i2c::Operation::Write(write), i2c::Operation::Read(read)],
             )
         }
-
         fn transaction(
             &mut self,
             address: u8,
             operations: &mut [i2c::Operation<'_>],
         ) -> Result<(), Self::Error> {
-            // The substrate doesn't expose explicit START/STOP control,
-            // so atomicity across a heterogeneous sequence isn't
-            // guaranteed.  We do fuse Write+Read into `write_read`
-            // (which DOES emit a repeated START) for the common
-            // "register address then read" pattern.
-            let mut i = 0;
-            while i < operations.len() {
-                if i + 1 < operations.len() {
-                    let (left, right) = operations.split_at_mut(i + 1);
-                    if let (i2c::Operation::Write(w), i2c::Operation::Read(r)) =
-                        (&left[i], &mut right[0])
-                    {
-                        self.write_read(address, w, r)?;
-                        i += 2;
-                        continue;
-                    }
-                }
-                match &mut operations[i] {
-                    i2c::Operation::Read(buf) => self.read(address, buf)?,
-                    i2c::Operation::Write(buf) => self.write(address, buf)?,
-                }
-                i += 1;
+            if address > 0x7f {
+                return Err(Error::InvalidParam);
             }
-            Ok(())
+            let timeout = core::time::Duration::MAX;
+            // Match the whole shape before dispatch. Separate native calls
+            // would introduce STOP intervals forbidden by the trait contract.
+            match operations {
+                [] => Ok(()),
+                [i2c::Operation::Write(write)] => I2c::write(self, address.into(), write, timeout),
+                [i2c::Operation::Read(read)] => {
+                    if read.is_empty() {
+                        return Err(Error::InvalidParam);
+                    }
+                    I2c::read(self, address.into(), read, timeout)
+                }
+                [i2c::Operation::Write(write), i2c::Operation::Read(read)] => {
+                    if write.is_empty() {
+                        return Err(Error::NotSupported);
+                    }
+                    if read.is_empty() {
+                        return Err(Error::InvalidParam);
+                    }
+                    I2c::write_read(self, address.into(), write, read, timeout)
+                }
+                _ => Err(Error::NotSupported),
+            }
         }
     }
 }

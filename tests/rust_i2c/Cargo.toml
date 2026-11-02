@@ -1,0 +1,14 @@
+[package]
+name = "ove-i2c-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+ove = { path = "../../bindings/rust/ove", default-features = false, features = ["std", "embedded-hal"] }
+embedded-hal = "1.0"
+log = "0.4"
+
+[[test]]
+name = "i2c"
+path = "i2c.rs"

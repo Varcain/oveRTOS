@@ -421,6 +421,18 @@ means plain read; zero-byte synchronous writes/probes preserve the address phase
 NuttX's two-message combined operation sets NOSTOP first and READ last. These
 native boundary checks do not establish Rust async retained-buffer ownership.
 
+Synchronous Rust I2C uses ordinary Config, native-heap owners and claimed
+static I2cStorage. Bus methods require exclusive access; owners are not
+Copy/Clone/Send/Sync. Static claims reopen only after native cleanup returns,
+while forgotten owners keep their claim. Unsafe raw wrappers remain nonowning.
+The embedded-hal adapter validates the complete operation list before effects:
+it supports [], one write (including empty), one nonempty read, and nonempty
+write followed by nonempty read. Other shapes, including an empty write prefix
+before read, fail without dispatch. Inherent empty-prefix write_read remains a
+plain read. Relative I2C/SYNC durations do not require TIME; clock-based SYNC
+methods do. With CONSOLE absent, the existing Rust log output is a no-op.
+These synchronous owners do not establish legacy Rust async buffer ownership.
+
 SPI's native boundary counts bytes in either word mode. In 16-bit mode it
 requires whole frames and `uint16_t`-aligned buffers. Raw TX/RX spans cover the
 full count and may be disjoint or exactly identical in-place; partial overlap
