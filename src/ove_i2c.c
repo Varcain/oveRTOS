@@ -40,6 +40,17 @@ static int i2c_validate_transfer(ove_i2c_t i2c, uint16_t addr, size_t tx_len, si
 	return ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, asynchronous);
 }
 
+#ifdef CONFIG_OVE_ASYNC
+enum {
+	I2C_ACTIVE = 1,
+	I2C_SUBMITTING = 2,
+	I2C_RESULT = 4,
+	I2C_CLOSING = 8,
+	I2C_DESTROY = 16,
+	I2C_COMPLETING = 32,
+};
+#endif
+
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
 int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2c_cfg *cfg)
@@ -57,6 +68,8 @@ int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2
 	storage->speed_hz = speed_hz;
 #ifdef CONFIG_OVE_ASYNC
 	storage->async_busy = 0;
+	storage->retire_next = NULL;
+	storage->async_result = OVE_OK;
 	storage->pending_cb = NULL;
 	storage->pending_ud = NULL;
 #endif
@@ -75,12 +88,41 @@ int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2
 	return OVE_OK;
 }
 
+static void i2c_deinit_now(ove_i2c_t i2c)
+{
+	ove_hal_i2c_close(i2c);
+	ove_mutex_deinit(i2c->bus_mtx);
+}
+
+#ifdef CONFIG_OVE_ASYNC
+static int i2c_request_close(ove_i2c_t i2c, int destroy)
+{
+	int previous = __atomic_fetch_or(
+		&i2c->async_busy, I2C_CLOSING | (destroy ? I2C_DESTROY : 0), __ATOMIC_ACQ_REL);
+	return previous & (I2C_ACTIVE | I2C_CLOSING);
+}
+
+static void i2c_finish_close(ove_i2c_t i2c, int flags)
+{
+	if (flags & I2C_CLOSING) {
+		i2c_deinit_now(i2c);
+#ifdef OVE_HEAP_I2C
+		if (flags & I2C_DESTROY)
+			OVE_BACKEND_FREE(i2c);
+#endif
+	}
+}
+#endif
+
 void ove_i2c_deinit(ove_i2c_t i2c)
 {
 	if (i2c == NULL)
 		return;
-	ove_hal_i2c_close(i2c);
-	ove_mutex_deinit(i2c->bus_mtx);
+#ifdef CONFIG_OVE_ASYNC
+	if (i2c_request_close(i2c, 0))
+		return;
+#endif
+	i2c_deinit_now(i2c);
 }
 
 #ifdef OVE_HEAP_I2C
@@ -109,7 +151,11 @@ void ove_i2c_destroy(ove_i2c_t i2c)
 {
 	if (i2c == NULL)
 		return;
-	ove_i2c_deinit(i2c);
+#ifdef CONFIG_OVE_ASYNC
+	if (i2c_request_close(i2c, 1))
+		return;
+#endif
+	i2c_deinit_now(i2c);
 	OVE_BACKEND_FREE(i2c);
 }
 #endif /* OVE_HEAP_I2C */
@@ -245,6 +291,17 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns)
 
 #ifdef CONFIG_OVE_ASYNC
 
+int ove_i2c_async_prepare(void)
+{
+	return ove_hal_i2c_async_prepare();
+}
+
+static void i2c_clear_pending(ove_i2c_t i2c)
+{
+	i2c->pending_cb = NULL;
+	i2c->pending_ud = NULL;
+}
+
 int ove_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
 			     size_t rx_len, ove_dma_complete_cb cb, void *user_data)
 {
@@ -263,25 +320,59 @@ int ove_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_
 	if (ret != OVE_OK)
 		return ret;
 
-	if (i2c->async_busy)
+	ret = ove_i2c_async_prepare();
+	if (ret != OVE_OK)
+		return ret;
+	int idle = 0;
+	if (!__atomic_compare_exchange_n(&i2c->async_busy, &idle, I2C_ACTIVE | I2C_SUBMITTING, 0,
+					 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
 		return OVE_ERR_BUS_BUSY;
-	i2c->async_busy = 1;
-
 	i2c->pending_cb = cb;
 	i2c->pending_ud = user_data;
 
 	ret = ove_hal_i2c_write_read_async(i2c, addr, tx, tx_len, rx, rx_len);
-	if (ret != OVE_OK)
-		i2c->async_busy = 0;
+	if (ret != OVE_OK) {
+		/* Rejection retains no provider state and produces no callback. */
+		i2c_clear_pending(i2c);
+		int flags = __atomic_fetch_and(&i2c->async_busy, I2C_CLOSING | I2C_DESTROY,
+					       __ATOMIC_ACQ_REL);
+		i2c_finish_close(i2c, flags);
+		return ret;
+	}
+	/* Paired with result publication: the participant observing the other
+	 * event owns the sole retirement request. This is the submitter's last
+	 * controller access before handing off to the provider. */
+	int flags = __atomic_fetch_and(&i2c->async_busy, ~I2C_SUBMITTING, __ATOMIC_ACQ_REL);
+	if (flags & I2C_RESULT)
+		ove_hal_i2c_async_retire(i2c);
 	return ret;
 }
 
 void ove_i2c_async_complete(ove_i2c_t i2c, int result)
 {
+	int flags = __atomic_load_n(&i2c->async_busy, __ATOMIC_ACQUIRE);
+	do {
+		if (!(flags & I2C_ACTIVE) || (flags & I2C_COMPLETING))
+			return;
+	} while (!__atomic_compare_exchange_n(&i2c->async_busy, &flags, flags | I2C_COMPLETING, 0,
+					      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+	i2c->async_result = result;
+	flags = __atomic_fetch_or(&i2c->async_busy, I2C_RESULT, __ATOMIC_ACQ_REL);
+	if (!(flags & I2C_SUBMITTING))
+		ove_hal_i2c_async_retire(i2c);
+}
+
+void ove_i2c_async_retired(ove_i2c_t i2c)
+{
+	/* Provider queues have already unlinked this object. All arguments and
+	 * cleanup choices must be cached before dropping its final active state. */
 	ove_dma_complete_cb cb = i2c->pending_cb;
 	void *user_data = i2c->pending_ud;
-
-	i2c->async_busy = 0;
+	int result = i2c->async_result;
+	i2c_clear_pending(i2c);
+	int flags =
+		__atomic_fetch_and(&i2c->async_busy, I2C_CLOSING | I2C_DESTROY, __ATOMIC_ACQ_REL);
+	i2c_finish_close(i2c, flags);
 	if (cb != NULL)
 		cb(result, user_data);
 }

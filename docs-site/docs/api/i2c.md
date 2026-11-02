@@ -65,3 +65,27 @@ for (uint16_t addr = 0x08; addr < 0x78; addr++) {
 ```
 
 > Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).
+
+### Asynchronous completion and lifetime
+
+Submit, prepare, deinit and destroy from thread context. Final I2C callbacks run in task context after native submission and provider
+retirement. FreeRTOS uses its existing timer daemon after the HAL interrupt
+returns; Zephyr dispatches after the transfer work's kernel cleanup; NuttX uses
+the final worker or submitter access. The internal write-to-read transition stays
+in the STM32 interrupt. Callbacks must be non-blocking. Replace unconditional
+FromISR-only callback calls with task APIs.
+
+Deinit/destroy consume the handle and defer cleanup for accepted work. Caller
+storage, TX/RX buffers and userdata must survive both callback completion and
+every active API call returning. Callback notification does not join an
+independent concurrent close call. Only a live unconsumed handle may be reused
+from a callback. Rejected submissions produce no callback. A missing completion
+retains one controller; async submission has no automatic watchdog.
+
+Preparation is automatic during submission; `ove_i2c_async_prepare()` can establish
+the completion service beforehand. The FreeRTOS and Zephyr services retain a
+small permanent list/timer and retry every 10ms, using existing tasks and bounded
+drain batches. Queue/service starvation has no hard completion deadline. NuttX
+release zero-heap uses the existing native reserve for workers; debug zero-heap
+returns NotSupported before admission because its debug heap lock rejects native
+worker allocation. Native thread resource reclamation may outlast notification.

@@ -8,6 +8,10 @@
 //! implementation when `embedded-hal-async` is enabled. Native seven-bit address
 //! and independent TX/RX byte-count limits apply; requests are not split to
 //! bypass provider limits. Submission has no timeout or automatic watchdog.
+//! Native callbacks run in task context after provider retirement. This legacy
+//! wrapper still requires stable owner/slot and application buffers through the
+//! callback; cancellation/forget and shared per-future completion ownership are
+//! not yet enforced by this wrapper.
 
 use ::core::cell::UnsafeCell;
 use ::core::ffi::c_void;
@@ -20,7 +24,8 @@ use crate::error::{Error, Result};
 use super::dma_slot::DmaSlot;
 
 unsafe extern "C" fn dma_complete_cb(result: ::core::ffi::c_int, user_data: *mut c_void) {
-    // SAFETY: user_data points to a DmaSlot owned by the calling future.
+    // The native callback requires this owner-held slot to stay at a stable
+    // address through callback return; cancellation currently does not enforce it.
     let slot = unsafe { &*(user_data as *const DmaSlot) };
     slot.result_store(result as i32);
     slot.wake();
@@ -32,10 +37,8 @@ pub struct AsyncI2c {
     slot: UnsafeCell<DmaSlot>,
 }
 
-// SAFETY: `AsyncI2c` wraps an `ove_i2c_t` handle.  The substrate serialises
-// bus transactions via its driver-level lock; the `UnsafeCell<DmaSlot>` is
-// only touched between `arm()` and the completion ISR, never concurrently
-// from Rust code.
+// `AsyncI2c` wraps a native handle with serialized async admission. This legacy shared
+// DmaSlot does not yet enforce distinct future result or backing ownership.
 unsafe impl Send for AsyncI2c {}
 unsafe impl Sync for AsyncI2c {}
 

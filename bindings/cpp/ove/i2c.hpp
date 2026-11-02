@@ -36,6 +36,13 @@ namespace ove
  * NuttX the smaller of ssize_t and INT_MAX. Requests are never split; register
  * writes include their prefix. Zero-byte writes/probes keep their ACK path.
  *
+ * Prepare, submit and close raw async work from thread context.
+ * Raw async submissions through handle() retain buffers/userdata through task
+ * callback completion and all active calls returning. Destruction consumes the
+ * handle and defers native close/free for pending work. In zero-heap mode the
+ * inline storage must remain alive and unmoved until those obligations retire;
+ * do not let raw pending work escape this object's lifetime.
+ *
  * Not copyable. Move-only when heap allocation is enabled.
  */
 class I2c

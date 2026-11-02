@@ -17,6 +17,12 @@
 //! bus effects: STM32 permits 65535 per phase, Zephyr uint32_t, NuttX the smaller
 //! of ssize_t and INT_MAX. Requests are never split; register writes include the
 //! prefix byte. Zero-byte writes/probes preserve the native address/ACK path.
+//! Prepare, submit and close raw async work from thread context.
+//! Raw native async callbacks run in task context after provider retirement.
+//! Close consumes a handle and may defer cleanup. Controller storage, buffers
+//! and userdata remain valid through callback completion AND all active calls
+//! returning; callback alone does not join a concurrent close. Callers coordinate
+//! raw entry/destruction. A missing completion retains one operation.
 
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

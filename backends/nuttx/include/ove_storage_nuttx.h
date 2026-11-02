@@ -408,6 +408,8 @@ struct ove_i2c {
 	size_t pending_tx_len;
 	void *pending_rx;
 	size_t pending_rx_len;
+	struct ove_i2c *retire_next;
+	int async_result;
 	volatile int async_busy;
 #endif
 };

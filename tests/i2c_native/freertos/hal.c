@@ -3,6 +3,21 @@
 #include "stm32f7xx_hal.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "ove/irq.h"
+ove_irq_key_t ove_irq_lock(void)
+{
+	taskENTER_CRITICAL();
+	return 0;
+}
+void ove_irq_unlock(ove_irq_key_t key)
+{
+	(void)key;
+	taskEXIT_CRITICAL();
+}
+bool ove_is_in_isr(void)
+{
+	return false;
+}
 
 unsigned i2c_hal_calls;
 uint16_t i2c_hal_address, i2c_hal_sizes[2];
