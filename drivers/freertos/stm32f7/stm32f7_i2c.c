@@ -234,7 +234,7 @@ static int sync_claim(struct ove_i2c *i2c)
 	int running = scheduler_running();
 	UBaseType_t saved = taskENTER_CRITICAL_FROM_ISR();
 #ifdef CONFIG_OVE_ASYNC
-	busy = i2c->async_busy;
+	busy = __atomic_load_n(&i2c->async_busy, __ATOMIC_ACQUIRE);
 #endif
 	if (!busy && running)
 		i2c->waiter = xTaskGetCurrentTaskHandle();
@@ -457,6 +457,119 @@ static struct ove_i2c *handle_owner(I2C_HandleTypeDef *hi2c)
 
 #ifdef CONFIG_OVE_ASYNC
 
+#include "ove/irq.h"
+#include "timers.h"
+
+static StaticTimer_t retire_timer_storage;
+static TimerHandle_t retire_timer;
+static ove_i2c_t retire_head, retire_tail;
+static int retire_initializing, retire_ready, retire_kick_pending, retire_draining;
+
+static void retire_drain(int pended)
+{
+	ove_irq_key_t key = ove_irq_lock();
+	if (pended)
+		retire_kick_pending = 0;
+	retire_draining = 1;
+	ove_irq_unlock(key);
+	for (unsigned i = 0; i < 4; ++i) {
+		key = ove_irq_lock();
+		ove_i2c_t i2c = retire_head;
+		if (i2c) {
+			retire_head = i2c->retire_next;
+			if (!retire_head)
+				retire_tail = NULL;
+			i2c->retire_next = NULL;
+		}
+		ove_irq_unlock(key);
+		if (!i2c)
+			break;
+		ove_i2c_async_retired(i2c);
+	}
+	key = ove_irq_lock();
+	retire_draining = 0;
+	ove_irq_unlock(key);
+	/* Leave excess/reentrant work for the pre-started periodic pump. Do not
+	 * recursively refill the daemon command queue and starve other timers. */
+}
+
+static void retire_retry(TimerHandle_t timer)
+{
+	(void)timer;
+	retire_drain(0);
+}
+
+static void retire_pended(void *argument, uint32_t value)
+{
+	(void)argument;
+	(void)value;
+	retire_drain(1);
+}
+
+int ove_hal_i2c_async_prepare(void)
+{
+	ove_irq_key_t key = ove_irq_lock();
+	if (retire_ready || retire_initializing) {
+		int rc = retire_ready ? OVE_OK : OVE_ERR_BUSY;
+		ove_irq_unlock(key);
+		return rc;
+	}
+	retire_initializing = 1;
+	ove_irq_unlock(key);
+	if (!retire_timer) {
+		TickType_t period =
+			(TickType_t)(((uint64_t)configTICK_RATE_HZ * 10u + 999u) / 1000u);
+		retire_timer = xTimerCreateStatic("i2c-retire", period, pdTRUE, NULL, retire_retry,
+						  &retire_timer_storage);
+	}
+	int rc = retire_timer && xTimerStart(retire_timer, 0) == pdPASS ? OVE_OK
+									: OVE_ERR_NO_MEMORY;
+	key = ove_irq_lock();
+	retire_ready = rc == OVE_OK;
+	retire_initializing = 0;
+	ove_irq_unlock(key);
+	return rc;
+}
+
+void ove_hal_i2c_async_retire(ove_i2c_t i2c)
+{
+	ove_irq_key_t key = ove_irq_lock();
+	i2c->retire_next = NULL;
+	if (retire_tail)
+		retire_tail->retire_next = i2c;
+	else
+		retire_head = i2c;
+	retire_tail = i2c;
+	int kick = !retire_kick_pending && !retire_draining;
+	if (kick)
+		retire_kick_pending = 1;
+	ove_irq_unlock(key);
+	if (!kick)
+		return;
+	BaseType_t rc;
+	if (ove_is_in_isr()) {
+		BaseType_t wake = pdFALSE;
+		rc = xTimerPendFunctionCallFromISR(retire_pended, NULL, 0, &wake);
+		portYIELD_FROM_ISR(wake);
+	} else {
+		rc = xTimerPendFunctionCall(retire_pended, NULL, 0, 0);
+	}
+	if (rc != pdPASS) {
+		key = ove_irq_lock();
+		retire_kick_pending = 0;
+		ove_irq_unlock(key);
+	}
+	/* No controller pointer escapes into daemon messages. A failed pend
+	 * retains its list node until the already-running retry timer visits. */
+}
+
+static void i2c_clear_phase(ove_i2c_t i2c)
+{
+	i2c->async_rx = NULL;
+	i2c->async_rx_len = 0;
+	i2c->async_addr = 0;
+}
+
 int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
 				 void *rx, size_t rx_len)
 {
@@ -479,8 +592,7 @@ int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, s
 		return OVE_ERR_BUS_BUSY;
 
 	clear_stale_error(h);
-	i2c->async_rx = NULL;
-	i2c->async_rx_len = 0;
+	i2c_clear_phase(i2c);
 	if (rx_len == 0) {
 		ret = HAL_I2C_Master_Transmit_IT(h, (uint16_t)(addr << 1), (uint8_t *)tx,
 						 (uint16_t)tx_len);
@@ -496,6 +608,8 @@ int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, s
 		ret = HAL_I2C_Master_Seq_Transmit_IT(h, (uint16_t)(addr << 1), (uint8_t *)tx,
 						     (uint16_t)tx_len, I2C_FIRST_FRAME);
 	}
+	if (ret != HAL_OK)
+		i2c_clear_phase(i2c);
 	return hal_i2c_to_ove(h, ret);
 }
 
@@ -515,19 +629,20 @@ static void i2c_done(I2C_HandleTypeDef *hi2c, int result)
 		return;
 	}
 #ifdef CONFIG_OVE_ASYNC
-	if (!i2c->async_busy)
+	if (!__atomic_load_n(&i2c->async_busy, __ATOMIC_ACQUIRE))
 		return;
 	if (result == OVE_OK && i2c->async_rx != NULL) {
 		void *rx = i2c->async_rx;
-		i2c->async_rx = NULL;
-		HAL_StatusTypeDef ret =
-			HAL_I2C_Master_Seq_Receive_IT(hi2c, (uint16_t)(i2c->async_addr << 1), rx,
-						      i2c->async_rx_len, I2C_LAST_FRAME);
+		uint16_t len = i2c->async_rx_len;
+		uint16_t addr = i2c->async_addr;
+		i2c_clear_phase(i2c);
+		HAL_StatusTypeDef ret = HAL_I2C_Master_Seq_Receive_IT(hi2c, (uint16_t)(addr << 1),
+								      rx, len, I2C_LAST_FRAME);
 		if (ret == HAL_OK)
 			return;
 		result = hal_i2c_to_ove(hi2c, ret);
 	}
-	i2c->async_rx = NULL;
+	i2c_clear_phase(i2c);
 	if (result != OVE_OK)
 		i2c_reset(i2c); /* as in i2c_await: release the bus */
 	ove_i2c_async_complete(i2c, result);

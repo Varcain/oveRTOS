@@ -240,7 +240,8 @@ OVE_NODISCARD int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *c
  * the native submission nor provider touches retained backing afterward.
  * Callbacks must be non-blocking. STM32 callbacks previously assuming ISR
  * context must migrate unconditional FromISR-only calls to task APIs.
- * These SPI rules do not change I2C or other DMA callback contexts.
+ * I2C defines its corresponding contract in ove_i2c_write_read_async; other
+ * DMA callback contexts remain defined by their submitting API.
  *
  * Buffers, CS and userdata remain valid through final callback completion and
  * every active API call returning. Callback notification alone does not

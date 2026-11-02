@@ -109,6 +109,11 @@ OVE_NODISCARD int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage,
 /**
  * @brief Deinitialise a statically-allocated I2C bus.
  *
+ * Thread context only. Consumes the handle. With accepted async work, actual close is deferred until
+ * final retirement; a missing completion retains the controller. Keep caller
+ * storage, buffers and userdata valid through final callback completion AND
+ * every active API call returning. Quiesce synchronous/raw API entry first.
+ *
  * @param[in] i2c  I2C handle returned by @ref ove_i2c_init.
  */
 void ove_i2c_deinit(ove_i2c_t i2c);
@@ -126,6 +131,11 @@ OVE_NODISCARD int ove_i2c_create(ove_i2c_t *i2c, const struct ove_i2c_cfg *cfg);
 
 /**
  * @brief Destroy a heap-allocated I2C bus controller.
+ *
+ * Thread context only. Consumes the handle. Accepted async work defers close/free until retirement;
+ * the final callback may run after heap controller storage has been freed.
+ * Userdata must independently remain live. Quiesce other raw/synchronous entry;
+ * callback notification alone does not join an independent active close call.
  *
  * @param[in] i2c  I2C handle returned by @ref ove_i2c_create.
  */
@@ -256,16 +266,41 @@ OVE_NODISCARD int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, vo
  */
 OVE_NODISCARD int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns);
 
+#ifdef CONFIG_OVE_ASYNC
+/** Prepare asynchronous completion dispatch from thread context without bus work.
+ * Submission also prepares automatically. Failure accepts no operation and
+ * preparation may be retried. Requires CONFIG_OVE_ASYNC.
+ */
+OVE_NODISCARD int ove_i2c_async_prepare(void);
+#endif
+
 /**
  * @brief Submit an I2C write-then-read transaction asynchronously.
  *
- * Equivalent to @ref ove_i2c_write_read but returns immediately. The
+ * Submit from thread context. Equivalent to @ref ove_i2c_write_read but returns
+ * immediately. The
  * completion callback fires when the device has been written, the
  * repeated-start completed, and the read finished — or when an error
  * (NACK, bus error, timeout) terminates the transaction.
  *
- * The callback currently runs in ISR context on STM32 FreeRTOS and worker
- * context on Zephyr/NuttX. No timeout argument or automatic watchdog applies
+ * Final callbacks run in task context after submission and provider retirement:
+ * STM32 uses the existing timer daemon after the HAL/IRQ returns; Zephyr uses
+ * the same system queue after the embedded work's kernel tail; NuttX/host use
+ * the final worker or submitter access. Callbacks must be non-blocking. Migrate
+ * unconditional STM32 FromISR-only callback calls to task APIs. The internal
+ * write-to-read transition remains in IRQ context.
+ *
+ * Keep controller backing, buffers and userdata valid through final callback
+ * completion AND every active API call returning. A callback can precede the
+ * submission call's return, but that operation's submitter/provider makes no
+ * further controller access after notification.
+ * Callback notification does not join an independent concurrent close call.
+ * Reentry is permitted on a live unconsumed handle. Close consumes the handle;
+ * callers coordinate unrelated raw entry/destruction and synchronous use.
+ * Accepted work produces exactly one result; rejection produces no callback.
+ * One active operation retains its result/backing through final retirement.
+ *
+ * No timeout argument or automatic watchdog applies
  * to async submission. A missing completion can remain pending indefinitely.
  * Empty TX selects a plain read, empty RX a pure write; both empty is invalid.
  *
@@ -292,6 +327,11 @@ OVE_NODISCARD int ove_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const v
 					   ove_dma_complete_cb cb, void *user_data);
 
 #else /* !CONFIG_OVE_I2C */
+
+OVE_NODISCARD static inline int ove_i2c_async_prepare(void)
+{
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 /* No _init/_deinit stubs: OVE_I2C_DEFINE_STATIC is itself gated by
  * #ifdef CONFIG_OVE_I2C in storage.h, so the link-failure path doesn't

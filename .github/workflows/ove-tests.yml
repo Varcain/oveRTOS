@@ -381,6 +381,9 @@ jobs:
       - name: Run native SPI retirement tests
         run: timeout 600 make test-spi-retirement-nuttx
 
+      - name: I2C retirement (nuttx)
+        run: timeout 1200 make test-i2c-retirement-nuttx
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -389,7 +392,7 @@ jobs:
           retention-days: 7
 
   zephyr-sim-tests:
-    name: Zephyr native_sim Tests
+    name: Zephyr native and ARM Tests
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -401,7 +404,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cmake build-essential meson ninja-build \
             python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
-            wget xz-utils file
+            wget xz-utils file qemu-system-arm
 
       - name: Compute Zephyr cache hash
         id: zephyr-hash
@@ -427,6 +430,9 @@ jobs:
 
       - name: Run native Zephyr I2C boundary tests
         run: make test-i2c-native-zephyr
+
+      - name: I2C retirement (zephyr)
+        run: timeout 1200 make test-i2c-retirement-zephyr
 
       - name: Run tests
         run: timeout 600 make test-zephyr
@@ -483,6 +489,9 @@ jobs:
 
       - name: Run native STM32 I2C count tests
         run: timeout 1200 make test-i2c-native-arm
+
+      - name: I2C retirement (freertos)
+        run: timeout 1200 make test-i2c-retirement-freertos
 
       - uses: actions/upload-artifact@v4
         if: failure()

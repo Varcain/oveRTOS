@@ -393,6 +393,7 @@ def test_stub(ove_dir, output_dir):
     _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
                                 "ove_test_i2c_front_heap", "ove_test_i2c_front_zero", "ove_test_i2c_nuttx",
+                                "ove_test_i2c_retire_heap", "ove_test_i2c_retire_zero",
                                 "ove_test_mqtt_heap", "ove_test_mqtt_zh",
                                 "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",
                                 "ove_test_mqtt_wide", "ove_test_mqtt_varint",
@@ -458,6 +459,7 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
     _run_extra_binaries(build, ("ove_test_mqtt_heap", "ove_test_mqtt_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
                                 "ove_test_i2c_front_heap", "ove_test_i2c_front_zero", "ove_test_i2c_nuttx",
+                                "ove_test_i2c_retire_heap", "ove_test_i2c_retire_zero",
                                 "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",
                                 "ove_test_mqtt_wide", "ove_test_mqtt_varint",
                                 "ove_test_mqtt_small_rx", "ove_test_mqtt_zh_small_rx",
@@ -945,6 +947,90 @@ def test_rust_async_spi_arm(ove_dir, output_dir):
             env=env, timeout=30)
     result.passed += int(rc == 0)
     result.failed += int(rc != 0)
+    return result
+
+
+def test_i2c_retirement_freertos(ove_dir, output_dir):
+    """Check actual STM32 I2C HAL retirement with the Cortex-M7 kernel."""
+    import hashlib
+    from .utils import hashed_dir
+    _ensure_stm32f746_renode_deps(ove_dir)
+    manifest = load_manifest(ove_dir)
+    sdk_revision = get_component(manifest, "rtos", "freertos", "stm32cubef7", "version")
+    sdk, _, _ = hashed_dir(os.path.join(ove_dir, "dl"), "STM32CubeF7", sdk_revision, None)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = os.path.join(ove_dir, "dl", "FreeRTOS-Kernel-" + digest)
+    if not os.path.isdir(kernel):
+        url = get_component(manifest, "rtos", "freertos", "kernel", "url")
+        run(["git", "clone", "--depth", "1", "--branch", revision, url, kernel])
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    build = os.path.join(output_dir, "tests", "i2c_async_freertos")
+    _cmake_build(os.path.join(ove_dir, "tests", "i2c_async_freertos"), build,
+                 extra_args=["-DFREERTOS_PATH=" + kernel, "-DSTM32_CUBE_PATH=" + sdk,
+                             "-DOVE_TOOLCHAIN_DIR=" + toolchain,
+                             "-DCMAKE_TOOLCHAIN_FILE=" + os.path.join(
+                                 ove_dir, "boards", "qemu-mps2-an500", "cmake", "arm-none-eabi.cmake")])
+    rc = _run_owned_test_process(
+        ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
+         "-nographic", "-semihosting", "-kernel", os.path.join(build, "ove_test_i2c_stm32")],
+        env=dict(os.environ), timeout=30)
+    return TestResults(suite="i2c-retirement-freertos", passed=int(rc == 0), failed=int(rc != 0))
+
+
+def test_i2c_retirement_zephyr(ove_dir, output_dir):
+    """Check I2C work tails on the native kernel and actual ARM execution stacks."""
+    result = _run_zephyr_native_sim(
+        ove_dir, output_dir, build_subdir="i2c_async_zephyr", label="i2c-retirement-zephyr",
+        source_dir=os.path.join(ove_dir, "tests", "i2c_async_zephyr"), owned_timeout=30)
+    if result.failed:
+        return result
+    env = _zephyr_sdk_build_env(ove_dir)
+    env["ZEPHYR_BASE"] = os.path.join(output_dir, "tests", "i2c_async_zephyr",
+                                    "zephyr-workspace", "zephyr")
+    build = os.path.join(output_dir, "tests", "i2c_async_zephyr_arm")
+    run([os.path.join(ove_dir, ".venv", "bin", "west"), "build", "-b", "mps2/an500",
+         "-d", build, os.path.join(ove_dir, "tests", "i2c_async_zephyr")], env=env)
+    rc = _run_owned_test_process(
+        ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
+         "-nographic", "-semihosting", "-kernel", os.path.join(build, "zephyr", "zephyr.elf")],
+        env=env, timeout=30)
+    result.passed += int(rc == 0)
+    result.failed += int(rc != 0)
+    return result
+
+
+def test_i2c_retirement_nuttx(ove_dir, output_dir):
+    """Exercise real native pthread/descriptor and reserved-heap retirement."""
+    kernel, applications, _ = _nuttx_fetch_sources(ove_dir)
+    fixture = os.path.join(ove_dir, "tests", "sim", "i2c-retirement-nuttx")
+    result = TestResults(suite="i2c-retirement-nuttx")
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    for mode in ("heap", "zeroheap", "debug-zeroheap"):
+        base = os.path.join(output_dir, "tests", "i2c_async_nuttx_qemu_" + mode)
+        apps = os.path.join(base, "nuttx-apps")
+        if not os.path.isdir(apps):
+            shutil.copytree(applications, apps, symlinks=True)
+        _nuttx_register_test_app(ove_dir, apps, "i2c-retirement-nuttx")
+        overlays = [os.path.join(ove_dir, "tests", "sim", "nuttx-qemu", "nuttx_test_defconfig"),
+                    os.path.join(fixture, "retirement_defconfig")]
+        if mode == "debug-zeroheap":
+            overlays.append(os.path.join(fixture, "debug_defconfig"))
+        build = os.path.join(base, "build")
+        _nuttx_cmake_build(
+            ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
+            board_config="mps2-an500:nsh", defconfig_overlays=overlays, coverage=False,
+            extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
+            variant_dir=fixture, cmake_extra_args=[
+                "-DOVE_I2C_ZERO_HEAP=" + ("OFF" if mode == "heap" else "ON")])
+        rc = _run_owned_test_process(["qemu-system-arm", "-M", "mps2-an500",
+                                     "-cpu", "cortex-m7", "-m", "16", "-nographic",
+                                     "-semihosting", "-kernel", os.path.join(build, "nuttx")],
+                                     env=dict(os.environ), timeout=30)
+        result.passed += int(rc == 0)
+        result.failed += int(rc != 0)
+        if rc != 0:
+            result.failed_names.append(mode)
     return result
 
 
@@ -3252,6 +3338,9 @@ TEST_TARGETS = {
     "rust-spi": test_rust_spi,
     "rust-async-spi": test_rust_async_spi,
     "rust-async-spi-arm": test_rust_async_spi_arm,
+    "i2c-retirement-freertos": test_i2c_retirement_freertos,
+    "i2c-retirement-zephyr": test_i2c_retirement_zephyr,
+    "i2c-retirement-nuttx": test_i2c_retirement_nuttx,
     "i2c-native-arm": test_i2c_native_arm,
     "i2c-native-zephyr": test_i2c_native_zephyr,
     "spi-retirement-freertos": test_spi_retirement_freertos,

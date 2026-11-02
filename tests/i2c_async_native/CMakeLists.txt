@@ -1,0 +1,31 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later
+file(READ "${OVE_ROOT}/tests/ove_config.h" _i2c_config)
+string(REGEX REPLACE "#define CONFIG_OVE_(LVGL|LINUX)[^\n]*\n" "" _i2c_config "${_i2c_config}")
+string(REPLACE "#endif /* OVE_CONFIG_H */" "#define CONFIG_OVE_I2C 1\n#endif /* OVE_CONFIG_H */" _i2c_config "${_i2c_config}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ove_config.h" "${_i2c_config}")
+foreach(mode heap zero)
+    set(name ove_test_i2c_retire_${mode})
+    add_library(${name}_front OBJECT ${OVE_ROOT}/src/ove_i2c.c)
+    target_compile_definitions(${name}_front PRIVATE malloc=i2c_test_malloc free=i2c_test_free)
+    add_executable(${name} retire.c ${POSIX_CORE_DIR}/posix_sync.c
+        ${POSIX_CORE_DIR}/posix_irq.c $<TARGET_OBJECTS:${name}_front>)
+    foreach(target ${name} ${name}_front)
+        target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
+            ${OVE_INCLUDE} ${OVE_ROOT}/backends/common ${POSIX_CORE_DIR}/include)
+        if(mode STREQUAL "zero")
+            target_compile_definitions(${target} PRIVATE CONFIG_OVE_ZERO_HEAP=1)
+        endif()
+        if(NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
+            target_compile_options(${target} PRIVATE -fsanitize=address,undefined
+                -fno-omit-frame-pointer -fno-sanitize-recover=all -g)
+        endif()
+    endforeach()
+    target_include_directories(${name} PRIVATE ${cmocka_SOURCE_DIR}/include)
+    target_link_libraries(${name} PRIVATE cmocka-static pthread)
+    set_target_properties(${name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+    if(NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
+        target_link_options(${name} PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    endif()
+    add_test(NAME ${name} COMMAND ${name})
+endforeach()

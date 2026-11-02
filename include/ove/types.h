@@ -358,9 +358,9 @@ typedef void (*ove_notify_cb)(void *user_data);
  * @brief DMA / async transfer completion callback signature.
  *
  * Context and retirement guarantees are defined by the submitting API.
- * SPI final callbacks run in task context after native submission/provider
- * retirement; see @c ove_spi_transfer_async for retained-memory obligations.
- * I2C and other DMA callbacks may run in ISR context on native hardware or
+ * SPI and I2C final callbacks run in task context after native submission/provider
+ * retirement; see @c ove_spi_transfer_async and @c ove_i2c_write_read_async for
+ * retained-memory obligations. Other DMA callbacks may run in ISR context on native hardware or
  * thread context on worker/simulator paths. All callbacks must be non-blocking;
  * use ISR-safe operations where the submitting API permits ISR notification.
  *

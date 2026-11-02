@@ -490,6 +490,8 @@ struct ove_i2c {
 #ifdef CONFIG_OVE_ASYNC
 	ove_dma_complete_cb pending_cb;
 	void *pending_ud;
+	struct ove_i2c *retire_next;
+	int async_result;
 	volatile int async_busy;
 	void *async_rx; /* read phase still to start after the write phase */
 	uint16_t async_rx_len;

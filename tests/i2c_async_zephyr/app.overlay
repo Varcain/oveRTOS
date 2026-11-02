@@ -1,0 +1,6 @@
+/ {
+    i2c1: i2c-boundary {
+        compatible = "test,i2c-boundary";
+        status = "okay";
+    };
+};

@@ -70,6 +70,15 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t address, const void *write, s
 	(void)timeout;
 	return record(address, write_len, read_len);
 }
+int ove_hal_i2c_async_prepare(void)
+{
+	return OVE_OK;
+}
+void ove_hal_i2c_async_retire(ove_i2c_t i2c)
+{
+	ove_i2c_async_retired(i2c);
+}
+
 int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t address, const void *write,
 				 size_t write_len, void *read, size_t read_len)
 {

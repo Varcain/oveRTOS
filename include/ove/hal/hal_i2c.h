@@ -16,6 +16,8 @@
  * Declares the low-level I2C functions that every platform HAL must
  * implement.  The portable @ref ove_i2c layer delegates to these
  * functions after performing parameter validation and bus locking.
+ * With CONFIG_OVE_ASYNC, each provider supplies preparation, submission and
+ * retirement hooks. Preparation may decline support before any admission.
  * @{
  */
 
@@ -108,13 +110,36 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
 			   size_t rx_len, uint64_t timeout_ns);
 
+/** Establish the permanent task-context retirement service before admission.
+ * Thread context only.
+ * Failure retains no operation; retrying preparation is permitted.
+ */
+int ove_hal_i2c_async_prepare(void);
+
+/** Queue a completed operation after its submitter's last controller access.
+ * Must defer finalization past provider/HAL/kernel tails. Queue only permanent
+ * dispatch arguments, retain the intrusive node across notification failure,
+ * and unlink it before calling ove_i2c_async_retired() in task context.
+ */
+void ove_hal_i2c_async_retire(ove_i2c_t i2c);
+
+/** Finish an unlinked operation after every provider reference has retired.
+ * This may close/free the controller and invoke arbitrary user code. The
+ * caller must make no further controller accesses after this call.
+ */
+void ove_i2c_async_retired(ove_i2c_t i2c);
+
 /**
  * @brief Submit an async I2C write+read.
  *
- * Optional HAL hook, gated by @c CONFIG_OVE_ASYNC. Backends must call
+ * Thread context only. Optional HAL hook, gated by @c CONFIG_OVE_ASYNC. Backends must call
  * @ref ove_i2c_async_complete with the transaction result; the
- * portable layer takes care of busy-flag clearing and user callback
- * dispatch.
+ * portable layer records the result and rendezvous with submission. The provider
+ * retirement hook establishes the final task-context callback boundary. Clear
+ * provider-owned span/phase metadata before handing off the final result.
+ * Accepted work reports exactly one result; rejection reports none. No provider
+ * controller access may follow its completion handoff, apart from a HAL/IRQ or
+ * kernel tail explicitly joined by the retirement hook.
  *
  * @param[in] i2c      I2C handle.
  * @param[in] addr     7-bit device address.
@@ -131,7 +156,9 @@ int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, s
 /**
  * @brief Completion notification from the HAL.
  *
- * Called by the HAL backend on transaction completion.
+ * Called by the HAL backend on final transaction completion. Records the
+ * result; user notification waits for submission and provider retirement.
+ * Do not report the intermediate TX completion of a write-then-read.
  *
  * @param[in] i2c     I2C handle.
  * @param[in] result  OVE_OK on success, negative error code on failure.
