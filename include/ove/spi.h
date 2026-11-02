@@ -293,6 +293,32 @@ OVE_NODISCARD int ove_spi_transfer_async(ove_spi_t spi, const struct ove_spi_cs 
  */
 OVE_NODISCARD int ove_spi_async_prepare(void);
 
+#ifdef CONFIG_OVE_ASYNC
+/** Validate an owned binding's nonempty byte count before staging allocation.
+ * Internal binding support. Requires a live, configured handle and external
+ * lifetime/configuration coordination. Checks whole frames and the existing
+ * provider limit without admitting work, touching CS or retaining pointers.
+ */
+OVE_NODISCARD int ove_spi_binding_check_length(ove_spi_t spi, size_t len);
+
+#ifdef OVE_HEAP_SPI
+/** Allocate stable SPI binding backing with the requested power-of-two alignment.
+ * Internal binding support using the configured native allocator. Returns NULL
+ * on invalid/overflowing layout or allocation failure. Size must be nonzero;
+ * the complete padded allocation must fit PTRDIFF_MAX. Padding includes one
+ * saved allocation pointer and up to alignment-1 bytes. No Rust allocator or
+ * global pool is involved. Free only with ove_spi_binding_free().
+ */
+OVE_NODISCARD void *ove_spi_binding_alloc(size_t size, size_t alignment);
+
+/** Release only a live allocation returned by ove_spi_binding_alloc(), or NULL.
+ * The caller must retire all users before freeing; this function does not
+ * provide operation ownership, cancellation or reference counting.
+ */
+void ove_spi_binding_free(void *pointer);
+#endif
+#endif
+
 #else /* !CONFIG_OVE_SPI */
 
 OVE_NODISCARD static inline int ove_spi_async_prepare(void)

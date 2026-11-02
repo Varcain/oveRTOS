@@ -3,6 +3,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(ove_spi_retirement_freertos C ASM)
 option(OVE_ARM "Run the real Cortex-M7 kernel port under QEMU" OFF)
+option(OVE_RUST_SPI_TEST "Exercise the production Rust SPI/Embassy path" OFF)
 get_filename_component(OVE_ROOT "../.." ABSOLUTE)
 if(NOT EXISTS "${FREERTOS_PATH}/portable/ThirdParty/GCC/Posix/port.c")
     message(FATAL_ERROR "FREERTOS_PATH must name the manifest-pinned kernel")
@@ -28,6 +29,25 @@ target_include_directories(ove_test_spi_freertos PRIVATE ${CMAKE_CURRENT_SOURCE_
     ${OVE_ROOT}/tests/spi_native/sdk ${OVE_ROOT}/include
     ${OVE_ROOT}/backends/freertos/include ${OVE_ROOT}/backends/common ${OVE_ROOT}/tests)
 target_compile_definitions(ove_test_spi_freertos PRIVATE STM32F746xx=1)
+if(OVE_RUST_SPI_TEST)
+    if(NOT OVE_ARM)
+        message(FATAL_ERROR "Rust SPI stack fixture requires the ARM port")
+    endif()
+    target_compile_definitions(ove_test_spi_freertos PRIVATE OVE_RUST_SPI_TEST=1)
+    target_sources(ove_test_spi_freertos PRIVATE ${OVE_ROOT}/src/ove_sync.c)
+    set(OVE_DIR "${OVE_ROOT}")
+    set(OVE_SPI ON)
+    set(OVE_SYNC ON)
+    include(${OVE_ROOT}/cmake/OveBindingsCommon.cmake)
+    _ove_binding_write_sizes_probe("${CMAKE_BINARY_DIR}/ove_storage_sizes.c"
+        "#include \"ove/ove.h\"\n#include \"ove/storage.h\"\n")
+    _ove_binding_build_sizes_probe(_rust_spi_sizes ove_test_spi_freertos
+        "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
+    _ove_binding_extract_sizes("${CMAKE_BINARY_DIR}/ove_storage_sizes.env"
+        _rust_spi_sizes "Extracting actual ARM fixture storage sizes")
+    add_custom_target(storage_sizes DEPENDS "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")
+    target_link_libraries(ove_test_spi_freertos PRIVATE "${OVE_RUST_SPI_LIBRARY}")
+endif()
 if(OVE_ARM)
     target_compile_definitions(ove_test_spi_freertos PRIVATE OVE_ARM=1)
     target_compile_options(ove_test_spi_freertos PRIVATE -Os -ffunction-sections -fdata-sections)

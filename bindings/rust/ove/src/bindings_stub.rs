@@ -4279,6 +4279,18 @@ unsafe extern "C" {
     #[doc = "Prepare async completion dispatch from thread context, without publishing\n an operation. Optional for C callers (submission prepares automatically);\n ownership bindings may call this before constructing an owner. Requires\n CONFIG_OVE_ASYNC. Returns OVE_OK or a negative setup error."]
     pub fn ove_spi_async_prepare() -> core::ffi::c_int;
 }
+unsafe extern "C" {
+    #[doc = " Validate an owned binding's nonempty byte count before staging allocation.\n Internal binding support. Requires a live, configured handle and external\n lifetime/configuration coordination. Checks whole frames and the existing\n provider limit without admitting work, touching CS or retaining pointers."]
+    pub fn ove_spi_binding_check_length(spi: ove_spi_t, len: usize) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " Allocate stable SPI binding backing with the requested power-of-two alignment.\n Internal binding support using the configured native allocator. Returns NULL\n on invalid/overflowing layout or allocation failure. Size must be nonzero;\n the complete padded allocation must fit PTRDIFF_MAX. Padding includes one\n saved allocation pointer and up to alignment-1 bytes. No Rust allocator or\n global pool is involved. Free only with ove_spi_binding_free()."]
+    pub fn ove_spi_binding_alloc(size: usize, alignment: usize) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " Release only a live allocation returned by ove_spi_binding_alloc(), or NULL.\n The caller must retire all users before freeing; this function does not\n provide operation ownership, cancellation or reference counting."]
+    pub fn ove_spi_binding_free(pointer: *mut core::ffi::c_void);
+}
 #[doc = "< 100 kHz."]
 pub const OVE_I2C_SPEED_STANDARD: ove_i2c_speed_t = 0;
 #[doc = "< 400 kHz."]

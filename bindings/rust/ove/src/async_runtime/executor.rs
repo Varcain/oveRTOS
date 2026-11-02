@@ -24,9 +24,9 @@
 //! exactly once per process. Multi-executor priority levels are Phase 3
 //! work (per-thread-id pender dispatch).
 
-#[cfg(zero_heap)]
+#[cfg(any(zero_heap, not(feature = "alloc")))]
 use ::core::cell::UnsafeCell;
-#[cfg(zero_heap)]
+#[cfg(any(zero_heap, not(feature = "alloc")))]
 use ::core::mem::MaybeUninit;
 use ::core::sync::atomic::{AtomicBool, Ordering};
 
@@ -62,16 +62,16 @@ impl Executor {
     /// May only be called once per process; subsequent calls return
     /// [`Error::Inval`].
     ///
-    /// In heap mode the executor lives in a leaked [`Box`]; in
-    /// zero-heap mode it lives in a function-scope `static mut`
-    /// [`MaybeUninit`] slot. Either way the returned reference has
-    /// `'static` lifetime.
+    /// With the `alloc` feature in heap mode, the executor lives in a
+    /// leaked `Box`. Otherwise it uses a function-scope static slot,
+    /// so enabling async does not itself require a Rust global allocator.
+    /// Either way the returned reference has `'static` lifetime.
     pub fn take() -> Result<&'static mut Self> {
         if EXECUTOR_TAKEN.swap(true, Ordering::AcqRel) {
             return Err(Error::Inval);
         }
 
-        #[cfg(not(zero_heap))]
+        #[cfg(all(not(zero_heap), feature = "alloc"))]
         {
             extern crate alloc;
             let boxed = alloc::boxed::Box::new(Self {
@@ -81,7 +81,7 @@ impl Executor {
             });
             Ok(alloc::boxed::Box::leak(boxed))
         }
-        #[cfg(zero_heap)]
+        #[cfg(any(zero_heap, not(feature = "alloc")))]
         {
             // Function-scope static — initialised exactly once because
             // EXECUTOR_TAKEN swaps to true above. Wrapped in an

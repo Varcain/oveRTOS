@@ -29,6 +29,28 @@ static TickType_t notification_tick[5];
 static atomic_uint retry_visit;
 static unsigned notification_visit[5];
 static int failures;
+#ifdef OVE_RUST_SPI_TEST
+static atomic_uint rust_done;
+static size_t rust_initial_heap;
+extern void rust_spi_run(void);
+void rust_spi_ready(void)
+{
+	rust_initial_heap = xPortGetFreeHeapSize();
+}
+void rust_spi_finished(void)
+{
+	atomic_store(&rust_done, 1);
+}
+void rust_spi_panic(void)
+{
+	semihosting_exit(2);
+}
+static void rust_executor(void *argument)
+{
+	(void)argument;
+	rust_spi_run();
+}
+#endif
 static _Alignas(2) uint8_t tx[4] = {1, 2, 3, 4}, rx[5][4];
 
 ove_irq_key_t ove_irq_lock(void)
@@ -237,6 +259,20 @@ static void run_test(void *argument)
 	       atomic_load(&retry_visit), (unsigned long)initial_heap,
 	       (unsigned long)xPortGetFreeHeapSize());
 #ifdef OVE_ARM
+#ifdef OVE_RUST_SPI_TEST
+	check(xTaskCreate(rust_executor, "rust-spi", 2048, NULL, 4, NULL) == pdPASS,
+	      "Rust executor task starts");
+	TickType_t rust_deadline = xTaskGetTickCount() + 200;
+	while (!atomic_load(&rust_done) && xTaskGetTickCount() < rust_deadline)
+		vTaskDelay(1);
+	check(atomic_load(&rust_done), "normal Embassy task finishes owned transfers");
+	vTaskDelay(10);
+	check(xPortGetFreeHeapSize() == rust_initial_heap,
+	      "Rust owner/staging and canceled-operation native heap reclaimed");
+	printf("ARM Rust SPI: done=%u retained_runtime_heap=%lu current_heap=%lu\n",
+	       atomic_load(&rust_done), (unsigned long)rust_initial_heap,
+	       (unsigned long)xPortGetFreeHeapSize());
+#endif
 	unsigned long remaining = uxTaskGetStackHighWaterMark(xTimerGetTimerDaemonTaskHandle());
 	printf("ARM timer daemon: reserved=%lu bytes remaining=%lu bytes\n",
 	       (unsigned long)configTIMER_TASK_STACK_DEPTH * sizeof(StackType_t),

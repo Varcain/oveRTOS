@@ -1,0 +1,19 @@
+[package]
+name = "ove-async-spi-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace]
+
+[dependencies]
+ove = { path = "../../bindings/rust/ove", default-features = false, features = ["std", "async", "embedded-hal-async"] }
+embedded-hal-async = "1.0"
+
+[[test]]
+name = "spi"
+path = "spi.rs"
+
+[[bin]]
+name = "retention"
+path = "retention.rs"
