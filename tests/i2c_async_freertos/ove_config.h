@@ -6,4 +6,8 @@
 #define CONFIG_OVE_SYNC 1
 #define CONFIG_OVE_I2C 1
 #define CONFIG_OVE_ASYNC 1
+#ifdef OVE_RUST_I2C_TEST
+#define CONFIG_OVE_TIME 1
+#define CONFIG_OVE_TIMER 1
+#endif
 #endif

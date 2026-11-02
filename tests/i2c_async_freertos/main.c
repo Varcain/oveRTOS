@@ -18,6 +18,37 @@ static int model_mode, fail_create = 1, fail_start = 1;
 static unsigned service_creates;
 static int in_tick, hal_depth, failures, expected_result, fail_receive, fail_transmit, inject_nack;
 static uint8_t tx[3] = {1, 2, 3}, rx[7];
+#ifdef OVE_RUST_I2C_TEST
+static atomic_uint rust_done;
+static int rust_mode;
+static size_t rust_initial_heap;
+extern void rust_i2c_run(void);
+void rust_i2c_ready(void)
+{
+	rust_initial_heap = xPortGetFreeHeapSize();
+}
+void rust_i2c_finished(void)
+{
+	atomic_store(&rust_done, 1);
+}
+void rust_i2c_panic(void)
+{
+	semihosting_exit(2);
+}
+static void rust_executor(void *argument)
+{
+	(void)argument;
+	rust_i2c_run();
+}
+static void rust_activate(I2C_HandleTypeDef *handle)
+{
+	if (rust_mode) {
+		for (unsigned i = 0; i < 4; ++i)
+			if (handle->Instance == &peripherals[i])
+				atomic_store(&active[i], handle);
+	}
+}
+#endif
 void I2C1_EV_IRQHandler(void);
 void I2C2_EV_IRQHandler(void);
 void I2C3_EV_IRQHandler(void);
@@ -67,6 +98,10 @@ HAL_StatusTypeDef __wrap_HAL_I2C_Init(I2C_HandleTypeDef *h)
 HAL_StatusTypeDef __wrap_HAL_I2C_DeInit(I2C_HandleTypeDef *h)
 {
 	(void)h;
+#ifdef OVE_RUST_I2C_TEST
+	if (rust_mode)
+		assert(!in_tick && hal_depth == 0);
+#endif
 	atomic_fetch_add(&closes, 1);
 	return HAL_OK;
 }
@@ -224,7 +259,13 @@ HAL_StatusTypeDef __wrap_HAL_I2C_Master_Seq_Receive_IT(I2C_HandleTypeDef *h, uin
 		fail_receive = 0;
 		return HAL_BUSY;
 	}
-	return __real_HAL_I2C_Master_Seq_Receive_IT(h, addr, data, size, options);
+	HAL_StatusTypeDef result =
+		__real_HAL_I2C_Master_Seq_Receive_IT(h, addr, data, size, options);
+#ifdef OVE_RUST_I2C_TEST
+	if (result == HAL_OK)
+		rust_activate(h);
+#endif
+	return result;
 }
 HAL_StatusTypeDef __real_HAL_I2C_Master_Seq_Transmit_IT(I2C_HandleTypeDef *, uint16_t, uint8_t *,
 							uint16_t, uint32_t);
@@ -236,8 +277,36 @@ HAL_StatusTypeDef __wrap_HAL_I2C_Master_Seq_Transmit_IT(I2C_HandleTypeDef *h, ui
 		fail_transmit = 0;
 		return HAL_BUSY;
 	}
-	return __real_HAL_I2C_Master_Seq_Transmit_IT(h, addr, data, size, options);
+	HAL_StatusTypeDef result =
+		__real_HAL_I2C_Master_Seq_Transmit_IT(h, addr, data, size, options);
+#ifdef OVE_RUST_I2C_TEST
+	if (result == HAL_OK)
+		rust_activate(h);
+#endif
+	return result;
 }
+#ifdef OVE_RUST_I2C_TEST
+HAL_StatusTypeDef __real_HAL_I2C_Master_Transmit_IT(I2C_HandleTypeDef *, uint16_t, uint8_t *,
+						    uint16_t);
+HAL_StatusTypeDef __wrap_HAL_I2C_Master_Transmit_IT(I2C_HandleTypeDef *h, uint16_t address,
+						    uint8_t *data, uint16_t size)
+{
+	HAL_StatusTypeDef result = __real_HAL_I2C_Master_Transmit_IT(h, address, data, size);
+	if (result == HAL_OK)
+		rust_activate(h);
+	return result;
+}
+HAL_StatusTypeDef __real_HAL_I2C_Master_Receive_IT(I2C_HandleTypeDef *, uint16_t, uint8_t *,
+						   uint16_t);
+HAL_StatusTypeDef __wrap_HAL_I2C_Master_Receive_IT(I2C_HandleTypeDef *h, uint16_t address,
+						   uint8_t *data, uint16_t size)
+{
+	HAL_StatusTypeDef result = __real_HAL_I2C_Master_Receive_IT(h, address, data, size);
+	if (result == HAL_OK)
+		rust_activate(h);
+	return result;
+}
+#endif
 static void phase_failure_cases(void)
 {
 	for (unsigned kind = 0; kind < 3; ++kind) {
@@ -392,6 +461,27 @@ static void run_test(void *argument)
 	queue_case();
 	vTaskDelay(5);
 	list_service_case();
+#endif
+#ifdef OVE_RUST_I2C_TEST
+	unsigned rust_closes = atomic_load(&closes);
+	rust_mode = 1;
+	require(xTaskCreate(rust_executor, "rust-i2c", 2048, NULL, 4, NULL) == pdPASS,
+		"Rust executor task starts");
+	TickType_t rust_deadline = xTaskGetTickCount() + 3000;
+	while ((!atomic_load(&rust_done) || atomic_load(&closes) < rust_closes + 7) &&
+	       xTaskGetTickCount() < rust_deadline)
+		vTaskDelay(1);
+	printf("Rust I2C progress: done=%u closes=%u expected=%u active=%u%u%u%u\n",
+	       atomic_load(&rust_done), atomic_load(&closes), rust_closes + 7,
+	       !!atomic_load(&active[0]), !!atomic_load(&active[1]), !!atomic_load(&active[2]),
+	       !!atomic_load(&active[3]));
+	require(atomic_load(&rust_done) && atomic_load(&closes) == rust_closes + 7,
+		"ordinary Rust await and pending owner drops retire all controllers");
+	check(xPortGetFreeHeapSize() == rust_initial_heap,
+	      "Rust headers and independent staging return actual native heap");
+	printf("Rust I2C Embassy: heap %lu -> %lu, supervisor stack %u bytes free\n",
+	       (unsigned long)rust_initial_heap, (unsigned long)xPortGetFreeHeapSize(),
+	       (unsigned)uxTaskGetStackHighWaterMark(NULL) * (unsigned)sizeof(StackType_t));
 #endif
 	printf("Real STM32 HAL I2C retirement: %d failed assertion(s), daemon stack %u bytes free\n",
 	       failures,

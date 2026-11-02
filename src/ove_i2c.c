@@ -296,6 +296,43 @@ int ove_i2c_async_prepare(void)
 	return ove_hal_i2c_async_prepare();
 }
 
+int ove_i2c_binding_check_lengths(ove_i2c_t i2c, uint16_t addr, size_t tx_len, size_t rx_len)
+{
+	if (tx_len == 0 && rx_len == 0)
+		return OVE_ERR_INVALID_PARAM;
+	return i2c_validate_transfer(i2c, addr, tx_len, rx_len, 1);
+}
+
+#ifdef OVE_HEAP_I2C
+void *ove_i2c_binding_alloc(size_t size, size_t alignment)
+{
+	if (!size || !alignment || (alignment & (alignment - 1)))
+		return NULL;
+	if (alignment - 1 > (size_t)PTRDIFF_MAX - sizeof(void *))
+		return NULL;
+	size_t padding = sizeof(void *) + alignment - 1;
+	if (size > (size_t)PTRDIFF_MAX - padding)
+		return NULL;
+	void *allocation = OVE_BACKEND_MALLOC(size + padding);
+	if (!allocation)
+		return NULL;
+	uintptr_t address = (uintptr_t)allocation + sizeof(void *);
+	address = (address + alignment - 1) & ~(uintptr_t)(alignment - 1);
+	void *pointer = (void *)address;
+	memcpy((uint8_t *)pointer - sizeof(allocation), &allocation, sizeof(allocation));
+	return pointer;
+}
+
+void ove_i2c_binding_free(void *pointer)
+{
+	if (pointer) {
+		void *allocation;
+		memcpy(&allocation, (uint8_t *)pointer - sizeof(allocation), sizeof(allocation));
+		OVE_BACKEND_FREE(allocation);
+	}
+}
+#endif
+
 static void i2c_clear_pending(ove_i2c_t i2c)
 {
 	i2c->pending_cb = NULL;

@@ -931,6 +931,53 @@ def test_rust_async_spi(ove_dir, output_dir):
         result.failed += int(types != 0)
     return result
 
+def test_rust_async_i2c(ove_dir, output_dir):
+    """Exercise owned Rust I2C staging, lifetime and public type contracts."""
+    result = TestResults(suite="rust-async-i2c")
+    for zero_heap in (False, True):
+        suffix = "-zero" if zero_heap else ""
+        native = os.path.join(output_dir, "tests", "rust_async_i2c_c" + suffix)
+        _cmake_build(os.path.join(ove_dir, "tests", "rust_async_i2c"), native,
+                     extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero_heap else "OFF")])
+        env = dict(os.environ)
+        env.pop("DOCS_RS", None)
+        env.update({
+            "OVE_DIR": ove_dir,
+            "OVE_GEN_DIR": native,
+            "RUST_IS_NATIVE": "1",
+            "ASYNC_I2C_TEST_LIB_DIR": native,
+            "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
+            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
+            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
+            "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_async_i2c" + suffix),
+        })
+        check = _run_owned_test_process(
+            ["cargo", "test", "--manifest-path",
+             os.path.join(ove_dir, "tests", "rust_async_i2c", "Cargo.toml"),
+             "--test", "i2c", "--", "--test-threads=1"], env=env, timeout=300)
+        result.passed += int(check == 0)
+        result.failed += int(check != 0)
+        if check != 0:
+            continue
+        cases = ["static-forget", "static-no-completion"]
+        if not zero_heap:
+            cases += ["heap-forget", "heap-no-completion"]
+        for case in cases:
+            retained = _run_owned_test_process(
+                [os.path.join(env["CARGO_TARGET_DIR"], "debug", "retention"), case],
+                env=env, timeout=30)
+            result.passed += int(retained == 0)
+            result.failed += int(retained != 0)
+        types = _run_owned_test_process(
+            [sys.executable, os.path.join(ove_dir, "tests", "rust_async_i2c", "type_checks.py"),
+             os.path.join(output_dir, "tests", "rust_async_i2c_types" + suffix)],
+            env=env, timeout=180)
+        result.passed += int(types == 0)
+        result.failed += int(types != 0)
+    return result
+
+
 
 def test_rust_async_spi_arm(ove_dir, output_dir):
     """Run the no_std SPI/Embassy path on the real Cortex-M7 kernel port."""
@@ -989,6 +1036,71 @@ def test_rust_async_spi_arm(ove_dir, output_dir):
     result.passed += int(rc == 0)
     result.failed += int(rc != 0)
     return result
+
+def test_rust_async_i2c_arm(ove_dir, output_dir):
+    """Run the no_std I2C/Embassy path on the real Cortex-M7 kernel port."""
+    import hashlib
+    from .utils import hashed_dir
+    _ensure_stm32f746_renode_deps(ove_dir)
+    manifest = load_manifest(ove_dir)
+    sdk_revision = get_component(manifest, "rtos", "freertos", "stm32cubef7", "version")
+    sdk, _, _ = hashed_dir(os.path.join(ove_dir, "dl"), "STM32CubeF7", sdk_revision, None)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = os.path.join(ove_dir, "dl", "FreeRTOS-Kernel-" + digest)
+    if not os.path.isdir(kernel):
+        url = get_component(manifest, "rtos", "freertos", "kernel", "url")
+        run(["git", "clone", "--depth", "1", "--branch", revision, url, kernel])
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    build = os.path.join(output_dir, "tests", "rust_async_i2c_arm")
+    os.makedirs(build, exist_ok=True)
+    target = os.path.join(build, "rust")
+    library = os.path.join(target, "thumbv7em-none-eabihf", "release", "libove_async_i2c_arm_tests.a")
+    run(["cmake", "-S", os.path.join(ove_dir, "tests", "i2c_async_freertos"), "-B", build,
+         "-DOVE_RUST_I2C_TEST=ON", "-DOVE_RUST_I2C_LIBRARY=" + library,
+         "-DFREERTOS_PATH=" + kernel, "-DSTM32_CUBE_PATH=" + sdk, "-DOVE_TOOLCHAIN_DIR=" + toolchain,
+         "-DCMAKE_TOOLCHAIN_FILE=" + os.path.join(ove_dir, "boards", "qemu-mps2-an500",
+                                               "cmake", "arm-none-eabi.cmake")])
+    run(["cmake", "--build", build, "--target", "storage_sizes", "-j", str(os.cpu_count() or 1)])
+    generated = os.path.join(build, "generated")
+    os.makedirs(generated, exist_ok=True)
+    with open(os.path.join(ove_dir, "tests", "i2c_async_freertos", "ove_config.h")) as source:
+        config = "#define OVE_RUST_I2C_TEST 1\n" + source.read()
+    with open(os.path.join(generated, "ove_config.h"), "w") as destination:
+        destination.write(config)
+    env = dict(os.environ)
+    env.pop("DOCS_RS", None)
+    includes = [os.path.join(ove_dir, "tests", "i2c_async_freertos"),
+                os.path.join(kernel, "include"), os.path.join(kernel, "portable", "GCC", "ARM_CM7", "r0p1"),
+                os.path.join(sdk, "Drivers", "STM32F7xx_HAL_Driver", "Inc"),
+                os.path.join(sdk, "Drivers", "CMSIS", "Device", "ST", "STM32F7xx", "Include"),
+                os.path.join(sdk, "Drivers", "CMSIS", "Include")]
+    env.update({
+        "OVE_DIR": ove_dir, "OVE_GEN_DIR": generated,
+        "OVE_STORAGE_SIZES": os.path.join(build, "ove_storage_sizes.env"),
+        "CARGO_TARGET_DIR": target, "RUSTFLAGS": "-Ctarget-cpu=cortex-m7", "RUST_IS_NATIVE": "0",
+        "ARM_SYSROOT_INCLUDE": os.path.join(toolchain, "arm-none-eabi", "include"),
+        "BINDGEN_EXTRA_CLANG_ARGS": "-DSTM32F746xx=1 " + " ".join("-I" + path for path in includes),
+        "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
+        "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+        "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
+    })
+    result = TestResults(suite="rust-async-i2c-arm")
+    rc = _run_owned_test_process(
+        ["cargo", "build", "--release", "--target", "thumbv7em-none-eabihf", "--manifest-path",
+         os.path.join(ove_dir, "tests", "rust_async_i2c", "arm", "Cargo.toml")], env=env, timeout=300)
+    if rc == 0:
+        rc = _run_owned_test_process(["cmake", "--build", build, "-j", str(os.cpu_count() or 1)],
+                                     env=env, timeout=180)
+    if rc == 0:
+        rc = _run_owned_test_process(
+            ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
+             "-nographic", "-semihosting", "-kernel", os.path.join(build, "ove_test_i2c_stm32")],
+            env=env, timeout=30)
+    result.passed += int(rc == 0)
+    result.failed += int(rc != 0)
+    return result
+
 
 
 def test_i2c_retirement_freertos(ove_dir, output_dir):
@@ -3379,6 +3491,8 @@ TEST_TARGETS = {
     "rust-spi": test_rust_spi,
     "rust-i2c": test_rust_i2c,
     "rust-async-spi": test_rust_async_spi,
+    "rust-async-i2c": test_rust_async_i2c,
+    "rust-async-i2c-arm": test_rust_async_i2c_arm,
     "rust-async-spi-arm": test_rust_async_spi_arm,
     "i2c-retirement-freertos": test_i2c_retirement_freertos,
     "i2c-retirement-zephyr": test_i2c_retirement_zephyr,

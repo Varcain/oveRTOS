@@ -1,114 +1,178 @@
 // Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
-//
 // SPDX-License-Identifier: GPL-3.0-or-later
-//
-// This file is part of oveRTOS.
 
-//! Async I2C bus wrapper with an `embedded_hal_async::i2c::I2c<SevenBitAddress>`
-//! implementation when `embedded-hal-async` is enabled. Native seven-bit address
-//! and independent TX/RX byte-count limits apply; requests are not split to
-//! bypass provider limits. Submission has no timeout or automatic watchdog.
-//! Native callbacks run in task context after provider retirement. This legacy
-//! wrapper still requires stable owner/slot and application buffers through the
-//! callback; cancellation/forget and shared per-future completion ownership are
-//! not yet enforced by this wrapper.
+//! Owned asynchronous I2C with stable independent TX/RX staging.
+//!
+//! Ordinary Config and native-heap or claimed static constructors need no
+//! application FFI, Rust allocator or manual pinning. Moving an owner leaves
+//! its native controller, callback context and staging in place. Exclusive
+//! operations borrow application slices only for live-future copy-in/copyback;
+//! native code retains only internal memory. Drop or forget does not cancel I/O.
+//!
+//! Static capacities count bytes separately for TX and RX; exceeding either
+//! returns NoSpace before work. Heap staging grows fallibly and retains each
+//! phase's high-water capacity. Complete independent counts are preserved:
+//! empty TX selects plain read, empty RX pure write, both empty InvalidParam.
+//! No filler, chunking, timeout or automatic watchdog is introduced.
+//!
+//! A dropped/forgotten operation leaves at most one native operation to settle.
+//! New work returns BusBusy while it is active. A new operation may replace an
+//! already-Ready orphan; flush instead consumes its actual result without RX
+//! copyback. Errors and released futures leave application RX unchanged. Owner
+//! Drop defers deinit/reclamation until all callback/wake/submission tails retire.
+//! Missing completion or a forgotten owner retains its bounded context/capacity
+//! or static claim. Callbacks remain nonblocking task-context notifications.
+//!
+//! The embedded-hal-async seven-bit trait accepts an empty list as a no-op,
+//! one nonempty write/read, or one nonempty write followed by one nonempty
+//! read. Other complete lists return NotSupported before any transfer. An
+//! empty single phase or a nonempty write with empty read returns InvalidParam; an empty
+//! write prefix before a read returns NotSupported. Trait write_read uses
+//! this same policy. Inherent write_read with empty TX remains a plain read.
+//!
+//! ```no_run
+//! # async fn example() -> ove::Result<()> {
+//! static BUS: ove::AsyncI2cStorage<3, 7> = ove::AsyncI2cStorage::new();
+//! let mut bus = BUS.init(ove::i2c::Config::default())?;
+//! let mut rx = [0; 7];
+//! bus.write_read(0x42, &[1, 2, 3], &mut rx).await?;
+//! bus.flush().await?;
+//! # Ok(()) }
+//! ```
+//!
+//! Physical-bus coordination with separate handles remains the caller's task.
+//! Provider limits still apply (STM32 permits 65535 bytes per phase). NuttX debug
+//! zero-heap preparation returns NotSupported; release zero-heap uses its
+//! existing native worker reserve even with static Rust staging. Native worker
+//! resource reclamation can outlast the final notification.
 
-use ::core::cell::UnsafeCell;
-use ::core::ffi::c_void;
-use ::core::future::poll_fn;
-use ::core::task::Poll;
+mod state;
+mod transfer;
+
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::bindings;
 use crate::error::{Error, Result};
+use crate::i2c::Config;
+use state::{Header, Staging};
+pub use transfer::{Flush, Transfer};
 
-use super::dma_slot::DmaSlot;
-
-unsafe extern "C" fn dma_complete_cb(result: ::core::ffi::c_int, user_data: *mut c_void) {
-    // The native callback requires this owner-held slot to stay at a stable
-    // address through callback return; cancellation currently does not enforce it.
-    let slot = unsafe { &*(user_data as *const DmaSlot) };
-    slot.result_store(result as i32);
-    slot.wake();
+/// Stable claimed storage with independent byte capacities per I2C phase.
+/// RX defaults to TX for equal-sized staging. Either capacity may be zero.
+/// Declare in a static; a live/forgotten owner or pending native tail retains
+/// the claim. Initialization touches only the fixed header/native controller,
+/// without constructing payload-sized runtime stack temporaries.
+pub struct AsyncI2cStorage<const TX: usize, const RX: usize = TX> {
+    header: UnsafeCell<MaybeUninit<Header>>,
+    tx: UnsafeCell<[MaybeUninit<u8>; TX]>,
+    rx: UnsafeCell<[MaybeUninit<u8>; RX]>,
+    claimed: AtomicBool,
 }
 
-/// Async I2C bus master.
-pub struct AsyncI2c {
-    i2c: bindings::ove_i2c_t,
-    slot: UnsafeCell<DmaSlot>,
-}
+// SAFETY: the atomic claimant alone initializes backing. Internal native and
+// callback lifetimes independently retain it; the final release completes
+// native deinit and every backing access before reopening the static claim.
+unsafe impl<const TX: usize, const RX: usize> Sync for AsyncI2cStorage<TX, RX> {}
 
-// `AsyncI2c` wraps a native handle with serialized async admission. This legacy shared
-// DmaSlot does not yet enforce distinct future result or backing ownership.
-unsafe impl Send for AsyncI2c {}
-unsafe impl Sync for AsyncI2c {}
-
-impl AsyncI2c {
-    /// Wrap an existing `ove_i2c_t` handle for async use.
-    ///
-    /// # Safety
-    /// `handle` must be a valid I2C handle. Don't use the same handle
-    /// through a sync [`crate::i2c::I2c`] wrapper while async
-    /// transactions are in flight.
-    #[inline]
-    pub const unsafe fn from_handle(handle: bindings::ove_i2c_t) -> Self {
+impl<const TX: usize, const RX: usize> AsyncI2cStorage<TX, RX> {
+    /// Reserve static backing without a runtime allocation.
+    pub const fn new() -> Self {
         Self {
-            i2c: handle,
-            slot: UnsafeCell::new(DmaSlot::new()),
+            header: UnsafeCell::new(MaybeUninit::uninit()),
+            tx: UnsafeCell::new([MaybeUninit::uninit(); TX]),
+            rx: UnsafeCell::new([MaybeUninit::uninit(); RX]),
+            claimed: AtomicBool::new(false),
         }
     }
 
-    /// Async write-then-read with repeated start.
-    pub async fn write_read(&self, addr: u16, tx: &[u8], rx: &mut [u8]) -> Result<()> {
-        let tx_ptr = if tx.is_empty() {
-            ::core::ptr::null()
-        } else {
-            tx.as_ptr().cast()
+    /// Claim/configure one ordinary owner in either allocation mode.
+    pub fn init(&'static self, config: Config) -> Result<AsyncI2c> {
+        Error::from_code(unsafe { bindings::ove_i2c_async_prepare() })?;
+        self.claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| Error::Busy)?;
+        let header = unsafe { NonNull::new_unchecked(self.header.get().cast::<Header>()) };
+        let staging = Staging {
+            tx: self.tx.get().cast(),
+            rx: self.rx.get().cast(),
+            tx_capacity: TX,
+            rx_capacity: RX,
+            allocation: core::ptr::null_mut(),
         };
-        let rx_ptr = if rx.is_empty() {
-            ::core::ptr::null_mut()
-        } else {
-            rx.as_mut_ptr().cast()
-        };
+        // SAFETY: the successful static claim excludes all former owners and
+        // tails. Native storage and the fixed header are initialized in place.
+        unsafe { state::initialize(header, &self.claimed, staging, config) }?;
+        Ok(AsyncI2c { header })
+    }
+}
 
-        let slot: &DmaSlot = unsafe { &*self.slot.get() };
-        slot.reset();
+impl<const TX: usize, const RX: usize> Default for AsyncI2cStorage<TX, RX> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-        let rc = unsafe {
-            bindings::ove_i2c_write_read_async(
-                self.i2c,
-                addr,
-                tx_ptr,
-                tx.len(),
-                rx_ptr,
-                rx.len(),
-                Some(dma_complete_cb),
-                slot as *const _ as *mut c_void,
-            )
-        };
-        Error::from_code(rc)?;
+/// Movable exclusive owner over stable internal backing; not Copy/Clone/Send/Sync.
+/// Native descriptor portability across tasks/groups is not assumed.
+pub struct AsyncI2c {
+    header: NonNull<Header>,
+}
 
-        poll_fn(|cx| {
-            slot.register(cx.waker());
-            let r = slot.result_load();
-            if r == DmaSlot::PENDING {
-                Poll::Pending
-            } else {
-                Poll::Ready(Error::from_code(r))
-            }
-        })
-        .await
+impl core::fmt::Debug for AsyncI2c {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.debug_struct("AsyncI2c").finish_non_exhaustive()
+    }
+}
+
+impl AsyncI2c {
+    /// Allocate native backing without a Rust allocator.
+    #[cfg(not(zero_heap))]
+    pub fn new(config: Config) -> Result<Self> {
+        Error::from_code(unsafe { bindings::ove_i2c_async_prepare() })?;
+        let pointer =
+            unsafe { bindings::ove_i2c_binding_alloc(size_of::<Header>(), align_of::<Header>()) };
+        let header = NonNull::new(pointer.cast::<Header>()).ok_or(Error::NoMemory)?;
+        // SAFETY: the checked native allocation stays stable through partial
+        // init cleanup or final owner/callback/submission lifetime retirement.
+        unsafe { state::initialize(header, core::ptr::null(), Staging::EMPTY, config) }?;
+        Ok(Self { header })
     }
 
-    /// Async write-only transaction.
-    pub async fn write(&self, addr: u16, data: &[u8]) -> Result<()> {
-        let mut empty = [];
-        self.write_read(addr, data, &mut empty).await
+    /// One combined transaction with independent phase lengths and owned staging.
+    /// Empty TX is plain read, empty RX pure write, both empty InvalidParam.
+    pub fn write_read<'a>(
+        &'a mut self,
+        address: u16,
+        tx: &'a [u8],
+        rx: &'a mut [u8],
+    ) -> Transfer<'a> {
+        Transfer::duplex(self, address, tx, rx)
     }
 
-    /// Async read-only transaction.
-    pub async fn read(&self, addr: u16, buf: &mut [u8]) -> Result<()> {
-        let empty: &[u8] = &[];
-        self.write_read(addr, empty, buf).await
+    /// Send a nonempty byte slice in one native transaction.
+    pub fn write<'a>(&'a mut self, address: u16, tx: &'a [u8]) -> Transfer<'a> {
+        Transfer::write(self, address, tx)
+    }
+
+    /// Receive into a nonempty byte slice in one native transaction.
+    pub fn read<'a>(&'a mut self, address: u16, rx: &'a mut [u8]) -> Transfer<'a> {
+        Transfer::read(self, address, rx)
+    }
+
+    /// Await/consume an orphan's actual result, without application RX copyback.
+    pub fn flush(&mut self) -> Flush<'_> {
+        Flush::new(self)
+    }
+}
+
+impl Drop for AsyncI2c {
+    fn drop(&mut self) {
+        // SAFETY: this is the sole public owner. Independent native/callback
+        // and synchronous-call leases protect every remaining backing access.
+        unsafe { state::close(self.header) };
     }
 }
 
@@ -122,36 +186,42 @@ mod hal_async_impl {
     impl ErrorType for AsyncI2c {
         type Error = Error;
     }
-
     impl I2c<SevenBitAddress> for AsyncI2c {
         async fn transaction(
             &mut self,
-            address: SevenBitAddress,
+            address: u8,
             operations: &mut [Operation<'_>],
-        ) -> Result<(), Self::Error> {
-            // Coalesce adjacent Write+Read pairs into a single
-            // ove_i2c_write_read_async call; otherwise issue per
-            // operation. This matches the embedded-hal-async semantics
-            // (each op is a logical transfer; repeated start between).
-            let mut i = 0;
-            while i < operations.len() {
-                match &mut operations[i..] {
-                    [Operation::Write(w), Operation::Read(r), ..] => {
-                        AsyncI2c::write_read(self, address as u16, w, r).await?;
-                        i += 2;
-                    }
-                    [Operation::Write(w), ..] => {
-                        AsyncI2c::write(self, address as u16, w).await?;
-                        i += 1;
-                    }
-                    [Operation::Read(r), ..] => {
-                        AsyncI2c::read(self, address as u16, r).await?;
-                        i += 1;
-                    }
-                    [] => break,
-                }
+        ) -> Result<(), Error> {
+            if address > 0x7f {
+                return Err(Error::InvalidParam);
             }
-            Ok(())
+            // Check the entire list before effects. Separate native calls
+            // would introduce STOPs forbidden by the trait transaction contract.
+            match operations {
+                [] => Ok(()),
+                [Operation::Write(write)] => {
+                    if write.is_empty() {
+                        return Err(Error::InvalidParam);
+                    }
+                    AsyncI2c::write(self, address.into(), write).await
+                }
+                [Operation::Read(read)] => {
+                    if read.is_empty() {
+                        return Err(Error::InvalidParam);
+                    }
+                    AsyncI2c::read(self, address.into(), read).await
+                }
+                [Operation::Write(write), Operation::Read(read)] => {
+                    if write.is_empty() {
+                        return Err(Error::NotSupported);
+                    }
+                    if read.is_empty() {
+                        return Err(Error::InvalidParam);
+                    }
+                    AsyncI2c::write_read(self, address.into(), write, read).await
+                }
+                _ => Err(Error::NotSupported),
+            }
         }
     }
 }
