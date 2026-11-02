@@ -8,6 +8,11 @@
 //!
 //! Provides a safe Rust wrapper around the `ove_model_*` C API for
 //! running TFLite model inference.
+//!
+//! Native construction returns Busy while any session owns the shared backend,
+//! including setup/cleanup/free tails. A forgotten session retains admission.
+//! Calls through a live handle require external serialization. This admission
+//! rule does not enforce the retained-byte/tensor preconditions of this wrapper.
 
 use crate::bindings;
 use crate::error::{Error, Result};

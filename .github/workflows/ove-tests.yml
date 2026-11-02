@@ -240,6 +240,9 @@ jobs:
       - name: Rust async I2C ownership and staging
         run: make test-rust-async-i2c
 
+      - name: Native inference session admission
+        run: timeout 1200 make test-infer-admission test-infer-admission-sanitize
+
       - name: Fetch LVGL (manifest-pinned) into dl/lvgl
         run: |
           LVGL_URL=$(python3 scripts/manifest_query.py libraries.lvgl.url)

@@ -25,6 +25,15 @@
  *    one-step static helper.
  *
  * @note Requires @c CONFIG_OVE_INFER.
+ *
+ * The backend admits one live session across all handles. Constructors return
+ * @c OVE_ERR_BUSY before allocation or writes when that session is occupied,
+ * including during setup, failure cleanup and final teardown/free. A lost or
+ * forgotten session retains admission indefinitely; there is no automatic
+ * recovery. Operations on the admitted handle require external serialization.
+ * Model bytes, caller storage and arena must remain valid through the final
+ * close call returning. Admission does not validate arbitrary model contents
+ * or establish that an arbitrary nonzero arena size is sufficient.
  * @{
  */
 
@@ -81,7 +90,7 @@ struct ove_tensor_info {
  *          lifetime of the model session. The caller MUST ensure the
  *          buffer remains valid and immutable from the successful
  *          @c ove_model_init() / @c ove_model_create() call until
- *          @c ove_model_deinit() / @c ove_model_destroy(). Passing a
+ *          @c ove_model_deinit() / @c ove_model_destroy() returning. Passing a
  *          stack-allocated or transient heap buffer will result in
  *          silent memory corruption during @c ove_model_invoke().
  */
@@ -105,7 +114,9 @@ struct ove_model_config {
  * @param[in]  arena    Caller-allocated tensor arena buffer.
  * @param[in]  cfg      Model configuration.
  * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,
- *         OVE_ERR_ML_FAILED if model parsing or tensor allocation fails.
+ *         OVE_ERR_ML_FAILED if model setup fails, OVE_ERR_BUSY while another
+ *         session owns the backend. Busy leaves the output handle, candidate
+ *         storage and arena unchanged and performs no allocation.
  *
  * @see ove_model_deinit, ove_model_create
  */
@@ -116,6 +127,9 @@ OVE_NODISCARD int ove_model_init(ove_model_t *model, ove_model_storage_t *storag
  * @brief Release resources held by a model initialised with ove_model_init().
  *
  * The static storage and arena buffer supplied at init time are not freed.
+ * Admission is released only after complete teardown. Calls on an admitted
+ * live handle must be serialized; old handles cannot be used after its storage
+ * is reinitialized for another session.
  *
  * @param[in] model  Handle returned by ove_model_init().
  *
@@ -135,7 +149,8 @@ void ove_model_deinit(ove_model_t model);
  * @param[out] model  Receives the opaque model handle on success.
  * @param[in]  cfg    Model configuration.
  * @return OVE_OK on success, OVE_ERR_NO_MEMORY if allocation fails,
- *         OVE_ERR_ML_FAILED if model parsing or tensor allocation fails.
+ *         OVE_ERR_ML_FAILED on setup error, OVE_ERR_BUSY while another session
+ *         owns the backend. Busy preserves the output and does not allocate.
  *
  * @see ove_model_destroy, ove_model_init
  */
@@ -143,6 +158,9 @@ OVE_NODISCARD int ove_model_create(ove_model_t *model, const struct ove_model_co
 
 /**
  * @brief Destroy and free a model allocated with ove_model_create().
+ *
+ * Admission remains held through final teardown and all owned frees. A model
+ * over caller-supplied storage is deinitialized without freeing that storage.
  *
  * @param[in] model  Handle returned by ove_model_create().
  *
