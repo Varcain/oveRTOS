@@ -146,6 +146,15 @@ static void clear_stale_error(I2C_HandleTypeDef *hi2c)
 		hi2c->ErrorCode = HAL_I2C_ERROR_NONE;
 }
 
+int ove_hal_i2c_validate_transfer(ove_i2c_t i2c, size_t tx_len, size_t rx_len, int asynchronous)
+{
+	(void)i2c;
+	(void)asynchronous;
+	if (tx_len > UINT16_MAX || rx_len > UINT16_MAX)
+		return OVE_ERR_INVALID_PARAM;
+	return OVE_OK;
+}
+
 int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg)
 {
 	I2C_TypeDef *periph = instance_to_periph(cfg->instance);
@@ -315,6 +324,12 @@ static int i2c_write_then_read(struct ove_i2c *i2c, uint16_t addr, const void *t
 int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
 		      uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, len, 0, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	int rc = sync_claim(i2c);
 	if (rc != OVE_OK)
 		return rc;
@@ -327,6 +342,12 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len
 
 int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, 0, len, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	int rc = sync_claim(i2c);
 	if (rc != OVE_OK)
 		return rc;
@@ -340,6 +361,12 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
 			   size_t rx_len, uint64_t timeout_ns)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, 0);
+	if (validation != OVE_OK)
+		return validation;
+
 	if (tx_len == 0)
 		return ove_hal_i2c_read(i2c, addr, rx, rx_len, timeout_ns);
 	if (tx_len > 2)
@@ -433,6 +460,12 @@ static struct ove_i2c *handle_owner(I2C_HandleTypeDef *hi2c)
 int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
 				 void *rx, size_t rx_len)
 {
+	if (addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	int validation = ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, 1);
+	if (validation != OVE_OK)
+		return validation;
+
 	I2C_HandleTypeDef *h = &i2c->hal_handle;
 	HAL_StatusTypeDef ret;
 

@@ -4336,7 +4336,7 @@ unsafe extern "C" {
     pub fn ove_i2c_destroy(i2c: ove_i2c_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Write data to an I2C device.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] data       Data to write.\n @param[in] len        Number of bytes to write.\n @param[in] timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Write data to an I2C device.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] data       Data to write.\n @param[in] len        Number of bytes to write.\n @param[in] timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2c_write(
         i2c: ove_i2c_t,
         addr: u16,
@@ -4346,7 +4346,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Read data from an I2C device.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[out] buf        Buffer to receive data.\n @param[in]  len        Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Read data from an I2C device.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[out] buf        Buffer to receive data.\n @param[in]  len        Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2c_read(
         i2c: ove_i2c_t,
         addr: u16,
@@ -4356,7 +4356,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Combined write-then-read with I2C repeated start.\n\n Writes @p tx_len bytes from @p tx, then reads @p rx_len bytes into\n @p rx without releasing the bus (repeated start condition).  This is\n the standard pattern for register reads on I2C sensors and codecs.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  tx         Transmit buffer (e.g. register address); may be\n                        @c NULL when @p tx_len is 0.\n @param[in]  tx_len     Number of bytes to write; 0 makes this a plain\n                        ove_i2c_read().\n @param[out] rx         Receive buffer.\n @param[in]  rx_len     Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Combined write-then-read with I2C repeated start.\n\n Writes @p tx_len bytes from @p tx, then reads @p rx_len bytes into\n @p rx without releasing the bus (repeated start condition).  This is\n the standard pattern for register reads on I2C sensors and codecs.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  tx         Transmit buffer (e.g. register address); may be\n                        @c NULL when @p tx_len is 0.\n @param[in]  tx_len     Number of bytes to write; 0 makes this a plain\n                        ove_i2c_read().\n @param[out] rx         Receive buffer.\n @param[in]  rx_len     Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2c_write_read(
         i2c: ove_i2c_t,
         addr: u16,
@@ -4368,7 +4368,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Write to a single-byte-addressed register.\n\n Prepends @p reg to @p data and performs a single I2C write.\n Implemented in the portable layer — not a HAL function.\n\n @note @p len must not exceed @c OVE_I2C_REG_WRITE_MAX (32 bytes).\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] reg        Register address byte.\n @param[in] data       Data to write after the register byte.\n @param[in] len        Number of data bytes (max OVE_I2C_REG_WRITE_MAX).\n @param[in] timeout_ns Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Write to a single-byte-addressed register.\n\n Prepends @p reg to @p data and performs a single I2C write.\n Implemented in the portable layer — not a HAL function.\n\n @note @p len must not exceed @c OVE_I2C_REG_WRITE_MAX (32 bytes).\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] reg        Register address byte.\n @param[in] data       Data to write after the register byte.\n @param[in] len        Number of data bytes (max OVE_I2C_REG_WRITE_MAX).\n @param[in] timeout_ns Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2c_reg_write(
         i2c: ove_i2c_t,
         addr: u16,
@@ -4379,7 +4379,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Read from a single-byte-addressed register.\n\n Writes @p reg, then reads @p len bytes via repeated start.\n Implemented in the portable layer — not a HAL function.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  reg        Register address byte.\n @param[out] buf        Buffer to receive register data.\n @param[in]  len        Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Read from a single-byte-addressed register.\n\n Writes @p reg, then reads @p len bytes via repeated start.\n Implemented in the portable layer — not a HAL function.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  reg        Register address byte.\n @param[out] buf        Buffer to receive register data.\n @param[in]  len        Number of bytes to read.\n @param[in]  timeout_ns Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2c_reg_read(
         i2c: ove_i2c_t,
         addr: u16,
@@ -4390,11 +4390,11 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Probe for a device at the given address.\n\n Sends a zero-length write and checks for ACK.  Useful for device\n enumeration and presence detection.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address to probe.\n @param[in] timeout_ns Maximum wait time.\n @return OVE_OK if the device ACKs, OVE_ERR_BUS_NACK if not,\n         other negative error code on bus failure."]
+    #[doc = " @brief Probe for a device at the given address.\n\n Sends a zero-length write and checks for ACK.  Useful for device\n enumeration and presence detection.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address to probe.\n @param[in] timeout_ns Maximum wait time.\n @return OVE_OK if the device ACKs, OVE_ERR_BUS_NACK if not,\n         other negative error code on bus failure."]
     pub fn ove_i2c_probe(i2c: ove_i2c_t, addr: u16, timeout_ns: u64) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit an I2C write-then-read transaction asynchronously.\n\n Equivalent to @ref ove_i2c_write_read but returns immediately. The\n completion callback fires when the device has been written, the\n repeated-start completed, and the read finished — or when an error\n (NACK, bus error, timeout) terminates the transaction.\n\n Same backend completion-context contract as\n @ref ove_spi_transfer_async (ISR on STM32 + FreeRTOS DMA, thread on\n Zephyr signal / NuttX worker fallback).\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] tx         Bytes to write before the repeated start.\n                       Must outlive the transaction. May be NULL if\n                       @p tx_len is 0 (pure read).\n @param[in] tx_len     Number of bytes to write.\n @param[in] rx         Buffer for read bytes. Must outlive the\n                       transaction. May be NULL if @p rx_len is 0\n                       (pure write).\n @param[in] rx_len     Number of bytes to read.\n @param[in] cb         Completion callback. Must not be NULL.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK if accepted; negative on submission failure (no\n         callback in that case)."]
+    #[doc = " @brief Submit an I2C write-then-read transaction asynchronously.\n\n Equivalent to @ref ove_i2c_write_read but returns immediately. The\n completion callback fires when the device has been written, the\n repeated-start completed, and the read finished — or when an error\n (NACK, bus error, timeout) terminates the transaction.\n\n The callback currently runs in ISR context on STM32 FreeRTOS and worker\n context on Zephyr/NuttX. No timeout argument or automatic watchdog applies\n to async submission. A missing completion can remain pending indefinitely.\n Empty TX selects a plain read, empty RX a pure write; both empty is invalid.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] tx         Bytes to write before the repeated start.\n                       Must outlive the transaction. May be NULL if\n                       @p tx_len is 0 (pure read).\n @param[in] tx_len     Number of bytes to write.\n @param[in] rx         Buffer for read bytes. Must outlive the\n                       transaction. May be NULL if @p rx_len is 0\n                       (pure write).\n @param[in] rx_len     Number of bytes to read.\n @param[in] cb         Completion callback. Must not be NULL.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK if accepted; negative on submission failure (no\n         callback in that case)."]
     pub fn ove_i2c_write_read_async(
         i2c: ove_i2c_t,
         addr: u16,

@@ -32,6 +32,14 @@ static uint32_t speed_to_hz(ove_i2c_speed_t speed)
 	}
 }
 
+static int i2c_validate_transfer(ove_i2c_t i2c, uint16_t addr, size_t tx_len, size_t rx_len,
+				 int asynchronous)
+{
+	if (i2c == NULL || addr > 0x7f)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_hal_i2c_validate_transfer(i2c, tx_len, rx_len, asynchronous);
+}
+
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
 int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2c_cfg *cfg)
@@ -115,6 +123,10 @@ int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, ui
 	if (i2c == NULL || (data == NULL && len > 0))
 		return OVE_ERR_INVALID_PARAM;
 
+	ret = i2c_validate_transfer(i2c, addr, len, 0, 0);
+	if (ret != OVE_OK)
+		return ret;
+
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write(i2c, addr, data, len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
@@ -128,6 +140,10 @@ int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t t
 
 	if (i2c == NULL || buf == NULL || len == 0)
 		return OVE_ERR_INVALID_PARAM;
+
+	ret = i2c_validate_transfer(i2c, addr, 0, len, 0);
+	if (ret != OVE_OK)
+		return ret;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_read(i2c, addr, buf, len, timeout_ns);
@@ -143,6 +159,10 @@ int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_l
 
 	if (i2c == NULL || (tx == NULL && tx_len > 0) || rx == NULL || rx_len == 0)
 		return OVE_ERR_INVALID_PARAM;
+
+	ret = i2c_validate_transfer(i2c, addr, tx_len, rx_len, 0);
+	if (ret != OVE_OK)
+		return ret;
 
 	/* Nothing to write is a plain read on every engine, rather than a
 	 * zero-length write each backend treats its own way. */
@@ -169,6 +189,10 @@ int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, const void *dat
 	if (len > sizeof(buf) - 1)
 		return OVE_ERR_INVALID_PARAM;
 
+	ret = i2c_validate_transfer(i2c, addr, len + 1, 0, 0);
+	if (ret != OVE_OK)
+		return ret;
+
 	buf[0] = reg;
 	if (len > 0)
 		memcpy(&buf[1], data, len);
@@ -188,6 +212,10 @@ int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_
 	if (i2c == NULL || buf == NULL || len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
+	ret = i2c_validate_transfer(i2c, addr, 1, len, 0);
+	if (ret != OVE_OK)
+		return ret;
+
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write_read(i2c, addr, &reg, 1, buf, len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
@@ -203,6 +231,10 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns)
 
 	if (i2c == NULL)
 		return OVE_ERR_INVALID_PARAM;
+
+	ret = i2c_validate_transfer(i2c, addr, 0, 0, 0);
+	if (ret != OVE_OK)
+		return ret;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write(i2c, addr, NULL, 0, timeout_ns);
@@ -226,6 +258,10 @@ int ove_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_
 		return OVE_ERR_INVALID_PARAM;
 	if (tx_len == 0 && rx_len == 0)
 		return OVE_ERR_INVALID_PARAM;
+
+	ret = i2c_validate_transfer(i2c, addr, tx_len, rx_len, 1);
+	if (ret != OVE_OK)
+		return ret;
 
 	if (i2c->async_busy)
 		return OVE_ERR_BUS_BUSY;

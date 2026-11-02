@@ -25,7 +25,16 @@
  *   modes.  See @c OVE_I2C_DEFINE_STATIC for a one-step static helper.
  *
  * All addresses are 7-bit (e.g. 0x50 for a typical EEPROM).  The HAL
- * shifts left and adds the R/W bit internally.
+ * shifts left and adds the R/W bit internally. Addresses above 0x7f return
+ * OVE_ERR_INVALID_PARAM before locking, hardware or async publication.
+ *
+ * TX and RX keep independent byte counts. Every operation validates both
+ * counts before effects: STM32 FreeRTOS permits at most 65535 bytes per phase,
+ * Zephyr requires each count to fit uint32_t, and NuttX requires each to fit
+ * both ssize_t and the supported STM32F7 driver's int counter (INT_MAX).
+ * Requests are never split to bypass these limits, since splitting changes
+ * I2C STOP/repeated-start semantics. A register-write prefix counts as one
+ * extra TX byte. Zero-byte synchronous writes/probes remain supported.
  *
  * A failed transfer reports @c OVE_ERR_BUS_NACK when the device does not
  * acknowledge, @c OVE_ERR_TIMEOUT when it does not complete in time,
@@ -42,9 +51,9 @@
  * with more than two bytes to write with @c OVE_ERR_NOT_SUPPORTED: it runs
  * on interrupts, which FreeRTOS keeps masked until then.
  * Zephyr and NuttX ignore @c timeout_ns
- * and rely on their drivers' own timeouts.  On every engine the call first
- * waits, with no timeout, for the bus lock held by any other transfer on the
- * same bus.
+ * and rely on their drivers' own timeouts. After validation, each synchronous
+ * call waits, with no timeout, for the bus lock held by another synchronous
+ * transfer through the same handle.
  *
  * @note Requires @c CONFIG_OVE_I2C.  When the option is disabled every
  *       function is replaced by a no-op stub that returns
@@ -128,6 +137,9 @@ void ove_i2c_destroy(ove_i2c_t i2c);
 /**
  * @brief Write data to an I2C device.
  *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
+ *
  * @param[in] i2c        I2C handle.
  * @param[in] addr       7-bit device address.
  * @param[in] data       Data to write.
@@ -140,6 +152,9 @@ OVE_NODISCARD int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, 
 
 /**
  * @brief Read data from an I2C device.
+ *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
  *
  * @param[in]  i2c        I2C handle.
  * @param[in]  addr       7-bit device address.
@@ -157,6 +172,9 @@ OVE_NODISCARD int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t l
  * Writes @p tx_len bytes from @p tx, then reads @p rx_len bytes into
  * @p rx without releasing the bus (repeated start condition).  This is
  * the standard pattern for register reads on I2C sensors and codecs.
+ *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
  *
  * @param[in]  i2c        I2C handle.
  * @param[in]  addr       7-bit device address.
@@ -185,6 +203,9 @@ OVE_NODISCARD int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *t
  *
  * @note @p len must not exceed @c OVE_I2C_REG_WRITE_MAX (32 bytes).
  *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
+ *
  * @param[in] i2c        I2C handle.
  * @param[in] addr       7-bit device address.
  * @param[in] reg        Register address byte.
@@ -201,6 +222,9 @@ OVE_NODISCARD int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, c
  *
  * Writes @p reg, then reads @p len bytes via repeated start.
  * Implemented in the portable layer — not a HAL function.
+ *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
  *
  * @param[in]  i2c        I2C handle.
  * @param[in]  addr       7-bit device address.
@@ -221,6 +245,9 @@ OVE_NODISCARD int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, vo
  * Sends a zero-length write and checks for ACK.  Useful for device
  * enumeration and presence detection.
  *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
+ *
  * @param[in] i2c        I2C handle.
  * @param[in] addr       7-bit device address to probe.
  * @param[in] timeout_ns Maximum wait time.
@@ -237,9 +264,13 @@ OVE_NODISCARD int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_n
  * repeated-start completed, and the read finished — or when an error
  * (NACK, bus error, timeout) terminates the transaction.
  *
- * Same backend completion-context contract as
- * @ref ove_spi_transfer_async (ISR on STM32 + FreeRTOS DMA, thread on
- * Zephyr signal / NuttX worker fallback).
+ * The callback currently runs in ISR context on STM32 FreeRTOS and worker
+ * context on Zephyr/NuttX. No timeout argument or automatic watchdog applies
+ * to async submission. A missing completion can remain pending indefinitely.
+ * Empty TX selects a plain read, empty RX a pure write; both empty is invalid.
+ *
+ * Address and independent phase-count limits are checked before bus effects;
+ * see the I2C file contract. Oversize requests are rejected, not split.
  *
  * @param[in] i2c        I2C handle.
  * @param[in] addr       7-bit device address.

@@ -9,9 +9,14 @@
 //!
 //! Wraps `ove/i2c.h`. Timeouts are nanoseconds; pass `OVE_WAIT_FOREVER` for an
 //! indefinite block. Only the FreeRTOS STM32 driver honours them, in whole
-//! milliseconds rounded down; Zephyr and NuttX ignore them. Every call first
-//! waits, with no timeout, for other transfers on the same bus. Available
+//! milliseconds rounded down; Zephyr and NuttX ignore them. Valid synchronous
+//! calls wait, with no timeout, for other transfers through the same handle. Available
 //! when `CONFIG_OVE_I2C` is enabled.
+//!
+//! Seven-bit addresses and independent TX/RX byte counts are validated before
+//! bus effects: STM32 permits 65535 per phase, Zephyr uint32_t, NuttX the smaller
+//! of ssize_t and INT_MAX. Requests are never split; register writes include the
+//! prefix byte. Zero-byte writes/probes preserve the native address/ACK path.
 
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

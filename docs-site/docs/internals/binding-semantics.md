@@ -412,6 +412,15 @@ constants in every binding; see [Versioning](versioning.md).
 
 ## Maintaining this contract
 
+I2C's native boundary validates seven-bit addresses and independent TX/RX byte
+counts before locking, hardware or async publication. STM32 accepts at most
+65535 bytes per phase; Zephyr counts fit uint32_t; NuttX counts fit ssize_t and
+the supported F7 int counter. No automatic splitting may change STOP/repeated
+start behavior. Register writes count the prefix byte. Empty TX in write-read
+means plain read; zero-byte synchronous writes/probes preserve the address phase.
+NuttX's two-message combined operation sets NOSTOP first and READ last. These
+native boundary checks do not establish Rust async retained-buffer ownership.
+
 SPI's native boundary counts bytes in either word mode. In 16-bit mode it
 requires whole frames and `uint16_t`-aligned buffers. Raw TX/RX spans cover the
 full count and may be disjoint or exactly identical in-place; partial overlap

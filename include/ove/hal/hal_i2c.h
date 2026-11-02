@@ -47,6 +47,17 @@ int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg);
  */
 void ove_hal_i2c_close(ove_i2c_t i2c);
 
+/** Pure provider count validation before admission, locking or hardware access.
+ * Every I2C provider must implement this hook, including custom providers.
+ * The common layer validates the seven-bit address and required non-NULL
+ * pointers; callers supply valid spans covering the full counts. Each
+ * phase keeps its independent byte count; providers reject unsupported lengths
+ * rather than narrowing or splitting an I2C transaction. The asynchronous flag
+ * selects the submission path. This hook must not retain pointers or change
+ * controller state, and is available in both allocation modes.
+ */
+int ove_hal_i2c_validate_transfer(ove_i2c_t i2c, size_t tx_len, size_t rx_len, int asynchronous);
+
 /**
  * @brief Write data to an I2C device.
  *

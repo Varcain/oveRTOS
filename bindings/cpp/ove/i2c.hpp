@@ -27,18 +27,23 @@ namespace ove
  * @brief RAII wrapper around an oveRTOS I2C bus controller.
  *
  * Timeouts are honoured only by the FreeRTOS STM32 driver, in whole
- * milliseconds rounded down; Zephyr and NuttX ignore them.  Every call first
- * waits, with no timeout, for other transfers on the same bus (see the
+ * milliseconds rounded down; Zephyr and NuttX ignore them. Valid synchronous
+ * calls wait, with no timeout, for other transfers through the same handle (see the
  * timeout note on @ref ove_i2c).
  *
- * Not copyable.  Move-only when heap allocation is enabled.
+ * Addresses must be seven-bit (0..127). Independent TX/RX byte counts are
+ * checked before bus effects: STM32 permits 65535 per phase, Zephyr uint32_t,
+ * NuttX the smaller of ssize_t and INT_MAX. Requests are never split; register
+ * writes include their prefix. Zero-byte writes/probes keep their ACK path.
+ *
+ * Not copyable. Move-only when heap allocation is enabled.
  */
 class I2c
 {
       public:
 	/**
 	 * @brief Construct and initialise the I2C bus from `cfg`.
-	 * @param[in] cfg Bus configuration (pins, clock, mode).
+	 * @param[in] cfg Bus configuration (peripheral index and speed).
 	 */
 	explicit I2c(const struct ove_i2c_cfg &cfg)
 	{

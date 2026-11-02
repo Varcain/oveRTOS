@@ -392,6 +392,7 @@ def test_stub(ove_dir, output_dir):
     # binaries of their own (tests/CMakeLists.txt).
     _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
+                                "ove_test_i2c_front_heap", "ove_test_i2c_front_zero", "ove_test_i2c_nuttx",
                                 "ove_test_mqtt_heap", "ove_test_mqtt_zh",
                                 "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",
                                 "ove_test_mqtt_wide", "ove_test_mqtt_varint",
@@ -456,6 +457,7 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
         [os.path.join(build, "ove_test_stub")], label, env=env)
     _run_extra_binaries(build, ("ove_test_mqtt_heap", "ove_test_mqtt_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
+                                "ove_test_i2c_front_heap", "ove_test_i2c_front_zero", "ove_test_i2c_nuttx",
                                 "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",
                                 "ove_test_mqtt_wide", "ove_test_mqtt_varint",
                                 "ove_test_mqtt_small_rx", "ove_test_mqtt_zh_small_rx",
@@ -944,6 +946,41 @@ def test_rust_async_spi_arm(ove_dir, output_dir):
     result.passed += int(rc == 0)
     result.failed += int(rc != 0)
     return result
+
+
+def test_i2c_native_arm(ove_dir, output_dir):
+    """Check native I2C counts with vendor types and the actual Cortex-M7 port."""
+    import hashlib
+    from .utils import hashed_dir
+    _ensure_stm32f746_renode_deps(ove_dir)
+    manifest = load_manifest(ove_dir)
+    sdk_revision = get_component(manifest, "rtos", "freertos", "stm32cubef7", "version")
+    sdk, _, _ = hashed_dir(os.path.join(ove_dir, "dl"), "STM32CubeF7", sdk_revision, None)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = os.path.join(ove_dir, "dl", "FreeRTOS-Kernel-" + digest)
+    if not os.path.isdir(kernel):
+        url = get_component(manifest, "rtos", "freertos", "kernel", "url")
+        run(["git", "clone", "--depth", "1", "--branch", revision, url, kernel])
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    build = os.path.join(output_dir, "tests", "i2c_native_arm")
+    _cmake_build(os.path.join(ove_dir, "tests", "i2c_native", "freertos"), build,
+                 extra_args=["-DFREERTOS_PATH=" + kernel, "-DSTM32_CUBE_PATH=" + sdk,
+                             "-DOVE_TOOLCHAIN_DIR=" + toolchain,
+                             "-DCMAKE_TOOLCHAIN_FILE=" + os.path.join(
+                                 ove_dir, "boards", "qemu-mps2-an500", "cmake", "arm-none-eabi.cmake")])
+    rc = _run_owned_test_process(
+        ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
+         "-nographic", "-semihosting", "-kernel", os.path.join(build, "ove_test_i2c_stm32")],
+        env=dict(os.environ), timeout=30)
+    return TestResults(suite="i2c-native-arm", passed=int(rc == 0), failed=int(rc != 0))
+
+
+def test_i2c_native_zephyr(ove_dir, output_dir):
+    """Check the actual Zephyr provider and driver message/count boundary."""
+    return _run_zephyr_native_sim(
+        ove_dir, output_dir, build_subdir="i2c_native_zephyr", label="i2c-native-zephyr",
+        source_dir=os.path.join(ove_dir, "tests", "i2c_native", "zephyr"), owned_timeout=30)
 
 
 def test_spi_retirement_freertos(ove_dir, output_dir):
@@ -3215,6 +3252,8 @@ TEST_TARGETS = {
     "rust-spi": test_rust_spi,
     "rust-async-spi": test_rust_async_spi,
     "rust-async-spi-arm": test_rust_async_spi_arm,
+    "i2c-native-arm": test_i2c_native_arm,
+    "i2c-native-zephyr": test_i2c_native_zephyr,
     "spi-retirement-freertos": test_spi_retirement_freertos,
     "spi-retirement-zephyr": test_spi_retirement_zephyr,
     "spi-retirement-nuttx": test_spi_retirement_nuttx,

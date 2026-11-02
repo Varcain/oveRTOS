@@ -4,9 +4,10 @@
 //
 // This file is part of oveRTOS.
 
-//! Async I2C bus wrapper. See [`super::spi`] for the design notes — same
-//! pattern, with an `embedded_hal_async::i2c::I2c<SevenBitAddress>` impl
-//! when the `embedded-hal-async` feature is enabled.
+//! Async I2C bus wrapper with an `embedded_hal_async::i2c::I2c<SevenBitAddress>`
+//! implementation when `embedded-hal-async` is enabled. Native seven-bit address
+//! and independent TX/RX byte-count limits apply; requests are not split to
+//! bypass provider limits. Submission has no timeout or automatic watchdog.
 
 use ::core::cell::UnsafeCell;
 use ::core::ffi::c_void;

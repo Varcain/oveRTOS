@@ -412,6 +412,7 @@ if(OVE_TEST_BUILD_MQTT)
 endif()
 
 add_subdirectory(spi_native)
+add_subdirectory(i2c_native)
 add_subdirectory(spi_async_native)
 
 # --- httpd WebSocket connection lifetime (ove_test_httpd_ws) ---
