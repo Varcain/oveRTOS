@@ -433,9 +433,31 @@ flattened count and no temporary array proportional to the sequence length.
 Heap owners use native create/destroy; static `SpiStorage::init` claims stable
 backing until native deinit finishes. Forgetting a static owner retains its
 claim; unsafe raw wrappers are nonowning. Owners are not Copy/Clone/Send/Sync.
-This synchronous contract does not establish async retained-buffer ownership,
-callback retirement or Zig slice adaptation. Native backend limits and
-coordination with separate handles remain the caller's responsibility.
+Native backend limits and coordination with separate handles remain the
+caller's responsibility. Zig slice adaptation remains separate.
+
+Rust async SPI uses typed `AsyncSpi`/`AsyncSpi16` owners and
+`AsyncSpiStorage<N, W = u8>` with ordinary `Config`/`ChipSelect`. It stages the
+complete larger slice length, zero-pads missing TX and discards excess RX in
+one native operation. Successful live futures copy only requested RX; error
+completion leaves application RX unchanged. Static capacity counts words and
+returns `NoSpace`; heap growth uses the native allocator and can fail.
+
+Native code retains only stable internal backing and copied CS. Future Drop
+or forget does not cancel I/O. Active orphans reject new nonempty work with
+`BusBusy`; empty work does nothing, and flush awaits/consumes the actual result.
+Owner Drop marks closing; independent native/callback/wake/submission lifetimes
+defer deinit/free/static-claim release until their final access. No future-owned
+reference count depends on Drop after Pending. Metadata locking never encloses
+Waker code, native calls, allocation or payload copying. Owners and futures
+remain neither Send nor Sync. Forgotten owners or missing completions retain
+bounded backing/claims. The old raw-handle constructor is removed.
+
+The async feature itself requires no Rust global allocator. The executor uses
+its static slot when `alloc` is disabled; with `alloc` in heap mode it keeps
+its existing Box allocation. SPI heap backing always uses native allocation.
+Native frame limits, task-context/nonblocking callback obligations, physical
+bus coordination and NuttX worker reserve/debug-zero restrictions still apply.
 
 When you add or change a binding API, update this page in the same change so the
 three languages stay aligned. The examples under `apps/{cpp,rust,zig}/` act as

@@ -252,6 +252,45 @@ int ove_spi_async_prepare(void)
 	return ove_hal_spi_async_prepare();
 }
 
+int ove_spi_binding_check_length(ove_spi_t spi, size_t len)
+{
+	if (!spi || !len || (spi->word_size != 8 && spi->word_size != 16))
+		return OVE_ERR_INVALID_PARAM;
+	if (spi->word_size == 16 && (len & 1))
+		return OVE_ERR_INVALID_PARAM;
+	return ove_hal_spi_validate_transfer(spi, len, 1);
+}
+
+#ifdef OVE_HEAP_SPI
+void *ove_spi_binding_alloc(size_t size, size_t alignment)
+{
+	if (!size || !alignment || (alignment & (alignment - 1)))
+		return NULL;
+	if (alignment - 1 > (size_t)PTRDIFF_MAX - sizeof(void *))
+		return NULL;
+	size_t padding = sizeof(void *) + alignment - 1;
+	if (size > (size_t)PTRDIFF_MAX - padding)
+		return NULL;
+	void *allocation = OVE_BACKEND_MALLOC(size + padding);
+	if (!allocation)
+		return NULL;
+	uintptr_t address = (uintptr_t)allocation + sizeof(void *);
+	address = (address + alignment - 1) & ~(uintptr_t)(alignment - 1);
+	void *pointer = (void *)address;
+	memcpy((uint8_t *)pointer - sizeof(allocation), &allocation, sizeof(allocation));
+	return pointer;
+}
+
+void ove_spi_binding_free(void *pointer)
+{
+	if (pointer) {
+		void *allocation;
+		memcpy(&allocation, (uint8_t *)pointer - sizeof(allocation), sizeof(allocation));
+		OVE_BACKEND_FREE(allocation);
+	}
+}
+#endif
+
 static void spi_clear_pending(ove_spi_t spi)
 {
 	spi->pending_cb = NULL;

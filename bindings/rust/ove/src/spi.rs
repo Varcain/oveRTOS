@@ -94,7 +94,7 @@ impl Default for Config {
 }
 
 impl Config {
-    fn native<W: Word>(self) -> bindings::ove_spi_cfg {
+    pub(crate) fn native<W: Word>(self) -> bindings::ove_spi_cfg {
         bindings::ove_spi_cfg {
             instance: self.instance,
             clock_hz: self.clock_hz,
@@ -114,6 +114,11 @@ pub struct ChipSelect {
 }
 
 impl ChipSelect {
+    #[cfg(all(feature = "async", has_async))]
+    pub(crate) const fn native(self) -> bindings::ove_spi_cs {
+        self.raw
+    }
+
     /// Describe a software-controlled GPIO chip select.
     pub const fn new(port: u32, pin: u32, active_low: bool) -> Self {
         Self {

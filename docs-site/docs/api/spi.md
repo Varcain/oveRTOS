@@ -171,7 +171,58 @@ be migrated to the public typed descriptions.
 These are blocking thread-context operations. Reserve the physical bus against
 other handles and native/async users externally. Hardware CS, filler and timeout
 limits remain as described above. STM32 currently uses a fixed prescaler;
-NuttX does not apply the requested bit order. Async buffer ownership and Zig
-slice adaptation are separate work.
+NuttX does not apply the requested bit order. Zig slice adaptation remains
+separate work.
+
+### Asynchronous Rust
+
+With `async` enabled, ordinary configuration and chip-select values also work
+with `AsyncSpi`, `AsyncSpi16` and `AsyncSpiStorage<N, W = u8>`. Static capacity
+counts complete words, with separate internal TX and RX arrays. Heap constructors
+use the configured native allocator and need no Rust global allocator.
+
+```rust
+use ove::{AsyncSpiStorage, Result};
+use ove::spi::{ChipSelect, Config};
+
+static SPI: AsyncSpiStorage<128> = AsyncSpiStorage::new();
+
+async fn exchange() -> Result<()> {
+    let mut spi = SPI.init(Config::default())?;
+    let cs = ChipSelect::new(0, 4, true);
+    let mut rx = [0; 4];
+    spi.transfer(Some(&cs), &[1, 2], &mut rx).await?;
+    spi.flush().await?;
+    Ok(())
+}
+```
+
+Use `AsyncSpiStorage<128, u16>` or heap `AsyncSpi16::new(config)` for 16-bit
+words. The owners implement the matching `embedded_hal_async::spi::SpiBus`
+when enabled. Methods borrow the owner mutably; owners and operation futures
+are neither Send nor Sync. Native backing stays stable when either moves.
+
+Each operation owns staging for the larger slice length, sends zero filler
+after the supplied TX and discards excess RX. It uses one native submission
+and CS interval, including in-place operations longer than 64 words. Only a
+successful live future copies its requested RX words into the application.
+Error completion leaves application RX unchanged. Static overflow returns
+`Error::NoSpace` before submission; heap growth can return `Error::NoMemory`.
+The provider's frame limit still applies, including STM32's 65535-frame cap.
+
+Dropping or forgetting a future leaves its accepted operation running against
+owned buffers and a copied CS. A new nonempty operation returns `Error::BusBusy`
+until it settles. `flush().await` waits for and consumes the orphan result,
+including its error; empty transfers have no effect on the orphan. Owner Drop
+defers native teardown and storage reuse until submission and callback/waker
+tails finish. A missing completion retains the current backing; forgetting an
+owner retains its claim or heap capacity. Static claims remain busy in both cases.
+Constructors replace the former raw-handle constructor; applications use the
+public typed configuration and CS without FFI or manual pinning.
+
+NuttX still needs native worker TCB/stack memory. Release zero-heap builds use
+the existing bounded reserve; debug zero-heap construction returns
+`Error::NotSupported`. Reserve the physical bus against other handles and native
+users externally. SPI callback context and native limitations remain as above.
 
 > Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).

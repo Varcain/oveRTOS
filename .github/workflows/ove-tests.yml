@@ -232,6 +232,9 @@ jobs:
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi
 
+      - name: Run owned async Rust SPI tests (both heap modes)
+        run: make test-rust-async-spi
+
       - name: Fetch LVGL (manifest-pinned) into dl/lvgl
         run: |
           LVGL_URL=$(python3 scripts/manifest_query.py libraries.lvgl.url)
@@ -444,7 +447,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build libclang-dev
+
+      - name: Install Rust for SPI executor stack tests
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
 
       - name: Cache ARM toolchain
         uses: actions/cache@v4
@@ -466,6 +474,9 @@ jobs:
 
       - name: Run real FreeRTOS SPI retirement tests
         run: timeout 1200 make test-spi-retirement-freertos
+
+      - name: Run Rust SPI and Embassy callback stack tests
+        run: timeout 1200 make test-rust-async-spi-arm
 
       - uses: actions/upload-artifact@v4
         if: failure()

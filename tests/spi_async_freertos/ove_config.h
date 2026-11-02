@@ -7,4 +7,9 @@
 #define CONFIG_OVE_SPI 1
 #define CONFIG_OVE_GPIO 1
 #define CONFIG_OVE_ASYNC 1
+#ifdef OVE_RUST_SPI_TEST
+#define CONFIG_OVE_TIME 1
+#define CONFIG_OVE_TIMER 1
+#define CONFIG_OVE_CONSOLE 1
+#endif
 #endif

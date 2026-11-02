@@ -246,14 +246,14 @@ pub use async_runtime::AsyncInput;
 pub use async_runtime::AsyncQueue;
 #[cfg(all(feature = "async", has_async, has_sync))]
 pub use async_runtime::AsyncSemaphore;
-#[cfg(all(feature = "async", has_async, has_spi))]
-pub use async_runtime::AsyncSpi;
 #[cfg(all(feature = "async", has_async, has_stream))]
 pub use async_runtime::AsyncStream;
 #[cfg(all(feature = "async", has_async, has_uart))]
 pub use async_runtime::AsyncUart;
 #[cfg(all(feature = "async", has_async))]
 pub use async_runtime::Executor;
+#[cfg(all(feature = "async", has_async, has_spi))]
+pub use async_runtime::{AsyncSpi, AsyncSpi16, AsyncSpiStorage};
 // A compile-time error to catch the common misconfiguration where the
 // Cargo `async` feature is on but the C side wasn't built with
 // CONFIG_OVE_ASYNC=y. Without this gate the binding would fail with

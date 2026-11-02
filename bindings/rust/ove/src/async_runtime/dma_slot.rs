@@ -4,10 +4,9 @@
 //
 // This file is part of oveRTOS.
 
-//! Completion slot shared by the async SPI and I2C wrappers: each in-flight
-//! transfer parks its waker here and the C completion callback stores the
-//! result and wakes it. Built whenever either bus is configured, so I2C does
-//! not depend on SPI being enabled.
+//! Completion slot used by the async I2C wrapper: each in-flight transfer
+//! parks its waker here and the C completion callback stores the result and
+//! wakes it. Built independently of SPI configuration.
 
 use ::core::sync::atomic::{AtomicI32, Ordering};
 

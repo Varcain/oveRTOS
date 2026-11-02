@@ -29,7 +29,7 @@
 // requires nightly. Skipped to keep the crate stable-only.
 
 pub(crate) mod critical_section;
-#[cfg(any(has_spi, has_i2c))]
+#[cfg(has_i2c)]
 mod dma_slot;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
@@ -62,7 +62,7 @@ pub use queue::AsyncQueue;
 #[cfg(has_sync)]
 pub use semaphore::AsyncSemaphore;
 #[cfg(has_spi)]
-pub use spi::AsyncSpi;
+pub use spi::{AsyncSpi, AsyncSpi16, AsyncSpiStorage};
 #[cfg(has_stream)]
 pub use stream::AsyncStream;
 #[cfg(has_uart)]
