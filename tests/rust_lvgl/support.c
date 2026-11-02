@@ -9,30 +9,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static size_t alloc_calls;
-void *__real_lv_malloc(size_t size);
-void *__real_lv_realloc(void *ptr, size_t size);
-void __real_lv_free(void *ptr);
-void *__wrap_lv_malloc(size_t size)
-{
-	alloc_calls++;
-	return __real_lv_malloc(size);
-}
-void *__wrap_lv_realloc(void *ptr, size_t size)
-{
-	alloc_calls++;
-	return __real_lv_realloc(ptr, size);
-}
-void __wrap_lv_free(void *ptr)
-{
-	alloc_calls++;
-	__real_lv_free(ptr);
-}
-size_t text_test_alloc_calls(void)
-{
-	return alloc_calls;
-}
-
 void ove_lvgl_assert_failed(const char *file, int line)
 {
 	fprintf(stderr, "LVGL assert: %s:%d\n", file, line);

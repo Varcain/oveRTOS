@@ -249,8 +249,8 @@ jobs:
           LVGL_TAG=$(python3 scripts/manifest_query.py libraries.lvgl.version)
           git clone --depth 1 --branch "$LVGL_TAG" "$LVGL_URL" dl/lvgl
 
-      - name: Run real LVGL text tests
-        run: make test-rust-lvgl
+      - name: Run real LVGL ownership and Canvas tests
+        run: timeout 1200 make test-rust-lvgl test-rust-lvgl-sanitize
 
       - name: Fetch mbedTLS (manifest-pinned) into dl/mbedtls
         run: |

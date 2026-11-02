@@ -26,6 +26,27 @@ fn p_slider(c: Obj) {
 }
 ```
 
+## Canvas pixels
+
+The Canvas page asks the binding for native-owned pixels:
+
+```rust
+let canvas = Canvas::create(c)
+    .size(32, 32)
+    .allocate_buffer(32, 32, ColorFormat::RGB565)
+    .expect("LVGL canvas pixels")
+    .fill_bg(Color::hex(0x202020), 255);
+canvas.set_pixel(1, 1, Color::white());
+```
+
+The RGB565 pixels occupy 2 KiB and use LVGL's pool in both heap modes. Pixel storage stays with the native
+widget and is released when the widget tree is deleted. To initialize from
+existing pixels, use
+`canvas.set_buffer(CanvasBuffer::new(&pixels, width, height, format)?)?`.
+The binding copies packed rows and handles native padding/alignment, so the
+initializer can be reused or dropped after the call. I1 initializers include
+eight palette bytes before their packed rows.
+
 ## Page table
 
 ```rust
