@@ -3028,14 +3028,14 @@ static_assert(sizeof(List) == sizeof(void *), "List must be pointer-sized");
  * @class Canvas
  * @brief C++ wrapper for LVGL's user-buffer drawing surface.
  *
- * The canvas owns a pixel buffer the caller supplies. LVGL draws rects,
- * arcs, text, etc. into that buffer via the `draw_*` helper functions
- * below. The buffer must outlive the canvas widget; size is
- * `w * h * bytes_per_pixel(cf)`.
+ * The canvas borrows a writable pixel buffer supplied by the caller; it
+ * does not free or copy those bytes. Keep initialized backing valid through
+ * replacement or native widget destruction returning. Match LVGL's configured
+ * draw alignment and native row stride, with eight palette bytes before I1
+ * rows. Width, height and native stride must fit the native image header.
  *
- * This initial cut exposes rect, arc, and label draw primitives. Line,
- * polygon, and image draws can be added in follow-up work as they
- * require wrapping more draw-descriptor structs.
+ * Use fill_bg/set_pixel or paired native layer drawing operations. Rust's
+ * copied and blank-buffer helpers instead attach native-owned pixel storage.
  */
 class Canvas : public ObjectView,
 	       public ObjectMixin<Canvas>,

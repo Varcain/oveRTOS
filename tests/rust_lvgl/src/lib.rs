@@ -376,3 +376,5 @@ fn observer_replacement_and_delete_events() -> Result<()> {
     SUBJECT.store(std::ptr::null_mut(), Ordering::Relaxed);
     Ok(())
 }
+
+mod canvas;

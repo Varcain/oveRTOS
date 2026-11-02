@@ -728,23 +728,65 @@ def test_rust(ove_dir, output_dir):
         [os.path.join(target_dir, "release", "ove-tests")], "rust")
 
 
+def _test_rust_lvgl(ove_dir, output_dir, sanitize=False):
+    """Exercise native LVGL text/Canvas ownership in both application modes."""
+    suite = "rust-lvgl-sanitize" if sanitize else "rust-lvgl"
+    result = TestResults(suite=suite)
+    for clib in ([False, True] if sanitize else [False]):
+        for zero in (False, True):
+            suffix = ("_zh" if zero else "") + ("_san" if sanitize else "") + ("_clib" if clib else "")
+            target = os.path.join(output_dir, "tests", "rust_lvgl" + suffix)
+            _, env = _rust_test_env(ove_dir, output_dir, target, zero_heap=zero)
+            native = os.path.join(output_dir, "tests", "rust_lvgl_c" + suffix)
+            _cmake_build(os.path.join(ove_dir, "tests", "rust_lvgl"), native,
+                         extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                                     "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"),
+                                     "-DOVE_DRAW_ALIGNMENT=" + ("32" if zero else "4"),
+                                     "-DOVE_CLIB=" + ("ON" if clib else "OFF")])
+            env.pop("DOCS_RS", None)
+            env.update({
+                "OVE_GEN_DIR": os.path.join(native, "generated"),
+                "LV_CONF_PATH": os.path.join(native, "generated"),
+                "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "dl", "lvgl"),
+                "LVGL_PARENT_PATH": os.path.join(ove_dir, "dl"),
+                "OVE_LVGL_TEST_LIB": native,
+            })
+            command = ["cargo", "test", "--locked", "--manifest-path",
+                       os.path.join(ove_dir, "tests", "rust_lvgl", "Cargo.toml")]
+            if sanitize:
+                env.update({
+                    "RUSTC_BOOTSTRAP": "1",
+                    "RUSTFLAGS": env.get("RUSTFLAGS", "") + " -Zsanitizer=address -Cforce-frame-pointers=yes",
+                    "OVE_LVGL_TEST_SANITIZE": "1",
+                    "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+                    "UBSAN_OPTIONS": "halt_on_error=1",
+                })
+                command += ["--target", "x86_64-unknown-linux-gnu"]
+            # Legacy text exhaustion checks intentionally depend on the fixed
+            # pool. The CLIB lane targets Canvas suballocation lifetimes.
+            if clib:
+                command.append("canvas::")
+            command += ["--", "--test-threads=1"]
+            rc = _run_owned_test_process(command, env=env, timeout=300)
+            result.passed += int(rc == 0)
+            result.failed += int(rc != 0)
+            if not sanitize and rc == 0:
+                types = _run_owned_test_process(
+                    [sys.executable, os.path.join(ove_dir, "tests", "rust_lvgl", "type_checks.py"),
+                     os.path.join(target, "debug", "deps"),
+                     os.path.join(output_dir, "tests", "rust_lvgl_types" + suffix)],
+                    env=env, timeout=120)
+                result.passed += int(types == 0)
+                result.failed += int(types != 0)
+    return result
+
+
 def test_rust_lvgl(ove_dir, output_dir):
-    """Exercise Rust text ownership against the vendored LVGL allocator."""
-    target_dir = os.path.join(output_dir, "tests", "rust_lvgl")
-    _, env = _rust_test_env(ove_dir, output_dir, target_dir)
-    native = os.path.join(output_dir, "tests", "rust_lvgl_c")
-    _cmake_build(os.path.join(ove_dir, "tests", "rust_lvgl"), native)
-    env.update({
-        "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "dl", "lvgl"),
-        "LVGL_PARENT_PATH": os.path.join(ove_dir, "dl"),
-        "OVE_LVGL_TEST_LIB": native,
-    })
-    result = subprocess.run(
-        ["cargo", "test", "--manifest-path",
-         os.path.join(ove_dir, "tests", "rust_lvgl", "Cargo.toml"),
-         "--", "--test-threads=1"], env=env, timeout=180)
-    return TestResults(suite="rust-lvgl", passed=int(result.returncode == 0),
-                       failed=int(result.returncode != 0))
+    return _test_rust_lvgl(ove_dir, output_dir)
+
+
+def test_rust_lvgl_sanitize(ove_dir, output_dir):
+    return _test_rust_lvgl(ove_dir, output_dir, sanitize=True)
 
 
 def test_rust_strings(ove_dir, output_dir):
@@ -3520,6 +3562,7 @@ TEST_TARGETS = {
     "rust": test_rust,
     "rust-zeroheap": test_rust_zeroheap,
     "rust-lvgl": test_rust_lvgl,
+    "rust-lvgl-sanitize": test_rust_lvgl_sanitize,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
     "rust-i2c": test_rust_i2c,

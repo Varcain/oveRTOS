@@ -30,8 +30,7 @@ use crate::error::{Error, Result};
 // matching the C/C++ contract. The event-handler trampolines and the widget
 // `Send`/`Sync` impls carry their own dedicated SAFETY banners (search
 // "Event handler soundness" and "Send + Sync"). Blocks that deviate —
-// `transmute` of the event user-data pointer, `from_raw_parts` over a canvas
-// buffer — carry their own `// SAFETY:` note.
+// `transmute` of the event user-data pointer — carry their own SAFETY note.
 
 // =========================================================================
 //  Constants
@@ -1993,14 +1992,15 @@ impl core::ops::Deref for Calendar {
 //  Canvas — user-buffer drawing surface
 // =========================================================================
 
-/// LVGL canvas — a widget backed by a user-supplied pixel buffer.
+/// LVGL canvas with pixel storage owned by the native widget.
 ///
-/// The caller must keep the buffer alive for the lifetime of the widget.
-/// Buffer size is `w * h * bytes_per_pixel(cf)`.
-///
-/// Initial cut exposes buffer setup, background fill, per-pixel writes,
-/// and the layer init/finish dance that LVGL 9 requires for draw
-/// operations. `draw_rect/arc/label` wrappers can be added later.
+/// [`Self::set_buffer`] copies a packed initializer; [`Self::allocate_buffer`]
+/// creates initialized blank pixels. Both use LVGL's private pool in either
+/// application heap mode, without a Rust global allocator. Replacement needs
+/// room for both old and new storage; failure preserves the old contents.
+/// Pixels survive dropped or forgotten Rust views and are freed by native
+/// widget destruction, after object and child deletion callbacks finish.
+/// The existing LVGL locking, widget-handle and native callback contracts apply.
 #[derive(Clone, Copy)]
 pub struct Canvas {
     raw: *mut bindings::lv_obj_t,
@@ -2009,17 +2009,22 @@ pub struct Canvas {
 impl Canvas {
     /// Create a new `Canvas` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
-        let raw = unsafe { bindings::lv_canvas_create(parent.raw()) };
+        // SAFETY: the parent follows the module's live-widget/lock contract.
+        let raw = unsafe { bindings::ove_lvgl_canvas_create(parent.raw().cast()) }.cast();
         Self { raw }
     }
 
-    /// **Legacy escape hatch** — prefer [`Canvas::set_buffer`] which takes
-    /// a typed, lifetime-tracked [`CanvasBuffer`]. Retained for code
+    /// **Legacy escape hatch** — prefer copied [`Canvas::set_buffer`] or
+    /// initialized [`Canvas::allocate_buffer`]. Retained for code
     /// that must supply a raw pointer (e.g. hardware-allocated framebuffers).
     ///
     /// # Safety
-    /// `buf` must remain valid for the lifetime of the canvas widget.
-    /// The buffer size must be exactly `w * h * bytes_per_pixel(cf)`.
+    /// `buf` must remain initialized, writable and valid until replacement
+    /// or native deletion returns. It must satisfy LVGL's configured draw
+    /// alignment and contain the actual native stride times height, plus
+    /// eight palette bytes for I1. Rust must not access or form references
+    /// to these bytes while LVGL can use them. Dimensions/format are checked;
+    /// this API cannot check the allocation's extent or lifetime.
     #[doc(hidden)]
     pub unsafe fn buffer(
         self,
@@ -2027,20 +2032,26 @@ impl Canvas {
         w: i32,
         h: i32,
         cf: bindings::lv_color_format_t,
-    ) -> Self {
-        unsafe { bindings::lv_canvas_set_buffer(self.raw, buf, w, h, cf) };
-        self
+    ) -> Result<Self> {
+        // SAFETY: the caller supplies the retained writable allocation.
+        Error::from_code(unsafe {
+            bindings::ove_lvgl_canvas_raw(self.raw.cast(), buf, w, h, canvas_format(cf))
+        })?;
+        Ok(self)
     }
 
     /// Fill the entire canvas with the given colour and opacity.
     pub fn fill_bg(self, color: Color, opa: u8) -> Self {
-        unsafe { bindings::lv_canvas_fill_bg(self.raw, color.to_raw(), opa) };
+        // SAFETY: native owned storage remains live through this synchronous call.
+        unsafe { bindings::ove_lvgl_canvas_fill(self.raw.cast(), canvas_rgb(color), opa) };
         self
     }
 
     /// Set a single pixel to the given colour.
+    /// For I1, the blue component selects palette index zero or one.
     pub fn set_pixel(self, x: i32, y: i32, color: Color) -> Self {
-        unsafe { bindings::lv_canvas_set_px(self.raw, x, y, color.to_raw(), 255) };
+        // SAFETY: native checks coordinates and owns the mutable pixel storage.
+        unsafe { bindings::ove_lvgl_canvas_pixel(self.raw.cast(), x, y, canvas_rgb(color)) };
         self
     }
 
@@ -2053,17 +2064,38 @@ impl Canvas {
 
     /// Fluent: initialise a draw layer bound to this canvas. Pair with
     /// [`Canvas::finish_layer`] around low-level draw operations.
-    pub fn init_layer(self, layer: *mut bindings::lv_layer_t) -> Self {
+    ///
+    /// # Safety
+    /// `layer` must point to valid, exclusively writable layer storage which
+    /// remains live until the matching finish. Keep the canvas and its pixel
+    /// allocation unchanged throughout that interval. Native draw-task and
+    /// callback lifetimes remain the caller's responsibility.
+    pub unsafe fn init_layer(self, layer: *mut bindings::lv_layer_t) -> Self {
         unsafe { bindings::lv_canvas_init_layer(self.raw(), layer) };
         self
     }
 
     /// Fluent: flush a draw layer previously opened with
     /// [`Canvas::init_layer`], committing its draw tasks to the canvas.
-    pub fn finish_layer(self, layer: *mut bindings::lv_layer_t) -> Self {
-        unsafe { bindings::lv_canvas_finish_layer(self.raw(), layer) };
+    ///
+    /// # Safety
+    /// `layer` must be the exclusively accessible live layer initialized for
+    /// this unchanged canvas. Its queued native draw tasks and referenced
+    /// resources must remain valid through completion.
+    pub unsafe fn finish_layer(self, layer: *mut bindings::lv_layer_t) -> Self {
+        unsafe { bindings::ove_lvgl_canvas_finish(self.raw.cast(), layer.cast()) };
         self
     }
+}
+
+fn canvas_rgb(color: Color) -> u32 {
+    (u32::from(color.red) << 16) | (u32::from(color.green) << 8) | u32::from(color.blue)
+}
+
+// Generated enums use u8 with target short enums and u32 on the host.
+#[allow(clippy::useless_conversion)]
+fn canvas_format(format: bindings::lv_color_format_t) -> u32 {
+    u32::from(format)
 }
 
 impl Widget for Canvas {
@@ -4170,8 +4202,7 @@ impl ColorFormat {
     /// `XRGB8888`) and `unwrap()` is safe.
     ///
     /// `I1` returns `Some(0)` — the format is sub-byte per pixel and
-    /// callers must size the canvas buffer externally (one bit per pixel,
-    /// rounded up to a whole byte per row).
+    /// [`CanvasBuffer`] handles its palette and row rounding.
     pub const fn bpp(self) -> Option<usize> {
         match self.0 {
             0x10 | 0x11 => Some(4), // ARGB8888 / XRGB8888
@@ -4184,51 +4215,96 @@ impl ColorFormat {
     }
 }
 
-/// Pixel storage for a [`Canvas`]. Borrows the buffer for the lifetime `'a`.
+/// Packed pixel initializer copied by [`Canvas::set_buffer`].
+///
+/// Rows have no native padding. I1 begins with two native BGRA palette entries
+/// (eight bytes), followed by rows rounded up to whole bytes. The slice only
+/// needs to remain live through the synchronous setter; its alignment is free.
 pub struct CanvasBuffer<'a> {
-    ptr: *mut u8,
+    bytes: &'a [u8],
     w: i32,
     h: i32,
     cf: ColorFormat,
-    _ph: core::marker::PhantomData<&'a mut [u8]>,
 }
 
 impl<'a> CanvasBuffer<'a> {
-    /// Wrap a mutable byte slice as canvas pixel storage.
+    /// Validate an initializer without allocation or native calls.
     ///
-    /// # Panics
-    /// Panics if `cf` is not one of the named [`ColorFormat`] constants
-    /// (unknown formats have no defined byte-per-pixel ratio), or if
-    /// `buf.len() != w * h * cf.bpp()`.  Sizing errors are programming
-    /// bugs, not runtime conditions.
-    pub fn new(buf: &'a mut [u8], w: i32, h: i32, cf: ColorFormat) -> Self {
-        let bpp = cf.bpp().expect("CanvasBuffer: unknown ColorFormat");
-        let need = (w as usize) * (h as usize) * bpp;
-        assert!(
-            buf.len() == need,
-            "CanvasBuffer: expected {} bytes, got {}",
-            need,
-            buf.len()
-        );
-        Self {
-            ptr: buf.as_mut_ptr(),
+    /// Returns [`Error::InvalidParam`] for unsupported formats, nonpositive or
+    /// nonrepresentable dimensions/rows, arithmetic overflow or length mismatch.
+    /// Native stride/alignment configuration is also checked at attachment.
+    pub fn new(buf: &'a [u8], w: i32, h: i32, cf: ColorFormat) -> Result<Self> {
+        if w <= 0 || h <= 0 || w > i32::from(u16::MAX) || h > i32::from(u16::MAX) {
+            return Err(Error::InvalidParam);
+        }
+        let bits = match cf.0 {
+            0x07 => 1_usize,
+            0x0E => 8,
+            0x12 => 16,
+            0x0F => 24,
+            0x10 | 0x11 => 32,
+            _ => return Err(Error::InvalidParam),
+        };
+        let row = (w as usize)
+            .checked_mul(bits)
+            .and_then(|n| n.checked_add(7))
+            .map(|n| n / 8)
+            .ok_or(Error::InvalidParam)?;
+        if row > usize::from(u16::MAX) {
+            return Err(Error::InvalidParam);
+        }
+        let palette = if cf.0 == 0x07 { 8 } else { 0 };
+        let need = row
+            .checked_mul(h as usize)
+            .and_then(|n| n.checked_add(palette))
+            .ok_or(Error::InvalidParam)?;
+        if buf.len() != need {
+            return Err(Error::InvalidParam);
+        }
+        Ok(Self {
+            bytes: buf,
             w,
             h,
             cf,
-            _ph: core::marker::PhantomData,
-        }
+        })
     }
 }
 
 impl Canvas {
-    /// Safe replacement for the legacy [`Canvas::buffer`] — accepts a
-    /// typed [`CanvasBuffer`] borrowed for at least as long as the canvas
-    /// is used.
-    pub fn set_buffer(self, buf: CanvasBuffer<'_>) -> Self {
-        unsafe {
-            bindings::lv_canvas_set_buffer(self.raw, buf.ptr as *mut _, buf.w, buf.h, buf.cf.0);
-        }
-        self
+    /// Copy a packed initializer into native-owned, aligned pixel storage.
+    pub fn set_buffer(self, buf: CanvasBuffer<'_>) -> Result<Self> {
+        // SAFETY: all bytes are initialized and remain borrowed through the
+        // synchronous native copy. No pointer to them is retained.
+        Error::from_code(unsafe {
+            bindings::ove_lvgl_canvas_copy(
+                self.raw.cast(),
+                buf.bytes.as_ptr(),
+                buf.bytes.len(),
+                buf.w,
+                buf.h,
+                canvas_format(buf.cf.0),
+            )
+        })?;
+        Ok(self)
+    }
+
+    /// Allocate zeroed pixels from LVGL's pool, with a black/white I1 palette.
+    ///
+    /// Allocation failure leaves existing pixels intact. This does not change
+    /// upstream widget-creation allocation/assertion behavior.
+    pub fn allocate_buffer(self, w: i32, h: i32, cf: ColorFormat) -> Result<Self> {
+        // SAFETY: null plus zero requests initialized blank native ownership.
+        Error::from_code(unsafe {
+            bindings::ove_lvgl_canvas_copy(
+                self.raw.cast(),
+                core::ptr::null(),
+                0,
+                w,
+                h,
+                canvas_format(cf.0),
+            )
+        })?;
+        Ok(self)
     }
 }
 

@@ -2487,6 +2487,37 @@ const _: () = {
         [core::mem::offset_of!(ove_lvgl_text_binding_t, status) - 12usize];
 };
 unsafe extern "C" {
+    pub fn ove_lvgl_canvas_create(parent: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_copy(
+        obj: *mut core::ffi::c_void,
+        data: *const u8,
+        size: usize,
+        w: i32,
+        h: i32,
+        format: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_raw(
+        obj: *mut core::ffi::c_void,
+        data: *mut core::ffi::c_void,
+        w: i32,
+        h: i32,
+        format: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_fill(obj: *mut core::ffi::c_void, rgb: u32, opacity: u8);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_pixel(obj: *mut core::ffi::c_void, x: i32, y: i32, rgb: u32);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_finish(obj: *mut core::ffi::c_void, layer: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
     pub fn ove_lvgl_text_alloc(size: usize) -> *mut core::ffi::c_void;
 }
 unsafe extern "C" {

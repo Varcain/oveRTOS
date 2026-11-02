@@ -20,7 +20,8 @@ cpp animation ready_cb  # cpp/zig ready_cb (lv_anim_set_ready_cb); rust names it
 zig animation ready_cb  # cpp/zig ready_cb (lv_anim_set_ready_cb); rust names it completed_cb
 rust bar value_anim  # cpp folds into value(v, anim) overload
 zig bar value_anim  # cpp folds into value(v, anim) overload
-rust canvas set_buffer  # rust typed-CanvasBuffer variant of the shared buffer setter
+rust canvas set_buffer  # rust copies packed CanvasBuffer into native-owned storage
+rust canvas allocate_buffer  # rust initializes native-owned pixels without caller backing
 rust chart chart_type  # cpp names it type (reserved-ish in rust/zig)
 zig chart chart_type  # cpp names it type (reserved-ish in rust/zig)
 cpp chart type  # rust/zig name it chart_type
@@ -123,7 +124,7 @@ cpp timer timer  # cpp constructor (extractor reads the ctor name)
 # ====================================================================
 rust animation tick_fn  # rust/zig custom-exec tick trampoline; cpp has none
 rust arc bind_value  # reactive binding; rust method, zig free fn, cpp none
-rust canvas_buffer new  # rust-only lifetime-tracked CanvasBuffer helper
+rust canvas_buffer new  # rust validates a borrowed packed initializer for synchronous copying
 rust color black  # rust Color::black; zig free fn colorBlack; cpp raw lv_color_black
 rust color hex  # rust Color::hex; zig free fn colorHex; cpp raw lv_color_hex
 rust color hex3  # rust-only Color::hex3 convenience (lv_color_hex3)

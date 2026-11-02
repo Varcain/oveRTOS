@@ -62,6 +62,7 @@ add_library(ove_stub STATIC
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_lvgl.c
     ${OVE_SRC}/ove_lvgl_text.c
+    ${OVE_SRC}/ove_lvgl_canvas.c
     ${STUB_DIR}/stub_pm.c
     ${STUB_DIR}/stub_audio_device.c
 )

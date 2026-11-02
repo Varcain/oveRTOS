@@ -355,11 +355,35 @@ are value-sized views; deleting the widget tree is an explicit `.del()`.
 | Chaining | CRTP mixins | blanket traits (`Layout`/`Styleable`/…) | comptime mixin fns |
 | Ownership | non-owning view | non-owning `Copy` | non-owning value |
 | Delete tree | `.del()` | `.del()` | `.del()` |
+| Canvas pixel backing | borrowed native buffer | copied `CanvasBuffer` or initialized `allocate_buffer`, native widget owns pixels | borrowed native buffer |
 | Typed constants | `LV_ALIGN_*` / `LV_PALETTE_*` (C macros) | `lvgl::ALIGN_*` / `Palette` | `lvgl.ALIGN_*` / `lvgl.PALETTE_*` |
 | Raw escape hatch | implicit `lv_obj_t*` / `handle()` | `Widget::raw()` + `bindings::` | `obj` field + `ove.ffi` |
 
 **Contract notes**
 
+- Rust Canvas views remain pointer-sized and `Copy`. Pixel storage belongs to
+  the native Canvas subclass and survives dropped or forgotten Rust views. It
+  remains live through object and child deletion callbacks, then native
+  destruction releases it. `set_buffer` copies an immutable initializer before
+  returning; `allocate_buffer` creates zeroed pixels, with a black/white I1
+  palette. Both return `Result`, use LVGL's existing pool in heap and zero-heap
+  builds, and need no Rust allocator. Replacement temporarily needs both old
+  and new allocations; preparation failure preserves the current pixels.
+- Rust Canvas initializers contain tightly packed rows. I1 has two BGRA palette
+  entries (eight bytes), followed by each row rounded up to whole bytes. The
+  binding handles native row padding and alignment. Nonpositive dimensions,
+  unsupported formats, length mismatch and native header/stride overflow return
+  `InvalidParam`; allocation failure returns `NoMemory`. Native widget creation
+  keeps upstream LVGL's allocation/assertion behavior. C++/Zig raw Canvas buffer
+  APIs borrow writable initialized backing with the configured native stride,
+  palette and alignment; their callers keep it valid through native close.
+- Rust's raw Canvas buffer and layer operations are unsafe escape hatches.
+  Layer storage, queued tasks and referenced drawing resources must remain live
+  and exclusive through paired init/finish, with unchanged canvas backing. The
+  binding evicts normalized image caches after ordinary pixel/fill mutations
+  and layer completion. Existing widget-handle, locking and native callback
+  constraints still apply; this ownership rule does not enforce all LVGL
+  lifecycle or thread-safety contracts in the type system.
 - The graphics thread must hold the LVGL lock around `tick`/`handler` and any
   widget mutation. C++ and Rust release the lock at scope exit (destructor /
   `Drop`); Zig uses `const g = lvgl.lock(); defer g.deinit();`.

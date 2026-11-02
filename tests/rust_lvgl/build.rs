@@ -12,10 +12,23 @@ fn main() {
     println!("cargo:rustc-link-lib=static=lvgl");
     println!("cargo:rustc-link-lib=m");
     println!("cargo:rustc-link-lib=pthread");
-    for symbol in ["lv_malloc", "lv_realloc", "lv_free"] {
+    if std::env::var_os("OVE_LVGL_TEST_SANITIZE").is_some() {
+        println!("cargo:rustc-link-lib=dylib=ubsan");
+    }
+    for symbol in [
+        "lv_malloc",
+        "lv_malloc_zeroed",
+        "lv_calloc",
+        "lv_zalloc",
+        "lv_realloc",
+        "lv_free",
+        "lv_obj_destruct",
+        "lv_image_cache_drop",
+    ] {
         println!("cargo:rustc-link-arg=-Wl,--wrap={symbol}");
     }
     println!("cargo:rerun-if-changed={path}/libove_lvgl_text_test.a");
     println!("cargo:rerun-if-changed={path}/lvgl/lib/liblvgl.a");
     println!("cargo:rerun-if-env-changed=OVE_LVGL_TEST_LIB");
+    println!("cargo:rerun-if-env-changed=OVE_LVGL_TEST_SANITIZE");
 }

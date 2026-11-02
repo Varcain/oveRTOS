@@ -2389,8 +2389,11 @@ pub const Canvas = struct {
         return .{ .obj = c.lv_canvas_create(parentObj(parent_)).? };
     }
 
-    /// Attach a pixel buffer of the given geometry and format. The
-    /// buffer must outlive the canvas.
+    /// Borrow initialized writable pixels until replacement or native widget
+    /// destruction returns. No copy or ownership transfer occurs. Match native
+    /// draw alignment and row stride, plus eight palette bytes before I1 rows;
+    /// geometry and stride must fit the native image header. Rust's copied/
+    /// blank-buffer helpers instead provide native-owned storage.
     pub fn buffer(self: Canvas, buf: ?*anyopaque, w: i32, h: i32, cf: c.lv_color_format_t) Canvas {
         c.lv_canvas_set_buffer(self.obj, buf, w, h, cf);
         return self;

@@ -17,10 +17,10 @@ use core::ptr::addr_of;
 use core::sync::atomic::{AtomicI32, Ordering};
 
 use ove::lvgl::{
-    self, Arc, Bar, Box, Button, Calendar, Canvas, CanvasBuffer, Chart, Checkbox, Color,
-    ColorFormat, Dropdown, EventCtx, EventTarget, FlexAlign, FlexFlow, Image, ImageSrc, Keyboard,
-    Label, Layout, Led, List, LvCell, Msgbox, Obj, PART_MAIN, Roller, Series, Slider, Spinbox,
-    Spinner, State, Styleable, Switch, TEXT_ALIGN_CENTER, Table, Tabview, Textarea,
+    self, Arc, Bar, Box, Button, Calendar, Canvas, Chart, Checkbox, Color, ColorFormat, Dropdown,
+    EventCtx, EventTarget, FlexAlign, FlexFlow, Image, ImageSrc, Keyboard, Label, Layout, Led,
+    List, LvCell, Msgbox, Obj, PART_MAIN, Roller, Series, Slider, Spinbox, Spinner, State,
+    Styleable, Switch, TEXT_ALIGN_CENTER, Table, Tabview, Textarea,
 };
 use ove::{Priority, Thread, Timer};
 
@@ -49,8 +49,6 @@ ove::shared!(CHART_W: Chart);
 ove::shared!(SERIES_W: Series);
 ove::shared!(COUNTER_STATE: State<i32>);
 
-// Pixel buffer for the canvas page (XRGB8888, 64×64).
-ove::shared!(CANVAS_BUF: LvCell<[u8; 64 * 64 * 4]>);
 
 /// Navigation state — single-threaded mutation under the LVGL lock.
 #[derive(Clone, Copy)]
@@ -304,28 +302,16 @@ fn p_image(c: Obj) {
 }
 
 fn p_canvas(c: Obj) {
-    let canvas = Canvas::create(c).size(64, 64);
-    let buf_cell = CANVAS_BUF.get();
-    // Take a mutable borrow via LvCell::replace+set — we need &mut [u8] for
-    // CanvasBuffer. Move pixel data through the cell using `replace`.
-    let mut pixels = buf_cell.replace([0u8; 64 * 64 * 4]);
-    canvas
-        .set_buffer(CanvasBuffer::new(
-            &mut pixels,
-            64,
-            64,
-            ColorFormat::XRGB8888,
-        ))
+    let canvas = Canvas::create(c)
+        .size(32, 32)
+        .allocate_buffer(32, 32, ColorFormat::RGB565)
+        .expect("LVGL canvas pixels")
         .fill_bg(Color::hex(0x202020), 255);
-    for y in 0..64i32 {
-        for x in 0..64i32 {
-            canvas.set_pixel(x, y, Color::make((x * 4) as u8, (y * 4) as u8, 128));
+    for y in 0..32i32 {
+        for x in 0..32i32 {
+            canvas.set_pixel(x, y, Color::make((x * 8) as u8, (y * 8) as u8, 128));
         }
     }
-    // Put the (now-LVGL-owned) buffer back so the canvas can keep using it.
-    // LVGL's canvas keeps a pointer to the data, so we MUST store the
-    // backing array somewhere stable. Swap it back into the cell.
-    buf_cell.set(pixels);
     canvas.center();
 }
 
@@ -491,8 +477,6 @@ fn create_ui() {
     // State for reactive label
     COUNTER_STATE.init(State::<i32>::new(0));
 
-    // Pixel storage for the canvas page
-    CANVAS_BUF.init(LvCell::new([0u8; 64 * 64 * 4]));
 
     rebuild_page();
 }
