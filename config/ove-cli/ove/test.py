@@ -6,6 +6,7 @@
 
 """Test target management."""
 
+import json
 import logging
 import os
 import re
@@ -17,6 +18,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
 from .appgen import generate_app_kconfig
@@ -818,9 +820,10 @@ def test_rust_strings(ove_dir, output_dir):
     return result
 
 
-def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5):
+def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=None, cwd=None):
     """Bound a native test and all children in its own process group."""
-    process = subprocess.Popen(command, env=env, start_new_session=True)
+    process = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True, stdout=stdout,
+                               stderr=subprocess.STDOUT if stdout is not None else None)
     try:
         return process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -1835,8 +1838,8 @@ def _nuttx_fetch_sources(ove_dir):
     """Fetch the manifest-pinned NuttX kernel + apps + CMocka into dl/.
 
     Returns (nuttx_src, apps_dl, cmocka_dl) — absolute paths to the cached
-    upstream trees. The kernel tree is used directly as a CMake source dir
-    (CMake builds out-of-tree, so it stays clean); the apps tree is the
+    upstream trees. ARM test builds prepare the global kernel patches in a
+    shared source tree; host SIM keeps its existing source path. The apps tree is the
     pristine cache that callers copy into a per-variant build dir to
     register external/ove_test/ without cross-variant interference."""
     import hashlib
@@ -1923,12 +1926,30 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     All build artifacts (objects, dep files, .gcno/.gcda for coverage) live
     under build_dir/CMakeFiles/.../*.o — no scatter into the OVE source
     tree, no manual dep tracking required."""
+    from .build import (_shared_patched_tree, _drop_stale_cmake_cache,
+                        _check_source_trees_unchanged)
+    from .nuttx_startup import require_arm_startup
+
+    arm_board = board_config.split(":", 1)[0]
+    arm_boundary = arm_board in ("mps2-an500", "stm32f746g-disco")
+    if arm_boundary:
+        # Keep the record beside the generated CMake directory: a source-key
+        # change removes that directory, while copied test apps stay intact.
+        source_record = SimpleNamespace(build_dir=os.path.dirname(os.path.abspath(build_dir)))
+        nuttx_src = _shared_patched_tree(source_record, nuttx_src, [
+            ("global patch", os.path.join(ove_dir, "config", "patches", "nuttx"))])
+        _drop_stale_cmake_cache(build_dir, nuttx_src)
+        evidence_path = os.path.join(build_dir, "ove-startup-boundary.json")
+        if os.path.isfile(evidence_path):
+            os.unlink(evidence_path)
+
     # The venv goes on top of extra_env's PATH (the cross toolchain's), so NuttX's
     # find_program(olddefconfig) finds kconfiglib without an activated venv.
     env = _venv_env(ove_dir, {**os.environ, **(extra_env or {})})
 
     cmake_defs = [
         f"-DBOARD_CONFIG={board_config}",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         f"-DOVE_DIR={ove_dir}",
         f"-DNUTTX_APPS_DIR={apps_build}",
         # _OVE_VARIANT_DIR holds the variant's own ove_config.h (with
@@ -1982,6 +2003,14 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     run(["cmake", "-S", nuttx_src, "-B", build_dir,
          "--no-warn-unused-cli"], env=env)
     run(["cmake", "--build", build_dir, "-j", str(nproc())], env=env)
+    if arm_boundary:
+        _check_source_trees_unchanged(source_record)
+        evidence = require_arm_startup(
+            os.path.join(build_dir, "nuttx"), os.path.join(build_dir, ".config"),
+            os.path.join(build_dir, "flash.ld.tmp"), arm_board)
+        with open(evidence_path, "w") as stream:
+            json.dump(evidence, stream, indent=2)
+            stream.write("\n")
 
 
 def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
@@ -2067,6 +2096,7 @@ def test_nuttx_startup(ove_dir, output_dir):
     """Check finite constructor reentry and native task startup admission."""
     kernel, applications, _ = _nuttx_fetch_sources(ove_dir)
     result = TestResults(suite="nuttx-startup")
+    _test_nuttx_stack_linker(ove_dir, output_dir, kernel, result)
     for sanitize in (False, True):
         build = os.path.join(output_dir, "tests", "nuttx_startup" + ("_san" if sanitize else ""))
         _cmake_build(os.path.join(ove_dir, "tests", "nuttx_startup"), build,
@@ -2100,13 +2130,101 @@ def test_nuttx_startup(ove_dir, output_dir):
                                 os.path.join(fixture, "constructors_defconfig")],
             extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
             cmake_extra_args=["-DOVE_CTOR_ZERO_HEAP=" + ("ON" if zero else "OFF")])
+        if not zero:
+            _test_nuttx_reset_vectors(ove_dir, output_dir, build, "mps2-an500", result)
         rc = _run_owned_test_process(
             ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
              "-nographic", "-monitor", "none", "-semihosting", "-kernel",
              os.path.join(build, "nuttx")], env=dict(os.environ), timeout=30)
         result.passed += int(rc == 0)
         result.failed += int(rc != 0)
+    f746 = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
+        app_subdir="renode-stm32f746-nuttx", label="nuttx_reset_f746")
+    _test_nuttx_reset_vectors(ove_dir, output_dir, os.path.dirname(f746),
+                             "stm32f746g-disco", result)
     return result
+
+
+def _test_nuttx_reset_vectors(ove_dir, output_dir, native_build, board, result):
+    """Compile actual native vectors under supported flags without execution."""
+    code = _run_owned_test_process([
+        os.path.join(ove_dir, ".venv", "bin", "python"),
+        os.path.join(ove_dir, "tests", "nuttx_startup", "reset", "check.py"),
+        "--native-build", native_build,
+        "--output", os.path.join(output_dir, "tests", "nuttx_reset_vectors", board)],
+        env=dict(os.environ), timeout=120)
+    if code != 0:
+        raise RuntimeError("Native reset vector regression failed")
+    result.passed += 9
+
+
+def _test_nuttx_stack_linker(ove_dir, output_dir, kernel, result):
+    """Build finite linker artifacts; no fixture ARM image is executed."""
+    from .build import _shared_patched_tree, _check_source_trees_unchanged
+    from .nuttx_startup import inspect_arm_startup
+
+    fixture = os.path.join(ove_dir, "tests", "nuttx_startup", "linker")
+    base = os.path.join(output_dir, "tests", "nuttx_stack_linker")
+    record = SimpleNamespace(build_dir=base)
+    source = _shared_patched_tree(record, kernel, [
+        ("global patch", os.path.join(ove_dir, "config", "patches", "nuttx"))])
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    for board, native in (("qemu-mps2-an500", "mps2-an500"),
+                          ("stm32f746g-discovery", "stm32f746g-disco")):
+        for generator in ("Ninja", "Unix Makefiles"):
+            build = os.path.join(base, board + "-" + generator.replace(" ", "-"))
+            os.makedirs(build, exist_ok=True)
+            def check_size(idle, stackcheck=False, diagnostic=None):
+                command = ["cmake", "-G", generator, "-S", fixture, "-B", build,
+                           "-DCMAKE_TOOLCHAIN_FILE=" + os.path.join(fixture, "toolchain.cmake"),
+                           "-DOVE_TEST_TOOLCHAIN_DIR=" + toolchain,
+                           "-DOVE_TEST_NATIVE_SOURCE=" + source,
+                           "-DOVE_TEST_BOARD=" + board, "-DOVE_TEST_IDLE_BYTES=" + str(idle),
+                           "-DCONFIG_ARMV7M_STACKCHECK=" + ("ON" if stackcheck else "OFF")]
+                code = _run_owned_test_process(command, env=dict(os.environ), timeout=60)
+                if code != 0:
+                    raise RuntimeError("Native linker fixture configuration failed")
+                log = os.path.join(build, "linker-build-" + str(idle) + ".log")
+                with open(log, "w") as stream:
+                    code = _run_owned_test_process(
+                        ["cmake", "--build", build, "-j", "2"], env=dict(os.environ),
+                        timeout=60, stdout=stream)
+                output = Path(log).read_text(errors="replace")
+                if diagnostic:
+                    if code not in (1, 2) or diagnostic not in output:
+                        raise RuntimeError("Native linker failed to reject an invalid idle size: " + output[-2000:])
+                else:
+                    if code != 0:
+                        raise RuntimeError("Native linker fixture build failed: " + output[-2000:])
+                    evidence = inspect_arm_startup(
+                        os.path.join(build, "boundary.elf"), os.path.join(build, "fixture.config"),
+                        os.path.join(build, "flash.ld.tmp"), native)
+                    if evidence["failed_checks"]:
+                        raise RuntimeError("Native linker geometry failed: " +
+                                           ", ".join(evidence["failed_checks"]))
+                    script = Path(build, "flash.ld.tmp").read_text()
+                    if evidence["idle_size"] != idle or str(idle) + " <=" not in script:
+                        raise RuntimeError("Native linker fixture retained a stale configuration")
+                result.passed += 1
+
+            check_size(2048)
+            check_size(2047, diagnostic="initial idle stack size must be a multiple of eight")
+            check_size(2056)
+            outputs = [os.path.join(build, name) for name in ("flash.ld.tmp", "boundary.elf")]
+            times = [os.stat(path).st_mtime_ns for path in outputs]
+            code = _run_owned_test_process(
+                ["cmake", "--build", build, "-j", "2"], env=dict(os.environ), timeout=60)
+            if code != 0 or times != [os.stat(path).st_mtime_ns for path in outputs]:
+                raise RuntimeError("Unchanged native linker artifacts were rebuilt")
+            result.passed += 1
+            for idle in (0, -8):
+                check_size(idle, diagnostic="initial idle stack size must be positive")
+            check_size(2052, diagnostic="initial idle stack size must be a multiple of eight")
+            check_size(16777224, diagnostic="Initial idle stack exceeds primary SRAM")
+            if native == "stm32f746g-disco":
+                check_size(64, stackcheck=True, diagnostic="initial idle stack must exceed the stackcheck reserve")
+                check_size(72, stackcheck=True)
+    _check_source_trees_unchanged(record)
 
 
 def test_nuttx_coverage(ove_dir, output_dir):

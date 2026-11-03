@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES OVE_TEST_TOOLCHAIN_DIR)
+set(OVE_TEST_TOOLCHAIN_DIR "" CACHE PATH "Selected ARM toolchain directory")
+if(NOT EXISTS "${OVE_TEST_TOOLCHAIN_DIR}/bin/arm-none-eabi-gcc")
+    message(FATAL_ERROR "Set OVE_TEST_TOOLCHAIN_DIR to the ARM toolchain directory")
+endif()
+set(CMAKE_C_COMPILER "${OVE_TEST_TOOLCHAIN_DIR}/bin/arm-none-eabi-gcc")
+set(CMAKE_ASM_COMPILER "${CMAKE_C_COMPILER}")
