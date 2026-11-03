@@ -6,6 +6,7 @@
 
 """Test target management."""
 
+import json
 import logging
 import os
 import re
@@ -17,6 +18,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
 from .appgen import generate_app_kconfig
@@ -818,9 +820,10 @@ def test_rust_strings(ove_dir, output_dir):
     return result
 
 
-def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5):
+def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=None, cwd=None):
     """Bound a native test and all children in its own process group."""
-    process = subprocess.Popen(command, env=env, start_new_session=True)
+    process = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True, stdout=stdout,
+                               stderr=subprocess.STDOUT if stdout is not None else None)
     try:
         return process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -1832,8 +1835,8 @@ def _nuttx_fetch_sources(ove_dir):
     """Fetch the manifest-pinned NuttX kernel + apps + CMocka into dl/.
 
     Returns (nuttx_src, apps_dl, cmocka_dl) — absolute paths to the cached
-    upstream trees. The kernel tree is used directly as a CMake source dir
-    (CMake builds out-of-tree, so it stays clean); the apps tree is the
+    upstream trees. ARM test builds prepare the global kernel patches in a
+    shared source tree; host SIM keeps its existing source path. The apps tree is the
     pristine cache that callers copy into a per-variant build dir to
     register external/ove_test/ without cross-variant interference."""
     import hashlib
@@ -1920,6 +1923,19 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     All build artifacts (objects, dep files, .gcno/.gcda for coverage) live
     under build_dir/CMakeFiles/.../*.o — no scatter into the OVE source
     tree, no manual dep tracking required."""
+    from .build import (_shared_patched_tree, _drop_stale_cmake_cache,
+                        _check_source_trees_unchanged)
+
+    arm_board = board_config.split(":", 1)[0]
+    patched = arm_board in ("mps2-an500", "stm32f746g-disco")
+    if patched:
+        # Keep the record beside the generated CMake directory: a source-key
+        # change removes that directory, while copied test apps stay intact.
+        source_record = SimpleNamespace(build_dir=os.path.dirname(os.path.abspath(build_dir)))
+        nuttx_src = _shared_patched_tree(source_record, nuttx_src, [
+            ("global patch", os.path.join(ove_dir, "config", "patches", "nuttx"))])
+        _drop_stale_cmake_cache(build_dir, nuttx_src)
+
     # The venv goes on top of extra_env's PATH (the cross toolchain's), so NuttX's
     # find_program(olddefconfig) finds kconfiglib without an activated venv.
     env = _venv_env(ove_dir, {**os.environ, **(extra_env or {})})
@@ -1979,6 +1995,8 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     run(["cmake", "-S", nuttx_src, "-B", build_dir,
          "--no-warn-unused-cli"], env=env)
     run(["cmake", "--build", build_dir, "-j", str(nproc())], env=env)
+    if patched:
+        _check_source_trees_unchanged(source_record)
 
 
 def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
@@ -2061,7 +2079,7 @@ def test_nuttx(ove_dir, output_dir):
 
 
 def test_nuttx_startup(ove_dir, output_dir):
-    """Check finite constructor reentry and native task startup admission."""
+    """Check finite constructor reentry on host and in an ARM QEMU image."""
     kernel, applications, _ = _nuttx_fetch_sources(ove_dir)
     result = TestResults(suite="nuttx-startup")
     for sanitize in (False, True):

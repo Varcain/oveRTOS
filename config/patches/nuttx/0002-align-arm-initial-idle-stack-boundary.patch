@@ -1,0 +1,102 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -649,7 +649,8 @@
+   set(LD_SCRIPT_TMP "${CMAKE_BINARY_DIR}/${LD_SCRIPT_NAME}.tmp")
+ 
+   nuttx_generate_preprocess_target(SOURCE_FILE ${ldscript} TARGET_FILE
+-                                   ${LD_SCRIPT_TMP})
++                                   ${LD_SCRIPT_TMP}
++                                   DEPENDS ${CMAKE_BINARY_DIR}/include/nuttx/config.h)
+ 
+   add_custom_target(ldscript_tmp DEPENDS ${LD_SCRIPT_TMP})
+   add_dependencies(nuttx ldscript_tmp)
+--- a/boards/arm/mps/mps2-an500/scripts/flash.ld
++++ b/boards/arm/mps/mps2-an500/scripts/flash.ld
+@@ -19,6 +19,15 @@
+  * under the License.
+  *
+  ****************************************************************************/
++
++#include <nuttx/config.h>
++
++#if CONFIG_IDLETHREAD_STACKSIZE <= 0
++#  error The initial idle stack size must be positive
++#endif
++#if (CONFIG_IDLETHREAD_STACKSIZE & 7) != 0
++#  error The initial idle stack size must be a multiple of eight
++#endif
+ 
+ MEMORY
+ {
+@@ -99,9 +108,18 @@
+         *(.bss .bss.*)
+         *(.gnu.linkonce.b.*)
+         *(COMMON)
+-        . = ALIGN(4);
++        . = ALIGN(8);
+         _ebss = ABSOLUTE(.);
+     } > sram1
++
++    /* The reset vector, idle task and flat heap share this boundary. */
++    ASSERT((_ebss & 7) == 0, "Initial idle stack base must be aligned to eight")
++    ASSERT(_ebss >= ORIGIN(sram1) &&
++           _ebss <= ORIGIN(sram1) + LENGTH(sram1),
++           "Initial idle stack base must lie in primary SRAM")
++    ASSERT(CONFIG_IDLETHREAD_STACKSIZE <=
++           LENGTH(sram1) - (_ebss - ORIGIN(sram1)),
++           "Initial idle stack exceeds primary SRAM")
+ 
+     /* Stabs debugging sections. */
+ 
+--- a/boards/arm/stm32f7/stm32f746g-disco/scripts/flash.ld
++++ b/boards/arm/stm32f7/stm32f746g-disco/scripts/flash.ld
+@@ -51,6 +51,18 @@
+  * where the code expects to begin execution by jumping to the entry point in
+  * the 0x0800:0000 address range.
+  */
++
++#include <nuttx/config.h>
++
++#if CONFIG_IDLETHREAD_STACKSIZE <= 0
++#  error The initial idle stack size must be positive
++#endif
++#if (CONFIG_IDLETHREAD_STACKSIZE & 7) != 0
++#  error The initial idle stack size must be a multiple of eight
++#endif
++#if defined(CONFIG_ARMV7M_STACKCHECK) && CONFIG_IDLETHREAD_STACKSIZE <= 64
++#  error The initial idle stack must exceed the stackcheck reserve
++#endif
+ 
+ MEMORY
+ {
+@@ -115,9 +127,18 @@
+         *(.bss .bss.*)
+         *(.gnu.linkonce.b.*)
+         *(COMMON)
+-        . = ALIGN(4);
++        . = ALIGN(8);
+         _ebss = ABSOLUTE(.);
+     } > sram1
++
++    /* The reset vector, idle task and flat heap share this boundary. */
++    ASSERT((_ebss & 7) == 0, "Initial idle stack base must be aligned to eight")
++    ASSERT(_ebss >= ORIGIN(sram1) &&
++           _ebss <= ORIGIN(sram1) + LENGTH(sram1),
++           "Initial idle stack base must lie in primary SRAM")
++    ASSERT(CONFIG_IDLETHREAD_STACKSIZE <=
++           LENGTH(sram1) - (_ebss - ORIGIN(sram1)),
++           "Initial idle stack exceeds primary SRAM")
+ 
+     /* Stabs debugging sections. */
+     .stab 0 : { *(.stab) }
+--- a/arch/arm/src/armv7-m/arm_vectors.c
++++ b/arch/arm/src/armv7-m/arm_vectors.c
+@@ -58,6 +58,8 @@
+ 
+ extern void __start(void);
+ 
++static void start(void) naked_function;
++
+ static void start(void)
+ {
+   /* Zero lr to mark the end of backtrace */
