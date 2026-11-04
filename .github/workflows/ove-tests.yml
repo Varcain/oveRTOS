@@ -492,6 +492,9 @@ jobs:
       - name: Run zeroheap tests
         run: timeout 1200 make test-qemu-freertos-zeroheap
 
+      - name: Qualify shipped inference models on Cortex-M7
+        run: timeout --kill-after=20 1500 make test-infer-target
+
       - name: Run real FreeRTOS SPI retirement tests
         run: timeout 1200 make test-spi-retirement-freertos
 

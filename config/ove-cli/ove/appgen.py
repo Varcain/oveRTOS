@@ -83,6 +83,7 @@ def generate_app_kconfig(ove_dir):
         suite — historically lived under apps/<lang>/benchmark, moved
         out to make tests/benchmarks the canonical home for measurement
         apps)
+      - app.yaml files below tests/infer_target/ (target model qualification)
       - $OVE_EXTERNAL_APPS — colon-separated dirs containing app.yaml
     """
     if yaml is None:
@@ -95,6 +96,8 @@ def generate_app_kconfig(ove_dir):
     try:
         _scan_apps_dir(os.path.join(ove_dir, "apps"), apps, app_paths)
         _scan_apps_dir(os.path.join(ove_dir, "tests", "benchmarks"),
+                       apps, app_paths)
+        _scan_apps_dir(os.path.join(ove_dir, "tests", "infer_target"),
                        apps, app_paths)
 
         ext_dirs = [path.strip() for path in os.environ.get(

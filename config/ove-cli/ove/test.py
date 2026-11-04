@@ -1018,6 +1018,25 @@ def test_infer_admission_sanitize(ove_dir, output_dir):
     return _test_infer_admission(ove_dir, output_dir, sanitize=True)
 
 
+def test_infer_target(ove_dir, output_dir):
+    """Qualify the original models on Cortex-M7 in both allocation modes."""
+    del output_dir
+    result = TestResults(suite="infer-target")
+    def interrupt(_signal, _frame):
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGTERM, interrupt)
+    try:
+        rc = _run_owned_test_process(
+            [sys.executable, os.path.join(ove_dir, "tests", "infer_target", "run.py")],
+            env=dict(os.environ), timeout=1200, cleanup_timeout=15, cwd=ove_dir)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    result.passed = int(rc == 0)
+    result.failed = int(rc != 0)
+    return result
+
+
 def test_rust_async_i2c(ove_dir, output_dir):
     """Exercise owned Rust I2C staging, lifetime and public type contracts."""
     result = TestResults(suite="rust-async-i2c")
@@ -3742,6 +3761,7 @@ TEST_TARGETS = {
     "rust-async-spi": test_rust_async_spi,
     "infer-admission": test_infer_admission,
     "infer-admission-sanitize": test_infer_admission_sanitize,
+    "infer-target": test_infer_target,
     "rust-async-i2c": test_rust_async_i2c,
     "rust-async-i2c-arm": test_rust_async_i2c_arm,
     "rust-async-spi-arm": test_rust_async_spi_arm,

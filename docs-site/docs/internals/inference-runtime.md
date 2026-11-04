@@ -57,6 +57,31 @@ and owned frees. A nested constructor observes `OVE_ERR_BUSY`.
 `AllocateTensors()` failures return `OVE_ERR_ML_FAILED`. This distinction does
 not make the undefined configuration region safe.
 
+## Shipped-model qualification
+
+`make test-infer-target` runs both original keyword models with reference kernels
+on QEMU Cortex-M7 in both heap configurations. It compares all feature bytes and
+all four classifier scores for fixed initialized input sequences, and prints
+arena usage and front padding against each unchanged 32768-byte budget. It also
+checks the actual model's RFFT options before execution. This finite corpus
+checks implementation consistency, not recognition accuracy or arbitrary inputs.
+
+The reference QEMU Cortex-M7 build with GCC 15.2.1 reports 8464 bytes for the
+audio preprocessor and 6804 bytes for the classifier, with zero front padding.
+Their remaining capacities are 24304 and 25964 bytes respectively. Both seeds,
+caller-owned sessions in both heap modes and heap-backed creation agree. These
+measurements qualify this build; other target/compiler/provider combinations
+retain separate preparation-capacity and execution checks.
+
+No shipped configuration currently enables CMSIS-NN. An opt-in ARM qualification
+target accepts existing CMSIS-NN sources and Core headers and compares against
+the same reference goldens without tolerance. It verifies the classifier's
+linked DSP path; host scalar fallbacks do not qualify it. See the
+[qualification instructions](https://github.com/Varcain/oveRTOS/tree/main/tests/infer_target)
+for input recipes, explicit golden regeneration and supplied-provider commands.
+Recheck allocation layouts and preparation capacity across target compiler/ABI
+profiles; physical-board checks remain manual.
+
 ## Owned extension points
 
 `OveArenaAllocator` derives from `SingleArenaBufferAllocator`. Before persistent

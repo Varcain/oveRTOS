@@ -1,0 +1,14 @@
+lang: c
+config_name: infer_target_heap
+description: "Target inference qualification"
+sources:
+  - ../qualify.c
+includes:
+  - ../..
+incompatible_boards:
+  - stm32f746g-discovery
+  - qemu-mps2-an521
+  - qemu-mps2-an500.nuttx
+  - qemu-mps2-an500.zephyr
+defconfig:
+  - CONFIG_OVE_INFER=y

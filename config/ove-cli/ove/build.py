@@ -409,7 +409,7 @@ def _find_cmake():
     return cmake
 
 
-def _prepare_freertos_build_dir(fw_build, float_abi):
+def _prepare_freertos_build_dir(fw_build, float_abi, cmake_source=None):
     """Discard CMake state compiled for a different ARM float ABI.
 
     CMAKE_<LANG>_FLAGS_INIT is consumed only when a build tree is first
@@ -420,18 +420,23 @@ def _prepare_freertos_build_dir(fw_build, float_abi):
     """
     cache = os.path.join(fw_build, "CMakeCache.txt")
     cached_abis = set()
+    cached_source = None
     if os.path.isfile(cache):
         with open(cache) as f:
             for line in f:
+                if line.startswith("CMAKE_HOME_DIRECTORY:"):
+                    cached_source = line.rstrip("\n").split("=", 1)[-1]
                 if line.startswith(("CMAKE_C_FLAGS:",
                                     "CMAKE_CXX_FLAGS:",
                                     "CMAKE_ASM_FLAGS:")):
                     cached_abis.update(re.findall(
                         r"(?:^|\s)-mfloat-abi=(hard|softfp)(?=\s|$)", line))
 
-    if cached_abis and cached_abis != {float_abi}:
+    source_changed = (cmake_source and cached_source and
+                      os.path.realpath(cmake_source) != os.path.realpath(cached_source))
+    if source_changed or (cached_abis and cached_abis != {float_abi}):
         logger.info(
-            "ARM float ABI changed (%s -> %s); cleaning the FreeRTOS "
+            "ARM float ABI or CMake entry changed (%s -> %s); cleaning the FreeRTOS "
             "CMake build tree",
             ", ".join(sorted(cached_abis)), float_abi)
         shutil.rmtree(fw_build)
@@ -459,13 +464,13 @@ def _prepare_zephyr_build_dir(fw_build, zephyr_base):
     os.makedirs(fw_build, exist_ok=True)
 
 
-def build_freertos(ws):
+def build_freertos(ws, *, cmake_source=None, extra_cmake_args=()):
     """Build FreeRTOS firmware via CMake."""
     cmake = _find_cmake()
     env = ws.toolchain_env()
     board_dir = os.path.join(ws.board_dir, "freertos")
     fw_build = os.path.join(ws.build_dir, "firmware")
-    _prepare_freertos_build_dir(fw_build, ws.arm_float_abi)
+    _prepare_freertos_build_dir(fw_build, ws.arm_float_abi, cmake_source or board_dir)
 
     # Keep the shared download immutable. Board, reusable LXP-port, and app
     # patches are materialized into this build workspace's verified worktree.
@@ -512,7 +517,8 @@ def build_freertos(ws):
     if os.path.isfile(toolchain_file):
         cmake_args.append(f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file}")
 
-    cmake_args.append(board_dir)
+    cmake_args.extend(extra_cmake_args)
+    cmake_args.append(cmake_source or board_dir)
 
     logger.info("Building FreeRTOS firmware")
     run(cmake_args, env=env, cwd=fw_build, log_file=ws.build_log)
