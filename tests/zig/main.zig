@@ -1554,6 +1554,9 @@ fn testInferInvokeNull() !void {
 fn testInferLastInferenceNull() !void {
     const us = ove.ffi.ove_model_last_inference_us(null);
     try expect(us == 0);
+    try expect(ove.ffi.ove_model_arena_used(null) == 0);
+    var closed = std.mem.zeroes(ove.Model);
+    try expect((&closed).arenaUsed() == 0);
 }
 
 // ---------------------------------------------------------------------------

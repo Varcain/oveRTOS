@@ -1,6 +1,6 @@
 # ML Inference
 
-The oveRTOS inference module provides a portable C API for loading pre-trained `.tflite` FlatBuffer models and running inference via LiteRT (formerly TensorFlow Lite Micro). The same model binary runs unchanged across every oveRTOS backend — FreeRTOS, Zephyr and NuttX. Models are typically compiled into flash as `const` C arrays using `xxd` or `flatc`.
+The oveRTOS inference module provides a portable C API for loading pre-trained `.tflite` FlatBuffer models and running inference via LiteRT (formerly TensorFlow Lite Micro). The same model binary runs unchanged across every oveRTOS backend — FreeRTOS, Zephyr and NuttX. Models are trusted build-time assets. Use `models/convert.py` to generate `const` arrays aligned to 16 bytes; externally integrated arrays need the same alignment and immutable lifetime. TFLM is compiled unmodified at the manifest revision.
 
 ## Pipeline
 
@@ -46,7 +46,7 @@ stateDiagram-v2
     READY --> [*]: destroy() / deinit()
 ```
 
-1. **INIT** -- `ove_model_create()` or `ove_model_init()` parses the FlatBuffer, allocates the tensor arena, and registers TFLM operators. Fails with `OVE_ERR_ML_FAILED` if the model is malformed or the arena is too small.
+1. **INIT** -- `ove_model_create()` or `ove_model_init()` parses the FlatBuffer, allocates the tensor arena, and registers TFLM operators. Misaligned model bytes return `OVE_ERR_INVALID_PARAM`; a schema mismatch returns `OVE_ERR_NOT_SUPPORTED`. Startup prechecks and detected allocation/planner exhaustion return `OVE_ERR_NO_MEMORY`; other setup failures return `OVE_ERR_ML_FAILED`. Malformed programs and intermediate undersized arena configurations have no safe-failure guarantee.
 2. **READY** -- The session is ready. Call `ove_model_input()` to get a pointer into the tensor arena, write input data there, then call `ove_model_invoke()`.
 3. **INVOKED** -- Inference has run. Call `ove_model_output()` to read results. The session can be reused — write new inputs and call `invoke()` again without re-creating the model.
 
@@ -56,12 +56,13 @@ stateDiagram-v2
 |----------|-----------|-------------|
 | `ove_model_init` | `(model, storage, arena, cfg) → int` | Initialise using caller-supplied storage and arena; no heap allocation |
 | `ove_model_deinit` | `(model) → void` | Release resources; static storage and arena are not freed |
-| `ove_model_create` | `(model, cfg) → int` | Allocate and initialise from heap (or static per-call-site in zero-heap mode) |
+| `ove_model_create` | `(model, cfg) → int` | Allocate and initialise from heap; heap-mode only |
 | `ove_model_destroy` | `(model) → void` | Destroy and free a heap-allocated model session |
 | `ove_model_invoke` | `(model) → int` | Run inference on the currently populated input tensors |
 | `ove_model_input` | `(model, index, info) → int` | Get a descriptor for input tensor at `index`; write to `info->data` before invoking |
 | `ove_model_output` | `(model, index, info) → int` | Get a descriptor for output tensor at `index`; read from `info->data` after invoking |
 | `ove_model_last_inference_us` | `(model) → uint64_t` | Return the duration of the last `invoke()` in microseconds (requires `CONFIG_OVE_TIME`) |
+| `ove_model_arena_used` | `(model) → size_t` | Report interpreter usage plus original arena alignment padding; zero for null or accessible closed handles |
 
 ## Model Config Struct
 
@@ -74,14 +75,34 @@ struct ove_model_config {
 };
 ```
 
-`arena_size` controls how much memory is reserved for intermediate tensors. The required size depends on the model architecture. Use the TFLite interpreter's profiling output or start with a generous estimate and reduce until `ove_model_create()` no longer fails. For CMSIS-NN kernels, the arena should be 16-byte aligned.
+Measure a generously sized configuration on the actual target and kernel provider
+with `ove_model_arena_used()`. Keep the configured arena at least that usage plus
+16 bytes and retain the preparation capacity established by qualification. Final
+usage can exclude temporary setup peaks; do not shrink until setup fails.
+Re-measure after model, provider or TFLM changes. Aligning the arena to 16 bytes
+avoids front padding. Model bytes themselves must always be 16-byte aligned.
+
+The arena contract has three regions:
+
+| Capacity | Behavior |
+| --- | --- |
+| Below the startup precheck minimum | `OVE_ERR_NO_MEMORY`, before SDK construction |
+| Persistent/preparation requirements met but activation/planner capacity exhausted | `OVE_ERR_NO_MEMORY` |
+| Between that minimum and the model's persistent/preparation requirement | Configuration error with undefined behavior |
+
+Upstream kernels may use failed allocations in the third region. Address zero
+can map RAM on a target, so a null-based write need not fault. Each admitted
+setup clears the effective arena before constructing SDK objects, costing
+O(arena_size). Alignment and schema checks do not validate arbitrary model
+programs. See the [runtime contract](../internals/inference-runtime.md) for the
+known upstream behavior, qualification policy and revision-update checklist.
 
 ## Tensor Info Struct
 
 <!-- ove:body -->
 ```c
 struct ove_tensor_info {
-    void                *data;    /* pointer into the tensor arena — valid for model lifetime */
+    void                *data;    /* tensor data — output access is read-only */
     size_t               size;   /* total size of tensor data in bytes                        */
     enum ove_tensor_type type;   /* element type (FLOAT32, INT8, etc.)                        */
     unsigned int         ndims;  /* number of dimensions                                      */
@@ -89,7 +110,7 @@ struct ove_tensor_info {
 };
 ```
 
-Write input data directly to `info->data` before calling `ove_model_invoke()`. Read output data from `info->data` after the call returns. The pointer remains valid for the lifetime of the model session.
+Write input data directly to `info->data` before calling `ove_model_invoke()`. Read output data from `info->data` after the call returns. Outputs are read-only and may refer to immutable model constants. The pointer remains valid for the lifetime of the model session.
 
 ## Allocation Strategies
 

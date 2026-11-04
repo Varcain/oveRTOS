@@ -13,6 +13,20 @@
 //! including setup/cleanup/free tails. A forgotten session retains admission.
 //! Calls through a live handle require external serialization. This admission
 //! rule does not enforce the retained-byte/tensor preconditions of this wrapper.
+//!
+//! Models must be trusted, valid build-time assets aligned to 16 bytes and
+//! retained immutable through close. Misaligned assets return InvalidParam and
+//! schema mismatches return NotSupported. Native TFLM is unmodified. Below the startup
+//! precheck minimum, setup returns NoMemory before SDK construction. Once
+//! persistent and preparation requirements are met, exhausted allocation/planning
+//! capacity returns NoMemory. Intermediate undersized arenas are configuration
+//! errors with undefined behavior; other setup failures report their native error.
+//!
+//! Each admitted setup clears the effective arena in O(arena_size) time. Measure
+//! `arena_used()` on the target/provider, retain at least usage plus 16 bytes and
+//! qualify that configuration; final usage need not include temporary setup peaks.
+//! Remeasure after model/provider/TFLM changes. Output data is read-only. These
+//! native checks do not establish this wrapper's retained-byte/tensor ownership.
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -43,7 +57,7 @@ pub enum TensorType {
 /// Tensor metadata descriptor.
 #[derive(Debug, Clone)]
 pub struct TensorInfo {
-    /// Pointer to tensor data in the arena.
+    /// Tensor data; outputs can refer to immutable model bytes and are read-only.
     pub data: *mut u8,
     /// Total size in bytes.
     pub size: usize,
@@ -166,6 +180,14 @@ impl Model {
     /// Return last inference duration in microseconds.
     pub fn last_inference_us(&self) -> u64 {
         unsafe { bindings::ove_model_last_inference_us(self.handle) }
+    }
+
+    /// Report native arena usage including original alignment padding.
+    ///
+    /// Keep at least this value plus 16 bytes and the qualified setup capacity.
+    /// Returns zero for an empty or accessible closed handle.
+    pub fn arena_used(&self) -> usize {
+        unsafe { bindings::ove_model_arena_used(self.handle) }
     }
 }
 

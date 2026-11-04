@@ -87,6 +87,7 @@ static void test_cpp_infer_stub(void **state)
 {
 	(void)state;
 	assert_int_not_equal(ove_model_create(nullptr, nullptr), OVE_OK);
+	assert_int_equal(ove_model_arena_used(nullptr), 0);
 }
 
 #endif

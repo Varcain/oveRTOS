@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <initializer_list>
 
 struct Stats {
 	unsigned allocations, frees, live, attempts, setup, blocked, resolvers, interpreters;
@@ -24,7 +25,7 @@ static struct {
 static int fail_alloc = -1, fail_register, fail_setup, fail_model;
 static bool reserved, hold_setup, setup_entered, release_setup, tail_hooks;
 static ove_model_t closing;
-static const unsigned char model_bytes[16] = {1};
+alignas(16) static const unsigned char model_bytes[16] = {1};
 alignas(16) static unsigned char arena_a[256], arena_b[256], arena_nested[256];
 static ove_model_storage_t storage_a{}, storage_b{}, storage_nested{};
 static ove_model_config config()
@@ -251,6 +252,38 @@ static bool pair(bool first_heap, bool next_heap)
 	close_model(first_heap, first);
 	return clean();
 }
+static bool busy_tiny(bool heap)
+{
+	ove_model_t active = nullptr;
+	CHECK(make(false, &active, &storage_a, arena_a) == OVE_OK);
+	for (size_t bytes : {size_t(0), size_t(1), size_t(63), size_t(64)}) {
+		auto cfg = config();
+		cfg.arena_size = bytes;
+		memset(&storage_b, 0xa5, sizeof(storage_b));
+		memset(arena_b, 0xa5, sizeof(arena_b));
+		auto saved = storage_b;
+		auto before = stats;
+		ove_model_t candidate = active;
+		int rc;
+#ifdef OVE_HEAP_INFER
+		if (heap)
+			rc = ove_model_create(&candidate, &cfg);
+		else
+#else
+		(void)heap;
+#endif
+			rc = ove_model_init(&candidate, &storage_b, arena_b + 1, &cfg);
+		CHECK(rc == OVE_ERR_BUSY && candidate == active);
+		CHECK(!memcmp(&saved, &storage_b, sizeof(saved)));
+		CHECK(stats.attempts == before.attempts && stats.setup == before.setup);
+		for (auto value : arena_b)
+			CHECK(value == 0xa5);
+	}
+	close_model(false, active);
+	CHECK(make(false, &active, &storage_a, arena_a) == OVE_OK);
+	close_model(false, active);
+	return clean();
+}
 static bool failure(int kind, bool heap)
 {
 	fail_alloc = kind == 0 ? 0 : kind == 1 ? 1 : -1;
@@ -345,7 +378,7 @@ static bool invalid()
 	CHECK(ove_model_init(nullptr, &storage_a, arena_a, &cfg) == OVE_ERR_INVALID_PARAM);
 	CHECK(ove_model_init(&model, nullptr, arena_a, &cfg) == OVE_ERR_INVALID_PARAM);
 	cfg.arena_size = 0;
-	CHECK(ove_model_init(&model, &storage_a, arena_a, &cfg) == OVE_ERR_INVALID_PARAM);
+	CHECK(ove_model_init(&model, &storage_a, arena_a, &cfg) == OVE_ERR_NO_MEMORY);
 	cfg = config();
 	CHECK(ove_model_init(&model, &storage_a, arena_a, &cfg) == OVE_OK);
 	close_model(false, model);
@@ -411,7 +444,9 @@ int main(int argc, char **argv)
 		return 2;
 	const char *name = argv[1];
 	bool passed = false;
-	if (!strcmp(name, "pair-static-static"))
+	if (!strcmp(name, "busy-tiny-static"))
+		passed = busy_tiny(false);
+	else if (!strcmp(name, "pair-static-static"))
 		passed = pair(false, false);
 	else if (!strcmp(name, "model-failure"))
 		passed = failure(2, false);
@@ -432,6 +467,8 @@ int main(int argc, char **argv)
 	else if (!strcmp(name, "parallel"))
 		passed = parallel();
 #ifdef OVE_HEAP_INFER
+	else if (!strcmp(name, "busy-tiny-heap"))
+		passed = busy_tiny(true);
 	else if (!strcmp(name, "pair-heap-heap"))
 		passed = pair(true, true);
 	else if (!strcmp(name, "pair-heap-static"))

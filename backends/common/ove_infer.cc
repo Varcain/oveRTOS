@@ -22,8 +22,14 @@ extern "C" {
 #include "ove_backend_common.h"
 }
 
+#include <climits>
+#include <cstring>
+#include <limits>
 #include <new>
 
+#include "tflm/ove_tflm_arena.h"
+
+#include "tensorflow/lite/micro/micro_arena_constants.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
@@ -174,15 +180,57 @@ static void model_release()
 	__atomic_store_n(&s_model_claimed, 0, __ATOMIC_RELEASE);
 }
 
+static int model_config_status(const struct ove_model_config *cfg)
+{
+	if (!cfg || !cfg->model_data || cfg->model_size == 0 ||
+	    cfg->arena_size > static_cast<size_t>(INT_MAX))
+		return OVE_ERR_INVALID_PARAM;
+	const uintptr_t bytes = reinterpret_cast<uintptr_t>(cfg->model_data);
+	if ((bytes & (tflite::MicroArenaBufferAlignment() - 1)) ||
+	    cfg->model_size > std::numeric_limits<uintptr_t>::max() - bytes)
+		return OVE_ERR_INVALID_PARAM;
+	return OVE_OK;
+}
+
+static size_t model_arena_padding(const void *arena)
+{
+	return (-reinterpret_cast<uintptr_t>(arena)) & (tflite::MicroArenaBufferAlignment() - 1);
+}
+
+static int model_arena_status(const void *arena, size_t bytes)
+{
+	if (bytes > std::numeric_limits<uintptr_t>::max() - reinterpret_cast<uintptr_t>(arena))
+		return OVE_ERR_INVALID_PARAM;
+	const size_t padding = model_arena_padding(arena);
+	if (padding > bytes || bytes - padding < ove_tflm_arena_minimum())
+		return OVE_ERR_NO_MEMORY;
+	return OVE_OK;
+}
+
 /*
  * Internal: set up the TFLM interpreter inside a struct ove_model.
  * Assumes m->model_data, m->arena, m->arena_size are already set.
  */
 static int model_setup(struct ove_model *m)
 {
+	const int arena_status = model_arena_status(m->arena, m->arena_size);
+	if (arena_status != OVE_OK)
+		return arena_status;
 	const tflite::Model *tfl_model = tflite::GetModel(m->model_data);
 	if (!tfl_model)
 		return OVE_ERR_ML_FAILED;
+	if (tfl_model->version() != TFLITE_SCHEMA_VERSION)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	const size_t padding = model_arena_padding(m->arena);
+	auto *effective = m->arena + padding;
+	const size_t effective_size = m->arena_size - padding;
+	/* Unvisited node records must retain null registrations during a partial
+	 * setup failure. Clear before any allocator or callback places its data. */
+	std::memset(effective, 0, effective_size);
+	const OveTflmArena arena = ove_tflm_arena_create(effective, effective_size);
+	if (!arena.allocator)
+		return OVE_ERR_NO_MEMORY;
 
 	auto *resolver = new (s_resolver_buf) OveOpResolver();
 	if (register_common_ops(*resolver) != kTfLiteOk) {
@@ -192,14 +240,15 @@ static int model_setup(struct ove_model *m)
 	m->resolver = resolver;
 
 	auto *interpreter = new (s_interpreter_buf)
-		tflite::MicroInterpreter(tfl_model, *resolver, m->arena, m->arena_size);
+		tflite::MicroInterpreter(tfl_model, *resolver, arena.allocator);
 
 	TfLiteStatus status = interpreter->AllocateTensors();
 	if (status != kTfLiteOk) {
+		const bool exhausted = ove_tflm_arena_exhausted(arena);
 		interpreter->~MicroInterpreter();
 		resolver->~OveOpResolver();
 		m->resolver = nullptr;
-		return OVE_ERR_ML_FAILED;
+		return exhausted ? OVE_ERR_NO_MEMORY : OVE_ERR_ML_FAILED;
 	}
 
 	m->interpreter = interpreter;
@@ -233,12 +282,21 @@ extern "C" {
 int ove_model_init(ove_model_t *model, ove_model_storage_t *storage, void *arena,
 		   const struct ove_model_config *cfg)
 {
-	if (!model || !storage || !arena || !cfg || !cfg->model_data)
+	if (!model || !storage || !arena)
 		return OVE_ERR_INVALID_PARAM;
-	if (cfg->arena_size == 0 || cfg->model_size == 0)
+	int checked = model_config_status(cfg);
+	if (checked != OVE_OK)
+		return checked;
+	if (cfg->arena_size >
+	    std::numeric_limits<uintptr_t>::max() - reinterpret_cast<uintptr_t>(arena))
 		return OVE_ERR_INVALID_PARAM;
 	if (!model_try_claim())
 		return OVE_ERR_BUSY;
+	checked = model_arena_status(arena, cfg->arena_size);
+	if (checked != OVE_OK) {
+		model_release();
+		return checked;
+	}
 
 	struct ove_model *m = storage;
 	m->model_data = cfg->model_data;
@@ -271,12 +329,17 @@ void ove_model_deinit(ove_model_t model)
 
 int ove_model_create(ove_model_t *model, const struct ove_model_config *cfg)
 {
-	if (!model || !cfg || !cfg->model_data)
+	if (!model)
 		return OVE_ERR_INVALID_PARAM;
-	if (cfg->arena_size == 0 || cfg->model_size == 0)
-		return OVE_ERR_INVALID_PARAM;
+	const int checked = model_config_status(cfg);
+	if (checked != OVE_OK)
+		return checked;
 	if (!model_try_claim())
 		return OVE_ERR_BUSY;
+	if (cfg->arena_size < ove_tflm_arena_minimum()) {
+		model_release();
+		return OVE_ERR_NO_MEMORY;
+	}
 
 	auto *m = static_cast<struct ove_model *>(OVE_BACKEND_MALLOC(sizeof(struct ove_model)));
 	if (!m) {
@@ -388,6 +451,14 @@ uint64_t ove_model_last_inference_us(ove_model_t model)
 	if (!model)
 		return 0;
 	return model->last_invoke_us;
+}
+
+size_t ove_model_arena_used(ove_model_t model)
+{
+	if (!model || !model->interpreter)
+		return 0;
+	const auto *interpreter = static_cast<const tflite::MicroInterpreter *>(model->interpreter);
+	return interpreter->arena_used_bytes() + model_arena_padding(model->arena);
 }
 
 } /* extern "C" */

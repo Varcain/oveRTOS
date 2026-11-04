@@ -265,7 +265,25 @@ sufficient-arena preconditions remain.
 | Reusable static storage + arena | `static ove::ModelStorage<N> s` | `ModelStorage::<N>::new()` (static) | `var arena: [N]u8 align(16)` |
 | Load a model into it | `auto m = s.load(data, size)` | `let m = s.load(data)?` | `try m.init(&arena, &cfg)` (zero-heap only) |
 | Session end | destructor | `Drop` | `defer m.deinit()` |
-| Bad model / arena too small | `Error::MlFailed` | `Error::MlFailed` | `error.MlFailed` |
+| Arena usage including front padding | `m.arena_used()` | `m.arena_used()` | `m.arenaUsed()` |
+| Detected allocation/planner exhaustion | `Error::NoMemory` | `Error::NoMemory` | `error.OutOfMemory` |
+| Model alignment mismatch | `Error::InvalidParam` | `Error::InvalidParam` | `error.InvalidParam` |
+| Schema mismatch | `Error::NotSupported` | `Error::NotSupported` | `error.NotSupported` |
+| Other setup failure | `Error::MlFailed` | `Error::MlFailed` | `error.MlFailed` |
+
+These bindings share the [trusted-model and arena contract](inference-runtime.md).
+Models are immutable build-time assets aligned to 16 bytes; there is no general
+model validator. Below the startup minimum, setup returns NoMemory (OutOfMemory in Zig) before SDK
+construction. Once persistent/preparation needs are met, exhausted allocation
+or planning capacity also returns NoMemory (OutOfMemory in Zig). Intermediate undersized configurations
+have undefined behavior. Each admitted setup clears the effective arena in
+O(arena_size) time. Outputs are read-only.
+
+Measure the configured target/provider and retain at least reported usage plus
+16 bytes while keeping its qualified preparation capacity. Final usage can
+exclude temporary setup peaks; shrinking until failure is unsafe. Re-measure
+after model/provider/TFLM changes. In C the query is `ove_model_arena_used()`;
+null or accessible closed handles return zero. A dangling handle is invalid.
 
 **Contract notes**
 

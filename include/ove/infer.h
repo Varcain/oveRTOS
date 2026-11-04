@@ -32,8 +32,33 @@
  * forgotten session retains admission indefinitely; there is no automatic
  * recovery. Operations on the admitted handle require external serialization.
  * Model bytes, caller storage and arena must remain valid through the final
- * close call returning. Admission does not validate arbitrary model contents
- * or establish that an arbitrary nonzero arena size is sufficient.
+ * close call returning.
+ *
+ * @par Trusted model contract
+ * Models are trusted build-time assets containing valid, supported TFLite
+ * programs. Model bytes must be 16-byte aligned and remain immutable throughout
+ * the session. TFLM is compiled unmodified at the manifest revision. Alignment
+ * and schema checks do not protect against malformed models or invalid numeric
+ * input domains.
+ *
+ * @par Arena configuration
+ * There are three arena regions:
+ * - Below the backend startup precheck minimum: @c OVE_ERR_NO_MEMORY, with no
+ *   SDK object constructed.
+ * - Once persistent allocation and preparation requirements are met, an
+ *   activation plan or planner bookkeeping that does not fit returns
+ *   @c OVE_ERR_NO_MEMORY.
+ * - Between the startup minimum and the model's persistent/preparation
+ *   requirement: a configuration error with undefined behavior. Upstream
+ *   kernels may use failed allocations; address zero can be mapped RAM on a
+ *   target, so a null-based write need not fault.
+ *
+ * Measure a generously sized configuration on the actual target and kernel
+ * provider with ove_model_arena_used(). Retain at least that usage plus 16 bytes
+ * and qualify the configured arena. Remeasure after changing the model, provider
+ * or TFLM revision. Final usage is not a universal preparation-peak bound;
+ * shrinking until setup fails can enter the undefined region. Every admitted
+ * setup clears the effective arena before SDK construction, costing O(arena_size).
  * @{
  */
 
@@ -66,12 +91,12 @@ enum ove_tensor_type {
 /**
  * @brief Tensor descriptor returned by ove_model_input() / ove_model_output().
  *
- * Provides direct access to tensor data inside the arena, along with
- * shape and type metadata.  The @c data pointer is valid for the
- * lifetime of the model session.
+ * Provides direct access to tensor data, along with shape and type metadata.
+ * Outputs are read-only and can refer to immutable model bytes. The @c data
+ * pointer is valid for the lifetime of the model session.
  */
 struct ove_tensor_info {
-	void *data;		   /**< Pointer into the tensor arena buffer. */
+	void *data;		   /**< Tensor data; output access is read-only. */
 	size_t size;		   /**< Total size of tensor data in bytes. */
 	enum ove_tensor_type type; /**< Element type. */
 	unsigned int ndims;	   /**< Number of dimensions. */
@@ -81,8 +106,8 @@ struct ove_tensor_info {
 /**
  * @brief Configuration for an ML inference session.
  *
- * @c model_data must point to a valid @c .tflite FlatBuffer.  It is
- * typically embedded as a @c const C array compiled into flash.
+ * @c model_data must point to a trusted, valid @c .tflite FlatBuffer aligned to
+ * 16 bytes, typically a generated @c const C array compiled into flash.
  * @c arena_size controls how much memory is reserved for intermediate
  * tensors; the actual requirement depends on the model.
  *
@@ -107,14 +132,18 @@ struct ove_model_config {
  *
  * No heap allocation is performed.  The @p arena must be at least
  * @p cfg->arena_size bytes and remain valid for the lifetime of the model.
- * It should be 16-byte aligned for optimal CMSIS-NN performance.
+ * Aligning the arena to 16 bytes avoids losing front padding. The arena must
+ * satisfy the configuration contract above; an arbitrary nonzero size is not
+ * sufficient. Effective arena bytes are cleared on each admitted setup.
  *
  * @param[out] model    Receives the opaque model handle on success.
  * @param[in]  storage  Pointer to caller-allocated backend storage.
  * @param[in]  arena    Caller-allocated tensor arena buffer.
  * @param[in]  cfg      Model configuration.
  * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,
- *         OVE_ERR_ML_FAILED if model setup fails, OVE_ERR_BUSY while another
+ *         OVE_ERR_NO_MEMORY for prechecked or allocator/planner-detected arena
+ *         exhaustion, OVE_ERR_NOT_SUPPORTED for a schema mismatch,
+ *         OVE_ERR_ML_FAILED for other setup failures, OVE_ERR_BUSY while another
  *         session owns the backend. Busy leaves the output handle, candidate
  *         storage and arena unchanged and performs no allocation.
  *
@@ -145,11 +174,14 @@ void ove_model_deinit(ove_model_t model);
  *
  * Both the backend storage and the tensor arena are allocated from
  * the heap.  The arena size is taken from @p cfg->arena_size.
+ * The trusted-model and three-region arena contracts above also apply.
  *
  * @param[out] model  Receives the opaque model handle on success.
  * @param[in]  cfg    Model configuration.
- * @return OVE_OK on success, OVE_ERR_NO_MEMORY if allocation fails,
- *         OVE_ERR_ML_FAILED on setup error, OVE_ERR_BUSY while another session
+ * @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments or model
+ *         alignment, OVE_ERR_NO_MEMORY for owned allocation failure or detected
+ *         arena exhaustion, OVE_ERR_NOT_SUPPORTED for a schema mismatch,
+ *         OVE_ERR_ML_FAILED on other setup error, OVE_ERR_BUSY while another session
  *         owns the backend. Busy preserves the output and does not allocate.
  *
  * @see ove_model_destroy, ove_model_init
@@ -205,7 +237,7 @@ OVE_NODISCARD int ove_model_input(ove_model_t model, unsigned int index,
  *
  * Populates @p info with the data pointer, shape, type, and size
  * of the output tensor at @p index.  Call after ove_model_invoke()
- * to read results.
+ * to read results. Output data is read-only, including model-backed constants.
  *
  * @param[in]  model  Model handle.
  * @param[in]  index  Zero-based output tensor index.
@@ -227,6 +259,21 @@ OVE_NODISCARD int ove_model_output(ove_model_t model, unsigned int index,
  * @return Inference duration in microseconds.
  */
 uint64_t ove_model_last_inference_us(ove_model_t model);
+
+/**
+ * @brief Report the live session's arena usage in bytes.
+ *
+ * Returns the interpreter's @c arena_used_bytes() plus the original arena's
+ * front alignment padding. Measure on the target build and kernel provider;
+ * the configured arena must retain at least this value plus 16 bytes. Keep the
+ * qualified preparation capacity as well: final usage need not include peak
+ * temporary planning/preparation space. Remeasure after model/provider/TFLM changes.
+ *
+ * @param[in] model Live session, or an accessible closed static handle.
+ * @return Arena usage, or zero for a null or closed handle. A dangling handle
+ *         remains invalid and must not be passed.
+ */
+size_t ove_model_arena_used(ove_model_t model);
 
 #else /* !CONFIG_OVE_INFER */
 
@@ -266,6 +313,11 @@ OVE_NODISCARD static inline int ove_model_output(ove_model_t m, unsigned int i,
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline uint64_t ove_model_last_inference_us(ove_model_t m)
+{
+	(void)m;
+	return 0;
+}
+static inline size_t ove_model_arena_used(ove_model_t m)
 {
 	(void)m;
 	return 0;

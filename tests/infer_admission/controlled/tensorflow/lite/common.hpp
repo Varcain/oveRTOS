@@ -39,11 +39,17 @@ struct TfLiteTensor {
 namespace tflite
 {
 struct Model {
+	uint32_t version() const
+	{
+		return 3;
+	}
 };
 struct MicroOpResolver {
 };
 inline const Model *GetModel(const void *data)
 {
-	return infer_probe_get_model() ? reinterpret_cast<const Model *>(data) : nullptr;
+	(void)data;
+	static const Model model{};
+	return infer_probe_get_model() ? &model : nullptr;
 }
 } // namespace tflite

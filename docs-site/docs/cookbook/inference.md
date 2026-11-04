@@ -93,7 +93,14 @@ void ove_main(void)
 
 ## Tensor arena sizing
 
-The arena holds the model's intermediate tensors. Too small and `ove_model_init()` fails with `OVE_ERR_ML_FAILED`; too large wastes SRAM. There is no call that reports the bytes used, so start generous, shrink until the init fails, and keep a margin above that point. `example_keyword_live` runs both of its models in 32 KB.
+Use trusted, valid model assets aligned to 16 bytes. Measure a generously sized
+configuration on the target/provider with `ove_model_arena_used()`. Keep at least
+reported usage plus 16 bytes and retain its qualified preparation capacity.
+Do not shrink until setup fails: intermediate undersized configurations can
+have undefined behavior. Prechecks and detected allocator/planner exhaustion
+return `OVE_ERR_NO_MEMORY`; other setup failures return `OVE_ERR_ML_FAILED`.
+Re-measure after model/provider/TFLM changes. The keyword application configures
+32 KB for each model. See the [runtime contract](../internals/inference-runtime.md).
 
 ## Quantized vs float
 
