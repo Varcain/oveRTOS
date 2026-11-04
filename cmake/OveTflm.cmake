@@ -5,6 +5,8 @@
 # This file is part of oveRTOS.
 
 # ove_build_tflm() — compile TensorFlow Lite Micro with oveRTOS platform port.
+# TFLM is compiled unmodified at the manifest revision. See
+# docs-site/docs/internals/inference-runtime.md for the trust and arena contracts.
 #
 # Expects:
 #   OVE_DL_DIR       — download directory containing tflite-micro/
@@ -113,21 +115,22 @@ macro(ove_build_tflm)
     list(FILTER _TFLM_SIGNAL_SRC EXCLUDE REGEX ".*/ceva/.*")
     list(APPEND _TFLM_ALL_SRC ${_TFLM_SIGNAL_SRC})
 
-    # ── oveRTOS platform port + inference wrapper ────────────────────
-    list(APPEND _TFLM_ALL_SRC
+    # Own code has project diagnostics; upstream code keeps its warning policy.
+    set(_TFLM_OWN_SRC
         ${OVE_DIR}/backends/common/tflm/ove_tflm_debug_log.cc
         ${OVE_DIR}/backends/common/tflm/ove_tflm_time.cc
+        ${OVE_DIR}/backends/common/tflm/ove_tflm_arena.cc
         ${OVE_DIR}/backends/common/ove_infer.cc
     )
-
-    # ── Build as static library ──────────────────────────────────────
     add_library(ove_tflm STATIC ${_TFLM_ALL_SRC})
+    add_library(ove_tflm_port OBJECT ${_TFLM_OWN_SRC})
+    target_sources(ove_tflm PRIVATE $<TARGET_OBJECTS:ove_tflm_port>)
 
     # TFLM downloads third-party deps via its own make system into
     # tensorflow/lite/micro/tools/make/downloads/.  Use those paths.
     set(_TFLM_DOWNLOADS "${_TFLM_PATH}/tensorflow/lite/micro/tools/make/downloads")
 
-    target_include_directories(ove_tflm PUBLIC
+    set(_TFLM_SDK_INCLUDES
         ${_TFLM_PATH}
         ${_TFLM_DOWNLOADS}/flatbuffers/include
         ${_TFLM_DOWNLOADS}/gemmlowp
@@ -135,50 +138,53 @@ macro(ove_build_tflm)
         ${_TFLM_DOWNLOADS}/kissfft
         ${_TFLM_PATH}/signal/src
         ${_TFLM_PATH}/signal/micro/kernels
-        ${OVE_INCLUDE_DIR}
-        ${OVE_GEN_DIR}
-        ${OVE_BACKENDS_COMMON_DIR}
     )
-
-    if(DEFINED CONFIG_OVE_INFER_CMSIS_NN AND DEFINED OVE_CMSIS_NN_DIR)
-        # TFLM uses #include "Include/arm_nnfunctions.h" (relative to NN dir)
-        target_include_directories(ove_tflm PRIVATE
-            ${OVE_CMSIS_NN_DIR}
+    foreach(_tflm_target ove_tflm ove_tflm_port)
+        target_include_directories(${_tflm_target} PUBLIC
+            ${_TFLM_SDK_INCLUDES}
+            ${OVE_INCLUDE_DIR}
+            ${OVE_GEN_DIR}
+            ${OVE_BACKENDS_COMMON_DIR}
         )
-        # CMSIS-NN depends on CMSIS-Core and CMSIS-DSP headers.
-        # OVE_CMSIS5_DIR should point to the CMSIS/ subtree (containing Core/, DSP/, NN/).
-        if(DEFINED OVE_CMSIS5_DIR)
-            target_include_directories(ove_tflm PRIVATE
-                ${OVE_CMSIS5_DIR}/Core/Include
-                ${OVE_CMSIS5_DIR}/DSP/Include
-            )
-        elseif(DEFINED OVE_CMSIS_NN_DIR)
-            # Derive: NN is at CMSIS/NN, so ../.. = root, ../Core = sibling
-            get_filename_component(_cmsis_parent "${OVE_CMSIS_NN_DIR}/.." ABSOLUTE)
-            target_include_directories(ove_tflm PRIVATE
-                ${_cmsis_parent}/Core/Include
-                ${_cmsis_parent}/DSP/Include
-            )
+        if(DEFINED CONFIG_OVE_INFER_CMSIS_NN AND DEFINED OVE_CMSIS_NN_DIR)
+            target_include_directories(${_tflm_target} PRIVATE ${OVE_CMSIS_NN_DIR})
+            if(DEFINED OVE_CMSIS5_DIR)
+                target_include_directories(${_tflm_target} PRIVATE
+                    ${OVE_CMSIS5_DIR}/Core/Include
+                    ${OVE_CMSIS5_DIR}/DSP/Include
+                )
+            elseif(DEFINED OVE_CMSIS_NN_DIR)
+                get_filename_component(_cmsis_parent "${OVE_CMSIS_NN_DIR}/.." ABSOLUTE)
+                target_include_directories(${_tflm_target} PRIVATE
+                    ${_cmsis_parent}/Core/Include
+                    ${_cmsis_parent}/DSP/Include
+                )
+            endif()
+            target_compile_definitions(${_tflm_target} PRIVATE CMSIS_NN)
         endif()
-        target_compile_definitions(ove_tflm PRIVATE CMSIS_NN)
+        set_target_properties(${_tflm_target} PROPERTIES
+            CXX_STANDARD 17
+            CXX_STANDARD_REQUIRED ON
+        )
+        target_compile_options(${_tflm_target} PRIVATE
+            -fno-exceptions
+            -fno-rtti
+            -fno-threadsafe-statics
+        )
+        target_compile_definitions(${_tflm_target} PRIVATE TF_LITE_STATIC_MEMORY)
+    endforeach()
+    target_compile_options(ove_tflm PRIVATE -w)
+    target_include_directories(ove_tflm_port SYSTEM PRIVATE ${_TFLM_SDK_INCLUDES})
+    target_compile_options(ove_tflm_port PRIVATE -Wall -Werror)
+    if(COMMAND ove_werror_own_sources)
+        ove_werror_own_sources(ove_tflm_port "${_TFLM_OWN_SRC}")
     endif()
-
-    set_target_properties(ove_tflm PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-    )
-
-    target_compile_options(ove_tflm PRIVATE
-        -w                  # Suppress TFLM warnings (upstream code)
-        -fno-exceptions
-        -fno-rtti
-        -fno-threadsafe-statics  # Avoids __cxa_guard_* deps (no RTOS-level C++ runtime)
-        -DTF_LITE_STATIC_MEMORY
-    )
-
 
     # Clean up local variables
     unset(_TFLM_PATH)
     unset(_TFLM_ALL_SRC)
     unset(_CMSIS_NN_KERNELS)
+    unset(_TFLM_OWN_SRC)
+    unset(_TFLM_SDK_INCLUDES)
+    unset(_tflm_target)
 endmacro()

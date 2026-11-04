@@ -3008,11 +3008,11 @@ pub const OVE_TENSOR_INT16: ove_tensor_type = 3;
 pub const OVE_TENSOR_INT32: ove_tensor_type = 4;
 #[doc = " @brief Tensor element types.\n\n Subset of TFLite tensor types that are relevant for microcontroller\n inference (quantised int8/int16 and float32)."]
 pub type ove_tensor_type = core::ffi::c_uint;
-#[doc = " @brief Tensor descriptor returned by ove_model_input() / ove_model_output().\n\n Provides direct access to tensor data inside the arena, along with\n shape and type metadata.  The @c data pointer is valid for the\n lifetime of the model session."]
+#[doc = " @brief Tensor descriptor returned by ove_model_input() / ove_model_output().\n\n Provides direct access to tensor data, along with shape and type metadata.\n Outputs are read-only and can refer to immutable model bytes. The @c data\n pointer is valid for the lifetime of the model session."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_tensor_info {
-    #[doc = "< Pointer into the tensor arena buffer."]
+    #[doc = "< Tensor data; output access is read-only."]
     pub data: *mut core::ffi::c_void,
     #[doc = "< Total size of tensor data in bytes."]
     pub size: usize,
@@ -3038,7 +3038,7 @@ const _: () = {
     ["Offset of field: ove_tensor_info::dims"]
         [core::mem::offset_of!(ove_tensor_info, dims) - 24usize];
 };
-#[doc = " @brief Configuration for an ML inference session.\n\n @c model_data must point to a valid @c .tflite FlatBuffer.  It is\n typically embedded as a @c const C array compiled into flash.\n @c arena_size controls how much memory is reserved for intermediate\n tensors; the actual requirement depends on the model.\n\n @warning The interpreter holds @c model_data by pointer for the entire\n          lifetime of the model session. The caller MUST ensure the\n          buffer remains valid and immutable from the successful\n          @c ove_model_init() / @c ove_model_create() call until\n          @c ove_model_deinit() / @c ove_model_destroy() returning. Passing a\n          stack-allocated or transient heap buffer will result in\n          silent memory corruption during @c ove_model_invoke()."]
+#[doc = " @brief Configuration for an ML inference session.\n\n @c model_data must point to a trusted, valid @c .tflite FlatBuffer aligned to\n 16 bytes, typically a generated @c const C array compiled into flash.\n @c arena_size controls how much memory is reserved for intermediate\n tensors; the actual requirement depends on the model.\n\n @warning The interpreter holds @c model_data by pointer for the entire\n          lifetime of the model session. The caller MUST ensure the\n          buffer remains valid and immutable from the successful\n          @c ove_model_init() / @c ove_model_create() call until\n          @c ove_model_deinit() / @c ove_model_destroy() returning. Passing a\n          stack-allocated or transient heap buffer will result in\n          silent memory corruption during @c ove_model_invoke()."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_model_config {
@@ -3061,7 +3061,7 @@ const _: () = {
         [core::mem::offset_of!(ove_model_config, arena_size) - 16usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a model using caller-supplied storage and arena.\n\n No heap allocation is performed.  The @p arena must be at least\n @p cfg->arena_size bytes and remain valid for the lifetime of the model.\n It should be 16-byte aligned for optimal CMSIS-NN performance.\n\n @param[out] model    Receives the opaque model handle on success.\n @param[in]  storage  Pointer to caller-allocated backend storage.\n @param[in]  arena    Caller-allocated tensor arena buffer.\n @param[in]  cfg      Model configuration.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,\n         OVE_ERR_ML_FAILED if model setup fails, OVE_ERR_BUSY while another\n         session owns the backend. Busy leaves the output handle, candidate\n         storage and arena unchanged and performs no allocation.\n\n @see ove_model_deinit, ove_model_create"]
+    #[doc = " @brief Initialise a model using caller-supplied storage and arena.\n\n No heap allocation is performed.  The @p arena must be at least\n @p cfg->arena_size bytes and remain valid for the lifetime of the model.\n Aligning the arena to 16 bytes avoids losing front padding. The arena must\n satisfy the configuration contract above; an arbitrary nonzero size is not\n sufficient. Effective arena bytes are cleared on each admitted setup.\n\n @param[out] model    Receives the opaque model handle on success.\n @param[in]  storage  Pointer to caller-allocated backend storage.\n @param[in]  arena    Caller-allocated tensor arena buffer.\n @param[in]  cfg      Model configuration.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,\n         OVE_ERR_NO_MEMORY for prechecked or allocator/planner-detected arena\n         exhaustion, OVE_ERR_NOT_SUPPORTED for a schema mismatch,\n         OVE_ERR_ML_FAILED for other setup failures, OVE_ERR_BUSY while another\n         session owns the backend. Busy leaves the output handle, candidate\n         storage and arena unchanged and performs no allocation.\n\n @see ove_model_deinit, ove_model_create"]
     pub fn ove_model_init(
         model: *mut ove_model_t,
         storage: *mut ove_model_storage_t,
@@ -3074,7 +3074,7 @@ unsafe extern "C" {
     pub fn ove_model_deinit(model: ove_model_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a model from the heap.\n\n Both the backend storage and the tensor arena are allocated from\n the heap.  The arena size is taken from @p cfg->arena_size.\n\n @param[out] model  Receives the opaque model handle on success.\n @param[in]  cfg    Model configuration.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if allocation fails,\n         OVE_ERR_ML_FAILED on setup error, OVE_ERR_BUSY while another session\n         owns the backend. Busy preserves the output and does not allocate.\n\n @see ove_model_destroy, ove_model_init"]
+    #[doc = " @brief Allocate and initialise a model from the heap.\n\n Both the backend storage and the tensor arena are allocated from\n the heap.  The arena size is taken from @p cfg->arena_size.\n The trusted-model and three-region arena contracts above also apply.\n\n @param[out] model  Receives the opaque model handle on success.\n @param[in]  cfg    Model configuration.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments or model\n         alignment, OVE_ERR_NO_MEMORY for owned allocation failure or detected\n         arena exhaustion, OVE_ERR_NOT_SUPPORTED for a schema mismatch,\n         OVE_ERR_ML_FAILED on other setup error, OVE_ERR_BUSY while another session\n         owns the backend. Busy preserves the output and does not allocate.\n\n @see ove_model_destroy, ove_model_init"]
     pub fn ove_model_create(
         model: *mut ove_model_t,
         cfg: *const ove_model_config,
@@ -3097,7 +3097,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a descriptor for an output tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the output tensor at @p index.  Call after ove_model_invoke()\n to read results.\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based output tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.\n\n @see ove_model_input, ove_model_invoke"]
+    #[doc = " @brief Get a descriptor for an output tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the output tensor at @p index.  Call after ove_model_invoke()\n to read results. Output data is read-only, including model-backed constants.\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based output tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.\n\n @see ove_model_input, ove_model_invoke"]
     pub fn ove_model_output(
         model: ove_model_t,
         index: core::ffi::c_uint,
@@ -3107,6 +3107,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Return inference time of the last ove_model_invoke() in microseconds.\n\n The timing is measured using ove_time_get_us() around the interpreter\n invocation.  Returns 0 if no inference has been run yet.\n\n @param[in] model  Model handle.\n @return Inference duration in microseconds."]
     pub fn ove_model_last_inference_us(model: ove_model_t) -> u64;
+}
+unsafe extern "C" {
+    #[doc = " @brief Report the live session's arena usage in bytes.\n\n Returns the interpreter's @c arena_used_bytes() plus the original arena's\n front alignment padding. Measure on the target build and kernel provider;\n the configured arena must retain at least this value plus 16 bytes. Keep the\n qualified preparation capacity as well: final usage need not include peak\n temporary planning/preparation space. Remeasure after model/provider/TFLM changes.\n\n @param[in] model Live session, or an accessible closed static handle.\n @return Arena usage, or zero for a null or closed handle. A dangling handle\n         remains invalid and must not be passed."]
+    pub fn ove_model_arena_used(model: ove_model_t) -> usize;
 }
 #[doc = "< Reliable byte-stream (TCP)."]
 pub const OVE_SOCK_STREAM: ove_sock_type_t = 1;

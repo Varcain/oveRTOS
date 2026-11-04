@@ -10,6 +10,19 @@
  * @file infer.hpp
  * @brief C++ wrappers for ML inference — `ove::Model` over LiteRT
  *        (TensorFlow Lite Micro). Available when `CONFIG_OVE_INFER` is set.
+ *
+ * Models are trusted, valid build-time assets aligned to 16 bytes and retained
+ * immutable through close. Misaligned assets return InvalidParam and schema
+ * mismatches return NotSupported. TFLM is compiled unmodified. Below the native startup
+ * minimum, setup returns NoMemory before SDK construction. Once persistent and
+ * preparation requirements are met, exhausted allocation/planning capacity also
+ * returns NoMemory; other setup failures return the native error. Intermediate
+ * undersized arenas are configuration errors with undefined behavior.
+ *
+ * Each admitted setup clears the effective arena in O(arena_size) time. Measure
+ * arena_used() on the target/provider, retain at least usage plus 16 bytes and
+ * qualify that configuration; final usage need not include temporary setup peaks.
+ * Remeasure after model/provider/TFLM changes. Output data is read-only.
  */
 
 #pragma once
@@ -108,6 +121,15 @@ class ModelBase
 	uint64_t last_inference_us() const
 	{
 		return ove_model_last_inference_us(handle_);
+	}
+
+	/** @brief Report native arena usage including original alignment padding.
+	 *  Keep at least this value plus 16 bytes and the qualified setup capacity.
+	 *  Returns zero for an empty or accessible closed handle.
+	 */
+	size_t arena_used() const noexcept
+	{
+		return ove_model_arena_used(handle_);
 	}
 
 	/** @brief Access the underlying C handle. */
@@ -273,11 +295,14 @@ template <size_t ArenaSize> class ModelStorage
 	/**
 	 * @brief Load a model into this storage.
 	 *
-	 * @param[in] model_data  The .tflite FlatBuffer; must outlive the session.
-	 * @param[in] model_size  Its size in bytes.
-	 * @return The session, borrowing this storage; or an `unexpected`
-	 *         @ref Error if the model does not load (Error::MlFailed
-	 *         when it is not a valid model or the arena is too small).
+	 * @param[in] model_data  Trusted, valid .tflite bytes aligned to 16 bytes;
+	 *                       retain them immutable through session cleanup.
+	 * @param[in] model_size  Its complete size in bytes.
+	 * @return The borrowing session, or an `unexpected` @ref Error:
+	 *         InvalidParam for bad arguments/alignment, NotSupported for a
+	 *         schema mismatch, NoMemory for detected resource exhaustion,
+	 *         MlFailed for other setup failures, or Busy while occupied.
+	 *         The documented three-region arena contract still applies.
 	 */
 	[[nodiscard]] Result<Model<>> load(const void *model_data, size_t model_size) noexcept
 	{

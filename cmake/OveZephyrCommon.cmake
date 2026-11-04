@@ -76,13 +76,16 @@ macro(ove_zephyr_add_tflm_if_enabled)
         set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
         include(${OVE_DIR}/cmake/OveTflm.cmake)
         ove_build_tflm()
-        target_include_directories(ove_tflm PRIVATE
-            ${OVE_DIR}/backends/zephyr/include)
-        target_link_libraries(ove_tflm PRIVATE zephyr_interface)
+        foreach(_tflm_target ove_tflm ove_tflm_port)
+            target_include_directories(${_tflm_target} PRIVATE
+                ${OVE_DIR}/backends/zephyr/include)
+            target_link_libraries(${_tflm_target} PRIVATE zephyr_interface)
+        endforeach()
         # Add ove_tflm objects directly to app rather than as a separate
         # library.  This avoids link-order issues where Rust/Zig bindings
         # (linked last) reference ove_tflm symbols.
-        target_sources(app PRIVATE $<TARGET_OBJECTS:ove_tflm>)
+        target_sources(app PRIVATE
+            $<TARGET_OBJECTS:ove_tflm> $<TARGET_OBJECTS:ove_tflm_port>)
         target_include_directories(app PRIVATE
             $<TARGET_PROPERTY:ove_tflm,INTERFACE_INCLUDE_DIRECTORIES>)
         target_link_libraries(app PRIVATE stdc++)

@@ -214,24 +214,26 @@ macro(ove_nuttx_build_tflm)
         # (div_t redefinition).  Strip defaults, re-add in the order
         # that makes #include_next resolve to NuttX's C headers.
         # Paths pre-computed by 'ove configure' (in ove_config.cmake).
-        target_compile_options(ove_tflm PRIVATE -nostdinc
-            "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>")
         set(_TFLM_PREFIX_H "${CMAKE_CURRENT_BINARY_DIR}/tflm_nuttx_prefix.h")
         file(WRITE "${_TFLM_PREFIX_H}"
             "#include <nuttx/config.h>\n"
             "#include <nuttx/compiler.h>\n")
-        target_compile_options(ove_tflm PRIVATE
-            "SHELL:-include ${_TFLM_PREFIX_H}"
-            "-isystem${OVE_GCC_BUILTIN_INC}")
-        foreach(_dir ${OVE_GCC_CXX_DIRS})
-            target_compile_options(ove_tflm PRIVATE
-                "$<$<COMPILE_LANGUAGE:CXX>:-isystem${_dir}>")
+        foreach(_tflm_target ove_tflm ove_tflm_port)
+            target_compile_options(${_tflm_target} PRIVATE -nostdinc
+                "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>")
+            target_compile_options(${_tflm_target} PRIVATE
+                "SHELL:-include ${_TFLM_PREFIX_H}"
+                "-isystem${OVE_GCC_BUILTIN_INC}")
+            foreach(_dir ${OVE_GCC_CXX_DIRS})
+                target_compile_options(${_tflm_target} PRIVATE
+                    "$<$<COMPILE_LANGUAGE:CXX>:-isystem${_dir}>")
+            endforeach()
+            target_compile_options(${_tflm_target} PRIVATE
+                "-isystem${CMAKE_BINARY_DIR}/include"
+                "-isystem${OVE_NUTTX_INC}"
+                "-isystem${OVE_NUTTX_LIBM_INC}"
+                "-I${OVE_DIR}/backends/nuttx/include")
         endforeach()
-        target_compile_options(ove_tflm PRIVATE
-            "-isystem${CMAKE_BINARY_DIR}/include"
-            "-isystem${OVE_NUTTX_INC}"
-            "-isystem${OVE_NUTTX_LIBM_INC}"
-            "-I${OVE_DIR}/backends/nuttx/include")
         set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ove_tflm)
     endif()
 endmacro()

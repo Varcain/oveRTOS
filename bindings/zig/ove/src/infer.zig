@@ -7,6 +7,19 @@
 //! ML inference runtime.
 //!
 //! Wraps the C `ove_model_*` API for running TFLite model inference.
+//!
+//! Models must be trusted, valid build-time assets aligned to 16 bytes and
+//! retained immutable through close. Misaligned assets return InvalidParam and
+//! schema mismatches return NotSupported. Native TFLM is unmodified. Below the startup
+//! precheck minimum, setup returns OutOfMemory before SDK construction. Once
+//! persistent and preparation requirements are met, exhausted allocation/planning
+//! capacity returns OutOfMemory. Intermediate undersized arenas are configuration
+//! errors with undefined behavior; other setup failures report their native error.
+//!
+//! Each admitted setup clears the effective arena in O(arena_size) time. Measure
+//! arenaUsed() on the target/provider, retain at least usage plus 16 bytes and
+//! qualify that configuration; final usage need not include temporary setup peaks.
+//! Remeasure after model/provider/TFLM changes. Output data is read-only.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
@@ -110,6 +123,12 @@ const HeapModel = struct {
         return c.ove_model_last_inference_us(self.handle);
     }
 
+    /// Native usage including original alignment padding; zero for a closed handle.
+    /// Keep at least usage plus 16 bytes and the qualified setup capacity.
+    pub fn arenaUsed(self: Model) usize {
+        return c.ove_model_arena_used(self.handle);
+    }
+
     pub fn inputData(self: Model, comptime T: type, index: u32) Error![*]T {
         const info = try self.input(index);
         return @ptrCast(@alignCast(info.data));
@@ -179,6 +198,14 @@ const ZeroHeapModel = struct {
     pub fn lastInferenceUs(self: *Model) u64 {
         self.tracker.assertSame(self, "ove.Model");
         return c.ove_model_last_inference_us(self.handle);
+    }
+
+    /// Native usage including original alignment padding; zero for a closed handle.
+    /// Keep at least usage plus 16 bytes and the qualified setup capacity.
+    pub fn arenaUsed(self: *Model) usize {
+        if (self.handle == null) return 0;
+        self.tracker.assertSame(self, "ove.Model");
+        return c.ove_model_arena_used(self.handle);
     }
 
     pub fn inputData(self: *Model, comptime T: type, index: u32) Error![*]T {

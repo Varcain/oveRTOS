@@ -1,6 +1,11 @@
-# Native inference admission
+# Native inference admission and arenas
 
-`make test-infer-admission` runs heap and zero-heap builds. The real executable
+`make test-infer-admission` runs heap and zero-heap builds, including the
+[arena regressions](../infer_arena/README.md) and their finite safe mutations.
+The sanitizer target runs both suites with the same mode flags. Arena case groups
+have their own deadlines; the CLI allows fifteen seconds for their controller to
+finish inner cleanup before its outer owner kills the controller. Failures from
+either suite fail the gate. The real executable
 uses the manifest-pinned TFLM/common backend and a complete aligned sine model.
 Sequential controls invoke and close valid models. Five pair cases retain the
 first session and all its backing forever, then require Busy from the second
@@ -27,5 +32,6 @@ case; that mutation must run only there. Missing marker-null mutations must
 stop before another session is opened, as the dedicated cases do. Mutant early
 exits are named assertion observations, not leak-free controls.
 
-These checks establish native singleton ownership only. They do not validate
-arbitrary model graphs/arena budgets or repair the Rust tensor/lifetime API.
+These checks cover native singleton ownership and the trusted-model allocator/
+planner contract. They do not make arbitrary model graphs or arena budgets safe,
+or repair the Rust tensor/lifetime API.

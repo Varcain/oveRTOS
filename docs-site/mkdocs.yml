@@ -145,6 +145,7 @@ nav:
     - Backend tuning:
       - Networking pools: backends/net-tuning.md
     - Binding Semantics: internals/binding-semantics.md
+    - Inference runtime: internals/inference-runtime.md
     - Versioning: internals/versioning.md
     - Testing:
       - Overview: testing/index.md

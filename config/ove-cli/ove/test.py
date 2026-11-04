@@ -818,23 +818,24 @@ def test_rust_strings(ove_dir, output_dir):
     return result
 
 
-def _run_owned_test_process(command, *, env, timeout):
+def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5):
     """Bound a native test and all children in its own process group."""
     process = subprocess.Popen(command, env=env, start_new_session=True)
     try:
         return process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         logger.error("Test process exceeded %s seconds: %s", timeout, command)
+        return 124
+    finally:
+        # Also let a controller unwind its child groups on interruption.
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
         try:
-            process.wait(timeout=5)
+            process.wait(timeout=cleanup_timeout)
         except subprocess.TimeoutExpired:
             pass
-        return 124
-    finally:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -974,7 +975,7 @@ def test_rust_async_spi(ove_dir, output_dir):
     return result
 
 def _test_infer_admission(ove_dir, output_dir, sanitize=False):
-    """Check native admission with real TFLM and guarded collaborators."""
+    """Check native admission and trusted-model arena resource handling."""
     from .download import download_tflm
     suite = "infer-admission" + ("-sanitize" if sanitize else "")
     result = TestResults(suite=suite)
@@ -986,15 +987,23 @@ def _test_infer_admission(ove_dir, output_dir, sanitize=False):
         build = os.path.join(output_dir, "tests", "infer_admission" + suffix)
         _cmake_build(os.path.join(ove_dir, "tests", "infer_admission"), build,
                      extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
-                                 "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")])
-        command = [sys.executable, os.path.join(ove_dir, "tests", "infer_admission", "run.py"), build]
-        if zero:
-            command.append("--zero-heap")
-        if sanitize:
-            command.append("--sanitize")
-        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=180)
-        result.passed += int(rc == 0)
-        result.failed += int(rc != 0)
+                                 "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"),
+                                 "-DOVE_ARENA_MUTATIONS=ON"])
+        for suite_dir in ("infer_admission", "infer_arena"):
+            command = [sys.executable, os.path.join(ove_dir, "tests", suite_dir, "run.py"), build]
+            if suite_dir == "infer_arena":
+                command.append("--mutations")
+            if zero:
+                command.append("--zero-heap")
+            if sanitize:
+                command.append("--sanitize")
+            # The arena runner owns separate case groups and needs five seconds
+            # for its inner cleanup before this outer owner may kill it.
+            grace = 15 if suite_dir == "infer_arena" else 5
+            rc = _run_owned_test_process(command, env=dict(os.environ), timeout=180,
+                                         cleanup_timeout=grace)
+            result.passed += int(rc == 0)
+            result.failed += int(rc != 0)
     return result
 
 
