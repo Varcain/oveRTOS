@@ -116,39 +116,44 @@ static TfLiteStatus register_common_ops(OveOpResolver &resolver)
 }
 
 /*
- * Internal: map TfLiteType to ove_tensor_type.
+ * Internal: publish a tensor descriptor only when it is fully representable.
  */
-static enum ove_tensor_type tflite_type_to_ove(TfLiteType t)
+static int fill_tensor_info(const TfLiteTensor *tensor, struct ove_tensor_info *info)
 {
-	switch (t) {
+	enum ove_tensor_type type;
+	switch (tensor->type) {
 	case kTfLiteFloat32:
-		return OVE_TENSOR_FLOAT32;
+		type = OVE_TENSOR_FLOAT32;
+		break;
 	case kTfLiteInt8:
-		return OVE_TENSOR_INT8;
+		type = OVE_TENSOR_INT8;
+		break;
 	case kTfLiteUInt8:
-		return OVE_TENSOR_UINT8;
+		type = OVE_TENSOR_UINT8;
+		break;
 	case kTfLiteInt16:
-		return OVE_TENSOR_INT16;
+		type = OVE_TENSOR_INT16;
+		break;
 	case kTfLiteInt32:
-		return OVE_TENSOR_INT32;
+		type = OVE_TENSOR_INT32;
+		break;
 	default:
-		return OVE_TENSOR_FLOAT32;
+		return OVE_ERR_NOT_SUPPORTED;
 	}
-}
 
-/*
- * Internal: populate ove_tensor_info from a TfLiteTensor.
- */
-static void fill_tensor_info(const TfLiteTensor *tensor, struct ove_tensor_info *info)
-{
+	const unsigned int ndims = (unsigned int)tensor->dims->size;
+	if (ndims > 5)
+		return OVE_ERR_NOT_SUPPORTED;
+
 	info->data = tensor->data.raw;
 	info->size = tensor->bytes;
-	info->type = tflite_type_to_ove(tensor->type);
-	info->ndims = (unsigned int)tensor->dims->size;
-	for (unsigned int i = 0; i < info->ndims && i < 5; i++)
+	info->type = type;
+	info->ndims = ndims;
+	for (unsigned int i = 0; i < ndims; i++)
 		info->dims[i] = tensor->dims->data[i];
-	for (unsigned int i = info->ndims; i < 5; i++)
+	for (unsigned int i = ndims; i < 5; i++)
 		info->dims[i] = 0;
+	return OVE_OK;
 }
 
 /*
@@ -424,8 +429,7 @@ int ove_model_input(ove_model_t model, unsigned int index, struct ove_tensor_inf
 	if (!tensor)
 		return OVE_ERR_ML_FAILED;
 
-	fill_tensor_info(tensor, info);
-	return OVE_OK;
+	return fill_tensor_info(tensor, info);
 }
 
 int ove_model_output(ove_model_t model, unsigned int index, struct ove_tensor_info *info)
@@ -442,8 +446,7 @@ int ove_model_output(ove_model_t model, unsigned int index, struct ove_tensor_in
 	if (!tensor)
 		return OVE_ERR_ML_FAILED;
 
-	fill_tensor_info(tensor, info);
-	return OVE_OK;
+	return fill_tensor_info(tensor, info);
 }
 
 uint64_t ove_model_last_inference_us(ove_model_t model)

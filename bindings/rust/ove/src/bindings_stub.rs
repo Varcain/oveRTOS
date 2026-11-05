@@ -3006,9 +3006,9 @@ pub const OVE_TENSOR_INT8: ove_tensor_type = 1;
 pub const OVE_TENSOR_UINT8: ove_tensor_type = 2;
 pub const OVE_TENSOR_INT16: ove_tensor_type = 3;
 pub const OVE_TENSOR_INT32: ove_tensor_type = 4;
-#[doc = " @brief Tensor element types.\n\n Subset of TFLite tensor types that are relevant for microcontroller\n inference (quantised int8/int16 and float32)."]
+#[doc = " @brief Tensor element types.\n\n Supported descriptor types: float32, int8, uint8, int16 and int32.\n Tensor descriptor getters reject other TFLite element types."]
 pub type ove_tensor_type = core::ffi::c_uint;
-#[doc = " @brief Tensor descriptor returned by ove_model_input() / ove_model_output().\n\n Provides direct access to tensor data, along with shape and type metadata.\n Outputs are read-only and can refer to immutable model bytes. The @c data\n pointer is valid for the lifetime of the model session."]
+#[doc = " @brief Tensor descriptor returned by ove_model_input() / ove_model_output().\n\n Provides direct access to tensor data, along with shape and type metadata.\n Outputs are read-only and can refer to immutable model bytes. The @c data\n pointer is valid for the lifetime of the model session.\n Successful descriptors report an exact supported type and rank from zero\n (scalar) through five. Unused shape entries are zero."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_tensor_info {
@@ -3018,9 +3018,9 @@ pub struct ove_tensor_info {
     pub size: usize,
     #[doc = "< Element type."]
     pub type_: ove_tensor_type,
-    #[doc = "< Number of dimensions."]
+    #[doc = "< Number of dimensions, from zero through five."]
     pub ndims: core::ffi::c_uint,
-    #[doc = "< Shape, e.g. {1, 96, 96, 1}."]
+    #[doc = "< Exact shape; unused entries are zero."]
     pub dims: [core::ffi::c_int; 5usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -3089,7 +3089,7 @@ unsafe extern "C" {
     pub fn ove_model_invoke(model: ove_model_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a descriptor for an input tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the input tensor at @p index.  Write input data to @p info->data\n before calling ove_model_invoke().\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based input tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.\n\n @see ove_model_output, ove_model_invoke"]
+    #[doc = " @brief Get a descriptor for an input tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the input tensor at @p index.  Write input data to @p info->data\n before calling ove_model_invoke().\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based input tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED for an element type outside\n         ove_tensor_type or rank above five, OVE_ERR_INVALID_PARAM for a null\n         or accessible closed handle, null info or out-of-range index, and\n         OVE_ERR_ML_FAILED if the interpreter cannot return the tensor.\n         Errors leave info unchanged.\n\n @see ove_model_output, ove_model_invoke"]
     pub fn ove_model_input(
         model: ove_model_t,
         index: core::ffi::c_uint,
@@ -3097,7 +3097,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a descriptor for an output tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the output tensor at @p index.  Call after ove_model_invoke()\n to read results. Output data is read-only, including model-backed constants.\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based output tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.\n\n @see ove_model_input, ove_model_invoke"]
+    #[doc = " @brief Get a descriptor for an output tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the output tensor at @p index.  Call after ove_model_invoke()\n to read results. Output data is read-only, including model-backed constants.\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based output tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED for an element type outside\n         ove_tensor_type or rank above five, OVE_ERR_INVALID_PARAM for a null\n         or accessible closed handle, null info or out-of-range index, and\n         OVE_ERR_ML_FAILED if the interpreter cannot return the tensor.\n         Errors leave info unchanged.\n\n @see ove_model_input, ove_model_invoke"]
     pub fn ove_model_output(
         model: ove_model_t,
         index: core::ffi::c_uint,

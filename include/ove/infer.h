@@ -77,8 +77,8 @@ extern "C" {
 /**
  * @brief Tensor element types.
  *
- * Subset of TFLite tensor types that are relevant for microcontroller
- * inference (quantised int8/int16 and float32).
+ * Supported descriptor types: float32, int8, uint8, int16 and int32.
+ * Tensor descriptor getters reject other TFLite element types.
  */
 enum ove_tensor_type {
 	OVE_TENSOR_FLOAT32 = 0,
@@ -94,13 +94,15 @@ enum ove_tensor_type {
  * Provides direct access to tensor data, along with shape and type metadata.
  * Outputs are read-only and can refer to immutable model bytes. The @c data
  * pointer is valid for the lifetime of the model session.
+ * Successful descriptors report an exact supported type and rank from zero
+ * (scalar) through five. Unused shape entries are zero.
  */
 struct ove_tensor_info {
 	void *data;		   /**< Tensor data; output access is read-only. */
 	size_t size;		   /**< Total size of tensor data in bytes. */
 	enum ove_tensor_type type; /**< Element type. */
-	unsigned int ndims;	   /**< Number of dimensions. */
-	int dims[5];		   /**< Shape, e.g. {1, 96, 96, 1}. */
+	unsigned int ndims;	   /**< Number of dimensions, from zero through five. */
+	int dims[5];		   /**< Exact shape; unused entries are zero. */
 };
 
 /**
@@ -225,7 +227,11 @@ OVE_NODISCARD int ove_model_invoke(ove_model_t model);
  * @param[in]  model  Model handle.
  * @param[in]  index  Zero-based input tensor index.
  * @param[out] info   Receives the tensor descriptor.
- * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.
+ * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED for an element type outside
+ *         ove_tensor_type or rank above five, OVE_ERR_INVALID_PARAM for a null
+ *         or accessible closed handle, null info or out-of-range index, and
+ *         OVE_ERR_ML_FAILED if the interpreter cannot return the tensor.
+ *         Errors leave info unchanged.
  *
  * @see ove_model_output, ove_model_invoke
  */
@@ -242,7 +248,11 @@ OVE_NODISCARD int ove_model_input(ove_model_t model, unsigned int index,
  * @param[in]  model  Model handle.
  * @param[in]  index  Zero-based output tensor index.
  * @param[out] info   Receives the tensor descriptor.
- * @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.
+ * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED for an element type outside
+ *         ove_tensor_type or rank above five, OVE_ERR_INVALID_PARAM for a null
+ *         or accessible closed handle, null info or out-of-range index, and
+ *         OVE_ERR_ML_FAILED if the interpreter cannot return the tensor.
+ *         Errors leave info unchanged.
  *
  * @see ove_model_input, ove_model_invoke
  */

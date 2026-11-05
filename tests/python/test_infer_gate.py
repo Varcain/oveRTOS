@@ -2,9 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The native inference gate must exercise arena and admission regressions."""
 
+import json
+import runpy
 import signal
 import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from ove import test as ove_test
@@ -58,6 +63,45 @@ class InferenceGateTest(unittest.TestCase):
         result, _, calls = self.run_gate(runner=run)
         self.assertGreater(result.failed, 0)
         self.assertTrue(any("/infer_arena/" in c.args[0][1] for c in calls))
+
+    def test_descriptor_failure_stops_each_admission_runner_mode(self):
+        runner = Path(__file__).resolve().parents[1] / "infer_admission/run.py"
+        for zero in (False, True):
+            for sanitize in (False, True):
+                with (
+                    self.subTest(zero=zero, sanitize=sanitize),
+                    tempfile.TemporaryDirectory() as tmp,
+                ):
+                    seen = []
+
+                    def execute(command, seen=seen, **kwargs):
+                        binary = Path(command[0]).name
+                        seen.append((binary, kwargs["env"]))
+                        return subprocess.CompletedProcess(
+                            command, int(binary == "infer_descriptors")
+                        )
+
+                    command = [str(runner), tmp]
+                    if zero:
+                        command.append("--zero-heap")
+                    if sanitize:
+                        command.append("--sanitize")
+                    with (
+                        mock.patch.object(sys, "argv", command),
+                        mock.patch("subprocess.run", side_effect=execute),
+                        self.assertRaises(SystemExit) as stopped,
+                    ):
+                        runpy.run_path(str(runner), run_name="__main__")
+                    self.assertEqual(stopped.exception.code, 1)
+                    rows = json.loads(
+                        (Path(tmp) / "admission-results.json").read_text()
+                    )
+                    self.assertEqual(rows[-1]["binary"], "infer_descriptors")
+                    self.assertEqual(rows[-1]["case"], "matrix")
+                    self.assertFalse(rows[-1]["intentional_retention"])
+                    self.assertEqual(rows[-1]["rc"], 1)
+                    if sanitize:
+                        self.assertIn("detect_leaks=1", seen[-1][1]["ASAN_OPTIONS"])
 
     def test_outer_cleanup_waits_for_inner_case_cleanup(self):
         command = ["fixture-controller"]

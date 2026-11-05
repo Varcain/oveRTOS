@@ -54,7 +54,11 @@ pub enum TensorType {
     Int32 = 4,
 }
 
-/// Tensor metadata descriptor.
+/// Tensor metadata descriptor for float32, int8, uint8, int16 or int32.
+///
+/// Successful getters report the exact type and rank, from zero (scalar)
+/// through five, and zero all unused dimensions. Other element types or
+/// higher ranks return [`Error::NotSupported`].
 #[derive(Debug, Clone)]
 pub struct TensorInfo {
     /// Tensor data; outputs can refer to immutable model bytes and are read-only.
@@ -63,9 +67,9 @@ pub struct TensorInfo {
     pub size: usize,
     /// Element type.
     pub tensor_type: TensorType,
-    /// Number of dimensions.
+    /// Number of dimensions, from zero through five.
     pub ndims: u32,
-    /// Shape array (up to 5 dimensions).
+    /// Exact shape; unused entries are zero.
     pub dims: [i32; 5],
 }
 
@@ -138,6 +142,9 @@ impl Model {
     }
 
     /// Get tensor info for an input tensor.
+    ///
+    /// Returns [`Error::NotSupported`] for an unsupported element type or rank
+    /// above five.
     pub fn input(&self, index: u32) -> Result<TensorInfo> {
         let mut info: bindings::ove_tensor_info = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_model_input(self.handle, index, &mut info) };
@@ -157,7 +164,10 @@ impl Model {
         })
     }
 
-    /// Get tensor info for an output tensor.
+    /// Get tensor info for a read-only output tensor.
+    ///
+    /// Returns [`Error::NotSupported`] for an unsupported element type or rank
+    /// above five.
     pub fn output(&self, index: u32) -> Result<TensorInfo> {
         let mut info: bindings::ove_tensor_info = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_model_output(self.handle, index, &mut info) };

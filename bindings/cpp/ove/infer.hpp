@@ -23,6 +23,9 @@
  * arena_used() on the target/provider, retain at least usage plus 16 bytes and
  * qualify that configuration; final usage need not include temporary setup peaks.
  * Remeasure after model/provider/TFLM changes. Output data is read-only.
+ * Tensor descriptors support float32, int8, uint8, int16 and int32 with ranks
+ * zero (scalar) through five and zeroed unused dimensions. Other types or
+ * higher ranks return NotSupported.
  */
 
 #pragma once
@@ -78,7 +81,9 @@ class ModelBase
 		return from_rc(ove_model_invoke(handle_));
 	}
 
-	/** @brief Get a typed pointer to input tensor data; nullptr on failure. */
+	/** @brief Get a typed pointer to input tensor data; nullptr on failure,
+	 *         including an unsupported descriptor type or rank.
+	 */
 	template <typename T> T *input_data(unsigned int index = 0)
 	{
 		struct ove_tensor_info info;
@@ -87,7 +92,9 @@ class ModelBase
 		return static_cast<T *>(info.data);
 	}
 
-	/** @brief Get a typed pointer to output tensor data (const); nullptr on failure. */
+	/** @brief Get a typed pointer to output tensor data (const); nullptr on
+	 *         failure, including an unsupported descriptor type or rank.
+	 */
 	template <typename T> const T *output_data(unsigned int index = 0) const
 	{
 		struct ove_tensor_info info;
@@ -98,7 +105,8 @@ class ModelBase
 
 	/** @brief Get full tensor descriptor for an input.
 	 *  @return On success, the populated @c ove_tensor_info.  On
-	 *          failure, an `unexpected` @ref Error.
+	 *          failure, an `unexpected` @ref Error, including NotSupported
+	 *          for an unsupported element type or rank above five.
 	 */
 	[[nodiscard]] Result<struct ove_tensor_info> input(unsigned int index) const noexcept
 	{
@@ -108,7 +116,10 @@ class ModelBase
 		return from_rc(rc, info);
 	}
 
-	/** @brief Get full tensor descriptor for an output. */
+	/** @brief Get full tensor descriptor for a read-only output.
+	 *  @return The descriptor, or an `unexpected` @ref Error, including
+	 *          NotSupported for an unsupported element type or rank above five.
+	 */
 	[[nodiscard]] Result<struct ove_tensor_info> output(unsigned int index) const noexcept
 	{
 		struct ove_tensor_info info {
