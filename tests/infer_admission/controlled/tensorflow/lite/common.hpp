@@ -12,15 +12,32 @@ int infer_probe_allocate();
 }
 enum TfLiteStatus { kTfLiteOk = 0, kTfLiteError = 1 };
 enum TfLiteType {
+	kTfLiteNoType = 0,
 	kTfLiteFloat32 = 1,
-	kTfLiteInt8 = 9,
+	kTfLiteInt32 = 2,
 	kTfLiteUInt8 = 3,
+	kTfLiteInt64 = 4,
+	kTfLiteString = 5,
+	kTfLiteBool = 6,
 	kTfLiteInt16 = 7,
-	kTfLiteInt32 = 2
+	kTfLiteComplex64 = 8,
+	kTfLiteInt8 = 9,
+	kTfLiteFloat16 = 10,
+	kTfLiteFloat64 = 11,
+	kTfLiteComplex128 = 12,
+	kTfLiteUInt64 = 13,
+	kTfLiteResource = 14,
+	kTfLiteVariant = 15,
+	kTfLiteUInt32 = 16,
+	kTfLiteUInt16 = 17,
+	kTfLiteInt4 = 18,
+	kTfLiteBFloat16 = 19,
+	kTfLiteInt2 = 20,
+	kTfLiteUInt4 = 21
 };
 struct TfLiteIntArray {
 	int size;
-	int data[5];
+	int data[6];
 };
 struct TfLiteTensor {
 	union {
@@ -30,6 +47,9 @@ struct TfLiteTensor {
 	TfLiteType type;
 	TfLiteIntArray *dims;
 };
+#ifdef OVE_INFER_DESCRIPTOR_PROBE
+extern "C" TfLiteTensor *infer_probe_tensor(unsigned int direction);
+#endif
 #define TF_LITE_ENSURE_STATUS(expression)   \
 	do {                                \
 		auto status = (expression); \

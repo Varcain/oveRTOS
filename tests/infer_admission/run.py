@@ -48,6 +48,7 @@ retained = ["static-static"] + (
 )
 rows = []
 for binary, cases, retention in [
+    ("infer_descriptors", ["matrix"], False),
     ("infer_controlled", controlled, False),
     ("infer_real", sequential, False),
     ("infer_real", retained, True),

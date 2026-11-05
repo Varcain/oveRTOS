@@ -32,5 +32,11 @@ add_executable(infer_controlled controlled.cc controlled/arena.cc ${OVE_DIR}/bac
 target_include_directories(infer_controlled PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/controlled ${OVE_DIR}/include ${OVE_DIR}/tests/host/posix/include ${CMAKE_BINARY_DIR} ${OVE_DIR}/backends/common)
 target_link_libraries(infer_controlled PRIVATE pthread)
 target_link_options(infer_controlled PRIVATE -Wl,--wrap=malloc -Wl,--wrap=free)
+add_executable(infer_descriptors descriptors.cc controlled/arena.cc ${OVE_DIR}/backends/common/ove_infer.cc)
+target_compile_definitions(infer_descriptors PRIVATE OVE_INFER_DESCRIPTOR_PROBE)
+target_compile_options(infer_descriptors PRIVATE -Wall -Werror)
+target_include_directories(infer_descriptors PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/controlled ${OVE_DIR}/include ${OVE_DIR}/tests/host/posix/include ${CMAKE_BINARY_DIR} ${OVE_DIR}/backends/common)
+target_link_libraries(infer_descriptors PRIVATE pthread)
+target_link_options(infer_descriptors PRIVATE "-Wl,-Map,${CMAKE_BINARY_DIR}/infer_descriptors.map")
 
 include(${OVE_DIR}/tests/infer_arena/Targets.cmake)

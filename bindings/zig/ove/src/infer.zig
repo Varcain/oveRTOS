@@ -37,6 +37,9 @@ pub const TensorType = enum(u32) {
 };
 
 /// Tensor descriptor with data pointer, shape, and type info.
+/// Supports float32, int8, uint8, int16 and int32 with ranks zero (scalar)
+/// through five. Unused dimensions are zero; other types or higher ranks
+/// return error.NotSupported from input/output. Output data is read-only.
 pub const TensorInfo = struct {
     data: ?*anyopaque,
     size: usize,
@@ -95,6 +98,8 @@ const HeapModel = struct {
         try err.fromCode(c.ove_model_invoke(self.handle));
     }
 
+    /// Get an exact descriptor; unsupported element types or ranks above five
+    /// return error.NotSupported.
     pub fn input(self: Model, index: u32) Error!TensorInfo {
         var info: c.ove_tensor_info = std.mem.zeroes(c.ove_tensor_info);
         try err.fromCode(c.ove_model_input(self.handle, index, &info));
@@ -107,6 +112,8 @@ const HeapModel = struct {
         };
     }
 
+    /// Get an exact descriptor for a read-only output; unsupported element
+    /// types or ranks above five return error.NotSupported.
     pub fn output(self: Model, index: u32) Error!TensorInfo {
         var info: c.ove_tensor_info = std.mem.zeroes(c.ove_tensor_info);
         try err.fromCode(c.ove_model_output(self.handle, index, &info));
@@ -169,6 +176,8 @@ const ZeroHeapModel = struct {
         try err.fromCode(c.ove_model_invoke(self.handle));
     }
 
+    /// Get an exact descriptor; unsupported element types or ranks above five
+    /// return error.NotSupported.
     pub fn input(self: *Model, index: u32) Error!TensorInfo {
         self.tracker.assertSame(self, "ove.Model");
         var info: c.ove_tensor_info = std.mem.zeroes(c.ove_tensor_info);
@@ -182,6 +191,8 @@ const ZeroHeapModel = struct {
         };
     }
 
+    /// Get an exact descriptor for a read-only output; unsupported element
+    /// types or ranks above five return error.NotSupported.
     pub fn output(self: *Model, index: u32) Error!TensorInfo {
         self.tracker.assertSame(self, "ove.Model");
         var info: c.ove_tensor_info = std.mem.zeroes(c.ove_tensor_info);

@@ -112,6 +112,12 @@ struct ove_tensor_info {
 
 Write input data directly to `info->data` before calling `ove_model_invoke()`. Read output data from `info->data` after the call returns. Outputs are read-only and may refer to immutable model constants. The pointer remains valid for the lifetime of the model session.
 
+A successful descriptor reports the exact element type from the table above and
+rank zero (scalar) through five. `dims` contains every dimension, with unused
+entries set to zero. Both getters return `OVE_ERR_NOT_SUPPORTED` for other
+element types or ranks above five. Any error leaves the supplied descriptor
+unchanged; no type substitution or truncated shape is returned as success.
+
 ## Allocation Strategies
 
 **Static (zero-heap) — `init` / `deinit`:**

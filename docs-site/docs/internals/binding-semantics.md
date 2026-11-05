@@ -269,7 +269,14 @@ sufficient-arena preconditions remain.
 | Detected allocation/planner exhaustion | `Error::NoMemory` | `Error::NoMemory` | `error.OutOfMemory` |
 | Model alignment mismatch | `Error::InvalidParam` | `Error::InvalidParam` | `error.InvalidParam` |
 | Schema mismatch | `Error::NotSupported` | `Error::NotSupported` | `error.NotSupported` |
+| Unsupported tensor descriptor type or rank above five | `Error::NotSupported` | `Error::NotSupported` | `error.NotSupported` |
 | Other setup failure | `Error::MlFailed` | `Error::MlFailed` | `error.MlFailed` |
+
+Successful input/output descriptors preserve the exact float32, int8, uint8,
+int16 or int32 type and rank zero (scalar) through five. Unused dimensions are
+zero. The C getters leave the caller's descriptor unchanged on error. C++ typed
+pointer helpers return `nullptr` on descriptor errors; Rust and Zig getters
+propagate the native error. Output data is read-only.
 
 These bindings share the [trusted-model and arena contract](inference-runtime.md).
 Models are immutable build-time assets aligned to 16 bytes; there is no general

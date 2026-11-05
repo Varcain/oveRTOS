@@ -56,11 +56,19 @@ class MicroInterpreter
 	}
 	TfLiteTensor *input(unsigned)
 	{
+#ifdef OVE_INFER_DESCRIPTOR_PROBE
+		return infer_probe_tensor(0);
+#else
 		return &in;
+#endif
 	}
 	const TfLiteTensor *output(unsigned)
 	{
+#ifdef OVE_INFER_DESCRIPTOR_PROBE
+		return infer_probe_tensor(1);
+#else
 		return &out;
+#endif
 	}
 	size_t arena_used_bytes() const
 	{
