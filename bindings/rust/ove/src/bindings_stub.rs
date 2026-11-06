@@ -407,7 +407,7 @@ unsafe extern "C" {
     pub fn ove_irq_unlock(key: ove_irq_key_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by higher-level bindings (Rust async runtime) to dispatch\n between the thread-context and ISR-context variants of a wake\n primitive (e.g. @c ove_event_signal vs @c ove_event_signal_from_isr).\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On the host test backend the ISR wrappers set a\n       thread-local flag; outside those\n       paths the function returns @c false.\n @note Requires @c CONFIG_OVE_ASYNC."]
+    #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by bindings to check synchronous call context and dispatch between\n thread-context and ISR-context wake operations. Requires no object setup\n or allocation.\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On the host test backend the ISR wrappers set a\n       thread-local flag; outside those\n       paths the function returns @c false.\n @note Requires @c CONFIG_OVE_SYNC or @c CONFIG_OVE_ASYNC."]
     pub fn ove_is_in_isr() -> bool;
 }
 #[doc = " Notification that the console RX path published one or more bytes. The\n callback may run in interrupt context and must therefore be ISR-safe."]
@@ -1038,7 +1038,7 @@ unsafe extern "C" {
     pub fn ove_time_delay_us(us: u32);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a non-recursive mutex using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock"]
+    #[doc = " @brief Initialise a non-recursive mutex using caller-supplied static storage.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock"]
     pub fn ove_mutex_init(
         mtx: *mut ove_mutex_t,
         storage: *mut ove_mutex_storage_t,
@@ -1049,7 +1049,7 @@ unsafe extern "C" {
     pub fn ove_mutex_deinit(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a counting semaphore using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the semaphore.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give"]
+    #[doc = " @brief Initialise a counting semaphore using caller-supplied static storage.\n\n Requires @p max > 0, @p initial <= @p max, and counts within the provider's\n domain: SEM_VALUE_MAX on POSIX/NuttX, UBaseType_t on FreeRTOS, and unsigned\n int on Zephyr. POSIX and NuttX do not retain the requested @p max: subsequent\n posts enforce their provider-wide ceiling rather than this requested limit.\n FreeRTOS and Zephyr enforce the requested maximum at runtime.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the semaphore.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL or the counts are outside that domain, or another negative\n         error code on failure.\n\n @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give"]
     pub fn ove_sem_init(
         sem: *mut ove_sem_t,
         storage: *mut ove_sem_storage_t,
@@ -1062,7 +1062,7 @@ unsafe extern "C" {
     pub fn ove_sem_deinit(sem: ove_sem_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  A signal is sticky:\n if posted while no thread is waiting, it remains pending and is\n consumed by the next ove_event_wait().  After a successful wait the\n event is auto-reset back to unsignalled.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
+    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  A signal is sticky:\n if posted while no thread is waiting, it remains pending and is\n consumed by the next ove_event_wait().  After a successful wait the\n event is auto-reset back to unsignalled.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
     pub fn ove_event_init(
         evt: *mut ove_event_t,
         storage: *mut ove_event_storage_t,
@@ -1073,7 +1073,7 @@ unsafe extern "C" {
     pub fn ove_event_deinit(evt: ove_event_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_recursive_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
+    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_recursive_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
     pub fn ove_recursive_mutex_init(
         mtx: *mut ove_mutex_t,
         storage: *mut ove_mutex_storage_t,
@@ -1084,7 +1084,7 @@ unsafe extern "C" {
     pub fn ove_recursive_mutex_deinit(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a condition variable using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] cv       Receives the opaque condition variable handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the condvar.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,\n      ove_condvar_signal, ove_condvar_broadcast"]
+    #[doc = " @brief Initialise a condition variable using caller-supplied static storage.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] cv       Receives the opaque condition variable handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the condvar.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,\n      ove_condvar_signal, ove_condvar_broadcast"]
     pub fn ove_condvar_init(
         cv: *mut ove_condvar_t,
         storage: *mut ove_condvar_storage_t,
@@ -1095,7 +1095,7 @@ unsafe extern "C" {
     pub fn ove_condvar_deinit(cv: ove_condvar_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a non-recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_mutex_destroy, ove_mutex_init"]
+    #[doc = " @brief Allocate and initialise a non-recursive mutex from the heap.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_mutex_destroy, ove_mutex_init"]
     pub fn ove_mutex_create(mtx: *mut ove_mutex_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1103,7 +1103,7 @@ unsafe extern "C" {
     pub fn ove_mutex_destroy(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a counting semaphore from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_sem_destroy, ove_sem_init"]
+    #[doc = " @brief Allocate and initialise a counting semaphore from the heap.\n\n Count validation and provider-specific maximum semantics match\n @ref ove_sem_init.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_sem_destroy, ove_sem_init"]
     pub fn ove_sem_create(
         sem: *mut ove_sem_t,
         initial: core::ffi::c_uint,
@@ -1115,7 +1115,7 @@ unsafe extern "C" {
     pub fn ove_sem_destroy(sem: ove_sem_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a binary event from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] evt  Receives the opaque event handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_event_destroy, ove_event_init"]
+    #[doc = " @brief Allocate and initialise a binary event from the heap.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] evt  Receives the opaque event handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_event_destroy, ove_event_init"]
     pub fn ove_event_create(evt: *mut ove_event_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1123,7 +1123,7 @@ unsafe extern "C" {
     pub fn ove_event_destroy(evt: ove_event_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_recursive_mutex_destroy, ove_recursive_mutex_init"]
+    #[doc = " @brief Allocate and initialise a recursive mutex from the heap.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_recursive_mutex_destroy, ove_recursive_mutex_init"]
     pub fn ove_recursive_mutex_create(mtx: *mut ove_mutex_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1131,7 +1131,7 @@ unsafe extern "C" {
     pub fn ove_recursive_mutex_destroy(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Allocate and initialise a condition variable from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] cv  Receives the opaque condition variable handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_condvar_destroy, ove_condvar_init"]
+    #[doc = " @brief Allocate and initialise a condition variable from the heap.\n\n On error the output handle is unchanged and initialized native pieces\n are released before returning.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] cv  Receives the opaque condition variable handle on success.\n @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument\n         is NULL, or another negative error code on failure.\n\n @see ove_condvar_destroy, ove_condvar_init"]
     pub fn ove_condvar_create(cv: *mut ove_condvar_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {

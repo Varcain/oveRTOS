@@ -1,0 +1,11 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later
+{
+  "lang": "cpp",
+  "description": "Build-only synchronization consumer",
+  "sources": [
+    "main.cpp",
+    "../../common/query-anchor.c",
+    "../../common/type-domain.c"
+  ]
+}

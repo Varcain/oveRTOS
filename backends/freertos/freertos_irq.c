@@ -22,19 +22,22 @@
  * This lets `ove_irq_unlock` recover the original context without the
  * caller needing to know.
  *
- * Available only when CONFIG_OVE_ASYNC is set in the C config.
+ * Context detection is available with SYNC or ASYNC; critical sections
+ * require ASYNC.
  */
 
 #include "ove/irq.h"
 #include "ove/types.h"
 #include "ove_config.h"
 
-#ifdef CONFIG_OVE_ASYNC
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
 
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef CONFIG_OVE_ASYNC
 
 #define OVE_IRQ_KEY_FROM_ISR_BIT ((uint64_t)1ULL << 63)
 
@@ -57,9 +60,11 @@ void ove_irq_unlock(ove_irq_key_t key)
 	}
 }
 
+#endif /* CONFIG_OVE_ASYNC */
+
 bool ove_is_in_isr(void)
 {
 	return xPortIsInsideInterrupt() != 0;
 }
 
-#endif /* CONFIG_OVE_ASYNC */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */

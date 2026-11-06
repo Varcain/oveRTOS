@@ -17,6 +17,29 @@
 #include <nuttx/clock.h>
 #include "ove_ns_to_ticks.h"
 #include <errno.h>
+#include <limits.h>
+
+static int wait_result(int status)
+{
+	if (status == -ETIMEDOUT || status == -EAGAIN || status == -EBUSY)
+		return OVE_ERR_TIMEOUT;
+	return status >= 0 ? OVE_OK : ove_errno_to_ove(-status);
+}
+
+static int nonclean_result(int status)
+{
+	int result = ove_errno_to_ove(-status);
+	return result == OVE_ERR_TIMEOUT ? OVE_ERR_BUSY : result;
+}
+
+static int lock_retry(mutex_t *mutex)
+{
+	int ret;
+	do {
+		ret = nxmutex_lock(mutex);
+	} while (ret == -EINTR);
+	return ret;
+}
 
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
@@ -25,7 +48,9 @@ int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 	if (mtx == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	nxmutex_init(&storage->mtx);
+	int ret = nxmutex_init(&storage->mtx);
+	if (ret < 0)
+		return ove_errno_to_ove(-ret);
 	*mtx = storage;
 	return OVE_OK;
 }
@@ -44,15 +69,14 @@ int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 
 	int ret;
 	if (ove_timeout_is_forever(timeout_ns)) {
-		while ((ret = nxmutex_lock(&mtx->mtx)) == -EINTR)
-			;
+		ret = lock_retry(&mtx->mtx);
 	} else {
 		ret = nxmutex_ticklock(&mtx->mtx, ove_ns_to_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
-	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_mutex_unlock(ove_mutex_t mtx)
@@ -68,9 +92,9 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 	if (mtx == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	if (nxrmutex_init(&storage->rmtx) < 0) {
-		return OVE_ERR_NO_MEMORY;
-	}
+	int ret = nxrmutex_init(&storage->rmtx);
+	if (ret < 0)
+		return ove_errno_to_ove(-ret);
 	*mtx = storage;
 	return OVE_OK;
 }
@@ -96,7 +120,7 @@ int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
-	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_recursive_mutex_unlock(ove_mutex_t mtx)
@@ -109,11 +133,12 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
-	if (sem == NULL || storage == NULL) {
+	if (sem == NULL || storage == NULL || max == 0 || initial > max || max > SEM_VALUE_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	(void)max;
-	nxsem_init(&storage->sem, 0, initial);
+	int ret = nxsem_init(&storage->sem, 0, (int32_t)initial);
+	if (ret < 0)
+		return ove_errno_to_ove(-ret);
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
 	*sem = storage;
@@ -141,7 +166,7 @@ int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
-	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_sem_give(ove_sem_t sem)
@@ -170,7 +195,9 @@ int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 	if (evt == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	nxsem_init(&storage->sem, 0, 0);
+	int ret = nxsem_init(&storage->sem, 0, 0);
+	if (ret < 0)
+		return ove_errno_to_ove(-ret);
 	*evt = storage;
 	return OVE_OK;
 }
@@ -196,7 +223,7 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
-	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 static void event_signal(ove_event_t evt)
@@ -231,8 +258,14 @@ int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 	if (cv == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	nxsem_init(&storage->waiter, 0, 0);
-	nxmutex_init(&storage->guard);
+	int ret = nxsem_init(&storage->waiter, 0, 0);
+	if (ret < 0)
+		return ove_errno_to_ove(-ret);
+	ret = nxmutex_init(&storage->guard);
+	if (ret < 0) {
+		nxsem_destroy(&storage->waiter);
+		return ove_errno_to_ove(-ret);
+	}
 	storage->nwaiters = 0;
 	*cv = storage;
 	return OVE_OK;
@@ -250,8 +283,9 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	int ret;
 
-	while (nxmutex_lock(&cv->guard) == -EINTR)
-		;
+	ret = lock_retry(&cv->guard);
+	if (ret < 0)
+		return nonclean_result(ret);
 	cv->nwaiters++;
 	nxmutex_unlock(&cv->guard);
 
@@ -269,22 +303,26 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
 
-	/* Re-acquire caller's mutex */
-	while (nxmutex_lock(&mtx->mtx) == -EINTR)
-		;
-
-	while (nxmutex_lock(&cv->guard) == -EINTR)
-		;
+	/* Retire waiter bookkeeping even if caller reacquisition fails. */
+	int acquired = lock_retry(&mtx->mtx);
+	int guarded = lock_retry(&cv->guard);
+	if (guarded < 0)
+		return nonclean_result(guarded);
 	cv->nwaiters--;
 	nxmutex_unlock(&cv->guard);
 
-	return (ret >= 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	if (acquired < 0)
+		return nonclean_result(acquired);
+	int result = wait_result(ret);
+	if (ove_timeout_is_forever(timeout_ns) && result == OVE_ERR_TIMEOUT)
+		return OVE_ERR_BUSY;
+	return result;
 }
 
 void ove_condvar_signal(ove_condvar_t cv)
 {
-	while (nxmutex_lock(&cv->guard) == -EINTR)
-		;
+	if (lock_retry(&cv->guard) < 0)
+		return;
 	if (cv->nwaiters > 0) {
 		nxsem_post(&cv->waiter);
 	}
@@ -294,8 +332,8 @@ void ove_condvar_signal(ove_condvar_t cv)
 
 void ove_condvar_broadcast(ove_condvar_t cv)
 {
-	while (nxmutex_lock(&cv->guard) == -EINTR)
-		;
+	if (lock_retry(&cv->guard) < 0)
+		return;
 	for (int i = 0; i < cv->nwaiters; i++) {
 		nxsem_post(&cv->waiter);
 	}

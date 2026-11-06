@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later
+{
+  "lang": "zig",
+  "description": "Build-only synchronization consumer",
+  "zig": {
+    "src_dir": ".",
+    "lib_name": "sync_compile_zig"
+  },
+  "c_sources": [
+    "../../common/query-anchor.c",
+    "../../common/type-domain.c"
+  ]
+}

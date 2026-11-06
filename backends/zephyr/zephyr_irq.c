@@ -14,19 +14,22 @@
  * that we widen to ove_irq_key_t (uint64_t) for ABI consistency
  * across backends.
  *
- * Available only when CONFIG_OVE_ASYNC is set in the oveRTOS config.
+ * Context detection is available with SYNC or ASYNC; critical sections
+ * require ASYNC.
  */
 
 #include "ove/irq.h"
 #include "ove/types.h"
 #include "ove_config.h"
 
-#ifdef CONFIG_OVE_ASYNC
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
 
 #include <zephyr/kernel.h>
-#include <zephyr/irq.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef CONFIG_OVE_ASYNC
+#include <zephyr/irq.h>
 
 ove_irq_key_t ove_irq_lock(void)
 {
@@ -38,9 +41,11 @@ void ove_irq_unlock(ove_irq_key_t key)
 	irq_unlock((unsigned int)key);
 }
 
+#endif /* CONFIG_OVE_ASYNC */
+
 bool ove_is_in_isr(void)
 {
 	return k_is_in_isr();
 }
 
-#endif /* CONFIG_OVE_ASYNC */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */

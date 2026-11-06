@@ -33,6 +33,7 @@ typedef void *TimerHandle_t;
 typedef void *EventGroupHandle_t;
 typedef uint32_t TickType_t;
 typedef int BaseType_t;
+typedef uint32_t UBaseType_t;
 typedef void (*TimerCallbackFunction_t)(TimerHandle_t);
 typedef void (*PendedFunction_t)(void *, uint32_t);
 #ifndef configNUMBER_OF_CORES

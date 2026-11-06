@@ -8,12 +8,14 @@
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -26,6 +28,7 @@ from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
+from .sync_contracts import cases as _sync_contract_cases, observation_valid as _sync_contract_observation
 
 logger = logging.getLogger("ove")
 
@@ -821,29 +824,106 @@ def test_rust_strings(ove_dir, output_dir):
 
 
 def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=None, cwd=None):
-    """Bound a native test and all children in its own process group."""
-    process = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True, stdout=stdout,
-                               stderr=subprocess.STDOUT if stdout is not None else None)
+    """Bound a test group while retaining its leader until cleanup finishes."""
+    features = ('waitid', 'P_PID', 'WEXITED', 'WNOHANG', 'WNOWAIT',
+                'CLD_EXITED', 'CLD_KILLED', 'CLD_DUMPED')
+    if not all(hasattr(os, name) for name in features):
+        raise RuntimeError('Owned test processes require non-reaping child observation')
     try:
-        return process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        logger.error("Test process exceeded %s seconds: %s", timeout, command)
-        return 124
+        os.waitid(os.P_PID, os.getpid(), os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        pass
+    except OSError as error:
+        raise RuntimeError('Non-reaping child observation is unavailable') from error
+    else:
+        raise RuntimeError('Unexpected non-reaping observation result')
+    if not hasattr(signal, 'pthread_sigmask'):
+        raise RuntimeError('Owned test processes require scoped signal restoration')
+    for interval in (timeout, cleanup_timeout):
+        if interval is not None:
+            if not math.isfinite(interval):
+                raise ValueError('Owned test intervals must be finite or None')
+            time.monotonic() + interval
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError('Owned test processes require the main thread')
+    if len(list(Path('/proc/self/task').iterdir())) != 1:
+        raise RuntimeError('Owned test processes require a sole waiter')
+    if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+        raise RuntimeError('Owned test processes require SIGCHLD defaults')
+    # Reinstall DFL to clear a native SA_NOCLDWAIT disposition too.
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    pending = []
+    handlers = {number: signal.getsignal(number) for number in (signal.SIGINT, signal.SIGTERM)}
+
+    def defer(number, frame):
+        if not pending:
+            pending.append((number, frame))
+
+    def observe():
+        # Do not reap or set Popen.returncode: the unreaped leader reserves
+        # its process-group number until the last group signal below.
+        result = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        if result is not None and (result.si_pid != process.pid or result.si_code not in
+                                   (os.CLD_EXITED, os.CLD_KILLED, os.CLD_DUMPED)):
+            raise RuntimeError('Unexpected owned test process observation')
+        return result
+
+    def signal_group(number):
+        observe()
+        try:
+            os.killpg(process.pid, number)
+        except ProcessLookupError:
+            pass
+
+    process = None
+    status = None
+    try:
+        for number, handler in handlers.items():
+            if handler != signal.SIG_IGN:
+                signal.signal(number, defer)
+        process = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True, stdout=stdout,
+                                   stderr=subprocess.STDOUT if stdout is not None else None)
+        limit = None if timeout is None else time.monotonic() + timeout
+        while not pending:
+            status = observe()
+            if status is not None:
+                break
+            if limit is not None and time.monotonic() >= limit:
+                logger.error('Test process exceeded %s seconds: %s', timeout, command)
+                break
+            time.sleep(0.01)
     finally:
-        # Also let a controller unwind its child groups on interruption.
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=cleanup_timeout)
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
+            if process is not None:
+                try:
+                    signal_group(signal.SIGTERM)
+                    limit = None if cleanup_timeout is None else time.monotonic() + cleanup_timeout
+                    while observe() is None and (limit is None or time.monotonic() < limit):
+                        time.sleep(0.01)
+                    signal_group(signal.SIGKILL)
+                finally:
+                    process.wait()
+        finally:
+            # No child is spawned while this temporary mask is installed.
+            saved_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(handlers))
+            try:
+                for number, handler in handlers.items():
+                    signal.signal(number, handler)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, saved_mask)
+    # An infrastructure exception propagates after restoration and takes
+    # precedence over a deferred interruption; it cannot become success.
+    if pending:
+        number, frame = pending[0]
+        handler = handlers[number]
+        if callable(handler):
+            handler(number, frame)
+        elif handler == signal.SIG_DFL:
+            signal.raise_signal(number)
+        return 128 + number
+    if status is None:
+        return 124
+    return status.si_status if status.si_code == os.CLD_EXITED else -status.si_status
 
 
 def _test_sync_condvar(ove_dir, output_dir, sanitize=False):
@@ -907,6 +987,67 @@ def test_sync_condvar(ove_dir, output_dir):
 
 def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
+
+
+def _test_sync_contracts(ove_dir, output_dir, sanitize=False):
+    """Check construction, error and context contracts with guarded native observers."""
+    result = TestResults(suite="sync-contracts-sanitize" if sanitize else "sync-contracts")
+    explicit_canary = os.environ.get("OVE_SYNC_CONTRACTS_CANARY") == "1"
+    env = dict(os.environ)
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    for zero in (False, True):
+        mode = ("zero" if zero else "heap") + ("-san" if sanitize else "")
+        build = os.path.join(output_dir, "tests", "sync_contracts", mode)
+        command = ["cmake", "-S", os.path.join(ove_dir, "tests", "sync_contracts"), "-B", build,
+                   "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                   "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"),
+                   "-DOVE_NATIVE_MODELS=ON", "-DOVE_CONTEXT_PROBES=ON",
+                   "-DOVE_CPP_SYNC_HEADER=" + os.path.join(ove_dir, "bindings", "cpp", "ove", "sync.hpp"),
+                   "-DOVE_COMMON_SYNC_SOURCE=" + os.path.join(ove_dir, "src", "ove_sync.c"),
+                   "-DOVE_IRQ_HEADER=" + os.path.join(ove_dir, "include", "ove", "irq.h")]
+        for platform in ("freertos", "zephyr", "nuttx", "posix"):
+            folder = os.path.join(ove_dir, "tests", "host", "posix") if platform == "posix" else \
+                os.path.join(ove_dir, "backends", platform)
+            for suffix in ("SYNC", "IRQ"):
+                command.append(f"-DOVE_{platform.upper()}_{suffix}_SOURCE=" +
+                               os.path.join(folder, platform + "_" + suffix.lower() + ".c"))
+        command.append("-DOVE_POSIX_TIMER_SOURCE=" +
+                       os.path.join(ove_dir, "tests", "host", "posix", "posix_timer.c"))
+        rc = _run_owned_test_process(command, env=env, timeout=180)
+        if rc == 0:
+            rc = _run_owned_test_process(["cmake", "--build", build, "-j", str(nproc())],
+                                         env=env, timeout=180)
+        if rc:
+            result.failed += 1
+            continue
+        for kind, ordinary in _sync_contract_cases(zero).items():
+            for case in (("canary",) if explicit_canary else ordinary + ("canary",)):
+                log = os.path.join(build, kind + "-" + case + ".log")
+                with open(log, "wb") as stream:
+                    rc = _run_owned_test_process([os.path.join(build, kind), case],
+                                                 env=dict(env, LD_BIND_NOW="1") if kind == "context_timer" else env,
+                                                 timeout=15, stdout=stream)
+                text = Path(log).read_text()
+                valid = _sync_contract_observation(text, kind, mode, case, rc,
+                                                   expected_failure=case == "canary" and not explicit_canary)
+                if explicit_canary:
+                    print(text, end="")
+                    print(f"fixture status: {mode}/{kind}/{case} rc={rc}")
+                elif not valid:
+                    logger.error("Synchronization contract failed: %s/%s/%s\n%s", mode, kind, case, text)
+                result.passed += int(valid)
+                result.failed += int(not valid)
+    return result
+
+
+def test_sync_contracts(ove_dir, output_dir):
+    return _test_sync_contracts(ove_dir, output_dir)
+
+
+def test_sync_contracts_sanitize(ove_dir, output_dir):
+    return _test_sync_contracts(ove_dir, output_dir, sanitize=True)
 
 
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
@@ -4001,6 +4142,8 @@ TEST_TARGETS = {
     "rust-spi": test_rust_spi,
     "sync-condvar": test_sync_condvar,
     "sync-condvar-sanitize": test_sync_condvar_sanitize,
+    "sync-contracts": test_sync_contracts,
+    "sync-contracts-sanitize": test_sync_contracts_sanitize,
     "cpp-infer": test_cpp_infer,
     "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,

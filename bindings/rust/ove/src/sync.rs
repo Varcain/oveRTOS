@@ -573,6 +573,11 @@ impl Default for SemaphoreStorage {
 unsafe impl Sync for SemaphoreStorage {}
 
 /// Counting semaphore.
+///
+/// Counts require `initial <= max`, `max > 0`, and the native provider ceiling:
+/// `SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS, and `unsigned int`
+/// on Zephyr. POSIX/NuttX posts enforce the provider ceiling rather than the
+/// requested `max`; FreeRTOS/Zephyr retain and enforce that requested maximum.
 pub struct Semaphore {
     handle: bindings::ove_sem_t,
 }

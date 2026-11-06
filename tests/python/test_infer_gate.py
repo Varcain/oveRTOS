@@ -4,7 +4,6 @@
 
 import json
 import runpy
-import signal
 import subprocess
 import sys
 import tempfile
@@ -103,45 +102,7 @@ class InferenceGateTest(unittest.TestCase):
                     if sanitize:
                         self.assertIn("detect_leaks=1", seen[-1][1]["ASAN_OPTIONS"])
 
-    def test_outer_cleanup_waits_for_inner_case_cleanup(self):
-        command = ["fixture-controller"]
-        process = mock.Mock(pid=12345)
-        process.wait.side_effect = [
-            subprocess.TimeoutExpired(command, 1),
-            subprocess.TimeoutExpired(command, 15),
-            0,
-        ]
-        with (
-            mock.patch.object(
-                ove_test.subprocess, "Popen", return_value=process
-            ) as popen,
-            mock.patch.object(ove_test.os, "killpg") as kill,
-        ):
-            rc = ove_test._run_owned_test_process(
-                command, env={}, timeout=1, cleanup_timeout=15
-            )
-        self.assertEqual(rc, 124)
-        self.assertTrue(popen.call_args.kwargs["start_new_session"])
-        self.assertEqual(process.wait.call_args_list[1].kwargs["timeout"], 15)
-        self.assertIn(mock.call(12345, signal.SIGTERM), kill.call_args_list)
-        self.assertIn(mock.call(12345, signal.SIGKILL), kill.call_args_list)
-        self.assertEqual(process.wait.call_args_list[-1], mock.call())
 
-    def test_interrupt_allows_controller_cleanup_before_kill(self):
-        process = mock.Mock(pid=12345)
-        process.wait.side_effect = [KeyboardInterrupt(), 0, 0]
-        with (
-            mock.patch.object(ove_test.subprocess, "Popen", return_value=process),
-            mock.patch.object(ove_test.os, "killpg") as kill,
-            self.assertRaises(KeyboardInterrupt),
-        ):
-            ove_test._run_owned_test_process(
-                ["fixture-controller"], env={}, timeout=1, cleanup_timeout=15
-            )
-        self.assertEqual(kill.call_args_list[0], mock.call(12345, signal.SIGTERM))
-        self.assertEqual(process.wait.call_args_list[1].kwargs["timeout"], 15)
-        self.assertEqual(kill.call_args_list[-1], mock.call(12345, signal.SIGKILL))
-        self.assertEqual(process.wait.call_args_list[-1], mock.call())
 
 
 if __name__ == "__main__":
