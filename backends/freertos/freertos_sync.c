@@ -189,23 +189,28 @@ void ove_event_signal(ove_event_t evt)
 {
 	/* Publish the latch first (level-triggered), then wake the waiter if
 	 * one is registered.  SEQ_CST pairs with ove_event_wait's
-	 * register-then-recheck so a signal can never be lost. */
+	 * register-then-recheck so a signal can never be lost. Keep the copied
+	 * task live through native notification on this single core. */
+	taskENTER_CRITICAL();
 	__atomic_store_n(&evt->signaled, 1u, __ATOMIC_SEQ_CST);
 	TaskHandle_t w = __atomic_load_n(&evt->waiter, __ATOMIC_SEQ_CST);
 	if (w != NULL) {
 		xTaskNotifyGive(w);
 	}
+	taskEXIT_CRITICAL();
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
+	UBaseType_t saved = taskENTER_CRITICAL_FROM_ISR();
 	__atomic_store_n(&evt->signaled, 1u, __ATOMIC_SEQ_CST);
 	TaskHandle_t w = __atomic_load_n(&evt->waiter, __ATOMIC_SEQ_CST);
 	BaseType_t yield = pdFALSE;
 	if (w != NULL) {
 		vTaskNotifyGiveFromISR(w, &yield);
 	}
+	taskEXIT_CRITICAL_FROM_ISR(saved);
 	portYIELD_FROM_ISR(yield);
 }
 

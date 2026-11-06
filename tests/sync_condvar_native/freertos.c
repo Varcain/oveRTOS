@@ -180,6 +180,20 @@ void model_exit_critical(void)
 	}
 }
 
+UBaseType_t model_enter_critical_from_isr(void)
+{
+	UBaseType_t saved = adapter_depth;
+	model_enter_critical();
+	return saved;
+}
+
+void model_exit_critical_from_isr(UBaseType_t saved)
+{
+	if (adapter_depth != saved + 1)
+		fixture_reject("unbalanced saved observer critical section");
+	model_exit_critical();
+}
+
 TaskHandle_t xTaskGetCurrentTaskHandle(void)
 {
 	if (!current)

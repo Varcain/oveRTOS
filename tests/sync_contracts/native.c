@@ -150,6 +150,18 @@ void model_exit_critical(void)
 		reject();
 	--critical_depth;
 }
+UBaseType_t model_enter_critical_from_isr(void)
+{
+	UBaseType_t saved = critical_depth;
+	model_enter_critical();
+	return saved;
+}
+void model_exit_critical_from_isr(UBaseType_t saved)
+{
+	if (critical_depth != saved + 1)
+		reject();
+	model_exit_critical();
+}
 TaskHandle_t xTaskGetCurrentTaskHandle(void)
 {
 	return &task;

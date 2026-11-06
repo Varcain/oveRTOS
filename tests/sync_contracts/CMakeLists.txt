@@ -24,6 +24,8 @@ set(OVE_POSIX_TIMER_SOURCE "${OVE_ROOT}/tests/host/posix/posix_timer.c"
     CACHE FILEPATH "POSIX timer callback implementation")
 set(OVE_CONTEXT_TIMER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/context_timer.c"
     CACHE FILEPATH "Owned timer context observer")
+set(OVE_FREERTOS_EVENT_OBSERVER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/freertos_event.c"
+    CACHE FILEPATH "FreeRTOS Event lifetime observer")
 option(OVE_NATIVE_MODELS "Build SDK dispatch models" ON)
 option(OVE_CONTEXT_PROBES "Build context source-gate profiles" ON)
 foreach(platform freertos zephyr nuttx)
@@ -98,6 +100,16 @@ if(OVE_NATIVE_MODELS)
             "${OVE_ROOT}/include" "${OVE_ROOT}/backends/${backend}/include"
             "${OVE_ROOT}/backends/common")
         instrument(contracts_${platform})
+        if(platform STREQUAL "freertos")
+            add_executable(contracts_freertos_event "${OVE_FREERTOS_EVENT_OBSERVER_SOURCE}")
+            target_compile_definitions(contracts_freertos_event PRIVATE
+                OVE_SYNC_BACKEND_SOURCE="${OVE_FREERTOS_SYNC_SOURCE}")
+            target_include_directories(contracts_freertos_event PRIVATE
+                "${CMAKE_BINARY_DIR}/freertos" "${CMAKE_CURRENT_SOURCE_DIR}/sdk/freertos"
+                "${CMAKE_BINARY_DIR}/sdk" "${OVE_ROOT}/include"
+                "${OVE_ROOT}/backends/freertos/include" "${OVE_ROOT}/backends/common")
+            instrument(contracts_freertos_event)
+        endif()
     endforeach()
 endif()
 

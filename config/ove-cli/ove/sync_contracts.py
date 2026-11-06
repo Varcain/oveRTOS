@@ -24,6 +24,9 @@ CV_CASES = ("cv_guard_error", "cv_reacquire_error", "cv_retire_error", "cv_wait_
             "cv_guard_timeout_error", "cv_reacquire_timeout_error", "cv_retire_timeout_error",
             "cv_clean_timeout", "cv_success", "cv_forever_timeout_error", "cv_entry_eintr",
             "cv_reacquire_eintr", "cv_retire_eintr", "cv_signal_guard_error", "cv_broadcast_guard_error")
+EVENT_CASES = ("task_latch", "task_timeout", "isr_task_latch", "isr_task_timeout",
+               "isr_true_latch", "isr_true_timeout", "isr_masked_latch", "isr_masked_timeout",
+               "no_waiter", "controls")
 
 
 def cases(zero):
@@ -33,6 +36,7 @@ def cases(zero):
         "contracts_cpp_release": CPP,
         "contracts_cpp_hook": CPP,
         "contracts_freertos": NATIVE_CONSTRUCTORS[:3] + COUNTS[:2] + ("controls",),
+        "contracts_freertos_event": EVENT_CASES,
         "contracts_zephyr": NATIVE_CONSTRUCTORS + COUNTS[:2] + NATIVE_ERRORS + ("controls",),
         "contracts_nuttx": NATIVE_CONSTRUCTORS + ("condvar_second_init",) + COUNTS
                            + NATIVE_ERRORS + CV_CASES + ("controls",),
@@ -127,6 +131,14 @@ def expected(kind, mode, case, expected_failure=False):
                        allocations=allocations, attempts=attempts, free_requests=frees,
                        actual_frees=allocations, native_inits=entries, destroys=destroys,
                        guard_interventions=0, retained_live=0)
+    elif kind == "contracts_freertos_event":
+        selected = "task_latch" if case == "canary" else case
+        registered = selected not in ("no_waiter", "controls")
+        masked = selected.startswith("isr_masked_")
+        text = _footer(case, failures, controls=11, loads=int(registered), calls=int(registered),
+                       checks=2 * registered, offers=0, deferrals=2 * registered, retentions=0,
+                       cleanups=0, last_uses=int(registered), yields=int(selected.startswith("isr_")),
+                       retired=int(registered), caller_mask=int(masked), returned_mask=int(masked))
     elif kind.startswith("contracts_"):
         backend = kind.removeprefix("contracts_")
         entries = {"freertos": 8, "zephyr": 12, "zephyr_core": 12, "nuttx": 14}[backend]
