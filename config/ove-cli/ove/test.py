@@ -846,6 +846,73 @@ def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=
         process.wait()
 
 
+def _test_rust_infer(ove_dir, output_dir, sanitize=False):
+    """Check Rust model ownership and initialized synthetic tensor records."""
+    suite = "rust-infer-sanitize" if sanitize else "rust-infer"
+    result = TestResults(suite=suite)
+    cases = (
+        "normal", "wrong_type", "partial", "outside", "constant_input",
+        "constant_output", "empty", "null", "misaligned", "too_large",
+        "straddle", "small_storage", "qualified_capacity", "setup_error", "construct_isr",
+        "invoke_error", "invoke_isr", "shared_readers", "drop_isr", "forget",
+    )
+    for zero in (False, True):
+        suffix = ("_zh" if zero else "") + ("_san" if sanitize else "")
+        native = os.path.join(output_dir, "tests", "rust_infer_c" + suffix)
+        target = os.path.join(output_dir, "tests", "rust_infer" + suffix)
+        _cmake_build(os.path.join(ove_dir, "tests", "rust_infer"), native,
+                     extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                                 "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")])
+        env = dict(os.environ)
+        env.pop("DOCS_RS", None)
+        env.update({
+            "OVE_DIR": ove_dir, "OVE_GEN_DIR": native, "RUST_IS_NATIVE": "1",
+            "INFER_TEST_LIB_DIR": native,
+            "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
+            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
+            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
+            "CARGO_TARGET_DIR": target,
+        })
+        command = ["cargo", "build", "--locked", "--manifest-path",
+                   os.path.join(ove_dir, "tests", "rust_infer", "Cargo.toml"), "--bins"]
+        if sanitize:
+            env.update({
+                "RUSTC_BOOTSTRAP": "1", "INFER_TEST_SANITIZE": "1",
+                "RUSTFLAGS": env.get("RUSTFLAGS", "") + " -Zsanitizer=address -Cforce-frame-pointers=yes",
+                "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+                "UBSAN_OPTIONS": "halt_on_error=1",
+            })
+            command += ["--target", "x86_64-unknown-linux-gnu"]
+        rc = _run_owned_test_process(command, env=env, timeout=300)
+        result.passed += int(rc == 0)
+        result.failed += int(rc != 0)
+        if rc != 0:
+            continue
+        binary_dir = os.path.join(target, "x86_64-unknown-linux-gnu") if sanitize else target
+        binary = os.path.join(binary_dir, "debug", "infer-contracts")
+        for case in cases + (() if zero else ("heap", "heap_construct_isr", "heap_drop_isr", "heap_forget")):
+            rc = _run_owned_test_process([binary, case], env=env, timeout=30)
+            result.passed += int(rc == 0)
+            result.failed += int(rc != 0)
+        if not sanitize:
+            rc = _run_owned_test_process(
+                [sys.executable, os.path.join(ove_dir, "tests", "rust_infer", "type_checks.py"),
+                 os.path.join(output_dir, "tests", "rust_infer_types" + suffix),
+                 "zero" if zero else "heap"], env=env, timeout=300)
+            result.passed += int(rc == 0)
+            result.failed += int(rc != 0)
+    return result
+
+
+def test_rust_infer(ove_dir, output_dir):
+    return _test_rust_infer(ove_dir, output_dir)
+
+
+def test_rust_infer_sanitize(ove_dir, output_dir):
+    return _test_rust_infer(ove_dir, output_dir, sanitize=True)
+
+
 def test_rust_spi(ove_dir, output_dir):
     """Exercise typed Rust SPI against the production C frontend and POSIX locks."""
     result = TestResults(suite="rust-spi")
@@ -3757,6 +3824,8 @@ TEST_TARGETS = {
     "rust-lvgl-sanitize": test_rust_lvgl_sanitize,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
+    "rust-infer": test_rust_infer,
+    "rust-infer-sanitize": test_rust_infer_sanitize,
     "rust-i2c": test_rust_i2c,
     "rust-async-spi": test_rust_async_spi,
     "infer-admission": test_infer_admission,

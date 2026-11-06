@@ -67,6 +67,7 @@
 
 #include "ove/types.h"
 #include "ove_config.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -285,6 +286,26 @@ uint64_t ove_model_last_inference_us(ove_model_t model);
  */
 size_t ove_model_arena_used(ove_model_t model);
 
+/**
+ * @brief Internal binding query for the live effective arena allocation.
+ *
+ * Reads eagerly initialized session state without mutation. Excludes front
+ * alignment padding. Caller must keep the handle live and serialize against
+ * mutation/close. This query does not transfer ownership or qualify tensor data.
+ * Returns OVE_ERR_INVALID_PARAM for null outputs or a null/accessible closed
+ * handle, leaving outputs unchanged. Dangling handles remain invalid.
+ */
+OVE_NODISCARD int ove_model_binding_arena(ove_model_t model, void **base, size_t *capacity);
+
+/**
+ * @brief Internal pointer-free binding context query, independent of ASYNC.
+ *
+ * True in a hardware ISR on FreeRTOS, Zephyr and NuttX. Host POSIX uses ordinary
+ * threads and reports false; simulated callbacks are not hardware interrupts.
+ * Takes no handle and never accesses session or abandoned backing state.
+ */
+bool ove_model_binding_in_isr(void);
+
 #else /* !CONFIG_OVE_INFER */
 
 /** @cond INTERNAL */
@@ -331,6 +352,18 @@ static inline size_t ove_model_arena_used(ove_model_t m)
 {
 	(void)m;
 	return 0;
+}
+OVE_NODISCARD static inline int ove_model_binding_arena(ove_model_t m, void **base,
+							size_t *capacity)
+{
+	(void)m;
+	(void)base;
+	(void)capacity;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline bool ove_model_binding_in_isr(void)
+{
+	return false;
 }
 /** @endcond */
 

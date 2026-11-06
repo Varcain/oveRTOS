@@ -263,7 +263,7 @@ sufficient-arena preconditions remain.
 |---|---|---|---|
 | Session, heap-allocated (heap mode) | `ove::Model<> m(cfg)` | `Model::new(&cfg)` | `Model.create(&cfg)` |
 | Reusable static storage + arena | `static ove::ModelStorage<N> s` | `ModelStorage::<N>::new()` (static) | `var arena: [N]u8 align(16)` |
-| Load a model into it | `auto m = s.load(data, size)` | `let m = s.load(data)?` | `try m.init(&arena, &cfg)` (zero-heap only) |
+| Load a model into it | `auto m = s.load(data, size)` | `let mut m = s.load(&cfg)?` | `try m.init(&arena, &cfg)` (zero-heap only) |
 | Session end | destructor | `Drop` | `defer m.deinit()` |
 | Arena usage including front padding | `m.arena_used()` | `m.arena_used()` | `m.arenaUsed()` |
 | Detected allocation/planner exhaustion | `Error::NoMemory` | `Error::NoMemory` | `error.OutOfMemory` |
@@ -291,6 +291,55 @@ Measure the configured target/provider and retain at least reported usage plus
 exclude temporary setup peaks; shrinking until failure is unsafe. Re-measure
 after model/provider/TFLM changes. In C the query is `ove_model_arena_used()`;
 null or accessible closed handles return zero. A dangling handle is invalid.
+
+Rust creates a private-field `ModelConfig` with unsafe
+`ModelConfig::from_trusted_model(bytes, capacity)`. This declares qualification
+of the native program, target/provider build, exact configured capacity and
+setup/teardown behavior; it does not validate arbitrary model programs. The
+token retains the immutable bytes and cannot safely be changed to a smaller
+capacity. `Model::new(&cfg)` and `ModelStorage::load(&cfg)` retain the asset
+loan independently of the temporary config object. A borrowed session also
+exclusively borrows its storage. `ModelStorage::new` is const and its arena
+field is individually aligned to 16 bytes. A larger storage buffer still uses
+exactly the qualified configured size; a smaller buffer is rejected before
+native effects. Native allocation needs no Rust allocator or `alloc` feature.
+
+Rust tensor views accept only sealed `f32`, `i8`, `u8`, `i16`, and `i32`
+elements and require the exact descriptor type. They check whole elements,
+alignment, representable lengths and the complete retained allocation before
+forming references. Mutable input views require `&mut Model` and lie wholly
+inside its effective writable arena. Shared output views can also borrow
+immutable model-backed constants. Empty views are valid independent empty
+slices. The view's borrow excludes incompatible views, invocation, reload and
+close. Native setup zeroes the entire effective arena; defined invocation
+must preserve valid initialized backing even on an ordinary error. Reading
+initialized stale outputs does not require a successful prior invocation.
+
+`unsafe Model::invoke(&mut self)` separately requires a qualified numeric
+input/state domain for the exact program/build. An error return does not
+excuse an undefined call. The original live keyword examples are build
+coverage until their live microphone domains are qualified; a finite
+reference corpus does not establish that broader domain. The generated
+`model_data!` accessor is also unsafe: the integration establishes its linked
+array/length pair, full initialized immutable span and program lifetime.
+Applications use the binding's config/storage/view APIs without application FFI.
+
+Rust keeps `Send` and shared-reader `Sync`: moving an owner leaves backing in
+place, shared native metadata queries read eagerly initialized records, and
+all mutation needs exclusive access. Construction and invocation reject
+detected ISR context with `InvalidParam`. Normal Drop synchronously calls the
+matching native deinit/destroy once. ISR Drop performs no native handle access,
+teardown or free, retaining resources and admission permanently. This uses the
+same no-worker/no-old-owner-access policy as forgetting a borrowed session;
+later construction returns Busy before touching abandoned backing. Host POSIX
+reports no hardware ISR, independently of simulated ordinary-thread callbacks.
+
+The C binding-support queries `ove_model_binding_arena` (live effective span,
+excluding front padding) and pointer-free `ove_model_binding_in_isr` are
+available with INFER independently of ASYNC, including through C++ and Zig's
+C import. They transfer no ownership. Raw descriptor pointer access and raw
+`Model::from_static` integration still require their documented unsafe backing
+and serialization contracts.
 
 **Contract notes**
 

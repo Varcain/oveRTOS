@@ -26,6 +26,10 @@
  * Tensor descriptors support float32, int8, uint8, int16 and int32 with ranks
  * zero (scalar) through five and zeroed unused dimensions. Other types or
  * higher ranks return NotSupported.
+ * The C binding-support queries ove_model_binding_arena (effective live span)
+ * and ove_model_binding_in_isr (pointer-free context, independent of ASYNC)
+ * remain available through infer.h; they do not transfer ownership or replace
+ * this binding's caller-side qualification and serialization obligations.
  */
 
 #pragma once
