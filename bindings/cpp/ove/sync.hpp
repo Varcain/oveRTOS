@@ -17,6 +17,7 @@
 #include <ove/types.hpp>
 #include <ove/error.hpp>
 #include <atomic>
+#include <cstdlib>
 #include <new>
 #include <type_traits>
 
@@ -964,8 +965,13 @@ class Event
  *
  * A condition variable allows tasks to efficiently wait for a predicate to
  * become true.  It must always be used together with a `Mutex` — the mutex
- * is atomically released while waiting and re-acquired before `wait()`
- * returns.
+ * is atomically released while waiting and re-acquired on successful wake
+ * or clean timeout. Other native errors do not establish mutex ownership.
+ *
+ * Hold the mutex exactly once and use these operations from thread context.
+ * Single-core FreeRTOS keeps waiter retirement and notification in one
+ * critical section; broadcast interrupt-masked work is linear in waiters.
+ * FreeRTOS SMP configurations are unsupported.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  * @note Always check the predicate in a loop after `wait()` to guard against
@@ -1041,10 +1047,11 @@ class CondVar
 	 *
 	 * The calling task must hold `mtx` before calling this method.  The mutex
 	 * is released atomically while the task blocks, and re-acquired before the
-	 * call returns.
+	 * call succeeds. Other native errors do not establish mutex ownership.
 	 *
-	 * Forever wait; failure means the handle is unusable.  Aborts via
-	 * @c OVE_STATIC_INIT_ASSERT.  Always re-check the predicate after
+	 * Forever wait; failure means mutex ownership is uncertain. Invokes
+	 * @c OVE_STATIC_INIT_ASSERT and aborts if that handler returns.
+	 * Always re-check the predicate after
 	 * @c wait returns to guard against spurious wake-ups.
 	 *
 	 * `std::condition_variable::wait` analog.
@@ -1055,7 +1062,10 @@ class CondVar
 	void wait(Mutex &mtx)
 	{
 		const int err = ove_condvar_wait(handle_, mtx.handle(), OVE_WAIT_FOREVER);
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -1072,9 +1082,9 @@ class CondVar
 	 * declared.  Using `Result<void>` keeps the API uniform across
 	 * FreeRTOS, NuttX and Zephyr.)
 	 *
-	 * @param[in] mtx The mutex (locked by the calling thread).  The
-	 *                kernel releases it while blocking and re-acquires
-	 *                it before returning.
+	 * @param[in] mtx The mutex, held exactly once by the calling thread.
+	 *                Re-acquired on success or clean timeout; other
+	 *                native errors do not establish ownership.
 	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
 	 * @return Empty `Result<void>` on wake; `unexpected`
 	 *         @ref Error::Timeout if the deadline elapsed without a
@@ -1084,8 +1094,8 @@ class CondVar
 	 * @note No `try_wait()` immediate form — a condvar wait is
 	 *       inherently blocking; `std::condition_variable` matches
 	 *       this (no `try_wait`).
-	 * @note Always re-check the predicate in a loop after this
-	 *       returns to guard against spurious wake-ups.  The
+	 * @note Re-check the predicate after success or clean timeout
+	 *       to guard against spurious wake-ups. The
 	 *       predicate-overload below does this internally.
 	 */
 	template <class Rep, class Period>
@@ -1140,6 +1150,8 @@ class CondVar
 	 *
 	 * Loops on @p pred, returning when either @p pred() becomes true
 	 * or @p rel elapses.
+	 * Other native errors invoke @c OVE_STATIC_INIT_ASSERT and abort if
+	 * that handler returns, before evaluating the predicate again.
 	 *
 	 * @return `true` if @p pred() was true on return; `false` if
 	 *         the timeout elapsed with @p pred() still false.
@@ -1159,6 +1171,8 @@ class CondVar
 	 * Loops on @p pred, recomputing the remaining timeout on each
 	 * iteration so spurious wake-ups don't shorten the effective
 	 * deadline.
+	 * Other native errors invoke @c OVE_STATIC_INIT_ASSERT and abort if
+	 * that handler returns, before evaluating the predicate again.
 	 *
 	 * @return `true` if @p pred() was true on return; `false` if
 	 *         the deadline elapsed with @p pred() still false.
@@ -1174,7 +1188,10 @@ class CondVar
 				return pred();
 			const int rc = ove_condvar_wait(handle_, mtx.handle(),
 							to_timeout_ns(deadline - now));
-			(void)rc; /* spurious wake-up or timeout — re-check pred */
+			if (rc != OVE_OK && rc != OVE_ERR_TIMEOUT) {
+				OVE_STATIC_INIT_ASSERT(rc == OVE_OK || rc == OVE_ERR_TIMEOUT);
+				std::abort();
+			}
 		}
 		return true;
 	}

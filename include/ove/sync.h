@@ -589,12 +589,14 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
 /**
  * @brief Atomically release a mutex and wait on a condition variable.
  *
- * The mutex @p mtx must be held by the calling thread before this call.
- * It is released atomically as the thread begins waiting.  When the
- * function returns (either due to a signal or timeout), @p mtx is
- * re-acquired before returning to the caller.
+ * The mutex @p mtx must be held exactly once by the calling thread.
+ * It is released atomically as the thread begins waiting. On @c OVE_OK
+ * or @c OVE_ERR_TIMEOUT, it is re-acquired before returning. Other errors
+ * do not establish mutex ownership; callers must not assume it is held.
+ * Always re-check the predicate after a wake, which may be spurious.
+ * Keep both objects and their backing alive until all operations finish.
  *
- * @note Requires @c CONFIG_OVE_SYNC.
+ * @note Requires @c CONFIG_OVE_SYNC. Thread context only.
  *
  * @param[in] cv          Condition variable handle obtained from
  *                        ove_condvar_init() or ove_condvar_create().
@@ -621,7 +623,8 @@ OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t t
  *
  * @param[in] cv          Condition variable handle.
  * @param[in] mtx         Mutex held by the calling thread; released atomically
- *                        on wait and re-acquired before return.
+ *                        on wait and re-acquired on success or clean timeout.
+ *                        Other errors do not establish ownership.
  * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
  *                        or @c OVE_WAIT_FOREVER.
  * @return Same set of return codes as @ref ove_condvar_wait.
@@ -637,7 +640,7 @@ OVE_NODISCARD static inline int ove_condvar_wait_until(ove_condvar_t cv, ove_mut
  *
  * If no threads are waiting, the signal is lost (not stored).
  *
- * @note Requires @c CONFIG_OVE_SYNC.
+ * @note Requires @c CONFIG_OVE_SYNC. Thread context only.
  *
  * @param[in] cv  Condition variable handle to signal.
  *
@@ -648,7 +651,11 @@ void ove_condvar_signal(ove_condvar_t cv);
 /**
  * @brief Wake all threads waiting on a condition variable.
  *
- * @note Requires @c CONFIG_OVE_SYNC.
+ * @note Requires @c CONFIG_OVE_SYNC. Thread context only.
+ *
+ * On single-core FreeRTOS, notification and waiter retirement share a
+ * critical section. Broadcast masks kernel-aware interrupts for work
+ * linear in the number of waiters. SMP configurations are unsupported.
  *
  * @param[in] cv  Condition variable handle to broadcast on.
  *

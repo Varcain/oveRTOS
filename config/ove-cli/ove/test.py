@@ -846,6 +846,69 @@ def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=
         process.wait()
 
 
+def _test_sync_condvar(ove_dir, output_dir, sanitize=False):
+    """Check native CondVar contracts using guarded, initialized SDK models."""
+    result = TestResults(suite="sync-condvar-sanitize" if sanitize else "sync-condvar")
+    canary = os.environ.get("OVE_SYNC_CONDVAR_CANARY") == "1"
+    cases = {
+        "freertos": ("signal", "signal_gap", "broadcast", "late_timeout", "spurious",
+                     "timeout", "post_signal", "held_mutex", "empty"),
+        "zephyr": ("timeout", "success", "error", "reacquire_error"),
+        "cpp_release": ("wait_error", "predicate_error"),
+        "cpp_hook": ("wait_error", "predicate_error"),
+    }
+    env = dict(os.environ)
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    for zero in (False, True):
+        mode = ("zero" if zero else "heap") + ("-san" if sanitize else "")
+        build = os.path.join(output_dir, "tests", "sync_condvar_native", mode)
+        command = ["cmake", "-S", os.path.join(ove_dir, "tests", "sync_condvar_native"),
+                   "-B", build, "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                   "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")]
+        for platform in ("freertos", "zephyr"):
+            command.append("-DOVE_" + platform.upper() + "_SYNC_SOURCE=" +
+                           os.path.join(ove_dir, "backends", platform, platform + "_sync.c"))
+        rc = _run_owned_test_process(command, env=env, timeout=180)
+        if rc == 0:
+            rc = _run_owned_test_process(["cmake", "--build", build, "-j", str(nproc())],
+                                         env=env, timeout=180)
+        if rc != 0:
+            result.failed += 1
+            continue
+        for platform, ordinary in cases.items():
+            binary = os.path.join(build, "condvar_" + platform)
+            for case in (("canary",) if canary else ordinary + ("canary",)):
+                log = os.path.join(build, platform + "-" + case + ".log")
+                with open(log, "wb") as stream:
+                    rc = _run_owned_test_process([binary, case], env=env, timeout=30, stdout=stream)
+                text = Path(log).read_text()
+                if canary:
+                    print(text, end="")
+                    print(f"fixture status: {mode}/{platform}/{case} rc={rc}")
+                    valid = rc == 0
+                elif case == "canary":
+                    valid = (rc == 1 and text == "failed: explicit fixture failure canary\n"
+                             "canary: 1 failed checks\n")
+                else:
+                    valid = (rc == 0 and text.endswith(case + ": 0 failed checks\n")
+                             and "failed:" not in text and "rejected:" not in text)
+                if not valid and not canary:
+                    logger.error("CondVar model failed: %s/%s/%s\n%s", mode, platform, case, text)
+                result.passed += int(valid)
+                result.failed += int(not valid)
+    return result
+
+
+def test_sync_condvar(ove_dir, output_dir):
+    return _test_sync_condvar(ove_dir, output_dir)
+
+
+def test_sync_condvar_sanitize(ove_dir, output_dir):
+    return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
+
+
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
     """Check C++ arena capacity and cleanup against recording-only C fakes."""
     result = TestResults(suite="cpp-infer-sanitize" if sanitize else "cpp-infer")
@@ -3936,6 +3999,8 @@ TEST_TARGETS = {
     "rust-lvgl-sanitize": test_rust_lvgl_sanitize,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
+    "sync-condvar": test_sync_condvar,
+    "sync-condvar-sanitize": test_sync_condvar_sanitize,
     "cpp-infer": test_cpp_infer,
     "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,

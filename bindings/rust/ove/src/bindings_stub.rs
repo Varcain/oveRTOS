@@ -1183,7 +1183,7 @@ unsafe extern "C" {
     pub fn ove_recursive_mutex_unlock(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Atomically release a mutex and wait on a condition variable.\n\n The mutex @p mtx must be held by the calling thread before this call.\n It is released atomically as the thread begins waiting.  When the\n function returns (either due to a signal or timeout), @p mtx is\n re-acquired before returning to the caller.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv          Condition variable handle obtained from\n                        ove_condvar_init() or ove_condvar_create().\n @param[in] mtx         Mutex that guards the condition.  Must be locked\n                        by the calling thread.\n @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_condvar_signal, ove_condvar_broadcast"]
+    #[doc = " @brief Atomically release a mutex and wait on a condition variable.\n\n The mutex @p mtx must be held exactly once by the calling thread.\n It is released atomically as the thread begins waiting. On @c OVE_OK\n or @c OVE_ERR_TIMEOUT, it is re-acquired before returning. Other errors\n do not establish mutex ownership; callers must not assume it is held.\n Always re-check the predicate after a wake, which may be spurious.\n Keep both objects and their backing alive until all operations finish.\n\n @note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n @param[in] cv          Condition variable handle obtained from\n                        ove_condvar_init() or ove_condvar_create().\n @param[in] mtx         Mutex that guards the condition.  Must be locked\n                        by the calling thread.\n @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_condvar_signal, ove_condvar_broadcast"]
     pub fn ove_condvar_wait(
         cv: ove_condvar_t,
         mtx: ove_mutex_t,
@@ -1191,11 +1191,11 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Wake one thread waiting on a condition variable.\n\n If no threads are waiting, the signal is lost (not stored).\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv  Condition variable handle to signal.\n\n @see ove_condvar_wait, ove_condvar_broadcast"]
+    #[doc = " @brief Wake one thread waiting on a condition variable.\n\n If no threads are waiting, the signal is lost (not stored).\n\n @note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n @param[in] cv  Condition variable handle to signal.\n\n @see ove_condvar_wait, ove_condvar_broadcast"]
     pub fn ove_condvar_signal(cv: ove_condvar_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Wake all threads waiting on a condition variable.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv  Condition variable handle to broadcast on.\n\n @see ove_condvar_wait, ove_condvar_signal"]
+    #[doc = " @brief Wake all threads waiting on a condition variable.\n\n @note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n On single-core FreeRTOS, notification and waiter retirement share a\n critical section. Broadcast masks kernel-aware interrupts for work\n linear in the number of waiters. SMP configurations are unsupported.\n\n @param[in] cv  Condition variable handle to broadcast on.\n\n @see ove_condvar_wait, ove_condvar_signal"]
     pub fn ove_condvar_broadcast(cv: ove_condvar_t);
 }
 #[doc = "< @brief Signed 16-bit integer (int16_t)."]

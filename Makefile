@@ -190,6 +190,7 @@ benchmarks-%: $(VENV_STAMP)
 TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap rust-lvgl rust-lvgl-sanitize rust-strings rust-spi rust-i2c rust-async-i2c rust-async-i2c-arm rust-async-spi rust-async-spi-arm \
               cpp-infer cpp-infer-sanitize rust-infer rust-infer-sanitize zig-infer \
+              sync-condvar sync-condvar-sanitize \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
               i2c-native-arm i2c-native-zephyr infer-admission infer-admission-sanitize infer-target \
               i2c-retirement-freertos i2c-retirement-zephyr i2c-retirement-nuttx \
