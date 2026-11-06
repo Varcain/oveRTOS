@@ -1037,6 +1037,7 @@ def _test_sync_contracts(ove_dir, output_dir, sanitize=False):
                     print(f"fixture status: {mode}/{kind}/{case} rc={rc}")
                 elif not valid:
                     logger.error("Synchronization contract failed: %s/%s/%s\n%s", mode, kind, case, text)
+                    print(f"fixture status: {mode}/{kind}/{case} rc={rc}")
                 result.passed += int(valid)
                 result.failed += int(not valid)
     return result

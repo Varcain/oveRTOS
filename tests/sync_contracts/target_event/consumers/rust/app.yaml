@@ -1,0 +1,13 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later
+{
+  "lang": "rust",
+  "description": "Build-only Event native integration consumer",
+  "rust": {
+    "crate_dir": ".",
+    "lib_name": "event_compile_rust"
+  },
+  "c_sources": [
+    "../../common/anchors.c"
+  ]
+}

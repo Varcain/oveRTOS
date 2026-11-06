@@ -2,7 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A successful status must also prove the complete native observation."""
 
+import contextlib
+import io
+import os
+from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 from ove import test as ove_test
 from ove.sync_contracts import cases, expected
@@ -72,6 +78,35 @@ class SyncContractStatusTest(unittest.TestCase):
         for changed in (text.split("\n", 1)[1], text.replace("held=1", "held=0"),
                         text.replace("waiters=0", "waiters=1"), text.replace("status=IO", "status=TIMEOUT")):
             self.assertFalse(self.valid(changed, "contracts_nuttx", case="cv_guard_error"))
+
+    def test_rejected_normal_observations_report_the_actual_status(self):
+        _, text = expected("contracts_freertos_event", "heap", "canary", True)
+        reset = text.replace("failures=1", "failures=0").encode()
+        for status in (0, 7):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as output:
+                def run(command, **kwargs):
+                    if command[0] == "cmake":
+                        if "-B" in command:
+                            Path(command[command.index("-B") + 1]).mkdir(parents=True)
+                        return 0
+                    kwargs["stdout"].write(reset)
+                    return status
+
+                captured = io.StringIO()
+                with mock.patch.dict(os.environ, {"OVE_SYNC_CONTRACTS_CANARY": "0"}), \
+                        mock.patch.object(ove_test, "_run_owned_test_process", side_effect=run), \
+                        mock.patch.object(ove_test, "_sync_contract_cases", return_value={
+                            "contracts_freertos_event": (),
+                        }), contextlib.redirect_stdout(captured), self.assertLogs("ove", "ERROR") as logs:
+                    result = ove_test._test_sync_contracts(str(Path(output)), output)
+                self.assertEqual((result.passed, result.failed), (0, 2))
+                self.assertEqual(captured.getvalue(), "".join(
+                    f"fixture status: {mode}/contracts_freertos_event/canary rc={status}\n"
+                    for mode in ("heap", "zero")))
+                for mode in ("heap", "zero"):
+                    self.assertTrue(any(
+                        f"{mode}/contracts_freertos_event/canary" in message
+                        for message in logs.output))
 
     def test_every_registered_kind_rejects_a_reset_calibration(self):
         for mode in ("heap", "zero", "heap-san", "zero-san"):

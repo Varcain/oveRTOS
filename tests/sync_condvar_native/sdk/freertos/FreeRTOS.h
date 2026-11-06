@@ -52,8 +52,12 @@ void vTaskNotifyGiveFromISR(TaskHandle_t, BaseType_t *);
 
 void model_enter_critical(void);
 void model_exit_critical(void);
+UBaseType_t model_enter_critical_from_isr(void);
+void model_exit_critical_from_isr(UBaseType_t);
 #define taskENTER_CRITICAL() model_enter_critical()
 #define taskEXIT_CRITICAL() model_exit_critical()
+#define taskENTER_CRITICAL_FROM_ISR() model_enter_critical_from_isr()
+#define taskEXIT_CRITICAL_FROM_ISR(state) model_exit_critical_from_isr(state)
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *);
 SemaphoreHandle_t xSemaphoreCreateRecursiveMutexStatic(StaticSemaphore_t *);
 SemaphoreHandle_t xSemaphoreCreateCountingStatic(unsigned int, unsigned int, StaticSemaphore_t *);
