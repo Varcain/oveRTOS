@@ -884,6 +884,11 @@ impl Default for CondVarStorage {
 // SAFETY: see MutexStorage.
 unsafe impl Sync for CondVarStorage {}
 
+/// Condition variable for a mutex held exactly once in thread context.
+/// Native success and clean timeout reacquire the mutex; other native errors
+/// do not establish ownership. Always re-check the predicate after waking.
+/// Single-core FreeRTOS protects notification and waiter retirement together;
+/// broadcast interrupt-masked work is linear in waiters. SMP is unsupported.
 pub struct CondVar {
     handle: bindings::ove_condvar_t,
 }
@@ -925,8 +930,9 @@ impl CondVar {
     }
 
     /// Atomically release the guarded mutex and block indefinitely
-    /// until signalled.  On return, the mutex is re-acquired and the
-    /// guard handed back.  `std::sync::Condvar::wait` analog.
+    /// until signalled. On success, the mutex is re-acquired and the
+    /// guard handed back. Native errors do not establish mutex ownership.
+    /// `std::sync::Condvar::wait` analog.
     ///
     /// Always re-check the predicate in a loop after this returns —
     /// spurious wake-ups are permitted by the substrate.  Or use
@@ -946,8 +952,9 @@ impl CondVar {
     }
 
     /// Atomically release the guarded mutex and wait up to `d`.  On
-    /// return, the mutex is re-acquired.  `parking_lot::Condvar::wait_for`
-    /// analog.
+    /// success or clean timeout, the mutex is re-acquired.
+    /// Other native errors do not establish mutex ownership.
+    /// `parking_lot::Condvar::wait_for` analog.
     ///
     /// The returned [`WaitTimeoutResult`] distinguishes "signalled in
     /// time" (`timed_out() == false`) from "elapsed without signal"

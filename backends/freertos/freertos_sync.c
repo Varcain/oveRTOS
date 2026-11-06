@@ -15,6 +15,10 @@
 #include "semphr.h"
 #include "task.h"
 
+#if configNUMBER_OF_CORES != 1
+#error "oveRTOS condition variables require single-core FreeRTOS"
+#endif
+
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
@@ -257,10 +261,8 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 
 	self.task = xTaskGetCurrentTaskHandle();
 
-	/* Register in wait list before releasing mutex.  The waiter list is
-	 * a 2-pointer linked-list; updates fit comfortably in a critical
-	 * section (canonical FreeRTOS idiom for short list operations) and
-	 * avoid a mutex round-trip on the hot path. */
+	/* Register before releasing the caller's mutex. All node and task uses
+	 * share this single-core critical boundary with waiter retirement. */
 	taskENTER_CRITICAL();
 	self.next = cv->head;
 	cv->head = &self;
@@ -274,30 +276,26 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	uint32_t got = ulTaskNotifyTake(pdTRUE, ove_ns_to_ticks(timeout_ns));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
 
-	if (got == 0) {
-		/* Timeout — remove ourselves from the list if still there */
-		taskENTER_CRITICAL();
-		struct condvar_waiter **pp = &cv->head;
-		int found = 0;
-		while (*pp) {
-			if (*pp == &self) {
-				*pp = self.next;
-				found = 1;
-				break;
-			}
-			pp = &(*pp)->next;
+	/* Unregister on every return, including unrelated notifications. A
+	 * notifier finishes all node/task uses before this section can run. */
+	taskENTER_CRITICAL();
+	struct condvar_waiter **pp = &cv->head;
+	int found = 0;
+	while (*pp) {
+		if (*pp == &self) {
+			*pp = self.next;
+			found = 1;
+			break;
 		}
-		taskEXIT_CRITICAL();
+		pp = &(*pp)->next;
+	}
+	taskEXIT_CRITICAL();
 
-		if (!found) {
-			/*
-			 * Signal/broadcast already removed us and sent a
-			 * notification that arrived after our timeout —
-			 * consume it and treat as signaled.
-			 */
-			ulTaskNotifyTake(pdTRUE, 0);
-			got = 1;
-		}
+	if (got == 0 && !found) {
+		/* A notifier completed after timeout committed. Consume its
+		 * pending notification and report a wake. */
+		ulTaskNotifyTake(pdTRUE, 0);
+		got = 1;
 	}
 
 	/* Re-acquire the caller's mutex */
@@ -308,33 +306,29 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 
 void ove_condvar_signal(ove_condvar_t cv)
 {
-	TaskHandle_t task = NULL;
 	taskENTER_CRITICAL();
 	if (cv->head != NULL) {
-		task = cv->head->task;
+		TaskHandle_t task = cv->head->task;
 		cv->head = cv->head->next;
-	}
-	taskEXIT_CRITICAL();
-	if (task != NULL) {
+		/* The nested native notification cannot schedule a recipient
+		 * until this outer critical section ends. */
 		xTaskNotifyGive(task);
 	}
+	taskEXIT_CRITICAL();
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }
 
 void ove_condvar_broadcast(ove_condvar_t cv)
 {
-	/* Detach the entire waiter list under the critical section, then
-	 * notify each task with interrupts re-enabled.  The notify itself
-	 * is a single FreeRTOS call that takes the scheduler lock for a
-	 * short window; doing it inside the critical section would
-	 * unnecessarily extend the interrupt-masked region. */
+	/* Keep detached nodes and task handles live through their last use.
+	 * Interrupt-masked work is linear in the number of waiters. */
 	taskENTER_CRITICAL();
 	struct condvar_waiter *p = cv->head;
 	cv->head = NULL;
-	taskEXIT_CRITICAL();
 	while (p) {
 		xTaskNotifyGive(p->task);
 		p = p->next;
 	}
+	taskEXIT_CRITICAL();
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }

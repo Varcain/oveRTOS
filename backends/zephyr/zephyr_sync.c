@@ -204,10 +204,22 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret = k_condvar_wait(&cv->cv, &mtx->mtx, ns_to_timeout(timeout_ns));
+	const bool timed_out = ret == -EAGAIN;
+	/* This kernel reacquires only on successful wake. Its -EAGAIN path,
+	 * including K_NO_WAIT, releases the mutex without reacquiring it. */
+	if (timed_out)
+		ret = k_mutex_lock(&mtx->mtx, K_FOREVER);
+
+	int result = ret == 0 ? OVE_OK : ove_errno_to_ove(-ret);
+	if (ret == 0 && timed_out)
+		result = OVE_ERR_TIMEOUT;
+	else if (result == OVE_ERR_TIMEOUT)
+		/* Only a completed timeout reacquisition promises held state. */
+		result = OVE_ERR_BUSY;
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
-	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return result;
 }
 
 void ove_condvar_signal(ove_condvar_t cv)

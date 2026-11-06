@@ -197,8 +197,10 @@ static inline int ove_errno_to_ove(int e)
 		return OVE_ERR_NO_MEMORY;
 	case ENOSPC:
 		return OVE_ERR_NO_SPACE;
+#if defined(EDQUOT) && EDQUOT != ENOSPC
 	case EDQUOT:
 		return OVE_ERR_NO_SPACE;
+#endif
 	case EROFS:
 		return OVE_ERR_READ_ONLY;
 	case EIO:

@@ -179,6 +179,30 @@ def _cmake_build(src_dir, build_dir, extra_args=None):
     run([cmake, "--build", build_dir, f"-j{nproc()}"])
 
 
+def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, True)):
+    """Configure, build and CTest tests/<name> once per zero-heap setting."""
+    result = TestResults(suite=label)
+    env = dict(os.environ)
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    for zero in configs:
+        build = os.path.join(output_dir, "tests", name,
+                             ("zero" if zero else "heap") + ("-san" if sanitize else ""))
+        commands = (
+            ["cmake", "-S", os.path.join(ove_dir, "tests", name), "-B", build,
+             "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+             "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")],
+            ["cmake", "--build", build, "-j", str(nproc())],
+            ["ctest", "--test-dir", build, "--output-on-failure", "--no-tests=error", "--timeout", "60",
+             f"-j{nproc()}"],
+        )
+        ok = all(_run_owned_test_process(command, env=env, timeout=300) == 0 for command in commands)
+        result.passed += int(ok)
+        result.failed += int(not ok)
+    return result
+
+
 def _ensure_kcov(ove_dir):
     """Ensure kcov is built locally, return path to its binary.
 
@@ -844,6 +868,20 @@ def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=
         except ProcessLookupError:
             pass
         process.wait()
+
+
+def _test_sync_condvar(ove_dir, output_dir, sanitize=False):
+    """Check native CondVar contracts using guarded, initialized SDK models."""
+    return _ctest_suite(ove_dir, output_dir, "sync_condvar_native",
+                        "sync-condvar-sanitize" if sanitize else "sync-condvar", sanitize)
+
+
+def test_sync_condvar(ove_dir, output_dir):
+    return _test_sync_condvar(ove_dir, output_dir)
+
+
+def test_sync_condvar_sanitize(ove_dir, output_dir):
+    return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
@@ -3833,6 +3871,8 @@ TEST_TARGETS = {
     "rust-lvgl-sanitize": test_rust_lvgl_sanitize,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
+    "sync-condvar": test_sync_condvar,
+    "sync-condvar-sanitize": test_sync_condvar_sanitize,
     "cpp-infer": test_cpp_infer,
     "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,
