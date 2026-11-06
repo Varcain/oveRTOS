@@ -178,7 +178,6 @@ class ModelBase
 
 	ove_model_t handle_ = nullptr;
 
-      private:
 	/* ove_model_destroy also tears down a session over caller storage
 	 * (it frees only what ove_model_create allocated); zero-heap builds
 	 * have only ove_model_deinit. */
@@ -233,12 +232,18 @@ template <size_t ArenaSize = 0> class Model : public detail::ModelBase
 	 * (embedded systems typically cannot recover from model load failure).
 	 * Not available for a zero-heap `Model<>`: load it from a
 	 * @ref ModelStorage.
+	 * Embedded zero-heap models reject arena_size greater than ArenaSize
+	 * before native initialization; accepted sizes are forwarded unchanged.
+	 * If the assertion hook returns or is disabled, failure leaves an empty
+	 * model with a null handle. No session is closed from that empty state.
 	 */
 	explicit Model(const struct ove_model_config &cfg)
 		requires(!detail::model_zero_heap || ArenaSize > 0)
 	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		int err = ove_model_init(&handle_, &mem_.storage, mem_.arena, &cfg);
+		int err = OVE_ERR_INVALID_PARAM;
+		if (cfg.arena_size <= ArenaSize)
+			err = ove_model_init(&handle_, &mem_.storage, mem_.arena, &cfg);
 #else
 		int err = ove_model_create(&handle_, &cfg);
 #endif
@@ -260,7 +265,11 @@ template <size_t ArenaSize = 0> class Model : public detail::ModelBase
 		requires(embedded)
 	= delete;
 
-	~Model() noexcept = default;
+	~Model() noexcept
+	{
+		/* Close while embedded storage and arena members are still alive. */
+		release();
+	}
 
       private:
 	template <size_t> friend class ModelStorage;
