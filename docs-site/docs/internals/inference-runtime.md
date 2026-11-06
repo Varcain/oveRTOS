@@ -150,3 +150,13 @@ Before changing the manifest revision:
 
 See the [inference API](../api/infer.md) and
 [binding contracts](binding-semantics.md#inference) for public interfaces.
+
+Rust represents these integration obligations through an unsafe qualified
+`ModelConfig` constructor and a separate unsafe, exclusive `invoke` call for
+the numeric domain. Ordinary session lifetimes, scalar types, retained spans
+and aliasing are enforced inside the binding. Its constructors reject ISR
+context; ISR Drop retains native resources and admission without native
+teardown. No background recovery accesses abandoned borrowed backing. The
+native binding-support arena/context queries are available independently of
+ASYNC; they add no native record fields and do not change C/C++/Zig callers'
+existing qualification obligations.

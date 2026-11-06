@@ -232,6 +232,9 @@ jobs:
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi
 
+      - name: Run Rust inference ownership tests (both heap modes and sanitizers)
+        run: timeout 1200 make test-rust-infer test-rust-infer-sanitize
+
       - name: Run synchronous Rust I2C tests (both heap modes, optional clocks and console)
         run: make test-rust-i2c
 

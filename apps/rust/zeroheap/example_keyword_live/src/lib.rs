@@ -6,17 +6,18 @@
 
 //! Live DMIC Keyword Detection — Rust implementation
 //!
-//! The only `unsafe` in this app is static state with one stated owner:
-//! the single-producer/single-consumer audio ring buffer, the inference
-//! thread's buffers and the audio graph.  All RTOS/FFI bridging stays
-//! inside the `ove` crate's binding layer.
+//! The binding owns session lifetimes and tensor views. This integration also
+//! declares generated model linkage, qualifies the native arena configuration,
+//! and assumes a numeric domain for invocation. The finite reference corpus
+//! does not qualify arbitrary live microphone values: this demo remains build
+//! coverage until its live domain is qualified for the target/provider. Static
+//! state separately has one stated owner. RTOS/FFI bridging stays in `ove`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::Thread;
-
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -147,7 +148,12 @@ fn generate_features(
     storage: &mut ove::infer::ModelStorage<ARENA_SIZE>,
     dsp: &DspState,
 ) -> ove::Result<()> {
-    let model = storage.load(preprocessor_model())?;
+    // The build links the original aligned immutable array and matching length.
+    // Retain the measured 32768-byte setup configuration; requalify after any
+    // model/provider/TFLM change, including preparation peaks and front padding.
+    let config =
+        unsafe { ove::infer::ModelConfig::from_trusted_model(preprocessor_model(), ARENA_SIZE)? };
+    let mut model = storage.load(&config)?;
 
     let actual_window = (FEATURE_DURATION_MS * dsp.actual_rate / 1000) as usize;
     let actual_stride = (FEATURE_STRIDE_MS * dsp.actual_rate / 1000) as usize;
@@ -168,7 +174,10 @@ fn generate_features(
             input[i] = s as i16;
         }
 
-        model.invoke()?;
+        // Integration obligation: qualify live input and mutable state for this
+        // target/provider before execution; finite reference samples do not
+        // establish a domain covering arbitrary microphone values.
+        unsafe { model.invoke()? };
 
         let output = model.output_slice::<i8>(0)?;
         features[frame].copy_from_slice(&output[..FEATURE_SIZE]);
@@ -191,7 +200,12 @@ fn classify_keyword(
     features: &[[i8; FEATURE_SIZE]; FEATURE_COUNT],
     storage: &mut ove::infer::ModelStorage<ARENA_SIZE>,
 ) -> ove::Result<Prediction> {
-    let model = storage.load(classifier_model())?;
+    // The build links the original aligned immutable array and matching length.
+    // Retain the measured 32768-byte setup configuration; requalify after any
+    // model/provider/TFLM change, including preparation peaks and front padding.
+    let config =
+        unsafe { ove::infer::ModelConfig::from_trusted_model(classifier_model(), ARENA_SIZE)? };
+    let mut model = storage.load(&config)?;
 
     // Flatten 2D features into tensor input
     let input = model.input_slice_mut::<i8>(0)?;
@@ -199,7 +213,10 @@ fn classify_keyword(
         input[i * FEATURE_SIZE..(i + 1) * FEATURE_SIZE].copy_from_slice(row);
     }
 
-    model.invoke()?;
+    // Integration obligation: qualify live input and mutable state for this
+    // target/provider before execution; finite reference samples do not
+    // establish a domain covering arbitrary microphone values.
+    unsafe { model.invoke()? };
 
     let scores = model.output_slice::<i8>(0)?;
     let best =
@@ -308,14 +325,7 @@ fn infer_thread() {
         log::info!("  dc_peak={}, gain={}", dc_peak, dsp.gain);
 
         // Inference pipeline
-        if generate_features(
-            &audio_window[..read_count],
-            features,
-            storage,
-            &dsp,
-        )
-        .is_err()
-        {
+        if generate_features(&audio_window[..read_count], features, storage, &dsp).is_err() {
             log::error!("Features failed");
             continue;
         }
@@ -344,10 +354,11 @@ static GRAPH: ove::InitMut<ove::audio::Graph> = ove::InitMut::new();
 fn app_main() {
     ove::log::try_init();
     log::info!("=== Live DMIC Keyword Detection (Rust) ===");
+    // The build links each matching generated immutable array and length.
     log::info!(
         "Models: preprocessor {} + classifier {} bytes",
-        preprocessor_model().len(),
-        classifier_model().len()
+        unsafe { preprocessor_model() }.len(),
+        unsafe { classifier_model() }.len()
     );
 
     // The graph lives in a static: on FreeRTOS this function's stack is the

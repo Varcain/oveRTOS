@@ -20,6 +20,14 @@ extern "C" {
 #include "ove/infer.h"
 #include "ove/time.h"
 #include "ove_backend_common.h"
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#include "FreeRTOS.h"
+#include "task.h"
+#elif defined(CONFIG_OVE_RTOS_ZEPHYR)
+#include <zephyr/kernel.h>
+#elif defined(CONFIG_OVE_RTOS_NUTTX)
+#include <nuttx/irq.h>
+#endif
 }
 
 #include <climits>
@@ -283,6 +291,29 @@ static bool model_teardown(struct ove_model *m)
 /* ── Public C API ────────────────────────────────────────────────────── */
 
 extern "C" {
+
+bool ove_model_binding_in_isr(void)
+{
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+	return xPortIsInsideInterrupt() != 0;
+#elif defined(CONFIG_OVE_RTOS_ZEPHYR)
+	return k_is_in_isr();
+#elif defined(CONFIG_OVE_RTOS_NUTTX)
+	return up_interrupt_context();
+#else
+	return false;
+#endif
+}
+
+int ove_model_binding_arena(ove_model_t model, void **base, size_t *capacity)
+{
+	if (!model || !model->interpreter || !base || !capacity)
+		return OVE_ERR_INVALID_PARAM;
+	const size_t padding = (16 - (reinterpret_cast<uintptr_t>(model->arena) & 15)) & 15;
+	*base = model->arena + padding;
+	*capacity = model->arena_size - padding;
+	return OVE_OK;
+}
 
 int ove_model_init(ove_model_t *model, ove_model_storage_t *storage, void *arena,
 		   const struct ove_model_config *cfg)

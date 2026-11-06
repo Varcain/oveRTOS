@@ -3112,6 +3112,18 @@ unsafe extern "C" {
     #[doc = " @brief Report the live session's arena usage in bytes.\n\n Returns the interpreter's @c arena_used_bytes() plus the original arena's\n front alignment padding. Measure on the target build and kernel provider;\n the configured arena must retain at least this value plus 16 bytes. Keep the\n qualified preparation capacity as well: final usage need not include peak\n temporary planning/preparation space. Remeasure after model/provider/TFLM changes.\n\n @param[in] model Live session, or an accessible closed static handle.\n @return Arena usage, or zero for a null or closed handle. A dangling handle\n         remains invalid and must not be passed."]
     pub fn ove_model_arena_used(model: ove_model_t) -> usize;
 }
+unsafe extern "C" {
+    #[doc = " @brief Internal binding query for the live effective arena allocation.\n\n Reads eagerly initialized session state without mutation. Excludes front\n alignment padding. Caller must keep the handle live and serialize against\n mutation/close. This query does not transfer ownership or qualify tensor data.\n Returns OVE_ERR_INVALID_PARAM for null outputs or a null/accessible closed\n handle, leaving outputs unchanged. Dangling handles remain invalid."]
+    pub fn ove_model_binding_arena(
+        model: ove_model_t,
+        base: *mut *mut core::ffi::c_void,
+        capacity: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Internal pointer-free binding context query, independent of ASYNC.\n\n True in a hardware ISR on FreeRTOS, Zephyr and NuttX. Host POSIX uses ordinary\n threads and reports false; simulated callbacks are not hardware interrupts.\n Takes no handle and never accesses session or abandoned backing state."]
+    pub fn ove_model_binding_in_isr() -> bool;
+}
 #[doc = "< Reliable byte-stream (TCP)."]
 pub const OVE_SOCK_STREAM: ove_sock_type_t = 1;
 #[doc = "< Connectionless datagrams (UDP)."]
