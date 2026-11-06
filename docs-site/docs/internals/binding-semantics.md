@@ -292,6 +292,14 @@ exclude temporary setup peaks; shrinking until failure is unsafe. Re-measure
 after model/provider/TFLM changes. In C the query is `ove_model_arena_used()`;
 null or accessible closed handles return zero. A dangling handle is invalid.
 
+C++ embedded zero-heap `Model<N>` rejects a configured arena larger than N
+before native initialization and forwards accepted capacities unchanged.
+It keeps the constructor's assertion policy; if the hook returns or assertions
+are disabled, failure leaves an empty model with a null handle. Heap models
+allocate the requested capacity independently of N. Cleanup runs before
+embedded storage members are destroyed. `ModelStorage<N>::load` uses exactly
+its own arena capacity and returns errors through `Result`.
+
 Rust creates a private-field `ModelConfig` with unsafe
 `ModelConfig::from_trusted_model(bytes, capacity)`. This declares qualification
 of the native program, target/provider build, exact configured capacity and

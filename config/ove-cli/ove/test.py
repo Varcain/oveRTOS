@@ -846,6 +846,36 @@ def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=
         process.wait()
 
 
+def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
+    """Check C++ arena capacity and cleanup against recording-only C fakes."""
+    result = TestResults(suite="cpp-infer-sanitize" if sanitize else "cpp-infer")
+    build = os.path.join(output_dir, "tests", "cpp_infer_san" if sanitize else "cpp_infer")
+    _cmake_build(os.path.join(ove_dir, "tests", "cpp_infer"), build,
+                 extra_args=["-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")])
+    env = dict(os.environ)
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1", UBSAN_OPTIONS="halt_on_error=1",
+                   LSAN_OPTIONS="exitcode=23")
+    for mode in ("heap", "zero"):
+        for policy in ("hook", "hook_release", "default_release", "default_debug"):
+            binary = os.path.join(build, "infer_" + mode + "_" + policy)
+            for case in ("capacity", "lifetime", "errors", "storage", "moves"):
+                if policy == "default_debug" and case == "errors":
+                    continue
+                rc = _run_owned_test_process([binary, case], env=env, timeout=30)
+                result.passed += int(rc == 0)
+                result.failed += int(rc != 0)
+    return result
+
+
+def test_cpp_infer(ove_dir, output_dir):
+    return _test_cpp_infer(ove_dir, output_dir)
+
+
+def test_cpp_infer_sanitize(ove_dir, output_dir):
+    return _test_cpp_infer(ove_dir, output_dir, sanitize=True)
+
+
 def _test_rust_infer(ove_dir, output_dir, sanitize=False):
     """Check Rust model ownership and initialized synthetic tensor records."""
     suite = "rust-infer-sanitize" if sanitize else "rust-infer"
@@ -3824,6 +3854,8 @@ TEST_TARGETS = {
     "rust-lvgl-sanitize": test_rust_lvgl_sanitize,
     "rust-strings": test_rust_strings,
     "rust-spi": test_rust_spi,
+    "cpp-infer": test_cpp_infer,
+    "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,
     "rust-infer-sanitize": test_rust_infer_sanitize,
     "rust-i2c": test_rust_i2c,

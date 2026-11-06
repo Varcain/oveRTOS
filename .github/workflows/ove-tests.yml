@@ -151,6 +151,9 @@ jobs:
       - name: Run tests
         run: make test-cpp
 
+      - name: Run inference storage tests (both heap modes)
+        run: timeout --signal=INT --kill-after=30 300 make test-cpp-infer
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -175,6 +178,9 @@ jobs:
 
       - name: Run zero-heap tests under sanitizers
         run: make test-cpp-sanitize-zh
+
+      - name: Run inference storage tests under sanitizers (both heap modes)
+        run: timeout --signal=INT --kill-after=30 300 make test-cpp-infer-sanitize
 
       - uses: actions/upload-artifact@v4
         if: failure()
