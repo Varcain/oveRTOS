@@ -15,7 +15,7 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +26,7 @@ from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
+from .sync_contracts import cases as _sync_contract_cases, observation_valid as _sync_contract_observation
 
 logger = logging.getLogger("ove")
 
@@ -845,29 +846,35 @@ def test_rust_strings(ove_dir, output_dir):
 
 
 def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=None, cwd=None):
-    """Bound a native test and all children in its own process group."""
-    process = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True, stdout=stdout,
-                               stderr=subprocess.STDOUT if stdout is not None else None)
+    """Run *command* in its own process group and kill the group afterwards.
+
+    Returns the exit status (negative for a signal) or 124 on timeout. The
+    group gets SIGTERM and *cleanup_timeout* seconds before SIGKILL; an
+    interruption, including SIGTERM to this process, still kills the group
+    before it propagates.
+    """
+    previous = signal.signal(signal.SIGTERM, signal.default_int_handler)
+    process = None
     try:
+        process = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True, stdout=stdout,
+                                   stderr=subprocess.STDOUT if stdout is not None else None)
         return process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        logger.error("Test process exceeded %s seconds: %s", timeout, command)
+        logger.error('Test process exceeded %s seconds: %s', timeout, command)
         return 124
     finally:
-        # Also let a controller unwind its child groups on interruption.
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=cleanup_timeout)
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
+            if process is not None and process.poll() is None:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGTERM)
+                with suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=cleanup_timeout)
+        finally:
+            if process is not None:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            signal.signal(signal.SIGTERM, previous)
 
 
 def _test_sync_condvar(ove_dir, output_dir, sanitize=False):
@@ -882,6 +889,67 @@ def test_sync_condvar(ove_dir, output_dir):
 
 def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
+
+
+def _test_sync_contracts(ove_dir, output_dir, sanitize=False):
+    """Check construction, error and context contracts with guarded native observers."""
+    result = TestResults(suite="sync-contracts-sanitize" if sanitize else "sync-contracts")
+    explicit_canary = os.environ.get("OVE_SYNC_CONTRACTS_CANARY") == "1"
+    env = dict(os.environ)
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    for zero in (False, True):
+        mode = ("zero" if zero else "heap") + ("-san" if sanitize else "")
+        build = os.path.join(output_dir, "tests", "sync_contracts", mode)
+        command = ["cmake", "-S", os.path.join(ove_dir, "tests", "sync_contracts"), "-B", build,
+                   "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                   "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"),
+                   "-DOVE_NATIVE_MODELS=ON", "-DOVE_CONTEXT_PROBES=ON",
+                   "-DOVE_CPP_SYNC_HEADER=" + os.path.join(ove_dir, "bindings", "cpp", "ove", "sync.hpp"),
+                   "-DOVE_COMMON_SYNC_SOURCE=" + os.path.join(ove_dir, "src", "ove_sync.c"),
+                   "-DOVE_IRQ_HEADER=" + os.path.join(ove_dir, "include", "ove", "irq.h")]
+        for platform in ("freertos", "zephyr", "nuttx", "posix"):
+            folder = os.path.join(ove_dir, "tests", "host", "posix") if platform == "posix" else \
+                os.path.join(ove_dir, "backends", platform)
+            for suffix in ("SYNC", "IRQ"):
+                command.append(f"-DOVE_{platform.upper()}_{suffix}_SOURCE=" +
+                               os.path.join(folder, platform + "_" + suffix.lower() + ".c"))
+        command.append("-DOVE_POSIX_TIMER_SOURCE=" +
+                       os.path.join(ove_dir, "tests", "host", "posix", "posix_timer.c"))
+        rc = _run_owned_test_process(command, env=env, timeout=180)
+        if rc == 0:
+            rc = _run_owned_test_process(["cmake", "--build", build, "-j", str(nproc())],
+                                         env=env, timeout=180)
+        if rc:
+            result.failed += 1
+            continue
+        for kind, ordinary in _sync_contract_cases(zero).items():
+            for case in (("canary",) if explicit_canary else ordinary + ("canary",)):
+                log = os.path.join(build, kind + "-" + case + ".log")
+                with open(log, "wb") as stream:
+                    rc = _run_owned_test_process([os.path.join(build, kind), case],
+                                                 env=dict(env, LD_BIND_NOW="1") if kind == "context_timer" else env,
+                                                 timeout=15, stdout=stream)
+                text = Path(log).read_text()
+                valid = _sync_contract_observation(text, kind, mode, case, rc,
+                                                   expected_failure=case == "canary" and not explicit_canary)
+                if explicit_canary:
+                    print(text, end="")
+                    print(f"fixture status: {mode}/{kind}/{case} rc={rc}")
+                elif not valid:
+                    logger.error("Synchronization contract failed: %s/%s/%s\n%s", mode, kind, case, text)
+                result.passed += int(valid)
+                result.failed += int(not valid)
+    return result
+
+
+def test_sync_contracts(ove_dir, output_dir):
+    return _test_sync_contracts(ove_dir, output_dir)
+
+
+def test_sync_contracts_sanitize(ove_dir, output_dir):
+    return _test_sync_contracts(ove_dir, output_dir, sanitize=True)
 
 
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
@@ -1154,16 +1222,9 @@ def test_infer_target(ove_dir, output_dir):
     """Qualify the original models on Cortex-M7 in both allocation modes."""
     del output_dir
     result = TestResults(suite="infer-target")
-    def interrupt(_signal, _frame):
-        raise KeyboardInterrupt
-
-    previous = signal.signal(signal.SIGTERM, interrupt)
-    try:
-        rc = _run_owned_test_process(
-            [sys.executable, os.path.join(ove_dir, "tests", "infer_target", "run.py")],
-            env=dict(os.environ), timeout=1200, cleanup_timeout=15, cwd=ove_dir)
-    finally:
-        signal.signal(signal.SIGTERM, previous)
+    rc = _run_owned_test_process(
+        [sys.executable, os.path.join(ove_dir, "tests", "infer_target", "run.py")],
+        env=dict(os.environ), timeout=1200, cleanup_timeout=15, cwd=ove_dir)
     result.passed = int(rc == 0)
     result.failed = int(rc != 0)
     return result
@@ -3873,6 +3934,8 @@ TEST_TARGETS = {
     "rust-spi": test_rust_spi,
     "sync-condvar": test_sync_condvar,
     "sync-condvar-sanitize": test_sync_condvar_sanitize,
+    "sync-contracts": test_sync_contracts,
+    "sync-contracts-sanitize": test_sync_contracts_sanitize,
     "cpp-infer": test_cpp_infer,
     "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,

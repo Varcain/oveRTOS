@@ -12,6 +12,14 @@
 #include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
+
+static int wait_result(int status)
+{
+	if (status == -EAGAIN || status == -EBUSY)
+		return OVE_ERR_TIMEOUT;
+	return status == 0 ? OVE_OK : ove_errno_to_ove(-status);
+}
+
 static k_timeout_t ns_to_timeout(uint64_t ns)
 {
 	if (ove_timeout_is_forever(ns)) {
@@ -27,14 +35,21 @@ int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 	if (mtx == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	k_mutex_init(&storage->mtx);
+	int ret = k_mutex_init(&storage->mtx);
+	if (ret)
+		return ove_errno_to_ove(-ret);
 	*mtx = storage;
 	return OVE_OK;
 }
 
 void ove_mutex_deinit(ove_mutex_t mtx)
 {
+#ifdef CONFIG_OBJ_CORE_MUTEX
+	if (mtx)
+		k_obj_core_unlink(&mtx->mtx.obj_core);
+#else
 	(void)mtx;
+#endif
 }
 
 int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
@@ -46,7 +61,7 @@ int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
-	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_mutex_unlock(ove_mutex_t mtx)
@@ -59,12 +74,7 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	if (mtx == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-	k_mutex_init(&storage->mtx);
-	*mtx = storage;
-	return OVE_OK;
+	return ove_mutex_init(mtx, storage);
 }
 
 void ove_recursive_mutex_deinit(ove_mutex_t mtx)
@@ -81,7 +91,7 @@ int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
-	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_recursive_mutex_unlock(ove_mutex_t mtx)
@@ -94,10 +104,12 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
-	if (sem == NULL || storage == NULL) {
+	if (sem == NULL || storage == NULL || max == 0 || initial > max) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	k_sem_init(&storage->sem, initial, max);
+	int ret = k_sem_init(&storage->sem, initial, max);
+	if (ret)
+		return ove_errno_to_ove(-ret);
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
 	*sem = storage;
@@ -106,7 +118,12 @@ int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initia
 
 void ove_sem_deinit(ove_sem_t sem)
 {
+#ifdef CONFIG_OBJ_CORE_SEM
+	if (sem)
+		k_obj_core_unlink(&sem->sem.obj_core);
+#else
 	(void)sem;
+#endif
 }
 
 int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
@@ -118,7 +135,7 @@ int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
-	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_sem_give(ove_sem_t sem)
@@ -147,14 +164,21 @@ int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 	if (evt == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	k_sem_init(&storage->sem, 0, 1);
+	int ret = k_sem_init(&storage->sem, 0, 1);
+	if (ret)
+		return ove_errno_to_ove(-ret);
 	*evt = storage;
 	return OVE_OK;
 }
 
 void ove_event_deinit(ove_event_t evt)
 {
+#ifdef CONFIG_OBJ_CORE_SEM
+	if (evt)
+		k_obj_core_unlink(&evt->sem.obj_core);
+#else
 	(void)evt;
+#endif
 }
 
 int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
@@ -166,7 +190,7 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
-	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return wait_result(ret);
 }
 
 void ove_event_signal(ove_event_t evt)
@@ -188,14 +212,21 @@ int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 	if (cv == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	k_condvar_init(&storage->cv);
+	int ret = k_condvar_init(&storage->cv);
+	if (ret)
+		return ove_errno_to_ove(-ret);
 	*cv = storage;
 	return OVE_OK;
 }
 
 void ove_condvar_deinit(ove_condvar_t cv)
 {
+#ifdef CONFIG_OBJ_CORE_CONDVAR
+	if (cv)
+		k_obj_core_unlink(&cv->cv.obj_core);
+#else
 	(void)cv;
+#endif
 }
 
 int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)

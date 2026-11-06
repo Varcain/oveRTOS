@@ -11,12 +11,10 @@
 #include <time.h>
 #include <string.h>
 #include <errno.h>
-#ifdef CONFIG_OVE_ASYNC
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
 /* Forward declarations from posix_irq.c — used to mark the timer
- * dispatcher as ISR context so async wakers dispatch through
- * ove_event_signal_from_isr correctly. Only declared when async is
- * compiled in; without it the symbols don't exist and the brackets
- * collapse to no-ops at the macro level. */
+ * dispatcher as ISR context for synchronous checks and async wake dispatch.
+ * The query and helpers are available with either supporting feature. */
 void posix_irq_enter_isr(void);
 void posix_irq_leave_isr(void);
 #define OVE_POSIX_ISR_ENTER() posix_irq_enter_isr()

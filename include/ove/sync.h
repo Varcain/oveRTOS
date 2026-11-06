@@ -22,6 +22,13 @@
  *  - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
  *    modes.  See @c OVE_MUTEX_DEFINE_STATIC and friends for one-step static
  *    helpers.
+ *
+ * Initializers and heap constructors publish the output handle only on success.
+ * On failure they leave that output unchanged and release successfully
+ * initialized native pieces, allowing unused backing to be retried or freed.
+ * Initialize only unused or fully deinitialized storage. Deinitialize only a
+ * successfully initialized, quiescent object: no active operations or waiters,
+ * and no outstanding mutex acquisitions.
  * @{
  */
 
@@ -45,6 +52,9 @@ extern "C" {
 
 /**
  * @brief Initialise a non-recursive mutex using caller-supplied static storage.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
@@ -82,6 +92,15 @@ void ove_mutex_deinit(ove_mutex_t mtx);
 /**
  * @brief Initialise a counting semaphore using caller-supplied static storage.
  *
+ * Requires @p max > 0, @p initial <= @p max, and counts within the provider's
+ * domain: SEM_VALUE_MAX on POSIX/NuttX, UBaseType_t on FreeRTOS, and unsigned
+ * int on Zephyr. POSIX and NuttX do not retain the requested @p max: subsequent
+ * posts enforce their provider-wide ceiling rather than this requested limit.
+ * FreeRTOS and Zephyr enforce the requested maximum at runtime.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
+ *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
  * @param[out] sem      Receives the opaque semaphore handle on success.
@@ -90,7 +109,8 @@ void ove_mutex_deinit(ove_mutex_t mtx);
  * @param[in]  initial  Initial count value.
  * @param[in]  max      Maximum count value.
  * @return OVE_OK on success, @c OVE_ERR_INVALID_PARAM if a pointer argument
- *         is NULL, or another negative error code on failure.
+ *         is NULL or the counts are outside that domain, or another negative
+ *         error code on failure.
  *
  * @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give
  */
@@ -119,6 +139,9 @@ void ove_sem_deinit(ove_sem_t sem);
  * if posted while no thread is waiting, it remains pending and is
  * consumed by the next ove_event_wait().  After a successful wait the
  * event is auto-reset back to unsignalled.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
@@ -153,6 +176,9 @@ void ove_event_deinit(ove_event_t evt);
  * A recursive mutex may be locked multiple times by the same thread without
  * deadlocking.  Each successful lock must be paired with an unlock.
  *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
+ *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
  * @param[out] mtx      Receives the opaque mutex handle on success.
@@ -184,6 +210,9 @@ void ove_recursive_mutex_deinit(ove_mutex_t mtx);
 
 /**
  * @brief Initialise a condition variable using caller-supplied static storage.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
@@ -219,6 +248,9 @@ void ove_condvar_deinit(ove_condvar_t cv);
 /**
  * @brief Allocate and initialise a non-recursive mutex from the heap.
  *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
+ *
  * @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC
  *       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).
  *
@@ -243,6 +275,12 @@ void ove_mutex_destroy(ove_mutex_t mtx);
 
 /**
  * @brief Allocate and initialise a counting semaphore from the heap.
+ *
+ * Count validation and provider-specific maximum semantics match
+ * @ref ove_sem_init.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
  *
  * @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.
  *
@@ -270,6 +308,9 @@ void ove_sem_destroy(ove_sem_t sem);
 /**
  * @brief Allocate and initialise a binary event from the heap.
  *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
+ *
  * @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.
  *
  * @param[out] evt  Receives the opaque event handle on success.
@@ -293,6 +334,9 @@ void ove_event_destroy(ove_event_t evt);
 
 /**
  * @brief Allocate and initialise a recursive mutex from the heap.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
  *
  * @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.
  *
@@ -318,6 +362,9 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx);
 
 /**
  * @brief Allocate and initialise a condition variable from the heap.
+ *
+ * On error the output handle is unchanged and initialized native pieces
+ * are released before returning.
  *
  * @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.
  *

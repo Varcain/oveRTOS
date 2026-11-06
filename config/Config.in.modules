@@ -725,9 +725,9 @@ config OVE_ASYNC
       nanosecond-period timer variant ove_timer_init_ns. Wakes
       the executor through the existing ove_event_signal_from_isr.
 
-      No effect on the C API surface for non-async users; symbols
-      are gated by CONFIG_OVE_ASYNC and absent when the option is
-      off.
+      Critical sections require CONFIG_OVE_ASYNC. Interrupt-context
+      detection is also available with CONFIG_OVE_SYNC alone, without
+      the async runtime or its timer/time dependencies.
 
       Rust apps then opt in via the `async` cargo feature on the
       `ove` crate.

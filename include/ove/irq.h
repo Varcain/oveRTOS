@@ -12,16 +12,13 @@
  * @ingroup ove_core
  * @brief Critical sections and interrupt-context detection.
  *
- * Public primitives used by the async runtime (Embassy on Rust) to
- * implement a critical-section provider and dispatch between thread-
- * and ISR-context paths. The C API itself does not need these for
- * normal blocking-style code — they are wired so that higher-level
- * bindings can layer an async executor on top.
+ * Interrupt-context detection supports synchronous bindings as well as
+ * async dispatch. Critical sections support the async runtime's exclusion
+ * provider (Embassy on Rust).
  *
- * @note All functions in this group require @c CONFIG_OVE_ASYNC.
- *       When @c CONFIG_OVE_ASYNC is not set, every function is replaced
- *       by a static inline stub that returns @c OVE_ERR_NOT_SUPPORTED
- *       (or zero, where the signature precludes an error return).
+ * @note Critical sections require @c CONFIG_OVE_ASYNC. The context query
+ *       requires @c CONFIG_OVE_SYNC or @c CONFIG_OVE_ASYNC. Disabled functions
+ *       use inert inline stubs; the disabled context query returns false.
  * @{
  */
 
@@ -79,22 +76,6 @@ ove_irq_key_t ove_irq_lock(void);
  */
 void ove_irq_unlock(ove_irq_key_t key);
 
-/**
- * @brief Return true if the caller is currently in interrupt context.
- *
- * Used by higher-level bindings (Rust async runtime) to dispatch
- * between the thread-context and ISR-context variants of a wake
- * primitive (e.g. @c ove_event_signal vs @c ove_event_signal_from_isr).
- *
- * @return @c true if the caller is in an ISR or equivalent
- *         interrupt-handling context, @c false otherwise.
- * @note On the host test backend the ISR wrappers set a
- *       thread-local flag; outside those
- *       paths the function returns @c false.
- * @note Requires @c CONFIG_OVE_ASYNC.
- */
-bool ove_is_in_isr(void);
-
 #else /* !CONFIG_OVE_ASYNC */
 
 static inline ove_irq_key_t ove_irq_lock(void)
@@ -105,12 +86,34 @@ static inline void ove_irq_unlock(ove_irq_key_t key)
 {
 	(void)key;
 }
+
+#endif /* CONFIG_OVE_ASYNC */
+
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
+
+/**
+ * @brief Return true if the caller is currently in interrupt context.
+ *
+ * Used by bindings to check synchronous call context and dispatch between
+ * thread-context and ISR-context wake operations. Requires no object setup
+ * or allocation.
+ *
+ * @return @c true if the caller is in an ISR or equivalent
+ *         interrupt-handling context, @c false otherwise.
+ * @note On the host test backend the ISR wrappers set a
+ *       thread-local flag; outside those
+ *       paths the function returns @c false.
+ * @note Requires @c CONFIG_OVE_SYNC or @c CONFIG_OVE_ASYNC.
+ */
+bool ove_is_in_isr(void);
+
+#else /* Neither SYNC nor ASYNC */
 static inline bool ove_is_in_isr(void)
 {
 	return false;
 }
 
-#endif /* CONFIG_OVE_ASYNC */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */
 
 #ifdef __cplusplus
 }

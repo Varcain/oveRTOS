@@ -68,7 +68,7 @@ jobs:
           retention-days: 7
 
   sync-condvar:
-    name: Native CondVar Boundary Models
+    name: Synchronization Boundary Models
     runs-on: ubuntu-latest
     needs: lint
     steps:
@@ -81,6 +81,8 @@ jobs:
         run: |
           timeout --signal=INT --kill-after=30 300 make test-sync-condvar
           timeout --signal=INT --kill-after=30 300 make test-sync-condvar-sanitize
+          timeout --signal=INT --kill-after=30 300 make test-sync-contracts
+          timeout --signal=INT --kill-after=30 300 make test-sync-contracts-sanitize
 
   stub-sanitize:
     name: C Stub Sanitize (UBSan + ASan)

@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import signal
 import subprocess
 from types import SimpleNamespace
 
@@ -141,8 +140,6 @@ def main():
     provider = "cmsis" if nn else "reference"
     require(bool(nn) == bool(core), "supply both CMSIS paths")
     require(not args.regenerate_goldens or provider == "reference", "only reference can produce goldens")
-    # The ove test runner stops this process with SIGTERM; unwind so QEMU is killed too.
-    signal.signal(signal.SIGTERM, signal.default_int_handler)
     root = Path(find_ove_dir()).resolve()
     pin = get_component(load_manifest(str(root)), "libraries", "tflm", "version")
     golden_path = root / "tests" / "infer_target" / "goldens.json"

@@ -208,6 +208,33 @@ only an invalid call is an error.
 
 ---
 
+## Synchronization construction and counts
+
+The five native synchronization families publish a handle only after complete
+initialization. Failure preserves the output and releases successfully
+initialized pieces before backing can be retried or freed. Teardown requires a
+successfully initialized, quiescent object with no waiters, active operations or
+outstanding mutex acquisitions.
+
+C++ constructors and void acquisition/wait methods invoke the configured
+assertion on error and abort if it returns, including release builds. Boolean
+and `Result` methods retain their fallible contracts. Rust constructors return
+errors; Zig constructors propagate errors and release their allocated storage,
+while its void acquisition methods use a terminal panic.
+
+Semaphore counts require `max > 0`, `initial <= max` and the provider ceiling:
+`SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS and `unsigned int` on
+Zephyr. FreeRTOS and Zephyr retain and enforce the requested maximum. POSIX and
+NuttX posts enforce their provider-wide ceiling; they do not retain the requested
+`max`. This limitation applies equally to C, C++, Rust and Zig.
+
+Bindings can query interrupt context with `CONFIG_OVE_SYNC` alone, without
+ASYNC, TIME or object initialization. Critical-section lock/unlock still require
+ASYNC. POSIX timer dispatchers bracket callbacks with the simulator context flag;
+this does not establish general asynchronous signal-handler or IRQ exclusion.
+
+---
+
 ## Timer
 
 | Contract | C++ | Rust | Zig |

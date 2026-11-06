@@ -25,7 +25,10 @@ int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
 	if (mtx == NULL || storage == NULL)
 		return OVE_ERR_INVALID_PARAM;
-	storage->sem = xSemaphoreCreateMutexStatic(&storage->static_sem);
+	SemaphoreHandle_t native = xSemaphoreCreateMutexStatic(&storage->static_sem);
+	if (native == NULL)
+		return OVE_ERR_NO_MEMORY;
+	storage->sem = native;
 	*mtx = storage;
 	return OVE_OK;
 }
@@ -56,9 +59,15 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
-	if (sem == NULL || storage == NULL)
+	UBaseType_t native_max = (UBaseType_t)max;
+	if (sem == NULL || storage == NULL || max == 0 || initial > max ||
+	    (unsigned int)native_max != max)
 		return OVE_ERR_INVALID_PARAM;
-	storage->sem = xSemaphoreCreateCountingStatic(max, initial, &storage->static_sem);
+	SemaphoreHandle_t native = xSemaphoreCreateCountingStatic(native_max, (UBaseType_t)initial,
+								  &storage->static_sem);
+	if (native == NULL)
+		return OVE_ERR_NO_MEMORY;
+	storage->sem = native;
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
 	*sem = storage;
@@ -206,7 +215,10 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
 	if (mtx == NULL || storage == NULL)
 		return OVE_ERR_INVALID_PARAM;
-	storage->sem = xSemaphoreCreateRecursiveMutexStatic(&storage->static_sem);
+	SemaphoreHandle_t native = xSemaphoreCreateRecursiveMutexStatic(&storage->static_sem);
+	if (native == NULL)
+		return OVE_ERR_NO_MEMORY;
+	storage->sem = native;
 	*mtx = storage;
 	return OVE_OK;
 }

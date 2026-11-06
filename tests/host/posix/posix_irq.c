@@ -12,10 +12,9 @@
  * There is no true interrupt model in the host POSIX backend. A thread-
  * local counter stands in for nested critical sections, and a separate
  * thread-local flag marks "currently inside a simulator ISR wrapper".
- * The simulator's HAL paths (e.g. timer SIGEV_THREAD dispatchers, GPIO
- * IRQ injection) set the ISR flag while invoking user callbacks; the
- * async runtime reads ove_is_in_isr() to decide between thread- and
- * ISR-context wake variants.
+ * The simulator's owned timer dispatchers set the ISR flag while invoking
+ * user callbacks. Bindings use the query for synchronous context checks
+ * and thread- versus ISR-context wake dispatch.
  *
  * The "critical section" implementation does not actually suspend
  * preemption — pthreads can't. Code that relies on critical_section::with
@@ -28,11 +27,15 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#ifdef CONFIG_OVE_ASYNC
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+static _Thread_local int s_in_isr;
+
+#ifdef CONFIG_OVE_ASYNC
+#include <pthread.h>
 
 /*
  * Per-thread state. Initialiser-free — POSIX zeros TLS for us.
@@ -44,7 +47,6 @@
  *             callbacks, cleared on return. Read by ove_is_in_isr.
  */
 static _Thread_local uint64_t s_lock_depth;
-static _Thread_local int s_in_isr;
 
 /*
  * Single global mutex used as a coarse "interrupt mask" across host
@@ -88,6 +90,8 @@ void ove_irq_unlock(ove_irq_key_t key)
 	pthread_mutex_unlock(&s_irq_mtx);
 }
 
+#endif /* CONFIG_OVE_ASYNC */
+
 bool ove_is_in_isr(void)
 {
 	return s_in_isr != 0;
@@ -95,8 +99,7 @@ bool ove_is_in_isr(void)
 
 /*
  * Simulator-side helpers — not part of the public API. Used by the
- * POSIX HAL layer to bracket callback dispatch from "ISR" contexts
- * (timer SIGEV_THREAD, GPIO injection threads, etc.) so user code that
+ * POSIX timer layer to bracket owned dispatcher callbacks so user code that
  * queries ove_is_in_isr() inside those callbacks gets `true`.
  */
 void posix_irq_enter_isr(void)
@@ -109,4 +112,4 @@ void posix_irq_leave_isr(void)
 	s_in_isr = 0;
 }
 
-#endif /* CONFIG_OVE_ASYNC */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */

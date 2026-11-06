@@ -36,8 +36,7 @@ namespace ove
  * configuration because the kernel may hold a pointer to the internal buffer.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
- * @note `lock()` is marked `[[nodiscard]]`; ignoring its return value risks
- *       deadlock.
+ * @note Check `try_lock()`'s `[[nodiscard]]` result before using guarded data.
  */
 class Mutex
 {
@@ -46,7 +45,8 @@ class Mutex
 	 * @brief Constructs and initialises the mutex.
 	 *
 	 * Calls `ove_mutex_init` (zero-heap) or `ove_mutex_create` (heap).
-	 * Asserts at startup if initialisation fails.
+	 * On failure invokes @c OVE_STATIC_INIT_ASSERT and aborts if that handler
+	 * returns, including release builds.
 	 */
 	Mutex()
 	{
@@ -55,7 +55,10 @@ class Mutex
 #else
 		int err = ove_mutex_create(&handle_);
 #endif
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -110,11 +113,9 @@ class Mutex
 	/**
 	 * @brief Acquires the mutex, blocking indefinitely.  `std::mutex::lock` analog.
 	 *
-	 * Failure of an indefinite lock means the handle is unusable
-	 * (moved-from, stale, or subsystem mid-deinit) — programming
-	 * error, not a recoverable runtime condition.  Aborts via
-	 * @c OVE_STATIC_INIT_ASSERT on non-OK return; mirrors how
-	 * @ref Thread / @ref Queue constructors handle similar failures.
+	 * On a native error, invokes @c OVE_STATIC_INIT_ASSERT and aborts if
+	 * that handler returns, including release builds. Fallible acquisition
+	 * methods expose errors through Boolean or Result returns.
 	 *
 	 * Pairs with @ref try_lock to satisfy the @c Lockable named
 	 * requirement, enabling @c std::lock_guard<ove::Mutex> and
@@ -127,7 +128,10 @@ class Mutex
 	void lock()
 	{
 		const int err = ove_mutex_lock(handle_, OVE_WAIT_FOREVER);
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -262,7 +266,9 @@ class RecursiveMutex
 	 * @brief Constructs and initialises the recursive mutex.
 	 *
 	 * Calls `ove_recursive_mutex_init` (zero-heap) or
-	 * `ove_recursive_mutex_create` (heap).  Asserts at startup on failure.
+	 * `ove_recursive_mutex_create` (heap). On failure invokes
+	 * @c OVE_STATIC_INIT_ASSERT and aborts if that handler returns,
+	 * including release builds.
 	 */
 	RecursiveMutex()
 	{
@@ -271,7 +277,10 @@ class RecursiveMutex
 #else
 		int err = ove_recursive_mutex_create(&handle_);
 #endif
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -329,7 +338,10 @@ class RecursiveMutex
 	void lock()
 	{
 		const int err = ove_recursive_mutex_lock(handle_, OVE_WAIT_FOREVER);
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -605,6 +617,10 @@ template <typename T> class StaticCell
  * @brief RAII wrapper around an oveRTOS counting semaphore.
  *
  * A counting semaphore with a configurable initial count and maximum count.
+ * Counts must satisfy initial <= max, max > 0 and the native provider ceiling
+ * (SEM_VALUE_MAX on POSIX/NuttX, UBaseType_t on FreeRTOS, unsigned int on Zephyr).
+ * POSIX/NuttX posts enforce the provider ceiling rather than the requested max;
+ * FreeRTOS/Zephyr retain and enforce the requested maximum.
  * Commonly used as a binary semaphore (`initial = 0, max = 1`) for signalling
  * between tasks or from an ISR.
  *
@@ -612,8 +628,8 @@ template <typename T> class StaticCell
  * operations are disabled.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
- * @note `take()` is marked `[[nodiscard]]`; the return value indicates
- *       whether the semaphore was actually decremented.
+ * @note `try_acquire()` is `[[nodiscard]]`; its result indicates whether a
+ *       permit was actually acquired.
  */
 class Semaphore
 {
@@ -623,7 +639,8 @@ class Semaphore
 	 * @param[in] initial Initial count value (default: 0).
 	 * @param[in] max     Maximum count value (default: 1, binary semaphore).
 	 *
-	 * Asserts at startup if initialisation fails.
+	 * On failure invokes @c OVE_STATIC_INIT_ASSERT and aborts if that handler
+	 * returns, including release builds.
 	 */
 	explicit Semaphore(unsigned int initial = 0, unsigned int max = 1)
 	{
@@ -632,7 +649,10 @@ class Semaphore
 #else
 		int err = ove_sem_create(&handle_, initial, max);
 #endif
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -685,15 +705,17 @@ class Semaphore
 	/**
 	 * @brief Decrements the semaphore count, blocking indefinitely.
 	 *
-	 * `std::counting_semaphore::acquire` analog.  Failure of an
-	 * indefinite wait means the handle is unusable — programming
-	 * error.  Aborts via @c OVE_STATIC_INIT_ASSERT on non-OK return
-	 * (same shape as @ref Mutex::lock).
+	 * `std::counting_semaphore::acquire` analog. On native error invokes
+	 * @c OVE_STATIC_INIT_ASSERT and aborts if that handler returns,
+	 * including release builds (same contract as @ref Mutex::lock).
 	 */
 	void acquire()
 	{
 		const int err = ove_sem_take(handle_, OVE_WAIT_FOREVER);
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -802,7 +824,8 @@ class Event
 	/**
 	 * @brief Constructs and initialises the event in the unsignalled state.
 	 *
-	 * Asserts at startup if initialisation fails.
+	 * On failure invokes @c OVE_STATIC_INIT_ASSERT and aborts if that handler
+	 * returns, including release builds.
 	 */
 	Event()
 	{
@@ -811,7 +834,10 @@ class Event
 #else
 		int err = ove_event_create(&handle_);
 #endif
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -864,14 +890,17 @@ class Event
 	/**
 	 * @brief Blocks the calling task until the event is signalled.
 	 *
-	 * Forever wait; failure means the handle is unusable.  Aborts via
-	 * @c OVE_STATIC_INIT_ASSERT (same shape as @ref Mutex::lock and
-	 * @ref Semaphore::acquire).
+	 * On native error invokes @c OVE_STATIC_INIT_ASSERT and aborts if that
+	 * handler returns, including release builds (same contract as
+	 * @ref Mutex::lock and @ref Semaphore::acquire).
 	 */
 	void wait()
 	{
 		const int err = ove_event_wait(handle_, OVE_WAIT_FOREVER);
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
@@ -983,7 +1012,8 @@ class CondVar
 	/**
 	 * @brief Constructs and initialises the condition variable.
 	 *
-	 * Asserts at startup if initialisation fails.
+	 * On failure invokes @c OVE_STATIC_INIT_ASSERT and aborts if that handler
+	 * returns, including release builds.
 	 */
 	CondVar()
 	{
@@ -992,7 +1022,10 @@ class CondVar
 #else
 		int err = ove_condvar_create(&handle_);
 #endif
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+			std::abort();
+		}
 	}
 
 	/**
