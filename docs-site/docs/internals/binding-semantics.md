@@ -300,6 +300,23 @@ allocate the requested capacity independently of N. Cleanup runs before
 embedded storage members are destroyed. `ModelStorage<N>::load` uses exactly
 its own arena capacity and returns errors through `Result`.
 
+Zig uses `ove.infer.linkedModel("g_my_model_data")` for generated array and
+length symbols. The binding references the array address and loads the scalar
+length separately. The integration establishes a complete immutable initialized
+array, matching `unsigned int` length, actual 16-byte alignment and program
+lifetime. This helper supplies metadata and does not validate arbitrary linkage
+or native model programs. `modelSlice` remains a low-level truthful-pointer/
+length adapter.
+
+Zig zeroheap `init` rejects a configured size larger than the supplied slice
+before native effects and preserves accepted sizes exactly. It publishes
+tracking state only after native success; failed live attempts, including Busy,
+preserve the existing owner. A failed first init grants no usable object or
+cleanup rights. Retain model bytes, arena and stable wrapper storage through
+close and serialize access/reuse. Repeated close on an initialized closed object
+is a no-op, including Debug; live pin validation remains active. Heap creation
+keeps native allocation behavior.
+
 Rust creates a private-field `ModelConfig` with unsafe
 `ModelConfig::from_trusted_model(bytes, capacity)`. This declares qualification
 of the native program, target/provider build, exact configured capacity and
