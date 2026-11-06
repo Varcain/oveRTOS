@@ -259,8 +259,10 @@ pub const lvgl = @import("lvgl.zig");
 
 /// ML inference engine (LiteRT / TF Lite Micro).
 pub const infer = @import("infer.zig");
-/// ML model session.  Declare with `undefined`; `init` takes a caller-
-/// supplied arena slice.
+/// ML model session. In zeroheap mode declare with `undefined`, then register
+/// cleanup only after successful `init` with a sufficient caller-owned arena.
+/// Live backing stays pinned through close; initialized closed objects can be
+/// closed again or reused. Heap mode uses `create` with native allocation.
 pub const Model = infer.Model;
 
 /// BSD-like sockets, DNS resolution, and network interface management.

@@ -1748,6 +1748,88 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
     return zig_exe, zig_test_dir
 
 
+def _build_zig_infer_binaries(ove_dir, output_dir):
+    """Build real bindings, recording fakes and complete linked model arrays."""
+    zig = _find_zig(ove_dir)
+    binaries = []
+    for zero in (False, True):
+        mode = "zero" if zero else "heap"
+        native = os.path.join(output_dir, "tests", "zig_infer_c_zh" if zero else "zig_infer_c")
+        _cmake_build(os.path.join(ove_dir, "tests", "zig_infer"), native,
+                     extra_args=["-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF")])
+        sizes = Path(native, "ove_storage_sizes.env").read_text()
+        Path(native, "zig_storage_sizes.h").write_text("".join(
+            "#define OVE_" + line.replace("=", " ", 1) + "\n"
+            for line in sizes.splitlines() if "=" in line))
+        for model in ("audio_preprocessor_int8", "micro_speech_quantized"):
+            generated = Path(native, "models", "g_" + model + "_model_data.c").read_text()
+            actual = bytes(int(value, 16) for value in re.findall(r"0x([0-9a-fA-F]{2})", generated))
+            if actual != Path(ove_dir, "models", "keyword", model + ".tflite").read_bytes():
+                logger.error("Generated model payload differs: %s", model)
+                sys.exit(1)
+        for opt in ("Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"):
+            out = os.path.join(output_dir, "tests", "zig_infer", mode, opt)
+            os.makedirs(out, exist_ok=True)
+            for kind in ("contracts", "assets"):
+                cache = os.path.join(out, kind + "-cache")
+                shared_cache = os.path.join(output_dir, "tests", "zig_infer", "global-cache")
+                env = dict(os.environ, ZIG_LOCAL_CACHE_DIR=cache, ZIG_GLOBAL_CACHE_DIR=shared_cache)
+                binary = os.path.join(out, kind)
+                command = [zig, "build-exe", "-target", "native-native-gnu", "-O" + opt,
+                           "-fllvm", "-fno-strip", "--cache-dir", cache,
+                           "--global-cache-dir", shared_cache, "--dep", "ove",
+                           "-Mroot=" + os.path.join(ove_dir, "tests", "zig_infer", kind + ".zig"),
+                           "-Move=" + os.path.join(ove_dir, "bindings", "zig", "ove", "src", "root.zig")]
+                command += ["-I" + path for path in (
+                    native, os.path.join(ove_dir, "include"),
+                    os.path.join(ove_dir, "tests", "host", "posix", "include"),
+                    os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+                    os.path.join(ove_dir, "tests", "backends", "stub"),
+                    os.path.join(ove_dir, "tests", "host"))]
+                command += ["-L" + native, "-love_zig_infer_fixture"]
+                if kind == "assets":
+                    command.append("-love_zig_infer_assets")
+                command += ["-lc", "-femit-bin=" + binary]
+                rc = _run_owned_test_process(command, env=env, timeout=300)
+                if rc != 0:
+                    logger.error("Zig inference fixture build failed: %s/%s/%s", mode, opt, kind)
+                    sys.exit(rc)
+                binaries.append((zero, opt, kind, binary, env))
+    return binaries
+
+
+def test_zig_infer(ove_dir, output_dir):
+    """Check linked arrays and inference storage without running model programs."""
+    result = TestResults(suite="zig-infer")
+    canary = os.environ.get("OVE_ZIG_INFER_CANARY") == "1"
+    for zero, _opt, kind, binary, env in _build_zig_infer_binaries(ove_dir, output_dir):
+        if canary:
+            cases = ("canary",) if kind == "contracts" else ()
+        elif kind == "assets":
+            cases = (None,)
+        else:
+            cases = ("forward", "extent", "errors", "busy_live", "closed")
+            if zero:
+                cases += ("busy_candidate",)
+        for case in cases:
+            command = [binary] + ([case] if case else [])
+            rc = _run_owned_test_process(command, env=env, timeout=30)
+            result.passed += int(rc == 0)
+            result.failed += int(rc != 0)
+        if not canary and kind == "contracts":
+            # An intentional failure must survive resetting fake session state.
+            # Verify its own diagnostic so an unrelated process failure cannot
+            # satisfy this control.
+            log = os.path.join(os.path.dirname(binary), "canary.log")
+            with open(log, "wb") as stream:
+                rc = _run_owned_test_process([binary, "canary"], env=env, timeout=30, stdout=stream)
+            text = Path(log).read_text()
+            valid = (rc == 1 and text == "failed: explicit fixture failure canary\ncanary: 1 failed checks\n")
+            result.passed += int(valid)
+            result.failed += int(not valid)
+    return result
+
+
 def test_zig(ove_dir, output_dir):
     """Build and run Zig binding tests."""
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir)
@@ -3876,6 +3958,7 @@ TEST_TARGETS = {
     "spi-retirement-nuttx": test_spi_retirement_nuttx,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
+    "zig-infer": test_zig_infer,
     "zig-zeroheap": test_zig_zeroheap,
     "zig-debug": test_zig_debug,
     "zig-coverage": test_zig_coverage,

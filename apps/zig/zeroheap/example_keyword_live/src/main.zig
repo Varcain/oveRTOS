@@ -10,6 +10,8 @@
 //! `AudioBuf` safe wrapper — zero `@ptrCast` or `callconv(.c)` in this
 //! file.  All FFI trampolines are generated at comptime inside the
 //! `ove.audio` binding layer.
+//! Live microphone numeric domains require qualification for the exact native
+//! build before execution; build coverage alone does not establish that domain.
 
 const std = @import("std");
 const ove = @import("ove");
@@ -61,23 +63,12 @@ const labels = [_][]const u8{ "silence", "unknown", "yes", "no" };
 
 // ── Model data (linked from C objects) ─────────────────────────────────
 
-extern const g_audio_preprocessor_int8_model_data: [*]const u8;
-extern const g_audio_preprocessor_int8_model_data_len: u32;
-extern const g_micro_speech_quantized_model_data: [*]const u8;
-extern const g_micro_speech_quantized_model_data_len: u32;
-
 fn preprocessorModel() infer.ModelSlice {
-    return infer.modelSlice(
-        g_audio_preprocessor_int8_model_data,
-        g_audio_preprocessor_int8_model_data_len,
-    );
+    return infer.linkedModel("g_audio_preprocessor_int8_model_data");
 }
 
 fn classifierModel() infer.ModelSlice {
-    return infer.modelSlice(
-        g_micro_speech_quantized_model_data,
-        g_micro_speech_quantized_model_data_len,
-    );
+    return infer.linkedModel("g_micro_speech_quantized_model_data");
 }
 
 // ── Lock-free SPSC ring buffer ────────────────────────────────────────
