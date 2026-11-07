@@ -637,7 +637,7 @@ var consumer_queue: Q8 = undefined;
 fn queueConsumerThread() void {
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
-        const val = consumer_queue.recvFor(.{ .ns = 1000 }) catch break;
+        const val = consumer_queue.recv();
         queue_sum += val;
     }
 }
@@ -649,9 +649,8 @@ fn testQueueProducerConsumer() !void {
     var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "qcon", .priority = .normal }, queueConsumerThread, .{});
     var i: u32 = 1;
     while (i <= 5) : (i += 1) {
-        try consumer_queue.sendFor(&i, .millis(1000));
+        consumer_queue.send(&i);
     }
-    ove.thread.sleepMs(100);
     t.deinit();
     try expectEqual(u32, 15, queue_sum);
 }
