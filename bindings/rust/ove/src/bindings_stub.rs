@@ -113,6 +113,10 @@ pub const OVE_THREAD_INFO_VALID_BLOCKED_TIME: u32 = 32;
 pub const OVE_THREAD_INFO_VALID_SUSPENDED_TIME: u32 = 64;
 pub const OVE_THREAD_INFO_VALID_STATE_TIMES: u32 = 120;
 pub const OVE_THREAD_NAME_MAX: u32 = 32;
+#[doc = " Native resource initialization/destruction is available in this context."]
+pub const OVE_SYNC_CONTEXT_RESOURCE: u32 = 1;
+#[doc = " Native mutex acquisitions and condition-variable operations are available."]
+pub const OVE_SYNC_CONTEXT_BLOCKING: u32 = 2;
 pub const OVE_AUDIO_MAX_CHANNELS: u32 = 8;
 pub const OVE_AUDIO_GRAPH_MAX_NODES: u32 = 16;
 pub const OVE_AUDIO_GRAPH_MAX_EDGES: u32 = 16;
@@ -398,6 +402,10 @@ pub type ove_dma_complete_cb =
     Option<unsafe extern "C" fn(result: core::ffi::c_int, user_data: *mut core::ffi::c_void)>;
 #[doc = " @brief Opaque cookie returned by @ref ove_irq_lock for use with\n        @ref ove_irq_unlock.\n\n The width is sized to fit each backend's native restore state:\n  - Zephyr:  @c unsigned @c int returned by @c irq_lock().\n  - FreeRTOS: 0 (the FreeRTOS @c taskENTER_CRITICAL macros are\n              symmetric and don't return a value).\n  - NuttX:   @c irqstate_t (typically @c uint32_t).\n  - host test backend: @c uint64_t (a TLS nesting depth — no real\n    ISR-mask).\n\n The C ABI commits to @c uint64_t so the Rust binding's\n `critical-section::Impl::RawRestoreState` can be a single fixed\n size across every target."]
 pub type ove_irq_key_t = u64;
+unsafe extern "C" {
+    #[doc = " @brief Query synchronization context without touching a primitive.\n\n Returns a mask of @c OVE_SYNC_CONTEXT_RESOURCE and\n @c OVE_SYNC_CONTEXT_BLOCKING. A missing bit means the binding must reject\n that operation or retain a resource whose destruction is unavailable.\n Object validity, ownership and quiescence are separate requirements.\n\n FreeRTOS permits resource setup before scheduler start; blocking requires\n a running, non-idle task with interrupts enabled. Both scheduler-state and\n idle-task queries must be enabled in its configuration. Zephyr and NuttX\n require an active kernel, non-idle thread and enabled interrupts. Cooperative\n and scheduler-locked threads remain supported where native blocking is legal.\n The POSIX backend rejects its modeled ISR and critical-section contexts.\n Unsupported architecture/configuration domains return zero conservatively.\n Current native domains are privileged Cortex-M3/M4/M7, Zephyr native_sim,\n single-core NuttX flat sim, and the POSIX backend. FreeRTOS multicore and\n NuttX SMP return zero.\n The query allocates nothing, changes\n no interrupt mask and requires no TIME, ASYNC or thread-wrapper feature.\n\n This is not the eligibility test for releasing an already-owned mutex:\n a valid same-thread unlock can remain legal with interrupts masked.\n\n @return Context flags, or zero when SYNC is disabled or unavailable."]
+    pub fn ove_sync_context() -> u32;
+}
 unsafe extern "C" {
     #[doc = " @brief Enter a critical section: disable interrupts (or equivalent\n        backend mechanism) and return an opaque restore cookie.\n\n Safe to call from both thread and ISR context. Nestable — each\n @ref ove_irq_lock must be paired with a matching @ref ove_irq_unlock\n passing the same cookie back, in LIFO order. The outermost\n @ref ove_irq_unlock restores the previous interrupt state.\n\n @return Opaque cookie to pass to @ref ove_irq_unlock.\n @note Requires @c CONFIG_OVE_ASYNC."]
     pub fn ove_irq_lock() -> ove_irq_key_t;

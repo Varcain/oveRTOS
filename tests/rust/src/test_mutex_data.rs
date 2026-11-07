@@ -4,7 +4,7 @@
 //
 // This file is part of oveRTOS.
 
-//! Tests for the data-carrying `Mutex<T>` surface introduced in B3.
+//! Tests for scoped access to data carried by `Mutex<T>`.
 //!
 //! `test_mutex.rs` exercises the `Mutex<()>` (no-data) shape — these
 //! tests pin down the `Deref`/`DerefMut` access pattern, `get_mut`,
@@ -15,28 +15,40 @@ use crate::test_entry;
 use ove::Mutex;
 
 fn test_deref_reads_data() {
-    let mtx = Mutex::new(42i32).unwrap();
-    let g = mtx.lock().unwrap();
-    assert_eq!(*g, 42);
+    let mutex = Mutex::new(42i32).unwrap();
+    mutex
+        .with_lock(|value| {
+            assert_eq!(*value, 42);
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_deref_mut_writes_data() {
-    let mtx = Mutex::new(0i32).unwrap();
-    {
-        let mut g = mtx.lock().unwrap();
-        *g = 99;
-    }
-    let g = mtx.lock().unwrap();
-    assert_eq!(*g, 99);
+    let mutex = Mutex::new(0i32).unwrap();
+    mutex
+        .with_lock(|mut value| {
+            *value = 99;
+            Ok(())
+        })
+        .unwrap();
+    mutex
+        .with_lock(|value| {
+            assert_eq!(*value, 99);
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_get_mut_skips_lock() {
-    // get_mut takes &mut self; no lock needed because exclusive access
-    // is statically proven.
-    let mut mtx = Mutex::new(7i32).unwrap();
-    *mtx.get_mut() = 11;
-    let g = mtx.lock().unwrap();
-    assert_eq!(*g, 11);
+    let mut mutex = Mutex::new(7i32).unwrap();
+    *mutex.get_mut() = 11;
+    mutex
+        .with_lock(|value| {
+            assert_eq!(*value, 11);
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_into_inner_extracts_value() {
@@ -52,14 +64,20 @@ struct Point {
 }
 
 fn test_struct_field_access() {
-    let mtx = Mutex::new(Point { x: 3, y: 4 }).unwrap();
-    {
-        let mut g = mtx.lock().unwrap();
-        g.x = 10;
-        g.y = 20;
-    }
-    let g = mtx.lock().unwrap();
-    assert_eq!(*g, Point { x: 10, y: 20 });
+    let mutex = Mutex::new(Point { x: 3, y: 4 }).unwrap();
+    mutex
+        .with_lock(|mut point| {
+            point.x = 10;
+            point.y = 20;
+            Ok(())
+        })
+        .unwrap();
+    mutex
+        .with_lock(|point| {
+            assert_eq!(*point, Point { x: 10, y: 20 });
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_drop_runs_t_destructor() {

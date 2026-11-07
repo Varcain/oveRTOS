@@ -4,10 +4,10 @@
 //
 // This file is part of oveRTOS.
 
-use crate::framework::{run_suite, PtrGuard};
+use crate::framework::{PtrGuard, run_suite};
 use crate::test_entry;
 use ove::{CondVar, Mutex, Thread};
-use std::sync::atomic::{AtomicPtr, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
 
 struct CvCtx {
     cv: *const CondVar,
@@ -20,14 +20,20 @@ static CV_WOKE: AtomicI32 = AtomicI32::new(0);
 static CV_CTX: AtomicPtr<CvCtx> = AtomicPtr::new(core::ptr::null_mut());
 
 fn cv_wait_entry() {
-    let ctx_ptr = CV_CTX.load(Ordering::Acquire);
-    if ctx_ptr.is_null() { return; }
-    let ctx = unsafe { &*ctx_ptr };
-    let cv = unsafe { &*ctx.cv };
-    let mtx = unsafe { &*ctx.mtx };
-    let g = mtx.lock().unwrap();
-    let _g2 = cv.wait(g).unwrap();
-    CV_WOKE.store(1, Ordering::Release);
+    let pointer = CV_CTX.load(Ordering::Acquire);
+    if pointer.is_null() {
+        return;
+    }
+    let context = unsafe { &*pointer };
+    let cv = unsafe { &*context.cv };
+    let mutex = unsafe { &*context.mtx };
+    mutex
+        .with_lock(|access| {
+            let _access = cv.wait(access)?;
+            CV_WOKE.store(1, Ordering::Release);
+            Ok(())
+        })
+        .unwrap();
 }
 
 static CV_SIGNALED: AtomicI32 = AtomicI32::new(0);
@@ -35,29 +41,41 @@ static CV_SIG_CTX: AtomicPtr<CvCtx> = AtomicPtr::new(core::ptr::null_mut());
 
 fn cv_signal_entry() {
     Thread::sleep_ms(50);
-    let ctx_ptr = CV_SIG_CTX.load(Ordering::Acquire);
-    if ctx_ptr.is_null() { return; }
-    let ctx = unsafe { &*ctx_ptr };
-    let cv = unsafe { &*ctx.cv };
-    let mtx = unsafe { &*ctx.mtx };
-    let mut g = mtx.lock().unwrap();
-    *g = true;
-    CV_SIGNALED.store(1, Ordering::Release);
-    cv.signal();
+    let pointer = CV_SIG_CTX.load(Ordering::Acquire);
+    if pointer.is_null() {
+        return;
+    }
+    let context = unsafe { &*pointer };
+    let cv = unsafe { &*context.cv };
+    let mutex = unsafe { &*context.mtx };
+    mutex
+        .with_lock(|mut value| {
+            *value = true;
+            CV_SIGNALED.store(1, Ordering::Release);
+            cv.signal();
+            Ok(())
+        })
+        .unwrap();
 }
 
 static CV_PROD_CTX: AtomicPtr<CvCtx> = AtomicPtr::new(core::ptr::null_mut());
 
 fn cv_producer_entry() {
     Thread::sleep_ms(50);
-    let ctx_ptr = CV_PROD_CTX.load(Ordering::Acquire);
-    if ctx_ptr.is_null() { return; }
-    let ctx = unsafe { &*ctx_ptr };
-    let cv = unsafe { &*ctx.cv };
-    let mtx = unsafe { &*ctx.mtx };
-    let mut g = mtx.lock().unwrap();
-    *g = true;
-    cv.signal();
+    let pointer = CV_PROD_CTX.load(Ordering::Acquire);
+    if pointer.is_null() {
+        return;
+    }
+    let context = unsafe { &*pointer };
+    let cv = unsafe { &*context.cv };
+    let mutex = unsafe { &*context.mtx };
+    mutex
+        .with_lock(|mut value| {
+            *value = true;
+            cv.signal();
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_create() {
@@ -75,12 +93,20 @@ fn test_signal_wakes_one() {
     };
     let _guard = PtrGuard::new(&CV_CTX, &ctx as *const CvCtx as *mut CvCtx);
 
-    let th = Thread::builder().name(c"cvw").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_wait_entry).unwrap();
+    let th = Thread::builder()
+        .name(c"cvw")
+        .priority(ove::Priority::Normal)
+        .stack_size(4096)
+        .spawn_simple(cv_wait_entry)
+        .unwrap();
     Thread::sleep_ms(50);
 
     {
-        let _g = mtx.lock().unwrap();
-        cv.signal();
+        mtx.with_lock(|_| {
+            cv.signal();
+            Ok(())
+        })
+        .unwrap();
     }
 
     drop(th);
@@ -90,12 +116,14 @@ fn test_signal_wakes_one() {
 
 fn test_wait_timeout() {
     let cv = CondVar::new().unwrap();
-    let mtx = Mutex::new(0i32).unwrap();
-    let g = mtx.lock().unwrap();
-    let (_g2, wtr) = cv
-        .wait_for(g, core::time::Duration::from_millis(50))
+    let mutex = Mutex::new(0i32).unwrap();
+    mutex
+        .with_lock(|access| {
+            let (_access, result) = cv.wait_for(access, core::time::Duration::from_millis(50))?;
+            assert!(result.timed_out(), "expected timeout without a signal");
+            Ok(())
+        })
         .unwrap();
-    assert!(wtr.timed_out(), "expected timeout — no signal sent");
 }
 
 fn test_wait_for_signalled_not_timed_out() {
@@ -116,15 +144,15 @@ fn test_wait_for_signalled_not_timed_out() {
         .spawn_simple(cv_producer_entry)
         .unwrap();
 
-    let g = mtx.lock().unwrap();
-    let (g2, wtr) = cv
-        .wait_for(g, core::time::Duration::from_millis(500))
-        .unwrap();
-    assert!(!wtr.timed_out(), "signal arrived before deadline");
-    assert!(*g2, "predicate flipped to true by signaller");
-
-    drop(th);
-    drop(_guard);
+    mtx.with_lock(|access| {
+        let (access, result) = cv.wait_for(access, core::time::Duration::from_millis(500))?;
+        assert!(!result.timed_out(), "signal arrived before deadline");
+        assert!(*access, "predicate flipped to true by signaller");
+        drop(th);
+        drop(_guard);
+        Ok(())
+    })
+    .unwrap();
 }
 
 fn test_wait_while_producer_consumer() {
@@ -137,14 +165,19 @@ fn test_wait_while_producer_consumer() {
     };
     let _guard = PtrGuard::new(&CV_PROD_CTX, &ctx as *const CvCtx as *mut CvCtx);
 
-    let th = Thread::builder().name(c"prod").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_producer_entry).unwrap();
+    let th = Thread::builder()
+        .name(c"prod")
+        .priority(ove::Priority::Normal)
+        .stack_size(4096)
+        .spawn_simple(cv_producer_entry)
+        .unwrap();
 
-    let g = mtx.lock().unwrap();
-    // wait_while loops until predicate returns false; safe against
-    // spurious wake-ups.
-    let g = cv.wait_while(g, |ready| !*ready).unwrap();
-    assert!(*g, "predicate satisfied");
-    drop(g);
+    mtx.with_lock(|access| {
+        let access = cv.wait_while(access, |ready| !*ready)?;
+        assert!(*access, "predicate satisfied");
+        Ok(())
+    })
+    .unwrap();
 
     drop(th);
     drop(_guard);
@@ -161,14 +194,21 @@ fn test_wait_forever() {
     };
     let _guard = PtrGuard::new(&CV_SIG_CTX, &ctx as *const CvCtx as *mut CvCtx);
 
-    let th = Thread::builder().name(c"sig").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_signal_entry).unwrap();
+    let th = Thread::builder()
+        .name(c"sig")
+        .priority(ove::Priority::Normal)
+        .stack_size(4096)
+        .spawn_simple(cv_signal_entry)
+        .unwrap();
 
-    let g = mtx.lock().unwrap();
-    let _g2 = cv.wait(g).unwrap();
-
-    drop(th);
-    drop(_guard);
-    assert_eq!(CV_SIGNALED.load(Ordering::SeqCst), 1);
+    mtx.with_lock(|access| {
+        let _access = cv.wait(access)?;
+        drop(th);
+        drop(_guard);
+        assert_eq!(CV_SIGNALED.load(Ordering::SeqCst), 1);
+        Ok(())
+    })
+    .unwrap();
 }
 
 fn test_raii_drop() {
@@ -179,22 +219,27 @@ fn test_raii_drop() {
 
 fn test_broadcast_wakes_all() {
     let cv = CondVar::new().unwrap();
-    let mtx = Mutex::new(()).unwrap();
-    // broadcast with no waiters must be a no-op, not a crash — exercises the
-    // broadcast() FFI path without needing threads.
-    let _g = mtx.lock().unwrap();
-    cv.broadcast();
+    let mutex = Mutex::new(()).unwrap();
+    mutex
+        .with_lock(|_| {
+            cv.broadcast();
+            Ok(())
+        })
+        .unwrap();
 }
 
 pub fn run() -> (usize, usize) {
-    run_suite("CondVar", &[
-        test_entry!(test_create),
-        test_entry!(test_signal_wakes_one),
-        test_entry!(test_wait_timeout),
-        test_entry!(test_wait_for_signalled_not_timed_out),
-        test_entry!(test_wait_while_producer_consumer),
-        test_entry!(test_wait_forever),
-        test_entry!(test_raii_drop),
-        test_entry!(test_broadcast_wakes_all),
-    ])
+    run_suite(
+        "CondVar",
+        &[
+            test_entry!(test_create),
+            test_entry!(test_signal_wakes_one),
+            test_entry!(test_wait_timeout),
+            test_entry!(test_wait_for_signalled_not_timed_out),
+            test_entry!(test_wait_while_producer_consumer),
+            test_entry!(test_wait_forever),
+            test_entry!(test_raii_drop),
+            test_entry!(test_broadcast_wakes_all),
+        ],
+    )
 }

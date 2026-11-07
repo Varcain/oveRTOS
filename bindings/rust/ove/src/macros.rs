@@ -144,9 +144,9 @@ macro_rules! model_data {
 // ---------------------------------------------------------------------------
 // Unified creation macros
 //
-// These macros work in both heap and zero-heap modes. In heap mode they call
-// `new()`. In zero-heap mode they declare function-local `static` storage
-// and call `from_static()`.
+// These macros work in both heap and zero-heap modes. Mutex, recursive mutex
+// and condition-variable macros use typed static storage with safe `create()`.
+// Other macros select heap allocation or native static storage by configuration.
 // ---------------------------------------------------------------------------
 
 /// Create a [`crate::Mutex<T>`] around `$val` that works in both heap and
@@ -155,36 +155,25 @@ macro_rules! model_data {
 /// Use `()` as the value for a "no-data" lock (i.e. `Mutex<()>` used
 /// purely to synchronise access to other state) — matches
 /// `std::sync::Mutex<()>` / `parking_lot::Mutex<()>` convention.
+/// In zero-heap mode this expansion claims its typed static backing; repeating
+/// it with a live/forgotten owner panics on Busy. End the owner before reuse.
 #[cfg(has_sync)]
 #[macro_export]
 macro_rules! mutex {
     ($val:expr) => {{
-        #[cfg(not(zero_heap))]
-        {
-            $crate::Mutex::new($val).unwrap()
-        }
-        #[cfg(zero_heap)]
-        {
-            static mut _S: $crate::ffi::ove_mutex_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::Mutex::from_static(core::ptr::addr_of_mut!(_S), $val) }.unwrap()
-        }
+        static STORAGE: $crate::MutexStorage = $crate::MutexStorage::new();
+        $crate::Mutex::create(&STORAGE, $val).unwrap()
     }};
 }
 
 /// Create a [`crate::RecursiveMutex`] that works in both heap and zero-heap modes.
+/// Repeating the same expansion with a live zero-heap owner panics on Busy.
 #[cfg(has_sync)]
 #[macro_export]
 macro_rules! recursive_mutex {
     () => {{
-        #[cfg(not(zero_heap))]
-        {
-            $crate::RecursiveMutex::new().unwrap()
-        }
-        #[cfg(zero_heap)]
-        {
-            static mut _S: $crate::ffi::ove_mutex_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::RecursiveMutex::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
-        }
+        static STORAGE: $crate::RecursiveMutexStorage = $crate::RecursiveMutexStorage::new();
+        $crate::RecursiveMutex::create(&STORAGE).unwrap()
     }};
 }
 
@@ -224,19 +213,13 @@ macro_rules! event {
 }
 
 /// Create a [`crate::CondVar`] that works in both heap and zero-heap modes.
+/// Repeating the same expansion with a live zero-heap owner panics on Busy.
 #[cfg(has_sync)]
 #[macro_export]
 macro_rules! condvar {
     () => {{
-        #[cfg(not(zero_heap))]
-        {
-            $crate::CondVar::new().unwrap()
-        }
-        #[cfg(zero_heap)]
-        {
-            static mut _S: $crate::ffi::ove_condvar_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::CondVar::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
-        }
+        static STORAGE: $crate::CondVarStorage = $crate::CondVarStorage::new();
+        $crate::CondVar::create(&STORAGE).unwrap()
     }};
 }
 

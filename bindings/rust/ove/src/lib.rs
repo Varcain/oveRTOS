@@ -9,6 +9,8 @@
 //! Provides RAII types for threads, mutexes, semaphores, queues, timers, etc.
 //! and the `app!` macro that generates all FFI boilerplate so application code
 //! can be written in pure safe Rust.
+//! Mutex data access uses callback scopes and nonowning `MutexAccess` views;
+//! private cleanup releases each native acquisition even if a view is forgotten.
 //!
 //! All three language bindings (C++/Rust/Zig) conform to one cross-binding
 //! behavioural contract — blocking vs non-blocking semantics, ownership and
@@ -134,15 +136,12 @@
 //!
 //! # Hot-path inline discipline
 //!
-//! Wrapper methods that are a thin `unsafe { ffi::ove_*(...) }` plus
-//! `Error::from_code(rc)` are marked `#[inline]` so the rustc/LLVM
-//! optimizer can fold the FFI call, the error-code match, and the
-//! `Result` construction into the caller's frame.  Without this,
-//! `Mutex::lock` and friends compile as out-of-line `bl` targets that
-//! cost an extra ~20–60 ns per call on Cortex-M and show up as a 6–15%
-//! per-binding overhead on the shortest sync paths.  The same
-//! discipline applies to any new wrapper added here — keep the body a
-//! one-liner and add `#[inline]`.
+//! Thin FFI wrappers can inline their native call, error match and Result
+//! construction into the caller's frame. Mutex callback scopes additionally
+//! perform context admission, data-loan tracking and private cleanup.
+//! Historical owning-guard measurements do not describe these scopes. Inspect
+//! generated hotpaths and measure the current implementation before claiming
+//! its cost; callback methods need their complete ownership protocol.
 //!
 //! Cross-language inlining between Rust and C is gated behind the
 //! `OVE_CROSS_LTO=ON` CMake option.  It is off by default because it
@@ -420,8 +419,8 @@ pub use spi::{Spi, Spi16, SpiStorage};
 pub use stream::{Stream, StreamStorage};
 #[cfg(has_sync)]
 pub use sync::{
-    CondVar, CondVarStorage, Event, EventStorage, Mutex, MutexGuard, MutexStorage, RecursiveMutex,
-    RecursiveMutexGuard, RecursiveMutexStorage, Semaphore, SemaphoreStorage, WaitTimeoutResult,
+    CondVar, CondVarStorage, Event, EventStorage, Mutex, MutexAccess, MutexStorage, RecursiveMutex,
+    RecursiveMutexStorage, Semaphore, SemaphoreStorage, WaitTimeoutResult,
 };
 pub use thread::Priority;
 #[cfg(zero_heap)]

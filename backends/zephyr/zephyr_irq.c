@@ -27,6 +27,46 @@
 #include <zephyr/kernel.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "ove_sync_context.h"
+
+#if defined(CONFIG_OVE_SYNC) && defined(CONFIG_MULTITHREADING)
+#ifndef CONFIG_SMP
+extern struct k_thread z_idle_threads[];
+#endif
+#if defined(CONFIG_BOARD_NATIVE_SIM)
+extern uint32_t hw_irq_ctrl_get_current_lock(void);
+#endif
+#endif
+
+#ifdef CONFIG_OVE_SYNC
+uint32_t ove_sync_context(void)
+{
+#if defined(CONFIG_MULTITHREADING) && \
+	(defined(OVE_SYNC_CORTEX_M) || defined(CONFIG_BOARD_NATIVE_SIM))
+	if (k_is_user_context() || k_is_pre_kernel() || k_is_in_isr())
+		return 0;
+#ifdef OVE_SYNC_CORTEX_M
+	if (!ove_sync_privileged() || !ove_sync_irqs_enabled())
+		return 0;
+#else
+	if (hw_irq_ctrl_get_current_lock() != 0)
+		return 0;
+#endif
+	struct k_thread *current = k_current_get();
+	if (current == NULL)
+		return 0;
+#ifdef CONFIG_SMP
+	if (current->base.is_idle)
+#else
+	if (current == &z_idle_threads[0])
+#endif
+		return 0;
+	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+#else
+	return 0;
+#endif
+}
+#endif
 
 #ifdef CONFIG_OVE_ASYNC
 #include <zephyr/irq.h>

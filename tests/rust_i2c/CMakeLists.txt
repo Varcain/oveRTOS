@@ -27,7 +27,8 @@ if(OVE_TIME)
     list(APPEND _sources ${OVE_DIR}/tests/host/posix/posix_time.c)
 endif()
 if(OVE_I2C_ENABLED)
-    list(APPEND _sources ${OVE_DIR}/src/ove_sync.c ${OVE_DIR}/tests/host/posix/posix_sync.c)
+    list(APPEND _sources ${OVE_DIR}/src/ove_sync.c ${OVE_DIR}/tests/host/posix/posix_sync.c
+        ${OVE_DIR}/tests/host/posix/posix_irq.c)
     add_library(i2c_front OBJECT ${OVE_DIR}/src/ove_i2c.c)
     target_compile_definitions(i2c_front PRIVATE
         malloc=i2c_test_malloc free=i2c_test_free

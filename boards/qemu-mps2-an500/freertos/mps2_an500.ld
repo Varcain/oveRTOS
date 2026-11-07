@@ -188,7 +188,7 @@ SECTIONS
     .stack (ORIGIN(RAM) + LENGTH(RAM) - 0x2000) :
     {
         __StackLimit = .;
-        KEEP(*(.stack*))
+        KEEP(*(.stack .stack.*))
         __StackTop = .;
     } > RAM
 

@@ -19,3 +19,8 @@ __attribute__((used)) int (*const sync_compile_consumer_anchor)(void) =
 extern int sync_binding_checked_wait(ove_condvar_t, ove_mutex_t, uint64_t, bool *);
 __attribute__((used)) int (*const sync_compile_checked_wait_anchor)(
 	ove_condvar_t, ove_mutex_t, uint64_t, bool *) = sync_binding_checked_wait;
+
+extern uint32_t sync_binding_context_flags(void);
+__attribute__((used))
+uint32_t (*const sync_compile_context_flags_anchor)(void) = sync_binding_context_flags;
+_Static_assert(sizeof(ove_sync_context()) == sizeof(uint32_t), "context flag ABI width");

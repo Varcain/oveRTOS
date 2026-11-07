@@ -115,6 +115,46 @@ static inline bool ove_is_in_isr(void)
 
 #endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */
 
+/** Native resource initialization/destruction is available in this context. */
+#define OVE_SYNC_CONTEXT_RESOURCE (1u << 0)
+/** Native mutex acquisitions and condition-variable operations are available. */
+#define OVE_SYNC_CONTEXT_BLOCKING (1u << 1)
+
+#ifdef CONFIG_OVE_SYNC
+/**
+ * @brief Query synchronization context without touching a primitive.
+ *
+ * Returns a mask of @c OVE_SYNC_CONTEXT_RESOURCE and
+ * @c OVE_SYNC_CONTEXT_BLOCKING. A missing bit means the binding must reject
+ * that operation or retain a resource whose destruction is unavailable.
+ * Object validity, ownership and quiescence are separate requirements.
+ *
+ * FreeRTOS permits resource setup before scheduler start; blocking requires
+ * a running, non-idle task with interrupts enabled. Both scheduler-state and
+ * idle-task queries must be enabled in its configuration. Zephyr and NuttX
+ * require an active kernel, non-idle thread and enabled interrupts. Cooperative
+ * and scheduler-locked threads remain supported where native blocking is legal.
+ * The POSIX backend rejects its modeled ISR and critical-section contexts.
+ * Unsupported architecture/configuration domains return zero conservatively.
+ * Current native domains are privileged Cortex-M3/M4/M7, Zephyr native_sim,
+ * single-core NuttX flat sim, and the POSIX backend. FreeRTOS multicore and
+ * NuttX SMP return zero.
+ * The query allocates nothing, changes
+ * no interrupt mask and requires no TIME, ASYNC or thread-wrapper feature.
+ *
+ * This is not the eligibility test for releasing an already-owned mutex:
+ * a valid same-thread unlock can remain legal with interrupts masked.
+ *
+ * @return Context flags, or zero when SYNC is disabled or unavailable.
+ */
+uint32_t ove_sync_context(void);
+#else
+static inline uint32_t ove_sync_context(void)
+{
+	return 0;
+}
+#endif
+
 #ifdef __cplusplus
 }
 #endif

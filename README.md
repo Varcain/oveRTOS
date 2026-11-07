@@ -196,7 +196,7 @@ fn app_main() {
         .stack_size(4096)
         .spawn(move |_stop| loop {
             let v = q.recv().unwrap();        // forever recv() → T, infallible
-            *s.lock().unwrap() = v;           // MutexGuard<u32>, Deref to T
+            s.with_lock(|mut value| { *value = v; Ok(()) }).unwrap();
             if v % 5 == 0 { log::info!("count = {v}"); }
         })
         .expect("spawn");
@@ -237,7 +237,7 @@ fn app_main() {
         .name(c"consumer").stack_size(4096)
         .spawn(|_stop| loop {
             let v = QUEUE.recv().unwrap();
-            *LAST.lock().unwrap() = v;
+            LAST.with_lock(|mut value| { *value = v; Ok(()) }).unwrap();
             if v % 5 == 0 { log::info!("count = {v}"); }
         })
         .expect("spawn");
@@ -246,7 +246,7 @@ fn app_main() {
 }
 ```
 
-**Highlights:** data-carrying `Mutex<T>` mirrors `std::sync::Mutex<T>`; per-op narrow error sets (exhaustive `match` without `_ =>` fallback); `Stream<N>` and `fs::File` implement `embedded_io::Read` / `Write`; `Thread::sleep_until(deadline)` and `q.try_recv_until(deadline)` share a single deadline across a sequence of bounded waits.
+**Highlights:** data-carrying `Mutex<T>` provides scoped callback access with `Deref` / `DerefMut`; the binding releases the native lock even if its view is forgotten. `Stream<N>` and `fs::File` implement `embedded_io::Read` / `Write`; `Thread::sleep_until(deadline)` and `q.try_recv_until(deadline)` share a single deadline across a sequence of bounded waits.
 
 ### Zig — comptime-safe wrappers, allocator-aware
 

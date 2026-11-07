@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ove/sync.hpp"
 #include "ove/app.hpp"
+extern "C" uint32_t sync_binding_context_flags(void)
+{
+	return ove_sync_context();
+}
 extern "C" int sync_binding_checked_wait(ove_condvar_t cv, ove_mutex_t mutex, uint64_t timeout,
 					 bool *held)
 {

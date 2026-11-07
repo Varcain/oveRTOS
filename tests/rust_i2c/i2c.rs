@@ -495,21 +495,29 @@ fn relative_sync_timeouts_work_without_the_optional_clock() {
     let _cleanup = start();
     static SYNC: ove::MutexStorage = ove::MutexStorage::new();
     let mutex = ove::Mutex::create(&SYNC, 7u32).unwrap();
-    let guard = mutex.try_lock_for(Duration::ZERO).unwrap();
-    assert_eq!(*guard, 7);
-    std::thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                assert!(matches!(
-                    mutex.try_lock_for(Duration::ZERO),
-                    Err(Error::Timeout)
-                ))
-            })
-            .join()
-            .unwrap();
-    });
-    drop(guard);
-    assert_eq!(*mutex.try_lock_for(Duration::from_nanos(1)).unwrap(), 7);
+    mutex
+        .try_with_lock_for(Duration::ZERO, |value| {
+            assert_eq!(*value, 7);
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        assert!(matches!(
+                            mutex.try_with_lock_for(Duration::ZERO, |_| Ok(())),
+                            Err(Error::Timeout)
+                        ));
+                    })
+                    .join()
+                    .unwrap();
+            });
+            Ok(())
+        })
+        .unwrap();
+    mutex
+        .try_with_lock_for(Duration::from_nanos(1), |value| {
+            assert_eq!(*value, 7);
+            Ok(())
+        })
+        .unwrap();
     drop(mutex);
     good();
 }

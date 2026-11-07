@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #![no_std]
 
+#[unsafe(no_mangle)]
+pub extern "C" fn sync_binding_context_flags() -> u32 {
+    // The query has no primitive, pointer, ownership or allocation prerequisite.
+    unsafe { ove::ffi::ove_sync_context() }
+}
+
 /// # Safety
 /// The native caller must satisfy the checked wait's handle, ownership,
 /// context, output and backing-lifetime requirements.
@@ -44,6 +50,15 @@ fn constructors() -> ove::Result<()> {
         ove::Event::create(&EVENT)?,
         ove::CondVar::create(&CONDVAR)?,
     );
+    _m.with_lock(|mut access| {
+        *access += 1;
+        let (_access, _timeout) = _c.wait_for(access, core::time::Duration::ZERO)?;
+        Ok(())
+    })?;
+    _r.with_lock(|| Ok(()))?;
+    let _macro_mutex = ove::mutex!(0u32);
+    let _macro_recursive = ove::recursive_mutex!();
+    let _macro_cv = ove::condvar!();
     Ok(())
 }
 

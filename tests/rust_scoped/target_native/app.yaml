@@ -1,0 +1,6 @@
+{
+  "lang": "rust",
+  "description": "Finite scoped native ownership control",
+  "rust": {"crate_dir": ".", "lib_name": "scoped_native_rust"},
+  "c_sources": ["bridge.c"]
+}
