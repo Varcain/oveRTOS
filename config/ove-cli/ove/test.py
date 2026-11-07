@@ -32,6 +32,7 @@ from .workspace import find_ove_dir
 from .sync_contracts import cases as _sync_contract_cases, observation_valid as _sync_contract_observation
 from .rust_scoped import CANARIES as _scoped_canaries, cases as _scoped_cases, observation_valid as _scoped_observation
 from .rust_scoped import UNIT_CASES as _scoped_units, unit_observation_valid as _scoped_unit_observation
+from .rust_sync import FAMILIES as _rust_sync_families, cases as _rust_sync_cases, observation_valid as _rust_sync_observation
 
 logger = logging.getLogger("ove")
 
@@ -1213,6 +1214,92 @@ def test_rust_scoped(ove_dir, output_dir):
 
 def test_rust_scoped_sanitize(ove_dir, output_dir):
     return _test_rust_scoped(ove_dir, output_dir, sanitize=True)
+
+
+def _test_rust_sync(ove_dir, output_dir, sanitize=False):
+    """Check Rust semaphore and event ownership against guarded POSIX primitives."""
+    result = TestResults(suite="rust-sync-sanitize" if sanitize else "rust-sync")
+    explicit_canary = os.environ.get("OVE_RUST_SYNC_CANARY") == "1"
+    for zero in (False, True):
+        for optional in (False, True):
+            profile = ("zero" if zero else "heap") + ("-optional" if optional else "-minimal")
+            profile += "-san" if sanitize else ""
+            native = os.path.join(output_dir, "tests", "rust_sync", "fixture-" + profile)
+            target = os.path.join(output_dir, "tests", "rust_sync", "cargo-" + profile)
+            env = dict(os.environ)
+            for key in ("DOCS_RS", "SYNC_TEST_SANITIZE", "CARGO_ENCODED_RUSTFLAGS"):
+                env.pop(key, None)
+            env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=native, RUST_IS_NATIVE="1",
+                       SYNC_TEST_LIB_DIR=native, CARGO_TARGET_DIR=target,
+                       OVE_STORAGE_SIZES=os.path.join(native, "ove_storage_sizes.env"),
+                       LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
+                       LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+                       LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
+            if sanitize:
+                env.update(RUSTC_BOOTSTRAP="1", SYNC_TEST_SANITIZE="1",
+                           RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address -Cforce-frame-pointers=yes",
+                           ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                           UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+            command = ["cmake", "-S", os.path.join(ove_dir, "tests", "rust_sync"), "-B", native,
+                       "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+                       "-DOVE_SYNC_OPTIONAL=" + ("ON" if optional else "OFF"),
+                       "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")]
+            rc = _run_owned_test_process(command, env=env, timeout=180)
+            if rc == 0:
+                rc = _run_owned_test_process(["cmake", "--build", native, "-j", str(nproc())], env=env, timeout=180)
+            if rc == 0:
+                command = ["cargo", "build", "--locked", "--target", "x86_64-unknown-linux-gnu",
+                           "--manifest-path", os.path.join(ove_dir, "tests", "rust_sync", "Cargo.toml")]
+                if optional:
+                    command += ["--features", "optional"]
+                rc = _run_owned_test_process(command, env=env, timeout=300)
+            if rc:
+                result.failed += 1
+                result.failed_names.append(profile + "/build")
+                continue
+            binary = os.path.join(target, "x86_64-unknown-linux-gnu", "debug", "sync-contracts")
+            for family in _rust_sync_families:
+                names = ("canary",) if explicit_canary else _rust_sync_cases(family, zero, optional) + ("canary",)
+                for case in names:
+                    log = os.path.join(native, family + "-" + case + ".log")
+                    command = [binary, family, case]
+                    with open(log, "wb") as stream:
+                        rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
+                    _record_scoped_observation(log, command, rc)
+                    text = Path(log).read_bytes().decode(errors="backslashreplace")
+                    valid = _rust_sync_observation(text, family, case, zero, optional, rc,
+                                                   expected_failure=case == "canary" and not explicit_canary)
+                    if not valid:
+                        print(text, end="")
+                        label = f"{profile}/{family}/{case}"
+                        print(f"fixture status: {label} rc={rc}")
+                        result.failed_names.append(label)
+                    result.passed += int(valid)
+                    result.failed += int(not valid)
+    command = [sys.executable,
+               os.path.join(ove_dir, "tests", "rust_scoped", "context_flags", "run.py"),
+               os.path.join(output_dir, "tests", "rust_sync", "context-models" + ("-san" if sanitize else ""))]
+    if sanitize:
+        command.append("--sanitize")
+    env = dict(os.environ)
+    env["OVE_RUST_SCOPED_CANARY"] = "1" if explicit_canary else "0"
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    rc = _run_owned_test_process(command, env=env, timeout=300)
+    result.passed += int(rc == 0)
+    result.failed += int(rc != 0)
+    if rc:
+        result.failed_names.append("context-models")
+    return result
+
+
+def test_rust_sync(ove_dir, output_dir):
+    return _test_rust_sync(ove_dir, output_dir)
+
+
+def test_rust_sync_sanitize(ove_dir, output_dir):
+    return _test_rust_sync(ove_dir, output_dir, sanitize=True)
 
 
 def _test_rust_infer(ove_dir, output_dir, sanitize=False):
@@ -4281,6 +4368,8 @@ TEST_TARGETS = {
     "sync-contracts-sanitize": test_sync_contracts_sanitize,
     "rust-scoped": test_rust_scoped,
     "rust-scoped-sanitize": test_rust_scoped_sanitize,
+    "rust-sync": test_rust_sync,
+    "rust-sync-sanitize": test_rust_sync_sanitize,
     "cpp-infer": test_cpp_infer,
     "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,

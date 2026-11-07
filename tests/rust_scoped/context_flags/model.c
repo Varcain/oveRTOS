@@ -52,7 +52,7 @@ BaseType_t xTaskGetSchedulerState(void)
 TaskHandle_t xTaskGetCurrentTaskHandle(void)
 {
 	++reads[2];
-	if (model.scheduler != taskSCHEDULER_RUNNING)
+	if (model.scheduler != taskSCHEDULER_RUNNING && model.scheduler != taskSCHEDULER_SUSPENDED)
 		++early;
 #if configNUMBER_OF_CORES > 1
 	model_effect();
@@ -63,7 +63,7 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void)
 TaskHandle_t xTaskGetIdleTaskHandle(void)
 {
 	++reads[3];
-	if (model.scheduler != taskSCHEDULER_RUNNING)
+	if (model.scheduler != taskSCHEDULER_RUNNING && model.scheduler != taskSCHEDULER_SUSPENDED)
 		++early;
 	return &idle;
 }
@@ -262,12 +262,14 @@ static void check(bool valid, const char *message)
 		printf("failed: %s\n", message);
 	}
 }
-static void observe(const char *name, uint32_t expected, const unsigned wanted[7]);
+static void observe(const char *name, uint32_t expected, uint32_t legacy, const unsigned wanted[7]);
 int main(int argc, char **argv)
 {
 	if (argc != 1 && (argc != 2 || strcmp(argv[1], "canary")))
 		return 2;
-	check(OVE_SYNC_CONTEXT_RESOURCE == 1 && OVE_SYNC_CONTEXT_BLOCKING == 2, "public constants");
+	check(OVE_SYNC_CONTEXT_RESOURCE == 1 && OVE_SYNC_CONTEXT_BLOCKING == 2 &&
+		      OVE_SYNC_CONTEXT_PRODUCER == 4,
+	      "public constants");
 	if (argc == 2)
 		check(false, "explicit early failure canary");
 #include "cases.inc"
@@ -276,7 +278,7 @@ int main(int argc, char **argv)
 	return failures ? 1 : 0;
 }
 
-static void observe(const char *name, uint32_t expected, const unsigned wanted[7])
+static void observe(const char *name, uint32_t expected, uint32_t legacy, const unsigned wanted[7])
 {
 	uint64_t before[24], after[24];
 	setup(name);
@@ -284,11 +286,14 @@ static void observe(const char *name, uint32_t expected, const unsigned wanted[7
 	uint32_t flags = ove_sync_context();
 	snapshot(after);
 	check(flags == expected, "context flags");
+	check((flags & (OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING)) == legacy,
+	      "resource and blocking admission preserved");
 	check(!memcmp(before, after, sizeof(before)), "query preserves metadata");
 	check(effects == 0 && early == 0, "query avoids native effects and early getters");
 	check(!memcmp(reads, wanted, sizeof(reads)), "query getter counts");
 	++queries;
-	printf("%s: flags=%u readonly=%u effects=%u early=%u getters=%u,%u,%u,%u,%u,%u,%u\n", name,
-	       flags, (unsigned)!memcmp(before, after, sizeof(before)), effects, early, reads[0],
-	       reads[1], reads[2], reads[3], reads[4], reads[5], reads[6]);
+	printf("%s: flags=%u legacy=%u readonly=%u effects=%u early=%u getters=%u,%u,%u,%u,%u,%u,%u\n",
+	       name, flags, flags & (OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING),
+	       (unsigned)!memcmp(before, after, sizeof(before)), effects, early, reads[0], reads[1],
+	       reads[2], reads[3], reads[4], reads[5], reads[6]);
 }

@@ -339,16 +339,20 @@ typedef uint32_t ove_eventbits_t;
  * @brief Notify-callback signature used by the @c _set_notify variants of
  *        the comm primitives (stream / queue / eventgroup / semaphore).
  *
- * Invoked from inside the producing call (e.g. @c ove_stream_send) after a
- * successful update.  The implementation must be short, non-blocking, and
- * safe to call from whatever context the originating send/give/set ran
- * in — typically a Rust @c AtomicWaker::wake bridge for the async runtime.
+ * Invoked from inside the producing call (e.g. @c ove_stream_send). Consult
+ * each producing API for notification timing: a semaphore notifies after a
+ * post attempt even when its count ceiling prevents an increment. The
+ * implementation must be short, non-blocking, and safe in every originating
+ * send/give/set context. Callback code and data must support concurrent or
+ * reentrant calls, or the caller must serialize producing operations.
  *
  * @note The @c _set_notify registration is *setup-time only*: it is NOT safe
  *       to call concurrently with producing operations on the same primitive,
  *       since those read the callback pointer without synchronisation. Register
- *       the callback once before the primitive is shared across contexts (the
- *       async bridge registers it at construction).
+ *       once before sharing the primitive, or externally serialize every
+ *       registration, replacement and removal with producing operations and
+ *       other registrations. Keep callback code and data valid until all
+ *       possible in-flight calls finish before retiring a registration.
  *
  * @param[in] user_data Opaque pointer supplied at @c _set_notify time.
  */

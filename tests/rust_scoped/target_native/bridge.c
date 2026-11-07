@@ -187,7 +187,8 @@ static void check_stack(void)
 static void step(unsigned index)
 {
 	check_stack();
-	check(ove_sync_context() == (OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING),
+	check((ove_sync_context() & (OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING)) ==
+		      (OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING),
 	      "native worker has supported resource and blocking context");
 	check(scoped_native_step(index) == 0, "actual Rust scoped body completes");
 	retire_current();

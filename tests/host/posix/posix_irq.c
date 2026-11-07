@@ -104,9 +104,9 @@ uint32_t ove_sync_context(void)
 		return 0;
 #ifdef CONFIG_OVE_ASYNC
 	if (s_lock_depth != 0)
-		return 0;
+		return OVE_SYNC_CONTEXT_PRODUCER;
 #endif
-	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING | OVE_SYNC_CONTEXT_PRODUCER;
 }
 #endif
 

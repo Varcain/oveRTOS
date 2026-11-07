@@ -46,11 +46,11 @@ uint32_t ove_sync_context(void)
 	if (k_is_user_context() || k_is_pre_kernel() || k_is_in_isr())
 		return 0;
 #ifdef OVE_SYNC_CORTEX_M
-	if (!ove_sync_privileged() || !ove_sync_irqs_enabled())
+	if (!ove_sync_privileged())
 		return 0;
+	bool blocking = ove_sync_irqs_enabled();
 #else
-	if (hw_irq_ctrl_get_current_lock() != 0)
-		return 0;
+	bool blocking = hw_irq_ctrl_get_current_lock() == 0;
 #endif
 	struct k_thread *current = k_current_get();
 	if (current == NULL)
@@ -61,7 +61,8 @@ uint32_t ove_sync_context(void)
 	if (current == &z_idle_threads[0])
 #endif
 		return 0;
-	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+	return OVE_SYNC_CONTEXT_PRODUCER |
+	       (blocking ? OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING : 0u);
 #else
 	return 0;
 #endif

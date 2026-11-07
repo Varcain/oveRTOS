@@ -5,9 +5,10 @@ context-query reference for inspection of generated configuration and linked
 symbols. A raw checked-wait thunk in each language also checks the generated
 function signature and bool-output ABI. A second uint32 thunk retains the
 pointer-free synchronization context query in all four languages. Rust also
-retains scoped data/recursive acquisition, consuming CV and three macro bodies
-in this SYNC-only no_std crate without a Rust allocator. Application entry starts the ordinary
-runtime; it never invokes either helper. These fixtures are built for inspection
+retains scoped data/recursive acquisition, consuming CV, semaphore/event methods
+and all five synchronization macro bodies in this SYNC-only no_std crate without
+a Rust allocator. Application entry starts the ordinary runtime; it never invokes
+the inspection helpers. These fixtures are built for inspection
 and are not run. Raw ABI thunks are test integration points, not application use
 examples.
 
@@ -28,6 +29,13 @@ refers to the language's constructor helper, and the checked-wait pointer retain
 its language thunk and the native checked entry. The context pointer must retain
 its language thunk and actual uint32 native query. An undefined symbol alone
 does not prove retention. A changed environment requires a fresh CMake cache.
+
+For Rust, also retain `sync_binding_storage_values` with
+`-Wl,--undefined=sync_binding_storage_values`. Its twelve target `usize` values
+record native storage size/alignment, typed storage size/alignment and wrapper
+size/alignment for the semaphore, followed by the same six values for the event.
+Inspect the actual linked data and compare it with the generated native sizes.
+This table does not execute an initializer or allocate an owner.
 
 The domain object uses complete actual SDK types. Its retained scalar array
 records count widths/ceilings and native storage size/alignment without calling

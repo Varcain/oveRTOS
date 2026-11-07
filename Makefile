@@ -193,6 +193,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               sync-condvar sync-condvar-sanitize \
               sync-contracts sync-contracts-sanitize \
               rust-scoped rust-scoped-sanitize \
+              rust-sync rust-sync-sanitize \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
               i2c-native-arm i2c-native-zephyr infer-admission infer-admission-sanitize infer-target \
               i2c-retirement-freertos i2c-retirement-zephyr i2c-retirement-nuttx \

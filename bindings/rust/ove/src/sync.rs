@@ -25,6 +25,11 @@ fn resource_context() -> bool {
     unsafe { bindings::ove_sync_context() & bindings::OVE_SYNC_CONTEXT_RESOURCE != 0 }
 }
 
+fn producer_context() -> bool {
+    // SAFETY: a pointer-free query; masked task producers do not block or allocate.
+    unsafe { bindings::ove_sync_context() & bindings::OVE_SYNC_CONTEXT_PRODUCER != 0 }
+}
+
 fn blocking_context() -> Result<()> {
     // SAFETY: no primitive, allocator, clock or caller-owned pointer is involved.
     if unsafe { bindings::ove_sync_context() & bindings::OVE_SYNC_CONTEXT_BLOCKING != 0 } {
@@ -526,11 +531,13 @@ impl Drop for RecursiveLease<'_> {
 // Semaphore
 // ---------------------------------------------------------------------------
 
-/// Caller-owned backing storage for a [`Semaphore`] in zero-heap mode.  See
-/// [`MutexStorage`] for the pattern; pass `&STORAGE` to [`Semaphore::create`].
+/// Claimed native backing for a [`Semaphore`] in zero-heap mode.
+/// A live, forgotten or retained owner reserves it until completed cleanup.
+/// Heap construction ignores this storage.
 #[allow(dead_code)]
 pub struct SemaphoreStorage {
     storage: UnsafeCell<MaybeUninit<bindings::ove_sem_storage_t>>,
+    claimed: AtomicBool,
 }
 
 impl SemaphoreStorage {
@@ -539,6 +546,7 @@ impl SemaphoreStorage {
     pub const fn new() -> Self {
         Self {
             storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            claimed: AtomicBool::new(false),
         }
     }
 }
@@ -549,7 +557,7 @@ impl Default for SemaphoreStorage {
     }
 }
 
-// SAFETY: see MutexStorage.
+// SAFETY: only the successful atomic claimant initializes or cleans this backing.
 unsafe impl Sync for SemaphoreStorage {}
 
 /// Counting semaphore.
@@ -558,39 +566,65 @@ unsafe impl Sync for SemaphoreStorage {}
 /// `SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS, and `unsigned int`
 /// on Zephyr. POSIX/NuttX posts enforce the provider ceiling rather than the
 /// requested `max`; FreeRTOS/Zephyr retain and enforce that requested maximum.
+///
+/// Creation and cleanup follow [`Mutex`]'s resource-context and retention rules.
+/// Every take requires an active non-idle thread with interrupts enabled;
+/// unsupported contexts return [`Error::NotSupported`] before native/clock effects.
+/// Task releases and serialized notification setup also support recognized
+/// masked contexts and FreeRTOS before scheduler start or while suspended.
+/// ISR/unsupported releases have no effect: no permit and no callback.
 pub struct Semaphore {
     handle: bindings::ove_sem_t,
+    origin: SyncOrigin,
 }
+
+// SAFETY: owned stable backing; native counter/waiter operations are thread-safe.
+unsafe impl Send for Semaphore {}
+unsafe impl Sync for Semaphore {}
 
 impl Semaphore {
     /// Create a counting semaphore via heap allocation (only in heap mode).
     #[cfg(not(zero_heap))]
     pub fn new(initial: u32, max: u32) -> Result<Self> {
+        require_resource_context()?;
         let mut handle: bindings::ove_sem_t = core::ptr::null_mut();
+        // SAFETY: admitted resource context; success publishes initialized backing.
         let rc = unsafe { bindings::ove_sem_create(&mut handle, initial, max) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Heap,
+        })
     }
 
     /// Create from caller-provided static storage.
     ///
     /// # Safety
-    /// Caller must ensure `storage` outlives the `Semaphore`.
+    /// Backing must be nonnull, aligned, complete, writable, unused and stable
+    /// through actual native cleanup or indefinite retention after forget or
+    /// unsupported Drop. No competing initialization, teardown or raw/wrapper
+    /// access is permitted. Native operation/context contracts still apply.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(
         storage: *mut bindings::ove_sem_storage_t,
         initial: u32,
         max: u32,
     ) -> Result<Self> {
+        require_resource_context()?;
         let mut handle: bindings::ove_sem_t = core::ptr::null_mut();
+        // SAFETY: caller supplies exclusive stable native backing.
         let rc = unsafe { bindings::ove_sem_init(&mut handle, storage, initial, max) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Raw,
+        })
     }
 
     /// Create a counting semaphore that works in **both** heap and zero-heap
-    /// modes (see [`Mutex::create`]).  Heap mode ignores `storage`; zero-heap
-    /// mode backs the handle with the caller-provided `storage`.
+    /// modes. Heap mode ignores `storage`; zero-heap mode claims its backing.
+    /// A live, forgotten or retained owner returns [`Error::Busy`] before native
+    /// initialization. Legal Drop completes cleanup before reopening the claim.
     pub fn create(storage: &'static SemaphoreStorage, initial: u32, max: u32) -> Result<Self> {
         #[cfg(not(zero_heap))]
         {
@@ -599,9 +633,22 @@ impl Semaphore {
         }
         #[cfg(zero_heap)]
         {
-            // SAFETY: see Mutex::create.
-            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
-            unsafe { Self::from_static(ptr, initial, max) }
+            require_resource_context()?;
+            storage
+                .claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| Error::Busy)?;
+            // SAFETY: this claim exclusively owns stable typed native backing.
+            match unsafe { Self::from_static(storage.storage.get().cast(), initial, max) } {
+                Ok(mut owner) => {
+                    owner.origin = SyncOrigin::Static(&storage.claimed);
+                    Ok(owner)
+                }
+                Err(error) => {
+                    storage.claimed.store(false, Ordering::Release);
+                    Err(error)
+                }
+            }
         }
     }
 
@@ -609,6 +656,8 @@ impl Semaphore {
     /// analog (sans `.await`).
     #[inline]
     pub fn acquire(&self) -> Result<()> {
+        blocking_context()?;
+        // SAFETY: borrowed live owner and admitted blocking context.
         let rc = unsafe { bindings::ove_sem_take(self.handle, u64::MAX) };
         Error::from_code(rc)
     }
@@ -616,9 +665,12 @@ impl Semaphore {
     /// Attempt to acquire one permit without blocking.
     ///
     /// # Errors
-    /// Returns [`Error::WouldBlock`] if no permit is available.
+    /// Preserves the native empty/timeout error if no permit is available.
+    /// Unsupported context returns [`Error::NotSupported`].
     #[inline]
     pub fn try_acquire(&self) -> Result<()> {
+        blocking_context()?;
+        // SAFETY: live owner and admitted task context, including zero timeout.
         let rc = unsafe { bindings::ove_sem_take(self.handle, 0) };
         Error::from_code(rc)
     }
@@ -632,6 +684,8 @@ impl Semaphore {
     /// permit available.
     #[inline]
     pub fn try_acquire_for(&self, d: core::time::Duration) -> Result<()> {
+        blocking_context()?;
+        // SAFETY: live owner and admitted blocking context.
         let rc = unsafe { bindings::ove_sem_take(self.handle, crate::duration::dur_to_ns(d)) };
         Error::from_code(rc)
     }
@@ -642,34 +696,51 @@ impl Semaphore {
     #[inline]
     #[cfg(has_time)]
     pub fn try_acquire_until(&self, deadline: crate::time::Instant) -> Result<()> {
+        blocking_context()?;
         let timeout = crate::time::deadline_to_timeout_ns(deadline);
+        // SAFETY: context admission precedes both clock and native wait.
         let rc = unsafe { bindings::ove_sem_take(self.handle, timeout) };
         Error::from_code(rc)
     }
 
     /// Release one permit.  `tokio::sync::Semaphore::add_permits(1)` /
     /// `embassy_sync::Semaphore::release(1)` analog.
+    /// No effect in ISR or unsupported task context, including no wake callback.
     #[inline]
     pub fn release(&self) {
-        unsafe { bindings::ove_sem_give(self.handle) }
-    }
-
-    /// Release `n` permits.  Binding-side loop — substrate currently
-    /// has no `ove_sem_give_n`, so this calls `ove_sem_give` `n` times.
-    #[inline]
-    pub fn release_n(&self, n: u32) {
-        for _ in 0..n {
+        if producer_context() {
+            // SAFETY: live owner and admitted task producer, which may be masked.
             unsafe { bindings::ove_sem_give(self.handle) }
         }
     }
 
-    /// Register a notify callback fired after every successful release.
-    /// Wraps the C-level `ove_sem_set_notify`.
+    /// Release `n` permits.  Binding-side loop — substrate currently
+    /// has no `ove_sem_give_n`, so this calls `ove_sem_give` `n` times.
+    /// ISR/unsupported entry and zero permits perform no native post or callback.
+    #[inline]
+    pub fn release_n(&self, n: u32) {
+        if !producer_context() {
+            return;
+        }
+        for _ in 0..n {
+            // SAFETY: live borrowed owner and admitted task producer.
+            unsafe { bindings::ove_sem_give(self.handle) }
+        }
+    }
+
+    /// Register a callback invoked by the native give path after a post attempt.
+    /// Current providers also invoke it when their count ceiling prevents an
+    /// increment. Setup requires admitted task producer context.
     ///
     /// # Safety
-    /// Same as [`crate::Stream::set_notify`]: `user_data` must remain
-    /// valid for as long as the callback may fire, and `cb` must be
-    /// ISR-safe.
+    /// Serialize registration, replacement and removal with every native give
+    /// and every other registration. Callback code and `user_data` must stay
+    /// valid through all possible in-flight calls; retire the previous callback
+    /// only after those calls finish. The callback must obey every give caller's
+    /// execution context and native restrictions and must not unwind through C.
+    /// Callback code and data must also support concurrent or reentrant calls
+    /// from all release callers, or the caller must serialize those gives.
+    /// Static lifetime alone does not provide registration synchronization.
     #[cfg(has_async)]
     #[inline]
     pub unsafe fn set_notify(
@@ -677,21 +748,52 @@ impl Semaphore {
         cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
         user_data: *mut core::ffi::c_void,
     ) -> Result<()> {
+        if !producer_context() {
+            return Err(Error::NotSupported);
+        }
+        // SAFETY: caller provides serialized callback lifetime; task setup admitted.
         let rc = unsafe { bindings::ove_sem_set_notify(self.handle, cb, user_data) };
         Error::from_code(rc)
     }
 }
 
-crate::ove_handle_impl!(Semaphore, ove_sem_destroy, ove_sem_deinit);
+impl Drop for Semaphore {
+    fn drop(&mut self) {
+        if !resource_context() {
+            return;
+        }
+        // SAFETY: exclusive owner, no borrowed operation, admitted resource cleanup.
+        #[cfg(not(zero_heap))]
+        unsafe {
+            bindings::ove_sem_destroy(self.handle);
+        }
+        #[cfg(zero_heap)]
+        unsafe {
+            bindings::ove_sem_deinit(self.handle);
+        }
+        self.origin.release_claim();
+    }
+}
+
+impl fmt::Debug for Semaphore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Semaphore")
+            .field("handle", &format_args!("{:p}", self.handle))
+            .finish_non_exhaustive()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Event
 // ---------------------------------------------------------------------------
 
-/// Caller-owned storage for an [`Event`] in zero-heap mode (see [`MutexStorage`]).
+/// Claimed native backing for an [`Event`] in zero-heap mode.
+/// Live, forgotten and retained owners reserve it through completed cleanup.
+/// Heap construction ignores this storage.
 #[allow(dead_code)]
 pub struct EventStorage {
     storage: UnsafeCell<MaybeUninit<bindings::ove_event_storage_t>>,
+    claimed: AtomicBool,
 }
 
 impl EventStorage {
@@ -700,6 +802,7 @@ impl EventStorage {
     pub const fn new() -> Self {
         Self {
             storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            claimed: AtomicBool::new(false),
         }
     }
 }
@@ -710,37 +813,66 @@ impl Default for EventStorage {
     }
 }
 
-// SAFETY: see MutexStorage.
+// SAFETY: only the successful atomic claimant initializes or cleans this backing.
 unsafe impl Sync for EventStorage {}
 
 /// Binary event (signal/wait).
+///
+/// Creation, waits and cleanup use the same resource/blocking admission and
+/// retention policy as [`Semaphore`]. Both producer methods select the actual
+/// task/ISR native route, independent of their name. Recognized masked task
+/// producers remain supported so critical-section and async wakes are delivered.
+/// Unsupported task producer contexts have no effect.
+/// ISR signaling supports only the provider's kernel-aware interrupt domain;
+/// native interrupt setup must obey its syscall priority/grouping restrictions.
+/// This does not qualify arbitrary high-priority interrupts or NMI.
 pub struct Event {
     handle: bindings::ove_event_t,
+    origin: SyncOrigin,
 }
+
+// SAFETY: owned stable backing; native event/waiter operations are thread-safe.
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
 
 impl Event {
     /// Create a new event via heap allocation (only in heap mode).
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
+        require_resource_context()?;
         let mut handle: bindings::ove_event_t = core::ptr::null_mut();
+        // SAFETY: admitted resource context; success initializes native backing.
         let rc = unsafe { bindings::ove_event_create(&mut handle) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Heap,
+        })
     }
 
     /// Create from caller-provided static storage.
     ///
     /// # Safety
-    /// Caller must ensure `storage` outlives the `Event`.
+    /// Backing must be nonnull, aligned, complete, writable, unused and stable
+    /// through actual native cleanup or indefinite retention after forget or
+    /// unsupported Drop. No conflicting initialization, teardown or raw/wrapper
+    /// access; respect native operation contexts and waiter lifetimes.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(storage: *mut bindings::ove_event_storage_t) -> Result<Self> {
+        require_resource_context()?;
         let mut handle: bindings::ove_event_t = core::ptr::null_mut();
+        // SAFETY: caller supplies exclusive stable native backing.
         let rc = unsafe { bindings::ove_event_init(&mut handle, storage) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Raw,
+        })
     }
 
-    /// Mode-agnostic constructor (see [`Mutex::create`]).
+    /// Claim typed static backing in zero-heap mode, or allocate in heap mode.
+    /// Live, forgotten or retained static owners return [`Error::Busy`] before
+    /// native entry. A legal Drop completes cleanup before the claim reopens.
     pub fn create(storage: &'static EventStorage) -> Result<Self> {
         #[cfg(not(zero_heap))]
         {
@@ -749,14 +881,30 @@ impl Event {
         }
         #[cfg(zero_heap)]
         {
-            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
-            unsafe { Self::from_static(ptr) }
+            require_resource_context()?;
+            storage
+                .claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| Error::Busy)?;
+            // SAFETY: this claim exclusively owns stable typed native backing.
+            match unsafe { Self::from_static(storage.storage.get().cast()) } {
+                Ok(mut owner) => {
+                    owner.origin = SyncOrigin::Static(&storage.claimed);
+                    Ok(owner)
+                }
+                Err(error) => {
+                    storage.claimed.store(false, Ordering::Release);
+                    Err(error)
+                }
+            }
         }
     }
 
     /// Block indefinitely until the event is signalled.
     #[inline]
     pub fn wait(&self) -> Result<()> {
+        blocking_context()?;
+        // SAFETY: borrowed live owner and admitted blocking context.
         let rc = unsafe { bindings::ove_event_wait(self.handle, u64::MAX) };
         Error::from_code(rc)
     }
@@ -764,10 +912,12 @@ impl Event {
     /// Non-blocking check.
     ///
     /// # Errors
-    /// Returns [`Error::WouldBlock`] if the event is not currently
-    /// signalled.
+    /// Preserves the native empty/timeout error if the event is not signalled.
+    /// Unsupported context returns [`Error::NotSupported`].
     #[inline]
     pub fn try_wait(&self) -> Result<()> {
+        blocking_context()?;
+        // SAFETY: live owner and admitted task context, including zero timeout.
         let rc = unsafe { bindings::ove_event_wait(self.handle, 0) };
         Error::from_code(rc)
     }
@@ -781,6 +931,8 @@ impl Event {
     /// `d`.
     #[inline]
     pub fn wait_for(&self, d: core::time::Duration) -> Result<()> {
+        blocking_context()?;
+        // SAFETY: live owner and admitted blocking context.
         let rc = unsafe { bindings::ove_event_wait(self.handle, crate::duration::dur_to_ns(d)) };
         Error::from_code(rc)
     }
@@ -795,25 +947,60 @@ impl Event {
     #[inline]
     #[cfg(has_time)]
     pub fn wait_until(&self, deadline: crate::time::Instant) -> Result<()> {
+        blocking_context()?;
         let timeout = crate::time::deadline_to_timeout_ns(deadline);
+        // SAFETY: admission precedes both clock and native wait.
         let rc = unsafe { bindings::ove_event_wait(self.handle, timeout) };
         Error::from_code(rc)
     }
 
-    /// Signal the event.
+    /// Signal through the actual task or native kernel-aware ISR route.
+    /// Masked task producers are supported; unsupported task contexts do nothing.
     #[inline]
     pub fn signal(&self) {
-        unsafe { bindings::ove_event_signal(self.handle) }
+        // SAFETY: pointer-free current-context observation, available with SYNC.
+        if unsafe { bindings::ove_is_in_isr() } {
+            // SAFETY: live event; native setup supplies a kernel-aware ISR context.
+            unsafe { bindings::ove_event_signal_from_isr(self.handle) }
+        } else if producer_context() {
+            // SAFETY: admitted live task producer, including native critical sections.
+            unsafe { bindings::ove_event_signal(self.handle) }
+        }
     }
 
-    /// Signal the event from an ISR context.
+    /// Signal using the actual context, including task callers of this method.
+    /// ISR priority/setup restrictions and task no-effect rules match [`Self::signal`].
     #[inline]
     pub fn signal_from_isr(&self) {
-        unsafe { bindings::ove_event_signal_from_isr(self.handle) }
+        self.signal();
     }
 }
 
-crate::ove_handle_impl!(Event, ove_event_destroy, ove_event_deinit);
+impl Drop for Event {
+    fn drop(&mut self) {
+        if !resource_context() {
+            return;
+        }
+        // SAFETY: exclusive owner, no borrowed operation, admitted resource cleanup.
+        #[cfg(not(zero_heap))]
+        unsafe {
+            bindings::ove_event_destroy(self.handle);
+        }
+        #[cfg(zero_heap)]
+        unsafe {
+            bindings::ove_event_deinit(self.handle);
+        }
+        self.origin.release_claim();
+    }
+}
+
+impl fmt::Debug for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Event")
+            .field("handle", &format_args!("{:p}", self.handle))
+            .finish_non_exhaustive()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // CondVar + WaitTimeoutResult

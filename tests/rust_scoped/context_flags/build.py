@@ -27,13 +27,7 @@ def getters(profile, case):
             return [0] * 7
         if "isr" in case:
             return [1, 0, 0, 0, 0, 0, 0]
-        if "prestart" in case or case in (
-            "scheduler_suspended",
-            "running_masked",
-            "running_primask_1",
-            "running_basepri_0x80",
-            "running_faultmask_1",
-        ):
+        if "prestart" in case:
             return [1, 1, 0, 0, 0, 0, 0]
         return [1, 1, 1, 1, 0, 0, 0]
     if provider == "zephyr":
@@ -44,21 +38,13 @@ def getters(profile, case):
         if case == "isr":
             return [1, 1, 1, 0, 0, 0, 0]
         native = "CONFIG_BOARD_NATIVE_SIM" in profile["defines"]
-        if case in (
-            "unprivileged",
-            "primask_1",
-            "basepri_0x80",
-            "faultmask_1",
-            "native_lock_1",
-        ):
+        if case == "unprivileged":
             return [1, 1, 1, 0, int(native), 0, 0]
         return [1, 1, 1, 1, int(native), 0, 0]
     if provider == "nuttx":
         native = "CONFIG_ARCH_SIM" in profile["defines"]
-        if case in ("unprivileged", "primask_1", "basepri_0x80", "faultmask_1"):
+        if case == "unprivileged":
             return [0] * 7
-        if case in ("signal_mask_low", "signal_mask_high_1ull_shift_40"):
-            return [0, 0, 1, 0, 0, 0, 0]
         if case in ("powerup", "boot", "tasklists", "memory", "hardware", "panic"):
             return [0, 0, int(native), 0, 0, 0, 0]
         if case == "isr":
@@ -72,7 +58,8 @@ def expected(profile, canary=False):
     for row in profile["cases"]:
         counts = ",".join(map(str, getters(profile, row["case"])))
         text += (
-            f"{row['case']}: flags={row['expected_flags']} readonly=1 effects=0 "
+            f"{row['case']}: flags={row['expected_flags']} "
+            f"legacy={row['expected_resource_blocking']} readonly=1 effects=0 "
             f"early=0 getters={counts}\n"
         )
     return text + (
@@ -126,6 +113,7 @@ def build(output, sanitize=False):
         )
         cases = "".join(
             f"observe({json.dumps(row['case'])}, {row['expected_flags']}, "
+            f"{row['expected_resource_blocking']}, "
             f"(const unsigned[7]){{{','.join(map(str, getters(profile, row['case'])))}}});\n"
             for row in profile["cases"]
         )

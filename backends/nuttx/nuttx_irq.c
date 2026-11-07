@@ -42,11 +42,11 @@ uint32_t ove_sync_context(void)
 #if defined(CONFIG_BUILD_FLAT) && !defined(CONFIG_SMP) && \
 	(defined(OVE_SYNC_CORTEX_M) || defined(CONFIG_ARCH_SIM))
 #ifdef OVE_SYNC_CORTEX_M
-	if (!ove_sync_privileged() || !ove_sync_irqs_enabled())
+	if (!ove_sync_privileged())
 		return 0;
+	bool blocking = ove_sync_irqs_enabled();
 #else
-	if (up_irq_flags() != 0)
-		return 0;
+	bool blocking = up_irq_flags() == 0;
 #endif
 	if ((g_nx_initstate != OSINIT_OSREADY && g_nx_initstate != OSINIT_IDLELOOP) ||
 	    up_interrupt_context())
@@ -54,7 +54,8 @@ uint32_t ove_sync_context(void)
 	struct tcb_s *current = nxsched_self();
 	if (current == NULL || current->pid == IDLE_PROCESS_ID)
 		return 0;
-	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+	return OVE_SYNC_CONTEXT_PRODUCER |
+	       (blocking ? OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING : 0u);
 #else
 	return 0;
 #endif
