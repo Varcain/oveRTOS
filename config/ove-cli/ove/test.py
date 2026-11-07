@@ -33,6 +33,7 @@ from .sync_contracts import cases as _sync_contract_cases, observation_valid as 
 from .rust_scoped import CANARIES as _scoped_canaries, cases as _scoped_cases, observation_valid as _scoped_observation
 from .rust_scoped import UNIT_CASES as _scoped_units, unit_observation_valid as _scoped_unit_observation
 from .rust_sync import FAMILIES as _rust_sync_families, cases as _rust_sync_cases, observation_valid as _rust_sync_observation
+from .rust_async_sem import observation_valid as _async_sem_observation, doctests_valid as _async_sem_doctests
 
 logger = logging.getLogger("ove")
 
@@ -735,6 +736,96 @@ def test_rust(ove_dir, output_dir):
     logger.info("Running Rust tests")
     return _run_test_binary(
         [os.path.join(target_dir, "release", "ove-tests")], "rust")
+
+
+def _rust_async_sem_profile(ove_dir, output_dir, zero, sanitize):
+    profile = ("zero" if zero else "heap") + ("-san" if sanitize else "")
+    base = Path(output_dir) / "tests" / "rust_async_sem" / profile
+    native, generated, target = base / "native", base / "generated", base / "cargo"
+    generated.mkdir(parents=True, exist_ok=True)
+    config = (Path(ove_dir) / "tests" / "ove_config.h").read_text()
+    if zero:
+        config = config.replace("#endif /* OVE_CONFIG_H */",
+                                "#define CONFIG_OVE_ZERO_HEAP 1\n#endif /* OVE_CONFIG_H */")
+    config_path = generated / "ove_config.h"
+    if not config_path.exists() or config_path.read_text() != config:
+        config_path.write_text(config)
+    env = dict(os.environ)
+    env.pop("DOCS_RS", None)
+    env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=str(generated), RUST_IS_NATIVE="1",
+               STUB_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target),
+               OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"),
+               LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
+               LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+               LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
+    configure = ["cmake", "-S", os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
+                 "-B", str(native), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                 "-DOVE_STUB_CONFIG_DIR=" + str(generated),
+                 "-DOVE_STUB_ZERO_HEAP=" + ("ON" if zero else "OFF")]
+    if sanitize:
+        configure.append("-DCMAKE_C_FLAGS=-fsanitize=address,undefined "
+                         "-fno-omit-frame-pointer -fno-sanitize-recover=all")
+        env.update(RUSTC_BOOTSTRAP="1",
+                   RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address "
+                   "-Cforce-frame-pointers=yes -Clink-arg=-lubsan",
+                   ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    build = ["cmake", "--build", str(native), "--target", "ove_stub", "storage_sizes",
+             "--parallel", str(nproc())]
+    cargo = ["cargo", "build", "--locked", "--release", "--manifest-path",
+             os.path.join(ove_dir, "tests", "rust", "Cargo.toml"),
+             "--features", "async-semaphore", "--bin", "async-semaphore"]
+    if sanitize:
+        cargo += ["--target", "x86_64-unknown-linux-gnu"]
+        target = target / "x86_64-unknown-linux-gnu"
+    return base, env, (configure, build, cargo), target / "release" / "async-semaphore"
+
+
+def _test_rust_async_sem(ove_dir, output_dir, sanitize=False):
+    """Exercise exclusive async semaphore setup and actual callback delivery."""
+    result = TestResults(suite="rust-async-sem-sanitize" if sanitize else "rust-async-sem")
+    explicit_canary = os.environ.get("OVE_RUST_ASYNC_SEM_CANARY") == "1"
+    for zero in (False, True):
+        base, env, commands, binary = _rust_async_sem_profile(ove_dir, output_dir, zero, sanitize)
+        if any(_run_owned_test_process(command, env=env, timeout=300) != 0 for command in commands):
+            result.failed += 1
+            continue
+        if not sanitize:
+            command = ["cargo", "test", "--locked", "--doc", "--manifest-path",
+                       os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
+                       "--no-default-features", "--features", "std,async", "--", "AsyncSemaphore::arm"]
+            log = base / "doctests.log"
+            with log.open("wb") as stream:
+                rc = _run_owned_test_process(command, env=env, timeout=300, stdout=stream)
+            _record_scoped_observation(log, command, rc)
+            text = log.read_text()
+            valid = _async_sem_doctests(text, rc)
+            if not valid:
+                print(text, end="")
+            result.passed += int(valid)
+            result.failed += int(not valid)
+        for canary in (False, True):
+            command = [str(binary)] + (["canary"] if canary or explicit_canary else [])
+            log = base / ("canary.log" if canary else "normal.log")
+            with log.open("wb") as stream:
+                rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
+            _record_scoped_observation(log, command, rc)
+            text = log.read_text()
+            valid = _async_sem_observation(text, zero, rc,
+                                           expected_canary=canary and not explicit_canary)
+            if explicit_canary or not valid:
+                print(text, end="")
+            result.passed += int(valid)
+            result.failed += int(not valid)
+    return result
+
+
+def test_rust_async_sem(ove_dir, output_dir):
+    return _test_rust_async_sem(ove_dir, output_dir)
+
+
+def test_rust_async_sem_sanitize(ove_dir, output_dir):
+    return _test_rust_async_sem(ove_dir, output_dir, sanitize=True)
 
 
 def _test_rust_lvgl(ove_dir, output_dir, sanitize=False):
@@ -4370,6 +4461,8 @@ TEST_TARGETS = {
     "rust-scoped-sanitize": test_rust_scoped_sanitize,
     "rust-sync": test_rust_sync,
     "rust-sync-sanitize": test_rust_sync_sanitize,
+    "rust-async-sem": test_rust_async_sem,
+    "rust-async-sem-sanitize": test_rust_async_sem_sanitize,
     "cpp-infer": test_cpp_infer,
     "cpp-infer-sanitize": test_cpp_infer_sanitize,
     "rust-infer": test_rust_infer,

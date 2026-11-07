@@ -4,9 +4,17 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 
+[features]
+async-semaphore = ["ove/async"]
+
 [[bin]]
 name = "ove-tests"
 path = "src/main.rs"
+
+[[bin]]
+name = "async-semaphore"
+path = "async_semaphore.rs"
+required-features = ["async-semaphore"]
 
 [dependencies]
 ove = { path = "../../bindings/rust/ove", features = ["std", "embedded-hal", "embedded-io"], default-features = false }

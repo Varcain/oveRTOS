@@ -10,13 +10,13 @@ fn main() {
     let stub_lib_dir =
         env::var("STUB_LIB_DIR").expect("STUB_LIB_DIR must be set (path to libove_stub.a)");
 
-    println!("cargo:rustc-link-search=native={}", stub_lib_dir);
+    println!("cargo:rustc-link-search=native={stub_lib_dir}");
     println!("cargo:rustc-link-lib=static:+whole-archive=ove_stub");
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=rt");
     // Cargo does not track the C library, so without this a rebuilt
     // libove_stub.a is not relinked and the tests run the old C code.
-    println!("cargo:rerun-if-changed={}/libove_stub.a", stub_lib_dir);
+    println!("cargo:rerun-if-changed={stub_lib_dir}/libove_stub.a");
 
     // Mirror bindings/rust/ove/build.rs: enable the `zero_heap` cfg (which
     // gates the test crate's zero-heap suite) when OVE_GEN_DIR/ove_config.h
@@ -26,9 +26,7 @@ fn main() {
     if let Ok(gen_dir) = env::var("OVE_GEN_DIR") {
         let cfg = std::path::Path::new(&gen_dir).join("ove_config.h");
         println!("cargo:rerun-if-changed={}", cfg.display());
-        if std::fs::read_to_string(&cfg)
-            .map(|s| s.contains("#define CONFIG_OVE_ZERO_HEAP 1"))
-            .unwrap_or(false)
+        if std::fs::read_to_string(&cfg).is_ok_and(|s| s.contains("#define CONFIG_OVE_ZERO_HEAP 1"))
         {
             println!("cargo:rustc-cfg=zero_heap");
         }
