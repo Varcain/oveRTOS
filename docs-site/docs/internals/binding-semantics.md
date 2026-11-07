@@ -189,22 +189,25 @@ only an invalid call is an error.
 | Contract | C++ | Rust | Zig |
 |---|---|---|---|
 | Wraps the guarded data? | no (bare lock) | **yes** — `Mutex<T>` over `UnsafeCell<T>` | no (bare lock) |
-| Blocking lock | `lock()` (abort on fail) | `lock() -> Result<MutexGuard<T>>` | `lock()` (panic on fail) |
-| Non-blocking try | `try_lock() -> bool` | `try_lock() -> Result<MutexGuard<T>>` (`WouldBlock`) | `tryLock() -> bool` |
-| Bounded-wait try | `try_lock_for/until() -> Result<void>` | `try_lock_for/until() -> Result<MutexGuard<T>>` | `lockFor/lockUntil() -> LockError!void` |
-| Scoped guard | `LockGuard` / `std::lock_guard<ove::Mutex>` | `MutexGuard` (from `lock()`) | `Guard` (from `acquire()`) |
-| Guard releases via | destructor (RAII) | `Drop` (RAII) | explicit `guard.release()` / `defer` |
+| Blocking lock | `lock()` (abort on fail) | `with_lock(f) -> Result<R>` | `lock()` (panic on fail) |
+| Non-blocking try | `try_lock() -> bool` | `try_with_lock(f) -> Result<R>` | `tryLock() -> bool` |
+| Bounded-wait try | `try_lock_for/until() -> Result<void>` | `try_with_lock_for/until(..., f) -> Result<R>` | `lockFor/lockUntil() -> LockError!void` |
+| Scoped access | `LockGuard` / `std::lock_guard<ove::Mutex>` | nonowning `MutexAccess` inside callback | `Guard` (from `acquire()`) |
+| Native release | guard destructor | private binding lease at callback end | explicit `guard.release()` / `defer` |
 | Recursive variant | `RecursiveMutex` | `RecursiveMutex` | `RecursiveMutex` |
 | Idempotent deinit | yes | yes | yes |
 
 **Contract notes**
 
-- Rust folds lock + data into `Mutex<T>` (the guard `Deref`s to `T`, and is
-  `!Send`); C++ and Zig are bare locks guarding caller-held data. All three
-  release the lock deterministically at scope end — automatically in C++/Rust,
-  via `defer guard.release()` in Zig.
-- `try_lock` reports contention as `false` (C++/Zig) or `Err(WouldBlock)` (Rust);
-  the bounded-wait forms report expiry as `Error::Timeout` / `error.Timeout`.
+- Rust's nonowning `MutexAccess` provides `Deref`/`DerefMut`, is `!Send`, and
+  cannot escape the callback. Dropping or forgetting it leaves private release
+  ownership intact. End the callback at an old guard's early-release point.
+  RecursiveMutex has matching no-data callback methods and no public unlock.
+- Rust callbacks return `ove::Result<R>`. For a distinct application error,
+  map it explicitly or return `Ok(app_result)` and use `??` at the call site.
+- Native contention/expiry maps to Rust errors (currently Timeout; native
+  same-thread recursive entry to an ordinary data mutex is rejected as Busy).
+  C++/Zig boolean try methods return false on contention.
 
 ---
 
@@ -233,11 +236,27 @@ ASYNC, TIME or object initialization. Critical-section lock/unlock still require
 ASYNC. POSIX timer dispatchers bracket callbacks with the simulator context flag;
 this does not establish general asynchronous signal-handler or IRQ exclusion.
 
+Rust Mutex, RecursiveMutex and CondVar use `ove_sync_context` privately before
+resource operations, acquisitions, signaling and native deadline queries.
+RESOURCE permits legal FreeRTOS setup before scheduler start; BLOCKING requires
+an active non-idle thread and enabled interrupts. Unsupported Result methods
+return NotSupported; CondVar signal/broadcast have no effect there.
+FreeRTOS admission supports single-core configurations; multicore FreeRTOS and
+NuttX SMP return no context flags. Private
+already-owned releases still run when a callback leaves interrupts masked.
+Unavailable resource teardown retains native backing and its static claim,
+while `T` is dropped or extracted once. Typed zero-heap storage rejects duplicate
+live initialization as Busy, reopens after completed cleanup and stays reserved
+when its owner is forgotten. The three creation macros use typed admission.
+Recursive scopes admit at most 65,535 combined held/pending acquisitions.
+
 The native `ove_condvar_wait_checked` entry reports whether the calling thread
 owns its ordinary mutex on every return, including errors. Success and clean
 timeout report held; other errors can report held or released. The output must
-be writable and disjoint from the primitive backing. The legacy wait entry and
-current C++/Rust/Zig convenience methods retain their status-only contracts.
+be writable and disjoint from the primitive backing. Rust consumes its current
+view and uses this output to preserve private cleanup on either error outcome;
+an error returns no view. Success/clean timeout return reacquired access. C++
+and Zig convenience methods use the legacy status contract.
 Both entries finish waiter retirement before returning; cleanup of a permanently
 broken internal mutex has no bounded-recovery guarantee.
 

@@ -35,6 +35,15 @@ from pathlib import Path
 
 from bench_utils import extract_envelopes
 
+# Scoped Rust case names identify the measured API; legacy records keep their
+# original labels when historical reports are regenerated.
+_SCOPED_RUST_CASES = {
+    ("sync", "mutex_with_lock"): ("mutex_lock_unlock", "ove::Mutex::with_lock"),
+    ("sync", "mutex_with_lock_contention_2t"): ("mutex_contention_2t", "ove::Mutex::with_lock (×2t)"),
+    ("sync", "recursive_mutex_with_lock"): ("recursive_mutex_lock_unlock", "ove::RecursiveMutex::with_lock"),
+    ("sync", "condvar_scoped_signal_wait"): ("condvar_signal_wait", "ove::CondVar::wait_for in with_lock"),
+}
+
 
 def load_inputs(paths):
     """Return dict: rtos -> {binding -> {(suite, case) -> case_dict}}."""
@@ -47,6 +56,10 @@ def load_inputs(paths):
             sname = suite.get("suite", "?")
             for case in suite.get("cases", []):
                 key = (sname, case.get("name", "?"))
+                if binding == "rust" and key in _SCOPED_RUST_CASES:
+                    operation, wrapper = _SCOPED_RUST_CASES[key]
+                    key = (sname, operation)
+                    case = dict(case, _wrapper_label=wrapper)
                 by_rtos[rtos][binding][key] = case
     return by_rtos
 
@@ -388,7 +401,7 @@ def build_report(by_rtos, threshold_pct, page_mode=None):
                 delta = w - n
                 sign = "+" if delta >= 0 else ""
                 lbl_map = WRAPPER_LABELS.get(w_key, {})
-                wrapper_label = lbl_map.get(b, w_key[1])
+                wrapper_label = by_binding[b][w_key].get("_wrapper_label", lbl_map.get(b, w_key[1]))
                 wn_rows.append([
                     label,
                     b.upper(),

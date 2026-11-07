@@ -97,6 +97,19 @@ bool ove_is_in_isr(void)
 	return s_in_isr != 0;
 }
 
+#ifdef CONFIG_OVE_SYNC
+uint32_t ove_sync_context(void)
+{
+	if (s_in_isr != 0)
+		return 0;
+#ifdef CONFIG_OVE_ASYNC
+	if (s_lock_depth != 0)
+		return 0;
+#endif
+	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+}
+#endif
+
 /*
  * Simulator-side helpers — not part of the public API. Used by the
  * POSIX timer layer to bracket owned dispatcher callbacks so user code that

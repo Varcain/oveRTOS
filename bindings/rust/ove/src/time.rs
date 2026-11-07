@@ -113,10 +113,10 @@ pub fn now_steady_ns() -> u64 {
 /// use ove::time::Instant;
 ///
 /// let deadline = Instant::now() + Duration::from_millis(100);
-/// mtx.try_lock_until(deadline)?;
+/// mtx.try_with_lock_until(deadline, |mut value| { *value += 1; Ok(()) })?;
 ///
 /// // Or wait indefinitely:
-/// mtx.try_lock_until(Instant::FOREVER)?;
+/// mtx.try_with_lock_until(Instant::FOREVER, |_| Ok(()))?;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(u64);

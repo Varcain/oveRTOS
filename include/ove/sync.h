@@ -36,6 +36,7 @@
 #define OVE_SYNC_H
 
 #include "ove/types.h"
+#include "ove/irq.h"
 #include "ove_config.h"
 #include "ove/storage.h"
 #include "ove/time.h"

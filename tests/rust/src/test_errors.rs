@@ -17,17 +17,31 @@ use crate::test_entry;
 use ove::{Error, EventGroup, Mutex, Queue, Semaphore, WaitFlags};
 
 fn test_mutex_try_lock_contended_returns_timeout() {
-    let mtx = Mutex::new(()).unwrap();
-    let _first = mtx.try_lock().unwrap();
-    let rc = mtx.try_lock();
-    assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc.as_ref().map(|_| ()));
+    let mutex = Mutex::new(()).unwrap();
+    mutex
+        .try_with_lock(|_| {
+            let result = mutex.try_with_lock(|_| Ok(()));
+            assert!(
+                matches!(result, Err(Error::Timeout | Error::Busy)),
+                "got {result:?}"
+            );
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_mutex_guard_contention_returns_timeout() {
-    let mtx = Mutex::new(()).unwrap();
-    let _first = mtx.try_lock().unwrap();
-    let rc = mtx.try_lock();
-    assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc.as_ref().map(|_| ()));
+    let mutex = Mutex::new(()).unwrap();
+    mutex
+        .try_with_lock(|_| {
+            let result = mutex.try_with_lock(|_| Ok(()));
+            assert!(
+                matches!(result, Err(Error::Timeout | Error::Busy)),
+                "got {result:?}"
+            );
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_semaphore_take_empty_returns_timeout() {
@@ -261,24 +275,27 @@ fn test_std_error_via_re_export() {
 }
 
 pub fn run() -> (usize, usize) {
-    run_suite("Errors", &[
-        test_entry!(test_mutex_try_lock_contended_returns_timeout),
-        test_entry!(test_mutex_guard_contention_returns_timeout),
-        test_entry!(test_semaphore_take_empty_returns_timeout),
-        test_entry!(test_queue_receive_empty_returns_queue_empty),
-        test_entry!(test_queue_send_full_returns_queue_full),
-        test_entry!(test_eventgroup_wait_bits_timeout),
-        test_entry!(test_from_code_ok),
-        test_entry!(test_from_code_all_variants),
-        test_entry!(test_from_code_unknown),
-        test_entry!(test_to_code_all_variants),
-        test_entry!(test_round_trip_all_variants),
-        test_entry!(test_is_net_error_positive),
-        test_entry!(test_is_bus_error_positive),
-        test_entry!(test_is_net_is_bus_negative),
-        test_entry!(test_display_all_variants),
-        test_entry!(test_derives),
-        test_entry!(test_core_error_coercion),
-        test_entry!(test_std_error_via_re_export),
-    ])
+    run_suite(
+        "Errors",
+        &[
+            test_entry!(test_mutex_try_lock_contended_returns_timeout),
+            test_entry!(test_mutex_guard_contention_returns_timeout),
+            test_entry!(test_semaphore_take_empty_returns_timeout),
+            test_entry!(test_queue_receive_empty_returns_queue_empty),
+            test_entry!(test_queue_send_full_returns_queue_full),
+            test_entry!(test_eventgroup_wait_bits_timeout),
+            test_entry!(test_from_code_ok),
+            test_entry!(test_from_code_all_variants),
+            test_entry!(test_from_code_unknown),
+            test_entry!(test_to_code_all_variants),
+            test_entry!(test_round_trip_all_variants),
+            test_entry!(test_is_net_error_positive),
+            test_entry!(test_is_bus_error_positive),
+            test_entry!(test_is_net_is_bus_negative),
+            test_entry!(test_display_all_variants),
+            test_entry!(test_derives),
+            test_entry!(test_core_error_coercion),
+            test_entry!(test_std_error_via_re_export),
+        ],
+    )
 }

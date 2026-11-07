@@ -1,166 +1,164 @@
 // Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
-//
 // SPDX-License-Identifier: GPL-3.0-or-later
-//
-// This file is part of oveRTOS.
 
 //! Synchronization primitives for oveRTOS.
 //!
-//! Provides RAII wrappers for mutexes, recursive mutexes, semaphores, events,
-//! and condition variables. All types implement `Send + Sync` and work in both
-//! heap and zero-heap modes.
-
-//! Single-wait relative timeouts do not require the optional TIME API.
-//! Absolute-deadline methods and `CondVar::wait_while_for` require
-//! `CONFIG_OVE_TIME`; timed predicate waits preserve one overall deadline.
+//! Mutex access runs in a callback scope. The binding privately releases the
+//! native lock when the callback returns, even if its public view is forgotten.
+//! Semaphores and events provide their ordinary wait/signal interfaces.
+//! Absolute deadlines and timed predicate waits require `CONFIG_OVE_TIME`.
 
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
+#[cfg(not(zero_heap))]
 use core::mem::ManuallyDrop;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::bindings;
 use crate::error::{Error, Result};
 
-// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
-// calls below): any handle passed to the C API is non-null and refers to a
-// live RTOS object — wrapper constructors establish validity via
-// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
-// a handle is released. Pointer and slice arguments reference caller-owned
-// memory valid for the duration of the call; the C side copies whatever it
-// retains and does not alias them past return (verified against the
-// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
-// pointer casts from user data, slice reconstruction via `from_raw_parts`,
-// or storing a callback across the FFI boundary — carry their own
-// `// SAFETY:` comment.
-
-// ---------------------------------------------------------------------------
-// Guard !Send sentinel
-// ---------------------------------------------------------------------------
-//
-// `MutexGuard` / `RecursiveMutexGuard` must be `!Send` so a guard cannot be
-// sent to another thread and unlocked there — backend-defined UB (FreeRTOS
-// asserts in debug / silently releases in release; pthread mutexes return
-// `EPERM`).
-//
-// `std::sync::MutexGuard` declares `impl !Send for MutexGuard {}` using the
-// nightly-only `negative_impls` feature.  On stable, the canonical workaround
-// is to embed a `!Send` marker type via `PhantomData`.  This is what
-// `lock_api`, `parking_lot`, and `tokio::sync` all do.  Raw pointers are
-// `!Send + !Sync`, so this newtype propagates both.
-#[allow(dead_code)] // marker type — field is never read by design
-struct GuardNoSend(*mut ());
-
-// ---------------------------------------------------------------------------
-// Mutex<T>
-// ---------------------------------------------------------------------------
-
-/// Mutex protecting a value of type `T`.  `std::sync::Mutex<T>` /
-/// `parking_lot::Mutex<T>` analog.
-///
-/// The lock and the data live together in one type.  Acquiring the
-/// lock via [`Mutex::lock`] returns a [`MutexGuard<T>`] that
-/// [`Deref`]s to `T`, so the only way to touch the data is to hold
-/// the lock first — the borrow checker enforces the contract that
-/// `lock` then `*g = …` is the only legal access pattern.
-///
-/// # Differences from `std::sync::Mutex`
-///
-/// - No [poisoning](https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning).
-///   `lock()` returns `Result<MutexGuard<T>, Error>`, not std's
-///   `LockResult<MutexGuard<T>>`.  Mirrors parking_lot's choice
-///   — forcing callers to unwrap a never-firing `PoisonError` is
-///   worse ergonomics than reporting only the backend errors that
-///   can actually occur.
-/// - [`try_lock_for`](Self::try_lock_for) /
-///   `try_lock_until` (with TIME enabled) variants for bounded
-///   waits.  Parking_lot has these; std does not.  Return
-///   `Result<MutexGuard, Error>` (with [`Error::Timeout`] on
-///   deadline elapsed), not parking_lot's `Option<MutexGuard>` —
-///   we have backend errors that aren't simply "could not acquire".
-pub struct Mutex<T: ?Sized> {
-    handle: bindings::ove_mutex_t,
-    data: UnsafeCell<T>,
+fn resource_context() -> bool {
+    // SAFETY: the query touches no primitive and is available with SYNC alone.
+    unsafe { bindings::ove_sync_context() & bindings::OVE_SYNC_CONTEXT_RESOURCE != 0 }
 }
 
-// SAFETY: `Mutex<T>` synchronises access to `T`; `T: Send` is enough
-// (`Send` is what is needed to ship across thread boundaries, and the
-// mutex provides the cross-thread mutual exclusion).  `T: Sync` is NOT
-// required — the mutex itself provides the synchronisation that would
-// otherwise be `T`'s responsibility.  Matches std / parking_lot.
-unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
-unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
-
-/// Caller-owned backing storage for a [`Mutex`] in zero-heap mode.  Declare
-/// it in a `static` and hand `&STORAGE` to [`Mutex::create`]; in heap mode the
-/// storage is ignored.  Mirrors [`crate::ThreadStorage`] — `const fn new()`
-/// makes it usable from a `static`, and the bytes are only ever handed to C as
-/// a raw pointer (the kernel owns the object's synchronisation).
-// The field is only addressed via a raw pointer handed to C, so it reads as
-// "never read" in heap mode — same as ClientStorage.
-#[allow(dead_code)]
-pub struct MutexStorage {
-    storage: UnsafeCell<MaybeUninit<bindings::ove_mutex_storage_t>>,
+fn blocking_context() -> Result<()> {
+    // SAFETY: no primitive, allocator, clock or caller-owned pointer is involved.
+    if unsafe { bindings::ove_sync_context() & bindings::OVE_SYNC_CONTEXT_BLOCKING != 0 } {
+        Ok(())
+    } else {
+        Err(Error::NotSupported)
+    }
 }
 
-impl MutexStorage {
-    /// Zero-initialised storage.  `const` so it can initialise a `static`.
-    #[inline]
-    pub const fn new() -> Self {
-        Self {
-            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+fn require_resource_context() -> Result<()> {
+    if resource_context() {
+        Ok(())
+    } else {
+        Err(Error::NotSupported)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SyncOrigin {
+    #[cfg(not(zero_heap))]
+    Heap,
+    #[cfg(zero_heap)]
+    Static(&'static AtomicBool),
+    #[cfg(zero_heap)]
+    Raw,
+}
+
+impl SyncOrigin {
+    #[cfg_attr(
+        not(zero_heap),
+        allow(clippy::unused_self, reason = "heap owners have no static claim")
+    )]
+    fn release_claim(self) {
+        #[cfg(zero_heap)]
+        if let Self::Static(claim) = self {
+            claim.store(false, Ordering::Release);
         }
     }
 }
 
+/// Stable backing for a [`Mutex`] in zero-heap mode.
+/// A live or forgotten owner reserves it; another `create` returns Busy.
+/// Heap mode ignores this storage. Legal Drop finishes deinit before reuse.
+#[allow(dead_code)]
+pub struct MutexStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_mutex_storage_t>>,
+    claimed: AtomicBool,
+}
+impl MutexStorage {
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            claimed: AtomicBool::new(false),
+        }
+    }
+}
 impl Default for MutexStorage {
     fn default() -> Self {
         Self::new()
     }
 }
-
-// SAFETY: the storage is only ever addressed as a raw pointer passed to C;
-// the kernel owns the mutex's synchronisation.  Mirrors ThreadStorage's Sync.
+// SAFETY: only the successful atomic claimant can initialize/use this backing.
+// Its claim survives forget and unavailable cleanup, and reopens after deinit.
 unsafe impl Sync for MutexStorage {}
 
+/// Native blocking mutex protecting `T`, accessed through callback scopes.
+///
+/// [`with_lock`](Self::with_lock) gives the callback a nonowning [`MutexAccess`].
+/// Dropping or forgetting that view does not unlock early: end the callback to
+/// release. Views and references borrowed from them cannot escape the callback.
+/// Native blocking and priority inheritance are retained; there is no poisoning.
+///
+/// Acquisitions require an active non-idle thread with interrupts enabled.
+/// Unsupported contexts return [`Error::NotSupported`] before native effects.
+/// Creation also supports FreeRTOS before scheduler start. Drop retains native
+/// backing when resource cleanup is unavailable, while dropping `T` normally.
+/// Native cancellation/nonlocal exits are outside ordinary Rust scope cleanup.
+///
+/// ```no_run
+/// # fn example() -> ove::Result<()> {
+/// let mutex = ove::mutex!(0u32);
+/// mutex.with_lock(|mut value| { *value += 1; Ok(()) })?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct Mutex<T: ?Sized> {
+    handle: bindings::ove_mutex_t,
+    origin: SyncOrigin,
+    issued: AtomicBool,
+    data: UnsafeCell<T>,
+}
+// SAFETY: native exclusion plus one issued data view serializes access to T.
+unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
+unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
+
 impl<T> Mutex<T> {
-    /// Create a new mutex around `val` via heap allocation (heap mode only).
+    /// Allocate native backing in heap mode; no Rust allocator is required.
     #[cfg(not(zero_heap))]
     pub fn new(val: T) -> Result<Self> {
-        let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_mutex_create(&mut handle) };
-        Error::from_code(rc)?;
+        require_resource_context()?;
+        let mut handle = core::ptr::null_mut();
+        // SAFETY: resource context is admitted; C initializes the output on success.
+        Error::from_code(unsafe { bindings::ove_mutex_create(&mut handle) })?;
         Ok(Self {
             handle,
+            origin: SyncOrigin::Heap,
+            issued: AtomicBool::new(false),
             data: UnsafeCell::new(val),
         })
     }
 
-    /// Create a mutex around `val` using caller-provided static storage
-    /// for the handle.  Available in zero-heap mode.
+    /// Initialize exclusive, caller-owned native backing in zero-heap mode.
     ///
     /// # Safety
-    /// Caller must ensure `storage` outlives the `Mutex` and is not
-    /// shared with another primitive.
+    /// `storage` must be nonnull, aligned, sufficiently large, unused and stable
+    /// through actual native cleanup or indefinite retention after forget or an
+    /// unsupported Drop context. No competing initialization, native access or
+    /// teardown is permitted. All native operation/context contracts still apply.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(storage: *mut bindings::ove_mutex_storage_t, val: T) -> Result<Self> {
-        let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_mutex_init(&mut handle, storage) };
-        Error::from_code(rc)?;
+        require_resource_context()?;
+        let mut handle = core::ptr::null_mut();
+        // SAFETY: caller supplies exclusive stable native backing.
+        Error::from_code(unsafe { bindings::ove_mutex_init(&mut handle, storage) })?;
         Ok(Self {
             handle,
+            origin: SyncOrigin::Raw,
+            issued: AtomicBool::new(false),
             data: UnsafeCell::new(val),
         })
     }
 
-    /// Create a mutex around `val` that works in **both** heap and zero-heap
-    /// modes: heap mode ignores `storage` and allocates; zero-heap mode backs
-    /// the handle with the caller-provided `storage` (which must outlive the
-    /// `Mutex`).  This is the mode-agnostic constructor downstream crates use
-    /// — `new`/`from_static` are gated to one mode and `from_static` needs the
-    /// crate-private storage type, so neither is callable portably.
+    /// Create with claimed static backing in zero-heap mode, or allocate in heap mode.
+    /// A live/forgotten static owner makes another create return [`Error::Busy`].
     pub fn create(storage: &'static MutexStorage, val: T) -> Result<Self> {
         #[cfg(not(zero_heap))]
         {
@@ -169,117 +167,114 @@ impl<T> Mutex<T> {
         }
         #[cfg(zero_heap)]
         {
-            // SAFETY: `storage` is 'static and, by this `&'static` borrow of a
-            // dedicated `static`, uniquely backs this one Mutex.
-            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
-            unsafe { Self::from_static(ptr, val) }
+            require_resource_context()?;
+            storage
+                .claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| Error::Busy)?;
+            // SAFETY: this claim is the sole initializer of stable typed backing.
+            let result = unsafe { Self::from_static(storage.storage.get().cast(), val) };
+            match result {
+                Ok(mut owner) => {
+                    owner.origin = SyncOrigin::Static(&storage.claimed);
+                    Ok(owner)
+                }
+                Err(error) => {
+                    storage.claimed.store(false, Ordering::Release);
+                    Err(error)
+                }
+            }
         }
     }
 
-    /// Consume the mutex and return the protected value.
-    ///
-    /// Available in heap mode only (zero-heap mode lacks a destroy path
-    /// for the handle — the handle's storage outlives the `Mutex`
-    /// anyway).
+    /// Consume the owner and transfer `T` once, without locking.
+    /// Native backing is retained if cleanup is unavailable. Zero-heap owners
+    /// also have deinit on Drop; this extraction method is heap-only.
     #[cfg(not(zero_heap))]
     pub fn into_inner(self) -> Result<T> {
-        // ManuallyDrop prevents the regular Drop from running (which
-        // would both destroy the handle AND drop the data).  We then
-        // extract T and destroy the handle ourselves.
         let this = ManuallyDrop::new(self);
-        // SAFETY: `this` is consumed; nothing else accesses `data`.
-        let data = unsafe { core::ptr::read(&this.data) };
-        unsafe { bindings::ove_mutex_destroy(this.handle) };
-        Ok(data.into_inner())
+        if !this.issued.load(Ordering::Acquire) && resource_context() {
+            // SAFETY: exclusive consumed owner, no outstanding scope, legal cleanup.
+            unsafe { bindings::ove_mutex_destroy(this.handle) };
+            this.origin.release_claim();
+        }
+        // SAFETY: consumed owner is not dropped; this transfers T exactly once.
+        Ok(unsafe { core::ptr::read(this.data.get()) })
     }
 }
 
 impl<T: ?Sized> Mutex<T> {
-    /// Get a mutable reference to the protected value without locking.
-    ///
-    /// Safe because `&mut self` proves the caller has exclusive access
-    /// — no other thread can hold a guard at this moment.  Matches
-    /// `std::sync::Mutex::get_mut`.
+    /// Borrow `T` exclusively without locking through an exclusive owner borrow.
     pub fn get_mut(&mut self) -> &mut T {
-        // SAFETY: `&mut self` is exclusive; no aliasing.
+        // SAFETY: &mut self excludes every accessible data view/reference.
         unsafe { &mut *self.data.get() }
     }
 
-    /// Acquire the mutex, blocking indefinitely.  Returns an RAII guard
-    /// that releases the lock on drop.
-    ///
-    /// # Errors
-    /// Returns the substrate's error code if the mutex handle is invalid
-    /// (programming error — same failure mode as in C/C++).
-    #[inline]
-    pub fn lock(&self) -> Result<MutexGuard<'_, T>> {
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, u64::MAX) };
-        Error::from_code(rc)?;
-        Ok(MutexGuard {
+    fn scoped<R>(
+        &self,
+        timeout: u64,
+        f: impl for<'s> FnOnce(MutexAccess<'s, T>) -> Result<R>,
+    ) -> Result<R> {
+        blocking_context()?;
+        // SAFETY: live owned native handle, admitted blocking context.
+        Error::from_code(unsafe { bindings::ove_mutex_lock(self.handle, timeout) })?;
+        if self.issued.swap(true, Ordering::AcqRel) {
+            // SAFETY: native recursion acquired only this temporary level; the
+            // previous view/lease remains intact and no second view was issued.
+            unsafe { bindings::ove_mutex_unlock(self.handle) };
+            return Err(Error::Busy);
+        }
+        let mut lease = MutexLease {
             mutex: self,
-            _no_send: PhantomData,
+            held: true,
+        };
+        f(MutexAccess {
+            mutex: self,
+            held: &mut lease.held,
+            invariant: PhantomData,
+            no_send: PhantomData,
         })
     }
 
-    /// Attempt to acquire the mutex without blocking.
-    /// `std::sync::Mutex::try_lock` analog.
-    ///
-    /// # Errors
-    /// Returns [`Error::WouldBlock`] if the mutex is currently held by
-    /// another thread.
-    #[inline]
-    pub fn try_lock(&self) -> Result<MutexGuard<'_, T>> {
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, 0) };
-        Error::from_code(rc)?;
-        Ok(MutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
+    /// Run `f` with exclusive data access, waiting indefinitely for the lock.
+    pub fn with_lock<R>(
+        &self,
+        f: impl for<'s> FnOnce(MutexAccess<'s, T>) -> Result<R>,
+    ) -> Result<R> {
+        self.scoped(u64::MAX, f)
     }
-
-    /// Attempt to acquire the mutex, waiting up to `d`.
-    /// `parking_lot::Mutex::try_lock_for` analog.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within
-    /// the duration.
-    #[inline]
-    pub fn try_lock_for(&self, d: core::time::Duration) -> Result<MutexGuard<'_, T>> {
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::duration::dur_to_ns(d)) };
-        Error::from_code(rc)?;
-        Ok(MutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
+    /// Attempt the same scope without waiting; native contention returns an error.
+    pub fn try_with_lock<R>(
+        &self,
+        f: impl for<'s> FnOnce(MutexAccess<'s, T>) -> Result<R>,
+    ) -> Result<R> {
+        self.scoped(0, f)
     }
-
-    /// Attempt to acquire the mutex by the given deadline.
-    /// `parking_lot::Mutex::try_lock_until` analog.  Use
-    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
-    /// indefinite wait.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before the lock
-    /// is acquired.
-    #[inline]
+    /// Wait up to `duration` to enter the callback scope.
+    pub fn try_with_lock_for<R>(
+        &self,
+        duration: core::time::Duration,
+        f: impl for<'s> FnOnce(MutexAccess<'s, T>) -> Result<R>,
+    ) -> Result<R> {
+        self.scoped(crate::duration::dur_to_ns(duration), f)
+    }
+    /// Wait until `deadline` to enter the scope. FOREVER means indefinite waiting.
     #[cfg(has_time)]
-    pub fn try_lock_until(&self, deadline: crate::time::Instant) -> Result<MutexGuard<'_, T>> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline);
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout) };
-        Error::from_code(rc)?;
-        Ok(MutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
+    pub fn try_with_lock_until<R>(
+        &self,
+        deadline: crate::time::Instant,
+        f: impl for<'s> FnOnce(MutexAccess<'s, T>) -> Result<R>,
+    ) -> Result<R> {
+        blocking_context()?;
+        self.scoped(crate::time::deadline_to_timeout_ns(deadline), f)
     }
 }
-
 impl<T: ?Sized> Drop for Mutex<T> {
     fn drop(&mut self) {
-        if self.handle.is_null() {
+        if self.issued.load(Ordering::Acquire) || !resource_context() {
             return;
         }
-        // `UnsafeCell<T>`'s Drop runs automatically and drops `T`.
+        // SAFETY: exclusive owner, no outstanding acquisition, admitted cleanup.
         #[cfg(not(zero_heap))]
         unsafe {
             bindings::ove_mutex_destroy(self.handle);
@@ -288,149 +283,138 @@ impl<T: ?Sized> Drop for Mutex<T> {
         unsafe {
             bindings::ove_mutex_deinit(self.handle);
         }
+        self.origin.release_claim();
+        // UnsafeCell<T> still drops T once, including on retained-backing paths.
     }
 }
-
 impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Don't try to lock — Debug shouldn't deadlock.  Show only the
-        // handle; matches std's "Mutex { data: <locked> }" shape minus
-        // the racy data probe.
         f.debug_struct("Mutex")
             .field("handle", &format_args!("{:p}", self.handle))
             .finish_non_exhaustive()
     }
 }
 
-/// RAII guard that unlocks a `Mutex<T>` when dropped.
-///
-/// Deref / DerefMut expose the protected value.  `MutexGuard` is
-/// `!Send`: the locking thread must release the lock.  Sending a guard
-/// to another thread would cause that thread to issue
-/// `ove_mutex_unlock` with no matching `ove_mutex_lock`, which is
-/// backend-defined UB.  The `_no_send` field carries a `GuardNoSend`
-/// `PhantomData` to propagate `!Send` at compile time (the same trick
-/// `lock_api` / `parking_lot` use on stable Rust).
-///
-/// `Sync` is reinstated for `T: Sync` — a `&MutexGuard<T>` is the same
-/// as a `&T`, which is `Send` if `T: Sync`.  Matches std and
-/// parking_lot.
-pub struct MutexGuard<'a, T: ?Sized> {
+struct MutexLease<'a, T: ?Sized> {
     mutex: &'a Mutex<T>,
-    _no_send: PhantomData<GuardNoSend>,
+    held: bool,
+}
+impl<T: ?Sized> Drop for MutexLease<'_, T> {
+    fn drop(&mut self) {
+        // An ordinary synchronous callback stays on its acquiring thread.
+        // IRQ masks may change; they do not prevent this owned native release.
+        if self.held && !unsafe { bindings::ove_is_in_isr() } {
+            self.mutex.issued.store(false, Ordering::Release);
+            // SAFETY: checked wait tracks whether this same thread still owns
+            // exactly this level; no public view/reference can escape the scope.
+            unsafe { bindings::ove_mutex_unlock(self.mutex.handle) };
+        }
+    }
 }
 
-// SAFETY: `&MutexGuard<T>` is `&T` once `Deref`-ed; if `T: Sync` then
-// sharing `&T` across threads is sound.  std / parking_lot do the same.
-unsafe impl<T: ?Sized + Sync> Sync for MutexGuard<'_, T> {}
-
-impl<T: ?Sized> Deref for MutexGuard<'_, T> {
+/// Nonowning data view valid only inside one [`Mutex::with_lock`] callback.
+/// It is !Send, and Sync when T:Sync. Drop/forget does not release the native
+/// mutex; end the callback to release. CV waits consume and return this view.
+/// Errors consume it while preserving the binding's private cleanup obligation.
+pub struct MutexAccess<'s, T: ?Sized> {
+    mutex: &'s Mutex<T>,
+    held: &'s mut bool,
+    invariant: PhantomData<fn(&'s ()) -> &'s ()>,
+    no_send: PhantomData<*mut ()>,
+}
+// SAFETY: shared access exposes only &T, and cannot move/consume the !Send view.
+unsafe impl<T: ?Sized + Sync> Sync for MutexAccess<'_, T> {}
+impl<T: ?Sized> Deref for MutexAccess<'_, T> {
     type Target = T;
-
-    #[inline]
     fn deref(&self) -> &T {
-        // SAFETY: holding the guard implies the lock is held; we have
-        // exclusive read access.
+        // SAFETY: this is the sole issued view and the private lease is held.
         unsafe { &*self.mutex.data.get() }
     }
 }
-
-impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
-    #[inline]
+impl<T: ?Sized> DerefMut for MutexAccess<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
-        // SAFETY: holding the guard implies the lock is held; `&mut self`
-        // ensures no other guard exists, so this is the only `&mut T`.
+        // SAFETY: native exclusion, a sole issued view and its exclusive borrow.
         unsafe { &mut *self.mutex.data.get() }
     }
 }
-
-impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexAccess<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // `&&**self` reaches through Deref to `&T`, then a second
-        // `&` makes the result Sized so `field(...)` can erase it
-        // through `&dyn Debug`.  Mirrors std::sync::MutexGuard's
-        // Debug impl.
-        f.debug_struct("MutexGuard")
+        f.debug_struct("MutexAccess")
             .field("data", &&**self)
             .finish()
     }
 }
-
-impl<T: ?Sized + fmt::Display> fmt::Display for MutexGuard<'_, T> {
+impl<T: ?Sized + fmt::Display> fmt::Display for MutexAccess<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<T: ?Sized> Drop for MutexGuard<'_, T> {
-    fn drop(&mut self) {
-        // SAFETY: handle is alive as long as the `&Mutex<T>` is borrowed,
-        // which the `'a` lifetime guarantees.
-        unsafe {
-            bindings::ove_mutex_unlock(self.mutex.handle);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RecursiveMutex
-// ---------------------------------------------------------------------------
-
-/// Caller-owned storage for a [`RecursiveMutex`] in zero-heap mode (see
-/// [`MutexStorage`]).
+/// Claimed native backing for a [`RecursiveMutex`] in zero-heap mode.
 #[allow(dead_code)]
 pub struct RecursiveMutexStorage {
     storage: UnsafeCell<MaybeUninit<bindings::ove_mutex_storage_t>>,
+    claimed: AtomicBool,
 }
-
 impl RecursiveMutexStorage {
-    /// Zero-initialised storage.  `const` so it can initialise a `static`.
-    #[inline]
     pub const fn new() -> Self {
         Self {
             storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            claimed: AtomicBool::new(false),
         }
     }
 }
-
 impl Default for RecursiveMutexStorage {
     fn default() -> Self {
         Self::new()
     }
 }
-
-// SAFETY: see MutexStorage.
+// SAFETY: one atomic claim owns native backing through completed deinit.
 unsafe impl Sync for RecursiveMutexStorage {}
 
-/// RAII wrapper around a recursive mutex.
+/// Recursive native mutex with private, callback-scoped release ownership.
+/// Each callback releases its level on return/Err or supported unwind. At most
+/// 65,535 combined held and pending acquisitions are admitted; excess is Busy.
+/// Context, retention and cancellation rules match [`Mutex`].
 pub struct RecursiveMutex {
     handle: bindings::ove_mutex_t,
+    origin: SyncOrigin,
+    reservations: AtomicU32,
 }
-
+// SAFETY: owned stable native backing; scopes remain on their acquiring thread.
+unsafe impl Send for RecursiveMutex {}
+unsafe impl Sync for RecursiveMutex {}
 impl RecursiveMutex {
-    /// Create a new recursive mutex via heap allocation (only in heap mode).
+    const MAX_RESERVATIONS: u32 = 65_535;
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
-        let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_recursive_mutex_create(&mut handle) };
-        Error::from_code(rc)?;
-        Ok(Self { handle })
+        require_resource_context()?;
+        let mut handle = core::ptr::null_mut();
+        // SAFETY: admitted context; success publishes an initialized handle.
+        Error::from_code(unsafe { bindings::ove_recursive_mutex_create(&mut handle) })?;
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Heap,
+            reservations: AtomicU32::new(0),
+        })
     }
-
-    /// Create from caller-provided static storage.
+    /// Initialize exclusive stable raw backing.
     ///
     /// # Safety
-    /// Caller must ensure `storage` outlives the `RecursiveMutex` and is not
-    /// shared with another primitive.
+    /// Requirements match [`Mutex::from_static`]: complete aligned unused backing,
+    /// exclusive native access, and lifetime through cleanup or retention.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(storage: *mut bindings::ove_mutex_storage_t) -> Result<Self> {
-        let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_recursive_mutex_init(&mut handle, storage) };
-        Error::from_code(rc)?;
-        Ok(Self { handle })
+        require_resource_context()?;
+        let mut handle = core::ptr::null_mut();
+        // SAFETY: caller supplies exclusive stable native backing.
+        Error::from_code(unsafe { bindings::ove_recursive_mutex_init(&mut handle, storage) })?;
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Raw,
+            reservations: AtomicU32::new(0),
+        })
     }
-
-    /// Mode-agnostic constructor (see [`Mutex::create`]).
     pub fn create(storage: &'static RecursiveMutexStorage) -> Result<Self> {
         #[cfg(not(zero_heap))]
         {
@@ -439,106 +423,102 @@ impl RecursiveMutex {
         }
         #[cfg(zero_heap)]
         {
-            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
-            unsafe { Self::from_static(ptr) }
+            require_resource_context()?;
+            storage
+                .claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| Error::Busy)?;
+            // SAFETY: the successful claim exclusively owns stable native backing.
+            match unsafe { Self::from_static(storage.storage.get().cast()) } {
+                Ok(mut owner) => {
+                    owner.origin = SyncOrigin::Static(&storage.claimed);
+                    Ok(owner)
+                }
+                Err(error) => {
+                    storage.claimed.store(false, Ordering::Release);
+                    Err(error)
+                }
+            }
         }
     }
-
-    /// Acquire the recursive mutex, blocking indefinitely.  Returns an
-    /// RAII guard that releases one level of the lock on drop.  Same
-    /// thread may call this multiple times — each guard releases one
-    /// level when dropped.
-    #[inline]
-    pub fn lock(&self) -> Result<RecursiveMutexGuard<'_>> {
-        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, u64::MAX) };
-        Error::from_code(rc)?;
-        Ok(RecursiveMutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
+    fn scoped<R>(&self, timeout: u64, f: impl FnOnce() -> Result<R>) -> Result<R> {
+        blocking_context()?;
+        self.reservations
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < Self::MAX_RESERVATIONS).then(|| n + 1)
+            })
+            .map_err(|_| Error::Busy)?;
+        // SAFETY: live native handle, legal blocking context and bounded reservation.
+        if let Err(error) =
+            Error::from_code(unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout) })
+        {
+            self.reservations.fetch_sub(1, Ordering::Release);
+            return Err(error);
+        }
+        let _lease = RecursiveLease { mutex: self };
+        f()
     }
-
-    /// Attempt to acquire the recursive mutex without blocking.
-    ///
-    /// # Errors
-    /// Returns [`Error::WouldBlock`] if held by a different thread.
-    #[inline]
-    pub fn try_lock(&self) -> Result<RecursiveMutexGuard<'_>> {
-        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, 0) };
-        Error::from_code(rc)?;
-        Ok(RecursiveMutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
+    pub fn with_lock<R>(&self, f: impl FnOnce() -> Result<R>) -> Result<R> {
+        self.scoped(u64::MAX, f)
     }
-
-    /// Attempt to acquire the recursive mutex, waiting up to `d`.
-    #[inline]
-    pub fn try_lock_for(&self, d: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
-        let rc = unsafe {
-            bindings::ove_recursive_mutex_lock(self.handle, crate::duration::dur_to_ns(d))
-        };
-        Error::from_code(rc)?;
-        Ok(RecursiveMutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
+    pub fn try_with_lock<R>(&self, f: impl FnOnce() -> Result<R>) -> Result<R> {
+        self.scoped(0, f)
     }
-
-    /// Attempt to acquire the recursive mutex by the given deadline.
-    /// Use [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
-    /// indefinite wait.
-    #[inline]
+    pub fn try_with_lock_for<R>(
+        &self,
+        duration: core::time::Duration,
+        f: impl FnOnce() -> Result<R>,
+    ) -> Result<R> {
+        self.scoped(crate::duration::dur_to_ns(duration), f)
+    }
     #[cfg(has_time)]
-    pub fn try_lock_until(
+    pub fn try_with_lock_until<R>(
         &self,
         deadline: crate::time::Instant,
-    ) -> Result<RecursiveMutexGuard<'_>> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline);
-        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout) };
-        Error::from_code(rc)?;
-        Ok(RecursiveMutexGuard {
-            mutex: self,
-            _no_send: PhantomData,
-        })
-    }
-
-    /// Release one level of the recursive lock.
-    ///
-    /// Prefer letting the RAII guard ([`RecursiveMutexGuard`]) drop
-    /// release the lock; this is kept `pub` for parity with the C API.
-    #[inline]
-    pub fn unlock(&self) {
-        unsafe { bindings::ove_recursive_mutex_unlock(self.handle) }
+        f: impl FnOnce() -> Result<R>,
+    ) -> Result<R> {
+        blocking_context()?;
+        self.scoped(crate::time::deadline_to_timeout_ns(deadline), f)
     }
 }
-
-crate::ove_handle_impl!(
-    RecursiveMutex,
-    ove_recursive_mutex_destroy,
-    ove_recursive_mutex_deinit
-);
-
-/// RAII guard that unlocks a `RecursiveMutex` when dropped.
-///
-/// Same `!Send` constraint as [`MutexGuard`]: the locking thread must
-/// issue the matching unlock.
-pub struct RecursiveMutexGuard<'a> {
-    mutex: &'a RecursiveMutex,
-    _no_send: PhantomData<GuardNoSend>,
-}
-
-impl fmt::Debug for RecursiveMutexGuard<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RecursiveMutexGuard")
-            .field("mutex", &format_args!("{:p}", self.mutex.handle))
-            .finish()
-    }
-}
-
-impl Drop for RecursiveMutexGuard<'_> {
+impl Drop for RecursiveMutex {
     fn drop(&mut self) {
-        self.mutex.unlock();
+        if self.reservations.load(Ordering::Acquire) != 0 || !resource_context() {
+            return;
+        }
+        // SAFETY: no pending/held scope, exclusive owner and legal resource cleanup.
+        #[cfg(not(zero_heap))]
+        unsafe {
+            bindings::ove_recursive_mutex_destroy(self.handle);
+        }
+        #[cfg(zero_heap)]
+        unsafe {
+            bindings::ove_recursive_mutex_deinit(self.handle);
+        }
+        self.origin.release_claim();
+    }
+}
+impl fmt::Debug for RecursiveMutex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RecursiveMutex")
+            .field("handle", &format_args!("{:p}", self.handle))
+            .finish_non_exhaustive()
+    }
+}
+struct RecursiveLease<'a> {
+    mutex: &'a RecursiveMutex,
+}
+
+#[cfg(all(test, ove_test))]
+#[path = "sync_tests.rs"]
+mod scoped_tests;
+impl Drop for RecursiveLease<'_> {
+    fn drop(&mut self) {
+        if !unsafe { bindings::ove_is_in_isr() } {
+            // SAFETY: exactly this private acquisition belongs to this thread.
+            unsafe { bindings::ove_recursive_mutex_unlock(self.mutex.handle) };
+            self.mutex.reservations.fetch_sub(1, Ordering::Release);
+        }
     }
 }
 
@@ -839,90 +819,85 @@ crate::ove_handle_impl!(Event, ove_event_destroy, ove_event_deinit);
 // CondVar + WaitTimeoutResult
 // ---------------------------------------------------------------------------
 
-/// Result of a `Condvar::wait_for` / `wait_until` call indicating
-/// whether the wait elapsed without being signalled.
-///
-/// Matches `std::sync::WaitTimeoutResult` exactly — same type name,
-/// same `timed_out()` accessor.  Returned wrapped in a tuple alongside
-/// the re-acquired guard.
+/// Outcome of a timed condition-variable wait with reacquired data access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaitTimeoutResult {
     timed_out: bool,
 }
-
 impl WaitTimeoutResult {
-    /// Returns `true` if the wait elapsed without being signalled.
-    #[inline]
     pub fn timed_out(&self) -> bool {
         self.timed_out
     }
 }
 
-/// Condition variable.  Pair with [`Mutex<T>`] to wait on state changes.
-///
-/// API matches `parking_lot::Condvar` shape — `wait` consumes the
-/// guard, returns it re-acquired.  Predicate variants
-/// (`wait_while*`) loop internally so callers can't accidentally write
-/// the buggy `if cv.wait_for(...) ... && ready` pattern.
-/// Caller-owned storage for a [`CondVar`] in zero-heap mode (see [`MutexStorage`]).
+/// Claimed native backing for a [`CondVar`] in zero-heap mode.
 #[allow(dead_code)]
 pub struct CondVarStorage {
     storage: UnsafeCell<MaybeUninit<bindings::ove_condvar_storage_t>>,
+    claimed: AtomicBool,
 }
-
 impl CondVarStorage {
-    /// Zero-initialised storage.  `const` so it can initialise a `static`.
-    #[inline]
     pub const fn new() -> Self {
         Self {
             storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            claimed: AtomicBool::new(false),
         }
     }
 }
-
 impl Default for CondVarStorage {
     fn default() -> Self {
         Self::new()
     }
 }
-
-// SAFETY: see MutexStorage.
+// SAFETY: one atomic claimant controls initialization and completed deinit.
 unsafe impl Sync for CondVarStorage {}
 
-/// Condition variable for a mutex held exactly once in thread context.
-/// Native success and clean timeout reacquire the mutex; other native errors
-/// do not establish ownership. Always re-check the predicate after waking.
-/// The native `ove_condvar_wait_checked` entry also reports explicit error-path
-/// ownership; these methods currently use the legacy status-only wait entry.
+/// Condition variable used inside a [`Mutex::with_lock`] callback.
+/// Wait consumes the current [`MutexAccess`] and returns it only after known
+/// successful reacquisition or clean timeout. An error consumes the view; the
+/// private scope still releases any known-held native acquisition on return.
+/// Recheck predicates after wakeups. Timed predicate waits keep one deadline.
+///
+/// Context and resource retention rules match [`Mutex`]. Signal/broadcast are
+/// no-ops outside an admitted blocking context; native NuttX signaling can lock.
 /// Single-core FreeRTOS protects notification and waiter retirement together;
-/// broadcast interrupt-masked work is linear in waiters. SMP is unsupported.
+/// broadcast interrupt-masked work is linear in waiters. FreeRTOS SMP is unsupported.
 pub struct CondVar {
     handle: bindings::ove_condvar_t,
+    origin: SyncOrigin,
 }
-
+// SAFETY: stable owned native backing; operation borrows exclude teardown.
+unsafe impl Send for CondVar {}
+unsafe impl Sync for CondVar {}
 impl CondVar {
-    /// Create a new condition variable via heap allocation (only in heap mode).
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
-        let mut handle: bindings::ove_condvar_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_condvar_create(&mut handle) };
-        Error::from_code(rc)?;
-        Ok(Self { handle })
+        require_resource_context()?;
+        let mut handle = core::ptr::null_mut();
+        // SAFETY: legal resource context, initialized output only on success.
+        Error::from_code(unsafe { bindings::ove_condvar_create(&mut handle) })?;
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Heap,
+        })
     }
-
-    /// Create from caller-provided static storage.
+    /// Initialize exclusive stable raw backing.
     ///
     /// # Safety
-    /// Caller must ensure `storage` outlives the `CondVar`.
+    /// Backing must be nonnull, aligned, sufficiently large, unused and stable
+    /// through actual deinit or indefinite retention. No competing native access,
+    /// initialization or teardown; respect native contexts and waiter lifetimes.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(storage: *mut bindings::ove_condvar_storage_t) -> Result<Self> {
-        let mut handle: bindings::ove_condvar_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_condvar_init(&mut handle, storage) };
-        Error::from_code(rc)?;
-        Ok(Self { handle })
+        require_resource_context()?;
+        let mut handle = core::ptr::null_mut();
+        // SAFETY: caller supplies exclusive complete stable native backing.
+        Error::from_code(unsafe { bindings::ove_condvar_init(&mut handle, storage) })?;
+        Ok(Self {
+            handle,
+            origin: SyncOrigin::Raw,
+        })
     }
-
-    /// Mode-agnostic constructor (see [`Mutex::create`]).
     pub fn create(storage: &'static CondVarStorage) -> Result<Self> {
         #[cfg(not(zero_heap))]
         {
@@ -931,179 +906,169 @@ impl CondVar {
         }
         #[cfg(zero_heap)]
         {
-            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
-            unsafe { Self::from_static(ptr) }
+            require_resource_context()?;
+            storage
+                .claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| Error::Busy)?;
+            // SAFETY: one successful claim owns stable native backing.
+            match unsafe { Self::from_static(storage.storage.get().cast()) } {
+                Ok(mut owner) => {
+                    owner.origin = SyncOrigin::Static(&storage.claimed);
+                    Ok(owner)
+                }
+                Err(error) => {
+                    storage.claimed.store(false, Ordering::Release);
+                    Err(error)
+                }
+            }
         }
     }
-
-    /// Atomically release the guarded mutex and block indefinitely
-    /// until signalled. On success, the mutex is re-acquired and the
-    /// guard handed back. Native errors do not establish mutex ownership.
-    /// `std::sync::Condvar::wait` analog.
-    ///
-    /// Always re-check the predicate in a loop after this returns —
-    /// spurious wake-ups are permitted by the substrate.  Or use
-    /// [`wait_while`](Self::wait_while) which does the loop for you.
-    #[inline]
-    pub fn wait<'a, T: ?Sized>(&self, guard: MutexGuard<'a, T>) -> Result<MutexGuard<'a, T>> {
-        let mutex = guard.mutex;
-        // Skip the guard's Drop — substrate atomically releases and
-        // re-acquires the mutex internally.
-        let _suppress = ManuallyDrop::new(guard);
-        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.handle, u64::MAX) };
-        Error::from_code(rc)?;
-        Ok(MutexGuard {
-            mutex,
-            _no_send: PhantomData,
-        })
-    }
-
-    /// Atomically release the guarded mutex and wait up to `d`.  On
-    /// success or clean timeout, the mutex is re-acquired.
-    /// Other native errors do not establish mutex ownership.
-    /// `parking_lot::Condvar::wait_for` analog.
-    ///
-    /// The returned [`WaitTimeoutResult`] distinguishes "signalled in
-    /// time" (`timed_out() == false`) from "elapsed without signal"
-    /// (`timed_out() == true`).
-    ///
-    /// # Errors
-    /// Returns an error for backend failures other than a clean timeout
-    /// — a clean timeout returns `Ok((guard, WaitTimeoutResult { ..true }))`.
-    #[inline]
-    pub fn wait_for<'a, T: ?Sized>(
+    fn wait_with_timeout<'s, T: ?Sized>(
         &self,
-        guard: MutexGuard<'a, T>,
-        d: core::time::Duration,
-    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
-        self.wait_with_timeout(guard, crate::duration::dur_to_ns(d))
-    }
-
-    /// Atomically release the guarded mutex and wait by the given
-    /// deadline.  `parking_lot::Condvar::wait_until` analog.  Use
-    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
-    /// indefinite wait.
-    #[inline]
-    #[cfg(has_time)]
-    pub fn wait_until<'a, T: ?Sized>(
-        &self,
-        guard: MutexGuard<'a, T>,
-        deadline: crate::time::Instant,
-    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
-        self.wait_with_timeout(guard, crate::time::deadline_to_timeout_ns(deadline))
-    }
-
-    #[inline]
-    fn wait_with_timeout<'a, T: ?Sized>(
-        &self,
-        guard: MutexGuard<'a, T>,
-        timeout_ns: u64,
-    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
-        let mutex = guard.mutex;
-        let _suppress = ManuallyDrop::new(guard);
-        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.handle, timeout_ns) };
-        // OVE_ERR_TIMEOUT is the "clean timeout, mutex re-acquired"
-        // case — re-package as `Ok((guard, timed_out: true))`.  Other
-        // negative codes are real errors.
+        access: MutexAccess<'s, T>,
+        timeout: u64,
+    ) -> Result<(MutexAccess<'s, T>, WaitTimeoutResult)> {
+        blocking_context()?;
+        access.mutex.issued.store(false, Ordering::Release);
+        let mut held = false;
+        // SAFETY: live CV, ordinary mutex held exactly once, no outstanding data
+        // reference after consuming access, and writable disjoint local output.
+        let rc = unsafe {
+            bindings::ove_condvar_wait_checked(self.handle, access.mutex.handle, timeout, &mut held)
+        };
+        *access.held = held;
+        if held {
+            // Native ownership excludes any other issuing thread. On unheld
+            // errors another thread may own the flag, so leave it untouched.
+            access.mutex.issued.store(true, Ordering::Release);
+        }
         let timed_out = match Error::from_code(rc) {
             Ok(()) => false,
             Err(Error::Timeout) => true,
-            Err(e) => return Err(e),
+            Err(error) => return Err(error),
         };
-        Ok((
-            MutexGuard {
-                mutex,
-                _no_send: PhantomData,
-            },
-            WaitTimeoutResult { timed_out },
-        ))
-    }
-
-    /// Loop until `cond(&mut T)` returns `false`, releasing the lock
-    /// while waiting.  `std::sync::Condvar::wait_while` analog.
-    ///
-    /// Internally handles spurious wake-ups by re-checking the
-    /// predicate after every wake.
-    pub fn wait_while<'a, T: ?Sized, F>(
-        &self,
-        mut guard: MutexGuard<'a, T>,
-        mut cond: F,
-    ) -> Result<MutexGuard<'a, T>>
-    where
-        F: FnMut(&mut T) -> bool,
-    {
-        while cond(&mut *guard) {
-            guard = self.wait(guard)?;
+        if !held {
+            return Err(Error::Inval);
         }
-        Ok(guard)
+        Ok((access, WaitTimeoutResult { timed_out }))
     }
-
-    /// `wait_while` with a duration bound.
-    ///
-    /// Returns `(guard, WaitTimeoutResult)` — `timed_out()` is `true`
-    /// iff the predicate is still `true` at deadline.
-    #[cfg(has_time)]
-    pub fn wait_while_for<'a, T: ?Sized, F>(
-        &self,
-        guard: MutexGuard<'a, T>,
-        d: core::time::Duration,
-        cond: F,
-    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)>
-    where
-        F: FnMut(&mut T) -> bool,
-    {
-        let deadline = crate::time::Instant::now() + d;
-        self.wait_while_until(guard, deadline, cond)
+    /// Release the access mutex while waiting indefinitely, then return access.
+    /// Spurious wakes are permitted; prefer [`wait_while`](Self::wait_while).
+    pub fn wait<'s, T: ?Sized>(&self, access: MutexAccess<'s, T>) -> Result<MutexAccess<'s, T>> {
+        let (access, result) = self.wait_with_timeout(access, u64::MAX)?;
+        if result.timed_out() {
+            Err(Error::Timeout)
+        } else {
+            Ok(access)
+        }
     }
-
-    /// `wait_while` with an absolute deadline.
-    #[cfg(has_time)]
-    pub fn wait_while_until<'a, T: ?Sized, F>(
+    /// Wait at most `duration`; clean timeout returns reacquired access and true.
+    pub fn wait_for<'s, T: ?Sized>(
         &self,
-        mut guard: MutexGuard<'a, T>,
+        access: MutexAccess<'s, T>,
+        duration: core::time::Duration,
+    ) -> Result<(MutexAccess<'s, T>, WaitTimeoutResult)> {
+        self.wait_with_timeout(access, crate::duration::dur_to_ns(duration))
+    }
+    #[cfg(has_time)]
+    pub fn wait_until<'s, T: ?Sized>(
+        &self,
+        access: MutexAccess<'s, T>,
         deadline: crate::time::Instant,
-        mut cond: F,
-    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)>
-    where
-        F: FnMut(&mut T) -> bool,
-    {
+    ) -> Result<(MutexAccess<'s, T>, WaitTimeoutResult)> {
+        blocking_context()?;
+        self.wait_with_timeout(access, crate::time::deadline_to_timeout_ns(deadline))
+    }
+    /// Keep waiting while `predicate` is true, consuming access at every wait.
+    pub fn wait_while<'s, T: ?Sized>(
+        &self,
+        mut access: MutexAccess<'s, T>,
+        mut predicate: impl FnMut(&mut T) -> bool,
+    ) -> Result<MutexAccess<'s, T>> {
+        blocking_context()?;
+        while predicate(&mut *access) {
+            access = self.wait(access)?;
+        }
+        Ok(access)
+    }
+    #[cfg(has_time)]
+    pub fn wait_while_for<'s, T: ?Sized>(
+        &self,
+        access: MutexAccess<'s, T>,
+        duration: core::time::Duration,
+        predicate: impl FnMut(&mut T) -> bool,
+    ) -> Result<(MutexAccess<'s, T>, WaitTimeoutResult)> {
+        blocking_context()?;
+        let deadline = crate::time::Instant::now() + duration;
+        self.wait_while_until(access, deadline, predicate)
+    }
+    #[cfg(has_time)]
+    pub fn wait_while_until<'s, T: ?Sized>(
+        &self,
+        mut access: MutexAccess<'s, T>,
+        deadline: crate::time::Instant,
+        mut predicate: impl FnMut(&mut T) -> bool,
+    ) -> Result<(MutexAccess<'s, T>, WaitTimeoutResult)> {
+        blocking_context()?;
         loop {
-            if !cond(&mut *guard) {
-                return Ok((guard, WaitTimeoutResult { timed_out: false }));
+            if !predicate(&mut *access) {
+                return Ok((access, WaitTimeoutResult { timed_out: false }));
             }
-            let (g, wtr) = self.wait_until(guard, deadline)?;
-            guard = g;
-            if wtr.timed_out() {
-                // Re-evaluate one final time — the substrate may have
-                // released the lock right at the deadline; cond may now
-                // be false.  Matches std's semantics.
-                let timed_out = cond(&mut *guard);
-                return Ok((guard, WaitTimeoutResult { timed_out }));
+            let (next, result) = self.wait_until(access, deadline)?;
+            access = next;
+            if result.timed_out() {
+                let timed_out = predicate(&mut *access);
+                return Ok((access, WaitTimeoutResult { timed_out }));
             }
         }
     }
-
-    /// Wake one waiter.
-    #[inline]
+    /// Wake one waiter. No effect when blocking context is unavailable.
     pub fn signal(&self) {
-        unsafe { bindings::ove_condvar_signal(self.handle) }
+        if blocking_context().is_ok() {
+            // SAFETY: live borrowed native CV and admitted signaling context.
+            unsafe { bindings::ove_condvar_signal(self.handle) };
+        }
     }
-
-    /// Wake all waiters.
-    #[inline]
+    /// Wake all waiters. No effect when blocking context is unavailable.
     pub fn broadcast(&self) {
-        unsafe { bindings::ove_condvar_broadcast(self.handle) }
+        if blocking_context().is_ok() {
+            // SAFETY: live borrowed native CV and admitted signaling context.
+            unsafe { bindings::ove_condvar_broadcast(self.handle) };
+        }
     }
 }
-
-crate::ove_handle_impl!(CondVar, ove_condvar_destroy, ove_condvar_deinit);
+impl Drop for CondVar {
+    fn drop(&mut self) {
+        if !resource_context() {
+            return;
+        }
+        // SAFETY: exclusive owned CV, no borrowed operation/waiter, legal cleanup.
+        #[cfg(not(zero_heap))]
+        unsafe {
+            bindings::ove_condvar_destroy(self.handle);
+        }
+        #[cfg(zero_heap)]
+        unsafe {
+            bindings::ove_condvar_deinit(self.handle);
+        }
+        self.origin.release_claim();
+    }
+}
+impl fmt::Debug for CondVar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CondVar")
+            .field("handle", &format_args!("{:p}", self.handle))
+            .finish_non_exhaustive()
+    }
+}
 
 // ── SpinMutex (G5) ───────────────────────────────────────────────────
 //
 // IRQ-locking mutex for very short critical sections. Distinct from
 // the sleeping `Mutex<T>` above:
 //
-// - `Mutex::lock` blocks the calling thread on a kernel mutex; legal
+// - `Mutex::with_lock` blocks the calling thread on a kernel mutex; legal
 //   from thread context only.
 // - `SpinMutex::lock` disables interrupts globally and holds them
 //   disabled for the body of the closure / lifetime of the guard. Use

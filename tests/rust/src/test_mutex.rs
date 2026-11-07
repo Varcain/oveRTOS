@@ -4,28 +4,31 @@
 //
 // This file is part of oveRTOS.
 
-use crate::framework::{run_suite, PtrGuard};
+use crate::framework::{PtrGuard, run_suite};
 use crate::test_entry;
-use ove::{Mutex, MutexGuard, Thread, Error};
+use ove::{Error, Mutex, MutexAccess, Thread};
 use static_assertions::assert_not_impl_all;
 use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
 
-// Compile-time invariant: a MutexGuard cannot be sent to another thread.
-// The locking thread must release the lock; cross-thread Send would
-// allow `ove_mutex_unlock` from a thread that never issued the matching
-// `ove_mutex_lock` — backend-defined UB (POSIX EPERM, FreeRTOS assert).
-assert_not_impl_all!(MutexGuard<'static, ()>: Send);
+// A data view cannot move to another thread or perform a consuming wait there.
+assert_not_impl_all!(MutexAccess<'static, ()>: Send);
 
 static COUNTER: AtomicI32 = AtomicI32::new(0);
 static COUNTER_MTX: AtomicPtr<Mutex<()>> = AtomicPtr::new(core::ptr::null_mut());
 
 fn counter_entry() {
-    let mtx_ptr = COUNTER_MTX.load(Ordering::Acquire);
-    if mtx_ptr.is_null() { return; }
-    let mtx = unsafe { &*(mtx_ptr as *const Mutex<()>) };
+    let pointer = COUNTER_MTX.load(Ordering::Acquire);
+    if pointer.is_null() {
+        return;
+    }
+    let mutex = unsafe { &*pointer };
     for _ in 0..1000 {
-        let _g = mtx.lock().unwrap();
-        COUNTER.fetch_add(1, Ordering::Relaxed);
+        mutex
+            .with_lock(|_| {
+                COUNTER.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            })
+            .unwrap();
     }
 }
 
@@ -35,8 +38,8 @@ fn test_create() {
 }
 
 fn test_lock_unlock() {
-    let mtx = Mutex::new(()).unwrap();
-    let _g = mtx.lock().unwrap();
+    let mutex = Mutex::new(()).unwrap();
+    mutex.with_lock(|_| Ok(())).unwrap();
 }
 
 static HOLD_MTX: AtomicPtr<Mutex<()>> = AtomicPtr::new(core::ptr::null_mut());
@@ -44,15 +47,20 @@ static HOLD_LOCKED: AtomicI32 = AtomicI32::new(0);
 static HOLD_RELEASE: AtomicI32 = AtomicI32::new(0);
 
 fn hold_lock_entry() {
-    let mtx_ptr = HOLD_MTX.load(Ordering::Acquire);
-    if mtx_ptr.is_null() { return; }
-    let mtx = unsafe { &*(mtx_ptr as *const Mutex<()>) };
-    let _g = mtx.lock().unwrap();
-    HOLD_LOCKED.store(1, Ordering::Release);
-    // Hold until told to release
-    while HOLD_RELEASE.load(Ordering::Acquire) == 0 {
-        Thread::sleep_ms(1);
+    let pointer = HOLD_MTX.load(Ordering::Acquire);
+    if pointer.is_null() {
+        return;
     }
+    let mutex = unsafe { &*pointer };
+    mutex
+        .with_lock(|_| {
+            HOLD_LOCKED.store(1, Ordering::Release);
+            while HOLD_RELEASE.load(Ordering::Acquire) == 0 {
+                Thread::sleep_ms(1);
+            }
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_contention_timeout() {
@@ -62,17 +70,24 @@ fn test_contention_timeout() {
     let _guard = PtrGuard::new(&HOLD_MTX, &mtx as *const Mutex<()> as *mut Mutex<()>);
 
     // Spawn thread that holds the lock
-    let th = Thread::builder().name(c"hold").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(hold_lock_entry).unwrap();
+    let th = Thread::builder()
+        .name(c"hold")
+        .priority(ove::Priority::Normal)
+        .stack_size(4096)
+        .spawn_simple(hold_lock_entry)
+        .unwrap();
 
     // Wait until the thread holds the lock
     for _ in 0..200 {
-        if HOLD_LOCKED.load(Ordering::Acquire) != 0 { break; }
+        if HOLD_LOCKED.load(Ordering::Acquire) != 0 {
+            break;
+        }
         Thread::sleep_ms(1);
     }
     assert_eq!(HOLD_LOCKED.load(Ordering::SeqCst), 1);
 
     // Now try to lock with timeout — should fail
-    let result = mtx.try_lock_for(core::time::Duration::from_millis(50));
+    let result = mtx.try_with_lock_for(core::time::Duration::from_millis(50), |_| Ok(()));
     assert!(matches!(result, Err(Error::Timeout)), "expected timeout");
 
     // Release the holder
@@ -82,44 +97,41 @@ fn test_contention_timeout() {
 }
 
 fn test_lock_zero_timeout() {
-    let mtx = Mutex::new(()).unwrap();
-    let _g = mtx.try_lock().unwrap();
+    let mutex = Mutex::new(()).unwrap();
+    mutex.try_with_lock(|_| Ok(())).unwrap();
 }
 
 fn test_raii_drop() {
-    {
-        let mtx = Mutex::new(()).unwrap();
-        {
-            let _g = mtx.lock().unwrap();
-        }
-        // mtx dropped here — should not leak
-    }
+    let mutex = Mutex::new(()).unwrap();
+    mutex.with_lock(|_| Ok(())).unwrap();
 }
 
-fn test_guard_auto_unlock() {
-    let mtx = Mutex::new(()).unwrap();
-    {
-        let _guard = mtx.lock().unwrap();
-        // Guard holds the lock
-    }
-    // Guard dropped — mutex should be unlocked
-    let _g = mtx.try_lock().unwrap();
+fn test_scope_auto_unlock() {
+    let mutex = Mutex::new(()).unwrap();
+    mutex.with_lock(|_| Ok(())).unwrap();
+    mutex.try_with_lock(|_| Ok(())).unwrap();
 }
 
-fn test_guard_timeout() {
-    let mtx = Mutex::new(()).unwrap();
-    let _guard = mtx.lock().unwrap();
-    // Try to acquire again — should timeout
-    let result = mtx.try_lock();
-    assert!(matches!(result, Err(Error::Timeout)));
+fn test_scope_contention() {
+    let mutex = Mutex::new(()).unwrap();
+    mutex
+        .with_lock(|_| {
+            let result = mutex.try_with_lock(|_| Ok(()));
+            assert!(matches!(result, Err(Error::Timeout | Error::Busy)));
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_error_mapping() {
-    let mtx = Mutex::new(()).unwrap();
-    let _g = mtx.lock().unwrap();
-    // Try-lock on already-held (same thread, non-recursive) returns timeout
-    let result = mtx.try_lock();
-    assert!(matches!(result, Err(Error::Timeout)));
+    let mutex = Mutex::new(()).unwrap();
+    mutex
+        .with_lock(|_| {
+            let result = mutex.try_with_lock(|_| Ok(()));
+            assert!(matches!(result, Err(Error::Timeout | Error::Busy)));
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_shared_counter() {
@@ -146,13 +158,11 @@ fn test_shared_counter() {
     assert_eq!(COUNTER.load(Ordering::SeqCst), 2000);
 }
 
-fn test_guard_debug_format() {
-    let mtx = Mutex::new(()).unwrap();
-    let guard = mtx.lock().unwrap();
-    let s = format!("{:?}", guard);
-    assert!(s.contains("MutexGuard"), "unexpected debug: {s}");
-    // The guard now derefs to T (= ()), so the inner field is rendered.
-    assert!(s.contains("data"), "unexpected debug: {s}");
+fn test_access_debug_format() {
+    let mutex = Mutex::new(()).unwrap();
+    let text = mutex.with_lock(|access| Ok(format!("{access:?}"))).unwrap();
+    assert!(text.contains("MutexAccess"), "unexpected debug: {text}");
+    assert!(text.contains("data"), "unexpected debug: {text}");
 }
 
 fn test_mutex_debug_format() {
@@ -165,17 +175,20 @@ fn test_mutex_debug_format() {
 }
 
 pub fn run() -> (usize, usize) {
-    run_suite("Mutex", &[
-        test_entry!(test_create),
-        test_entry!(test_lock_unlock),
-        test_entry!(test_contention_timeout),
-        test_entry!(test_lock_zero_timeout),
-        test_entry!(test_raii_drop),
-        test_entry!(test_guard_auto_unlock),
-        test_entry!(test_guard_timeout),
-        test_entry!(test_error_mapping),
-        test_entry!(test_shared_counter),
-        test_entry!(test_guard_debug_format),
-        test_entry!(test_mutex_debug_format),
-    ])
+    run_suite(
+        "Mutex",
+        &[
+            test_entry!(test_create),
+            test_entry!(test_lock_unlock),
+            test_entry!(test_contention_timeout),
+            test_entry!(test_lock_zero_timeout),
+            test_entry!(test_raii_drop),
+            test_entry!(test_scope_auto_unlock),
+            test_entry!(test_scope_contention),
+            test_entry!(test_error_mapping),
+            test_entry!(test_shared_counter),
+            test_entry!(test_access_debug_format),
+            test_entry!(test_mutex_debug_format),
+        ],
+    )
 }

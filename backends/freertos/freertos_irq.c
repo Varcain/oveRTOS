@@ -36,6 +36,28 @@
 #include "task.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "ove_sync_context.h"
+
+#ifdef CONFIG_OVE_SYNC
+uint32_t ove_sync_context(void)
+{
+#if defined(OVE_SYNC_CORTEX_M) && (configNUMBER_OF_CORES == 1) && \
+	(INCLUDE_xTaskGetSchedulerState == 1) && (INCLUDE_xTaskGetIdleTaskHandle == 1)
+	if (!ove_sync_privileged() || xPortIsInsideInterrupt())
+		return 0;
+	BaseType_t state = xTaskGetSchedulerState();
+	if (state == taskSCHEDULER_NOT_STARTED)
+		return OVE_SYNC_CONTEXT_RESOURCE;
+	if (state != taskSCHEDULER_RUNNING || !ove_sync_irqs_enabled())
+		return 0;
+	if (xTaskGetCurrentTaskHandle() == xTaskGetIdleTaskHandle())
+		return 0;
+	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+#else
+	return 0;
+#endif
+}
+#endif
 
 #ifdef CONFIG_OVE_ASYNC
 

@@ -248,10 +248,8 @@ fn mutex_lock_unlock_setup() {
     SYNC_MTX.init(ove::mutex!(()));
 }
 fn mutex_lock_unlock_run() {
-    if let Some(m) = SYNC_MTX.try_get() {
-        // Mutex<T> uses RAII: the MutexGuard returned by .lock() drops
-        // (and unlocks) at the end of the statement.
-        drop(m.lock());
+    if let Some(mutex) = SYNC_MTX.try_get() {
+        let _ = mutex.with_lock(|_| Ok(()));
     }
 }
 fn mutex_lock_unlock_teardown() {
@@ -278,10 +276,11 @@ fn mutex_create_destroy_run() {
 // shutdown the mutex" (DONE flag also set, while-loop exits naturally).
 fn contention_thread() {
     while !SYNC_CONTENTION_DONE.load(Ordering::Relaxed) {
-        if let Some(m) = SYNC_MTX.try_get() {
-            let _g = m.lock();
-            SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
-            // _g drops at end of scope, releasing the lock.
+        if let Some(mutex) = SYNC_MTX.try_get() {
+            let _ = mutex.with_lock(|_| {
+                SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            });
         } else {
             Thread::yield_now();
         }
@@ -301,10 +300,11 @@ fn mutex_contention_setup() {
 }
 
 fn mutex_contention_run() {
-    if let Some(m) = SYNC_MTX.try_get() {
-        let _g = m.lock();
-        SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
-        // _g drops at end of scope, releasing the lock.
+    if let Some(mutex) = SYNC_MTX.try_get() {
+        let _ = mutex.with_lock(|_| {
+            SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        });
     }
 }
 
@@ -433,13 +433,11 @@ fn condvar_signal_wait_setup() {
 }
 
 fn condvar_signal_wait_run() {
-    if let (Some(mtx), Some(cv)) = (SYNC_CV_MTX.try_get(), SYNC_CV.try_get()) {
-        if let Ok(g) = mtx.lock() {
-            // Bounded wait: returns Ok((guard, ...)) or Err on backend
-            // failure.  Guard re-acquires on return, then drops at end of
-            // scope.
-            let _ = cv.wait_for(g, core::time::Duration::from_millis(10));
-        }
+    if let (Some(mutex), Some(cv)) = (SYNC_CV_MTX.try_get(), SYNC_CV.try_get()) {
+        let _ = mutex.with_lock(|access| {
+            let _ = cv.wait_for(access, core::time::Duration::from_millis(10))?;
+            Ok(())
+        });
     }
 }
 
@@ -469,9 +467,8 @@ fn rmtx_lock_unlock_setup() {
     SYNC_RMTX.init(ove::recursive_mutex!());
 }
 fn rmtx_lock_unlock_run() {
-    if let Some(rm) = SYNC_RMTX.try_get() {
-        // RAII guard auto-drops at end of statement.
-        drop(rm.lock());
+    if let Some(mutex) = SYNC_RMTX.try_get() {
+        let _ = mutex.with_lock(|| Ok(()));
     }
 }
 fn rmtx_lock_unlock_teardown() {
@@ -507,7 +504,7 @@ bench_case!(static CONDVAR_MEMORY: BenchCase = {
     teardown: condvar_memory_teardown,
 });
 bench_case!(static MUTEX_LOCK_UNLOCK: BenchCase = {
-    name: b"mutex_lock_unlock\0",
+    name: b"mutex_with_lock\0",
     kind: BenchType::Latency,
     run: mutex_lock_unlock_run,
     setup: mutex_lock_unlock_setup,
@@ -520,7 +517,7 @@ bench_case!(static MUTEX_CREATE_DESTROY: BenchCase = {
     run: mutex_create_destroy_run,
 });
 bench_case!(static MUTEX_CONTENTION_2T: BenchCase = {
-    name: b"mutex_contention_2t\0",
+    name: b"mutex_with_lock_contention_2t\0",
     kind: BenchType::Throughput,
     run: mutex_contention_run,
     setup: mutex_contention_setup,
@@ -548,7 +545,7 @@ bench_case!(static EVENT_SIGNAL_WAIT: BenchCase = {
     iterations: 500,
 });
 bench_case!(static CONDVAR_SIGNAL_WAIT: BenchCase = {
-    name: b"condvar_signal_wait\0",
+    name: b"condvar_scoped_signal_wait\0",
     kind: BenchType::Latency,
     run: condvar_signal_wait_run,
     setup: condvar_signal_wait_setup,
@@ -556,7 +553,7 @@ bench_case!(static CONDVAR_SIGNAL_WAIT: BenchCase = {
     iterations: 500,
 });
 bench_case!(static RMTX_LOCK_UNLOCK: BenchCase = {
-    name: b"recursive_mutex_lock_unlock\0",
+    name: b"recursive_mutex_with_lock\0",
     kind: BenchType::Latency,
     run: rmtx_lock_unlock_run,
     setup: rmtx_lock_unlock_setup,

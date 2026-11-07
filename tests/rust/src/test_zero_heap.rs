@@ -22,24 +22,27 @@ use ove::{
 };
 
 fn test_mutex_static() {
-    static S: MutexStorage = MutexStorage::new();
-    let m = Mutex::create(&S, 41u32).unwrap();
-    {
-        let mut g = m.lock().unwrap();
-        *g += 1;
-        assert_eq!(*g, 42);
-    }
-    assert_eq!(*m.lock().unwrap(), 42);
+    static STORAGE: MutexStorage = MutexStorage::new();
+    let mutex = Mutex::create(&STORAGE, 41u32).unwrap();
+    mutex
+        .with_lock(|mut value| {
+            *value += 1;
+            assert_eq!(*value, 42);
+            Ok(())
+        })
+        .unwrap();
+    mutex
+        .with_lock(|value| {
+            assert_eq!(*value, 42);
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn test_recursive_mutex_static() {
-    static S: RecursiveMutexStorage = RecursiveMutexStorage::new();
-    let m = RecursiveMutex::create(&S).unwrap();
-    // Same thread re-locks — that's the recursive contract.
-    let g1 = m.lock().unwrap();
-    let g2 = m.lock().unwrap();
-    drop(g2);
-    drop(g1);
+    static STORAGE: RecursiveMutexStorage = RecursiveMutexStorage::new();
+    let mutex = RecursiveMutex::create(&STORAGE).unwrap();
+    mutex.with_lock(|| mutex.with_lock(|| Ok(()))).unwrap();
 }
 
 fn test_semaphore_static() {

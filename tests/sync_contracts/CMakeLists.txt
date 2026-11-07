@@ -157,7 +157,8 @@ if(OVE_CONTEXT_PROBES)
             target_compile_definitions(${target} PRIVATE _GNU_SOURCE)
             target_include_directories(${target} PRIVATE "${context_dir}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/sdk/${platform}" "${CMAKE_BINARY_DIR}/sdk"
-                "${OVE_ROOT}/tests/sync_condvar_native/sdk/${platform}" "${OVE_ROOT}/include")
+                "${OVE_ROOT}/tests/sync_condvar_native/sdk/${platform}" "${OVE_ROOT}/include"
+                "${OVE_ROOT}/backends/common")
             target_link_libraries(${target} PRIVATE pthread)
             if(platform STREQUAL "posix" AND (features STREQUAL "async" OR features STREQUAL "both"))
                 target_link_options(${target} PRIVATE -Wl,--wrap=pthread_mutex_lock
