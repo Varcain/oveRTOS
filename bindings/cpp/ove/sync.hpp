@@ -996,6 +996,8 @@ class Event
  * become true.  It must always be used together with a `Mutex` — the mutex
  * is atomically released while waiting and re-acquired on successful wake
  * or clean timeout. Other native errors do not establish mutex ownership.
+ * The native `ove_condvar_wait_checked` entry additionally reports explicit
+ * ownership on errors; these wrappers retain the legacy status contract.
  *
  * Hold the mutex exactly once and use these operations from thread context.
  * Single-core FreeRTOS keeps waiter retirement and notification in one

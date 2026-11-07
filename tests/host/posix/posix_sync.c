@@ -329,9 +329,12 @@ void ove_condvar_deinit(ove_condvar_t cv)
 	}
 }
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+static int condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns, bool *mutex_held)
 {
 	struct ove_condvar *c = cv;
+	/* Ordinary nonrobust API-created mutexes remain held on early errors
+	 * and are reacquired on successful wake or timeout. */
+	*mutex_held = true;
 	if (ove_timeout_is_forever(timeout_ns)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, c);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -348,6 +351,23 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, c);
 	return condvar_result(ret, true);
+}
+
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+{
+	bool held;
+	return condvar_wait(cv, mtx, timeout_ns, &held);
+}
+
+int ove_condvar_wait_checked(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns,
+			     bool *mutex_held)
+{
+	if (mutex_held == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	*mutex_held = mtx != NULL;
+	if (cv == NULL || mtx == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	return condvar_wait(cv, mtx, timeout_ns, mutex_held);
 }
 
 void ove_condvar_signal(ove_condvar_t cv)

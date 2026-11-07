@@ -1,6 +1,11 @@
 /* Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ove/ove.h"
+int sync_binding_checked_wait(ove_condvar_t cv, ove_mutex_t mutex, uint64_t timeout, bool *held)
+{
+	return ove_condvar_wait_checked(cv, mutex, timeout, held);
+}
+
 int sync_binding_compile_consumer(void)
 {
 	ove_mutex_storage_t m = {0}, recursive = {0};

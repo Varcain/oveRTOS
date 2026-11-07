@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 const std = @import("std");
 const ove = @import("ove");
+export fn sync_binding_checked_wait(cv: ove.ffi.ove_condvar_t, mutex: ove.ffi.ove_mutex_t, timeout: u64, held: [*c]bool) c_int {
+    return ove.ffi.ove_condvar_wait_checked(cv, mutex, timeout, held);
+}
+
 // New test backing only. No existing application/model arena changes.
 var bytes: [8192]u8 align(64) = undefined;
 

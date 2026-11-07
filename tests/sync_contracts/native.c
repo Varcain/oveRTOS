@@ -851,14 +851,14 @@ static void cv_case(unsigned selected, union backing *storage)
 	const bool failed_retire = selected == 16 || selected == 22;
 	int held = void_call ? -1 : (int)find(&caller.mtx)->held;
 	int expected_held = void_call ? -1 : failed_caller ? 0 : 1;
-	int expected_waiters = void_call || failed_retire ? 1 : 0;
+	int expected_waiters = void_call ? 1 : 0;
 	const char *trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/r0:1:1";
 	if (failed_entry)
 		trace = "G0:1:0";
 	else if (failed_caller)
 		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:0:0/r0:0:1";
 	else if (failed_retire)
-		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0";
+		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/R1:1:0/r0:1:1";
 	else if (selected == 26)
 		trace = "G0:1:0/G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/r0:1:1";
 	else if (selected == 27)

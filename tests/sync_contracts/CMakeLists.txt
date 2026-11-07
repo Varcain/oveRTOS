@@ -28,6 +28,11 @@ set(OVE_FREERTOS_EVENT_OBSERVER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/freertos_eve
     CACHE FILEPATH "FreeRTOS Event lifetime observer")
 option(OVE_NATIVE_MODELS "Build SDK dispatch models" ON)
 option(OVE_CONTEXT_PROBES "Build context source-gate profiles" ON)
+option(OVE_OUTCOME_LEGACY "Infer checked ownership from the legacy wait status" OFF)
+set(OVE_CONDVAR_OUTCOME_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/condvar_outcome.c"
+    CACHE FILEPATH "Checked condition-variable ownership observer")
+set(OVE_DISABLED_SYNC_HEADER "${OVE_ROOT}/include/ove/sync.h"
+    CACHE FILEPATH "Synchronization header used by the disabled outcome observer")
 foreach(platform freertos zephyr nuttx)
     string(TOUPPER "${platform}" upper)
     set(OVE_${upper}_SYNC_SOURCE "${OVE_ROOT}/backends/${platform}/${platform}_sync.c"
@@ -100,6 +105,22 @@ if(OVE_NATIVE_MODELS)
             "${OVE_ROOT}/include" "${OVE_ROOT}/backends/${backend}/include"
             "${OVE_ROOT}/backends/common")
         instrument(contracts_${platform})
+        if(NOT platform STREQUAL "zephyr_core")
+            add_executable(outcome_${platform} "${OVE_CONDVAR_OUTCOME_SOURCE}")
+            target_compile_definitions(outcome_${platform} PRIVATE _GNU_SOURCE
+                OVE_SYNC_BACKEND_SOURCE="${OVE_${upper}_SYNC_SOURCE}")
+            if(OVE_OUTCOME_LEGACY)
+                target_compile_definitions(outcome_${platform} PRIVATE OVE_TEST_LEGACY_OUTCOME=1)
+            endif()
+            target_include_directories(outcome_${platform} PRIVATE
+                "${CMAKE_BINARY_DIR}/${platform}" "${CMAKE_CURRENT_SOURCE_DIR}/sdk/${backend}"
+                "${CMAKE_BINARY_DIR}/sdk" "${OVE_ROOT}/tests/sync_condvar_native/sdk/${backend}"
+                "${OVE_ROOT}/include" "${OVE_ROOT}/backends/${backend}/include"
+                "${OVE_ROOT}/backends/common")
+            target_compile_options(outcome_${platform} PRIVATE -ffunction-sections -fdata-sections)
+            target_link_options(outcome_${platform} PRIVATE -Wl,--gc-sections)
+            instrument(outcome_${platform})
+        endif()
         if(platform STREQUAL "freertos")
             add_executable(contracts_freertos_event "${OVE_FREERTOS_EVENT_OBSERVER_SOURCE}")
             target_compile_definitions(contracts_freertos_event PRIVATE
@@ -164,6 +185,28 @@ if(OVE_CONTEXT_PROBES)
     instrument(context_timer)
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/ove_config.h" "${config}")
+add_executable(outcome_posix "${OVE_CONDVAR_OUTCOME_SOURCE}")
+target_compile_definitions(outcome_posix PRIVATE _GNU_SOURCE
+    OVE_SYNC_BACKEND_SOURCE="${OVE_POSIX_SYNC_SOURCE}")
+if(OVE_OUTCOME_LEGACY)
+    target_compile_definitions(outcome_posix PRIVATE OVE_TEST_LEGACY_OUTCOME=1)
+endif()
+target_include_directories(outcome_posix PRIVATE "${CMAKE_BINARY_DIR}"
+    "${OVE_ROOT}/include" "${OVE_ROOT}/tests/host/posix/include" "${OVE_ROOT}/backends/common")
+target_compile_options(outcome_posix PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(outcome_posix PRIVATE -Wl,--gc-sections)
+target_link_libraries(outcome_posix PRIVATE pthread)
+instrument(outcome_posix)
+
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/configs/outcome_disabled/ove")
+configure_file("${OVE_DISABLED_SYNC_HEADER}"
+    "${CMAKE_BINARY_DIR}/configs/outcome_disabled/ove/sync.h" COPYONLY)
+file(WRITE "${CMAKE_BINARY_DIR}/configs/outcome_disabled/ove_config.h"
+    "#pragma once\n#define CONFIG_OVE_RTOS_POSIX 1\n")
+add_executable(outcome_disabled condvar_disabled.c)
+target_include_directories(outcome_disabled PRIVATE "${CMAKE_BINARY_DIR}/configs/outcome_disabled"
+    "${OVE_ROOT}/include" "${OVE_ROOT}/tests/host/posix/include")
+instrument(outcome_disabled)
 set(posix_kinds posix)
 if(NOT OVE_ZERO_HEAP)
     list(APPEND posix_kinds posix_heap)

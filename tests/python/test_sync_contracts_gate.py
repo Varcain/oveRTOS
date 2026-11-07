@@ -79,6 +79,22 @@ class SyncContractStatusTest(unittest.TestCase):
                         text.replace("waiters=0", "waiters=1"), text.replace("status=IO", "status=TIMEOUT")):
             self.assertFalse(self.valid(changed, "contracts_nuttx", case="cv_guard_error"))
 
+    def test_checked_wait_requires_ownership_and_completed_retirement(self):
+        for kind, case in (("outcome_nuttx", "entry_error"),
+                           ("outcome_nuttx", "combined_error"),
+                           ("outcome_freertos", "acquire_error"),
+                           ("outcome_zephyr", "wait_error"),
+                           ("outcome_posix", "wait_error")):
+            with self.subTest(kind=kind, case=case):
+                rc, text = expected(kind, "heap", case)
+                self.assertTrue(self.valid(text, kind, case=case, rc=rc))
+                for field in ("held", "physical", "injections", "registrations"):
+                    changed = text.replace(field + "=0", field + "=9").replace(
+                        field + "=1", field + "=9").replace(field + "=2", field + "=9")
+                    self.assertFalse(self.valid(changed, kind, case=case))
+                self.assertFalse(self.valid(text + "extra\n", kind, case=case))
+                self.assertFalse(self.valid(text, kind, case=case, rc=1))
+
     def test_rejected_normal_observations_report_the_actual_status(self):
         _, text = expected("contracts_freertos_event", "heap", "canary", True)
         reset = text.replace("failures=1", "failures=0").encode()

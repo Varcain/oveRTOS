@@ -279,44 +279,70 @@ void ove_condvar_deinit(ove_condvar_t cv)
 	}
 }
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+static int condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns, bool *mutex_held)
 {
 	int ret;
 
+	*mutex_held = true;
 	ret = lock_retry(&cv->guard);
 	if (ret < 0)
 		return nonclean_result(ret);
 	cv->nwaiters++;
 	nxmutex_unlock(&cv->guard);
 
-	nxmutex_unlock(&mtx->mtx);
-
-	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
-	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
-
-	if (ove_timeout_is_forever(timeout_ns)) {
-		ret = nxsem_wait_uninterruptible(&cv->waiter);
+	ret = nxmutex_unlock(&mtx->mtx);
+	int result;
+	if (ret < 0) {
+		result = nonclean_result(ret);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&cv->waiter, ove_ns_to_ticks(timeout_ns));
+		*mutex_held = false;
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
+		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
+
+		if (ove_timeout_is_forever(timeout_ns)) {
+			ret = nxsem_wait_uninterruptible(&cv->waiter);
+		} else {
+			ret = nxsem_tickwait_uninterruptible(&cv->waiter,
+							     ove_ns_to_ticks(timeout_ns));
+		}
+
+		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
+
+		int acquired = lock_retry(&mtx->mtx);
+		*mutex_held = acquired >= 0;
+		result = acquired < 0 ? nonclean_result(acquired) : wait_result(ret);
+		if (ove_timeout_is_forever(timeout_ns) && result == OVE_ERR_TIMEOUT)
+			result = OVE_ERR_BUSY;
 	}
 
-	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
-	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
-
-	/* Retire waiter bookkeeping even if caller reacquisition fails. */
-	int acquired = lock_retry(&mtx->mtx);
-	int guarded = lock_retry(&cv->guard);
-	if (guarded < 0)
-		return nonclean_result(guarded);
+	/* Complete retirement before returning even after a transient guard
+	 * error. A permanently broken internal mutex cannot safely complete. */
+	int cleanup_error = lock_retry(&cv->guard);
+	int guarded = cleanup_error;
+	while (guarded < 0)
+		guarded = lock_retry(&cv->guard);
 	cv->nwaiters--;
 	nxmutex_unlock(&cv->guard);
 
-	if (acquired < 0)
-		return nonclean_result(acquired);
-	int result = wait_result(ret);
-	if (ove_timeout_is_forever(timeout_ns) && result == OVE_ERR_TIMEOUT)
-		return OVE_ERR_BUSY;
-	return result;
+	return cleanup_error < 0 ? nonclean_result(cleanup_error) : result;
+}
+
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+{
+	bool held;
+	return condvar_wait(cv, mtx, timeout_ns, &held);
+}
+
+int ove_condvar_wait_checked(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns,
+			     bool *mutex_held)
+{
+	if (mutex_held == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	*mutex_held = mtx != NULL;
+	if (cv == NULL || mtx == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	return condvar_wait(cv, mtx, timeout_ns, mutex_held);
 }
 
 void ove_condvar_signal(ove_condvar_t cv)

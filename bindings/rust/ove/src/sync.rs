@@ -892,6 +892,8 @@ unsafe impl Sync for CondVarStorage {}
 /// Condition variable for a mutex held exactly once in thread context.
 /// Native success and clean timeout reacquire the mutex; other native errors
 /// do not establish ownership. Always re-check the predicate after waking.
+/// The native `ove_condvar_wait_checked` entry also reports explicit error-path
+/// ownership; these methods currently use the legacy status-only wait entry.
 /// Single-core FreeRTOS protects notification and waiter retirement together;
 /// broadcast interrupt-masked work is linear in waiters. SMP is unsupported.
 pub struct CondVar {
