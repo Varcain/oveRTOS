@@ -2,6 +2,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #![no_std]
 
+/// # Safety
+/// The native caller must satisfy the checked wait's handle, ownership,
+/// context, output and backing-lifetime requirements.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sync_binding_checked_wait(
+    cv: ove::ffi::ove_condvar_t,
+    mutex: ove::ffi::ove_mutex_t,
+    timeout: u64,
+    held: *mut bool,
+) -> i32 {
+    // The compile-only native ABI caller supplies the checked wait's contract.
+    unsafe { ove::ffi::ove_condvar_wait_checked(cv, mutex, timeout, held) }
+}
+
 #[cfg(zero_heap)]
 static MUTEX: ove::MutexStorage = ove::MutexStorage::new();
 #[cfg(zero_heap)]

@@ -1191,6 +1191,15 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " @brief Wait on a condition variable and report the caller's mutex ownership.\n\n Like @ref ove_condvar_wait, but every return initializes @p mutex_held to\n whether this thread owns @p mtx exactly once. Inspect this output even on\n error: an error before release can leave the mutex held, while a failed\n reacquisition leaves it released. Success and clean timeout report true.\n Internal waiter uses are retired before returning. Cleanup may wait for an\n internal mutex; permanently broken backing does not have bounded recovery.\n\n Requires a valid live condition variable and an ordinary, nonrecursive\n mutex created by this API, held exactly once by the caller. Foreign robust\n or priority-protect mutexes are not supported. All object/backing/task\n lifetimes and the legal blocking thread context required by\n @ref ove_condvar_wait still apply. The output must be writable and disjoint\n from the primitive objects and their backing.\n\n @param[in] cv          Condition variable handle.\n @param[in] mtx         Ordinary mutex held exactly once by this thread.\n @param[in] timeout_ns  Maximum wait, or @c OVE_WAIT_FOREVER.\n @param[out] mutex_held Explicit ownership on every return. A NULL output\n                        returns @c OVE_ERR_INVALID_PARAM without native calls.\n                        A writable output is first set to @c (mtx != NULL);\n                        NULL handles then return @c OVE_ERR_INVALID_PARAM\n                        without changing the caller's ownership.\n @return Same statuses as @ref ove_condvar_wait. A release, acquisition or\n         cleanup failure is never a clean @c OVE_ERR_TIMEOUT.\n @note Requires @c CONFIG_OVE_SYNC. The disabled stub returns\n       @c OVE_ERR_NOT_SUPPORTED, initializes a non-NULL output to\n       @c (mtx != NULL), and performs no native operation."]
+    pub fn ove_condvar_wait_checked(
+        cv: ove_condvar_t,
+        mtx: ove_mutex_t,
+        timeout_ns: u64,
+        mutex_held: *mut bool,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Wake one thread waiting on a condition variable.\n\n If no threads are waiting, the signal is lost (not stored).\n\n @note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n @param[in] cv  Condition variable handle to signal.\n\n @see ove_condvar_wait, ove_condvar_broadcast"]
     pub fn ove_condvar_signal(cv: ove_condvar_t);
 }

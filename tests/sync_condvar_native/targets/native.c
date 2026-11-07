@@ -33,7 +33,7 @@ static struct {
 	const char *name;
 	uint64_t timeout;
 	int expected, result;
-	bool unrelated;
+	bool unrelated, mutex_held;
 } jobs[2];
 
 void condvar_target_reject(void)
@@ -114,9 +114,10 @@ static void worker(unsigned index)
 			xTaskNotifyGive(xTaskGetCurrentTaskHandle());
 #endif
 		give(ready);
-		jobs[index].result = ove_condvar_wait(cv, mutex, jobs[index].timeout);
+		jobs[index].result = ove_condvar_wait_checked(cv, mutex, jobs[index].timeout,
+							      &jobs[index].mutex_held);
 		/* A bad ownership result rejects before any potentially unheld unlock. */
-		if (!held_once()) {
+		if (!held_once() || !jobs[index].mutex_held) {
 			printf("rejected: %s worker=%u cause=ownership rc=%d\n", jobs[index].name,
 			       index, jobs[index].result);
 			condvar_target_reject();
@@ -159,6 +160,7 @@ static void exercise(const char *name, unsigned count, uint64_t timeout, int exp
 		jobs[i].expected = expected;
 		jobs[i].result = 1;
 		jobs[i].unrelated = unrelated;
+		jobs[i].mutex_held = false;
 		give(starts[i]);
 	}
 	for (unsigned i = 0; i < count; ++i)
@@ -185,7 +187,8 @@ static void exercise(const char *name, unsigned count, uint64_t timeout, int exp
 	for (unsigned i = 0; i < count; ++i)
 		take(done);
 	for (unsigned i = 0; i < count; ++i) {
-		printf("returned: %s worker=%u rc=%d held=1\n", name, i, jobs[i].result);
+		printf("returned: %s worker=%u rc=%d held=1 reported=%u\n", name, i, jobs[i].result,
+		       jobs[i].mutex_held);
 		if (jobs[i].result != jobs[i].expected) {
 			printf("rejected: %s worker=%u cause=status expected=%d\n", name, i,
 			       jobs[i].expected);

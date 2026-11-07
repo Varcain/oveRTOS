@@ -272,10 +272,11 @@ void ove_condvar_deinit(ove_condvar_t cv)
 	}
 }
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+static int condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns, bool *mutex_held)
 {
 	struct condvar_waiter self;
 
+	*mutex_held = true;
 	self.task = xTaskGetCurrentTaskHandle();
 
 	/* Register before releasing the caller's mutex. All node and task uses
@@ -286,12 +287,15 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	taskEXIT_CRITICAL();
 
 	/* Release the caller's mutex */
-	xSemaphoreGive(mtx->sem);
-
-	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
-	/* Wait for direct notification from signal/broadcast */
-	uint32_t got = ulTaskNotifyTake(pdTRUE, ove_ns_to_ticks(timeout_ns));
-	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
+	BaseType_t released = xSemaphoreGive(mtx->sem);
+	uint32_t got = 0;
+	if (released == pdTRUE) {
+		*mutex_held = false;
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
+		/* Wait for direct notification from signal/broadcast */
+		got = ulTaskNotifyTake(pdTRUE, ove_ns_to_ticks(timeout_ns));
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
+	}
 
 	/* Unregister on every return, including unrelated notifications. A
 	 * notifier finishes all node/task uses before this section can run. */
@@ -308,6 +312,9 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	}
 	taskEXIT_CRITICAL();
 
+	if (released != pdTRUE)
+		return OVE_ERR_BUSY;
+
 	if (got == 0 && !found) {
 		/* A notifier completed after timeout committed. Consume its
 		 * pending notification and report a wake. */
@@ -316,9 +323,28 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 	}
 
 	/* Re-acquire the caller's mutex */
-	xSemaphoreTake(mtx->sem, portMAX_DELAY);
+	if (xSemaphoreTake(mtx->sem, portMAX_DELAY) != pdTRUE)
+		return OVE_ERR_BUSY;
+	*mutex_held = true;
 
 	return (got != 0) ? OVE_OK : OVE_ERR_TIMEOUT;
+}
+
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+{
+	bool held;
+	return condvar_wait(cv, mtx, timeout_ns, &held);
+}
+
+int ove_condvar_wait_checked(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns,
+			     bool *mutex_held)
+{
+	if (mutex_held == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	*mutex_held = mtx != NULL;
+	if (cv == NULL || mtx == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	return condvar_wait(cv, mtx, timeout_ns, mutex_held);
 }
 
 void ove_condvar_signal(ove_condvar_t cv)

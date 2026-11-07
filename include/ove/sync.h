@@ -39,6 +39,7 @@
 #include "ove_config.h"
 #include "ove/storage.h"
 #include "ove/time.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -659,6 +660,40 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
 OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns);
 
 /**
+ * @brief Wait on a condition variable and report the caller's mutex ownership.
+ *
+ * Like @ref ove_condvar_wait, but every return initializes @p mutex_held to
+ * whether this thread owns @p mtx exactly once. Inspect this output even on
+ * error: an error before release can leave the mutex held, while a failed
+ * reacquisition leaves it released. Success and clean timeout report true.
+ * Internal waiter uses are retired before returning. Cleanup may wait for an
+ * internal mutex; permanently broken backing does not have bounded recovery.
+ *
+ * Requires a valid live condition variable and an ordinary, nonrecursive
+ * mutex created by this API, held exactly once by the caller. Foreign robust
+ * or priority-protect mutexes are not supported. All object/backing/task
+ * lifetimes and the legal blocking thread context required by
+ * @ref ove_condvar_wait still apply. The output must be writable and disjoint
+ * from the primitive objects and their backing.
+ *
+ * @param[in] cv          Condition variable handle.
+ * @param[in] mtx         Ordinary mutex held exactly once by this thread.
+ * @param[in] timeout_ns  Maximum wait, or @c OVE_WAIT_FOREVER.
+ * @param[out] mutex_held Explicit ownership on every return. A NULL output
+ *                        returns @c OVE_ERR_INVALID_PARAM without native calls.
+ *                        A writable output is first set to @c (mtx != NULL);
+ *                        NULL handles then return @c OVE_ERR_INVALID_PARAM
+ *                        without changing the caller's ownership.
+ * @return Same statuses as @ref ove_condvar_wait. A release, acquisition or
+ *         cleanup failure is never a clean @c OVE_ERR_TIMEOUT.
+ * @note Requires @c CONFIG_OVE_SYNC. The disabled stub returns
+ *       @c OVE_ERR_NOT_SUPPORTED, initializes a non-NULL output to
+ *       @c (mtx != NULL), and performs no native operation.
+ */
+OVE_NODISCARD int ove_condvar_wait_checked(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns,
+					   bool *mutex_held);
+
+/**
  * @brief Deadline-based variant of @ref ove_condvar_wait.
  *
  * Equivalent to calling @ref ove_condvar_wait with the time remaining
@@ -872,6 +907,15 @@ OVE_NODISCARD static inline int ove_condvar_wait(ove_condvar_t c, ove_mutex_t m,
 	(void)c;
 	(void)m;
 	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+OVE_NODISCARD static inline int ove_condvar_wait_checked(ove_condvar_t c, ove_mutex_t m, uint64_t t,
+							 bool *mutex_held)
+{
+	(void)c;
+	(void)t;
+	if (mutex_held != NULL)
+		*mutex_held = m != NULL;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline void ove_condvar_signal(ove_condvar_t c)

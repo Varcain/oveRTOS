@@ -27,6 +27,45 @@ CV_CASES = ("cv_guard_error", "cv_reacquire_error", "cv_retire_error", "cv_wait_
 EVENT_CASES = ("task_latch", "task_timeout", "isr_task_latch", "isr_task_timeout",
                "isr_true_latch", "isr_true_timeout", "isr_masked_latch", "isr_masked_timeout",
                "no_waiter", "controls")
+OUTCOMES = {
+    "freertos": ("success", "timeout", "release_error", "acquire_error", "nulls"),
+    "zephyr": ("success", "timeout", "acquire_error", "wait_error", "nulls"),
+    "nuttx": ("success", "timeout", "entry_error", "release_error", "acquire_error",
+              "retire_error", "combined_error", "wait_error", "nulls"),
+    "posix": ("success", "timeout", "wait_error", "eagain_error", "nulls"),
+}
+# status, reported held, provider depth, waits, caller takes/gives, guard
+# takes/gives, injected faults, remaining registrations.
+OUTCOME_RECORDS = {
+    "freertos": {
+        "success": (0, 1, 1, 1, 1, 1, 0, 0, 0, 0),
+        "timeout": (-4, 1, 1, 1, 1, 1, 0, 0, 0, 0),
+        "release_error": (-30, 1, 1, 0, 0, 1, 0, 0, 1, 0),
+        "acquire_error": (-30, 0, 0, 1, 1, 1, 0, 0, 1, 0),
+    },
+    "zephyr": {
+        "success": (0, 1, 1, 1, 1, 1, 0, 0, 0, 0),
+        "timeout": (-4, 1, 1, 1, 1, 1, 0, 0, 0, 0),
+        "acquire_error": (-29, 0, 0, 1, 1, 1, 0, 0, 1, 0),
+        "wait_error": (-29, 0, 0, 1, 0, 1, 0, 0, 1, 0),
+    },
+    "nuttx": {
+        "success": (0, 1, 1, 1, 1, 1, 2, 2, 0, 0),
+        "timeout": (-4, 1, 1, 1, 1, 1, 2, 2, 0, 0),
+        "entry_error": (-29, 1, 1, 0, 0, 0, 1, 0, 1, 0),
+        "release_error": (-29, 1, 1, 0, 0, 1, 2, 2, 1, 0),
+        "acquire_error": (-29, 0, 0, 1, 1, 1, 2, 2, 1, 0),
+        "retire_error": (-29, 1, 1, 1, 1, 1, 3, 2, 1, 0),
+        "combined_error": (-29, 0, 0, 1, 1, 1, 3, 2, 2, 0),
+        "wait_error": (-29, 1, 1, 1, 1, 1, 2, 2, 1, 0),
+    },
+    "posix": {
+        "success": (0, 1, 1, 1, 0, 0, 0, 0, 0, 0),
+        "timeout": (-4, 1, 1, 1, 0, 0, 0, 0, 0, 0),
+        "wait_error": (-2, 1, 1, 1, 0, 0, 0, 0, 1, 0),
+        "eagain_error": (-30, 1, 1, 1, 0, 0, 0, 0, 1, 0),
+    },
+}
 
 
 def cases(zero):
@@ -43,6 +82,8 @@ def cases(zero):
         "context_timer": ("controls",),
     }
     result["contracts_zephyr_core"] = result["contracts_zephyr"]
+    result.update({f"outcome_{backend}": names for backend, names in OUTCOMES.items()})
+    result["outcome_disabled"] = ("controls",)
     if not zero:
         result["contracts_posix_heap"] = CONSTRUCTORS + ALLOCATIONS + COUNTS + ("controls",)
     for platform in ("freertos", "zephyr", "nuttx", "posix"):
@@ -63,7 +104,7 @@ def _cv_record(case):
     elif case in ("cv_reacquire_error", "cv_reacquire_timeout_error"):
         trace, held = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:0:0/r0:0:1", 0
     elif case in ("cv_retire_error", "cv_retire_timeout_error"):
-        trace, waiters = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0", 1
+        trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/R1:1:0/r0:1:1"
     elif case in ("cv_signal_guard_error", "cv_broadcast_guard_error"):
         trace, status, held, waiters = "G1:-1:0", "void", -1, 1
     elif case == "cv_entry_eintr":
@@ -95,7 +136,23 @@ def expected(kind, mode, case, expected_failure=False):
         raise ValueError("only the named canary is a calibration")
     failures = int(expected_failure)
     prefix = "failed: explicit early failure canary\n" if expected_failure else ""
-    if kind.startswith("contracts_cpp_"):
+    if kind.startswith("outcome_"):
+        backend = kind.removeprefix("outcome_")
+        text = ""
+        if backend == "disabled":
+            controls = 3
+        else:
+            controls = 2
+            selected = "timeout" if case == "canary" else case
+            if selected == "nulls":
+                text = "outcome: nulls=3 dispatches=0\n"
+            else:
+                fields = ("status", "held", "physical", "waits", "takes", "gives", "guards",
+                          "guard_releases", "injections", "registrations")
+                record = OUTCOME_RECORDS[backend][selected]
+                text = "outcome: " + " ".join(f"{key}={value}" for key, value in zip(fields, record)) + "\n"
+        text += _footer(case, failures, controls=controls, safety=0)
+    elif kind.startswith("contracts_cpp_"):
         site = 5 if case == "canary" else CPP.index(case)
         text = f"observed: terminal=1 site={site}\n" + _footer(
             case, failures, controls=2, errors=1, assertions=int(kind.endswith("hook")))

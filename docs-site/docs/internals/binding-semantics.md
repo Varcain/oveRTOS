@@ -233,6 +233,14 @@ ASYNC, TIME or object initialization. Critical-section lock/unlock still require
 ASYNC. POSIX timer dispatchers bracket callbacks with the simulator context flag;
 this does not establish general asynchronous signal-handler or IRQ exclusion.
 
+The native `ove_condvar_wait_checked` entry reports whether the calling thread
+owns its ordinary mutex on every return, including errors. Success and clean
+timeout report held; other errors can report held or released. The output must
+be writable and disjoint from the primitive backing. The legacy wait entry and
+current C++/Rust/Zig convenience methods retain their status-only contracts.
+Both entries finish waiter retirement before returning; cleanup of a permanently
+broken internal mutex has no bounded-recovery guarantee.
+
 ---
 
 ## Timer

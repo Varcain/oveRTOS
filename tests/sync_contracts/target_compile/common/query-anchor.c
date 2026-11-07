@@ -1,6 +1,7 @@
 /* Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ove/irq.h"
+#include "ove/sync.h"
 #if !defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_TIME) || \
 	defined(CONFIG_OVE_CONSOLE) || defined(CONFIG_OVE_INFER)
 #error "this control requires the minimal SYNC profile"
@@ -14,3 +15,7 @@ __attribute__((used, noinline)) bool sync_compile_query_anchor(void)
 extern int sync_binding_compile_consumer(void);
 __attribute__((used)) int (*const sync_compile_consumer_anchor)(void) =
 	sync_binding_compile_consumer;
+
+extern int sync_binding_checked_wait(ove_condvar_t, ove_mutex_t, uint64_t, bool *);
+__attribute__((used)) int (*const sync_compile_checked_wait_anchor)(
+	ove_condvar_t, ove_mutex_t, uint64_t, bool *) = sync_binding_checked_wait;

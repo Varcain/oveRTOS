@@ -377,6 +377,8 @@ pub const Event = struct {
 /// Condition variable paired with a `Mutex` for producer/consumer patterns.
 /// Hold the mutex exactly once before waiting. Success and clean timeout
 /// reacquire it; unexpected native errors do not establish ownership and panic.
+/// The native `ove_condvar_wait_checked` entry also reports explicit ownership
+/// on errors; these wrappers retain the legacy status contract.
 /// Use these operations from thread context and re-check predicates after wakes.
 /// Single-core FreeRTOS protects notification and waiter retirement together;
 /// broadcast interrupt-masked work is linear in waiters. SMP is unsupported.
