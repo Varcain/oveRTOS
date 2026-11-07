@@ -7,20 +7,22 @@ profiles = []
 
 def add(name, provider, defines, cases, fallback=False):
     rows = []
-    for case, flag in cases:
+    for case, flag, old_flag in cases:
         rows.append(
             {
                 "case": case,
                 "expected_flags": flag,
+                "expected_resource_blocking": old_flag,
                 "readonly": True,
                 "native_effects": 0,
             }
         )
-        if flag == 0 and not fallback:
+        if old_flag == 0 and not fallback:
             rows.append(
                 {
                     "case": case + "__restored_valid",
-                    "expected_flags": 3,
+                    "expected_flags": 7,
+                    "expected_resource_blocking": 3,
                     "readonly": True,
                     "native_effects": 0,
                     "setup": "restore all metadata to ordinary supported state",
@@ -40,22 +42,22 @@ def add(name, provider, defines, cases, fallback=False):
 
 
 f = [
-    ("running", 3),
-    ("running_control_2_psp", 3),
-    ("prestart", 1),
-    ("prestart_primask_1", 1),
-    ("prestart_basepri_0x80", 1),
-    ("prestart_faultmask_1", 1),
-    ("prestart_isr", 0),
-    ("prestart_unprivileged", 0),
-    ("running_isr", 0),
-    ("running_unprivileged", 0),
-    ("running_primask_1", 0),
-    ("running_basepri_0x80", 0),
-    ("running_faultmask_1", 0),
-    ("scheduler_suspended", 0),
-    ("current_idle", 0),
-    ("final_ordinary", 3),
+    ("running", 7, 3),
+    ("running_control_2_psp", 7, 3),
+    ("prestart", 5, 1),
+    ("prestart_primask_1", 5, 1),
+    ("prestart_basepri_0x80", 5, 1),
+    ("prestart_faultmask_1", 5, 1),
+    ("prestart_isr", 0, 0),
+    ("prestart_unprivileged", 0, 0),
+    ("running_isr", 0, 0),
+    ("running_unprivileged", 0, 0),
+    ("running_primask_1", 4, 0),
+    ("running_basepri_0x80", 4, 0),
+    ("running_faultmask_1", 4, 0),
+    ("scheduler_suspended", 4, 0),
+    ("current_idle", 0, 0),
+    ("final_ordinary", 7, 3),
 ]
 fa = {
     "CONFIG_OVE_SYNC": 1,
@@ -68,7 +70,7 @@ add("f-arm7em-sync", "freertos", fa, f)
 fb = dict(fa)
 del fb["__ARM_ARCH_7EM__"]
 fb["__ARM_ARCH_7M__"] = 1
-small = [("running", 3), ("prestart_masked", 1), ("running_masked", 0)]
+small = [("running", 7, 3), ("prestart_masked", 5, 1), ("running_masked", 4, 0)]
 add("f-arm7m-sync", "freertos", fb, small)
 add("f-arm7em-async", "freertos", dict(fa, CONFIG_OVE_ASYNC=1), small)
 for field, short in [
@@ -85,7 +87,7 @@ for field, short in [
             "f-" + short + "-" + label,
             "freertos",
             flags,
-            [("otherwise_running", 0), ("otherwise_prestart", 0)],
+            [("otherwise_running", 0, 0), ("otherwise_prestart", 0, 0)],
             fallback=True,
         )
 flags = dict(fa)
@@ -95,45 +97,45 @@ add(
     "f-unsupported-arch",
     "freertos",
     flags,
-    [("otherwise_running", 0), ("otherwise_prestart", 0)],
+    [("otherwise_running", 0, 0), ("otherwise_prestart", 0, 0)],
     fallback=True,
 )
 add(
     "f-multicore",
     "freertos",
     dict(fa, configNUMBER_OF_CORES=2),
-    [("otherwise_running", 0), ("otherwise_prestart", 0)],
+    [("otherwise_running", 0, 0), ("otherwise_prestart", 0, 0)],
     fallback=True,
 )
 
 za = {"CONFIG_OVE_SYNC": 1, "CONFIG_MULTITHREADING": 1, "__ARM_ARCH_7EM__": 1}
 zarm = [
-    ("ordinary_untagged", 3),
-    ("control_2_psp", 3),
-    ("user", 0),
-    ("pre_kernel", 0),
-    ("isr", 0),
-    ("unprivileged", 0),
-    ("primask_1", 0),
-    ("basepri_0x80", 0),
-    ("faultmask_1", 0),
-    ("null_current", 0),
-    ("idle_current", 0),
-    ("cooperative_prio_minus_1", 3),
-    ("scheduler_locked_255", 3),
-    ("final_ordinary", 3),
+    ("ordinary_untagged", 7, 3),
+    ("control_2_psp", 7, 3),
+    ("user", 0, 0),
+    ("pre_kernel", 0, 0),
+    ("isr", 0, 0),
+    ("unprivileged", 0, 0),
+    ("primask_1", 4, 0),
+    ("basepri_0x80", 4, 0),
+    ("faultmask_1", 4, 0),
+    ("null_current", 0, 0),
+    ("idle_current", 0, 0),
+    ("cooperative_prio_minus_1", 7, 3),
+    ("scheduler_locked_255", 7, 3),
+    ("final_ordinary", 7, 3),
 ]
 znative = [
-    ("ordinary_untagged", 3),
-    ("user", 0),
-    ("pre_kernel", 0),
-    ("isr", 0),
-    ("native_lock_1", 0),
-    ("null_current", 0),
-    ("idle_current", 0),
-    ("cooperative_prio_minus_1", 3),
-    ("scheduler_locked_255", 3),
-    ("final_ordinary", 3),
+    ("ordinary_untagged", 7, 3),
+    ("user", 0, 0),
+    ("pre_kernel", 0, 0),
+    ("isr", 0, 0),
+    ("native_lock_1", 4, 0),
+    ("null_current", 0, 0),
+    ("idle_current", 0, 0),
+    ("cooperative_prio_minus_1", 7, 3),
+    ("scheduler_locked_255", 7, 3),
+    ("final_ordinary", 7, 3),
 ]
 add("z-arm-up", "zephyr", za, zarm)
 zb = {
@@ -151,48 +153,48 @@ add(
     "z-no-multithreading",
     "zephyr",
     flags,
-    [("otherwise_ordinary", 0), ("otherwise_masked", 0)],
+    [("otherwise_ordinary", 0, 0), ("otherwise_masked", 0, 0)],
     fallback=True,
 )
 add(
     "z-unsupported-arch",
     "zephyr",
     {"CONFIG_OVE_SYNC": 1, "CONFIG_MULTITHREADING": 1},
-    [("otherwise_ordinary", 0), ("otherwise_masked", 0)],
+    [("otherwise_ordinary", 0, 0), ("otherwise_masked", 0, 0)],
     fallback=True,
 )
 
 na = {"CONFIG_OVE_SYNC": 1, "CONFIG_BUILD_FLAT": 1, "__ARM_ARCH_7EM__": 1}
 states = [
-    ("powerup", 0),
-    ("boot", 0),
-    ("tasklists", 0),
-    ("memory", 0),
-    ("hardware", 0),
-    ("osready", 3),
-    ("idleloop", 3),
-    ("panic", 0),
+    ("powerup", 0, 0),
+    ("boot", 0, 0),
+    ("tasklists", 0, 0),
+    ("memory", 0, 0),
+    ("hardware", 0, 0),
+    ("osready", 7, 3),
+    ("idleloop", 7, 3),
+    ("panic", 0, 0),
 ]
 narm = states + [
-    ("control_2_psp", 3),
-    ("isr", 0),
-    ("unprivileged", 0),
-    ("primask_1", 0),
-    ("basepri_0x80", 0),
-    ("faultmask_1", 0),
-    ("null_current", 0),
-    ("idle_pid", 0),
-    ("lockcount_1", 3),
-    ("final_ordinary", 3),
+    ("control_2_psp", 7, 3),
+    ("isr", 0, 0),
+    ("unprivileged", 0, 0),
+    ("primask_1", 4, 0),
+    ("basepri_0x80", 4, 0),
+    ("faultmask_1", 4, 0),
+    ("null_current", 0, 0),
+    ("idle_pid", 0, 0),
+    ("lockcount_1", 7, 3),
+    ("final_ordinary", 7, 3),
 ]
 nsim = states + [
-    ("signal_mask_low", 0),
-    ("signal_mask_high_1ull_shift_40", 0),
-    ("isr", 0),
-    ("null_current", 0),
-    ("idle_pid", 0),
-    ("lockcount_1", 3),
-    ("final_ordinary", 3),
+    ("signal_mask_low", 4, 0),
+    ("signal_mask_high_1ull_shift_40", 4, 0),
+    ("isr", 0, 0),
+    ("null_current", 0, 0),
+    ("idle_pid", 0, 0),
+    ("lockcount_1", 7, 3),
+    ("final_ordinary", 7, 3),
 ]
 add("n-arm-flat-up", "nuttx", na, narm)
 add(
@@ -210,7 +212,7 @@ add(
     "n-smp-unsupported",
     "nuttx",
     dict(na, CONFIG_SMP=1),
-    [("otherwise_ordinary", 0), ("otherwise_masked", 0)],
+    [("otherwise_ordinary", 0, 0), ("otherwise_masked", 0, 0)],
     fallback=True,
 )
 flags = dict(na)
@@ -219,14 +221,14 @@ add(
     "n-not-flat",
     "nuttx",
     flags,
-    [("otherwise_ordinary", 0), ("otherwise_masked", 0)],
+    [("otherwise_ordinary", 0, 0), ("otherwise_masked", 0, 0)],
     fallback=True,
 )
 add(
     "n-unsupported-arch",
     "nuttx",
     {"CONFIG_OVE_SYNC": 1, "CONFIG_BUILD_FLAT": 1},
-    [("otherwise_ordinary", 0), ("otherwise_masked", 0)],
+    [("otherwise_ordinary", 0, 0), ("otherwise_masked", 0, 0)],
     fallback=True,
 )
 
@@ -234,28 +236,28 @@ add(
     "p-sync",
     "posix",
     {"CONFIG_OVE_SYNC": 1},
-    [("ordinary", 3), ("modeled_isr", 0), ("after_leave_isr", 3)],
+    [("ordinary", 7, 3), ("modeled_isr", 0, 0), ("after_leave_isr", 7, 3)],
 )
 add(
     "p-async",
     "posix",
     {"CONFIG_OVE_SYNC": 1, "CONFIG_OVE_ASYNC": 1},
     [
-        ("ordinary", 3),
-        ("modeled_isr", 0),
-        ("depth_1", 0),
-        ("depth_2", 0),
-        ("depth_1ull_shift_32", 0),
-        ("isr_and_depth", 0),
-        ("restored_ordinary", 3),
+        ("ordinary", 7, 3),
+        ("modeled_isr", 0, 0),
+        ("depth_1", 4, 0),
+        ("depth_2", 4, 0),
+        ("depth_1ull_shift_32", 4, 0),
+        ("isr_and_depth", 0, 0),
+        ("restored_ordinary", 7, 3),
     ],
 )
-add("header-disabled", "header_only", {}, [("disabled_query", 0)], fallback=True)
+add("header-disabled", "header_only", {}, [("disabled_query", 0, 0)], fallback=True)
 add(
     "header-async-only",
     "header_only",
     {"CONFIG_OVE_ASYNC": 1},
-    [("sync_disabled_query", 0)],
+    [("sync_disabled_query", 0, 0)],
     fallback=True,
 )
 

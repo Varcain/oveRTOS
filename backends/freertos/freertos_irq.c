@@ -47,12 +47,14 @@ uint32_t ove_sync_context(void)
 		return 0;
 	BaseType_t state = xTaskGetSchedulerState();
 	if (state == taskSCHEDULER_NOT_STARTED)
-		return OVE_SYNC_CONTEXT_RESOURCE;
-	if (state != taskSCHEDULER_RUNNING || !ove_sync_irqs_enabled())
+		return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_PRODUCER;
+	if (state != taskSCHEDULER_RUNNING && state != taskSCHEDULER_SUSPENDED)
 		return 0;
+	bool blocking = state == taskSCHEDULER_RUNNING && ove_sync_irqs_enabled();
 	if (xTaskGetCurrentTaskHandle() == xTaskGetIdleTaskHandle())
 		return 0;
-	return OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING;
+	return OVE_SYNC_CONTEXT_PRODUCER |
+	       (blocking ? OVE_SYNC_CONTEXT_RESOURCE | OVE_SYNC_CONTEXT_BLOCKING : 0u);
 #else
 	return 0;
 #endif

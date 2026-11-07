@@ -1074,7 +1074,7 @@ fn native_context_flags() {
     let normal = unsafe { ove::ffi::ove_sync_context() };
     let depth_before = unsafe { scoped_test_actual_critical_depth() };
     check(
-        normal == (RESOURCE | BLOCKING),
+        normal & (RESOURCE | BLOCKING) == (RESOURCE | BLOCKING),
         "ordinary POSIX resource and blocking flags are available",
     );
     unsafe { posix_irq_enter_isr() };
@@ -1096,7 +1096,9 @@ fn native_context_flags() {
         let held_after = unsafe { scoped_test_actual_critical_depth() };
         unsafe { ove::ffi::ove_irq_unlock(key) };
         check(
-            masked == 0 && held_before == depth_before + 1 && held_before == held_after,
+            masked & (RESOURCE | BLOCKING) == 0
+                && held_before == depth_before + 1
+                && held_before == held_after,
             "readonly actual critical-section context query",
         );
     }
@@ -1135,7 +1137,7 @@ fn actual_masked_release() {
             "private release completes before actual IRQ restoration",
         );
         check(
-            flags == 0 && critical == 1,
+            flags & (RESOURCE | BLOCKING) == 0 && critical == 1,
             "actual masked context was retained through private cleanup",
         );
         retire_current();

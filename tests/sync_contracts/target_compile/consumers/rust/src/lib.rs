@@ -56,11 +56,36 @@ fn constructors() -> ove::Result<()> {
         Ok(())
     })?;
     _r.with_lock(|| Ok(()))?;
+    _s.release_n(0);
+    let _ = _s.try_acquire();
+    _e.signal();
+    _e.signal_from_isr();
+    let _ = _e.try_wait();
     let _macro_mutex = ove::mutex!(0u32);
     let _macro_recursive = ove::recursive_mutex!();
+    let _macro_semaphore = ove::semaphore!(0, 2);
+    let _macro_event = ove::event!();
     let _macro_cv = ove::condvar!();
     Ok(())
 }
+
+// Retained target data exposes actual native and binding layout without running
+// constructors, querying context, or allocating an owner.
+#[unsafe(no_mangle)]
+pub static sync_binding_storage_values: [usize; 12] = [
+    core::mem::size_of::<ove::ffi::ove_sem_storage_t>(),
+    core::mem::align_of::<ove::ffi::ove_sem_storage_t>(),
+    core::mem::size_of::<ove::SemaphoreStorage>(),
+    core::mem::align_of::<ove::SemaphoreStorage>(),
+    core::mem::size_of::<ove::Semaphore>(),
+    core::mem::align_of::<ove::Semaphore>(),
+    core::mem::size_of::<ove::ffi::ove_event_storage_t>(),
+    core::mem::align_of::<ove::ffi::ove_event_storage_t>(),
+    core::mem::size_of::<ove::EventStorage>(),
+    core::mem::align_of::<ove::EventStorage>(),
+    core::mem::size_of::<ove::Event>(),
+    core::mem::align_of::<ove::Event>(),
+];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sync_binding_compile_consumer() -> i32 {

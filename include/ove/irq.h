@@ -119,22 +119,33 @@ static inline bool ove_is_in_isr(void)
 #define OVE_SYNC_CONTEXT_RESOURCE (1u << 0)
 /** Native mutex acquisitions and condition-variable operations are available. */
 #define OVE_SYNC_CONTEXT_BLOCKING (1u << 1)
+/** Task semaphore/event posts and serialized notification setup are available. */
+#define OVE_SYNC_CONTEXT_PRODUCER (1u << 2)
 
 #ifdef CONFIG_OVE_SYNC
 /**
  * @brief Query synchronization context without touching a primitive.
  *
- * Returns a mask of @c OVE_SYNC_CONTEXT_RESOURCE and
- * @c OVE_SYNC_CONTEXT_BLOCKING. A missing bit means the binding must reject
- * that operation or retain a resource whose destruction is unavailable.
+ * Returns a mask of @c OVE_SYNC_CONTEXT_RESOURCE,
+ * @c OVE_SYNC_CONTEXT_BLOCKING and @c OVE_SYNC_CONTEXT_PRODUCER.
+ * A missing bit means the binding must reject that operation or retain a
+ * resource whose destruction is unavailable.
  * Object validity, ownership and quiescence are separate requirements.
  *
- * FreeRTOS permits resource setup before scheduler start; blocking requires
- * a running, non-idle task with interrupts enabled. Both scheduler-state and
+ * FreeRTOS permits resource setup and task posts before scheduler start;
+ * blocking requires a running, non-idle task with interrupts enabled.
+ * Both scheduler-state and
  * idle-task queries must be enabled in its configuration. Zephyr and NuttX
- * require an active kernel, non-idle thread and enabled interrupts. Cooperative
- * and scheduler-locked threads remain supported where native blocking is legal.
- * The POSIX backend rejects its modeled ISR and critical-section contexts.
+ * require an active kernel and non-idle thread. Resource and blocking admission
+ * additionally require enabled interrupts. Task producers remain available in
+ * recognized masked contexts, including nested native critical sections.
+ * FreeRTOS also permits task producers while its scheduler is suspended.
+ * Cooperative and scheduler-locked threads remain supported where native
+ * blocking is legal. The POSIX backend reports producer-only admission inside
+ * its modeled critical sections. All providers return zero in ISR context;
+ * native ISR producer entries have separate kernel-aware interrupt contracts.
+ * Producer admission does not permit mutex acquisition or arbitrary nonblocking
+ * operations, and does not serialize notification registration with gives.
  * Unsupported architecture/configuration domains return zero conservatively.
  * Current native domains are privileged Cortex-M3/M4/M7, Zephyr native_sim,
  * single-core NuttX flat sim, and the POSIX backend. FreeRTOS multicore and

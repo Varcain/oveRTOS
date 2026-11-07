@@ -144,8 +144,8 @@ macro_rules! model_data {
 // ---------------------------------------------------------------------------
 // Unified creation macros
 //
-// These macros work in both heap and zero-heap modes. Mutex, recursive mutex
-// and condition-variable macros use typed static storage with safe `create()`.
+// These macros work in both heap and zero-heap modes. Mutex, recursive mutex,
+// semaphore, event and condition-variable macros use typed storage/create().
 // Other macros select heap allocation or native static storage by configuration.
 // ---------------------------------------------------------------------------
 
@@ -178,37 +178,24 @@ macro_rules! recursive_mutex {
 }
 
 /// Create a [`crate::Semaphore`] that works in both heap and zero-heap modes.
+/// Repeating the same expansion with a live zero-heap owner panics on Busy.
 #[cfg(has_sync)]
 #[macro_export]
 macro_rules! semaphore {
     ($initial:expr, $max:expr) => {{
-        #[cfg(not(zero_heap))]
-        {
-            $crate::Semaphore::new($initial, $max).unwrap()
-        }
-        #[cfg(zero_heap)]
-        {
-            static mut _S: $crate::ffi::ove_sem_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::Semaphore::from_static(core::ptr::addr_of_mut!(_S), $initial, $max) }
-                .unwrap()
-        }
+        static STORAGE: $crate::SemaphoreStorage = $crate::SemaphoreStorage::new();
+        $crate::Semaphore::create(&STORAGE, $initial, $max).unwrap()
     }};
 }
 
 /// Create an [`crate::Event`] that works in both heap and zero-heap modes.
+/// Repeating the same expansion with a live zero-heap owner panics on Busy.
 #[cfg(has_sync)]
 #[macro_export]
 macro_rules! event {
     () => {{
-        #[cfg(not(zero_heap))]
-        {
-            $crate::Event::new().unwrap()
-        }
-        #[cfg(zero_heap)]
-        {
-            static mut _S: $crate::ffi::ove_event_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::Event::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
-        }
+        static STORAGE: $crate::EventStorage = $crate::EventStorage::new();
+        $crate::Event::create(&STORAGE).unwrap()
     }};
 }
 

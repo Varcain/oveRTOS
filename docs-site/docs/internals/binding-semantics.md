@@ -236,8 +236,8 @@ ASYNC, TIME or object initialization. Critical-section lock/unlock still require
 ASYNC. POSIX timer dispatchers bracket callbacks with the simulator context flag;
 this does not establish general asynchronous signal-handler or IRQ exclusion.
 
-Rust Mutex, RecursiveMutex and CondVar use `ove_sync_context` privately before
-resource operations, acquisitions, signaling and native deadline queries.
+Rust Mutex, RecursiveMutex, Semaphore, Event and CondVar use `ove_sync_context`
+privately before resource operations, waits and native deadline queries.
 RESOURCE permits legal FreeRTOS setup before scheduler start; BLOCKING requires
 an active non-idle thread and enabled interrupts. Unsupported Result methods
 return NotSupported; CondVar signal/broadcast have no effect there.
@@ -247,8 +247,36 @@ already-owned releases still run when a callback leaves interrupts masked.
 Unavailable resource teardown retains native backing and its static claim,
 while `T` is dropped or extracted once. Typed zero-heap storage rejects duplicate
 live initialization as Busy, reopens after completed cleanup and stays reserved
-when its owner is forgotten. The three creation macros use typed admission.
+when its owner is forgotten. All five creation macros use typed admission.
 Recursive scopes admit at most 65,535 combined held/pending acquisitions.
+
+PRODUCER admits task semaphore/Event posts and serialized notification setup
+in recognized masked task contexts, including nested critical sections.
+FreeRTOS also permits these operations before scheduler start and while its
+scheduler is suspended. This preserves synchronous async wake tails while
+RESOURCE and BLOCKING remain unavailable in masked running tasks. Producer
+admission does not permit mutex acquisition or arbitrary nonblocking operations.
+Rust semaphore releases outside producer admission have no permit or callback
+effect, including in ISR context. Both Rust Event producer names select the
+actual task or ISR route; native ISR setup must satisfy its kernel-aware
+priority/grouping contract. The query does not classify arbitrary IRQ or NMI
+eligibility. C, C++ and Zig retain their own native operation/context contracts.
+
+Semaphore/Event zero-heap constructors claim their typed backing before native
+initialization. Heap construction ignores the supplied typed storage. Legal
+cleanup finishes before a claim reopens; forgotten or unsupported-context drops
+retain backing and its claim. Unsafe raw backing must remain stable through
+cleanup or indefinite retention. The native C storage layout is unchanged.
+
+Rust `Semaphore::set_notify` is unsafe: registration, replacement and removal
+must be serialized with all native gives and other registrations, and the old
+callback/data must remain live until all in-flight calls finish. The context
+query supplies no registration synchronization. The callback and its data must
+support concurrent or reentrant calls from all release callers, or those gives
+must also be serialized. Current native give paths call
+the hook after a post attempt even when their count ceiling prevents increment.
+Rust zero-time semaphore/Event waits preserve the provider's empty/timeout
+status; unsupported context instead returns NotSupported before native entry.
 
 The native `ove_condvar_wait_checked` entry reports whether the calling thread
 owns its ordinary mutex on every return, including errors. Success and clean

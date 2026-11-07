@@ -491,15 +491,21 @@ OVE_NODISCARD static inline int ove_sem_take_until(ove_sem_t sem, uint64_t deadl
 void ove_sem_give(ove_sem_t sem);
 
 /**
- * @brief Register a notify callback fired after every successful give.
+ * @brief Register a notify callback fired after every give attempt.
  *
- * The callback is invoked at the tail of @ref ove_sem_give — once the
- * count has been incremented. Only one slot per semaphore; a later
- * call replaces an earlier registration. Pass @c cb=NULL to clear.
+ * The callback is invoked at the tail of @ref ove_sem_give after the native
+ * post attempt, including when the count ceiling prevents an increment.
+ * Notification does not prove that a permit was added. Only one slot per
+ * semaphore; a later call replaces an earlier registration. Pass @c cb=NULL
+ * to clear.
  *
- * Designed for async runtimes (Rust binding's @c AsyncSemaphore) that
- * need a wake hook. Runs in whatever context the give was issued in —
- * implementation must be non-blocking and ISR-safe.
+ * Serialize registration, replacement and removal with every give and every
+ * other registration. Keep callback code and @p user_data valid until all
+ * possible in-flight calls finish before retiring a previous registration.
+ * The callback must be non-blocking, obey every give caller's execution
+ * context and native restrictions, and not unwind through C. Callback code
+ * and data must support concurrent or reentrant calls, or the caller must
+ * serialize gives. Static lifetime alone does not synchronize registration.
  *
  * @param[in] sem        Semaphore handle.
  * @param[in] cb         Callback to invoke, or @c NULL to clear.

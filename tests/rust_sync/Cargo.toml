@@ -1,0 +1,17 @@
+[package]
+name = "ove-sync-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[features]
+optional = ["dep:critical-section", "dep:embassy-sync"]
+
+[dependencies]
+ove = { path = "../../bindings/rust/ove", default-features = false, features = ["std"] }
+critical-section = { version = "1.2", default-features = false, features = ["restore-state-u64"], optional = true }
+embassy-sync = { version = "=0.7.2", default-features = false, optional = true }
+
+[[bin]]
+name = "sync-contracts"
+path = "contracts.rs"
