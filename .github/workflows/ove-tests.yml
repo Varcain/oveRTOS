@@ -256,6 +256,8 @@ jobs:
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-scoped test-rust-scoped-sanitize
       - name: Rust semaphore and event ownership contracts
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-sync test-rust-sync-sanitize
+      - name: Async semaphore setup and wake callbacks
+        run: timeout --signal=INT --kill-after=30 1200 make test-rust-async-sem test-rust-async-sem-sanitize
 
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi

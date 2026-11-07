@@ -278,6 +278,15 @@ the hook after a post attempt even when their count ceiling prevents increment.
 Rust zero-time semaphore/Event waits preserve the provider's empty/timeout
 status; unsupported context instead returns NotSupported before native entry.
 
+Rust `AsyncSemaphore::arm` takes exclusive static access and returns a shared
+static reference only after installing its wake callback. Initialize the wrapper
+at its final address, arm it once, then publish that returned reference to
+producers and async waiters. Shared access cannot register again or overlap
+setup with an `inner()` producer borrow. An error still consumes the static
+borrow and retains the wrapper/backing; safe code cannot retry or reclaim it.
+This Rust setup rule changes no native, C++ or Zig interface. It does not
+establish fairness for multiple waiters sharing the single waker slot.
+
 The native `ove_condvar_wait_checked` entry reports whether the calling thread
 owns its ordinary mutex on every return, including errors. Success and clean
 timeout report held; other errors can report held or released. The output must
