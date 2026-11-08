@@ -43,6 +43,47 @@ int ove_time_get_ns(uint64_t *out)
 static StaticEventGroup_t native;
 static EventBits_t native_bits;
 static BaseType_t queue_result = pdPASS;
+void model_enter_critical(void)
+{
+	++enters;
+	++effects;
+}
+void model_exit_critical(void)
+{
+	++leaves;
+	++effects;
+}
+UBaseType_t model_enter_critical_from_isr(void)
+{
+	model_enter_critical();
+	return 7;
+}
+void model_exit_critical_from_isr(UBaseType_t key)
+{
+	if (key != 7)
+		++bad;
+	model_exit_critical();
+}
+void vTaskSuspendAll(void)
+{
+	++effects;
+}
+BaseType_t xTaskResumeAll(void)
+{
+	++effects;
+	return pdFALSE;
+}
+BaseType_t xTimerPendFunctionCallFromISR(PendedFunction_t fn, void *p, uint32_t bits,
+					 BaseType_t *wake)
+{
+	(void)fn;
+	(void)p;
+	(void)bits;
+	*wake = pdFALSE;
+	++queues;
+	++effects;
+	return queue_result;
+}
 static void yielded(BaseType_t value)
 {
 	(void)value;

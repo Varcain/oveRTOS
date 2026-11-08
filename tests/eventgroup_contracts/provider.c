@@ -86,6 +86,20 @@ static int tracked_cond_destroy(pthread_cond_t *p)
 #define NATIVE_STAGES 2u
 #elif defined(CONFIG_OVE_RTOS_FREERTOS)
 #include <event_groups.h>
+void model_enter_critical(void)
+{
+}
+void model_exit_critical(void)
+{
+}
+UBaseType_t model_enter_critical_from_isr(void)
+{
+	return 0;
+}
+void model_exit_critical_from_isr(UBaseType_t key)
+{
+	(void)key;
+}
 EventGroupHandle_t xEventGroupCreateStatic(StaticEventGroup_t *p)
 {
 	return initialize(p) ? NULL : p;

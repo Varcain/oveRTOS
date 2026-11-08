@@ -195,6 +195,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               eventgroup-contracts eventgroup-contracts-sanitize \
               eventgroup-scalar eventgroup-scalar-sanitize \
               eventgroup-user eventgroup-bindings \
+              eventgroup-deferred eventgroup-deferred-sanitize eventgroup-deferred-arm \
               queue-contracts queue-contracts-sanitize \
               rust-queue rust-queue-sanitize \
               rust-scoped rust-scoped-sanitize \

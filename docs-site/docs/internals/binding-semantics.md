@@ -802,6 +802,17 @@ deadline clock. Zero set/clear masks remain valid. Task clear returns the full
 prior value. NuttX snapshots share writer exclusion; Zephyr clear shares the
 native event lock through a private syscall that preserves granted native user
 callers. Zig timed waits expose InvalidParam alongside Timeout; its scalar
-forever wait requires valid inputs and panics on an unexpected error. FreeRTOS
-deferred lifetime/wake timing and larger set/wait result normalization remain
-separate work.
+forever wait requires valid inputs and panics on an unexpected error. Larger
+set/wait result normalization remains separate work.
+
+FreeRTOS EventGroup deferred commands use stable internal tokens. Teardown
+cancels queued associations before native deletion and immediate backing release;
+external sources/producers and synchronous users must already be quiescent.
+The daemon protects its native update against task teardown, detaches owner/token
+access, then invokes saved notify locals after publication. Clear propagates the
+daemon wake request too. Native MPU V1 task teardown preserves caller privilege.
+These guarantees keep C++ inline and Zig allocator-owned retirement unchanged.
+Notify data is separate: code/data must remain live through pending dispatch and
+saved tails, and unregister/deinit is not a data reclamation fence. Rust ownership,
+operation context and AsyncEventGroup exclusive setup still require their own
+repairs; the native command protocol does not certify those wrappers.

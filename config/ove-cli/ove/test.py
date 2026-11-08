@@ -1320,6 +1320,61 @@ def test_eventgroup_bindings(ove_dir, output_dir):
     return TestResults(suite="eventgroup-bindings", passed=int(valid), failed=int(not valid))
 
 
+def _test_eventgroup_deferred(ove_dir, output_dir, sanitize=False):
+    """Check deferred command ownership and post-publication notification."""
+    label = "eventgroup-deferred-sanitize" if sanitize else "eventgroup-deferred"
+    build = Path(output_dir) / "tests" / "eventgroup_deferred" / ("sanitize" if sanitize else "normal")
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "eventgroup_deferred", "run.py"), str(build)]
+    env = dict(os.environ)
+    if sanitize:
+        command.append("--sanitize")
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=env, timeout=300, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("eventgroup deferred: observations=144 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
+def test_eventgroup_deferred(ove_dir, output_dir):
+    return _test_eventgroup_deferred(ove_dir, output_dir)
+
+
+def test_eventgroup_deferred_sanitize(ove_dir, output_dir):
+    return _test_eventgroup_deferred(ove_dir, output_dir, sanitize=True)
+
+
+def test_eventgroup_deferred_arm(ove_dir, output_dir):
+    """Check real SysTick/daemon delivery and native MPU V1 caller preservation."""
+    import hashlib
+    manifest = load_manifest(ove_dir)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = os.path.join(ove_dir, "dl", "FreeRTOS-Kernel-" + digest)
+    if not os.path.isdir(kernel):
+        url = get_component(manifest, "rtos", "freertos", "kernel", "url")
+        run(["git", "clone", "--depth", "1", "--branch", revision, url, kernel])
+    command = [sys.executable, os.path.join(ove_dir, "tests", "eventgroup_deferred", "target.py"),
+               str(output_dir), "--freertos", kernel, "--toolchain", _ensure_arm_toolchain(ove_dir)]
+    build = Path(output_dir) / "tests" / "eventgroup_deferred"
+    build.mkdir(parents=True, exist_ok=True)
+    log = build / "target-gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=900, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("eventgroup deferred target: observations=4 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite="eventgroup-deferred-arm", passed=int(valid), failed=int(not valid))
+
+
 def _test_queue_contracts(ove_dir, output_dir, sanitize=False):
     """Check native queue setup, dimensions and minimal context availability."""
     result = TestResults(suite="queue-contracts-sanitize" if sanitize else "queue-contracts")
@@ -4738,6 +4793,9 @@ TEST_TARGETS = {
     "eventgroup-scalar-sanitize": test_eventgroup_scalar_sanitize,
     "eventgroup-user": test_eventgroup_user,
     "eventgroup-bindings": test_eventgroup_bindings,
+    "eventgroup-deferred": test_eventgroup_deferred,
+    "eventgroup-deferred-sanitize": test_eventgroup_deferred_sanitize,
+    "eventgroup-deferred-arm": test_eventgroup_deferred_arm,
     "queue-contracts": test_queue_contracts,
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-queue": test_rust_queue,
