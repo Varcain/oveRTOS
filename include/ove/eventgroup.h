@@ -61,6 +61,18 @@ extern "C" {
 #ifdef CONFIG_OVE_EVENTGROUP
 
 /**
+ * @brief Return the configured mask of usable public event bits.
+ *
+ * FreeRTOS reserves its native high byte: 16/32-bit tick configurations expose
+ * 8/24 payload bits; 64-bit ticks and the other engines expose all public 32
+ * bits. The query requires no object, clock, allocation or execution context.
+ * Use this mask for portable clear-all or wait-for-any-bit operations.
+ *
+ * @return Mask of valid bits, or zero when EVENTGROUP is disabled.
+ */
+ove_eventbits_t ove_eventgroup_valid_mask(void);
+
+/**
  * @brief Initialise an event group using caller-provided static storage.
  *
  * All bits in the new event group are cleared. The caller must ensure that
@@ -116,6 +128,9 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg);
  * Atomically ORs @p bits into the current event group value. Any tasks
  * blocked in @ref ove_eventgroup_wait_bits whose wait conditions are now
  * satisfied will be unblocked.
+ * Bits outside @ref ove_eventgroup_valid_mask are rejected with zero before
+ * native or notification effects. A zero mask preserves the ordinary snapshot
+ * behavior without notifying.
  *
  * @param[in] eg    Event group handle.
  * @param[in] bits  Bitmask of bits to set.
@@ -135,7 +150,8 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
  * @param[in] bits  Bitmask of bits to clear.
  * @return The value of the event group as it was *before* the clear operation
  *         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps
- *         or mirrors).
+ *         or mirrors). An invalid mask returns zero without effects; a zero
+ *         mask returns the full current value without changing it.
  * @note Must not be called from an ISR; use @ref ove_eventgroup_clear_bits_from_isr.
  */
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits);
@@ -150,6 +166,9 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
  *
  * On success the event bits at the time of the condition being met are
  * written to @p result.
+ * A zero mask, bits outside @ref ove_eventgroup_valid_mask, or unknown flags
+ * return @c OVE_ERR_INVALID_PARAM before native effects and leave @p result
+ * unchanged. Only the two flags listed above are accepted.
  *
  * @param[in]  eg          Event group handle.
  * @param[in]  bits        Bitmask of bits to wait for.
@@ -172,6 +191,8 @@ OVE_NODISCARD int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t 
  * remaining until @p deadline_ns (a steady-clock value from
  * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
  * indefinite block.
+ * Invalid masks or flags are rejected before reading the deadline clock and
+ * leave @p result unchanged, as in @ref ove_eventgroup_wait_bits.
  *
  * @param[in]  eg          Event group handle.
  * @param[in]  bits        Bitmask of bits to wait for.
@@ -189,6 +210,9 @@ OVE_NODISCARD static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t 
 							       uint64_t deadline_ns,
 							       ove_eventbits_t *result)
 {
+	if (bits == 0 || (bits & ~ove_eventgroup_valid_mask()) != 0 ||
+	    (flags & ~(uint32_t)(OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT)) != 0)
+		return OVE_ERR_INVALID_PARAM;
 	return ove_eventgroup_wait_bits(eg, bits, flags,
 					ove_time_deadline_to_timeout_ns(deadline_ns), result);
 }
@@ -202,8 +226,10 @@ OVE_NODISCARD static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t 
  *
  * @param[in] eg    Event group handle.
  * @param[in] bits  Bitmask of bits to set.
- * @return The value of the event group at the time of the call (before any
- *         pending context switch).
+ * @return On FreeRTOS, the accepted mask, or zero if the timer command queue
+ *         rejected it; the set itself is deferred. Other engines return a bit
+ *         snapshot. Invalid masks return zero before native, queue, yield or
+ *         notification effects. A zero mask does not notify.
  */
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
 
@@ -218,7 +244,9 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
  * @param[in] eg    Event group handle.
  * @param[in] bits  Bitmask of bits to clear.
  * @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue
- *         had no room for the request.
+ *         had no room for the request. Bits outside
+ *         @ref ove_eventgroup_valid_mask return @c OVE_ERR_INVALID_PARAM before
+ *         native or queue effects.
  */
 OVE_NODISCARD int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
 
@@ -240,6 +268,11 @@ ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg);
 int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data);
 
 #else /* !CONFIG_OVE_EVENTGROUP */
+
+static inline ove_eventbits_t ove_eventgroup_valid_mask(void)
+{
+	return 0;
+}
 
 /* P0-3: _init/_deinit stubs so OVE_EVENTGROUP_DEFINE_STATIC links cleanly
  * when CONFIG_OVE_EVENTGROUP=n. */

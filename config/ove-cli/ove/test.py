@@ -1270,6 +1270,56 @@ def test_eventgroup_contracts_sanitize(ove_dir, output_dir):
     return _test_eventgroup_contracts(ove_dir, output_dir, sanitize=True)
 
 
+def _test_eventgroup_scalar(ove_dir, output_dir, sanitize=False):
+    """Check configured masks, rejected waits and native snapshots."""
+    result = TestResults(suite="eventgroup-scalar-sanitize" if sanitize else "eventgroup-scalar")
+    build = Path(output_dir) / "tests" / "eventgroup_scalar" / ("sanitize" if sanitize else "normal")
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "eventgroup_scalar", "run.py"), str(build)]
+    env = dict(os.environ)
+    if sanitize:
+        command.append("--sanitize")
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=env, timeout=300, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("eventgroup scalar: observations=24 failed=0\n")
+    if not valid:
+        print(text, end="")
+        result.failed_names.append("native-eventgroup-scalar")
+    result.passed += int(valid)
+    result.failed += int(not valid)
+    return result
+
+
+def test_eventgroup_scalar(ove_dir, output_dir):
+    return _test_eventgroup_scalar(ove_dir, output_dir)
+
+
+def test_eventgroup_scalar_sanitize(ove_dir, output_dir):
+    return _test_eventgroup_scalar(ove_dir, output_dir, sanitize=True)
+
+
+def test_eventgroup_bindings(ove_dir, output_dir):
+    """Exercise public scalar APIs against real POSIX event groups."""
+    build = Path(output_dir) / "tests" / "eventgroup_scalar" / "bindings"
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "eventgroup_scalar", "bindings.py"),
+               str(build), "--zig", _find_zig(ove_dir)]
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=600, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("eventgroup bindings: observations=6 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite="eventgroup-bindings", passed=int(valid), failed=int(not valid))
+
+
 def _test_queue_contracts(ove_dir, output_dir, sanitize=False):
     """Check native queue setup, dimensions and minimal context availability."""
     result = TestResults(suite="queue-contracts-sanitize" if sanitize else "queue-contracts")
@@ -3895,7 +3945,8 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
 
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
 def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
-                     extra_conf=None, board=None, run_via_west=False):
+                     extra_conf=None, board=None, run_via_west=False,
+                     build_subdir=None, expected_output=None):
     """Build and run a Zephyr QEMU ARM test variant.
 
     `board` selects the Zephyr board (default the an500's board.yaml one, the
@@ -3914,7 +3965,8 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     if board is None:
         board = zephyr_board(_board_dir(ove_dir, "qemu-mps2-an500"))
     dl_dir = os.path.join(ove_dir, "dl")
-    build = os.path.join(output_dir, "tests", label)
+    build = (os.path.join(output_dir, build_subdir) if build_subdir
+             else os.path.join(output_dir, "tests", label))
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
     manifest = load_manifest(ove_dir)
@@ -3942,6 +3994,8 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
 
     env = _zephyr_sdk_build_env(ove_dir)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
+    if expected_output is not None:
+        env["CCACHE_DIR"] = os.path.join(build, "ccache")
     build_cmd = [
         west, "build",
         "-b", board,
@@ -3950,9 +4004,33 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     ]
     if extra_conf:
         build_cmd.extend(["--", f"-DEXTRA_CONF_FILE={extra_conf}"])
-    run(build_cmd, env=env)
+    if expected_output is not None:
+        log = Path(build) / "build.log"
+        with log.open("wb") as stream:
+            rc = _run_owned_test_process(build_cmd, env=env, timeout=480, stdout=stream)
+        _record_scoped_observation(log, build_cmd, rc)
+        if rc != 0:
+            print(log.read_text(), end="")
+            return TestResults(suite=label, passed=0, failed=1)
+    else:
+        run(build_cmd, env=env)
 
     logger.info(f"Running {label}")
+    if expected_output is not None:
+        elf = os.path.join(build, "zephyr", "zephyr.elf")
+        command = ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16",
+                   "-nographic", "-monitor", "none", "-semihosting-config", "enable=on,target=native",
+                   "-kernel", elf]
+        log = Path(build) / "run.log"
+        with log.open("wb") as stream:
+            rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
+        _record_scoped_observation(log, command, rc)
+        text = log.read_text()
+        print(text, end="")
+        config = Path(build, "zephyr", ".config").read_text()
+        valid = (rc == 0 and text.endswith(expected_output)
+                 and "CONFIG_USERSPACE=y\n" in config and "CONFIG_ARM_MPU=y\n" in config)
+        return TestResults(suite=label, passed=int(valid), failed=int(not valid))
     if run_via_west:
         # mps2/an521 (Cortex-M33): the oveRTOS an500 qemu-run.sh can't host it,
         # and Zephyr's own `-t run` routes the UART to a host pty without
@@ -4034,6 +4112,15 @@ def test_qemu_zephyr(ove_dir, output_dir):
     """Build and run Zephyr QEMU ARM tests."""
     return _run_zephyr_qemu(ove_dir, output_dir,
                             src_subdir="zephyr-qemu", label="qemu-zephyr")
+
+
+def test_eventgroup_user(ove_dir, output_dir):
+    """Preserve full-prior clear from a granted native user thread."""
+    return _run_zephyr_qemu(
+        ove_dir, output_dir, src_subdir=os.path.join(ove_dir, "tests", "eventgroup_user"),
+        label="eventgroup-user", board="mps2/an500",
+        build_subdir="qemu-mps2-an500/zephyr/eventgroup_user",
+        expected_output="eventgroup user: checks=10 failures=0 mode=1 prior=3 after=2\n")
 
 
 def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
@@ -4647,6 +4734,10 @@ TEST_TARGETS = {
     "sync-contracts-sanitize": test_sync_contracts_sanitize,
     "eventgroup-contracts": test_eventgroup_contracts,
     "eventgroup-contracts-sanitize": test_eventgroup_contracts_sanitize,
+    "eventgroup-scalar": test_eventgroup_scalar,
+    "eventgroup-scalar-sanitize": test_eventgroup_scalar_sanitize,
+    "eventgroup-user": test_eventgroup_user,
+    "eventgroup-bindings": test_eventgroup_bindings,
     "queue-contracts": test_queue_contracts,
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-queue": test_rust_queue,

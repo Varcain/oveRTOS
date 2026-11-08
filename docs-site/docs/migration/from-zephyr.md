@@ -92,6 +92,8 @@ Zephyr's `k_event` maps onto `ove_eventgroup`. The naming uses the `_bits` suffi
 
 `flags` is `0` (wake when any requested bit is set) or `OVE_EG_WAIT_ALL`, optionally `| OVE_EG_CLEAR_ON_EXIT`. There is no atomic "overwrite" variant; use `_clear_bits` followed by `_set_bits` if you need set-with-reset semantics.
 
+All 32 bits are usable on Zephyr; `ove_eventgroup_valid_mask()` exposes that mask through the portable API. Waits reject zero masks and unknown flags with `OVE_ERR_INVALID_PARAM` and leave the result unchanged. Zero set/clear masks remain valid. Unlike native `k_event_clear`, oveRTOS task clear returns the full prior group value, including unaffected bits, atomically under the native event lock. An internal syscall preserves calls from native user threads granted access to the embedded event object.
+
 ## Workqueues
 
 Each work item is submitted to a specific workqueue; oveRTOS does not expose a global "system workqueue". Create your own with `ove_workqueue_create` (heap) or `OVE_WORKQUEUE_DEFINE_STATIC`.

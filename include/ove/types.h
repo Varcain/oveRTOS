@@ -330,8 +330,8 @@ typedef struct ove_i2s *ove_i2s_t;
 /**
  * @brief Bit-mask type used by the event-group API.
  *
- * Each bit represents a distinct event flag.  Up to 32 independent flags
- * can be combined in a single event group.
+ * Each bit represents a distinct event flag. The configured engine may reserve
+ * native bits; use ove_eventgroup_valid_mask() to obtain the usable public mask.
  */
 typedef uint32_t ove_eventbits_t;
 

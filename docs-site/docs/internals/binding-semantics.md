@@ -792,3 +792,16 @@ heap helpers release failed allocations. This contract applies to C initializati
 and the C++/Rust/Zig constructors. The existing pointer-free context query is
 available with EVENTGROUP alone, including without SYNC, QUEUE, TIME or ASYNC.
 EventGroup Rust storage ownership and operation admission are separate repairs.
+
+EventGroup masks use the configured payload domain exposed by the ordinary C,
+C++, Rust and Zig accessors. FreeRTOS reserves its native high byte; no global
+24-bit restriction applies to the other engines. Invalid scalar masks return
+zero without effects; ISR clear and invalid waits report InvalidParam. Waits
+reject zero masks and unknown flags without changing the result or reading a
+deadline clock. Zero set/clear masks remain valid. Task clear returns the full
+prior value. NuttX snapshots share writer exclusion; Zephyr clear shares the
+native event lock through a private syscall that preserves granted native user
+callers. Zig timed waits expose InvalidParam alongside Timeout; its scalar
+forever wait requires valid inputs and panics on an unexpected error. FreeRTOS
+deferred lifetime/wake timing and larger set/wait result normalization remain
+separate work.

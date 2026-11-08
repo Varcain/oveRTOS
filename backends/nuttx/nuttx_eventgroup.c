@@ -9,6 +9,7 @@
 #include "ove/eventgroup.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_eventgroup_validate.h"
 #include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
@@ -16,6 +17,11 @@
 #include <errno.h>
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
+
+ove_eventbits_t ove_eventgroup_valid_mask(void)
+{
+	return UINT32_MAX;
+}
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
@@ -47,6 +53,9 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	struct ove_eventgroup *g = eg;
 	ove_eventbits_t result;
 	irqstate_t flags;
@@ -70,6 +79,9 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
 
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	struct ove_eventgroup *g = eg;
 	ove_eventbits_t prev;
 	irqstate_t flags;
@@ -85,6 +97,9 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
 			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
+	if (!ove_eventgroup_wait_input_valid(bits, flags))
+		return OVE_ERR_INVALID_PARAM;
+
 	struct ove_eventgroup *g = eg;
 	int wait_all = (flags & OVE_EG_WAIT_ALL) ? 1 : 0;
 	int clear = (flags & OVE_EG_CLEAR_ON_EXIT) ? 1 : 0;
@@ -150,11 +165,17 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	return ove_eventgroup_set_bits(eg, bits);
 }
 
 int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return OVE_ERR_INVALID_PARAM;
+
 	/* clear_bits only takes a critical section, which is ISR-safe here. */
 	(void)ove_eventgroup_clear_bits(eg, bits);
 	return OVE_OK;
@@ -164,8 +185,10 @@ ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	struct ove_eventgroup *g = eg;
 
-	/* Lock-free: 32-bit aligned read is atomic on ARM */
-	return g->bits;
+	irqstate_t flags = enter_critical_section();
+	ove_eventbits_t bits = g->bits;
+	leave_critical_section(flags);
+	return bits;
 }
 
 int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data)

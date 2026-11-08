@@ -9,11 +9,17 @@
 #include "ove/eventgroup.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_eventgroup_validate.h"
 #include "FreeRTOS.h"
 #include "ove_ns_to_ticks.h"
 #include "event_groups.h"
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
+
+ove_eventbits_t ove_eventgroup_valid_mask(void)
+{
+	return (ove_eventbits_t)(EventBits_t)~eventEVENT_BITS_CONTROL_BYTES;
+}
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
@@ -41,6 +47,9 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	ove_eventbits_t result = (ove_eventbits_t)xEventGroupSetBits(eg->handle, (EventBits_t)bits);
 	if (bits != 0 && eg->notify_cb != NULL) {
 		eg->notify_cb(eg->notify_ud);
@@ -50,12 +59,18 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
 
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	return (ove_eventbits_t)xEventGroupClearBits(eg->handle, (EventBits_t)bits);
 }
 
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
 			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
+	if (!ove_eventgroup_wait_input_valid(bits, flags))
+		return OVE_ERR_INVALID_PARAM;
+
 	BaseType_t wait_all = (flags & OVE_EG_WAIT_ALL) ? pdTRUE : pdFALSE;
 	BaseType_t clear = (flags & OVE_EG_CLEAR_ON_EXIT) ? pdTRUE : pdFALSE;
 	TickType_t ticks;
@@ -87,6 +102,9 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	BaseType_t yield = pdFALSE;
 	BaseType_t ret;
 
@@ -104,6 +122,9 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 
 int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return OVE_ERR_INVALID_PARAM;
+
 	/* FreeRTOS defers the clear to the timer service task. */
 	return xEventGroupClearBitsFromISR(eg->handle, (EventBits_t)bits) == pdPASS
 		       ? OVE_OK

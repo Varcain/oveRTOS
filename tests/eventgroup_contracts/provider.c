@@ -116,6 +116,8 @@ void k_event_init(struct k_event *p)
 {
 	++calls;
 	p->opaque = 0;
+	p->events = 0;
+	p->lock.opaque = 0;
 }
 #define NATIVE_STAGES 0u
 #endif

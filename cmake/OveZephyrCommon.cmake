@@ -32,6 +32,7 @@
 #   ove_zephyr_add_common_includes()
 
 cmake_minimum_required(VERSION 3.20.0)
+include(${CMAKE_CURRENT_LIST_DIR}/OveZephyrSyscalls.cmake)
 
 # ─── ove_zephyr_pre_find() ──────────────────────────────────────────
 # Runs before find_package(Zephyr).  Resolves paths, includes the
@@ -50,6 +51,10 @@ macro(ove_zephyr_pre_find)
     # Include generated CMake config (sets OVE_RTOS, OVE_APP_LANG, etc.)
     if(EXISTS "${OVE_GEN_DIR}/ove_config.cmake")
         include(${OVE_GEN_DIR}/ove_config.cmake)
+    endif()
+
+    if(OVE_EVENTGROUP)
+        ove_zephyr_register_eventgroup_syscalls()
     endif()
 
     # Download directory (workspace-isolated).

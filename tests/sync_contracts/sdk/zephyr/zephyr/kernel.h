@@ -20,16 +20,18 @@ struct k_timer {
 struct k_work {
 	uintptr_t opaque;
 };
+struct k_spinlock {
+	uintptr_t opaque;
+};
 struct k_event {
 	uintptr_t opaque;
+	uint32_t events;
+	struct k_spinlock lock;
 };
 struct k_work_delayable {
 	uintptr_t opaque;
 };
 struct k_work_q {
-	uintptr_t opaque;
-};
-struct k_spinlock {
 	uintptr_t opaque;
 };
 typedef uint8_t k_thread_stack_t;

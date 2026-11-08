@@ -10,3 +10,10 @@ uint32_t k_event_wait(struct k_event *, uint32_t, bool, k_timeout_t);
 uint32_t k_event_wait_all(struct k_event *, uint32_t, bool, k_timeout_t);
 uint32_t k_event_wait_safe(struct k_event *, uint32_t, bool, k_timeout_t);
 uint32_t k_event_wait_all_safe(struct k_event *, uint32_t, bool, k_timeout_t);
+
+#ifndef __syscall
+#define __syscall static inline
+#endif
+typedef unsigned int k_spinlock_key_t;
+k_spinlock_key_t k_spin_lock(struct k_spinlock *);
+void k_spin_unlock(struct k_spinlock *, k_spinlock_key_t);

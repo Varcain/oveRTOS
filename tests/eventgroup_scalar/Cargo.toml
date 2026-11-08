@@ -1,0 +1,11 @@
+[package]
+name = "ove-eventgroup-scalar-tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ove = { path = "../../bindings/rust/ove", default-features = false, features = ["std", "async"] }
+
+[[bin]]
+name = "eventgroup-bindings"
+path = "bindings.rs"

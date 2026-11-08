@@ -89,6 +89,15 @@ pub struct EventGroup {
 }
 
 impl EventGroup {
+    /// Configured usable payload bits, without accessing a native object.
+    /// Use this mask for clear-all or wait-for-any-bit operations. FreeRTOS
+    /// reserves its high native byte; the other engines expose all 32 bits.
+    #[must_use]
+    pub fn valid_mask() -> u32 {
+        // SAFETY: this pointer-free query only returns a configured mask.
+        unsafe { bindings::ove_eventgroup_valid_mask() }
+    }
+
     /// Create a new event group via heap allocation (only in heap mode).
     /// Native initialization failures propagate without publishing a handle;
     /// successfully initialized native resources and the allocation are released.
@@ -126,13 +135,17 @@ impl EventGroup {
         }
     }
 
-    /// Set bits in the event group. Returns the bits value after setting.
+    /// Set bits in the event group. Returns the post-set value.
+    /// Bits outside [`Self::valid_mask`] return inert zero without effects;
+    /// zero is also a possible genuine snapshot. Setting zero does not notify.
     #[inline]
     pub fn set_bits(&self, bits: u32) -> u32 {
         unsafe { bindings::ove_eventgroup_set_bits(self.handle, bits) }
     }
 
-    /// Clear bits in the event group. Returns the bits value before clearing.
+    /// Clear bits and return the full prior snapshot atomically.
+    /// Bits outside [`Self::valid_mask`] return inert zero without effects.
+    /// Clearing zero returns the unchanged prior snapshot.
     #[inline]
     pub fn clear_bits(&self, bits: u32) -> u32 {
         unsafe { bindings::ove_eventgroup_clear_bits(self.handle, bits) }
@@ -143,6 +156,8 @@ impl EventGroup {
     ///
     /// `flags` is a combination of [`WaitFlags::WAIT_ALL`] and
     /// [`WaitFlags::CLEAR_ON_EXIT`].
+    /// Zero masks or bits outside [`Self::valid_mask`] return
+    /// [`Error::InvalidParam`] without native wait effects.
     #[inline]
     pub fn wait_bits(&self, bits: u32, flags: WaitFlags) -> Result<u32> {
         self.wait_bits_with_timeout(bits, flags, u64::MAX)
@@ -151,13 +166,16 @@ impl EventGroup {
     /// Non-blocking check for the specified bits.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the bits are not currently set.
+    /// Returns [`Error::Timeout`] if the bits are not currently set, or
+    /// [`Error::InvalidParam`] for zero/invalid masks or unknown flags.
     #[inline]
     pub fn try_wait_bits(&self, bits: u32, flags: WaitFlags) -> Result<u32> {
         self.wait_bits_with_timeout(bits, flags, 0)
     }
 
     /// Wait up to `d` for the specified bits.
+    /// Zero masks or bits outside [`Self::valid_mask`] return
+    /// [`Error::InvalidParam`] without native wait effects.
     #[inline]
     pub fn wait_bits_for(
         &self,
@@ -171,6 +189,7 @@ impl EventGroup {
     /// Wait by the given deadline.  Use
     /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
     /// indefinite wait.
+    /// Invalid masks return [`Error::InvalidParam`] before reading the clock.
     #[inline]
     pub fn wait_bits_until(
         &self,
@@ -178,6 +197,9 @@ impl EventGroup {
         flags: WaitFlags,
         deadline: crate::time::Instant,
     ) -> Result<u32> {
+        if bits == 0 || bits & !Self::valid_mask() != 0 || flags.0 & !3 != 0 {
+            return Err(Error::InvalidParam);
+        }
         self.wait_bits_with_timeout(bits, flags, crate::time::deadline_to_timeout_ns(deadline))
     }
 
@@ -191,7 +213,9 @@ impl EventGroup {
         Ok(result)
     }
 
-    /// Set bits from an ISR context. Returns the bits value after setting.
+    /// Set bits from an ISR context. FreeRTOS returns the accepted requested
+    /// mask, or zero on queue failure; publication is deferred. Other engines
+    /// return the post-set snapshot. Invalid bits return inert zero.
     #[inline]
     pub fn set_bits_from_isr(&self, bits: u32) -> u32 {
         unsafe { bindings::ove_eventgroup_set_bits_from_isr(self.handle, bits) }
@@ -199,7 +223,7 @@ impl EventGroup {
 
     /// Clear bits from an ISR context. On FreeRTOS the clear is deferred to
     /// the timer service task; [`Error::QueueFull`] means it could not be
-    /// queued.
+    /// queued. Bits outside [`Self::valid_mask`] return [`Error::InvalidParam`].
     #[inline]
     pub fn clear_bits_from_isr(&self, bits: u32) -> Result<()> {
         Error::from_code(unsafe { bindings::ove_eventgroup_clear_bits_from_isr(self.handle, bits) })

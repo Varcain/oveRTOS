@@ -92,6 +92,8 @@ The callback signature is `void cb(ove_timer_t t, void *user_data)` — the time
 
 `flags` is `0` (wake when any requested bit is set) or `OVE_EG_WAIT_ALL`, optionally `| OVE_EG_CLEAR_ON_EXIT`.
 
+Use `ove_eventgroup_valid_mask()` instead of an all-ones literal. The configured FreeRTOS high control byte is excluded before narrowing: 16-bit ticks allow 8 payload bits, 32-bit ticks allow 24, and a 64-bit native event type allows all 32 public bits. Invalid scalar set/clear masks return zero without native effects; ISR clear returns `OVE_ERR_INVALID_PARAM`. Waits reject zero masks, unsupported bits and unknown flags with `OVE_ERR_INVALID_PARAM`, leaving the result unchanged. Zero set/clear masks remain valid. Task clear returns the full prior value. ISR set reports its accepted mask or zero on queue rejection and takes effect later in the timer task.
+
 ## Stream buffers
 
 `ove_stream_create()` carries the `trigger` argument (the "deliver after N bytes" threshold) directly into the constructor instead of into the buffer-create function only on FreeRTOS.

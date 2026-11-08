@@ -193,6 +193,8 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               sync-condvar sync-condvar-sanitize \
               sync-contracts sync-contracts-sanitize \
               eventgroup-contracts eventgroup-contracts-sanitize \
+              eventgroup-scalar eventgroup-scalar-sanitize \
+              eventgroup-user eventgroup-bindings \
               queue-contracts queue-contracts-sanitize \
               rust-queue rust-queue-sanitize \
               rust-scoped rust-scoped-sanitize \
