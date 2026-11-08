@@ -18,13 +18,18 @@
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0) {
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0 ||
+	    item_size > SIZE_MAX / max_items || (size_t)(UBaseType_t)item_size != item_size ||
+	    (unsigned int)(UBaseType_t)max_items != max_items) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
+	QueueHandle_t native = xQueueCreateStatic((UBaseType_t)max_items, (UBaseType_t)item_size,
+						  buffer, &storage->static_queue);
+	if (native == NULL)
+		return OVE_ERR_NO_MEMORY;
 	storage->storage = (uint8_t *)buffer;
-	storage->queue =
-		xQueueCreateStatic(max_items, item_size, storage->storage, &storage->static_queue);
+	storage->queue = native;
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
 	*q = storage;

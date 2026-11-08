@@ -100,6 +100,9 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
 
         /// Allocate the queue's backing buffer + substrate-storage
         /// from `allocator` and `ove_queue_init` against it.
+        /// Native dimensions must fit the provider (including NuttX SEM_VALUE_MAX).
+        /// Initialization errors retire partial native resources before returning;
+        /// the backing allocation is then released by the error cleanup.
         pub fn create(allocator: std.mem.Allocator) Error!Self {
             const backing = try allocator.create(Backing);
             errdefer allocator.destroy(backing);

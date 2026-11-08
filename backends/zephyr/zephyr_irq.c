@@ -14,7 +14,7 @@
  * that we widen to ove_irq_key_t (uint64_t) for ABI consistency
  * across backends.
  *
- * Context detection is available with SYNC or ASYNC; critical sections
+ * Context detection is available with SYNC, ASYNC or QUEUE; critical sections
  * require ASYNC.
  */
 
@@ -22,14 +22,14 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE)
 
 #include <zephyr/kernel.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include "ove_sync_context.h"
 
-#if defined(CONFIG_OVE_SYNC) && defined(CONFIG_MULTITHREADING)
+#if (defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)) && defined(CONFIG_MULTITHREADING)
 #ifndef CONFIG_SMP
 extern struct k_thread z_idle_threads[];
 #endif
@@ -38,7 +38,7 @@ extern uint32_t hw_irq_ctrl_get_current_lock(void);
 #endif
 #endif
 
-#ifdef CONFIG_OVE_SYNC
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)
 uint32_t ove_sync_context(void)
 {
 #if defined(CONFIG_MULTITHREADING) && \
@@ -89,4 +89,4 @@ bool ove_is_in_isr(void)
 	return k_is_in_isr();
 }
 
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE */

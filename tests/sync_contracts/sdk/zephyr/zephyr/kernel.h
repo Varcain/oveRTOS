@@ -12,6 +12,7 @@ struct k_thread {
 };
 struct k_msgq {
 	uintptr_t opaque;
+	uint32_t max_msgs;
 };
 struct k_timer {
 	uintptr_t opaque;

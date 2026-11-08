@@ -746,3 +746,12 @@ three languages stay aligned. The examples under `apps/{cpp,rust,zig}/` act as
 conformance tests for these semantics — if an example has to drop to raw FFI to
 express something, that is a gap in the contract (or the wrapper), not a licence
 to diverge.
+
+Native Queue initialization validates nonzero dimensions, product overflow and
+provider limits before entering the kernel. Partial initialization failures
+retire earlier resources and do not publish an output handle, permitting retry
+on the same quiescent backing. Rust and Zig propagate the error; C++ applies
+its constructor initialization assertion after native cleanup. C callers must
+keep storage and the complete item buffer exclusive through teardown. Queue-only
+configurations provide interrupt detection and resource-context queries without
+enabling SYNC, TIME or ASYNC; this does not broaden the admitted context flags.

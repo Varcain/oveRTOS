@@ -27,7 +27,7 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE)
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -97,7 +97,7 @@ bool ove_is_in_isr(void)
 	return s_in_isr != 0;
 }
 
-#ifdef CONFIG_OVE_SYNC
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)
 uint32_t ove_sync_context(void)
 {
 	if (s_in_isr != 0)
@@ -125,4 +125,4 @@ void posix_irq_leave_isr(void)
 	s_in_isr = 0;
 }
 
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE */

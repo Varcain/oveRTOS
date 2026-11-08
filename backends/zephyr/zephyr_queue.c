@@ -16,7 +16,8 @@
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0) {
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0 ||
+	    item_size > SIZE_MAX / max_items) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 

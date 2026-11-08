@@ -48,7 +48,14 @@ typedef struct ove_queue *ove_queue_t;
  *
  * No heap allocation is performed.  The @p buffer must be at least
  * @p item_size * @p max_items bytes and remain valid for the lifetime of
- * the queue.
+ * the queue. Storage and buffer must be exclusively owned through completed
+ * teardown; do not initialize live storage again. Dimensions must be nonzero
+ * and their product must fit size_t. FreeRTOS additionally requires dimensions
+ * representable by UBaseType_t; NuttX capacity must not exceed SEM_VALUE_MAX.
+ *
+ * Native resources are initialized in stages. Failure releases earlier stages
+ * before returning and leaves the output handle unchanged. The same backing
+ * may then be retried. Only complete initialization publishes a handle.
  *
  * @note Requires @c CONFIG_OVE_QUEUE.
  *

@@ -16,13 +16,15 @@
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0) {
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0 ||
+	    item_size > SIZE_MAX / max_items || max_items > SEM_VALUE_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -33,8 +35,14 @@ int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, s
 	storage->tail = 0;
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
-	nxsem_init(&storage->not_full, 0, max_items);
-	nxsem_init(&storage->not_empty, 0, 0);
+	int rc = nxsem_init(&storage->not_full, 0, (int32_t)max_items);
+	if (rc < 0)
+		return ove_errno_to_ove(-rc);
+	rc = nxsem_init(&storage->not_empty, 0, 0);
+	if (rc < 0) {
+		nxsem_destroy(&storage->not_full);
+		return ove_errno_to_ove(-rc);
+	}
 
 	*q = storage;
 	return OVE_OK;
