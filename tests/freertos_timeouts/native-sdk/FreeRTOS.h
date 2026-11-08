@@ -12,10 +12,6 @@
 #define configASSERT(condition) assert(condition)
 #define pdMS_TO_TICKS(ms) ((TickType_t)(((uint64_t)(ms) * configTICK_RATE_HZ) / 1000u))
 typedef void (*TaskFunction_t)(void *);
-typedef struct {
-	TickType_t start;
-	uint64_t wraps;
-} TimeOut_t;
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *);
 
 BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t, BaseType_t *);

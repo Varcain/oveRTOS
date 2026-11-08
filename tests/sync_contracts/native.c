@@ -170,6 +170,11 @@ TickType_t xTaskGetTickCount(void)
 {
 	return 1;
 }
+void vTaskSetTimeOutState(TimeOut_t *state)
+{
+	(void)state;
+	reject();
+}
 uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks)
 {
 	(void)clear;

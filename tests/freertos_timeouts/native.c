@@ -32,7 +32,7 @@ static unsigned checks, failures, depth, live, allocated, freed;
 static unsigned converted, native_calls, posted;
 static uint64_t converted_ns;
 static TickType_t converted_ticks, arguments[32], now;
-static uint64_t wraps;
+static UBaseType_t wraps;
 static BaseType_t native_result;
 static bool cv_mode;
 static void (*wake)(void);
@@ -267,15 +267,20 @@ BaseType_t xTaskResumeAll(void)
 }
 void vTaskSetTimeOutState(TimeOut_t *state)
 {
-	state->start = now;
-	state->wraps = wraps;
+	if (wraps > INT32_MAX) {
+		fputs("fixture rejected: native overflow count lifetime exceeded\n", stderr);
+		exit(2);
+	}
+	state->xTimeOnEntering = now;
+	state->xOverflowCount = (BaseType_t)wraps;
 }
 BaseType_t xTaskCheckForTimeOut(TimeOut_t *state, TickType_t *remaining)
 {
 	if (*remaining == portMAX_DELAY)
 		return pdFALSE;
-	TickType_t elapsed = (TickType_t)(now - state->start);
-	if ((wraps != state->wraps && now >= state->start) || elapsed >= *remaining) {
+	TickType_t elapsed = (TickType_t)(now - state->xTimeOnEntering);
+	if ((wraps != (UBaseType_t)state->xOverflowCount && now >= state->xTimeOnEntering) ||
+	    elapsed >= *remaining) {
 		*remaining = 0;
 		return pdTRUE;
 	}

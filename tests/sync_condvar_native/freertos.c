@@ -206,6 +206,12 @@ TickType_t xTaskGetTickCount(void)
 	return 0;
 }
 
+void vTaskSetTimeOutState(TimeOut_t *state)
+{
+	(void)state;
+	fixture_reject("unexpected Event snapshot in condition-variable observer");
+}
+
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage)
 {
 	*storage = (StaticSemaphore_t){.initialized = true};

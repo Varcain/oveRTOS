@@ -71,6 +71,11 @@ TickType_t xTaskGetTickCount(void)
 {
 	return 1;
 }
+void vTaskSetTimeOutState(TimeOut_t *state)
+{
+	(void)state;
+	reject();
+}
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage)
 {
 	*storage = (StaticSemaphore_t){.initialized = true};
