@@ -193,6 +193,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               sync-condvar sync-condvar-sanitize \
               sync-contracts sync-contracts-sanitize \
               queue-contracts queue-contracts-sanitize \
+              rust-queue rust-queue-sanitize \
               rust-scoped rust-scoped-sanitize \
               rust-sync rust-sync-sanitize \
               rust-async-sem rust-async-sem-sanitize \

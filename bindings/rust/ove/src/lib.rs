@@ -291,7 +291,7 @@ pub mod console;
 pub mod containers;
 #[cfg(any(has_fs, has_nvs, has_net_tls, has_net_httpd, has_audio))]
 mod cstring;
-#[cfg(any(has_time, has_sync, has_i2c))]
+#[cfg(any(has_time, has_sync, has_i2c, has_queue))]
 mod duration;
 #[cfg(feature = "embedded-hal")]
 mod embedded_hal_impl;

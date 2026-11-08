@@ -1087,6 +1087,23 @@ def test_queue_contracts_sanitize(ove_dir, output_dir):
     return _test_queue_contracts(ove_dir, output_dir, sanitize=True)
 
 
+def _test_rust_queue(ove_dir, output_dir, sanitize=False):
+    """Check Rust Queue ownership and context with guarded native operations."""
+    command = [sys.executable, os.path.join(ove_dir, "tests", "rust_queue", "run.py"),
+               os.path.join(output_dir, "tests", "rust_queue", "sanitize" if sanitize else "normal")]
+    rc = _run_owned_test_process(command + (["--sanitize"] if sanitize else []), env=dict(os.environ), timeout=600)
+    return TestResults(suite="rust-queue-sanitize" if sanitize else "rust-queue",
+                       passed=int(rc == 0), failed=int(rc != 0))
+
+
+def test_rust_queue(ove_dir, output_dir):
+    return _test_rust_queue(ove_dir, output_dir)
+
+
+def test_rust_queue_sanitize(ove_dir, output_dir):
+    return _test_rust_queue(ove_dir, output_dir, sanitize=True)
+
+
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
     """Check C++ arena capacity and cleanup against recording-only C fakes."""
     result = TestResults(suite="cpp-infer-sanitize" if sanitize else "cpp-infer")
@@ -4290,6 +4307,8 @@ TEST_TARGETS = {
     "sync-contracts-sanitize": test_sync_contracts_sanitize,
     "queue-contracts": test_queue_contracts,
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
+    "rust-queue": test_rust_queue,
+    "rust-queue-sanitize": test_rust_queue_sanitize,
     "rust-scoped": test_rust_scoped,
     "rust-scoped-sanitize": test_rust_scoped_sanitize,
     "rust-sync": test_rust_sync,

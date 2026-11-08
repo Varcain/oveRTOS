@@ -286,16 +286,8 @@ macro_rules! queue {
         }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_queue_storage_t = unsafe { core::mem::zeroed() };
-            static mut _B: [core::mem::MaybeUninit<$T>; $N] =
-                unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-            unsafe {
-                $crate::Queue::<$T, $N>::from_static(
-                    core::ptr::addr_of_mut!(_S),
-                    core::ptr::addr_of_mut!(_B) as *mut _,
-                )
-            }
-            .unwrap()
+            static _S: $crate::QueueStorage<$T, $N> = $crate::QueueStorage::new();
+            $crate::Queue::<$T, $N>::create(&_S).unwrap()
         }
     }};
 }
