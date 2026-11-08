@@ -283,6 +283,9 @@ jobs:
       - name: Async Queue setup and wake callbacks
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-async-queue test-rust-async-queue-sanitize
 
+      - name: Scoped SpinMutex ownership and native key cleanup
+        run: timeout --signal=INT --kill-after=30 1200 make test-rust-spinmutex test-rust-spinmutex-sanitize
+
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi
 

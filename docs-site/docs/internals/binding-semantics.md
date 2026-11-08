@@ -240,6 +240,22 @@ ASYNC, TIME or object initialization. Critical-section lock/unlock still require
 ASYNC. POSIX timer dispatchers bracket callbacks with the simulator context flag;
 this does not establish general asynchronous signal-handler or IRQ exclusion.
 
+Rust `SpinMutex` exposes scoped `with(f)` access. It reserves one exclusive
+data loan and keeps its native IRQ key private until the callback returns or
+unwinds. A repeated acquisition of the same object restores its temporary key
+and then panics before invoking another callback. Short callbacks can nest
+different objects; their keys retire in reverse order. A terminal panic or
+abort does not perform ordinary unwind cleanup. Native IRQ-provider context
+and priority requirements still apply.
+
+Migrate uses of the removed `SpinMutex::lock` and `SpinMutexGuard` to `with`.
+Return a computed value or application `Result` from the callback; its result
+shape passes through unchanged. Data references and IRQ ownership cannot escape
+the callback. `new` remains const, and `get_mut`/`into_inner` retain ordinary
+exclusive-owner access. Native SYNC plus ASYNC enables this type; Cargo `async`
+selects the separate runtime/provider. Keep callbacks nonblocking and access
+shared state between await points.
+
 Rust Mutex, RecursiveMutex, Semaphore, Event and CondVar use `ove_sync_context`
 privately before resource operations, waits and native deadline queries.
 RESOURCE permits legal FreeRTOS setup before scheduler start; BLOCKING requires

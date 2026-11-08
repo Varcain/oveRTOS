@@ -1077,6 +1077,28 @@ def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
+def _test_rust_spinmutex(ove_dir, output_dir, sanitize=False):
+    """Check scoped data ownership and exact native key retirement."""
+    label = "rust-spinmutex" + ("-sanitize" if sanitize else "")
+    folder = Path(output_dir) / "tests" / label
+    result = TestResults(suite=label)
+    stages = [("run.py", "ownership")] + ([] if sanitize else [("contracts.py", "contracts")])
+    for script, stage in stages:
+        command = [sys.executable, os.path.join(ove_dir, "tests/rust_spinmutex", script), str(folder / stage)]
+        rc = _run_owned_test_process(command + (["--sanitize"] if sanitize else []), env=dict(os.environ), timeout=600)
+        result.passed += int(rc == 0)
+        result.failed += int(rc != 0)
+    return result
+
+
+def test_rust_spinmutex(ove_dir, output_dir):
+    return _test_rust_spinmutex(ove_dir, output_dir)
+
+
+def test_rust_spinmutex_sanitize(ove_dir, output_dir):
+    return _test_rust_spinmutex(ove_dir, output_dir, sanitize=True)
+
+
 def _test_freertos_cv_context(ove_dir, output_dir, sanitize=False):
     return _ctest_suite(ove_dir, output_dir, "freertos_condvar_context",
                         "freertos-cv-context" + ("-sanitize" if sanitize else ""), sanitize, configs=(False,))
@@ -4757,6 +4779,8 @@ TEST_TARGETS = {
     "rust-sync-sanitize": test_rust_sync_sanitize,
     "rust-async-queue": test_rust_async_queue,
     "rust-async-queue-sanitize": test_rust_async_queue_sanitize,
+    "rust-spinmutex": test_rust_spinmutex,
+    "rust-spinmutex-sanitize": test_rust_spinmutex_sanitize,
     "rust-async-sem": test_rust_async_sem,
     "rust-async-sem-sanitize": test_rust_async_sem_sanitize,
     "cpp-infer": test_cpp_infer,
