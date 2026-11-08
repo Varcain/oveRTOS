@@ -11,22 +11,65 @@
 //! inter-task signalling without dedicated queues.
 
 use core::cell::UnsafeCell;
+use core::fmt;
 use core::mem::MaybeUninit;
+use core::sync::atomic::AtomicBool;
+#[cfg(zero_heap)]
+use core::sync::atomic::Ordering;
 
 use crate::bindings;
 use crate::error::{Error, Result};
 
-// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
-// calls below): any handle passed to the C API is non-null and refers to a
-// live RTOS object — wrapper constructors establish validity via
-// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
-// a handle is released. Pointer and slice arguments reference caller-owned
-// memory valid for the duration of the call; the C side copies whatever it
-// retains and does not alias them past return (verified against the
-// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
-// pointer casts from user data, slice reconstruction via `from_raw_parts`,
-// or storing a callback across the FFI boundary — carry their own
-// `// SAFETY:` comment.
+// SAFETY: successful construction publishes an initialized nonnull handle.
+// One owner keeps its native backing live through complete admitted cleanup;
+// synchronous operations borrow that owner through their callback tails.
+// Native deferred commands detach from backing before cleanup returns.
+// Raw backing and retained notification data have additional unsafe contracts.
+
+fn resource_context() -> bool {
+    // SAFETY: pointer-free, allocation-free query available with EventGroup alone.
+    (unsafe { bindings::ove_sync_context() } & bindings::OVE_SYNC_CONTEXT_RESOURCE) != 0
+}
+
+fn require_resource_context() -> Result<()> {
+    if resource_context() {
+        Ok(())
+    } else {
+        Err(Error::NotSupported)
+    }
+}
+
+fn blocking_context() -> Result<()> {
+    // SAFETY: pointer-free query before any clock or primitive operation.
+    if (unsafe { bindings::ove_sync_context() } & bindings::OVE_SYNC_CONTEXT_BLOCKING) != 0 {
+        Ok(())
+    } else {
+        Err(Error::NotSupported)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EventGroupOrigin {
+    #[cfg(not(zero_heap))]
+    Heap,
+    #[cfg(zero_heap)]
+    Static(&'static AtomicBool),
+    #[cfg(zero_heap)]
+    Raw,
+}
+
+impl EventGroupOrigin {
+    #[cfg_attr(
+        not(zero_heap),
+        allow(clippy::unused_self, reason = "heap owners have no static claim")
+    )]
+    fn release_claim(self) {
+        #[cfg(zero_heap)]
+        if let Self::Static(claim) = self {
+            claim.store(false, Ordering::Release);
+        }
+    }
+}
 
 /// Flags controlling [`EventGroup::wait_bits`] behavior.
 ///
@@ -57,11 +100,14 @@ pub const EG_WAIT_ALL: WaitFlags = WaitFlags::WAIT_ALL;
 #[deprecated(note = "use WaitFlags::CLEAR_ON_EXIT instead")]
 pub const EG_CLEAR_ON_EXIT: WaitFlags = WaitFlags::CLEAR_ON_EXIT;
 
-/// Caller-owned storage for an [`EventGroup`] in zero-heap mode (see
-/// [`crate::MutexStorage`]).
+/// Caller-owned storage for an [`EventGroup`] in zero-heap mode.
+/// Declare in a static and pass a shared reference to [`EventGroup::create`].
+/// A live, initializing, tearing-down, forgotten or retained owner keeps its
+/// claim closed until complete legal native cleanup. Heap mode ignores it.
 #[allow(dead_code)]
 pub struct EventGroupStorage {
     storage: UnsafeCell<MaybeUninit<bindings::ove_eventgroup_storage_t>>,
+    claimed: AtomicBool,
 }
 
 impl EventGroupStorage {
@@ -70,6 +116,7 @@ impl EventGroupStorage {
     pub const fn new() -> Self {
         Self {
             storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            claimed: AtomicBool::new(false),
         }
     }
 }
@@ -80,12 +127,20 @@ impl Default for EventGroupStorage {
     }
 }
 
-// SAFETY: see crate::MutexStorage.
+// SAFETY: private bytes expose no references. A unique atomic claimant owns
+// native initialization/access/cleanup; forget and unsupported Drop retain it.
 unsafe impl Sync for EventGroupStorage {}
 
 /// Event group — a set of named bits that can be set, cleared, and waited on.
+///
+/// Construction, cleanup and notification setup require RESOURCE permission.
+/// Unsupported Drop retains the native resource and its static claim.
+/// All task operations, including zero-timeout waits, require BLOCKING.
+/// Unsupported scalar methods return inert zero; Result methods return
+/// [`Error::NotSupported`] before primitive or deadline-clock effects.
 pub struct EventGroup {
     handle: bindings::ove_eventgroup_t,
+    origin: EventGroupOrigin,
 }
 
 impl EventGroup {
@@ -103,25 +158,40 @@ impl EventGroup {
     /// successfully initialized native resources and the allocation are released.
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
+        require_resource_context()?;
         let mut handle: bindings::ove_eventgroup_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_eventgroup_create(&mut handle) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            origin: EventGroupOrigin::Heap,
+        })
     }
 
     /// Create from caller-provided static storage.
     ///
     /// # Safety
-    /// Caller must ensure `storage` outlives the `EventGroup`.
+    /// Storage must be nonnull, aligned, complete, writable, unused and stable
+    /// through actual native cleanup or indefinite retention after forget or
+    /// unsupported Drop. No aliased live Rust reference into the native extent,
+    /// competing initialization, teardown or raw/wrapper access is permitted.
+    /// Native context, operation and external producer quiescence contracts
+    /// still apply. This entry does not own or reopen a typed storage claim.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(storage: *mut bindings::ove_eventgroup_storage_t) -> Result<Self> {
+        require_resource_context()?;
         let mut handle: bindings::ove_eventgroup_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_eventgroup_init(&mut handle, storage) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            origin: EventGroupOrigin::Raw,
+        })
     }
 
-    /// Mode-agnostic constructor (see [`crate::Mutex::create`]).
+    /// Mode-agnostic constructor. Heap mode ignores storage. Zero-heap mode
+    /// claims it before native initialization, returning [`Error::Busy`] while
+    /// another generation is live or retained. Clean errors release the claim.
     pub fn create(storage: &'static EventGroupStorage) -> Result<Self> {
         #[cfg(not(zero_heap))]
         {
@@ -130,24 +200,47 @@ impl EventGroup {
         }
         #[cfg(zero_heap)]
         {
+            require_resource_context()?;
+            storage
+                .claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| Error::Busy)?;
             let ptr = UnsafeCell::raw_get(&storage.storage).cast();
-            unsafe { Self::from_static(ptr) }
+            // SAFETY: a sole claim owns complete, aligned, stable typed backing.
+            match unsafe { Self::from_static(ptr) } {
+                Ok(mut owner) => {
+                    owner.origin = EventGroupOrigin::Static(&storage.claimed);
+                    Ok(owner)
+                }
+                Err(error) => {
+                    storage.claimed.store(false, Ordering::Release);
+                    Err(error)
+                }
+            }
         }
     }
 
     /// Set bits in the event group. Returns the post-set value.
     /// Bits outside [`Self::valid_mask`] return inert zero without effects;
     /// zero is also a possible genuine snapshot. Setting zero does not notify.
+    /// Returns inert zero without native effects when BLOCKING is unavailable.
     #[inline]
     pub fn set_bits(&self, bits: u32) -> u32 {
+        if blocking_context().is_err() {
+            return 0;
+        }
         unsafe { bindings::ove_eventgroup_set_bits(self.handle, bits) }
     }
 
     /// Clear bits and return the full prior snapshot atomically.
     /// Bits outside [`Self::valid_mask`] return inert zero without effects.
     /// Clearing zero returns the unchanged prior snapshot.
+    /// Returns inert zero without native effects when BLOCKING is unavailable.
     #[inline]
     pub fn clear_bits(&self, bits: u32) -> u32 {
+        if blocking_context().is_err() {
+            return 0;
+        }
         unsafe { bindings::ove_eventgroup_clear_bits(self.handle, bits) }
     }
 
@@ -183,7 +276,7 @@ impl EventGroup {
         flags: WaitFlags,
         d: core::time::Duration,
     ) -> Result<u32> {
-        self.wait_bits_with_timeout(bits, flags, crate::time::dur_to_ns(d))
+        self.wait_bits_with_timeout(bits, flags, crate::duration::dur_to_ns(d))
     }
 
     /// Wait by the given deadline.  Use
@@ -191,12 +284,14 @@ impl EventGroup {
     /// indefinite wait.
     /// Invalid masks return [`Error::InvalidParam`] before reading the clock.
     #[inline]
+    #[cfg(has_time)]
     pub fn wait_bits_until(
         &self,
         bits: u32,
         flags: WaitFlags,
         deadline: crate::time::Instant,
     ) -> Result<u32> {
+        blocking_context()?;
         if bits == 0 || bits & !Self::valid_mask() != 0 || flags.0 & !3 != 0 {
             return Err(Error::InvalidParam);
         }
@@ -205,6 +300,7 @@ impl EventGroup {
 
     #[inline]
     fn wait_bits_with_timeout(&self, bits: u32, flags: WaitFlags, timeout_ns: u64) -> Result<u32> {
+        blocking_context()?;
         let mut result: u32 = 0;
         let rc = unsafe {
             bindings::ove_eventgroup_wait_bits(self.handle, bits, flags.0, timeout_ns, &mut result)
@@ -213,30 +309,55 @@ impl EventGroup {
         Ok(result)
     }
 
-    /// Set bits from an ISR context. FreeRTOS returns the accepted requested
+    /// Set bits from an ISR context. Actual FreeRTOS interrupts return the accepted requested
     /// mask, or zero on queue failure; publication is deferred. Other engines
     /// return the post-set snapshot. Invalid bits return inert zero.
+    /// Task callers use [`Self::set_bits`], including its native task snapshot
+    /// and context fallback. Interrupt callers must satisfy native kernel-aware
+    /// priority/setup rules; detection does not qualify NMI or arbitrary IRQs.
     #[inline]
     pub fn set_bits_from_isr(&self, bits: u32) -> u32 {
+        // SAFETY: pointer-free detection does not access the native object.
+        if !unsafe { bindings::ove_is_in_isr() } {
+            return self.set_bits(bits);
+        }
         unsafe { bindings::ove_eventgroup_set_bits_from_isr(self.handle, bits) }
     }
 
     /// Clear bits from an ISR context. On FreeRTOS the clear is deferred to
     /// the timer service task; [`Error::QueueFull`] means it could not be
     /// queued. Bits outside [`Self::valid_mask`] return [`Error::InvalidParam`].
+    /// Task callers use the admitted task clear path and preserve InvalidParam.
+    /// Interrupts have the same kernel-aware restrictions as [`Self::set_bits_from_isr`].
     #[inline]
     pub fn clear_bits_from_isr(&self, bits: u32) -> Result<()> {
+        // SAFETY: pointer-free detection does not access the native object.
+        if !unsafe { bindings::ove_is_in_isr() } {
+            blocking_context()?;
+            if bits & !Self::valid_mask() != 0 {
+                return Err(Error::InvalidParam);
+            }
+            // SAFETY: admitted task, valid mask and borrowed live owner.
+            unsafe { bindings::ove_eventgroup_clear_bits(self.handle, bits) };
+            return Ok(());
+        }
         Error::from_code(unsafe { bindings::ove_eventgroup_clear_bits_from_isr(self.handle, bits) })
     }
 
     /// Get current bits value.
+    /// Returns inert zero without native effects when BLOCKING is unavailable;
+    /// that fallback does not report the actual bits.
     #[inline]
     pub fn get_bits(&self) -> u32 {
+        if blocking_context().is_err() {
+            return 0;
+        }
         unsafe { bindings::ove_eventgroup_get_bits(self.handle) }
     }
 
     /// Register a notify callback after each completed nonzero set.
     /// Wraps the C-level `ove_eventgroup_set_notify`.
+    /// Setup requires RESOURCE permission.
     ///
     /// # Safety
     /// Serialize setup/replacement/removal with producers, deferred dispatch
@@ -256,9 +377,40 @@ impl EventGroup {
         cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
         user_data: *mut core::ffi::c_void,
     ) -> Result<()> {
+        require_resource_context()?;
         let rc = unsafe { bindings::ove_eventgroup_set_notify(self.handle, cb, user_data) };
         Error::from_code(rc)
     }
 }
 
-crate::ove_handle_impl!(EventGroup, ove_eventgroup_destroy, ove_eventgroup_deinit);
+impl fmt::Debug for EventGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EventGroup")
+            .field("handle", &self.handle)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for EventGroup {
+    fn drop(&mut self) {
+        if self.handle.is_null() || !resource_context() {
+            return;
+        }
+        #[cfg(not(zero_heap))]
+        unsafe {
+            bindings::ove_eventgroup_destroy(self.handle);
+        }
+        #[cfg(zero_heap)]
+        unsafe {
+            bindings::ove_eventgroup_deinit(self.handle);
+        }
+        self.origin.release_claim();
+    }
+}
+
+// SAFETY: native bit/wait operations serialize access. The sole owner retains
+// backing through admitted cleanup; synchronous borrows and native cancellation
+// protect its lifetime. Notification registration/data have separate unsafe rules.
+unsafe impl Send for EventGroup {}
+// SAFETY: the same native serialization/lifecycle rules permit shared operations.
+unsafe impl Sync for EventGroup {}

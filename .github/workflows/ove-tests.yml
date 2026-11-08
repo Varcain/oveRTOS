@@ -266,6 +266,8 @@ jobs:
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-sync test-rust-sync-sanitize
       - name: Rust Queue ownership and context contracts
         run: timeout --signal=INT --kill-after=30 1500 make test-rust-queue test-rust-queue-sanitize
+      - name: Rust EventGroup ownership and context
+        run: timeout --signal=INT --kill-after=30 1500 make test-rust-eventgroup test-rust-eventgroup-sanitize
       - name: Async semaphore setup and wake callbacks
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-async-sem test-rust-async-sem-sanitize
       - name: Async Queue setup and wake callbacks

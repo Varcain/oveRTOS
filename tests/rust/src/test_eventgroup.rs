@@ -15,10 +15,20 @@ const BIT_2: u32 = 1 << 2;
 
 static EG_PTR: AtomicPtr<()> = AtomicPtr::new(core::ptr::null_mut());
 
+struct Publication;
+
+impl Drop for Publication {
+    fn drop(&mut self) {
+        EG_PTR.store(core::ptr::null_mut(), Ordering::Release);
+    }
+}
+
 fn setter_thread() {
     Thread::sleep_ms(50);
     let eg_ptr = EG_PTR.load(Ordering::Acquire);
     if !eg_ptr.is_null() {
+        // SAFETY: the owner outlives the joined worker. Its publication guard
+        // clears the pointer after join, including during panic cleanup.
         let eg = unsafe { &*(eg_ptr as *const EventGroup) };
         eg.set_bits(BIT_0 | BIT_1);
     }
@@ -82,22 +92,26 @@ fn test_clear_on_exit() {
     assert!(remaining & BIT_1 == 0);
 }
 
-fn test_set_bits_from_isr() {
+fn test_isr_named_task_routing() {
     let eg = EventGroup::new().unwrap();
-    eg.set_bits_from_isr(BIT_2);
-    assert!(eg.get_bits() & BIT_2 != 0);
+    eg.set_bits(BIT_0);
+    // This is a task call: it uses task operations and returns their snapshot.
+    assert_eq!(eg.set_bits_from_isr(BIT_2), BIT_0 | BIT_2);
+    assert_eq!(eg.clear_bits_from_isr(BIT_0), Ok(()));
+    assert_eq!(eg.get_bits(), BIT_2);
 }
 
 fn test_cross_thread() {
     let eg = EventGroup::new().unwrap();
     EG_PTR.store(&eg as *const EventGroup as *mut (), Ordering::Release);
+    // Declared before the worker so unwind joins it before clearing publication.
+    let _publication = Publication;
 
     let th = Thread::builder().name(c"set").priority(ove::Priority::Low).stack_size(4096).spawn_simple(setter_thread).unwrap();
     let actual = eg.wait_bits_for(BIT_0 | BIT_1, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(500)).unwrap();
     assert_eq!(actual & (BIT_0 | BIT_1), BIT_0 | BIT_1);
 
     drop(th);
-    EG_PTR.store(core::ptr::null_mut(), Ordering::Release);
 }
 
 fn test_raii_drop() {
@@ -117,7 +131,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_wait_any),
         test_entry!(test_wait_timeout),
         test_entry!(test_clear_on_exit),
-        test_entry!(test_set_bits_from_isr),
+        test_entry!(test_isr_named_task_routing),
         test_entry!(test_cross_thread),
         test_entry!(test_raii_drop),
     ])

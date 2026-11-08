@@ -8,6 +8,13 @@ Which suite runs on which backend. Sources of truth:
 
 ## Suite × backend
 
+The standalone `make test-rust-eventgroup` and
+`make test-rust-eventgroup-sanitize` gates use guarded POSIX native operations
+to validate Rust ownership, context, task/ISR routing and timeout conversion.
+They include heap/zero-heap and minimal/optional feature profiles, compiler
+controls and deliberate failure checks. Their modeled ISR branch is separate
+from physical interrupt coverage in the native C suites below.
+
 Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 
 | Suite              | stub | nuttx (native) | nuttx-qemu | freertos-qemu | zephyr | zephyr-qemu | Notes |
