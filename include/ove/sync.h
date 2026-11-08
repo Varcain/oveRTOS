@@ -404,7 +404,7 @@ void ove_condvar_destroy(ove_condvar_t cv);
  *
  * @param[in] mtx         Mutex handle obtained from ove_mutex_init() or
  *                        ove_mutex_create().
- * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ * @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.
  *
  * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
@@ -453,7 +453,7 @@ void ove_mutex_unlock(ove_mutex_t mtx);
  *
  * @param[in] sem         Semaphore handle obtained from ove_sem_init() or
  *                        ove_sem_create().
- * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ * @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.
  *
  * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
@@ -532,7 +532,7 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data);
  *
  * @param[in] evt         Event handle obtained from ove_event_init() or
  *                        ove_event_create().
- * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ * @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.
  *
  * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
@@ -603,7 +603,7 @@ void ove_event_signal_from_isr(ove_event_t evt);
  * @param[in] mtx         Recursive mutex handle obtained from
  *                        ove_recursive_mutex_init() or
  *                        ove_recursive_mutex_create().
- * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ * @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.
  *
  * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
@@ -665,7 +665,7 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  *                        ove_condvar_init() or ove_condvar_create().
  * @param[in] mtx         Mutex that guards the condition.  Must be locked
  *                        by the calling thread.
- * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ * @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.
  *
  * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
@@ -695,7 +695,7 @@ OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t t
  *
  * @param[in] cv          Condition variable handle.
  * @param[in] mtx         Ordinary mutex held exactly once by this thread.
- * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ * @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.
  *
  * @param[in] timeout_ns  Maximum wait, or @c OVE_WAIT_FOREVER.
  * @param[out] mutex_held Explicit ownership on every return. A NULL output

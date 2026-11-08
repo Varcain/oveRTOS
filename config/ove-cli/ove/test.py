@@ -1320,6 +1320,33 @@ def test_eventgroup_bindings(ove_dir, output_dir):
     return TestResults(suite="eventgroup-bindings", passed=int(valid), failed=int(not valid))
 
 
+def _test_freertos_timeouts(ove_dir, output_dir, sanitize=False):
+    """Check exact finite budgets and all shared native conversion consumers."""
+    label = "freertos-timeouts-sanitize" if sanitize else "freertos-timeouts"
+    build = Path(output_dir) / "tests" / "freertos_timeouts" / ("sanitize" if sanitize else "normal")
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_timeouts", "run.py"), str(build)]
+    if sanitize:
+        command.append("--sanitize")
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=600, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("freertos timeouts: observations=96 diagnostics=3 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
+def test_freertos_timeouts(ove_dir, output_dir):
+    return _test_freertos_timeouts(ove_dir, output_dir)
+
+
+def test_freertos_timeouts_sanitize(ove_dir, output_dir):
+    return _test_freertos_timeouts(ove_dir, output_dir, sanitize=True)
+
+
 def _test_nuttx_timeouts(ove_dir, output_dir, sanitize=False):
     """Check finite budgets, deadline accounting and timer range admission."""
     label = "nuttx-timeouts-sanitize" if sanitize else "nuttx-timeouts"
@@ -4851,6 +4878,8 @@ TEST_TARGETS = {
     "eventgroup-scalar-sanitize": test_eventgroup_scalar_sanitize,
     "eventgroup-user": test_eventgroup_user,
     "eventgroup-bindings": test_eventgroup_bindings,
+    "freertos-timeouts": test_freertos_timeouts,
+    "freertos-timeouts-sanitize": test_freertos_timeouts_sanitize,
     "nuttx-timeouts": test_nuttx_timeouts,
     "nuttx-timeouts-sanitize": test_nuttx_timeouts_sanitize,
     "eventgroup-deferred": test_eventgroup_deferred,

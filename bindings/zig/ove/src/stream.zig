@@ -18,6 +18,13 @@
 //! short counts refer to this effective budget. Only explicit FOREVER
 //! waits are indefinite; native tick phase, scheduling and condition-variable
 //! mutex reacquisition can extend the elapsed time.
+//!
+//! FreeRTOS synchronization, queue, EventGroup and stream calls convert a
+//! positive finite encoded budget with exact ceil(ns * Hz / 1e9), saturating
+//! at portMAX_DELAY - 1 before tick-type narrowing. Encoded FOREVER selects
+//! portMAX_DELAY; indefinite native waiting requires INCLUDE_vTaskSuspend=1.
+//! These are native-call budgets: scheduling, composed waits and mutex
+//! reacquisition can extend elapsed time.
 
 const std = @import("std");
 const c = @import("c.zig").raw;

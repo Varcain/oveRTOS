@@ -1,5 +1,7 @@
 # Inter-Thread Communication
 
+FreeRTOS synchronization, queue, EventGroup and stream calls convert a positive finite encoded budget with exact ceil(ns * Hz / 1e9), saturating at portMAX_DELAY - 1 before tick-type narrowing. Encoded FOREVER selects portMAX_DELAY; indefinite native waiting requires INCLUDE_vTaskSuspend=1. These are native-call budgets: scheduling, composed waits and mutex reacquisition can extend elapsed time.
+
 On NuttX, positive finite waits round up to ticks and saturate at min(WDOG_MAX_DELAY - 2, INT32_MAX - 1) ticks: 1,073,741,821 with 32-bit clocks or 2,147,483,646 with 64-bit clocks. Timeout and stream short counts refer to this effective budget. Only explicit FOREVER waits are indefinite; native tick phase, scheduling and condition-variable mutex reacquisition can extend the elapsed time.
 
 oveRTOS provides three IPC primitives for coordinating work across threads and interrupt service routines. Each is optimised for a distinct communication pattern:
