@@ -1077,6 +1077,32 @@ def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
+def _test_freertos_cv_context(ove_dir, output_dir, sanitize=False):
+    return _ctest_suite(ove_dir, output_dir, "freertos_condvar_context",
+                        "freertos-cv-context" + ("-sanitize" if sanitize else ""), sanitize, configs=(False,))
+
+
+def test_freertos_cv_context(ove_dir, output_dir):
+    return _test_freertos_cv_context(ove_dir, output_dir)
+
+
+def test_freertos_cv_context_sanitize(ove_dir, output_dir):
+    return _test_freertos_cv_context(ove_dir, output_dir, sanitize=True)
+
+
+def test_freertos_cv_context_arm(ove_dir, output_dir):
+    rows = [(0, 0, 0, zero, False) for zero in (0, 1)]
+    rows += [(1, enforce, allow, zero, False) for enforce in (0, 1) for allow in (0, 1) for zero in (0, 1)]
+    rows += [(mpu, mpu, 0, zero, True) for mpu in (0, 1) for zero in (0, 1)]
+    profiles = {f"{'v1' if mpu else 'ordinary'}-enforce{enforce}-allow{allow}-"
+                f"{'zero' if zero else 'heap'}{'-trace' if trace else ''}":
+                {"OVE_MPU_V1": mpu, "OVE_ZERO_HEAP": zero, "OVE_ALLOW_UNPRIVILEGED_CRITICAL": allow,
+                 "OVE_SYSCALL_ENFORCE": enforce, "OVE_NATIVE_TRACE": int(trace), "OVE_ERRATUM": 1 - mpu}
+                for mpu, enforce, allow, zero, trace in rows}
+    return _freertos_arm_profiles(ove_dir, output_dir, "freertos_condvar_context", "freertos-cv-context-arm",
+                                  "arm", "cv_context_target", profiles)
+
+
 def _test_sync_contracts(ove_dir, output_dir, sanitize=False):
     """Check construction, error and context contracts with guarded native observers."""
     result = TestResults(suite="sync-contracts-sanitize" if sanitize else "sync-contracts")
@@ -4708,6 +4734,9 @@ TEST_TARGETS = {
     "freertos-event-waiters": test_freertos_event_waiters,
     "freertos-event-waiters-sanitize": test_freertos_event_waiters_sanitize,
     "freertos-event-waiters-arm": test_freertos_event_waiters_arm,
+    "freertos-cv-context": test_freertos_cv_context,
+    "freertos-cv-context-sanitize": test_freertos_cv_context_sanitize,
+    "freertos-cv-context-arm": test_freertos_cv_context_arm,
     "freertos-event-bindings": test_freertos_event_bindings,
     "freertos-event-timeouts-sanitize": test_freertos_event_timeouts_sanitize,
     "freertos-event-timeouts-arm": test_freertos_event_timeouts_arm,

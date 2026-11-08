@@ -399,6 +399,9 @@ pub const Event = struct {
 /// Use these operations from thread context and re-check predicates after wakes.
 /// Single-core FreeRTOS protects notification and waiter retirement together;
 /// broadcast interrupt-masked work is linear in waiters. SMP is unsupported.
+/// FreeRTOS V1 uses short privileged list operations and restores caller mode
+/// before release, waiting and reacquisition. Privileged producers retain
+/// incoming masks with brief fault/IRQ masking if needed.
 pub const CondVar = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_condvar_t,

@@ -238,6 +238,16 @@ A condition variable lets a thread atomically release a mutex and sleep until an
 
 Always recheck the guarded condition in a `while` loop — spurious wakeups are possible on some backends.
 
+On single-core FreeRTOS, short privileged critical sections protect waiter
+publication, notification and retirement, including access to other tasks'
+private waiter stacks under MPU V1. Caller mode is restored before mutex release,
+native waiting and reacquisition. Broadcast masks kernel-aware interrupts for
+work linear in the number of waiters. Already-privileged native producers retain
+incoming masks; stronger masks require brief fault/IRQ masking. These remain
+thread-context operations with live, accessible backing and a legal native
+blocking context for waits. Rust also retains its existing blocking-context
+admission for signaling and broadcasting.
+
 ```mermaid
 sequenceDiagram
     participant W as Waiter Thread

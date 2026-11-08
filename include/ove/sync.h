@@ -668,6 +668,8 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  * do not establish mutex ownership; callers must not assume it is held.
  * Always re-check the predicate after a wake, which may be spurious.
  * Keep both objects and their backing alive until all operations finish.
+ * FreeRTOS V1 protects waiter-list access in short privileged sections,
+ * restoring caller mode before mutex release, waiting and reacquisition.
  *
  * @note Requires @c CONFIG_OVE_SYNC. Thread context only.
  *
@@ -767,6 +769,8 @@ void ove_condvar_signal(ove_condvar_t cv);
  * On single-core FreeRTOS, notification and waiter retirement share a
  * critical section. Broadcast masks kernel-aware interrupts for work
  * linear in the number of waiters. SMP configurations are unsupported.
+ * V1 restores the caller's mode. Already-privileged producers retain their
+ * incoming native masks; stronger masks require brief fault/IRQ masking.
  *
  * @param[in] cv  Condition variable handle to broadcast on.
  *
