@@ -191,6 +191,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap rust-lvgl rust-lvgl-sanitize rust-strings rust-spi rust-i2c rust-async-i2c rust-async-i2c-arm rust-async-spi rust-async-spi-arm \
               cpp-infer cpp-infer-sanitize rust-infer rust-infer-sanitize zig-infer \
               sync-condvar sync-condvar-sanitize \
+              freertos-cv-context freertos-cv-context-sanitize freertos-cv-context-arm \
               sync-contracts sync-contracts-sanitize \
               eventgroup-contracts eventgroup-contracts-sanitize \
               eventgroup-scalar eventgroup-scalar-sanitize \

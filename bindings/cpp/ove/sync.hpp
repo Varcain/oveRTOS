@@ -1019,6 +1019,9 @@ class Event
  * Single-core FreeRTOS keeps waiter retirement and notification in one
  * critical section; broadcast interrupt-masked work is linear in waiters.
  * FreeRTOS SMP configurations are unsupported.
+ * FreeRTOS V1 uses short privileged list operations and restores caller
+ * mode before releasing, waiting on or reacquiring the mutex. Privileged
+ * producers retain incoming masks using brief fault/IRQ masking if needed.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  * @note Always check the predicate in a loop after `wait()` to guard against

@@ -85,10 +85,8 @@ struct ove_event {
 };
 
 struct ove_condvar {
-	/* Waiter list head; updates are guarded by taskENTER_CRITICAL/EXIT,
-	 * not a mutex.  Replaces the earlier (StaticSemaphore_t static_guard,
-	 * SemaphoreHandle_t guard) pair which added 6× xSemaphoreTake/Give
-	 * round trips per signal+wait (~5 µs on Cortex-M7). */
+	/* Automatic waiter records share short privileged critical sections
+	 * for publication, notification and retirement on the single core. */
 	struct condvar_waiter *head;
 };
 

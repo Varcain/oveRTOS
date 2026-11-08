@@ -351,6 +351,55 @@ struct condvar_waiter {
 	struct condvar_waiter *next;
 };
 
+#if defined(portUSING_MPU_WRAPPERS) && portUSING_MPU_WRAPPERS == 1 && configUSE_MPU_WRAPPERS_V1 == 1
+#define OVE_CV_MPU_V1 1
+static bool condvar_wait_step(ove_condvar_t cv, struct condvar_waiter *self,
+			      bool publish) FREERTOS_SYSTEM_CALL __attribute__((noinline));
+static void condvar_notify(ove_condvar_t cv, bool all) FREERTOS_SYSTEM_CALL
+	__attribute__((noinline));
+#endif
+
+static bool condvar_wait_step(ove_condvar_t cv, struct condvar_waiter *self, bool publish)
+{
+#ifdef OVE_CV_MPU_V1
+	BaseType_t was_privileged = portIS_PRIVILEGED();
+	if (was_privileged == pdFALSE) {
+		portRAISE_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+	struct freertos_event_masks masks = event_mask_save();
+	taskENTER_CRITICAL();
+	bool found = false;
+	if (publish) {
+		self->next = cv->head;
+		cv->head = self;
+	} else {
+		/* Traversal can visit other tasks' private stacks. Keep its entire
+		 * lifetime inside this privileged, single-core exclusion scope. */
+		struct condvar_waiter **link = &cv->head;
+		while (*link != NULL) {
+			if (*link == self) {
+				*link = self->next;
+				found = true;
+				break;
+			}
+			link = &(*link)->next;
+		}
+	}
+	event_mask_prepare_exit();
+	taskEXIT_CRITICAL();
+	event_mask_restore(masks);
+#ifdef OVE_CV_MPU_V1
+	if (was_privileged == pdFALSE) {
+		portMEMORY_BARRIER();
+		portRESET_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+	return found;
+}
+
 /* ─── Condvar _init / _deinit ────────────────────────────────────────── */
 
 int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
@@ -378,10 +427,7 @@ static int condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns, 
 
 	/* Register before releasing the caller's mutex. All node and task uses
 	 * share this single-core critical boundary with waiter retirement. */
-	taskENTER_CRITICAL();
-	self.next = cv->head;
-	cv->head = &self;
-	taskEXIT_CRITICAL();
+	(void)condvar_wait_step(cv, &self, true);
 
 	/* Release the caller's mutex */
 	BaseType_t released = xSemaphoreGive(mtx->sem);
@@ -396,18 +442,7 @@ static int condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns, 
 
 	/* Unregister on every return, including unrelated notifications. A
 	 * notifier finishes all node/task uses before this section can run. */
-	taskENTER_CRITICAL();
-	struct condvar_waiter **pp = &cv->head;
-	int found = 0;
-	while (*pp) {
-		if (*pp == &self) {
-			*pp = self.next;
-			found = 1;
-			break;
-		}
-		pp = &(*pp)->next;
-	}
-	taskEXIT_CRITICAL();
+	bool found = condvar_wait_step(cv, &self, false);
 
 	if (released != pdTRUE)
 		return OVE_ERR_BUSY;
@@ -444,31 +479,50 @@ int ove_condvar_wait_checked(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout
 	return condvar_wait(cv, mtx, timeout_ns, mutex_held);
 }
 
-void ove_condvar_signal(ove_condvar_t cv)
+static void condvar_notify(ove_condvar_t cv, bool all)
 {
+#ifdef OVE_CV_MPU_V1
+	BaseType_t was_privileged = portIS_PRIVILEGED();
+	if (was_privileged == pdFALSE) {
+		portRAISE_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+	struct freertos_event_masks masks = event_mask_save();
 	taskENTER_CRITICAL();
-	if (cv->head != NULL) {
+	if (all) {
+		/* Retain every detached node through its final next-field use. */
+		struct condvar_waiter *p = cv->head;
+		cv->head = NULL;
+		while (p != NULL) {
+			xTaskNotifyGive(p->task);
+			p = p->next;
+		}
+	} else if (cv->head != NULL) {
 		TaskHandle_t task = cv->head->task;
 		cv->head = cv->head->next;
-		/* The nested native notification cannot schedule a recipient
-		 * until this outer critical section ends. */
 		xTaskNotifyGive(task);
 	}
-	taskEXIT_CRITICAL();
+	/* The task-tag getter also needs this enclosing privilege/mask scope. */
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
+	event_mask_prepare_exit();
+	taskEXIT_CRITICAL();
+	event_mask_restore(masks);
+#ifdef OVE_CV_MPU_V1
+	if (was_privileged == pdFALSE) {
+		portMEMORY_BARRIER();
+		portRESET_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+}
+
+void ove_condvar_signal(ove_condvar_t cv)
+{
+	condvar_notify(cv, false);
 }
 
 void ove_condvar_broadcast(ove_condvar_t cv)
 {
-	/* Keep detached nodes and task handles live through their last use.
-	 * Interrupt-masked work is linear in the number of waiters. */
-	taskENTER_CRITICAL();
-	struct condvar_waiter *p = cv->head;
-	cv->head = NULL;
-	while (p) {
-		xTaskNotifyGive(p->task);
-		p = p->next;
-	}
-	taskEXIT_CRITICAL();
-	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
+	condvar_notify(cv, true);
 }

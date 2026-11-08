@@ -1175,6 +1175,79 @@ def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
+def _test_freertos_cv_context(ove_dir, output_dir, sanitize=False):
+    label = "freertos-cv-context" + ("-sanitize" if sanitize else "")
+    folder = Path(output_dir) / "tests" / label
+    folder.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests/freertos_condvar_context/run.py"),
+               str(folder)]
+    if sanitize:
+        command.append("--sanitize")
+    log = folder / "gate.log"
+    with log.open("wb") as stream:
+        status = _run_owned_test_process(command, env=dict(os.environ), timeout=600, stdout=stream)
+    _record_scoped_observation(log, command, status)
+    text = log.read_text()
+    valid = status == 0 and text.endswith("freertos cv context gate: observations=48 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
+def test_freertos_cv_context(ove_dir, output_dir):
+    return _test_freertos_cv_context(ove_dir, output_dir)
+
+
+def test_freertos_cv_context_sanitize(ove_dir, output_dir):
+    return _test_freertos_cv_context(ove_dir, output_dir, sanitize=True)
+
+
+def test_freertos_cv_context_arm(ove_dir, output_dir):
+    label = "freertos-cv-context-arm"
+    folder = Path(output_dir) / "tests" / label
+    folder.mkdir(parents=True, exist_ok=True)
+    manifest = load_manifest(ove_dir)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = Path(ove_dir) / "dl" / ("FreeRTOS-Kernel-" + digest)
+    env = dict(os.environ)
+    if not (kernel / "include/FreeRTOS.h").is_file():
+        command = ["git", "clone", "--depth", "1", "--branch", revision,
+                   get_component(manifest, "rtos", "freertos", "kernel", "url"), str(kernel)]
+        kernel.parent.mkdir(parents=True, exist_ok=True)
+        log = folder / "kernel.log"
+        with log.open("wb") as stream:
+            status = _run_owned_test_process(command, env=env, timeout=120, stdout=stream)
+        _record_scoped_observation(log, command, status)
+        if status or not (kernel / "include/FreeRTOS.h").is_file():
+            print(log.read_text(errors="backslashreplace"), end="")
+            return TestResults(suite=label, failed=1)
+    toolchain = folder / "toolchain.json"
+    code = ("import json,sys;from pathlib import Path;"
+            "from ove.test import _ensure_arm_toolchain;"
+            "Path(sys.argv[2]).write_text(json.dumps(_ensure_arm_toolchain(sys.argv[1])))")
+    command = [sys.executable, "-c", code, str(ove_dir), str(toolchain)]
+    log = folder / "toolchain.log"
+    with log.open("wb") as stream:
+        status = _run_owned_test_process(command, env=env, timeout=240, stdout=stream)
+    _record_scoped_observation(log, command, status)
+    if status:
+        print(log.read_text(errors="backslashreplace"), end="")
+        return TestResults(suite=label, failed=1)
+    command = [sys.executable, os.path.join(ove_dir, "tests/freertos_condvar_context/target.py"),
+               str(folder / "native"), "--freertos", str(kernel),
+               "--toolchain", json.loads(toolchain.read_text())]
+    log = folder / "gate.log"
+    with log.open("wb") as stream:
+        status = _run_owned_test_process(command, env=env, timeout=1200, stdout=stream)
+    _record_scoped_observation(log, command, status)
+    text = log.read_text()
+    valid = status == 0 and text.endswith("freertos cv native gate: observations=14 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
 def _test_sync_contracts(ove_dir, output_dir, sanitize=False):
     """Check construction, error and context contracts with guarded native observers."""
     result = TestResults(suite="sync-contracts-sanitize" if sanitize else "sync-contracts")
@@ -5057,6 +5130,9 @@ TEST_TARGETS = {
     "freertos-event-waiters": test_freertos_event_waiters,
     "freertos-event-waiters-sanitize": test_freertos_event_waiters_sanitize,
     "freertos-event-waiters-arm": test_freertos_event_waiters_arm,
+    "freertos-cv-context": test_freertos_cv_context,
+    "freertos-cv-context-sanitize": test_freertos_cv_context_sanitize,
+    "freertos-cv-context-arm": test_freertos_cv_context_arm,
     "freertos-event-bindings": test_freertos_event_bindings,
     "freertos-event-timeouts-sanitize": test_freertos_event_timeouts_sanitize,
     "freertos-event-timeouts-arm": test_freertos_event_timeouts_arm,

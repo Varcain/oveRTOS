@@ -1067,6 +1067,10 @@ unsafe impl Sync for CondVarStorage {}
 /// no-ops outside an admitted blocking context; native NuttX signaling can lock.
 /// Single-core FreeRTOS protects notification and waiter retirement together;
 /// broadcast interrupt-masked work is linear in waiters. FreeRTOS SMP is unsupported.
+/// Native V1 list operations use short privileged scopes and restore caller
+/// mode before release, waiting and reacquisition. Privileged producers retain
+/// incoming masks with brief fault/IRQ masking if needed; the blocking-context
+/// admission above remains required for this wrapper.
 pub struct CondVar {
     handle: bindings::ove_condvar_t,
     origin: SyncOrigin,
