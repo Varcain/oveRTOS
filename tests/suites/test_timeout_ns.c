@@ -285,11 +285,6 @@ static void test_freertos_large_finite_prompt_release(void **state)
 						sizeof(s_range_bytes), 2),
 			 OVE_OK);
 	for (c.kind = 0; c.kind < 8; ++c.kind) {
-#ifdef CONFIG_OVE_RTOS_FREERTOS
-		/* Binary Event time accounting has its own independent repair. */
-		if (c.kind == 3)
-			continue;
-#endif
 		c.status = OVE_OK;
 		if (c.kind == 7)
 			assert_int_equal(ove_mutex_lock(c.mutex, OVE_MS(500)), OVE_OK);

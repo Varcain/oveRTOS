@@ -204,6 +204,13 @@ TickType_t xTaskGetTickCount(void)
 	return model.tick++;
 }
 
+void vTaskSetTimeOutState(TimeOut_t *state)
+{
+	/* Existing retirement schedules remain within the first tick cycle. */
+	state->xOverflowCount = 0;
+	state->xTimeOnEntering = xTaskGetTickCount();
+}
+
 static void before_native(TaskHandle_t target)
 {
 	if (model.in_native || target != &token || !token.initialized ||

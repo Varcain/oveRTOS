@@ -89,6 +89,8 @@ jobs:
           timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts-sanitize
           timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts
           timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts-sanitize
+          timeout --signal=INT --kill-after=30 480 make test-freertos-event-timeouts
+          timeout --signal=INT --kill-after=30 480 make test-freertos-event-timeouts-sanitize
           timeout --signal=INT --kill-after=30 420 make test-nuttx-timeouts
           timeout --signal=INT --kill-after=30 420 make test-nuttx-timeouts-sanitize
           timeout --signal=INT --kill-after=30 360 make test-eventgroup-scalar
@@ -551,6 +553,9 @@ jobs:
 
       - name: Check EventGroup deferred interrupt delivery and task access
         run: timeout --signal=INT --kill-after=30 960 make test-eventgroup-deferred-arm
+
+      - name: Native Event timeout and caller-mode controls
+        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-event-timeouts-arm
 
       - name: Qualify shipped inference models on Cortex-M7
         run: timeout --kill-after=20 1500 make test-infer-target

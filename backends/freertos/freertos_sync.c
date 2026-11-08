@@ -125,6 +125,26 @@ void ove_event_deinit(ove_event_t evt)
 	(void)evt; /* no kernel object to release */
 }
 
+static bool event_time_expired(TimeOut_t *previous, TickType_t *remaining)
+{
+	/* A ready task can miss complete tick-counter cycles. Charge all
+	 * represented wraps and update from this one coherent native snapshot. */
+	TimeOut_t current;
+	vTaskSetTimeOutState(&current);
+	UBaseType_t wraps =
+		(UBaseType_t)current.xOverflowCount - (UBaseType_t)previous->xOverflowCount;
+	TickType_t elapsed = (TickType_t)(current.xTimeOnEntering - previous->xTimeOnEntering);
+	if (wraps > 1 || (wraps == 1 && current.xTimeOnEntering >= previous->xTimeOnEntering) ||
+	    elapsed >= *remaining) {
+		*remaining = 0;
+		return true;
+	}
+	*remaining -= elapsed;
+	previous->xOverflowCount = current.xOverflowCount;
+	previous->xTimeOnEntering = current.xTimeOnEntering;
+	return false;
+}
+
 int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
@@ -135,8 +155,10 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 	(void)ulTaskNotifyTake(pdTRUE, 0);
 
 	const int forever = (timeout_ns == OVE_WAIT_FOREVER);
-	const TickType_t deadline =
-		xTaskGetTickCount() + (forever ? 0 : ove_ns_to_ticks(timeout_ns));
+	TickType_t remaining = forever ? 0 : ove_ns_to_ticks(timeout_ns);
+	TimeOut_t deadline;
+	if (!forever && remaining != 0)
+		vTaskSetTimeOutState(&deadline);
 	int ret = OVE_ERR_TIMEOUT;
 
 	/* Register as the (single) waiter for the signaller to notify. */
@@ -155,12 +177,11 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 		if (forever) {
 			wait_ticks = portMAX_DELAY;
 		} else {
-			TickType_t now = xTaskGetTickCount();
-			if ((int32_t)(deadline - now) <= 0) {
+			if (remaining == 0 || event_time_expired(&deadline, &remaining)) {
 				ret = OVE_ERR_TIMEOUT;
 				break;
 			}
-			wait_ticks = deadline - now;
+			wait_ticks = remaining;
 		}
 
 		uint32_t got = ulTaskNotifyTake(pdTRUE, wait_ticks);

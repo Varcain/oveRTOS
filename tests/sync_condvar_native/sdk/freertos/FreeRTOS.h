@@ -46,6 +46,15 @@ typedef uint32_t TickType_t;
 #endif
 typedef int BaseType_t;
 typedef uint32_t UBaseType_t;
+#ifndef OVE_MODEL_TIMEOUT_DEFINED
+#define OVE_MODEL_TIMEOUT_DEFINED
+typedef struct {
+	BaseType_t xOverflowCount;
+	TickType_t xTimeOnEntering;
+} TimeOut_t;
+void vTaskSetTimeOutState(TimeOut_t *);
+BaseType_t xTaskCheckForTimeOut(TimeOut_t *, TickType_t *);
+#endif
 typedef void (*TimerCallbackFunction_t)(TimerHandle_t);
 typedef void (*PendedFunction_t)(void *, uint32_t);
 #ifndef configNUMBER_OF_CORES
