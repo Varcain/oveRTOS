@@ -6,6 +6,7 @@ rust-version = "1.85"
 
 [features]
 async-semaphore = ["ove/async"]
+async-queue = ["ove/async", "dep:static_cell"]
 
 [[bin]]
 name = "ove-tests"
@@ -16,9 +17,15 @@ name = "async-semaphore"
 path = "async_semaphore.rs"
 required-features = ["async-semaphore"]
 
+[[bin]]
+name = "async-queue"
+path = "async_queue.rs"
+required-features = ["async-queue"]
+
 [dependencies]
 ove = { path = "../../bindings/rust/ove", features = ["std", "embedded-hal", "embedded-io"], default-features = false }
 embedded-hal = "1.0"
 embedded-io = "0.7"
 log = "0.4"
 static_assertions = "1.1"
+static_cell = { version = "=2.1.1", optional = true }
