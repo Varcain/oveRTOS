@@ -403,6 +403,13 @@ void ove_socket_destroy(ove_socket_t sock);
 /**
  * @brief Resolve a hostname to an address.
  *
+ * FreeRTOS DNS uses the same exact finite tick conversion and
+ * portMAX_DELAY - 1 saturation for its completion wait. A zero argument
+ * selects its existing ten-second default. The preceding serialization
+ * mutex wait is outside this budget. Encoded FOREVER requires native
+ * INCLUDE_vTaskSuspend=1 for indefinite waiting. Other engines use their
+ * own DNS timeout policies.
+ *
  * @param[in]  hostname   Null-terminated hostname string.
  * @param[out] addr       Resolved address written here.
  * @param[in]  timeout_ns Timeout in nanoseconds.

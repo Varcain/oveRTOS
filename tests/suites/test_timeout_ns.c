@@ -188,7 +188,7 @@ static void test_sem_wait_forever_unblocks_on_give(void **state)
 	ove_test_sem_destroy(sem);
 }
 
-#ifdef CONFIG_OVE_RTOS_NUTTX
+#if defined(CONFIG_OVE_RTOS_NUTTX) || defined(CONFIG_OVE_RTOS_FREERTOS)
 OVE_TEST_STORAGE(ove_mutex_storage_t, s_range_recursive);
 OVE_TEST_STORAGE(ove_condvar_storage_t, s_range_condvar);
 OVE_TEST_STORAGE(ove_sem_storage_t, s_range_ready);
@@ -263,7 +263,11 @@ static void range_wake_entry(void *arg)
 	}
 }
 
+#ifdef CONFIG_OVE_RTOS_NUTTX
 static void test_nuttx_large_finite_prompt_release(void **state)
+#else
+static void test_freertos_large_finite_prompt_release(void **state)
+#endif
 {
 	(void)state;
 	struct range_wake_context c = {0};
@@ -281,6 +285,11 @@ static void test_nuttx_large_finite_prompt_release(void **state)
 						sizeof(s_range_bytes), 2),
 			 OVE_OK);
 	for (c.kind = 0; c.kind < 8; ++c.kind) {
+#ifdef CONFIG_OVE_RTOS_FREERTOS
+		/* Binary Event time accounting has its own independent repair. */
+		if (c.kind == 3)
+			continue;
+#endif
 		c.status = OVE_OK;
 		if (c.kind == 7)
 			assert_int_equal(ove_mutex_lock(c.mutex, OVE_MS(500)), OVE_OK);
@@ -352,6 +361,46 @@ static void test_nuttx_large_finite_prompt_release(void **state)
 }
 #endif
 
+#ifdef CONFIG_OVE_RTOS_FREERTOS
+struct queue_drain_context {
+	ove_queue_t queue;
+	uint32_t value;
+	int status;
+};
+static void queue_drain_entry(void *arg)
+{
+	struct queue_drain_context *ctx = arg;
+	test_msleep(30);
+	ctx->status = ove_queue_receive(ctx->queue, &ctx->value, 0);
+}
+static void test_freertos_large_finite_queue_send(void **state)
+{
+	(void)state;
+	ove_queue_t queue = NULL;
+	assert_int_equal(ove_test_queue_create(&queue, &s_q_storage, s_q_buffer, sizeof(uint32_t),
+					       4),
+			 OVE_OK);
+	uint32_t value = 123;
+	for (unsigned i = 0; i < 4; ++i)
+		assert_int_equal(ove_queue_send(queue, &value, 0), OVE_OK);
+	struct queue_drain_context ctx = {.queue = queue, .status = OVE_ERR_BUSY};
+	ove_thread_t worker = NULL;
+	assert_int_equal(ove_test_thread_run(&worker, &s_th_storage, "range-drain",
+					     queue_drain_entry, &ctx, s_th_stack,
+					     sizeof(s_th_stack)),
+			 OVE_OK);
+	int result = ove_queue_send(queue, &value, UINT64_MAX - 1);
+	assert_int_equal(ove_test_thread_join_destroy(worker, 2000), OVE_OK);
+	assert_int_equal(result, OVE_OK);
+	assert_int_equal(ctx.status, OVE_OK);
+	assert_int_equal(ctx.value, value);
+	assert_int_equal(ove_queue_count(queue), 4);
+	for (unsigned i = 0; i < 4; ++i)
+		assert_int_equal(ove_queue_receive(queue, &value, 0), OVE_OK);
+	ove_test_queue_destroy(queue);
+}
+#endif
+
 /* ── runner ─────────────────────────────────────────────────────────── */
 
 int test_timeout_ns_run(void)
@@ -367,6 +416,10 @@ int test_timeout_ns_run(void)
 		cmocka_unit_test(test_sem_timeout_above_uint32_max_slow_path),
 #ifdef CONFIG_OVE_RTOS_NUTTX
 		cmocka_unit_test(test_nuttx_large_finite_prompt_release),
+#endif
+#ifdef CONFIG_OVE_RTOS_FREERTOS
+		cmocka_unit_test(test_freertos_large_finite_prompt_release),
+		cmocka_unit_test(test_freertos_large_finite_queue_send),
 #endif
 		cmocka_unit_test(test_timeout_ns_constants),
 		cmocka_unit_test(test_sem_wait_forever_unblocks_on_give),

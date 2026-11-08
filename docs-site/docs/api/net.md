@@ -1,5 +1,7 @@
 # Networking
 
+FreeRTOS DNS uses the same exact finite tick conversion and portMAX_DELAY - 1 saturation for its completion wait. A zero argument selects its existing ten-second default. The preceding serialization mutex wait is outside this budget. Encoded FOREVER requires native INCLUDE_vTaskSuspend=1 for indefinite waiting. Other engines use their own DNS timeout policies.
+
 The oveRTOS networking subsystem provides a portable BSD-like socket API, DNS resolution, TLS encryption, and higher-level protocol clients (HTTP, MQTT) and servers (HTTPD with WebSocket support). The stack runs on all four backends with zero-heap support throughout.
 
 All networking modules require `CONFIG_OVE_NET`. When it is not set, every function is replaced by a static inline stub that returns `OVE_ERR_NOT_SUPPORTED`.

@@ -87,6 +87,8 @@ jobs:
           timeout --signal=INT --kill-after=30 360 make test-queue-contracts-sanitize
           timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts
           timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts-sanitize
+          timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts
+          timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts-sanitize
           timeout --signal=INT --kill-after=30 420 make test-nuttx-timeouts
           timeout --signal=INT --kill-after=30 420 make test-nuttx-timeouts-sanitize
           timeout --signal=INT --kill-after=30 360 make test-eventgroup-scalar

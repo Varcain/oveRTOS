@@ -74,6 +74,13 @@
 //! For the async equivalents, see [`crate::async_net`]'s module docs —
 //! it documents which crates.io community crates pair with embassy-net
 //! ([`rust-mqtt`], [`reqwless`], [`embedded-tls`], `sntpc`, `picoserve`).
+//!
+//! FreeRTOS DNS uses the same exact finite tick conversion and
+//! portMAX_DELAY - 1 saturation for its completion wait. A zero argument
+//! selects its existing ten-second default. The preceding serialization
+//! mutex wait is outside this budget. Encoded FOREVER requires native
+//! INCLUDE_vTaskSuspend=1 for indefinite waiting. Other engines use their
+//! own DNS timeout policies.
 
 use core::fmt;
 
