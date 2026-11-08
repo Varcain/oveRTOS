@@ -776,3 +776,12 @@ this fallback does not report actual emptiness. Capacity is validated constant N
 Raw backing and callback installation retain their documented unsafe contracts;
 notification setup requires RESOURCE and serialization through all callback
 tails. These Rust ownership rules do not impose a new C++ or Zig lifetime API.
+
+Rust AsyncQueue setup consumes exclusive static access and returns shared ready
+access only after callback installation. Producers and receive futures use that
+shared reference. Safe permanent placement can use StaticCell without a core
+allocator dependency or application FFI. Setup uses Queue's RESOURCE admission;
+producer-only masked contexts are insufficient. Error consumes the static borrow
+too, retaining wrapper/backing and preventing safe retry or reclamation. Static
+lifetime keeps callback data alive after publication, while exclusive setup
+prevents registration from overlapping another registration or producer.

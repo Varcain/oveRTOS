@@ -262,6 +262,8 @@ jobs:
         run: timeout --signal=INT --kill-after=30 1500 make test-rust-queue test-rust-queue-sanitize
       - name: Async semaphore setup and wake callbacks
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-async-sem test-rust-async-sem-sanitize
+      - name: Async Queue setup and wake callbacks
+        run: timeout --signal=INT --kill-after=30 1200 make test-rust-async-queue test-rust-async-queue-sanitize
 
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi

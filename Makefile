@@ -197,6 +197,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               rust-scoped rust-scoped-sanitize \
               rust-sync rust-sync-sanitize \
               rust-async-sem rust-async-sem-sanitize \
+              rust-async-queue rust-async-queue-sanitize \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
               i2c-native-arm i2c-native-zephyr infer-admission infer-admission-sanitize infer-target \
               i2c-retirement-freertos i2c-retirement-zephyr i2c-retirement-nuttx \
