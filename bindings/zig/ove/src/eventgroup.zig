@@ -79,6 +79,8 @@ pub const EventGroup = struct {
     /// Idempotent — clears `handle` and `storage` after teardown so a
     /// redundant `defer eg.deinit()` after an explicit `deinit()` is a safe
     /// no-op rather than a double free.
+    /// External producers and synchronous users must be quiescent. FreeRTOS
+    /// cancels queued commands before allocator-owned backing is released.
     pub fn deinit(self: *EventGroup) void {
         if (self.handle) |h| {
             c.ove_eventgroup_deinit(h);

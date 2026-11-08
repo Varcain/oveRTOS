@@ -235,14 +235,20 @@ impl EventGroup {
         unsafe { bindings::ove_eventgroup_get_bits(self.handle) }
     }
 
-    /// Register a notify callback fired after every successful set_bits.
+    /// Register a notify callback after each completed nonzero set.
     /// Wraps the C-level `ove_eventgroup_set_notify`.
     ///
     /// # Safety
-    /// Same as [`crate::Stream::set_notify`]: `user_data` must remain
-    /// valid for as long as the callback may fire, and `cb` must be
-    /// ISR-safe (the C-side invokes it from whatever context the set
-    /// ran in, thread or ISR).
+    /// Serialize setup/replacement/removal with producers, deferred dispatch
+    /// and other registrations. Keep callback code and `user_data` valid through
+    /// pending dispatch and saved/in-flight tails, including after removal or
+    /// native teardown; neither is a callback-data reclamation fence.
+    /// Task sets notify inside their call. FreeRTOS ISR sets notify later in the
+    /// timer daemon after native publication; other engines use the producer
+    /// context. Rejected/canceled/zero sets and clears do not notify. Waiters
+    /// may consume bits before notification. The callback must be nonblocking,
+    /// safe in all delivery contexts, support permitted concurrent/reentrant
+    /// calls and never unwind across C.
     #[cfg(has_async)]
     #[inline]
     pub unsafe fn set_notify(

@@ -65,6 +65,8 @@ class EventGroup
 
 	/**
 	 * @brief Destroys the event group, releasing the underlying kernel resource.
+	 * External producers and synchronous users must be quiescent. FreeRTOS
+	 * cancels queued commands before inline or heap backing expires.
 	 */
 	~EventGroup() noexcept
 	{
@@ -186,8 +188,8 @@ class EventGroup
 	 *         publication is deferred. Other engines return the post-set snapshot.
 	 *         Invalid bits outside valid_mask() return zero without effects.
 	 *
-	 * `[[nodiscard]]` for the same reason as @ref set_bits — the
-	 * post-set state is the observable result.
+	 * `[[nodiscard]]` because zero can report rejected admission. FreeRTOS
+	 * teardown cancels pending commands before backing expires.
 	 */
 	[[nodiscard]] ove_eventbits_t set_bits_from_isr(ove_eventbits_t bits)
 	{

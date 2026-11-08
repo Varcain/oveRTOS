@@ -192,6 +192,8 @@ Combining both flags (`OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT`) is the recommend
 
 Static-storage macro: `OVE_EVENTGROUP_DEFINE_STATIC(name)` (in `ove/storage.h`).
 
+Before teardown, quiesce external interrupt sources, producers and synchronous users. FreeRTOS cancels queued commands before backing can expire or be reused. Nonzero ISR sets notify later in the timer daemon after native publication and waiter processing; accepted commands canceled by teardown do not notify. Callback setup must be serialized with producers and deferred dispatch. Keep callback code/data alive through pending and saved delivery tails: removing a callback or destroying the group is not a callback-data reclamation fence.
+
 Set and clear reject bits outside the configured mask before native or callback effects. Scalar operations return zero on invalid input; ISR clear returns `OVE_ERR_INVALID_PARAM`. Zero set and clear masks remain valid; task clear returns the full prior value, including unaffected bits. A wait requires a nonzero valid mask and only the two documented flags. Invalid waits return `OVE_ERR_INVALID_PARAM` without changing the result, entering native synchronization or reading a deadline clock. For example, clear all supported bits with `ove_eventgroup_clear_bits(eg, ove_eventgroup_valid_mask())`. The normal binding accessors are `EventGroup::valid_mask()` in C++ and Rust, and `EventGroup.validMask()` in Zig.
 
 ### Example: Coordinating Load and Bypass State
@@ -226,17 +228,10 @@ int wait_for_ir(void)
                                     OVE_EG_WAIT_ALL, OVE_WAIT_FOREVER, NULL);
 }
 
-/* Bypass button ISR — toggle bypass bit */
-void BYPASS_IRQHandler(void)
+/* Clip detector ISR — signal work for a thread to consume */
+void CLIP_DETECT_IRQHandler(void)
 {
-    bool bypass = !!(ove_eventgroup_get_bits(g_state_eg) & BIT_BYPASS_ACTIVE);
-    if (bypass) {
-        if (ove_eventgroup_clear_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE) != OVE_OK) {
-            /* FreeRTOS timer queue full: the bit stays set; the next press retries */
-        }
-    } else {
-        ove_eventgroup_set_bits_from_isr(g_state_eg, BIT_BYPASS_ACTIVE);
-    }
+    (void)ove_eventgroup_set_bits_from_isr(g_state_eg, BIT_CLIP_DETECTED);
 }
 ```
 

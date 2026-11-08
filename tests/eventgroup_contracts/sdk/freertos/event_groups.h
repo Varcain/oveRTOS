@@ -2,6 +2,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "FreeRTOS.h"
+#ifndef configTIMER_QUEUE_LENGTH
+#define configTIMER_QUEUE_LENGTH 10
+#endif
+#ifndef PRIVILEGED_DATA
+#define PRIVILEGED_DATA
+#endif
 typedef TickType_t EventBits_t;
 #if OVE_MODEL_TICK_BITS == 16
 #define eventEVENT_BITS_CONTROL_BYTES UINT16_C(0xff00)

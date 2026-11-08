@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include "../framework/ove_test_isr.h"
 
 OVE_TEST_STORAGE(ove_eventgroup_storage_t, s_eg_storage);
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
@@ -29,6 +30,34 @@ static void setter_thread(void *arg)
 	setter_ctx_t *ctx = (setter_ctx_t *)arg;
 	test_msleep(ctx->delay_ms);
 	ove_eventgroup_set_bits(ctx->eg, ctx->bits_to_set);
+}
+
+typedef struct {
+	ove_eventgroup_t eg;
+	ove_eventbits_t bits, accepted;
+	int status;
+} isr_ctx_t;
+
+static void set_from_interrupt(void *arg)
+{
+	isr_ctx_t *ctx = arg;
+	ctx->accepted = ove_eventgroup_set_bits_from_isr(ctx->eg, ctx->bits);
+}
+
+static void clear_from_interrupt(void *arg)
+{
+	isr_ctx_t *ctx = arg;
+	ctx->status = ove_eventgroup_clear_bits_from_isr(ctx->eg, ctx->bits);
+}
+
+static bool expected_interrupt_context(bool actual)
+{
+#ifdef CONFIG_OVE_RTOS_POSIX
+	/* The host helper deliberately supplies a task stand-in, not an IRQ. */
+	return !actual;
+#else
+	return actual;
+#endif
 }
 
 /* ── tests ───────────────────────────────────────────────────────────── */
@@ -167,12 +196,15 @@ static void test_eg_set_bits_from_isr(void **state)
 	ove_eventgroup_t eg = NULL;
 	ove_test_eventgroup_create(&eg, &s_eg_storage);
 
-	ove_eventgroup_set_bits_from_isr(eg, BIT_2);
-
-	ove_eventbits_t bits = ove_eventgroup_get_bits(eg);
-	assert_true(bits & BIT_2);
-
+	isr_ctx_t ctx = {.eg = eg, .bits = BIT_2};
+	bool actual = ove_test_run_in_isr(set_from_interrupt, &ctx);
+	ove_eventbits_t bits = 0;
+	int rc = ove_eventgroup_wait_bits(eg, BIT_2, 0, OVE_MS(100), &bits);
 	ove_test_eventgroup_destroy(eg);
+	assert_true(expected_interrupt_context(actual));
+	assert_true(ctx.accepted & BIT_2);
+	assert_int_equal(rc, OVE_OK);
+	assert_true(bits & BIT_2);
 }
 
 static void test_eg_clear_bits_from_isr(void **state)
@@ -182,7 +214,8 @@ static void test_eg_clear_bits_from_isr(void **state)
 	ove_test_eventgroup_create(&eg, &s_eg_storage);
 
 	ove_eventgroup_set_bits(eg, BIT_0 | BIT_2);
-	assert_int_equal(ove_eventgroup_clear_bits_from_isr(eg, BIT_2), OVE_OK);
+	isr_ctx_t ctx = {.eg = eg, .bits = BIT_2, .status = OVE_ERR_TIMEOUT};
+	bool actual = ove_test_run_in_isr(clear_from_interrupt, &ctx);
 
 	/* FreeRTOS applies the clear in its timer service task: give it a turn. */
 	ove_eventbits_t bits = ove_eventgroup_get_bits(eg);
@@ -190,10 +223,11 @@ static void test_eg_clear_bits_from_isr(void **state)
 		ove_thread_sleep_ms(10);
 		bits = ove_eventgroup_get_bits(eg);
 	}
+	ove_test_eventgroup_destroy(eg);
+	assert_true(expected_interrupt_context(actual));
+	assert_int_equal(ctx.status, OVE_OK);
 	assert_false(bits & BIT_2);
 	assert_true(bits & BIT_0);
-
-	ove_test_eventgroup_destroy(eg);
 }
 
 static void test_eg_cross_thread(void **state)

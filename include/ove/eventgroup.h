@@ -90,8 +90,12 @@ OVE_NODISCARD int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_stora
 /**
  * @brief Deinitialise a statically-allocated event group.
  *
- * Releases all RTOS resources associated with @p eg. Any tasks still
- * blocked in @ref ove_eventgroup_wait_bits will be unblocked with an error.
+ * Releases all RTOS resources associated with @p eg. External interrupt
+ * sources, producers and synchronous users must be quiescent before teardown.
+ * On FreeRTOS, queued deferred commands are canceled before return, so backing
+ * may immediately expire or be reused without waiting for the timer daemon.
+ * This does not retire notify code/data already saved for delivery; see
+ * @ref ove_eventgroup_set_notify.
  *
  * @param[in] eg  Event group handle returned by @ref ove_eventgroup_init.
  * @note Requires @c CONFIG_OVE_EVENTGROUP.
@@ -223,6 +227,8 @@ OVE_NODISCARD static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t 
  * ISR-safe variant of @ref ove_eventgroup_set_bits. A context switch to a
  * higher-priority task that was unblocked may be requested by the underlying
  * RTOS after this call returns.
+ * On FreeRTOS publication and notification occur later in the timer task.
+ * Teardown cancels commands that have not started their native update.
  *
  * @param[in] eg    Event group handle.
  * @param[in] bits  Bitmask of bits to set.
@@ -240,6 +246,8 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
  * is handed to the timer service task and takes effect once that task runs,
  * after the ISR returns; the other engines clear immediately. Because of that
  * deferral it reports a status, not the previous bits.
+ * Teardown cancels pending commands before backing is released. Successful
+ * admission requests a context switch when it wakes the timer task.
  *
  * @param[in] eg    Event group handle.
  * @param[in] bits  Bitmask of bits to clear.
@@ -262,8 +270,19 @@ OVE_NODISCARD int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_ev
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg);
 
 /**
- * @brief Register a notify callback fired after every successful set of
- *        one or more bits. See `set_notify` family across primitives.
+ * @brief Register a notify callback after a successful nonzero set.
+ *
+ * Task sets notify inside their producing call. FreeRTOS ISR sets notify in
+ * the timer daemon after publication and native waiter processing; other
+ * engines notify from the producing context. The bits may already have been
+ * consumed by waiters. Rejected, canceled or zero sets and clears do not notify.
+ *
+ * Setup/replacement/removal must be serialized with producers, deferred
+ * dispatch and other registrations. Keep callback code/data alive through all
+ * pending dispatch and saved/in-flight delivery tails. Removal or deinit is not
+ * a callback-data reclamation fence: a saved pair can run after either returns.
+ * Callbacks must be nonblocking, support permitted concurrent/reentrant calls
+ * and never unwind across C. See the `set_notify` family across primitives.
  */
 int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data);
 

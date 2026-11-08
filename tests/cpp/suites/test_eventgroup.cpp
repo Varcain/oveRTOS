@@ -114,7 +114,9 @@ static void test_cpp_eg_clear_on_exit(void **state)
 	assert_false(remaining & BIT_1);
 }
 
-static void test_cpp_eg_set_bits_from_isr(void **state)
+#ifdef CONFIG_OVE_RTOS_POSIX
+/* POSIX surface coverage; real deferred interrupt delivery has a native gate. */
+static void test_cpp_eg_host_from_isr_surface(void **state)
 {
 	(void)state;
 	ove::EventGroup eg;
@@ -122,6 +124,7 @@ static void test_cpp_eg_set_bits_from_isr(void **state)
 	(void)eg.set_bits_from_isr(BIT_2);
 	assert_true(eg.get_bits() & BIT_2);
 }
+#endif
 
 static void test_cpp_eg_cross_thread(void **state)
 {
@@ -181,7 +184,9 @@ int test_cpp_eventgroup_run(void)
 		cmocka_unit_test(test_cpp_eg_wait_any),
 		cmocka_unit_test(test_cpp_eg_wait_timeout),
 		cmocka_unit_test(test_cpp_eg_clear_on_exit),
-		cmocka_unit_test(test_cpp_eg_set_bits_from_isr),
+#ifdef CONFIG_OVE_RTOS_POSIX
+		cmocka_unit_test(test_cpp_eg_host_from_isr_surface),
+#endif
 		cmocka_unit_test(test_cpp_eg_cross_thread),
 		cmocka_unit_test(test_cpp_eg_raii_destroy),
 #ifndef CONFIG_OVE_ZERO_HEAP

@@ -1178,6 +1178,61 @@ def test_eventgroup_bindings(ove_dir, output_dir):
     return TestResults(suite="eventgroup-bindings", passed=int(rc == 0), failed=int(rc != 0))
 
 
+def _test_eventgroup_deferred(ove_dir, output_dir, sanitize=False):
+    """Check deferred command ownership and post-publication notification."""
+    return _ctest_suite(ove_dir, output_dir, "eventgroup_deferred",
+                        "eventgroup-deferred-sanitize" if sanitize else "eventgroup-deferred",
+                        sanitize, configs=(False,))
+
+
+def test_eventgroup_deferred(ove_dir, output_dir):
+    return _test_eventgroup_deferred(ove_dir, output_dir)
+
+
+def test_eventgroup_deferred_sanitize(ove_dir, output_dir):
+    return _test_eventgroup_deferred(ove_dir, output_dir, sanitize=True)
+
+
+def _freertos_arm_profiles(ove_dir, output_dir, name, label, source, binary, profiles):
+    """Build tests/<name>/<source> per {profile: CMake options} and run each on QEMU."""
+    manifest = load_manifest(ove_dir)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    kernel = os.path.join(ove_dir, "dl", "FreeRTOS-Kernel-" + hashlib.sha256(revision.encode()).hexdigest()[:8])
+    if not os.path.isdir(kernel):
+        run(["git", "clone", "--depth", "1", "--branch", revision,
+             get_component(manifest, "rtos", "freertos", "kernel", "url"), kernel])
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    result = TestResults(suite=label, failed=int(not profiles))
+    for profile, options in profiles.items():
+        build = os.path.join(output_dir, "tests", name, "arm", profile)
+        commands = (
+            ["cmake", "-S", os.path.join(ove_dir, "tests", name, source), "-B", build,
+             "-DOVE_TOOLCHAIN_DIR=" + toolchain, "-DFREERTOS_PATH=" + kernel,
+             "-DCMAKE_TOOLCHAIN_FILE=" + os.path.join(ove_dir, "boards", "qemu-mps2-an500", "cmake",
+                                                      "arm-none-eabi.cmake")]
+            + [f"-D{key}={value}" for key, value in options.items()],
+            ["cmake", "--build", build, "-j", str(nproc())],
+            ["qemu-system-arm", "-M", "mps2-an500", "-cpu", "cortex-m7", "-m", "16", "-nographic",
+             "-monitor", "none", "-semihosting-config", "enable=on,target=native",
+             "-kernel", os.path.join(build, binary)],
+        )
+        ok = all(_run_owned_test_process(command, env=dict(os.environ), timeout=timeout) == 0
+                 for command, timeout in zip(commands, (240, 240, 60)))
+        print(f"{label} {profile}: {'PASS' if ok else 'FAIL'}", flush=True)
+        result.passed += int(ok)
+        result.failed += int(not ok)
+    return result
+
+
+def test_eventgroup_deferred_arm(ove_dir, output_dir):
+    """Check real SysTick/daemon delivery and native MPU V1 caller preservation."""
+    profiles = {("mpu-" if mpu else "daemon-") + ("zero" if zero else "heap"):
+                {"OVE_MPU_V1": int(mpu), "OVE_ZERO_HEAP": int(zero)}
+                for mpu in (False, True) for zero in (False, True)}
+    return _freertos_arm_profiles(ove_dir, output_dir, "eventgroup_deferred", "eventgroup-deferred-arm",
+                                  "target", "eventgroup_target", profiles)
+
+
 def _test_queue_contracts(ove_dir, output_dir, sanitize=False):
     """Check native queue setup, dimensions and minimal context availability."""
     result = _ctest_suite(ove_dir, output_dir, "queue_contracts",
@@ -4478,6 +4533,9 @@ TEST_TARGETS = {
     "eventgroup-scalar-sanitize": test_eventgroup_scalar_sanitize,
     "eventgroup-user": test_eventgroup_user,
     "eventgroup-bindings": test_eventgroup_bindings,
+    "eventgroup-deferred": test_eventgroup_deferred,
+    "eventgroup-deferred-sanitize": test_eventgroup_deferred_sanitize,
+    "eventgroup-deferred-arm": test_eventgroup_deferred_arm,
     "queue-contracts": test_queue_contracts,
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-queue": test_rust_queue,
