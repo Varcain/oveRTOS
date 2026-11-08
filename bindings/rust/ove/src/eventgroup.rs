@@ -90,6 +90,8 @@ pub struct EventGroup {
 
 impl EventGroup {
     /// Create a new event group via heap allocation (only in heap mode).
+    /// Native initialization failures propagate without publishing a handle;
+    /// successfully initialized native resources and the allocation are released.
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
         let mut handle: bindings::ove_eventgroup_t = core::ptr::null_mut();

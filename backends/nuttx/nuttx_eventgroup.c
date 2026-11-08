@@ -23,7 +23,9 @@ int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	nxsem_init(&storage->waiter, 0, 0);
+	int rc = nxsem_init(&storage->waiter, 0, 0);
+	if (rc < 0)
+		return ove_errno_to_ove(-rc);
 	storage->bits = 0;
 	storage->nwaiters = 0;
 	storage->notify_cb = NULL;

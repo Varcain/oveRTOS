@@ -1139,6 +1139,22 @@ def test_sync_contracts_sanitize(ove_dir, output_dir):
     return _test_sync_contracts(ove_dir, output_dir, sanitize=True)
 
 
+def _test_eventgroup_contracts(ove_dir, output_dir, sanitize=False):
+    """Check native eventgroup setup, cleanup and minimal context availability."""
+    label = "eventgroup-contracts-sanitize" if sanitize else "eventgroup-contracts"
+    result = _ctest_suite(ove_dir, output_dir, "eventgroup_contracts", label, sanitize)
+    _run_context_models(ove_dir, output_dir, "eventgroup_contracts", sanitize, result)
+    return result
+
+
+def test_eventgroup_contracts(ove_dir, output_dir):
+    return _test_eventgroup_contracts(ove_dir, output_dir)
+
+
+def test_eventgroup_contracts_sanitize(ove_dir, output_dir):
+    return _test_eventgroup_contracts(ove_dir, output_dir, sanitize=True)
+
+
 def _test_queue_contracts(ove_dir, output_dir, sanitize=False):
     """Check native queue setup, dimensions and minimal context availability."""
     result = _ctest_suite(ove_dir, output_dir, "queue_contracts",
@@ -4396,6 +4412,8 @@ TEST_TARGETS = {
     "sync-condvar-sanitize": test_sync_condvar_sanitize,
     "sync-contracts": test_sync_contracts,
     "sync-contracts-sanitize": test_sync_contracts_sanitize,
+    "eventgroup-contracts": test_eventgroup_contracts,
+    "eventgroup-contracts-sanitize": test_eventgroup_contracts_sanitize,
     "queue-contracts": test_queue_contracts,
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-queue": test_rust_queue,

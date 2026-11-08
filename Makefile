@@ -192,6 +192,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               cpp-infer cpp-infer-sanitize rust-infer rust-infer-sanitize zig-infer \
               sync-condvar sync-condvar-sanitize \
               sync-contracts sync-contracts-sanitize \
+              eventgroup-contracts eventgroup-contracts-sanitize \
               queue-contracts queue-contracts-sanitize \
               rust-queue rust-queue-sanitize \
               rust-scoped rust-scoped-sanitize \

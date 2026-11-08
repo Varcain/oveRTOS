@@ -20,7 +20,10 @@ int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 	if (eg == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	storage->handle = xEventGroupCreateStatic(&storage->static_eg);
+	EventGroupHandle_t native = xEventGroupCreateStatic(&storage->static_eg);
+	if (native == NULL)
+		return OVE_ERR_NO_MEMORY;
+	storage->handle = native;
 	storage->notify_cb = NULL;
 	storage->notify_ud = NULL;
 	*eg = storage;

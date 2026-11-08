@@ -15,7 +15,7 @@
  * returned irqstate_t is widened to ove_irq_key_t (uint64_t) for ABI
  * consistency across backends.
  *
- * Context detection is available with SYNC, ASYNC or QUEUE; critical sections
+ * Context detection is available with SYNC, ASYNC, QUEUE or EVENTGROUP; critical sections
  * require ASYNC.
  */
 
@@ -23,20 +23,22 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
+	defined(CONFIG_OVE_EVENTGROUP)
 
 #include <nuttx/irq.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include "ove_sync_context.h"
 
-#if (defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)) && defined(CONFIG_BUILD_FLAT) && \
-	!defined(CONFIG_SMP) && (defined(OVE_SYNC_CORTEX_M) || defined(CONFIG_ARCH_SIM))
+#if (defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE) || defined(CONFIG_OVE_EVENTGROUP)) && \
+	defined(CONFIG_BUILD_FLAT) && !defined(CONFIG_SMP) &&                                    \
+	(defined(OVE_SYNC_CORTEX_M) || defined(CONFIG_ARCH_SIM))
 #include <nuttx/init.h>
 #include <nuttx/sched.h>
 #endif
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE) || defined(CONFIG_OVE_EVENTGROUP)
 uint32_t ove_sync_context(void)
 {
 #if defined(CONFIG_BUILD_FLAT) && !defined(CONFIG_SMP) && \
@@ -81,4 +83,4 @@ bool ove_is_in_isr(void)
 	return up_interrupt_context();
 }
 
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */
