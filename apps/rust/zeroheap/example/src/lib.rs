@@ -12,9 +12,9 @@
 //!   - Caller-supplied static storage for every kernel object.  Thread
 //!     storage uses [`ove::ThreadStorage<N>`], a `Sync` wrapper that the
 //!     borrow checker enforces the lifetime of (no `static mut`, no
-//!     `addr_of_mut!` in user code).  Queue and timer follow the
-//!     established `from_static(&mut storage, …)` `unsafe` pattern
-//!     until they get the same treatment.
+//!     `addr_of_mut!` in user code). Queue uses claimed [`ove::QueueStorage`]
+//!     through [`ove::Queue::create`]. The timer macro supplies its permanent
+//!     backing for native static initialization.
 //!   - The `ove::queue!`, `ove::thread!`, and `ove::timer!` macros each
 //!     expand to a function-scope `static <storage>` declaration plus
 //!     the matching constructor — they encapsulate the boilerplate
@@ -184,11 +184,8 @@ fn app_main() {
     ove::log::try_init();
     log::info!("Rust example (zero-heap mode): init");
 
-    // The `ove::queue!` / `ove::thread!` / `ove::timer!` macros emit
-    // function-scope `static <storage>: ...;` declarations and call
-    // `Type::from_static(...)` against them.  In zero-heap mode this is
-    // the only way to construct the wrappers (the `_create` paths are
-    // not linked into the binary).
+    // The macros declare function-scope static backing. queue! claims typed
+    // QueueStorage through Queue::create, with no native heap allocation.
     QUEUE.init(ove::queue!(u32, 8));
     UI_TIMER.init(ove::timer!(ui_timer_cb, 200, false));
 

@@ -755,3 +755,24 @@ its constructor initialization assertion after native cleanup. C callers must
 keep storage and the complete item buffer exclusive through teardown. Queue-only
 configurations provide interrupt detection and resource-context queries without
 enabling SYNC, TIME or ASYNC; this does not broaden the admitted context flags.
+
+Rust Queue holds one claim on typed zero-heap backing until complete native
+cleanup. Live, initializing, tearing-down, forgotten and retained owners reject
+another claim with Busy before native entry. Clean initialization errors reopen
+the claim; Raw owners still deinitialize their exclusive backing. Heap owners
+allocate independently. Queue payloads are invariant: shared insertion cannot
+shorten a stored reference's lifetime. Borrowed heap payloads remain supported,
+and owner Send/Sync requires Copy + Send without requiring T: Sync. Private
+unused typed storage remains shareable for local non-Send Copy payloads.
+
+Rust construction and destruction require RESOURCE; unavailable Drop retains
+the resource and any claim. Task transfers, including zero timeout, require
+BLOCKING before native or deadline-clock effects. ISR-named methods dispatch
+actual task callers through the admitted task route. Native interrupt priority
+and setup requirements still apply. Relative durations work without TIME;
+absolute deadlines require TIME. Infallible task occupancy snapshots return
+inert zero outside admitted context, so is_empty returns true and is_full false;
+this fallback does not report actual emptiness. Capacity is validated constant N.
+Raw backing and callback installation retain their documented unsafe contracts;
+notification setup requires RESOURCE and serialization through all callback
+tails. These Rust ownership rules do not impose a new C++ or Zig lifetime API.
