@@ -2,7 +2,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "FreeRTOS.h"
-typedef uint32_t EventBits_t;
+typedef TickType_t EventBits_t;
+#if OVE_MODEL_TICK_BITS == 16
+#define eventEVENT_BITS_CONTROL_BYTES UINT16_C(0xff00)
+#elif OVE_MODEL_TICK_BITS == 64
+#define eventEVENT_BITS_CONTROL_BYTES UINT64_C(0xff00000000000000)
+#else
+#define eventEVENT_BITS_CONTROL_BYTES UINT32_C(0xff000000)
+#endif
 EventGroupHandle_t xEventGroupCreateStatic(StaticEventGroup_t *);
 void vEventGroupDelete(EventGroupHandle_t);
 EventBits_t xEventGroupSetBits(EventGroupHandle_t, EventBits_t);

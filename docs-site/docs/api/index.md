@@ -23,7 +23,7 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | Queue | `ove/queue.h` | 8 | Fixed-size item FIFO with ISR-safe variants. [Guide](ipc.md#queue) |
 | Containers | (per-binding) | — | General-purpose fixed-capacity vectors, strings, and hashmaps for C++ (ETL), Rust (heapless), and Zig (hybrid). [Guide](containers.md) |
 | Timer | `ove/timer.h` | 7 | Periodic and one-shot software timers. [Guide](timers.md#timer) |
-| EventGroup | `ove/eventgroup.h` | 9 | Multi-bit event flags with ISR-safe set. [Guide](ipc.md#eventgroup) |
+| EventGroup | `ove/eventgroup.h` | 12 | Multi-bit event flags and configured payload mask. [Guide](ipc.md#eventgroup) |
 | WorkQueue | `ove/workqueue.h` | 9 | Deferred work on a dedicated thread. [Guide](timers.md#workqueue) |
 | Stream | `ove/stream.h` | 10 | Byte-stream ring buffer with trigger threshold. [Guide](ipc.md#stream) |
 | Audio | `ove/audio.h` `ove/audio_node.h` `ove/audio_device.h` | 19 | Graph-based audio engine with pluggable nodes and transports (13 graph + 4 built-in nodes + 2 device factories). [Guide](audio.md) |

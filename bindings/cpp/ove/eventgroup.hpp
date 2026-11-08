@@ -39,6 +39,15 @@ class EventGroup
 {
       public:
 	/**
+	 * @brief Returns the configured payload mask without accessing an object.
+	 * Use this for clear-all and wait-for-any-bit operations.
+	 */
+	[[nodiscard]] static ove_eventbits_t valid_mask() noexcept
+	{
+		return ove_eventgroup_valid_mask();
+	}
+
+	/**
 	 * @brief Constructs and initialises the event group with all bits cleared.
 	 *
 	 * Asserts at startup if initialisation fails. Native initialization failure
@@ -104,7 +113,9 @@ class EventGroup
 	/**
 	 * @brief Sets one or more event bits atomically.
 	 * @param[in] bits Bitmask of bits to set.
-	 * @return The value of the event group after the bits were set.
+	 * @return The post-set value, or zero without effects for bits outside
+	 *         valid_mask(). A real zero snapshot has the same scalar value.
+	 *         Setting zero preserves the snapshot without notifying.
 	 *
 	 * `[[nodiscard]]` because the post-set bit state is the only way to
 	 * observe whether your bits actually went on (vs. were cleared by
@@ -119,7 +130,8 @@ class EventGroup
 	/**
 	 * @brief Clears one or more event bits atomically.
 	 * @param[in] bits Bitmask of bits to clear.
-	 * @return The value of the event group before the bits were cleared.
+	 * @return The full prior value, or zero without effects for bits outside
+	 *         valid_mask(). Clearing zero returns the unchanged prior value.
 	 *
 	 * `[[nodiscard]]` because the pre-clear state lets callers detect
 	 * which bits were actually set at the moment of clearing — useful
@@ -137,7 +149,8 @@ class EventGroup
 	 * @param[in] timeout Maximum time to wait.
 	 * @return On success, the event-group value at the moment the
 	 *         wait condition was satisfied.  On failure, an
-	 *         `unexpected` @ref Error (`Error::Timeout` on deadline).
+	 *         `unexpected` @ref Error (`Error::Timeout` on deadline,
+	 *         `Error::InvalidParam` for zero/invalid masks or unknown flags).
 	 */
 	[[nodiscard]] Result<ove_eventbits_t> wait_bits(ove_eventbits_t bits, uint32_t flags,
 							std::chrono::nanoseconds timeout) noexcept
@@ -169,7 +182,9 @@ class EventGroup
 	/**
 	 * @brief Sets one or more event bits from an ISR context.
 	 * @param[in] bits Bitmask of bits to set.
-	 * @return The value of the event group after the bits were set.
+	 * @return On FreeRTOS, the accepted requested mask or zero on queue failure;
+	 *         publication is deferred. Other engines return the post-set snapshot.
+	 *         Invalid bits outside valid_mask() return zero without effects.
 	 *
 	 * `[[nodiscard]]` for the same reason as @ref set_bits — the
 	 * post-set state is the observable result.
@@ -185,7 +200,8 @@ class EventGroup
 	 * On FreeRTOS the clear is deferred to the timer service task.
 	 * @param[in] bits Bitmask of bits to clear.
 	 * @return Empty `Result<void>` on success; `unexpected` @ref Error
-	 *         (QueueFull) if the deferred clear could not be queued.
+	 *         (QueueFull) if the deferred clear could not be queued, or
+	 *         InvalidParam for bits outside valid_mask().
 	 */
 	[[nodiscard]] Result<void> clear_bits_from_isr(ove_eventbits_t bits) noexcept
 	{

@@ -395,7 +395,7 @@ pub struct ove_i2s {
 }
 #[doc = " @brief Opaque handle for an I2S / SAI bus controller. @see ove_i2s_init, ove_i2s_create"]
 pub type ove_i2s_t = *mut ove_i2s;
-#[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag.  Up to 32 independent flags\n can be combined in a single event group."]
+#[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag. The configured engine may reserve\n native bits; use ove_eventgroup_valid_mask() to obtain the usable public mask."]
 pub type ove_eventbits_t = u32;
 #[doc = " @brief Notify-callback signature used by the @c _set_notify variants of\n        the comm primitives (stream / queue / eventgroup / semaphore).\n\n Invoked from inside the producing call (e.g. @c ove_stream_send). Consult\n each producing API for notification timing: a semaphore notifies after a\n post attempt even when its count ceiling prevents an increment. The\n implementation must be short, non-blocking, and safe in every originating\n send/give/set context. Callback code and data must support concurrent or\n reentrant calls, or the caller must serialize producing operations.\n\n @note The @c _set_notify registration is *setup-time only*: it is NOT safe\n       to call concurrently with producing operations on the same primitive,\n       since those read the callback pointer without synchronisation. Register\n       once before sharing the primitive, or externally serialize every\n       registration, replacement and removal with producing operations and\n       other registrations. Keep callback code and data valid until all\n       possible in-flight calls finish before retiring a registration.\n\n @param[in] user_data Opaque pointer supplied at @c _set_notify time."]
 pub type ove_notify_cb = Option<unsafe extern "C" fn(user_data: *mut core::ffi::c_void)>;
@@ -2640,6 +2640,10 @@ unsafe extern "C" {
     pub fn ove_lvgl_handler();
 }
 unsafe extern "C" {
+    #[doc = " @brief Return the configured mask of usable public event bits.\n\n FreeRTOS reserves its native high byte: 16/32-bit tick configurations expose\n 8/24 payload bits; 64-bit ticks and the other engines expose all public 32\n bits. The query requires no object, clock, allocation or execution context.\n Use this mask for portable clear-all or wait-for-any-bit operations.\n\n @return Mask of valid bits, or zero when EVENTGROUP is disabled."]
+    pub fn ove_eventgroup_valid_mask() -> ove_eventbits_t;
+}
+unsafe extern "C" {
     #[doc = " @brief Initialise an event group using caller-provided static storage.\n\n All bits in the new event group are cleared. The caller must ensure that\n @p storage remains valid for the lifetime of the event group.\n On failure, no handle is published and earlier successfully initialized\n resources are released. The original initialization error is preserved.\n\n @param[out] eg       Receives the initialised event group handle.\n @param[in]  storage  Pointer to statically-allocated event group storage.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_EVENTGROUP."]
     pub fn ove_eventgroup_init(
         eg: *mut ove_eventgroup_t,
@@ -2658,18 +2662,18 @@ unsafe extern "C" {
     pub fn ove_eventgroup_destroy(eg: ove_eventgroup_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Set one or more bits in the event group from task context.\n\n Atomically ORs @p bits into the current event group value. Any tasks\n blocked in @ref ove_eventgroup_wait_bits whose wait conditions are now\n satisfied will be unblocked.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return The value of the event group immediately after the set operation,\n         before any waiting tasks have had the chance to clear bits.\n @note Must not be called from an ISR; use @ref ove_eventgroup_set_bits_from_isr."]
+    #[doc = " @brief Set one or more bits in the event group from task context.\n\n Atomically ORs @p bits into the current event group value. Any tasks\n blocked in @ref ove_eventgroup_wait_bits whose wait conditions are now\n satisfied will be unblocked.\n Bits outside @ref ove_eventgroup_valid_mask are rejected with zero before\n native or notification effects. A zero mask preserves the ordinary snapshot\n behavior without notifying.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return The value of the event group immediately after the set operation,\n         before any waiting tasks have had the chance to clear bits.\n @note Must not be called from an ISR; use @ref ove_eventgroup_set_bits_from_isr."]
     pub fn ove_eventgroup_set_bits(eg: ove_eventgroup_t, bits: ove_eventbits_t) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group as it was *before* the clear operation\n         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps\n         or mirrors).\n @note Must not be called from an ISR; use @ref ove_eventgroup_clear_bits_from_isr."]
+    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group as it was *before* the clear operation\n         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps\n         or mirrors). An invalid mask returns zero without effects; a zero\n         mask returns the full current value without changing it.\n @note Must not be called from an ISR; use @ref ove_eventgroup_clear_bits_from_isr."]
     pub fn ove_eventgroup_clear_bits(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
     ) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Block until one or all of the requested bits are set.\n\n Waits for the bit pattern described by @p bits and @p flags. The behavior\n is controlled by @p flags:\n - @c OVE_EG_WAIT_ALL — require all bits in @p bits to be set simultaneously.\n - @c OVE_EG_CLEAR_ON_EXIT — clear the matching bits atomically on return.\n\n On success the event bits at the time of the condition being met are\n written to @p result.\n\n @param[in]  eg          Event group handle.\n @param[in]  bits        Bitmask of bits to wait for.\n @param[in]  flags       Combination of @c OVE_EG_WAIT_ALL and/or\n                         @c OVE_EG_CLEAR_ON_EXIT; pass 0 for defaults.\n @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.\n @param[out] result      Receives the event bits value that satisfied the wait,\n                         or @c NULL if not needed.\n @return OVE_OK if the wait condition was met, @c OVE_ERR_TIMEOUT on timeout,\n         negative error code on failure."]
+    #[doc = " @brief Block until one or all of the requested bits are set.\n\n Waits for the bit pattern described by @p bits and @p flags. The behavior\n is controlled by @p flags:\n - @c OVE_EG_WAIT_ALL — require all bits in @p bits to be set simultaneously.\n - @c OVE_EG_CLEAR_ON_EXIT — clear the matching bits atomically on return.\n\n On success the event bits at the time of the condition being met are\n written to @p result.\n A zero mask, bits outside @ref ove_eventgroup_valid_mask, or unknown flags\n return @c OVE_ERR_INVALID_PARAM before native effects and leave @p result\n unchanged. Only the two flags listed above are accepted.\n\n @param[in]  eg          Event group handle.\n @param[in]  bits        Bitmask of bits to wait for.\n @param[in]  flags       Combination of @c OVE_EG_WAIT_ALL and/or\n                         @c OVE_EG_CLEAR_ON_EXIT; pass 0 for defaults.\n @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.\n @param[out] result      Receives the event bits value that satisfied the wait,\n                         or @c NULL if not needed.\n @return OVE_OK if the wait condition was met, @c OVE_ERR_TIMEOUT on timeout,\n         negative error code on failure."]
     pub fn ove_eventgroup_wait_bits(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
@@ -2679,14 +2683,14 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_set_bits. A context switch to a\n higher-priority task that was unblocked may be requested by the underlying\n RTOS after this call returns.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return The value of the event group at the time of the call (before any\n         pending context switch)."]
+    #[doc = " @brief Set bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_set_bits. A context switch to a\n higher-priority task that was unblocked may be requested by the underlying\n RTOS after this call returns.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return On FreeRTOS, the accepted mask, or zero if the timer command queue\n         rejected it; the set itself is deferred. Other engines return a bit\n         snapshot. Invalid masks return zero before native, queue, yield or\n         notification effects. A zero mask does not notify."]
     pub fn ove_eventgroup_set_bits_from_isr(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
     ) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Clear bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_clear_bits. On FreeRTOS the clear\n is handed to the timer service task and takes effect once that task runs,\n after the ISR returns; the other engines clear immediately. Because of that\n deferral it reports a status, not the previous bits.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue\n         had no room for the request."]
+    #[doc = " @brief Clear bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_clear_bits. On FreeRTOS the clear\n is handed to the timer service task and takes effect once that task runs,\n after the ISR returns; the other engines clear immediately. Because of that\n deferral it reports a status, not the previous bits.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue\n         had no room for the request. Bits outside\n         @ref ove_eventgroup_valid_mask return @c OVE_ERR_INVALID_PARAM before\n         native or queue effects."]
     pub fn ove_eventgroup_clear_bits_from_isr(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,

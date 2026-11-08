@@ -8,7 +8,7 @@
 //! and an ISR-safe `setBitsFromIsr` producer.
 //!
 //! Wraps `ove/eventgroup.h`. Per-op narrow error sets surface only the
-//! timeout vs the substrate `Error` set; bounded waits accept a typed
+//! Timeout/InvalidParam cases; bounded waits accept a typed
 //! `Duration` or `Instant`. Available when `CONFIG_OVE_EVENTGROUP` is
 //! enabled.
 
@@ -29,12 +29,13 @@ pub const WAIT_ALL: u32 = 0x01;
 /// `waitBits` flag: clear matched bits atomically on exit.
 pub const CLEAR_ON_EXIT: u32 = 0x02;
 
-/// Error set for `EventGroup.waitBitsFor` / `waitBitsUntil`.
-pub const WaitError = error{Timeout};
+/// Timed waits report Timeout or InvalidParam for zero/invalid masks or flags.
+pub const WaitError = error{ Timeout, InvalidParam };
 
-inline fn mapTimeoutOnly(comptime ctx: []const u8, rc: c_int) WaitError {
+inline fn mapWaitError(comptime ctx: []const u8, rc: c_int) WaitError {
     return switch (rc) {
         c.OVE_ERR_TIMEOUT => error.Timeout,
+        c.OVE_ERR_INVALID_PARAM => error.InvalidParam,
         else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
     };
 }
@@ -52,6 +53,12 @@ inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
 /// _ = eg.waitBits(0x03, ove.eventgroup.WAIT_ALL);
 /// ```
 pub const EventGroup = struct {
+    /// Configured usable payload mask, without accessing an object.
+    /// Use for clear-all or wait-for-any-bit operations without native FFI.
+    pub fn validMask() EventBits {
+        return c.ove_eventgroup_valid_mask();
+    }
+
     allocator: std.mem.Allocator,
     handle: c.ove_eventgroup_t,
     storage: ?*c.ove_eventgroup_storage_t,
@@ -83,12 +90,15 @@ pub const EventGroup = struct {
         }
     }
 
-    /// Set the bits in `bits`.  Returns the bitmask after the set.
+    /// Set bits and return the post-set value. Bits outside validMask()
+    /// return inert zero without effects; a real zero snapshot is ambiguous.
+    /// Setting zero does not notify.
     pub inline fn setBits(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits(self.handle, bits);
     }
 
-    /// Clear the bits in `bits`.  Returns the bitmask before the clear.
+    /// Clear bits and return the full prior group atomically. Bits outside
+    /// validMask() return inert zero. Clearing zero returns the unchanged prior.
     pub inline fn clearBits(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_clear_bits(self.handle, bits);
     }
@@ -98,7 +108,9 @@ pub const EventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    /// Forever-blocking wait.  Returns the matched bits.  Infallible.
+    /// Forever-blocking wait. Requires a nonzero mask within validMask() and
+    /// only WAIT_ALL/CLEAR_ON_EXIT flags. Invalid input panics on the native
+    /// rejection; the existing scalar return does not encode errors.
     pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32) EventBits {
         var result: EventBits = 0;
         const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, WAIT_FOREVER, &result);
@@ -109,25 +121,30 @@ pub const EventGroup = struct {
     pub inline fn waitBitsFor(self: EventGroup, bits: EventBits, flags: u32, d: Duration) WaitError!EventBits {
         var result: EventBits = 0;
         const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, d.ns, &result);
-        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsFor", rc);
+        if (rc < 0) return mapWaitError("EventGroup.waitBitsFor", rc);
         return result;
     }
 
     pub inline fn waitBitsUntil(self: EventGroup, bits: EventBits, flags: u32, deadline: Instant) WaitError!EventBits {
+        if (bits == 0 or (bits & ~validMask()) != 0 or (flags & ~(WAIT_ALL | CLEAR_ON_EXIT)) != 0)
+            return error.InvalidParam;
         const t = time_mod.deadlineToTimeoutNs(deadline);
         var result: EventBits = 0;
         const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
-        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
+        if (rc < 0) return mapWaitError("EventGroup.waitBitsUntil", rc);
         return result;
     }
 
-    /// Set bits from an ISR.  Returns the bitmask after the set.
+    /// Set from an ISR. FreeRTOS returns the accepted mask or zero on queue
+    /// failure and publishes later; other engines return the post-set value.
+    /// Invalid bits return zero without effects.
     pub inline fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
 
     /// Clear bits from an ISR.  On FreeRTOS the clear is deferred to the
     /// timer service task; `error.QueueFull` means it could not be queued.
+    /// Bits outside validMask() return error.InvalidParam.
     pub inline fn clearBitsFromIsr(self: EventGroup, bits: EventBits) Error!void {
         try err.fromCode(c.ove_eventgroup_clear_bits_from_isr(self.handle, bits));
     }

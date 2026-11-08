@@ -31,7 +31,19 @@ typedef uint32_t StackType_t;
 typedef void *QueueHandle_t;
 typedef void *TimerHandle_t;
 typedef void *EventGroupHandle_t;
+#ifndef OVE_MODEL_TICK_BITS
+#define OVE_MODEL_TICK_BITS 32
+#endif
+#if OVE_MODEL_TICK_BITS == 16
+typedef uint16_t TickType_t;
+#define portMAX_DELAY UINT16_MAX
+#elif OVE_MODEL_TICK_BITS == 64
+typedef uint64_t TickType_t;
+#define portMAX_DELAY UINT64_MAX
+#else
 typedef uint32_t TickType_t;
+#define portMAX_DELAY UINT32_MAX
+#endif
 typedef int BaseType_t;
 typedef uint32_t UBaseType_t;
 typedef void (*TimerCallbackFunction_t)(TimerHandle_t);
@@ -40,7 +52,6 @@ typedef void (*PendedFunction_t)(void *, uint32_t);
 #define configNUMBER_OF_CORES 1
 #endif
 #define configTICK_RATE_HZ 1000
-#define portMAX_DELAY UINT32_MAX
 #define pdTRUE 1
 #define pdFALSE 0
 #define pdPASS 1

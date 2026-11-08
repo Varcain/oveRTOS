@@ -5,6 +5,9 @@
 # This file is part of oveRTOS.
 
 cmake_minimum_required(VERSION 3.20.0)
+get_filename_component(OVE_SYSCALL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+include(${OVE_SYSCALL_ROOT}/cmake/OveZephyrSyscalls.cmake)
+ove_zephyr_register_eventgroup_syscalls()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_test_zephyr_qemu)
 

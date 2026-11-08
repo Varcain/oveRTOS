@@ -129,7 +129,7 @@ void drain_ir_requests(void)
 
 ## EventGroup
 
-An EventGroup holds a small bitmask of independent boolean bits (the exact width is `ove_eventbits_t`). Any thread (or ISR) can set or clear bits; waiting threads are unblocked when a target bit pattern is satisfied. EventGroups are ideal for broadcasting state transitions without copying data.
+An EventGroup holds independent boolean bits in a `uint32_t` mask. Use `ove_eventgroup_valid_mask()` for the configured payload domain: FreeRTOS with 16/32-bit ticks exposes 8/24 bits; a 64-bit native event type and the other engines expose all 32 public bits. Threads and supported ISRs can set or clear bits; waiting threads unblock when a target bit pattern is satisfied.
 
 ```mermaid
 graph TB
@@ -178,6 +178,7 @@ Combining both flags (`OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT`) is the recommend
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
+| `ove_eventgroup_valid_mask` | `ove_eventbits_t (void)` | Configured usable mask; zero when EventGroup is disabled. No object or execution context required. |
 | `ove_eventgroup_init` | `int (ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)` | Initialise from caller-supplied storage. |
 | `ove_eventgroup_deinit` | `void (ove_eventgroup_t eg)` | Release the EventGroup. |
 | `ove_eventgroup_create` | `int (ove_eventgroup_t *eg)` | Heap-allocate. Requires `OVE_HEAP_EVENTGROUP`. |
@@ -186,10 +187,12 @@ Combining both flags (`OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT`) is the recommend
 | `ove_eventgroup_clear_bits` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | Clear one or more bits. Returns the previous bit value. |
 | `ove_eventgroup_get_bits` | `ove_eventbits_t (ove_eventgroup_t eg)` | Read current bit mask without blocking. |
 | `ove_eventgroup_wait_bits` | `int (ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags, uint64_t timeout_ns, ove_eventbits_t *result)` | Block until bit pattern satisfied. Writes the bits value at wake-time to `*result` if non-NULL. |
-| `ove_eventgroup_set_bits_from_isr` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | ISR-safe set. |
+| `ove_eventgroup_set_bits_from_isr` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | Set from a supported ISR. FreeRTOS returns the accepted mask or zero on queue rejection; publication is deferred. Other engines return a snapshot. |
 | `ove_eventgroup_clear_bits_from_isr` | `int (ove_eventgroup_t eg, ove_eventbits_t bits)` | ISR-safe clear; deferred to the timer task on FreeRTOS. |
 
 Static-storage macro: `OVE_EVENTGROUP_DEFINE_STATIC(name)` (in `ove/storage.h`).
+
+Set and clear reject bits outside the configured mask before native or callback effects. Scalar operations return zero on invalid input; ISR clear returns `OVE_ERR_INVALID_PARAM`. Zero set and clear masks remain valid; task clear returns the full prior value, including unaffected bits. A wait requires a nonzero valid mask and only the two documented flags. Invalid waits return `OVE_ERR_INVALID_PARAM` without changing the result, entering native synchronization or reading a deadline clock. For example, clear all supported bits with `ove_eventgroup_clear_bits(eg, ove_eventgroup_valid_mask())`. The normal binding accessors are `EventGroup::valid_mask()` in C++ and Rust, and `EventGroup.validMask()` in Zig.
 
 ### Example: Coordinating Load and Bypass State
 

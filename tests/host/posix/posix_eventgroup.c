@@ -8,6 +8,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "ove_eventgroup_validate.h"
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
@@ -21,6 +22,11 @@ static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 		ts->tv_sec += 1;
 		ts->tv_nsec -= 1000000000L;
 	}
+}
+
+ove_eventbits_t ove_eventgroup_valid_mask(void)
+{
+	return UINT32_MAX;
 }
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
@@ -52,6 +58,9 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	struct ove_eventgroup *g = eg;
 	if (!g) {
 		return 0;
@@ -72,6 +81,9 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
 
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	struct ove_eventgroup *g = eg;
 	if (!g) {
 		return 0;
@@ -85,6 +97,9 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 
 int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return OVE_ERR_INVALID_PARAM;
+
 	/* No interrupts on the host: the locked clear stands in for the ISR path. */
 	(void)ove_eventgroup_clear_bits(eg, bits);
 	return OVE_OK;
@@ -93,6 +108,9 @@ int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
 			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
+	if (!ove_eventgroup_wait_input_valid(bits, flags))
+		return OVE_ERR_INVALID_PARAM;
+
 	struct ove_eventgroup *g = eg;
 	if (!g) {
 		return OVE_ERR_INVALID_PARAM;
@@ -144,6 +162,9 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	return ove_eventgroup_set_bits(eg, bits);
 }
 

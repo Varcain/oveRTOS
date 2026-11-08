@@ -9,8 +9,43 @@
 #include "ove/eventgroup.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
+#include "ove_eventgroup_validate.h"
 #include <zephyr/kernel.h>
+#include <zephyr/tracing/tracing.h>
+#include "syscalls/ove_eventgroup_atomic.h"
+#ifdef CONFIG_USERSPACE
+#include <zephyr/internal/syscall_handler.h>
+#endif
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
+
+uint32_t z_impl_ove_zephyr_eventgroup_clear_atomic(struct k_event *event, uint32_t bits)
+{
+	/* Native clear returns masked prior bits. Share the kernel's event lock
+	 * to preserve the full prior snapshot; removing bits cannot wake waiters. */
+	k_spinlock_key_t key = k_spin_lock(&event->lock);
+	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_event, post, event, 0, bits);
+	uint32_t previous = event->events;
+	uint32_t cleared = previous & ~bits;
+	event->events = cleared;
+	k_spin_unlock(&event->lock, key);
+	SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_event, post, event, cleared, bits);
+	return previous;
+}
+
+#ifdef CONFIG_USERSPACE
+static inline uint32_t z_vrfy_ove_zephyr_eventgroup_clear_atomic(struct k_event *event,
+								 uint32_t bits)
+{
+	K_OOPS(K_SYSCALL_OBJ(event, K_OBJ_EVENT));
+	return z_impl_ove_zephyr_eventgroup_clear_atomic(event, bits);
+}
+#include <zephyr/syscalls/ove_zephyr_eventgroup_clear_atomic_mrsh.c>
+#endif
+
+ove_eventbits_t ove_eventgroup_valid_mask(void)
+{
+	return UINT32_MAX;
+}
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
@@ -33,6 +68,9 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	k_event_post(&eg->event, bits);
 	ove_eventbits_t result = k_event_test(&eg->event, 0xFFFFFFFFU);
 	if (bits != 0 && eg->notify_cb != NULL) {
@@ -43,14 +81,18 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
 
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
-	ove_eventbits_t prev = k_event_test(&eg->event, 0xFFFFFFFFU);
-	k_event_clear(&eg->event, bits);
-	return prev;
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
+	return ove_zephyr_eventgroup_clear_atomic(&eg->event, bits);
 }
 
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
 			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
+	if (!ove_eventgroup_wait_input_valid(bits, flags))
+		return OVE_ERR_INVALID_PARAM;
+
 	k_timeout_t timeout;
 	uint32_t val;
 	int wait_all = (flags & OVE_EG_WAIT_ALL) ? 1 : 0;
@@ -89,6 +131,9 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return 0;
+
 	k_event_post(&eg->event, bits);
 	ove_eventbits_t result = k_event_test(&eg->event, 0xFFFFFFFFU);
 	if (bits != 0 && eg->notify_cb != NULL) {
@@ -99,6 +144,9 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 
 int ove_eventgroup_clear_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
+	if (!ove_eventgroup_mask_valid(bits))
+		return OVE_ERR_INVALID_PARAM;
+
 	/* k_event_clear() takes the event's spinlock: safe from an ISR. */
 	k_event_clear(&eg->event, bits);
 	return OVE_OK;
