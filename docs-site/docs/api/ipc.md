@@ -131,6 +131,15 @@ void drain_ir_requests(void)
 
 An EventGroup holds independent boolean bits in a `uint32_t` mask. Use `ove_eventgroup_valid_mask()` for the configured payload domain: FreeRTOS with 16/32-bit ticks exposes 8/24 bits; a 64-bit native event type and the other engines expose all 32 public bits. Threads and supported ISRs can set or clear bits; waiting threads unblock when a target bit pattern is satisfied.
 
+Rust `EventGroup::create` claims typed static backing in zero-heap mode until
+complete legal cleanup; another live or retained owner returns `Busy`. Heap
+creation remains independent. Construction, cleanup and notify setup require
+resource permission, while all task operations require blocking permission.
+Unsupported scalar calls return inert zero, Result methods return
+`NotSupported`, and unsupported Drop retains the resource and claim.
+ISR-named calls made by tasks use task operations and snapshots. Relative
+`Duration` waits work without `TIME`; absolute deadlines require it.
+
 ```mermaid
 graph TB
     subgraph Setters

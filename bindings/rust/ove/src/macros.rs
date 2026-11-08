@@ -211,6 +211,8 @@ macro_rules! condvar {
 }
 
 /// Create an [`crate::EventGroup`] that works in both heap and zero-heap modes.
+/// A repeated live zero-heap invocation at one expansion panics with Busy.
+/// Complete legal cleanup permits reuse; heap invocations are independent.
 #[cfg(has_eventgroup)]
 #[macro_export]
 macro_rules! eventgroup {
@@ -221,8 +223,8 @@ macro_rules! eventgroup {
         }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_eventgroup_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::EventGroup::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+            static STORAGE: $crate::EventGroupStorage = $crate::EventGroupStorage::new();
+            $crate::EventGroup::create(&STORAGE).unwrap()
         }
     }};
 }

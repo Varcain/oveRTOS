@@ -1439,6 +1439,37 @@ def test_rust_queue_sanitize(ove_dir, output_dir):
     return _test_rust_queue(ove_dir, output_dir, sanitize=True)
 
 
+def _test_rust_eventgroup(ove_dir, output_dir, sanitize=False):
+    """Check Rust EventGroup ownership and context with guarded native operations."""
+    result = TestResults(suite="rust-eventgroup-sanitize" if sanitize else "rust-eventgroup")
+    build = Path(output_dir) / "tests" / "rust_eventgroup" / ("sanitize" if sanitize else "normal")
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "rust_eventgroup", "run.py"), str(build)]
+    if sanitize:
+        command.append("--sanitize")
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=600, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    expected = "rust eventgroup: native=8 types=" + ("0 macro=0" if sanitize else "34 macro=2") + " failed=0\n"
+    valid = rc == 0 and text.endswith(expected)
+    if not valid:
+        print(text, end="")
+        result.failed_names.append("eventgroup-ownership")
+    result.passed += int(valid)
+    result.failed += int(not valid)
+    return result
+
+
+def test_rust_eventgroup(ove_dir, output_dir):
+    return _test_rust_eventgroup(ove_dir, output_dir)
+
+
+def test_rust_eventgroup_sanitize(ove_dir, output_dir):
+    return _test_rust_eventgroup(ove_dir, output_dir, sanitize=True)
+
+
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
     """Check C++ arena capacity and cleanup against recording-only C fakes."""
     result = TestResults(suite="cpp-infer-sanitize" if sanitize else "cpp-infer")
@@ -4800,6 +4831,8 @@ TEST_TARGETS = {
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-queue": test_rust_queue,
     "rust-queue-sanitize": test_rust_queue_sanitize,
+    "rust-eventgroup": test_rust_eventgroup,
+    "rust-eventgroup-sanitize": test_rust_eventgroup_sanitize,
     "rust-scoped": test_rust_scoped,
     "rust-scoped-sanitize": test_rust_scoped_sanitize,
     "rust-sync": test_rust_sync,

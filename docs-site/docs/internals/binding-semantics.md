@@ -813,6 +813,19 @@ access, then invokes saved notify locals after publication. Clear propagates the
 daemon wake request too. Native MPU V1 task teardown preserves caller privilege.
 These guarantees keep C++ inline and Zig allocator-owned retirement unchanged.
 Notify data is separate: code/data must remain live through pending dispatch and
-saved tails, and unregister/deinit is not a data reclamation fence. Rust ownership,
-operation context and AsyncEventGroup exclusive setup still require their own
-repairs; the native command protocol does not certify those wrappers.
+saved tails, and unregister/deinit is not a data reclamation fence.
+
+Rust EventGroup typed storage claims one native generation until complete legal
+cleanup. Live, initializing, tearing-down, forgotten and retained generations
+exclude another zero-heap owner. Heap constructors remain independent; raw
+constructors require stable exclusive backing through actual cleanup or retention.
+Construction, cleanup and notify setup require RESOURCE permission. Unsupported
+Drop retains the native resource and claim. Task operations, including zero waits,
+require BLOCKING; unsupported scalar calls return inert zero and Result methods
+return NotSupported before primitive or clock effects. ISR-named task calls use
+task operations and their snapshots; task clear preserves InvalidParam. Genuine
+interrupt calls retain native eligibility and deferred-result contracts.
+Relative Duration waits work without TIME; only absolute Instant methods require
+TIME. The typed eventgroup macro preserves this ownership policy automatically.
+AsyncEventGroup exclusive setup remains a separate repair; native cancellation
+and Rust ownership do not certify its shared registration method.
