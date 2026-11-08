@@ -194,6 +194,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               sync-contracts sync-contracts-sanitize \
               eventgroup-contracts eventgroup-contracts-sanitize \
               eventgroup-scalar eventgroup-scalar-sanitize \
+              nuttx-timeouts nuttx-timeouts-sanitize \
               eventgroup-user eventgroup-bindings \
               eventgroup-deferred eventgroup-deferred-sanitize eventgroup-deferred-arm \
               queue-contracts queue-contracts-sanitize \

@@ -22,10 +22,13 @@
  *  - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
  *    modes.  See @c OVE_TIMER_DEFINE_STATIC for a one-step static helper.
  *
- * The longest period depends on the engine.  NuttX refuses one beyond its
- * watchdog's range (@c WDOG_MAX_DELAY ticks, about 12.4 days at a 1 ms
- * tick), and
- * FreeRTOS one whose tick count does not fit @c TickType_t (about 49.7 days
+ * The longest period depends on the engine. NuttX requires a rounded tick
+ * count strictly below both @c WDOG_MAX_DELAY and @c UINT32_MAX; a period
+ * beyond either boundary is refused rather than shortened. The watchdog
+ * boundary is about 12.4 days at a 1 ms tick with 32-bit clocks.
+ *
+ * FreeRTOS refuses a period whose tick count does not fit @c TickType_t
+ * (about 49.7 days
  * at a 1 kHz tick); Zephyr takes any period.  A refused period fails the
  * init or create call, or @ref ove_timer_set_period_ns, with
  * @c OVE_ERR_INVALID_PARAM, and leaves a running timer as it was.
@@ -127,7 +130,7 @@ void ove_timer_deinit(ove_timer_t timer);
  * Effective resolution is backend-dependent:
  *  - Zephyr:  underlying tick (K_NSEC); typically µs-class.
  *  - FreeRTOS: rounded up to @c configTICK_RATE_HZ; typically 1 ms.
- *  - NuttX:   POSIX timer resolution; typically µs.
+ *  - NuttX:   native tick resolution; watchdog expiry defers callbacks to HPWORK.
  *  - host test backend: @c timer_create with CLOCK_MONOTONIC; nsec.
  *
  * @note Requires @c CONFIG_OVE_TIMER.  When @c CONFIG_OVE_ASYNC is off,

@@ -178,6 +178,8 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
  * @param[in]  bits        Bitmask of bits to wait for.
  * @param[in]  flags       Combination of @c OVE_EG_WAIT_ALL and/or
  *                         @c OVE_EG_CLEAR_ON_EXIT; pass 0 for defaults.
+ * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ *
  * @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] result      Receives the event bits value that satisfied the wait,
  *                         or @c NULL if not needed.

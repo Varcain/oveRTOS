@@ -71,7 +71,7 @@ int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = lock_retry(&mtx->mtx);
 	} else {
-		ret = nxmutex_ticklock(&mtx->mtx, ove_ns_to_ticks(timeout_ns));
+		ret = nxmutex_ticklock(&mtx->mtx, ove_ns_to_wait_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -115,7 +115,7 @@ int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxrmutex_lock(&mtx->rmtx);
 	} else {
-		ret = nxrmutex_ticklock(&mtx->rmtx, ove_ns_to_ticks(timeout_ns));
+		ret = nxrmutex_ticklock(&mtx->rmtx, ove_ns_to_wait_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -161,7 +161,7 @@ int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxsem_wait_uninterruptible(&sem->sem);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&sem->sem, ove_ns_to_ticks(timeout_ns));
+		ret = nxsem_tickwait_uninterruptible(&sem->sem, ove_ns_to_wait_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -218,7 +218,7 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxsem_wait_uninterruptible(&evt->sem);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&evt->sem, ove_ns_to_ticks(timeout_ns));
+		ret = nxsem_tickwait_uninterruptible(&evt->sem, ove_ns_to_wait_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -303,7 +303,7 @@ static int condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns, 
 			ret = nxsem_wait_uninterruptible(&cv->waiter);
 		} else {
 			ret = nxsem_tickwait_uninterruptible(&cv->waiter,
-							     ove_ns_to_ticks(timeout_ns));
+							     ove_ns_to_wait_ticks(timeout_ns));
 		}
 
 		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);

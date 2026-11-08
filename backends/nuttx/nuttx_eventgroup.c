@@ -110,7 +110,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 	irqstate_t irqflags;
 
 	if (timeout_ns != OVE_WAIT_FOREVER) {
-		remaining_ticks = ove_ns_to_ticks(timeout_ns);
+		remaining_ticks = ove_ns_to_wait_ticks(timeout_ns);
 		deadline = clock_systime_ticks() + remaining_ticks;
 	}
 

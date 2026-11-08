@@ -1,5 +1,7 @@
 # Timers & Deferred Work
 
+NuttX uses native tick resolution. The rounded period must be strictly below both `WDOG_MAX_DELAY` and `UINT32_MAX`; unsupported periods are rejected without shortening or changing an existing timer. Watchdog expiry defers callbacks to HPWORK.
+
 oveRTOS provides two complementary primitives for time-based and deferred execution:
 
 | Primitive | Best for | Execution context |

@@ -1178,6 +1178,21 @@ def test_eventgroup_bindings(ove_dir, output_dir):
     return TestResults(suite="eventgroup-bindings", passed=int(rc == 0), failed=int(rc != 0))
 
 
+def _test_nuttx_timeouts(ove_dir, output_dir, sanitize=False):
+    """Check finite budgets, deadline accounting and timer range admission."""
+    return _ctest_suite(ove_dir, output_dir, "nuttx_timeouts",
+                        "nuttx-timeouts-sanitize" if sanitize else "nuttx-timeouts", sanitize,
+                        configs=(False,))
+
+
+def test_nuttx_timeouts(ove_dir, output_dir):
+    return _test_nuttx_timeouts(ove_dir, output_dir)
+
+
+def test_nuttx_timeouts_sanitize(ove_dir, output_dir):
+    return _test_nuttx_timeouts(ove_dir, output_dir, sanitize=True)
+
+
 def _test_eventgroup_deferred(ove_dir, output_dir, sanitize=False):
     """Check deferred command ownership and post-publication notification."""
     return _ctest_suite(ove_dir, output_dir, "eventgroup_deferred",
@@ -4550,6 +4565,8 @@ TEST_TARGETS = {
     "eventgroup-scalar-sanitize": test_eventgroup_scalar_sanitize,
     "eventgroup-user": test_eventgroup_user,
     "eventgroup-bindings": test_eventgroup_bindings,
+    "nuttx-timeouts": test_nuttx_timeouts,
+    "nuttx-timeouts-sanitize": test_nuttx_timeouts_sanitize,
     "eventgroup-deferred": test_eventgroup_deferred,
     "eventgroup-deferred-sanitize": test_eventgroup_deferred_sanitize,
     "eventgroup-deferred-arm": test_eventgroup_deferred_arm,

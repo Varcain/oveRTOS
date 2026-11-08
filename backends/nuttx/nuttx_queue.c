@@ -69,7 +69,8 @@ int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ret = nxsem_wait_uninterruptible(&nq->not_full);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&nq->not_full, ove_ns_to_ticks(timeout_ns));
+		ret = nxsem_tickwait_uninterruptible(&nq->not_full,
+						     ove_ns_to_wait_ticks(timeout_ns));
 	}
 	if (ret < 0) {
 		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
@@ -97,7 +98,8 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
 	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ret = nxsem_wait_uninterruptible(&nq->not_empty);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&nq->not_empty, ove_ns_to_ticks(timeout_ns));
+		ret = nxsem_tickwait_uninterruptible(&nq->not_empty,
+						     ove_ns_to_wait_ticks(timeout_ns));
 	}
 	if (ret < 0) {
 		return (timeout_ns == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;

@@ -33,6 +33,13 @@
 //! a by-value copy.  `deinit` is idempotent — a redundant `defer
 //! x.deinit()` after an explicit `deinit()` is a safe no-op, not a double
 //! free.
+//!
+//! On NuttX, positive finite waits round up to ticks and saturate at
+//! min(WDOG_MAX_DELAY - 2, INT32_MAX - 1) ticks: 1,073,741,821 with
+//! 32-bit clocks or 2,147,483,646 with 64-bit clocks. Timeout and stream
+//! short counts refer to this effective budget. Only explicit FOREVER
+//! waits are indefinite; native tick phase, scheduling and condition-variable
+//! mutex reacquisition can extend the elapsed time.
 
 const std = @import("std");
 const c = @import("c.zig").raw;

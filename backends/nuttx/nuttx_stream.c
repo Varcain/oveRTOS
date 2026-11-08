@@ -34,23 +34,11 @@ static bool hint_wanted(sem_t *sem)
 	return value <= 0;
 }
 
-/* A wait too long for a watchdog to time is a wait forever: wd_start refuses
- * a delay of WDOG_MAX_DELAY ticks or more, nxsem_tickwait takes 32 bits, and
- * a 32-bit tick deadline that far out would already look passed. */
-static uint64_t wait_limit(uint64_t timeout_ns)
-{
-	const uint64_t max_ticks = (uint64_t)WDOG_MAX_DELAY < UINT32_MAX ? (uint64_t)WDOG_MAX_DELAY
-									 : UINT32_MAX;
-	if (timeout_ns != OVE_WAIT_FOREVER && timeout_ns / NSEC_PER_TICK >= max_ticks - 1) {
-		return OVE_WAIT_FOREVER;
-	}
-	return timeout_ns;
-}
-
 static clock_t deadline_for(uint64_t timeout_ns)
 {
-	return timeout_ns == OVE_WAIT_FOREVER ? 0
-					      : clock_systime_ticks() + ove_ns_to_ticks(timeout_ns);
+	return timeout_ns == OVE_WAIT_FOREVER
+		       ? 0
+		       : clock_systime_ticks() + ove_ns_to_wait_ticks(timeout_ns);
 }
 
 static bool deadline_passed(uint64_t timeout_ns, clock_t deadline)
@@ -121,7 +109,6 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 
 	const unsigned char *src = data;
 	size_t written = 0;
-	timeout_ns = wait_limit(timeout_ns);
 	clock_t deadline = deadline_for(timeout_ns);
 
 	while (written < len) {
@@ -177,7 +164,6 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 	}
 
 	size_t received = 0;
-	timeout_ns = wait_limit(timeout_ns);
 	clock_t deadline = deadline_for(timeout_ns);
 
 	/* Wait until at least `trigger` bytes are present, then take up to `len`

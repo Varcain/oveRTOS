@@ -9,6 +9,13 @@
 //! An [`EventGroup`] holds a set of bits that any thread or ISR can set or clear.
 //! Other threads can block until specific bit patterns appear, enabling fine-grained
 //! inter-task signalling without dedicated queues.
+//!
+//! On NuttX, positive finite waits round up to ticks and saturate at
+//! min(WDOG_MAX_DELAY - 2, INT32_MAX - 1) ticks: 1,073,741,821 with
+//! 32-bit clocks or 2,147,483,646 with 64-bit clocks. Timeout and stream
+//! short counts refer to this effective budget. Only explicit FOREVER
+//! waits are indefinite; native tick phase, scheduling and condition-variable
+//! mutex reacquisition can extend the elapsed time.
 
 use core::cell::UnsafeCell;
 use core::fmt;
