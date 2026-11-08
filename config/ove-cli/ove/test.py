@@ -1048,6 +1048,45 @@ def test_sync_contracts_sanitize(ove_dir, output_dir):
     return _test_sync_contracts(ove_dir, output_dir, sanitize=True)
 
 
+def _test_queue_contracts(ove_dir, output_dir, sanitize=False):
+    """Check native queue setup, dimensions and minimal context availability."""
+    result = _ctest_suite(ove_dir, output_dir, "queue_contracts",
+                          "queue-contracts-sanitize" if sanitize else "queue-contracts", sanitize)
+    _run_context_models(ove_dir, output_dir, "queue_contracts", sanitize, result)
+    return result
+
+
+def _run_context_models(ove_dir, output_dir, name, sanitize, result):
+    """Build the images of tests/<name>/context_models.py and run each one."""
+    env = dict(os.environ)
+    if sanitize:
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    models = Path(output_dir) / "tests" / name / ("context-models-san" if sanitize else "context-models")
+    shutil.rmtree(models, ignore_errors=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", name, "context_models.py"), str(models)]
+    rc = _run_owned_test_process(command + (["--sanitize"] if sanitize else []), env=env, timeout=300)
+    binaries = sorted(models.glob("*/model"))
+    result.failed += int(rc != 0 or not binaries)
+    for binary in binaries:
+        log = binary.with_suffix(".log")
+        with log.open("wb") as stream:
+            ok = _run_owned_test_process([str(binary)], env=env, timeout=15, stdout=stream) == 0
+        if not ok:
+            print(log.read_text(errors="backslashreplace"), end="")
+        result.passed += int(ok)
+        result.failed += int(not ok)
+    print(f"{name}: {len(binaries)} context models run")
+
+
+def test_queue_contracts(ove_dir, output_dir):
+    return _test_queue_contracts(ove_dir, output_dir)
+
+
+def test_queue_contracts_sanitize(ove_dir, output_dir):
+    return _test_queue_contracts(ove_dir, output_dir, sanitize=True)
+
+
 def _test_cpp_infer(ove_dir, output_dir, sanitize=False):
     """Check C++ arena capacity and cleanup against recording-only C fakes."""
     result = TestResults(suite="cpp-infer-sanitize" if sanitize else "cpp-infer")
@@ -4249,6 +4288,8 @@ TEST_TARGETS = {
     "sync-condvar-sanitize": test_sync_condvar_sanitize,
     "sync-contracts": test_sync_contracts,
     "sync-contracts-sanitize": test_sync_contracts_sanitize,
+    "queue-contracts": test_queue_contracts,
+    "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-scoped": test_rust_scoped,
     "rust-scoped-sanitize": test_rust_scoped_sanitize,
     "rust-sync": test_rust_sync,

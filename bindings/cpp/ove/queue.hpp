@@ -35,6 +35,10 @@ namespace ove
  * In zero-heap mode `MaxItems` must be greater than zero; the backing buffer
  * is allocated inside the wrapper.  On heap-enabled builds `MaxItems` is
  * also required at compile time (it is passed to the kernel at construction).
+ * Native dimensions must fit the provider; NuttX capacity is bounded by
+ * SEM_VALUE_MAX. Initialization publishes a handle only after every native
+ * stage succeeds; earlier stages are released on failure before the constructor
+ * applies its initialization assertion.
  *
  * @tparam T        Type of message items; should be trivially copyable.
  * @tparam MaxItems Compile-time capacity of the queue (must be > 0).

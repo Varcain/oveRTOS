@@ -68,10 +68,13 @@ def expected(profile, canary=False):
     )
 
 
-def build(output, sanitize=False):
+def build(output, sanitize=False, selected_profiles=None):
     if sys.flags.optimize:
         raise ValueError("context checks require Python without optimization")
     validate_profiles()
+    selection = profiles if selected_profiles is None else selected_profiles
+    if not selection or len({row["profile"] for row in selection}) != len(selection):
+        raise ValueError("empty or duplicate context selection")
     output.mkdir(parents=True, exist_ok=True)
     original = (ROOT / "backends/common/ove_sync_context.h").read_text()
     replacements = []
@@ -102,7 +105,7 @@ def build(output, sanitize=False):
         + "\n"
     )
     images = []
-    for profile in profiles:
+    for profile in selection:
         folder = output / profile["profile"]
         folder.mkdir(exist_ok=True)
         (folder / "ove_config.h").write_text(

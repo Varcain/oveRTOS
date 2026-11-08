@@ -213,7 +213,7 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/freertos/freertos_board.c
 {% endif %}
-{% if config.get("CONFIG_OVE_SYNC") == True or config.get("CONFIG_OVE_ASYNC") == True %}
+{% if config.get("CONFIG_OVE_SYNC") == True or config.get("CONFIG_OVE_ASYNC") == True or config.get("CONFIG_OVE_QUEUE") == True %}
     ${OVE_DIR}/backends/freertos/freertos_irq.c
 {% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
@@ -232,7 +232,7 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_board.c
 {% endif %}
-{% if config.get("CONFIG_OVE_SYNC") == True or config.get("CONFIG_OVE_ASYNC") == True %}
+{% if config.get("CONFIG_OVE_SYNC") == True or config.get("CONFIG_OVE_ASYNC") == True or config.get("CONFIG_OVE_QUEUE") == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_irq.c
 {% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
@@ -255,7 +255,7 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_board.c
 {% endif %}
-{% if config.get("CONFIG_OVE_SYNC") == True or config.get("CONFIG_OVE_ASYNC") == True %}
+{% if config.get("CONFIG_OVE_SYNC") == True or config.get("CONFIG_OVE_ASYNC") == True or config.get("CONFIG_OVE_QUEUE") == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_irq.c
 {% endif %}
 {% endif %}

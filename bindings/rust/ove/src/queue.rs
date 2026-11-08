@@ -74,6 +74,9 @@ pub struct Queue<T: Copy, const N: usize> {
 
 impl<T: Copy, const N: usize> Queue<T, N> {
     /// Create a queue via heap allocation (only in heap mode).
+    /// Native initialization errors are propagated after partial resources are
+    /// cleaned up. Native dimensions must fit the provider, including the
+    /// NuttX semaphore count limit.
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
         let mut handle: bindings::ove_queue_t = core::ptr::null_mut();

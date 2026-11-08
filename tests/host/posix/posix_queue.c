@@ -27,16 +27,28 @@ static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0)
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0 ||
+	    item_size > SIZE_MAX / max_items)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_queue *sq = (struct ove_queue *)storage;
 	memset(sq, 0, sizeof(*sq));
 	sq->buffer = buffer;
 	sq->item_size = item_size;
 	sq->max_items = max_items;
-	pthread_mutex_init(&sq->lock, NULL);
-	pthread_cond_init(&sq->not_full, NULL);
-	pthread_cond_init(&sq->not_empty, NULL);
+	int rc = pthread_mutex_init(&sq->lock, NULL);
+	if (rc)
+		return ove_errno_to_ove(rc);
+	rc = pthread_cond_init(&sq->not_full, NULL);
+	if (rc) {
+		pthread_mutex_destroy(&sq->lock);
+		return ove_errno_to_ove(rc);
+	}
+	rc = pthread_cond_init(&sq->not_empty, NULL);
+	if (rc) {
+		pthread_cond_destroy(&sq->not_full);
+		pthread_mutex_destroy(&sq->lock);
+		return ove_errno_to_ove(rc);
+	}
 	*q = sq;
 	return OVE_OK;
 }
