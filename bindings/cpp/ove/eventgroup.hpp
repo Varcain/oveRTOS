@@ -41,7 +41,8 @@ class EventGroup
 	/**
 	 * @brief Constructs and initialises the event group with all bits cleared.
 	 *
-	 * Asserts at startup if initialisation fails.
+	 * Asserts at startup if initialisation fails. Native initialization failure
+	 * publishes no handle and releases successfully initialized resources.
 	 */
 	EventGroup()
 	{

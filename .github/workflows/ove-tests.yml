@@ -85,6 +85,8 @@ jobs:
           timeout --signal=INT --kill-after=30 300 make test-sync-contracts-sanitize
           timeout --signal=INT --kill-after=30 360 make test-queue-contracts
           timeout --signal=INT --kill-after=30 360 make test-queue-contracts-sanitize
+          timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts
+          timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts-sanitize
 
   stub-sanitize:
     name: C Stub Sanitize (UBSan + ASan)

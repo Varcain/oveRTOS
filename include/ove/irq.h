@@ -17,7 +17,8 @@
  * provider (Embassy on Rust).
  *
  * @note Critical sections require @c CONFIG_OVE_ASYNC. Interrupt detection
- *       requires SYNC, ASYNC or QUEUE; resource flags require SYNC or QUEUE.
+ *       requires SYNC, ASYNC, QUEUE or EVENTGROUP; resource flags require SYNC,
+ *       QUEUE or EVENTGROUP.
  *       Disabled functions use inert inline stubs and return false or zero.
  * @{
  */
@@ -89,7 +90,8 @@ static inline void ove_irq_unlock(ove_irq_key_t key)
 
 #endif /* CONFIG_OVE_ASYNC */
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
+	defined(CONFIG_OVE_EVENTGROUP)
 
 /**
  * @brief Return true if the caller is currently in interrupt context.
@@ -103,17 +105,18 @@ static inline void ove_irq_unlock(ove_irq_key_t key)
  * @note On the host test backend the ISR wrappers set a
  *       thread-local flag; outside those
  *       paths the function returns @c false.
- * @note Requires @c CONFIG_OVE_SYNC, @c CONFIG_OVE_ASYNC or @c CONFIG_OVE_QUEUE.
+ * @note Requires @c CONFIG_OVE_SYNC, @c CONFIG_OVE_ASYNC, @c CONFIG_OVE_QUEUE
+ *       or @c CONFIG_OVE_EVENTGROUP.
  */
 bool ove_is_in_isr(void);
 
-#else /* No SYNC, ASYNC or QUEUE */
+#else /* No SYNC, ASYNC, QUEUE or EVENTGROUP */
 static inline bool ove_is_in_isr(void)
 {
 	return false;
 }
 
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */
 
 /** Native resource initialization/destruction is available in this context. */
 #define OVE_SYNC_CONTEXT_RESOURCE (1u << 0)
@@ -122,7 +125,7 @@ static inline bool ove_is_in_isr(void)
 /** Task semaphore/event posts and serialized notification setup are available. */
 #define OVE_SYNC_CONTEXT_PRODUCER (1u << 2)
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE) || defined(CONFIG_OVE_EVENTGROUP)
 /**
  * @brief Query synchronization context without touching a primitive.
  *
@@ -156,8 +159,8 @@ static inline bool ove_is_in_isr(void)
  * This is not the eligibility test for releasing an already-owned mutex:
  * a valid same-thread unlock can remain legal with interrupts masked.
  *
- * @return Context flags, or zero when both SYNC and QUEUE are disabled or the
- *         context is unavailable.
+ * @return Context flags, or zero when SYNC, QUEUE and EVENTGROUP are all
+ *         disabled or the context is unavailable.
  */
 uint32_t ove_sync_context(void);
 #else

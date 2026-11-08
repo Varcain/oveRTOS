@@ -65,6 +65,8 @@ extern "C" {
  *
  * All bits in the new event group are cleared. The caller must ensure that
  * @p storage remains valid for the lifetime of the event group.
+ * On failure, no handle is published and earlier successfully initialized
+ * resources are released. The original initialization error is preserved.
  *
  * @param[out] eg       Receives the initialised event group handle.
  * @param[in]  storage  Pointer to statically-allocated event group storage.

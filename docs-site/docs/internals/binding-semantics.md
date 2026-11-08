@@ -785,3 +785,10 @@ producer-only masked contexts are insufficient. Error consumes the static borrow
 too, retaining wrapper/backing and preventing safe retry or reclamation. Static
 lifetime keeps callback data alive after publication, while exclusive setup
 prevents registration from overlapping another registration or producer.
+
+EventGroup native initialization publishes a handle only after all native stages
+succeed. Failures release earlier stages and preserve the initialization error;
+heap helpers release failed allocations. This contract applies to C initialization
+and the C++/Rust/Zig constructors. The existing pointer-free context query is
+available with EVENTGROUP alone, including without SYNC, QUEUE, TIME or ASYNC.
+EventGroup Rust storage ownership and operation admission are separate repairs.

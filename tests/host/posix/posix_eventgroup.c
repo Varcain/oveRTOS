@@ -29,8 +29,14 @@ int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_eventgroup *g = (struct ove_eventgroup *)storage;
 	memset(g, 0, sizeof(*g));
-	pthread_mutex_init(&g->lock, NULL);
-	pthread_cond_init(&g->cond, NULL);
+	int rc = pthread_mutex_init(&g->lock, NULL);
+	if (rc)
+		return ove_errno_to_ove(rc);
+	rc = pthread_cond_init(&g->cond, NULL);
+	if (rc) {
+		pthread_mutex_destroy(&g->lock);
+		return ove_errno_to_ove(rc);
+	}
 	*eg = g;
 	return OVE_OK;
 }

@@ -22,7 +22,7 @@
  * This lets `ove_irq_unlock` recover the original context without the
  * caller needing to know.
  *
- * Context detection is available with SYNC, ASYNC or QUEUE; critical sections
+ * Context detection is available with SYNC, ASYNC, QUEUE or EVENTGROUP; critical sections
  * require ASYNC.
  */
 
@@ -30,7 +30,8 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
+	defined(CONFIG_OVE_EVENTGROUP)
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -38,7 +39,7 @@
 #include <stdint.h>
 #include "ove_sync_context.h"
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE)
+#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE) || defined(CONFIG_OVE_EVENTGROUP)
 uint32_t ove_sync_context(void)
 {
 #if defined(OVE_SYNC_CORTEX_M) && (configNUMBER_OF_CORES == 1) && \
@@ -91,4 +92,4 @@ bool ove_is_in_isr(void)
 	return xPortIsInsideInterrupt() != 0;
 }
 
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE */
+#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */

@@ -1237,6 +1237,39 @@ def test_sync_contracts_sanitize(ove_dir, output_dir):
     return _test_sync_contracts(ove_dir, output_dir, sanitize=True)
 
 
+def _test_eventgroup_contracts(ove_dir, output_dir, sanitize=False):
+    """Check native eventgroup setup, cleanup and minimal context availability."""
+    result = TestResults(suite="eventgroup-contracts-sanitize" if sanitize else "eventgroup-contracts")
+    build = Path(output_dir) / "tests" / "eventgroup_contracts" / ("sanitize" if sanitize else "normal")
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "eventgroup_contracts", "run.py"), str(build)]
+    env = dict(os.environ)
+    if sanitize:
+        command.append("--sanitize")
+        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=env, timeout=300, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("eventgroup contracts: observations=84 failed=0\n")
+    if not valid:
+        print(text, end="")
+        result.failed_names.append("native-eventgroup-contracts")
+    result.passed += int(valid)
+    result.failed += int(not valid)
+    return result
+
+
+def test_eventgroup_contracts(ove_dir, output_dir):
+    return _test_eventgroup_contracts(ove_dir, output_dir)
+
+
+def test_eventgroup_contracts_sanitize(ove_dir, output_dir):
+    return _test_eventgroup_contracts(ove_dir, output_dir, sanitize=True)
+
+
 def _test_queue_contracts(ove_dir, output_dir, sanitize=False):
     """Check native queue setup, dimensions and minimal context availability."""
     result = TestResults(suite="queue-contracts-sanitize" if sanitize else "queue-contracts")
@@ -4612,6 +4645,8 @@ TEST_TARGETS = {
     "sync-condvar-sanitize": test_sync_condvar_sanitize,
     "sync-contracts": test_sync_contracts,
     "sync-contracts-sanitize": test_sync_contracts_sanitize,
+    "eventgroup-contracts": test_eventgroup_contracts,
+    "eventgroup-contracts-sanitize": test_eventgroup_contracts_sanitize,
     "queue-contracts": test_queue_contracts,
     "queue-contracts-sanitize": test_queue_contracts_sanitize,
     "rust-queue": test_rust_queue,

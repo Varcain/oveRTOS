@@ -58,6 +58,8 @@ pub const EventGroup = struct {
 
     /// Allocate the event group's substrate-storage from `allocator`
     /// and `ove_eventgroup_init` against it.  All bits start cleared.
+    /// Native initialization failure publishes no handle, releases completed
+    /// native stages, and propagates the original error; errdefer frees storage.
     pub fn create(allocator: std.mem.Allocator) Error!EventGroup {
         const storage = try allocator.create(c.ove_eventgroup_storage_t);
         errdefer allocator.destroy(storage);
