@@ -326,6 +326,9 @@ pub const Semaphore = struct {
 // ---------------------------------------------------------------------------
 
 /// Binary event flag — auto-resets after a successful `wait()`.
+/// Multiple threads may wait concurrently. One pending occurrence permits at
+/// most one successful wait, without a FIFO guarantee. Signals coalesce while
+/// pending. Finish waits and producers before `deinit` or retiring the storage.
 pub const Event = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_event_t,

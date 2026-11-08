@@ -1178,6 +1178,30 @@ def test_eventgroup_bindings(ove_dir, output_dir):
     return TestResults(suite="eventgroup-bindings", passed=int(rc == 0), failed=int(rc != 0))
 
 
+def test_freertos_event_bindings(ove_dir, output_dir):
+    """Check ordinary shared binding APIs against the actual Event adapter."""
+    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_event_waiters", "bindings.py"),
+               os.path.join(output_dir, "tests", "freertos_event_waiters", "bindings"),
+               "--zig", _find_zig(ove_dir)]
+    rc = _run_owned_test_process(command, env=dict(os.environ), timeout=900)
+    return TestResults(suite="freertos-event-bindings", passed=int(rc == 0), failed=int(rc != 0))
+
+
+def _test_freertos_event_waiters(ove_dir, output_dir, sanitize=False):
+    """Check shared binary Event waits and private registration lifetimes."""
+    return _ctest_suite(ove_dir, output_dir, "freertos_event_waiters",
+                        "freertos-event-waiters-sanitize" if sanitize else "freertos-event-waiters",
+                        sanitize, configs=(False,))
+
+
+def test_freertos_event_waiters(ove_dir, output_dir):
+    return _test_freertos_event_waiters(ove_dir, output_dir)
+
+
+def test_freertos_event_waiters_sanitize(ove_dir, output_dir):
+    return _test_freertos_event_waiters(ove_dir, output_dir, sanitize=True)
+
+
 def _test_freertos_event_timeouts(ove_dir, output_dir, sanitize=False):
     """Check complete finite Event budgets, latch ordering and native epochs."""
     label = "freertos-event-timeouts-sanitize" if sanitize else "freertos-event-timeouts"
@@ -1203,6 +1227,20 @@ def test_freertos_event_timeouts(ove_dir, output_dir):
 
 def test_freertos_event_timeouts_sanitize(ove_dir, output_dir):
     return _test_freertos_event_timeouts(ove_dir, output_dir, sanitize=True)
+
+
+def test_freertos_event_waiters_arm(ove_dir, output_dir):
+    """Check real shared Event waits, IRQ masks and syscall entry."""
+    rows = [(mpu, enforce, abort, zero, False) for mpu in (0, 1) for abort in (0, 1)
+            for zero in (0, 1) for enforce in ((0, 1) if mpu else (0,))]
+    rows += [(mpu, mpu, 0, zero, True) for mpu in (0, 1) for zero in (0, 1)]
+    profiles = {f"{'v1' if mpu else 'ordinary'}-enforce{enforce}-abort{abort}-"
+                f"{'zero' if zero else 'heap'}{'-trace' if trace else ''}":
+                {"OVE_MPU_V1": mpu, "OVE_ZERO_HEAP": zero, "OVE_NATIVE_ABORT": abort,
+                 "OVE_SYSCALL_ENFORCE": enforce, "OVE_NATIVE_TRACE": int(trace), "OVE_ERRATUM": 1 - mpu}
+                for mpu, enforce, abort, zero, trace in rows}
+    return _freertos_arm_profiles(ove_dir, output_dir, "freertos_event_waiters", "freertos-event-waiters-arm",
+                                  "arm", "event_waiters_target", profiles)
 
 
 def test_freertos_event_timeouts_arm(ove_dir, output_dir):
@@ -4667,6 +4705,10 @@ TEST_TARGETS = {
     "freertos-timeouts": test_freertos_timeouts,
     "freertos-timeouts-sanitize": test_freertos_timeouts_sanitize,
     "freertos-event-timeouts": test_freertos_event_timeouts,
+    "freertos-event-waiters": test_freertos_event_waiters,
+    "freertos-event-waiters-sanitize": test_freertos_event_waiters_sanitize,
+    "freertos-event-waiters-arm": test_freertos_event_waiters_arm,
+    "freertos-event-bindings": test_freertos_event_bindings,
     "freertos-event-timeouts-sanitize": test_freertos_event_timeouts_sanitize,
     "freertos-event-timeouts-arm": test_freertos_event_timeouts_arm,
     "nuttx-timeouts": test_nuttx_timeouts,

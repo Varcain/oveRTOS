@@ -173,7 +173,7 @@ enum signal_kind { TASK_SIGNAL, ISR_TASK_SIGNAL, IRQ_SIGNAL };
 
 static void wake_worker(const char *name, enum signal_kind kind, bool nested)
 {
-	if (uxSemaphoreGetCount(ready) || uxSemaphoreGetCount(done) || event->waiter)
+	if (uxSemaphoreGetCount(ready) || uxSemaphoreGetCount(done) || event->waiters)
 		event_target_reject();
 	++generation;
 	__atomic_store_n(&job.generation, generation, __ATOMIC_RELEASE);
@@ -185,8 +185,7 @@ static void wake_worker(const char *name, enum signal_kind kind, bool nested)
 	take(ready);
 	/* The higher-priority worker runs from ready directly into its wait.
 	 * No other worker exists, and this is its only blocking path. */
-	if (ove_thread_get_state(thread) != OVE_THREAD_STATE_BLOCKED ||
-	    __atomic_load_n(&event->waiter, __ATOMIC_SEQ_CST) != thread->task)
+	if (ove_thread_get_state(thread) != OVE_THREAD_STATE_BLOCKED)
 		event_target_reject();
 	check(ipsr() == 0 && mask() == 0, "controller context before signal");
 	if (nested)
@@ -235,7 +234,7 @@ static void wake_worker(const char *name, enum signal_kind kind, bool nested)
 		event_target_reject();
 	thread = NULL;
 	++joins;
-	check(!event->waiter && mask() == 0, "waiter retired before backing reuse");
+	check(!event->waiters && mask() == 0, "waiter retired before backing reuse");
 	text("observed: ");
 	text(name);
 	field(" before=", before);
@@ -269,7 +268,7 @@ static void controller(void *argument)
 	TickType_t began = xTaskGetTickCount();
 	int status = wait_event(10000000);
 	TickType_t elapsed = xTaskGetTickCount() - began;
-	check(status == OVE_ERR_TIMEOUT && elapsed >= 10 && elapsed <= 1000 && !event->waiter,
+	check(status == OVE_ERR_TIMEOUT && elapsed >= 10 && elapsed <= 1000 && !event->waiters,
 	      "finite timeout and tick progress");
 	text("observed: timeout status=TIMEOUT ticks_in_range=1 retired=1\n");
 	++scenarios;
@@ -290,7 +289,7 @@ static void controller(void *argument)
 	unsigned controller_headroom = uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t);
 	check(controller_headroom >= 512 && minimum_worker_headroom >= 512,
 	      "application stack headroom");
-	check(!event->waiter && !__atomic_load_n(&irq_armed, __ATOMIC_ACQUIRE),
+	check(!event->waiters && !__atomic_load_n(&irq_armed, __ATOMIC_ACQUIRE),
 	      "Event and IRQ quiescent before cleanup");
 	ove_event_deinit(event);
 	vSemaphoreDelete(ready);

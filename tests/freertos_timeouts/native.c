@@ -491,7 +491,7 @@ static void sync_cases(void)
 		reset();
 		event->signaled = 1;
 		active_event = NULL;
-		check(ove_event_wait(event, ns) == OVE_OK && event->waiter == NULL &&
+		check(ove_event_wait(event, ns) == OVE_OK && event->waiters == NULL &&
 			      !event->signaled,
 		      "event immediate latch behavior remains unchanged");
 		conversion(ns, ns != UINT64_MAX);
@@ -502,7 +502,7 @@ static void sync_cases(void)
 	event->signaled = 0;
 	active_event = event;
 	check(ove_event_wait(event, UINT64_MAX) == OVE_OK && native_calls == 2 &&
-		      arguments[1] == portMAX_DELAY && event->waiter == NULL,
+		      arguments[1] == portMAX_DELAY && event->waiters == NULL,
 	      "encoded forever event takes inert notification route");
 	active_event = NULL;
 	ove_event_deinit(event);

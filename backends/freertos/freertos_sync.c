@@ -11,6 +11,7 @@
 #include "ove/trace.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
+#include "ove_event_mask.h"
 #include "ove_ns_to_ticks.h"
 #include "semphr.h"
 #include "task.h"
@@ -110,12 +111,25 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 
 /* ─── Event _init / _deinit ──────────────────────────────────────────── */
 
+struct freertos_event_waiter {
+	TaskHandle_t task;
+	struct freertos_event_waiter *next;
+};
+
+#if defined(portUSING_MPU_WRAPPERS) && portUSING_MPU_WRAPPERS == 1 && configUSE_MPU_WRAPPERS_V1 == 1
+#define OVE_EVENT_MPU_V1 1
+/* Keep each stock privilege transition in its native system-call section. */
+static bool event_wait_step(ove_event_t evt, struct freertos_event_waiter *self, bool publish,
+			    bool retire) FREERTOS_SYSTEM_CALL __attribute__((noinline));
+static void event_notify(ove_event_t evt) FREERTOS_SYSTEM_CALL __attribute__((noinline));
+#endif
+
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
 	if (evt == NULL || storage == NULL)
 		return OVE_ERR_INVALID_PARAM;
 	__atomic_store_n(&storage->signaled, 0u, __ATOMIC_RELAXED);
-	__atomic_store_n(&storage->waiter, (TaskHandle_t)NULL, __ATOMIC_RELAXED);
+	storage->waiters = NULL;
 	*evt = storage;
 	return OVE_OK;
 }
@@ -123,6 +137,48 @@ int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 void ove_event_deinit(ove_event_t evt)
 {
 	(void)evt; /* no kernel object to release */
+}
+
+static bool event_wait_step(ove_event_t evt, struct freertos_event_waiter *self, bool publish,
+			    bool retire)
+{
+#ifdef OVE_EVENT_MPU_V1
+	BaseType_t was_privileged = portIS_PRIVILEGED();
+	if (was_privileged == pdFALSE) {
+		portRAISE_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+	struct freertos_event_masks masks = event_mask_save();
+	taskENTER_CRITICAL();
+	if (publish) {
+		self->next = evt->waiters;
+		evt->waiters = self;
+	}
+	bool consumed = __atomic_exchange_n(&evt->signaled, 0u, __ATOMIC_SEQ_CST) != 0;
+	if (consumed || retire) {
+		/* Consume and retire together so a later signal cannot select this
+		 * completed invocation. Other live records remain registered. */
+		struct freertos_event_waiter **link = &evt->waiters;
+		while (*link != NULL) {
+			if (*link == self) {
+				*link = self->next;
+				break;
+			}
+			link = &(*link)->next;
+		}
+	}
+	event_mask_prepare_exit();
+	taskEXIT_CRITICAL();
+	event_mask_restore(masks);
+#ifdef OVE_EVENT_MPU_V1
+	if (was_privileged == pdFALSE) {
+		portMEMORY_BARRIER();
+		portRESET_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+	return consumed;
 }
 
 static bool event_time_expired(TimeOut_t *previous, TickType_t *remaining)
@@ -161,24 +217,22 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 		vTaskSetTimeOutState(&deadline);
 	int ret = OVE_ERR_TIMEOUT;
 
-	/* Register as the (single) waiter for the signaller to notify. */
-	__atomic_store_n(&evt->waiter, xTaskGetCurrentTaskHandle(), __ATOMIC_SEQ_CST);
+	struct freertos_event_waiter self = {.task = xTaskGetCurrentTaskHandle(), .next = NULL};
+	bool poll = !forever && remaining == 0;
+	if (event_wait_step(evt, &self, true, poll)) {
+		ret = OVE_OK;
+		goto out;
+	}
+	if (poll)
+		goto out;
 	for (;;) {
-		/* The latch is the per-event source of truth; a task
-		 * notification is only a wakeup hint (per-task, shared across
-		 * every event this thread waits on).  Checking the latch first
-		 * also closes the signal-between-register-and-block race. */
-		if (__atomic_exchange_n(&evt->signaled, 0u, __ATOMIC_SEQ_CST) != 0u) {
-			ret = OVE_OK;
-			break;
-		}
-
 		TickType_t wait_ticks;
 		if (forever) {
 			wait_ticks = portMAX_DELAY;
 		} else {
 			if (remaining == 0 || event_time_expired(&deadline, &remaining)) {
-				ret = OVE_ERR_TIMEOUT;
+				ret = event_wait_step(evt, &self, false, true) ? OVE_OK
+									       : OVE_ERR_TIMEOUT;
 				break;
 			}
 			wait_ticks = remaining;
@@ -186,52 +240,74 @@ int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 
 		uint32_t got = ulTaskNotifyTake(pdTRUE, wait_ticks);
 
-		/* Re-check the latch regardless of why we woke — a signal that
-		 * raced the timeout still set it, and `got` alone can't tell our
-		 * event's signal from a stale cross-event notification. */
-		if (__atomic_exchange_n(&evt->signaled, 0u, __ATOMIC_SEQ_CST) != 0u) {
+		/* A hint alone cannot grant success. Resolve the latch and retire
+		 * this call under the same protection when the native wait ends. */
+		if (event_wait_step(evt, &self, false, got == 0)) {
 			ret = OVE_OK;
 			break;
 		}
 		if (got == 0u) {
-			ret = OVE_ERR_TIMEOUT; /* timed out, no latch (forever never hits this) */
+			ret = OVE_ERR_TIMEOUT; /* native wait ended without a pending latch */
 			break;
 		}
 		/* got != 0 but no latch: stale notification from another event —
 		 * re-block on the remaining time. */
 	}
-	__atomic_store_n(&evt->waiter, (TaskHandle_t)NULL, __ATOMIC_SEQ_CST);
-
+out:
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
 	return ret;
 }
 
-void ove_event_signal(ove_event_t evt)
+static void event_notify(ove_event_t evt)
 {
-	/* Publish the latch first (level-triggered), then wake the waiter if
-	 * one is registered.  SEQ_CST pairs with ove_event_wait's
-	 * register-then-recheck so a signal can never be lost. Keep the copied
-	 * task live through native notification on this single core. */
+#ifdef OVE_EVENT_MPU_V1
+	BaseType_t was_privileged = portIS_PRIVILEGED();
+	if (was_privileged == pdFALSE) {
+		portRAISE_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+	struct freertos_event_masks masks = event_mask_save();
 	taskENTER_CRITICAL();
 	__atomic_store_n(&evt->signaled, 1u, __ATOMIC_SEQ_CST);
-	TaskHandle_t w = __atomic_load_n(&evt->waiter, __ATOMIC_SEQ_CST);
-	if (w != NULL) {
-		xTaskNotifyGive(w);
-	}
-	taskEXIT_CRITICAL();
+	/* Hint every live record so a suspended waiter cannot absorb the only
+	 * notification. The one shared latch still grants only one success. */
+	for (struct freertos_event_waiter *p = evt->waiters; p != NULL; p = p->next)
+		xTaskNotifyGive(p->task);
+	/* Resolving the trace task tag also enters a native critical section. */
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
+	event_mask_prepare_exit();
+	taskEXIT_CRITICAL();
+	event_mask_restore(masks);
+#ifdef OVE_EVENT_MPU_V1
+	if (was_privileged == pdFALSE) {
+		portMEMORY_BARRIER();
+		portRESET_PRIVILEGE();
+		portMEMORY_BARRIER();
+	}
+#endif
+}
+
+void ove_event_signal(ove_event_t evt)
+{
+	event_notify(evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
+	struct freertos_event_masks masks = event_mask_save();
 	UBaseType_t saved = taskENTER_CRITICAL_FROM_ISR();
 	__atomic_store_n(&evt->signaled, 1u, __ATOMIC_SEQ_CST);
-	TaskHandle_t w = __atomic_load_n(&evt->waiter, __ATOMIC_SEQ_CST);
 	BaseType_t yield = pdFALSE;
-	if (w != NULL) {
-		vTaskNotifyGiveFromISR(w, &yield);
+	for (struct freertos_event_waiter *p = evt->waiters; p != NULL; p = p->next) {
+		BaseType_t wake = pdFALSE;
+		vTaskNotifyGiveFromISR(p->task, &wake);
+		if (wake != pdFALSE)
+			yield = pdTRUE;
 	}
+	event_mask_prepare_exit();
 	taskEXIT_CRITICAL_FROM_ISR(saved);
+	event_mask_restore(masks);
 	portYIELD_FROM_ISR(yield);
 }
 

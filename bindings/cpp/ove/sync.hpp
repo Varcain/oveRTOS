@@ -826,9 +826,11 @@ class Semaphore
  * @brief RAII wrapper around an oveRTOS binary event flag.
  *
  * An `Event` is a lightweight synchronisation primitive for signalling a
- * single occurrence from one task (or ISR) to another.  The event is in an
- * unsignalled state after construction; `signal()` or `signal_from_isr()`
- * wakes any task blocked in `wait()`.
+ * single occurrence from one task (or ISR) to waiting tasks. The event starts
+ * unsignalled. Multiple threads may wait concurrently; one pending occurrence
+ * permits at most one successful wait, without a FIFO guarantee. Signals
+ * coalesce while an occurrence remains pending. Finish waits and producers
+ * before destroying the owner or retiring its backing storage.
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
