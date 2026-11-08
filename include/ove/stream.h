@@ -114,6 +114,8 @@ void ove_stream_destroy(ove_stream_t stream);
  *                         @p len is 0.
  * @param[in]  len         Number of bytes to send.  0 sends nothing and
  *                         returns OVE_OK at once, without waiting.
+ * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ *
  * @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL if the caller does not need this value.
@@ -166,6 +168,8 @@ OVE_NODISCARD static inline int ove_stream_send_until(ove_stream_t stream, const
  * @param[in]  len             Maximum number of bytes to read.  0 reads
  *                             nothing and returns OVE_OK at once, without
  *                             waiting for the trigger level.
+ * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ *
  * @param[in]  timeout_ns      Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_received  Receives the number of bytes actually read, or
  *                             @c NULL if the caller does not need this value.

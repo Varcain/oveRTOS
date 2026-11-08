@@ -8,6 +8,10 @@
 //!
 //! [`Timer`] wraps an RTOS software timer with a safe Rust `fn()` callback.
 //! Timers can be periodic or one-shot and are driven by the RTOS tick.
+//!
+//! NuttX periods round up to native ticks. The rounded count must be
+//! strictly below both WDOG_MAX_DELAY and UINT32_MAX; unsupported periods
+//! are rejected, never shortened. Watchdog expiry defers callbacks to HPWORK.
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;

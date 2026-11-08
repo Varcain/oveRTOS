@@ -188,6 +188,170 @@ static void test_sem_wait_forever_unblocks_on_give(void **state)
 	ove_test_sem_destroy(sem);
 }
 
+#ifdef CONFIG_OVE_RTOS_NUTTX
+OVE_TEST_STORAGE(ove_mutex_storage_t, s_range_recursive);
+OVE_TEST_STORAGE(ove_condvar_storage_t, s_range_condvar);
+OVE_TEST_STORAGE(ove_sem_storage_t, s_range_ready);
+OVE_TEST_STORAGE(ove_eventgroup_storage_t, s_range_group);
+OVE_TEST_STORAGE(ove_stream_storage_t, s_range_stream);
+static unsigned char s_range_bytes[4];
+
+struct range_wake_context {
+	unsigned kind;
+	ove_mutex_t mutex, recursive;
+	ove_sem_t sem, ready;
+	ove_event_t event;
+	ove_queue_t queue;
+	ove_condvar_t condvar;
+	ove_eventgroup_t group;
+	ove_stream_t stream;
+	int status;
+};
+
+static void range_wake_entry(void *arg)
+{
+	struct range_wake_context *c = arg;
+	if (c->kind < 2) {
+		c->status = c->kind ? ove_recursive_mutex_lock(c->recursive, OVE_MS(500))
+				    : ove_mutex_lock(c->mutex, OVE_MS(500));
+		ove_sem_give(c->ready);
+		test_msleep(30);
+		if (c->status == OVE_OK) {
+			if (c->kind)
+				ove_recursive_mutex_unlock(c->recursive);
+			else
+				ove_mutex_unlock(c->mutex);
+		}
+		return;
+	}
+	test_msleep(15);
+	uint32_t item = 123;
+	size_t count = 0;
+	switch (c->kind) {
+	case 2:
+		ove_sem_give(c->sem);
+		break;
+	case 3:
+		ove_event_signal(c->event);
+		break;
+	case 4:
+		c->status = ove_queue_send(c->queue, &item, 0);
+		break;
+	case 5:
+		(void)ove_eventgroup_set_bits(c->group, 2);
+		test_msleep(15);
+		(void)ove_eventgroup_set_bits(c->group, 1);
+		break;
+	case 6:
+		c->status = ove_stream_send(c->stream, &item, 1, 0, &count);
+		if (count != 1)
+			c->status = OVE_ERR_BUSY;
+		test_msleep(15);
+		if (c->status == OVE_OK) {
+			c->status = ove_stream_send(c->stream, &item, 1, 0, &count);
+			if (count != 1)
+				c->status = OVE_ERR_BUSY;
+		}
+		break;
+	case 7:
+		c->status = ove_mutex_lock(c->mutex, OVE_MS(500));
+		if (c->status == OVE_OK) {
+			ove_condvar_signal(c->condvar);
+			ove_mutex_unlock(c->mutex);
+		}
+		break;
+	}
+}
+
+static void test_nuttx_large_finite_prompt_release(void **state)
+{
+	(void)state;
+	struct range_wake_context c = {0};
+	assert_int_equal(ove_test_mutex_create(&c.mutex, &s_mtx_storage), OVE_OK);
+	assert_int_equal(ove_test_recursive_mutex_create(&c.recursive, &s_range_recursive), OVE_OK);
+	assert_int_equal(ove_test_sem_create(&c.sem, &s_sem_storage, 0, 1), OVE_OK);
+	assert_int_equal(ove_test_sem_create(&c.ready, &s_range_ready, 0, 1), OVE_OK);
+	assert_int_equal(ove_test_event_create(&c.event, &s_evt_storage), OVE_OK);
+	assert_int_equal(ove_test_queue_create(&c.queue, &s_q_storage, s_q_buffer, sizeof(uint32_t),
+					       4),
+			 OVE_OK);
+	assert_int_equal(ove_test_condvar_create(&c.condvar, &s_range_condvar), OVE_OK);
+	assert_int_equal(ove_test_eventgroup_create(&c.group, &s_range_group), OVE_OK);
+	assert_int_equal(ove_test_stream_create(&c.stream, &s_range_stream, s_range_bytes,
+						sizeof(s_range_bytes), 2),
+			 OVE_OK);
+	for (c.kind = 0; c.kind < 8; ++c.kind) {
+		c.status = OVE_OK;
+		if (c.kind == 7)
+			assert_int_equal(ove_mutex_lock(c.mutex, OVE_MS(500)), OVE_OK);
+		ove_thread_t worker = NULL;
+		assert_int_equal(ove_test_thread_run(&worker, &s_th_storage, "range-wake",
+						     range_wake_entry, &c, s_th_stack,
+						     sizeof(s_th_stack)),
+				 OVE_OK);
+		if (c.kind < 2)
+			assert_int_equal(ove_sem_take(c.ready, OVE_SEC(1)), OVE_OK);
+		int rc = OVE_ERR_BUSY;
+		uint32_t item = 0;
+		size_t count = 0;
+		ove_eventbits_t bits = 0;
+		bool held = true;
+		switch (c.kind) {
+		case 0:
+			rc = ove_mutex_lock(c.mutex, UINT64_MAX - 1);
+			if (rc == OVE_OK)
+				ove_mutex_unlock(c.mutex);
+			break;
+		case 1:
+			rc = ove_recursive_mutex_lock(c.recursive, UINT64_MAX - 1);
+			if (rc == OVE_OK)
+				ove_recursive_mutex_unlock(c.recursive);
+			break;
+		case 2:
+			rc = ove_sem_take(c.sem, UINT64_MAX - 1);
+			break;
+		case 3:
+			rc = ove_event_wait(c.event, UINT64_MAX - 1);
+			break;
+		case 4:
+			rc = ove_queue_receive(c.queue, &item, UINT64_MAX - 1);
+			break;
+		case 5:
+			rc = ove_eventgroup_wait_bits(c.group, 1, 0, UINT64_MAX - 1, &bits);
+			break;
+		case 6:
+			rc = ove_stream_receive(c.stream, &item, 2, UINT64_MAX - 1, &count);
+			break;
+		case 7:
+			rc = ove_condvar_wait_checked(c.condvar, c.mutex, UINT64_MAX - 1, &held);
+			if (held)
+				ove_mutex_unlock(c.mutex);
+			break;
+		}
+		assert_int_equal(ove_test_thread_join_destroy(worker, 2000), OVE_OK);
+		assert_int_equal(rc, OVE_OK);
+		assert_int_equal(c.status, OVE_OK);
+		if (c.kind == 4)
+			assert_int_equal(item, 123);
+		if (c.kind == 5)
+			assert_int_equal(bits, 3);
+		if (c.kind == 6)
+			assert_int_equal(count, 2);
+		if (c.kind == 7)
+			assert_true(held);
+	}
+	ove_test_stream_destroy(c.stream);
+	ove_test_eventgroup_destroy(c.group);
+	ove_test_condvar_destroy(c.condvar);
+	ove_test_queue_destroy(c.queue);
+	ove_test_event_destroy(c.event);
+	ove_test_sem_destroy(c.ready);
+	ove_test_sem_destroy(c.sem);
+	ove_test_recursive_mutex_destroy(c.recursive);
+	ove_test_mutex_destroy(c.mutex);
+}
+#endif
+
 /* ── runner ─────────────────────────────────────────────────────────── */
 
 int test_timeout_ns_run(void)
@@ -201,6 +365,9 @@ int test_timeout_ns_run(void)
 		cmocka_unit_test(test_sem_timeout_hundred_ms_elapses),
 		cmocka_unit_test(test_sem_timeout_uint32_max_boundary),
 		cmocka_unit_test(test_sem_timeout_above_uint32_max_slow_path),
+#ifdef CONFIG_OVE_RTOS_NUTTX
+		cmocka_unit_test(test_nuttx_large_finite_prompt_release),
+#endif
 		cmocka_unit_test(test_timeout_ns_constants),
 		cmocka_unit_test(test_sem_wait_forever_unblocks_on_give),
 	};

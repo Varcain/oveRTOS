@@ -14,6 +14,10 @@
 //! if the caller outranks the timer task); `deinit` waits for a running
 //! callback, so never call it from the callback. Available when
 //! `CONFIG_OVE_TIMER` is enabled.
+//!
+//! NuttX periods round up to native ticks. The rounded count must be
+//! strictly below both WDOG_MAX_DELAY and UINT32_MAX; unsupported periods
+//! are rejected, never shortened. Watchdog expiry defers callbacks to HPWORK.
 
 const std = @import("std");
 const c = @import("c.zig").raw;

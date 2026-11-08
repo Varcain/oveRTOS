@@ -9,6 +9,10 @@
 /**
  * @file timer.hpp
  * @brief Software timer with RAII lifecycle
+ *
+ * NuttX periods round up to native ticks. The rounded count must be
+ * strictly below both WDOG_MAX_DELAY and UINT32_MAX; unsupported periods
+ * are rejected, never shortened. Watchdog expiry defers callbacks to HPWORK.
  */
 
 #pragma once

@@ -135,6 +135,8 @@ void ove_queue_destroy(ove_queue_t q);
  *
  * @param[in] q           Queue handle.
  * @param[in] data        Pointer to the item to copy into the queue.
+ * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ *
  * @param[in] timeout_ns  Maximum time to wait in nanoseconds if the queue
  *                        is full.  Pass @c OVE_WAIT_FOREVER to block
  *                        indefinitely.  Use @c OVE_MS(n) / @c OVE_SEC(n)
@@ -182,6 +184,8 @@ OVE_NODISCARD static inline int ove_queue_send_until(ove_queue_t q, const void *
  * @param[in]  q           Queue handle.
  * @param[out] buf         Buffer to copy the received item into.  Must be at
  *                         least @p item_size bytes.
+ * @note NuttX finite waits use the effective budget described by @ref OVE_WAIT_FOREVER.
+ *
  * @param[in]  timeout_ns  Maximum time to wait in nanoseconds if the queue
  *                         is empty.  Pass @c OVE_WAIT_FOREVER to block
  *                         indefinitely.  Use @c OVE_MS(n) / @c OVE_SEC(n)
