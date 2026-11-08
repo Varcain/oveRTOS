@@ -36,7 +36,7 @@ static struct {
 	unsigned registration, deregistration, yields, retired;
 	unsigned expected_mask;
 	unsigned copied_generation;
-	bool trial, in_native, irq, retained, injected;
+	bool trial, in_native, irq, retained, injected, registered_now, deferred_signal;
 } model;
 
 static void check(bool condition, const char *message)
@@ -54,12 +54,13 @@ static void reject(void)
 }
 
 static void dispatch(enum wake how);
+static bool trial_registered(void);
 
 static void retirement_offer(void)
 {
 	if (!model.trial || !model.copied || model.phase == NO_RETIREMENT)
 		return;
-	if (model.copied != &token || !token.initialized || model.event->waiter != &token)
+	if (model.copied != &token || !token.initialized || !trial_registered())
 		reject();
 	/* A runnable waiter before its first latch check can consume this exact
 	 * posted latch. A waiter after its last timeout check can instead finish
@@ -80,7 +81,7 @@ static void retirement_offer(void)
 	}
 }
 
-static void after_load(TaskHandle_t copied)
+static void observe_native_argument(TaskHandle_t copied)
 {
 	if (!model.trial || !copied)
 		return;
@@ -92,29 +93,30 @@ static void after_load(TaskHandle_t copied)
 	retirement_offer();
 }
 
-static void after_store(const void *address)
+static void observe_registration(void)
 {
-	if (!model.event || address != &model.event->waiter || model.trial)
+	if (!model.event || model.trial)
 		return;
-	if (model.event->waiter) {
+	bool live = model.event->waiters != NULL;
+	if (live && !model.registered_now)
 		++model.registration;
-		if (model.wake == REGISTER_WAKE && !model.injected) {
-			model.injected = true;
-			dispatch(TASK_WAKE);
-		}
-	} else {
+	if (!live && model.registered_now)
 		++model.deregistration;
-	}
+	model.registered_now = live;
 }
 
 static void after_exchange(const void *address, unsigned previous)
 {
+	observe_registration();
 	if (!model.event || address != &model.event->signaled || model.trial ||
 	    model.wake != COMMITTED_WAKE || model.takes < 2 || model.injected)
 		return;
 	check(previous == 0, "committed timeout observed the empty latch");
 	model.injected = true;
-	dispatch(TASK_WAKE);
+	if (model.mask)
+		model.deferred_signal = true;
+	else
+		dispatch(TASK_WAKE);
 }
 
 static void model_yield(BaseType_t wake)
@@ -125,21 +127,8 @@ static void model_yield(BaseType_t wake)
 		++model.yields;
 }
 
-/* Preserve the exact atomic operand type, value, order and single evaluation.
- * The observation follows the actual copy/store and adds no synchronization. */
-#define __atomic_load_n(pointer, order)                                                  \
-	({                                                                               \
-		__auto_type observed_pointer = (pointer);                                \
-		__auto_type observed_value = __atomic_load_n(observed_pointer, (order)); \
-		after_load(observed_value);                                              \
-		observed_value;                                                          \
-	})
-#define __atomic_store_n(pointer, value, order)                       \
-	do {                                                          \
-		__auto_type observed_pointer = (pointer);             \
-		__atomic_store_n(observed_pointer, (value), (order)); \
-		after_store(observed_pointer);                        \
-	} while (0)
+/* Preserve the actual latch operation. Native arguments are observed at the
+ * callback boundary; source/native checks cover private record traversal. */
 #define __atomic_exchange_n(pointer, value, order)                               \
 	({                                                                       \
 		__auto_type observed_pointer = (pointer);                        \
@@ -150,10 +139,32 @@ static void model_yield(BaseType_t wake)
 	})
 #undef portYIELD_FROM_ISR
 #define portYIELD_FROM_ISR(wake) model_yield(wake)
+#include "ove/trace.h"
+static void observe_trace(const char *, const char *, const void *);
+#undef OVE_TRACE_MARK_CURRENT
+#define OVE_TRACE_MARK_CURRENT(primitive, action, object) \
+	observe_trace(#primitive, #action, (object))
 #include OVE_SYNC_BACKEND_SOURCE
-#undef __atomic_load_n
-#undef __atomic_store_n
+#undef OVE_TRACE_MARK_CURRENT
 #undef __atomic_exchange_n
+
+static struct freertos_event_waiter trial_record;
+static bool trial_registered(void)
+{
+	return model.event->waiters == &trial_record && trial_record.task == &token &&
+	       trial_record.next == NULL;
+}
+static void observe_trace(const char *primitive, const char *action, const void *object)
+{
+	if (strcmp(primitive, "OVE_TRACE_PRIM_EVENT") || strcmp(action, "OVE_TRACE_ACT_WAIT_EXIT"))
+		return;
+	check(object == model.event && !model.mask && !model.event->waiters,
+	      "automatic record retires before its owning call returns");
+	/* Keep an invalid retirement observable without allowing a subsequent
+	 * modeled producer to access expired automatic storage. */
+	model.event->waiters = NULL;
+	observe_registration();
+}
 
 void model_enter_critical(void)
 {
@@ -170,8 +181,16 @@ void model_exit_critical(void)
 		reject();
 	if (model.in_native)
 		--model.native_depth;
-	if (!--model.task_depth)
+	observe_registration();
+	if (!--model.task_depth) {
 		model.mask = 0;
+		if (model.deferred_signal ||
+		    (model.registered_now && model.wake == REGISTER_WAKE && !model.injected)) {
+			model.deferred_signal = false;
+			model.injected = true;
+			dispatch(TASK_WAKE);
+		}
+	}
 }
 
 UBaseType_t model_enter_critical_from_isr(void)
@@ -217,6 +236,7 @@ static void before_native(TaskHandle_t target)
 	    token.generation != generation)
 		reject();
 	if (model.trial) {
+		observe_native_argument(target);
 		if (model.copied != target || model.copied_generation != token.generation)
 			reject();
 		++model.calls;
@@ -360,7 +380,7 @@ BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t s)
 static void finish(void)
 {
 	if (model.copied || model.copied_generation || model.retained || model.in_native ||
-	    model.native_depth || model.mask || model.task_depth || model.event->waiter)
+	    model.native_depth || model.mask || model.task_depth || model.event->waiters)
 		reject();
 	ove_event_deinit(model.event);
 	token.initialized = false;
@@ -382,7 +402,7 @@ static void wait_control(enum wake wake, int expected, unsigned takes)
 	model.wake = wake;
 	int rc = ove_event_wait(model.event, 20000000);
 	check(rc == expected && model.takes == takes, "actual wait result and remaining-time path");
-	check(model.registration == 1 && model.deregistration == 1 && !model.event->waiter,
+	check(model.registration == 1 && model.deregistration == 1 && !model.event->waiters,
 	      "actual wait registration and retirement");
 	finish();
 	++controls;
@@ -398,7 +418,7 @@ static void ordinary_controls(void)
 	check(ove_event_wait(model.event, 0) == OVE_ERR_TIMEOUT, "coalesced signal consumed once");
 	finish();
 	++controls;
-	wait_control(REGISTER_WAKE, OVE_OK, 1);
+	wait_control(REGISTER_WAKE, OVE_OK, 2);
 	wait_control(TASK_WAKE, OVE_OK, 2);
 	wait_control(ISR_TASK_WAKE, OVE_OK, 2);
 	wait_control(ISR_WAKE, OVE_OK, 2);
@@ -450,8 +470,10 @@ int main(int argc, char **argv)
 	model.trial = true;
 	model.phase = no_waiter ? NO_RETIREMENT : timeout ? COMMITTED_TIMEOUT : LATCH_RECHECK;
 	model.irq = genuine;
-	if (!no_waiter)
-		__atomic_store_n(&model.event->waiter, &token, __ATOMIC_SEQ_CST);
+	if (!no_waiter) {
+		trial_record = (struct freertos_event_waiter){.task = &token, .next = NULL};
+		model.event->waiters = &trial_record;
+	}
 	if (masked)
 		model_enter_critical();
 	model.expected_mask = model.mask;
@@ -463,7 +485,7 @@ int main(int argc, char **argv)
 	check(!model.copied && !model.retained && !model.native_depth,
 	      "last native use precedes private retention cleanup");
 	/* Only now can the simulated waiter finish and its owner reuse backing. */
-	__atomic_store_n(&model.event->waiter, (TaskHandle_t)NULL, __ATOMIC_SEQ_CST);
+	model.event->waiters = NULL;
 	model.retired = !no_waiter;
 	unsigned loads = model.loads, calls = model.calls, checks = model.checks;
 	unsigned offers = model.offers, deferrals = model.deferrals;

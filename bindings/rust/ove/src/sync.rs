@@ -832,6 +832,10 @@ unsafe impl Sync for EventStorage {}
 
 /// Binary event (signal/wait).
 ///
+/// Shared references support concurrent waiters. One pending occurrence permits
+/// at most one successful wait, without a FIFO guarantee. Signals coalesce while
+/// an occurrence remains pending; polls and timeouts preserve other waiters.
+///
 /// Creation, waits and cleanup use the same resource/blocking admission and
 /// retention policy as [`Semaphore`]. Both producer methods select the actual
 /// task/ISR native route, independent of their name. Recognized masked task

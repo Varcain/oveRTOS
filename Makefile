@@ -198,6 +198,9 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               freertos-timeouts freertos-timeouts-sanitize \
               freertos-event-timeouts freertos-event-timeouts-sanitize \
               freertos-event-timeouts-arm \
+              freertos-event-waiters freertos-event-waiters-sanitize \
+              freertos-event-waiters-arm \
+              freertos-event-bindings \
               eventgroup-user eventgroup-bindings \
               eventgroup-deferred eventgroup-deferred-sanitize eventgroup-deferred-arm \
               queue-contracts queue-contracts-sanitize \

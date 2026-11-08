@@ -31,7 +31,10 @@ static struct {
 	unsigned count, takes, scripted, drains, registered, retired, depth, snapshots;
 	unsigned advance_sample, epoch_bias;
 	bool observing, sampled, register_signal, committed_signal, injected, prior_abort;
+	bool registered_now, deferred_signal;
 } model;
+static void observe_records(void);
+static bool current_record(void);
 
 static void check(bool condition, const char *message)
 {
@@ -76,7 +79,12 @@ void model_exit_critical(void)
 {
 	if (!model.depth)
 		reject();
+	observe_records();
 	--model.depth;
+	if (!model.depth && model.deferred_signal) {
+		model.deferred_signal = false;
+		ove_event_signal(model.event);
+	}
 }
 UBaseType_t model_enter_critical_from_isr(void)
 {
@@ -161,13 +169,13 @@ uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks)
 	if (clear != pdTRUE || !token.initialized || model.depth)
 		reject();
 	if (!ticks) {
-		check(model.event->waiter == NULL, "stale hint drained before registration");
+		check(model.event->waiters == NULL, "stale hint drained before registration");
 		++model.drains;
 		unsigned value = token.pending;
 		token.pending = 0;
 		return value;
 	}
-	check(model.event->waiter == &token, "positive wait has an initialized registered token");
+	check(current_record(), "positive wait has an initialized registered token");
 	if (model.ns == UINT64_MAX) {
 		check(ticks == portMAX_DELAY, "encoded forever preserves native argument");
 	} else {
@@ -201,21 +209,18 @@ uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks)
 		token.pending = 0;
 	return step.hint;
 }
-static void stored(const void *address)
-{
-	if (!model.observing || address != &model.event->waiter)
-		return;
-	if (model.event->waiter)
-		++model.registered;
-	else
-		++model.retired;
-}
 static void exchanged(const void *address, unsigned value)
 {
+	observe_records();
 	if (model.observing && address == &model.event->signaled && !value &&
 	    model.committed_signal && model.takes && !model.injected) {
 		model.injected = true;
-		ove_event_signal(model.event);
+		/* An eligible producer cannot run inside the new protection. Offer
+		 * its signal at the first unmasked boundary after retirement. */
+		if (model.depth)
+			model.deferred_signal = true;
+		else
+			ove_event_signal(model.event);
 	}
 }
 void *pvPortMalloc(size_t size)
@@ -240,11 +245,6 @@ void vPortFree(void *pointer)
 #endif
 }
 
-#define __atomic_store_n(address, value, order)          \
-	do {                                             \
-		__atomic_store_n(address, value, order); \
-		stored(address);                         \
-	} while (0)
 #define __atomic_exchange_n(address, value, order)                               \
 	({                                                                       \
 		__auto_type result = __atomic_exchange_n(address, value, order); \
@@ -252,8 +252,35 @@ void vPortFree(void *pointer)
 		result;                                                          \
 	})
 #include OVE_EVENT_SOURCE
-#undef __atomic_store_n
 #undef __atomic_exchange_n
+
+static bool current_record(void)
+{
+	return model.event->waiters != NULL && model.event->waiters->task == &token &&
+	       model.event->waiters->next == NULL;
+}
+static void observe_records(void)
+{
+	if (!model.observing)
+		return;
+	bool live = model.event->waiters != NULL;
+	if (live && !model.registered_now)
+		++model.registered;
+	if (!live && model.registered_now)
+		++model.retired;
+	model.registered_now = live;
+}
+void model_trace(const char *primitive, const char *action, const void *object)
+{
+	if (strcmp(primitive, "OVE_TRACE_PRIM_EVENT") || strcmp(action, "OVE_TRACE_ACT_WAIT_EXIT"))
+		return;
+	check(object == model.event && !model.depth && model.event->waiters == NULL,
+	      "completed call retires its automatic record before return");
+	/* Record a bad retirement while the automatic record is still alive,
+	 * then repair only observer-owned links before any later signal. */
+	model.event->waiters = NULL;
+	observe_records();
+}
 
 static void begin(const char *name, uint64_t ns, __uint128_t start)
 {
@@ -279,7 +306,7 @@ static void finish(int expected)
 	check(model.takes == model.count, "every expected positive wait occurs exactly once");
 	check(model.drains == 1 && model.registered == 1 && model.retired == 1,
 	      "one drain and balanced registration/retirement per operation");
-	check(model.event->waiter == NULL && !model.depth,
+	check(model.event->waiters == NULL && !model.depth,
 	      "waiter retired and native protection balanced before return");
 	check(model.event->signaled == (unsigned)model.committed_signal,
 	      "success consumes its target latch and timeout retains only later signals");
@@ -292,7 +319,7 @@ static void finish(int expected)
 	model.observing = false;
 	/* Even a retirement mutation never ends this model token's lifetime.
 	 * Clear only test state after recording the failed postcondition. */
-	model.event->waiter = NULL;
+	model.event->waiters = NULL;
 #ifndef CONFIG_OVE_ZERO_HEAP
 	ove_event_destroy(model.event);
 #else

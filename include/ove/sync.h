@@ -141,6 +141,9 @@ void ove_sem_deinit(ove_sem_t sem);
  * if posted while no thread is waiting, it remains pending and is
  * consumed by the next ove_event_wait().  After a successful wait the
  * event is auto-reset back to unsignalled.
+ * Several threads may wait on the same live event. One pending occurrence
+ * permits at most one successful wait; waiter selection order is unspecified.
+ * Finish all waits and producers before destroying the event or its storage.
  *
  * On error the output handle is unchanged and initialized native pieces
  * are released before returning.
@@ -527,6 +530,8 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data);
  * expires.  The event is automatically reset (consumed) after a successful
  * wait. Multiple signals issued before that wait coalesce into one pending
  * event.
+ * Concurrent waiters share the binary occurrence, without a FIFO guarantee.
+ * A poll, timeout or unrelated wake does not remove another thread's wait.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
@@ -567,6 +572,9 @@ OVE_NODISCARD static inline int ove_event_wait_until(ove_event_t evt, uint64_t d
  *
  * Safe to call from any thread context.  Must @b not be called from an
  * ISR — use ove_event_signal_from_isr() instead.
+ * Native task-context restrictions still apply, including serviceable syscall
+ * entry for restricted callers. FreeRTOS preserves admitted incoming masks;
+ * signaling work is proportional to the number of live waiters.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
@@ -581,6 +589,8 @@ void ove_event_signal(ove_event_t evt);
  *
  * ISR-safe variant of ove_event_signal().  May trigger a context switch
  * to a higher-priority thread after the ISR exits.
+ * Only native kernel-aware interrupt priorities are supported. FreeRTOS
+ * preserves the handler's incoming masks before requesting the switch.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *

@@ -182,6 +182,12 @@ void consumer(void *arg)
 
 A binary event provides a lightweight one-bit signal. The waiting task blocks until the event is signalled; the signal is consumed on wakeup (auto-reset). `ove_event_signal_from_isr()` is the ISR-safe variant — it may trigger an immediate context switch to a higher-priority waiter when the interrupt exits.
 
+Several threads may wait on the same live event. One pending occurrence permits at most one successful wait; signals coalesce while it remains pending. Waiter selection has no FIFO guarantee. Polling or timing out preserves other live waits. Finish all waits and producers before destroying the event or retiring its storage; a FreeRTOS native task must return from its wait before it is deleted.
+
+FreeRTOS keeps one private stack record per live wait and allocates no extra memory for these registrations. Signaling sends wake hints to the live records, so its protected work grows with the number of waiters. The shared binary latch determines success.
+
+On Cortex-M3/M4/M7, FreeRTOS Event operations preserve admitted incoming interrupt masks and caller privilege. Normal signaling uses the native kernel mask plus a brief interrupt-masked exit envelope. An incoming PRIMASK or a BASEPRI stronger than the kernel threshold uses a conservative FAULTMASK envelope across the short nonblocking operation, including trace markers. This also masks faults and higher-priority interrupts until the original masks are restored. Native kernel-aware IRQ and serviceable syscall-entry requirements still apply; this mechanism does not establish a physical latency or fault-recovery guarantee.
+
 ```mermaid
 sequenceDiagram
     participant ISR as Hardware ISR

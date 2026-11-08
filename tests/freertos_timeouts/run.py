@@ -56,7 +56,7 @@ def expected_output(name, canary):
         count = 89
         prefix = f"freertos timeout arithmetic: bits={bits} rate={rate} cases=30"
     else:
-        count = (525 if fields[3] == "heap" else 521) + (4 if rate == "3000" else 0)
+        count = (535 if fields[3] == "heap" else 531) + (4 if rate == "3000" else 0)
         prefix = f"freertos timeout native observers: bits={bits} rate={rate} heap={int(fields[3] == 'heap')}"
     return (("FAIL: early failure survives later controls\n" if canary else "") +
             f"{prefix} checks={count + int(canary)} failures={int(canary)}\n").encode()

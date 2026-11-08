@@ -1320,6 +1320,62 @@ def test_eventgroup_bindings(ove_dir, output_dir):
     return TestResults(suite="eventgroup-bindings", passed=int(valid), failed=int(not valid))
 
 
+def test_freertos_event_bindings(ove_dir, output_dir):
+    """Check ordinary shared binding APIs against the actual Event adapter."""
+    label = "freertos-event-bindings"
+    build = Path(output_dir) / "tests" / "freertos_event_waiters" / "bindings"
+    build.mkdir(parents=True, exist_ok=True)
+    compiler = build / "zig.json"
+    code = ("import json,sys;from pathlib import Path;from ove.test import _find_zig;"
+            "Path(sys.argv[2]).write_text(json.dumps(_find_zig(sys.argv[1])))")
+    command = [sys.executable, "-c", code, str(ove_dir), str(compiler)]
+    log = build / "zig.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=240, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    if rc:
+        print(log.read_text(errors="backslashreplace"), end="")
+        return TestResults(suite=label, failed=1)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_event_waiters", "bindings.py"),
+               str(build), "--zig", json.loads(compiler.read_text())]
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=900, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("freertos event bindings: observations=12 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
+def _test_freertos_event_waiters(ove_dir, output_dir, sanitize=False):
+    """Check shared binary Event waits and private registration lifetimes."""
+    label = "freertos-event-waiters-sanitize" if sanitize else "freertos-event-waiters"
+    build = Path(output_dir) / "tests" / "freertos_event_waiters" / ("sanitize" if sanitize else "normal")
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_event_waiters", "run.py"), str(build)]
+    if sanitize:
+        command.append("--sanitize")
+    log = build / "gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=660, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("freertos event waiters: observations=68 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
+def test_freertos_event_waiters(ove_dir, output_dir):
+    return _test_freertos_event_waiters(ove_dir, output_dir)
+
+
+def test_freertos_event_waiters_sanitize(ove_dir, output_dir):
+    return _test_freertos_event_waiters(ove_dir, output_dir, sanitize=True)
+
+
 def _test_freertos_event_timeouts(ove_dir, output_dir, sanitize=False):
     """Check complete finite Event budgets, latch ordering and native epochs."""
     label = "freertos-event-timeouts-sanitize" if sanitize else "freertos-event-timeouts"
@@ -1345,6 +1401,51 @@ def test_freertos_event_timeouts(ove_dir, output_dir):
 
 def test_freertos_event_timeouts_sanitize(ove_dir, output_dir):
     return _test_freertos_event_timeouts(ove_dir, output_dir, sanitize=True)
+
+
+def test_freertos_event_waiters_arm(ove_dir, output_dir):
+    """Check real shared Event waits, IRQ masks and syscall entry."""
+    label = "freertos-event-waiters-arm"
+    build = Path(output_dir) / "tests" / "freertos_event_waiters"
+    build.mkdir(parents=True, exist_ok=True)
+    manifest = load_manifest(ove_dir)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
+    kernel = Path(ove_dir) / "dl" / ("FreeRTOS-Kernel-" + digest)
+    if not (kernel / "include/FreeRTOS.h").is_file():
+        command = ["git", "clone", "--depth", "1", "--branch", revision,
+                   get_component(manifest, "rtos", "freertos", "kernel", "url"), str(kernel)]
+        kernel.parent.mkdir(parents=True, exist_ok=True)
+        log = build / "kernel.log"
+        with log.open("wb") as stream:
+            rc = _run_owned_test_process(command, env=dict(os.environ), timeout=120, stdout=stream)
+        _record_scoped_observation(log, command, rc)
+        if rc or not (kernel / "include/FreeRTOS.h").is_file():
+            print(log.read_text(errors="backslashreplace"), end="")
+            return TestResults(suite=label, failed=1)
+    toolchain = build / "toolchain.json"
+    code = ("import json,sys;from pathlib import Path;"
+            "from ove.test import _ensure_arm_toolchain;"
+            "Path(sys.argv[2]).write_text(json.dumps(_ensure_arm_toolchain(sys.argv[1])))")
+    command = [sys.executable, "-c", code, str(ove_dir), str(toolchain)]
+    log = build / "toolchain.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=240, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    if rc:
+        print(log.read_text(errors="backslashreplace"), end="")
+        return TestResults(suite=label, failed=1)
+    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_event_waiters", "target.py"),
+               str(build / "native"), "--freertos", str(kernel), "--toolchain", json.loads(toolchain.read_text())]
+    log = build / "target-gate.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=1200, stdout=stream)
+    _record_scoped_observation(log, command, rc)
+    text = log.read_text()
+    valid = rc == 0 and text.endswith("freertos event waiters native gate: observations=16 failed=0\n")
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
 
 
 def test_freertos_event_timeouts_arm(ove_dir, output_dir):
@@ -4953,6 +5054,10 @@ TEST_TARGETS = {
     "freertos-timeouts": test_freertos_timeouts,
     "freertos-timeouts-sanitize": test_freertos_timeouts_sanitize,
     "freertos-event-timeouts": test_freertos_event_timeouts,
+    "freertos-event-waiters": test_freertos_event_waiters,
+    "freertos-event-waiters-sanitize": test_freertos_event_waiters_sanitize,
+    "freertos-event-waiters-arm": test_freertos_event_waiters_arm,
+    "freertos-event-bindings": test_freertos_event_bindings,
     "freertos-event-timeouts-sanitize": test_freertos_event_timeouts_sanitize,
     "freertos-event-timeouts-arm": test_freertos_event_timeouts_arm,
     "nuttx-timeouts": test_nuttx_timeouts,

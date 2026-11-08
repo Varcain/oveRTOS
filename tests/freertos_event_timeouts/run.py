@@ -22,7 +22,7 @@ def expected_output(profile, canary):
     prefix = "FAIL: setup: early failure survives all later controls\n" if canary else ""
     return (prefix + f"freertos event accounting: bits={bits} abort={abort} "
             f"suspend={suspend} heap={int(mode == 'heap')} cases=26 "
-            f"checks={216 + int(canary)} failures={int(canary)}\n").encode()
+            f"checks={243 + int(canary)} failures={int(canary)}\n").encode()
 
 
 def main():

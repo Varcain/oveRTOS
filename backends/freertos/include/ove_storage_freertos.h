@@ -76,21 +76,12 @@ struct ove_sem {
 };
 
 struct ove_event {
-	/* Level-triggered single-token latch + at-most-one registered waiter.
-	 * `signaled` is the sticky latch (a signal posted before a wait is
-	 * consumed by the next wait — keeps signal-then-wait and
-	 * signal_from_isr working, which an earlier *edge-triggered*
-	 * task-notification attempt broke); `waiter` is the blocked task to
-	 * notify.  Accessed via __atomic_* (SEQ_CST) on plain fields so the
-	 * C++ binding — which includes this header — isn't fed the C-only
-	 * _Atomic keyword.  Replaces a binary semaphore, which cost ~2.5× the
-	 * raw FreeRTOS task-notification path on signal+wait.  Single-waiter
-	 * is within the API contract (ove_event_signal wakes "one waiting
-	 * thread"); ove_event_wait re-checks the latch on every wake so a
-	 * stale notification from another event sharing this task's single
-	 * notification slot can never return a false wake. */
+	/* One sticky binary latch and private live wait records. List access,
+	 * token consumption and retirement share the notifier's protection.
+	 * Notifications are hints; only consuming the latch completes a wait.
+	 * Plain fields keep this canonical storage usable from C++ too. */
 	unsigned int signaled;
-	TaskHandle_t waiter;
+	struct freertos_event_waiter *waiters;
 };
 
 struct ove_condvar {
