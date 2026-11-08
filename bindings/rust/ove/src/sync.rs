@@ -1279,11 +1279,9 @@ impl fmt::Debug for CondVar {
 //
 // - `Mutex::with_lock` blocks the calling thread on a kernel mutex; legal
 //   from thread context only.
-// - `SpinMutex::lock` disables interrupts globally and holds them
-//   disabled for the body of the closure / lifetime of the guard. Use
-//   for sub-microsecond updates to shared state that must be readable
-//   from ISR context, or to bridge `&` data into an async task that
-//   can't hold a real mutex across an `.await`.
+// - `SpinMutex::with` holds native IRQ exclusion and an exclusive data
+//   claim for a short callback. Use it for shared updates between polls
+//   or await points, subject to the native provider's context contract.
 //
 // Requires the async substrate (`CONFIG_OVE_ASYNC=y`) — `ove_irq_lock`
 // lives in `include/ove/irq.h` under that gate. Consumers that need to
@@ -1291,36 +1289,33 @@ impl fmt::Debug for CondVar {
 // `#[cfg(has_async)]`.
 
 #[cfg(has_async)]
-pub use spin_mutex::{SpinMutex, SpinMutexGuard};
+pub use spin_mutex::SpinMutex;
 
 #[cfg(has_async)]
 mod spin_mutex {
     use ::core::cell::UnsafeCell;
-    use ::core::ops::{Deref, DerefMut};
+    use ::core::marker::PhantomData;
+    use ::core::sync::atomic::{AtomicBool, Ordering};
 
     use crate::bindings;
 
     /// IRQ-locking mutex for very short critical sections.
     ///
-    /// Acquiring the lock disables interrupts globally for the lifetime
-    /// of the [`SpinMutexGuard`]; releasing it restores the previous
-    /// interrupt state. **Do not hold across blocking calls or `.await`
-    /// points** — the system will deadlock if a higher-priority
-    /// interrupt is needed to make progress.
+    /// Access through [`with`](Self::with), which holds a native IRQ key
+    /// and one exclusive data claim until its callback returns or unwinds.
+    /// Reentering the same mutex panics after restoring the failed attempt's
+    /// temporary key. Callbacks must be short and must not block or await.
     ///
-    /// Maps to `ove_irq_lock` / `ove_irq_unlock` on the C side, which
-    /// is itself a thin wrapper over the host RTOS's
-    /// interrupt-disable primitive (`taskENTER_CRITICAL` on FreeRTOS,
-    /// `irq_lock()` on Zephyr, `enter_critical_section()` on NuttX).
+    /// Native IRQ-provider context and priority restrictions still apply.
+    /// This type requires native SYNC and ASYNC configuration. A terminal
+    /// panic or abort does not perform ordinary unwind cleanup.
     pub struct SpinMutex<T: ?Sized> {
-        // UnsafeCell — `lock()` hands out `&mut T` while interrupts
-        // are disabled, which is sound because the disable masks out
-        // any other code path that could observe the same `&mut`.
+        claimed: AtomicBool,
         inner: UnsafeCell<T>,
     }
 
-    // SAFETY: any `T: Send` may be shared between threads because the
-    // mutex enforces mutual exclusion via the interrupt-disable.
+    // SAFETY: the atomic claim admits one mutable view; callback lifetimes
+    // prevent escape, and private leases retain native key order/cleanup.
     unsafe impl<T: ?Sized + Send> Send for SpinMutex<T> {}
     unsafe impl<T: ?Sized + Send> Sync for SpinMutex<T> {}
 
@@ -1329,6 +1324,7 @@ mod spin_mutex {
         #[inline]
         pub const fn new(value: T) -> Self {
             Self {
+                claimed: AtomicBool::new(false),
                 inner: UnsafeCell::new(value),
             }
         }
@@ -1341,26 +1337,18 @@ mod spin_mutex {
     }
 
     impl<T: ?Sized> SpinMutex<T> {
-        /// Acquire the lock by disabling interrupts. The returned
-        /// guard restores them when dropped.
-        #[inline]
-        pub fn lock(&self) -> SpinMutexGuard<'_, T> {
-            // SAFETY: ove_irq_lock is safe from any context.
-            let key = unsafe { bindings::ove_irq_lock() };
-            SpinMutexGuard {
-                mtx: self,
-                key,
-                _not_send: ::core::marker::PhantomData,
-            }
-        }
-
         /// Run `f` with the value, restoring the IRQ state afterwards.
-        /// Sugar around [`SpinMutex::lock`] that scopes the lock to
-        /// the closure body.
+        /// The callback's borrow and native key cannot escape this scope.
+        /// Its return value is passed through unchanged.
+        ///
+        /// # Panics
+        /// Panics on reentry after rolling back the failed attempt's key.
         #[inline]
         pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
-            let mut g = self.lock();
-            f(&mut *g)
+            let _lease = Lease::try_acquire(&self.claimed).expect("SpinMutex is already borrowed");
+            // SAFETY: this lease owns the only claim. The callback's output
+            // is independent of this borrow, and cleanup is private.
+            f(unsafe { &mut *self.inner.get() })
         }
 
         /// Get a mutable reference without taking the lock. Sound
@@ -1372,36 +1360,41 @@ mod spin_mutex {
         }
     }
 
-    /// RAII guard that releases the [`SpinMutex`] when dropped.
-    pub struct SpinMutexGuard<'a, T: ?Sized> {
-        mtx: &'a SpinMutex<T>,
+    struct Lease<'a> {
+        claimed: &'a AtomicBool,
         key: bindings::ove_irq_key_t,
-        // `*const ()` is !Send + !Sync by default; ensures the guard
-        // can't migrate to another thread and call ove_irq_unlock from
-        // the wrong context.
-        _not_send: ::core::marker::PhantomData<*const ()>,
+        _not_send: PhantomData<*const ()>,
     }
 
-    impl<T: ?Sized> Deref for SpinMutexGuard<'_, T> {
-        type Target = T;
+    impl<'a> Lease<'a> {
         #[inline]
-        fn deref(&self) -> &T {
-            // SAFETY: the lock guarantees exclusive access.
-            unsafe { &*self.mtx.inner.get() }
+        fn try_acquire(claimed: &'a AtomicBool) -> Option<Self> {
+            // SAFETY: native context eligibility belongs to the IRQ provider;
+            // this synchronous scope retains its key until matching cleanup.
+            let key = unsafe { bindings::ove_irq_lock() };
+            if claimed
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
+                // SAFETY: retire only this failed attempt, preserving the
+                // successful owner's claim and earlier native key.
+                unsafe { bindings::ove_irq_unlock(key) };
+                return None;
+            }
+            Some(Self {
+                claimed,
+                key,
+                _not_send: PhantomData,
+            })
         }
     }
 
-    impl<T: ?Sized> DerefMut for SpinMutexGuard<'_, T> {
-        #[inline]
-        fn deref_mut(&mut self) -> &mut T {
-            unsafe { &mut *self.mtx.inner.get() }
-        }
-    }
-
-    impl<T: ?Sized> Drop for SpinMutexGuard<'_, T> {
+    impl Drop for Lease<'_> {
         #[inline]
         fn drop(&mut self) {
-            // SAFETY: `key` was returned by the matching ove_irq_lock.
+            self.claimed.store(false, Ordering::Release);
+            // SAFETY: the callback borrow ended, and this private lease
+            // retires its own key on the acquiring thread in reverse order.
             unsafe { bindings::ove_irq_unlock(self.key) }
         }
     }

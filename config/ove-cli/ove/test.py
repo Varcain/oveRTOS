@@ -1175,6 +1175,58 @@ def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
+def _test_rust_spinmutex(ove_dir, output_dir, sanitize=False):
+    """Check scoped data ownership and exact native key retirement."""
+    label = "rust-spinmutex" + ("-sanitize" if sanitize else "")
+    folder = Path(output_dir) / "tests" / label
+    folder.mkdir(parents=True, exist_ok=True)
+    result = TestResults(suite=label)
+    deadline = time.monotonic() + 600
+    stages = [("run.py", "ownership", "spinmutex ownership gate: observations=8 failed=0\n")]
+    if not sanitize:
+        stages.append(("contracts.py", "contracts", "spinmutex compile contracts: observations=36 failed=0\n"))
+    for script, stage, footer in stages:
+        command = [sys.executable, os.path.join(ove_dir, "tests/rust_spinmutex", script),
+                   str(folder / stage)]
+        if sanitize:
+            command.append("--sanitize")
+        log = folder / (stage + ".log")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            result.failed += 1
+            break
+        with log.open("wb") as stream:
+            status = _run_owned_test_process(command, env=dict(os.environ), timeout=remaining, stdout=stream)
+        _record_scoped_observation(log, command, status)
+        text = log.read_text()
+        if stage == "ownership":
+            expected = "".join(mode + provider + suffix + " PASS\n"
+                               for mode in ("heap", "zero")
+                               for provider in ("-inert", "-posix")
+                               for suffix in ("", "-canary")) + footer
+            valid = status == 0 and text == expected
+        else:
+            lines = text.splitlines(keepends=True)
+            valid = (status == 0 and len(lines) == 37 and lines[-1] == footer
+                     and len(set(lines[:-1])) == 36
+                     and all(re.fullmatch(r"[a-z_]+-(?:heap|zero) PASS\n", line)
+                             for line in lines[:-1]))
+        result.passed += int(valid)
+        result.failed += int(not valid)
+        if not valid:
+            print(text, end="")
+            break
+    return result
+
+
+def test_rust_spinmutex(ove_dir, output_dir):
+    return _test_rust_spinmutex(ove_dir, output_dir)
+
+
+def test_rust_spinmutex_sanitize(ove_dir, output_dir):
+    return _test_rust_spinmutex(ove_dir, output_dir, sanitize=True)
+
+
 def _test_freertos_cv_context(ove_dir, output_dir, sanitize=False):
     label = "freertos-cv-context" + ("-sanitize" if sanitize else "")
     folder = Path(output_dir) / "tests" / label
@@ -5153,6 +5205,8 @@ TEST_TARGETS = {
     "rust-sync-sanitize": test_rust_sync_sanitize,
     "rust-async-queue": test_rust_async_queue,
     "rust-async-queue-sanitize": test_rust_async_queue_sanitize,
+    "rust-spinmutex": test_rust_spinmutex,
+    "rust-spinmutex-sanitize": test_rust_spinmutex_sanitize,
     "rust-async-sem": test_rust_async_sem,
     "rust-async-sem-sanitize": test_rust_async_sem_sanitize,
     "cpp-infer": test_cpp_infer,

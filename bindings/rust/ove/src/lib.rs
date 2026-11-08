@@ -106,11 +106,11 @@
 //!   `ove_console_write` macros that bypass the `log` framework. Use
 //!   for early-boot banners before [`log::try_init`] runs and for
 //!   ISR-adjacent contexts.
-//! - [`sync::SpinMutex`] — IRQ-locking mutex (`ove_irq_lock`-backed)
-//!   for sub-microsecond critical sections, ISR-shared state, and
-//!   crossing `.await` points where a real [`sync::Mutex`] would
-//!   deadlock. Requires the `async` feature (the `ove_irq_*` substrate
-//!   lives in `irq.h` under `CONFIG_OVE_ASYNC`).
+//! - `sync::SpinMutex` — scoped IRQ-backed access to shared state through
+//!   `with`, for short updates between polls or
+//!   await points. Reentry panics after rolling back the failed attempt.
+//!   Native SYNC and ASYNC configuration is required; Cargo `async` selects
+//!   the separate runtime/provider. Native context and priority rules apply.
 //! - [`ove_macros::thread`] (`#[ove::thread(stack_size = N, name = "...")]`)
 //!   — attribute-macro form of static-storage thread spawn. The
 //!   decorated `fn name()` becomes a spawn helper that, on first call,
