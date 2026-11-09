@@ -731,8 +731,8 @@ fn main() {
         }
     }
 
-    // Native (the host test suites) parses the headers for the host and keeps
-    // bindgen's std-compatible types; everything else is a freestanding ARM target.
+    // Native builds parse host headers; other builds use a freestanding ARM target.
+    // Rust namespace selection below is independent of that C target choice.
     if !is_native {
         builder = builder
             .clang_arg("-DARM_MATH_CM7")
@@ -745,9 +745,9 @@ fn main() {
                 builder = builder.clang_arg(format!("-isystem{sysroot}"));
             }
         }
-
-        builder = builder.use_core().ctypes_prefix("core::ffi");
     }
+
+    builder = builder.use_core().ctypes_prefix("core::ffi");
 
     let bindings = builder
         .generate()

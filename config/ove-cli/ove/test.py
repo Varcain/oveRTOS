@@ -1239,6 +1239,25 @@ def test_freertos_irq_bindings_sanitize(ove_dir, output_dir):
     return _test_freertos_irq(ove_dir, output_dir, sanitize=True, bindings=True)
 
 
+def test_rust_native_core(ove_dir, output_dir):
+    """Compile real native bindings without requiring the std feature."""
+    label = "rust-native-core"
+    folder = Path(output_dir) / "tests" / label
+    folder.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests/rust_native_core/run.py"), str(folder / "profiles")]
+    log = folder / "gate.log"
+    with log.open("wb") as stream:
+        status = _run_owned_test_process(command, env=dict(os.environ), timeout=660, stdout=stream)
+    _record_scoped_observation(log, command, status)
+    text = log.read_text()
+    expected = "".join(f"{mode}-{feature} PASS\n" for mode in ("heap", "zero") for feature in ("no_std", "alloc", "std"))
+    expected += "native core bindgen gate: observations=6 failed=0\n"
+    valid = status == 0 and text == expected
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
 def _test_rust_spinmutex(ove_dir, output_dir, sanitize=False):
     """Check scoped data ownership and exact native key retirement."""
     label = "rust-spinmutex" + ("-sanitize" if sanitize else "")
@@ -5269,6 +5288,7 @@ TEST_TARGETS = {
     "rust-sync-sanitize": test_rust_sync_sanitize,
     "rust-async-queue": test_rust_async_queue,
     "rust-async-queue-sanitize": test_rust_async_queue_sanitize,
+    "rust-native-core": test_rust_native_core,
     "rust-spinmutex": test_rust_spinmutex,
     "freertos-irq-masks": test_freertos_irq_masks,
     "freertos-irq-masks-sanitize": test_freertos_irq_masks_sanitize,

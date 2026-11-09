@@ -211,7 +211,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               rust-sync rust-sync-sanitize \
               rust-async-sem rust-async-sem-sanitize \
               rust-async-queue rust-async-queue-sanitize \
-              rust-spinmutex rust-spinmutex-sanitize \
+              rust-native-core rust-spinmutex rust-spinmutex-sanitize \
               freertos-irq-masks freertos-irq-masks-sanitize \
               freertos-irq-bindings freertos-irq-bindings-sanitize \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \

@@ -270,6 +270,9 @@ jobs:
       - name: Run zero-heap tests
         run: make test-rust-zeroheap
 
+      - name: Native Rust bindings in no_std, alloc and std modes
+        run: timeout --signal=INT --kill-after=30 720 make test-rust-native-core
+
       - name: Run scoped Rust synchronization contracts and sanitizers
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-scoped test-rust-scoped-sanitize
       - name: Rust semaphore and event ownership contracts

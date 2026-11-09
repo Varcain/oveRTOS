@@ -150,7 +150,7 @@ fi
 python3 - "$BINDINGS" "$OUT" <<'PY'
 import re, sys
 text = open(sys.argv[1]).read()
-# Drop layout assertions (need real ::std::mem and platform-specific sizes)
+# Remove legacy layout-assertion forms; structured assertions remain below.
 text = re.sub(
     r"#\[allow\(clippy::unnecessary_operation, clippy::identity_op\)\]\s*\n"
     r"const _: \(\) = \{[^;]*?\};",
@@ -158,8 +158,8 @@ text = re.sub(
 text = re.sub(r"const _: \(\) = \{[^;]*?\};", "", text, flags=re.DOTALL)
 # core::ffi for no_std stub
 text = re.sub(r"::std::os::raw::", "core::ffi::", text)
-text = re.sub(r"::std::option::Option", "Option", text)
-text = re.sub(r"::std::mem::", "core::mem::", text)
+text = re.sub(r"::(?:std|core)::option::Option", "Option", text)
+text = re.sub(r"::(?:std|core)::mem::", "core::mem::", text)
 
 header = '''// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 //
