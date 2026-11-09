@@ -14,6 +14,37 @@ The first three are gated by CI on every PR and on `make test-all`.
 The HW layer is **manual-only** — needs a board attached, never run by
 CI or `make test-all`.
 
+## Backend static analysis
+
+`make lint-backends` analyzes the freshest existing compilation database for
+each RTOS. It retains that command's ARM bare-metal or Linux x86_64 GNU target,
+explicit ABI options, macro definitions and include search order. It does not
+build missing firmware databases or cover every available configuration.
+Unsupported compiler targets, response files and command wrappers fail with an
+explanation. Unprefixed native compilers must answer a bounded `-dumpmachine`
+query. Original compilation databases are unchanged.
+
+Analysis uses Clang's compiler headers in place of explicitly listed GCC
+compiler headers. Explicit RTOS/libc include paths and sysroot restrictions
+remain in effect. GCC `-fno-freestanding` becomes `-fhosted`. For ARM commands
+without an explicit float ABI, analysis uses the supported GCC toolchains'
+soft ABI default. IEEE half format is supported; other half formats fail.
+
+GCC `-fsingle-precision-constant` is translated to Clang18's frontend option
+so unsuffixed floating literals have type `float`. Clang first parses a
+`double` and then rounds it to `float`; GCC rounds directly to `float`.
+Decimal and hexadecimal literals close to a rounding midpoint can therefore
+have different values during analysis. Compiler builds and their static
+assertions remain authoritative for numerical behavior. This check is not an
+exact GCC numerical simulation.
+
+`make test-backend-lint` (or `ove test backend-lint`) checks target layouts,
+float ABIs, literal types and the known rounding difference, include selection,
+malformed commands, and diagnostics in our sources and headers. It requires
+GCC and clang-tidy 18.1.8, uses generated compile-only fixtures, and needs no
+RTOS downloads or firmware builds. CI runs this regression separately from
+analysis of the available backend databases.
+
 The remaining pages cover the two layers that aren't already documented
 under [Build System → Simulation](../build-system/sim.md):
 
