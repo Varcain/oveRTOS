@@ -1141,6 +1141,14 @@ def test_freertos_irq_bindings_sanitize(ove_dir, output_dir):
     return _test_freertos_irq(ove_dir, output_dir, sanitize=True, bindings=True)
 
 
+def test_rust_native_core(ove_dir, output_dir):
+    """Compile real native bindings without requiring the std feature."""
+    command = [sys.executable, os.path.join(ove_dir, "tests/rust_native_core/run.py"),
+               os.path.join(output_dir, "tests", "rust-native-core", "profiles")]
+    rc = _run_owned_test_process(command, env=dict(os.environ), timeout=660)
+    return TestResults(suite="rust-native-core", passed=int(rc == 0), failed=int(rc != 0))
+
+
 def _test_rust_spinmutex(ove_dir, output_dir, sanitize=False):
     """Check scoped data ownership and exact native key retirement."""
     label = "rust-spinmutex" + ("-sanitize" if sanitize else "")
@@ -4843,6 +4851,7 @@ TEST_TARGETS = {
     "rust-sync-sanitize": test_rust_sync_sanitize,
     "rust-async-queue": test_rust_async_queue,
     "rust-async-queue-sanitize": test_rust_async_queue_sanitize,
+    "rust-native-core": test_rust_native_core,
     "rust-spinmutex": test_rust_spinmutex,
     "freertos-irq-masks": test_freertos_irq_masks,
     "freertos-irq-masks-sanitize": test_freertos_irq_masks_sanitize,
