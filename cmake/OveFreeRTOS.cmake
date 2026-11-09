@@ -24,6 +24,14 @@ macro(ove_add_freertos_kernel _port_path)
         endif()
     endif()
 
+    # Only these native mask primitives have an admitted IRQ adapter contract.
+    set(_OVE_IRQ_PORT_SUPPORTED 0)
+    if("${_port_path}" STREQUAL "ARM_CM3" OR "${_port_path}" STREQUAL "ARM_CM4F"
+       OR "${_port_path}" STREQUAL "ARM_CM7/r0p1" OR "${_port_path}" STREQUAL "ARM_CM4_MPU")
+        set(_OVE_IRQ_PORT_SUPPORTED 1)
+    endif()
+    add_compile_definitions(OVE_FREERTOS_IRQ_PORT_SUPPORTED=${_OVE_IRQ_PORT_SUPPORTED})
+
     # Kernel core sources (plus shared oveRTOS FreeRTOS hooks)
     set(_OVE_FREERTOS_SOURCES
         ${FREERTOS_PATH}/tasks.c

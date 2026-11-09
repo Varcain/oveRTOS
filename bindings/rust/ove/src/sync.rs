@@ -1307,6 +1307,12 @@ mod spin_mutex {
     /// temporary key. Callbacks must be short and must not block or await.
     ///
     /// Native IRQ-provider context and priority restrictions still apply.
+    /// On FreeRTOS, only kernel-aware IRQs participate; unsupported entry
+    /// stops before the callback. Restricted MPU V1 calls require a serviceable
+    /// priority-zero SVCall with PRIMASK and FAULTMASK clear. Native calls in
+    /// the callback can lower stronger incoming raw masks even though matching
+    /// wrapper boundaries restore the captured state. This is not global IRQ
+    /// exclusion or continuous stronger-mask protection through native calls.
     /// This type requires native SYNC and ASYNC configuration. A terminal
     /// panic or abort does not perform ordinary unwind cleanup.
     pub struct SpinMutex<T: ?Sized> {

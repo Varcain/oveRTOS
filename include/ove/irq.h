@@ -35,45 +35,69 @@ extern "C" {
 #endif
 
 /**
- * @brief Opaque cookie returned by @ref ove_irq_lock for use with
- *        @ref ove_irq_unlock.
+ * @brief Opaque interrupt-state cookie returned by @ref ove_irq_lock.
  *
- * The width is sized to fit each backend's native restore state:
- *  - Zephyr:  @c unsigned @c int returned by @c irq_lock().
- *  - FreeRTOS: 0 (the FreeRTOS @c taskENTER_CRITICAL macros are
- *              symmetric and don't return a value).
- *  - NuttX:   @c irqstate_t (typically @c uint32_t).
- *  - host test backend: @c uint64_t (a TLS nesting depth — no real
- *    ISR-mask).
- *
- * The C ABI commits to @c uint64_t so the Rust binding's
- * `critical-section::Impl::RawRestoreState` can be a single fixed
- * size across every target.
+ * The fixed uint64_t ABI accommodates each backend's native restore state.
+ * FreeRTOS retains its native ISR cookie and architectural mask state;
+ * task cookies are not required to be zero. Callers must pass the entire
+ * unchanged cookie to its matching unlock, without inspecting its encoding.
  */
 typedef uint64_t ove_irq_key_t;
 
 #ifdef CONFIG_OVE_ASYNC
 
 /**
- * @brief Enter a critical section: disable interrupts (or equivalent
- *        backend mechanism) and return an opaque restore cookie.
+ * @brief Acquire the backend's native exclusion domain and capture its state.
  *
- * Safe to call from both thread and ISR context. Nestable — each
- * @ref ove_irq_lock must be paired with a matching @ref ove_irq_unlock
- * passing the same cookie back, in LIFO order. The outermost
- * @ref ove_irq_unlock restores the previous interrupt state.
+ * Nestable: pair each call exactly once with @ref ove_irq_unlock, passing the
+ * same opaque cookie in LIFO order on the acquiring thread or handler activation.
+ * Keep the body short and nonblocking: do not yield, await, start the scheduler,
+ * migrate context, or change interrupt priorities/grouping or privilege while held.
  *
- * @return Opaque cookie to pass to @ref ove_irq_unlock.
- * @note Requires @c CONFIG_OVE_ASYNC.
+ * @par FreeRTOS domain and admission
+ * Supported single-core Cortex-M3/M4/M7 ports exclude kernel-aware participants,
+ * using configMAX_SYSCALL_INTERRUPT_PRIORITY. Higher-urgency interrupts remain
+ * able to run and must not participate in this provider's shared-state protection.
+ * Supported handlers are external IRQs, SysTick and PendSV at eligible priority
+ * and grouping. Fault, NMI, supervisor, debug and reserved handlers are excluded.
+ * Unsupported FreeRTOS ports/configurations/contexts stop without returning a key;
+ * this enforcement remains active with assertions disabled. Priority-bit metadata
+ * must match the hardware. Ordinary unprivileged tasks are unsupported.
+ *
+ * Restricted MPU V1 tasks require a permitted, serviceable priority-zero SVCall,
+ * with PRIMASK and FAULTMASK clear. This is a native setup precondition, not a
+ * condition that unprivileged mask reads can diagnose before attempting SVCall.
+ * Supported calls preserve the caller's privilege before returning to the body.
+ *
+ * @par FreeRTOS restoration and native-call limitation
+ * The wrapper preserves incoming exclusion during its own transitions and
+ * restores captured PRIMASK, BASEPRI and FAULTMASK on matching unlock. Exceptional
+ * transitions briefly mask faults; no whole-body fault mask or latency bound is
+ * promised. Native operations inside the body can still lower stronger raw masks.
+ * For example, with BASEPRI = 0x40 and native threshold 0x80, a nested stock
+ * critical operation can leave BASEPRI = 0x80 inside the body. The CM7 workaround
+ * can also clear an incoming PRIMASK. Kernel-aware exclusion still holds, and
+ * unlock restores the captured input, but cannot undo intervening execution.
+ * Keep incompatible native operations outside regions requiring continuous
+ * stronger-mask protection. This API does not promise global IRQ exclusion.
+ *
+ * Other backends retain their native execution-context and exclusion contracts;
+ * the FreeRTOS admission checks do not describe their enforcement.
+ *
+ * @return Opaque cookie for the matching @ref ove_irq_unlock.
+ * @note Requires CONFIG_OVE_ASYNC. Disabled-feature stubs provide no exclusion.
  */
 ove_irq_key_t ove_irq_lock(void);
 
 /**
- * @brief Leave a critical section, restoring the interrupt state
- *        captured by the corresponding @ref ove_irq_lock.
+ * @brief Restore the state captured by the matching @ref ove_irq_lock.
  *
- * @param[in] key  Cookie returned by the matching @ref ove_irq_lock.
- * @note Requires @c CONFIG_OVE_ASYNC.
+ * Each nested release restores its own captured state. The same-context and
+ * LIFO contract and the documented native-body limitation apply to all bindings.
+ * This does not make blocking or otherwise ineligible native calls valid.
+ *
+ * @param key Complete, unchanged cookie from the matching acquisition.
+ * @note Requires CONFIG_OVE_ASYNC.
  */
 void ove_irq_unlock(ove_irq_key_t key);
 

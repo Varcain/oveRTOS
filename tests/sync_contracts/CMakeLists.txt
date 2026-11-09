@@ -155,6 +155,10 @@ if(OVE_CONTEXT_PROBES)
             set(target "context_${platform}_${features}")
             add_executable(${target} context.c "${OVE_${upper}_IRQ_SOURCE}")
             target_compile_definitions(${target} PRIVATE _GNU_SOURCE)
+            if(platform STREQUAL "freertos")
+                target_compile_definitions(${target} PRIVATE OVE_FREERTOS_IRQ_PORT_SUPPORTED=1
+                    configPRIO_BITS=4 configMAX_SYSCALL_INTERRUPT_PRIORITY=128)
+            endif()
             target_include_directories(${target} PRIVATE "${context_dir}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/sdk/${platform}" "${CMAKE_BINARY_DIR}/sdk"
                 "${OVE_ROOT}/tests/sync_condvar_native/sdk/${platform}" "${OVE_ROOT}/include"

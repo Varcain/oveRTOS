@@ -145,6 +145,7 @@ def build(output, sanitize=False, selected_profiles=None):
             "-I" + str(HERE / "sdk"),
             "-I" + str(HERE),
             "-I" + str(ROOT / "include"),
+            "-I" + str(ROOT / "backends/freertos/include"),
             "-DMODEL_PROFILE=" + json.dumps(profile["profile"]),
         ]
         if provider != "header_only":

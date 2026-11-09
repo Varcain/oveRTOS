@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ove/irq.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static unsigned native_locks, native_unlocks, bad_native, lock_controls;
@@ -17,6 +18,63 @@ BaseType_t xPortIsInsideInterrupt(void)
 	return interrupt_context;
 }
 #ifdef CONFIG_OVE_ASYNC
+/* Initialized architectural scalars for this native-dispatch compatibility
+ * control. Dedicated mask tests cover physical encoding and transition order. */
+static unsigned modeled_primask, modeled_faultmask;
+uint32_t irq_mask_exception(void)
+{
+	return interrupt_context ? 17 : 0;
+}
+uint32_t irq_mask_control(void)
+{
+	return 0;
+}
+uint32_t irq_mask_group(void)
+{
+	return 0;
+}
+uint32_t irq_mask_priority(uint32_t exception)
+{
+	(void)exception;
+	return 144;
+}
+_Noreturn void irq_mask_reject(void)
+{
+	fputs("fixture rejected IRQ context\n", stderr);
+	exit(2);
+}
+uint32_t event_mask_primask(void)
+{
+	return modeled_primask;
+}
+uint32_t event_mask_basepri(void)
+{
+	return mask;
+}
+uint32_t event_mask_faultmask(void)
+{
+	return modeled_faultmask;
+}
+void event_mask_disable_faults(void)
+{
+	modeled_faultmask = 1;
+}
+void event_mask_disable_irqs(void)
+{
+	modeled_primask = 1;
+}
+void event_mask_restore_basepri(uint32_t value)
+{
+	mask = value;
+}
+void event_mask_restore_primask(uint32_t value)
+{
+	modeled_primask = value;
+}
+void event_mask_restore_faultmask(uint32_t value)
+{
+	modeled_faultmask = value;
+}
 static unsigned depth;
 void model_enter_critical(void)
 {

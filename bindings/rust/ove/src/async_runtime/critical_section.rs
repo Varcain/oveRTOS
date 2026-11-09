@@ -13,6 +13,19 @@
 //! impl for the entire dep graph — users who pull in another crate
 //! that also calls `critical_section::set_impl!` will get a link error,
 //! which is the intended behaviour (only one impl can exist).
+//!
+//! The provider uses the backend's native exclusion domain. On supported
+//! single-core FreeRTOS Cortex-M ports this is kernel-aware IRQ exclusion;
+//! higher-urgency interrupts cannot participate. The C boundary stops
+//! unsupported entry before returning a token, including with assertions off.
+//! Restricted MPU V1 calls require a serviceable priority-zero supervisor
+//! call with PRIMASK and FAULTMASK clear; native setup must establish this.
+//!
+//! FreeRTOS restores captured masks and caller privilege at wrapper boundaries.
+//! Native calls inside the body can still lower a stronger incoming BASEPRI
+//! or clear PRIMASK. This provider promises neither global IRQ masking nor
+//! continuous stronger-mask protection through arbitrary native body calls.
+//! Other backends retain their own native execution-context contracts.
 
 use ::critical_section::{Impl, RawRestoreState};
 
@@ -23,12 +36,10 @@ struct OveCriticalSection;
 
 unsafe impl Impl for OveCriticalSection {
     unsafe fn acquire() -> RawRestoreState {
-        // SAFETY: ove_irq_lock is safe to call from any context per the
-        // C-side contract (it nests via a depth counter on the host test
-        // backend, real IRQ-disable on embedded backends). Returns an opaque cookie
-        // which we re-interpret as RawRestoreState; the
-        // `restore-state-u64` feature in Cargo.toml pins this to u64
-        // matching ove_irq_key_t.
+        // SAFETY: supported native configurations establish the exclusion domain.
+        // FreeRTOS checks eligible entry before returning. Its documented native
+        // setup preconditions also apply to callers through this provider.
+        // The opaque u64 restore state passes through unchanged.
         unsafe { bindings::ove_irq_lock() as RawRestoreState }
     }
 
