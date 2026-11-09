@@ -443,3 +443,59 @@ graph LR
 | Header | Contents |
 |--------|----------|
 | `ove/sync.h` | Mutex, recursive mutex, semaphore, binary event, and condition variable — init/deinit, create/destroy (heap mode), and operation variants (lock/unlock, take/give, wait/signal, broadcast, signal-from-ISR). Static-init macros are declared in `ove/storage.h`. |
+
+## IRQ critical sections
+
+`ove_irq_lock()` and `ove_irq_unlock(key)` acquire and restore the backend's
+native exclusion domain when `CONFIG_OVE_ASYNC` is enabled. Disabled-feature
+stubs provide no protection. Pair keys exactly once in LIFO order on the same
+thread or handler activation. C++ and Zig share this C contract; Rust's global
+`critical_section` provider and scoped `SpinMutex::with` use the same boundary.
+
+```c
+#include <ove/irq.h>
+
+void update_irq_protected_state(void)
+{
+    ove_irq_key_t key = ove_irq_lock();
+    /* Short, nonblocking access to state shared by eligible participants. */
+    ove_irq_unlock(key);
+}
+```
+
+For supported single-core FreeRTOS Cortex-M3/M4/M7 ports, the domain contains
+tasks and kernel-aware external IRQ, SysTick and PendSV handlers at eligible
+priority and grouping. Higher-urgency IRQs remain runnable and cannot use this
+provider to share protected state. Faults, NMI, supervisor/debug/reserved handlers,
+unsupported ports/configurations and ordinary unprivileged tasks cannot enter;
+the FreeRTOS boundary stops before returning a key, even with assertions disabled.
+Correct priority-bit metadata and stable priority/grouping are setup requirements.
+
+Restricted MPU V1 tasks are supported with a permitted, serviceable priority-zero
+SVCall and PRIMASK/FAULTMASK clear. Unprivileged mask reads cannot diagnose a
+blocked supervisor call beforehand, so native setup must maintain this invariant.
+The wrapper restores caller privilege before the application body resumes.
+
+**Restoration has a native-call limitation.** The FreeRTOS wrapper preserves
+incoming exclusion during its own entry/exit and restores captured PRIMASK,
+BASEPRI and FAULTMASK on matching unlock. It does not guarantee a stronger raw
+mask remains intact through arbitrary unadapted native calls inside the body:
+
+```text
+Incoming BASEPRI = 0x40; native syscall threshold = 0x80
+    ove_irq_lock() preserves 0x40
+    a nested stock critical operation can replace it with 0x80
+    interrupts with raw priority 0x40 can now run
+    ove_irq_unlock(key) restores 0x40
+```
+
+The CM7 native workaround can similarly clear an incoming PRIMASK. Kernel-aware
+exclusion remains, but restoring the input later cannot undo an intervening
+handler. Keep incompatible native operations outside a region needing continuous
+stronger-mask protection. This API does not promise global IRQ exclusion.
+
+Bodies must not block, yield, await, start the scheduler, migrate context, or
+reconfigure priorities/grouping or privilege. Exceptional wrapper transitions
+briefly mask faults; they provide no physical latency or fault-recovery bound.
+Other engines retain their own native provider/context contracts; the enforcement
+described above is FreeRTOS-specific.

@@ -1175,6 +1175,70 @@ def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
+def _irq_model_output_valid(text, bindings=False):
+    lines = []
+    if bindings:
+        for mpu, allow in ((0, 0), (1, 0), (1, 1)):
+            for zero in (0, 1):
+                for kind in range(14):
+                    for api in ("spin", "global"):
+                        for suffix in ("normal", "canary"):
+                            lines.append(f"mpu{mpu}-allow{allow}-zero{zero}/{kind}/{api}/{suffix} PASS\n")
+        footer = "freertos irq Rust gate: observations=336 failed=0\n"
+    else:
+        rejections = ("fast", "systick", "pendsv", "nmi", "hardfault", "fault", "supervisor",
+                      "debug", "reserved", "impossible", "group", "bits-low", "bits-high",
+                      "bits-mismatch", "threshold-zero", "threshold-wide", "threshold-unaligned",
+                      "eight-odd", "eight-group")
+        for mpu, allow in ((0, 0), (1, 0), (1, 1)):
+            for erratum in (0, 1):
+                for zero in (0, 1):
+                    for case in ("normal",) + rejections + (() if mpu else ("ordinary-user",)):
+                        for suffix in ("", "/canary"):
+                            lines.append(f"mpu{mpu}-allow{allow}-erratum{erratum}-zero{zero}/{case}{suffix} PASS\n")
+        for case in ("missing-port", "other-port", "other-architecture", "multiple-cores", "missing-cores",
+                     "mpu-v2", "missing-priority-bits", "missing-threshold"):
+            for suffix in ("", "/canary"):
+                lines.append(case + suffix + " PASS\n")
+        footer = "freertos irq masks gate: observations=504 failed=0\n"
+    return text == "".join(lines) + footer
+
+
+def _test_freertos_irq(ove_dir, output_dir, sanitize=False, bindings=False):
+    label = ("freertos-irq-bindings" if bindings else "freertos-irq-masks") + ("-sanitize" if sanitize else "")
+    folder = Path(output_dir) / "tests" / label
+    folder.mkdir(parents=True, exist_ok=True)
+    script = "run_rust.py" if bindings else "run.py"
+    command = [sys.executable, os.path.join(ove_dir, "tests/freertos_irq_masks", script), str(folder / "models")]
+    if sanitize:
+        command.append("--sanitize")
+    log = folder / "gate.log"
+    with log.open("wb") as stream:
+        status = _run_owned_test_process(command, env=dict(os.environ), timeout=660 if bindings else 360, stdout=stream)
+    _record_scoped_observation(log, command, status)
+    text = log.read_text()
+    valid = status == 0 and _irq_model_output_valid(text, bindings)
+    if not valid:
+        print(text, end="")
+    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+
+
+def test_freertos_irq_masks(ove_dir, output_dir):
+    return _test_freertos_irq(ove_dir, output_dir)
+
+
+def test_freertos_irq_masks_sanitize(ove_dir, output_dir):
+    return _test_freertos_irq(ove_dir, output_dir, sanitize=True)
+
+
+def test_freertos_irq_bindings(ove_dir, output_dir):
+    return _test_freertos_irq(ove_dir, output_dir, bindings=True)
+
+
+def test_freertos_irq_bindings_sanitize(ove_dir, output_dir):
+    return _test_freertos_irq(ove_dir, output_dir, sanitize=True, bindings=True)
+
+
 def _test_rust_spinmutex(ove_dir, output_dir, sanitize=False):
     """Check scoped data ownership and exact native key retirement."""
     label = "rust-spinmutex" + ("-sanitize" if sanitize else "")
@@ -5206,6 +5270,10 @@ TEST_TARGETS = {
     "rust-async-queue": test_rust_async_queue,
     "rust-async-queue-sanitize": test_rust_async_queue_sanitize,
     "rust-spinmutex": test_rust_spinmutex,
+    "freertos-irq-masks": test_freertos_irq_masks,
+    "freertos-irq-masks-sanitize": test_freertos_irq_masks_sanitize,
+    "freertos-irq-bindings": test_freertos_irq_bindings,
+    "freertos-irq-bindings-sanitize": test_freertos_irq_bindings_sanitize,
     "rust-spinmutex-sanitize": test_rust_spinmutex_sanitize,
     "rust-async-sem": test_rust_async_sem,
     "rust-async-sem-sanitize": test_rust_async_sem_sanitize,

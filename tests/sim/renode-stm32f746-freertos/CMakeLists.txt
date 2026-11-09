@@ -80,6 +80,7 @@ include(${TESTS_ROOT}/cmake/OveTest.cmake)
 set(BOARD_DIR ${OVE_ROOT}/boards/stm32f746g-discovery)
 set(FREERTOS_SRC ${freertos_kernel_SOURCE_DIR})
 set(FREERTOS_PORT ${FREERTOS_SRC}/portable/GCC/ARM_CM7/r0p1)
+add_compile_definitions(OVE_FREERTOS_IRQ_PORT_SUPPORTED=1)
 
 file(GLOB _CUBE_F7_CANDIDATES "${OVE_ROOT}/dl/STM32CubeF7-*")
 if(NOT _CUBE_F7_CANDIDATES)

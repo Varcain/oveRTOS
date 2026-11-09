@@ -286,6 +286,9 @@ jobs:
       - name: Scoped SpinMutex ownership and native key cleanup
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-spinmutex test-rust-spinmutex-sanitize
 
+      - name: FreeRTOS IRQ masks and Rust caller admission
+        run: timeout --signal=INT --kill-after=30 2100 make test-freertos-irq-masks test-freertos-irq-masks-sanitize test-freertos-irq-bindings test-freertos-irq-bindings-sanitize
+
       - name: Run typed Rust SPI tests (both heap modes)
         run: make test-rust-spi
 

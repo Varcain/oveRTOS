@@ -1,0 +1,13 @@
+[package]
+name = "ove-irq-boundary-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+ove = { path = "../../../bindings/rust/ove", default-features = false, features = ["std", "async"] }
+critical-section = { version = "1.2", features = ["restore-state-u64"] }
+
+[[bin]]
+name = "irq-boundary"
+path = "src/main.rs"

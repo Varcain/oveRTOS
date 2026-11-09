@@ -72,6 +72,7 @@ include(${TESTS_ROOT}/cmake/OveTest.cmake)
 set(BOARD_DIR ${OVE_ROOT}/boards/qemu-mps2-an500)
 set(FREERTOS_SRC ${freertos_kernel_SOURCE_DIR})
 set(FREERTOS_PORT ${FREERTOS_SRC}/portable/GCC/ARM_CM7/r0p1)
+add_compile_definitions(OVE_FREERTOS_IRQ_PORT_SUPPORTED=1)
 
 # --- CMSIS startup and system ---
 # syscalls.c (legacy newlib _sbrk against __HeapLimit) removed with the

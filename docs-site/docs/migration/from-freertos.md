@@ -135,12 +135,25 @@ The portable API does not currently expose `malloc` / `free`. In **heap mode**, 
 
 ## Critical sections
 
-There is no portable critical-section / `__disable_irq` API in oveRTOS. The backends disagree on what these should mean across cores, ISR priorities, and lock-disabling semantics — so the portable surface omits them. Two practical replacements:
+With `CONFIG_OVE_ASYNC`, `ove_irq_lock()` / `ove_irq_unlock()` provide paired,
+nestable native critical sections. Pass the complete opaque key back in LIFO
+order in the same execution context. C++ and Zig use the same C contract; Rust's
+`critical_section::with` and `SpinMutex::with` use the selected provider.
 
-- **In-thread mutual exclusion** — use `ove_mutex_*`. Backends apply priority inheritance.
-- **ISR-to-thread handoff** — use `ove_event_signal_from_isr` / `ove_queue_send_from_isr` / `ove_eventgroup_set_bits_from_isr`. The ISR pushes work; the thread runs it.
+On supported single-core FreeRTOS Cortex-M ports, this excludes kernel-aware
+participants at the configured syscall threshold. Higher-urgency IRQs remain
+runnable and cannot participate in that protection. Unsupported FreeRTOS entry
+stops before returning; restricted MPU V1 tasks additionally need a serviceable
+priority-zero supervisor call with PRIMASK/FAULTMASK clear.
 
-If you genuinely need to disable IRQs (rare in app code), drop to the backend's native function — but understand you've left the portable surface.
+The wrapper preserves its own transitions and restores captured masks on unlock.
+A native call inside the body can still lower stronger incoming BASEPRI or clear
+PRIMASK; restoration afterwards cannot undo execution during that interval.
+See [IRQ critical sections](../api/sync.md#irq-critical-sections) for the precise
+supported contexts and an example of this limitation.
+
+Use a mutex for blocking thread synchronization and eligible ISR handoff APIs
+for deferred work. Critical-section bodies must stay short and nonblocking.
 
 ## Where this leaves you
 

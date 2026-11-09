@@ -849,3 +849,26 @@ Relative Duration waits work without TIME; only absolute Instant methods require
 TIME. The typed eventgroup macro preserves this ownership policy automatically.
 AsyncEventGroup exclusive setup remains a separate repair; native cancellation
 and Rust ownership do not certify its shared registration method.
+
+### Native IRQ exclusion and restore state
+
+C, C++, Rust and Zig share the native domain of `ove_irq_lock`/`ove_irq_unlock`;
+Rust's global `critical_section` provider and scoped `SpinMutex::with` do not
+widen it. The opaque u64 key must pass through unchanged in same-context LIFO
+order; FreeRTOS task keys need not be zero. No binding-owned heap or app-side
+FFI workaround is needed for the restore state.
+
+On the admitted single-core FreeRTOS ARM ports, C entry checks the supported
+kernel-aware external IRQ/SysTick/PendSV priority and grouping before returning
+a token/key. Unsupported entry stops even with assertions disabled. Ordinary
+unprivileged tasks are excluded. MPU V1 restricted tasks retain caller mode and
+require permitted, serviceable priority-zero SVCall with PRIMASK/FAULTMASK clear;
+this native setup invariant cannot be diagnosed by unprivileged mask reads.
+
+FreeRTOS wrapper transitions preserve incoming exclusion, then matching unlock
+restores captured masks exactly. Native calls inside a body can still lower a
+stronger BASEPRI or clear PRIMASK; kernel-aware exclusion remains but continuous
+stronger-mask protection and global IRQ masking are not guaranteed. The public
+[IRQ contract](../api/sync.md#irq-critical-sections) gives the concrete example.
+Other engines retain their own native contracts; FreeRTOS-specific admission
+must not be presented as universal provider enforcement.
