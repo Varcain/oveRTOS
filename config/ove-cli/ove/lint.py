@@ -19,7 +19,6 @@ reports diagnostics.
 
 import logging
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -28,6 +27,7 @@ from . import lint_backend_struct
 from . import lint_doc_snippets
 from . import lint_error_codes
 from . import lint_version
+from .lint_backend_commands import BackendCommands, source_path
 from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
@@ -366,114 +366,6 @@ def _clang_tidy(ove_dir, check):
             f"{len(files)} files" if rc == 0 else out.strip()[:200])
 
 
-# gcc-only flags that clang's driver rejects with `unknown argument` errors
-# when consumed via a cross-compile compile_commands.json.  We strip these
-# before invoking clang-tidy so the parser accepts the rest of the cmdline.
-# Anything starting with one of these prefixes (or matching exactly) is
-# dropped.  Keep narrow — over-stripping risks silently masking warnings.
-_GCC_ONLY_PREFIXES = (
-    "-fno-defer-pop",
-    "-fno-printf-return-value",
-    "-fno-reorder-functions",
-    "-fno-allow-store-data-races",
-    "-mfp16-format=",
-    "-mtp=",
-    "-mfix-cmse-cve-2021-35465",
-    "--param=",
-    "-Wno-pointer-sign",  # clang lacks this; gcc-only spelling
-    "-fdiagnostics-color=",  # clang uses different syntax; harmless to drop
-    # NuttX cross builds inject `-fprofile-abs-path` (gcc 9+) which
-    # clang doesn't accept.  Stripping it has no effect on diagnostics
-    # since coverage instrumentation is irrelevant to clang-tidy.
-    "-fprofile-abs-path",
-    # The STM32 FreeRTOS hard-float build passes it; clang rejects it.
-    "-fsingle-precision-constant",
-)
-
-
-def _strip_gcc_only(args):
-    return [a for a in args if not any(
-        a == p or a.startswith(p) for p in _GCC_ONLY_PREFIXES)]
-
-
-# GCC's own compiler headers (stdatomic.h, stddef.h, arm_acle.h, ...) live in
-# <prefix>/lib/gcc/<target>/<version>/include[-fixed].  They are written for
-# GCC's builtins: under clang, GCC's stdatomic.h makes every atomic_* call on
-# an _Atomic object an error.
-_GCC_PRIVATE_INCLUDE = re.compile(r"/lib/gcc/[^/]+/[^/]+/include(-fixed)?/?$")
-
-
-def _use_clang_builtin_headers(args):
-    """Let clang use its own compiler headers instead of GCC's.
-
-    Zephyr builds pass -nostdinc and add GCC's private include directory by
-    hand; clang's -nostdinc would also drop clang's builtin headers, so it
-    becomes -nostdlibinc and GCC's directory goes.
-    """
-    out = []
-    skip_next = False
-    for i, arg in enumerate(args):
-        if skip_next:
-            skip_next = False
-            continue
-        if arg == "-nostdinc":
-            out.append("-nostdlibinc")
-            continue
-        if arg in ("-isystem", "-I") and i + 1 < len(args) \
-                and _GCC_PRIVATE_INCLUDE.search(args[i + 1]):
-            skip_next = True
-            continue
-        if arg.startswith(("-isystem", "-I")) and \
-                _GCC_PRIVATE_INCLUDE.search(arg.removeprefix("-isystem").removeprefix("-I")):
-            continue
-        out.append(arg)
-    return out
-
-
-# Path fragments that mark third-party / vendored include trees.  When
-# we see `-I<path>` whose path contains one of these, we rewrite it to
-# `-isystem<path>` so clang treats the headers as system headers and
-# suppresses diagnostics inside them.  This kills the noise from
-# vendored Zephyr SDK headers / STM32 HAL macros / NuttX libc shims
-# without losing findings in our own backend code.
-_THIRDPARTY_PATH_FRAGMENTS = (
-    "/dl/",
-    "/zephyr-workspace",
-    "/zephyr-sdk",
-    "/cmocka-src/",
-    "/_deps/",
-    "/picolibc-",
-    "arm-zephyr-eabi/",
-    "arm-none-eabi/",
-)
-
-
-def _demote_thirdparty_includes(args):
-    out = []
-    for arg in args:
-        if arg.startswith("-I") and len(arg) > 2:
-            path = arg[2:]
-            if any(frag in path for frag in _THIRDPARTY_PATH_FRAGMENTS):
-                out.append("-isystem" + path)
-                continue
-        out.append(arg)
-    return out
-
-
-def _pin_float_abi(args):
-    """Spell out GCC's float ABI for clang.
-
-    The arm-none-eabi and Zephyr GCC toolchains default to -mfloat-abi=soft,
-    but clang with --target=arm-none-eabi and an FPU-capable -mcpu does not
-    define __SOFTFP__, so CMSIS headers decide FPU code is being generated
-    for a device without an FPU and #error out.  Make the default explicit
-    when a command leaves the ABI unset.
-    """
-    if any(a.startswith("-mfloat-abi=") for a in args):
-        return args
-    return list(args) + ["-mfloat-abi=soft"]
-
-
 def _clang_tidy_backends(ove_dir, check):
     """Run clang-tidy against each RTOS backend's C code via cross-compile
     compile_commands.json artefacts.
@@ -482,8 +374,8 @@ def _clang_tidy_backends(ove_dir, check):
     files under `backends/{freertos,nuttx,zephyr}/*.c` never get linted.
     This check finds existing cross-compile DBs at predictable locations
     under output/, scopes to backend-specific files, strips gcc-private
-    flags clang's driver rejects, and runs clang-tidy with
-    `--target=arm-none-eabi`.
+    flags Clang's driver rejects, and preserves the supported target and ABI
+    of each command. Unsupported commands fail explicitly.
 
     Filtered DBs are written to `output/tests/lint_backend_dbs/<rtos>/`
     so the original firmware-build artefacts aren't disturbed.
@@ -495,7 +387,6 @@ def _clang_tidy_backends(ove_dir, check):
     or via the dedicated `make lint-backends` target.
     """
     import json
-    import shlex
     import glob
     del check
     if not shutil.which("clang-tidy"):
@@ -506,8 +397,7 @@ def _clang_tidy_backends(ove_dir, check):
     #                           (NuttX: .../build/nuttx-cmake/)
     #   - QEMU/Renode test:     output/tests/{qemu,renode-stm32f746}-<rtos>*/build/
     #   - Plain test build:     output/tests/<rtos>/build/
-    # Order matters — prefer app builds (full surface) over test builds
-    # (slimmer surface) so we lint the maximum amount of backend code.
+    # Select the freshest available database for each RTOS below.
     candidate_globs = [
         os.path.join(ove_dir, "output", "*", "*", "*", "build",
                      "firmware", "compile_commands.json"),
@@ -555,6 +445,7 @@ def _clang_tidy_backends(ove_dir, check):
                 "no RTOS-tagged compile_commands.json found")
 
     failures = []
+    commands = BackendCommands()
     files_total = 0
     filtered_root = os.path.join(ove_dir, "output", "tests",
                                  "lint_backend_dbs")
@@ -569,33 +460,28 @@ def _clang_tidy_backends(ove_dir, check):
             failures.append(f"{rtos}: db read failed ({e})")
             continue
 
-        # Build a filtered DB: only backend TUs, with gcc-only flags
-        # stripped.  Each entry's `command` (or `arguments`) is rewritten
-        # so clang-tidy's invocation goes through clang's driver cleanly.
+        # Validate selected commands before writing or invoking any filtered DB.
         filtered = []
         seen = set()
-        for e in entries:
-            src = e.get("file")
-            if not src or src in seen:
-                continue
-            src_abs = os.path.abspath(src)
-            if not src_abs.startswith(backend_root + os.sep):
-                continue
-            # A database older than the tree can name a deleted file.
-            if not os.path.isfile(src_abs):
-                continue
-            seen.add(src)
-            new_entry = dict(e)
-            if "arguments" in e and e["arguments"]:
-                new_entry["arguments"] = _pin_float_abi(
-                    _demote_thirdparty_includes(_use_clang_builtin_headers(
-                        _strip_gcc_only(e["arguments"]))))
-            elif "command" in e and e["command"]:
-                tokens = shlex.split(e["command"])
-                new_entry["command"] = shlex.join(_pin_float_abi(
-                    _demote_thirdparty_includes(_use_clang_builtin_headers(
-                        _strip_gcc_only(tokens)))))
-            filtered.append(new_entry)
+        invalid = False
+        if not isinstance(entries, list):
+            failures.append(f"{rtos}: compile database must be an array")
+            continue
+        for entry in entries:
+            try:
+                source = source_path(entry)
+                if not source.startswith(backend_root + os.sep):
+                    continue
+                normalized = commands.normalize(entry)
+                if source in seen:
+                    continue
+                filtered.append(normalized)
+                seen.add(source)
+            except ValueError as error:
+                failures.append(f"{rtos}: {error}")
+                invalid = True
+        if invalid:
+            continue
 
         if not filtered:
             continue
@@ -612,10 +498,9 @@ def _clang_tidy_backends(ove_dir, check):
             failures.append(f"{rtos}: filtered db write failed ({e})")
             continue
 
-        # `--target=arm-none-eabi` keeps clang's parser happy with the
-        # remaining -mcpu / -mthumb / -mfpu flags.  -Qunused-arguments
-        # silences any residual unrecognised flags so findings dominate
-        # the output rather than driver chatter.
+        # Each filtered command carries its qualified compiler target.
+        # Unknown options remain visible as driver errors; unused codegen
+        # options need not obscure findings in analysis-only invocations.
         #
         # `--checks` overrides the repo .clang-tidy: keep the bug-finding
         # families (bugprone / cert / concurrency / clang-analyzer) and
@@ -647,10 +532,9 @@ def _clang_tidy_backends(ove_dir, check):
             # when our backend casts an int to gpio_flags_t — it can't see
             # that the int IS a flag combination; third-party-induced noise.
             "-clang-analyzer-optin.core.EnumCastOutOfRange",
-            # Scope header analysis to our own backend headers; the
-            # demote-to-isystem pass above silences vendored headers.
+            # Scope header analysis to our own backend headers while preserving
+            # include search order, including third-party paths.
             "--header-filter=backends/",
-            "--extra-arg-before=--target=arm-none-eabi",
             "--extra-arg=-Qunused-arguments",
             "--extra-arg=-Wno-unknown-warning-option",
             "--extra-arg=-Wno-unused-command-line-argument",

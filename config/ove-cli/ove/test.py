@@ -1239,6 +1239,23 @@ def test_freertos_irq_bindings_sanitize(ove_dir, output_dir):
     return _test_freertos_irq(ove_dir, output_dir, sanitize=True, bindings=True)
 
 
+def test_backend_lint(ove_dir, output_dir):
+    """Check backend target, ABI and diagnostic preservation with pinned Clang."""
+    folder = Path(output_dir) / "tests/backend-lint"
+    folder.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, os.path.join(ove_dir, "tests/backend_lint/run.py"), str(folder / "cases")]
+    log = folder / "gate.log"
+    with log.open("wb") as stream:
+        status = _run_owned_test_process(command, env=dict(os.environ), timeout=180, stdout=stream)
+    _record_scoped_observation(log, command, status)
+    text = log.read_text()
+    valid = status == 0 and text.count("BACKEND_LINT_GATE_PASS tests=19\n") == 1
+    valid = valid and "Ran 19 tests in " in text and "\nOK\n" in text
+    if not valid:
+        print(text, end="")
+    return TestResults(suite="backend-lint", passed=int(valid), failed=int(not valid))
+
+
 def test_rust_native_core(ove_dir, output_dir):
     """Compile real native bindings without requiring the std feature."""
     label = "rust-native-core"
@@ -5289,6 +5306,7 @@ TEST_TARGETS = {
     "rust-async-queue": test_rust_async_queue,
     "rust-async-queue-sanitize": test_rust_async_queue_sanitize,
     "rust-native-core": test_rust_native_core,
+    "backend-lint": test_backend_lint,
     "rust-spinmutex": test_rust_spinmutex,
     "freertos-irq-masks": test_freertos_irq_masks,
     "freertos-irq-masks-sanitize": test_freertos_irq_masks_sanitize,

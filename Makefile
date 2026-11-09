@@ -211,7 +211,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               rust-sync rust-sync-sanitize \
               rust-async-sem rust-async-sem-sanitize \
               rust-async-queue rust-async-queue-sanitize \
-              rust-native-core rust-spinmutex rust-spinmutex-sanitize \
+              backend-lint rust-native-core rust-spinmutex rust-spinmutex-sanitize \
               freertos-irq-masks freertos-irq-masks-sanitize \
               freertos-irq-bindings freertos-irq-bindings-sanitize \
               spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
@@ -394,7 +394,7 @@ lint: $(VENV_STAMP)
 	@# every gap; remove a line as you close its gap.
 	@python3 $(OVE_DIR)/scripts/lvgl_parity_check.py --strict
 
-# Run clang-tidy specifically against cross-compile backend code.  Reuses
+# Run clang-tidy against supported firmware or native backend commands. Reuses
 # any existing output/<board>/<rtos>/<app>/build/firmware/compile_commands.json
 # (or output/tests/{qemu,renode}-<rtos>*/build/compile_commands.json) and
 # scopes to backends/<rtos>/*.c.  SKIPs cleanly if no firmware build is

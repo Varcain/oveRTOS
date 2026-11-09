@@ -23,7 +23,6 @@ jobs:
           sudo apt-get update && sudo apt-get install -y \
             python3 python3-venv cmake build-essential \
             clang-format clang-tidy
-          python3 -m pip install --user ruff
 
       - name: Install Rust (for cargo fmt / cargo clippy)
         # `rust-src` is listed alongside rustfmt/clippy because the repo's
@@ -39,8 +38,16 @@ jobs:
       - name: Bootstrap oveRTOS venv
         run: make setup
 
+      - name: Install pinned lint tools
+        run: |
+          .venv/bin/python -m pip install ruff clang-format==18.1.3 clang-tidy==18.1.8
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
       - name: Run ove lint
         run: make lint
+
+      - name: Backend lint target and ABI regression
+        run: timeout --signal=INT --kill-after=30 240 make test-backend-lint
 
   stub-tests:
     name: Stub Backend Tests
