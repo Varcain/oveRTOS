@@ -5,8 +5,9 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-use super::state::{self, Lease, Outcome};
+use super::state;
 use super::{ChipSelect, Controller, Result, Word};
+use crate::async_runtime::bus_state::{self, Lease, Outcome};
 
 enum Buffers<'a, W: Word> {
     Duplex { tx: &'a [W], rx: &'a mut [W] },
@@ -123,7 +124,7 @@ impl<W: Word> Future for Transfer<'_, W> {
         } else {
             Some(context.waker().clone())
         };
-        match unsafe { state::observe(header, this.generation, waiter) } {
+        match unsafe { bus_state::observe(header, this.generation, waiter) } {
             Outcome::Pending { replaced, .. } => {
                 drop(replaced);
                 Poll::Pending
@@ -137,7 +138,7 @@ impl<W: Word> Future for Transfer<'_, W> {
                 if result.is_ok() {
                     unsafe { this.copy_back(rx) };
                 }
-                unsafe { state::consumed(header, generation) };
+                unsafe { bus_state::consumed(header, generation) };
                 this.generation = None;
                 this.done = Some(result);
                 // RX and operation state are finished before arbitrary Waker
@@ -158,7 +159,7 @@ impl<W: Word> Drop for Transfer<'_, W> {
         if let Some(generation) = self.generation {
             // No cancel/refcount decrement: stable native ownership outlives
             // either Drop or forget. Only the matching waiter is detached.
-            unsafe { state::detach(self.owner.header, generation) };
+            unsafe { bus_state::detach(self.owner.header, generation) };
         }
     }
 }
@@ -193,7 +194,7 @@ impl<W: Word> Future for Flush<'_, W> {
         let header = this.owner.header;
         let _call = unsafe { Lease::acquire(header) };
         let waiter = context.waker().clone();
-        match unsafe { state::observe(header, this.generation, Some(waiter)) } {
+        match unsafe { bus_state::observe(header, this.generation, Some(waiter)) } {
             Outcome::Pending {
                 generation,
                 replaced,
@@ -208,7 +209,7 @@ impl<W: Word> Future for Flush<'_, W> {
                 unused,
                 ..
             } => {
-                unsafe { state::consumed(header, generation) };
+                unsafe { bus_state::consumed(header, generation) };
                 this.generation = None;
                 this.done = Some(result);
                 drop(unused);
@@ -227,7 +228,7 @@ impl<W: Word> Future for Flush<'_, W> {
 impl<W: Word> Drop for Flush<'_, W> {
     fn drop(&mut self) {
         if let Some(generation) = self.generation {
-            unsafe { state::detach(self.owner.header, generation) };
+            unsafe { bus_state::detach(self.owner.header, generation) };
         }
     }
 }

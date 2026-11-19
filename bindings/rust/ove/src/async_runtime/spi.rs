@@ -89,7 +89,8 @@ impl<const N: usize, W: Word> AsyncSpiStorage<N, W> {
         let staging = Staging {
             tx: self.tx.get().cast(),
             rx: self.rx.get().cast(),
-            capacity: N,
+            tx_capacity: N,
+            rx_capacity: N,
             allocation: core::ptr::null_mut(),
         };
         // SAFETY: the static claim excludes every previous owner/tail. Native
