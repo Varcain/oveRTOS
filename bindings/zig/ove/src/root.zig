@@ -131,6 +131,11 @@ pub const zero_heap = @import("pin.zig").zero_heap;
 /// Raw C FFI symbols from the oveRTOS C layer. Prefer the typed wrappers above this.
 pub const ffi = @import("c.zig").raw;
 
+// Fail the build when @cImport's struct layouts differ from the C compiler's.
+comptime {
+    _ = @import("abi_contract.zig");
+}
+
 /// Error type and conversion utilities for the oveRTOS C error codes.
 pub const err = @import("error.zig");
 /// Zig error set representing all possible oveRTOS failure codes.

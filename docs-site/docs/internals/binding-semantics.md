@@ -619,6 +619,7 @@ lowers that into its language's error type.
 | Success/failure carrier | `Result<T>` = `std::expected<T, Error>` | `Result<T>` = `Result<T, Error>` | `Error!T` |
 | Unknown / unmapped code | — (maps the pinned set) | `Error::Unknown(i32)` (carries the code) | `Error.UnknownErrorCode` in release; **panics in `Debug`** |
 | Code/enum pin | `static_assert` | `const` assertions | `comptime` asserts |
+| Struct-layout pin (`cmake/ove_abi_types.def`) | none (same compiler as C) | `build.rs` `const` asserts | `comptime` in `abi_contract.zig` |
 
 **Contract notes**
 

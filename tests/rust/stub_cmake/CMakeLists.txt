@@ -118,7 +118,8 @@ S(ove_netif_storage_t) A(ove_netif_storage_t)\n\
 #endif\n\
 #ifdef CONFIG_OVE_NET_TLS\n\
 S(ove_tls_storage_t) A(ove_tls_storage_t)\n\
-#endif\n"
+#endif\n\
+${_OVE_ABI_PROBE}"
 )
 
 add_library(_ove_sizes OBJECT ${SIZES_C})

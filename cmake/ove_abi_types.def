@@ -1,0 +1,108 @@
+/*
+ * Public structs whose C layout the Rust and Zig bindings must match.
+ * The size probe (OveBindingsCommon.cmake) expands these X-macros; the
+ * bindings assert size, alignment and each listed field's offset and size.
+ * Anonymous unions are covered by size/alignment only.  struct
+ * ove_fb_info is not listed: ove/fb.h is not part of ove/ove.h.
+ */
+
+OVE_ABI_STRUCT(ove_audio_fmt)
+OVE_ABI_FIELD(ove_audio_fmt, sample_rate)
+OVE_ABI_FIELD(ove_audio_fmt, channels)
+OVE_ABI_FIELD(ove_audio_fmt, sample_fmt)
+
+OVE_ABI_STRUCT(ove_audio_node)
+OVE_ABI_FIELD(ove_audio_node, name_span)
+OVE_ABI_FIELD(ove_audio_node, type)
+OVE_ABI_FIELD(ove_audio_node, ops)
+OVE_ABI_FIELD(ove_audio_node, ctx)
+OVE_ABI_FIELD(ove_audio_node, out_fmt)
+
+OVE_ABI_STRUCT(ove_audio_graph)
+#ifdef CONFIG_OVE_AUDIO
+OVE_ABI_FIELD(ove_audio_graph, nodes)
+OVE_ABI_FIELD(ove_audio_graph, node_count)
+OVE_ABI_FIELD(ove_audio_graph, edges)
+OVE_ABI_FIELD(ove_audio_graph, edge_count)
+OVE_ABI_FIELD(ove_audio_graph, exec_order)
+OVE_ABI_FIELD(ove_audio_graph, exec_count)
+OVE_ABI_FIELD(ove_audio_graph, buffers)
+OVE_ABI_FIELD(ove_audio_graph, buf_storage)
+OVE_ABI_FIELD(ove_audio_graph, buf_storage_size)
+OVE_ABI_FIELD(ove_audio_graph, frames_per_period)
+OVE_ABI_FIELD(ove_audio_graph, state)
+OVE_ABI_FIELD(ove_audio_graph, stats)
+OVE_ABI_FIELD(ove_audio_graph, busy)
+OVE_ABI_FIELD(ove_audio_graph, stopping)
+#endif
+
+OVE_ABI_STRUCT(ove_audio_device_cfg)
+OVE_ABI_FIELD(ove_audio_device_cfg, transport)
+OVE_ABI_FIELD(ove_audio_device_cfg, fmt)
+OVE_ABI_FIELD(ove_audio_device_cfg, num_buffers)
+OVE_ABI_FIELD(ove_audio_device_cfg, thread_priority)
+OVE_ABI_FIELD(ove_audio_device_cfg, thread_stack_size)
+
+OVE_ABI_STRUCT(ove_i2c_cfg)
+OVE_ABI_FIELD(ove_i2c_cfg, instance)
+OVE_ABI_FIELD(ove_i2c_cfg, speed)
+
+OVE_ABI_STRUCT(ove_i2s_cfg)
+OVE_ABI_FIELD(ove_i2s_cfg, instance)
+OVE_ABI_FIELD(ove_i2s_cfg, sample_rate)
+OVE_ABI_FIELD(ove_i2s_cfg, bit_depth)
+OVE_ABI_FIELD(ove_i2s_cfg, channels)
+OVE_ABI_FIELD(ove_i2s_cfg, direction)
+OVE_ABI_FIELD(ove_i2s_cfg, dma_buf_samples)
+
+OVE_ABI_STRUCT(ove_pm_wake_src)
+OVE_ABI_FIELD(ove_pm_wake_src, type)
+
+OVE_ABI_STRUCT(ove_spi_cfg)
+OVE_ABI_FIELD(ove_spi_cfg, instance)
+OVE_ABI_FIELD(ove_spi_cfg, clock_hz)
+OVE_ABI_FIELD(ove_spi_cfg, mode)
+OVE_ABI_FIELD(ove_spi_cfg, bit_order)
+OVE_ABI_FIELD(ove_spi_cfg, word_size)
+
+OVE_ABI_STRUCT(ove_tensor_info)
+OVE_ABI_FIELD(ove_tensor_info, data)
+OVE_ABI_FIELD(ove_tensor_info, size)
+OVE_ABI_FIELD(ove_tensor_info, type)
+OVE_ABI_FIELD(ove_tensor_info, ndims)
+OVE_ABI_FIELD(ove_tensor_info, dims)
+
+OVE_ABI_STRUCT(ove_thread_info)
+OVE_ABI_FIELD(ove_thread_info, identity)
+OVE_ABI_FIELD(ove_thread_info, state)
+OVE_ABI_FIELD(ove_thread_info, priority)
+OVE_ABI_FIELD(ove_thread_info, stack_used)
+OVE_ABI_FIELD(ove_thread_info, stack_size)
+OVE_ABI_FIELD(ove_thread_info, cpu_percent_x100)
+OVE_ABI_FIELD(ove_thread_info, valid_fields)
+OVE_ABI_FIELD(ove_thread_info, native_priority)
+OVE_ABI_FIELD(ove_thread_info, state_times)
+OVE_ABI_FIELD(ove_thread_info, name)
+
+OVE_ABI_STRUCT(ove_uart_cfg)
+OVE_ABI_FIELD(ove_uart_cfg, instance)
+OVE_ABI_FIELD(ove_uart_cfg, baudrate)
+OVE_ABI_FIELD(ove_uart_cfg, data_bits)
+OVE_ABI_FIELD(ove_uart_cfg, parity)
+OVE_ABI_FIELD(ove_uart_cfg, stop_bits)
+OVE_ABI_FIELD(ove_uart_cfg, flow_control)
+OVE_ABI_FIELD(ove_uart_cfg, rx_buf_size)
+
+#ifdef CONFIG_OVE_NET
+OVE_ABI_STRUCT(ove_sockaddr)
+OVE_ABI_FIELD(ove_sockaddr, family)
+OVE_ABI_FIELD(ove_sockaddr, port)
+OVE_ABI_FIELD(ove_sockaddr, addr)
+
+OVE_ABI_STRUCT(ove_netif_config)
+OVE_ABI_FIELD(ove_netif_config, use_dhcp)
+OVE_ABI_FIELD(ove_netif_config, static_ip)
+OVE_ABI_FIELD(ove_netif_config, gateway)
+OVE_ABI_FIELD(ove_netif_config, netmask)
+OVE_ABI_FIELD(ove_netif_config, dns)
+#endif

@@ -45,9 +45,15 @@ def main():
             return _run_owned_test_process(command, env=env, timeout=min(maximum, remaining), stdout=stream)
     # These are actual host opaque-storage measurements for bindgen. This
     # fixture uses only a u64 key and a fresh Rust u32; no storage ABI is tested.
+    # The probe also measures public struct layouts, so it must see the
+    # profiles' feature set (on the host backend) rather than tests/ove_config.h.
     storage = out / "storage"
+    (out / "stub_config").mkdir(exist_ok=True)
     storage.mkdir(exist_ok=True)
-    for stage, command in (("configure", ["cmake", "-S", str(ROOT / "tests/rust/stub_cmake"), "-B", str(storage)]),
+    (out / "stub_config/ove_config.h").write_text("#pragma once\n" + "".join(
+        "#define CONFIG_OVE_" + item + " 1\n" for item in ("RTOS_POSIX", "SYNC", "ASYNC", "TIME", "TIMER")))
+    for stage, command in (("configure", ["cmake", "-S", str(ROOT / "tests/rust/stub_cmake"), "-B", str(storage),
+                                          "-DOVE_STUB_CONFIG_DIR=" + str(out / "stub_config")]),
                            ("build", ["cmake", "--build", str(storage), "--target", "storage_sizes", "--parallel", "8"])):
         log = storage / (stage + ".log")
         if run(command, log):

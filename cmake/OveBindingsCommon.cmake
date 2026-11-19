@@ -22,7 +22,8 @@
 #
 #   _ove_binding_write_sizes_probe(OUT_C_PATH ROOT_INCLUDES)
 #       Writes a C file at OUT_C_PATH containing sizeof/alignof arrays for
-#       all conditionally-compiled storage types. ROOT_INCLUDES is the
+#       all conditionally-compiled storage types, plus the public struct
+#       layouts of ove_abi_types.def. ROOT_INCLUDES is the
 #       initial #include block (e.g. "#include \"ove/storage.h\"\n").
 #
 #   _ove_binding_build_sizes_probe(LIB_NAME TARGET)
@@ -43,6 +44,16 @@ if(_OVE_BINDINGS_COMMON_INCLUDED)
     return()
 endif()
 set(_OVE_BINDINGS_COMMON_INCLUDED TRUE)
+
+# Layout probe for the public structs listed in ove_abi_types.def; the
+# bindings assert these values and each field's offset and size.  Offsets
+# are stored +1 (no 0-size arrays).
+set(_OVE_ABI_PROBE "#include \"ove/ove.h\"\n\
+#define OVE_ABI_STRUCT(t) unsigned char _sizeof_struct_##t[sizeof(struct t)]; \
+unsigned char _alignof_struct_##t[_Alignof(struct t)];\n\
+#define OVE_ABI_FIELD(t, f) unsigned char _offsetof_##t##__##f[offsetof(struct t, f) + 1]; \
+unsigned char _fieldsize_##t##__##f[sizeof(((struct t *)0)->f)];\n\
+#include \"${CMAKE_CURRENT_LIST_DIR}/ove_abi_types.def\"\n")
 
 
 function(_ove_binding_resolve_board_dir OUTVAR)
@@ -170,6 +181,7 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
 "S(ove_i2s_storage_t)        A(ove_i2s_storage_t)\n"
         )
     endif()
+    file(APPEND ${OUT_C_PATH} "${_OVE_ABI_PROBE}")
 endfunction()
 
 

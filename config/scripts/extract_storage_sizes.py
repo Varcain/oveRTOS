@@ -12,6 +12,8 @@ Usage: extract_storage_sizes.py <object_file> <output_file>
 
 Compiles a C file with sizeof/alignof arrays, then parses the nm output
 to produce KEY=VALUE pairs suitable for passing as env vars to cargo.
+Offset arrays (_offsetof_<tag>__<field>) hold the offset plus one;
+_fieldsize_<tag>__<field> arrays hold the field's size.
 
 An explicit `NM` env var overrides the `nm` found on PATH.
 """
@@ -44,7 +46,7 @@ def main():
 
     # Parse lines like: 00000000 000000c4 B _sizeof_ove_thread_storage_t
     pattern = re.compile(
-        r'[0-9a-f]+\s+([0-9a-f]+)\s+[A-Z]\s+_(sizeof|alignof)_(\w+)'
+        r'[0-9a-f]+\s+([0-9a-f]+)\s+[A-Z]\s+_(sizeof|alignof|offsetof|fieldsize)_(\w+)'
     )
 
     sizes = {}
@@ -52,10 +54,13 @@ def main():
         m = pattern.match(line)
         if m:
             value = int(m.group(1), 16)
-            kind = m.group(2).upper()  # SIZEOF or ALIGNOF
+            kind = m.group(2).upper()  # SIZEOF, ALIGNOF, OFFSETOF or FIELDSIZE
             type_name = m.group(3).upper()  # e.g. OVE_THREAD_STORAGE_T
-            # Remove _T suffix for cleaner env var names
-            type_name = re.sub(r'_T$', '', type_name)
+            if kind == "OFFSETOF":
+                value -= 1
+            elif kind != "FIELDSIZE":
+                # Remove _T suffix for cleaner env var names
+                type_name = re.sub(r'_T$', '', type_name)
             key = f"{kind}_{type_name}"
             sizes[key] = value
 
