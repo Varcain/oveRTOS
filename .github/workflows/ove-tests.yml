@@ -1,10 +1,20 @@
 name: oveRTOS Tests
 
+# Pushes and pull requests run lint, the host suites for every binding,
+# one QEMU smoke per RTOS and one plain model per contract family.
+# Jobs named "nightly" hold the sanitizer variants and the full
+# contract and ARM/QEMU matrices; they run on the schedule (against the
+# default branch) and on a manual dispatch, which also runs every
+# per-push job.
+
 on:
   push:
     branches: [main, devel]
   pull_request:
     branches: [main, devel]
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -77,8 +87,8 @@ jobs:
           path: output/
           retention-days: 7
 
-  sync-condvar:
-    name: Synchronization Boundary Models
+  sync-contracts:
+    name: Synchronization Contract Models
     runs-on: ubuntu-latest
     needs: lint
     steps:
@@ -87,19 +97,33 @@ jobs:
           submodules: true
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential python3-venv
-      - name: Run ordinary and sanitizer models
+      - name: Run one model per primitive family
+        run: |
+          timeout --signal=INT --kill-after=30 300 make test-sync-contracts
+          timeout --signal=INT --kill-after=30 360 make test-queue-contracts
+          timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts
+          timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts
+
+  sync-condvar:
+    name: Synchronization Boundary Models (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential python3-venv
+      - name: Run the remaining ordinary and sanitizer models
         run: |
           timeout --signal=INT --kill-after=30 300 make test-sync-condvar
           timeout --signal=INT --kill-after=30 300 make test-sync-condvar-sanitize
           timeout --signal=INT --kill-after=30 660 make test-freertos-cv-context
           timeout --signal=INT --kill-after=30 660 make test-freertos-cv-context-sanitize
-          timeout --signal=INT --kill-after=30 300 make test-sync-contracts
           timeout --signal=INT --kill-after=30 300 make test-sync-contracts-sanitize
-          timeout --signal=INT --kill-after=30 360 make test-queue-contracts
           timeout --signal=INT --kill-after=30 360 make test-queue-contracts-sanitize
-          timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts
           timeout --signal=INT --kill-after=30 600 make test-eventgroup-contracts-sanitize
-          timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts
           timeout --signal=INT --kill-after=30 660 make test-freertos-timeouts-sanitize
           timeout --signal=INT --kill-after=30 480 make test-freertos-event-timeouts
           timeout --signal=INT --kill-after=30 480 make test-freertos-event-timeouts-sanitize
@@ -113,7 +137,8 @@ jobs:
           timeout --signal=INT --kill-after=30 360 make test-eventgroup-deferred-sanitize
 
   stub-sanitize:
-    name: C Stub Sanitize (UBSan + ASan)
+    name: C Stub Sanitize (UBSan + ASan, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -138,7 +163,8 @@ jobs:
           retention-days: 7
 
   stub-msan:
-    name: C Stub MSan (uninitialized-memory detector)
+    name: C Stub MSan (uninitialized-memory detector, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -160,7 +186,8 @@ jobs:
           retention-days: 7
 
   stub-tsan:
-    name: C Stub TSan (data-race detector)
+    name: C Stub TSan (data-race detector, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -207,7 +234,8 @@ jobs:
           retention-days: 7
 
   cpp-sanitize:
-    name: C++ Sanitize (UBSan + ASan)
+    name: C++ Sanitize (UBSan + ASan, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -235,7 +263,8 @@ jobs:
           retention-days: 7
 
   cpp-tsan:
-    name: C++ TSan (data-race detector)
+    name: C++ TSan (data-race detector, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -280,13 +309,42 @@ jobs:
       - name: Run zero-heap tests
         run: make test-rust-zeroheap
 
+      - name: Rust semaphore and event ownership contracts
+        run: timeout --signal=INT --kill-after=30 600 make test-rust-sync
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: rust-tests-logs
+          path: output/
+          retention-days: 7
+
+  rust-contracts:
+    name: Rust and Binding Contracts (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-src
+          targets: thumbv7em-none-eabihf, thumbv7em-none-eabi, thumbv7m-none-eabi
+
       - name: Native Rust bindings in no_std, alloc and std modes
         run: timeout --signal=INT --kill-after=30 720 make test-rust-native-core
 
       - name: Run scoped Rust synchronization contracts and sanitizers
         run: timeout --signal=INT --kill-after=30 1200 make test-rust-scoped test-rust-scoped-sanitize
-      - name: Rust semaphore and event ownership contracts
-        run: timeout --signal=INT --kill-after=30 1200 make test-rust-sync test-rust-sync-sanitize
+      - name: Rust semaphore and event ownership contracts under sanitizers
+        run: timeout --signal=INT --kill-after=30 1200 make test-rust-sync-sanitize
       - name: Rust Queue ownership and context contracts
         run: timeout --signal=INT --kill-after=30 1500 make test-rust-queue test-rust-queue-sanitize
       - name: Rust EventGroup ownership and context
@@ -337,15 +395,19 @@ jobs:
       - name: Run real native Rust string tests (both heap modes)
         run: make test-rust-strings
 
+      - name: Check shared Event public bindings
+        run: timeout --signal=INT --kill-after=30 1200 make test-freertos-event-bindings
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: rust-tests-logs
+          name: rust-contracts-logs
           path: output/
           retention-days: 7
 
   rust-miri:
-    name: Rust Miri (UB detector)
+    name: Rust Miri (UB detector, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -379,9 +441,6 @@ jobs:
       - name: Run zero-heap tests
         run: make test-zig-zeroheap
 
-      - name: Run inference assets and storage tests (both modes, four optimizations)
-        run: timeout --signal=INT --kill-after=30 1200 make test-zig-infer
-
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -390,7 +449,8 @@ jobs:
           retention-days: 7
 
   zig-debug:
-    name: Zig Debug-mode Tests (tighter safety checks)
+    name: Zig Debug-mode and Inference Tests (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -403,6 +463,9 @@ jobs:
 
       - name: Run tests in -ODebug
         run: make test-zig-debug
+
+      - name: Run inference assets and storage tests (both modes, four optimizations)
+        run: timeout --signal=INT --kill-after=30 1200 make test-zig-infer
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -444,9 +507,6 @@ jobs:
       - name: Check EventGroup public bindings
         run: timeout --signal=INT --kill-after=30 660 make test-eventgroup-bindings
 
-      - name: Check shared Event public bindings
-        run: timeout --signal=INT --kill-after=30 1200 make test-freertos-event-bindings
-
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -466,19 +526,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y cmake build-essential \
-            gperf genromfs xxd python3-pip python3-venv qemu-system-arm
+            gperf genromfs xxd python3-pip python3-venv
 
       - name: Run tests
         run: timeout 600 make test-nuttx
-
-      - name: Run constructor startup tests
-        run: timeout 600 make test-nuttx-startup
-
-      - name: Run native SPI retirement tests
-        run: timeout 600 make test-spi-retirement-nuttx
-
-      - name: I2C retirement (nuttx)
-        run: timeout 1200 make test-i2c-retirement-nuttx
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -488,7 +539,7 @@ jobs:
           retention-days: 7
 
   zephyr-sim-tests:
-    name: Zephyr native and ARM Tests
+    name: Zephyr native_sim Tests
     runs-on: ubuntu-latest
     needs: stub-tests
     steps:
@@ -500,7 +551,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cmake build-essential meson ninja-build \
             python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
-            wget xz-utils file qemu-system-arm
+            wget xz-utils file
 
       - name: Compute Zephyr cache hash
         id: zephyr-hash
@@ -520,15 +571,6 @@ jobs:
             ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
             echo "Zephyr workspace restored from cache"
           fi
-
-      - name: Run real Zephyr SPI retirement tests
-        run: make test-spi-retirement-zephyr
-
-      - name: Run native Zephyr I2C boundary tests
-        run: make test-i2c-native-zephyr
-
-      - name: I2C retirement (zephyr)
-        run: timeout 1200 make test-i2c-retirement-zephyr
 
       - name: Run tests
         run: timeout 600 make test-zephyr
@@ -554,11 +596,6 @@ jobs:
           sudo apt-get update && sudo apt-get install -y \
             cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build libclang-dev
 
-      - name: Install Rust for SPI executor stack tests
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: thumbv7em-none-eabihf
-
       - name: Cache ARM toolchain
         uses: actions/cache@v4
         with:
@@ -573,38 +610,6 @@ jobs:
       # budget despite the actual build+test taking ~3 min when warm.
       - name: Run tests
         run: timeout 1200 make test-qemu-freertos
-
-      - name: Run zeroheap tests
-        run: timeout 1200 make test-qemu-freertos-zeroheap
-
-      - name: Check EventGroup deferred interrupt delivery and task access
-        run: timeout --signal=INT --kill-after=30 960 make test-eventgroup-deferred-arm
-
-      - name: Native Event timeout and caller-mode controls
-        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-event-timeouts-arm
-
-      - name: Native shared Event waits and interrupt-mask restoration
-        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-event-waiters-arm
-
-      - name: Native condition-variable caller mode and foreign stacks
-        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-cv-context-arm
-
-      - name: Qualify shipped inference models on Cortex-M7
-        run: timeout --kill-after=20 1500 make test-infer-target
-
-      - name: Run real FreeRTOS SPI retirement tests
-        run: timeout 1200 make test-spi-retirement-freertos
-
-      - name: Run Rust SPI and Embassy callback stack tests
-        run: timeout 1200 make test-rust-async-spi-arm
-      - name: Rust async I2C on Cortex-M7
-        run: timeout 1200 make test-rust-async-i2c-arm
-
-      - name: Run native STM32 I2C count tests
-        run: timeout 1200 make test-i2c-native-arm
-
-      - name: I2C retirement (freertos)
-        run: timeout 1200 make test-i2c-retirement-freertos
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -678,12 +683,6 @@ jobs:
       - name: Run tests
         run: timeout 900 make test-qemu-nuttx
 
-      - name: Run zeroheap tests
-        run: timeout 900 make test-qemu-nuttx-zeroheap
-
-      - name: Run cpuload tests
-        run: timeout 900 make test-qemu-nuttx-cpuload
-
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -729,6 +728,167 @@ jobs:
       - name: Run tests
         run: timeout 600 make test-qemu-zephyr
 
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-zephyr-tests-logs
+          path: output/
+          retention-days: 7
+
+  qemu-freertos-contracts:
+    name: QEMU FreeRTOS Contracts (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build libclang-dev
+
+      - name: Install Rust for SPI executor stack tests
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      - name: Run zeroheap tests
+        run: timeout 1200 make test-qemu-freertos-zeroheap
+
+      - name: Check EventGroup deferred interrupt delivery and task access
+        run: timeout --signal=INT --kill-after=30 960 make test-eventgroup-deferred-arm
+
+      - name: Native Event timeout and caller-mode controls
+        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-event-timeouts-arm
+
+      - name: Native shared Event waits and interrupt-mask restoration
+        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-event-waiters-arm
+
+      - name: Native condition-variable caller mode and foreign stacks
+        run: timeout --signal=INT --kill-after=30 1320 make test-freertos-cv-context-arm
+
+      - name: Qualify shipped inference models on Cortex-M7
+        run: timeout --kill-after=20 1500 make test-infer-target
+
+      - name: Run real FreeRTOS SPI retirement tests
+        run: timeout 1200 make test-spi-retirement-freertos
+
+      - name: Run Rust SPI and Embassy callback stack tests
+        run: timeout 1200 make test-rust-async-spi-arm
+      - name: Rust async I2C on Cortex-M7
+        run: timeout 1200 make test-rust-async-i2c-arm
+
+      - name: Run native STM32 I2C count tests
+        run: timeout 1200 make test-i2c-native-arm
+
+      - name: I2C retirement (freertos)
+        run: timeout 1200 make test-i2c-retirement-freertos
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-freertos-contracts-logs
+          path: output/
+          retention-days: 7
+
+  nuttx-contracts:
+    name: NuttX Startup, Retirement and QEMU Variants (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
+            gperf genromfs xxd python3-pip python3-venv
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      - name: Run constructor startup tests
+        run: timeout 600 make test-nuttx-startup
+
+      - name: Run native SPI retirement tests
+        run: timeout 600 make test-spi-retirement-nuttx
+
+      - name: I2C retirement (nuttx)
+        run: timeout 1200 make test-i2c-retirement-nuttx
+
+      - name: Run zeroheap tests
+        run: timeout 900 make test-qemu-nuttx-zeroheap
+
+      - name: Run cpuload tests
+        run: timeout 900 make test-qemu-nuttx-cpuload
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: nuttx-contracts-logs
+          path: output/
+          retention-days: 7
+
+  zephyr-contracts:
+    name: Zephyr Retirement, I2C and QEMU Variants (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential meson ninja-build qemu-system-arm \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          HASH=$(python3 scripts/manifest_query.py --hash rtos.zephyr.version)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-qemu-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Run real Zephyr SPI retirement tests
+        run: make test-spi-retirement-zephyr
+
+      - name: Run native Zephyr I2C boundary tests
+        run: make test-i2c-native-zephyr
+
+      - name: I2C retirement (zephyr)
+        run: timeout 1200 make test-i2c-retirement-zephyr
+
       - name: Run zeroheap tests
         run: timeout 600 make test-qemu-zephyr-zeroheap
 
@@ -738,6 +898,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: qemu-zephyr-tests-logs
+          name: zephyr-contracts-logs
           path: output/
           retention-days: 7

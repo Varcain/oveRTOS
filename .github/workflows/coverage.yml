@@ -1,10 +1,10 @@
 name: Coverage
 
+# Nightly on the default branch, or on demand for any branch.
 on:
-  push:
-    branches: [main, devel]
-  pull_request:
-    branches: [main, devel]
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -338,12 +338,12 @@ jobs:
           echo "pct=${PCT}" >> "$GITHUB_OUTPUT"
           echo "Line coverage: ${PCT}%"
 
-      # Badge updates only on main push — PR runs leave the headline number alone.
+      # Badge updates only from main — runs dispatched on other branches
+      # leave the headline number alone.
       # Skipped gracefully if any upstream backend failed (so a regressed job
       # doesn't freeze a wrong, partial number onto the badge).
       - name: Update coverage badge (main only)
         if: >
-          github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
           !contains(needs.*.result, 'failure') &&
           !contains(needs.*.result, 'cancelled')

@@ -1,11 +1,12 @@
 name: Build All Defconfigs
 
+# Nightly on the default branch, or on demand for any branch. Pushes
+# and pull requests still build firmware through the QEMU smoke tests
+# and the substrate audits.
 on:
+  schedule:
+    - cron: '53 2 * * *'
   workflow_dispatch:
-  push:
-    branches: [main, devel]
-  pull_request:
-    branches: [main, devel]
 
 permissions:
   contents: read
