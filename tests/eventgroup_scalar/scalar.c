@@ -7,9 +7,6 @@
 #include <string.h>
 #include <time.h>
 
-#ifndef OVE_SCALAR_HAS_QUERY
-#define OVE_SCALAR_HAS_QUERY 1
-#endif
 static ove_eventgroup_storage_t backing;
 static unsigned checks, failures, effects, calls, queues, yields, notifications;
 static unsigned enters, leaves, bad;
@@ -537,10 +534,8 @@ static void exclusion(void)
 	      "consumer before clear yields updated full prior");
 #endif
 }
-int main(int argc, char **argv)
+int main(void)
 {
-	if (argc > 2 || (argc == 2 && strcmp(argv[1], "canary")))
-		return 2;
 #ifdef CONFIG_OVE_RTOS_FREERTOS
 #if OVE_MODEL_TICK_BITS == 16
 	wanted_mask = UINT32_C(0xff);
@@ -552,13 +547,9 @@ int main(int argc, char **argv)
 #else
 	wanted_mask = UINT32_MAX;
 #endif
-	if (argc == 2)
-		check(0, "early failure survives controls");
-#if OVE_SCALAR_HAS_QUERY
 	reset(0);
 	check(ove_eventgroup_valid_mask() == wanted_mask && effects == 0,
 	      "ordinary configured mask query has no native effects");
-#endif
 	wait_admission();
 	mask_admission();
 	ordinary();

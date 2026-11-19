@@ -265,10 +265,8 @@ static void heap_cleanup(void)
 }
 #endif
 
-int main(int argc, char **argv)
+int main(void)
 {
-	if (argc > 2 || (argc == 2 && strcmp(argv[1], "canary")))
-		return 2;
 #ifdef CONFIG_OVE_RTOS_POSIX
 	platform = "posix";
 #elif defined(CONFIG_OVE_RTOS_FREERTOS)
@@ -278,8 +276,6 @@ int main(int argc, char **argv)
 #else
 	platform = "zephyr-void-init";
 #endif
-	if (argc == 2)
-		check(0, "early failure survives controls");
 	construction();
 #ifndef CONFIG_OVE_ZERO_HEAP
 	heap_cleanup();

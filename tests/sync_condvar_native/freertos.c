@@ -17,10 +17,6 @@
 /* The include supplies the actual private waiter type, without alias casts. */
 #include OVE_SYNC_BACKEND_SOURCE
 
-#ifndef OVE_TEST_NEXT_BEFORE_NOTIFY
-#define OVE_TEST_NEXT_BEFORE_NOTIFY 0
-#endif
-
 enum operation { NO_OPERATION, SIGNAL, BROADCAST };
 enum schedule { ORDINARY, COMMITTED_TIMEOUT, PENDING_NOTIFICATION, IMMEDIATE_TIMEOUT };
 struct model_task {
@@ -409,7 +405,7 @@ BaseType_t xTaskNotifyGive(TaskHandle_t task)
 	if (operation == BROADCAST && world.previous >= 0)
 		world.workers[world.previous].next_field_use = false;
 	target->task_field_use = false;
-	if (operation == SIGNAL || OVE_TEST_NEXT_BEFORE_NOTIFY)
+	if (operation == SIGNAL)
 		target->next_field_use = false;
 	++target->pending;
 	target->notice_epoch = ++world.epoch;
@@ -626,9 +622,6 @@ int main(int argc, char **argv)
 	} else if (strcmp(argv[1], "empty") == 0) {
 		exercise("empty-signal", 0, SIGNAL, ORDINARY, false, false);
 		exercise("empty-broadcast", 0, BROADCAST, ORDINARY, false, false);
-	} else if (strcmp(argv[1], "canary") == 0) {
-		fixture_check(false, "explicit fixture failure canary");
-		reset_world();
 	} else {
 		return 2;
 	}

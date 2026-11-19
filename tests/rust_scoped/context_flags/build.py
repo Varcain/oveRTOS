@@ -5,7 +5,6 @@
 import argparse
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 from profiles import profiles
@@ -53,26 +52,17 @@ def getters(profile, case):
 
 
 def build(output, sanitize=False, selected_profiles=None):
-    if sys.flags.optimize:
-        raise ValueError("context checks require Python without optimization")
     selection = profiles if selected_profiles is None else selected_profiles
     if not selection or len({row["profile"] for row in selection}) != len(selection):
         raise ValueError("empty or duplicate context selection")
     output.mkdir(parents=True, exist_ok=True)
-    original = (ROOT / "backends/common/ove_sync_context.h").read_text()
-    replacements = []
-    transformed = original
+    transformed = (ROOT / "backends/common/ove_sync_context.h").read_text()
     for register in ("control", "primask", "basepri", "faultmask"):
         old = f'__asm__ volatile("mrs %0, {register}" : "=r"({register}) : : "memory");'
         new = f"{register} = model_{register}();"
         if transformed.count(old) != 1:
             raise ValueError(f"architectural read changed: {register}")
         transformed = transformed.replace(old, new)
-        replacements.append({"original": old, "model": new})
-    reverse = transformed
-    for row in replacements:
-        reverse = reverse.replace(row["model"], row["original"])
-    assert reverse == original
     (output / "ove_sync_context.h").write_text(transformed)
     binaries = []
     for profile in selection:

@@ -60,7 +60,7 @@ foreach(profile posix nuttx zephyr freertos16 freertos32 freertos64)
     add_executable(scalar_${profile} scalar.c)
     add_test(NAME scalar_${profile} COMMAND scalar_${profile})
     target_compile_definitions(scalar_${profile} PRIVATE _GNU_SOURCE
-        OVE_SCALAR_PROVIDER="${source}" OVE_SCALAR_HAS_QUERY=1)
+        OVE_SCALAR_PROVIDER="${source}")
     if(platform STREQUAL "zephyr")
         target_compile_definitions(scalar_${profile} PRIVATE OVE_MODEL_EVENT_TRACE=1)
     endif()

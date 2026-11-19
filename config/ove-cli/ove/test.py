@@ -180,7 +180,7 @@ def _cmake_build(src_dir, build_dir, extra_args=None):
 
 
 def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, True), options=()):
-    """Configure, build and CTest tests/<name> once per zero-heap setting."""
+    """Configure, build and CTest tests/<name> once per zero-heap setting (None: no setting)."""
     result = TestResults(suite=label)
     env = dict(os.environ)
     if sanitize:
@@ -191,7 +191,7 @@ def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, Tru
                              ("zero" if zero else "heap") + ("-san" if sanitize else ""))
         commands = (
             ["cmake", "-S", os.path.join(ove_dir, "tests", name), "-B", build,
-             "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
+             *([] if zero is None else ["-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF")]),
              "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"), *options],
             ["cmake", "--build", build, "-j", str(nproc())],
             ["ctest", "--test-dir", build, "--output-on-failure", "--no-tests=error", "--timeout", "60",
@@ -1056,7 +1056,7 @@ def test_rust_spinmutex_sanitize(ove_dir, output_dir):
 
 def _test_freertos_cv_context(ove_dir, output_dir, sanitize=False):
     return _ctest_suite(ove_dir, output_dir, "freertos_condvar_context",
-                        "freertos-cv-context" + ("-sanitize" if sanitize else ""), sanitize, configs=(False,))
+                        "freertos-cv-context" + ("-sanitize" if sanitize else ""), sanitize, configs=(None,))
 
 
 def test_freertos_cv_context(ove_dir, output_dir):
@@ -1146,7 +1146,7 @@ def _test_freertos_event_waiters(ove_dir, output_dir, sanitize=False):
     """Check shared binary Event waits and private registration lifetimes."""
     return _ctest_suite(ove_dir, output_dir, "freertos_event_waiters",
                         "freertos-event-waiters-sanitize" if sanitize else "freertos-event-waiters",
-                        sanitize, configs=(False,))
+                        sanitize, configs=(None,))
 
 
 def test_freertos_event_waiters(ove_dir, output_dir):
@@ -1161,7 +1161,7 @@ def _test_freertos_event_timeouts(ove_dir, output_dir, sanitize=False):
     """Check complete finite Event budgets, latch ordering and native epochs."""
     return _ctest_suite(ove_dir, output_dir, "freertos_event_timeouts",
                         "freertos-event-timeouts-sanitize" if sanitize else "freertos-event-timeouts",
-                        sanitize, configs=(False,))
+                        sanitize, configs=(None,))
 
 
 def test_freertos_event_timeouts(ove_dir, output_dir):
@@ -1206,7 +1206,7 @@ def _test_freertos_timeouts(ove_dir, output_dir, sanitize=False):
     lwip, _, _ = hashed_dir(os.path.join(ove_dir, "dl"), "lwip", tag, None)
     if not git_clone(get_component(manifest, "libraries", "lwip", "url"), tag, lwip, "lwIP"):
         return TestResults(suite=label, failed=1)
-    return _ctest_suite(ove_dir, output_dir, "freertos_timeouts", label, sanitize, configs=(False,),
+    return _ctest_suite(ove_dir, output_dir, "freertos_timeouts", label, sanitize, configs=(None,),
                         options=("-DOVE_LWIP_DIR=" + lwip,))
 
 
@@ -1222,7 +1222,7 @@ def _test_nuttx_timeouts(ove_dir, output_dir, sanitize=False):
     """Check finite budgets, deadline accounting and timer range admission."""
     return _ctest_suite(ove_dir, output_dir, "nuttx_timeouts",
                         "nuttx-timeouts-sanitize" if sanitize else "nuttx-timeouts", sanitize,
-                        configs=(False,))
+                        configs=(None,))
 
 
 def test_nuttx_timeouts(ove_dir, output_dir):
@@ -1237,7 +1237,7 @@ def _test_eventgroup_deferred(ove_dir, output_dir, sanitize=False):
     """Check deferred command ownership and post-publication notification."""
     return _ctest_suite(ove_dir, output_dir, "eventgroup_deferred",
                         "eventgroup-deferred-sanitize" if sanitize else "eventgroup-deferred",
-                        sanitize, configs=(False,))
+                        sanitize, configs=(None,))
 
 
 def test_eventgroup_deferred(ove_dir, output_dir):
