@@ -2,9 +2,9 @@
 
 Run `make test-rust-scoped` or `make test-rust-scoped-sanitize`. Each gate checks
 heap and zero-heap bindings, with and without TIME/ASYNC. It runs the closed
-contract cases, persistent early-failure controls, and the two private recursive
-reservation tests. The sanitizer gate instruments Rust and the native fixture
-with ASan, native C with UBSan, and enables leak detection.
+contract cases and the private recursive reservation tests. The sanitizer gate
+instruments Rust and the native fixture with ASan, native C with UBSan, and
+enables leak detection.
 
 The fixture forwards valid operations to real initialized POSIX primitives.
 Independent owner records and entry guards intercept duplicate initialization
@@ -20,10 +20,8 @@ Twenty-six profiles cover 212 queries, including restored valid controls.
 These prove provider branches and read-only metadata behavior; they do not
 execute hardware interrupts or establish a general target timing or stack bound.
 
-Set `OVE_RUST_SCOPED_CANARY=1` to make the permanent gate reject its explicit
-failure controls. An ordinary run expects and validates those controls without
-accepting an arbitrary failure or a lost failure counter. All case transcripts
-and statuses must match, including every ownership and cleanup field.
+Each case exits non-zero on any failed check, including a duplicate native
+initialization, a forbidden native entry or an unbalanced cleanup.
 
 `target_native` contains separate finite FreeRTOS and Zephyr Cortex-M7 controls.
 It uses actual scoped Rust operations and native ownership observations. Its

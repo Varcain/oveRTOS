@@ -23,11 +23,6 @@ fn main() {
             println!("cargo:rustc-cfg={cfg}");
         }
     }
-    println!("cargo:rustc-check-cfg=cfg(scoped_parent)");
-    if env::var_os("SCOPED_TEST_PARENT").is_some() {
-        println!("cargo:rustc-cfg=scoped_parent");
-    }
-    println!("cargo:rerun-if-env-changed=SCOPED_TEST_PARENT");
     if env::var_os("SCOPED_TEST_SANITIZE").is_some() {
         println!("cargo:rustc-link-lib=dylib=ubsan");
     }

@@ -112,59 +112,6 @@ impl Drop for WorkerExit {
     }
 }
 
-#[cfg(scoped_parent)]
-trait ParentMutexScopes<T: ?Sized> {
-    fn with_lock<R>(
-        &self,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R>;
-    fn try_with_lock<R>(
-        &self,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R>;
-    fn try_with_lock_for<R>(
-        &self,
-        d: Duration,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R>;
-    #[cfg(has_time)]
-    fn try_with_lock_until<R>(
-        &self,
-        d: ove::time::Instant,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R>;
-}
-#[cfg(scoped_parent)]
-impl<T: ?Sized> ParentMutexScopes<T> for Mutex<T> {
-    fn with_lock<R>(
-        &self,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R> {
-        f(self.lock()?)
-    }
-    fn try_with_lock<R>(
-        &self,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R> {
-        f(self.try_lock()?)
-    }
-    fn try_with_lock_for<R>(
-        &self,
-        d: Duration,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R> {
-        f(self.try_lock_for(d)?)
-    }
-    #[cfg(has_time)]
-    fn try_with_lock_until<R>(
-        &self,
-        d: ove::time::Instant,
-        f: impl for<'s> FnOnce(ove::MutexGuard<'s, T>) -> ove::Result<R>,
-    ) -> ove::Result<R> {
-        f(self.try_lock_until(d)?)
-    }
-}
-
 trait Ops: 'static {
     type Storage: Sync;
     type Owner: Send + Sync;
@@ -491,51 +438,6 @@ fn macros<O: Ops>() {
     );
 }
 
-#[cfg(scoped_parent)]
-trait ParentRecursiveScopes {
-    fn with_lock<T>(&self, f: impl FnOnce() -> ove::Result<T>) -> ove::Result<T>;
-    fn try_with_lock<T>(&self, f: impl FnOnce() -> ove::Result<T>) -> ove::Result<T>;
-    fn try_with_lock_for<T>(
-        &self,
-        d: Duration,
-        f: impl FnOnce() -> ove::Result<T>,
-    ) -> ove::Result<T>;
-    #[cfg(has_time)]
-    fn try_with_lock_until<T>(
-        &self,
-        d: ove::time::Instant,
-        f: impl FnOnce() -> ove::Result<T>,
-    ) -> ove::Result<T>;
-}
-#[cfg(scoped_parent)]
-impl ParentRecursiveScopes for RecursiveMutex {
-    fn with_lock<T>(&self, f: impl FnOnce() -> ove::Result<T>) -> ove::Result<T> {
-        let _guard = self.lock()?;
-        f()
-    }
-    fn try_with_lock<T>(&self, f: impl FnOnce() -> ove::Result<T>) -> ove::Result<T> {
-        let _guard = self.try_lock()?;
-        f()
-    }
-    fn try_with_lock_for<T>(
-        &self,
-        d: Duration,
-        f: impl FnOnce() -> ove::Result<T>,
-    ) -> ove::Result<T> {
-        let _guard = self.try_lock_for(d)?;
-        f()
-    }
-    #[cfg(has_time)]
-    fn try_with_lock_until<T>(
-        &self,
-        d: ove::time::Instant,
-        f: impl FnOnce() -> ove::Result<T>,
-    ) -> ove::Result<T> {
-        let _guard = self.try_lock_until(d)?;
-        f()
-    }
-}
-
 fn mutex_scope(case: &str) {
     let Some(mutex) = required(M::create(M::storage(2))) else {
         return;
@@ -666,17 +568,8 @@ fn recursive_scope(case: &str) {
     };
     match case {
         "forget" => {
-            // The old API exposes a release owner. The new no-data callback
-            // never exposes its private lease; no shim cleanup is attributed to it.
-            #[cfg(scoped_parent)]
-            {
-                if let Ok(guard) = mutex.lock() {
-                    std::mem::forget(guard);
-                } else {
-                    check(false, "ordinary recursive acquisition succeeds");
-                }
-            }
-            #[cfg(not(scoped_parent))]
+            // The no-data callback never exposes its private lease; no shim
+            // cleanup is attributed to it.
             check(
                 mutex.with_lock(|| Ok(())).is_ok(),
                 "recursive callback completes",
@@ -1310,7 +1203,6 @@ fn cv_deadline_context(predicate: bool) {
 
 const LIFECYCLE: &[&str] = &[
     "controls",
-    "canary",
     "live",
     "init_overlap",
     "drop_overlap",
@@ -1326,7 +1218,7 @@ const LIFECYCLE: &[&str] = &[
 ];
 fn lifecycle<O: Ops>(case: &str) {
     match case {
-        "controls" | "canary" => (),
+        "controls" => (),
         "live" => duplicate::<O>(),
         "init_overlap" => overlap::<O>(INIT_STAGE),
         "drop_overlap" => overlap::<O>(DEINIT_STAGE),
@@ -1342,10 +1234,7 @@ fn lifecycle<O: Ops>(case: &str) {
         _ => unreachable!(),
     }
 }
-fn run_family<O: Ops>(case: &str, action: impl FnOnce()) {
-    if case == "canary" {
-        check(false, "explicit early failure canary");
-    }
+fn run_family<O: Ops>(action: impl FnOnce()) {
     controls::<O>();
     action();
     normal_context();
@@ -1365,17 +1254,17 @@ fn main() {
         .strip_prefix("mutex_")
         .filter(|case| LIFECYCLE.contains(case))
     {
-        run_family::<M>(case, || lifecycle::<M>(case));
+        run_family::<M>(|| lifecycle::<M>(case));
     } else if let Some(case) = name
         .strip_prefix("recursive_")
         .filter(|case| LIFECYCLE.contains(case))
     {
-        run_family::<R>(case, || lifecycle::<R>(case));
+        run_family::<R>(|| lifecycle::<R>(case));
     } else if let Some(case) = name
         .strip_prefix("condvar_")
         .filter(|case| LIFECYCLE.contains(case))
     {
-        run_family::<C>(case, || lifecycle::<C>(case));
+        run_family::<C>(|| lifecycle::<C>(case));
     } else if let Some(case) = name.strip_prefix("scope_mutex_").filter(|case| {
         [
             "forget",
@@ -1389,7 +1278,7 @@ fn main() {
         ]
         .contains(case)
     }) {
-        run_family::<M>(case, || mutex_scope(case));
+        run_family::<M>(|| mutex_scope(case));
     } else if let Some(case) = name.strip_prefix("scope_recursive_").filter(|case| {
         [
             "forget",
@@ -1402,41 +1291,29 @@ fn main() {
         ]
         .contains(case)
     }) {
-        run_family::<R>(case, || recursive_scope(case));
+        run_family::<R>(|| recursive_scope(case));
     } else {
         match name.as_str() {
-            "native_flags" => run_family::<M>("native_flags", native_context_flags),
-            "actual_masked_release" => {
-                run_family::<M>("actual_masked_release", actual_masked_release)
+            "native_flags" => run_family::<M>(native_context_flags),
+            "actual_masked_release" => run_family::<M>(actual_masked_release),
+            "genuine_contender" => run_family::<M>(genuine_contender),
+            "cv_second_owner" => run_family::<C>(cv_second_owner),
+            "cv_real_wake" => run_family::<C>(cv_real_wake),
+            "value_busy" => run_family::<M>(|| value_lifecycle("busy")),
+            "value_error" => run_family::<M>(|| value_lifecycle("error")),
+            "value_retained_drop" => run_family::<M>(|| value_lifecycle("retained_drop")),
+            "value_into_inner" => run_family::<M>(|| value_lifecycle("into_inner")),
+            "value_retained_into_inner" => {
+                run_family::<M>(|| value_lifecycle("retained_into_inner"))
             }
-            "genuine_contender" => run_family::<M>("genuine_contender", genuine_contender),
-            "cv_second_owner" => run_family::<C>("second_owner", cv_second_owner),
-            "cv_real_wake" => run_family::<C>("real_wake", cv_real_wake),
-            "value_busy" => run_family::<M>("value_busy", || value_lifecycle("busy")),
-            "value_error" => run_family::<M>("value_error", || value_lifecycle("error")),
-            "value_retained_drop" => {
-                run_family::<M>("value_retained_drop", || value_lifecycle("retained_drop"))
-            }
-            "value_into_inner" => {
-                run_family::<M>("value_into_inner", || value_lifecycle("into_inner"))
-            }
-            "value_retained_into_inner" => run_family::<M>("value_retained_into_inner", || {
-                value_lifecycle("retained_into_inner")
-            }),
-            "cv_deadline_context" => {
-                run_family::<C>("cv_deadline_context", || cv_deadline_context(false))
-            }
-            "cv_predicate_context" => {
-                run_family::<C>("cv_predicate_context", || cv_deadline_context(true))
-            }
-            "cv_held_error" => run_family::<C>("held_error", || cv_error(1, false, false)),
-            "cv_unheld_error" => run_family::<C>("unheld_error", || cv_error(2, false, false)),
-            "cv_propagated_held_error" => {
-                run_family::<C>("propagated_held_error", || cv_error(1, false, true))
-            }
-            "cv_blocked_wait" => run_family::<C>("blocked_wait", || cv_error(1, true, false)),
-            "cv_timeout_forget" => run_family::<C>("timeout_forget", cv_timeout),
-            "cv_signal_context" => run_family::<C>("signal_context", cv_signal_context),
+            "cv_deadline_context" => run_family::<C>(|| cv_deadline_context(false)),
+            "cv_predicate_context" => run_family::<C>(|| cv_deadline_context(true)),
+            "cv_held_error" => run_family::<C>(|| cv_error(1, false, false)),
+            "cv_unheld_error" => run_family::<C>(|| cv_error(2, false, false)),
+            "cv_propagated_held_error" => run_family::<C>(|| cv_error(1, false, true)),
+            "cv_blocked_wait" => run_family::<C>(|| cv_error(1, true, false)),
+            "cv_timeout_forget" => run_family::<C>(cv_timeout),
+            "cv_signal_context" => run_family::<C>(cv_signal_context),
             _ => std::process::exit(2),
         }
     }
@@ -1451,6 +1328,10 @@ fn main() {
             || name == "value_retained_into_inner",
     );
     check(total(FORBIDDEN) == 0, "no forbidden native entry occurred");
+    check(
+        total(DUPLICATE) == 0,
+        "no duplicate native initialization occurred",
+    );
     check(
         total(RETIRE) == 0,
         "no independent acquisition retirement was needed",

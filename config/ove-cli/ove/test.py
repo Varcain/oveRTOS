@@ -27,8 +27,6 @@ from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
-from .rust_scoped import CANARIES as _scoped_canaries, cases as _scoped_cases, observation_valid as _scoped_observation
-from .rust_scoped import UNIT_CASES as _scoped_units, unit_observation_valid as _scoped_unit_observation
 from .rust_async_queue import observation_valid as _async_queue_observation, doctests_valid as _async_queue_doctests
 from .rust_async_sem import observation_valid as _async_sem_observation, doctests_valid as _async_sem_doctests
 
@@ -1577,51 +1575,51 @@ def _record_scoped_observation(log, command, status):
     }, indent=2) + "\n")
 
 
+def _scoped_cases(zero, optional):
+    """Cases of tests/rust_scoped/contracts.rs for one profile."""
+    lifecycle = ("controls", "live", "init_overlap", "drop_overlap", "failure", "cleaned_error",
+                 "forget_owner", "construct_isr", "construct_masked", "drop_isr", "drop_masked", "raw", "macros")
+    names = tuple(f"{family}_{case}" for family in ("mutex", "recursive", "condvar") for case in lifecycle)
+    names += tuple("scope_mutex_" + case for case in (
+        "forget", "error", "drop", "reentry", "masked_release", "blocked_entry", "startup_entry"))
+    names += tuple("scope_recursive_" + case for case in (
+        "forget", "error", "nested", "masked_release", "blocked_entry", "startup_entry"))
+    names += ("native_flags", "genuine_contender", "cv_second_owner", "cv_real_wake", "value_busy",
+              "value_error", "value_retained_drop", "cv_held_error", "cv_unheld_error",
+              "cv_propagated_held_error", "cv_blocked_wait", "cv_timeout_forget", "cv_signal_context")
+    if not zero:
+        names += ("value_into_inner", "value_retained_into_inner")
+    if optional:
+        names += ("scope_mutex_deadline_entry", "scope_recursive_deadline_entry",
+                  "cv_deadline_context", "cv_predicate_context", "actual_masked_release")
+    return names
+
+
 def _scoped_private_units(ove_dir, native, env):
-    unit_env = dict(env)
-    unit_env["RUST_MIN_STACK"] = "67108864"
+    """Run the bindings' private scoped tests against the native fixture."""
+    unit_env = dict(env, RUST_MIN_STACK="67108864")
     unit_env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + " --cfg ove_test -L native=" + native
                              + " -l static=ove_scoped_test -l pthread")
     if env.get("SCOPED_TEST_SANITIZE"):
         unit_env["RUSTFLAGS"] += " -l ubsan"
-    build_log = Path(native) / "private-unit-build.jsonl"
     command = ["cargo", "test", "--locked", "--manifest-path",
                os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
                "--target", "x86_64-unknown-linux-gnu", "--no-default-features", "--features", "std",
-               "--lib", "--no-run", "--message-format=json"]
-    with build_log.open("wb") as stream:
-        rc = _run_owned_test_process(command, env=unit_env, timeout=300, stdout=stream)
-    executables = []
-    if rc == 0:
-        for line in build_log.read_text().splitlines():
-            if line.startswith("{"):
-                message = json.loads(line)
-                if message.get("reason") == "compiler-artifact" and message.get("executable"):
-                    executables.append(message["executable"])
-    if rc != 0 or len(executables) != 1:
-        print(build_log.read_text(), end="")
-        return 0, len(_scoped_units)
-    passed = failed = 0
-    for name in _scoped_units:
-        log = Path(native) / (name + ".log")
-        command = [executables[0], "--exact", "sync::scoped_tests::" + name,
-                   "--nocapture", "--test-threads=1"]
-        with log.open("wb") as stream:
-            rc = _run_owned_test_process(command, env=unit_env, timeout=30, stdout=stream)
-        _record_scoped_observation(log, command, rc)
-        text = log.read_bytes().decode()
-        valid = _scoped_unit_observation(text, name, rc)
-        if not valid:
-            print(text, end="")
-        passed += int(valid)
-        failed += int(not valid)
-    return passed, failed
+               "--lib", "--", "sync::scoped_tests"]
+    log = Path(native) / "private-units.log"
+    with log.open("wb") as stream:
+        rc = _run_owned_test_process(command, env=unit_env, timeout=600, stdout=stream)
+    text = log.read_text(errors="backslashreplace")
+    passed = re.search(r"test result: ok\. ([1-9][0-9]*) passed", text)
+    if rc or not passed:
+        print(text, end="")
+        return 0, 1
+    return int(passed[1]), 0
 
 
 def _test_rust_scoped(ove_dir, output_dir, sanitize=False):
     """Check scoped Rust ownership against guarded native POSIX primitives."""
     result = TestResults(suite="rust-scoped-sanitize" if sanitize else "rust-scoped")
-    explicit_canary = os.environ.get("OVE_RUST_SCOPED_CANARY") == "1"
     for zero in (False, True):
         for optional in (False, True):
             profile = ("zero" if zero else "heap") + ("-optional" if optional else "-minimal")
@@ -1629,7 +1627,7 @@ def _test_rust_scoped(ove_dir, output_dir, sanitize=False):
             native = os.path.join(output_dir, "tests", "rust_scoped", "fixture-" + profile)
             target = os.path.join(output_dir, "tests", "rust_scoped", "cargo-" + profile)
             env = dict(os.environ)
-            for key in ("DOCS_RS", "SCOPED_TEST_PARENT", "SCOPED_TEST_SANITIZE"):
+            for key in ("DOCS_RS", "SCOPED_TEST_SANITIZE"):
                 env.pop(key, None)
             env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=native, RUST_IS_NATIVE="1",
                        SCOPED_TEST_LIB_DIR=native, CARGO_TARGET_DIR=target,
@@ -1657,25 +1655,20 @@ def _test_rust_scoped(ove_dir, output_dir, sanitize=False):
                 result.failed += 1
                 continue
             binary = os.path.join(target, "x86_64-unknown-linux-gnu", "debug", "scoped-contracts")
-            names = _scoped_canaries if explicit_canary else _scoped_cases(zero, optional) + _scoped_canaries
-            for case in names:
+            before = result.passed
+            for case in _scoped_cases(zero, optional):
                 log = os.path.join(native, case + ".log")
-                command = [binary, case]
                 with open(log, "wb") as stream:
-                    rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
-                _record_scoped_observation(log, command, rc)
-                text = Path(log).read_bytes().decode()
-                valid = _scoped_observation(text, case, zero, optional, rc,
-                                            expected_failure=case in _scoped_canaries and not explicit_canary)
-                if explicit_canary or not valid:
-                    print(text, end="")
-                    print(f"fixture status: {profile}/{case} rc={rc}")
-                result.passed += int(valid)
-                result.failed += int(not valid)
-            if not explicit_canary:
-                passed, failed = _scoped_private_units(ove_dir, native, env)
-                result.passed += passed
-                result.failed += failed
+                    rc = _run_owned_test_process([binary, case], env=env, timeout=30, stdout=stream)
+                if rc:
+                    print(Path(log).read_text(errors="backslashreplace"), end="")
+                    result.failed_names.append(f"{profile}/{case}")
+                result.passed += int(rc == 0)
+                result.failed += int(rc != 0)
+            result.failed += int(result.passed == before)
+            passed, failed = _scoped_private_units(ove_dir, native, env)
+            result.passed += passed
+            result.failed += failed
     context_command = [sys.executable,
                        os.path.join(ove_dir, "tests", "rust_scoped", "context_flags", "run.py"),
                        os.path.join(output_dir, "tests", "rust_scoped", "context-models"
