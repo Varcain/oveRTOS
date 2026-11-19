@@ -2,10 +2,11 @@
 
 `make test-freertos-irq-masks` checks the actual C adapter against initialized
 scalar register and native-nesting models. Its sanitizer variant adds ASan,
-nonrecovering UBSan and unrestricted LSan. The 504 observations cover paired
+nonrecovering UBSan and unrestricted LSan. The 296 observations cover paired
 normal/failure controls, ordinary and MPU V1 configurations, both allocation
 configurations, admitted task/external/system callers, exact mask restoration,
-transition envelopes and early unsupported-context/configuration rejection.
+transition envelopes and early unsupported-context rejection; unsupported
+configurations fail to compile.
 
 `make test-freertos-irq-bindings` checks the actual Rust crate's `SpinMutex::with`
 and global `critical_section::with` entry paths. The 336 observations use fresh

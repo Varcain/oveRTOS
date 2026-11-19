@@ -142,9 +142,11 @@ order in the same execution context. C++ and Zig use the same C contract; Rust's
 
 On supported single-core FreeRTOS Cortex-M ports, this excludes kernel-aware
 participants at the configured syscall threshold. Higher-urgency IRQs remain
-runnable and cannot participate in that protection. Unsupported FreeRTOS entry
-stops before returning; restricted MPU V1 tasks additionally need a serviceable
-priority-zero supervisor call with PRIMASK/FAULTMASK clear.
+runnable and cannot participate in that protection. Unsupported FreeRTOS ports
+and configurations fail to compile, unsupported entry stops before returning,
+and the priority grouping is checked once, at the first lock; restricted MPU V1
+tasks additionally need a serviceable priority-zero supervisor call with
+PRIMASK/FAULTMASK clear.
 
 The wrapper preserves its own transitions and restores captured masks on unlock.
 A native call inside the body can still lower stronger incoming BASEPRI or clear

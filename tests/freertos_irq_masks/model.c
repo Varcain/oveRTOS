@@ -10,8 +10,6 @@
 struct model_masks {
 	uint32_t p, b, f;
 };
-unsigned model_bits = 4, model_device_bits = 4;
-uint64_t model_threshold = 128;
 static struct model_masks registers, required, target;
 static unsigned exception, priority[256], group, control = 4, depth;
 static unsigned checks, failures, cases, rejected, delivered, enters, exits;
@@ -176,7 +174,7 @@ static void native_raise(void)
 	registers.p = 1;
 	observe();
 #endif
-	registers.b = (uint32_t)model_threshold;
+	registers.b = configMAX_SYSCALL_INTERRUPT_PRIORITY;
 	observe();
 #if OVE_MODEL_ERRATUM
 	registers.p = 0;
@@ -272,8 +270,6 @@ static void initialize(struct model_masks incoming, unsigned active, bool user, 
 	priority[14] = priority[15] = 240;
 	if (active >= 16 && active < 256)
 		priority[active] = 144;
-	model_bits = model_device_bits = 4;
-	model_threshold = 128;
 	enters = exits = writes = delivered = rejected = 0;
 	bad_access = weakened = bad_write = raises = lowers = bad_origin = isr_depth = 0;
 	expect_reject = exiting = restored = false;
@@ -351,33 +347,25 @@ static void body_controls(void)
 }
 static void metadata_controls(void)
 {
-	for (unsigned bits = 1; bits <= 8; ++bits) {
-		unsigned maximum = bits == 8 ? 0 : 7 - bits;
-		for (unsigned grouping = 0; grouping <= maximum; ++grouping)
-			for (unsigned role = 0; role < 4; ++role) {
-				++cases;
-				initialize((struct model_masks){0, 0, 0},
-					   role == 0   ? 0
-					   : role == 1 ? 17
-					   : role == 2 ? 14
-						       : 15,
-					   false, 0);
-				model_bits = model_device_bits = bits;
-				model_threshold = bits == 8 ? 2 : 1u << (8 - bits);
-				group = grouping;
-				if (exception)
-					priority[exception] = (unsigned)model_threshold;
-				ove_irq_key_t key = ove_irq_lock();
-				check(registers.b == model_threshold && !registers.p &&
-					      !registers.f,
-				      "valid metadata and threshold-equal handlers acquire");
-				release(key, (struct model_masks){0, 0, 0});
-				check(equal(registers, (struct model_masks){0, 0, 0}) &&
-					      !bad_access && !bad_origin && !bad_write && !weakened,
-				      "metadata boundary restores masks without forbidden access");
-				check(depth == 0 && isr_depth == 0,
-				      "metadata control retires native ownership");
-			}
+	for (unsigned role = 0; role < 4; ++role) {
+		++cases;
+		initialize((struct model_masks){0, 0, 0},
+			   role == 0   ? 0
+			   : role == 1 ? 17
+			   : role == 2 ? 14
+				       : 15,
+			   false, 0);
+		if (exception)
+			priority[exception] = configMAX_SYSCALL_INTERRUPT_PRIORITY;
+		ove_irq_key_t key = ove_irq_lock();
+		check(registers.b == configMAX_SYSCALL_INTERRUPT_PRIORITY && !registers.p &&
+			      !registers.f,
+		      "threshold-equal handlers acquire");
+		release(key, (struct model_masks){0, 0, 0});
+		check(equal(registers, (struct model_masks){0, 0, 0}) && !bad_access &&
+			      !bad_origin && !bad_write && !weakened,
+		      "metadata boundary restores masks without forbidden access");
+		check(depth == 0 && isr_depth == 0, "metadata control retires native ownership");
 	}
 }
 static void reject_case(const char *name)
@@ -412,28 +400,10 @@ static void reject_case(const char *name)
 		exception = 511;
 	else if (!strcmp(name, "group"))
 		group = 4;
-	else if (!strcmp(name, "bits-low"))
-		model_bits = model_device_bits = 0;
-	else if (!strcmp(name, "bits-high"))
-		model_bits = model_device_bits = 9;
-	else if (!strcmp(name, "bits-mismatch"))
-		model_device_bits = 3;
-	else if (!strcmp(name, "threshold-zero"))
-		model_threshold = 0;
-	else if (!strcmp(name, "threshold-wide"))
-		model_threshold = UINT64_C(1) << 40;
-	else if (!strcmp(name, "threshold-unaligned"))
-		model_threshold = 129;
-	else if (!strcmp(name, "eight-odd")) {
-		model_bits = model_device_bits = 8;
-		model_threshold = 129;
-	} else if (!strcmp(name, "eight-group")) {
-		model_bits = model_device_bits = 8;
-		group = 1;
-	} else if (!strcmp(name, "ordinary-user")) {
+	else if (!strcmp(name, "ordinary-user")) {
 		exception = 0;
 		control |= 1u;
-	} else if (strcmp(name, "unsupported"))
+	} else
 		exit(2);
 	ove_irq_key_t key = ove_irq_lock();
 	++delivered;

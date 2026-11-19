@@ -861,10 +861,12 @@ FFI workaround is needed for the restore state.
 
 On the admitted single-core FreeRTOS ARM ports, C entry checks the supported
 kernel-aware external IRQ/SysTick/PendSV priority and grouping before returning
-a token/key. Unsupported entry stops even with assertions disabled. Ordinary
-unprivileged tasks are excluded. MPU V1 restricted tasks retain caller mode and
-require permitted, serviceable priority-zero SVCall with PRIMASK/FAULTMASK clear;
-this native setup invariant cannot be diagnosed by unprivileged mask reads.
+a token/key. Unsupported ports and configurations fail to compile; unsupported
+entry stops even with assertions disabled; the grouping is checked once, at the
+first lock. Ordinary unprivileged tasks are excluded. MPU V1 restricted tasks
+retain caller mode and require permitted, serviceable priority-zero SVCall with
+PRIMASK/FAULTMASK clear; this native setup invariant cannot be diagnosed by
+unprivileged mask reads.
 
 FreeRTOS wrapper transitions preserve incoming exclusion, then matching unlock
 restores captured masks exactly. Native calls inside a body can still lower a

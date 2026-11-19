@@ -59,8 +59,9 @@ typedef uint64_t ove_irq_key_t;
  * able to run and must not participate in this provider's shared-state protection.
  * Supported handlers are external IRQs, SysTick and PendSV at eligible priority
  * and grouping. Fault, NMI, supervisor, debug and reserved handlers are excluded.
- * Unsupported FreeRTOS ports/configurations/contexts stop without returning a key;
- * this enforcement remains active with assertions disabled. Priority-bit metadata
+ * Unsupported FreeRTOS ports and configurations fail to compile; unsupported
+ * contexts stop without returning a key, even with assertions disabled; the
+ * priority grouping is checked once, at the first lock. Priority-bit metadata
  * must match the hardware. Ordinary unprivileged tasks are unsupported.
  *
  * Restricted MPU V1 tasks require a permitted, serviceable priority-zero SVCall,

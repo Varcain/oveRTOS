@@ -466,9 +466,11 @@ void update_irq_protected_state(void)
 For supported single-core FreeRTOS Cortex-M3/M4/M7 ports, the domain contains
 tasks and kernel-aware external IRQ, SysTick and PendSV handlers at eligible
 priority and grouping. Higher-urgency IRQs remain runnable and cannot use this
-provider to share protected state. Faults, NMI, supervisor/debug/reserved handlers,
-unsupported ports/configurations and ordinary unprivileged tasks cannot enter;
-the FreeRTOS boundary stops before returning a key, even with assertions disabled.
+provider to share protected state. Faults, NMI, supervisor/debug/reserved handlers
+and ordinary unprivileged tasks cannot enter; the FreeRTOS boundary stops before
+returning a key, even with assertions disabled. Unsupported ports and
+configurations fail to compile; the priority grouping is checked once, at the
+first lock.
 Correct priority-bit metadata and stable priority/grouping are setup requirements.
 
 Restricted MPU V1 tasks are supported with a permitted, serviceable priority-zero

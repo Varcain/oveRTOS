@@ -72,7 +72,18 @@ del fb["__ARM_ARCH_7EM__"]
 fb["__ARM_ARCH_7M__"] = 1
 small = [("running", 7, 3), ("prestart_masked", 5, 1), ("running_masked", 4, 0)]
 add("f-arm7m-sync", "freertos", fb, small)
-add("f-arm7em-async", "freertos", dict(fa, CONFIG_OVE_ASYNC=1), small)
+add(
+    "f-arm7em-async",
+    "freertos",
+    dict(
+        fa,
+        CONFIG_OVE_ASYNC=1,
+        OVE_FREERTOS_IRQ_PORT_SUPPORTED=1,
+        configPRIO_BITS=4,
+        configMAX_SYSCALL_INTERRUPT_PRIORITY=128,
+    ),
+    small,
+)
 for field, short in [
     ("INCLUDE_xTaskGetSchedulerState", "scheduler"),
     ("INCLUDE_xTaskGetIdleTaskHandle", "idle"),

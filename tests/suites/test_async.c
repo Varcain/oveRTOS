@@ -78,6 +78,29 @@ static void test_async_irq_lock_nested(void **state)
 	ove_irq_unlock(k1);
 }
 
+#if defined(CONFIG_OVE_RTOS_FREERTOS) && (defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__))
+/* A task-level lock/unlock pair keeps a stronger caller-owned mask; the
+ * native critical-section exit alone would clear BASEPRI (and PRIMASK on
+ * the CM7 r0p1 port). */
+static void test_async_irq_lock_keeps_caller_mask(void **state)
+{
+	(void)state;
+	uint32_t basepri, primask;
+	__asm volatile("cpsid i\n\tmsr basepri, %0\n\tdsb\n\tisb\n\tcpsie i"
+		       :
+		       : "r"(0x20u)
+		       : "memory");
+	ove_irq_unlock(ove_irq_lock());
+	__asm volatile("mrs %0, basepri" : "=r"(basepri) : : "memory");
+	__asm volatile("cpsid i\n\tmsr basepri, %0\n\tdsb\n\tisb" : : "r"(0u) : "memory");
+	ove_irq_unlock(ove_irq_lock());
+	__asm volatile("mrs %0, primask" : "=r"(primask) : : "memory");
+	__asm volatile("cpsie i" : : : "memory");
+	assert_int_equal(basepri, 0x20);
+	assert_int_equal(primask, 1);
+}
+#endif
+
 static void test_async_is_in_isr_thread_context(void **state)
 {
 	(void)state;
@@ -696,6 +719,9 @@ int test_async_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup(test_async_irq_lock_unlock_roundtrip, async_setup),
 		cmocka_unit_test_setup(test_async_irq_lock_nested, async_setup),
+#if defined(CONFIG_OVE_RTOS_FREERTOS) && (defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__))
+		cmocka_unit_test_setup(test_async_irq_lock_keeps_caller_mask, async_setup),
+#endif
 		cmocka_unit_test_setup(test_async_is_in_isr_thread_context, async_setup),
 #ifndef __SANITIZE_THREAD__
 		cmocka_unit_test_setup(test_async_timer_init_ns_fires, async_setup),

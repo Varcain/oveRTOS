@@ -54,37 +54,43 @@ uint32_t ove_sync_context(void)
 #include <ove_irq_mask_ops.h>
 #define OVE_IRQ_KEY_FROM_ISR_BIT (UINT64_C(1) << 63)
 
-#if defined(OVE_IRQ_MASK_CORTEX_M) && defined(OVE_FREERTOS_IRQ_PORT_SUPPORTED) &&    \
-	OVE_FREERTOS_IRQ_PORT_SUPPORTED == 1 && (configNUMBER_OF_CORES == 1) &&      \
-	defined(configPRIO_BITS) && defined(configMAX_SYSCALL_INTERRUPT_PRIORITY) && \
-	(!defined(portUSING_MPU_WRAPPERS) || portUSING_MPU_WRAPPERS == 0 ||          \
-	 (defined(configUSE_MPU_WRAPPERS_V1) && configUSE_MPU_WRAPPERS_V1 == 1))
-#define OVE_IRQ_MASK_SUPPORTED 1
+#if !(defined(OVE_IRQ_MASK_CORTEX_M) && defined(OVE_FREERTOS_IRQ_PORT_SUPPORTED) && \
+      OVE_FREERTOS_IRQ_PORT_SUPPORTED == 1 && (configNUMBER_OF_CORES == 1) &&       \
+      defined(configPRIO_BITS) && defined(configMAX_SYSCALL_INTERRUPT_PRIORITY) &&  \
+      (!defined(portUSING_MPU_WRAPPERS) || portUSING_MPU_WRAPPERS == 0 ||           \
+       (defined(configUSE_MPU_WRAPPERS_V1) && configUSE_MPU_WRAPPERS_V1 == 1)))
+#error "ove_irq_lock needs a supported single-core ARMv7-M port (MPU wrappers V1 only)"
+#endif
+#define IRQ_THRESHOLD ((uint32_t)configMAX_SYSCALL_INTERRUPT_PRIORITY)
 _Static_assert(sizeof(UBaseType_t) <= sizeof(uint32_t), "native IRQ cookie must fit completely");
+_Static_assert(configPRIO_BITS >= 1 && configPRIO_BITS <= 8, "configPRIO_BITS must be 1..8");
+#ifdef __NVIC_PRIO_BITS
+_Static_assert(configPRIO_BITS == __NVIC_PRIO_BITS, "configPRIO_BITS must match the device");
+#endif
+_Static_assert(configMAX_SYSCALL_INTERRUPT_PRIORITY > 0 &&
+		       configMAX_SYSCALL_INTERRUPT_PRIORITY <= 255 &&
+		       !(configMAX_SYSCALL_INTERRUPT_PRIORITY &
+			 ((1u << (8 - configPRIO_BITS)) - 1u)) &&
+		       (configPRIO_BITS != 8 || !(configMAX_SYSCALL_INTERRUPT_PRIORITY & 1u)),
+	       "configMAX_SYSCALL_INTERRUPT_PRIORITY must be a nonzero implemented priority");
 struct irq_masks {
 	uint32_t primask, basepri, faultmask;
 };
-static inline uint32_t irq_threshold(void)
+/* PRIGROUP is runtime state: check once that the threshold is a preemption level. */
+static bool irq_group_ok;
+static inline void irq_group_check(void)
 {
-	unsigned bits = configPRIO_BITS;
-	uint64_t threshold = configMAX_SYSCALL_INTERRUPT_PRIORITY;
-	if (bits < 1u || bits > 8u || threshold == 0 || threshold > 255u)
+	if (irq_group_ok)
+		return;
+	if (irq_mask_group() > (configPRIO_BITS == 8 ? 0u : 7u - configPRIO_BITS))
 		irq_mask_reject();
-#ifdef __NVIC_PRIO_BITS
-	if (bits != __NVIC_PRIO_BITS)
-		irq_mask_reject();
-#endif
-	unsigned shift = 8u - bits;
-	if ((threshold & ((1u << shift) - 1u)) || (bits == 8u && (threshold & 1u)) ||
-	    irq_mask_group() > (bits == 8u ? 0u : 7u - bits))
-		irq_mask_reject();
-	return (uint32_t)threshold;
+	irq_group_ok = true;
 }
-static inline void irq_handler_check(uint32_t exception, uint32_t threshold)
+static inline void irq_handler_check(uint32_t exception)
 {
 	if ((exception < 16u && exception != 14u && exception != 15u) || exception >= 256u)
 		irq_mask_reject();
-	if (irq_mask_priority(exception) < threshold)
+	if (irq_mask_priority(exception) < IRQ_THRESHOLD)
 		irq_mask_reject();
 }
 static inline struct irq_masks irq_snapshot(void)
@@ -92,8 +98,9 @@ static inline struct irq_masks irq_snapshot(void)
 	return (struct irq_masks){event_mask_primask(), event_mask_basepri(),
 				  event_mask_faultmask()};
 }
-static inline ove_irq_key_t irq_enter(bool isr, uint32_t threshold)
+static inline ove_irq_key_t irq_enter(bool isr)
 {
+	uint32_t threshold = IRQ_THRESHOLD;
 	struct irq_masks saved = irq_snapshot();
 	if (saved.primask || (saved.basepri && saved.basepri < threshold))
 		event_mask_disable_faults();
@@ -168,51 +175,38 @@ static inline void irq_task_demote(bool promoted)
 static ove_irq_key_t irq_task_enter(void)
 {
 	bool promoted = irq_task_promote();
-	uint32_t threshold = irq_threshold();
-	ove_irq_key_t key = irq_enter(false, threshold);
+	irq_group_check();
+	ove_irq_key_t key = irq_enter(false);
 	irq_task_demote(promoted);
 	return key;
 }
 static void irq_task_leave(ove_irq_key_t key)
 {
 	bool promoted = irq_task_promote();
-	(void)irq_threshold();
 	irq_leave(key);
 	irq_task_demote(promoted);
 }
-#endif
 
 ove_irq_key_t ove_irq_lock(void)
 {
-#ifdef OVE_IRQ_MASK_SUPPORTED
 	uint32_t exception = irq_mask_exception();
-	if (exception) {
-		uint32_t threshold = irq_threshold();
-		irq_handler_check(exception, threshold);
-		return irq_enter(true, threshold);
-	}
-	return irq_task_enter();
-#else
-	irq_mask_reject();
-#endif
+	if (!exception)
+		return irq_task_enter();
+	irq_handler_check(exception);
+	irq_group_check();
+	return irq_enter(true);
 }
 void ove_irq_unlock(ove_irq_key_t key)
 {
-#ifdef OVE_IRQ_MASK_SUPPORTED
 	uint32_t exception = irq_mask_exception();
 	if ((exception != 0) != ((key & OVE_IRQ_KEY_FROM_ISR_BIT) != 0))
 		irq_mask_reject();
 	if (exception) {
-		uint32_t threshold = irq_threshold();
-		irq_handler_check(exception, threshold);
+		irq_handler_check(exception);
 		irq_leave(key);
 	} else {
 		irq_task_leave(key);
 	}
-#else
-	(void)key;
-	irq_mask_reject();
-#endif
 }
 
 #endif /* CONFIG_OVE_ASYNC */

@@ -2,11 +2,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "../../sync_condvar_native/sdk/freertos/FreeRTOS.h"
-extern unsigned model_bits, model_device_bits;
-extern uint64_t model_threshold;
-#define configPRIO_BITS model_bits
-#define __NVIC_PRIO_BITS model_device_bits
-#define configMAX_SYSCALL_INTERRUPT_PRIORITY model_threshold
+#define configPRIO_BITS 4
+#define __NVIC_PRIO_BITS 4
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY 128
 BaseType_t xPortIsInsideInterrupt(void);
 #if OVE_MODEL_MPU
 #define portUSING_MPU_WRAPPERS 1

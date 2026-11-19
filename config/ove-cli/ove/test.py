@@ -1089,20 +1089,14 @@ def _irq_model_output_valid(text, bindings=False):
         footer = "freertos irq Rust gate: observations=336 failed=0\n"
     else:
         rejections = ("fast", "systick", "pendsv", "nmi", "hardfault", "fault", "supervisor",
-                      "debug", "reserved", "impossible", "group", "bits-low", "bits-high",
-                      "bits-mismatch", "threshold-zero", "threshold-wide", "threshold-unaligned",
-                      "eight-odd", "eight-group")
+                      "debug", "reserved", "impossible", "group")
         for mpu, allow in ((0, 0), (1, 0), (1, 1)):
             for erratum in (0, 1):
                 for zero in (0, 1):
                     for case in ("normal",) + rejections + (() if mpu else ("ordinary-user",)):
                         for suffix in ("", "/canary"):
                             lines.append(f"mpu{mpu}-allow{allow}-erratum{erratum}-zero{zero}/{case}{suffix} PASS\n")
-        for case in ("missing-port", "other-port", "other-architecture", "multiple-cores", "missing-cores",
-                     "mpu-v2", "missing-priority-bits", "missing-threshold"):
-            for suffix in ("", "/canary"):
-                lines.append(case + suffix + " PASS\n")
-        footer = "freertos irq masks gate: observations=504 failed=0\n"
+        footer = "freertos irq masks gate: observations=296 failed=0\n"
     return text == "".join(lines) + footer
 
 
