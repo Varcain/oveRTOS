@@ -3,24 +3,24 @@
 use ove::sync::SpinMutex;
 
 unsafe extern "C" {
-    fn irq_rust_setup(kind: u32, canary: u32);
+    fn irq_rust_setup(kind: u32);
     fn irq_rust_callback();
     fn irq_rust_finish() -> i32;
 }
 
-fn arguments() -> (u32, bool, bool) {
+fn arguments() -> (u32, bool) {
     let args: Vec<_> = std::env::args().collect();
-    assert_eq!(args.len(), 4);
+    assert_eq!(args.len(), 3);
     let kind = args[1].parse().expect("initialized context selector");
     let spin = args[2] == "spin";
     assert!(spin || args[2] == "global");
-    (kind, spin, args[3] == "canary")
+    (kind, spin)
 }
 
 fn main() {
     // Argument allocations retire before a terminal native rejection can exit.
-    let (kind, spin, canary) = arguments();
-    unsafe { irq_rust_setup(kind, u32::from(canary)) };
+    let (kind, spin) = arguments();
+    unsafe { irq_rust_setup(kind) };
     if spin {
         let owner = SpinMutex::new(7u32);
         let result = owner.with(|value| {

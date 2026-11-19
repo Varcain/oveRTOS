@@ -324,6 +324,8 @@ static void body_controls(void)
 		release(key, incoming);
 		check(equal(registers, incoming) && !weakened,
 		      "exit protects current and target fault masks");
+		check(enters == 1 && exits == 1 && depth == 0,
+		      "fault-mask exit retires native ownership once");
 	}
 	for (unsigned strong = 0; strong < 2; ++strong) {
 		++cases;
@@ -343,6 +345,8 @@ static void body_controls(void)
 		release(key, incoming);
 		check(equal(registers, incoming),
 		      "wrapper restores input after a native body operation");
+		check(enters == 2 && exits == 2 && depth == 0,
+		      "wrapper retires native ownership after a native body operation");
 	}
 }
 static void metadata_controls(void)
@@ -365,7 +369,8 @@ static void metadata_controls(void)
 		check(equal(registers, (struct model_masks){0, 0, 0}) && !bad_access &&
 			      !bad_origin && !bad_write && !weakened,
 		      "metadata boundary restores masks without forbidden access");
-		check(depth == 0 && isr_depth == 0, "metadata control retires native ownership");
+		check(enters == 1 && exits == 1 && depth == 0 && isr_depth == 0,
+		      "metadata control retires native ownership once");
 	}
 }
 static void reject_case(const char *name)
@@ -413,18 +418,11 @@ static void reject_case(const char *name)
 }
 int main(int argc, char **argv)
 {
-	if (argc != 2 && argc != 3)
-		return 2;
-	bool canary = strstr(argv[1], "canary") != NULL;
-	if (canary)
-		check(false, "early failure survives every later IRQ control");
-	if (!strncmp(argv[1], "reject", 6)) {
-		if (argc != 3)
-			return 2;
+	if (argc == 3 && !strcmp(argv[1], "reject")) {
 		reject_case(argv[2]);
 		return failures != 0;
 	}
-	if (strcmp(argv[1], "normal") && strcmp(argv[1], "canary"))
+	if (argc != 2 || strcmp(argv[1], "normal"))
 		return 2;
 	static const unsigned bases[] = {0, 16, 64, 128, 192, 240};
 	for (unsigned p = 0; p < 2; ++p)

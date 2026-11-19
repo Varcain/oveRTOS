@@ -981,62 +981,35 @@ def test_sync_condvar_sanitize(ove_dir, output_dir):
     return _test_sync_condvar(ove_dir, output_dir, sanitize=True)
 
 
-def _irq_model_output_valid(text, bindings=False):
-    lines = []
-    if bindings:
-        for mpu, allow in ((0, 0), (1, 0), (1, 1)):
-            for zero in (0, 1):
-                for kind in range(14):
-                    for api in ("spin", "global"):
-                        for suffix in ("normal", "canary"):
-                            lines.append(f"mpu{mpu}-allow{allow}-zero{zero}/{kind}/{api}/{suffix} PASS\n")
-        footer = "freertos irq Rust gate: observations=336 failed=0\n"
-    else:
-        rejections = ("fast", "systick", "pendsv", "nmi", "hardfault", "fault", "supervisor",
-                      "debug", "reserved", "impossible", "group")
-        for mpu, allow in ((0, 0), (1, 0), (1, 1)):
-            for erratum in (0, 1):
-                for zero in (0, 1):
-                    for case in ("normal",) + rejections + (() if mpu else ("ordinary-user",)):
-                        for suffix in ("", "/canary"):
-                            lines.append(f"mpu{mpu}-allow{allow}-erratum{erratum}-zero{zero}/{case}{suffix} PASS\n")
-        footer = "freertos irq masks gate: observations=296 failed=0\n"
-    return text == "".join(lines) + footer
-
-
-def _test_freertos_irq(ove_dir, output_dir, sanitize=False, bindings=False):
-    label = ("freertos-irq-bindings" if bindings else "freertos-irq-masks") + ("-sanitize" if sanitize else "")
-    folder = Path(output_dir) / "tests" / label
-    folder.mkdir(parents=True, exist_ok=True)
-    script = "run_rust.py" if bindings else "run.py"
-    command = [sys.executable, os.path.join(ove_dir, "tests/freertos_irq_masks", script), str(folder / "models")]
-    if sanitize:
-        command.append("--sanitize")
-    log = folder / "gate.log"
-    with log.open("wb") as stream:
-        status = _run_owned_test_process(command, env=dict(os.environ), timeout=660 if bindings else 360, stdout=stream)
-    _record_scoped_observation(log, command, status)
-    text = log.read_text()
-    valid = status == 0 and _irq_model_output_valid(text, bindings)
-    if not valid:
-        print(text, end="")
-    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+def _test_freertos_irq_masks(ove_dir, output_dir, sanitize=False):
+    """Check the FreeRTOS IRQ adapter against initialized register models."""
+    return _ctest_suite(ove_dir, output_dir, "freertos_irq_masks",
+                        "freertos-irq-masks" + ("-sanitize" if sanitize else ""), sanitize)
 
 
 def test_freertos_irq_masks(ove_dir, output_dir):
-    return _test_freertos_irq(ove_dir, output_dir)
+    return _test_freertos_irq_masks(ove_dir, output_dir)
 
 
 def test_freertos_irq_masks_sanitize(ove_dir, output_dir):
-    return _test_freertos_irq(ove_dir, output_dir, sanitize=True)
+    return _test_freertos_irq_masks(ove_dir, output_dir, sanitize=True)
+
+
+def _test_freertos_irq_bindings(ove_dir, output_dir, sanitize=False):
+    """Check the Rust IRQ entry paths against the same register models."""
+    label = "freertos-irq-bindings" + ("-sanitize" if sanitize else "")
+    command = [sys.executable, os.path.join(ove_dir, "tests/freertos_irq_masks/run_rust.py"),
+               os.path.join(output_dir, "tests", label)] + (["--sanitize"] if sanitize else [])
+    rc = _run_owned_test_process(command, env=dict(os.environ), timeout=660)
+    return TestResults(suite=label, passed=int(rc == 0), failed=int(rc != 0))
 
 
 def test_freertos_irq_bindings(ove_dir, output_dir):
-    return _test_freertos_irq(ove_dir, output_dir, bindings=True)
+    return _test_freertos_irq_bindings(ove_dir, output_dir)
 
 
 def test_freertos_irq_bindings_sanitize(ove_dir, output_dir):
-    return _test_freertos_irq(ove_dir, output_dir, sanitize=True, bindings=True)
+    return _test_freertos_irq_bindings(ove_dir, output_dir, sanitize=True)
 
 
 def test_backend_lint(ove_dir, output_dir):

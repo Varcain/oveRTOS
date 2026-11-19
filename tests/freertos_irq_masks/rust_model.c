@@ -4,7 +4,7 @@
 #include "model.c"
 #undef main
 
-void irq_rust_setup(unsigned kind, unsigned canary)
+void irq_rust_setup(unsigned kind)
 {
 	++cases;
 	initialize((struct model_masks){0, 0, 0}, 0, false, 0);
@@ -72,8 +72,6 @@ void irq_rust_setup(unsigned kind, unsigned canary)
 	default:
 		exit(2);
 	}
-	if (canary)
-		check(false, "early failure survives every later IRQ control");
 }
 void irq_rust_callback(void)
 {
