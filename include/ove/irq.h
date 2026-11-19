@@ -10,15 +10,12 @@
  * @file irq.h
  * @defgroup ove_irq Interrupt context
  * @ingroup ove_core
- * @brief Critical sections and interrupt-context detection.
+ * @brief Critical sections and interrupt-context queries.
  *
- * Interrupt-context detection supports synchronous bindings as well as
- * async dispatch. Critical sections support the async runtime's exclusion
- * provider (Embassy on Rust).
- *
- * @note Critical sections require @c CONFIG_OVE_ASYNC. Interrupt detection is
- *       always available; resource flags require SYNC, QUEUE or EVENTGROUP.
- *       Disabled functions use inert inline stubs and return zero.
+ * @note ove_is_in_isr() is always available. ove_sync_context() requires
+ *       @c CONFIG_OVE_SYNC, @c CONFIG_OVE_QUEUE or @c CONFIG_OVE_EVENTGROUP,
+ *       and the critical sections require @c CONFIG_OVE_ASYNC. Without their
+ *       feature they are inline stubs that return zero and give no exclusion.
  * @{
  */
 
@@ -34,69 +31,55 @@ extern "C" {
 #endif
 
 /**
- * @brief Opaque interrupt-state cookie returned by @ref ove_irq_lock.
+ * @brief Opaque interrupt-state key returned by @ref ove_irq_lock.
  *
- * The fixed uint64_t ABI accommodates each backend's native restore state.
- * FreeRTOS retains its native ISR cookie and architectural mask state;
- * task cookies are not required to be zero. Callers must pass the entire
- * unchanged cookie to its matching unlock, without inspecting its encoding.
+ * Pass the complete, unchanged key to the matching @ref ove_irq_unlock and do
+ * not inspect it. A task key is not necessarily zero.
  */
 typedef uint64_t ove_irq_key_t;
 
 #ifdef CONFIG_OVE_ASYNC
 
 /**
- * @brief Acquire the backend's native exclusion domain and capture its state.
+ * @brief Enter a critical section of the backend's native exclusion domain.
  *
- * Nestable: pair each call exactly once with @ref ove_irq_unlock, passing the
- * same opaque cookie in LIFO order on the acquiring thread or handler activation.
- * Keep the body short and nonblocking: do not yield, await, start the scheduler,
- * migrate context, or change interrupt priorities/grouping or privilege while held.
+ * Nestable: pair each call exactly once with @ref ove_irq_unlock, in LIFO order
+ * on the same thread or handler activation. Keep the body short: do not block,
+ * yield, await, start the scheduler, migrate context, or change interrupt
+ * priorities, grouping or privilege while it is held.
  *
- * @par FreeRTOS domain and admission
- * Supported single-core Cortex-M3/M4/M7 ports exclude kernel-aware participants,
- * using configMAX_SYSCALL_INTERRUPT_PRIORITY. Higher-urgency interrupts remain
- * able to run and must not participate in this provider's shared-state protection.
- * Supported handlers are external IRQs, SysTick and PendSV at eligible priority
- * and grouping. Fault, NMI, supervisor, debug and reserved handlers are excluded.
- * Unsupported FreeRTOS ports and configurations fail to compile; unsupported
- * contexts stop without returning a key, even with assertions disabled; the
- * priority grouping is checked once, at the first lock. Priority-bit metadata
- * must match the hardware. Ordinary unprivileged tasks are unsupported.
+ * On FreeRTOS only single-core ARMv7-M ports, without MPU wrappers or with V1
+ * wrappers, are supported; other ports fail to compile. The section masks the
+ * kernel-aware interrupts (configMAX_SYSCALL_INTERRUPT_PRIORITY and less
+ * urgent); more urgent interrupts keep running and must not share state
+ * protected by it. Callers may be privileged tasks, MPU V1 restricted tasks
+ * and external IRQ, SysTick or PendSV handlers at kernel-aware priority. Any
+ * other caller, or an ineligible priority grouping (checked once, at the first
+ * lock), stops without returning a key, even with assertions disabled.
+ * Restricted tasks keep their privilege level but need a serviceable
+ * priority-zero SVCall with PRIMASK and FAULTMASK clear. This cannot be
+ * checked before the SVCall: one that cannot be taken faults, and a non-zero
+ * SVCall priority stops at the check. configPRIO_BITS must match the
+ * hardware. Entry and exit may briefly mask faults; no latency bound is
+ * promised.
  *
- * Restricted MPU V1 tasks require a permitted, serviceable priority-zero SVCall,
- * with PRIMASK and FAULTMASK clear. This is a native setup precondition, not a
- * condition that unprivileged mask reads can diagnose before attempting SVCall.
- * Supported calls preserve the caller's privilege before returning to the body.
+ * On FreeRTOS, lock and unlock never weaken an incoming PRIMASK, FAULTMASK or
+ * stronger BASEPRI, and unlock restores the captured masks exactly. Native
+ * calls inside the body can still lower a stronger incoming BASEPRI or clear
+ * PRIMASK meanwhile, so this is not a global interrupt mask. Other backends
+ * follow their native critical-section contracts.
  *
- * @par FreeRTOS restoration and native-call limitation
- * The wrapper preserves incoming exclusion during its own transitions and
- * restores captured PRIMASK, BASEPRI and FAULTMASK on matching unlock. Exceptional
- * transitions briefly mask faults; no whole-body fault mask or latency bound is
- * promised. Native operations inside the body can still lower stronger raw masks.
- * For example, with BASEPRI = 0x40 and native threshold 0x80, a nested stock
- * critical operation can leave BASEPRI = 0x80 inside the body. The CM7 workaround
- * can also clear an incoming PRIMASK. Kernel-aware exclusion still holds, and
- * unlock restores the captured input, but cannot undo intervening execution.
- * Keep incompatible native operations outside regions requiring continuous
- * stronger-mask protection. This API does not promise global IRQ exclusion.
- *
- * Other backends retain their native execution-context and exclusion contracts;
- * the FreeRTOS admission checks do not describe their enforcement.
- *
- * @return Opaque cookie for the matching @ref ove_irq_unlock.
- * @note Requires CONFIG_OVE_ASYNC. Disabled-feature stubs provide no exclusion.
+ * @return Key for the matching @ref ove_irq_unlock.
+ * @note Requires CONFIG_OVE_ASYNC; the disabled stub gives no exclusion.
  */
 ove_irq_key_t ove_irq_lock(void);
 
 /**
- * @brief Restore the state captured by the matching @ref ove_irq_lock.
+ * @brief Leave the critical section entered by the matching @ref ove_irq_lock.
  *
- * Each nested release restores its own captured state. The same-context and
- * LIFO contract and the documented native-body limitation apply to all bindings.
- * This does not make blocking or otherwise ineligible native calls valid.
+ * Restores the state that call captured; each nested release restores its own.
  *
- * @param key Complete, unchanged cookie from the matching acquisition.
+ * @param key Complete, unchanged key from the matching acquisition.
  * @note Requires CONFIG_OVE_ASYNC.
  */
 void ove_irq_unlock(ove_irq_key_t key);
@@ -138,40 +121,34 @@ bool ove_is_in_isr(void);
 
 #if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_QUEUE) || defined(CONFIG_OVE_EVENTGROUP)
 /**
- * @brief Query synchronization context without touching a primitive.
+ * @brief Report which synchronization operations the calling context allows.
  *
- * Returns a mask of @c OVE_SYNC_CONTEXT_RESOURCE,
- * @c OVE_SYNC_CONTEXT_BLOCKING and @c OVE_SYNC_CONTEXT_PRODUCER.
- * A missing bit means the binding must reject that operation or retain a
- * resource whose destruction is unavailable.
- * Object validity, ownership and quiescence are separate requirements.
+ * Returns a mask of the flags below. A clear flag means the operation must not
+ * be attempted: bindings reject it or, for destruction, retain the resource.
+ * - @c OVE_SYNC_CONTEXT_RESOURCE: native initialization and destruction.
+ * - @c OVE_SYNC_CONTEXT_BLOCKING: mutex acquisition and condition variables.
+ * - @c OVE_SYNC_CONTEXT_PRODUCER: task semaphore/event posts and serialized
+ *   notification setup only; it does not serialize registration with gives.
  *
- * FreeRTOS permits resource setup and task posts before scheduler start;
- * blocking requires a running, non-idle task with interrupts enabled.
- * Both scheduler-state and
- * idle-task queries must be enabled in its configuration. Zephyr and NuttX
- * require an active kernel and non-idle thread. Resource and blocking admission
- * additionally require enabled interrupts. Task producers remain available in
- * recognized masked contexts, including nested native critical sections.
- * FreeRTOS also permits task producers while its scheduler is suspended.
- * Cooperative and scheduler-locked threads remain supported where native
- * blocking is legal. The POSIX backend reports producer-only admission inside
- * its modeled critical sections. All providers return zero in ISR context;
- * native ISR producer entries have separate kernel-aware interrupt contracts.
- * Producer admission does not permit mutex acquisition or arbitrary nonblocking
- * operations, and does not serialize notification registration with gives.
- * Unsupported architecture/configuration domains return zero conservatively.
- * Current native domains are privileged Cortex-M3/M4/M7, Zephyr native_sim,
- * single-core NuttX flat sim, and the POSIX backend. FreeRTOS multicore and
- * NuttX SMP return zero.
- * The query allocates nothing, changes
- * no interrupt mask and requires no TIME, ASYNC or thread-wrapper feature.
+ * RESOURCE and BLOCKING need a running, non-idle thread with interrupts
+ * enabled; cooperative and scheduler-locked threads qualify. PRODUCER also
+ * holds with interrupts masked, including in nested critical sections.
+ * FreeRTOS also grants RESOURCE and PRODUCER before the scheduler starts, and
+ * only PRODUCER while the scheduler is suspended.
  *
- * This is not the eligibility test for releasing an already-owned mutex:
- * a valid same-thread unlock can remain legal with interrupts masked.
+ * Returns zero in an ISR, in unprivileged code and outside the supported
+ * domains (privileged Cortex-M3/M4/M7, Zephyr native_sim, single-core NuttX
+ * flat sim and the POSIX backend), so also on FreeRTOS multicore, NuttX SMP
+ * and FreeRTOS unless both INCLUDE_xTaskGetSchedulerState and
+ * INCLUDE_xTaskGetIdleTaskHandle are 1. The POSIX backend reports PRODUCER only
+ * inside its critical sections.
  *
- * @return Context flags, or zero when SYNC, QUEUE and EVENTGROUP are all
- *         disabled or the context is unavailable.
+ * The flags do not cover object validity, ownership or quiescence, and are not
+ * the test for releasing an already-owned mutex, which can stay legal with
+ * interrupts masked. The query touches no primitive, allocates nothing,
+ * changes no interrupt mask and needs no TIME, ASYNC or thread wrappers.
+ *
+ * @return Context flags, or zero as described above.
  */
 uint32_t ove_sync_context(void);
 #else

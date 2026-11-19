@@ -1,34 +1,45 @@
 # Binding Semantics
 
-FreeRTOS synchronization, queue, EventGroup and stream calls convert a positive finite encoded budget with exact ceil(ns * Hz / 1e9), saturating at portMAX_DELAY - 1 before tick-type narrowing. Encoded FOREVER selects portMAX_DELAY; indefinite native waiting requires INCLUDE_vTaskSuspend=1. These are native-call budgets: scheduling, composed waits and mutex reacquisition can extend elapsed time. FreeRTOS DNS uses the same exact finite tick conversion and portMAX_DELAY - 1 saturation for its completion wait. A zero argument selects its existing ten-second default. The preceding serialization mutex wait is outside this budget. Encoded FOREVER requires native INCLUDE_vTaskSuspend=1 for indefinite waiting. Other engines use their own DNS timeout policies.
-
-Relative synchronization and IPC waits share the native engine budget across C, C++, Rust and Zig. On NuttX, positive finite waits round up to ticks and saturate at min(WDOG_MAX_DELAY - 2, INT32_MAX - 1) ticks: 1,073,741,821 with 32-bit clocks or 2,147,483,646 with 64-bit clocks. Timeout and stream short counts refer to this effective budget. Only explicit FOREVER waits are indefinite; native tick phase, scheduling and condition-variable mutex reacquisition can extend the elapsed time.
-
 !!! note "Audience"
-    This page is for **oveRTOS developers** — people writing or reviewing the
-    C++, Rust, and Zig bindings (`bindings/{cpp,rust,zig}/ove/`). It is the
-    single source of truth for *what each wrapper must do*. App developers
-    writing against one language can read the [API Reference](../api/index.md)
-    instead; this page exists so the three bindings stay behaviourally
-    identical.
+    This page is for **oveRTOS developers** writing or reviewing the C++, Rust
+    and Zig bindings (`bindings/{cpp,rust,zig}/ove/`). It defines what each
+    wrapper must do. App developers can read the [API Reference](../api/index.md)
+    instead; this page keeps the three bindings behaviourally identical.
 
-The three bindings deliberately look different — each follows its language's
-idioms (C++ RAII + `std::expected`, Rust ownership + typed `Result`, Zig
-explicit allocators + `defer`). What they must **not** differ on is *behaviour*.
-This page defines that behaviour once per subsystem; the per-language spelling is
-shown side by side so a divergence is easy to spot.
-
-The rule of thumb: **the contract is identical, the syntax is language-shaped.**
-Where a genuine asymmetry exists (e.g. Rust has channels, C++/Zig do not), it is
-called out explicitly rather than papered over.
+Each binding follows its language's idioms (C++ RAII + `std::expected`, Rust
+ownership + typed `Result`, Zig explicit allocators + `defer`). They must not
+differ on *behaviour*. **The contract is identical, the syntax is
+language-shaped.** A genuine asymmetry (e.g. Rust has channels, C++/Zig do not)
+is called out explicitly.
 
 A recurring difference is *how a scope-bound resource is released*:
 
-- **C++** releases in a **destructor** (RAII) — automatic at scope exit.
-- **Rust** releases in **`Drop`** — automatic at scope exit.
-- **Zig** has no destructors, so it releases via an explicit **`defer
-  guard.deinit()`** (or `.release()`). The release is just as deterministic; it
-  is written, not implicit.
+- **C++** releases in a **destructor** (RAII) at scope exit.
+- **Rust** releases in **`Drop`** at scope exit.
+- **Zig** has no destructors and releases with an explicit **`defer
+  guard.deinit()`** (or `.release()`). It is just as deterministic.
+
+Rust-only ownership rules (typed static storage claims, context admission,
+async setup) are stated per subsystem below. They add no C++ or Zig API.
+
+---
+
+## Timeouts
+
+Relative synchronization and IPC waits use the native engine budget in C, C++,
+Rust and Zig. Timeouts and stream short counts refer to this effective budget.
+Only explicit FOREVER waits are indefinite; tick phase, scheduling, composed
+waits and condition-variable mutex reacquisition can extend elapsed time.
+
+- **FreeRTOS** synchronization, queue, EventGroup, stream and DNS-completion
+  waits convert a positive finite budget with exact `ceil(ns * Hz / 1e9)`,
+  saturating at `portMAX_DELAY - 1` before narrowing to the tick type. FOREVER
+  selects `portMAX_DELAY`, which waits indefinitely only with
+  `INCLUDE_vTaskSuspend=1`. A zero DNS timeout selects a ten-second default;
+  the DNS serialization mutex wait is outside the budget.
+- **NuttX** rounds positive finite waits up to ticks and saturates at
+  `min(WDOG_MAX_DELAY - 2, INT32_MAX - 1)` ticks.
+- Other engines use their own DNS timeout policies.
 
 ---
 
@@ -47,37 +58,36 @@ A recurring difference is *how a scope-bound resource is released*:
 
 **Contract notes**
 
-- Rust privately terminates genuine bounded C-string inputs (FS255 bytes,
-  TLS hostname255, method7/path63) and passes counted inputs to native
-  NVS/response/log consumers. Byte slices must never be handed directly to a
-  terminator-reading consumer. NUL is rejected before effects. FS byte paths
-  preserve non-UTF8 directory names. Native `_cstr` compatibility remains.
-- Checked formatting runs once, latches errors, and publishes no partial key
-  or path. Core staging needs neither LVGL nor a Rust allocator.
-  `FmtBuf::as_c_str()` remains an optional low-level compatibility utility.
-- Audio retains static `name_span { data, len }` bytes without a terminator,
-  name cap or name allocation. This changes the public descriptor ABI;
-  rebuild all consumers and use length-aware readers. Shell/thread name
-  retention remains unchanged.
+- Rust privately terminates bounded C-string inputs (FS paths 255 bytes, TLS
+  hostname 255, httpd method 7 / path 63) and passes counted inputs to NVS,
+  response and log consumers by length. A byte slice is never handed to a
+  consumer that reads to a terminator. Embedded NUL is rejected before any
+  effect. FS byte paths keep non-UTF-8 names. The native `_cstr` variants
+  remain available.
+- Checked formatting runs once, latches errors and publishes no partial key or
+  path. Core staging needs neither LVGL nor a Rust allocator.
+  `FmtBuf::as_c_str()` is an optional low-level utility.
+- Audio retains static `name_span { data, len }` bytes: no terminator, no
+  name cap and no allocation. Readers must use the length.
 - Rust LVGL string methods return `Result`: embedded NUL is `InvalidParam`,
   conversion pool exhaustion is `NoMemory`. Short conversions use stack
-  scratch; longer ones use LVGL's fixed pool without a Rust global allocator.
-  `set_text_fmt(format_args!(...))` and `cell_value_fmt` accept Rust formatting.
-  They preserve text on preparation errors; LVGL's own void setters still
-  follow its configured assertion policy for internal allocation failures.
+  scratch, longer ones LVGL's fixed pool; no Rust global allocator is needed.
+  `set_text_fmt(format_args!(...))` and `cell_value_fmt` keep the old text on
+  preparation errors; LVGL's own void setters follow its assertion policy for
+  internal allocation failures.
 - `Label::text_buffered` attaches a static `TextStorage<N>` once. Its
-  `BufferedLabel` updates allocate no text memory; capacity includes NUL.
+  `BufferedLabel` updates allocate no memory; capacity includes the NUL.
   Overflow returns `NoSpace` without truncating UTF-8 or changing the text.
-  Replacement and deletion invalidate old tokens; storage can then be reused.
+  Replacement and deletion invalidate old tokens; the storage can then be reused.
 - `Label::bind_text` accepts `fn(i32, &mut dyn core::fmt::Write) -> fmt::Result`.
-  The binding owns observer context until replacement, deletion, or subject
-  teardown. `text_status()` reports asynchronous formatting errors and
-  `NotFound` when unbound. Recursive state changes that invalidate a render
-  report `Busy` unless LVGL dispatches a fresh render of the latest value.
-- All LVGL operations, including conversion allocation and storage updates,
-  require initialized LVGL and its existing lock. Callbacks already holding
-  that lock must not reacquire it. Image strings are borrowed only until the
-  widget copies them; image descriptors and pixels must remain alive.
+  The binding owns the observer context until replacement, deletion or subject
+  teardown. `text_status()` reports asynchronous formatting errors, and
+  `NotFound` when unbound. A recursive state change that invalidates a render
+  reports `Busy` unless LVGL dispatches a fresh render of the latest value.
+- All LVGL operations, including conversion and storage updates, require
+  initialized LVGL and its lock. Callbacks already holding the lock must not
+  reacquire it. Image strings are borrowed only until the widget copies them;
+  image descriptors and pixels must stay alive.
 - Rust `ove::net_httpd::ws::send` is `unsafe`: its connection handle is a raw
   pointer that stops being valid once the connection's close callback runs.
 
@@ -97,33 +107,36 @@ A recurring difference is *how a scope-bound resource is released*:
 | Idempotent deinit | yes | yes | yes |
 | Cancellation flag | `stop_token::stop_requested()` | `StopToken::is_stopped()` | `StopToken.isStopped()` |
 | Request stop | `Thread::request_stop()` | `Thread::request_stop()` | `Thread.requestStop()` |
-| Current thread | `this_thread::self()` / `get_id()` (null handle on a thread oveRTOS did not create) | `Thread::current() -> Option<Thread>` (`None` there) | `getSelf()` (null there) |
+| Current thread | `this_thread::self()` / `get_id()` (null handle on a thread oveRTOS did not create, or from an ISR) | `Thread::current() -> Option<Thread>` (`None` there) | `getSelf()` (null there) |
+| From an ISR | `thread_list` → `Error::WouldBlock`; sleeps return at once | `spawn_cooperative` / `spawn_simple` / `spawn_static[_simple]` / `thread_list` → `Error::WouldBlock`; `sleep_ms` returns at once | `threadList` → `error.WouldBlock`; `sleepMs` returns at once |
 | Priority | `ove_prio_t` (C enum) + `ove::prio_above`/`prio_below` | `Priority` newtype (`u8` level, anchor consts, `above`/`below`) | `Priority` non-exhaustive `enum(c_uint)` (`above`/`below`) |
 | State | `ove_thread_state_t` (C enum) | `ThreadState` enum | `State` `enum(c_uint)` |
 
-Native pthread workers return no oveRTOS identity even when their creator is an
-oveRTOS task; they do not inherit its implicit stop flag or state attribution.
-
 **Contract notes**
 
-- A live thread handle **owns** the kernel thread. Letting the handle go out of
-  scope requests cooperative stop and then joins/destroys it. `detach()` discards
-  that owner without stopping the worker, so its oveRTOS handle and stack are not
-  reclaimed. Reserve it for a bounded set of program-lifetime workers; otherwise
-  retain the handle and shut the worker down cooperatively.
+- A live thread handle **owns** the kernel thread. Dropping it requests
+  cooperative stop, then joins/destroys. `detach()` discards the owner without
+  stopping the worker, so its handle and stack are never reclaimed. Reserve it
+  for a bounded set of program-lifetime workers.
 - Cooperative cancellation is the supported shutdown path: the entry loops
-  `while (!stop_requested())` and the owner calls `request_stop()` (implicitly via
-  drop, or explicitly).
+  `while (!stop_requested())` and the owner calls `request_stop()` (implicitly
+  via drop, or explicitly).
+- From an ISR the C thread init/deinit/create/destroy/list calls return
+  `OVE_ERR_WOULD_BLOCK`, `ove_thread_get_self` returns NULL and millisecond
+  sleeps and delays return at once. The bindings' list, current-thread and
+  sleep calls pass this through. Spawning and owner teardown are task-context
+  only: Rust heap `spawn` and Zig `spawn` allocate first, C++ construction
+  asserts on the error, and C++/Rust/Zig teardown ignores it.
+- Native pthread workers have no oveRTOS identity even when an oveRTOS task
+  created them; they do not inherit its stop flag or state attribution.
 - `Priority` is a level on the 0..31 scale in every binding. The named values
-  are anchors on it (`OVE_PRIO_NORMAL`, `Priority::Normal`, `.normal`), and
-  each binding steps between them the same way, clamping at both ends:
+  are anchors on it (`OVE_PRIO_NORMAL`, `Priority::Normal`, `.normal`); every
+  binding steps between them the same way, clamping at both ends:
   `OVE_PRIO_ABOVE(p, n)` / `ove::prio_above(p, n)` / `p.above(n)` and the
-  `below` forms. Rust keeps the anchor names as associated consts, so
-  `Priority::Normal` reads as before; a level outside the scale cannot be
-  built (`Priority::from_level` returns `None`, Zig's `fromLevel` `null`).
-- `State` is a typed enum in Rust and Zig; C++ currently surfaces the raw C
-  enum (`ove_thread_state_t`). Treat the named values as the contract, not
-  the integers.
+  `below` forms. A level outside the scale cannot be built
+  (`Priority::from_level` returns `None`, Zig's `fromLevel` `null`).
+- `State` is a typed enum in Rust and Zig; C++ surfaces the raw C enum. Treat
+  the named values as the contract, not the integers.
 
 ---
 
@@ -131,7 +144,7 @@ oveRTOS task; they do not inherit its implicit stop flag or state attribution.
 
 `Queue<T, N>` is a bounded MPMC queue of trivially-copyable `T`. A **channel**
 (`Sender`/`Receiver`) is a *Rust-only* refcounted layer over `Queue` that adds
-peer-drop detection; **C++ and Zig have no channel type** — they use `Queue`
+peer-drop detection; **C++ and Zig have no channel type** and use `Queue`
 directly.
 
 | Contract | C++ | Rust `Queue` | Zig | Rust `channel` |
@@ -149,15 +162,45 @@ directly.
 
 - **Non-blocking receive returns the item by value**, sharing one return channel
   with the empty/closed signal: C++ `Result<T>`, Rust `Result<T>`, Zig `?T`. The
-  C++ `bool try_receive(T&)` out-param form is retained for back-compat and
-  hot-path use, but new code should prefer the value form.
-- The **Empty vs Disconnected** distinction only exists where there are peers to
-  drop — i.e. the Rust channel. `Receiver::try_recv` returns
-  `TryRecvError::Empty` while a sender is alive and `TryRecvError::Disconnected`
-  once the queue is drained *and* every `Sender` is gone (mirrors
-  `std::sync::mpsc`). A bare `Queue` is never "disconnected".
-- Zig's forever-blocking `recv()` is intentionally infallible (`T`, not `!T`): a
-  forever wait either returns an item or the program is mis-built.
+  C++ `bool try_receive(T&)` out-param form remains for hot paths; new code
+  should prefer the value form.
+- **Empty vs Disconnected** exists only where there are peers to drop: the Rust
+  channel. `Receiver::try_recv` returns `TryRecvError::Empty` while a sender is
+  alive and `TryRecvError::Disconnected` once the queue is drained *and* every
+  `Sender` is gone (as `std::sync::mpsc`). A bare `Queue` is never disconnected.
+- Zig's forever-blocking `recv()` is infallible (`T`, not `!T`): a forever wait
+  either returns an item or the program is mis-built.
+- Native initialization validates nonzero dimensions, size overflow and provider
+  limits before entering the kernel. A partial failure retires earlier resources
+  and publishes no handle, so the same quiescent backing can be retried. Rust
+  and Zig propagate the error; C++ applies its constructor assertion after
+  native cleanup. C callers keep storage and the item buffer exclusive through
+  teardown.
+- Queue-only configurations provide `ove_is_in_isr` and `ove_sync_context`
+  without SYNC, TIME or ASYNC.
+
+**Rust ownership and context**
+
+- Typed zero-heap backing stays claimed until native cleanup completes; while
+  an owner is live, initializing, tearing down, forgotten or retained, another
+  claim returns `Busy` before native entry. A clean initialization error
+  reopens it. Heap owners are independent; raw owners deinit their backing.
+- Payloads are invariant, so shared insertion cannot shorten a stored
+  reference's lifetime. Owner `Send`/`Sync` requires `T: Copy + Send`.
+- Construction, destruction and notification setup require RESOURCE (an
+  unavailable Drop retains the resource and claim); task transfers, including
+  zero timeouts, require BLOCKING before any native or clock effect. Outside
+  admitted context occupancy snapshots read zero (`is_empty` true, `is_full`
+  false), which is not actual emptiness. ISR-named methods called from a task
+  take the task route. Relative durations work without TIME; absolute
+  deadlines need it.
+- `AsyncQueue::arm` and `AsyncSemaphore::arm` take exclusive `&'static mut`
+  access and return the shared `&'static` reference only after installing the
+  wake callback: initialize at the final address (`StaticCell` works), arm
+  once, then publish the reference. `AsyncQueue` needs RESOURCE for this,
+  `AsyncSemaphore` PRODUCER. An error still consumes the borrow, so safe code
+  cannot retry or reclaim. The single waker slot gives no fairness between
+  waiters.
 
 ---
 
@@ -203,119 +246,161 @@ only an invalid call is an error.
 
 **Contract notes**
 
-- Rust's nonowning `MutexAccess` provides `Deref`/`DerefMut`, is `!Send`, and
-  cannot escape the callback. Dropping or forgetting it leaves private release
-  ownership intact. End the callback at an old guard's early-release point.
-  RecursiveMutex has matching no-data callback methods and no public unlock.
-- Rust callbacks return `ove::Result<R>`. For a distinct application error,
-  map it explicitly or return `Ok(app_result)` and use `??` at the call site.
-- Native contention/expiry maps to Rust errors (currently Timeout; native
-  same-thread recursive entry to an ordinary data mutex is rejected as Busy).
-  C++/Zig boolean try methods return false on contention.
+- Rust's nonowning `MutexAccess` provides `Deref`/`DerefMut`, is `!Send` and
+  cannot escape the callback. Dropping or forgetting it leaves the private
+  release intact; to release early, end the callback. `RecursiveMutex` has
+  matching no-data callback methods and no public unlock.
+- Rust callbacks return `ove::Result<R>`. For a distinct application error, map
+  it explicitly or return `Ok(app_result)` and use `??` at the call site.
+- Native contention or expiry maps to a Rust error (currently `Timeout`;
+  same-thread recursive entry to an ordinary data mutex is `Busy`). C++/Zig
+  boolean try methods return false on contention.
 
 ---
 
-## Synchronization construction and counts
+## Synchronization primitives
 
-The five native synchronization families publish a handle only after complete
-initialization. Failure preserves the output and releases successfully
-initialized pieces before backing can be retried or freed. Teardown requires a
-successfully initialized, quiescent object with no waiters, active operations or
-outstanding mutex acquisitions.
+**Construction and teardown.** The five native synchronization families publish
+a handle only after complete initialization. A failure leaves the output
+untouched and releases the pieces already initialized, so the backing can be
+retried or freed. Teardown requires a successfully initialized, quiescent
+object: no waiters, active operations or outstanding mutex acquisitions.
 
 C++ constructors and void acquisition/wait methods invoke the configured
-assertion on error and abort if it returns, including release builds. Boolean
-and `Result` methods retain their fallible contracts. Rust constructors return
-errors; Zig constructors propagate errors and release their allocated storage,
-while its void acquisition methods use a terminal panic.
+assertion on error and abort if it returns, including in release builds.
+Boolean and `Result` methods stay fallible. Rust constructors return errors;
+Zig constructors propagate errors and free their allocated storage, and its
+void acquisition methods panic.
 
-Semaphore counts require `max > 0`, `initial <= max` and the provider ceiling:
-`SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS and `unsigned int` on
-Zephyr. FreeRTOS and Zephyr retain and enforce the requested maximum. POSIX and
-NuttX posts enforce their provider-wide ceiling; they do not retain the requested
-`max`. This limitation applies equally to C, C++, Rust and Zig.
+**Semaphore counts** require `max > 0`, `initial <= max` and the provider
+ceiling: `SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS and
+`unsigned int` on Zephyr. FreeRTOS and Zephyr enforce the requested maximum.
+POSIX and NuttX enforce only their provider-wide ceiling, in every binding.
 
-Bindings can query interrupt context with `CONFIG_OVE_SYNC` alone, without
-ASYNC, TIME or object initialization. Critical-section lock/unlock still require
-ASYNC. POSIX timer dispatchers bracket callbacks with the simulator context flag;
-this does not establish general asynchronous signal-handler or IRQ exclusion.
+**Condition variables.** `ove_condvar_wait_checked` reports on every return
+whether the caller still owns its ordinary mutex: held after success or clean
+timeout, either way after other errors. The output must be writable and
+disjoint from the primitive. Rust uses it to keep its private cleanup correct
+and returns reacquired access only on success or clean timeout; C++ and Zig
+convenience methods use the plain status. Waiter retirement finishes before
+return; a permanently broken internal mutex has no bounded recovery.
 
-Rust `SpinMutex` exposes scoped `with(f)` access. It reserves one exclusive
-data loan and keeps its native IRQ key private until the callback returns or
-unwinds. A repeated acquisition of the same object restores its temporary key
-and then panics before invoking another callback. Short callbacks can nest
-different objects; their keys retire in reverse order. A terminal panic or
-abort does not perform ordinary unwind cleanup. Native IRQ-provider context
-and priority requirements still apply.
+**Rust context admission.** `Mutex`, `RecursiveMutex`, `Semaphore`, `Event`
+and `CondVar` check `ove_sync_context` before resource operations, waits and
+deadline-clock reads (see [IRQ and context queries](#irq-and-context-queries)):
 
-Migrate uses of the removed `SpinMutex::lock` and `SpinMutexGuard` to `with`.
-Return a computed value or application `Result` from the callback; its result
-shape passes through unchanged. Data references and IRQ ownership cannot escape
-the callback. `new` remains const, and `get_mut`/`into_inner` retain ordinary
-exclusive-owner access. Native SYNC plus ASYNC enables this type; Cargo `async`
-selects the separate runtime/provider. Keep callbacks nonblocking and access
-shared state between await points.
+- Unsupported `Result` methods return `NotSupported` before native entry,
+  including zero-time waits; `CondVar` signal/broadcast do nothing there.
+  Releasing an already-owned mutex still works with interrupts masked.
+- Semaphore releases outside PRODUCER admission have no effect, including in
+  an ISR. The Event producer methods take the actual task or ISR route; native
+  ISR setup must meet its kernel-aware priority contract.
+- Typed zero-heap storage (used by all five creation macros) is claimed before
+  native init, rejects a duplicate live init with `Busy`, reopens only after
+  cleanup and stays reserved when its owner is forgotten or its teardown is
+  unavailable; `T` is still dropped or extracted exactly once. Heap
+  construction ignores it. Raw backing must stay stable through cleanup or
+  retention.
+- A recursive mutex admits at most 65,535 combined held and pending
+  acquisitions.
 
-Rust Mutex, RecursiveMutex, Semaphore, Event and CondVar use `ove_sync_context`
-privately before resource operations, waits and native deadline queries.
-RESOURCE permits legal FreeRTOS setup before scheduler start; BLOCKING requires
-an active non-idle thread and enabled interrupts. Unsupported Result methods
-return NotSupported; CondVar signal/broadcast have no effect there.
-FreeRTOS admission supports single-core configurations; multicore FreeRTOS and
-NuttX SMP return no context flags. Private
-already-owned releases still run when a callback leaves interrupts masked.
-Unavailable resource teardown retains native backing and its static claim,
-while `T` is dropped or extracted once. Typed zero-heap storage rejects duplicate
-live initialization as Busy, reopens after completed cleanup and stays reserved
-when its owner is forgotten. All five creation macros use typed admission.
-Recursive scopes admit at most 65,535 combined held/pending acquisitions.
+`Semaphore::set_notify` requires PRODUCER admission and is `unsafe`:
+registration must be serialized with every native give and other
+registration, the old callback and data must outlive in-flight calls, and the
+callback must tolerate concurrent calls from all release callers. Native gives
+call the hook after every post attempt, even when the count ceiling prevents
+an increment.
 
-PRODUCER admits task semaphore/Event posts and serialized notification setup
-in recognized masked task contexts, including nested critical sections.
-FreeRTOS also permits these operations before scheduler start and while its
-scheduler is suspended. This preserves synchronous async wake tails while
-RESOURCE and BLOCKING remain unavailable in masked running tasks. Producer
-admission does not permit mutex acquisition or arbitrary nonblocking operations.
-Rust semaphore releases outside producer admission have no permit or callback
-effect, including in ISR context. Both Rust Event producer names select the
-actual task or ISR route; native ISR setup must satisfy its kernel-aware
-priority/grouping contract. The query does not classify arbitrary IRQ or NMI
-eligibility. C, C++ and Zig retain their own native operation/context contracts.
+**Rust `SpinMutex`** gives scoped `with(f)` access: one exclusive data loan and
+a private native IRQ key, both released when the callback returns or unwinds.
+Re-entering the same object restores its key and panics; different objects can
+nest and retire in reverse order. A terminal panic or abort runs no unwind
+cleanup. The callback's result passes through unchanged and no reference or
+key escapes it. `new` is const; `get_mut`/`into_inner` give exclusive-owner
+access. It needs native SYNC plus ASYNC (Cargo `async` selects the runtime).
+Keep callbacks short and nonblocking; the
+[critical-section](#irq-and-context-queries) rules apply.
 
-Semaphore/Event zero-heap constructors claim their typed backing before native
-initialization. Heap construction ignores the supplied typed storage. Legal
-cleanup finishes before a claim reopens; forgotten or unsupported-context drops
-retain backing and its claim. Unsafe raw backing must remain stable through
-cleanup or indefinite retention. The native C storage layout is unchanged.
+---
 
-Rust `Semaphore::set_notify` is unsafe: registration, replacement and removal
-must be serialized with all native gives and other registrations, and the old
-callback/data must remain live until all in-flight calls finish. The context
-query supplies no registration synchronization. The callback and its data must
-support concurrent or reentrant calls from all release callers, or those gives
-must also be serialized. Current native give paths call
-the hook after a post attempt even when their count ceiling prevents increment.
-Rust zero-time semaphore/Event waits preserve the provider's empty/timeout
-status; unsupported context instead returns NotSupported before native entry.
+## EventGroup
 
-Rust `AsyncSemaphore::arm` takes exclusive static access and returns a shared
-static reference only after installing its wake callback. Initialize the wrapper
-at its final address, arm it once, then publish that returned reference to
-producers and async waiters. Shared access cannot register again or overlap
-setup with an `inner()` producer borrow. An error still consumes the static
-borrow and retains the wrapper/backing; safe code cannot retry or reclaim it.
-This Rust setup rule changes no native, C++ or Zig interface. It does not
-establish fairness for multiple waiters sharing the single waker slot.
+- Native initialization publishes a handle only after every stage succeeds. A
+  failure releases earlier stages and returns the initialization error; heap
+  helpers free failed allocations. This covers C and the C++, Rust and Zig
+  constructors. `ove_sync_context` is available with EVENTGROUP alone.
+- Masks use the configured payload domain from the `valid_mask` accessor in
+  every binding: FreeRTOS reserves its native high byte, other engines expose
+  all 32 bits. Invalid scalar masks return zero without effects; ISR clear and
+  invalid waits return InvalidParam. Waits reject zero masks and unknown flags
+  before touching the result or a deadline clock. Zero set/clear masks are
+  valid. Task clear returns the full prior value.
+- NuttX snapshots share writer exclusion. Zephyr clear shares the native event
+  lock through a private syscall that keeps granted user-mode callers working.
+- Zig timed waits return InvalidParam alongside Timeout; its forever wait
+  requires valid inputs and panics on an unexpected error.
+- FreeRTOS deferred commands use stable internal tokens. Teardown cancels queued
+  work before native deletion and releases the backing at once; external
+  sources, producers and synchronous users must already be quiescent. The timer
+  daemon protects its update against task teardown, drops owner/token access,
+  then runs saved notify callbacks after publication; clear propagates its wake
+  request. MPU V1 teardown keeps caller privilege. Notify code and data must
+  stay live through pending dispatch: unregister/deinit is not a reclamation
+  fence.
 
-The native `ove_condvar_wait_checked` entry reports whether the calling thread
-owns its ordinary mutex on every return, including errors. Success and clean
-timeout report held; other errors can report held or released. The output must
-be writable and disjoint from the primitive backing. Rust consumes its current
-view and uses this output to preserve private cleanup on either error outcome;
-an error returns no view. Success/clean timeout return reacquired access. C++
-and Zig convenience methods use the legacy status contract.
-Both entries finish waiter retirement before returning; cleanup of a permanently
-broken internal mutex has no bounded-recovery guarantee.
+**Rust ownership and context**
+
+- Typed storage claims one native generation until legal cleanup completes,
+  with the same live/forgotten/retained exclusion as `Queue`; the typed
+  eventgroup macro uses it. Raw constructors need stable exclusive backing.
+- Construction, cleanup and notify setup require RESOURCE; task operations,
+  including zero waits, require BLOCKING. Unsupported scalar calls return zero
+  and `Result` methods `NotSupported`, before any effect; an unsupported Drop
+  retains the resource and claim. ISR-named calls made by a task use the task
+  operations. Relative waits work without TIME; `Instant` methods need it.
+- `AsyncEventGroup::arm` takes a shared reference; it has no exclusive-setup
+  guarantee like `AsyncQueue`'s.
+
+---
+
+## IRQ and context queries
+
+| Query | Available with | Result |
+|---|---|---|
+| `ove_is_in_isr()` | always | true in interrupt context (host: inside simulator ISR wrappers) |
+| `ove_sync_context()` | SYNC, QUEUE or EVENTGROUP | mask of `OVE_SYNC_CONTEXT_RESOURCE` / `_BLOCKING` / `_PRODUCER`; zero when disabled |
+| `ove_irq_lock()` / `ove_irq_unlock()` | ASYNC | native exclusion; disabled stubs give none |
+
+None of them needs object setup, allocation, TIME or ASYNC (except the lock).
+
+**Context flags** (full rules on `ove_sync_context` in `ove/irq.h`):
+
+- RESOURCE (native init/destroy) and BLOCKING (mutex acquisition, condition
+  variables) need an active, non-idle thread with interrupts enabled; FreeRTOS
+  also grants RESOURCE before the scheduler starts.
+- PRODUCER (task semaphore/Event posts, serialized notification setup) also
+  holds in masked task contexts and nested critical sections, and on FreeRTOS
+  before scheduler start and while the scheduler is suspended. It permits
+  nothing else.
+- All flags are zero in an ISR, in unprivileged code, on unsupported
+  architectures, FreeRTOS multicore and NuttX SMP. They are not the test for
+  releasing an already-owned mutex, which can stay legal with interrupts masked.
+- POSIX timer dispatchers mark callbacks as ISR context and its critical
+  sections report PRODUCER only; this does not model signal handlers or real
+  IRQ exclusion.
+
+**Critical sections.** Every binding shares the native domain of
+`ove_irq_lock`/`ove_irq_unlock`; Rust's global `critical_section` provider and
+`SpinMutex::with` do not widen it. Pass the opaque 64-bit key back unchanged,
+once, in LIFO order on the same thread or handler activation (FreeRTOS task
+keys need not be zero). No binding-owned heap or application FFI is needed.
+The FreeRTOS admission rules (supported ports, eligible handlers and grouping,
+MPU V1 restricted tasks, stop-before-key even with assertions disabled) and the
+native-body limitation (unlock restores the captured masks, but native calls in
+the body can lower a stronger BASEPRI or clear PRIMASK, so this is not a global
+IRQ mask) are stated on `ove_irq_lock` and in the
+[IRQ contract](../api/sync.md#irq-critical-sections). Other engines keep their
+native contracts.
 
 ---
 
@@ -356,19 +441,46 @@ broken internal mutex has no bounded-recovery guarantee.
 
 ---
 
+## SPI and I2C
+
+The native rules (byte counts and provider limits, 16-bit frames and alignment,
+buffer overlap, per-segment timeouts, chip-select and mutex scope, read filler,
+seven-bit addresses, repeated starts, async completion context and retention)
+are defined once in the [SPI](../api/spi.md) and [I2C](../api/i2c.md)
+references. They are checked before any effect and apply unchanged through
+every binding; I2C transfers are never split to bypass a limit. C++ and Zig
+pass them through. Rust adds owners, documented with their examples in those
+references:
+
+- `Spi`/`Spi16`, `I2c` and their `AsyncSpi*`/`AsyncI2c` forms take ordinary
+  `Config`/`ChipSelect`/`Transfer` values and need no application FFI, Rust
+  global allocator or manual pinning. Heap owners use the native allocator;
+  static `*Storage` types are claimed until native deinit finishes, and a live
+  or forgotten owner makes another init return `Busy`. Owners are not
+  `Copy`/`Clone`/`Send`/`Sync`; moving one leaves native backing in place.
+- Async owners stage TX/RX in binding-owned buffers. Static capacity overflow
+  returns `NoSpace` before I/O. Only a successful live future copies RX back.
+  Dropping or forgetting a future does not cancel the I/O: new nonempty work
+  returns `BusBusy` until it settles, and `flush().await` consumes its result.
+  Owner Drop defers cleanup until native callback, wake and submission tails
+  finish; a missing completion retains bounded backing or a claim.
+- The `embedded-hal`/`embedded-hal-async` adapters validate the whole operation
+  list before effects and reject unsupported shapes.
+- Other handles on the same bus, and raw async users, need external
+  coordination.
+
+---
+
 ## Inference
 
-The backend enforces one admitted session across handles: init/create returns
-`OVE_ERR_BUSY` before storage/output writes, allocation or interpreter setup.
-Admission covers constructor failure cleanup, destructors and final frees.
-Losing a session without closing it retains admission indefinitely; a new
-constructor does not recover it. Raw operations on one live handle must be
-externally serialized, and retained model bytes/storage/arena must outlive the
-final close call returning. An old handle cannot be reused after its storage
-is initialized for another session. This rule does not validate arbitrary
-model graphs or make arbitrary arena sizes safe; existing valid-model and
-sufficient-arena preconditions remain.
-
+The C session rules are in the [inference API](../api/infer.md) and the
+[trusted-model and arena contract](inference-runtime.md): one session is
+admitted at a time across handles (a second init/create returns `OVE_ERR_BUSY`
+before any effect, admission is held through teardown, and a session lost
+without closing keeps it); models are trusted, immutable, 16-byte-aligned
+build-time assets with no general validator; operations on one handle are
+serialized by the caller; model bytes, storage and arena outlive the final
+close; a handle cannot be reused once its storage holds another session.
 
 | Contract | C++ | Rust | Zig |
 |---|---|---|---|
@@ -383,135 +495,77 @@ sufficient-arena preconditions remain.
 | Unsupported tensor descriptor type or rank above five | `Error::NotSupported` | `Error::NotSupported` | `error.NotSupported` |
 | Other setup failure | `Error::MlFailed` | `Error::MlFailed` | `error.MlFailed` |
 
-Successful input/output descriptors preserve the exact float32, int8, uint8,
-int16 or int32 type and rank zero (scalar) through five. Unused dimensions are
-zero. The C getters leave the caller's descriptor unchanged on error. C++ typed
-pointer helpers return `nullptr` on descriptor errors; Rust and Zig getters
-propagate the native error. Output data is read-only.
-
-These bindings share the [trusted-model and arena contract](inference-runtime.md).
-Models are immutable build-time assets aligned to 16 bytes; there is no general
-model validator. Below the startup minimum, setup returns NoMemory (OutOfMemory in Zig) before SDK
-construction. Once persistent/preparation needs are met, exhausted allocation
-or planning capacity also returns NoMemory (OutOfMemory in Zig). Intermediate undersized configurations
-have undefined behavior. Each admitted setup clears the effective arena in
-O(arena_size) time. Outputs are read-only.
-
-Measure the configured target/provider and retain at least reported usage plus
-16 bytes while keeping its qualified preparation capacity. Final usage can
-exclude temporary setup peaks; shrinking until failure is unsafe. Re-measure
-after model/provider/TFLM changes. In C the query is `ove_model_arena_used()`;
-null or accessible closed handles return zero. A dangling handle is invalid.
-
-C++ embedded zero-heap `Model<N>` rejects a configured arena larger than N
-before native initialization and forwards accepted capacities unchanged.
-It keeps the constructor's assertion policy; if the hook returns or assertions
-are disabled, failure leaves an empty model with a null handle. Heap models
-allocate the requested capacity independently of N. Cleanup runs before
-embedded storage members are destroyed. `ModelStorage<N>::load` uses exactly
-its own arena capacity and returns errors through `Result`.
-
-Zig uses `ove.infer.linkedModel("g_my_model_data")` for generated array and
-length symbols. The binding references the array address and loads the scalar
-length separately. The integration establishes a complete immutable initialized
-array, matching `unsigned int` length, actual 16-byte alignment and program
-lifetime. This helper supplies metadata and does not validate arbitrary linkage
-or native model programs. `modelSlice` remains a low-level truthful-pointer/
-length adapter.
-
-Zig zeroheap `init` rejects a configured size larger than the supplied slice
-before native effects and preserves accepted sizes exactly. It publishes
-tracking state only after native success; failed live attempts, including Busy,
-preserve the existing owner. A failed first init grants no usable object or
-cleanup rights. Retain model bytes, arena and stable wrapper storage through
-close and serialize access/reuse. Repeated close on an initialized closed object
-is a no-op, including Debug; live pin validation remains active. Heap creation
-keeps native allocation behavior.
-
-Rust creates a private-field `ModelConfig` with unsafe
-`ModelConfig::from_trusted_model(bytes, capacity)`. This declares qualification
-of the native program, target/provider build, exact configured capacity and
-setup/teardown behavior; it does not validate arbitrary model programs. The
-token retains the immutable bytes and cannot safely be changed to a smaller
-capacity. `Model::new(&cfg)` and `ModelStorage::load(&cfg)` retain the asset
-loan independently of the temporary config object. A borrowed session also
-exclusively borrows its storage. `ModelStorage::new` is const and its arena
-field is individually aligned to 16 bytes. A larger storage buffer still uses
-exactly the qualified configured size; a smaller buffer is rejected before
-native effects. Native allocation needs no Rust allocator or `alloc` feature.
-
-Rust tensor views accept only sealed `f32`, `i8`, `u8`, `i16`, and `i32`
-elements and require the exact descriptor type. They check whole elements,
-alignment, representable lengths and the complete retained allocation before
-forming references. Mutable input views require `&mut Model` and lie wholly
-inside its effective writable arena. Shared output views can also borrow
-immutable model-backed constants. Empty views are valid independent empty
-slices. The view's borrow excludes incompatible views, invocation, reload and
-close. Native setup zeroes the entire effective arena; defined invocation
-must preserve valid initialized backing even on an ordinary error. Reading
-initialized stale outputs does not require a successful prior invocation.
-
-`unsafe Model::invoke(&mut self)` separately requires a qualified numeric
-input/state domain for the exact program/build. An error return does not
-excuse an undefined call. The original live keyword examples are build
-coverage until their live microphone domains are qualified; a finite
-reference corpus does not establish that broader domain. The generated
-`model_data!` accessor is also unsafe: the integration establishes its linked
-array/length pair, full initialized immutable span and program lifetime.
-Applications use the binding's config/storage/view APIs without application FFI.
-
-Rust keeps `Send` and shared-reader `Sync`: moving an owner leaves backing in
-place, shared native metadata queries read eagerly initialized records, and
-all mutation needs exclusive access. Construction and invocation reject
-detected ISR context with `InvalidParam`. Normal Drop synchronously calls the
-matching native deinit/destroy once. ISR Drop performs no native handle access,
-teardown or free, retaining resources and admission permanently. This uses the
-same no-worker/no-old-owner-access policy as forgetting a borrowed session;
-later construction returns Busy before touching abandoned backing. Host POSIX
-reports no hardware ISR, independently of simulated ordinary-thread callbacks.
-
-The C binding-support queries `ove_model_binding_arena` (live effective span,
-excluding front padding) and pointer-free `ove_model_binding_in_isr` are
-available with INFER independently of ASYNC, including through C++ and Zig's
-C import. They transfer no ownership. Raw descriptor pointer access and raw
-`Model::from_static` integration still require their documented unsafe backing
-and serialization contracts.
-
 **Contract notes**
 
-- The arena is the bulk of a session's memory, so it lives in caller storage
-  meant to be static, never inside an object that may land on a thread's
-  stack. A zero-heap C++ `ove::Model<N>` with `N > 0` still embeds its arena,
-  for compatibility; prefer `ModelStorage`.
-- One model session at a time: the backend shares one interpreter between
-  sessions, so a pipeline loads its models into one storage in turn, ending
-  each session before loading the next.
+- Below the startup minimum, or once allocation/planning capacity is exhausted,
+  setup returns NoMemory (OutOfMemory in Zig); configurations in between are
+  undefined. Each setup clears the arena in O(arena_size). Size the arena from
+  a measured `arena_used` plus 16 bytes on the real target and re-measure after
+  model, provider or TFLM changes. `ove_model_arena_used()` returns zero for
+  null or closed handles; a dangling handle is invalid.
+- Descriptors keep the exact float32, int8, uint8, int16 or int32 type and rank
+  zero to five; unused dimensions are zero. C getters leave the descriptor
+  unchanged on error, C++ typed pointer helpers return `nullptr`, Rust and Zig
+  propagate the error. Outputs are read-only.
+- C++ embedded `Model<N>`, Rust `ModelStorage` and Zig zero-heap `init` reject
+  a configured arena larger than their storage before native effects and pass
+  smaller sizes through unchanged. C++ `ModelStorage<N>::load` always uses N.
+- The arena lives in caller storage meant to be static, never inside an object
+  that may land on a thread's stack. A zero-heap C++ `ove::Model<N>` with
+  `N > 0` still embeds its arena; prefer `ModelStorage`.
+- One session at a time: a pipeline loads its models into one storage in turn,
+  ending each session before the next.
 - Asymmetry: Zig has no heap-mode form that borrows caller storage; its heap
   build allocates per session with `Model.create`.
+
+**Per binding**
+
+- C++ zero-heap `Model<N>` keeps the constructor assertion policy; if the hook
+  returns, the model is empty with a null handle. Heap models allocate the
+  requested size regardless of N. `ModelStorage<N>::load` returns errors
+  through `Result`.
+- Zig `ove.infer.linkedModel("g_my_model_data")` references the generated
+  array and its `unsigned int` length; the integration guarantees a complete,
+  immutable, aligned array with program lifetime (`modelSlice` is the raw
+  adapter). Zero-heap `init` publishes state only after native success, so a
+  failed attempt, including `Busy`, leaves an existing owner untouched. The
+  wrapper must not move while live (checked in Debug); a repeated close is a
+  no-op.
+- Rust puts the qualification obligations on `unsafe
+  ModelConfig::from_trusted_model` and `unsafe Model::invoke`, and on the
+  generated `model_data!` accessor. Sessions borrow the model bytes and their
+  storage exclusively. Tensor views accept only `f32`, `i8`, `u8`, `i16` and
+  `i32` of the exact descriptor type and are bounds- and alignment-checked.
+  Construction and invocation return `InvalidParam` in a detected ISR; Drop in
+  an ISR touches nothing and retains the resources and admission permanently,
+  so later construction returns `Busy`. The `ove::infer` crate docs hold the
+  full rules.
+- `ove_model_binding_arena` (live span, excluding front padding) and
+  `ove_model_binding_in_isr` are available with INFER alone, also to C++ and
+  Zig, and transfer no ownership.
 
 ---
 
 ## MQTT clients
 
-C owns one reusable buffer pair for an initialized client and each attempt's
-socket/TLS session separately. Heap allocation of the pair is lazy and atomic;
-disconnect/failure releases transport, while deinit/destroy also frees the pair.
-Zero-heap pairs remain embedded. BUSY rejection preserves all live state; accepted
-reconnect resets local clean-session subscriptions. Complete CONNECT/RX preflight
-must precede effects. C storage ABI stays unchanged by this ownership policy.
+- C owns one reusable buffer pair per initialized client and each attempt's
+  socket/TLS session separately. A heap pair is allocated lazily and
+  atomically; disconnect or failure releases the transport, deinit/destroy also
+  frees the pair. Zero-heap pairs are embedded. A `Busy` rejection preserves all
+  live state; an accepted reconnect resets local clean-session subscriptions.
+  CONNECT/RX preflight completes before any effect.
+- C++ callbacks use an instance field with `user_data=this`; the client's
+  stable address and non-movability keep the context valid. A failed connect
+  restores the previous callback, and clients route independently. Rust stores
+  a function pointer in the C user data; Zig uses a comptime trampoline or typed
+  context. Owning cleanup in every binding releases an active transport.
+- All operations on one client must be serialized by the caller. A synchronous
+  callback may disconnect without losing its packet views, but must return
+  before reconnect, destructive cleanup or another packet operation on that
+  client. Views cannot escape the callback. Raw C destroy invalidates the
+  handle; destroying through a stale handle is not supported.
 
-C++ callbacks use an instance field with `user_data=this`; its stable address
-and existing non-movability keep the context valid. Failed connect restores the
-previous callback, and independent clients route independently. Rust stores a
-function pointer in C user data; Zig uses its static/comptime trampoline or typed
-context. Owning cleanup in each binding releases an active transport through C.
-
-All operations on one client require caller serialization. A synchronous callback
-may disconnect without losing its packet views; it must return before reconnect,
-destructive cleanup or another packet operation on the same client. Views cannot
-escape callback return. Raw C destroy invalidates its handle; this does not
-promise redundant destruction through a stale handle or extend every wrapper's
-existing idempotence contract.
+---
 
 ## Callbacks
 
@@ -571,29 +625,13 @@ are value-sized views; deleting the widget tree is an explicit `.del()`.
 
 **Contract notes**
 
-- Rust Canvas views remain pointer-sized and `Copy`. Pixel storage belongs to
-  the native Canvas subclass and survives dropped or forgotten Rust views. It
-  remains live through object and child deletion callbacks, then native
-  destruction releases it. `set_buffer` copies an immutable initializer before
-  returning; `allocate_buffer` creates zeroed pixels, with a black/white I1
-  palette. Both return `Result`, use LVGL's existing pool in heap and zero-heap
-  builds, and need no Rust allocator. Replacement temporarily needs both old
-  and new allocations; preparation failure preserves the current pixels.
-- Rust Canvas initializers contain tightly packed rows. I1 has two BGRA palette
-  entries (eight bytes), followed by each row rounded up to whole bytes. The
-  binding handles native row padding and alignment. Nonpositive dimensions,
-  unsupported formats, length mismatch and native header/stride overflow return
-  `InvalidParam`; allocation failure returns `NoMemory`. Native widget creation
-  keeps upstream LVGL's allocation/assertion behavior. C++/Zig raw Canvas buffer
-  APIs borrow writable initialized backing with the configured native stride,
-  palette and alignment; their callers keep it valid through native close.
-- Rust's raw Canvas buffer and layer operations are unsafe escape hatches.
-  Layer storage, queued tasks and referenced drawing resources must remain live
-  and exclusive through paired init/finish, with unchanged canvas backing. The
-  binding evicts normalized image caches after ordinary pixel/fill mutations
-  and layer completion. Existing widget-handle, locking and native callback
-  constraints still apply; this ownership rule does not enforce all LVGL
-  lifecycle or thread-safety contracts in the type system.
+- Rust Canvas views are `Copy` and pixel storage belongs to the native widget:
+  `set_buffer` copies tightly packed rows, `allocate_buffer` creates zeroed
+  pixels, both use LVGL's pool and return `Result` (`InvalidParam` for bad
+  dimensions, format or length, `NoMemory` on allocation failure), and a failed
+  replacement keeps the current pixels. The raw buffer and layer methods are
+  `unsafe`. C++/Zig Canvas buffers are borrowed, initialized, native-stride
+  backing that the caller keeps valid until native close.
 - The graphics thread must hold the LVGL lock around `tick`/`handler` and any
   widget mutation. C++ and Rust release the lock at scope exit (destructor /
   `Drop`); Zig uses `const g = lvgl.lock(); defer g.deinit();`.
@@ -626,11 +664,11 @@ lowers that into its language's error type.
 - The numeric `OVE_ERR_*` ↔ enum mapping is **pinned** in every binding and
   enforced by the `error-code-pin` lint (`make lint`): every C code must be
   handled by every binding.
-- Unknown-code policy: Rust always surfaces `Error::Unknown(code)` (it can carry
-  the integer). Zig cannot carry a payload in an error set, so it **panics in
-  `Debug`** (loud, localised drift detection during development/tests) and
-  **degrades to `Error.UnknownErrorCode` in release** so a shipped binary never
-  hard-crashes on a code the substrate added but the binding hasn't mapped yet.
+- Unknown-code policy: Rust always surfaces `Error::Unknown(code)`. Zig cannot
+  carry a payload in an error set, so it **panics in `Debug`** (loud drift
+  detection during development) and **degrades to `Error.UnknownErrorCode` in
+  release**, so a shipped binary never crashes on a code the binding has not
+  mapped yet.
 
 ---
 
@@ -659,219 +697,9 @@ constants in every binding; see [Versioning](versioning.md).
 
 ## Maintaining this contract
 
-I2C's native boundary validates seven-bit addresses and independent TX/RX byte
-counts before locking, hardware or async publication. STM32 accepts at most
-65535 bytes per phase; Zephyr counts fit uint32_t; NuttX counts fit ssize_t and
-the supported F7 int counter. No automatic splitting may change STOP/repeated
-start behavior. Register writes count the prefix byte. Empty TX in write-read
-means plain read; zero-byte synchronous writes/probes preserve the address phase.
-NuttX's two-message combined operation sets NOSTOP first and READ last. These
-native boundary checks do not establish Rust async retained-buffer ownership.
-
-Synchronous Rust I2C uses ordinary Config, native-heap owners and claimed
-static I2cStorage. Bus methods require exclusive access; owners are not
-Copy/Clone/Send/Sync. Static claims reopen only after native cleanup returns,
-while forgotten owners keep their claim. Unsafe raw wrappers remain nonowning.
-The embedded-hal adapter validates the complete operation list before effects:
-it supports [], one write (including empty), one nonempty read, and nonempty
-write followed by nonempty read. Other shapes, including an empty write prefix
-before read, fail without dispatch. Inherent empty-prefix write_read remains a
-plain read. Relative I2C/SYNC durations do not require TIME; clock-based SYNC
-methods do. With CONSOLE absent, the existing Rust log output is a no-op.
-Synchronous owners require raw async users to retire before cleanup.
-
-Asynchronous Rust I2C uses the same Config with AsyncI2c::new in heap builds or
-claimed AsyncI2cStorage<TX, RX=TX> in either allocation mode. Stable native
-backing and independent TX/RX byte staging need no application FFI, Rust global
-allocator or manual pinning. Operations require &mut self. Owners and operation
-futures are neither Send nor Sync; owners are neither Copy nor Clone. Moving an
-owner keeps native backing in place. Either static capacity may be zero;
-exceeding either returns NoSpace before I/O. Heap growth preserves each phase's
-high-water capacity, checks the combined layout and allocates the new pair
-before freeing the old pair, with native alignment overhead.
-
-Dropping an operation detaches its waiter; forgetting it does not run Drop, so
-the waiter remains until completion, replacement or owner close. Both release
-application borrows without cancelling I/O: native code retains internal spans,
-and only a successful live future copies RX back. Active orphans return
-BusBusy for new work. A new operation can replace a ready orphan; flush awaits
-and consumes its actual result without RX copyback. Owner Drop defers cleanup
-through native callback, wake and submission tails; static claims reopen only
-after native deinit returns. Missing completion or a forgotten owner retains
-one bounded context/capacity or claim. There is no watchdog, filler or split.
-Separate handles still require physical-bus coordination.
-
-The embedded-hal-async seven-bit adapter preflights the entire list: [] is a
-no-op (address still checked; orphan not flushed), a nonempty write/read or
-nonempty write followed by nonempty read uses one native transaction. Other
-lists return NotSupported before effects. Empty single phases and a nonempty
-write with empty read return InvalidParam; an empty write prefix before read,
-including both-empty, returns NotSupported. Trait write_read follows that
-policy; inherent write_read uses empty TX as plain read, empty RX as pure write,
-and rejects both empty. Independent counts and provider limits apply unchanged.
-The minimal closure is native I2C, ASYNC, SYNC, TIMER and TIME plus Rust async;
-SPI/GPIO/CONSOLE are unnecessary. NuttX debug zero-heap preparation returns
-NotSupported; release zero-heap retains the native worker-reserve behavior,
-whose reclamation can outlast notification. Static Rust staging does not alter
-that native resource policy.
-
-SPI's native boundary counts bytes in either word mode. In 16-bit mode it
-requires whole frames and `uint16_t`-aligned buffers. Raw TX/RX spans cover the
-full count and may be disjoint or exactly identical in-place; partial overlap
-is rejected. All nonempty sequence records and backend limits are checked
-before effects. Software CS and the mutex for one ove handle span a synchronous sequence;
-async use needs separate coordination because it does not take that mutex;
-native hardware selection/controller ownership may end between segments on
-NuttX and Zephyr. Read filler is backend-defined, possibly initial RX contents.
-STM32 synchronous chunks share one per-segment timeout budget; its one-shot
-async limit is 65535 frames.
-
-Synchronous Rust SPI owners select their native word size: `Spi` uses `u8` and
-`Spi16` uses `u16`. Public `Config`, `ChipSelect` and borrow-retaining `Transfer`
-descriptions support ordinary calls without application FFI. Unequal slices
-become a full-duplex prefix and a half-duplex tail in one native sequence;
-neither buffer is published beyond its supplied span. Empty operations are
-no-ops. Every logical descriptor occupies two native records, with checked
-flattened count and no temporary array proportional to the sequence length.
-Heap owners use native create/destroy; static `SpiStorage::init` claims stable
-backing until native deinit finishes. Forgetting a static owner retains its
-claim; unsafe raw wrappers are nonowning. Owners are not Copy/Clone/Send/Sync.
-Native backend limits and coordination with separate handles remain the
-caller's responsibility. Zig slice adaptation remains separate.
-
-Rust async SPI uses typed `AsyncSpi`/`AsyncSpi16` owners and
-`AsyncSpiStorage<N, W = u8>` with ordinary `Config`/`ChipSelect`. It stages the
-complete larger slice length, zero-pads missing TX and discards excess RX in
-one native operation. Successful live futures copy only requested RX; error
-completion leaves application RX unchanged. Static capacity counts words and
-returns `NoSpace`; heap growth uses the native allocator and can fail.
-
-Native code retains only stable internal backing and copied CS. Future Drop
-or forget does not cancel I/O. Active orphans reject new nonempty work with
-`BusBusy`; empty work does nothing, and flush awaits/consumes the actual result.
-Owner Drop marks closing; independent native/callback/wake/submission lifetimes
-defer deinit/free/static-claim release until their final access. No future-owned
-reference count depends on Drop after Pending. Metadata locking never encloses
-Waker code, native calls, allocation or payload copying. Owners and futures
-remain neither Send nor Sync. Forgotten owners or missing completions retain
-bounded backing/claims. The old raw-handle constructor is removed.
-
-The async feature itself requires no Rust global allocator. The executor uses
-its static slot when `alloc` is disabled; with `alloc` in heap mode it keeps
-its existing Box allocation. SPI heap backing always uses native allocation.
-Native frame limits, task-context/nonblocking callback obligations, physical
-bus coordination and NuttX worker reserve/debug-zero restrictions still apply.
-
 When you add or change a binding API, update this page in the same change so the
-three languages stay aligned. The examples under `apps/{cpp,rust,zig}/` act as
-conformance tests for these semantics — if an example has to drop to raw FFI to
-express something, that is a gap in the contract (or the wrapper), not a licence
-to diverge.
-
-Native Queue initialization validates nonzero dimensions, product overflow and
-provider limits before entering the kernel. Partial initialization failures
-retire earlier resources and do not publish an output handle, permitting retry
-on the same quiescent backing. Rust and Zig propagate the error; C++ applies
-its constructor initialization assertion after native cleanup. C callers must
-keep storage and the complete item buffer exclusive through teardown. Queue-only
-configurations provide interrupt detection and resource-context queries without
-enabling SYNC, TIME or ASYNC; this does not broaden the admitted context flags.
-
-Rust Queue holds one claim on typed zero-heap backing until complete native
-cleanup. Live, initializing, tearing-down, forgotten and retained owners reject
-another claim with Busy before native entry. Clean initialization errors reopen
-the claim; Raw owners still deinitialize their exclusive backing. Heap owners
-allocate independently. Queue payloads are invariant: shared insertion cannot
-shorten a stored reference's lifetime. Borrowed heap payloads remain supported,
-and owner Send/Sync requires Copy + Send without requiring T: Sync. Private
-unused typed storage remains shareable for local non-Send Copy payloads.
-
-Rust construction and destruction require RESOURCE; unavailable Drop retains
-the resource and any claim. Task transfers, including zero timeout, require
-BLOCKING before native or deadline-clock effects. ISR-named methods dispatch
-actual task callers through the admitted task route. Native interrupt priority
-and setup requirements still apply. Relative durations work without TIME;
-absolute deadlines require TIME. Infallible task occupancy snapshots return
-inert zero outside admitted context, so is_empty returns true and is_full false;
-this fallback does not report actual emptiness. Capacity is validated constant N.
-Raw backing and callback installation retain their documented unsafe contracts;
-notification setup requires RESOURCE and serialization through all callback
-tails. These Rust ownership rules do not impose a new C++ or Zig lifetime API.
-
-Rust AsyncQueue setup consumes exclusive static access and returns shared ready
-access only after callback installation. Producers and receive futures use that
-shared reference. Safe permanent placement can use StaticCell without a core
-allocator dependency or application FFI. Setup uses Queue's RESOURCE admission;
-producer-only masked contexts are insufficient. Error consumes the static borrow
-too, retaining wrapper/backing and preventing safe retry or reclamation. Static
-lifetime keeps callback data alive after publication, while exclusive setup
-prevents registration from overlapping another registration or producer.
-
-EventGroup native initialization publishes a handle only after all native stages
-succeed. Failures release earlier stages and preserve the initialization error;
-heap helpers release failed allocations. This contract applies to C initialization
-and the C++/Rust/Zig constructors. The existing pointer-free context query is
-available with EVENTGROUP alone, including without SYNC, QUEUE, TIME or ASYNC.
-EventGroup Rust storage ownership and operation admission are separate repairs.
-
-EventGroup masks use the configured payload domain exposed by the ordinary C,
-C++, Rust and Zig accessors. FreeRTOS reserves its native high byte; no global
-24-bit restriction applies to the other engines. Invalid scalar masks return
-zero without effects; ISR clear and invalid waits report InvalidParam. Waits
-reject zero masks and unknown flags without changing the result or reading a
-deadline clock. Zero set/clear masks remain valid. Task clear returns the full
-prior value. NuttX snapshots share writer exclusion; Zephyr clear shares the
-native event lock through a private syscall that preserves granted native user
-callers. Zig timed waits expose InvalidParam alongside Timeout; its scalar
-forever wait requires valid inputs and panics on an unexpected error. Larger
-set/wait result normalization remains separate work.
-
-FreeRTOS EventGroup deferred commands use stable internal tokens. Teardown
-cancels queued associations before native deletion and immediate backing release;
-external sources/producers and synchronous users must already be quiescent.
-The daemon protects its native update against task teardown, detaches owner/token
-access, then invokes saved notify locals after publication. Clear propagates the
-daemon wake request too. Native MPU V1 task teardown preserves caller privilege.
-These guarantees keep C++ inline and Zig allocator-owned retirement unchanged.
-Notify data is separate: code/data must remain live through pending dispatch and
-saved tails, and unregister/deinit is not a data reclamation fence.
-
-Rust EventGroup typed storage claims one native generation until complete legal
-cleanup. Live, initializing, tearing-down, forgotten and retained generations
-exclude another zero-heap owner. Heap constructors remain independent; raw
-constructors require stable exclusive backing through actual cleanup or retention.
-Construction, cleanup and notify setup require RESOURCE permission. Unsupported
-Drop retains the native resource and claim. Task operations, including zero waits,
-require BLOCKING; unsupported scalar calls return inert zero and Result methods
-return NotSupported before primitive or clock effects. ISR-named task calls use
-task operations and their snapshots; task clear preserves InvalidParam. Genuine
-interrupt calls retain native eligibility and deferred-result contracts.
-Relative Duration waits work without TIME; only absolute Instant methods require
-TIME. The typed eventgroup macro preserves this ownership policy automatically.
-AsyncEventGroup exclusive setup remains a separate repair; native cancellation
-and Rust ownership do not certify its shared registration method.
-
-### Native IRQ exclusion and restore state
-
-C, C++, Rust and Zig share the native domain of `ove_irq_lock`/`ove_irq_unlock`;
-Rust's global `critical_section` provider and scoped `SpinMutex::with` do not
-widen it. The opaque u64 key must pass through unchanged in same-context LIFO
-order; FreeRTOS task keys need not be zero. No binding-owned heap or app-side
-FFI workaround is needed for the restore state.
-
-On the admitted single-core FreeRTOS ARM ports, C entry checks the supported
-kernel-aware external IRQ/SysTick/PendSV priority and grouping before returning
-a token/key. Unsupported ports and configurations fail to compile; unsupported
-entry stops even with assertions disabled; the grouping is checked once, at the
-first lock. Ordinary unprivileged tasks are excluded. MPU V1 restricted tasks
-retain caller mode and require permitted, serviceable priority-zero SVCall with
-PRIMASK/FAULTMASK clear; this native setup invariant cannot be diagnosed by
-unprivileged mask reads.
-
-FreeRTOS wrapper transitions preserve incoming exclusion, then matching unlock
-restores captured masks exactly. Native calls inside a body can still lower a
-stronger BASEPRI or clear PRIMASK; kernel-aware exclusion remains but continuous
-stronger-mask protection and global IRQ masking are not guaranteed. The public
-[IRQ contract](../api/sync.md#irq-critical-sections) gives the concrete example.
-Other engines retain their own native contracts; FreeRTOS-specific admission
-must not be presented as universal provider enforcement.
+three languages stay aligned. State the rule, not the history of how it was
+reached; that belongs in the commit message. The examples under
+`apps/{cpp,rust,zig}/` act as conformance tests for these semantics — if an
+example has to drop to raw FFI to express something, that is a gap in the
+contract (or the wrapper), not a licence to diverge.
