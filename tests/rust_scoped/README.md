@@ -22,7 +22,3 @@ execute hardware interrupts or establish a general target timing or stack bound.
 
 Each case exits non-zero on any failed check, including a duplicate native
 initialization, a forbidden native entry or an unbalanced cleanup.
-
-`target_native` contains separate finite FreeRTOS and Zephyr Cortex-M7 controls.
-It uses actual scoped Rust operations and native ownership observations. Its
-firmware builds and execution have separate configuration and startup checks.
