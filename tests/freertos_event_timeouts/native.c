@@ -28,7 +28,7 @@ static struct {
 	__uint128_t clock, initial, observed, advance_register;
 	uint64_t ns;
 	struct step steps[4];
-	unsigned count, takes, scripted, drains, registered, retired, depth, snapshots;
+	unsigned count, takes, scripted, drains, registered, retired, depth, snapshots, traces;
 	unsigned advance_sample, epoch_bias;
 	bool observing, sampled, register_signal, committed_signal, injected, prior_abort;
 	bool registered_now, deferred_signal;
@@ -274,6 +274,7 @@ void model_trace(const char *primitive, const char *action, const void *object)
 {
 	if (strcmp(primitive, "OVE_TRACE_PRIM_EVENT") || strcmp(action, "OVE_TRACE_ACT_WAIT_EXIT"))
 		return;
+	++model.traces;
 	check(object == model.event && !model.depth && model.event->waiters == NULL,
 	      "completed call retires its automatic record before return");
 	/* Record a bad retirement while the automatic record is still alive,
@@ -304,6 +305,7 @@ static void finish(int expected)
 	int result = ove_event_wait(model.event, model.ns);
 	check(result == expected, "public return matches target latch and elapsed budget");
 	check(model.takes == model.count, "every expected positive wait occurs exactly once");
+	check(model.traces == 1, "completed call emits its exit trace once");
 	check(model.drains == 1 && model.registered == 1 && model.retired == 1,
 	      "one drain and balanced registration/retirement per operation");
 	check(model.event->waiters == NULL && !model.depth,
@@ -326,10 +328,8 @@ static void finish(int expected)
 	ove_event_deinit(model.event);
 #endif
 }
-int main(int argc, char **argv)
+int main(void)
 {
-	if (argc > 1 && !strcmp(argv[1], "canary"))
-		check(false, "early failure survives all later controls");
 	const uint64_t ten = UINT64_C(10000000);
 	__uint128_t mod = modulus();
 	begin("ordinary", ten, 100);

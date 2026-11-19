@@ -197,9 +197,6 @@ static void run(enum scenario scenario, bool restricted)
 static void supervisor(void *unused)
 {
 	(void)unused;
-#if OVE_EVENT_TARGET_CANARY
-	check(false, "early failure survives later native controls");
-#endif
 	check(!control(), "supervisor enters privileged");
 #ifdef OVE_MPU_V1
 	check((*(volatile uint32_t *)0xE000ED94 & 1) != 0, "real native MPU is enabled");

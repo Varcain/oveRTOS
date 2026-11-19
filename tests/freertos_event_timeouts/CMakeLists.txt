@@ -4,8 +4,9 @@ cmake_minimum_required(VERSION 3.20)
 project(ove_freertos_event_timeouts C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+enable_testing()
 get_filename_component(OVE_ROOT "../.." ABSOLUTE)
-set(OVE_EVENT_SOURCE "${OVE_ROOT}/backends/freertos/freertos_sync.c" CACHE FILEPATH "Event adapter source")
+set(OVE_EVENT_SOURCE "${OVE_ROOT}/backends/freertos/freertos_sync.c")
 option(OVE_SANITIZE "Instrument actual adapter and observers" OFF)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/sdk")
 foreach(header task semphr queue timers event_groups stream_buffer)
@@ -21,6 +22,7 @@ function(event_profile bits abort mode suspend)
     endif()
     file(WRITE "${folder}/ove_config.h" "${config}")
     add_executable(${name} native.c "${OVE_ROOT}/src/ove_sync.c")
+    add_test(NAME ${name} COMMAND ${name})
     target_include_directories(${name} PRIVATE "${folder}"
         "${CMAKE_CURRENT_SOURCE_DIR}/sdk" "${CMAKE_BINARY_DIR}/sdk"
         "${OVE_ROOT}/include" "${OVE_ROOT}/backends/freertos/include"

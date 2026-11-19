@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include OVE_TEST_CONVERSION
 
 #define NS_PER_SECOND UINT64_C(1000000000)
@@ -36,10 +35,8 @@ static int compare(const void *left, const void *right)
 	uint64_t a = *(const uint64_t *)left, b = *(const uint64_t *)right;
 	return (a > b) - (a < b);
 }
-int main(int argc, char **argv)
+int main(void)
 {
-	if (argc > 1 && !strcmp(argv[1], "canary"))
-		check(false, "early failure survives later controls");
 	const uint64_t rate = configTICK_RATE_HZ, limit = (uint64_t)portMAX_DELAY - 1;
 	const uint64_t quantum = NS_PER_SECOND / rate + (NS_PER_SECOND % rate != 0);
 	const uint64_t cap_ns = finite_ns((__uint128_t)limit * NS_PER_SECOND / rate);

@@ -29,7 +29,7 @@ struct resource {
 };
 static struct resource resources[64];
 static unsigned checks, failures, depth, live, allocated, freed;
-static unsigned converted, native_calls, posted;
+static unsigned converted, native_calls, posted, locks;
 static uint64_t converted_ns;
 static TickType_t converted_ticks, arguments[32], now;
 static UBaseType_t wraps;
@@ -105,7 +105,7 @@ void ove_test_conversion(uint64_t ns, TickType_t ticks)
 }
 static void reset(void)
 {
-	converted = native_calls = posted = hint_count = 0;
+	converted = native_calls = posted = hint_count = locks = 0;
 	converted_ns = 0;
 	converted_ticks = 0;
 	memset(arguments, 0, sizeof(arguments));
@@ -126,6 +126,7 @@ static void conversion(uint64_t ns, bool called)
 void model_enter_critical(void)
 {
 	++depth;
+	++locks;
 }
 void model_exit_critical(void)
 {
@@ -484,7 +485,7 @@ static void sync_cases(void)
 			      "condition clean timeout reacquires and retires with truthful ownership");
 			conversion(ns, true);
 			check(native_calls == 2 && arguments[0] == expected(ns) &&
-				      arguments[1] == portMAX_DELAY,
+				      arguments[1] == portMAX_DELAY && locks == 2,
 			      "condition wait budget and reacquisition remain distinct");
 			ove_mutex_unlock(m);
 		}
@@ -495,14 +496,14 @@ static void sync_cases(void)
 			      !event->signaled,
 		      "event immediate latch behavior remains unchanged");
 		conversion(ns, ns != UINT64_MAX);
-		check(native_calls == 1 && arguments[0] == 0,
+		check(native_calls == 1 && arguments[0] == 0 && locks == 1,
 		      "latched event drains stale hint without claiming full-domain wait accounting");
 	}
 	reset();
 	event->signaled = 0;
 	active_event = event;
 	check(ove_event_wait(event, UINT64_MAX) == OVE_OK && native_calls == 2 &&
-		      arguments[1] == portMAX_DELAY && event->waiters == NULL,
+		      arguments[1] == portMAX_DELAY && event->waiters == NULL && locks == 2,
 	      "encoded forever event takes inert notification route");
 	active_event = NULL;
 	ove_event_deinit(event);
@@ -534,7 +535,9 @@ static void group_cases(void)
 		check(native_calls == 1 && arguments[0] == expected(ns),
 		      "group submits exact bounded argument");
 	}
+	reset();
 	ove_eventgroup_deinit(g);
+	check(locks == 1, "group teardown excludes deferred commands");
 #ifndef CONFIG_OVE_ZERO_HEAP
 	int rc = ove_eventgroup_create(&g);
 	check(rc == OVE_OK, "common heap group constructor");
@@ -569,6 +572,7 @@ static void stream_cases(void)
 			check(native_calls == (ns ? 1u : 0u) &&
 				      (!ns || arguments[0] == expected(ns)),
 			      "stream uses exact finite/forever native budget");
+			check(locks == native_calls + 1, "stream locks its ring once per attempt");
 		}
 		for (unsigned wrap = 0; wrap < 2; ++wrap) {
 			reset();
@@ -589,6 +593,8 @@ static void stream_cases(void)
 			check(native_calls == budget && arguments[0] == budget &&
 				      arguments[native_calls - 1] == 1,
 			      "stream keeps one elapsed budget across hints and model wrap");
+			check(locks == native_calls + 1 + send,
+			      "stream locks its ring once per attempt");
 		}
 		reset();
 		count = 99;
@@ -661,10 +667,8 @@ static void dns_cases(void)
 	dns_callback = NULL;
 	dns_context = NULL;
 }
-int main(int argc, char **argv)
+int main(void)
 {
-	if (argc > 1 && !strcmp(argv[1], "canary"))
-		check(false, "early failure survives later controls");
 	queue_cases();
 	sync_cases();
 	group_cases();

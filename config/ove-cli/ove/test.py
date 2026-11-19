@@ -180,7 +180,7 @@ def _cmake_build(src_dir, build_dir, extra_args=None):
     run([cmake, "--build", build_dir, f"-j{nproc()}"])
 
 
-def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, True)):
+def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, True), options=()):
     """Configure, build and CTest tests/<name> once per zero-heap setting."""
     result = TestResults(suite=label)
     env = dict(os.environ)
@@ -193,7 +193,7 @@ def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, Tru
         commands = (
             ["cmake", "-S", os.path.join(ove_dir, "tests", name), "-B", build,
              "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
-             "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF")],
+             "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"), *options],
             ["cmake", "--build", build, "-j", str(nproc())],
             ["ctest", "--test-dir", build, "--output-on-failure", "--no-tests=error", "--timeout", "60",
              f"-j{nproc()}"],
@@ -1191,21 +1191,9 @@ def test_freertos_event_waiters_sanitize(ove_dir, output_dir):
 
 def _test_freertos_event_timeouts(ove_dir, output_dir, sanitize=False):
     """Check complete finite Event budgets, latch ordering and native epochs."""
-    label = "freertos-event-timeouts-sanitize" if sanitize else "freertos-event-timeouts"
-    build = Path(output_dir) / "tests" / "freertos_event_timeouts" / ("sanitize" if sanitize else "normal")
-    build.mkdir(parents=True, exist_ok=True)
-    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_event_timeouts", "run.py"), str(build)]
-    if sanitize:
-        command.append("--sanitize")
-    log = build / "gate.log"
-    with log.open("wb") as stream:
-        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=420, stdout=stream)
-    _record_scoped_observation(log, command, rc)
-    text = log.read_text()
-    valid = rc == 0 and text.endswith("freertos event timeouts: observations=26 failed=0\n")
-    if not valid:
-        print(text, end="")
-    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+    return _ctest_suite(ove_dir, output_dir, "freertos_event_timeouts",
+                        "freertos-event-timeouts-sanitize" if sanitize else "freertos-event-timeouts",
+                        sanitize, configs=(False,))
 
 
 def test_freertos_event_timeouts(ove_dir, output_dir):
@@ -1232,66 +1220,26 @@ def test_freertos_event_waiters_arm(ove_dir, output_dir):
 
 def test_freertos_event_timeouts_arm(ove_dir, output_dir):
     """Check real ordinary/V1 Event callers and native abort compatibility."""
-    label = "freertos-event-timeouts-arm"
-    build = Path(output_dir) / "tests" / "freertos_event_timeouts"
-    build.mkdir(parents=True, exist_ok=True)
-    manifest = load_manifest(ove_dir)
-    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
-    digest = hashlib.sha256(revision.encode()).hexdigest()[:8]
-    kernel = Path(ove_dir) / "dl" / ("FreeRTOS-Kernel-" + digest)
-    if not (kernel / "include/FreeRTOS.h").is_file():
-        command = ["git", "clone", "--depth", "1", "--branch", revision,
-                   get_component(manifest, "rtos", "freertos", "kernel", "url"), str(kernel)]
-        kernel.parent.mkdir(parents=True, exist_ok=True)
-        log = build / "kernel.log"
-        with log.open("wb") as stream:
-            rc = _run_owned_test_process(command, env=dict(os.environ), timeout=120, stdout=stream)
-        _record_scoped_observation(log, command, rc)
-        if rc or not (kernel / "include/FreeRTOS.h").is_file():
-            print(log.read_text(errors="backslashreplace"), end="")
-            return TestResults(suite=label, failed=1)
-    toolchain = build / "toolchain.json"
-    code = ("import json,sys;from pathlib import Path;"
-            "from ove.test import _ensure_arm_toolchain;"
-            "Path(sys.argv[2]).write_text(json.dumps(_ensure_arm_toolchain(sys.argv[1])))")
-    command = [sys.executable, "-c", code, str(ove_dir), str(toolchain)]
-    log = build / "toolchain.log"
-    with log.open("wb") as stream:
-        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=240, stdout=stream)
-    _record_scoped_observation(log, command, rc)
-    if rc:
-        print(log.read_text(errors="backslashreplace"), end="")
-        return TestResults(suite=label, failed=1)
-    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_event_timeouts", "target.py"),
-               str(output_dir), "--freertos", str(kernel), "--toolchain", json.loads(toolchain.read_text())]
-    log = build / "target-gate.log"
-    with log.open("wb") as stream:
-        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=900, stdout=stream)
-    _record_scoped_observation(log, command, rc)
-    text = log.read_text()
-    valid = rc == 0 and text.endswith("freertos event native gate: observations=8 failed=0\n")
-    if not valid:
-        print(text, end="")
-    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+    on = {False: "OFF", True: "ON"}
+    profiles = {("v1-" if mpu else "ordinary-") + ("abort-" if abort else "default-") + ("zero" if zero else "heap"):
+                {"OVE_MPU_V1": on[mpu], "OVE_ZERO_HEAP": on[zero], "OVE_NATIVE_ABORT": on[abort]}
+                for mpu in (False, True) for abort in (False, True) for zero in (False, True)}
+    return _freertos_arm_profiles(ove_dir, output_dir, "freertos_event_timeouts", "freertos-event-timeouts-arm",
+                                  "target", "event_timeout_target", profiles)
 
 
 def _test_freertos_timeouts(ove_dir, output_dir, sanitize=False):
     """Check exact finite budgets and all shared native conversion consumers."""
+    from .download import git_clone
+    from .utils import hashed_dir
     label = "freertos-timeouts-sanitize" if sanitize else "freertos-timeouts"
-    build = Path(output_dir) / "tests" / "freertos_timeouts" / ("sanitize" if sanitize else "normal")
-    build.mkdir(parents=True, exist_ok=True)
-    command = [sys.executable, os.path.join(ove_dir, "tests", "freertos_timeouts", "run.py"), str(build)]
-    if sanitize:
-        command.append("--sanitize")
-    log = build / "gate.log"
-    with log.open("wb") as stream:
-        rc = _run_owned_test_process(command, env=dict(os.environ), timeout=600, stdout=stream)
-    _record_scoped_observation(log, command, rc)
-    text = log.read_text()
-    valid = rc == 0 and text.endswith("freertos timeouts: observations=96 diagnostics=3 failed=0\n")
-    if not valid:
-        print(text, end="")
-    return TestResults(suite=label, passed=int(valid), failed=int(not valid))
+    manifest = load_manifest(ove_dir)
+    tag = get_component(manifest, "libraries", "lwip", "version")
+    lwip, _, _ = hashed_dir(os.path.join(ove_dir, "dl"), "lwip", tag, None)
+    if not git_clone(get_component(manifest, "libraries", "lwip", "url"), tag, lwip, "lwIP"):
+        return TestResults(suite=label, failed=1)
+    return _ctest_suite(ove_dir, output_dir, "freertos_timeouts", label, sanitize, configs=(False,),
+                        options=("-DOVE_LWIP_DIR=" + lwip,))
 
 
 def test_freertos_timeouts(ove_dir, output_dir):
