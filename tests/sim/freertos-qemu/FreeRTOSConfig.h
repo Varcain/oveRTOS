@@ -113,7 +113,7 @@ void ove_backend_freertos_task_deleted(void *task);
 	do {                                                                                    \
 		if (!(x)) {                                                                     \
 			fprintf(stderr, "FreeRTOS assert failed: %s:%d\n", __FILE__, __LINE__); \
-			exit(1);                                                                \
+			_Exit(1);                                                               \
 		}                                                                               \
 	} while (0)
 
