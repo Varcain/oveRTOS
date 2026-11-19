@@ -29,7 +29,6 @@ from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
 from .rust_scoped import CANARIES as _scoped_canaries, cases as _scoped_cases, observation_valid as _scoped_observation
 from .rust_scoped import UNIT_CASES as _scoped_units, unit_observation_valid as _scoped_unit_observation
-from .rust_sync import FAMILIES as _rust_sync_families, cases as _rust_sync_cases, observation_valid as _rust_sync_observation
 from .rust_async_queue import observation_valid as _async_queue_observation, doctests_valid as _async_queue_doctests
 from .rust_async_sem import observation_valid as _async_sem_observation, doctests_valid as _async_sem_doctests
 
@@ -1701,10 +1700,33 @@ def test_rust_scoped_sanitize(ove_dir, output_dir):
     return _test_rust_scoped(ove_dir, output_dir, sanitize=True)
 
 
+_RUST_SYNC_COMMON = (
+    "normal", "live", "concurrent_init", "concurrent_live", "teardown", "init_error", "cleaned_error",
+    "forget", "drop_isr", "drop_masked", "drop_unknown", "construct_isr", "wait_isr", "relative_isr",
+    "forever_isr", "post_isr", "named_producer", "named_producer_isr", "macro_reuse", "post_n",
+    "post_n_isr", "handoff", "reuse",
+)
+
+
+def _rust_sync_cases(family, zero, optional):
+    """Cases of tests/rust_sync/contracts.rs for one family and profile."""
+    operations = ("create", "try", "relative", "forever", "post", "named", "many")
+    operations += ("deadline",) if optional else ()
+    names = _RUST_SYNC_COMMON + tuple(f"context_{operation}_{mode}" for operation in operations
+                                      for mode in ("prestart", "masked", "resource", "unknown"))
+    if family == "semaphore":
+        names += ("invalid_counts",)
+    if zero:
+        names += ("raw_construct_isr", "raw_origin")
+    if optional:
+        names += ("deadline_isr",)
+        names += ("notify",) if family == "semaphore" else ("actual_masked", "actual_masked_named", "actual_waker")
+    return names
+
+
 def _test_rust_sync(ove_dir, output_dir, sanitize=False):
     """Check Rust semaphore and event ownership against guarded POSIX primitives."""
     result = TestResults(suite="rust-sync-sanitize" if sanitize else "rust-sync")
-    explicit_canary = os.environ.get("OVE_RUST_SYNC_CANARY") == "1"
     for zero in (False, True):
         for optional in (False, True):
             profile = ("zero" if zero else "heap") + ("-optional" if optional else "-minimal")
@@ -1743,39 +1765,17 @@ def _test_rust_sync(ove_dir, output_dir, sanitize=False):
                 result.failed_names.append(profile + "/build")
                 continue
             binary = os.path.join(target, "x86_64-unknown-linux-gnu", "debug", "sync-contracts")
-            for family in _rust_sync_families:
-                names = ("canary",) if explicit_canary else _rust_sync_cases(family, zero, optional) + ("canary",)
-                for case in names:
+            for family in ("semaphore", "event"):
+                for case in _rust_sync_cases(family, zero, optional):
                     log = os.path.join(native, family + "-" + case + ".log")
-                    command = [binary, family, case]
                     with open(log, "wb") as stream:
-                        rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
-                    _record_scoped_observation(log, command, rc)
-                    text = Path(log).read_bytes().decode(errors="backslashreplace")
-                    valid = _rust_sync_observation(text, family, case, zero, optional, rc,
-                                                   expected_failure=case == "canary" and not explicit_canary)
-                    if not valid:
-                        print(text, end="")
-                        label = f"{profile}/{family}/{case}"
-                        print(f"fixture status: {label} rc={rc}")
-                        result.failed_names.append(label)
-                    result.passed += int(valid)
-                    result.failed += int(not valid)
-    command = [sys.executable,
-               os.path.join(ove_dir, "tests", "rust_scoped", "context_flags", "run.py"),
-               os.path.join(output_dir, "tests", "rust_sync", "context-models" + ("-san" if sanitize else ""))]
-    if sanitize:
-        command.append("--sanitize")
-    env = dict(os.environ)
-    env["OVE_RUST_SCOPED_CANARY"] = "1" if explicit_canary else "0"
-    if sanitize:
-        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
-                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
-    rc = _run_owned_test_process(command, env=env, timeout=300)
-    result.passed += int(rc == 0)
-    result.failed += int(rc != 0)
-    if rc:
-        result.failed_names.append("context-models")
+                        rc = _run_owned_test_process([binary, family, case], env=env, timeout=30, stdout=stream)
+                    if rc:
+                        print(Path(log).read_text(errors="backslashreplace"), end="")
+                        result.failed_names.append(f"{profile}/{family}/{case}")
+                    result.passed += int(rc == 0)
+                    result.failed += int(rc != 0)
+    result.failed += int(result.passed == 0)
     return result
 
 

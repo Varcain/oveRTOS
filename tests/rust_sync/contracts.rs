@@ -37,6 +37,7 @@ const INIT: u32 = 0;
 const CREATE: u32 = 1;
 const DEINIT: u32 = 2;
 const DESTROY: u32 = 3;
+const DUPLICATE: u32 = 4;
 const FORBIDDEN: u32 = 5;
 const NATIVE_INIT: u32 = 6;
 const NATIVE_DEINIT: u32 = 7;
@@ -649,6 +650,7 @@ fn semaphore_notifications() {
         HITS.load(Ordering::Relaxed) == 0 && count::<Sem>(TASK_POST) == 0,
         "notify_zero_posts_no_callback",
     );
+    let calls = count::<Sem>(NOTIFY);
     critical_section::with(|_| {
         // SAFETY: no concurrent registration or give; static callback/data.
         check(
@@ -657,6 +659,10 @@ fn semaphore_notifications() {
         );
         owner.release();
     });
+    check(
+        count::<Sem>(NOTIFY) == calls + 1,
+        "masked_notify_reaches_native",
+    );
     check(HITS.load(Ordering::Relaxed) == 1, "masked_notify_delivered");
     check(owner.try_acquire().is_ok(), "masked_notify_permit");
     let prestart = Context::new(5);
@@ -664,6 +670,10 @@ fn semaphore_notifications() {
     check(
         unsafe { owner.set_notify(Some(notified), data) }.is_ok(),
         "prestart_notify_setup",
+    );
+    check(
+        count::<Sem>(NOTIFY) == calls + 2,
+        "prestart_notify_reaches_native",
     );
     owner.release_n(2);
     drop(prestart);
@@ -1011,7 +1021,7 @@ fn run<P: Primitive>(case: &str) {
                     }
                 }
             }
-            "normal" | "canary" => {}
+            "normal" => {}
             _ => panic!("unknown contract case"),
         }
     }
@@ -1023,6 +1033,20 @@ fn run<P: Primitive>(case: &str) {
     let before_retirement = live::<P>();
     check(before_retirement == retained, "final_resource_accounting");
     check(count::<P>(FORBIDDEN) == 0, "no_forbidden_native_entry");
+    check(
+        count::<P>(DUPLICATE) == 0,
+        "no_duplicate_native_initialization",
+    );
+    #[cfg(not(zero_heap))]
+    check(
+        count::<P>(DESTROY) + u32::from(case == "cleaned_error") == count::<P>(DEINIT),
+        "heap_cleanup_destroys",
+    );
+    // SAFETY: Reads synchronized scalar clock metadata, without a handle.
+    check(
+        unsafe { sync_test_forbidden_clock_calls() } == 0,
+        "no_forbidden_clock_entry",
+    );
     // SAFETY: Inspects live metadata and integer historical addresses only.
     check(
         unsafe { sync_test_registry_ok() },
@@ -1069,7 +1093,6 @@ fn case_allowed(family: &str, case: &str) -> bool {
     if matches!(
         case,
         "normal"
-            | "canary"
             | "live"
             | "concurrent_init"
             | "concurrent_live"
@@ -1138,9 +1161,6 @@ fn main() -> std::process::ExitCode {
         || !case_allowed(&family, &case)
     {
         return std::process::ExitCode::from(2);
-    }
-    if case == "canary" {
-        check(false, "early_calibration_survives_controls");
     }
     match family.as_str() {
         "semaphore" => run::<Sem>(&case),

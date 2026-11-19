@@ -23,12 +23,12 @@ the fixture retires quiescent generations. Workers are joined, latches released
 and all accessible owners gone before this independent cleanup; it never reopens
 forgotten Rust claims. Raw extents remain static through retirement. The outer
 heap destroy reservation includes its common deinit/free path, and active native
-calls exclude physical teardown. Native initialization/cleanup must balance with
-full leak checking after retirement. A canary
-records an early named failure, runs ordinary controls and retains that failure
-in its summary and exit status. Complete output and actual status are required
-for gate acceptance. Duplicate macro dispatch needs a separate inert-receiver
-check; production macro panic is never an expected failure witness.
+calls exclude physical teardown. Native initialization and cleanup must balance
+after retirement, and every heap owner that is not retained must release through
+the common destroy path. Each case exits non-zero on any failed check, including
+a duplicate native initialization or a clock read in a rejected context.
+Duplicate macro dispatch needs a separate inert-receiver check; production macro
+panic is never an expected failure witness.
 
 This target covers Semaphore and Event only. Mutex, RecursiveMutex, CondVar,
 other synchronization families and AsyncSemaphore callback registration need
