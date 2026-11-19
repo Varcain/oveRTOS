@@ -15,16 +15,12 @@
  * returned irqstate_t is widened to ove_irq_key_t (uint64_t) for ABI
  * consistency across backends.
  *
- * Context detection is available with SYNC, ASYNC, QUEUE or EVENTGROUP; critical sections
- * require ASYNC.
+ * Context detection is always available; critical sections require ASYNC.
  */
 
 #include "ove/irq.h"
 #include "ove/types.h"
 #include "ove_config.h"
-
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
-	defined(CONFIG_OVE_EVENTGROUP)
 
 #include <nuttx/irq.h>
 #include <stdbool.h>
@@ -82,5 +78,3 @@ bool ove_is_in_isr(void)
 {
 	return up_interrupt_context();
 }
-
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */

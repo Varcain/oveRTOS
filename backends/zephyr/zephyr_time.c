@@ -40,6 +40,7 @@ int ove_time_get_ns(uint64_t *out)
 
 void ove_time_delay_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 	k_sleep(K_MSEC(ms));
 }
 

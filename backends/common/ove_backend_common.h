@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <errno.h>
 
+#include "ove/irq.h"
 #include "ove/sync.h"
 #include "ove/types.h"
 #include "ove_config.h"
@@ -35,6 +36,13 @@
 		int _rc = ove_mutex_lock((mtx), OVE_WAIT_FOREVER); \
 		assert(_rc == OVE_OK);                             \
 		(void)_rc;                                         \
+	} while (0)
+
+/* Return from a blocking or allocating entry point called in an ISR. */
+#define OVE_RETURN_IF_ISR(...)              \
+	do {                                \
+		if (ove_is_in_isr())        \
+			return __VA_ARGS__; \
 	} while (0)
 
 /*

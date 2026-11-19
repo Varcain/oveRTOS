@@ -77,7 +77,8 @@ pub fn getNs() Error!u64 {
 /// Block the calling thread for at least `ms` milliseconds.
 ///
 /// Yields the CPU to other threads during the delay. Actual delay may be
-/// slightly longer depending on scheduler resolution.
+/// slightly longer depending on scheduler resolution. Returns immediately
+/// from an ISR.
 pub inline fn delayMs(milliseconds: u32) void {
     c.ove_time_delay_ms(milliseconds);
 }
@@ -85,7 +86,9 @@ pub inline fn delayMs(milliseconds: u32) void {
 /// Block the calling thread for at least `us` microseconds.
 ///
 /// May be implemented as a busy-wait spin on platforms lacking sub-millisecond
-/// sleep support. Prefer `delayMs()` for longer delays.
+/// sleep support. Prefer `delayMs()` for longer delays. From an ISR it
+/// busy-waits where the backend spins and returns immediately where it would
+/// sleep.
 pub inline fn delayUs(microseconds: u32) void {
     c.ove_time_delay_us(microseconds);
 }

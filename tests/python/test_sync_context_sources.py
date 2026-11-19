@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Synchronous context detection needs its native source without async features."""
+"""Every build compiles its native interrupt-context query source."""
 
 import os
 import unittest
@@ -31,7 +31,7 @@ class SyncContextSourcesTest(unittest.TestCase):
                     }
                     text = template.render(config=config)
                     source = "backends/" + platform + "/" + platform + "_irq.c"
-                    self.assertEqual(text.count(source), int(sync or asynchronous or queue))
+                    self.assertEqual(text.count(source), 1)
                     for other in {"freertos", "zephyr", "nuttx"} - {platform}:
                         self.assertNotIn("backends/" + other + "/" + other + "_irq.c", text)
 

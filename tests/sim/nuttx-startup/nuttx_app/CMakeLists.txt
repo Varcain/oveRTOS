@@ -8,6 +8,7 @@ nuttx_add_application(
     SRCS ${CMAKE_CURRENT_SOURCE_DIR}/main.c
         ${OVE_DIR}/backends/nuttx/nuttx_thread.c
         ${OVE_DIR}/backends/nuttx/nuttx_time.c
+        ${OVE_DIR}/backends/nuttx/nuttx_irq.c
     STACKSIZE ${CONFIG_EXTERNAL_OVE_TEST_STACKSIZE}
     PRIORITY ${CONFIG_EXTERNAL_OVE_TEST_PRIORITY}
     INCLUDE_DIRECTORIES ${_OVE_VARIANT_DIR}

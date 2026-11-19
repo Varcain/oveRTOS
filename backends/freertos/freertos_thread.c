@@ -73,6 +73,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
 		    void *stack)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	if (handle == NULL || storage == NULL || entry == NULL || stack == NULL ||
 	    (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
@@ -149,6 +150,7 @@ static void wait_for_worker_exit(ove_thread_t handle)
 
 int ove_thread_deinit(ove_thread_t handle)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	int ret = ove_check_param(handle);
 	if (ret)
 		return ret;
@@ -164,6 +166,7 @@ int ove_thread_deinit(ove_thread_t handle)
 int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
 		      ove_prio_t priority, size_t stack_size)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	if (handle == NULL || entry == NULL || (unsigned)priority > OVE_PRIO_MAX)
 		return OVE_ERR_INVALID_PARAM;
 
@@ -223,6 +226,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 
 int ove_thread_destroy(ove_thread_t handle)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	int ret = ove_check_param(handle);
 	if (ret)
 		return ret;
@@ -239,6 +243,7 @@ int ove_thread_destroy(ove_thread_t handle)
 
 ove_thread_t ove_thread_get_self(void)
 {
+	OVE_RETURN_IF_ISR(NULL);
 	return (ove_thread_t)xTaskGetApplicationTaskTag(xTaskGetCurrentTaskHandle());
 }
 
@@ -252,6 +257,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 	vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
@@ -508,6 +514,7 @@ static void frt_task_info(TaskHandle_t handle, TaskStatus_t *task)
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 #if OVE_FRT_HAVE_TASK_REGISTRY
 	UBaseType_t filled;
 #if configGENERATE_RUN_TIME_STATS == 1

@@ -133,6 +133,7 @@ int ove_time_get_ns(uint64_t *out)
 
 void ove_time_delay_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 	vTaskDelay(pdMS_TO_TICKS(ms));
 }
 

@@ -319,7 +319,8 @@ pub const StopToken = struct {
 // Module-level helpers (no instance)
 // ---------------------------------------------------------------------------
 
-/// Sleep the calling thread for `ms` milliseconds.
+/// Sleep the calling thread for `ms` milliseconds.  Returns immediately from
+/// an ISR.
 pub inline fn sleepMs(ms: u32) void {
     c.ove_thread_sleep_ms(ms);
 }
@@ -331,7 +332,8 @@ pub inline fn yieldCpu() void {
 
 /// Return the raw C handle of the currently executing thread, or null on a
 /// thread oveRTOS did not create, including native pthread workers. Workers
-/// do not inherit their creator's ove identity. Task context only. Use only
+/// do not inherit their creator's ove identity. Task context only; null from
+/// an ISR. Use only
 /// for FFI — the wrapper type cannot be reconstructed from a bare handle
 /// because the storage is owned by a `Thread(N)` value somewhere.
 pub fn getSelf() c.ove_thread_t {
@@ -502,7 +504,9 @@ pub fn Thread(comptime stack_size: usize) type {
         /// `.{}` for all defaults).  `entry` may take zero, one, or two
         /// parameters; the first may be a [`StopToken`] (auto-injected
         /// by the trampoline).  `args` is a tuple matching the
-        /// remaining parameters (zero or one pointer).
+        /// remaining parameters (zero or one pointer).  Task context only:
+        /// from an ISR `ove_thread_init` returns `error.WouldBlock`, but
+        /// `allocator` has already run.
         pub fn spawn(
             allocator: std.mem.Allocator,
             comptime cfg: SpawnConfig,
@@ -746,7 +750,8 @@ comptime {
 /// FreeRTOS lists at most 32 tasks; `error.QueueFull` means a live thread was
 /// left out (on FreeRTOS, a task created while its registry was full stays
 /// unlisted while it lives). A thread NuttX has no run-time accounting slot
-/// for is still listed, with its run-time valid bits clear.
+/// for is still listed, with its run-time valid bits clear. Returns
+/// `error.WouldBlock` from an ISR.
 pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     var actual: usize = 0;
     const raw: [*c]c.struct_ove_thread_info = if (buf.len == 0) null else @ptrCast(buf.ptr);

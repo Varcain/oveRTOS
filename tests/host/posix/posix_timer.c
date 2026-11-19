@@ -11,18 +11,12 @@
 #include <time.h>
 #include <string.h>
 #include <errno.h>
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC)
 /* Forward declarations from posix_irq.c — used to mark the timer
- * dispatcher as ISR context for synchronous checks and async wake dispatch.
- * The query and helpers are available with either supporting feature. */
+ * dispatcher as ISR context for synchronous checks and async wake dispatch. */
 void posix_irq_enter_isr(void);
 void posix_irq_leave_isr(void);
 #define OVE_POSIX_ISR_ENTER() posix_irq_enter_isr()
 #define OVE_POSIX_ISR_LEAVE() posix_irq_leave_isr()
-#else
-#define OVE_POSIX_ISR_ENTER() ((void)0)
-#define OVE_POSIX_ISR_LEAVE() ((void)0)
-#endif
 
 /* The dispatcher runs the user callback, so it needs a generous stack:
  * sanitizer-instrumented builds want ~140 KB (TSan) / ~96 KB (ASan), and

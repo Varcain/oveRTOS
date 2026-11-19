@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include "../framework/ove_test_isr.h"
 #include <errno.h>
 #include <stdbool.h>
 #include <stdatomic.h>
@@ -1151,6 +1152,62 @@ static void test_native_pthread_has_no_ove_identity(void **state)
 }
 #endif
 
+/* Thread and time calls that can block or allocate refuse from an ISR. */
+#ifdef CONFIG_OVE_RTOS_POSIX
+void posix_irq_enter_isr(void);
+void posix_irq_leave_isr(void);
+#endif
+
+struct isr_calls {
+	ove_thread_t live, made, self;
+	int run, destroy, list;
+	uint64_t elapsed_us;
+};
+
+static void isr_thread_calls(void *arg)
+{
+	struct isr_calls *c = arg;
+	struct ove_thread_info info[1];
+	size_t n = 0;
+	uint64_t t0 = 0, t1 = 0;
+	c->run = ove_test_thread_run(&c->made, &s_race_storage[0], "isr", entry_set_flag, NULL,
+				     s_race_stack0, SELF_RACE_STACK);
+	c->destroy = ove_test_thread_destroy(c->live);
+	c->list = ove_thread_list(info, 1, &n);
+	c->self = ove_thread_get_self();
+	(void)ove_time_get_us(&t0);
+	ove_thread_sleep_ms(50);
+	ove_time_delay_ms(50);
+	(void)ove_time_get_us(&t1);
+	c->elapsed_us = t1 - t0;
+}
+
+static void test_isr_refuses_blocking_calls(void **state)
+{
+	(void)state;
+	atomic_store(&g_flag, 0);
+	struct isr_calls c = {.self = (ove_thread_t)&c};
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&c.live, &s_th_storage, "live", entry_set_flag, NULL,
+					       s_th_stack, 4096));
+	assert_false(ove_is_in_isr());
+#ifdef CONFIG_OVE_RTOS_POSIX
+	posix_irq_enter_isr();
+	isr_thread_calls(&c);
+	posix_irq_leave_isr();
+#else
+	assert_true(ove_test_run_in_isr(isr_thread_calls, &c));
+#endif
+	assert_int_equal(c.run, OVE_ERR_WOULD_BLOCK);
+	assert_null(c.made);
+	assert_int_equal(c.destroy, OVE_ERR_WOULD_BLOCK);
+	assert_int_equal(c.list, OVE_ERR_WOULD_BLOCK);
+	assert_null(c.self);
+	assert_true(c.elapsed_us < 20000);
+	/* The refused destroy left the thread intact. */
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	OVE_TEST_ASSERT_OK(ove_test_thread_destroy(c.live));
+}
+
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -1195,6 +1252,7 @@ int test_thread_run(void)
 					  teardown_stop_spin),
 #endif
 		cmocka_unit_test(test_errno_per_thread),
+		cmocka_unit_test(test_isr_refuses_blocking_calls),
 #ifdef CONFIG_OVE_RTOS_NUTTX
 		cmocka_unit_test(test_native_thread_lifetime),
 		cmocka_unit_test(test_native_thread_suspend),

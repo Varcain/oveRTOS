@@ -27,9 +27,6 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
-	defined(CONFIG_OVE_EVENTGROUP)
-
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -125,5 +122,3 @@ void posix_irq_leave_isr(void)
 {
 	s_in_isr = 0;
 }
-
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */

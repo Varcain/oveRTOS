@@ -54,8 +54,9 @@ typedef struct ove_timer *ove_timer_t;
  * Invoked when the timer period elapses, in thread context, on a thread the
  * engine owns: the FreeRTOS timer service task, Zephyr's system work queue,
  * NuttX's high-priority work queue (HPWORK), or a dispatcher thread on the
- * host test backend.  Implementations must be non-blocking and short: they
- * hold up every other timer, and other work, on that thread.  On Zephyr and
+ * host test backend, which reports ove_is_in_isr() true inside timer callbacks.
+ * Implementations must be non-blocking and short: they hold up every other
+ * timer, and other work, on that thread.  On Zephyr and
  * NuttX, firings that pile up while a call is still pending may be merged
  * into one.
  *

@@ -14,16 +14,12 @@
  * key. The body uses the native kernel-aware domain; native operations inside
  * it can still lower a stronger caller-owned raw mask.
  *
- * Context detection is available with SYNC, ASYNC, QUEUE or EVENTGROUP; critical sections
- * require ASYNC.
+ * Context detection is always available; critical sections require ASYNC.
  */
 
 #include "ove/irq.h"
 #include "ove/types.h"
 #include "ove_config.h"
-
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
-	defined(CONFIG_OVE_EVENTGROUP)
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -225,5 +221,3 @@ bool ove_is_in_isr(void)
 {
 	return xPortIsInsideInterrupt() != 0;
 }
-
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */

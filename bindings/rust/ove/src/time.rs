@@ -57,7 +57,7 @@ pub fn get_us_unchecked() -> u64 {
 /// Block the current thread for at least `ms` milliseconds.
 ///
 /// Yields the CPU to other threads for the duration. Prefer [`crate::Thread::sleep_ms`]
-/// for thread-level sleeping.
+/// for thread-level sleeping.  Returns immediately from an ISR.
 #[inline]
 pub fn delay_ms(ms: u32) {
     unsafe { bindings::ove_time_delay_ms(ms) }
@@ -66,6 +66,8 @@ pub fn delay_ms(ms: u32) {
 /// Block the current thread for at least `us` microseconds.
 ///
 /// On most platforms this is a busy-wait for short durations; use sparingly.
+/// From an ISR it busy-waits where the backend spins and returns immediately
+/// where it would sleep.
 #[inline]
 pub fn delay_us(us: u32) {
     unsafe { bindings::ove_time_delay_us(us) }

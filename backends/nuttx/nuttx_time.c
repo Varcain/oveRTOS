@@ -85,6 +85,7 @@ int ove_time_get_ns(uint64_t *out)
 
 void ove_time_delay_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 #if defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_7M__)
 	/*
 	 * For short delays (< one tick), busy-wait using SysTick to
@@ -133,5 +134,6 @@ void ove_time_delay_us(uint32_t us)
 		return;
 	}
 #endif
+	OVE_RETURN_IF_ISR();
 	usleep(us);
 }

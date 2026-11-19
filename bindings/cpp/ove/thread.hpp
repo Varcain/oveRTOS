@@ -894,6 +894,7 @@ enum class ThreadInfoField : uint32_t {
  * thread, the function returns @ref Error::QueueFull after writing the partial
  * snapshot and setting its count in the C API.  The engine caps are
  * described at @ref ove_thread_list; each entry's @c name is its own copy.
+ * Returns @ref Error::WouldBlock from an ISR.
  *
  * @param[out] out Array to fill with thread info.
  * @param[in]  max Maximum entries the @p out buffer can hold.
@@ -925,6 +926,7 @@ namespace ove::this_thread
  * @brief Suspend the calling thread for at least @p ms milliseconds.
  *        Plain-millisecond analog of `std::this_thread::sleep_for`.
  * @param[in] ms Sleep duration in milliseconds. Pass `0` to yield for one scheduler tick.
+ * @note Returns immediately from an ISR.
  */
 inline void sleep_ms(uint32_t ms) noexcept
 {
@@ -938,6 +940,7 @@ inline void sleep_ms(uint32_t ms) noexcept
  * @tparam Period Tick period of @p d.
  * @param[in] d   Sleep duration; rounded down to whole milliseconds (the
  *                substrate's resolution).
+ * @note Returns immediately from an ISR.
  */
 template <typename Rep, typename Period>
 inline void sleep_for(std::chrono::duration<Rep, Period> d) noexcept
@@ -957,14 +960,16 @@ inline void yield() noexcept
 
 /** @return Raw C handle of the currently executing thread, or a null handle on
  *          a thread oveRTOS did not create, including native pthread workers.
- *          Workers do not inherit their creator's ove identity. Task context only. */
+ *          Workers do not inherit their creator's ove identity. Task context only;
+ *          a null handle from an ISR. */
 inline ove_thread_t self() noexcept
 {
 	return ove_thread_get_self();
 }
 
 /** @return @ref thread_id of the currently executing thread; the default
- *          (null) id on a thread oveRTOS did not create.  Task context only. */
+ *          (null) id on a thread oveRTOS did not create.  Task context only;
+ *          the default id from an ISR. */
 inline thread_id get_id() noexcept
 {
 	return thread_id{ove_thread_get_self()};

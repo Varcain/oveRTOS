@@ -44,6 +44,7 @@ namespace ove::time
 /**
  * @brief Blocks the calling task for at least the specified number of milliseconds.
  * @param[in] ms Delay duration in milliseconds.
+ * @note Returns immediately from an ISR.
  */
 inline void delay_ms(uint32_t ms)
 {
@@ -53,6 +54,8 @@ inline void delay_ms(uint32_t ms)
 /**
  * @brief Blocks the calling task for at least the specified number of microseconds.
  * @param[in] us Delay duration in microseconds.
+ * @note From an ISR it busy-waits where the backend spins and returns
+ *       immediately where it would sleep.
  */
 inline void delay_us(uint32_t us)
 {

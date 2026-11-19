@@ -143,6 +143,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
 		    void *stack)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	k_tid_t tid;
 
 	if (handle == NULL || storage == NULL || entry == NULL ||
@@ -206,6 +207,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 
 int ove_thread_deinit(ove_thread_t handle)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	int ret = ove_check_param(handle);
 	if (ret)
 		return ret;
@@ -228,6 +230,7 @@ int ove_thread_deinit(ove_thread_t handle)
 int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
 		      ove_prio_t priority, size_t stack_size)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	struct ove_thread *info;
 	k_thread_stack_t *stack;
 	k_tid_t tid;
@@ -273,6 +276,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 
 int ove_thread_destroy(ove_thread_t handle)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	int ret = ove_check_param(handle);
 	if (ret)
 		return ret;
@@ -293,6 +297,7 @@ int ove_thread_destroy(ove_thread_t handle)
 /* Requires CONFIG_THREAD_CUSTOM_DATA=y */
 ove_thread_t ove_thread_get_self(void)
 {
+	OVE_RETURN_IF_ISR(NULL);
 	return k_thread_custom_data_get();
 }
 
@@ -310,6 +315,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 	struct ove_thread *t = ove_zephyr_current_thread();
 	if (t)
 		SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
@@ -550,6 +556,7 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
+	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	if (!out) {
 		if (actual_count)
 			*actual_count = 0;

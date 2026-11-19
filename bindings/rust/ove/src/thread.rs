@@ -368,7 +368,8 @@ unsafe impl Send for Thread {}
 unsafe impl Sync for Thread {}
 
 impl Thread {
-    /// Sleep the current thread for `ms` milliseconds.
+    /// Sleep the current thread for `ms` milliseconds.  Returns
+    /// immediately from an ISR.
     #[inline]
     pub fn sleep_ms(ms: u32) {
         unsafe { bindings::ove_thread_sleep_ms(ms) }
@@ -384,7 +385,8 @@ impl Thread {
     ///
     /// Returns `None` on a thread oveRTOS did not create (the startup or
     /// main thread, idle, RTOS service threads, or native pthread workers).
-    /// Native workers do not inherit their creator's identity. Task context only.
+    /// Native workers do not inherit their creator's identity. Task context
+    /// only; returns `None` from an ISR.
     #[inline]
     pub fn current() -> Option<Self> {
         let handle = unsafe { bindings::ove_thread_get_self() };
@@ -1259,10 +1261,10 @@ impl Default for bindings::ove_thread_info {
 ///
 /// # Errors
 /// Returns [`Error::QueueFull`] if the caller's buffer or the backend's native
-/// snapshot cannot hold every thread, or another error if enumeration is not
-/// supported.  FreeRTOS lists at most 32 tasks; `QueueFull` means a live
-/// thread was left out (on FreeRTOS, a task created while its registry was
-/// full stays unlisted while it lives).  A thread
+/// snapshot cannot hold every thread, [`Error::WouldBlock`] from an ISR, or
+/// another error if enumeration is not supported.  FreeRTOS lists at most 32
+/// tasks; `QueueFull` means a live thread was left out (on FreeRTOS, a task
+/// created while its registry was full stays unlisted while it lives).  A thread
 /// NuttX has no run-time accounting slot for is still listed, with its
 /// run-time valid bits clear.
 pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {

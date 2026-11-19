@@ -35,10 +35,12 @@ int ove_time_get_ns(uint64_t *out)
 
 void ove_time_delay_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 	posix_sleep_ms(ms);
 }
 
 void ove_time_delay_us(uint32_t us)
 {
+	OVE_RETURN_IF_ISR();
 	posix_sleep_ns((uint64_t)us * 1000ULL);
 }

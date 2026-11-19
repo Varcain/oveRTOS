@@ -8,6 +8,9 @@
 
 #include "../framework/ove_test.h"
 #include <stdatomic.h>
+#ifdef CONFIG_OVE_RTOS_POSIX
+#include <unistd.h>
+#endif
 
 OVE_TEST_STORAGE(ove_timer_storage_t, s_tmr_storage);
 
@@ -48,7 +51,11 @@ static void slow_cb(ove_timer_t timer, void *user_data)
 	(void)timer;
 	(void)user_data;
 	s_slow_cb_entered = 1;
+#ifdef CONFIG_OVE_RTOS_POSIX
+	usleep(80000); /* host timer callbacks run as ISRs, where sleep returns at once */
+#else
 	test_msleep(80);
+#endif
 	s_slow_cb_completed = 1;
 }
 

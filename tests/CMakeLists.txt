@@ -317,6 +317,7 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
         ${CMAKE_CURRENT_SOURCE_DIR}/net_tls/test_net_tls.c
         ${POSIX_CORE_DIR}/posix_net.c
         ${POSIX_CORE_DIR}/posix_time.c
+        ${POSIX_CORE_DIR}/posix_irq.c
         ${POSIX_CORE_DIR}/posix_console.c
         ${POSIX_CORE_DIR}/posix_sync.c
         ${OVE_SRC}/ove_net.c
@@ -364,6 +365,7 @@ if(OVE_TEST_BUILD_NET_TLS AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
             ${CMAKE_CURRENT_SOURCE_DIR}/net_tls/test_net_tls_zh.c
             ${POSIX_CORE_DIR}/posix_net.c
             ${POSIX_CORE_DIR}/posix_time.c
+            ${POSIX_CORE_DIR}/posix_irq.c
             ${POSIX_CORE_DIR}/posix_console.c
             ${POSIX_CORE_DIR}/posix_sync.c
             ${OVE_SRC}/ove_net.c
@@ -425,6 +427,7 @@ add_executable(ove_test_httpd_ws
     ${CMAKE_CURRENT_SOURCE_DIR}/net_httpd/test_httpd_ws.c
     ${POSIX_CORE_DIR}/posix_net.c
     ${POSIX_CORE_DIR}/posix_time.c
+    ${POSIX_CORE_DIR}/posix_irq.c
     ${POSIX_CORE_DIR}/posix_console.c
     ${POSIX_CORE_DIR}/posix_sync.c
     ${POSIX_CORE_DIR}/posix_thread.c

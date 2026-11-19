@@ -59,11 +59,13 @@ int ove_time_get_ns(uint64_t *out)
 
 void ove_time_delay_ms(uint32_t ms)
 {
+	OVE_RETURN_IF_ISR();
 	vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
 void ove_time_delay_us(uint32_t us)
 {
+	OVE_RETURN_IF_ISR();
 	/* No cycle counter to spin on: round up to whole milliseconds. */
 	uint32_t ms = (us + 999) / 1000;
 	if (ms == 0) {

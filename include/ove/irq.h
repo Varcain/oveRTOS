@@ -16,10 +16,9 @@
  * async dispatch. Critical sections support the async runtime's exclusion
  * provider (Embassy on Rust).
  *
- * @note Critical sections require @c CONFIG_OVE_ASYNC. Interrupt detection
- *       requires SYNC, ASYNC, QUEUE or EVENTGROUP; resource flags require SYNC,
- *       QUEUE or EVENTGROUP.
- *       Disabled functions use inert inline stubs and return false or zero.
+ * @note Critical sections require @c CONFIG_OVE_ASYNC. Interrupt detection is
+ *       always available; resource flags require SYNC, QUEUE or EVENTGROUP.
+ *       Disabled functions use inert inline stubs and return zero.
  * @{
  */
 
@@ -114,9 +113,6 @@ static inline void ove_irq_unlock(ove_irq_key_t key)
 
 #endif /* CONFIG_OVE_ASYNC */
 
-#if defined(CONFIG_OVE_SYNC) || defined(CONFIG_OVE_ASYNC) || defined(CONFIG_OVE_QUEUE) || \
-	defined(CONFIG_OVE_EVENTGROUP)
-
 /**
  * @brief Return true if the caller is currently in interrupt context.
  *
@@ -129,18 +125,8 @@ static inline void ove_irq_unlock(ove_irq_key_t key)
  * @note On the host test backend the ISR wrappers set a
  *       thread-local flag; outside those
  *       paths the function returns @c false.
- * @note Requires @c CONFIG_OVE_SYNC, @c CONFIG_OVE_ASYNC, @c CONFIG_OVE_QUEUE
- *       or @c CONFIG_OVE_EVENTGROUP.
  */
 bool ove_is_in_isr(void);
-
-#else /* No SYNC, ASYNC, QUEUE or EVENTGROUP */
-static inline bool ove_is_in_isr(void)
-{
-	return false;
-}
-
-#endif /* CONFIG_OVE_SYNC || CONFIG_OVE_ASYNC || CONFIG_OVE_QUEUE || CONFIG_OVE_EVENTGROUP */
 
 /** Native resource initialization/destruction is available in this context. */
 #define OVE_SYNC_CONTEXT_RESOURCE (1u << 0)

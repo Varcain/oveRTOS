@@ -189,13 +189,13 @@ int start_worker(void)
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a thread from caller-supplied static storage and stack. `name` must outlive the thread: NuttX, Zephyr and the host test backend keep the pointer. |
-| `ove_thread_deinit` | `int (ove_thread_t handle)` | Join and release a thread created with `ove_thread_init()`. Static storage is not freed. |
-| `ove_thread_create` | `int (ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size)` | Heap-allocate and start a thread. Requires `OVE_HEAP_THREAD` (not declared in zero-heap mode). `name` must outlive the thread, as for `ove_thread_init`. |
-| `ove_thread_destroy` | `int (ove_thread_t handle)` | Join and free a thread created with `ove_thread_create()`. Heap mode only. |
-| `ove_thread_get_self` | `ove_thread_t (void)` | Return the handle of the currently executing thread: valid from the first statement of an oveRTOS thread's entry, NULL on a thread oveRTOS did not create. Task context only. |
+| `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a thread from caller-supplied static storage and stack. `name` must outlive the thread: NuttX, Zephyr and the host test backend keep the pointer. Returns `OVE_ERR_WOULD_BLOCK` from an ISR. |
+| `ove_thread_deinit` | `int (ove_thread_t handle)` | Join and release a thread created with `ove_thread_init()`. Static storage is not freed. Returns `OVE_ERR_WOULD_BLOCK` from an ISR. |
+| `ove_thread_create` | `int (ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size)` | Heap-allocate and start a thread. Requires `OVE_HEAP_THREAD` (not declared in zero-heap mode). `name` must outlive the thread, as for `ove_thread_init`. Returns `OVE_ERR_WOULD_BLOCK` from an ISR. |
+| `ove_thread_destroy` | `int (ove_thread_t handle)` | Join and free a thread created with `ove_thread_create()`. Heap mode only. Returns `OVE_ERR_WOULD_BLOCK` from an ISR. |
+| `ove_thread_get_self` | `ove_thread_t (void)` | Return the handle of the currently executing thread: valid from the first statement of an oveRTOS thread's entry, NULL on a thread oveRTOS did not create. Task context only; NULL from an ISR. |
 | `ove_thread_set_priority` | `void (ove_thread_t handle, ove_prio_t prio)` | Change the scheduling priority of a thread at runtime. |
-| `ove_thread_sleep_ms` | `void (uint32_t ms)` | Block the calling thread for at least `ms` milliseconds. Passing `0` yields for one scheduler tick. |
+| `ove_thread_sleep_ms` | `void (uint32_t ms)` | Block the calling thread for at least `ms` milliseconds. Passing `0` yields for one scheduler tick. Returns immediately from an ISR. |
 | `ove_thread_yield` | `void (void)` | Voluntarily relinquish the CPU to another ready thread of equal or higher priority. |
 | `ove_thread_start_scheduler` | `void (void)` | Start the RTOS scheduler. Usually called indirectly via `ove_run()`. Does not return on most platforms. |
 | `ove_thread_suspend` | `void (ove_thread_t handle)` | Prevent a thread from being scheduled. May be called on the calling thread itself. A NULL handle is ignored. |
@@ -206,7 +206,7 @@ int start_worker(void)
 | `ove_thread_request_stop` | `void (ove_thread_t handle)` | Cooperative stop signal. The thread keeps running until it observes `ove_thread_should_stop()` and exits its entry function. |
 | `ove_thread_should_stop` | `bool (ove_thread_t handle)` | Returns `true` once `ove_thread_request_stop()` has been called for the thread. Polled inside the worker's main loop. |
 | `ove_thread_get_runtime_stats` | `int (ove_thread_t handle, struct ove_thread_stats *stats)` | Retrieve total CPU time (`runtime_us`) and utilisation percentage (`cpu_percent_x100`) since the scheduler started. Returns `OVE_ERR_INVALID_PARAM` for a NULL handle or `stats`, `OVE_ERR_NOT_SUPPORTED` if the backend does not provide runtime accounting. |
-| `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Identity, state, and priority are always populated: `priority` is the ove-scale priority (a thread created at an ove priority reports that priority; an RTOS service thread reports the highest ove priority at or below its native one) and `native_priority` the value the RTOS uses. `valid_fields` identifies the optional metrics supplied by the backend. Returns `OVE_ERR_NOT_SUPPORTED` if enumeration itself is unavailable. |
+| `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Identity, state, and priority are always populated: `priority` is the ove-scale priority (a thread created at an ove priority reports that priority; an RTOS service thread reports the highest ove priority at or below its native one) and `native_priority` the value the RTOS uses. `valid_fields` identifies the optional metrics supplied by the backend. Returns `OVE_ERR_NOT_SUPPORTED` if enumeration itself is unavailable, `OVE_ERR_WOULD_BLOCK` from an ISR. |
 | `ove_sys_get_mem_stats` | `int (struct ove_mem_stats *stats)` | Query system heap totals: `total`, `free`, `used`, `peak_used` bytes. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
 
 On NuttX, suspension reserves `SIGUSR1` in the target group. Creation completes

@@ -141,6 +141,7 @@ typedef enum {
  *                         @c OVE_THREAD_STACK_DEFINE_ family of helpers in
  *                         @c include/ove/storage.h.
  * @return OVE_OK on success, or a negative error code on failure.
+ * @note Returns OVE_ERR_WOULD_BLOCK from an ISR.
  *
  * @see ove_thread_deinit, ove_thread_create
  */
@@ -163,6 +164,7 @@ OVE_NODISCARD int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *st
  *
  * @param[in] handle  Handle returned by ove_thread_init().
  * @return OVE_OK on success, or a negative error code on failure.
+ * @note Returns OVE_ERR_WOULD_BLOCK from an ISR.
  *
  * @see ove_thread_init
  */
@@ -192,6 +194,7 @@ int ove_thread_deinit(ove_thread_t handle);
  *                         (larger values return OVE_ERR_INVALID_PARAM).
  * @param[in]  stack_size  Stack size in bytes.  Must be > 0.
  * @return OVE_OK on success, or a negative error code on failure.
+ * @note Returns OVE_ERR_WOULD_BLOCK from an ISR.
  *
  * @see ove_thread_destroy
  */
@@ -209,6 +212,7 @@ OVE_NODISCARD int ove_thread_create(ove_thread_t *handle, const char *name, ove_
  *
  * @param[in] handle  Handle returned by ove_thread_create().
  * @return OVE_OK on success, or a negative error code on failure.
+ * @note Returns OVE_ERR_WOULD_BLOCK from an ISR.
  *
  * @see ove_thread_create
  */
@@ -224,7 +228,7 @@ int ove_thread_destroy(ove_thread_t handle);
  * that call returns.
  *
  * Task context only, after the scheduler has started: the result is undefined
- * in an ISR and before ove_thread_start_scheduler().
+ * before ove_thread_start_scheduler() and NULL in an ISR.
  *
  * @return Handle of the calling thread, or NULL on a thread oveRTOS did not
  *         create (the startup or main thread, idle, RTOS service threads,
@@ -247,6 +251,7 @@ void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio);
  *
  * @param[in] ms  Minimum sleep duration in milliseconds.  A value of 0
  *                yields the CPU for one scheduler tick.
+ * @note Returns immediately from an ISR.
  */
 void ove_thread_sleep_ms(uint32_t ms);
 
@@ -510,6 +515,7 @@ static inline bool ove_thread_info_has(const struct ove_thread_info *info, uint3
  *
  * @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,
  *         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.
+ * @note Returns OVE_ERR_WOULD_BLOCK from an ISR.
  */
 OVE_NODISCARD int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 				  size_t *actual_count);

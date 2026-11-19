@@ -69,7 +69,7 @@ int ove_time_get_ns(uint64_t *out);
  * Passing 0 yields the CPU to any equal or higher-priority task.
  *
  * @param[in] ms  Minimum delay in milliseconds.
- * @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR.
+ * @note Requires @c CONFIG_OVE_TIME. Returns immediately from an ISR.
  */
 void ove_time_delay_ms(uint32_t ms);
 
@@ -81,7 +81,8 @@ void ove_time_delay_ms(uint32_t ms);
  * depending on the RTOS tick resolution.
  *
  * @param[in] us  Minimum delay in microseconds.
- * @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR.
+ * @note Requires @c CONFIG_OVE_TIME. From an ISR it busy-waits where the backend
+ *       spins and returns immediately where it would sleep.
  */
 void ove_time_delay_us(uint32_t us);
 
