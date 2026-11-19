@@ -53,6 +53,7 @@ static void rust_executor(void *argument)
 #endif
 static _Alignas(2) uint8_t tx[4] = {1, 2, 3, 4}, rx[5][4];
 
+#ifndef OVE_RUST_SPI_TEST /* Rust links the real FreeRTOS provider. */
 ove_irq_key_t ove_irq_lock(void)
 {
 	if (in_tick)
@@ -71,6 +72,7 @@ bool ove_is_in_isr(void)
 {
 	return in_tick != 0;
 }
+#endif
 int ove_gpio_set(unsigned int port, unsigned int pin, int value)
 {
 	(void)port;

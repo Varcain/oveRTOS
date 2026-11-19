@@ -59,6 +59,7 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *name)
 	(void)name;
 	semihosting_exit(2);
 }
+#ifndef OVE_RUST_I2C_TEST /* Rust links the real FreeRTOS provider. */
 ove_irq_key_t ove_irq_lock(void)
 {
 	if (in_tick)
@@ -77,6 +78,7 @@ bool ove_is_in_isr(void)
 {
 	return in_tick != 0;
 }
+#endif
 uint32_t HAL_GetTick(void)
 {
 	return atomic_load(&ticks);

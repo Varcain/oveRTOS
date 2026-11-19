@@ -33,8 +33,10 @@ if(OVE_RUST_SPI_TEST)
     if(NOT OVE_ARM)
         message(FATAL_ERROR "Rust SPI stack fixture requires the ARM port")
     endif()
-    target_compile_definitions(ove_test_spi_freertos PRIVATE OVE_RUST_SPI_TEST=1)
-    target_sources(ove_test_spi_freertos PRIVATE ${OVE_ROOT}/src/ove_sync.c)
+    target_compile_definitions(ove_test_spi_freertos PRIVATE OVE_RUST_SPI_TEST=1
+        OVE_FREERTOS_IRQ_PORT_SUPPORTED=1)
+    target_sources(ove_test_spi_freertos PRIVATE ${OVE_ROOT}/src/ove_sync.c
+        ${OVE_ROOT}/backends/freertos/freertos_irq.c)
     set(OVE_DIR "${OVE_ROOT}")
     set(OVE_SPI ON)
     set(OVE_SYNC ON)
