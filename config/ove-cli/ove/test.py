@@ -27,8 +27,6 @@ from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
-from .rust_async_queue import observation_valid as _async_queue_observation, doctests_valid as _async_queue_doctests
-from .rust_async_sem import observation_valid as _async_sem_observation, doctests_valid as _async_sem_doctests
 
 logger = logging.getLogger("ove")
 
@@ -757,184 +755,94 @@ def test_rust(ove_dir, output_dir):
         [os.path.join(target_dir, "release", "ove-tests")], "rust")
 
 
-def _rust_async_queue_profile(ove_dir, output_dir, zero, sanitize):
-    profile = ("zero" if zero else "heap") + ("-san" if sanitize else "")
-    base = Path(output_dir) / "tests" / "rust_async_queue" / profile
-    native, generated, target = base / "native", base / "generated", base / "cargo"
-    generated.mkdir(parents=True, exist_ok=True)
-    config = (Path(ove_dir) / "tests" / "ove_config.h").read_text()
-    if zero:
-        config = config.replace("#endif /* OVE_CONFIG_H */",
-                                "#define CONFIG_OVE_ZERO_HEAP 1\n#endif /* OVE_CONFIG_H */")
-    config_path = generated / "ove_config.h"
-    if not config_path.exists() or config_path.read_text() != config:
-        config_path.write_text(config)
-    env = dict(os.environ)
-    env.pop("DOCS_RS", None)
-    env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=str(generated), RUST_IS_NATIVE="1",
-               STUB_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target),
-               OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"),
-               LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
-               LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-               LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
-    configure = ["cmake", "-S", os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
-                 "-B", str(native), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                 "-DOVE_STUB_CONFIG_DIR=" + str(generated),
-                 "-DOVE_STUB_ZERO_HEAP=" + ("ON" if zero else "OFF")]
-    if sanitize:
-        configure.append("-DCMAKE_C_FLAGS=-fsanitize=address,undefined "
-                         "-fno-omit-frame-pointer -fno-sanitize-recover=all")
-        env.update(RUSTC_BOOTSTRAP="1",
-                   RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address "
-                   "-Cforce-frame-pointers=yes -Clink-arg=-lubsan",
-                   ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
-                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
-    build = ["cmake", "--build", str(native), "--target", "ove_stub", "storage_sizes",
-             "--parallel", str(nproc())]
-    cargo = ["cargo", "build", "--locked", "--release", "--manifest-path",
-             os.path.join(ove_dir, "tests", "rust", "Cargo.toml"),
-             "--features", "async-queue", "--bin", "async-queue"]
-    if sanitize:
-        cargo += ["--target", "x86_64-unknown-linux-gnu"]
-        target = target / "x86_64-unknown-linux-gnu"
-    return base, env, (configure, build, cargo), target / "release" / "async-queue"
-
-
-def _rust_async_sem_profile(ove_dir, output_dir, zero, sanitize):
-    profile = ("zero" if zero else "heap") + ("-san" if sanitize else "")
-    base = Path(output_dir) / "tests" / "rust_async_sem" / profile
-    native, generated, target = base / "native", base / "generated", base / "cargo"
-    generated.mkdir(parents=True, exist_ok=True)
-    config = (Path(ove_dir) / "tests" / "ove_config.h").read_text()
-    if zero:
-        config = config.replace("#endif /* OVE_CONFIG_H */",
-                                "#define CONFIG_OVE_ZERO_HEAP 1\n#endif /* OVE_CONFIG_H */")
-    config_path = generated / "ove_config.h"
-    if not config_path.exists() or config_path.read_text() != config:
-        config_path.write_text(config)
-    env = dict(os.environ)
-    env.pop("DOCS_RS", None)
-    env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=str(generated), RUST_IS_NATIVE="1",
-               STUB_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target),
-               OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"),
-               LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
-               LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-               LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
-    configure = ["cmake", "-S", os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
-                 "-B", str(native), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                 "-DOVE_STUB_CONFIG_DIR=" + str(generated),
-                 "-DOVE_STUB_ZERO_HEAP=" + ("ON" if zero else "OFF")]
-    if sanitize:
-        configure.append("-DCMAKE_C_FLAGS=-fsanitize=address,undefined "
-                         "-fno-omit-frame-pointer -fno-sanitize-recover=all")
-        env.update(RUSTC_BOOTSTRAP="1",
-                   RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address "
-                   "-Cforce-frame-pointers=yes -Clink-arg=-lubsan",
-                   ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
-                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
-    build = ["cmake", "--build", str(native), "--target", "ove_stub", "storage_sizes",
-             "--parallel", str(nproc())]
-    cargo = ["cargo", "build", "--locked", "--release", "--manifest-path",
-             os.path.join(ove_dir, "tests", "rust", "Cargo.toml"),
-             "--features", "async-semaphore", "--bin", "async-semaphore"]
-    if sanitize:
-        cargo += ["--target", "x86_64-unknown-linux-gnu"]
-        target = target / "x86_64-unknown-linux-gnu"
-    return base, env, (configure, build, cargo), target / "release" / "async-semaphore"
-
-
-def _test_rust_async_queue(ove_dir, output_dir, sanitize=False):
-    """Exercise exclusive async queue setup and actual callback delivery."""
-    result = TestResults(suite="rust-async-queue-sanitize" if sanitize else "rust-async-queue")
-    explicit_canary = os.environ.get("OVE_RUST_ASYNC_QUEUE_CANARY") == "1"
+def _test_rust_async(ove_dir, output_dir, short, program, doc_filter, sanitize=False):
+    """Run one async wake program, and its doctests, in heap and zero-heap profiles."""
+    result = TestResults(suite=f"rust-async-{short}" + ("-sanitize" if sanitize else ""))
     for zero in (False, True):
-        base, env, commands, binary = _rust_async_queue_profile(ove_dir, output_dir, zero, sanitize)
-        if any(_run_owned_test_process(command, env=env, timeout=300) != 0 for command in commands):
+        mode = "zero" if zero else "heap"
+        base = Path(output_dir) / "tests" / f"rust_async_{short}" / (mode + ("-san" if sanitize else ""))
+        native, generated, target = base / "native", base / "generated", base / "cargo"
+        generated.mkdir(parents=True, exist_ok=True)
+        config = (Path(ove_dir) / "tests" / "ove_config.h").read_text()
+        if zero:
+            config = config.replace("#endif /* OVE_CONFIG_H */",
+                                    "#define CONFIG_OVE_ZERO_HEAP 1\n#endif /* OVE_CONFIG_H */")
+        config_path = generated / "ove_config.h"
+        if not config_path.exists() or config_path.read_text() != config:
+            config_path.write_text(config)
+        env = dict(os.environ)
+        env.pop("DOCS_RS", None)
+        env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=str(generated), RUST_IS_NATIVE="1",
+                   STUB_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target),
+                   OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"),
+                   LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
+                   LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
+                   LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
+        configure = ["cmake", "-S", os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
+                     "-B", str(native), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                     "-DOVE_STUB_CONFIG_DIR=" + str(generated),
+                     "-DOVE_STUB_ZERO_HEAP=" + ("ON" if zero else "OFF")]
+        build = ["cmake", "--build", str(native), "--target", "ove_stub", "storage_sizes",
+                 "--parallel", str(nproc())]
+        cargo = ["cargo", "build", "--locked", "--release", "--manifest-path",
+                 os.path.join(ove_dir, "tests", "rust", "Cargo.toml"),
+                 "--features", program, "--bin", program]
+        runs = []
+        if sanitize:
+            configure.append("-DCMAKE_C_FLAGS=-fsanitize=address,undefined "
+                             "-fno-omit-frame-pointer -fno-sanitize-recover=all")
+            env.update(RUSTC_BOOTSTRAP="1",
+                       RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address "
+                       "-Cforce-frame-pointers=yes -Clink-arg=-lubsan",
+                       ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
+                       UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
+            cargo += ["--target", "x86_64-unknown-linux-gnu"]
+            target = target / "x86_64-unknown-linux-gnu"
+        else:
+            # A mistyped fence such as compile-fail only warns and skips the block.
+            env["RUSTDOCFLAGS"] = (env.get("RUSTDOCFLAGS", "") +
+                                   " -D rustdoc::invalid_codeblock_attributes").strip()
+            runs.append(("doctests", ["cargo", "test", "--locked", "--doc", "--manifest-path",
+                                      os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
+                                      "--no-default-features", "--features", "std,async", "--", doc_filter], 300))
+        runs.append(("program", [str(target / "release" / program)], 30))
+        if any(_run_owned_test_process(command, env=env, timeout=300) != 0
+               for command in (configure, build, cargo)):
             result.failed += 1
+            result.failed_names.append(mode + "/build")
             continue
-        if not sanitize:
-            command = ["cargo", "test", "--locked", "--doc", "--manifest-path",
-                       os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
-                       "--no-default-features", "--features", "std,async", "--", "AsyncQueue"]
-            log = base / "doctests.log"
+        for label, command, timeout in runs:
+            log = base / (label + ".log")
             with log.open("wb") as stream:
-                rc = _run_owned_test_process(command, env=env, timeout=300, stdout=stream)
-            _record_scoped_observation(log, command, rc)
-            text = log.read_text()
-            valid = _async_queue_doctests(text, rc)
-            if not valid:
+                rc = _run_owned_test_process(command, env=env, timeout=timeout, stdout=stream)
+            text = log.read_text(errors="backslashreplace")
+            # A filtered doctest run exits 0 when nothing matches the filter.
+            ok = rc == 0 and (label == "program" or bool(re.search(r"^test result: ok\. [1-9]", text, re.M)
+                                                          and not re.search(r"[1-9]\d* ignored;", text)))
+            if not ok:
                 print(text, end="")
-            result.passed += int(valid)
-            result.failed += int(not valid)
-        for canary in (False, True):
-            command = [str(binary)] + (["canary"] if canary or explicit_canary else [])
-            log = base / ("canary.log" if canary else "normal.log")
-            with log.open("wb") as stream:
-                rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
-            _record_scoped_observation(log, command, rc)
-            text = log.read_text()
-            valid = _async_queue_observation(text, zero, rc,
-                                           expected_canary=canary and not explicit_canary)
-            if explicit_canary or not valid:
-                print(text, end="")
-            result.passed += int(valid)
-            result.failed += int(not valid)
+                result.failed_names.append(f"{mode}/{label}")
+            result.passed += int(ok)
+            result.failed += int(not ok)
+    result.failed += int(result.passed == 0)
     return result
 
 
 def test_rust_async_queue(ove_dir, output_dir):
-    return _test_rust_async_queue(ove_dir, output_dir)
+    return _test_rust_async(ove_dir, output_dir, "queue", "async-queue", "AsyncQueue")
 
 
 def test_rust_async_queue_sanitize(ove_dir, output_dir):
-    return _test_rust_async_queue(ove_dir, output_dir, sanitize=True)
-
-
-def _test_rust_async_sem(ove_dir, output_dir, sanitize=False):
-    """Exercise exclusive async semaphore setup and actual callback delivery."""
-    result = TestResults(suite="rust-async-sem-sanitize" if sanitize else "rust-async-sem")
-    explicit_canary = os.environ.get("OVE_RUST_ASYNC_SEM_CANARY") == "1"
-    for zero in (False, True):
-        base, env, commands, binary = _rust_async_sem_profile(ove_dir, output_dir, zero, sanitize)
-        if any(_run_owned_test_process(command, env=env, timeout=300) != 0 for command in commands):
-            result.failed += 1
-            continue
-        if not sanitize:
-            command = ["cargo", "test", "--locked", "--doc", "--manifest-path",
-                       os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
-                       "--no-default-features", "--features", "std,async", "--", "AsyncSemaphore::arm"]
-            log = base / "doctests.log"
-            with log.open("wb") as stream:
-                rc = _run_owned_test_process(command, env=env, timeout=300, stdout=stream)
-            _record_scoped_observation(log, command, rc)
-            text = log.read_text()
-            valid = _async_sem_doctests(text, rc)
-            if not valid:
-                print(text, end="")
-            result.passed += int(valid)
-            result.failed += int(not valid)
-        for canary in (False, True):
-            command = [str(binary)] + (["canary"] if canary or explicit_canary else [])
-            log = base / ("canary.log" if canary else "normal.log")
-            with log.open("wb") as stream:
-                rc = _run_owned_test_process(command, env=env, timeout=30, stdout=stream)
-            _record_scoped_observation(log, command, rc)
-            text = log.read_text()
-            valid = _async_sem_observation(text, zero, rc,
-                                           expected_canary=canary and not explicit_canary)
-            if explicit_canary or not valid:
-                print(text, end="")
-            result.passed += int(valid)
-            result.failed += int(not valid)
-    return result
+    return _test_rust_async(ove_dir, output_dir, "queue", "async-queue", "AsyncQueue", sanitize=True)
 
 
 def test_rust_async_sem(ove_dir, output_dir):
-    return _test_rust_async_sem(ove_dir, output_dir)
+    return _test_rust_async(ove_dir, output_dir, "sem", "async-semaphore", "AsyncSemaphore::arm")
 
 
 def test_rust_async_sem_sanitize(ove_dir, output_dir):
-    return _test_rust_async_sem(ove_dir, output_dir, sanitize=True)
+    return _test_rust_async(ove_dir, output_dir, "sem", "async-semaphore", "AsyncSemaphore::arm",
+                            sanitize=True)
 
 
 def _test_rust_lvgl(ove_dir, output_dir, sanitize=False):

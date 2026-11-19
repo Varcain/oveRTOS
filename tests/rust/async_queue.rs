@@ -50,14 +50,6 @@ impl Wake for WakeCount {
 }
 
 fn main() -> std::process::ExitCode {
-    let canary = match std::env::args().nth(1).as_deref() {
-        None => false,
-        Some("canary") => true,
-        _ => return std::process::ExitCode::from(2),
-    };
-    if canary {
-        check(false, "early_calibration_survives_controls");
-    }
     let Ok(inner) = queue(&PRIMARY) else {
         eprintln!("queue setup failed");
         return std::process::ExitCode::from(2);
@@ -126,6 +118,8 @@ fn main() -> std::process::ExitCode {
         queue(&ORDINARY).is_ok_and(|owner| empty(&owner)),
         "ordinary_reused",
     );
+    // Only the two deliveries above may wake the armed queue.
+    check(count.0.load(Ordering::Acquire) == 2, "no_extra_wake");
     let failures = FAILURES.load(Ordering::Acquire);
     let mode = if cfg!(zero_heap) { "zero" } else { "heap" };
     println!(
