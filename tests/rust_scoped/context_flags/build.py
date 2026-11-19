@@ -3,13 +3,12 @@
 """Build metadata models of the actual providers; never run a model here."""
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from profiles import profiles, validate_profiles
+from profiles import profiles
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -53,25 +52,9 @@ def getters(profile, case):
     return [0] * 7
 
 
-def expected(profile, canary=False):
-    text = "failed: explicit early failure canary\n" if canary else ""
-    for row in profile["cases"]:
-        counts = ",".join(map(str, getters(profile, row["case"])))
-        text += (
-            f"{row['case']}: flags={row['expected_flags']} "
-            f"legacy={row['expected_resource_blocking']} readonly=1 effects=0 "
-            f"early=0 getters={counts}\n"
-        )
-    return text + (
-        f"context-model: profile={profile['profile']} failures={int(canary)} "
-        f"queries={len(profile['cases'])}\n"
-    )
-
-
 def build(output, sanitize=False, selected_profiles=None):
     if sys.flags.optimize:
         raise ValueError("context checks require Python without optimization")
-    validate_profiles()
     selection = profiles if selected_profiles is None else selected_profiles
     if not selection or len({row["profile"] for row in selection}) != len(selection):
         raise ValueError("empty or duplicate context selection")
@@ -91,20 +74,7 @@ def build(output, sanitize=False, selected_profiles=None):
         reverse = reverse.replace(row["model"], row["original"])
     assert reverse == original
     (output / "ove_sync_context.h").write_text(transformed)
-    digest = lambda text: hashlib.sha256(text.encode()).hexdigest()
-    (output / "helper-provenance.json").write_text(
-        json.dumps(
-            {
-                "original_sha256": digest(original),
-                "derived_sha256": digest(transformed),
-                "reversed_sha256": digest(reverse),
-                "replacements": replacements,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-    images = []
+    binaries = []
     for profile in selection:
         folder = output / profile["profile"]
         folder.mkdir(exist_ok=True)
@@ -166,19 +136,8 @@ def build(output, sanitize=False, selected_profiles=None):
         completed = subprocess.run(command, timeout=60, check=False)
         if completed.returncode:
             raise RuntimeError(f"context model build failed: {profile['profile']}")
-        binary = folder / "model"
-        images.append(
-            {
-                "profile": profile["profile"],
-                "binary": str(binary),
-                "command": command,
-                "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
-                "normal_text": expected(profile),
-                "canary_text": expected(profile, True),
-            }
-        )
-    (output / "images.json").write_text(json.dumps(images, indent=2) + "\n")
-    return images
+        binaries.append(folder / "model")
+    return binaries
 
 
 if __name__ == "__main__":

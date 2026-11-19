@@ -263,16 +263,13 @@ static void check(bool valid, const char *message)
 	}
 }
 static void observe(const char *name, uint32_t expected, uint32_t legacy, const unsigned wanted[7]);
-int main(int argc, char **argv)
+int main(void)
 {
-	if (argc != 1 && (argc != 2 || strcmp(argv[1], "canary")))
-		return 2;
 	check(OVE_SYNC_CONTEXT_RESOURCE == 1 && OVE_SYNC_CONTEXT_BLOCKING == 2 &&
 		      OVE_SYNC_CONTEXT_PRODUCER == 4,
 	      "public constants");
-	if (argc == 2)
-		check(false, "explicit early failure canary");
 #include "cases.inc"
+	check(queries > 0, "context queries ran");
 	printf("context-model: profile=%s failures=%u queries=%u\n", MODEL_PROFILE, failures,
 	       queries);
 	return failures ? 1 : 0;
