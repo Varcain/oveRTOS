@@ -962,7 +962,11 @@ def _run_owned_test_process(command, *, env, timeout, cleanup_timeout=5, stdout=
             if process is not None:
                 with suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+                # An interruption inside wait() can leave Popen's wait lock
+                # held, so reap the child directly instead.
+                if process.returncode is None:
+                    with suppress(ChildProcessError):
+                        process.returncode = os.waitstatus_to_exitcode(os.waitpid(process.pid, 0)[1])
             signal.signal(signal.SIGTERM, previous)
 
 

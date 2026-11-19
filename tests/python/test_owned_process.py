@@ -21,7 +21,7 @@ STRAY = "sleep 60 & echo $! > \"$0\""
 # The child starts a grandchild in the same group, records its PID, then waits.
 SPAWN = ("import subprocess, sys, time; "
          "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
-         "open(sys.argv[1], 'w').write(str(p.pid)); time.sleep(60)")
+         "open(sys.argv[1], 'w').write(f'{p.pid}\\n'); time.sleep(60)")
 
 
 def alive(pid):
@@ -91,8 +91,8 @@ class OwnedProcessTest(unittest.TestCase):
             record = Path(directory) / "pid"
             command = [sys.executable, "-c", SPAWN, str(record)]
             self.assertEqual(ove_test._run_owned_test_process(command, env=dict(os.environ),
-                                                              timeout=2, cleanup_timeout=1), 124)
-            self.assertFalse(alive(int(record.read_text())))
+                                                              timeout=5, cleanup_timeout=1), 124)
+            self.assertFalse(alive(recorded_pid(record)))
 
     def test_interruption_kills_the_group_and_propagates(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -103,13 +103,18 @@ class OwnedProcessTest(unittest.TestCase):
                 if timeout == 30:
                     while not (record.exists() and record.read_text()):
                         time.sleep(0.01)
+                    # The signal can land while wait() holds its internal lock.
+                    process._waitpid_lock.acquire()
                     raise KeyboardInterrupt
+                if timeout is None and process._waitpid_lock.locked():
+                    raise AssertionError("untimed wait() would block on the held wait lock")
                 return real_wait(process, timeout)
 
             command = [sys.executable, "-c", SPAWN, str(record)]
             with mock.patch.object(subprocess.Popen, "wait", interrupted), \
                     self.assertRaises(KeyboardInterrupt):
-                ove_test._run_owned_test_process(command, env=dict(os.environ), timeout=30)
+                ove_test._run_owned_test_process(command, env=dict(os.environ), timeout=30,
+                                                 cleanup_timeout=1)
             self.assertFalse(alive(int(record.read_text())))
 
 
