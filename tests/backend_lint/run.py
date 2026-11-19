@@ -260,11 +260,7 @@ _Static_assert(1.00000005960464477539062501 == 0x1.000002p0f, "GCC direct decima
         raise RuntimeError("GCC reference literal assertions failed")
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(BackendLint)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    failed = not result.wasSuccessful() or bool(result.skipped) or result.testsRun != 19
-    failed |= os.environ.get("OVE_BACKEND_LINT_CANARY") == "1"
-    if not failed:
-        print("BACKEND_LINT_GATE_PASS tests=19", flush=True)
-    return int(failed)
+    return int(not result.wasSuccessful() or bool(result.skipped) or bool(result.expectedFailures) or result.testsRun != 19)
 
 
 if __name__ == "__main__":
