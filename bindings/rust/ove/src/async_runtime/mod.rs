@@ -28,7 +28,7 @@
 // Note: #[doc(cfg(...))] would surface the feature gate on docs.rs but
 // requires nightly. Skipped to keep the crate stable-only.
 
-#[cfg(has_spi)]
+#[cfg(any(has_spi, has_i2c))]
 mod bus_state;
 pub(crate) mod critical_section;
 #[cfg(has_eventgroup)]
