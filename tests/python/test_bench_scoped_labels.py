@@ -4,7 +4,6 @@
 
 import importlib.util
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -12,8 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-path = Path(os.environ.get("OVE_BENCH_COMPARE_SCRIPT", ROOT / "scripts/bench_compare.py"))
-spec = importlib.util.spec_from_file_location("scoped_bench_compare", path)
+spec = importlib.util.spec_from_file_location("scoped_bench_compare", ROOT / "scripts/bench_compare.py")
 compare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(compare)
 sys.path.pop(0)

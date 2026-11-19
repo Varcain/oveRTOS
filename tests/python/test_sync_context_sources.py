@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Every build compiles its native interrupt-context query source."""
 
-import os
 import unittest
 from itertools import product
 from pathlib import Path
@@ -14,8 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class SyncContextSourcesTest(unittest.TestCase):
     def test_minimal_and_disabled_source_selection(self):
-        path = Path(os.environ.get("OVE_SYNC_CONTEXT_TEMPLATE",
-                                   ROOT / "config/templates/ove_config.cmake.j2"))
+        path = ROOT / "config/templates/ove_config.cmake.j2"
         template = Environment(loader=FileSystemLoader(path.parent)).get_template(path.name)
         for platform in ("freertos", "zephyr", "nuttx"):
             for sync, asynchronous, queue in product((False, True), repeat=3):

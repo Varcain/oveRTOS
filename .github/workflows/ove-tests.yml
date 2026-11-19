@@ -49,6 +49,9 @@ jobs:
       - name: Backend lint target and ABI regression
         run: timeout --signal=INT --kill-after=30 240 make test-backend-lint
 
+      - name: ove CLI and tooling unit tests
+        run: timeout --signal=INT --kill-after=30 120 make test-python
+
   stub-tests:
     name: Stub Backend Tests
     runs-on: ubuntu-latest

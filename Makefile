@@ -163,6 +163,11 @@ flash: $(VENV_STAMP)
 test: $(VENV_STAMP)
 	@$(OVE) test $(if $(filter 1,$(JSON)),--json)
 
+# Unit tests for the ove CLI and its tooling scripts.
+.PHONY: test-python
+test-python: $(VENV_STAMP)
+	@$(VENV_PYTHON) -m unittest discover -s $(OVE_DIR)/tests/python
+
 # ── Benchmarks ─────────────────────────────────────────────────────────────
 # `make benchmarks-<platform>` — build all 4 bindings (c, cpp, rust, zig)
 # of the benchmark app for the given platform, run each, and emit a
@@ -647,6 +652,7 @@ help:
 	@echo "  test-cpp                - C++ binding tests"
 	@echo "  test-rust               - Rust binding tests"
 	@echo "  test-zig                - Zig binding tests"
+	@echo "  test-python             - ove CLI and tooling unit tests"
 	@echo "  test-nuttx              - NuttX simulator tests"
 	@echo "  test-zephyr             - Zephyr native_sim tests"
 	@echo "  test-qemu               - All QEMU ARM tests"
