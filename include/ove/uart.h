@@ -48,6 +48,8 @@ typedef enum {
 	OVE_UART_PARITY_NONE = 0,
 	OVE_UART_PARITY_ODD = 1,
 	OVE_UART_PARITY_EVEN = 2,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_UART_PARITY_MAX_ENUM = 0x7fffffff,
 } ove_uart_parity_t;
 
 /** @brief UART stop-bit count. */
@@ -55,12 +57,16 @@ typedef enum {
 	OVE_UART_STOP_1 = 0,
 	OVE_UART_STOP_1_5 = 1,
 	OVE_UART_STOP_2 = 2,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_UART_STOP_MAX_ENUM = 0x7fffffff,
 } ove_uart_stop_t;
 
 /** @brief UART hardware flow control. */
 typedef enum {
 	OVE_UART_FLOW_NONE = 0,
 	OVE_UART_FLOW_RTS_CTS = 1,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_UART_FLOW_MAX_ENUM = 0x7fffffff,
 } ove_uart_flow_t;
 
 /* ── Configuration ───────────────────────────────────────────────── */

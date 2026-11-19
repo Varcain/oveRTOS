@@ -76,6 +76,8 @@ int ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg)
 		spi->hal_handle.Init.CLKPolarity = SPI_POLARITY_HIGH;
 		spi->hal_handle.Init.CLKPhase = SPI_PHASE_2EDGE;
 		break;
+	default:
+		break;
 	}
 
 	/* Prescaler: pick closest divider to requested clock_hz.

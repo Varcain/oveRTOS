@@ -66,6 +66,8 @@ typedef enum {
 	OVE_SPI_MODE_1 = 1, /**< CPOL=0, CPHA=1. */
 	OVE_SPI_MODE_2 = 2, /**< CPOL=1, CPHA=0. */
 	OVE_SPI_MODE_3 = 3, /**< CPOL=1, CPHA=1. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_SPI_MODE_MAX_ENUM = 0x7fffffff,
 } ove_spi_mode_t;
 
 /**
@@ -74,6 +76,8 @@ typedef enum {
 typedef enum {
 	OVE_SPI_MSB_FIRST = 0, /**< Most significant bit first (common). */
 	OVE_SPI_LSB_FIRST = 1, /**< Least significant bit first. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_SPI_BIT_ORDER_MAX_ENUM = 0x7fffffff,
 } ove_spi_bit_order_t;
 
 /* ── Configuration ───────────────────────────────────────────────── */

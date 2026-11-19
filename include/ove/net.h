@@ -34,29 +34,21 @@ extern "C" {
 /* ── Types (always visible) ──────────────────────────────────────── */
 
 /** @brief Socket type. */
-#ifdef __ZIG_CIMPORT__ /* @cond ZIG_ABI */
-/* Zig @cImport uses clang which does not default to -fshort-enums on ARM.
- * Use fixed-width types so the struct layout matches the ARM EABI ABI. */
-typedef uint8_t ove_sock_type_t;
-#define OVE_SOCK_STREAM ((ove_sock_type_t)1)
-#define OVE_SOCK_DGRAM ((ove_sock_type_t)2)
-#define OVE_SOCK_RAW ((ove_sock_type_t)3)
-typedef uint8_t ove_af_t;
-#define OVE_AF_INET ((ove_af_t)2)
-#define OVE_AF_INET6 ((ove_af_t)10)
-#else /* @endcond */
 typedef enum {
 	OVE_SOCK_STREAM = 1, /**< Reliable byte-stream (TCP). */
 	OVE_SOCK_DGRAM = 2,  /**< Connectionless datagrams (UDP). */
 	OVE_SOCK_RAW = 3,    /**< Raw IP protocol access (e.g. ICMP for ping). */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_SOCK_TYPE_MAX_ENUM = 0x7fffffff,
 } ove_sock_type_t;
 
 /** @brief Address family. */
 typedef enum {
 	OVE_AF_INET = 2,   /**< IPv4. */
 	OVE_AF_INET6 = 10, /**< IPv6. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_AF_MAX_ENUM = 0x7fffffff,
 } ove_af_t;
-#endif
 
 /** @brief Socket readiness bits for @ref ove_socket_poll (Linux poll(2) values). */
 #define OVE_SOCK_POLLIN 0x01u  /**< Readable: data ready, or an incoming connection. */
@@ -72,7 +64,7 @@ typedef enum {
 /**
  * @brief Generic socket address (large enough for IPv4 or IPv6).
  */
-typedef struct {
+typedef struct ove_sockaddr {
 	ove_af_t family;  /**< Address family (OVE_AF_INET or OVE_AF_INET6). */
 	uint16_t port;	  /**< Port number in host byte order. */
 	uint8_t addr[16]; /**< Address bytes (4 for IPv4, 16 for IPv6). */
@@ -81,7 +73,7 @@ typedef struct {
 /**
  * @brief Network interface configuration.
  */
-typedef struct {
+typedef struct ove_netif_config {
 	int use_dhcp;		  /**< Non-zero to use DHCP; zero for static. */
 	ove_sockaddr_t static_ip; /**< Static IP (ignored if use_dhcp). */
 	ove_sockaddr_t gateway;	  /**< Default gateway (ignored if use_dhcp). */

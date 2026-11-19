@@ -31,16 +31,12 @@ extern "C" {
 #endif
 
 /** @brief MQTT QoS level. */
-#ifdef __ZIG_CIMPORT__
-typedef uint8_t ove_mqtt_qos_t;
-#define OVE_MQTT_QOS0 ((ove_mqtt_qos_t)0) /**< At most once. */
-#define OVE_MQTT_QOS1 ((ove_mqtt_qos_t)1) /**< At least once. */
-#else
 typedef enum {
 	OVE_MQTT_QOS0 = 0, /**< At most once. */
 	OVE_MQTT_QOS1 = 1, /**< At least once. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_MQTT_QOS_MAX_ENUM = 0x7fffffff,
 } ove_mqtt_qos_t;
-#endif
 
 /**
  * @brief MQTT message callback.

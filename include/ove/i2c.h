@@ -78,6 +78,8 @@ typedef enum {
 	OVE_I2C_SPEED_STANDARD = 0,  /**< 100 kHz. */
 	OVE_I2C_SPEED_FAST = 1,	     /**< 400 kHz. */
 	OVE_I2C_SPEED_FAST_PLUS = 2, /**< 1 MHz. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_I2C_SPEED_MAX_ENUM = 0x7fffffff,
 } ove_i2c_speed_t;
 
 /* ── Configuration ───────────────────────────────────────────────── */

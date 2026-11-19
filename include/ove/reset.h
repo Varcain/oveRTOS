@@ -39,6 +39,8 @@ typedef enum ove_reset_cause {
 	OVE_RESET_WATCHDOG,    /**< a watchdog timed out — the host stopped feeding */
 	OVE_RESET_BROWNOUT,    /**< brown-out detector tripped */
 	OVE_RESET_LOW_POWER,   /**< illegal low-power / standby exit */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_RESET_CAUSE_MAX_ENUM = 0x7fffffff,
 } ove_reset_cause_t;
 
 /** Human-readable name for @p c (never NULL). */

@@ -67,7 +67,8 @@ def check(ove_dir: str):
     Empty list means every binding asserts exactly the master set.
     """
     header = _read(os.path.join(ove_dir, _C_HEADER))
-    defined = set(_DEFINE_RE.findall(header))
+    # OVE_ERR_MAX_ENUM only widens the enum to 4 bytes; it is not a code.
+    defined = set(_DEFINE_RE.findall(header)) - {"OVE_ERR_MAX_ENUM"}
     if not defined:
         # Header missing or unparseable — surface this so a refactor that
         # moves the OVE_ERR_* #defines doesn't silently neuter the lint.

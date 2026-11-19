@@ -87,6 +87,8 @@ enum ove_tensor_type {
 	OVE_TENSOR_UINT8 = 2,
 	OVE_TENSOR_INT16 = 3,
 	OVE_TENSOR_INT32 = 4,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_TENSOR_TYPE_MAX_ENUM = 0x7fffffff,
 };
 
 /**

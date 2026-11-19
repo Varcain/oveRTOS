@@ -58,6 +58,8 @@ typedef enum {
 	OVE_THREAD_STATE_SUSPENDED,   /**< @brief Explicitly suspended via ove_thread_suspend(). */
 	OVE_THREAD_STATE_TERMINATED,  /**< @brief Entry function has returned; not yet destroyed. */
 	OVE_THREAD_STATE_UNKNOWN,     /**< @brief State could not be determined. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_THREAD_STATE_MAX_ENUM = 0x7fffffff,
 } ove_thread_state_t;
 
 /**
@@ -86,6 +88,8 @@ typedef enum {
 	OVE_PRIO_HIGH = 20,	    /**< @brief High priority; prefer for time-sensitive tasks. */
 	OVE_PRIO_REALTIME = 24,	    /**< @brief Real-time priority; use with care. */
 	OVE_PRIO_CRITICAL = 31, /**< @brief Highest priority; reserved for critical system tasks. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_PRIO_MAX_ENUM = 0x7fffffff,
 } ove_prio_t;
 
 /** @brief Highest valid priority; thread and workqueue calls reject larger values. */

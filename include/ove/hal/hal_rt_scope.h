@@ -26,6 +26,8 @@ typedef void (*ove_hal_rt_scope_release_fn)(void);
 typedef enum {
 	OVE_HAL_RT_SCOPE_RESPONSE_WORKER = 0,
 	OVE_HAL_RT_SCOPE_REPORT_WORKER,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_HAL_RT_SCOPE_WORKER_MAX_ENUM = 0x7fffffff,
 } ove_hal_rt_scope_worker_t;
 
 typedef struct {

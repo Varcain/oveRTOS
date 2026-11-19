@@ -37,6 +37,8 @@ typedef enum {
 	OVE_HTTP_PUT = 2,    /**< HTTP PUT. */
 	OVE_HTTP_DELETE = 3, /**< HTTP DELETE. */
 	OVE_HTTP_PATCH = 4,  /**< HTTP PATCH. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_HTTP_METHOD_MAX_ENUM = 0x7fffffff,
 } ove_http_method_t;
 
 /**

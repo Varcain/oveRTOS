@@ -43,6 +43,8 @@ enum ove_audio_sample_fmt {
 	OVE_AUDIO_FMT_S16, /**< @brief Signed 16-bit integer (int16_t). */
 	OVE_AUDIO_FMT_S32, /**< @brief Signed 32-bit integer (int32_t). */
 	OVE_AUDIO_FMT_F32, /**< @brief 32-bit IEEE 754 float. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_AUDIO_SAMPLE_FMT_MAX_ENUM = 0x7fffffff,
 };
 
 /**
@@ -191,6 +193,8 @@ enum ove_audio_node_type {
 	OVE_AUDIO_NODE_SOURCE,	  /**< @brief Produces audio; has no upstream connection. */
 	OVE_AUDIO_NODE_PROCESSOR, /**< @brief Transforms audio; has one upstream connection. */
 	OVE_AUDIO_NODE_SINK,	  /**< @brief Consumes audio; has no downstream connection. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_AUDIO_NODE_TYPE_MAX_ENUM = 0x7fffffff,
 };
 
 /**

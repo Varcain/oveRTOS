@@ -237,6 +237,8 @@ pub const OVE_ERR_BAD_HANDLE: ove_err = -32;
 pub const OVE_ERR_PERMISSION: ove_err = -33;
 #[doc = " Source and destination belong to different mounted filesystems."]
 pub const OVE_ERR_CROSS_DEVICE: ove_err = -34;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_ERR_MAX_ENUM: ove_err = 2147483647;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]
 pub type ove_err = core::ffi::c_int;
 #[doc = " @brief oveRTOS error codes.\n\n Convention: zero (@c OVE_OK) on success, negative values on error.\n Numeric values are pinned by the @c _Static_assert block below — the\n names and codes form the stable C ABI between substrate and bindings.\n\n Function APIs return @c int (not @c ove_err_t) for ABI compatibility\n and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.\n Bindings consume the typed enum via bindgen / @c \\@cImport."]
@@ -470,6 +472,8 @@ pub const OVE_THREAD_STATE_SUSPENDED: ove_thread_state_t = 3;
 pub const OVE_THREAD_STATE_TERMINATED: ove_thread_state_t = 4;
 #[doc = "< @brief State could not be determined."]
 pub const OVE_THREAD_STATE_UNKNOWN: ove_thread_state_t = 5;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_THREAD_STATE_MAX_ENUM: ove_thread_state_t = 2147483647;
 #[doc = " @brief Thread execution state as reported by the active backend."]
 pub type ove_thread_state_t = core::ffi::c_uint;
 #[doc = " @brief Per-thread runtime statistics snapshot."]
@@ -506,6 +510,8 @@ pub const OVE_PRIO_HIGH: ove_prio_t = 20;
 pub const OVE_PRIO_REALTIME: ove_prio_t = 24;
 #[doc = "< @brief Highest priority; reserved for critical system tasks."]
 pub const OVE_PRIO_CRITICAL: ove_prio_t = 31;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_PRIO_MAX_ENUM: ove_prio_t = 2147483647;
 #[doc = " @brief Portable thread priority, on a scale from 0 to @ref OVE_PRIO_MAX.\n\n Higher values represent higher scheduling priority. The named levels are\n anchors on the scale; any value in between is a valid priority too, and\n @ref OVE_PRIO_ABOVE / @ref OVE_PRIO_BELOW derive one from an anchor. Every\n backend maps each of the 32 values to a distinct native priority, so the\n order between any two values holds on every RTOS."]
 pub type ove_prio_t = core::ffi::c_uint;
 #[doc = " @cond INTERNAL"]
@@ -1223,6 +1229,8 @@ pub const OVE_AUDIO_FMT_S16: ove_audio_sample_fmt = 0;
 pub const OVE_AUDIO_FMT_S32: ove_audio_sample_fmt = 1;
 #[doc = "< @brief 32-bit IEEE 754 float."]
 pub const OVE_AUDIO_FMT_F32: ove_audio_sample_fmt = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_AUDIO_SAMPLE_FMT_MAX_ENUM: ove_audio_sample_fmt = 2147483647;
 #[doc = " @brief PCM sample format tag.\n\n Identifies the numeric type and bit-depth of each audio sample."]
 pub type ove_audio_sample_fmt = core::ffi::c_uint;
 #[doc = " @brief Complete audio stream format descriptor.\n\n Describes the sample rate, channel count, and sample encoding of an\n audio stream.  Channels are always interleaved."]
@@ -1315,6 +1323,8 @@ pub const OVE_AUDIO_NODE_SOURCE: ove_audio_node_type = 0;
 pub const OVE_AUDIO_NODE_PROCESSOR: ove_audio_node_type = 1;
 #[doc = "< @brief Consumes audio; has no downstream connection."]
 pub const OVE_AUDIO_NODE_SINK: ove_audio_node_type = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_AUDIO_NODE_TYPE_MAX_ENUM: ove_audio_node_type = 2147483647;
 #[doc = " @brief Role of a node within the audio graph."]
 pub type ove_audio_node_type = core::ffi::c_uint;
 #[doc = " @brief Descriptor for a single node in the audio graph.\n\n Populated by ove_audio_graph_add_node() and stored inside\n @c ove_audio_graph::nodes[]. The public descriptor now represents names\n as name_span.data/len rather than a C-string pointer: readers must use\n the byte count, not strlen or %s. This changes its source layout and ABI;\n rebuild consumers together. Names remain borrowed until graph deinit."]
@@ -1473,6 +1483,8 @@ pub const OVE_AUDIO_GRAPH_IDLE: ove_audio_graph_state = 0;
 pub const OVE_AUDIO_GRAPH_READY: ove_audio_graph_state = 1;
 #[doc = "< @brief Graph is actively processing audio."]
 pub const OVE_AUDIO_GRAPH_RUNNING: ove_audio_graph_state = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_AUDIO_GRAPH_STATE_MAX_ENUM: ove_audio_graph_state = 2147483647;
 #[doc = " @brief Lifecycle state of an audio graph.\n\n @see ove_audio_graph_build, ove_audio_graph_start, ove_audio_graph_stop"]
 pub type ove_audio_graph_state = core::ffi::c_uint;
 #[doc = " @brief Audio processing graph instance.\n\n Holds all nodes, edges, execution order, audio buffers, and runtime\n statistics for one complete audio pipeline.  Must be initialised with\n ove_audio_graph_init() before use."]
@@ -1626,6 +1638,8 @@ unsafe extern "C" {
 pub const OVE_AUDIO_TRANSPORT_I2S: ove_audio_transport = 0;
 #[doc = "< @brief PDM microphone interface."]
 pub const OVE_AUDIO_TRANSPORT_PDM: ove_audio_transport = 1;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_AUDIO_TRANSPORT_MAX_ENUM: ove_audio_transport = 2147483647;
 #[doc = " @brief Audio hardware transport type.\n\n Selects the low-level audio bus or host API used by a device node."]
 pub type ove_audio_transport = core::ffi::c_uint;
 #[doc = " @brief Configuration descriptor for a hardware audio device node.\n\n Passed to ove_audio_device_source() or ove_audio_device_sink() to\n describe the transport, stream format, and transport-specific\n parameters.  Fields set to zero select the backend default."]
@@ -2392,6 +2406,8 @@ pub const OVE_GPIO_MODE_INPUT: ove_gpio_mode_t = 0;
 pub const OVE_GPIO_MODE_OUTPUT_PP: ove_gpio_mode_t = 1;
 #[doc = "< Open-drain digital output."]
 pub const OVE_GPIO_MODE_OUTPUT_OD: ove_gpio_mode_t = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_GPIO_MODE_MAX_ENUM: ove_gpio_mode_t = 2147483647;
 #[doc = " @brief GPIO pin direction and drive mode."]
 pub type ove_gpio_mode_t = core::ffi::c_uint;
 #[doc = "< Trigger on rising edge only."]
@@ -2400,6 +2416,8 @@ pub const OVE_GPIO_IRQ_RISING: ove_gpio_irq_mode_t = 1;
 pub const OVE_GPIO_IRQ_FALLING: ove_gpio_irq_mode_t = 2;
 #[doc = "< Trigger on both edges."]
 pub const OVE_GPIO_IRQ_BOTH: ove_gpio_irq_mode_t = 3;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_GPIO_IRQ_MODE_MAX_ENUM: ove_gpio_irq_mode_t = 2147483647;
 #[doc = " @brief GPIO interrupt trigger edge selection."]
 pub type ove_gpio_irq_mode_t = core::ffi::c_uint;
 #[doc = " @brief GPIO interrupt callback type.\n\n Called when the configured edge is detected.\n\n Called in interrupt context, from the GPIO interrupt handler, on every\n engine (the host test backend calls it from the thread that injects the\n edge).  Keep it short and non-blocking, using only @c _from_isr APIs.\n Once ove_gpio_irq_disable() or ove_gpio_irq_unregister() has returned in\n thread context, no new call starts, and on a single core none is still\n running; nothing is guaranteed if they are called from an interrupt of\n higher priority than the GPIO one.\n\n @param[in] port      GPIO port index that generated the interrupt.\n @param[in] pin       GPIO pin index that generated the interrupt.\n @param[in] user_data Opaque pointer supplied at registration time."]
@@ -3029,6 +3047,8 @@ pub const OVE_TENSOR_INT8: ove_tensor_type = 1;
 pub const OVE_TENSOR_UINT8: ove_tensor_type = 2;
 pub const OVE_TENSOR_INT16: ove_tensor_type = 3;
 pub const OVE_TENSOR_INT32: ove_tensor_type = 4;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_TENSOR_TYPE_MAX_ENUM: ove_tensor_type = 2147483647;
 #[doc = " @brief Tensor element types.\n\n Supported descriptor types: float32, int8, uint8, int16 and int32.\n Tensor descriptor getters reject other TFLite element types."]
 pub type ove_tensor_type = core::ffi::c_uint;
 #[doc = " @brief Tensor descriptor returned by ove_model_input() / ove_model_output().\n\n Provides direct access to tensor data, along with shape and type metadata.\n Outputs are read-only and can refer to immutable model bytes. The @c data\n pointer is valid for the lifetime of the model session.\n Successful descriptors report an exact supported type and rank from zero\n (scalar) through five. Unused shape entries are zero."]
@@ -3153,17 +3173,21 @@ pub const OVE_SOCK_STREAM: ove_sock_type_t = 1;
 pub const OVE_SOCK_DGRAM: ove_sock_type_t = 2;
 #[doc = "< Raw IP protocol access (e.g. ICMP for ping)."]
 pub const OVE_SOCK_RAW: ove_sock_type_t = 3;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_SOCK_TYPE_MAX_ENUM: ove_sock_type_t = 2147483647;
 pub type ove_sock_type_t = core::ffi::c_uint;
 #[doc = "< IPv4."]
 pub const OVE_AF_INET: ove_af_t = 2;
 #[doc = "< IPv6."]
 pub const OVE_AF_INET6: ove_af_t = 10;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_AF_MAX_ENUM: ove_af_t = 2147483647;
 #[doc = " @brief Address family."]
 pub type ove_af_t = core::ffi::c_uint;
 #[doc = " @brief Generic socket address (large enough for IPv4 or IPv6)."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct ove_sockaddr_t {
+pub struct ove_sockaddr {
     #[doc = "< Address family (OVE_AF_INET or OVE_AF_INET6)."]
     pub family: ove_af_t,
     #[doc = "< Port number in host byte order."]
@@ -3173,17 +3197,18 @@ pub struct ove_sockaddr_t {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_sockaddr_t"][core::mem::size_of::<ove_sockaddr_t>() - 24usize];
-    ["Alignment of ove_sockaddr_t"][core::mem::align_of::<ove_sockaddr_t>() - 4usize];
-    ["Offset of field: ove_sockaddr_t::family"]
-        [core::mem::offset_of!(ove_sockaddr_t, family) - 0usize];
-    ["Offset of field: ove_sockaddr_t::port"][core::mem::offset_of!(ove_sockaddr_t, port) - 4usize];
-    ["Offset of field: ove_sockaddr_t::addr"][core::mem::offset_of!(ove_sockaddr_t, addr) - 6usize];
+    ["Size of ove_sockaddr"][core::mem::size_of::<ove_sockaddr>() - 24usize];
+    ["Alignment of ove_sockaddr"][core::mem::align_of::<ove_sockaddr>() - 4usize];
+    ["Offset of field: ove_sockaddr::family"][core::mem::offset_of!(ove_sockaddr, family) - 0usize];
+    ["Offset of field: ove_sockaddr::port"][core::mem::offset_of!(ove_sockaddr, port) - 4usize];
+    ["Offset of field: ove_sockaddr::addr"][core::mem::offset_of!(ove_sockaddr, addr) - 6usize];
 };
+#[doc = " @brief Generic socket address (large enough for IPv4 or IPv6)."]
+pub type ove_sockaddr_t = ove_sockaddr;
 #[doc = " @brief Network interface configuration."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct ove_netif_config_t {
+pub struct ove_netif_config {
     #[doc = "< Non-zero to use DHCP; zero for static."]
     pub use_dhcp: core::ffi::c_int,
     #[doc = "< Static IP (ignored if use_dhcp)."]
@@ -3197,19 +3222,21 @@ pub struct ove_netif_config_t {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_netif_config_t"][core::mem::size_of::<ove_netif_config_t>() - 100usize];
-    ["Alignment of ove_netif_config_t"][core::mem::align_of::<ove_netif_config_t>() - 4usize];
-    ["Offset of field: ove_netif_config_t::use_dhcp"]
-        [core::mem::offset_of!(ove_netif_config_t, use_dhcp) - 0usize];
-    ["Offset of field: ove_netif_config_t::static_ip"]
-        [core::mem::offset_of!(ove_netif_config_t, static_ip) - 4usize];
-    ["Offset of field: ove_netif_config_t::gateway"]
-        [core::mem::offset_of!(ove_netif_config_t, gateway) - 28usize];
-    ["Offset of field: ove_netif_config_t::netmask"]
-        [core::mem::offset_of!(ove_netif_config_t, netmask) - 52usize];
-    ["Offset of field: ove_netif_config_t::dns"]
-        [core::mem::offset_of!(ove_netif_config_t, dns) - 76usize];
+    ["Size of ove_netif_config"][core::mem::size_of::<ove_netif_config>() - 100usize];
+    ["Alignment of ove_netif_config"][core::mem::align_of::<ove_netif_config>() - 4usize];
+    ["Offset of field: ove_netif_config::use_dhcp"]
+        [core::mem::offset_of!(ove_netif_config, use_dhcp) - 0usize];
+    ["Offset of field: ove_netif_config::static_ip"]
+        [core::mem::offset_of!(ove_netif_config, static_ip) - 4usize];
+    ["Offset of field: ove_netif_config::gateway"]
+        [core::mem::offset_of!(ove_netif_config, gateway) - 28usize];
+    ["Offset of field: ove_netif_config::netmask"]
+        [core::mem::offset_of!(ove_netif_config, netmask) - 52usize];
+    ["Offset of field: ove_netif_config::dns"]
+        [core::mem::offset_of!(ove_netif_config, dns) - 76usize];
 };
+#[doc = " @brief Network interface configuration."]
+pub type ove_netif_config_t = ove_netif_config;
 unsafe extern "C" {
     #[doc = " @brief Initialise a network interface from caller-supplied storage.\n\n @param[out] netif   Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_netif_init(
@@ -3526,6 +3553,8 @@ pub const OVE_HTTP_PUT: ove_http_method_t = 2;
 pub const OVE_HTTP_DELETE: ove_http_method_t = 3;
 #[doc = "< HTTP PATCH."]
 pub const OVE_HTTP_PATCH: ove_http_method_t = 4;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_HTTP_METHOD_MAX_ENUM: ove_http_method_t = 2147483647;
 #[doc = " @brief HTTP method."]
 pub type ove_http_method_t = core::ffi::c_uint;
 #[doc = " @brief HTTP request header (name-value pair)."]
@@ -3665,6 +3694,8 @@ unsafe extern "C" {
 pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
 #[doc = "< At least once."]
 pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_MQTT_QOS_MAX_ENUM: ove_mqtt_qos_t = 2147483647;
 pub type ove_mqtt_qos_t = core::ffi::c_uint;
 #[doc = " @brief MQTT message callback.\n\n Invoked synchronously by the MQTT API call that receives the packet\n (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).\n The client does not create a background callback thread. Topic/payload views\n remain valid until this callback returns. The callback may disconnect its\n client; it must not reconnect, deinit/destroy it, or start another packet\n operation on that client before returning.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
 pub type ove_mqtt_msg_cb = Option<
@@ -4077,15 +4108,21 @@ unsafe extern "C" {
 pub const OVE_UART_PARITY_NONE: ove_uart_parity_t = 0;
 pub const OVE_UART_PARITY_ODD: ove_uart_parity_t = 1;
 pub const OVE_UART_PARITY_EVEN: ove_uart_parity_t = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_UART_PARITY_MAX_ENUM: ove_uart_parity_t = 2147483647;
 #[doc = " @brief UART parity mode."]
 pub type ove_uart_parity_t = core::ffi::c_uint;
 pub const OVE_UART_STOP_1: ove_uart_stop_t = 0;
 pub const OVE_UART_STOP_1_5: ove_uart_stop_t = 1;
 pub const OVE_UART_STOP_2: ove_uart_stop_t = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_UART_STOP_MAX_ENUM: ove_uart_stop_t = 2147483647;
 #[doc = " @brief UART stop-bit count."]
 pub type ove_uart_stop_t = core::ffi::c_uint;
 pub const OVE_UART_FLOW_NONE: ove_uart_flow_t = 0;
 pub const OVE_UART_FLOW_RTS_CTS: ove_uart_flow_t = 1;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_UART_FLOW_MAX_ENUM: ove_uart_flow_t = 2147483647;
 #[doc = " @brief UART hardware flow control."]
 pub type ove_uart_flow_t = core::ffi::c_uint;
 #[doc = " @brief UART configuration descriptor."]
@@ -4195,12 +4232,16 @@ pub const OVE_SPI_MODE_1: ove_spi_mode_t = 1;
 pub const OVE_SPI_MODE_2: ove_spi_mode_t = 2;
 #[doc = "< CPOL=1, CPHA=1."]
 pub const OVE_SPI_MODE_3: ove_spi_mode_t = 3;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_SPI_MODE_MAX_ENUM: ove_spi_mode_t = 2147483647;
 #[doc = " @brief SPI clock polarity / phase mode."]
 pub type ove_spi_mode_t = core::ffi::c_uint;
 #[doc = "< Most significant bit first (common)."]
 pub const OVE_SPI_MSB_FIRST: ove_spi_bit_order_t = 0;
 #[doc = "< Least significant bit first."]
 pub const OVE_SPI_LSB_FIRST: ove_spi_bit_order_t = 1;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_SPI_BIT_ORDER_MAX_ENUM: ove_spi_bit_order_t = 2147483647;
 #[doc = " @brief SPI bit order."]
 pub type ove_spi_bit_order_t = core::ffi::c_uint;
 #[doc = " @brief SPI bus configuration descriptor."]
@@ -4367,6 +4408,8 @@ pub const OVE_I2C_SPEED_STANDARD: ove_i2c_speed_t = 0;
 pub const OVE_I2C_SPEED_FAST: ove_i2c_speed_t = 1;
 #[doc = "< 1 MHz."]
 pub const OVE_I2C_SPEED_FAST_PLUS: ove_i2c_speed_t = 2;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_I2C_SPEED_MAX_ENUM: ove_i2c_speed_t = 2147483647;
 #[doc = " @brief I2C bus speed grade."]
 pub type ove_i2c_speed_t = core::ffi::c_uint;
 #[doc = " @brief I2C bus configuration descriptor."]
@@ -4495,6 +4538,8 @@ pub const OVE_I2S_DIR_TX: ove_i2s_dir_t = 1;
 pub const OVE_I2S_DIR_RX: ove_i2s_dir_t = 2;
 #[doc = "< Full-duplex (simultaneous TX + RX)."]
 pub const OVE_I2S_DIR_TXRX: ove_i2s_dir_t = 3;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_I2S_DIR_MAX_ENUM: ove_i2s_dir_t = 2147483647;
 #[doc = " @brief I2S stream direction."]
 pub type ove_i2s_dir_t = core::ffi::c_uint;
 #[doc = " @brief I2S half-buffer completion callback.\n\n Called from ISR context when a DMA half-transfer or full-transfer\n completes.  The callback should be short — typically it unblocks a\n processing task.\n\n @param[in] i2s       I2S handle.\n @param[in] user_data Opaque pointer supplied at registration time."]
@@ -4625,6 +4670,8 @@ pub const OVE_PM_STATE_STANDBY: ove_pm_state_t = 2;
 #[doc = "< Lowest power, RAM retained."]
 pub const OVE_PM_STATE_DEEP_SLEEP: ove_pm_state_t = 3;
 pub const OVE_PM_STATE_COUNT: ove_pm_state_t = 4;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_PM_STATE_MAX_ENUM: ove_pm_state_t = 2147483647;
 #[doc = " @brief System power states, ordered by increasing sleep depth."]
 pub type ove_pm_state_t = core::ffi::c_uint;
 #[doc = "< GPIO pin edge."]
@@ -4635,6 +4682,8 @@ pub const OVE_PM_WAKE_TIMER: ove_pm_wake_type_t = 1;
 pub const OVE_PM_WAKE_UART: ove_pm_wake_type_t = 2;
 #[doc = "< RTC alarm."]
 pub const OVE_PM_WAKE_RTC: ove_pm_wake_type_t = 3;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_PM_WAKE_TYPE_MAX_ENUM: ove_pm_wake_type_t = 2147483647;
 #[doc = " @brief Wake source types."]
 pub type ove_pm_wake_type_t = core::ffi::c_uint;
 pub const OVE_PM_DOMAIN_RADIO: ove_pm_domain_t = 0;
@@ -4646,12 +4695,16 @@ pub const OVE_PM_DOMAIN_COMMS: ove_pm_domain_t = 5;
 pub const OVE_PM_DOMAIN_USER0: ove_pm_domain_t = 6;
 pub const OVE_PM_DOMAIN_USER1: ove_pm_domain_t = 7;
 pub const OVE_PM_DOMAIN_COUNT: ove_pm_domain_t = 8;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_PM_DOMAIN_MAX_ENUM: ove_pm_domain_t = 2147483647;
 #[doc = " @brief Peripheral power domain identifiers."]
 pub type ove_pm_domain_t = core::ffi::c_uint;
 #[doc = "< About to enter low-power state."]
 pub const OVE_PM_EVENT_PRE_SLEEP: ove_pm_event_t = 0;
 #[doc = "< Just woke from low-power state."]
 pub const OVE_PM_EVENT_POST_WAKE: ove_pm_event_t = 1;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_PM_EVENT_MAX_ENUM: ove_pm_event_t = 2147483647;
 #[doc = " @brief Transition event type for notification callbacks."]
 pub type ove_pm_event_t = core::ffi::c_uint;
 #[doc = " @brief PM subsystem configuration."]
@@ -5163,6 +5216,8 @@ pub type ove_ptask_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)
 pub const OVE_PTASK_OK: ove_ptask_result = 0;
 #[doc = "< Entry trapped on a memory-protection violation."]
 pub const OVE_PTASK_FAULT: ove_ptask_result = 1;
+#[doc = " Not a value; forces a 4-byte enum."]
+pub const OVE_PTASK_RESULT_MAX_ENUM: ove_ptask_result = 2147483647;
 #[doc = " Outcome of running a protected task."]
 pub type ove_ptask_result = core::ffi::c_uint;
 #[doc = " Outcome of running a protected task."]

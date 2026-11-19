@@ -62,6 +62,8 @@ typedef void (*ove_ptask_fn)(void *arg);
 typedef enum ove_ptask_result {
 	OVE_PTASK_OK = 0,    /**< Entry returned normally. */
 	OVE_PTASK_FAULT = 1, /**< Entry trapped on a memory-protection violation. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_PTASK_RESULT_MAX_ENUM = 0x7fffffff,
 } ove_ptask_result_t;
 
 /**

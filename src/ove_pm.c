@@ -126,6 +126,8 @@ static int wake_src_match(const struct ove_pm_wake_src *a, const struct ove_pm_w
 		return a->uart.instance == b->uart.instance;
 	case OVE_PM_WAKE_RTC:
 		return a->rtc.alarm_ms == b->rtc.alarm_ms;
+	default:
+		break;
 	}
 	return 0;
 }

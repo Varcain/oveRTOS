@@ -33,6 +33,8 @@ extern "C" {
 /** Pixel format (only RGB565 for now). */
 typedef enum {
 	OVE_FB_FMT_RGB565 = 0,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_FB_FMT_MAX_ENUM = 0x7fffffff,
 } ove_fb_fmt_t;
 
 /** Geometry + memory extent of the framebuffer. */

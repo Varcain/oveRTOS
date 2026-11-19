@@ -44,6 +44,8 @@ typedef enum {
 	OVE_I2S_DIR_TX = 0x01,	 /**< Transmit only (playback). */
 	OVE_I2S_DIR_RX = 0x02,	 /**< Receive only (capture). */
 	OVE_I2S_DIR_TXRX = 0x03, /**< Full-duplex (simultaneous TX + RX). */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_I2S_DIR_MAX_ENUM = 0x7fffffff,
 } ove_i2s_dir_t;
 
 /* ── Callback ────────────────────────────────────────────────────── */

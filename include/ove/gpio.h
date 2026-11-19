@@ -37,6 +37,8 @@ typedef enum {
 	OVE_GPIO_MODE_INPUT = 0,     /**< High-impedance digital input. */
 	OVE_GPIO_MODE_OUTPUT_PP = 1, /**< Push-pull digital output. */
 	OVE_GPIO_MODE_OUTPUT_OD = 2, /**< Open-drain digital output. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_GPIO_MODE_MAX_ENUM = 0x7fffffff,
 } ove_gpio_mode_t;
 
 /**
@@ -46,6 +48,8 @@ typedef enum {
 	OVE_GPIO_IRQ_RISING = 0x01,  /**< Trigger on rising edge only. */
 	OVE_GPIO_IRQ_FALLING = 0x02, /**< Trigger on falling edge only. */
 	OVE_GPIO_IRQ_BOTH = 0x03,    /**< Trigger on both edges. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_GPIO_IRQ_MODE_MAX_ENUM = 0x7fffffff,
 } ove_gpio_irq_mode_t;
 
 /**

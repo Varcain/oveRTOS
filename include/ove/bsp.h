@@ -51,6 +51,8 @@ typedef enum {
 	OVE_GPIO_IRQ_RISING = 0x01,  /**< Trigger on rising edge only. */
 	OVE_GPIO_IRQ_FALLING = 0x02, /**< Trigger on falling edge only. */
 	OVE_GPIO_IRQ_BOTH = 0x03,    /**< Trigger on both edges. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_GPIO_IRQ_MODE_MAX_ENUM = 0x7fffffff,
 } ove_gpio_irq_mode_t;
 
 /**

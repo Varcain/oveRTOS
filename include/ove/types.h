@@ -194,6 +194,8 @@ typedef enum ove_err {
 
 	/** Source and destination belong to different mounted filesystems. */
 	OVE_ERR_CROSS_DEVICE = -34,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_ERR_MAX_ENUM = 0x7fffffff,
 } ove_err_t;
 
 /**

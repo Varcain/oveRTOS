@@ -54,6 +54,8 @@ typedef enum {
 	OVE_PM_STATE_STANDBY = 2,    /**< Deep idle, some peripherals off. */
 	OVE_PM_STATE_DEEP_SLEEP = 3, /**< Lowest power, RAM retained. */
 	OVE_PM_STATE_COUNT = 4,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_PM_STATE_MAX_ENUM = 0x7fffffff,
 } ove_pm_state_t;
 
 /**
@@ -64,6 +66,8 @@ typedef enum {
 	OVE_PM_WAKE_TIMER = 1, /**< Timer expiry. */
 	OVE_PM_WAKE_UART = 2,  /**< UART RX activity. */
 	OVE_PM_WAKE_RTC = 3,   /**< RTC alarm. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_PM_WAKE_TYPE_MAX_ENUM = 0x7fffffff,
 } ove_pm_wake_type_t;
 
 /**
@@ -79,6 +83,8 @@ typedef enum {
 	OVE_PM_DOMAIN_USER0 = 6,
 	OVE_PM_DOMAIN_USER1 = 7,
 	OVE_PM_DOMAIN_COUNT = 8,
+	/** Not a value; forces a 4-byte enum. */
+	OVE_PM_DOMAIN_MAX_ENUM = 0x7fffffff,
 } ove_pm_domain_t;
 
 /**
@@ -87,6 +93,8 @@ typedef enum {
 typedef enum {
 	OVE_PM_EVENT_PRE_SLEEP = 0, /**< About to enter low-power state. */
 	OVE_PM_EVENT_POST_WAKE = 1, /**< Just woke from low-power state. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_PM_EVENT_MAX_ENUM = 0x7fffffff,
 } ove_pm_event_t;
 
 /* ── Structures ─────────────────────────────────────────────────────── */

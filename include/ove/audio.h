@@ -85,6 +85,8 @@ enum ove_audio_graph_state {
 	OVE_AUDIO_GRAPH_IDLE,	 /**< @brief Initial state; nodes may be added and connected. */
 	OVE_AUDIO_GRAPH_READY,	 /**< @brief Build succeeded; graph may be started. */
 	OVE_AUDIO_GRAPH_RUNNING, /**< @brief Graph is actively processing audio. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_AUDIO_GRAPH_STATE_MAX_ENUM = 0x7fffffff,
 };
 
 /**

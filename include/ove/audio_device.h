@@ -35,6 +35,8 @@ extern "C" {
 enum ove_audio_transport {
 	OVE_AUDIO_TRANSPORT_I2S, /**< @brief I2S / TDM serial bus (e.g. codec, DAC, ADC). */
 	OVE_AUDIO_TRANSPORT_PDM, /**< @brief PDM microphone interface. */
+	/** Not a value; forces a 4-byte enum. */
+	OVE_AUDIO_TRANSPORT_MAX_ENUM = 0x7fffffff,
 };
 
 /* ── Device configuration ───────────────────────────────────────── */
