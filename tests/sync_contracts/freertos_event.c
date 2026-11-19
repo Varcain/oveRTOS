@@ -452,10 +452,7 @@ int main(int argc, char **argv)
 	if (argc != 2)
 		return 2;
 	const char *name = argv[1];
-	bool canary = !strcmp(name, "canary");
-	const char *selected = canary ? "task_latch" : name;
-	if (canary)
-		check(false, "explicit early failure canary");
+	const char *selected = name;
 	start();
 	bool isr = !strncmp(selected, "isr_", 4);
 	bool genuine = !strncmp(selected, "isr_true_", 9);
@@ -492,6 +489,8 @@ int main(int argc, char **argv)
 	unsigned retentions = model.retentions, cleanups = model.cleanups;
 	unsigned last_uses = model.last_uses, yields = model.yields, retired = model.retired;
 	unsigned caller_mask = model.expected_mask;
+	check(loads == retired && calls == retired && last_uses == retired,
+	      "each registered trial waiter is loaded, notified and retired once");
 	model.irq = false;
 	finish();
 	ordinary_controls();

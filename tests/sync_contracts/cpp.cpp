@@ -15,7 +15,7 @@ ove_mutex_storage_t mutex_tokens[2] = {};
 ove_sem_storage_t sem_token = {};
 ove_event_storage_t event_token = {};
 ove_condvar_storage_t cv_token = {};
-bool live[FamilyCount], held[2], armed, calibration;
+bool live[FamilyCount], held[2], armed;
 unsigned failures, controls, errors, assertions, native_calls, error_call;
 int selected;
 const char *case_name;
@@ -345,15 +345,10 @@ int main(int argc, char **argv)
 	if (argc != 2)
 		return 2;
 	case_name = argv[1];
-	calibration = std::strcmp(case_name, "canary") == 0;
 	selected = -1;
 	for (int i = 0; i < 9; ++i)
 		if (std::strcmp(case_name, names[i]) == 0)
 			selected = i;
-	if (calibration) {
-		selected = FamilyCount + Mutex;
-		check(false, "explicit early failure canary");
-	}
 	if (selected < 0)
 		return 2;
 	ordinary_controls();

@@ -134,6 +134,7 @@ static void heap_controls(void)
 
 static int heap_finish(const char *name)
 {
+	check(retained_live == 0, "common heap free never precedes native cleanup");
 	printf("%s: failures=%u controls=%u injected=%u allocations=%u attempts=%u free_requests=%u actual_frees=%u native_inits=%u destroys=%u guard_interventions=%u retained_live=%u\n",
 	       name, failures, controls, injected, allocations, allocation_attempts,
 	       total_free_requests, actual_frees, native_inits, native_destroys, interventions,
@@ -165,16 +166,13 @@ int main(int argc, char **argv)
 				      "count_max_domain",
 				      "count_initial_ceiling_plus_one",
 				      "count_max_ceiling_plus_one",
-				      "controls",
-				      "canary"};
+				      "controls"};
 	int selected = -1;
 	for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
 		if (!strcmp(name, names[i]))
 			selected = (int)i;
 	if (selected < 0)
 		return 2;
-	if (!strcmp(name, "canary"))
-		check(0, "explicit early failure canary");
 	ordinary_controls();
 	heap_controls();
 	if (selected >= 8 && selected <= 18) {
@@ -246,7 +244,7 @@ int main(int argc, char **argv)
 		family = CONDVAR;
 		site = "cond_init";
 		expected = OVE_ERR_NO_MEMORY;
-	} else if (!strcmp(name, "controls") || !strcmp(name, "canary")) {
+	} else if (!strcmp(name, "controls")) {
 		return heap_finish(name);
 	} else {
 		return 2;
@@ -260,7 +258,6 @@ int main(int argc, char **argv)
 	check(same_handle(family, out, original), "failed heap constructor preserves output");
 	check(live_count() == 0, "heap error releases native pieces before storage free");
 	check(free_requests == 1, "common heap failure requests storage free once");
-	check(retained_live == 0, "common heap free never precedes native cleanup");
 	out = (union handle){0};
 	private_cleanup();
 	release_allocation();

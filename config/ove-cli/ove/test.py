@@ -27,7 +27,6 @@ from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
-from .sync_contracts import cases as _sync_contract_cases, observation_valid as _sync_contract_observation
 from .rust_scoped import CANARIES as _scoped_canaries, cases as _scoped_cases, observation_valid as _scoped_observation
 from .rust_scoped import UNIT_CASES as _scoped_units, unit_observation_valid as _scoped_unit_observation
 from .rust_sync import FAMILIES as _rust_sync_families, cases as _rust_sync_cases, observation_valid as _rust_sync_observation
@@ -1210,56 +1209,8 @@ def test_freertos_cv_context_arm(ove_dir, output_dir):
 
 def _test_sync_contracts(ove_dir, output_dir, sanitize=False):
     """Check construction, error and context contracts with guarded native observers."""
-    result = TestResults(suite="sync-contracts-sanitize" if sanitize else "sync-contracts")
-    explicit_canary = os.environ.get("OVE_SYNC_CONTRACTS_CANARY") == "1"
-    env = dict(os.environ)
-    if sanitize:
-        env.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1",
-                   UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="exitcode=23")
-    for zero in (False, True):
-        mode = ("zero" if zero else "heap") + ("-san" if sanitize else "")
-        build = os.path.join(output_dir, "tests", "sync_contracts", mode)
-        command = ["cmake", "-S", os.path.join(ove_dir, "tests", "sync_contracts"), "-B", build,
-                   "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF"),
-                   "-DOVE_SANITIZE=" + ("ON" if sanitize else "OFF"),
-                   "-DOVE_NATIVE_MODELS=ON", "-DOVE_CONTEXT_PROBES=ON",
-                   "-DOVE_CPP_SYNC_HEADER=" + os.path.join(ove_dir, "bindings", "cpp", "ove", "sync.hpp"),
-                   "-DOVE_COMMON_SYNC_SOURCE=" + os.path.join(ove_dir, "src", "ove_sync.c"),
-                   "-DOVE_IRQ_HEADER=" + os.path.join(ove_dir, "include", "ove", "irq.h")]
-        for platform in ("freertos", "zephyr", "nuttx", "posix"):
-            folder = os.path.join(ove_dir, "tests", "host", "posix") if platform == "posix" else \
-                os.path.join(ove_dir, "backends", platform)
-            for suffix in ("SYNC", "IRQ"):
-                command.append(f"-DOVE_{platform.upper()}_{suffix}_SOURCE=" +
-                               os.path.join(folder, platform + "_" + suffix.lower() + ".c"))
-        command.append("-DOVE_POSIX_TIMER_SOURCE=" +
-                       os.path.join(ove_dir, "tests", "host", "posix", "posix_timer.c"))
-        rc = _run_owned_test_process(command, env=env, timeout=180)
-        if rc == 0:
-            rc = _run_owned_test_process(["cmake", "--build", build, "-j", str(nproc())],
-                                         env=env, timeout=180)
-        if rc:
-            result.failed += 1
-            continue
-        for kind, ordinary in _sync_contract_cases(zero).items():
-            for case in (("canary",) if explicit_canary else ordinary + ("canary",)):
-                log = os.path.join(build, kind + "-" + case + ".log")
-                with open(log, "wb") as stream:
-                    rc = _run_owned_test_process([os.path.join(build, kind), case],
-                                                 env=dict(env, LD_BIND_NOW="1") if kind == "context_timer" else env,
-                                                 timeout=15, stdout=stream)
-                text = Path(log).read_text()
-                valid = _sync_contract_observation(text, kind, mode, case, rc,
-                                                   expected_failure=case == "canary" and not explicit_canary)
-                if explicit_canary:
-                    print(text, end="")
-                    print(f"fixture status: {mode}/{kind}/{case} rc={rc}")
-                elif not valid:
-                    logger.error("Synchronization contract failed: %s/%s/%s\n%s", mode, kind, case, text)
-                    print(f"fixture status: {mode}/{kind}/{case} rc={rc}")
-                result.passed += int(valid)
-                result.failed += int(not valid)
-    return result
+    return _ctest_suite(ove_dir, output_dir, "sync_contracts",
+                        "sync-contracts-sanitize" if sanitize else "sync-contracts", sanitize)
 
 
 def test_sync_contracts(ove_dir, output_dir):

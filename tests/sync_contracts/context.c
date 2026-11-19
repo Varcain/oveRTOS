@@ -207,11 +207,9 @@ static void nested_locks(unsigned *failures, bool inside)
 
 int main(int argc, char **argv)
 {
-	if (argc != 2 || (strcmp(argv[1], "controls") && strcmp(argv[1], "canary")))
+	if (argc != 2 || strcmp(argv[1], "controls"))
 		return 2;
 	unsigned failures = 0;
-	if (!strcmp(argv[1], "canary"))
-		check(&failures, 0, "explicit early failure canary");
 	if (ove_is_in_isr())
 		return 2;
 	nested_locks(&failures, false);

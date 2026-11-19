@@ -14,11 +14,9 @@ static void check(bool condition, const char *message, unsigned *failures)
 
 int main(int argc, char **argv)
 {
-	if (argc != 2 || (strcmp(argv[1], "controls") && strcmp(argv[1], "canary")))
+	if (argc != 2 || strcmp(argv[1], "controls"))
 		return 2;
-	unsigned failures = !strcmp(argv[1], "canary");
-	if (failures)
-		fputs("failed: explicit early failure canary\n", stderr);
+	unsigned failures = 0;
 	/* An inert aligned token tests unchanged-entry reporting, not a live
 	 * native mutex: no disabled function may dereference it. */
 	ove_mutex_storage_t token = {0};

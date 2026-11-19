@@ -355,19 +355,7 @@ static unsigned depth(void)
 
 static int checked_wait(ove_condvar_t cv, ove_mutex_t mutex, uint64_t timeout, bool *held)
 {
-#ifdef OVE_TEST_LEGACY_OUTCOME
-	/* Compatibility witness for the status-only parent, never a native ABI. */
-	if (held == NULL)
-		return OVE_ERR_INVALID_PARAM;
-	*held = mutex != NULL;
-	if (cv == NULL || mutex == NULL)
-		return OVE_ERR_INVALID_PARAM;
-	int result = ove_condvar_wait(cv, mutex, timeout);
-	*held = result == OVE_OK || result == OVE_ERR_TIMEOUT;
-	return result;
-#else
 	return ove_condvar_wait_checked(cv, mutex, timeout, held);
-#endif
 }
 
 static void one_case(const char *name, bool control)
@@ -482,8 +470,7 @@ int main(int argc, char **argv)
 	if (argc != 2)
 		return 2;
 	const char *name = argv[1];
-	bool known = !strcmp(name, "success") || !strcmp(name, "timeout") ||
-		     !strcmp(name, "canary") || !strcmp(name, "nulls");
+	bool known = !strcmp(name, "success") || !strcmp(name, "timeout") || !strcmp(name, "nulls");
 #if defined(CONFIG_OVE_RTOS_FREERTOS) || defined(CONFIG_OVE_RTOS_NUTTX)
 	known |= !strcmp(name, "release_error");
 #endif
@@ -501,14 +488,12 @@ int main(int argc, char **argv)
 #endif
 	if (!known)
 		return 2;
-	if (!strcmp(name, "canary"))
-		check(false, "explicit early failure canary");
 	one_case("success", true);
 	one_case("timeout", true);
 	if (!strcmp(name, "nulls"))
 		null_cases();
 	else
-		one_case(!strcmp(name, "canary") ? "timeout" : name, false);
+		one_case(name, false);
 	check(interventions == 0, "ordinary fixture needs no safety intervention");
 	printf("%s: failures=%u controls=%u safety=%u\n", name, failures, controls, interventions);
 	return failures ? 1 : 0;

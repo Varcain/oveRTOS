@@ -806,7 +806,7 @@ static const char *status_name(int status)
 
 static void cv_case(unsigned selected, union backing *storage)
 {
-	const bool void_call = selected == 29 || selected == 30;
+	const bool void_call = selected == 28 || selected == 29;
 	ove_condvar_t cv = NULL;
 	ove_mutex_storage_t caller = {0};
 	ove_mutex_t mutex = NULL;
@@ -816,27 +816,28 @@ static void cv_case(unsigned selected, union backing *storage)
 		reject();
 	if (void_call)
 		cv->nwaiters = 1;
+	const unsigned pieces = live_count();
 	cv_observer = (__typeof__(cv_observer)){
 		.cv = cv, .caller = void_call ? NULL : &caller.mtx, .active = true, .error = -EIO};
 	int expected = OVE_ERR_IO;
 	if (selected >= 14 && selected <= 16)
 		cv_observer.failure_role = selected - 13;
-	else if (selected >= 20 && selected <= 22) {
-		cv_observer.failure_role = selected - 19;
+	else if (selected >= 19 && selected <= 21) {
+		cv_observer.failure_role = selected - 18;
 		cv_observer.error = -ETIMEDOUT;
 		expected = OVE_ERR_BUSY;
-	} else if (selected >= 26 && selected <= 28) {
-		cv_observer.failure_role = selected - 25;
+	} else if (selected >= 25 && selected <= 27) {
+		cv_observer.failure_role = selected - 24;
 		cv_observer.error = -EINTR;
 		expected = OVE_ERR_TIMEOUT;
 	} else if (void_call)
 		cv_observer.failure_role = CV_ENTRY;
-	else if (selected == 23)
+	else if (selected == 22)
 		expected = OVE_ERR_TIMEOUT;
-	else if (selected == 24) {
+	else if (selected == 23) {
 		expected = OVE_OK;
 		cv_observer.signal_token = true;
-	} else if (selected == 25) {
+	} else if (selected == 24) {
 		expected = OVE_ERR_BUSY;
 		wait_error = -ETIMEDOUT;
 	}
@@ -844,16 +845,16 @@ static void cv_case(unsigned selected, union backing *storage)
 		wait_error = -EIO;
 	cv_observer.remaining = cv_observer.failure_role != 0;
 	int rc = OVE_OK;
-	if (selected == 29)
+	if (selected == 28)
 		ove_condvar_signal(cv);
-	else if (selected == 30)
+	else if (selected == 29)
 		ove_condvar_broadcast(cv);
 	else
 		rc = ove_condvar_wait(
-			cv, mutex, selected == 24 || selected == 25 ? OVE_WAIT_FOREVER : 1000000);
-	const bool failed_entry = selected == 14 || selected == 20;
-	const bool failed_caller = selected == 15 || selected == 21;
-	const bool failed_retire = selected == 16 || selected == 22;
+			cv, mutex, selected == 23 || selected == 24 ? OVE_WAIT_FOREVER : 1000000);
+	const bool failed_entry = selected == 14 || selected == 19;
+	const bool failed_caller = selected == 15 || selected == 20;
+	const bool failed_retire = selected == 16 || selected == 21;
 	int held = void_call ? -1 : (int)find(&caller.mtx)->held;
 	int expected_held = void_call ? -1 : failed_caller ? 0 : 1;
 	int expected_waiters = void_call ? 1 : 0;
@@ -864,11 +865,11 @@ static void cv_case(unsigned selected, union backing *storage)
 		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:0:0/r0:0:1";
 	else if (failed_retire)
 		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/R1:1:0/r0:1:1";
-	else if (selected == 26)
+	else if (selected == 25)
 		trace = "G0:1:0/G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/r0:1:1";
-	else if (selected == 27)
+	else if (selected == 26)
 		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/M1:0:0/R1:1:0/r0:1:1";
-	else if (selected == 28)
+	else if (selected == 27)
 		trace = "G0:1:0/g1:1:1/m1:1:0/W1:0:0/M1:0:0/R1:1:0/R1:1:0/r0:1:1";
 	else if (void_call)
 		trace = "G1:-1:0";
@@ -879,9 +880,9 @@ static void cv_case(unsigned selected, union backing *storage)
 	      "condition registration follows acquired bookkeeping guards");
 	check(strcmp(cv_observer.trace, trace) == 0,
 	      "condition operations preserve role and ownership order");
-	check(cv_observer.posts == (unsigned)(selected == 24),
+	check(cv_observer.posts == (unsigned)(selected == 23),
 	      "condition posts require a successful guarded signal");
-	check(cv_observer.injections == (unsigned)(selected != 23 && selected != 24),
+	check(cv_observer.injections == (unsigned)(selected != 22 && selected != 23),
 	      "condition injection occurs exactly once at its selected role");
 	printf("cv: trace=%s status=%s held=%d waiters=%d posts=%u injections=%u\n",
 	       cv_observer.trace, void_call ? "void" : status_name(rc), held, cv->nwaiters,
@@ -894,6 +895,7 @@ static void cv_case(unsigned selected, union backing *storage)
 	lock_error = -EIO;
 	mutex = NULL;
 	cv = NULL;
+	check(live_count() == pieces, "condition errors keep caller-owned pieces live");
 	private_cleanup();
 	reuse_backing(CONDVAR, storage);
 }
@@ -922,7 +924,6 @@ int main(int argc, char **argv)
 				      "cv_retire_error",
 				      "cv_wait_error",
 				      "controls",
-				      "canary",
 				      "cv_guard_timeout_error",
 				      "cv_reacquire_timeout_error",
 				      "cv_retire_timeout_error",
@@ -947,15 +948,13 @@ int main(int argc, char **argv)
 	if (selected < 0)
 		return 2;
 #ifdef CONFIG_OVE_RTOS_FREERTOS
-	if ((selected >= 3 && selected <= 5) || (selected >= 8 && selected <= 17) || selected >= 20)
+	if ((selected >= 3 && selected <= 5) || (selected >= 8 && selected <= 17) || selected >= 19)
 		return 2;
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 	if (selected == 5 || selected == 8 || selected == 9 || (selected >= 14 && selected <= 17) ||
-	    (selected >= 20 && selected <= 30) || selected >= 35)
+	    (selected >= 19 && selected <= 29) || selected >= 34)
 		return 2;
 #endif
-	if (selected == 19)
-		check(0, "explicit early failure canary");
 	ordinary_controls();
 	union backing storage = {0}, sentinel = {0};
 	enum family family = selected <= 4 ? (enum family)selected : CONDVAR;
@@ -978,15 +977,15 @@ int main(int argc, char **argv)
 		fail_init = 0;
 		reuse_backing(family, &storage);
 		reuse_backing(family, &storage);
-	} else if ((selected >= 6 && selected <= 9) || selected >= 35) {
+	} else if ((selected >= 6 && selected <= 9) || selected >= 34) {
 		family = SEMAPHORE;
 		original = sentinel_handle(family, &sentinel);
 		out = original;
 		unsigned initial = selected == 7 ? 2 : selected == 8 ? UINT_MAX : 0;
 		unsigned maximum = selected == 6 ? 0 : selected == 7 ? 1 : UINT_MAX;
-		if (selected >= 35) {
+		if (selected >= 34) {
 			maximum = (unsigned)INT_MAX + 1u;
-			initial = selected == 35 ? maximum : 0;
+			initial = selected == 34 ? maximum : 0;
 		}
 #if !defined(CONFIG_OVE_RTOS_NUTTX)
 		if (selected >= 8)
@@ -1005,22 +1004,23 @@ int main(int argc, char **argv)
 		private_cleanup();
 		reuse_backing(family, &storage);
 		reuse_backing(family, &storage);
-	} else if ((selected >= 14 && selected <= 17) || (selected >= 20 && selected <= 30)) {
+	} else if ((selected >= 14 && selected <= 17) || (selected >= 19 && selected <= 29)) {
 #ifdef CONFIG_OVE_RTOS_NUTTX
 		cv_case((unsigned)selected, &storage);
 #else
 		return 2;
 #endif
-	} else if ((selected >= 10 && selected <= 13) || (selected >= 31 && selected <= 34)) {
+	} else if ((selected >= 10 && selected <= 13) || (selected >= 30 && selected <= 33)) {
 #ifdef CONFIG_OVE_RTOS_FREERTOS
 		return 2;
 #endif
-		family = (enum family)(selected >= 31 ? selected - 31 : selected - 10);
+		family = (enum family)(selected >= 30 ? selected - 30 : selected - 10);
 		out = (union handle){0};
 		if (initialize(family, &storage, &out, 0, 1))
 			reject();
+		const unsigned pieces = live_count();
 		int rc;
-		uint64_t timeout = selected >= 31 ? OVE_WAIT_FOREVER : 0;
+		uint64_t timeout = selected >= 30 ? OVE_WAIT_FOREVER : 0;
 		if (family <= RECURSIVE) {
 			fail_lock = lock_calls + 1;
 			lock_error = -EIO;
@@ -1032,12 +1032,13 @@ int main(int argc, char **argv)
 						 : ove_event_wait(out.event, timeout);
 		}
 		check(rc == OVE_ERR_IO, "native acquisition preserves non-timeout error");
+		check(live_count() == pieces, "native acquisition errors keep the primitive live");
 		out = (union handle){0};
 		private_cleanup();
 		fail_lock = 0;
 		wait_error = 0;
 		reuse_backing(family, &storage);
-	} else if (selected != 18 && selected != 19) {
+	} else if (selected != 18) {
 		return 2;
 	}
 	check(live_count() == 0, "all model resources retired while backing lives");

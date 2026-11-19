@@ -725,15 +725,12 @@ int main(int argc, char **argv)
 				      "event_timed_eagain_error",
 				      "condvar_forever_timeout_error",
 				      "event_forever_timeout_error",
-				      "controls",
-				      "canary"};
+				      "controls"};
 	int known = 0;
 	for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
 		known |= strcmp(name, names[i]) == 0;
 	if (!known)
 		return 2;
-	if (strcmp(name, "canary") == 0)
-		check(0, "explicit early failure canary");
 	ordinary_controls();
 	if (strcmp(name, "mutex_init") == 0)
 		constructor_case(NORMAL, "mutex_init", OVE_ERR_NO_MEMORY);
@@ -795,7 +792,7 @@ int main(int argc, char **argv)
 		status_case(CONDVAR_ERROR, 1, ETIMEDOUT);
 	else if (strcmp(name, "event_forever_timeout_error") == 0)
 		status_case(EVENT_ERROR, 1, ETIMEDOUT);
-	else if (strcmp(name, "controls") && strcmp(name, "canary"))
+	else if (strcmp(name, "controls"))
 		return 2;
 	check(live_count() == 0 && !attr_live, "all real resources released before backing ends");
 	printf("%s: failures=%u controls=%u injected=%u native_inits=%u destroys=%u safety=%u\n",

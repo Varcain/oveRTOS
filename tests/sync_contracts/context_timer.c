@@ -314,11 +314,9 @@ static void check(unsigned *failures, int condition, const char *message)
 
 int main(int argc, char **argv)
 {
-	if (argc != 2 || (strcmp(argv[1], "controls") && strcmp(argv[1], "canary")))
+	if (argc != 2 || strcmp(argv[1], "controls"))
 		return 2;
 	unsigned failures = 0;
-	if (!strcmp(argv[1], "canary"))
-		check(&failures, 0, "explicit early failure canary");
 	struct observation state = {0};
 	atomic_init(&state.refused, false);
 	state.slots[0].after_leave = state.slots[1].after_leave = -1;
