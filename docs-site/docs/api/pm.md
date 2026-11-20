@@ -109,9 +109,7 @@ Query runtime statistics with `ove_pm_get_stats()`:
 | `total_runtime_us` | `uint64_t` | Total tracked time |
 | `active_pct_x100` | `uint32_t` | Active percentage in hundredths |
 
-Statistics require `CONFIG_OVE_PM_STATS` (enabled by default when PM is on).
-
-The power budget API (`ove_pm_set_budget()` / `ove_pm_get_budget_status()`) requires `CONFIG_OVE_PM_BUDGET`.
+Use `ove_pm_set_budget()` to set a target percentage of time in low-power states and `ove_pm_get_budget_status()` to read the measured percentage.
 
 ## Example
 
@@ -124,11 +122,6 @@ See the [Power Management example](../examples/example_pm/index.md) for a comple
 | `CONFIG_OVE_PM` | bool | `n` | Enable the power management framework |
 | `CONFIG_OVE_PM_MAX_WAKE_SOURCES` | int | `8` | Maximum registered wake sources (~32 bytes each) |
 | `CONFIG_OVE_PM_MAX_NOTIFIERS` | int | `4` | Maximum transition notification callbacks |
-| `CONFIG_OVE_PM_IDLE_THRESHOLD_MS` | int | `10` | Idle ms before ACTIVE → IDLE |
-| `CONFIG_OVE_PM_STANDBY_THRESHOLD_MS` | int | `1000` | Idle ms before IDLE → STANDBY |
-| `CONFIG_OVE_PM_DEEP_SLEEP_THRESHOLD_MS` | int | `10000` | Idle ms before → DEEP_SLEEP |
-| `CONFIG_OVE_PM_STATS` | bool | `y` | Track per-state time and transition counts |
-| `CONFIG_OVE_PM_BUDGET` | bool | `n` | Enable power budget target tracking |
 
 ## Header
 

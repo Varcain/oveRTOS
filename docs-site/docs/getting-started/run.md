@@ -48,7 +48,7 @@ To flash firmware onto a physical board (e.g., STM32F746G-Discovery):
 make flash
 ```
 
-This invokes the `ove` CLI, which calls OpenOCD with the configured board file (`OVE_OPENOCD_CFG`, default: `board/stm32f7discovery.cfg`). Connect the board via ST-LINK USB before running.
+On the STM32F746G-Discovery, `make flash` uses the board's `flash.sh` to run OpenOCD with `board/stm32f7discovery.cfg` on FreeRTOS and NuttX, and uses `west flash --runner openocd` with Zephyr's board configuration on Zephyr. Connect the board via ST-LINK USB before running.
 
 Ensure OpenOCD is installed:
 

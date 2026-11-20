@@ -528,36 +528,6 @@ config OVE_AUDIO
     default n
     select OVE_I2S if OVE_RTOS_FREERTOS && OVE_BOARD_STM32F746G_DISCO
 
-config OVE_AUDIO_NODE_CONVERTER
-    bool "Audio format converter node"
-    depends on OVE_AUDIO
-    default n
-
-config OVE_AUDIO_NODE_GAIN
-    bool "Audio gain node"
-    depends on OVE_AUDIO
-    default n
-    help
-      Per-channel linear gain stage in the audio graph. Configured via
-      ove_audio_node_gain_set(); applied in-place during process().
-      Enable when an app needs runtime volume control or fader
-      automation without modifying the source node.
-
-config OVE_AUDIO_NODE_TAP
-    bool "Audio tap/observer node"
-    depends on OVE_AUDIO
-    default n
-    help
-      Read-only observer node that copies frames flowing through a
-      point in the graph into a ring buffer readable from another
-      thread (e.g. for metering, waveform display, or logging). Does
-      not modify the audio path.
-
-config OVE_AUDIO_NODE_CHANNEL_MAP
-    bool "Audio channel mapper node"
-    depends on OVE_AUDIO
-    default n
-
 config OVE_FS
     bool "File system"
     # The FreeRTOS backend is FatFs on the STM32 SD card; the AN500 has no
@@ -1148,43 +1118,6 @@ config OVE_PM_MAX_NOTIFIERS
     depends on OVE_PM
     help
       Maximum number of pre/post sleep notification callbacks.
-
-config OVE_PM_IDLE_THRESHOLD_MS
-    int "Idle threshold (ms)"
-    default 10
-    depends on OVE_PM
-    help
-      Minimum idle duration before transitioning from ACTIVE to IDLE.
-
-config OVE_PM_STANDBY_THRESHOLD_MS
-    int "Standby threshold (ms)"
-    default 1000
-    depends on OVE_PM
-    help
-      Minimum idle duration before transitioning from IDLE to STANDBY.
-
-config OVE_PM_DEEP_SLEEP_THRESHOLD_MS
-    int "Deep sleep threshold (ms)"
-    default 10000
-    depends on OVE_PM
-    help
-      Minimum idle duration before transitioning to DEEP_SLEEP.
-
-config OVE_PM_STATS
-    bool "Power statistics tracking"
-    default y
-    depends on OVE_PM
-    help
-      Track cumulative time in each power state and transition
-      counts. Adds ~64 bytes of RAM overhead.
-
-config OVE_PM_BUDGET
-    bool "Power budget enforcement"
-    default n
-    depends on OVE_PM && OVE_PM_STATS
-    help
-      Enable power budget target tracking. The policy engine
-      can use the budget to adjust sleep depth automatically.
 
 endmenu
 

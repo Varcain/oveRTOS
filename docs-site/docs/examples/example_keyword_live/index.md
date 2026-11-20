@@ -19,7 +19,7 @@ ove_audio_graph_*, ove_audio_device_source/sink, ove_model_init, ove_model_invok
 
 ## Required Kconfig
 
-`CONFIG_OVE_BSP=y, CONFIG_OVE_AUDIO=y, CONFIG_OVE_AUDIO_NODE_CONVERTER=y, CONFIG_OVE_INFER=y`
+`CONFIG_OVE_BSP=y, CONFIG_OVE_AUDIO=y, CONFIG_OVE_INFER=y`
 
 ## How to build
 

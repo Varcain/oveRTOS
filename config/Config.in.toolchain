@@ -59,12 +59,6 @@ config OVE_ARM_FLOAT_ABI_SOFTFP
       soft-float libraries, but not with hard-float libraries.
 endchoice
 
-config OVE_OPENOCD_CFG
-    string "OpenOCD configuration file"
-    default "board/stm32f7discovery.cfg"
-    help
-      OpenOCD board configuration file for flashing.
-
 menu "Rust Toolchain"
     visible if OVE_APP_LANG_RUST
 
