@@ -10,15 +10,8 @@ import json
 import os
 import sys
 
-try:
-    import yaml
-except ImportError:
-    yaml = None
-
-try:
-    import jsonschema
-except ImportError:
-    jsonschema = None
+import jsonschema
+import yaml
 
 
 # Bytes per pixel of each board.yaml display.color_format.
@@ -212,10 +205,6 @@ def generate_board_desc(ws):
     if not os.path.isfile(board_yaml_path):
         return
 
-    if yaml is None:
-        print("Warning: pyyaml not installed, skipping board descriptor")
-        return
-
     print("=== Generating board descriptor ===")
     with open(board_yaml_path) as f:
         board = yaml.safe_load(f)
@@ -223,7 +212,7 @@ def generate_board_desc(ws):
     # Validate against schema
     schema_path = os.path.join(ws.ove_dir, "config", "schemas",
                                "board_schema.json")
-    if jsonschema and os.path.isfile(schema_path):
+    if os.path.isfile(schema_path):
         with open(schema_path) as f:
             schema = json.load(f)
         board_clean = {k: v for k, v in board.items() if k != "_meta"}

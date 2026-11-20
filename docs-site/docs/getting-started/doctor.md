@@ -27,7 +27,7 @@ The checks fall into five groups. A `FAIL` blocks building; a `WARN` is a tool y
 | `python` | Yes | Interpreter version ≥ 3.9 |
 | `py:jinja2` | Yes | Template engine used to generate `FreeRTOSConfig.h`, `prj.conf`, etc. |
 | `py:yaml` | Yes | `app.yaml` / `board.yaml` / `manifest.yaml` parsing |
-| `py:jsonschema` | No | Validates `app.yaml` against the schema |
+| `py:jsonschema` | Yes | Validates `app.yaml` and `board.yaml` against their schemas |
 | `py:serial` | No | Used by hardware-in-the-loop tests only |
 
 If any required Python package fails, recreate the venv:

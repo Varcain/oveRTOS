@@ -17,12 +17,10 @@ import os
 import subprocess
 import sys
 
-from ..workspace import get_bool, get_str
+import yaml
+from jinja2 import Environment, FileSystemLoader
 
-try:
-    from jinja2 import Environment, FileSystemLoader
-except ImportError:
-    Environment = None
+from ..workspace import get_bool, get_str
 
 
 def _gcc_sysroot_cached(cc, cxx, cache_path):
@@ -76,10 +74,6 @@ def render_template(env, template_name, output_path, config):
 
 def generate_configs(ws):
     """Generate configuration files from .config using Jinja2 templates."""
-    if Environment is None:
-        print("Error: jinja2 not installed. Install with: pip install jinja2")
-        sys.exit(1)
-
     config = ws.config
     output_dir = ws.gen_dir
     templates_dir = os.path.join(ws.ove_dir, "config", "templates")
@@ -103,7 +97,6 @@ def generate_configs(ws):
     if ws.board_dir:
         board_yaml = os.path.join(ws.board_dir, "board.yaml")
         if os.path.isfile(board_yaml):
-            import yaml
             with open(board_yaml) as f:
                 board = yaml.safe_load(f) or {}
     env.globals["board"] = board

@@ -40,9 +40,9 @@ import re
 import shutil
 import subprocess
 import sys
-from collections import defaultdict
 from pathlib import Path
 
+import yaml
 
 # Lines that look like one decoded instruction: `<hex>: <mnemonic> ...`.
 # The mnemonic captured here is then matched against the unconditional-
@@ -302,21 +302,7 @@ def check_one(sym_label, sym, disasm, expected, cppfilt, elf_path=None, addr_map
 def load_config(path):
     if not path or not Path(path).is_file():
         return {}
-    # Avoid hard PyYAML dependency — accept JSON-equivalent or a tiny
-    # YAML parser via the stdlib.  Try yaml first if available; fall
-    # back to JSON for simple configs.
-    text = Path(path).read_text()
-    try:
-        import yaml  # type: ignore
-        return yaml.safe_load(text) or {}
-    except ImportError:
-        import json
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            print(f"hotpath config requires PyYAML or JSON-compatible "
-                  f"format ({path}): {e}", file=sys.stderr)
-            sys.exit(2)
+    return yaml.safe_load(Path(path).read_text()) or {}
 
 
 def main():

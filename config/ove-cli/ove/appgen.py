@@ -10,10 +10,7 @@ import json
 import os
 import re
 
-try:
-    import yaml
-except ImportError:
-    yaml = None
+import yaml
 
 _CONFIG_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -86,10 +83,6 @@ def generate_app_kconfig(ove_dir):
       - app.yaml files below tests/infer_target/ (target model qualification)
       - $OVE_EXTERNAL_APPS — colon-separated dirs containing app.yaml
     """
-    if yaml is None:
-        print("Warning: pyyaml not installed, skipping app Kconfig generation")
-        return
-
     apps = []
     app_paths = {}  # config_name -> absolute path mapping
 

@@ -11,6 +11,8 @@ import re
 import shutil
 import sys
 
+import yaml
+
 from .appgen import generate_app_kconfig
 from .boardgen import board_symbol as yaml_board_symbol, generate_board_kconfig
 from .utils import atomic_symlink
@@ -278,79 +280,8 @@ def _find_board_kconfig_symbol(ove_dir, board_dir_name):
 
 
 def _load_yaml(path):
-    """Load a YAML file."""
-    try:
-        import yaml
-    except ImportError:
-        # Fallback: simple parser for the fields we need
-        return _load_yaml_simple(path)
     with open(path) as f:
         return yaml.safe_load(f)
-
-
-def _load_yaml_simple(path):
-    """Minimal YAML parser for board.yaml/app.yaml (flat lists only)."""
-    # Use the workspace module's parser if available
-    result = {}
-    current_key = None
-    current_list = None
-    current_dict = None
-    current_dict_key = None
-
-    with open(path) as f:
-        for line in f:
-            stripped = line.rstrip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            indent = len(line) - len(line.lstrip())
-
-            if indent == 0 and ':' in stripped:
-                if current_key and current_list is not None:
-                    result[current_key] = current_list
-                elif current_key and current_dict is not None:
-                    result[current_key] = current_dict
-                key, _, val = stripped.partition(':')
-                current_key = key.strip()
-                current_dict_key = None
-                val = val.strip()
-                if val:
-                    result[current_key] = val
-                    current_key = None
-                    current_list = None
-                    current_dict = None
-                else:
-                    current_list = None
-                    current_dict = None
-            elif stripped.lstrip().startswith('- '):
-                val = stripped.lstrip()[2:].strip()
-                if val.startswith('"') and val.endswith('"'):
-                    val = val[1:-1]
-                if current_dict_key is not None:
-                    if current_dict is None:
-                        current_dict = {}
-                    if current_dict_key not in current_dict:
-                        current_dict[current_dict_key] = []
-                    current_dict[current_dict_key].append(val)
-                else:
-                    if current_list is None:
-                        current_list = []
-                    current_list.append(val)
-            elif indent > 0 and ':' in stripped and not stripped.lstrip().startswith('- '):
-                key, _, val = stripped.partition(':')
-                key = key.strip()
-                val = val.strip()
-                if not val:
-                    # Sub-dict key (e.g., rtos_defconfig.freertos:)
-                    current_dict_key = key
-                    if current_dict is None:
-                        current_dict = {}
-
-    if current_key and current_list is not None:
-        result[current_key] = current_list
-    elif current_key and current_dict is not None:
-        result[current_key] = current_dict
-
-    return result
 
 
 def _find_app_yaml(ove_dir, app_name):

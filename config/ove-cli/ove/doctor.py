@@ -91,7 +91,7 @@ def _check_python_version():
 def _check_python_pkgs():
     results = []
     for mod, required in [("jinja2", True), ("yaml", True),
-                          ("jsonschema", False),
+                          ("jsonschema", True),
                           # pyserial — only needed by the manual HW test
                           # runner.  Surface a warning so devs know it's
                           # missing without failing the doctor check on

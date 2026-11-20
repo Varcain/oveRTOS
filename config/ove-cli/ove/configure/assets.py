@@ -16,20 +16,9 @@ import os
 import subprocess
 import sys
 
-try:
-    from jinja2 import Environment, FileSystemLoader
-except ImportError:
-    Environment = None
-
-try:
-    import yaml
-except ImportError:
-    yaml = None
-
-try:
-    import jsonschema
-except ImportError:
-    jsonschema = None
+import jsonschema
+import yaml
+from jinja2 import Environment, FileSystemLoader
 
 
 # ── lv_conf.h discovery ──────────────────────────────────────────────────
@@ -193,10 +182,6 @@ def generate_app_sources(ws):
     if not os.path.isfile(app_yaml_path):
         return
 
-    if yaml is None:
-        print("Warning: pyyaml not installed, skipping app source generation")
-        return
-
     print("=== Generating app build files ===")
     with open(app_yaml_path) as f:
         app = yaml.safe_load(f)
@@ -204,7 +189,7 @@ def generate_app_sources(ws):
     # Validate against schema
     schema_path = os.path.join(ws.ove_dir, "config", "schemas",
                                "app_schema.json")
-    if jsonschema and os.path.isfile(schema_path):
+    if os.path.isfile(schema_path):
         with open(schema_path) as f:
             schema = json.load(f)
         try:
@@ -246,10 +231,6 @@ def generate_app_sources(ws):
     generated_image_sources = _process_app_images(ws, app, app_dir)
     if generated_image_sources:
         app["generated_image_sources"] = generated_image_sources
-
-    if Environment is None:
-        print("Warning: jinja2 not installed, skipping app source generation")
-        return
 
     templates_dir = os.path.join(ws.ove_dir, "config", "templates")
     env = Environment(
