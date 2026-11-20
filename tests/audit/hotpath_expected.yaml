@@ -27,7 +27,7 @@
 #
 # Zig coverage uses stable suite-scoped exports (`zig_bench_run_<suite>_
 # <case>`) emitted by `bench.caseAudited(suite, spec)` in
-# `bindings/zig/ove/src/bench.zig`.  Without the explicit @export, Zig
+# `tests/benchmarks/zig/src/bench.zig`.  Without the explicit @export, Zig
 # emits anonymous numbered trampolines (`bench.case.Tramps.runTramp.<N>`)
 # whose ordering is rebuild-volatile — useless as audit targets.  The
 # `caseAudited` helper aliases each trampoline to a deterministic

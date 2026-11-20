@@ -23,10 +23,11 @@ naturally because each language has different idioms — Rust takes
 
 Usage:
     scripts/lvgl_parity_check.py            # report, exit 0
-    scripts/lvgl_parity_check.py --strict   # exit 1 if any non-whitelisted gap
+    scripts/lvgl_parity_check.py --strict   # exit 1 on a non-whitelisted gap
+                                           # or stale whitelist entry
 
-Wired into `make lint` non-blockingly: lint runs the tool without
-`--strict`, prints any drift as a warning, but never fails the lint.
+`make lint` runs this check with `--strict` and fails on non-whitelisted
+gaps or stale whitelist entries.
 """
 
 import argparse

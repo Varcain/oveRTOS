@@ -7,11 +7,11 @@ name: oveRTOS Substrate Audits
 # only to invoke the builds in CI and upload the symbol/disasm dumps as
 # artifacts so regressions are visible on every PR.
 #
-# Per docs-site/docs/testing/audit-guarantees.md, the audits prove three
-# substrate claims at link time:
+# The audits check three properties of the linked ELF.
 #   - no C++ vtables / Rust trait-object dispatch / ove_* dispatch tables
-#   - hot-path wrappers compile within bounded instruction budgets
-#   - zero-heap builds contain no kernel-heap regions and no malloc paths
+#   - hot-path callees match the allowlist (see
+#     docs-site/docs/benchmarks/methodology.md)
+#   - zero-heap builds define no kernel-heap region symbols
 #
 # Bench *execution* is deliberately not in this workflow — hosted runners
 # have noisy perf and there is no hardware farm.  The audits run on the

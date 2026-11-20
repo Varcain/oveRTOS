@@ -14,10 +14,10 @@ hot binding wrappers (Mutex::lock, MutexGuard::drop, etc.) compile to
 the same instructions a hand-written C call site would.
 
 Disassembles selected symbols via objdump, summarises each (instruction
-count, list of call/jmp targets), and optionally compares against a
-golden YAML at tests/audit/hotpath_expected.yaml — fails on hard
-violations (forbidden patterns, unexpected callees, instruction counts
-beyond the max).
+count, list of call/jmp targets), and compares against the golden YAML at
+tests/audit/hotpath_expected.yaml — fails on hard violations (forbidden
+patterns, unexpected callees) and warns when instruction counts exceed
+the configured cap.
 
 Usage:
   dump_hotpaths.py --elf <elf> --binding <c|cpp|rust|zig> --target <name>
