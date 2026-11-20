@@ -5657,6 +5657,9 @@ unsafe extern "C" {
     pub fn lv_obj_set_style_pad_column(obj: *mut lv_obj_t, g: i32, sel: u32);
 }
 unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_all(obj: *mut lv_obj_t, p: i32, sel: u32);
+}
+unsafe extern "C" {
     pub fn lv_obj_set_style_text_color(obj: *mut lv_obj_t, color: lv_color_t, sel: u32);
 }
 unsafe extern "C" {
@@ -5706,6 +5709,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn lv_style_set_pad_right(style: *mut lv_style_t, p: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_pad_all(style: *mut lv_style_t, p: i32);
 }
 unsafe extern "C" {
     pub fn lv_style_set_text_color(style: *mut lv_style_t, color: lv_color_t);
