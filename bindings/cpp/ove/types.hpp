@@ -56,55 +56,6 @@ template <typename F>
 concept ThreadEntry = std::convertible_to<F, void (*)(void *)>;
 
 /* ------------------------------------------------------------------ */
-/*  Compile-time C-ABI shape check                                    */
-/* ------------------------------------------------------------------ */
-/*
- * Pin the OVE_ERR_* numeric values at compile time.  Mirrors Rust's
- * `_assert_codes_match()` (bindings/rust/ove/src/error.rs:127-150)
- * and Zig's `comptime { std.debug.assert(...) }` block
- * (bindings/zig/ove/src/error.zig:88-102).  If a future C-header
- * rename or renumber drifts an OVE_ERR_* value, every C++ TU that
- * includes <ove/types.hpp> (i.e. every TU in apps/cpp and the C++
- * binding) fails to build with a clear message — the silent-drift
- * surface that bit Rust's mangled-name audit is closed at the C++
- * boundary too.
- */
-static_assert(OVE_ERR_NOT_REGISTERED == -1, "OVE_ERR_NOT_REGISTERED drifted");
-static_assert(OVE_ERR_INVALID_PARAM == -2, "OVE_ERR_INVALID_PARAM drifted");
-static_assert(OVE_ERR_NO_MEMORY == -3, "OVE_ERR_NO_MEMORY drifted");
-static_assert(OVE_ERR_TIMEOUT == -4, "OVE_ERR_TIMEOUT drifted");
-static_assert(OVE_ERR_NOT_SUPPORTED == -5, "OVE_ERR_NOT_SUPPORTED drifted");
-static_assert(OVE_ERR_QUEUE_FULL == -6, "OVE_ERR_QUEUE_FULL drifted");
-static_assert(OVE_ERR_ML_FAILED == -7, "OVE_ERR_ML_FAILED drifted");
-static_assert(OVE_ERR_NET_REFUSED == -8, "OVE_ERR_NET_REFUSED drifted");
-static_assert(OVE_ERR_NET_UNREACHABLE == -9, "OVE_ERR_NET_UNREACHABLE drifted");
-static_assert(OVE_ERR_NET_ADDR_IN_USE == -10, "OVE_ERR_NET_ADDR_IN_USE drifted");
-static_assert(OVE_ERR_NET_RESET == -11, "OVE_ERR_NET_RESET drifted");
-static_assert(OVE_ERR_NET_DNS_FAIL == -12, "OVE_ERR_NET_DNS_FAIL drifted");
-static_assert(OVE_ERR_NET_CLOSED == -13, "OVE_ERR_NET_CLOSED drifted");
-static_assert(OVE_ERR_BUS_NACK == -14, "OVE_ERR_BUS_NACK drifted");
-static_assert(OVE_ERR_BUS_BUSY == -15, "OVE_ERR_BUS_BUSY drifted");
-static_assert(OVE_ERR_BUS_ERROR == -16, "OVE_ERR_BUS_ERROR drifted");
-static_assert(OVE_ERR_QUEUE_EMPTY == -17, "OVE_ERR_QUEUE_EMPTY drifted");
-static_assert(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
-static_assert(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
-static_assert(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
-static_assert(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
-static_assert(OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22, "OVE_ERR_NET_ADDR_NOT_AVAILABLE drifted");
-static_assert(OVE_ERR_ALREADY_EXISTS == -23, "OVE_ERR_ALREADY_EXISTS drifted");
-static_assert(OVE_ERR_NO_SPACE == -24, "OVE_ERR_NO_SPACE drifted");
-static_assert(OVE_ERR_NOT_DIR == -25, "OVE_ERR_NOT_DIR drifted");
-static_assert(OVE_ERR_IS_DIR == -26, "OVE_ERR_IS_DIR drifted");
-static_assert(OVE_ERR_NOT_EMPTY == -27, "OVE_ERR_NOT_EMPTY drifted");
-static_assert(OVE_ERR_READ_ONLY == -28, "OVE_ERR_READ_ONLY drifted");
-static_assert(OVE_ERR_IO == -29, "OVE_ERR_IO drifted");
-static_assert(OVE_ERR_BUSY == -30, "OVE_ERR_BUSY drifted");
-static_assert(OVE_ERR_NAME_TOO_LONG == -31, "OVE_ERR_NAME_TOO_LONG drifted");
-static_assert(OVE_ERR_BAD_HANDLE == -32, "OVE_ERR_BAD_HANDLE drifted");
-static_assert(OVE_ERR_PERMISSION == -33, "OVE_ERR_PERMISSION drifted");
-static_assert(OVE_ERR_CROSS_DEVICE == -34, "OVE_ERR_CROSS_DEVICE drifted");
-
-/* ------------------------------------------------------------------ */
 /*  Duration / timeout types                                          */
 /* ------------------------------------------------------------------ */
 

@@ -9,7 +9,8 @@
 //! `Error` is the binding's broad error union — every fallible `ove_*` C call
 //! lowers an `int` return code into an `Error` via `fromCode(rc)`. Per-op
 //! narrow sets (e.g. `Queue.SendError`, `Mutex.LockError`) are defined in
-//! their owning modules and inherit from this set.
+//! their owning modules and inherit from this set. The mapping uses the
+//! `OVE_ERR_*` constants imported from the C header.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -96,8 +97,7 @@ pub const Error = error{
     /// `OVE_ERR_*` that `mapErrorCode` has not caught up with.  In
     /// `Debug` builds an unrecognised code panics at the FFI boundary
     /// (loud, localised drift detection); release builds surface it as
-    /// this error instead of crashing a shipped binary — matching the
-    /// graceful `Error::Unknown` policy of the Rust/C++ bindings.
+    /// this error instead of crashing a shipped binary.
     UnknownErrorCode,
 };
 
@@ -145,11 +145,10 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_CROSS_DEVICE => Error.CrossDevice,
         // An unrecognised substrate code is almost always a binding bug —
         // the substrate added a new `OVE_ERR_*` and this map didn't catch
-        // up.  In `Debug` builds, panic at the FFI boundary so the failure
-        // is localised to the binding's pin set during development/tests.
+        // up.  In `Debug` builds, panic at the FFI boundary to flag the
+        // missing mapping during development and testing.
         // Release builds must not hard-crash a shipped device on an
-        // unmapped code, so they degrade to `Error.UnknownErrorCode`
-        // (mirroring the Rust/C++ bindings' graceful `Error::Unknown`).
+        // unmapped code, so they degrade to `Error.UnknownErrorCode`.
         else => blk: {
             if (builtin.mode == .Debug)
                 std.debug.panic("ove binding: unrecognised C error code {d}", .{rc});
@@ -171,47 +170,4 @@ pub inline fn fromCode(rc: c_int) Error!void {
 pub inline fn fromCodeInt(rc: c_int) Error!c_int {
     if (rc >= 0) return rc;
     return mapErrorCode(rc);
-}
-
-// Compile-time assertion: the C `OVE_ERR_*` defines this binding maps in
-// `mapErrorCode` must keep the negative numeric codes that Zig callers
-// rely on.  If the C header renumbers a code, bindgen-via-@cImport
-// regenerates a different constant and this block fails to compile.
-// Analog of Rust's `_assert_codes_match` (per TIGER_STYLE.md "verify
-// type sizes and constant relationships before execution").
-comptime {
-    std.debug.assert(c.OVE_ERR_NOT_REGISTERED == -1);
-    std.debug.assert(c.OVE_ERR_INVALID_PARAM == -2);
-    std.debug.assert(c.OVE_ERR_NO_MEMORY == -3);
-    std.debug.assert(c.OVE_ERR_TIMEOUT == -4);
-    std.debug.assert(c.OVE_ERR_NOT_SUPPORTED == -5);
-    std.debug.assert(c.OVE_ERR_QUEUE_FULL == -6);
-    std.debug.assert(c.OVE_ERR_ML_FAILED == -7);
-    std.debug.assert(c.OVE_ERR_NET_REFUSED == -8);
-    std.debug.assert(c.OVE_ERR_NET_UNREACHABLE == -9);
-    std.debug.assert(c.OVE_ERR_NET_ADDR_IN_USE == -10);
-    std.debug.assert(c.OVE_ERR_NET_RESET == -11);
-    std.debug.assert(c.OVE_ERR_NET_DNS_FAIL == -12);
-    std.debug.assert(c.OVE_ERR_NET_CLOSED == -13);
-    std.debug.assert(c.OVE_ERR_BUS_NACK == -14);
-    std.debug.assert(c.OVE_ERR_BUS_BUSY == -15);
-    std.debug.assert(c.OVE_ERR_BUS_ERROR == -16);
-    std.debug.assert(c.OVE_ERR_QUEUE_EMPTY == -17);
-    std.debug.assert(c.OVE_ERR_WOULD_BLOCK == -18);
-    std.debug.assert(c.OVE_ERR_EOF == -19);
-    std.debug.assert(c.OVE_ERR_INVAL == -20);
-    std.debug.assert(c.OVE_ERR_NOT_FOUND == -21);
-    std.debug.assert(c.OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22);
-    std.debug.assert(c.OVE_ERR_ALREADY_EXISTS == -23);
-    std.debug.assert(c.OVE_ERR_NO_SPACE == -24);
-    std.debug.assert(c.OVE_ERR_NOT_DIR == -25);
-    std.debug.assert(c.OVE_ERR_IS_DIR == -26);
-    std.debug.assert(c.OVE_ERR_NOT_EMPTY == -27);
-    std.debug.assert(c.OVE_ERR_READ_ONLY == -28);
-    std.debug.assert(c.OVE_ERR_IO == -29);
-    std.debug.assert(c.OVE_ERR_BUSY == -30);
-    std.debug.assert(c.OVE_ERR_NAME_TOO_LONG == -31);
-    std.debug.assert(c.OVE_ERR_BAD_HANDLE == -32);
-    std.debug.assert(c.OVE_ERR_PERMISSION == -33);
-    std.debug.assert(c.OVE_ERR_CROSS_DEVICE == -34);
 }

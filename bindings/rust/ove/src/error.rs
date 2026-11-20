@@ -6,11 +6,12 @@
 
 //! oveRTOS error types and the [`Result`] alias.
 
-/// oveRTOS error codes, mapped from C `OVE_ERR_*` defines in `ove/types.h`.
+use crate::bindings;
+
+/// oveRTOS error codes, mapped using the C `OVE_ERR_*` constants from `ove/types.h`.
 ///
 /// When adding a new variant, update [`from_code`](Error::from_code),
-/// [`to_code`](Error::to_code), [`Display`](core::fmt::Display), and
-/// the `_assert_codes_match` function below.
+/// [`to_code`](Error::to_code), and [`Display`](core::fmt::Display).
 ///
 /// The enum is `#[non_exhaustive]` so the substrate can add new
 /// `OVE_ERR_*` codes (mapped to fresh variants here) without breaking
@@ -102,41 +103,41 @@ impl Error {
     #[inline]
     pub fn from_code(code: i32) -> Result<()> {
         match code {
-            0 => Ok(()),
-            -1 => Err(Error::NotRegistered),
-            -2 => Err(Error::InvalidParam),
-            -3 => Err(Error::NoMemory),
-            -4 => Err(Error::Timeout),
-            -5 => Err(Error::NotSupported),
-            -6 => Err(Error::QueueFull),
-            -7 => Err(Error::MlFailed),
-            -8 => Err(Error::NetRefused),
-            -9 => Err(Error::NetUnreachable),
-            -10 => Err(Error::NetAddrInUse),
-            -11 => Err(Error::NetReset),
-            -12 => Err(Error::NetDnsFail),
-            -13 => Err(Error::NetClosed),
-            -14 => Err(Error::BusNack),
-            -15 => Err(Error::BusBusy),
-            -16 => Err(Error::BusError),
-            -17 => Err(Error::QueueEmpty),
-            -18 => Err(Error::WouldBlock),
-            -19 => Err(Error::Eof),
-            -20 => Err(Error::Inval),
-            -21 => Err(Error::NotFound),
-            -22 => Err(Error::NetAddrNotAvailable),
-            -23 => Err(Error::AlreadyExists),
-            -24 => Err(Error::NoSpace),
-            -25 => Err(Error::NotDir),
-            -26 => Err(Error::IsDir),
-            -27 => Err(Error::NotEmpty),
-            -28 => Err(Error::ReadOnly),
-            -29 => Err(Error::Io),
-            -30 => Err(Error::Busy),
-            -31 => Err(Error::NameTooLong),
-            -32 => Err(Error::BadHandle),
-            -33 => Err(Error::Permission),
-            -34 => Err(Error::CrossDevice),
+            bindings::OVE_OK => Ok(()),
+            bindings::OVE_ERR_NOT_REGISTERED => Err(Error::NotRegistered),
+            bindings::OVE_ERR_INVALID_PARAM => Err(Error::InvalidParam),
+            bindings::OVE_ERR_NO_MEMORY => Err(Error::NoMemory),
+            bindings::OVE_ERR_TIMEOUT => Err(Error::Timeout),
+            bindings::OVE_ERR_NOT_SUPPORTED => Err(Error::NotSupported),
+            bindings::OVE_ERR_QUEUE_FULL => Err(Error::QueueFull),
+            bindings::OVE_ERR_ML_FAILED => Err(Error::MlFailed),
+            bindings::OVE_ERR_NET_REFUSED => Err(Error::NetRefused),
+            bindings::OVE_ERR_NET_UNREACHABLE => Err(Error::NetUnreachable),
+            bindings::OVE_ERR_NET_ADDR_IN_USE => Err(Error::NetAddrInUse),
+            bindings::OVE_ERR_NET_RESET => Err(Error::NetReset),
+            bindings::OVE_ERR_NET_DNS_FAIL => Err(Error::NetDnsFail),
+            bindings::OVE_ERR_NET_CLOSED => Err(Error::NetClosed),
+            bindings::OVE_ERR_BUS_NACK => Err(Error::BusNack),
+            bindings::OVE_ERR_BUS_BUSY => Err(Error::BusBusy),
+            bindings::OVE_ERR_BUS_ERROR => Err(Error::BusError),
+            bindings::OVE_ERR_QUEUE_EMPTY => Err(Error::QueueEmpty),
+            bindings::OVE_ERR_WOULD_BLOCK => Err(Error::WouldBlock),
+            bindings::OVE_ERR_EOF => Err(Error::Eof),
+            bindings::OVE_ERR_INVAL => Err(Error::Inval),
+            bindings::OVE_ERR_NOT_FOUND => Err(Error::NotFound),
+            bindings::OVE_ERR_NET_ADDR_NOT_AVAILABLE => Err(Error::NetAddrNotAvailable),
+            bindings::OVE_ERR_ALREADY_EXISTS => Err(Error::AlreadyExists),
+            bindings::OVE_ERR_NO_SPACE => Err(Error::NoSpace),
+            bindings::OVE_ERR_NOT_DIR => Err(Error::NotDir),
+            bindings::OVE_ERR_IS_DIR => Err(Error::IsDir),
+            bindings::OVE_ERR_NOT_EMPTY => Err(Error::NotEmpty),
+            bindings::OVE_ERR_READ_ONLY => Err(Error::ReadOnly),
+            bindings::OVE_ERR_IO => Err(Error::Io),
+            bindings::OVE_ERR_BUSY => Err(Error::Busy),
+            bindings::OVE_ERR_NAME_TOO_LONG => Err(Error::NameTooLong),
+            bindings::OVE_ERR_BAD_HANDLE => Err(Error::BadHandle),
+            bindings::OVE_ERR_PERMISSION => Err(Error::Permission),
+            bindings::OVE_ERR_CROSS_DEVICE => Err(Error::CrossDevice),
             other => Err(Error::Unknown(other)),
         }
     }
@@ -145,40 +146,40 @@ impl Error {
     #[inline]
     pub fn to_code(self) -> i32 {
         match self {
-            Error::NotRegistered => -1,
-            Error::InvalidParam => -2,
-            Error::NoMemory => -3,
-            Error::Timeout => -4,
-            Error::NotSupported => -5,
-            Error::QueueFull => -6,
-            Error::MlFailed => -7,
-            Error::NetRefused => -8,
-            Error::NetUnreachable => -9,
-            Error::NetAddrInUse => -10,
-            Error::NetReset => -11,
-            Error::NetDnsFail => -12,
-            Error::NetClosed => -13,
-            Error::BusNack => -14,
-            Error::BusBusy => -15,
-            Error::BusError => -16,
-            Error::QueueEmpty => -17,
-            Error::WouldBlock => -18,
-            Error::Eof => -19,
-            Error::Inval => -20,
-            Error::NotFound => -21,
-            Error::NetAddrNotAvailable => -22,
-            Error::AlreadyExists => -23,
-            Error::NoSpace => -24,
-            Error::NotDir => -25,
-            Error::IsDir => -26,
-            Error::NotEmpty => -27,
-            Error::ReadOnly => -28,
-            Error::Io => -29,
-            Error::Busy => -30,
-            Error::NameTooLong => -31,
-            Error::BadHandle => -32,
-            Error::Permission => -33,
-            Error::CrossDevice => -34,
+            Error::NotRegistered => bindings::OVE_ERR_NOT_REGISTERED,
+            Error::InvalidParam => bindings::OVE_ERR_INVALID_PARAM,
+            Error::NoMemory => bindings::OVE_ERR_NO_MEMORY,
+            Error::Timeout => bindings::OVE_ERR_TIMEOUT,
+            Error::NotSupported => bindings::OVE_ERR_NOT_SUPPORTED,
+            Error::QueueFull => bindings::OVE_ERR_QUEUE_FULL,
+            Error::MlFailed => bindings::OVE_ERR_ML_FAILED,
+            Error::NetRefused => bindings::OVE_ERR_NET_REFUSED,
+            Error::NetUnreachable => bindings::OVE_ERR_NET_UNREACHABLE,
+            Error::NetAddrInUse => bindings::OVE_ERR_NET_ADDR_IN_USE,
+            Error::NetReset => bindings::OVE_ERR_NET_RESET,
+            Error::NetDnsFail => bindings::OVE_ERR_NET_DNS_FAIL,
+            Error::NetClosed => bindings::OVE_ERR_NET_CLOSED,
+            Error::BusNack => bindings::OVE_ERR_BUS_NACK,
+            Error::BusBusy => bindings::OVE_ERR_BUS_BUSY,
+            Error::BusError => bindings::OVE_ERR_BUS_ERROR,
+            Error::QueueEmpty => bindings::OVE_ERR_QUEUE_EMPTY,
+            Error::WouldBlock => bindings::OVE_ERR_WOULD_BLOCK,
+            Error::Eof => bindings::OVE_ERR_EOF,
+            Error::Inval => bindings::OVE_ERR_INVAL,
+            Error::NotFound => bindings::OVE_ERR_NOT_FOUND,
+            Error::NetAddrNotAvailable => bindings::OVE_ERR_NET_ADDR_NOT_AVAILABLE,
+            Error::AlreadyExists => bindings::OVE_ERR_ALREADY_EXISTS,
+            Error::NoSpace => bindings::OVE_ERR_NO_SPACE,
+            Error::NotDir => bindings::OVE_ERR_NOT_DIR,
+            Error::IsDir => bindings::OVE_ERR_IS_DIR,
+            Error::NotEmpty => bindings::OVE_ERR_NOT_EMPTY,
+            Error::ReadOnly => bindings::OVE_ERR_READ_ONLY,
+            Error::Io => bindings::OVE_ERR_IO,
+            Error::Busy => bindings::OVE_ERR_BUSY,
+            Error::NameTooLong => bindings::OVE_ERR_NAME_TOO_LONG,
+            Error::BadHandle => bindings::OVE_ERR_BAD_HANDLE,
+            Error::Permission => bindings::OVE_ERR_PERMISSION,
+            Error::CrossDevice => bindings::OVE_ERR_CROSS_DEVICE,
             Error::Unknown(c) => c,
         }
     }
@@ -204,53 +205,6 @@ impl Error {
         matches!(self, Error::BusNack | Error::BusBusy | Error::BusError)
     }
 }
-
-// Compile-time assertion: verify Rust error codes match the C `OVE_ERR_*`
-// defines from `ove/types.h`.  If the C header changes its numbering,
-// bindgen will regenerate different constants and this function will fail
-// to compile.
-#[cfg(not(docsrs))]
-const fn _assert_codes_match() {
-    use crate::bindings;
-    assert!(bindings::OVE_ERR_NOT_REGISTERED == -1);
-    assert!(bindings::OVE_ERR_INVALID_PARAM == -2);
-    assert!(bindings::OVE_ERR_NO_MEMORY == -3);
-    assert!(bindings::OVE_ERR_TIMEOUT == -4);
-    assert!(bindings::OVE_ERR_NOT_SUPPORTED == -5);
-    assert!(bindings::OVE_ERR_QUEUE_FULL == -6);
-    assert!(bindings::OVE_ERR_ML_FAILED == -7);
-    assert!(bindings::OVE_ERR_NET_REFUSED == -8);
-    assert!(bindings::OVE_ERR_NET_UNREACHABLE == -9);
-    assert!(bindings::OVE_ERR_NET_ADDR_IN_USE == -10);
-    assert!(bindings::OVE_ERR_NET_RESET == -11);
-    assert!(bindings::OVE_ERR_NET_DNS_FAIL == -12);
-    assert!(bindings::OVE_ERR_NET_CLOSED == -13);
-    assert!(bindings::OVE_ERR_BUS_NACK == -14);
-    assert!(bindings::OVE_ERR_BUS_BUSY == -15);
-    assert!(bindings::OVE_ERR_BUS_ERROR == -16);
-    assert!(bindings::OVE_ERR_QUEUE_EMPTY == -17);
-    assert!(bindings::OVE_ERR_WOULD_BLOCK == -18);
-    assert!(bindings::OVE_ERR_EOF == -19);
-    assert!(bindings::OVE_ERR_INVAL == -20);
-    assert!(bindings::OVE_ERR_NOT_FOUND == -21);
-    assert!(bindings::OVE_ERR_NET_ADDR_NOT_AVAILABLE == -22);
-    assert!(bindings::OVE_ERR_ALREADY_EXISTS == -23);
-    assert!(bindings::OVE_ERR_NO_SPACE == -24);
-    assert!(bindings::OVE_ERR_NOT_DIR == -25);
-    assert!(bindings::OVE_ERR_IS_DIR == -26);
-    assert!(bindings::OVE_ERR_NOT_EMPTY == -27);
-    assert!(bindings::OVE_ERR_READ_ONLY == -28);
-    assert!(bindings::OVE_ERR_IO == -29);
-    assert!(bindings::OVE_ERR_BUSY == -30);
-    assert!(bindings::OVE_ERR_NAME_TOO_LONG == -31);
-    assert!(bindings::OVE_ERR_BAD_HANDLE == -32);
-    assert!(bindings::OVE_ERR_PERMISSION == -33);
-    assert!(bindings::OVE_ERR_CROSS_DEVICE == -34);
-}
-
-#[cfg(not(docsrs))]
-#[allow(clippy::used_underscore_items)] // intentional compile-time assertion
-const _: () = _assert_codes_match();
 
 /// `core::error::Error` is stable since Rust 1.81; our MSRV is 1.85 so
 /// the impl can be unconditional.  `std::error::Error` is a re-export

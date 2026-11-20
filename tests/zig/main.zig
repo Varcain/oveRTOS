@@ -1962,41 +1962,47 @@ fn testWorkqueueRaiiDrop() !void {
 // These run in the regular test pass and require no fuzz infra.
 
 fn testErrorsKnownCodesRoundTrip() !void {
-    // Each known C error code must map to a typed Error and the typed
-    // error must be reachable in ReleaseSafe (compile-time guarded by the
-    // comptime block in bindings/zig/ove/src/error.zig).
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_REGISTERED), error.NotRegistered);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_INVALID_PARAM), error.InvalidParam);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NO_MEMORY), error.OutOfMemory);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_TIMEOUT), error.Timeout);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_SUPPORTED), error.NotSupported);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_QUEUE_FULL), error.QueueFull);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_ML_FAILED), error.MlFailed);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_REFUSED), error.NetRefused);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_UNREACHABLE), error.NetUnreachable);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_ADDR_IN_USE), error.NetAddrInUse);
-    try expectErrorIs(
-        ove.err.fromCode(ove.ffi.OVE_ERR_NET_ADDR_NOT_AVAILABLE),
-        error.NetAddrNotAvailable,
-    );
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_RESET), error.NetReset);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_DNS_FAIL), error.NetDnsFail);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_CLOSED), error.NetClosed);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_NACK), error.BusNack);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_BUSY), error.BusBusy);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_ERROR), error.BusError);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_ALREADY_EXISTS), error.AlreadyExists);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NO_SPACE), error.NoSpace);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_DIR), error.NotDir);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_IS_DIR), error.IsDir);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_EMPTY), error.NotEmpty);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_READ_ONLY), error.ReadOnly);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_IO), error.Io);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUSY), error.Busy);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NAME_TOO_LONG), error.NameTooLong);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BAD_HANDLE), error.BadHandle);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_PERMISSION), error.Permission);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_CROSS_DEVICE), error.CrossDevice);
+    // Check every known C error code against its typed Zig error.
+    const known = [_]struct { c_int, ove.Error }{
+        .{ ove.ffi.OVE_ERR_NOT_REGISTERED, error.NotRegistered },
+        .{ ove.ffi.OVE_ERR_INVALID_PARAM, error.InvalidParam },
+        .{ ove.ffi.OVE_ERR_NO_MEMORY, error.OutOfMemory },
+        .{ ove.ffi.OVE_ERR_TIMEOUT, error.Timeout },
+        .{ ove.ffi.OVE_ERR_NOT_SUPPORTED, error.NotSupported },
+        .{ ove.ffi.OVE_ERR_QUEUE_FULL, error.QueueFull },
+        .{ ove.ffi.OVE_ERR_ML_FAILED, error.MlFailed },
+        .{ ove.ffi.OVE_ERR_NET_REFUSED, error.NetRefused },
+        .{ ove.ffi.OVE_ERR_NET_UNREACHABLE, error.NetUnreachable },
+        .{ ove.ffi.OVE_ERR_NET_ADDR_IN_USE, error.NetAddrInUse },
+        .{ ove.ffi.OVE_ERR_NET_ADDR_NOT_AVAILABLE, error.NetAddrNotAvailable },
+        .{ ove.ffi.OVE_ERR_NET_RESET, error.NetReset },
+        .{ ove.ffi.OVE_ERR_NET_DNS_FAIL, error.NetDnsFail },
+        .{ ove.ffi.OVE_ERR_NET_CLOSED, error.NetClosed },
+        .{ ove.ffi.OVE_ERR_BUS_NACK, error.BusNack },
+        .{ ove.ffi.OVE_ERR_BUS_BUSY, error.BusBusy },
+        .{ ove.ffi.OVE_ERR_BUS_ERROR, error.BusError },
+        .{ ove.ffi.OVE_ERR_QUEUE_EMPTY, error.QueueEmpty },
+        .{ ove.ffi.OVE_ERR_WOULD_BLOCK, error.WouldBlock },
+        .{ ove.ffi.OVE_ERR_EOF, error.Eof },
+        .{ ove.ffi.OVE_ERR_INVAL, error.Inval },
+        .{ ove.ffi.OVE_ERR_NOT_FOUND, error.NotFound },
+        .{ ove.ffi.OVE_ERR_ALREADY_EXISTS, error.AlreadyExists },
+        .{ ove.ffi.OVE_ERR_NO_SPACE, error.NoSpace },
+        .{ ove.ffi.OVE_ERR_NOT_DIR, error.NotDir },
+        .{ ove.ffi.OVE_ERR_IS_DIR, error.IsDir },
+        .{ ove.ffi.OVE_ERR_NOT_EMPTY, error.NotEmpty },
+        .{ ove.ffi.OVE_ERR_READ_ONLY, error.ReadOnly },
+        .{ ove.ffi.OVE_ERR_IO, error.Io },
+        .{ ove.ffi.OVE_ERR_BUSY, error.Busy },
+        .{ ove.ffi.OVE_ERR_NAME_TOO_LONG, error.NameTooLong },
+        .{ ove.ffi.OVE_ERR_BAD_HANDLE, error.BadHandle },
+        .{ ove.ffi.OVE_ERR_PERMISSION, error.Permission },
+        .{ ove.ffi.OVE_ERR_CROSS_DEVICE, error.CrossDevice },
+    };
+    inline for (known) |entry| {
+        const code, const expected = entry;
+        try expectErrorIs(ove.err.fromCode(code), expected);
+    }
 }
 
 fn testErrorsZeroIsOk() !void {

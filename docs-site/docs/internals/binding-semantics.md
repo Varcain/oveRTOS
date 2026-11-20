@@ -655,15 +655,15 @@ lowers that into its language's error type.
 |---|---|---|---|
 | Error type | `enum class Error` | `enum Error` (`#[non_exhaustive]`) | `Error` error set |
 | Success/failure carrier | `Result<T>` = `std::expected<T, Error>` | `Result<T>` = `Result<T, Error>` | `Error!T` |
-| Unknown / unmapped code | — (maps the pinned set) | `Error::Unknown(i32)` (carries the code) | `Error.UnknownErrorCode` in release; **panics in `Debug`** |
-| Code/enum pin | `static_assert` | `const` assertions | `comptime` asserts |
+| Unknown / unmapped code | Unnamed `Error` value (carries the code) | `Error::Unknown(i32)` (carries the code) | `Error.UnknownErrorCode` in release; **panics in `Debug`** |
 | Struct-layout pin (`cmake/ove_abi_types.def`) | none (same compiler as C) | `build.rs` `const` asserts | `comptime` in `abi_contract.zig` |
 
 **Contract notes**
 
-- The numeric `OVE_ERR_*` ↔ enum mapping is **pinned** in every binding and
-  enforced by the `error-code-pin` lint (`make lint`): every C code must be
-  handled by every binding.
+- Static assertions in `include/ove/types.h` pin the numeric error codes.
+  C++ defines `Error` variants using the C constants, Rust uses bindgen's
+  constants in `from_code` and `to_code`, and Zig matches the imported C
+  constants in `mapErrorCode`.
 - Unknown-code policy: Rust always surfaces `Error::Unknown(code)`. Zig cannot
   carry a payload in an error set, so it **panics in `Debug`** (loud drift
   detection during development) and **degrades to `Error.UnknownErrorCode` in

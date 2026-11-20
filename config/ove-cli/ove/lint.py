@@ -25,7 +25,6 @@ import sys
 
 from . import lint_backend_struct
 from . import lint_doc_snippets
-from . import lint_error_codes
 from . import lint_version
 from .lint_backend_commands import BackendCommands, source_path
 from .workspace import find_ove_dir
@@ -678,16 +677,6 @@ def _backend_struct_guard(ove_dir, check):
     return ("backend-struct", "FAIL", detail)
 
 
-def _error_code_pinning(ove_dir, check):
-    """Every OVE_ERR_* in include/ove/types.h must be pinned in every binding."""
-    del check  # read-only
-    violations = lint_error_codes.check(ove_dir)
-    if not violations:
-        return ("error-code-pin", "OK", "all bindings pin every code")
-    detail = lint_error_codes.format_violations(violations)
-    return ("error-code-pin", "FAIL", detail)
-
-
 def _version_pinning(ove_dir, check):
     """Every package manifest carries the version in include/ove/version.h."""
     del check  # read-only
@@ -758,7 +747,6 @@ def _run_all(check, include_lint=True):
             _cargo_clippy(ove_dir, check),
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
-            _error_code_pinning(ove_dir, check),
             _version_pinning(ove_dir, check),
             _nonnull_public(ove_dir, check),
             _doc_snippets(ove_dir, check),

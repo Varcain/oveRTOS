@@ -223,19 +223,8 @@ typedef enum ove_err {
 #define OVE_WAIT_FOREVER UINT64_MAX
 
 /*
- * Compile-time C-ABI shape check.  This file IS the C-ABI contract;
- * the assertions below pin the numeric values that every binding
- * (Rust `Error::from_code`, Zig `mapErrorCode`, C++ `static_assert`
- * block in <ove/types.hpp>) reads back.  If a future re-numbering
- * drifts an `OVE_ERR_*` value, every TU that includes this header
- * fails to compile with a clear message — the silent-drift surface is
- * closed at the substrate layer the higher-level bindings sit on.
- *
- * `_Static_assert` is the C99/C11 keyword (also a GCC extension in
- * C++); `static_assert` is the C++11 keyword.  Pick whichever the
- * including TU's language supports — TUs that include this header as
- * C++ (the C++ binding's <ove/types.hpp> for instance) need the
- * portable spelling.
+ * Pin the C ABI values used by the C++, Rust, and Zig error mappings.
+ * Use the assertion spelling for the language compiling this header.
  */
 #if defined(__cplusplus)
 #define OVE_STATIC_ASSERT(cond, msg) static_assert(cond, msg)

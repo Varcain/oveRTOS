@@ -29,19 +29,61 @@
 static void test_cpp_error_int_roundtrip(void **state)
 {
 	(void)state;
-	/* Drift-pin sanity: cast both directions for representative
-	 * variants.  The exhaustive static_assert block lives in
-	 * <ove/error.hpp>; these are runtime checks just to confirm
-	 * the build's `static_cast<int>(Error::X) == OVE_ERR_*` answer
-	 * also holds at runtime under the same flags. */
-	assert_int_equal(static_cast<int>(ove::Error::Ok), OVE_OK);
-	assert_int_equal(static_cast<int>(ove::Error::Timeout), OVE_ERR_TIMEOUT);
-	assert_int_equal(static_cast<int>(ove::Error::QueueFull), OVE_ERR_QUEUE_FULL);
-	assert_int_equal(static_cast<int>(ove::Error::NotFound), OVE_ERR_NOT_FOUND);
-	assert_int_equal(static_cast<int>(ove::Error::NetAddrNotAvailable),
-			 OVE_ERR_NET_ADDR_NOT_AVAILABLE);
-	assert_int_equal(static_cast<int>(ove::Error::NoSpace), OVE_ERR_NO_SPACE);
-	assert_int_equal(static_cast<int>(ove::Error::CrossDevice), OVE_ERR_CROSS_DEVICE);
+	using ove::Error;
+	/* Check every C++ variant against its C return code. */
+	constexpr struct {
+		Error error;
+		int code;
+	} known[] = {
+		{Error::Ok, OVE_OK},
+		{Error::NotRegistered, OVE_ERR_NOT_REGISTERED},
+		{Error::InvalidParam, OVE_ERR_INVALID_PARAM},
+		{Error::NoMemory, OVE_ERR_NO_MEMORY},
+		{Error::Timeout, OVE_ERR_TIMEOUT},
+		{Error::NotSupported, OVE_ERR_NOT_SUPPORTED},
+		{Error::QueueFull, OVE_ERR_QUEUE_FULL},
+		{Error::MlFailed, OVE_ERR_ML_FAILED},
+		{Error::NetRefused, OVE_ERR_NET_REFUSED},
+		{Error::NetUnreachable, OVE_ERR_NET_UNREACHABLE},
+		{Error::NetAddrInUse, OVE_ERR_NET_ADDR_IN_USE},
+		{Error::NetAddrNotAvailable, OVE_ERR_NET_ADDR_NOT_AVAILABLE},
+		{Error::NetReset, OVE_ERR_NET_RESET},
+		{Error::NetDnsFail, OVE_ERR_NET_DNS_FAIL},
+		{Error::NetClosed, OVE_ERR_NET_CLOSED},
+		{Error::BusNack, OVE_ERR_BUS_NACK},
+		{Error::BusBusy, OVE_ERR_BUS_BUSY},
+		{Error::BusError, OVE_ERR_BUS_ERROR},
+		{Error::QueueEmpty, OVE_ERR_QUEUE_EMPTY},
+		{Error::WouldBlock, OVE_ERR_WOULD_BLOCK},
+		{Error::Eof, OVE_ERR_EOF},
+		{Error::Inval, OVE_ERR_INVAL},
+		{Error::NotFound, OVE_ERR_NOT_FOUND},
+		{Error::AlreadyExists, OVE_ERR_ALREADY_EXISTS},
+		{Error::NoSpace, OVE_ERR_NO_SPACE},
+		{Error::NotDir, OVE_ERR_NOT_DIR},
+		{Error::IsDir, OVE_ERR_IS_DIR},
+		{Error::NotEmpty, OVE_ERR_NOT_EMPTY},
+		{Error::ReadOnly, OVE_ERR_READ_ONLY},
+		{Error::Io, OVE_ERR_IO},
+		{Error::Busy, OVE_ERR_BUSY},
+		{Error::NameTooLong, OVE_ERR_NAME_TOO_LONG},
+		{Error::BadHandle, OVE_ERR_BAD_HANDLE},
+		{Error::Permission, OVE_ERR_PERMISSION},
+		{Error::CrossDevice, OVE_ERR_CROSS_DEVICE},
+	};
+	for (const auto &[error, code] : known) {
+		assert_int_equal(static_cast<int>(error), code);
+		const auto result = ove::from_rc(code);
+		if (code == OVE_OK) {
+			assert_true(result.has_value());
+		} else {
+			assert_false(result.has_value());
+			assert_true(result.error() == error);
+		}
+		const auto msg = ove::make_error_code(error).message();
+		assert_false(msg.empty());
+		assert_true(msg.find("unknown") == std::string::npos);
+	}
 }
 
 /* ── from_rc(int) -> Result<void> ───────────────────────────────── */

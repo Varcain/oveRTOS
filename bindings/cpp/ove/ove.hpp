@@ -60,11 +60,9 @@
  *
  * @section compile_check Compile-time C-ABI shape check
  *
- * `<ove/types.hpp>` carries a `static_assert` block validating the
- * numeric values of every `OVE_ERR_*` constant.  This catches silent
- * drift if a future C-header rename or renumber breaks the contract,
- * mirroring `_assert_codes_match()` in the Rust binding and the
- * `comptime { std.debug.assert(...) }` block in the Zig binding.
+ * The C header `<ove/types.h>` pins the numeric `OVE_ERR_*` values
+ * with assertions that also compile in C++.  `ove::Error` uses those
+ * C constants directly.
  */
 
 #pragma once

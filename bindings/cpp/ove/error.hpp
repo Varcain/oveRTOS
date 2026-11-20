@@ -26,12 +26,6 @@
  *     generic `std::error_code`-based user code.
  *   - `from_rc(int)` and `from_rc(int, T&&)` to lift substrate
  *     rc-codes into a `Result`.
- *
- * **Drift guard.**  Each `Error` variant is `static_assert`-pinned
- * to its `OVE_*` substrate constant — and `<ove/types.h>`
- * independently pins every `OVE_ERR_*` to a literal integer.  A
- * renumbering in either layer breaks the build before producing a
- * binary.
  */
 
 #pragma once
@@ -51,9 +45,8 @@ namespace ove
  * @brief Strong-typed mirror of substrate `OVE_ERR_*` codes.
  *
  * Underlying type is `int` so `static_cast<int>(Error::Timeout)` gives
- * back the original substrate rc-value bit-for-bit.  Every variant is
- * pinned to its substrate constant via `static_assert` immediately
- * below this enum — a drift in either layer triggers a compile error.
+ * back the original substrate rc-value bit-for-bit.  Each variant is
+ * defined using its C constant from `<ove/types.h>`.
  *
  * `Error::Ok` is included so the enum can round-trip a "no error"
  * value through `std::error_code` (where `value() == 0` denotes
@@ -98,63 +91,6 @@ enum class Error : int {
 	Permission = OVE_ERR_PERMISSION,
 	CrossDevice = OVE_ERR_CROSS_DEVICE,
 };
-
-/*
- * Drift pin.  `<ove/types.h>` already pins every `OVE_ERR_*` to a
- * literal integer with `OVE_STATIC_ASSERT`; this second pass pins
- * `Error::*` to those same substrate values.  A future variant must
- * either land here too or have its substrate constant renumbered —
- * the silent-drift surface is closed at both ends.
- */
-static_assert(static_cast<int>(Error::Ok) == OVE_OK, "Error::Ok drifted");
-static_assert(static_cast<int>(Error::NotRegistered) == OVE_ERR_NOT_REGISTERED,
-	      "Error::NotRegistered drifted");
-static_assert(static_cast<int>(Error::InvalidParam) == OVE_ERR_INVALID_PARAM,
-	      "Error::InvalidParam drifted");
-static_assert(static_cast<int>(Error::NoMemory) == OVE_ERR_NO_MEMORY, "Error::NoMemory drifted");
-static_assert(static_cast<int>(Error::Timeout) == OVE_ERR_TIMEOUT, "Error::Timeout drifted");
-static_assert(static_cast<int>(Error::NotSupported) == OVE_ERR_NOT_SUPPORTED,
-	      "Error::NotSupported drifted");
-static_assert(static_cast<int>(Error::QueueFull) == OVE_ERR_QUEUE_FULL, "Error::QueueFull drifted");
-static_assert(static_cast<int>(Error::MlFailed) == OVE_ERR_ML_FAILED, "Error::MlFailed drifted");
-static_assert(static_cast<int>(Error::NetRefused) == OVE_ERR_NET_REFUSED,
-	      "Error::NetRefused drifted");
-static_assert(static_cast<int>(Error::NetUnreachable) == OVE_ERR_NET_UNREACHABLE,
-	      "Error::NetUnreachable drifted");
-static_assert(static_cast<int>(Error::NetAddrInUse) == OVE_ERR_NET_ADDR_IN_USE,
-	      "Error::NetAddrInUse drifted");
-static_assert(static_cast<int>(Error::NetAddrNotAvailable) == OVE_ERR_NET_ADDR_NOT_AVAILABLE,
-	      "Error::NetAddrNotAvailable drifted");
-static_assert(static_cast<int>(Error::NetReset) == OVE_ERR_NET_RESET, "Error::NetReset drifted");
-static_assert(static_cast<int>(Error::NetDnsFail) == OVE_ERR_NET_DNS_FAIL,
-	      "Error::NetDnsFail drifted");
-static_assert(static_cast<int>(Error::NetClosed) == OVE_ERR_NET_CLOSED, "Error::NetClosed drifted");
-static_assert(static_cast<int>(Error::BusNack) == OVE_ERR_BUS_NACK, "Error::BusNack drifted");
-static_assert(static_cast<int>(Error::BusBusy) == OVE_ERR_BUS_BUSY, "Error::BusBusy drifted");
-static_assert(static_cast<int>(Error::BusError) == OVE_ERR_BUS_ERROR, "Error::BusError drifted");
-static_assert(static_cast<int>(Error::QueueEmpty) == OVE_ERR_QUEUE_EMPTY,
-	      "Error::QueueEmpty drifted");
-static_assert(static_cast<int>(Error::WouldBlock) == OVE_ERR_WOULD_BLOCK,
-	      "Error::WouldBlock drifted");
-static_assert(static_cast<int>(Error::Eof) == OVE_ERR_EOF, "Error::Eof drifted");
-static_assert(static_cast<int>(Error::Inval) == OVE_ERR_INVAL, "Error::Inval drifted");
-static_assert(static_cast<int>(Error::NotFound) == OVE_ERR_NOT_FOUND, "Error::NotFound drifted");
-static_assert(static_cast<int>(Error::AlreadyExists) == OVE_ERR_ALREADY_EXISTS,
-	      "Error::AlreadyExists drifted");
-static_assert(static_cast<int>(Error::NoSpace) == OVE_ERR_NO_SPACE, "Error::NoSpace drifted");
-static_assert(static_cast<int>(Error::NotDir) == OVE_ERR_NOT_DIR, "Error::NotDir drifted");
-static_assert(static_cast<int>(Error::IsDir) == OVE_ERR_IS_DIR, "Error::IsDir drifted");
-static_assert(static_cast<int>(Error::NotEmpty) == OVE_ERR_NOT_EMPTY, "Error::NotEmpty drifted");
-static_assert(static_cast<int>(Error::ReadOnly) == OVE_ERR_READ_ONLY, "Error::ReadOnly drifted");
-static_assert(static_cast<int>(Error::Io) == OVE_ERR_IO, "Error::Io drifted");
-static_assert(static_cast<int>(Error::Busy) == OVE_ERR_BUSY, "Error::Busy drifted");
-static_assert(static_cast<int>(Error::NameTooLong) == OVE_ERR_NAME_TOO_LONG,
-	      "Error::NameTooLong drifted");
-static_assert(static_cast<int>(Error::BadHandle) == OVE_ERR_BAD_HANDLE, "Error::BadHandle drifted");
-static_assert(static_cast<int>(Error::Permission) == OVE_ERR_PERMISSION,
-	      "Error::Permission drifted");
-static_assert(static_cast<int>(Error::CrossDevice) == OVE_ERR_CROSS_DEVICE,
-	      "Error::CrossDevice drifted");
 
 /**
  * @brief `std::expected`-based result alias.

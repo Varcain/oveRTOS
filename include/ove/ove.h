@@ -79,12 +79,10 @@
  * C++) wraps over.  The discipline ported back from the higher
  * bindings — and codified in this header — is:
  *
- *   - **Compile-time C-ABI shape pin.** `<ove/types.h>` carries a
- *     `_Static_assert` block validating every `OVE_ERR_*` numeric
- *     value.  Mirrors `_assert_codes_match` (Rust), the `comptime`
- *     block (Zig), and the `static_assert` block (C++).  A future
- *     re-numbering of an error code fails to compile in every TU
- *     that includes this header.
+ *   - **Compile-time C-ABI shape pin.** `<ove/types.h>` pins the
+ *     numeric error codes with assertions in C and C++.  The C++,
+ *     Rust, and Zig bindings use the C `OVE_ERR_*` constants in
+ *     their error mappings.
  *
  *   - **No function-pointer dispatch in hot paths.**  The
  *     `scripts/zero_overhead_audit.py` gate enforces that no
