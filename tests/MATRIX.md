@@ -113,7 +113,7 @@ Built from `tests/CMakeLists.txt`:
 |----------------------------|:-------:|---------------------------------------------|---------|
 | `ove_test_stub`            | on      | `-Wall -Wextra -Werror`                     | baseline |
 | `ove_test_stub_asan`       | on      | `-fsanitize=address,undefined -g`           | UAF / UB catcher |
-| `ove_test_stub_coverage`   | off     | `--coverage -O0 -g` (requires `-DOVE_TEST_BUILD_COVERAGE=ON`) | feeds the `coverage` target (needs lcov/genhtml) |
+| `ove_test_stub_coverage`   | off     | `--coverage -fprofile-update=atomic -O0 -g` (requires `-DOVE_TEST_BUILD_COVERAGE=ON`) | feeds the `coverage` target (needs lcov/genhtml) |
 
 ## Reporting targets
 

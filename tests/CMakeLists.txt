@@ -207,8 +207,9 @@ endif()
 # surface stays untouched in the report.
 option(OVE_TEST_BUILD_COVERAGE "Build ove_test_stub_coverage with --coverage" OFF)
 if(OVE_TEST_BUILD_COVERAGE)
-    ove_add_stub_variant(ove_test_stub_coverage --coverage -O0 -g)
-    ove_add_stub_variant(ove_test_stub_coverage_zh --coverage -O0 -g)
+    # Keep gcov counters consistent when threads execute the same code.
+    ove_add_stub_variant(ove_test_stub_coverage --coverage -fprofile-update=atomic -O0 -g)
+    ove_add_stub_variant(ove_test_stub_coverage_zh --coverage -fprofile-update=atomic -O0 -g)
     target_compile_definitions(ove_test_stub_coverage_zh PRIVATE CONFIG_OVE_ZERO_HEAP=1)
 endif()
 

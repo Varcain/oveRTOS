@@ -25,7 +25,7 @@
 #        without per-site patterns.
 #     5. Emits HTML under ${CMAKE_BINARY_DIR}/coverage/html/ for standalone use.
 #
-#   The unfiltered .info file is also preserved so the top-level Makefile can
+#   The filtered .info file is also preserved so the top-level Makefile can
 #   merge per-backend tracefiles into one combined report.
 
 function(ove_test_coverage_report name)
