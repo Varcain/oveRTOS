@@ -88,8 +88,6 @@ own guest programs as FDPIC binaries under `board/overtos/progs/` (see
 - [Capabilities & limitations](capabilities.md) — what runs, and the current simplifications.
 - [Debugging](debugging.md) — turnkey source-level GDB of FDPIC guest programs.
 - [Benchmarks](benchmarks.md) — the personality tax (process vs native thread) on silicon.
-- [Complexity remediation baseline](complexity-baseline.md) — frozen runtime,
-  firmware-size, and invariant guardrails for the structural cleanup.
-- [Port migration baseline](port-migration-baseline.md) — current app/seam
-  ownership, build cost, and the guardrails for moving reusable RTOS ports into
-  LXP.
+
+LXP owns the port boundary. See `modules/lxp/docs/port-ownership.md`
+and `modules/lxp/scripts/check-decoupled.sh`, which runs in LXP CI.

@@ -505,22 +505,6 @@ foreach(_sizes_variant make ninja)
     set_tests_properties(ove_binding_sizes_${_sizes_variant}_cmake PROPERTIES
         TIMEOUT 180 SKIP_REGULAR_EXPRESSION "SKIP:")
 endforeach()
-add_test(NAME ove_freertos_bootstrap_cmake
-    COMMAND ${CMAKE_COMMAND}
-        -DOVE_ROOT=${OVE_ROOT}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestFreeRTOSBootstrap.cmake)
-add_test(NAME ove_lxp_wx_config_cmake
-    COMMAND ${CMAKE_COMMAND}
-        -DOVE_ROOT=${OVE_ROOT}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestLxpWxConfig.cmake)
-add_test(NAME ove_lxp_port_ownership_cmake
-    COMMAND ${CMAKE_COMMAND}
-        -DOVE_ROOT=${OVE_ROOT}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestLxpPortOwnership.cmake)
-add_test(NAME ove_linux_interop_ergonomics_cmake
-    COMMAND ${CMAKE_COMMAND}
-        -DOVE_ROOT=${OVE_ROOT}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TestLinuxInteropErgonomics.cmake)
 add_test(NAME ove_backend_filter_cmake
     COMMAND ${CMAKE_COMMAND}
         -DOVE_ROOT=${OVE_ROOT}
