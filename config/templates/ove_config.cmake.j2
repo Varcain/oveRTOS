@@ -287,13 +287,6 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_arena.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/loader/ove_loader.c")
 {% endif %}
 
-# Protected tasks (fault containment; per-RTOS backend)
-{% if config.get("CONFIG_OVE_PROTECTED") == True %}
-{% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
-{% endif %}
-{% endif %}
-
 # Linux personality — engine-agnostic syscall dispatch + per-engine SVC seam.
 {% if config.get("CONFIG_OVE_LINUX") == True %}
 set(OVE_LINUX ON)

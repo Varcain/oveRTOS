@@ -66,8 +66,6 @@ set(OVE_TEST_FS_SUITES
 set(OVE_TEST_STUB_ONLY_SUITES
     test_arena.c
     test_loader.c
-    test_protected.c
-    test_sandbox.c
     test_lxp_adapter.c
     test_lxp_memory_policy.c
     test_thread_stop_isolation.c

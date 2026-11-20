@@ -164,7 +164,6 @@
 #include "ove/pm.h"
 #include "ove/arena.h"
 #include "ove/loader.h"
-#include "ove/protected.h"
 #if defined(CONFIG_OVE_LINUX)
 #include "ove/lxp.h"
 #endif

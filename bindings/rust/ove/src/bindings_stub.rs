@@ -5281,30 +5281,6 @@ unsafe extern "C" {
         copy_text: core::ffi::c_int,
     ) -> core::ffi::c_int;
 }
-#[doc = " Entry function for a protected task.\n\n Runs synchronously on the thread that calls ove_ptask_run().  A contained\n fault abandons it by longjmp, so anything it holds at that point (locks,\n allocations) stays held."]
-pub type ove_ptask_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
-#[doc = "< Entry returned normally."]
-pub const OVE_PTASK_OK: ove_ptask_result = 0;
-#[doc = "< Entry trapped on a memory-protection violation."]
-pub const OVE_PTASK_FAULT: ove_ptask_result = 1;
-#[doc = " Not a value; forces a 4-byte enum."]
-pub const OVE_PTASK_RESULT_MAX_ENUM: ove_ptask_result = 2147483647;
-#[doc = " Outcome of running a protected task."]
-pub type ove_ptask_result = core::ffi::c_uint;
-#[doc = " Outcome of running a protected task."]
-pub use self::ove_ptask_result as ove_ptask_result_t;
-unsafe extern "C" {
-    #[doc = " @brief Run @p entry in a fault-contained context.\n\n If @p entry triggers a memory-protection fault, the fault is trapped, the\n supervisor regains control, and @p result is set to @c OVE_PTASK_FAULT.\n Otherwise @p result is @c OVE_PTASK_OK.\n\n @param[in]  entry  Function to run.\n @param[in]  arg    Opaque argument passed to @p entry.\n @param[out] result Outcome; may be NULL.\n @return OVE_OK if the run was performed (whether it completed or faulted),\n         OVE_ERR_INVALID_PARAM if @p entry is NULL.\n @note Requires @c CONFIG_OVE_PROTECTED."]
-    pub fn ove_ptask_run(
-        entry: ove_ptask_fn,
-        arg: *mut core::ffi::c_void,
-        result: *mut ove_ptask_result_t,
-    ) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " @brief Number of faults contained since process start (diagnostics)."]
-    pub fn ove_ptask_fault_count() -> core::ffi::c_ulong;
-}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct lv_obj_t {

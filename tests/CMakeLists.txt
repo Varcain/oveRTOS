@@ -75,7 +75,6 @@ set(STUB_SOURCES
     ${OVE_SRC}/ove_block.c
     ${OVE_SRC}/ove_net.c
     ${POSIX_CORE_DIR}/posix_net.c
-    ${POSIX_CORE_DIR}/posix_protected.c
     # Async runtime substrate (compiled to no-ops when CONFIG_OVE_ASYNC=n).
     ${POSIX_CORE_DIR}/posix_irq.c
     # Shared BSP modules
