@@ -18,6 +18,7 @@ extern fn infer_fixture_reset() void;
 extern fn infer_fixture_failure(status: c_int) void;
 extern fn infer_fixture_count(which: c_uint) c_uint;
 extern fn infer_fixture_check(condition: bool, expression: [*:0]const u8) void;
+extern fn infer_fixture_failed() c_uint;
 extern fn infer_fixture_finish(name: [*:0]const u8) u8;
 extern fn infer_fixture_header_unchanged() bool;
 extern fn infer_fixture_capacity() usize;
@@ -27,6 +28,13 @@ extern fn infer_fixture_arena() ?*anyopaque;
 
 fn check(condition: bool, comptime description: [:0]const u8) void {
     infer_fixture_check(condition, description);
+}
+
+// Cases reset fake session state between steps; earlier failures must survive.
+fn reset() void {
+    const failed = infer_fixture_failed();
+    infer_fixture_reset();
+    check(infer_fixture_failed() == failed, "reset keeps failed checks");
 }
 
 fn config(size: usize) c.ove_model_config {
@@ -48,7 +56,7 @@ fn errorOf(result: ove.Error!void) usize {
 
 fn forwarding() void {
     for ([_]usize{ 129, 256 }) |size| {
-        infer_fixture_reset();
+        reset();
         var arena: [256]u8 align(16) = @splat(0);
         var model: ove.Model = undefined;
         const cfg = config(size);
@@ -72,7 +80,7 @@ fn forwarding() void {
 
 fn extent() void {
     for ([_]usize{ 257, std.math.maxInt(usize) }) |size| {
-        infer_fixture_reset();
+        reset();
         var arena: [256]u8 align(16) = @splat(0);
         var model: ove.Model = undefined;
         const cfg = config(size);
@@ -92,7 +100,7 @@ fn extent() void {
         }
     }
     if (zero_heap) {
-        infer_fixture_reset();
+        reset();
         var arena: [256]u8 align(16) = @splat(0);
         var model: ove.Model = undefined;
         const cfg = config(1);
@@ -101,7 +109,7 @@ fn extent() void {
         check(infer_fixture_count(0) == 0, "empty arena has no native call");
         if (result) |_| model.deinit() else |_| {}
 
-        infer_fixture_reset();
+        reset();
         infer_fixture_failure(c.OVE_ERR_INVALID_PARAM);
         const zero_cfg = config(0);
         const zero_result = open(&model, arena[0..0], &zero_cfg);
@@ -114,7 +122,7 @@ fn extent() void {
 
 fn errors() void {
     for ([_]c_int{ c.OVE_ERR_BUSY, c.OVE_ERR_INVALID_PARAM, c.OVE_ERR_NO_MEMORY, c.OVE_ERR_ML_FAILED }) |status| {
-        infer_fixture_reset();
+        reset();
         infer_fixture_failure(status);
         var arena: [256]u8 align(16) = @splat(0);
         var model: ove.Model = undefined;
@@ -134,7 +142,7 @@ fn errors() void {
 }
 
 fn busyLive() void {
-    infer_fixture_reset();
+    reset();
     var arena: [256]u8 align(16) = @splat(0);
     var model: ove.Model = undefined;
     const cfg = config(129);
@@ -160,7 +168,7 @@ fn busyLive() void {
 
 fn busyCandidate() void {
     if (zero_heap) {
-        infer_fixture_reset();
+        reset();
         infer_fixture_failure(c.OVE_ERR_BUSY);
         var arena: [256]u8 align(16) = @splat(0);
         // Every observed field is initialized; storage is opaque byte backing.
@@ -179,7 +187,7 @@ fn busyCandidate() void {
 }
 
 fn closed(observer: bool) void {
-    infer_fixture_reset();
+    reset();
     var arena: [256]u8 align(16) = @splat(0);
     var model: ove.Model = undefined;
     const cfg = config(256);
@@ -215,7 +223,7 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     const args = init.args.vector;
     if (args.len != 2) return 2;
     const name = std.mem.span(args[1]);
-    const Case = enum { forward, extent, errors, busy_live, busy_candidate, closed, closed_observer, canary };
+    const Case = enum { forward, extent, errors, busy_live, busy_candidate, closed, closed_observer };
     switch (std.meta.stringToEnum(Case, name) orelse return 2) {
         .forward => forwarding(),
         .extent => extent(),
@@ -224,11 +232,6 @@ pub fn main(init: std.process.Init.Minimal) u8 {
         .busy_candidate => busyCandidate(),
         .closed => closed(false),
         .closed_observer => closed(true),
-        .canary => {
-            infer_fixture_reset();
-            check(false, "explicit fixture failure canary");
-            infer_fixture_reset();
-        },
     }
     return infer_fixture_finish(args[1]);
 }

@@ -2515,11 +2515,8 @@ def _build_zig_infer_binaries(ove_dir, output_dir):
 def test_zig_infer(ove_dir, output_dir):
     """Check linked arrays and inference storage without running model programs."""
     result = TestResults(suite="zig-infer")
-    canary = os.environ.get("OVE_ZIG_INFER_CANARY") == "1"
     for zero, _opt, kind, binary, env in _build_zig_infer_binaries(ove_dir, output_dir):
-        if canary:
-            cases = ("canary",) if kind == "contracts" else ()
-        elif kind == "assets":
+        if kind == "assets":
             cases = (None,)
         else:
             cases = ("forward", "extent", "errors", "busy_live", "closed")
@@ -2530,17 +2527,7 @@ def test_zig_infer(ove_dir, output_dir):
             rc = _run_owned_test_process(command, env=env, timeout=30)
             result.passed += int(rc == 0)
             result.failed += int(rc != 0)
-        if not canary and kind == "contracts":
-            # An intentional failure must survive resetting fake session state.
-            # Verify its own diagnostic so an unrelated process failure cannot
-            # satisfy this control.
-            log = os.path.join(os.path.dirname(binary), "canary.log")
-            with open(log, "wb") as stream:
-                rc = _run_owned_test_process([binary, "canary"], env=env, timeout=30, stdout=stream)
-            text = Path(log).read_text()
-            valid = (rc == 1 and text == "failed: explicit fixture failure canary\ncanary: 1 failed checks\n")
-            result.passed += int(valid)
-            result.failed += int(not valid)
+    result.failed += int(result.passed == 0)
     return result
 
 

@@ -49,6 +49,11 @@ void infer_fixture_check(bool condition, const char *expression)
 	}
 }
 
+unsigned int infer_fixture_failed(void)
+{
+	return failed_checks;
+}
+
 uint8_t infer_fixture_finish(const char *name)
 {
 	(void)printf("%s: %u failed checks\n", name, failed_checks);
