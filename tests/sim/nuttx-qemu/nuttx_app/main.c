@@ -13,10 +13,6 @@
 #include <stdio.h>
 #include <sys/mount.h>
 
-#ifdef OVE_COVERAGE
-extern void __gcov_dump(void);
-#endif
-
 /* Stub — tests exercise ove_app module without a real app entry point */
 void ove_main(void)
 {
@@ -28,16 +24,6 @@ int main(int argc, char *argv[])
 
 	(void)argc;
 	(void)argv;
-
-#ifdef OVE_COVERAGE
-	/* Mount the host root at /host so libgcov's fopen("/abs/path.gcda")
-	 * can reach the host filesystem via the ARM semihosting trap. We
-	 * also bind / itself via GCOV_PREFIX_STRIP so gcda paths rooted at
-	 * the host / are written under /host/... */
-	if (mount(NULL, "/host", "hostfs", 0, "fs=/") != 0) {
-		printf("WARN: hostfs mount failed; gcda will not be captured\n");
-	}
-#endif
 
 #ifndef CONFIG_ARCH_SIM
 	/* tmpfs at /tmp: the file-backed NVS suite keeps its keys there. The
@@ -54,15 +40,6 @@ int main(int argc, char *argv[])
 #include "framework/suites.inc"
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
-#ifdef OVE_COVERAGE
-	/* libgcov writes .gcda via fopen — with hostfs mounted at /host,
-	 * set GCOV_PREFIX=/host so "/host" + source-abs-path produces a
-	 * valid NuttX VFS path that passes through semihosting to the
-	 * real host filesystem. */
-	setenv("GCOV_PREFIX", "/host", 1);
-	setenv("GCOV_PREFIX_STRIP", "0", 1);
-	__gcov_dump();
-#endif
 #ifdef CONFIG_ARCH_SIM
 	return failures ? 1 : 0;
 #else

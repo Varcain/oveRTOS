@@ -204,58 +204,12 @@ asan: $(VENV_STAMP)
 	@cmake --build $(ASAN_BUILD_DIR) --target ove_test_stub_asan -j$$(nproc)
 	@$(ASAN_BUILD_DIR)/ove_test_stub_asan
 
-COVERAGE_OUTPUT_DIR         := $(OVE_DIR)/output/tests/coverage
-COVERAGE_STUB_DIR           := $(OVE_DIR)/output/tests/stub_coverage
-COVERAGE_CPP_DIR            := $(OVE_DIR)/output/tests/cpp_coverage
-COVERAGE_RUST_DIR           := $(OVE_DIR)/output/tests/rust_coverage
-COVERAGE_ZEPHYR_DIR         := $(OVE_DIR)/output/tests/zephyr_coverage
-COVERAGE_NUTTX_DIR          := $(OVE_DIR)/output/tests/nuttx_coverage
-COVERAGE_ZIG_DIR            := $(OVE_DIR)/output/tests/zig_coverage
-COVERAGE_QEMU_FREERTOS_DIR  := $(OVE_DIR)/output/tests/qemu_freertos_coverage
-COVERAGE_QEMU_NUTTX_DIR     := $(OVE_DIR)/output/tests/qemu_nuttx_coverage
-COVERAGE_QEMU_ZEPHYR_DIR    := $(OVE_DIR)/output/tests/qemu_zephyr_coverage
+COVERAGE_OUTPUT_DIR        := $(OVE_DIR)/output/tests/coverage
+COVERAGE_STUB_DIR          := $(OVE_DIR)/output/tests/stub_coverage
+COVERAGE_CPP_DIR           := $(OVE_DIR)/output/tests/cpp_coverage
+COVERAGE_RUST_DIR          := $(OVE_DIR)/output/tests/rust_coverage
+COVERAGE_QEMU_FREERTOS_DIR := $(OVE_DIR)/output/tests/qemu_freertos_coverage
 
-# Each backend emits a filtered lcov tracefile; the top-level `coverage`
-# target merges them into one combined HTML report so the headline number
-# reflects every test target, not just the C stub suites.
-#
-#   `make coverage`                                        — everything instrumented (default)
-#   `make coverage WITH_QEMU_FREERTOS=0 WITH_QEMU_NUTTX=0 \
-#     WITH_QEMU_ZEPHYR=0 WITH_ZEPHYR=0 WITH_NUTTX=0 \
-#     WITH_ZIG=0`                                          — host-only (stub + cpp + rust, fastest)
-#
-# Backends already wired:
-#   - stub (C / gcc / gcov)             via tests/CMakeLists.txt
-#   - cpp  (C++ / g++ / gcov)           via tests/cpp/CMakeLists.txt
-#   - rust (LLVM src-based)             via `ove test rust-coverage`
-#   - zephyr native_sim (gcov)          via `ove test zephyr-coverage`        (opt-in)
-#   - nuttx sim (gcov)                  via `ove test nuttx-coverage`         (opt-in)
-#   - zig   (kcov/DWARF)                via `ove test zig-coverage`           (opt-in;
-#             kcov built locally from manifest, see _ensure_kcov in test.py)
-#   - freertos QEMU (arm-none-eabi-gcov) via `ove test qemu-freertos-coverage` (opt-in)
-#   - nuttx    QEMU (arm-none-eabi-gcov) via `ove test qemu-nuttx-coverage`    (opt-in)
-#   - zephyr   QEMU (arm-zephyr-eabi-gcov, from Zephyr SDK) via
-#             `ove test qemu-zephyr-coverage` (opt-in)
-# Every instrumented backend runs by default so the headline coverage
-# number reflects the full test matrix. Opt out per-backend with e.g.
-# `make coverage WITH_QEMU_FREERTOS=0` when you need a faster pass.
-WITH_ZEPHYR         ?= 1
-WITH_NUTTX          ?= 1
-WITH_ZIG            ?= 1
-WITH_QEMU_FREERTOS  ?= 1
-WITH_QEMU_NUTTX     ?= 1
-WITH_QEMU_ZEPHYR    ?= 1
-
-# Coverage entry points.
-#
-# `make test-stub-coverage` / `make test-cpp-coverage` wrap the cmake
-# invocations the CI workflow used to inline.  They sit outside the
-# auto-generated `test-<name>` pattern (which delegates to `$(OVE) test
-# <name>`) because the stub/cpp coverage builds are plain CMake projects
-# that do not need the `ove` RTOS-orchestration layer.  The rest of the
-# coverage backends (rust/zephyr/nuttx/zig/qemu-*) DO need that layer
-# and continue to flow through `$(OVE) test <name>-coverage` via the
-# pattern rule above.
 .PHONY: test-stub-coverage
 test-stub-coverage:
 	@cmake -S $(OVE_DIR)/tests -B $(COVERAGE_STUB_DIR) -DOVE_TEST_BUILD_COVERAGE=ON
@@ -279,12 +233,7 @@ coverage: $(VENV_STAMP)
 	@$(MAKE) --no-print-directory test-stub-coverage
 	@$(MAKE) --no-print-directory test-cpp-coverage
 	@$(OVE) test rust-coverage
-	@if [ "$(WITH_ZEPHYR)" = "1" ];        then $(OVE) test zephyr-coverage;        fi
-	@if [ "$(WITH_NUTTX)" = "1" ];         then $(OVE) test nuttx-coverage;         fi
-	@if [ "$(WITH_ZIG)" = "1" ];           then $(OVE) test zig-coverage;           fi
-	@if [ "$(WITH_QEMU_FREERTOS)" = "1" ]; then $(OVE) test qemu-freertos-coverage; fi
-	@if [ "$(WITH_QEMU_NUTTX)" = "1" ];    then $(OVE) test qemu-nuttx-coverage;    fi
-	@if [ "$(WITH_QEMU_ZEPHYR)" = "1" ];   then $(OVE) test qemu-zephyr-coverage;   fi
+	@$(OVE) test qemu-freertos-coverage
 	@$(MAKE) --no-print-directory coverage-merge
 
 # Final lcov-merge + genhtml + summary, factored out so CI can invoke it
@@ -302,12 +251,7 @@ coverage-merge:
 		$(if $(wildcard $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info) \
 		$(if $(wildcard $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info) \
 		$(if $(wildcard $(COVERAGE_RUST_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_RUST_DIR)/coverage.filtered.info) \
-		$(if $(filter 1,$(WITH_ZEPHYR)),$(if $(wildcard $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info)) \
-		$(if $(filter 1,$(WITH_NUTTX)),$(if $(wildcard $(COVERAGE_NUTTX_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_NUTTX_DIR)/coverage.filtered.info)) \
-		$(if $(filter 1,$(WITH_ZIG)),$(if $(wildcard $(COVERAGE_ZIG_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_ZIG_DIR)/coverage.filtered.info)) \
-		$(if $(filter 1,$(WITH_QEMU_FREERTOS)),$(if $(wildcard $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info)) \
-		$(if $(filter 1,$(WITH_QEMU_NUTTX)),$(if $(wildcard $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info)) \
-		$(if $(filter 1,$(WITH_QEMU_ZEPHYR)),$(if $(wildcard $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info)) \
+		$(if $(wildcard $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info) \
 		--rc branch_coverage=1 \
 		--output-file   $(COVERAGE_OUTPUT_DIR)/coverage.info \
 		--ignore-errors inconsistent,format,empty
@@ -616,10 +560,7 @@ help:
 	@echo "                            an installed openocd; never run by test-all/CI."
 	@echo "  test-all                - All tests (sim + QEMU + Renode; excludes HW)"
 	@echo "  asan                    - Build and run stub with AddressSanitizer + UBSan"
-	@echo "  coverage                - Combined HTML coverage (stub + cpp + rust; needs lcov)"
-	@echo "  coverage WITH_ZEPHYR=1  - Also include Zephyr native_sim (slow)"
-	@echo "  coverage WITH_NUTTX=1   - Also include NuttX sim (slow)"
-	@echo "  coverage WITH_ZIG=1     - Also include Zig (builds kcov locally)"
+	@echo "  coverage                - HTML coverage for stub, C++, Rust and QEMU FreeRTOS"
 	@echo ""
 	@echo "Quality / CI:"
 	@echo "  doctor                  - Check host environment (toolchains, deps, venv)"

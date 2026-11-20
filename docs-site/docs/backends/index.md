@@ -165,7 +165,7 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
 
 ## Host test backend
 
-`tests/host/posix/` maps the portable API onto pthreads, `clock_gettime(CLOCK_MONOTONIC)` and host files and sockets so the stub, C++, Rust and Zig test suites, the sanitizers and coverage run natively. It is not an application target: apps run on FreeRTOS, Zephyr or NuttX, natively under QEMU or in a browser. See [Testing](../testing/index.md).
+`tests/host/posix/` maps the portable API onto pthreads, `clock_gettime(CLOCK_MONOTONIC)` and host files and sockets so the stub, C++, Rust and Zig test suites, the sanitizers and host coverage run natively. It is not an application target: apps run on FreeRTOS, Zephyr or NuttX, natively under QEMU or in a browser. See [Testing](../testing/index.md).
 
 ## Zephyr backend notes
 

@@ -203,109 +203,6 @@ def _ctest_suite(ove_dir, output_dir, name, label, sanitize, configs=(False, Tru
     return result
 
 
-def _ensure_kcov(ove_dir):
-    """Ensure kcov is built locally, return path to its binary.
-
-    Pinned to `libraries.kcov.version` in manifest.yaml. Source is cloned
-    into `dl/kcov-<tag>` and installed under `output/tools/kcov-<tag>/`.
-    Before invoking cmake we preflight the Ubuntu-side build deps and,
-    if any are missing, print the exact apt-get one-liner and exit.
-    """
-    manifest = load_manifest(ove_dir)
-    kcov_version = get_component(manifest, "libraries", "kcov", "version")
-    kcov_url = get_component(manifest, "libraries", "kcov", "url")
-    if not kcov_version or not kcov_url:
-        logger.error("manifest.yaml missing libraries.kcov entry")
-        sys.exit(1)
-
-    install_dir = os.path.join(ove_dir, "output", "tools",
-                               f"kcov-{kcov_version}")
-    kcov_bin = os.path.join(install_dir, "bin", "kcov")
-    if os.path.isfile(kcov_bin):
-        return kcov_bin
-
-    # Preflight: check required deps + tools. Keyed by Ubuntu package.
-    # We check pkg-config first (authoritative on multi-arch layouts like
-    # /usr/include/x86_64-linux-gnu/) and fall back to direct header paths
-    # for packages that don't ship a .pc file (binutils-dev, libiberty-dev).
-    required_tools = {
-        "cmake":           "cmake",
-        "pkg-config":      "pkg-config",
-        "build-essential": "g++",
-    }
-    missing_pkgs = []
-    for pkg, tool in required_tools.items():
-        if shutil.which(tool) is None:
-            missing_pkgs.append(pkg)
-
-    pc = shutil.which("pkg-config")
-
-    def _has_pc(module):
-        if not pc:
-            return False
-        return subprocess.run([pc, "--exists", module]).returncode == 0
-
-    def _has_header(name):
-        # Try standard /usr/include first, then multi-arch /usr/include/<triplet>/.
-        if os.path.isfile(f"/usr/include/{name}"):
-            return True
-        import glob as _glob
-        return bool(_glob.glob(f"/usr/include/*-linux-*/{name}"))
-
-    required_pkgconfig = {
-        "libssl-dev":           "openssl",
-        "libcurl4-openssl-dev": "libcurl",
-        "libelf-dev":           "libelf",
-        "zlib1g-dev":           "zlib",
-        "libdw-dev":            "libdw",
-    }
-    for pkg, mod in required_pkgconfig.items():
-        if not _has_pc(mod):
-            missing_pkgs.append(pkg)
-
-    required_headers = {
-        "binutils-dev":  "bfd.h",
-        "libiberty-dev": "libiberty/demangle.h",
-    }
-    for pkg, hdr in required_headers.items():
-        if not _has_header(hdr):
-            missing_pkgs.append(pkg)
-
-    if missing_pkgs:
-        apt_line = "sudo apt-get install -y " + " ".join(missing_pkgs)
-        logger.error("kcov build requires packages not present on this host:")
-        for pkg in missing_pkgs:
-            logger.error("  - %s", pkg)
-        logger.error("")
-        logger.error("Install with:")
-        logger.error("  %s", apt_line)
-        sys.exit(1)
-
-    dl_dir = os.path.join(ove_dir, "dl")
-    os.makedirs(dl_dir, exist_ok=True)
-    src_dir = os.path.join(dl_dir, f"kcov-{kcov_version}")
-    if not os.path.isdir(src_dir):
-        logger.info("Cloning kcov %s...", kcov_version)
-        run(["git", "clone", "--depth", "1", "-b", kcov_version,
-              kcov_url, src_dir])
-
-    build_dir = os.path.join(ove_dir, "output", "tools",
-                             f"kcov-{kcov_version}-build")
-    logger.info("Building kcov %s", kcov_version)
-    os.makedirs(build_dir, exist_ok=True)
-    run(["cmake", "-S", src_dir, "-B", build_dir,
-          f"-DCMAKE_INSTALL_PREFIX={install_dir}",
-          "-DCMAKE_BUILD_TYPE=Release"])
-    run(["cmake", "--build", build_dir, "-j", str(nproc())])
-    run(["cmake", "--install", build_dir])
-
-    if not os.path.isfile(kcov_bin):
-        logger.error("kcov build completed but binary not found at %s",
-                     kcov_bin)
-        sys.exit(1)
-    return kcov_bin
-
-
 def _ensure_arm_toolchain(ove_dir):
     """Download ARM toolchain + picolibc source if needed, return tc dir.
 
@@ -2092,7 +1989,7 @@ def test_i2c_retirement_nuttx(ove_dir, output_dir):
         build = os.path.join(base, "build")
         _nuttx_cmake_build(
             ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
-            board_config="mps2-an500:nsh", defconfig_overlays=overlays, coverage=False,
+            board_config="mps2-an500:nsh", defconfig_overlays=overlays,
             extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
             variant_dir=fixture, cmake_extra_args=[
                 "-DOVE_I2C_ZERO_HEAP=" + ("OFF" if mode == "heap" else "ON")])
@@ -2200,7 +2097,7 @@ def test_spi_retirement_nuttx(ove_dir, output_dir):
         build = os.path.join(base, "build")
         _nuttx_cmake_build(
             ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
-            board_config="mps2-an500:nsh", defconfig_overlays=overlays, coverage=False,
+            board_config="mps2-an500:nsh", defconfig_overlays=overlays,
             extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
             variant_dir=fixture, cmake_extra_args=[
                 "-DOVE_SPI_ZERO_HEAP=" + ("OFF" if mode == "heap" else "ON")])
@@ -2367,17 +2264,10 @@ def _find_zig(ove_dir):
     sys.exit(1)
 
 
-def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
-                           output_subdir=None, zero_heap=False):
+def _build_zig_test_binary(ove_dir, output_dir, *, debug=False, zero_heap=False):
     """Build tests/zig/main.zig into an executable; return (exe_path, cwd).
 
-    Shared by test_zig, test_zig_coverage, and test_zig_debug.  When
-    `debug=True` we pass `-ODebug` so kcov's DWARF-driven source
-    attribution produces useful line-level data and Zig's safety
-    checks stay live across the whole binary.  `output_subdir` lets a
-    caller distinguish between debug builds with different intents
-    (coverage vs plain debug-mode test) so they don't clobber each
-    other's artefacts under output/tests/.
+    Debug builds use `-ODebug` to keep Zig's safety checks enabled.
     """
     stub_build = os.path.join(output_dir, "tests",
                               "zig_stub_zh" if zero_heap else "zig_stub")
@@ -2425,9 +2315,7 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
     zig_test_dir = os.path.join(ove_dir, "tests", "zig")
     zig_bindings = os.path.join(ove_dir, "bindings", "zig", "ove",
                                 "src", "root.zig")
-    if output_subdir is None:
-        output_subdir = ("zig_coverage" if debug
-                         else "zig_zh" if zero_heap else "zig")
+    output_subdir = "zig_debug" if debug else "zig_zh" if zero_heap else "zig"
     zig_output = os.path.join(output_dir, "tests", output_subdir)
     os.makedirs(zig_output, exist_ok=True)
     zig_exe = os.path.join(zig_output, "ove_test_zig")
@@ -2442,7 +2330,7 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
     ]
 
     logger.info("Building Zig tests%s",
-                " (debug/coverage)" if debug else "")
+                " (debug)" if debug else "")
     opt_flag = "-ODebug" if debug else "-OReleaseSafe"
     cmd = [
         zig, "build-exe",
@@ -2457,10 +2345,6 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
         "-lc",
         "-femit-bin=" + zig_exe,
     ]
-    # Zig 0.14/0.15 defaulted to a self-hosted x86_64 Debug backend whose
-    # DWARF was unreadable to kcov (issue #25368), so we used to force
-    # `-fllvm`.  Verified 0.16 emits kcov-attributable DWARF directly;
-    # the workaround was retired in the 0.16 bump.
     run(cmd, cwd=zig_test_dir)
     return zig_exe, zig_test_dir
 
@@ -2568,123 +2452,9 @@ def test_zig_debug(ove_dir, output_dir):
     test mode whose CI signal is "the safety net is intact" rather than
     "the production build works."
     """
-    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True,
-                                        output_subdir="zig_debug")
+    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True)
     logger.info("Running Zig tests (Debug mode)")
     return _run_test_binary([zig_exe], "zig-debug")
-
-
-def _cobertura_to_lcov(xml_path, out_path):
-    """Convert a kcov-produced cobertura.xml to an lcov tracefile.
-
-    kcov v43 doesn't emit lcov natively — it writes cobertura.xml, JSON,
-    and HTML. We walk the XML and produce `SF:` / `DA:` / `LF:` / `LH:`
-    records so the result can be merged with the other backends'
-    tracefiles via `lcov --add-tracefile`. Returns the number of source
-    files emitted.
-    """
-    import xml.etree.ElementTree as ET
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    # Cobertura stores file paths relative to <sources>/<source>; take the
-    # first entry (kcov emits one) so the resulting SF: records are
-    # absolute and genhtml can locate them.
-    source_prefix = ""
-    src_el = root.find("./sources/source")
-    if src_el is not None and src_el.text:
-        source_prefix = src_el.text.rstrip("/") + "/"
-    files_written = 0
-    with open(out_path, "w") as out:
-        for cls in root.iter("class"):
-            filename = cls.get("filename")
-            lines_el = cls.find("lines")
-            if not filename or lines_el is None:
-                continue
-            entries = [(int(ln.get("number")), int(ln.get("hits", "0")))
-                       for ln in lines_el.iter("line")
-                       if ln.get("number")]
-            if not entries:
-                continue
-            if not os.path.isabs(filename):
-                filename = source_prefix + filename
-            out.write(f"SF:{filename}\n")
-            hits = 0
-            for number, count in entries:
-                out.write(f"DA:{number},{count}\n")
-                if count > 0:
-                    hits += 1
-            out.write(f"LF:{len(entries)}\n")
-            out.write(f"LH:{hits}\n")
-            out.write("end_of_record\n")
-            files_written += 1
-    return files_written
-
-
-def test_zig_coverage(ove_dir, output_dir):
-    """Build and run Zig binding tests under kcov; emit lcov tracefile.
-
-    Zig has no native source-based coverage; we wrap the debug-built
-    test binary with kcov (locally built per manifest, see _ensure_kcov).
-    kcov walks DWARF via ptrace and writes cobertura.xml + HTML; we
-    convert to lcov so the result merges with the other backends.
-    """
-    kcov = _ensure_kcov(ove_dir)
-    # Heap build only — intentionally NO zero-heap coverage twin here (unlike
-    # the C stub's coverage_zh and rust-coverage's zero-heap pass).  For Zig
-    # the primitives' `create(allocator)` is mode-agnostic: it always allocates
-    # storage from the caller's allocator and calls the static `ove_*_init()`,
-    # so the static-storage path is identical in both modes and already covered
-    # by this heap run.  The only genuinely zero-heap-only Zig code is the
-    # `ZeroHeap*` type variants (Watchdog/infer.Model/net.*), which the
-    # zero-heap suite (test_zig_zeroheap) gates OUT — so a zero-heap kcov pass
-    # would merely add those untested variants at 0%, lowering the number
-    # without covering anything new.  (Rust differed: its `from_static` is
-    # distinct binding code the heap run never touched, hence rust-coverage's
-    # zero-heap pass.)
-    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True)
-
-    cov_dir = os.path.join(output_dir, "tests", "zig_coverage", "kcov")
-    shutil.rmtree(cov_dir, ignore_errors=True)
-    os.makedirs(cov_dir, exist_ok=True)
-
-    logger.info("Running Zig tests under kcov")
-    # Ziggit #3421 recipe: --include-pattern (substring match) works where
-    # --include-path (absolute paths) can yield empty reports for Zig binaries.
-    result = _run_test_binary(
-        [kcov, "--include-pattern=bindings/zig/ove/src",
-         cov_dir, zig_exe], "zig-coverage")
-
-    import glob as _glob
-    candidates = _glob.glob(os.path.join(cov_dir, "ove_test_zig*",
-                                          "cobertura.xml"))
-    if not candidates:
-        logger.error("kcov did not emit cobertura.xml under %s", cov_dir)
-        return result
-    cobertura = candidates[0]
-
-    raw_lcov = os.path.join(output_dir, "tests", "zig_coverage",
-                            "coverage.info")
-    n_files = _cobertura_to_lcov(cobertura, raw_lcov)
-
-    filtered = os.path.join(output_dir, "tests", "zig_coverage",
-                            "coverage.filtered.info")
-    lcov = shutil.which("lcov")
-    if n_files > 0 and lcov:
-        _lcov_filter_ove_sources(lcov, raw_lcov, filtered, ove_dir,
-                                 extra_ignore=["format"])
-    else:
-        shutil.copy(raw_lcov, filtered)
-
-    if n_files == 0:
-        logger.warning(
-            "kcov attributed 0 Zig source files — kcov's DWARF parser may "
-            "have regressed against the current Zig codegen.  If reverting "
-            "to LLVM via `-fllvm` in `_build_zig_test_binary` restores "
-            "attribution, that's the workaround (cf. Zig issue #25368).  "
-            "Emitted empty tracefile: %s", filtered)
-    else:
-        logger.info("Zig coverage: %s (%d files)", filtered, n_files)
-    return result
 
 
 def _lcov_filter_ove_sources(lcov, raw, filtered, ove_dir, *,
@@ -2715,25 +2485,6 @@ def _lcov_filter_ove_sources(lcov, raw, filtered, ove_dir, *,
          "--rc", "branch_coverage=1",
          "--output-file", filtered,
          "--ignore-errors", ",".join(ignore)])
-
-
-def _clean_gcda(root):
-    """Remove stale .gcda under `root` before a coverage run. Leftover
-    counters from a previous run (or a previous coverage variant) would
-    accumulate into the next merge and inflate the line-hit numbers.
-    `lcov --capture --directory <root>` walks the whole tree, so we
-    sweep the whole tree to match."""
-    removed = 0
-    for dirpath, _, files in os.walk(root):
-        for f in files:
-            if f.endswith(".gcda"):
-                try:
-                    os.unlink(os.path.join(dirpath, f))
-                    removed += 1
-                except OSError:
-                    pass
-    if removed:
-        logger.debug("Removed %d stale .gcda file(s) under %s", removed, root)
 
 
 def _nuttx_fetch_sources(ove_dir):
@@ -2812,8 +2563,8 @@ def _nuttx_register_test_app(ove_dir, apps_build, app_subdir):
 
 
 def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
-                       board_config, defconfig_overlays, coverage,
-                       variant_dir, extra_env=None, hw=False, cmake_extra_args=None):
+                       board_config, defconfig_overlays, variant_dir,
+                       extra_env=None, hw=False, cmake_extra_args=None):
     """Configure + build a NuttX target via CMake. Two-phase to thread our
     test defconfig overlays through Kconfig:
 
@@ -2825,9 +2576,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
          and regenerates include/nuttx/config.h, then cmake --build runs
          the kernel + libapps build.
 
-    All build artifacts (objects, dep files, .gcno/.gcda for coverage) live
-    under build_dir/CMakeFiles/.../*.o — no scatter into the OVE source
-    tree, no manual dep tracking required."""
+    Build artifacts live under build_dir."""
     from .build import (_shared_patched_tree, _drop_stale_cmake_cache,
                         _check_source_trees_unchanged)
 
@@ -2855,8 +2604,6 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
         # ove_config.h, so the variant dir is decoupled from app_subdir.
         f"-D_OVE_VARIANT_DIR={variant_dir}",
     ]
-    if coverage:
-        cmake_defs.append("-DOVE_COVERAGE=ON")
     if hw:
         # Tells the test app it runs on silicon (OVE_HW), as the FreeRTOS
         # and Zephyr hardware builds do.
@@ -2865,7 +2612,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
 
     logger.debug(f"cmake configure: {board_config} -> {build_dir}")
     # --no-warn-unused-cli silences "Manually-specified variables were not
-    # used" for OVE_DIR / OVE_COVERAGE — they're consumed in the
+    # used" for OVE_DIR, which is consumed in the
     # nuttx-apps subtree (external/ove_test/CMakeLists.txt) which CMake
     # processes after the top-level pass that emits the warning.
     run(["cmake", "-G", "Ninja", "--no-warn-unused-cli",
@@ -2904,15 +2651,8 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
         _check_source_trees_unchanged(source_record)
 
 
-def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
-                    coverage=False):
-    """Shared driver for test_nuttx and test_nuttx_coverage.
-
-    When `coverage=True` the app is built with -DOVE_COVERAGE=ON, stale
-    `.gcda` counters under OVE_DIR are removed before the run, and the
-    `__gcov_dump()` hook in main.c flushes counters on clean exit. .gcda
-    files land under <build>/CMakeFiles/.../*.gcda — lcov --directory
-    walks ove_dir to collect them."""
+def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label):
+    """Build and run a NuttX simulator test."""
     build_base = os.path.join(output_dir, "tests", build_subdir)
     apps_build = os.path.join(build_base, "nuttx-apps")
     build_dir = os.path.join(build_base, "build")
@@ -2927,9 +2667,6 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
         shutil.copytree(apps_dl, apps_build, symlinks=True)
     _nuttx_register_test_app(ove_dir, apps_build, "nuttx-qemu")
 
-    if coverage:
-        _clean_gcda(ove_dir)
-
     _nuttx_cmake_build(
         ove_dir,
         nuttx_src=nuttx_src,
@@ -2940,7 +2677,6 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
             os.path.join(ove_dir, "tests", "sim", "nuttx",
                          "nuttx_sim_defconfig"),
         ],
-        coverage=coverage,
         variant_dir=_nuttx_variant_config_dir(ove_dir, "nuttx"),
     )
 
@@ -3014,7 +2750,7 @@ def test_nuttx_startup(ove_dir, output_dir):
         build = os.path.join(base, "build")
         _nuttx_cmake_build(
             ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
-            board_config="mps2-an500:nsh", coverage=False, variant_dir=fixture,
+            board_config="mps2-an500:nsh", variant_dir=fixture,
             defconfig_overlays=[os.path.join(ove_dir, "tests", "sim", "nuttx-qemu",
                                              "nuttx_test_defconfig"),
                                 os.path.join(fixture, "constructors_defconfig")],
@@ -3029,46 +2765,9 @@ def test_nuttx_startup(ove_dir, output_dir):
     return result
 
 
-def test_nuttx_coverage(ove_dir, output_dir):
-    """NuttX sim tests with --coverage; emit lcov tracefile.
-
-    `.gcda` files land under <build>/CMakeFiles/.../*.gcda; lcov
-    --directory walks ove_dir to collect them (the build dir is under
-    ove_dir/output) and writes the filtered tracefile into the coverage
-    build dir.
-    """
-    result = _run_nuttx_sim(ove_dir, output_dir,
-                            build_subdir="nuttx_coverage",
-                            label="nuttx-sim-coverage",
-                            coverage=True)
-
-    lcov = shutil.which("lcov")
-    if not lcov:
-        logger.error("lcov not found — skipping NuttX coverage capture")
-        return result
-
-    build = os.path.join(output_dir, "tests", "nuttx_coverage")
-    info = os.path.join(build, "coverage.info")
-    filtered = os.path.join(build, "coverage.filtered.info")
-    run([lcov, "--directory", ove_dir, "--capture",
-         "--test-name", "nuttx",
-         "--rc", "branch_coverage=1",
-         "--output-file", info,
-         "--ignore-errors", "mismatch,gcov,source,empty,inconsistent"])
-    _lcov_filter_ove_sources(lcov, info, filtered, ove_dir,
-                             extra_ignore=["format"])
-    logger.info("NuttX coverage: %s", filtered)
-    return result
-
-
 def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
-                            extra_conf=None, source_dir=None, owned_timeout=None):
-    """Shared driver for test_zephyr and test_zephyr_coverage.
-
-    `extra_conf` is applied as Zephyr's EXTRA_CONF_FILE so Kconfig overlays
-    (e.g. CONFIG_COVERAGE=y) can be layered on top of tests/sim/zephyr/prj.conf
-    without duplicating the baseline build graph.
-    """
+                            source_dir=None, owned_timeout=None):
+    """Build and run a Zephyr native_sim test."""
     import hashlib
     build = os.path.join(output_dir, "tests", build_subdir)
     dl_dir = os.path.join(ove_dir, "dl")
@@ -3104,8 +2803,6 @@ def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
         "-d", build,
         source_dir or os.path.join(ove_dir, "tests", "sim", "zephyr"),
     ]
-    if extra_conf:
-        build_cmd.extend(["--", f"-DEXTRA_CONF_FILE={extra_conf}"])
     run(build_cmd, env=env)
 
     logger.info("Running Zephyr native_sim tests (%s)", label)
@@ -3122,40 +2819,6 @@ def test_zephyr(ove_dir, output_dir):
     return _run_zephyr_native_sim(ove_dir, output_dir,
                                    build_subdir="zephyr",
                                    label="zephyr-native-sim")
-
-
-def test_zephyr_coverage(ove_dir, output_dir):
-    """Zephyr native_sim tests with CONFIG_COVERAGE=y; emit lcov tracefile.
-
-    Zephyr drops .gcda alongside .gcno in the build tree when main() returns,
-    so we just run the binary and `lcov --capture`. Output:
-      <cov_dir>/coverage.filtered.info
-    """
-    overlay = os.path.join(ove_dir, "tests", "sim", "zephyr",
-                            "overlay-coverage.conf")
-    result = _run_zephyr_native_sim(
-        ove_dir, output_dir,
-        build_subdir="zephyr_coverage",
-        label="zephyr-native-sim-coverage",
-        extra_conf=overlay)
-
-    lcov = shutil.which("lcov")
-    if not lcov:
-        logger.error("lcov not found — skipping Zephyr coverage capture")
-        return result
-
-    build = os.path.join(output_dir, "tests", "zephyr_coverage")
-    info = os.path.join(build, "coverage.info")
-    filtered = os.path.join(build, "coverage.filtered.info")
-    run([lcov, "--directory", build, "--capture",
-         "--test-name", "zephyr",
-         "--rc", "branch_coverage=1",
-         "--output-file", info,
-         "--ignore-errors", "mismatch,gcov,source,empty,inconsistent"])
-    _lcov_filter_ove_sources(lcov, info, filtered, ove_dir,
-                             extra_ignore=["format"])
-    logger.info("Zephyr coverage: %s", filtered)
-    return result
 
 
 # ── FreeRTOS QEMU shared driver ────────────────────────────────────────
@@ -3371,7 +3034,6 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label,
         build_dir=build_dir,
         board_config=nuttx_board_config(_board_dir(ove_dir, "stm32f746g-discovery")),
         defconfig_overlays=overlays,
-        coverage=False,
         variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
         extra_env=extra_env,
         hw=hw,
@@ -3729,7 +3391,7 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
-def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
+def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label,
                     board_config=None, overlay=None):
     """Build and run a NuttX QEMU ARM test variant via CMake.
 
@@ -3766,9 +3428,6 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
         os.path.join(ove_dir, "tests", "sim", app_subdir,
                      "nuttx_test_defconfig"),
     ]
-    if coverage:
-        overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
-                                     "nuttx_test_coverage_defconfig"))
     if overlay:
         overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
                                      overlay))
@@ -3780,7 +3439,6 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
         build_dir=build_dir,
         board_config=board_config,
         defconfig_overlays=overlays,
-        coverage=coverage,
         variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
         extra_env=extra_env,
     )
@@ -3794,7 +3452,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
 
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
 def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
-                     extra_conf=None, board=None, run_via_west=False,
+                     board=None, run_via_west=False,
                      build_subdir=None, exit_status=False):
     """Build and run a Zephyr QEMU ARM test variant.
 
@@ -3803,12 +3461,6 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     the oveRTOS an500 qemu-run.sh can't host (e.g. mps2/an521/cpu0, the Cortex-M33
     USERSPACE target) set `run_via_west=True` to run through Zephyr's own QEMU
     integration (`west build -t run`) instead.
-
-    `extra_conf` is applied as Zephyr's EXTRA_CONF_FILE so Kconfig overlays
-    (e.g. overlay-coverage.conf) layer on top of the baseline prj.conf
-    without duplicating the build graph. Coverage builds must start from a
-    clean build dir: CMake caches Kconfig state and stale .gcno would
-    mislead lcov.
 
     `exit_status` builds and runs QEMU under a deadline and passes only when
     the guest's semihosting exit status is zero.
@@ -3826,8 +3478,6 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
     dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
 
-    if extra_conf:
-        shutil.rmtree(build, ignore_errors=True)
     logger.info(f"Building {label}")
     os.makedirs(build, exist_ok=True)
 
@@ -3854,8 +3504,6 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
         "-d", build,
         os.path.join(ove_dir, "tests", "sim", src_subdir),
     ]
-    if extra_conf:
-        build_cmd.extend(["--", f"-DEXTRA_CONF_FILE={extra_conf}"])
     if exit_status:
         log = Path(build) / "build.log"
         with log.open("wb") as stream:
@@ -3917,41 +3565,6 @@ def test_qemu_nuttx_cpuload(ove_dir, output_dir):
                            app_subdir="nuttx-qemu",
                            label="qemu-nuttx-cpuload",
                            overlay="nuttx_test_cpuload_defconfig")
-
-
-def test_qemu_nuttx_coverage(ove_dir, output_dir):
-    """Build and run NuttX QEMU tests with --coverage; emit lcov tracefile.
-
-    The app CMakeLists gates `--coverage` + `-fprofile-abs-path` on
-    `-DOVE_COVERAGE=ON`, and main.c calls `__gcov_dump()` before
-    `semihosting_exit`. libgcov's fopen/fwrite writes .gcda via
-    semihosting to absolute host paths (-fprofile-abs-path).
-    .gcno/.gcda land under <build>/CMakeFiles/.../*; lcov --capture
-    walks ove_dir to collect them.
-    """
-    label = "qemu-nuttx-coverage"
-    _clean_gcda(ove_dir)
-    result = _run_nuttx_qemu(ove_dir, output_dir,
-                             app_subdir="nuttx-qemu", label=label,
-                             coverage=True)
-    cov_dir = os.path.join(output_dir, "tests", "qemu_nuttx_coverage")
-    os.makedirs(cov_dir, exist_ok=True)
-    raw = os.path.join(cov_dir, "coverage.info")
-    filtered = os.path.join(cov_dir, "coverage.filtered.info")
-    tc_dir = _ensure_arm_toolchain(ove_dir)
-    gcov = os.path.join(tc_dir, "bin", "arm-none-eabi-gcov")
-    lcov = shutil.which("lcov")
-    if not lcov:
-        logger.error("lcov not installed; skipping capture")
-        return result
-    run([lcov, "--capture", "--directory", ove_dir,
-         "--directory", os.path.join(output_dir, "tests", label),
-         "--gcov-tool", gcov,
-         "--output-file", raw, "--rc", "branch_coverage=1",
-         "--ignore-errors", "mismatch,source,gcov,unused,inconsistent"])
-    _lcov_filter_ove_sources(lcov, raw, filtered, ove_dir)
-    logger.info("NuttX QEMU coverage: %s", filtered)
-    return result
 
 
 def test_qemu_zephyr(ove_dir, output_dir):
@@ -4305,64 +3918,6 @@ def test_qemu_freertos_linux_kstress(ove_dir, output_dir):
     return _linux_kstress(ove_dir, output_dir, "qemu.freertos.linux_interop", "freertos")
 
 
-def test_qemu_zephyr_coverage(ove_dir, output_dir):
-    """Build and run Zephyr QEMU tests with CONFIG_COVERAGE=y; emit lcov.
-
-    Zephyr's CONFIG_COVERAGE_SEMIHOST routes gcov_coverage_semihost() (called
-    automatically when main() returns, see kernel/init.c) through ARM
-    semihosting — so QEMU writes .gcda files directly to the host build dir
-    alongside each .gcno, without touching the console stream. We then run
-    `lcov --capture` on the build dir and filter non-oveRTOS paths.
-    """
-    label = "qemu-zephyr-coverage"
-    overlay = os.path.join(ove_dir, "tests", "sim", "zephyr-qemu",
-                            "overlay-coverage.conf")
-    result = _run_zephyr_qemu(ove_dir, output_dir,
-                              src_subdir="zephyr-qemu", label=label,
-                              extra_conf=overlay)
-    build = os.path.join(output_dir, "tests", label)
-    cov_dir = os.path.join(output_dir, "tests", "qemu_zephyr_coverage")
-    os.makedirs(cov_dir, exist_ok=True)
-    raw = os.path.join(cov_dir, "coverage.info")
-    filtered = os.path.join(cov_dir, "coverage.filtered.info")
-
-    # Zephyr compiles with its own arm-zephyr-eabi GCC (Zephyr SDK, typically
-    # GCC 13), not our arm-none-eabi-gcc 15, so the gcda .gcno version tags
-    # won't match if we capture with our toolchain. Derive gcov from the
-    # compiler Zephyr actually used.
-    gcov = None
-    cache = os.path.join(build, "CMakeCache.txt")
-    if os.path.isfile(cache):
-        with open(cache) as f:
-            for line in f:
-                if line.startswith("CMAKE_C_COMPILER:"):
-                    cc = line.split("=", 1)[1].strip()
-                    gcov_candidate = cc[:-3] + "gcov" if cc.endswith("gcc") \
-                        else cc + "-gcov"
-                    if os.path.isfile(gcov_candidate):
-                        gcov = gcov_candidate
-                    break
-    if not gcov:
-        logger.error("Could not locate Zephyr SDK gcov; aborting capture")
-        return result
-    lcov = shutil.which("lcov")
-    if not lcov:
-        logger.error("lcov not installed; skipping capture")
-        return result
-    # `negative`: Zephyr's own coverage.c is instrumented while being the thing
-    # that dumps gcda — the recursive counting occasionally produces a negative
-    # delta for one of its own lines, which we drop along with non-oveRTOS
-    # sources in the filter step below.
-    run([lcov, "--capture", "--directory", build,
-         "--gcov-tool", gcov,
-         "--output-file", raw, "--rc", "branch_coverage=1",
-         "--ignore-errors",
-         "mismatch,source,gcov,unused,inconsistent,negative"])
-    _lcov_filter_ove_sources(lcov, raw, filtered, ove_dir)
-    logger.info("Zephyr QEMU coverage: %s", filtered)
-    return result
-
-
 def _compile_probe(label, cmd, *, env=None, cwd=None):
     """Run a compile-only command; return (ok, combined_output).
 
@@ -4646,19 +4201,15 @@ TEST_TARGETS = {
     "zig-infer": test_zig_infer,
     "zig-zeroheap": test_zig_zeroheap,
     "zig-debug": test_zig_debug,
-    "zig-coverage": test_zig_coverage,
     "nuttx": test_nuttx,
     "nuttx-startup": test_nuttx_startup,
-    "nuttx-coverage": test_nuttx_coverage,
     "zephyr": test_zephyr,
-    "zephyr-coverage": test_zephyr_coverage,
     "qemu-freertos": test_qemu_freertos,
     "qemu-freertos-zeroheap": test_qemu_freertos_zeroheap,
     "qemu-freertos-coverage": test_qemu_freertos_coverage,
     "qemu-nuttx": test_qemu_nuttx,
     "qemu-nuttx-zeroheap": test_qemu_nuttx_zeroheap,
     "qemu-nuttx-cpuload": test_qemu_nuttx_cpuload,
-    "qemu-nuttx-coverage": test_qemu_nuttx_coverage,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
@@ -4674,7 +4225,6 @@ TEST_TARGETS = {
     "qemu-nuttx-linux-kstress": test_qemu_nuttx_linux_kstress,
     "qemu-zephyr-linux-kstress": test_qemu_zephyr_linux_kstress,
     "qemu-freertos-linux-kstress": test_qemu_freertos_linux_kstress,
-    "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
     "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
     "renode-stm32f746-freertos-zeroheap": test_renode_stm32f746_freertos_zeroheap,
     "renode-stm32f746-zephyr": test_renode_stm32f746_zephyr,

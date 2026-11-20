@@ -82,93 +82,6 @@ jobs:
           path: output/tests/rust_coverage/coverage.filtered.info
           retention-days: 7
 
-  zig-coverage:
-    name: Zig Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential xz-utils lcov \
-            libcurl4-openssl-dev libelf-dev libdw-dev libiberty-dev binutils-dev
-
-      - name: Run coverage
-        run: make test-zig-coverage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cov-zig
-          path: output/tests/zig_coverage/coverage.filtered.info
-          retention-days: 7
-
-  nuttx-sim-coverage:
-    name: NuttX Simulator Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y cmake build-essential \
-            gperf genromfs xxd python3-pip python3-venv lcov
-
-      - name: Run coverage
-        run: timeout 600 make test-nuttx-coverage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cov-nuttx
-          path: output/tests/nuttx_coverage/coverage.filtered.info
-          retention-days: 7
-
-  zephyr-sim-coverage:
-    name: Zephyr native_sim Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y cmake build-essential meson ninja-build \
-            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
-            wget xz-utils file lcov
-
-      - name: Compute Zephyr cache hash
-        id: zephyr-hash
-        run: |
-          HASH=$(python3 scripts/manifest_query.py --hash rtos.zephyr.version)
-          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Zephyr workspace
-        uses: actions/cache@v5
-        with:
-          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
-          key: ove-zephyr-${{ steps.zephyr-hash.outputs.hash }}
-
-      - name: Symlink Zephyr workspace
-        run: |
-          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
-            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
-            echo "Zephyr workspace restored from cache"
-          fi
-
-      - name: Run coverage
-        run: timeout 900 make test-zephyr-coverage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cov-zephyr
-          path: output/tests/zephyr_coverage/coverage.filtered.info
-          retention-days: 7
-
   qemu-freertos-coverage:
     name: QEMU FreeRTOS Coverage
     runs-on: ubuntu-latest
@@ -197,78 +110,6 @@ jobs:
           path: output/tests/qemu_freertos_coverage/coverage.filtered.info
           retention-days: 7
 
-  qemu-nuttx-coverage:
-    name: QEMU NuttX Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
-            gperf genromfs xxd python3-pip python3-venv lcov
-
-      - name: Cache ARM toolchain
-        uses: actions/cache@v4
-        with:
-          path: output/toolchains
-          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
-
-      - name: Run coverage
-        run: timeout 1200 make test-qemu-nuttx-coverage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cov-qemu-nuttx
-          path: output/tests/qemu_nuttx_coverage/coverage.filtered.info
-          retention-days: 7
-
-  qemu-zephyr-coverage:
-    name: QEMU Zephyr Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential meson ninja-build qemu-system-arm \
-            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
-            wget xz-utils file lcov
-
-      - name: Compute Zephyr cache hash
-        id: zephyr-hash
-        run: |
-          HASH=$(python3 scripts/manifest_query.py --hash rtos.zephyr.version)
-          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Zephyr workspace
-        uses: actions/cache@v5
-        with:
-          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
-          key: ove-zephyr-qemu-${{ steps.zephyr-hash.outputs.hash }}
-
-      - name: Symlink Zephyr workspace
-        run: |
-          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
-            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
-            echo "Zephyr workspace restored from cache"
-          fi
-
-      - name: Run coverage
-        run: timeout 900 make test-qemu-zephyr-coverage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cov-qemu-zephyr
-          path: output/tests/qemu_zephyr_coverage/coverage.filtered.info
-          retention-days: 7
-
   merge:
     name: Merge & Report
     runs-on: ubuntu-latest
@@ -280,12 +121,7 @@ jobs:
       - stub-coverage
       - cpp-coverage
       - rust-coverage
-      - zig-coverage
-      - nuttx-sim-coverage
-      - zephyr-sim-coverage
       - qemu-freertos-coverage
-      - qemu-nuttx-coverage
-      - qemu-zephyr-coverage
     steps:
       - uses: actions/checkout@v5
         with:
@@ -305,21 +141,11 @@ jobs:
           mkdir -p output/tests/stub_coverage/coverage \
                    output/tests/cpp_coverage/coverage \
                    output/tests/rust_coverage \
-                   output/tests/zig_coverage \
-                   output/tests/nuttx_coverage \
-                   output/tests/zephyr_coverage \
-                   output/tests/qemu_freertos_coverage \
-                   output/tests/qemu_nuttx_coverage \
-                   output/tests/qemu_zephyr_coverage
+                   output/tests/qemu_freertos_coverage
           cp -n cov-artifacts/cov-stub/coverage.filtered.info          output/tests/stub_coverage/coverage/          2>/dev/null || true
           cp -n cov-artifacts/cov-cpp/coverage.filtered.info           output/tests/cpp_coverage/coverage/           2>/dev/null || true
           cp -n cov-artifacts/cov-rust/coverage.filtered.info          output/tests/rust_coverage/                   2>/dev/null || true
-          cp -n cov-artifacts/cov-zig/coverage.filtered.info           output/tests/zig_coverage/                    2>/dev/null || true
-          cp -n cov-artifacts/cov-nuttx/coverage.filtered.info         output/tests/nuttx_coverage/                  2>/dev/null || true
-          cp -n cov-artifacts/cov-zephyr/coverage.filtered.info        output/tests/zephyr_coverage/                 2>/dev/null || true
           cp -n cov-artifacts/cov-qemu-freertos/coverage.filtered.info output/tests/qemu_freertos_coverage/          2>/dev/null || true
-          cp -n cov-artifacts/cov-qemu-nuttx/coverage.filtered.info    output/tests/qemu_nuttx_coverage/             2>/dev/null || true
-          cp -n cov-artifacts/cov-qemu-zephyr/coverage.filtered.info   output/tests/qemu_zephyr_coverage/            2>/dev/null || true
 
       - name: Merge tracefiles and generate HTML
         run: make coverage-merge

@@ -185,15 +185,6 @@ else()
   list(APPEND _definitions [[OVE_NVS_FS_DIR="/tmp/ove-nvs"]])
 endif()
 
-# Coverage — opted in via -DOVE_COVERAGE=ON. Only the app-side .c files
-# are instrumented here; libgcov.a is pulled into the final kernel link
-# by NuttX's CONFIG_COVERAGE_TOOLCHAIN=y (set via the variant's
-# nuttx_test_coverage_defconfig).
-if(OVE_COVERAGE)
-  list(APPEND _compile_flags --coverage -fprofile-abs-path)
-  list(APPEND _definitions OVE_COVERAGE=1)
-endif()
-
 # Include order: the variant's own dir (ove_config.h overrides) FIRST so
 # it wins over the include/ove_config.h shipped with the library.
 set(_include_dirs

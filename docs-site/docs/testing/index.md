@@ -67,6 +67,13 @@ make test-stub
 
 The Stub layer catches API contracts and pure-logic bugs but cannot exercise RTOS-port code (scheduler, ISR plumbing, HAL paths). For those, the QEMU and Renode layers run the same suite list against real backend implementations.
 
+## Coverage
+
+`make coverage` merges the host stub, C++ and Rust coverage with the
+FreeRTOS QEMU coverage. It uses lcov and writes the HTML report to
+`output/tests/coverage/html/index.html`. The CI coverage badge uses the
+same four sources.
+
 ## Common-suite list
 
 `tests/cmake/OveTest.cmake::OVE_TEST_COMMON_SUITES` is the single source
