@@ -1,5 +1,5 @@
-:name: oveRTOS CMocka suite on Zephyr/STM32F746 — heap mode
-:description: Boot the oveRTOS test firmware on Zephyr's stm32f746g_disco target under Renode's stm32f7_discovery-bb platform; capture stdout via USART1 + a semihosting UART.
+:name: oveRTOS CMocka suite on Zephyr/STM32F746
+:description: Boot the oveRTOS test firmware on Renode's stm32f7_discovery-bb platform and capture stdout via USART1.
 
 using sysbus
 
@@ -13,9 +13,7 @@ sysbus LoadELF $bin
 # Zephyr's stm32f746g_disco defconfig routes printk through USART1
 # (the Discovery's ST-Link VCP).  Renode models that as STM32F7_USART —
 # tap its TX into a file so the outer harness can grep for the CMocka
-# summary post-run.  Semihosting traps for `semihosting_exit` go
-# through the CPU debug interface (CONFIG_SEMIHOST=y in prj.conf), no
-# UART backend required.
+# summary post-run.
 $uart_out?=@/tmp/renode-stm32f746-zephyr.uart
 sysbus.usart1 CreateFileBackend $uart_out true
 showAnalyzer sysbus.usart1

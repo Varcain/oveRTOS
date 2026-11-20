@@ -5,6 +5,13 @@
 # This file is part of oveRTOS.
 
 cmake_minimum_required(VERSION 3.20.0)
+option(OVE_ZERO_HEAP "Build the zero-heap test variant" OFF)
+if(OVE_ZERO_HEAP)
+    list(APPEND EXTRA_CONF_FILE zeroheap.conf)
+else()
+    list(APPEND EXTRA_CONF_FILE heap.conf)
+endif()
+
 get_filename_component(OVE_SYSCALL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 include(${OVE_SYSCALL_ROOT}/cmake/OveZephyrSyscalls.cmake)
 ove_zephyr_register_eventgroup_syscalls()
@@ -123,8 +130,6 @@ target_include_directories(app PRIVATE
 )
 
 target_compile_definitions(app PRIVATE OVE_QEMU_ARM OVE_TEST_STM32_EXTI=1 HAVE_UINTPTR_T
-    # OVE_HW propagated to main.c so it skips the post-summary
-    # semihosting_exit() trap when running on real silicon.
     $<$<BOOL:${OVE_HW}>:OVE_HW>)
 zephyr_link_libraries(cmocka_lib m)
 
@@ -132,6 +137,20 @@ zephyr_link_libraries(cmocka_lib m)
 # subscope → ELF_PATH. Symbol audit only on test scaffolding; hotpath
 # disasm reserved for bench targets.
 include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+if(OVE_ZERO_HEAP)
+    zephyr_compile_definitions(CONFIG_OVE_ZERO_HEAP=1)
+    target_sources(app PRIVATE
+        ${OVE_ROOT}/backends/common/ove_heap_lock.c
+        ${ZEPHYR_BACKEND}/zephyr_heap_lock.c
+    )
+    # Wrapping memalign also pulls in picolibc's conflicting aligned_alloc.
+    zephyr_ld_options(-Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc
+                      -Wl,--wrap=free -Wl,--wrap=zalloc)
+    include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+    ove_zero_heap_assert_no_kernel_alloc(zephyr_final
+        ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
+    set(OVE_PANIC_AUDIT NO_PANIC_SYMBOLS)
+endif()
 ove_assert_no_dispatch_overhead(app
-    BINDING c
+    BINDING c ${OVE_PANIC_AUDIT}
     ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)

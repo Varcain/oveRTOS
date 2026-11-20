@@ -1,5 +1,4 @@
 #include "framework/ove_test.h"
-#include "framework/semihosting_exit.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,11 +18,10 @@ int main(void)
 #include "framework/suites.inc"
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
-	/* See zero-heap sibling for rationale — same halt path on both
-	 * Renode and HW avoids the post-summary fault loop that
-	 * `semihosting_exit` triggers when Renode 1.16 doesn't catch
-	 * SYS_EXIT_EXTENDED.  HW runner exits as soon as it sees the
-	 * summary line; Renode's RunFor timer expires cleanly. */
+	/* Halt after the summary so Renode's RunFor can finish.
+	 * Renode 1.16 lacks SYS_EXIT_EXTENDED, so the CPU falls into
+	 * a fault loop after the trap.  Returning from main calls
+	 * k_thread_abort, which fails on this model in zero-heap mode. */
 	(void)failures;
 	for (;;) {
 	}

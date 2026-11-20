@@ -24,7 +24,7 @@ from .utils import CARGO_CLIPPY_COMMAND, run, nproc, apply_defconfig_overlay, at
 from .appgen import generate_app_kconfig
 from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
-from .build import _drop_stale_cmake_cache
+from .build import _drop_stale_cmake_cache, _prepare_zephyr_build_dir
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
 
@@ -3013,8 +3013,8 @@ def test_renode_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
         label="renode-stm32f746-nuttx-zeroheap")
 
 
-def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label,
-                                   extra_cmake=None):
+def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, label, zero_heap=False,
+                                   extra_cmake=()):
     """Build a Zephyr stm32f746g_disco firmware via west.  Returns the
     path to the produced zephyr.elf.
 
@@ -3042,33 +3042,25 @@ def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label,
              "checkout", default_rev])
         run([west, "update"], cwd=hash_dir)
 
-    link = os.path.join(build, "zephyr-workspace")
-    atomic_symlink(hash_dir, link)
-
     env = _zephyr_sdk_build_env(ove_dir)
-    env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
-    cmd = [west, "build",
+    # A pristine rebuild removes symlinks inside the build directory.
+    env["ZEPHYR_BASE"] = os.path.join(hash_dir, "zephyr")
+    cmd = [west, "build", "-p", "auto",
            "-b", zephyr_board(_board_dir(ove_dir, "stm32f746g-discovery")),
            "-d", build,
-           os.path.join(ove_dir, "tests", "sim", src_subdir)]
-    if extra_cmake:
-        cmd.extend(["--", *extra_cmake])
+           os.path.join(ove_dir, "tests", "sim", "renode-stm32f746-zephyr"),
+           "--", f"-DOVE_ZERO_HEAP={'ON' if zero_heap else 'OFF'}",
+           *extra_cmake]
+    _prepare_zephyr_build_dir(build, env["ZEPHYR_BASE"])
     run(cmd, env=env)
     return os.path.join(build, "zephyr", "zephyr.elf")
 
 
-def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label):
-    """Build a Zephyr stm32f746g_disco firmware and run it under Renode.
-
-    Reuses `_run_zephyr_qemu`'s workspace setup almost verbatim — only
-    diverges in BOARD (stm32f746g_disco vs mps2/an500) and runner
-    (Renode vs qemu-run.sh).  Kept as a separate helper rather than
-    parameterising `_run_zephyr_qemu` because the latter's QEMU
-    invocation path is QEMU-specific.
-    """
+def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, label, zero_heap=False):
+    """Build a Zephyr stm32f746g_disco firmware and run it under Renode."""
     elf = _build_renode_stm32f746_zephyr(ove_dir, output_dir,
-                                         src_subdir=src_subdir, label=label)
-    resc = os.path.join(ove_dir, "tests", "sim", src_subdir, "test.resc")
+                                       label=label, zero_heap=zero_heap)
+    resc = os.path.join(ove_dir, "tests", "sim", "renode-stm32f746-zephyr", "test.resc")
     return _renode_run_elf(ove_dir, output_dir,
                            label=label, elf=elf, resc=resc)
 
@@ -3076,15 +3068,13 @@ def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label):
 def test_renode_stm32f746_zephyr(ove_dir, output_dir):
     """Build + run the STM32F746 Zephyr heap test firmware under Renode."""
     return _run_renode_stm32f746_zephyr(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-zephyr",
         label="renode-stm32f746-zephyr")
 
 
 def test_renode_stm32f746_zephyr_zeroheap(ove_dir, output_dir):
     """Build + run the STM32F746 Zephyr zero-heap firmware under Renode."""
     return _run_renode_stm32f746_zephyr(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-zephyr-zeroheap",
-        label="renode-stm32f746-zephyr-zeroheap")
+        label="renode-stm32f746-zephyr-zeroheap", zero_heap=True)
 
 
 def test_renode_stm32f746_freertos(ove_dir, output_dir):
@@ -3278,7 +3268,6 @@ def test_hw_stm32f746_freertos_zeroheap(ove_dir, output_dir):
 def test_hw_stm32f746_zephyr(ove_dir, output_dir):
     """Flash + run the STM32F746 Zephyr heap firmware on real hardware."""
     elf = _build_renode_stm32f746_zephyr(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-zephyr",
         label="hw-stm32f746-zephyr",
         extra_cmake=["-DOVE_HW=ON"])
     return _run_hw_stm32f746(ove_dir, output_dir,
@@ -3288,8 +3277,7 @@ def test_hw_stm32f746_zephyr(ove_dir, output_dir):
 def test_hw_stm32f746_zephyr_zeroheap(ove_dir, output_dir):
     """Flash + run the STM32F746 Zephyr zero-heap firmware on hardware."""
     elf = _build_renode_stm32f746_zephyr(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-zephyr-zeroheap",
-        label="hw-stm32f746-zephyr-zeroheap",
+        label="hw-stm32f746-zephyr-zeroheap", zero_heap=True,
         extra_cmake=["-DOVE_HW=ON"])
     return _run_hw_stm32f746(ove_dir, output_dir,
                              label="hw-stm32f746-zephyr-zeroheap", elf=elf)
@@ -3407,7 +3395,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label,
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
 def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
                      board=None, run_via_west=False,
-                     build_subdir=None, exit_status=False):
+                     build_subdir=None, exit_status=False, extra_cmake=()):
     """Build and run a Zephyr QEMU ARM test variant.
 
     `board` selects the Zephyr board (default the an500's board.yaml one, the
@@ -3445,19 +3433,19 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
               "checkout", default_rev])
         run([west, "update"], cwd=hash_dir)
 
-    link = os.path.join(build, "zephyr-workspace")
-    atomic_symlink(hash_dir, link)
-
     env = _zephyr_sdk_build_env(ove_dir)
-    env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
+    env["ZEPHYR_BASE"] = os.path.join(hash_dir, "zephyr")
     if exit_status:
         env["CCACHE_DIR"] = os.path.join(build, "ccache")
     build_cmd = [
-        west, "build",
+        west, "build", "-p", "auto",
         "-b", board,
         "-d", build,
         os.path.join(ove_dir, "tests", "sim", src_subdir),
     ]
+    if extra_cmake:
+        build_cmd.extend(["--", *extra_cmake])
+    _prepare_zephyr_build_dir(build, env["ZEPHYR_BASE"])
     if exit_status:
         log = Path(build) / "build.log"
         with log.open("wb") as stream:
@@ -3524,7 +3512,8 @@ def test_qemu_nuttx_cpuload(ove_dir, output_dir):
 def test_qemu_zephyr(ove_dir, output_dir):
     """Build and run Zephyr QEMU ARM tests."""
     return _run_zephyr_qemu(ove_dir, output_dir,
-                            src_subdir="zephyr-qemu", label="qemu-zephyr")
+                           src_subdir="zephyr-qemu", label="qemu-zephyr",
+                           extra_cmake=["-DOVE_ZERO_HEAP=OFF"])
 
 
 def test_eventgroup_user(ove_dir, output_dir):
@@ -3539,8 +3528,8 @@ def test_eventgroup_user(ove_dir, output_dir):
 def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
     """Build and run Zephyr QEMU ARM tests (zero-heap mode)."""
     return _run_zephyr_qemu(ove_dir, output_dir,
-                            src_subdir="zephyr-qemu-zeroheap",
-                            label="qemu-zephyr-zeroheap")
+                           src_subdir="zephyr-qemu", label="qemu-zephyr-zeroheap",
+                           extra_cmake=["-DOVE_ZERO_HEAP=ON"])
 
 
 def test_qemu_freertos_linux_segv(ove_dir, output_dir):

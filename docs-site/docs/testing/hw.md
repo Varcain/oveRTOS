@@ -110,18 +110,17 @@ console.
 
 ## Test matrix
 
-Each HW target's count matches the corresponding Renode target
-exactly — the same firmware ELF, the same CMocka suite list, the
-same parser:
+The table shows counts from the last recorded hardware run. For current
+simulator counts, see the [Renode test matrix](renode.md#test-matrix).
 
-| Target | Tests | Mirrors Renode |
-|---|---|---|
-| `test-hw-stm32f746-freertos` | 219 | ✓ |
-| `test-hw-stm32f746-freertos-zeroheap` | 192 | ✓ |
-| `test-hw-stm32f746-zephyr` | 211 | ✓ |
-| `test-hw-stm32f746-zephyr-zeroheap` | 184 | ✓ |
-| `test-hw-stm32f746-nuttx` | 212 | ✓ |
-| `test-hw-stm32f746-nuttx-zeroheap` | 185 | ✓ |
+| Target | Tests |
+|---|---|
+| `test-hw-stm32f746-freertos` | 219 |
+| `test-hw-stm32f746-freertos-zeroheap` | 192 |
+| `test-hw-stm32f746-zephyr` | 211 |
+| `test-hw-stm32f746-zephyr-zeroheap` | 184 |
+| `test-hw-stm32f746-nuttx` | 212 |
+| `test-hw-stm32f746-nuttx-zeroheap` | 185 |
 
 ## HW-only tests
 

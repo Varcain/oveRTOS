@@ -107,3 +107,5 @@ the same way `make test-all` does.
 
 The FreeRTOS QEMU targets share `tests/sim/freertos-qemu`. The
 `test-qemu-freertos-zeroheap` target sets `OVE_ZERO_HEAP=ON`.
+The Zephyr QEMU targets share `tests/sim/zephyr-qemu`. The
+`test-qemu-zephyr-zeroheap` target uses the same CMake option.

@@ -57,8 +57,9 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 `nuttx-qemu`, `freertos-qemu`, `zephyr-qemu` each have a matching
 `-zeroheap` variant that runs the same suite set with
 `CONFIG_OVE_ZERO_HEAP=1`. They are not listed as separate columns to keep
-the matrix readable. Both FreeRTOS QEMU variants use `tests/sim/freertos-qemu`
-and select the allocation mode with the `OVE_ZERO_HEAP` CMake option.
+the matrix readable. The FreeRTOS and Zephyr QEMU pairs share
+`tests/sim/freertos-qemu` and `tests/sim/zephyr-qemu`, respectively, and
+select the allocation mode with the `OVE_ZERO_HEAP` CMake option.
 
 ## Renode STM32F746 target (board-level fidelity)
 
@@ -73,6 +74,9 @@ firmware that would flash on a real Discovery board.
 |---|---|---|
 | `renode-stm32f746-freertos` | 211 | push to main + PRs + `workflow_dispatch` |
 | `renode-stm32f746-freertos-zeroheap` | 184 | push to main + PRs + `workflow_dispatch` |
+
+Both Zephyr variants share `tests/sim/renode-stm32f746-zephyr` and select
+the allocation mode with `OVE_ZERO_HEAP`.
 
 Caveats:
 - Renode 1.16.1's ARM Cortex-M semihosting handler implements

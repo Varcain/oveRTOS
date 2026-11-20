@@ -81,8 +81,8 @@ endfunction()
 #
 # Use on the FINAL exe target on each RTOS:
 #   - FreeRTOS:  ${_OVE_PROJ_NAME}.elf
-#   - Zephyr:    add the link options via add_link_options() at the
-#                point Zephyr's final link picks them up
+#   - Zephyr:    pass -Wl,--wrap= flags via zephyr_ld_options() so
+#                they reach Zephyr's final link
 #   - NuttX:     `nuttx`
 #
 # Optional EXTRA <symbols> argument adds RTOS-specific wraps (e.g.

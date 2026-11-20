@@ -27,8 +27,8 @@ Six targets total — one per RTOS backend, two heap modes each:
 |---|---|---|
 | `test-renode-stm32f746-freertos` | 219 | FreeRTOS heap-mode; full HAL + lwIP linked |
 | `test-renode-stm32f746-freertos-zeroheap` | 192 | FreeRTOS static-only allocation |
-| `test-renode-stm32f746-zephyr` | 211 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
-| `test-renode-stm32f746-zephyr-zeroheap` | 184 | Zephyr `HW_STACK_PROTECTION=n` (workaround for Renode's MPU drift) |
+| `test-renode-stm32f746-zephyr` | 354 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
+| `test-renode-stm32f746-zephyr-zeroheap` | 314 | Zephyr with a zero-size kernel heap pool |
 | `test-renode-stm32f746-nuttx` | 212 | NuttX `stm32f746g-disco:nsh` |
 | `test-renode-stm32f746-nuttx-zeroheap` | 185 | Same with `CONFIG_OVE_ZERO_HEAP` |
 
@@ -47,7 +47,7 @@ make test-renode-stm32f746-zephyr-zeroheap        # one
 ```mermaid
 flowchart LR
     subgraph Build["Build (per RTOS variant)"]
-        SRC["tests/sim/renode-stm32f746-&lt;rtos&gt;{-zeroheap}/<br/>(CMakeLists.txt or nuttx_app/Makefile)"]
+        SRC["tests/sim/renode-stm32f746-&lt;rtos&gt;*/<br/>(CMakeLists.txt or nuttx_app/Makefile)"]
         ELF["firmware.elf"]
         SRC --> ELF
     end
@@ -83,7 +83,7 @@ that the HW runner reuses to avoid duplicating build logic.
 
 ### FreeRTOS
 
-Three sim trees: `tests/sim/renode-stm32f746-freertos/` (heap) and
+Two sim trees, `tests/sim/renode-stm32f746-freertos/` (heap) and
 `tests/sim/renode-stm32f746-freertos-zeroheap/`.  Both link the real
 STM32F7 HAL, FreeRTOS ARM_CM7/r0p1 port, and lwIP.  Renode 1.16's
 semihosting handler doesn't implement SYS_WRITE (0x05); the trees
@@ -103,13 +103,10 @@ against Renode's modelled peripherals:
 
 ### Zephyr
 
-`tests/sim/renode-stm32f746-{zephyr,zephyr-zeroheap}/`.  Built via
-`west build -b stm32f746g_disco`.  printk goes through Zephyr's
-`UART_CONSOLE` on USART1; `test.resc` taps that into a file backend.
-Zero-heap variant disables `CONFIG_HW_STACK_PROTECTION` because
-Zephyr's MPU programming for static thread stacks trips a USAGE_FAULT
-("Illegal use of EPSR") on the first context switch back from
-`k_sleep` under Renode 1.16's STM32F7 + ARM core combo.
+Both variants build from `tests/sim/renode-stm32f746-zephyr/` via
+`west build -b stm32f746g_disco`. The zero-heap target sets
+`OVE_ZERO_HEAP=ON`. Both variants enable `CONFIG_HW_STACK_PROTECTION`.
+The shared `test.resc` captures Zephyr's USART1 console to a file.
 
 `main()` ends in `for(;;)` rather than `semihosting_exit()` —
 Renode 1.16 doesn't catch `SYS_EXIT_EXTENDED`, the bkpt fall-through
