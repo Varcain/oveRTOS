@@ -102,126 +102,13 @@ endif()
 
 # Capture this .cmake file's directory at include time. Inside a function
 # body CMAKE_CURRENT_LIST_DIR becomes the *caller's* dir (the bottom of
-# the call stack), so we can't rely on it to locate the audit/hotpath
-# scripts at ${OVE_DIR}/scripts/. CMAKE_CURRENT_FUNCTION_LIST_DIR would
+# the call stack), so we can't rely on it to locate the audit
+# script at ${OVE_DIR}/scripts/. CMAKE_CURRENT_FUNCTION_LIST_DIR would
 # do the right thing but requires CMake 3.17, and consumer projects in
 # this repo only require 3.14. Stash the dir in a module-level variable
 # that propagates to the including scope via plain set() (include() does
 # not push a new scope).
 set(_OVE_AUDIT_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
-
-# ─── ove_dump_hotpaths(<target> BINDING <c|cpp|rust|zig> ...) ──────
-#
-# Run scripts/dump_hotpaths.py POST_BUILD on <target>, comparing the
-# disassembly of selected bench-case run trampolines against the
-# golden file at tests/audit/hotpath_expected.yaml.  Companion to
-# ove_assert_no_dispatch_overhead — the audit proves no dispatch table
-# *exists*; this proves the wrapper layer compiles to the expected
-# inlined call sequence.
-#
-# Soft fail (warning only) on instruction-count overruns.  Hard fail
-# on unexpected callees or forbidden demangled-name patterns.
-function(ove_dump_hotpaths target)
-    set(options STRICT)
-    set(oneValueArgs ELF_PATH BINDING TARGET_KEY CONFIG OUTPUT_DIR)
-    set(multiValueArgs)
-    cmake_parse_arguments(_OVE_HP "${options}" "${oneValueArgs}"
-                          "${multiValueArgs}" ${ARGN})
-
-    if(NOT _OVE_HP_BINDING)
-        message(FATAL_ERROR "ove_dump_hotpaths: BINDING required")
-    endif()
-
-    _ove_pick_python3(_py)
-    _ove_pick_nm(_nm)
-    _ove_pick_cppfilt(_cppfilt)
-    # objdump is normally exposed by CMake as CMAKE_OBJDUMP; fall back
-    # to the toolchain prefix derivation if not.  The audit must run
-    # the cross objdump on cross-compiled ELFs (host objdump can't
-    # decode ARM/Thumb/Cortex-M opcodes).
-    if(CMAKE_OBJDUMP)
-        set(_objdump "${CMAKE_OBJDUMP}")
-    elseif(CMAKE_C_COMPILER MATCHES "^(.+)-gcc$")
-        set(_objdump "${CMAKE_MATCH_1}-objdump")
-    else()
-        set(_objdump "objdump")
-    endif()
-
-    if(NOT DEFINED OVE_DIR)
-        get_filename_component(_ove_root "${_OVE_AUDIT_CMAKE_DIR}/.." ABSOLUTE)
-    else()
-        set(_ove_root "${OVE_DIR}")
-    endif()
-    set(_hp_script "${_ove_root}/scripts/dump_hotpaths.py")
-
-    if(NOT _OVE_HP_CONFIG)
-        set(_OVE_HP_CONFIG "${_ove_root}/tests/audit/hotpath_expected.yaml")
-    endif()
-    if(NOT _OVE_HP_OUTPUT_DIR)
-        set(_OVE_HP_OUTPUT_DIR "${CMAKE_BINARY_DIR}/audit/disasm")
-    endif()
-
-    set(_strict_flag)
-    if(_OVE_HP_STRICT)
-        set(_strict_flag "--strict")
-    endif()
-
-    set(_target_key_arg)
-    if(_OVE_HP_TARGET_KEY)
-        set(_target_key_arg --target "${_OVE_HP_TARGET_KEY}")
-    endif()
-
-    if(_OVE_HP_ELF_PATH)
-        # File-level dependency for cross-subscope use (e.g. NuttX,
-        # Zephyr — final ELF is built by a sibling cmake project that
-        # this directory cannot attach POST_BUILD steps to).  Same
-        # pattern as ove_assert_no_dispatch_overhead's ELF_PATH branch.
-        set(_elf "${_OVE_HP_ELF_PATH}")
-        set(_stamp_dir "${CMAKE_CURRENT_BINARY_DIR}/hotpath_dump")
-        set(_stamp "${_stamp_dir}/${target}.stamp")
-        file(MAKE_DIRECTORY "${_stamp_dir}")
-        add_custom_command(OUTPUT "${_stamp}"
-            DEPENDS "${_elf}" "${_hp_script}"
-            COMMAND ${CMAKE_COMMAND} -E echo
-                    "[hotpath dump] checking ${_elf} (binding=${_OVE_HP_BINDING})"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${_OVE_HP_OUTPUT_DIR}"
-            COMMAND ${_py} "${_hp_script}"
-                    --elf "${_elf}"
-                    --binding "${_OVE_HP_BINDING}"
-                    --config "${_OVE_HP_CONFIG}"
-                    --output-dir "${_OVE_HP_OUTPUT_DIR}"
-                    --nm "${_nm}"
-                    --objdump "${_objdump}"
-                    --cppfilt "${_cppfilt}"
-                    ${_target_key_arg}
-                    ${_strict_flag}
-            COMMAND ${CMAKE_COMMAND} -E touch "${_stamp}"
-            VERBATIM
-            COMMENT "Dumping ${target} hotpath disassembly"
-        )
-        add_custom_target(${target}_hotpath_dump ALL DEPENDS "${_stamp}")
-    else()
-        set(_elf "$<TARGET_FILE:${target}>")
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo
-                    "[hotpath dump] checking ${_elf} (binding=${_OVE_HP_BINDING})"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${_OVE_HP_OUTPUT_DIR}"
-            COMMAND ${_py} "${_hp_script}"
-                    --elf "${_elf}"
-                    --binding "${_OVE_HP_BINDING}"
-                    --config "${_OVE_HP_CONFIG}"
-                    --output-dir "${_OVE_HP_OUTPUT_DIR}"
-                    --nm "${_nm}"
-                    --objdump "${_objdump}"
-                    --cppfilt "${_cppfilt}"
-                    ${_target_key_arg}
-                    ${_strict_flag}
-            VERBATIM
-            COMMENT "Dumping ${target} hotpath disassembly"
-        )
-    endif()
-endfunction()
-
 
 function(ove_assert_no_dispatch_overhead target)
     set(options NO_PANIC_SYMBOLS)

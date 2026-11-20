@@ -13,7 +13,7 @@ For every primitive (mutex, semaphore, event, condvar, queue, stream, timer, eve
 | **Throughput** | Two-thread contention runs (e.g. mutex contention, queue producer/consumer) |
 | **Memory** | Heap delta of `create()` (heap mode only — gated out under zero-heap) |
 
-Each binding runs the exact same suite. The C suite calls oveRTOS C directly; the C++/Rust/Zig suites call the binding wrappers, which inline to the same FFI symbols. The **wrapper-vs-native delta** column in each report quantifies binding overhead within a single hardware run, so it isolates wrapper cost from cross-run scheduler noise.
+Each binding runs the exact same suite. The C suite calls oveRTOS C directly, and the C++, Rust, and Zig suites use wrappers around the C API. The **wrapper-vs-native delta** column in each report quantifies binding overhead within a single hardware run, so it isolates wrapper cost from cross-run scheduler noise.
 
 A per-RTOS `native_<rtos>` suite calls the raw backend API (FreeRTOS `xSemaphoreTake`, NuttX `nxsem_*`, Zephyr `k_sem_*`) identically across every binding. Those rows show **scheduler noise** more than binding cost — the meaningful comparison is the wrapper-vs-native table below each main report.
 
@@ -31,7 +31,27 @@ Two configurations are benchmarked separately:
 - **Warmup**: 100 iterations dropped before measurement starts.
 - **Timing**: on ARMv7-M targets the harness reads the DWT cycle counter (`DWT->CYCCNT` at `0xE0001004`) directly via a single volatile load — uniform across FreeRTOS / NuttX / Zephyr, so no per-RTOS counter-read overhead leaks into the per-call deltas. Per-measurement floor ≈ 50 ns (two LDRs at 216 MHz). Elsewhere the harness falls back to `ove_time_get_ns`. Source: `tests/benchmarks/c/include/bench_cyccnt.h`.
 - **Statistics**: min, p50, p95, p99, max, trimmed mean (top 1% dropped), per-op nanoseconds, Welford running stddev; ops/sec computed from the trimmed mean.
-- **Hot-path audit**: every reported binding has its hot-path disassembly audited against the allowed-callee list at `tests/audit/hotpath_expected.yaml` — any unexpected callee (alloc, exception unwind, trampoline that wasn't inlined) fails the build before a number reaches a report.
+
+## Hot-path audit
+
+The Substrate Audits workflow checks selected wrappers from the four STM32F746
+FreeRTOS heap benchmark ELFs nightly and on manual dispatch. After the
+firmware builds, the audit step compares the callees against
+`tests/audit/hotpath_expected.yaml` and fails on unexpected calls.
+The separate symbol audit still runs at build time.
+
+To check the Rust ELF locally, build the heap benchmark with
+`make stm32f746.freertos.benchmark_rust` followed by `make all`. From the
+repository root, with the ARM toolchain on `PATH`, run
+
+```bash
+.venv/bin/python scripts/dump_hotpaths.py \
+  --elf output/stm32f746/freertos/benchmark_rust/images/firmware.elf \
+  --binding rust --target stm32f746_freertos_benchmark_rust \
+  --config tests/audit/hotpath_expected.yaml --output-dir output/audit/disasm \
+  --nm arm-none-eabi-nm --objdump arm-none-eabi-objdump \
+  --cppfilt arm-none-eabi-c++filt
+```
 
 ## Worst-case timing mode
 

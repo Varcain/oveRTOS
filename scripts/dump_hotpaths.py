@@ -9,9 +9,9 @@
 """Dump and check oveRTOS binding hotpaths from a benchmark ELF.
 
 Companion to scripts/zero_overhead_audit.py.  The audit proves no
-function-pointer dispatch *exists* in the binary; this tool proves the
-hot binding wrappers (Mutex::lock, MutexGuard::drop, etc.) compile to
-the same instructions a hand-written C call site would.
+function-pointer dispatch *exists* in the binary. This tool checks the
+callees of selected binding wrappers, including Rust's Mutex::with_lock
+and its scoped unlock.
 
 Disassembles selected symbols via objdump, summarises each (instruction
 count, list of call/jmp targets), and compares against the golden YAML at

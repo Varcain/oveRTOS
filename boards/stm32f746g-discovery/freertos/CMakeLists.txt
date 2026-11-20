@@ -186,21 +186,13 @@ ove_link_firmware(
 # would reflect the README's "zero overhead" claim.  Frame pointers stay
 # on for the sim profiler's backtrace walker and the FreeRTOS-openocd
 # integration.
-# Audit + hotpath disassembly run as POST_BUILD on firmware.elf.
+# The symbol audit runs as POST_BUILD on firmware.elf.
 #############################################################################
 if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
     target_compile_options(firmware.elf PRIVATE -O2 -fno-omit-frame-pointer)
     target_compile_definitions(firmware.elf PRIVATE
         OVE_APP_LANG_NAME=\"${OVE_APP_LANG}\")
     include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
-    if(OVE_ZERO_HEAP)
-        set(_audit_target_key "stm32f746_freertos_benchmark_zeroheap_${OVE_APP_LANG}")
-    else()
-        set(_audit_target_key "stm32f746_freertos_benchmark_${OVE_APP_LANG}")
-    endif()
     ove_assert_no_dispatch_overhead(firmware.elf
         BINDING ${OVE_APP_LANG})
-    ove_dump_hotpaths(firmware.elf
-        BINDING ${OVE_APP_LANG}
-        TARGET_KEY ${_audit_target_key})
 endif()

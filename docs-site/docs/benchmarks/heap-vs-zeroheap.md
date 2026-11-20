@@ -179,9 +179,10 @@ static-vs-pool address difference is below the noise floor.
 
 The take-aways:
 
-1. **No binding-level overhead** is introduced by zero-heap on any
-   RTOS.  The wrapper hot-path is the same FFI symbol either way; the
-   audit at `tests/audit/hotpath_expected.yaml` enforces this.
+1. **The C binding calls the same hot-path FFI symbols** in both modes
+   on each RTOS. The [hot-path disassembly audit](methodology.md#hot-path-audit)
+   covers selected FreeRTOS heap wrappers. Zero-heap builds retain their
+   build-time symbol audits.
 2. **Per-call sync** (mutex, sem, condvar, event, queue, eventgroup)
    is at parity within a few hundred nanoseconds on every RTOS in
    either mode.  Pick zero-heap and take the compile-time guarantees

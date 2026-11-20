@@ -1,27 +1,23 @@
 name: oveRTOS Substrate Audits
 
-# Runs the zero-overhead and zero-heap POST_BUILD audits across the
-# (board × rtos × binding × mode) tuples covered by
-# tests/audit/hotpath_expected.yaml.  The audits are already wired into
-# each board's CMakeLists.txt as POST_BUILD steps; this workflow's job is
-# only to invoke the builds in CI and upload the symbol/disasm dumps as
-# artifacts so regressions are visible on every PR.
+# Benchmark builds run the zero-overhead symbol audit on every push
+# and pull request. FreeRTOS zero-heap builds also check for kernel-heap
+# region symbols. The workflow uploads the audit reports as artifacts.
 #
-# The audits check three properties of the linked ELF.
-#   - no C++ vtables / Rust trait-object dispatch / ove_* dispatch tables
-#   - hot-path callees match the allowlist (see
-#     docs-site/docs/benchmarks/methodology.md)
-#   - zero-heap builds define no kernel-heap region symbols
+# Nightly and manually dispatched runs also check selected FreeRTOS
+# heap wrappers against the hot-path callee allowlist and upload their
+# disassembly. See docs-site/docs/benchmarks/methodology.md.
 #
-# Bench *execution* is deliberately not in this workflow — hosted runners
-# have noisy perf and there is no hardware farm.  The audits run on the
-# built ELF; the binary is never executed.
+# These checks inspect linked ELFs. Benchmark execution stays manual.
 
 on:
   push:
     branches: [main, devel]
   pull_request:
     branches: [main, devel]
+  schedule:
+    - cron: '37 2 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -81,6 +77,22 @@ jobs:
       - name: Build + audit Zig (zeroheap)
         run: make stm32f746.freertos.benchmark_zig_zh && make all
 
+      - name: Check FreeRTOS heap hot-path disassembly
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          for spec in c:benchmark cpp:benchmark_cpp rust:benchmark_rust zig:benchmark_zig; do
+            binding=${spec%%:*}
+            app=${spec#*:}
+            .venv/bin/python scripts/dump_hotpaths.py \
+              --elf "output/stm32f746/freertos/$app/images/firmware.elf" \
+              --binding "$binding" \
+              --target "stm32f746_freertos_benchmark_$binding" \
+              --config tests/audit/hotpath_expected.yaml \
+              --output-dir output/audit/disasm \
+              --nm arm-none-eabi-nm --objdump arm-none-eabi-objdump \
+              --cppfilt arm-none-eabi-c++filt
+          done
+
       - name: Upload audit artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,7 +100,7 @@ jobs:
           name: audit-stm32-freertos
           path: |
             output/stm32f746/freertos/*/build/**/audit/symbols/*.txt
-            output/stm32f746/freertos/*/build/**/audit/disasm/**
+            output/audit/disasm/**
           retention-days: 30
           if-no-files-found: warn
 
@@ -153,7 +165,6 @@ jobs:
           name: audit-stm32-nuttx
           path: |
             output/stm32f746/nuttx/*/build/**/audit/symbols/*.txt
-            output/stm32f746/nuttx/*/build/**/audit/disasm/**
           retention-days: 30
           if-no-files-found: warn
 
@@ -232,7 +243,6 @@ jobs:
           name: audit-stm32-zephyr
           path: |
             output/stm32f746/zephyr/*/build/**/audit/symbols/*.txt
-            output/stm32f746/zephyr/*/build/**/audit/disasm/**
           retention-days: 30
           if-no-files-found: warn
 

@@ -144,8 +144,6 @@ Outliers worth knowing:
 
 For **per-call sync primitives** (lock/unlock, take/give, signal/wait,
 yield) C++ stays inside ±300 ns of C on every RTOS+mode combination.
-The ergonomic wins (RAII, type-safe queue) come at zero measurable
-per-op cost on those paths.
 
 ## Rust
 
@@ -155,6 +153,10 @@ Rust wrappers add a fixed adapter layer per FFI call:
 - `Error::from_code(rc)` decoder converting C `int` to `ove::Error`
 - `Option<T>` decoding via `LvCell::try_get()` for shared state
 - Bounds/null checks the compiler can't elide through the FFI boundary
+
+The current synchronization and queue APIs also check execution context
+with `ove_sync_context()` and, on some paths, `ove_is_in_isr()`.
+The published Rust timings predate these checks.
 
 The DWT-direct measurement floor (~50 ns) makes the absolute adder
 visible: **typically +100–500 ns per simple FFI call, scaling to
@@ -245,7 +247,7 @@ For an op that's ~5–8 µs in C under worst-case timing (typical
 |---|---|---|
 | **C**   | 0 (baseline) | — |
 | **C++** | ±0–300 ns | inlined RAII / `optional` body, mostly parity with C |
-| **Rust** | +100–500 ns typical, +1 000+ ns on value-marshalling ops | `Result<T,E>` wrap, `Error::from_code`, `Option` decode |
+| **Rust** | +100–500 ns typical, +1 000+ ns on value-marshalling ops | `Result<T,E>` wrap, `Error::from_code`, `Option` decode. Timings predate context checks. |
 | **Zig** | ±0–300 ns | comptime trampoline; pin tracker elided in release |
 
 For an op that's ~50–60 µs in C (context switch, condvar, workqueue
@@ -306,6 +308,8 @@ estimate of the cache-on numbers, divide the C-binding base by ~2.7
 and add the same fixed binding adder back; that recovers the
 cache-on per-call ratio.
 
-The deltas in this analysis are stable across runs; the hot-path
-audit at `tests/audit/hotpath_expected.yaml` ensures no hidden
-allocator/vtable/panic-handler ever sneaks into the measured path.
+The [hot-path audit](methodology.md#hot-path-audit) checks direct callees
+for selected FreeRTOS heap wrappers against an allowlist. On success, the
+audited C, C++, and Zig wrappers call the C primitives directly. The audit
+allows the C++ abort and Zig panic paths. The Rust allowlist includes the
+context checks and the event signal path for ISRs.
