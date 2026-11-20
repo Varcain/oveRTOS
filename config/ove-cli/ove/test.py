@@ -418,6 +418,7 @@ def test_stub(ove_dir, output_dir):
     # binaries of their own (tests/CMakeLists.txt).
     _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
+                                "ove_test_spi_retire_heap", "ove_test_spi_retire_zero",
                                 "ove_test_i2c_front_heap", "ove_test_i2c_front_zero", "ove_test_i2c_nuttx",
                                 "ove_test_i2c_retire_heap", "ove_test_i2c_retire_zero",
                                 "ove_test_mqtt_heap", "ove_test_mqtt_zh",
@@ -430,11 +431,12 @@ def test_stub(ove_dir, output_dir):
 
 
 def _run_extra_binaries(build, names, suite, results, env=None):
-    """Run the stub tree's other test binaries that exist, adding their
-    results to @p results."""
+    """Run the listed binaries and count missing binaries as failures."""
     for name in names:
         path = os.path.join(build, name)
         if not os.path.exists(path):
+            results.failed += 1
+            results.failed_names.append(f"<missing {name}>")
             continue
         logger.info("Running %s", name)
         extra = _run_test_binary([path], suite, cwd=build, env=env)
@@ -484,6 +486,7 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
         [os.path.join(build, "ove_test_stub")], label, env=env)
     _run_extra_binaries(build, ("ove_test_mqtt_heap", "ove_test_mqtt_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
+                                "ove_test_spi_retire_heap", "ove_test_spi_retire_zero",
                                 "ove_test_i2c_front_heap", "ove_test_i2c_front_zero", "ove_test_i2c_nuttx",
                                 "ove_test_i2c_retire_heap", "ove_test_i2c_retire_zero",
                                 "ove_test_mqtt_no_tls", "ove_test_mqtt_zh_no_tls",

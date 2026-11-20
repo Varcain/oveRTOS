@@ -12,6 +12,8 @@ import os
 import shutil
 import sys
 
+from .test import SIM_TESTS, cmd_test
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -107,8 +109,8 @@ def main():
     p = sub.add_parser("test", help="Run tests")
     p.add_argument("names", nargs="*",
                    help="Test targets or groups. Groups: sim (the default: "
-                        "lxp-layout-config, stub, cpp, rust, zig, nuttx, "
-                        "zephyr), qemu (qemu-<rtos>[-zeroheap]), renode "
+                        f"{', '.join(SIM_TESTS)}), "
+                        "qemu (qemu-<rtos>[-zeroheap]), renode "
                         "(renode-stm32f746-<rtos>[-zeroheap]), hw "
                         "(hw-stm32f746-<rtos>[-zeroheap], needs a board), "
                         "all (sim + qemu + renode). Single targets add the "
@@ -312,7 +314,6 @@ def main():
         cmd_flash(args)
 
     elif args.command == "test":
-        from .test import cmd_test
         cmd_test(args)
 
     elif args.command == "benchmarks":

@@ -20,25 +20,21 @@ Install (one of):
 
 import sys
 
+from .test import TEST_TARGETS
+
 
 _SUBCOMMANDS = [
     "defconfig", "defconfig-fragments", "menuconfig", "rtos-menuconfig",
     "savedefconfig", "download", "ensure-toolchain", "configure", "build",
     "allconfigs", "alldefconfigs", "docs-demos", "run", "flash", "test",
-    "clean",
+    "benchmarks", "clean", "lint", "format", "ci",
     "manifest", "doctor", "board", "completion", "vscode", "app",
 ]
 
 _APP_LANGS = ["c", "cpp", "rust", "zig"]
 _APP_TEMPLATES = ["hello", "lvgl", "net", "audio"]
 
-_TEST_NAMES = [
-    "stub", "cpp", "rust", "zig", "freertos", "nuttx", "zephyr",
-    "qemu", "qemu-freertos", "qemu-freertos-zeroheap",
-    "qemu-nuttx", "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
-    "qemu-zephyr", "qemu-zephyr-zeroheap",
-    "sim", "all",
-]
+_TEST_NAMES = sorted(TEST_TARGETS) + ["sim", "qemu", "renode", "hw", "all"]
 
 
 _BASH = """\

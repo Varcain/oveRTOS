@@ -190,65 +190,11 @@ benchmarks-%: $(VENV_STAMP)
 		$(foreach b,$(BINDING),--binding $(b)) \
 		"$*"
 
-# Single source of truth for `test-<name>` recipes — each delegates to
-# `ove test <name>`. Add new suites here, not as separate targets.
-TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
-              cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap rust-lvgl rust-lvgl-sanitize rust-strings rust-spi rust-i2c rust-async-i2c rust-async-i2c-arm rust-async-spi rust-async-spi-arm \
-              cpp-infer cpp-infer-sanitize rust-infer rust-infer-sanitize zig-infer \
-              sync-condvar sync-condvar-sanitize \
-              freertos-cv-context freertos-cv-context-sanitize freertos-cv-context-arm \
-              sync-contracts sync-contracts-sanitize \
-              eventgroup-contracts eventgroup-contracts-sanitize \
-              eventgroup-scalar eventgroup-scalar-sanitize \
-              nuttx-timeouts nuttx-timeouts-sanitize \
-              freertos-timeouts freertos-timeouts-sanitize \
-              freertos-event-timeouts freertos-event-timeouts-sanitize \
-              freertos-event-timeouts-arm \
-              freertos-event-waiters freertos-event-waiters-sanitize \
-              freertos-event-waiters-arm \
-              freertos-event-bindings \
-              eventgroup-user eventgroup-bindings \
-              eventgroup-deferred eventgroup-deferred-sanitize eventgroup-deferred-arm \
-              queue-contracts queue-contracts-sanitize \
-              rust-queue rust-queue-sanitize \
-              rust-eventgroup rust-eventgroup-sanitize \
-              rust-scoped rust-scoped-sanitize \
-              rust-sync rust-sync-sanitize \
-              rust-async-sem rust-async-sem-sanitize \
-              rust-async-queue rust-async-queue-sanitize \
-              backend-lint rust-native-core rust-spinmutex rust-spinmutex-sanitize \
-              freertos-irq-masks freertos-irq-masks-sanitize \
-              freertos-irq-bindings freertos-irq-bindings-sanitize \
-              spi-retirement-freertos spi-retirement-zephyr spi-retirement-nuttx \
-              i2c-native-arm i2c-native-zephyr infer-admission infer-admission-sanitize infer-target \
-              i2c-retirement-freertos i2c-retirement-zephyr i2c-retirement-nuttx \
-              zig zig-zeroheap zig-debug lvgl-compile nuttx nuttx-startup zephyr \
-              qemu qemu-freertos qemu-freertos-zeroheap \
-              qemu-nuttx qemu-nuttx-zeroheap qemu-nuttx-cpuload \
-              qemu-zephyr qemu-zephyr-zeroheap \
-              qemu-freertos-linux-segv qemu-nuttx-linux-segv \
-              qemu-freertos-linux-hardfloat linux-abi-switch \
-              qemu-freertos-linux-faultmatrix \
-              qemu-freertos-linux-fbtest qemu-freertos-linux-lvbench qemu-freertos-linux-evread \
-              qemu-nuttx-linux-xregion qemu-zephyr-linux-segv \
-              qemu-nuttx-linux-kstress qemu-zephyr-linux-kstress qemu-freertos-linux-kstress all \
-              renode renode-stm32f746-freertos \
-              renode-stm32f746-freertos-zeroheap \
-              renode-stm32f746-zephyr \
-              renode-stm32f746-zephyr-zeroheap \
-              renode-stm32f746-nuttx \
-              renode-stm32f746-nuttx-zeroheap \
-              hw hw-stm32f746-freertos \
-              hw-stm32f746-freertos-zeroheap \
-              hw-stm32f746-zephyr \
-              hw-stm32f746-zephyr-zeroheap \
-              hw-stm32f746-nuttx \
-              hw-stm32f746-nuttx-zeroheap \
-              rust-coverage zig-coverage nuttx-coverage zephyr-coverage \
-              qemu-freertos-coverage qemu-nuttx-coverage qemu-zephyr-coverage
-.PHONY: $(addprefix test-,$(TEST_NAMES))
-$(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
+test-%: $(VENV_STAMP) FORCE
 	@$(OVE) test $* $(if $(filter 1,$(JSON)),--json)
+
+.PHONY: FORCE
+FORCE:
 
 ASAN_BUILD_DIR := $(OVE_DIR)/output/tests/stub_asan
 
@@ -647,7 +593,8 @@ help:
 	@echo "    JSON=1                - Emit JSON summary for build/test/doctor"
 	@echo ""
 	@echo "Tests:"
-	@echo "  test                    - Run sim tests (stub, cpp, rust, zig, nuttx, zephyr)"
+	@echo "  test                    - Run the default sim group"
+	@echo "  test-<name>             - Run a test target or group (see ove test --help)"
 	@echo "  test-stub               - Stub backend tests"
 	@echo "  test-cpp                - C++ binding tests"
 	@echo "  test-rust               - Rust binding tests"
