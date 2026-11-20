@@ -121,9 +121,9 @@ fn test_suspend_resume() {
     }
     assert_eq!(FLAG.load(Ordering::SeqCst), 1);
 
-    th.suspend();
+    th.suspend().unwrap();
     Thread::sleep_ms(10);
-    th.resume();
+    th.resume().unwrap();
     Thread::sleep_ms(300);
     drop(th);
 }
@@ -192,7 +192,7 @@ fn test_get_state_suspended_arm() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"susp").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(10);
-    th.suspend();
+    th.suspend().unwrap();
     // Poll briefly — POSIX backend may take a moment to report suspension.
     let mut saw_suspended = false;
     for _ in 0..20 {
@@ -207,7 +207,7 @@ fn test_get_state_suspended_arm() {
     // care about is exercising the match arm, which happens on every
     // call regardless of outcome.
     let _ = saw_suspended;
-    th.resume();
+    th.resume().unwrap();
     KEEP_RUNNING.store(0, Ordering::SeqCst);
     Thread::sleep_ms(20);
     drop(th);

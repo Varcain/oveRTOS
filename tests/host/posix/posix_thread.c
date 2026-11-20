@@ -503,28 +503,32 @@ void ove_thread_start_scheduler(void)
 	}
 }
 
-void ove_thread_suspend(ove_thread_t handle)
+int ove_thread_suspend(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
+	if (!t)
+		return OVE_ERR_INVALID_PARAM;
 	/* The calling thread may suspend itself before its creator has stored
 	 * tid and started (it can run before pthread_create returns). */
-	if (t && t == tls_current) {
+	if (t == tls_current) {
 		pthread_kill(pthread_self(), SIGUSR1);
-		return;
-	}
-	if (t && __atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
+	} else if (__atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
 		pthread_kill(t->tid, SIGUSR1);
 		posix_sleep_ns(1000000ULL); /* 1 ms for signal delivery */
 	}
+	return OVE_OK;
 }
 
-void ove_thread_resume(ove_thread_t handle)
+int ove_thread_resume(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
-	if (t && __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
+	if (!t)
+		return OVE_ERR_INVALID_PARAM;
+	if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 		SET_STATE(t, OVE_THREAD_STATE_READY);
 		sem_post(&t->suspend_sem);
 	}
+	return OVE_OK;
 }
 
 void ove_thread_request_stop(ove_thread_t handle)

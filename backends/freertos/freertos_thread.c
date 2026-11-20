@@ -274,16 +274,20 @@ void ove_thread_start_scheduler(void)
 	vTaskStartScheduler();
 }
 
-void ove_thread_suspend(ove_thread_t handle)
+int ove_thread_suspend(ove_thread_t handle)
 {
-	if (handle)
-		vTaskSuspend(handle->task);
+	if (!handle)
+		return OVE_ERR_INVALID_PARAM;
+	vTaskSuspend(handle->task);
+	return OVE_OK;
 }
 
-void ove_thread_resume(ove_thread_t handle)
+int ove_thread_resume(ove_thread_t handle)
 {
-	if (handle)
-		vTaskResume(handle->task);
+	if (!handle)
+		return OVE_ERR_INVALID_PARAM;
+	vTaskResume(handle->task);
+	return OVE_OK;
 }
 
 void ove_thread_request_stop(ove_thread_t handle)

@@ -339,22 +339,22 @@ void ove_thread_start_scheduler(void)
 #endif
 }
 
-void ove_thread_suspend(ove_thread_t handle)
+int ove_thread_suspend(ove_thread_t handle)
 {
-	if (handle != NULL) {
-		struct ove_thread *info = handle;
-		SET_STATE(info, OVE_THREAD_STATE_SUSPENDED);
-		k_thread_suspend(&info->thread);
-	}
+	if (!handle)
+		return OVE_ERR_INVALID_PARAM;
+	SET_STATE(handle, OVE_THREAD_STATE_SUSPENDED);
+	k_thread_suspend(&handle->thread);
+	return OVE_OK;
 }
 
-void ove_thread_resume(ove_thread_t handle)
+int ove_thread_resume(ove_thread_t handle)
 {
-	if (handle != NULL) {
-		struct ove_thread *info = handle;
-		SET_STATE(info, OVE_THREAD_STATE_READY);
-		k_thread_resume(&info->thread);
-	}
+	if (!handle)
+		return OVE_ERR_INVALID_PARAM;
+	SET_STATE(handle, OVE_THREAD_STATE_READY);
+	k_thread_resume(&handle->thread);
+	return OVE_OK;
 }
 
 void ove_thread_request_stop(ove_thread_t handle)

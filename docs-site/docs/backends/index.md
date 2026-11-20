@@ -184,8 +184,8 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
   exhaustion can still stall inside the pinned kernel allocator.
 - Suspension acknowledges the owner and coalesces concurrent requests. Resume
   also releases a request before signal delivery and restores its previous
-  logical state. A native signal-queue allocation failure can return from the
-  void suspension API without suspension. Control operations require thread
+  logical state. A native signal-queue allocation failure can return `OVE_OK`
+  without suspension. Control operations require thread
   context and callers that remain alive through return. Native group owners
   must join pthread workers before returning while they are in library calls;
   coordinate new calls with destruction and never reuse an invalidated handle.

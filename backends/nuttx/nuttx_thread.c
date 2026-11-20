@@ -566,11 +566,11 @@ void ove_thread_start_scheduler(void)
 	/* On Linux, POSIX threads run immediately — no scheduler to start */
 }
 
-void ove_thread_suspend(ove_thread_t handle)
+int ove_thread_suspend(ove_thread_t handle)
 {
 	struct ove_thread *t = suspend_admit(handle);
 	if (!t)
-		return;
+		return handle ? OVE_OK : OVE_ERR_INVALID_PARAM;
 	irqstate_t flags = enter_critical_section();
 	bool send = !t->suspend_active;
 	if (send) {
@@ -580,7 +580,7 @@ void ove_thread_suspend(ove_thread_t handle)
 			if (t->suspend_users != 1 || t->suspend_handler) {
 				leave_critical_section(flags);
 				suspend_depart(t);
-				return;
+				return OVE_OK;
 			}
 			t->suspend_generation = 0;
 		}
@@ -611,17 +611,19 @@ void ove_thread_suspend(ove_thread_t handle)
 		}
 	}
 	suspend_depart(t);
+	return OVE_OK;
 }
 
-void ove_thread_resume(ove_thread_t handle)
+int ove_thread_resume(ove_thread_t handle)
 {
 	struct ove_thread *t = suspend_admit(handle);
 	if (!t)
-		return;
+		return handle ? OVE_OK : OVE_ERR_INVALID_PARAM;
 	irqstate_t flags = enter_critical_section();
 	suspend_release(t);
 	leave_critical_section(flags);
 	suspend_depart(t);
+	return OVE_OK;
 }
 
 void ove_thread_request_stop(ove_thread_t handle)

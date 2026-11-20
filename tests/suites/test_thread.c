@@ -476,9 +476,9 @@ static void test_suspend_resume(void **state)
 	/* Wait for the thread to start (it sets g_flag=1 on entry). */
 	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 
-	ove_thread_suspend(h);
+	OVE_TEST_ASSERT_OK(ove_thread_suspend(h));
 	test_msleep(10);
-	ove_thread_resume(h);
+	OVE_TEST_ASSERT_OK(ove_thread_resume(h));
 
 	/* Settle delay (not a flag-poll): let the resumed worker finish its
 	 * sleep before we destroy it, so destroy's join can't race a thread
@@ -507,8 +507,8 @@ static void test_null_handle_queries(void **state)
 	(void)state;
 	struct ove_thread_stats st;
 
-	ove_thread_suspend(NULL);
-	ove_thread_resume(NULL);
+	assert_int_equal(ove_thread_suspend(NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_thread_resume(NULL), OVE_ERR_INVALID_PARAM);
 	assert_int_equal(ove_thread_get_state(NULL), OVE_THREAD_STATE_UNKNOWN);
 	assert_int_equal(ove_thread_get_runtime_stats(NULL, &st), OVE_ERR_INVALID_PARAM);
 }

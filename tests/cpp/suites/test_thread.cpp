@@ -144,9 +144,9 @@ static void test_cpp_thread_suspend_resume(void **state)
 		test_msleep(5);
 	assert_int_equal(g_cpp_flag.load(), 1);
 
-	t.suspend();
+	assert_true(t.suspend().has_value());
 	test_msleep(10);
-	t.resume();
+	assert_true(t.resume().has_value());
 	test_msleep(300);
 }
 

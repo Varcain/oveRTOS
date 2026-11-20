@@ -198,8 +198,8 @@ int start_worker(void)
 | `ove_thread_sleep_ms` | `void (uint32_t ms)` | Block the calling thread for at least `ms` milliseconds. Passing `0` yields for one scheduler tick. Returns immediately from an ISR. |
 | `ove_thread_yield` | `void (void)` | Voluntarily relinquish the CPU to another ready thread of equal or higher priority. |
 | `ove_thread_start_scheduler` | `void (void)` | Start the RTOS scheduler. Usually called indirectly via `ove_run()`. Does not return on most platforms. |
-| `ove_thread_suspend` | `void (ove_thread_t handle)` | Prevent a thread from being scheduled. May be called on the calling thread itself. A NULL handle is ignored. |
-| `ove_thread_resume` | `void (ove_thread_t handle)` | Resume a previously suspended thread. A NULL handle is ignored. |
+| `ove_thread_suspend` | `int (ove_thread_t handle)` | Prevent a thread from being scheduled. May be called on the calling thread itself. |
+| `ove_thread_resume` | `int (ove_thread_t handle)` | Resume a previously suspended thread. |
 | `ove_thread_get_stack_headroom` | `int (ove_thread_t handle, size_t *headroom_bytes)` | Return the minimum free stack observed, with `OVE_ERR_NOT_SUPPORTED` when profiling is unavailable. |
 | `ove_thread_get_stack_usage` | `size_t (ove_thread_t handle)` | Legacy, misnamed minimum-free-stack query. Returns `0` both for an exhausted stack and when profiling is unavailable. |
 | `ove_thread_get_state` | `ove_thread_state_t (ove_thread_t handle)` | Query the current execution state of a thread. Returns `OVE_THREAD_STATE_UNKNOWN` for a NULL handle. |
@@ -209,16 +209,23 @@ int start_worker(void)
 | `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Identity, state, and priority are always populated: `priority` is the ove-scale priority (a thread created at an ove priority reports that priority; an RTOS service thread reports the highest ove priority at or below its native one) and `native_priority` the value the RTOS uses. `valid_fields` identifies the optional metrics supplied by the backend. Returns `OVE_ERR_NOT_SUPPORTED` if enumeration itself is unavailable, `OVE_ERR_WOULD_BLOCK` from an ISR. |
 | `ove_sys_get_mem_stats` | `int (struct ove_mem_stats *stats)` | Query system heap totals: `total`, `free`, `used`, `peak_used` bytes. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
 
+Both controls return `OVE_OK` when the request is handled,
+`OVE_ERR_INVALID_PARAM` for a NULL handle, or `OVE_ERR_NOT_SUPPORTED` when
+the backend lacks suspension support. Call them from thread context on
+FreeRTOS, NuttX and the POSIX host backend. Zephyr also allows calls from an
+ISR. On Zephyr SMP, an ISR suspending a thread running on another CPU may
+spin until the target halts.
+
 On NuttX, suspension reserves `SIGUSR1` in the target group. Creation completes
 that setup before returning, without changing the creator's handler or mask.
 Do not replace or permanently block the reserved target signal. External
 suspension waits for acknowledgement or concurrent release, close or exit;
 multiple callers share one request. Resume retains an early release and the
 owner restores its previous logical state. A native signal-queue resource
-failure can return without suspension through the existing void API.
+failure can return `OVE_OK` without suspending the thread.
 
-Use these controls from thread context and keep native callers alive through
-return. A native group owner must join pthread workers before returning while
+On NuttX, keep native callers alive through return.
+A native group owner must join pthread workers before returning while
 they are in library calls. Coordinate initiating calls with destruction;
 deinitialization invalidates the handle. NuttX closes pending suspensions and
 waits for admitted callers and actual native retirement before releasing backing.

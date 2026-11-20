@@ -984,10 +984,10 @@ fn testThreadSuspendResume() !void {
     suspended_flag = false;
     var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "susp", .priority = .normal }, suspendableThread, .{});
     ove.thread.sleepMs(50);
-    t.suspendThread();
+    try t.suspendThread();
     ove.thread.sleepMs(100);
     try expect(!suspended_flag);
-    t.resumeThread();
+    try t.resumeThread();
     ove.thread.sleepMs(600);
     try expect(suspended_flag);
     t.deinit();

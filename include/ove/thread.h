@@ -281,35 +281,47 @@ void ove_thread_start_scheduler(void);
  *
  * The thread remains suspended until ove_thread_resume() is called.
  *
+ * Call from thread context on FreeRTOS, NuttX and the POSIX host backend.
+ * Zephyr also allows calls from an ISR. On SMP, an ISR may spin until a
+ * target running on another CPU halts.
+ *
  * NuttX reserves SIGUSR1 in each oveRTOS task group. Do not replace its action
  * or permanently block it. An external call waits for owner acknowledgement,
  * concurrent resume, close or entry return; multiple callers coalesce into one
- * suspension. A native signal-queue resource failure can return without suspension
- * because this void API cannot report it. Self-suspension waits for release.
+ * suspension. A native signal-queue resource failure can return OVE_OK without
+ * suspension. Self-suspension waits for release.
  * Native pthread callers are supported while their owner group stays alive;
- * callers must not be forcibly canceled during a control call. These are
- * thread-context operations. Coordinate starting calls with destruction.
+ * callers must not be forcibly canceled during a control call. Coordinate
+ * starting calls with destruction.
  *
  * @param[in] handle  Thread to suspend.  May be the calling thread itself.
- *                    NULL is ignored.
+ * @retval OVE_OK The request was handled.
+ * @retval OVE_ERR_INVALID_PARAM The handle is NULL.
+ * @retval OVE_ERR_NOT_SUPPORTED The backend does not support suspension.
  *
  * @see ove_thread_resume
  */
-void ove_thread_suspend(ove_thread_t handle);
+int ove_thread_suspend(ove_thread_t handle);
 
 /**
  * @brief Resume a previously suspended thread.
  *
+ * Call from thread context on FreeRTOS, NuttX and the POSIX host backend.
+ * Zephyr also allows calls from an ISR.
+ *
  * On NuttX, also releases a request whose signal has not arrived yet. The
- * owner restores its prior logical state after release. The thread-context,
- * caller-lifetime and reserved-signal rules of ove_thread_suspend() apply.
+ * owner restores its prior logical state after release. The caller-lifetime
+ * and reserved-signal rules of ove_thread_suspend() apply.
  *
  * @param[in] handle  Thread to resume.  Must have been suspended with
- *                    ove_thread_suspend().  NULL is ignored.
+ *                    ove_thread_suspend().
+ * @retval OVE_OK The request was handled.
+ * @retval OVE_ERR_INVALID_PARAM The handle is NULL.
+ * @retval OVE_ERR_NOT_SUPPORTED The backend does not support suspension.
  *
  * @see ove_thread_suspend
  */
-void ove_thread_resume(ove_thread_t handle);
+int ove_thread_resume(ove_thread_t handle);
 
 /**
  * @brief Cooperatively request that a thread stop running.

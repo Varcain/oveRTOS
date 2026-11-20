@@ -110,6 +110,7 @@ waits and condition-variable mutex reacquisition can extend elapsed time.
 | Idempotent deinit | yes | yes | yes |
 | Cancellation flag | `stop_token::stop_requested()` | `StopToken::is_stopped()` | `StopToken.isStopped()` |
 | Request stop | `Thread::request_stop()` | `Thread::request_stop()` | `Thread.requestStop()` |
+| Suspend / resume | `suspend()` / `resume()` → `Result<void>` | `suspend()` / `resume()` → `Result<()>` on `Thread` and `JoinHandle` | `suspendThread()` / `resumeThread()` → `Error!void` |
 | Current thread | `this_thread::self()` / `get_id()` (null handle on a thread oveRTOS did not create, or from an ISR) | `Thread::current() -> Option<Thread>` (`None` there) | `getSelf()` (null there) |
 | From an ISR | `thread_list` → `Error::WouldBlock`; sleeps return at once | `spawn_cooperative` / `spawn_simple` / `spawn_static[_simple]` / `thread_list` → `Error::WouldBlock`; `sleep_ms` returns at once | `threadList` → `error.WouldBlock`; `sleepMs` returns at once |
 | Priority | `ove_prio_t` (C enum) + `ove::prio_above`/`prio_below` | `Priority` newtype (`u8` level, anchor consts, `above`/`below`) | `Priority` non-exhaustive `enum(c_uint)` (`above`/`below`) |
@@ -124,6 +125,10 @@ waits and condition-variable mutex reacquisition can extend elapsed time.
 - Cooperative cancellation is the supported shutdown path: the entry loops
   `while (!stop_requested())` and the owner calls `request_stop()` (implicitly
   via drop, or explicitly).
+- Suspend and resume pass through the [C thread contract](../api/threads.md).
+  An unsupported backend reports `NotSupported`. Empty C++ and Zig thread
+  wrappers report `InvalidParam`. Zephyr allows ISR calls, while FreeRTOS,
+  NuttX and the POSIX host backend require thread context.
 - From an ISR the C thread init/deinit/create/destroy/list calls return
   `OVE_ERR_WOULD_BLOCK`, `ove_thread_get_self` returns NULL and millisecond
   sleeps and delays return at once. The bindings' list, current-thread and

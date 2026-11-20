@@ -409,22 +409,25 @@ impl Thread {
 
     /// Suspend this thread.
     ///
-    /// NuttX reserves SIGUSR1; do not replace or permanently mask it. This
-    /// thread-context call waits for acknowledgement or concurrent release/exit;
-    /// queue failure can return without suspension. Keep native callers and their
+    /// Zephyr allows calls from an ISR. Other backends require thread context.
+    /// NuttX reserves SIGUSR1; do not replace or permanently mask it. The
+    /// call waits for acknowledgement or concurrent release/exit; queue
+    /// failure can return `Ok(())` without suspension. Keep native callers and their
     /// groups alive through the call and coordinate new calls with destruction.
+    ///
+    /// Returns [`Error::NotSupported`] when the backend lacks suspension support.
     #[inline]
-    pub fn suspend(&self) {
-        unsafe { bindings::ove_thread_suspend(self.handle) }
+    pub fn suspend(&self) -> Result<()> {
+        Error::from_code(unsafe { bindings::ove_thread_suspend(self.handle) })
     }
 
     /// Resume this thread.
     ///
     /// NuttX retains release before delivery and restores the prior logical
-    /// state. The thread-context and live-caller rules of `suspend` apply.
+    /// state. The context, live-caller and error rules of [`Thread::suspend`] apply.
     #[inline]
-    pub fn resume(&self) {
-        unsafe { bindings::ove_thread_resume(self.handle) }
+    pub fn resume(&self) -> Result<()> {
+        Error::from_code(unsafe { bindings::ove_thread_resume(self.handle) })
     }
 
     /// Set this thread's priority.
@@ -996,18 +999,16 @@ impl<'storage, T> JoinHandleBorrowed<'storage, T> {
     // ── Convenience delegates to Thread (non-owning operations) ──
     // These let callers do `h.suspend()` instead of `h.thread().suspend()`.
 
-    /// Suspend the running thread.  See [`Thread::suspend`].
-    /// NuttX uses reserved SIGUSR1; see `Thread::suspend` for its
-    /// acknowledgement, resource-failure and live-caller rules.
+    /// Suspend the running thread, returning the result of [`Thread::suspend`].
     #[inline]
-    pub fn suspend(&self) {
-        self.thread().suspend();
+    pub fn suspend(&self) -> Result<()> {
+        self.thread().suspend()
     }
 
-    /// Resume the running thread.  See [`Thread::resume`].
+    /// Resume the running thread, returning the result of [`Thread::resume`].
     #[inline]
-    pub fn resume(&self) {
-        self.thread().resume();
+    pub fn resume(&self) -> Result<()> {
+        self.thread().resume()
     }
 
     /// Change the running thread's priority.  See [`Thread::set_priority`].
