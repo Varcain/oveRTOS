@@ -192,6 +192,29 @@ static void test_create_destroy(void **state)
 	ove_test_thread_destroy(h);
 }
 
+static void entry_count_run(void *arg)
+{
+	atomic_int *runs = arg;
+	atomic_fetch_add(runs, 1);
+}
+
+static void test_reuse_backing_after_deinit(void **state)
+{
+	(void)state;
+	static atomic_int runs;
+	atomic_store(&runs, 0);
+	for (int i = 1; i <= 8; i++) {
+		ove_thread_t h = NULL;
+		OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "treuse", entry_count_run,
+						   &runs, OVE_PRIO_IDLE, 4096, s_th_stack));
+		OVE_TEST_ASSERT_OK(ove_thread_deinit(h));
+		assert_int_equal(atomic_load(&runs), i);
+		/* A lower-priority worker can still be on its stack after posting completion. */
+		memset(s_th_stack, 0xa5, sizeof(s_th_stack));
+		memset(&s_th_storage, 0xa5, sizeof(s_th_storage));
+	}
+}
+
 /* 2. entry receives correct arg */
 static void test_entry_arg(void **state)
 {
@@ -1214,6 +1237,7 @@ int test_thread_run(void)
 		/* Must stay first: see test_get_self_concurrent_first_start. */
 		cmocka_unit_test(test_get_self_concurrent_first_start),
 		cmocka_unit_test(test_create_destroy),
+		cmocka_unit_test(test_reuse_backing_after_deinit),
 		cmocka_unit_test(test_entry_arg),
 		cmocka_unit_test(test_sleep_duration),
 		cmocka_unit_test(test_yield),
