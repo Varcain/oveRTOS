@@ -20,9 +20,8 @@
 //! arenaUsed() on the target/provider, retain at least usage plus 16 bytes and
 //! qualify that configuration; final usage need not include temporary setup peaks.
 //! Remeasure after model/provider/TFLM changes. Output data is read-only.
-//! The C import also exposes ove_model_binding_arena (effective live span) and
-//! pointer-free ove_model_binding_in_isr, independently of ASYNC. These binding
-//! queries transfer no ownership and do not replace caller-side program,
+//! The C import also exposes ove_model_binding_arena, which reports the effective
+//! live span without transferring ownership or replacing the caller's program,
 //! backing or serialization obligations.
 
 const std = @import("std");

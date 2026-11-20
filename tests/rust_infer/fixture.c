@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <ove/infer.h>
+#include <ove/irq.h>
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -163,7 +164,7 @@ int ove_model_binding_arena(ove_model_t model, void **base, size_t *capacity)
 	return OVE_OK;
 }
 
-bool ove_model_binding_in_isr(void)
+bool ove_is_in_isr(void)
 {
 	return atomic_load(&interrupt_context);
 }

@@ -156,7 +156,8 @@ Rust represents these integration obligations through an unsafe qualified
 the numeric domain. Ordinary session lifetimes, scalar types, retained spans
 and aliasing are enforced inside the binding. Its constructors reject ISR
 context; ISR Drop retains native resources and admission without native
-teardown. No background recovery accesses abandoned borrowed backing. The
-native binding-support arena/context queries are available independently of
-ASYNC; they add no native record fields and do not change C/C++/Zig callers'
-existing qualification obligations.
+teardown. No background recovery accesses abandoned borrowed backing.
+`ove_model_binding_arena()` is available with INFER alone, and the Rust binding
+detects ISR context with the always-available `ove_is_in_isr()`. Neither query
+adds native record fields or changes C/C++/Zig callers' existing qualification
+obligations.

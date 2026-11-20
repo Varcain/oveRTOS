@@ -3228,10 +3228,6 @@ unsafe extern "C" {
         capacity: *mut usize,
     ) -> core::ffi::c_int;
 }
-unsafe extern "C" {
-    #[doc = " @brief Internal pointer-free binding context query, independent of ASYNC.\n\n True in a hardware ISR on FreeRTOS, Zephyr and NuttX. Host POSIX uses ordinary\n threads and reports false; simulated callbacks are not hardware interrupts.\n Takes no handle and never accesses session or abandoned backing state."]
-    pub fn ove_model_binding_in_isr() -> bool;
-}
 #[doc = "< Reliable byte-stream (TCP)."]
 pub const OVE_SOCK_STREAM: ove_sock_type_t = 1;
 #[doc = "< Connectionless datagrams (UDP)."]

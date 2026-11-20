@@ -23,7 +23,7 @@
 //! Drop normally closes synchronously. In ISR context it retains native resources
 //! and admission indefinitely, as does `mem::forget`; later construction returns
 //! Busy without accessing abandoned backing. There is no background worker or
-//! recovery. Host POSIX uses ordinary threads and reports no hardware ISR.
+//! recovery. Host POSIX ISR wrappers and timer callbacks count as ISR context.
 
 use core::{ffi::c_void, marker::PhantomData, mem, ptr};
 
@@ -204,9 +204,8 @@ impl<'model> Model<'static, 'model> {
 }
 
 fn check_thread() -> Result<()> {
-    // SAFETY: This pointer-free query is available independently of ASYNC and
-    // accesses no handle or retained backing, including during ISR Drop.
-    if unsafe { bindings::ove_model_binding_in_isr() } {
+    // SAFETY: The ISR query takes no arguments and accesses no model state.
+    if unsafe { bindings::ove_is_in_isr() } {
         Err(Error::InvalidParam)
     } else {
         Ok(())

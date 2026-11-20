@@ -299,15 +299,6 @@ size_t ove_model_arena_used(ove_model_t model);
  */
 OVE_NODISCARD int ove_model_binding_arena(ove_model_t model, void **base, size_t *capacity);
 
-/**
- * @brief Internal pointer-free binding context query, independent of ASYNC.
- *
- * True in a hardware ISR on FreeRTOS, Zephyr and NuttX. Host POSIX uses ordinary
- * threads and reports false; simulated callbacks are not hardware interrupts.
- * Takes no handle and never accesses session or abandoned backing state.
- */
-bool ove_model_binding_in_isr(void);
-
 #else /* !CONFIG_OVE_INFER */
 
 /** @cond INTERNAL */
@@ -362,10 +353,6 @@ OVE_NODISCARD static inline int ove_model_binding_arena(ove_model_t m, void **ba
 	(void)base;
 	(void)capacity;
 	return OVE_ERR_NOT_SUPPORTED;
-}
-static inline bool ove_model_binding_in_isr(void)
-{
-	return false;
 }
 /** @endcond */
 

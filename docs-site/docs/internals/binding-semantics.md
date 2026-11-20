@@ -536,13 +536,13 @@ close; a handle cannot be reused once its storage holds another session.
   generated `model_data!` accessor. Sessions borrow the model bytes and their
   storage exclusively. Tensor views accept only `f32`, `i8`, `u8`, `i16` and
   `i32` of the exact descriptor type and are bounds- and alignment-checked.
-  Construction and invocation return `InvalidParam` in a detected ISR; Drop in
-  an ISR touches nothing and retains the resources and admission permanently,
+  Rust uses `ove_is_in_isr()` to detect ISR context, including inside host POSIX
+  ISR wrappers and timer callbacks. Construction and invocation there return
+  `InvalidParam`. Drop there retains the resources and admission permanently,
   so later construction returns `Busy`. The `ove::infer` crate docs hold the
   full rules.
-- `ove_model_binding_arena` (live span, excluding front padding) and
-  `ove_model_binding_in_isr` are available with INFER alone, also to C++ and
-  Zig, and transfer no ownership.
+- `ove_model_binding_arena` reports the live span excluding front padding.
+  It is available with INFER alone, also to C++ and Zig, and transfers no ownership.
 
 ---
 
