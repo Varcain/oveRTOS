@@ -6,8 +6,8 @@
 #
 # Renode STM32F746 test target — zero-heap mode.
 #
-# Mirrors tests/sim/freertos-qemu-zeroheap/CMakeLists.txt but links
-# against the real STM32F7 HAL (from dl/STM32CubeF7-*) + the FreeRTOS
+# Uses static allocation like tests/sim/freertos-qemu with OVE_ZERO_HEAP=ON.
+# Links against the real STM32F7 HAL (from dl/STM32CubeF7-*) + the FreeRTOS
 # ARM_CM7/r0p1 port + the STM32F746NGHx linker script.  Renode's
 # stm32f7_discovery-bb platform implements the CPU, NVIC, SysTick,
 # USARTs, timers, DMA, GPIO, RCC, SPI, I2C, LTDC; peripherals that

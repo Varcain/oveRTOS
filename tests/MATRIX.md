@@ -57,7 +57,8 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 `nuttx-qemu`, `freertos-qemu`, `zephyr-qemu` each have a matching
 `-zeroheap` variant that runs the same suite set with
 `CONFIG_OVE_ZERO_HEAP=1`. They are not listed as separate columns to keep
-the matrix readable.
+the matrix readable. Both FreeRTOS QEMU variants use `tests/sim/freertos-qemu`
+and select the allocation mode with the `OVE_ZERO_HEAP` CMake option.
 
 ## Renode STM32F746 target (board-level fidelity)
 

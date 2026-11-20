@@ -104,3 +104,6 @@ Every target follows a predictable shape:
 
 `ove test <name>` accepts the same names; `ove test all` excludes HW
 the same way `make test-all` does.
+
+The FreeRTOS QEMU targets share `tests/sim/freertos-qemu`. The
+`test-qemu-freertos-zeroheap` target sets `OVE_ZERO_HEAP=ON`.

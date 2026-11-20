@@ -17,6 +17,12 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Werror -Wno-unused-parameter
                     -ffunction-sections -fdata-sections)
 
+option(OVE_ZERO_HEAP "Build the zero-heap test variant" OFF)
+if(OVE_ZERO_HEAP)
+    add_compile_definitions(CONFIG_OVE_ZERO_HEAP=1)
+    add_compile_options(-Wno-unused-function)
+endif()
+
 include(FetchContent)
 
 # --- Fetch FreeRTOS-Kernel ---
@@ -84,6 +90,11 @@ set(STARTUP_SOURCES
 )
 
 # --- FreeRTOS kernel sources (ARM_CM7/r0p1 port) ---
+if(OVE_ZERO_HEAP)
+    set(FREERTOS_HEAP_SOURCE ${FREERTOS_BACKEND}/freertos_heap_stubs.c)
+else()
+    set(FREERTOS_HEAP_SOURCE ${FREERTOS_SRC}/portable/MemMang/heap_4.c)
+endif()
 set(FREERTOS_KERNEL_SOURCES
     ${FREERTOS_SRC}/tasks.c
     ${FREERTOS_SRC}/queue.c
@@ -91,7 +102,7 @@ set(FREERTOS_KERNEL_SOURCES
     ${FREERTOS_SRC}/timers.c
     ${FREERTOS_SRC}/event_groups.c
     ${FREERTOS_SRC}/stream_buffer.c
-    ${FREERTOS_SRC}/portable/MemMang/heap_4.c
+    ${FREERTOS_HEAP_SOURCE}
     ${FREERTOS_PORT}/port.c
 )
 
@@ -161,7 +172,7 @@ target_compile_definitions(ove_test_freertos_qemu PRIVATE OVE_QEMU_ARM)
 # -fprofile-abs-path ensures .gcda filenames embed absolute paths so
 # libgcov's rdimon-semihosting fopen writes them where lcov expects.
 option(OVE_TEST_BUILD_COVERAGE "Enable gcov coverage instrumentation" OFF)
-if(OVE_TEST_BUILD_COVERAGE)
+if(OVE_TEST_BUILD_COVERAGE AND NOT OVE_ZERO_HEAP)
     target_compile_definitions(ove_test_freertos_qemu PRIVATE OVE_COVERAGE=1)
     set(COVERAGE_SOURCES
         ${FREERTOS_BACKEND_SOURCES}
@@ -215,4 +226,15 @@ set_source_files_properties(${FREERTOS_KERNEL_SOURCES} PROPERTIES
 # NOT wired: test ELFs are CMocka scaffolding, not production hot path
 # — that audit runs only on bench targets in boards/*/CMakeLists.txt.
 include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
-ove_assert_no_dispatch_overhead(ove_test_freertos_qemu BINDING c)
+if(OVE_ZERO_HEAP)
+    target_sources(ove_test_freertos_qemu PRIVATE
+        ${OVE_ROOT}/backends/common/ove_heap_lock.c
+        ${FREERTOS_BACKEND}/freertos_heap_lock.c
+    )
+    include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+    ove_apply_zero_heap_wrap(ove_test_freertos_qemu)
+    ove_zero_heap_assert_no_kernel_alloc(ove_test_freertos_qemu RTOS FREERTOS STRICT)
+    ove_assert_no_dispatch_overhead(ove_test_freertos_qemu BINDING c NO_PANIC_SYMBOLS)
+else()
+    ove_assert_no_dispatch_overhead(ove_test_freertos_qemu BINDING c)
+endif()

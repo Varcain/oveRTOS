@@ -6,7 +6,7 @@
  * This file is part of oveRTOS.
  *
  * FreeRTOS config for Renode-hosted STM32F746 test firmware, zero-heap
- * mode.  Mirrors tests/sim/freertos-qemu-zeroheap/FreeRTOSConfig.h with
+ * mode. Based on the zero-heap config in tests/sim/freertos-qemu with
  * the CPU clock retuned for the STM32F746 (216 MHz nominal) and the
  * interrupt-priority bits set for the STM32 NVIC (4 bits).
  */

@@ -7,11 +7,9 @@
  *
  * Test runner for the Renode-hosted STM32F746 target.
  *
- * Mirrors tests/sim/freertos-qemu-zeroheap/sim_main.c.  The only
- * structural difference is the exception-handler set: the CubeF7 startup
- * assembly uses the full STM32F7 vector table, so SysTick / PendSV / SVC
- * are the only handlers we have to provide — the rest come out of the
- * FreeRTOS port or stay at Default_Handler.
+ * The CubeF7 startup assembly uses the full STM32F7 vector table, so
+ * SysTick / PendSV / SVC are the only handlers we have to provide.
+ * The rest come out of the FreeRTOS port or stay at Default_Handler.
  */
 
 #include "FreeRTOS.h"

@@ -24,6 +24,7 @@ from .utils import CARGO_CLIPPY_COMMAND, run, nproc, apply_defconfig_overlay, at
 from .appgen import generate_app_kconfig
 from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
+from .build import _drop_stale_cmake_cache
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
 
@@ -170,6 +171,7 @@ def _venv_env(ove_dir, base_env=None):
 def _cmake_build(src_dir, build_dir, extra_args=None):
     """Configure + build a CMake project."""
     cmake = shutil.which("cmake") or "cmake"
+    _drop_stale_cmake_cache(build_dir, src_dir)
     os.makedirs(build_dir, exist_ok=True)
     cmd = [cmake]
     if extra_args:
@@ -2535,7 +2537,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
          the kernel + libapps build.
 
     Build artifacts live under build_dir."""
-    from .build import (_shared_patched_tree, _drop_stale_cmake_cache,
+    from .build import (_shared_patched_tree,
                         _check_source_trees_unchanged)
 
     arm_board = board_config.split(":", 1)[0]
@@ -2780,8 +2782,7 @@ def test_zephyr(ove_dir, output_dir):
 
 
 # ── FreeRTOS QEMU shared driver ────────────────────────────────────────
-def _run_freertos_qemu(ove_dir, output_dir, *, src_subdir, binary, label,
-                       coverage=False):
+def _run_freertos_qemu(ove_dir, output_dir, *, label, zero_heap=False, coverage=False):
     """Build and run a FreeRTOS QEMU ARM test variant."""
     tc_dir = _ensure_arm_toolchain(ove_dir)
     build = os.path.join(output_dir, "tests", label)
@@ -2791,33 +2792,31 @@ def _run_freertos_qemu(ove_dir, output_dir, *, src_subdir, binary, label,
     if coverage:
         shutil.rmtree(build, ignore_errors=True)
     logger.info(f"Building {label}")
-    cmake_args = [f"-DOVE_TOOLCHAIN_DIR={tc_dir}"]
+    cmake_args = [
+        f"-DOVE_TOOLCHAIN_DIR={tc_dir}",
+        "-DOVE_ZERO_HEAP=" + ("ON" if zero_heap else "OFF"),
+    ]
     if coverage:
         cmake_args.append("-DOVE_TEST_BUILD_COVERAGE=ON")
-    _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
+    _cmake_build(os.path.join(ove_dir, "tests", "sim", "freertos-qemu"),
                  build, extra_args=cmake_args)
     logger.info(f"Running {label}")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
-        [qemu_run, os.path.join(build, binary),
+        [qemu_run, os.path.join(build, "ove_test_freertos_qemu"),
          "--headless", "--timeout", "45"], label)
 
 
 def test_qemu_freertos(ove_dir, output_dir):
     """Build and run FreeRTOS QEMU ARM tests."""
-    return _run_freertos_qemu(ove_dir, output_dir,
-                              src_subdir="freertos-qemu",
-                              binary="ove_test_freertos_qemu",
-                              label="qemu-freertos")
+    return _run_freertos_qemu(ove_dir, output_dir, label="qemu-freertos")
 
 
 def test_qemu_freertos_zeroheap(ove_dir, output_dir):
     """Build and run FreeRTOS QEMU ARM tests (zero-heap mode)."""
     return _run_freertos_qemu(ove_dir, output_dir,
-                              src_subdir="freertos-qemu-zeroheap",
-                              binary="ove_test_freertos_qemu_zeroheap",
-                              label="qemu-freertos-zeroheap")
+                             label="qemu-freertos-zeroheap", zero_heap=True)
 
 
 # ── Renode STM32F746 shared driver ─────────────────────────────────────
@@ -3324,10 +3323,7 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
     lcov --capture on the build dir and filter out non-oveRTOS paths.
     """
     label = "qemu-freertos-coverage"
-    result = _run_freertos_qemu(ove_dir, output_dir,
-                                src_subdir="freertos-qemu",
-                                binary="ove_test_freertos_qemu",
-                                label=label, coverage=True)
+    result = _run_freertos_qemu(ove_dir, output_dir, label=label, coverage=True)
     build = os.path.join(output_dir, "tests", label)
     cov_dir = os.path.join(output_dir, "tests", "qemu_freertos_coverage")
     os.makedirs(cov_dir, exist_ok=True)

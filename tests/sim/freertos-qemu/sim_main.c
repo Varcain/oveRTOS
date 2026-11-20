@@ -157,8 +157,15 @@ int main(void)
 		printf("pre-scheduler thread teardown failed\n");
 		semihosting_exit(1);
 	}
+#ifdef CONFIG_OVE_ZERO_HEAP
+	static StaticTask_t runner_tcb;
+	static StackType_t runner_stack[configMINIMAL_STACK_SIZE * 8];
+	xTaskCreateStatic(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
+			  tskIDLE_PRIORITY + 1, runner_stack, &runner_tcb);
+#else
 	xTaskCreate(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
 		    tskIDLE_PRIORITY + 1, NULL);
+#endif
 	vTaskStartScheduler();
 	return 0;
 }

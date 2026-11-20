@@ -31,9 +31,13 @@
 
 /* Memory */
 #define configSUPPORT_STATIC_ALLOCATION 1
+#ifdef CONFIG_OVE_ZERO_HEAP
+#define configSUPPORT_DYNAMIC_ALLOCATION 0
+#else
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
 #define configTOTAL_HEAP_SIZE ((size_t)(512 * 1024))
 #define configAPPLICATION_ALLOCATED_HEAP 0
+#endif
 
 /* Synchronization */
 #define configUSE_MUTEXES 1
