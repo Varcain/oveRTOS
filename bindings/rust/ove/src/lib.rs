@@ -379,6 +379,20 @@ pub mod ffi {
     pub use crate::bindings::*;
 }
 
+/// Without `CONFIG_OVE_ASYNC` the C IRQ lock is an inline stub that gives
+/// no exclusion, so the bindings must not expose it. The blocks name the
+/// functions without calling them, so only name resolution can fail.
+///
+/// ```compile_fail,E0425
+/// let _ = ove::ffi::ove_irq_lock;
+/// ```
+///
+/// ```compile_fail,E0425
+/// let _ = ove::ffi::ove_irq_unlock;
+/// ```
+#[cfg(not(has_async))]
+mod irq_lock_absent {}
+
 #[cfg(ove_test)]
 #[doc(hidden)]
 pub mod __test_support {

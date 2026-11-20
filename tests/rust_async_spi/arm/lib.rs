@@ -12,6 +12,9 @@ use ove::spi::Config;
 mod consumer {
     include!("../consumer.rs");
 }
+mod abi_roundtrip {
+    include!("../../rust/abi_roundtrip.rs");
+}
 unsafe extern "C" {
     fn rust_spi_ready();
     fn rust_spi_finished();
@@ -67,6 +70,7 @@ async fn transfers() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_spi_run() -> ! {
+    abi_roundtrip::check();
     let executor = ove::Executor::take().unwrap();
     executor.run(|spawner| {
         unsafe { rust_spi_ready() };

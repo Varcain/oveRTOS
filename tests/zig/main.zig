@@ -2055,6 +2055,26 @@ fn testErrorsFromCodeIntPositiveIsValue() !void {
     }
 }
 
+// The C side, tests/rust/abi_roundtrip.c, is in the stub library.
+extern fn ove_test_abi_spi_cfg(cfg: *const ove.ffi.ove_spi_cfg) c_uint;
+extern fn ove_test_abi_irq_key(key: ove.ffi.ove_irq_key_t) ove.ffi.ove_irq_key_t;
+
+fn testAbiSpiCfgByPointer() !void {
+    const cfg = ove.ffi.ove_spi_cfg{
+        .instance = 5,
+        .clock_hz = 12_345_678,
+        .mode = ove.ffi.OVE_SPI_MODE_3,
+        .bit_order = ove.ffi.OVE_SPI_LSB_FIRST,
+        .word_size = 16,
+    };
+    try expectEqual(c_uint, 0x1f, ove_test_abi_spi_cfg(&cfg));
+}
+
+fn testAbiIrqKeyByValue() !void {
+    const key: ove.ffi.ove_irq_key_t = 0x1122_3344_5566_7788;
+    try expectEqual(ove.ffi.ove_irq_key_t, key, ove_test_abi_irq_key(key));
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -2334,6 +2354,11 @@ pub fn main() void {
     runSuite("Version", &.{
         .{ .name = "string_spells_numbers", .func = testVersionStringSpellsNumbers },
         .{ .name = "packing_orders", .func = testVersionPackingOrders },
+    });
+
+    runSuite("AbiRoundTrip", &.{
+        .{ .name = "spi_cfg_by_pointer", .func = testAbiSpiCfgByPointer },
+        .{ .name = "irq_key_by_value", .func = testAbiIrqKeyByValue },
     });
 
     // Every primitive constructed above should have been deinit'd, so the

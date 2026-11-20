@@ -26,6 +26,7 @@ set(OVE_STUB_CONFIG_DIR "" CACHE PATH "Optional generated host-test configuratio
 
 add_library(ove_stub STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../string_native.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../abi_roundtrip.c
     ${POSIX_CORE_DIR}/posix_thread.c
     ${POSIX_CORE_DIR}/posix_sync.c
     ${OVE_SRC}/ove_sync.c

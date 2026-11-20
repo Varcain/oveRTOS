@@ -14,6 +14,11 @@ unsafe extern "C" {
     fn ove_test_audio_layout(values: *mut usize);
 }
 
+mod abi_roundtrip {
+    include!("../abi_roundtrip.rs");
+}
+use abi_roundtrip::check as test_abi_round_trip;
+
 fn test_paths_prefix_nul_and_native_bytes() {
     let root = std::env::temp_dir().join(format!("ove-native-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
@@ -208,6 +213,7 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_paths_prefix_nul_and_native_bytes),
             test_entry!(test_counted_nvs_and_single_pass_formatting),
             test_entry!(test_audio_counted_spans_and_c_layout),
+            test_entry!(test_abi_round_trip),
         ],
     )
 }

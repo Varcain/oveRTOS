@@ -32,6 +32,14 @@ def main(out):
                          "--manifest-path", str(ROOT / "bindings/rust/ove/Cargo.toml")]
                         + ([] if feature == "no_std" else ["--features", feature]))
             ok = all(subprocess.run(command, env=env, timeout=180, check=False).returncode == 0 for command in commands)
+            if ok and not zero and feature == "std":
+                # Async is off here, so the IRQ lock doctests must fail to compile.
+                doc = subprocess.run(["cargo", "test", "--locked", "--doc", "--no-default-features", "--features", "std",
+                                      "--target", host, "--manifest-path", str(ROOT / "bindings/rust/ove/Cargo.toml"),
+                                      "--", "irq_lock_absent"],
+                                     env=env, timeout=300, check=False, capture_output=True, text=True)
+                ok = doc.returncode == 0 and "test result: ok. 2 passed" in doc.stdout
+                print(doc.stdout + ("" if ok else doc.stderr), end="", flush=True)
             print(folder.name, "PASS" if ok else "FAIL", flush=True)
             passed += ok
             failed += not ok

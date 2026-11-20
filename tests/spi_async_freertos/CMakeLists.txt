@@ -36,7 +36,7 @@ if(OVE_RUST_SPI_TEST)
     target_compile_definitions(ove_test_spi_freertos PRIVATE OVE_RUST_SPI_TEST=1
         OVE_FREERTOS_IRQ_PORT_SUPPORTED=1)
     target_sources(ove_test_spi_freertos PRIVATE ${OVE_ROOT}/src/ove_sync.c
-        ${OVE_ROOT}/backends/freertos/freertos_irq.c)
+        ${OVE_ROOT}/backends/freertos/freertos_irq.c ${OVE_ROOT}/tests/rust/abi_roundtrip.c)
     set(OVE_DIR "${OVE_ROOT}")
     set(OVE_SPI ON)
     set(OVE_SYNC ON)
