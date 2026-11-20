@@ -35,10 +35,7 @@ def main():
             env.pop(key, None)
         env.update(OVE_DIR=str(ROOT), OVE_GEN_DIR=str(generated), RUST_IS_NATIVE="1",
                    OVE_STORAGE_SIZES=str(generated / "ove_storage_sizes.env"),
-                   EVENTGROUP_TEST_LIB_DIR=str(native), CARGO_TARGET_DIR=str(native / "cargo"),
-                   LVGL_INCLUDE_PATH=str(ROOT / "tests/backends/stub/lvgl"),
-                   LVGL_PARENT_PATH=str(ROOT / "tests/backends/stub"),
-                   LV_CONF_PATH=str(ROOT / "tests/host"))
+                   EVENTGROUP_TEST_LIB_DIR=str(native), CARGO_TARGET_DIR=str(native / "cargo"))
         command(["cmake", "-S", str(HERE), "-B", str(native),
                  "-DOVE_ZERO_HEAP=" + ("ON" if zero else "OFF")], env, mode + "-configure")
         command(["cmake", "--build", str(native), "--parallel", "8"], env, mode + "-native")

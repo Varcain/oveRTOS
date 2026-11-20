@@ -13,8 +13,7 @@ nothing ever built it, so it drifted onto functions that do not exist. This
 rule pulls out each ```c block under _PAGE_DIRS, prepends
 `#include "ove/ove.h"`, and compiles it to assembly against include/ with
 tests/docs/ove_config.h (every module the docs use switched on). LVGL comes
-from dl/lvgl when it has been downloaded, else from the stub header the host
-tests use.
+from dl/lvgl when it has been downloaded, else from the stub header.
 
 The compile generates code (-S) at -O0 on purpose. GCC reports an ignored
 OVE_NODISCARD result only while generating code, so -fsyntax-only never sees

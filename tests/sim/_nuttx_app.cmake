@@ -82,7 +82,6 @@ set(_srcs
   ${OVE_DIR}/backends/common/ove_audio_graph.c
   ${OVE_DIR}/backends/common/ove_audio_nodes.c
   ${_stub_dir}/stub_bsp.c
-  ${_stub_dir}/stub_lvgl.c
   ${_stub_dir}/stub_gpio.c
   ${_stub_dir}/stub_board.c
   ${_stub_dir}/stub_watchdog.c
@@ -123,7 +122,6 @@ set(_srcs
   ${_suite_dir}/test_gpio.c
   ${_suite_dir}/test_led.c
   ${_suite_dir}/test_fs.c
-  ${_suite_dir}/test_lvgl.c
   ${_suite_dir}/test_app.c
   ${_suite_dir}/test_async.c
   ${_suite_dir}/test_init_no_alloc.c

@@ -41,7 +41,6 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 | board              | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
 | gpio               | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
 | led                | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
-| lvgl               | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
 | app                | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
 | fs                 | ✅   | ✅             | ❌         | ❌            | ❌     | ❌          | No FS on bare-metal QEMU |
 | static_define      | ✅   | —              | —          | —             | —      | —           | Stub-only today |

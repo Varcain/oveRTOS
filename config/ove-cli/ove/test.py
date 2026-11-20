@@ -630,11 +630,6 @@ def _rust_test_env(ove_dir, output_dir, target_dir, *, zero_heap=False):
         "STUB_LIB_DIR": stub_build,
         "OVE_STORAGE_SIZES": os.path.join(stub_build,
                                                "ove_storage_sizes.env"),
-        "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-        "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends",
-                                           "stub", "lvgl"),
-        "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends",
-                                          "stub"),
         "CARGO_TARGET_DIR": target_dir,
     })
     env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "").strip() +
@@ -673,10 +668,7 @@ def _test_rust_async(ove_dir, output_dir, short, program, doc_filter, sanitize=F
         env.pop("DOCS_RS", None)
         env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=str(generated), RUST_IS_NATIVE="1",
                    STUB_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target),
-                   OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"),
-                   LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
-                   LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-                   LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
+                   OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"))
         configure = ["cmake", "-S", os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
                      "-B", str(native), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                      "-DOVE_STUB_CONFIG_DIR=" + str(generated),
@@ -820,9 +812,6 @@ def test_rust_strings(ove_dir, output_dir):
             "RUST_IS_NATIVE": "1",
             "OVE_STRING_TEST_LIB": native,
             "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
-            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
             "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_strings" + suffix),
         })
         check = subprocess.run(
@@ -1351,10 +1340,7 @@ def _test_rust_scoped(ove_dir, output_dir, sanitize=False):
                 env.pop(key, None)
             env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=native, RUST_IS_NATIVE="1",
                        SCOPED_TEST_LIB_DIR=native, CARGO_TARGET_DIR=target,
-                       OVE_STORAGE_SIZES=os.path.join(native, "ove_storage_sizes.env"),
-                       LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
-                       LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-                       LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
+                       OVE_STORAGE_SIZES=os.path.join(native, "ove_storage_sizes.env"))
             if sanitize:
                 env.update(RUSTC_BOOTSTRAP="1", SCOPED_TEST_SANITIZE="1",
                            RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address -Cforce-frame-pointers=yes",
@@ -1451,10 +1437,7 @@ def _test_rust_sync(ove_dir, output_dir, sanitize=False):
                 env.pop(key, None)
             env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=native, RUST_IS_NATIVE="1",
                        SYNC_TEST_LIB_DIR=native, CARGO_TARGET_DIR=target,
-                       OVE_STORAGE_SIZES=os.path.join(native, "ove_storage_sizes.env"),
-                       LV_CONF_PATH=os.path.join(ove_dir, "tests", "host"),
-                       LVGL_INCLUDE_PATH=os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-                       LVGL_PARENT_PATH=os.path.join(ove_dir, "tests", "backends", "stub"))
+                       OVE_STORAGE_SIZES=os.path.join(native, "ove_storage_sizes.env"))
             if sanitize:
                 env.update(RUSTC_BOOTSTRAP="1", SYNC_TEST_SANITIZE="1",
                            RUSTFLAGS=env.get("RUSTFLAGS", "") + " -Zsanitizer=address -Cforce-frame-pointers=yes",
@@ -1523,9 +1506,6 @@ def _test_rust_infer(ove_dir, output_dir, sanitize=False):
             "OVE_DIR": ove_dir, "OVE_GEN_DIR": native, "RUST_IS_NATIVE": "1",
             "INFER_TEST_LIB_DIR": native,
             "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
-            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
             "CARGO_TARGET_DIR": target,
         })
         command = ["cargo", "build", "--locked", "--manifest-path",
@@ -1583,9 +1563,6 @@ def test_rust_spi(ove_dir, output_dir):
             "RUST_IS_NATIVE": "1",
             "SPI_TEST_LIB_DIR": native,
             "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
-            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
             "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_spi" + suffix),
         })
         check = _run_owned_test_process(
@@ -1630,9 +1607,6 @@ def test_rust_i2c(ove_dir, output_dir):
                 "RUST_IS_NATIVE": "1",
                 "I2C_TEST_LIB_DIR": native,
                 "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
-                "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-                "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-                "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
                 "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_i2c" + suffix),
             })
             check = _run_owned_test_process(
@@ -1668,9 +1642,6 @@ def test_rust_async_spi(ove_dir, output_dir):
             "RUST_IS_NATIVE": "1",
             "ASYNC_SPI_TEST_LIB_DIR": native,
             "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
-            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
             "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_async_spi" + suffix),
         })
         check = _run_owned_test_process(
@@ -1764,9 +1735,6 @@ def test_rust_async_i2c(ove_dir, output_dir):
             "RUST_IS_NATIVE": "1",
             "ASYNC_I2C_TEST_LIB_DIR": native,
             "OVE_STORAGE_SIZES": os.path.join(native, "ove_storage_sizes.env"),
-            "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-            "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-            "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
             "CARGO_TARGET_DIR": os.path.join(output_dir, "tests", "rust_async_i2c" + suffix),
         })
         check = _run_owned_test_process(
@@ -1834,9 +1802,6 @@ def test_rust_async_spi_arm(ove_dir, output_dir):
         "CARGO_TARGET_DIR": target, "RUSTFLAGS": "-Ctarget-cpu=cortex-m7", "RUST_IS_NATIVE": "0",
         "ARM_SYSROOT_INCLUDE": os.path.join(toolchain, "arm-none-eabi", "include"),
         "BINDGEN_EXTRA_CLANG_ARGS": "-DSTM32F746xx=1 " + " ".join("-I" + path for path in includes),
-        "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-        "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-        "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
     })
     result = TestResults(suite="rust-async-spi-arm")
     rc = _run_owned_test_process(
@@ -1898,9 +1863,6 @@ def test_rust_async_i2c_arm(ove_dir, output_dir):
         "CARGO_TARGET_DIR": target, "RUSTFLAGS": "-Ctarget-cpu=cortex-m7", "RUST_IS_NATIVE": "0",
         "ARM_SYSROOT_INCLUDE": os.path.join(toolchain, "arm-none-eabi", "include"),
         "BINDGEN_EXTRA_CLANG_ARGS": "-DSTM32F746xx=1 " + " ".join("-I" + path for path in includes),
-        "LV_CONF_PATH": os.path.join(ove_dir, "tests", "host"),
-        "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-        "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends", "stub"),
     })
     result = TestResults(suite="rust-async-i2c-arm")
     rc = _run_owned_test_process(
@@ -2324,8 +2286,6 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False, zero_heap=False)
         "-I" + os.path.join(ove_dir, "include"),
         "-I" + os.path.join(ove_dir, "tests"),
         "-I" + os.path.join(ove_dir, "tests", "host", "posix", "include"),
-        "-I" + os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-        "-I" + os.path.join(ove_dir, "tests", "backends", "stub"),
         "-I" + os.path.join(ove_dir, "tests", "host"),
     ]
 
@@ -2384,8 +2344,6 @@ def _build_zig_infer_binaries(ove_dir, output_dir):
                 command += ["-I" + path for path in (
                     native, os.path.join(ove_dir, "include"),
                     os.path.join(ove_dir, "tests", "host", "posix", "include"),
-                    os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
-                    os.path.join(ove_dir, "tests", "backends", "stub"),
                     os.path.join(ove_dir, "tests", "host"))]
                 command += ["-L" + native, "-love_zig_infer_fixture"]
                 if kind == "assets":
@@ -3933,22 +3891,7 @@ def _compile_probe(label, cmd, *, env=None, cwd=None):
 
 
 def test_lvgl_bindings_compile(ove_dir, output_dir):
-    """Compile-check the C++/Rust/Zig LVGL bindings against the REAL
-    vendored LVGL (dl/lvgl) + the host lv_conf, not the test stub header.
-
-    Why this exists: the binding wrappers are otherwise only ever compiled
-    against the hand-written stub `tests/backends/stub/lvgl/lvgl.h` (during
-    `make test-{rust,zig,cpp}`, whose `ove_config.h` sets CONFIG_OVE_LVGL).
-    The stub declares "just enough for bindgen", so it can neither catch a
-    wrapper that calls an `lv_*` function with the wrong signature nor
-    detect stub drift from upstream LVGL.  Pointing each binding's compile
-    at `dl/lvgl` makes a bad `lv_*` call fail here against ground truth.
-
-    Compile-only (no run): it validates the binding *surface*, not runtime
-    behaviour.  C++ is `-fsyntax-only`; Zig is `build-obj`; Rust is
-    `cargo check` reusing the stub-build env from `_rust_test_env` with the
-    LVGL include path swapped from the stub to `dl/lvgl`.
-    """
+    """Compile the C++, Rust and Zig LVGL bindings against vendored LVGL."""
     res = TestResults(suite="lvgl-compile")
     lvgl_dir = os.path.join(ove_dir, "dl", "lvgl")
     if not os.path.isfile(os.path.join(lvgl_dir, "lvgl.h")):
@@ -3957,9 +3900,13 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
         return res
 
     host_lv_conf = os.path.join(ove_dir, "tests", "host")
-    # tests/ove_config.h carries CONFIG_OVE_LVGL=1 + the host-stub backend,
-    # so it is a complete host config for a compile-only check.
-    gen_dir = os.path.join(ove_dir, "tests")
+    gen_dir = os.path.join(output_dir, "tests", "lvgl_compile_gen")
+    os.makedirs(gen_dir, exist_ok=True)
+    # build.rs needs a literal CONFIG_OVE_LVGL define in this header.
+    base_config = Path(ove_dir, "tests", "ove_config.h").read_text()
+    Path(gen_dir, "ove_config.h").write_text(base_config.replace(
+        "#endif /* OVE_CONFIG_H */",
+        "#define CONFIG_OVE_LVGL 1\n\n#endif /* OVE_CONFIG_H */"))
 
     def _inc(*parts):
         return "-I" + os.path.join(ove_dir, *parts)
@@ -3987,7 +3934,7 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
             '    "ANIM_STORAGE_SIZE in bindings/zig/ove/src/lvgl.zig is '
             'smaller than sizeof(lv_anim_t) against real LVGL — enlarge it");\n')
     ok, _ = _compile_probe("cpp", [
-        "g++", "-std=c++20", "-fsyntax-only", "-DCONFIG_OVE_LVGL=1",
+        "g++", "-std=c++20", "-fsyntax-only",
         _inc("bindings", "cpp"), _inc("include"), "-I" + gen_dir,
         _inc("dl"), "-I" + host_lv_conf, _inc("tests", "host", "posix", "include"),
         probe_cpp,
@@ -4046,12 +3993,12 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
         res.failed_names.append("zig")
 
     # ── Rust : cargo check the binding crate against real LVGL ──
-    # Reuse the stub-build env (builds rust_stub + generates ove_config.h),
-    # then swap the LVGL include path from the stub to dl/lvgl.
+    # Reuse the host storage sizes and supply the LVGL config and headers.
     rust_target = os.path.join(output_dir, "tests", "lvgl_compile_rust")
     _rust_dir, env = _rust_test_env(ove_dir, output_dir, rust_target)
-    env["LVGL_INCLUDE_PATH"] = lvgl_dir
-    env["LVGL_PARENT_PATH"] = os.path.join(ove_dir, "dl")
+    env.pop("DOCS_RS", None)
+    env.update(OVE_GEN_DIR=gen_dir, LV_CONF_PATH=host_lv_conf,
+               LVGL_INCLUDE_PATH=lvgl_dir, LVGL_PARENT_PATH=os.path.join(ove_dir, "dl"))
     ok, _ = _compile_probe("rust", [
         "cargo", "check", "--manifest-path",
         os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),

@@ -21,6 +21,7 @@
 #define CONFIG_OVE_UART 1
 #define CONFIG_OVE_SPI 1
 #define CONFIG_OVE_I2C 1
+#define CONFIG_OVE_LVGL 1
 /* tests/CMakeLists.txt turns networking on per target; the cookbook needs it
  * everywhere. Sizes are the Kconfig defaults. */
 #define CONFIG_OVE_NET 1

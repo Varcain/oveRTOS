@@ -561,14 +561,7 @@ def _clang_tidy_backends(ove_dir, check):
 def _cargo_clippy(ove_dir, check):
     """Run cargo clippy against the `bindings/rust/ove` crate.
 
-    The crate's build.rs needs LVGL/CMSIS headers and a generated
-    storage-sizes env file, none of which exist on a bare checkout.
-    Rather than skip the lib (and lint only build.rs), we reuse the
-    same workspace prep that `ove test rust` does — building the
-    `tests/rust/stub_cmake` project produces ove_storage_sizes.env,
-    and `tests/backends/stub/lvgl/` ships a stub LVGL header tree.
-    With both present, clippy compiles the crate the same way the
-    Rust test harness does and lints every target end-to-end.
+    Reuse the host configuration and storage sizes from `ove test rust`.
 
     Rust *apps* (apps/rust/*, overtos_apps/*_rust) need a fully
     configured CMake workspace and per-board paths; lint them

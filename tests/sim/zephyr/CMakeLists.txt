@@ -75,7 +75,6 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_bsp.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_gpio.c
-    ${STUB_DIR}/stub_lvgl.c
 )
 
 # --- Test suites (list sourced from cmake/OveTest.cmake) ---

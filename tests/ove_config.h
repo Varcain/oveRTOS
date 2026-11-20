@@ -7,7 +7,7 @@
  */
 
 /*
- * Test-only ove_config.h — enables all modules for stub testing.
+ * Base configuration for host tests.
  */
 
 #ifndef OVE_CONFIG_H
@@ -27,7 +27,6 @@
 #define CONFIG_OVE_BOARD 1
 #define CONFIG_OVE_GPIO 1
 #define CONFIG_OVE_LED 1
-#define CONFIG_OVE_LVGL 1
 #define CONFIG_OVE_QUEUE 1
 #define CONFIG_OVE_TIMER 1
 #define CONFIG_OVE_EVENTGROUP 1

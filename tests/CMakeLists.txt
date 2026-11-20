@@ -109,7 +109,6 @@ set(STUB_SOURCES
     # Headless stubs (display, HAL)
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
-    ${STUB_DIR}/stub_lvgl.c
     ${STUB_DIR}/stub_pm.c
     # Bus-driver public API + stub HAL impls.  The .c files are gated
     # by CONFIG_OVE_{I2C,SPI,UART}, which is enabled per-target below

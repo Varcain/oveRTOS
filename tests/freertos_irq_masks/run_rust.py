@@ -23,9 +23,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env.pop("DOCS_RS", None)
-    env.update(OVE_DIR=str(ROOT), RUST_IS_NATIVE="1", CARGO_TARGET_DIR=str(out / "cargo"),
-               LVGL_INCLUDE_PATH=str(ROOT / "tests/backends/stub/lvgl"),
-               LVGL_PARENT_PATH=str(ROOT / "tests/backends/stub"))
+    env.update(OVE_DIR=str(ROOT), RUST_IS_NATIVE="1", CARGO_TARGET_DIR=str(out / "cargo"))
     if args.sanitize:
         env.update(RUSTC_BOOTSTRAP="1", RUSTFLAGS="-Zsanitizer=address -Cforce-frame-pointers=yes -Clink-arg=-lubsan",
                    ASAN_OPTIONS="detect_leaks=1:halt_on_error=1", UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1",

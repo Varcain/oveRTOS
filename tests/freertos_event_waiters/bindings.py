@@ -43,10 +43,7 @@ def main():
                      OVE_STORAGE_SIZES=str(generated / "ove_storage_sizes.env"),
                      EVENT_WAITER_TEST_LIB_DIR=str(native),
                      EVENT_WAITER_TEST_LIB="provider_threaded_32_0_0_" + mode,
-                     CARGO_TARGET_DIR=str(target),
-                     LVGL_INCLUDE_PATH=str(ROOT / "tests/backends/stub/lvgl"),
-                     LVGL_PARENT_PATH=str(ROOT / "tests/backends/stub"),
-                     LV_CONF_PATH=str(ROOT / "tests/host"))
+                     CARGO_TARGET_DIR=str(target))
         if not build(mode + "-rust", ["cargo", "build", "--locked", "--target",
                                       "x86_64-unknown-linux-gnu", "--manifest-path",
                                       str(HERE / "rust/Cargo.toml")], child):

@@ -71,8 +71,6 @@ mod test_pm;
 #[cfg(not(zero_heap))]
 mod test_fmt;
 #[cfg(not(zero_heap))]
-mod test_lvgl;
-#[cfg(not(zero_heap))]
 mod test_embedded_hal;
 #[cfg(not(zero_heap))]
 mod test_net_mqtt;
@@ -125,7 +123,6 @@ fn main() {
         ("Errors", test_errors::run),
         ("PM", test_pm::run),
         ("Fmt", test_fmt::run),
-        ("Lvgl", test_lvgl::run),
         ("embedded-hal+io", test_embedded_hal::run),
         ("NetMqtt", test_net_mqtt::run),
         ("Version", test_version::run),

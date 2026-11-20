@@ -128,7 +128,6 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     ${STUB_DIR}/stub_bsp.c
-    ${STUB_DIR}/stub_lvgl.c
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
     ${FREERTOS_BACKEND}/freertos_time_systick.c

@@ -84,7 +84,6 @@ set(STUB_SOURCES
     # Headless stubs
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
-    ${STUB_DIR}/stub_lvgl.c
     # App framework
     ${OVE_SRC}/ove_app.c
 )

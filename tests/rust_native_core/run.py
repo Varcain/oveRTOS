@@ -13,8 +13,7 @@ def main(out):
     env = {key: value for key, value in os.environ.items() if key not in (
         "DOCS_RS", "CARGO_BUILD_TARGET", "RUSTFLAGS") and not key.startswith("BINDGEN_EXTRA_CLANG_ARGS")}
     # Empty encoded flags override target-specific/config-file cfg injections.
-    env.update(CARGO_ENCODED_RUSTFLAGS="", OVE_DIR=str(ROOT), RUST_IS_NATIVE="1",
-               LVGL_INCLUDE_PATH=str(ROOT / "tests/backends/stub/lvgl"), LVGL_PARENT_PATH=str(ROOT / "tests/backends/stub"))
+    env.update(CARGO_ENCODED_RUSTFLAGS="", OVE_DIR=str(ROOT), RUST_IS_NATIVE="1")
     host = subprocess.run(["rustc", "--print", "host-tuple"], capture_output=True, text=True, check=True).stdout.strip()
     passed = failed = 0
     for zero in (0, 1):

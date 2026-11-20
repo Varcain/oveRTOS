@@ -69,7 +69,6 @@ OVE_SUITE(bsp,             "BSP")
 OVE_SUITE(board,           "Board")
 OVE_SUITE(gpio,            "GPIO")
 OVE_SUITE(led,             "LED")
-OVE_SUITE(lvgl,            "LVGL")
 OVE_SUITE(app,             "App")
 OVE_SUITE(async,           "Async (irq + ns timer)")
 

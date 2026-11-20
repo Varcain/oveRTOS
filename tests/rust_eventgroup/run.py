@@ -30,9 +30,7 @@ def main():
                 "CMSIS_CORE_INCLUDE", "BINDGEN_EXTRA_CLANG_ARGS", "EVENTGROUP_TEST_SANITIZE")}
             env.update(OVE_DIR=str(ROOT), OVE_GEN_DIR=str(native), RUST_IS_NATIVE="1",
                        OVE_STORAGE_SIZES=str(native / "ove_storage_sizes.env"),
-                       EVENTGROUP_TEST_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target),
-                       LVGL_INCLUDE_PATH=str(ROOT / "tests/backends/stub/lvgl"),
-                       LVGL_PARENT_PATH=str(ROOT / "tests/backends/stub"), LV_CONF_PATH=str(ROOT / "tests/host"))
+                       EVENTGROUP_TEST_LIB_DIR=str(native), CARGO_TARGET_DIR=str(target))
             if args.sanitize:
                 env.update(RUSTC_BOOTSTRAP="1", EVENTGROUP_TEST_SANITIZE="1",
                            RUSTFLAGS="-Zsanitizer=address -Cforce-frame-pointers=yes",

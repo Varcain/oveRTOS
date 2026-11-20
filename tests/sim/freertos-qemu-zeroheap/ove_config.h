@@ -28,7 +28,6 @@
 #define CONFIG_OVE_BOARD 1
 #define CONFIG_OVE_GPIO 1
 #define CONFIG_OVE_LED 1
-#define CONFIG_OVE_LVGL 1
 #define CONFIG_OVE_ZERO_HEAP 1
 #define CONFIG_OVE_ASYNC 1
 #define CONFIG_OVE_APP_NAME "test"

@@ -234,7 +234,6 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     ${STUB_DIR}/stub_bsp.c
-    ${STUB_DIR}/stub_lvgl.c
     # stub_gpio removed — freertos_gpio.c + HAL_GPIO_* now drive the
     # STM32_GPIOPort peripherals Renode models.  test_gpio's hooks into
     # stub_gpio are answered from the real EXTI state instead.

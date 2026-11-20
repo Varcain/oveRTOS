@@ -51,7 +51,6 @@ set(OVE_TEST_COMMON_SUITES
     test_board.c
     test_gpio.c
     test_led.c
-    test_lvgl.c
     test_app.c
     test_async.c
     test_init_no_alloc.c

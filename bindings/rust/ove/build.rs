@@ -227,11 +227,6 @@ fn main() {
 
         println!("cargo:rerun-if-changed={config_path}");
     }
-    let lvgl_include = env::var("LVGL_INCLUDE_PATH")
-        .expect("LVGL_INCLUDE_PATH env var must be set by build system");
-    let lvgl_parent =
-        env::var("LVGL_PARENT_PATH").expect("LVGL_PARENT_PATH env var must be set by build system");
-
     let is_native = env::var("RUST_IS_NATIVE").unwrap_or_default() == "1";
 
     // Detect enabled features from ove_config.h
@@ -345,12 +340,7 @@ fn main() {
         .clang_arg("-D__BINDGEN__")
         .clang_arg("-DLV_CONF_INCLUDE_SIMPLE");
     builder = builder
-        .clang_args(&[
-            format!("-I{ove_dir}/include"),
-            format!("-I{ove_gen_dir}"),
-            format!("-I{lvgl_include}"),
-            format!("-I{lvgl_parent}"),
-        ])
+        .clang_args([format!("-I{ove_dir}/include"), format!("-I{ove_gen_dir}")])
         // Generate enum constants without type prefix (LV_EVENT_CLICKED, not
         // lv_event_code_t_LV_EVENT_CLICKED) — matches stub anonymous-enum output.
         .prepend_enum_name(false);
@@ -368,7 +358,12 @@ fn main() {
 
     // LVGL symbols (only when LVGL is enabled)
     if has_lvgl {
+        let lvgl_include = env::var("LVGL_INCLUDE_PATH")
+            .expect("LVGL_INCLUDE_PATH env var must be set by build system");
+        let lvgl_parent = env::var("LVGL_PARENT_PATH")
+            .expect("LVGL_PARENT_PATH env var must be set by build system");
         builder = builder
+            .clang_args([format!("-I{lvgl_include}"), format!("-I{lvgl_parent}")])
             // Static inline helpers like lv_obj_set_style_pad_all have no linkable symbol.
             // Bindgen skips them, so the binding composes them in Rust.
             .allowlist_function("lv_.*")
