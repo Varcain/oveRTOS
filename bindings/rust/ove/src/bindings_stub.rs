@@ -1942,49 +1942,6 @@ const _: () = {
     ["Offset of field: ove_fs_volume::_reserved"]
         [core::mem::offset_of!(ove_fs_volume, _reserved) - 21usize];
 };
-#[doc = " Aggregate physical-media telemetry for the mounted filesystem backend."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ove_fs_media_metrics {
-    pub read_commands: u64,
-    pub write_commands: u64,
-    pub read_blocks: u64,
-    pub write_blocks: u64,
-    pub multiblock_commands: u64,
-    pub completion_wait_us_total: u64,
-    pub completion_wait_us_max: u64,
-    pub ready_wait_us_total: u64,
-    pub ready_wait_us_max: u64,
-    pub errors: u64,
-    pub recoveries: u64,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of ove_fs_media_metrics"][core::mem::size_of::<ove_fs_media_metrics>() - 88usize];
-    ["Alignment of ove_fs_media_metrics"][core::mem::align_of::<ove_fs_media_metrics>() - 8usize];
-    ["Offset of field: ove_fs_media_metrics::read_commands"]
-        [core::mem::offset_of!(ove_fs_media_metrics, read_commands) - 0usize];
-    ["Offset of field: ove_fs_media_metrics::write_commands"]
-        [core::mem::offset_of!(ove_fs_media_metrics, write_commands) - 8usize];
-    ["Offset of field: ove_fs_media_metrics::read_blocks"]
-        [core::mem::offset_of!(ove_fs_media_metrics, read_blocks) - 16usize];
-    ["Offset of field: ove_fs_media_metrics::write_blocks"]
-        [core::mem::offset_of!(ove_fs_media_metrics, write_blocks) - 24usize];
-    ["Offset of field: ove_fs_media_metrics::multiblock_commands"]
-        [core::mem::offset_of!(ove_fs_media_metrics, multiblock_commands) - 32usize];
-    ["Offset of field: ove_fs_media_metrics::completion_wait_us_total"]
-        [core::mem::offset_of!(ove_fs_media_metrics, completion_wait_us_total) - 40usize];
-    ["Offset of field: ove_fs_media_metrics::completion_wait_us_max"]
-        [core::mem::offset_of!(ove_fs_media_metrics, completion_wait_us_max) - 48usize];
-    ["Offset of field: ove_fs_media_metrics::ready_wait_us_total"]
-        [core::mem::offset_of!(ove_fs_media_metrics, ready_wait_us_total) - 56usize];
-    ["Offset of field: ove_fs_media_metrics::ready_wait_us_max"]
-        [core::mem::offset_of!(ove_fs_media_metrics, ready_wait_us_max) - 64usize];
-    ["Offset of field: ove_fs_media_metrics::errors"]
-        [core::mem::offset_of!(ove_fs_media_metrics, errors) - 72usize];
-    ["Offset of field: ove_fs_media_metrics::recoveries"]
-        [core::mem::offset_of!(ove_fs_media_metrics, recoveries) - 80usize];
-};
 unsafe extern "C" {
     #[doc = " @brief Open a file using caller-provided static storage.\n\n Opens the file at @p path with the given @p flags and stores the resulting\n handle in @p file. The caller must ensure @p storage remains valid for the\n lifetime of the open file.\n\n @param[out] file     Receives the opened file handle.\n @param[in]  storage  Pointer to statically-allocated file storage.\n @param[in]  path     Absolute path of the file to open.\n @param[in]  flags    Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
     pub fn ove_fs_open_init(
@@ -2123,14 +2080,6 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Flush buffered file data and metadata to the storage device."]
     pub fn ove_fs_sync(file: ove_file_t) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " Snapshot optional physical-media telemetry for the mounted backend."]
-    pub fn ove_fs_media_metrics(out_metrics: *mut ove_fs_media_metrics) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " Reset optional physical-media telemetry at the start of a measurement run."]
-    pub fn ove_fs_media_metrics_reset();
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
