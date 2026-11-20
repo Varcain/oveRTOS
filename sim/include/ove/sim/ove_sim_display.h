@@ -79,16 +79,6 @@ struct ove_sim_display_cfg {
 /* ── Built-in display plugin ───────────────────────────────────────── */
 
 /**
- * @brief Get the built-in display plugin ops.
- *
- * The returned ops capture LVGL framebuffer flushes and emit
- * FRAME events via the transport.
- *
- * @return Pointer to the static display plugin ops.
- */
-const struct ove_sim_display_ops *ove_sim_display_builtin_ops(void);
-
-/**
  * @brief Notify the display plugin of a framebuffer flush.
  *
  * Called by the sim LVGL integration when LVGL flushes a dirty region.

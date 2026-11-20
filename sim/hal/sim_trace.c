@@ -158,8 +158,6 @@ static int trace_init(void *ctx, const void *config, size_t config_len)
 }
 
 static const struct ove_sim_plugin_ops trace_ops = {
-	.name = "trace",
-	.type = OVE_SIM_PLUGIN_SENSOR,
 	.init = trace_init,
 };
 

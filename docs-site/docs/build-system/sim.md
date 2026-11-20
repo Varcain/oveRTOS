@@ -47,25 +47,7 @@ Plugins implement virtual peripherals using a vtable interface (`struct ove_sim_
 | Callback | Required | Description |
 |----------|----------|-------------|
 | `init` | Yes | Initialise the plugin instance |
-| `deinit` | No | Tear down and release resources |
 | `handle_cmd` | No | Process a command from the dashboard |
-| `tick` | No | Periodic callback (~1 kHz) |
-| `get_state` | No | Serialise current state for dashboard polling |
-
-### Plugin Types
-
-| Type | Description |
-|------|-------------|
-| `OVE_SIM_PLUGIN_DISPLAY` | Display output (framebuffer capture) |
-| `OVE_SIM_PLUGIN_AUDIO` | Audio I/O (PCM capture / injection) |
-| `OVE_SIM_PLUGIN_GPIO` | GPIO port simulator |
-| `OVE_SIM_PLUGIN_LED` | LED state visualiser |
-| `OVE_SIM_PLUGIN_I2C_DEV` | Virtual I2C device (sensor, EEPROM) |
-| `OVE_SIM_PLUGIN_SPI_DEV` | Virtual SPI device (flash, display) |
-| `OVE_SIM_PLUGIN_UART` | Virtual UART / serial terminal |
-| `OVE_SIM_PLUGIN_SENSOR` | High-level sensor (accel, gyro, temp) |
-| `OVE_SIM_PLUGIN_BUTTON` | Virtual button / touch input |
-| `OVE_SIM_PLUGIN_NVS` | Non-volatile storage simulator |
 
 Up to 32 plugins can be registered concurrently (`OVE_SIM_MAX_PLUGINS`).
 
@@ -87,8 +69,6 @@ static int my_sensor_cmd(void *ctx, const struct ove_sim_cmd *cmd)
 }
 
 static const struct ove_sim_plugin_ops my_sensor_ops = {
-    .name       = "bme280",
-    .type       = OVE_SIM_PLUGIN_SENSOR,
     .init       = my_sensor_init,
     .handle_cmd = my_sensor_cmd,
 };
@@ -166,7 +146,4 @@ The `sim/hal/` directory contains HAL implementations that bridge oveRTOS subsys
 | `ove/sim/ove_sim_transport.h` | Transport abstraction and factory functions |
 | `ove/sim/ove_sim_display.h` | Display plugin configuration |
 | `ove/sim/ove_sim_audio.h` | Audio plugin configuration |
-| `ove/sim/ove_sim_gpio_observer.h` | GPIO observation interface |
 | `ove/sim/ove_sim_shm.h` | Shared memory layout definitions |
-| `ove/sim/ove_sim_spi_dev.h` | SPI device plugin interface |
-| `ove/sim/ove_sim_i2c_dev.h` | I2C device plugin interface |

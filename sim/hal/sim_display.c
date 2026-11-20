@@ -18,7 +18,6 @@
 #include "ove/sim/ove_sim_plugin.h"
 #include "ove/types.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -43,39 +42,12 @@ static int display_init(void *ctx, const void *config, size_t config_len)
 	return OVE_OK;
 }
 
-static void display_deinit(void *ctx)
-{
-	(void)ctx;
-}
-
-static int display_get_state(void *ctx, void *buf, size_t buf_len, size_t *out_len)
-{
-	struct sim_display_ctx *d = (struct sim_display_ctx *)ctx;
-	int n = snprintf((char *)buf, buf_len,
-			 "{\"type\":\"display\",\"width\":%u,\"height\":%u,"
-			 "\"frames\":%u}",
-			 (unsigned int)d->cfg.width, (unsigned int)d->cfg.height,
-			 (unsigned int)d->frame_count);
-	if (out_len)
-		*out_len = (size_t)n;
-	return OVE_OK;
-}
-
 static const struct ove_sim_display_ops builtin_display_ops = {
 	.base =
 		{
-			.name = "display",
-			.type = OVE_SIM_PLUGIN_DISPLAY,
 			.init = display_init,
-			.deinit = display_deinit,
-			.get_state = display_get_state,
 		},
 };
-
-const struct ove_sim_display_ops *ove_sim_display_builtin_ops(void)
-{
-	return &builtin_display_ops;
-}
 
 /* ── Flush notification (called from sim_lvgl.c) ──────────────────── */
 

@@ -259,27 +259,8 @@ static int debug_init(void *ctx, const void *config, size_t config_len)
 	return OVE_OK;
 }
 
-static void debug_deinit(void *ctx)
-{
-	(void)ctx;
-}
-
-static int debug_get_state(void *ctx, void *buf, size_t buf_len, size_t *out_len)
-{
-	(void)ctx;
-	int n = snprintf((char *)buf, buf_len, "{\"type\":\"debug\",\"interval_ms\":%d}",
-			 OVE_SIM_DEBUG_INTERVAL_MS);
-	if (out_len)
-		*out_len = (size_t)n;
-	return OVE_OK;
-}
-
 static const struct ove_sim_plugin_ops debug_ops = {
-	.name = "debug",
-	.type = OVE_SIM_PLUGIN_SENSOR,
 	.init = debug_init,
-	.deinit = debug_deinit,
-	.get_state = debug_get_state,
 };
 
 /* ── Registration helper ───────────────────────────────────────────── */

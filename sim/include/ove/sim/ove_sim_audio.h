@@ -65,17 +65,6 @@ struct ove_sim_audio_cfg {
 /* ── Built-in audio plugin ─────────────────────────────────────────── */
 
 /**
- * @brief Get the built-in audio plugin ops.
- *
- * The returned ops provide a sim audio device.
- * PCM output is streamed to the dashboard; PCM input is received
- * from the dashboard.
- *
- * @return Pointer to the static audio plugin ops.
- */
-const struct ove_sim_plugin_ops *ove_sim_audio_builtin_ops(void);
-
-/**
  * @brief Push PCM output samples to the dashboard.
  *
  * Called by the sim audio graph sink node each processing cycle.

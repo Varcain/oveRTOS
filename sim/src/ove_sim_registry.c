@@ -43,14 +43,6 @@ int ove_sim_plugin_register(const struct ove_sim_plugin_ops *ops, void *ctx, con
 	return id;
 }
 
-void ove_sim_plugin_tick_all(uint32_t elapsed_ms)
-{
-	for (int i = 0; i < plugin_count; i++) {
-		if (plugins[i].ops->tick)
-			plugins[i].ops->tick(plugins[i].ctx, elapsed_ms);
-	}
-}
-
 int ove_sim_plugin_dispatch_cmd(const struct ove_sim_cmd *cmd)
 {
 	if (!cmd)
@@ -102,14 +94,6 @@ void ove_sim_set_transport(struct ove_sim_transport *transport)
 struct ove_sim_transport *ove_sim_get_transport(void)
 {
 	return global_transport;
-}
-
-const struct ove_sim_plugin *ove_sim_plugin_get(uint32_t plugin_id)
-{
-	if (plugin_id >= (uint32_t)plugin_count)
-		return NULL;
-
-	return &plugins[plugin_id];
 }
 
 int ove_sim_plugin_count(void)

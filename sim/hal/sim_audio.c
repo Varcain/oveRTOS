@@ -23,7 +23,6 @@
 #include "ove/sim/ove_sim_transport.h"
 #include "ove_sim_audio_ring.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -61,30 +60,10 @@ static int audio_handle_cmd(void *ctx, const struct ove_sim_cmd *cmd)
 	return OVE_OK;
 }
 
-static int audio_get_state(void *ctx, void *buf, size_t buf_len, size_t *out_len)
-{
-	struct sim_audio_ctx *a = (struct sim_audio_ctx *)ctx;
-	int n = snprintf((char *)buf, buf_len,
-			 "{\"type\":\"audio\",\"sample_rate\":%u,"
-			 "\"channels\":%u,\"bit_depth\":%u}",
-			 a->cfg.fmt.sample_rate, a->cfg.fmt.channels, a->cfg.fmt.bit_depth);
-	if (out_len)
-		*out_len = (size_t)n;
-	return OVE_OK;
-}
-
 static const struct ove_sim_plugin_ops sim_audio_ops = {
-	.name = "audio",
-	.type = OVE_SIM_PLUGIN_AUDIO,
 	.init = audio_init,
 	.handle_cmd = audio_handle_cmd,
-	.get_state = audio_get_state,
 };
-
-const struct ove_sim_plugin_ops *ove_sim_audio_builtin_ops(void)
-{
-	return &sim_audio_ops;
-}
 
 /* ── Push/pull PCM API (platform-agnostic via transport) ───────────── */
 

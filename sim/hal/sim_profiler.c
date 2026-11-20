@@ -189,12 +189,6 @@ static int profiler_init(void *ctx, const void *config, size_t config_len)
 	return OVE_OK;
 }
 
-static void profiler_deinit(void *ctx)
-{
-	(void)ctx;
-	ove_backend_profiler_stop();
-}
-
 static int profiler_handle_cmd(void *ctx, const struct ove_sim_cmd *cmd)
 {
 	struct sim_profiler_ctx *t = (struct sim_profiler_ctx *)ctx;
@@ -217,10 +211,7 @@ void ove_sim_profiler_announce_caps(void)
 }
 
 static const struct ove_sim_plugin_ops profiler_ops = {
-	.name = "profiler",
-	.type = OVE_SIM_PLUGIN_SENSOR,
 	.init = profiler_init,
-	.deinit = profiler_deinit,
 	.handle_cmd = profiler_handle_cmd,
 };
 
