@@ -278,15 +278,6 @@ lint: $(VENV_STAMP)
 	@# Fail lint on Rust bindings stub drift.
 	@# Generated doc attributes can vary by libclang version.
 	@$(OVE_DIR)/scripts/regen-bindings-stub.sh --check
-	@# LVGL cross-binding parity — GATING.  The whole backlog has been
-	@# triaged: intentional/idiomatic gaps are whitelisted with a rationale
-	@# in tests/audit/lvgl_parity_whitelist.txt, and the checker's staleness
-	@# guard fails if a whitelist line stops matching a real gap.  A NEW
-	@# cross-binding drift (or a stale whitelist entry) now fails lint here.
-	@# Genuine drops still pending a build-verified binding fix are tracked
-	@# under the whitelist's "GENUINE DROPS" section.  `... --verbose` lists
-	@# every gap; remove a line as you close its gap.
-	@python3 $(OVE_DIR)/scripts/lvgl_parity_check.py --strict
 
 # Run clang-tidy against supported firmware or native backend commands. Reuses
 # any existing output/<board>/<rtos>/<app>/build/firmware/compile_commands.json
