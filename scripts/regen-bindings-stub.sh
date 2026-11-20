@@ -8,16 +8,9 @@
 #   (no args)   Regenerate bindings_stub.rs in place from a fresh bindgen
 #               run.  Run after adding/changing a C FFI symbol; commit
 #               the diff.
-#   --check     Run bindgen and compare against the in-tree stub.  Prints
-#               a warning on drift but ALWAYS exits 0 — wired into
-#               `make lint` to surface stale stubs without blocking the
-#               lint pass.
-#
-# A second drift catch is the cfg(docsrs) clippy run inside `make lint`,
-# which fails-fast on symbols the Rust binding references but the stub
-# lacks.  `--check` catches the inverse direction too: bindgen surface
-# present in real builds but missing from the stub (e.g. a new C
-# function added without yet writing the Rust wrapper for it).
+#   --check     Compare with fresh bindgen output, ignoring doc attributes.
+#               Fail on drift or generation failure. Skip if rust_stub
+#               has not been built.
 set -euo pipefail
 
 MODE="regen"
@@ -129,13 +122,17 @@ LVGL_INCLUDE_PATH="$OVE_DIR/tests/backends/stub/lvgl" \
 LVGL_PARENT_PATH="$OVE_DIR/tests/backends/stub" \
 CARGO_TARGET_DIR="$TMP/target" \
 cargo build --manifest-path "$OVE_DIR/bindings/rust/ove/Cargo.toml" \
-    --features std --locked >/dev/null 2>&1 || true
+    --features std --locked >"$TMP/cargo.log" 2>&1 || true
 
-BINDINGS=$(find "$TMP/target" -name ove_bindings.rs | head -1)
+BINDINGS=""
+if [ -d "$TMP/target" ]; then
+    BINDINGS=$(find "$TMP/target" -name ove_bindings.rs -print -quit)
+fi
 if [ -z "$BINDINGS" ]; then
     if [ "$MODE" = "check" ]; then
-        echo "warning: bindgen never ran (build.rs failed) — skipping bindings_stub.rs drift check" >&2
-        exit 0
+        echo "error: bindgen never ran" >&2
+        tail -n 30 "$TMP/cargo.log" >&2
+        exit 1
     fi
     echo "bindgen never ran — check build.rs failed earlier" >&2
     exit 1
@@ -172,12 +169,11 @@ header = '''// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 //! Used in place of the bindgen-generated `ove_bindings.rs` when
 //! building documentation on docs.rs (detected via `DOCS_RS` env var
 //! and the `docsrs` cfg flag). Mirrors what bindgen would emit so
-//! `cargo doc` (and `clippy --cfg docsrs`) compile without a real C
-//! toolchain or LVGL headers.
+//! `cargo doc` can build without a real C toolchain or LVGL headers.
 //!
 //! Regenerate after touching the C FFI surface:
 //!     scripts/regen-bindings-stub.sh
-//! `make lint` then runs clippy with cfg(docsrs) to catch drift.
+//! `make lint` compares this stub with fresh bindgen output.
 
 #![allow(
     non_upper_case_globals,
@@ -199,12 +195,16 @@ if command -v rustfmt >/dev/null 2>&1; then
 fi
 
 if [ "$MODE" = "check" ]; then
-    if ! diff -q "$OUT" "$REAL" >/dev/null 2>&1; then
-        echo "warning: bindings_stub.rs is out of sync with the bindgen output." >&2
+    sed '/^[[:space:]]*#\[doc = /d' "$REAL" > "$TMP/stub.nodoc"
+    sed '/^[[:space:]]*#\[doc = /d' "$OUT" > "$TMP/generated.nodoc"
+    if ! diff -U2 --label 'bindings_stub.rs (in tree)' --label 'bindings_stub.rs (generated)' \
+        "$TMP/stub.nodoc" "$TMP/generated.nodoc" > "$TMP/stub.diff"; then
+        echo "error: bindings_stub.rs is out of sync with the bindgen output." >&2
         echo "         Run \`scripts/regen-bindings-stub.sh\` and commit the diff." >&2
-    else
-        echo "bindings_stub.rs: up to date with bindgen output"
+        head -n 40 "$TMP/stub.diff" >&2
+        exit 1
     fi
+    echo "bindings_stub.rs: up to date with bindgen output"
     exit 0
 fi
 

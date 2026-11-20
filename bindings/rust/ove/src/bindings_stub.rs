@@ -9,12 +9,11 @@
 //! Used in place of the bindgen-generated `ove_bindings.rs` when
 //! building documentation on docs.rs (detected via `DOCS_RS` env var
 //! and the `docsrs` cfg flag). Mirrors what bindgen would emit so
-//! `cargo doc` (and `clippy --cfg docsrs`) compile without a real C
-//! toolchain or LVGL headers.
+//! `cargo doc` can build without a real C toolchain or LVGL headers.
 //!
 //! Regenerate after touching the C FFI surface:
 //!     scripts/regen-bindings-stub.sh
-//! `make lint` then runs clippy with cfg(docsrs) to catch drift.
+//! `make lint` compares this stub with fresh bindgen output.
 
 #![allow(
     non_upper_case_globals,

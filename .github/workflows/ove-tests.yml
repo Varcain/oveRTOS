@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y \
             python3 python3-venv cmake build-essential \
-            clang-format clang-tidy
+            clang-format clang-tidy libclang-dev
 
       - name: Install Rust (for cargo fmt / cargo clippy)
         # `rust-src` is listed alongside rustfmt/clippy because the repo's

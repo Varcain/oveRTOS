@@ -275,10 +275,9 @@ doctor: $(VENV_STAMP)
 lint: $(VENV_STAMP)
 	@$(OVE) ensure-toolchain zig
 	@$(OVE) lint
-	@# Non-blocking proactive drift check: warns if bindings_stub.rs is
-	@# stale relative to a fresh bindgen run.  The script always exits 0
-	@# in --check mode, but `|| true` is belt-and-braces.
-	@$(OVE_DIR)/scripts/regen-bindings-stub.sh --check || true
+	@# Fail lint on Rust bindings stub drift.
+	@# Generated doc attributes can vary by libclang version.
+	@$(OVE_DIR)/scripts/regen-bindings-stub.sh --check
 	@# LVGL cross-binding parity — GATING.  The whole backlog has been
 	@# triaged: intentional/idiomatic gaps are whitelisted with a rationale
 	@# in tests/audit/lvgl_parity_whitelist.txt, and the checker's staleness
