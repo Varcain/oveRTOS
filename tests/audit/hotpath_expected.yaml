@@ -5,100 +5,79 @@
 # This file is part of oveRTOS.
 #
 # Callee allowlists for the nightly STM32F746 FreeRTOS heap audit.
-# An unexpected callee fails the audit. Instruction caps emit warnings.
+# Symbol and callee patterns are case-sensitive globs.
+# Missing wrappers and unexpected callees fail the audit.
 
 stm32f746_freertos_benchmark_c:
   symbols:
     - name: "mutex_lock_unlock_run (C, ARM)"
-      pattern: '^mutex_lock_unlock_run$'
-      max_instructions: 19
+      pattern: 'mutex_lock_unlock_run'
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 stm32f746_freertos_benchmark_cpp:
   symbols:
     # Mutex::lock and Semaphore::acquire abort on failed acquisition.
     - name: "mutex_lock_unlock trampoline (C++, ARM)"
       pattern: '_ZN5bench6detail14run_trampolineIL_ZL22mutex_lock_unlock_specEEEvPv'
-      max_instructions: 18
       allowed_calls: [ove_mutex_lock, ove_mutex_unlock, abort]
-      forbid_demangled: ["vtable for ", "typeinfo for ", "operator new", "operator delete"]
     - name: "sem_take_give trampoline (C++, ARM)"
       pattern: '_ZN5bench6detail14run_trampolineIL_ZL18sem_take_give_specEEEvPv'
-      max_instructions: 18
       allowed_calls: [ove_sem_take, ove_sem_give, abort]
-      forbid_demangled: ["vtable for ", "typeinfo for "]
     - name: "queue_send_recv trampoline (C++, ARM)"
       pattern: '_ZN5bench6detail14run_trampolineIL_ZL20queue_send_recv_specEEEvPv'
-      max_instructions: 32
       allowed_calls: [ove_queue_send, ove_queue_receive, __stack_chk_fail]
-      forbid_demangled: ["vtable for ", "typeinfo for "]
 
 stm32f746_freertos_benchmark_rust:
   symbols:
     # The scoped sync and queue APIs check execution context.
     - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp (ARM)"
-      pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
-      max_instructions: 48
+      pattern: '_ZN*MUTEX_LOCK_UNLOCK11__run_tramp17h*E'
       allowed_calls:
         - ove_sync_context
         - ove_mutex_lock
         - ove_is_in_isr
         - ove_mutex_unlock
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::", "alloc::alloc::"]
     - name: "Rust SEM_TAKE_GIVE::__run_tramp (ARM)"
-      pattern: '_ZN.+SEM_TAKE_GIVE11__run_tramp17h[0-9a-f]+E$'
-      max_instructions: 28
+      pattern: '_ZN*SEM_TAKE_GIVE11__run_tramp17h*E'
       allowed_calls:
         - ove_sync_context
         - ove_sem_take
         - ove_sem_give
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::", "alloc::alloc::"]
     - name: "Rust EVENT_SIGNAL_WAIT::__run_tramp (ARM)"
-      pattern: '_ZN.+EVENT_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
-      max_instructions: 44
+      pattern: '_ZN*EVENT_SIGNAL_WAIT11__run_tramp17h*E'
       allowed_calls:
         - ove_sync_context
         - ove_event_wait
         - ove_is_in_isr
         - ove_event_signal_from_isr
         - ove_event_signal
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust QUEUE_SEND_RECEIVE::__run_tramp (ARM)"
-      pattern: '_ZN.+QUEUE_SEND_RECEIVE11__run_tramp17h[0-9a-f]+E$'
-      max_instructions: 36
+      pattern: '_ZN*QUEUE_SEND_RECEIVE11__run_tramp17h*E'
       allowed_calls:
         - ove_sync_context
         - ove_queue_send
         - ove_queue_receive
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
 
 stm32f746_freertos_benchmark_zig:
   symbols:
     - name: "Zig zig_bench_run_sync_mutex_lock_unlock (ARM)"
-      pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
-      max_instructions: 28
+      pattern: 'zig_bench_run_sync_mutex_lock_unlock'
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
         - "debug.panic*"
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_take_give (ARM)"
-      pattern: '^zig_bench_run_sync_sem_take_give$'
-      max_instructions: 28
+      pattern: 'zig_bench_run_sync_sem_take_give'
       allowed_calls:
         - ove_sem_take
         - ove_sem_give
         - "debug.FullPanic*"
         - "debug.panic*"
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_send_receive (ARM)"
-      pattern: '^zig_bench_run_queue_send_receive$'
-      max_instructions: 40
+      pattern: 'zig_bench_run_queue_send_receive'
       allowed_calls:
         - ove_queue_send
         - ove_queue_receive
         - "debug.FullPanic*"
         - "debug.panic*"
-      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]

@@ -85,12 +85,7 @@ jobs:
             app=${spec#*:}
             .venv/bin/python scripts/dump_hotpaths.py \
               --elf "output/stm32f746/freertos/$app/images/firmware.elf" \
-              --binding "$binding" \
-              --target "stm32f746_freertos_benchmark_$binding" \
-              --config tests/audit/hotpath_expected.yaml \
-              --output-dir output/audit/disasm \
-              --nm arm-none-eabi-nm --objdump arm-none-eabi-objdump \
-              --cppfilt arm-none-eabi-c++filt
+              --target "stm32f746_freertos_benchmark_$binding"
           done
 
       - name: Upload audit artifacts

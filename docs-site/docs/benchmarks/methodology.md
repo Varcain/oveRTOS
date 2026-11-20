@@ -37,7 +37,8 @@ Two configurations are benchmarked separately:
 The Substrate Audits workflow checks selected wrappers from the four STM32F746
 FreeRTOS heap benchmark ELFs nightly and on manual dispatch. After the
 firmware builds, the audit step compares the callees against
-`tests/audit/hotpath_expected.yaml` and fails on unexpected calls.
+`tests/audit/hotpath_expected.yaml` and fails on missing wrappers or
+unexpected callees.
 The separate symbol audit still runs at build time.
 
 To check the Rust ELF locally, build the heap benchmark with
@@ -47,10 +48,7 @@ repository root, with the ARM toolchain on `PATH`, run
 ```bash
 .venv/bin/python scripts/dump_hotpaths.py \
   --elf output/stm32f746/freertos/benchmark_rust/images/firmware.elf \
-  --binding rust --target stm32f746_freertos_benchmark_rust \
-  --config tests/audit/hotpath_expected.yaml --output-dir output/audit/disasm \
-  --nm arm-none-eabi-nm --objdump arm-none-eabi-objdump \
-  --cppfilt arm-none-eabi-c++filt
+  --target stm32f746_freertos_benchmark_rust
 ```
 
 ## Worst-case timing mode
