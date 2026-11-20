@@ -107,12 +107,13 @@ void ove_backend_freertos_task_deleted(void *task);
 /* Assert — use semihosting fprintf */
 #include <stdio.h>
 #include <stdlib.h>
-#define configASSERT(x)                                                                         \
-	do {                                                                                    \
-		if (!(x)) {                                                                     \
-			fprintf(stderr, "FreeRTOS assert failed: %s:%d\n", __FILE__, __LINE__); \
-			_Exit(1);                                                               \
-		}                                                                               \
+#define configASSERT(x)                                                                    \
+	do {                                                                               \
+		if (!(x)) {                                                                \
+			(void)fprintf(stderr, "FreeRTOS assert failed: %s:%d\n", __FILE__, \
+				      __LINE__);                                           \
+			_Exit(1);                                                          \
+		}                                                                          \
 	} while (0)
 
 #endif /* FREERTOS_CONFIG_H */
