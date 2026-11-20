@@ -184,14 +184,9 @@ set(CMAKE_CXX_FLAGS_INIT
 set(CMAKE_CXX_FLAGS_INIT
     "${CMAKE_CXX_FLAGS_INIT} -U_GNU_SOURCE -D_POSIX_C_SOURCE=200809L")
 
-# `--defsym=_impure_ptr=0` resolves a libstdc++ link reference.  The C++
-# runtime shipped with arm-gnu-toolchain (assert_fail.cc / vterminate.cc)
-# was built against newlib and references newlib's per-thread `_impure_ptr`
-# from cold error-handler paths (assertion failures, uncaught exception
-# verbose terminate).  Picolibc has no equivalent symbol; defining it as
-# 0 satisfies the relocations.  These paths are not exercised under normal
-# operation, so a null `_impure_ptr` never gets dereferenced — and if one
-# of them did fire, we'd be aborting anyway.
+# Picolibc lacks newlib's _impure_ptr, so --defsym=_impure_ptr=0 defines the
+# symbol at address 0. References occur only on error paths in libstdc++
+# and in libgcov (coverage builds).
 if(OVE_ARM_SEMIHOSTING)
     set(CMAKE_EXE_LINKER_FLAGS_INIT
         "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS} --oslib=semihost --crt0=hosted -Wl,--defsym=_impure_ptr=0")
