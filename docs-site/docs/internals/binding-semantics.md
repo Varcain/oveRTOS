@@ -84,6 +84,9 @@ waits and condition-variable mutex reacquisition can extend elapsed time.
   teardown. `text_status()` reports asynchronous formatting errors, and
   `NotFound` when unbound. A recursive state change that invalidates a render
   reports `Busy` unless LVGL dispatches a fresh render of the latest value.
+- A `State` must keep its address while observers are attached (C++ `State`
+  is non-copyable, Rust bind methods take `Pin<&State<T>>`, and Zig documents
+  this requirement), and dropping or deinitialising it detaches the observers.
 - All LVGL operations, including conversion and storage updates, require
   initialized LVGL and its lock. Callbacks already holding the lock must not
   reacquire it. Image strings are borrowed only until the widget copies them;

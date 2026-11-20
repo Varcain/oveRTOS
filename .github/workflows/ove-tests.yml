@@ -498,7 +498,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rust-src
+          components: clippy, rust-src
 
       - name: Fetch LVGL (manifest-pinned) into dl/lvgl
         run: |
@@ -506,7 +506,7 @@ jobs:
           LVGL_TAG=$(python3 scripts/manifest_query.py libraries.lvgl.version)
           git clone --depth 1 --branch "$LVGL_TAG" "$LVGL_URL" dl/lvgl
 
-      - name: Compile-check bindings against real LVGL
+      - name: Check bindings against real LVGL
         run: make test-lvgl-compile
 
       - name: Check EventGroup public bindings

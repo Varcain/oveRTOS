@@ -27,6 +27,7 @@ from . import lint_backend_struct
 from . import lint_doc_snippets
 from . import lint_version
 from .lint_backend_commands import BackendCommands, source_path
+from .utils import CARGO_CLIPPY_COMMAND
 from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
@@ -561,8 +562,8 @@ def _clang_tidy_backends(ove_dir, check):
 def _cargo_clippy(ove_dir, check):
     """Run cargo clippy against the `bindings/rust/ove` crate.
 
-    Reuse the `ove test rust` host configuration, which leaves LVGL off,
-    and its storage probe.
+    Reuse the `ove test rust` host configuration and storage probe.
+    `make test-lvgl-compile` lints the LVGL-enabled configuration.
 
     Rust *apps* (apps/rust/*, overtos_apps/*_rust) need a fully
     configured CMake workspace and per-board paths; lint them
@@ -595,22 +596,8 @@ def _cargo_clippy(ove_dir, check):
     env["CARGO_TARGET_DIR"] = os.path.join(
         output_dir, "tests", "rust_lint", "clippy_target")
 
-    # `--features std` matches the test/docs.rs build shape — without
-    # it the crate's `extern crate alloc` paths are no_std-only, leading
-    # to E0433 "no std" / missing-symbol noise rather than real lint
-    # findings.  (The old `bench` feature was retired when bench code
-    # moved out of the binding crate into tests/benchmarks/rust/.)
-    cmd = [
-        "cargo", "clippy", "--all-targets", "--locked",
-        "--features", "std", "--",
-        "-D", "warnings",
-        "-W", "clippy::pedantic",
-        "-W", "clippy::nursery",
-        "-A", "clippy::module-name-repetitions",
-        "-A", "clippy::missing-errors-doc",
-    ]
     try:
-        r = subprocess.run(cmd, cwd=binding_crate, env=env,
+        r = subprocess.run(CARGO_CLIPPY_COMMAND, cwd=binding_crate, env=env,
                            capture_output=True, text=True)
     except FileNotFoundError:
         return ("cargo clippy", "SKIP", "cargo disappeared mid-run")

@@ -37,6 +37,9 @@
 //! oveRTOS `has_<module>` / `rtos_<backend>` / `board_<name>` cfg
 //! flags continue to coexist as their own facets.
 
+// The generated `_USIZE` constants in config_consts.rs use explicit casts.
+#![allow(clippy::unnecessary_cast)]
+
 // `OVE_CONFIG_CONSTS` is set by `build.rs` and points at a generated
 // file in `OUT_DIR`. The file consists of `pub const CONFIG_OVE_*: …`
 // lines — see `build.rs`'s G3 block.

@@ -104,8 +104,8 @@ fn native_text_and_lifetimes() -> Result<()> {
     reuse.set_text("ready")?;
 
     let owner = Box::pin(State::new(7_i32));
-    let state = owner.as_ref().get_ref();
-    let label = label.bind_text(&state, |v, out| write!(out, "Value: {v}"))?;
+    let state = owner.as_ref();
+    let label = label.bind_text(state, |v, out| write!(out, "Value: {v}"))?;
     assert_eq!(reuse.set_text("replaced"), Err(Error::BadHandle));
     assert_eq!(value(label), "Value: 7");
     state.set(9);
@@ -121,7 +121,7 @@ fn native_text_and_lifetimes() -> Result<()> {
     state.set(11);
     assert_eq!(value(label), "unbound");
     assert_eq!(label.text_status(), Err(Error::NotFound));
-    let label = label.bind_text(&state, |v, out| {
+    let label = label.bind_text(state, |v, out| {
         if v == 12 {
             Err(fmt::Error)
         } else {
@@ -229,10 +229,10 @@ fn reentrant_formatting() -> Result<()> {
         Err(Error::BadHandle)
     );
     let owner = Box::pin(State::new(0_i32));
-    let state = owner.as_ref().get_ref();
+    let state = owner.as_ref();
     let label = Label::create(root);
     TARGET.store(label.raw(), Ordering::Relaxed);
-    let bound = label.bind_text(&state, |v, out| {
+    let bound = label.bind_text(state, |v, out| {
         if v == 1 {
             write!(out, "{Deletes}")
         } else {
@@ -242,8 +242,11 @@ fn reentrant_formatting() -> Result<()> {
     state.set(1);
     assert_eq!(bound.text_status(), Err(Error::NotFound));
     let label = Label::create(root);
-    SUBJECT.store((state as *const State<i32>).cast_mut(), Ordering::Relaxed);
-    label.bind_text(&state, |v, out| {
+    SUBJECT.store(
+        (state.get_ref() as *const State<i32>).cast_mut(),
+        Ordering::Relaxed,
+    );
+    label.bind_text(state, |v, out| {
         if v == 2 {
             unsafe { &*SUBJECT.load(Ordering::Relaxed) }.set(3);
         }
@@ -255,7 +258,7 @@ fn reentrant_formatting() -> Result<()> {
     assert_eq!(value(label), "4");
     assert_eq!(label.text_status(), Ok(()));
     TARGET.store(label.raw(), Ordering::Relaxed);
-    label.bind_text(&state, |v, out| {
+    label.bind_text(state, |v, out| {
         if v == 5 {
             write!(out, "{Replaces}")
         } else {
@@ -265,7 +268,7 @@ fn reentrant_formatting() -> Result<()> {
     state.set(5);
     assert_eq!(value(label), "inner");
     assert_eq!(label.text_status(), Err(Error::NotFound));
-    label.bind_text(&state, |v, out| {
+    label.bind_text(state, |v, out| {
         if v == 6 {
             let _ = out.write_str("bad\0tail");
             return Ok(());
@@ -295,8 +298,11 @@ fn observer_replacement_and_delete_events() -> Result<()> {
     let root = screen();
     let _lvgl = ove::lvgl::lock();
     let owner = Box::pin(State::new(1_i32));
-    let state = owner.as_ref().get_ref();
-    SUBJECT.store((state as *const State<i32>).cast_mut(), Ordering::Relaxed);
+    let state = owner.as_ref();
+    SUBJECT.store(
+        (state.get_ref() as *const State<i32>).cast_mut(),
+        Ordering::Relaxed,
+    );
     let label = Label::create(root);
     TARGET.store(label.raw(), Ordering::Relaxed);
     assert!(matches!(
@@ -308,7 +314,8 @@ fn observer_replacement_and_delete_events() -> Result<()> {
     assert!(matches!(
         label.bind_text(state, |_, out| {
             let label = unsafe { Label::from_raw(TARGET.load(Ordering::Relaxed)) };
-            let state = unsafe { &*SUBJECT.load(Ordering::Relaxed) };
+            // SAFETY: SUBJECT points to the live pinned owner for this test.
+            let state = unsafe { std::pin::Pin::new_unchecked(&*SUBJECT.load(Ordering::Relaxed)) };
             label
                 .bind_text(state, |v, out| write!(out, "new {v}"))
                 .unwrap();
@@ -324,7 +331,8 @@ fn observer_replacement_and_delete_events() -> Result<()> {
         static FIRST: TextStorage<32> = TextStorage::new();
         static SECOND: TextStorage<32> = TextStorage::new();
         let label = unsafe { Label::from_raw(event.target().raw()) };
-        let state = unsafe { &*SUBJECT.load(Ordering::Relaxed) };
+        // SAFETY: SUBJECT points to the live pinned owner for this test.
+        let state = unsafe { std::pin::Pin::new_unchecked(&*SUBJECT.load(Ordering::Relaxed)) };
         label
             .text_buffered(&FIRST, format_args!("first buffer"))
             .unwrap();
@@ -367,7 +375,8 @@ fn observer_replacement_and_delete_events() -> Result<()> {
                 .text_buffered(&DELETING, format_args!("late"))
                 .is_err()
         );
-        let state = unsafe { &*SUBJECT.load(Ordering::Relaxed) };
+        // SAFETY: SUBJECT points to the live pinned owner for this test.
+        let state = unsafe { std::pin::Pin::new_unchecked(&*SUBJECT.load(Ordering::Relaxed)) };
         assert!(label.bind_text(state, |v, out| write!(out, "{v}")).is_err());
     });
     unsafe { ove::ffi::lv_obj_delete(label.raw()) };

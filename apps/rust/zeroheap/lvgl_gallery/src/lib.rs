@@ -49,7 +49,6 @@ ove::shared!(CHART_W: Chart);
 ove::shared!(SERIES_W: Series);
 ove::shared!(COUNTER_STATE: State<i32>);
 
-
 /// Navigation state — single-threaded mutation under the LVGL lock.
 #[derive(Clone, Copy)]
 struct NavState {
@@ -138,7 +137,9 @@ fn p_label(c: Obj) {
         Label::create(c)
             .color(Color::hex(0x888888))
             .font(lvgl::font_montserrat_14())
-            .bind_text(state, |value, out| write!(out, "Tick: {value}"))
+            .bind_text(core::pin::Pin::static_ref(state), |value, out| {
+                write!(out, "Tick: {value}")
+            })
             .expect("LVGL text")
             .align(lvgl::ALIGN_BOTTOM_MID, 0, -16);
     }
@@ -476,7 +477,6 @@ fn create_ui() {
 
     // State for reactive label
     COUNTER_STATE.init(State::<i32>::new(0));
-
 
     rebuild_page();
 }

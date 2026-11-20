@@ -22,6 +22,7 @@ pub use text::{BufferedLabel, TextFormatter, TextStorage};
 
 use crate::bindings;
 use crate::error::{Error, Result};
+use core::pin::Pin;
 
 // SAFETY (module-wide contract for the `unsafe { bindings::lv_*(...) }` and
 // `bindings::ove_lvgl_*(...)` calls below): every LVGL object handle is a
@@ -3209,23 +3210,27 @@ unsafe impl Sync for Timer {}
 ///
 /// # Stability requirement
 ///
-/// `lv_subject_t` keeps a linked list of observer references, so the
-/// `State` address must be stable from the moment any observer attaches.
-/// The intended usage is inside a static slot — either a raw `static`
-/// declared by the user, or via the `ove::shared!` macro. A pinned owner is
-/// another option. Do not move a state after attaching observers; the
-/// `PhantomPinned` marker makes it `!Unpin` but does not pin it by itself.
-/// Dropping it at its stable address detaches its observers.
+/// LVGL observers retain the subject's address. Pin the state before binding
+/// observers, using `Pin::static_ref` for a static slot or `pin!` on the stack.
+/// Hold the LVGL lock when accessing or dropping the state. Dropping it
+/// detaches its observers.
 ///
 /// ```ignore
+/// use core::pin::Pin;
 /// use ove::lvgl::{State, Label};
 /// ove::shared!(COUNTER: State<i32>);
-/// // init once:
+/// let _guard = ove::lvgl::lock();
 /// COUNTER.init(State::new(0));
-/// // bind:
-/// Label::create(screen).bind_text(COUNTER.get_ref(), |value, out| write!(out, "Count: {value}"))?;
-/// // update from anywhere:
-/// COUNTER.get_ref().set(42);  // label updates automatically
+/// let state = Pin::static_ref(COUNTER.get());
+/// Label::create(screen).bind_text(state, |value, out| write!(out, "Count: {value}"))?;
+/// state.set(42);  // label updates automatically
+/// ```
+///
+/// ```compile_fail,E0308
+/// use ove::lvgl::{Label, State};
+/// fn bind_unpinned(label: Label, state: &State<i32>) {
+///     let _ = label.bind_text(state, |value, out| write!(out, "{value}"));
+/// }
 /// ```
 pub struct State<T: Copy> {
     subject: core::cell::UnsafeCell<bindings::lv_subject_t>,
@@ -3279,10 +3284,12 @@ impl<T: Copy> Drop for State<T> {
     }
 }
 
-// SAFETY: `State<T>` is a reactive observer state.  Writes dispatch
-// LV_EVENT_VALUE_CHANGED under the LVGL lock; the `T: Copy + Send` bound
-// ensures the stored value can cross thread boundaries when read.
+// SAFETY: An integer subject starts with an empty observer list. Once bound,
+// sending a pinned owner preserves the address retained by LVGL.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<T: Copy + Send> Send for State<T> {}
+
+// SAFETY: Access to the subject and its observers requires the LVGL lock.
 unsafe impl<T: Copy + Send> Sync for State<T> {}
 
 #[cfg(all(test, docsrs))]
@@ -3358,10 +3365,10 @@ impl Label {
     /// Bind text using a noncapturing Rust formatter. Formatting errors preserve
     /// the displayed text and are available from `text_status`. A recursive
     /// state change that invalidates the rendered value reports `Error::Busy`.
-    /// State must remain at a stable address, as for other LVGL bindings.
+    /// The pinned state retains a stable address for the observer.
     pub fn bind_text<T: Copy + Into<i32> + TryFrom<i32>>(
         self,
-        state: &State<T>,
+        state: Pin<&State<T>>,
         formatter: TextFormatter,
     ) -> Result<Self> {
         text::bind(self, state.subject_ptr(), formatter)?;
@@ -3376,7 +3383,7 @@ impl Label {
 
 impl Arc {
     /// Bind this arc's value to a reactive state.
-    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: &State<T>) -> Self {
+    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: Pin<&State<T>>) -> Self {
         unsafe { bindings::lv_arc_bind_value(self.raw(), state.subject_ptr()) };
         self
     }
@@ -3384,7 +3391,7 @@ impl Arc {
 
 impl Slider {
     /// Bind this slider's value to a reactive state.
-    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: &State<T>) -> Self {
+    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: Pin<&State<T>>) -> Self {
         unsafe { bindings::lv_slider_bind_value(self.raw(), state.subject_ptr()) };
         self
     }
@@ -3392,7 +3399,7 @@ impl Slider {
 
 impl Roller {
     /// Bind this roller's selected index to a reactive state.
-    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: &State<T>) -> Self {
+    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: Pin<&State<T>>) -> Self {
         unsafe { bindings::lv_roller_bind_value(self.raw(), state.subject_ptr()) };
         self
     }
@@ -3400,7 +3407,7 @@ impl Roller {
 
 impl Dropdown {
     /// Bind this dropdown's selected index to a reactive state.
-    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: &State<T>) -> Self {
+    pub fn bind_value<T: Copy + Into<i32> + TryFrom<i32>>(self, state: Pin<&State<T>>) -> Self {
         unsafe { bindings::lv_dropdown_bind_value(self.raw(), state.subject_ptr()) };
         self
     }
@@ -4448,7 +4455,7 @@ impl<T: Copy + Into<i32> + TryFrom<i32>> State<T> {
     /// Attach an observer that automatically refreshes `obj` when this
     /// state changes. The actual rebinding logic is on the widget side
     /// (e.g. [`Label::bind_text`]) — this is a low-level escape hatch.
-    pub fn observe(&self, obj: impl Widget) {
+    pub fn observe(self: Pin<&Self>, obj: impl Widget) {
         unsafe {
             bindings::lv_subject_add_observer_obj(
                 self.subject_ptr(),

@@ -12,6 +12,16 @@ import os
 import subprocess
 import sys
 
+CARGO_CLIPPY_COMMAND = (
+    "cargo", "clippy", "--all-targets", "--locked",
+    "--features", "std", "--",
+    "-D", "warnings",
+    "-W", "clippy::pedantic",
+    "-W", "clippy::nursery",
+    "-A", "clippy::module-name-repetitions",
+    "-A", "clippy::missing-errors-doc",
+)
+
 logger = logging.getLogger("ove")
 
 

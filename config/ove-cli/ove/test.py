@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
-from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
+from .utils import CARGO_CLIPPY_COMMAND, run, nproc, apply_defconfig_overlay, atomic_symlink
 from .appgen import generate_app_kconfig
 from .board_yaml import nuttx_board_config, zephyr_board
 from .boardgen import generate_board_kconfig
@@ -3891,7 +3891,7 @@ def _compile_probe(label, cmd, *, env=None, cwd=None):
 
 
 def test_lvgl_bindings_compile(ove_dir, output_dir):
-    """Compile the C++, Rust and Zig LVGL bindings against dl/lvgl and the host LVGL config."""
+    """Compile the C++ and Zig bindings and lint Rust against the real LVGL headers."""
     res = TestResults(suite="lvgl-compile")
     lvgl_dir = os.path.join(ove_dir, "dl", "lvgl")
     if not os.path.isfile(os.path.join(lvgl_dir, "lvgl.h")):
@@ -3992,18 +3992,16 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
         res.failed += 1
         res.failed_names.append("zig")
 
-    # ── Rust : cargo check the binding crate against real LVGL ──
+    # ── Rust : cargo clippy the binding crate against real LVGL ──
     # Reuse the host storage sizes and supply the LVGL config and headers.
     rust_target = os.path.join(output_dir, "tests", "lvgl_compile_rust")
     _rust_dir, env = _rust_test_env(ove_dir, output_dir, rust_target)
     env.pop("DOCS_RS", None)
     env.update(OVE_GEN_DIR=gen_dir, LV_CONF_PATH=host_lv_conf,
                LVGL_INCLUDE_PATH=lvgl_dir, LVGL_PARENT_PATH=os.path.join(ove_dir, "dl"))
-    ok, _ = _compile_probe("rust", [
-        "cargo", "check", "--manifest-path",
-        os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
-        "--features", "std",
-    ], env=env, cwd=ove_dir)
+    rust_crate = os.path.join(ove_dir, "bindings", "rust", "ove")
+    ok, _ = _compile_probe("rust (cargo clippy)", CARGO_CLIPPY_COMMAND,
+                           env=env, cwd=rust_crate)
     res.passed += ok
     if not ok:
         res.failed += 1
