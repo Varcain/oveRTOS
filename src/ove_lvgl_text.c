@@ -14,7 +14,6 @@
 #include <lvgl/lvgl.h>
 #endif
 
-#ifndef OVE_LVGL_STUB
 #if defined(__ZEPHYR__)
 #include <src/core/lv_obj_private.h>
 #include <src/core/lv_observer_private.h>
@@ -260,71 +259,4 @@ int ove_lvgl_text_status(void *obj)
 	return observer ? ((ove_lvgl_text_binding_t *)observer->user_data)->status
 			: OVE_ERR_NOT_FOUND;
 }
-#else
-#include <stdlib.h>
-void *ove_lvgl_text_alloc(size_t size)
-{
-	return malloc(size);
-}
-void *ove_lvgl_text_realloc(void *ptr, size_t size)
-{
-	return realloc(ptr, size);
-}
-void ove_lvgl_text_free(void *ptr)
-{
-	free(ptr);
-}
-ove_lvgl_text_watch_t *ove_lvgl_text_watch(void *obj, void *data, ove_lvgl_text_release_fn release)
-{
-	(void)obj;
-	(void)data;
-	(void)release;
-	return NULL;
-}
-int ove_lvgl_text_watch_valid(ove_lvgl_text_watch_t *watch)
-{
-	(void)watch;
-	return 0;
-}
-void ove_lvgl_text_watch_end(ove_lvgl_text_watch_t *watch)
-{
-	(void)watch;
-}
-void ove_lvgl_text_set(void *obj, const char *text)
-{
-	lv_label_set_text(obj, text);
-}
-int ove_lvgl_text_static(void *obj, const char *text, void *data, ove_lvgl_text_release_fn release)
-{
-	(void)obj;
-	(void)text;
-	(void)data;
-	(void)release;
-	return OVE_ERR_NOT_SUPPORTED;
-}
-int ove_lvgl_text_bind(void *obj, void *subject, ove_lvgl_text_binding_t *context)
-{
-	(void)obj;
-	(void)subject;
-	free(context);
-	return OVE_ERR_NOT_SUPPORTED;
-}
-int ove_lvgl_text_current(void *obj, uint32_t cookie, int32_t value)
-{
-	(void)obj;
-	(void)cookie;
-	(void)value;
-	return OVE_ERR_NOT_SUPPORTED;
-}
-int ove_lvgl_text_status(void *obj)
-{
-	(void)obj;
-	return OVE_ERR_NOT_SUPPORTED;
-}
-int ove_lvgl_text_publish(void *obj, uint32_t cookie, int32_t value, const char *text)
-{
-	(void)text;
-	return ove_lvgl_text_current(obj, cookie, value);
-}
-#endif /* OVE_LVGL_STUB */
 #endif /* CONFIG_OVE_LVGL */

@@ -9,8 +9,8 @@
 #               run.  Run after adding/changing a C FFI symbol; commit
 #               the diff.
 #   --check     Compare with fresh bindgen output, ignoring doc attributes.
-#               Fail on drift or generation failure. Skip if rust_stub
-#               has not been built.
+#               Fail on drift or generation failure. Skip if LVGL or the
+#               rust_stub storage probe is missing.
 set -euo pipefail
 
 MODE="regen"
@@ -20,6 +20,16 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 OVE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LVGL_DIR="$OVE_DIR/dl/lvgl"
+if [ ! -f "$LVGL_DIR/lvgl.h" ]; then
+    if [ "$MODE" = "check" ]; then
+        echo "warning: dl/lvgl not present — skipping bindings_stub.rs drift check" >&2
+        exit 0
+    fi
+    echo "Fetch the manifest-pinned LVGL into dl/lvgl before regenerating bindings_stub.rs" >&2
+    exit 1
+fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -118,8 +128,8 @@ OVE_GEN_DIR="$TMP" \
 RUST_IS_NATIVE=1 \
 OVE_STORAGE_SIZES="$TMP/sizes.env" \
 LV_CONF_PATH="$OVE_DIR/tests/host" \
-LVGL_INCLUDE_PATH="$OVE_DIR/tests/backends/stub/lvgl" \
-LVGL_PARENT_PATH="$OVE_DIR/tests/backends/stub" \
+LVGL_INCLUDE_PATH="$LVGL_DIR" \
+LVGL_PARENT_PATH="$OVE_DIR/dl" \
 CARGO_TARGET_DIR="$TMP/target" \
 cargo build --manifest-path "$OVE_DIR/bindings/rust/ove/Cargo.toml" \
     --features std --locked >"$TMP/cargo.log" 2>&1 || true
@@ -171,7 +181,7 @@ header = '''// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 //! and the `docsrs` cfg flag). Mirrors what bindgen would emit so
 //! `cargo doc` can build without a real C toolchain or LVGL headers.
 //!
-//! Regenerate after touching the C FFI surface:
+//! Regenerate after changing the C FFI surface, LVGL pin or host LVGL config:
 //!     scripts/regen-bindings-stub.sh
 //! `make lint` compares this stub with fresh bindgen output.
 

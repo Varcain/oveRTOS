@@ -1938,11 +1938,7 @@ impl Calendar {
         let ok = unsafe { bindings::lv_calendar_get_pressed_date(self.raw, &mut date) };
         // LVGL's lv_result_t: 1 = OK, 0 = INVALID. Non-zero means we got a date.
         if ok != 0 {
-            // lv_calendar_date_t fields are uint16_t/uint8_t in real
-            // LVGL but bindgen lifts them to u32 in the test stub; the
-            // `as u32` keeps both variants compiling (the no-op cast in
-            // the stub is silenced by clippy::unnecessary_cast at the
-            // crate root).
+            // Widen the uint16_t year and uint8_t month and day to u32.
             Some((date.year as u32, date.month as u32, date.day as u32))
         } else {
             None

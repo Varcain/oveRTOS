@@ -12,8 +12,8 @@ The cookbook, API reference and getting-started pages show C code, but
 nothing ever built it, so it drifted onto functions that do not exist. This
 rule pulls out each ```c block under _PAGE_DIRS, prepends
 `#include "ove/ove.h"`, and compiles it to assembly against include/ with
-tests/docs/ove_config.h (every module the docs use switched on). LVGL comes
-from dl/lvgl when it has been downloaded, else from the stub header.
+tests/docs/ove_config.h. The LVGL cookbook blocks require dl/lvgl and are
+skipped when it is missing.
 
 The compile generates code (-S) at -O0 on purpose. GCC reports an ignored
 OVE_NODISCARD result only while generating code, so -fsyntax-only never sees
@@ -63,15 +63,14 @@ def _blocks(text):
         yield line, code
 
 
-def _include_args(ove_dir):
+def _include_args(ove_dir, has_lvgl):
     def inc(*parts):
         return "-I" + os.path.join(ove_dir, *parts)
 
     args = [inc("tests", "docs"), inc("include"), inc("tests", "host", "posix", "include")]
-    if os.path.isfile(os.path.join(ove_dir, "dl", "lvgl", "lvgl.h")):
-        args += [inc("dl", "lvgl"), inc("dl"), inc("tests", "host"), "-DLV_CONF_INCLUDE_SIMPLE"]
-    else:
-        args += [inc("tests", "backends", "stub", "lvgl"), inc("tests", "backends", "stub")]
+    if has_lvgl:
+        args += [inc("dl", "lvgl"), inc("dl"), inc("tests", "host"),
+                 "-DCONFIG_OVE_LVGL=1", "-DLV_CONF_INCLUDE_SIMPLE"]
     return args
 
 
@@ -97,9 +96,11 @@ def check(ove_dir):
     if not cc:
         return "SKIP", "no host C compiler"
     docs_root = os.path.join(ove_dir, "docs-site", "docs")
-    args = _include_args(ove_dir)
+    has_lvgl = os.path.isfile(os.path.join(ove_dir, "dl", "lvgl", "lvgl.h"))
+    args = _include_args(ove_dir, has_lvgl)
     problems = []
     compiled = 0
+    skipped = 0
     pages = []
     for d in _PAGE_DIRS:
         full = os.path.join(ove_dir, d)
@@ -111,6 +112,9 @@ def check(ove_dir):
             text = f.read()
         page_ok = True
         for line, code in _blocks(text):
+            if not has_lvgl and page == "cookbook/lvgl-thread-safe.md":
+                skipped += 1
+                continue
             ok, err = _compile(cc, args, code)
             compiled += 1
             if not ok:
@@ -121,7 +125,10 @@ def check(ove_dir):
             problems.append(f"{page}: compiles now; remove it from _PENDING")
     if problems:
         return "FAIL", "; ".join(problems)
-    return "OK", f"{compiled} blocks, {len(_PENDING)} pages pending"
+    detail = f"{compiled} blocks, {len(_PENDING)} pages pending"
+    if skipped:
+        detail += f" ({skipped} skipped because dl/lvgl is missing)"
+    return "OK", detail
 
 
 # ── doc-names: API names quoted in prose and tables ─────────────────────────

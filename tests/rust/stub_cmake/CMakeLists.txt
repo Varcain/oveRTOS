@@ -67,7 +67,6 @@ add_library(ove_stub STATIC
 
 target_include_directories(ove_stub BEFORE PRIVATE ${OVE_STUB_CONFIG_DIR})
 target_include_directories(ove_stub PRIVATE
-    ${STUB_DIR}
     ${OVE_INCLUDE}
     ${OVE_ROOT}/backends/common
     ${CMAKE_CURRENT_SOURCE_DIR}/../..

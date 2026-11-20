@@ -66,19 +66,10 @@ comptime { ove.exportMain(appMain); }
 
 `inline for` unrolls the loop at comptime — each page builder is called directly, no function-pointer dispatch through the table. The table itself stays for readability.
 
-## Comptime widget gating
+## LVGL configuration
 
-If the LVGL config disables a particular widget (`CONFIG_OVE_LVGL_USE_CHART=n`), the corresponding page can be omitted at comptime:
-
-```zig
-if (comptime ove.lvgl.has(.Chart)) {
-    .{ .name = "Chart", .build = buildChartPage },
-} else {
-    .{ .name = "Chart (disabled)", .build = buildDisabledStub },
-}
-```
-
-`ove.lvgl.has(.X)` checks `@hasDecl` against the bindings stub — false-branch code never gets emitted.
+Enable the widgets the gallery uses in the LVGL configuration. Zig imports
+their declarations from the configured LVGL headers at build time.
 
 ## Where to next
 

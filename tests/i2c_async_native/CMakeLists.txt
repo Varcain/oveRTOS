@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later
 file(READ "${OVE_ROOT}/tests/ove_config.h" _i2c_config)
-string(REGEX REPLACE "#define CONFIG_OVE_(LVGL|LINUX)[^\n]*\n" "" _i2c_config "${_i2c_config}")
+string(REGEX REPLACE "#define CONFIG_OVE_LINUX[^\n]*\n" "" _i2c_config "${_i2c_config}")
 string(REPLACE "#endif /* OVE_CONFIG_H */" "#define CONFIG_OVE_I2C 1\n#endif /* OVE_CONFIG_H */" _i2c_config "${_i2c_config}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ove_config.h" "${_i2c_config}")
 foreach(mode heap zero)

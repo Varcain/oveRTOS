@@ -3891,7 +3891,7 @@ def _compile_probe(label, cmd, *, env=None, cwd=None):
 
 
 def test_lvgl_bindings_compile(ove_dir, output_dir):
-    """Compile the C++, Rust and Zig LVGL bindings against vendored LVGL."""
+    """Compile the C++, Rust and Zig LVGL bindings against dl/lvgl and the host LVGL config."""
     res = TestResults(suite="lvgl-compile")
     lvgl_dir = os.path.join(ove_dir, "dl", "lvgl")
     if not os.path.isfile(os.path.join(lvgl_dir, "lvgl.h")):

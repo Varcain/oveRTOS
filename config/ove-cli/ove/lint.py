@@ -561,7 +561,8 @@ def _clang_tidy_backends(ove_dir, check):
 def _cargo_clippy(ove_dir, check):
     """Run cargo clippy against the `bindings/rust/ove` crate.
 
-    Reuse the host configuration and storage sizes from `ove test rust`.
+    Reuse the `ove test rust` host configuration, which leaves LVGL off,
+    and its storage probe.
 
     Rust *apps* (apps/rust/*, overtos_apps/*_rust) need a fully
     configured CMake workspace and per-board paths; lint them

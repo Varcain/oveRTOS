@@ -11,7 +11,7 @@ import shutil
 import tempfile
 import unittest
 
-from ove.lint_doc_snippets import _blocks, _compile, _include_args, check_names
+from ove.lint_doc_snippets import _blocks, _compile, _include_args, check, check_names
 
 TREE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -66,8 +66,16 @@ class DocNamesTest(unittest.TestCase):
 class DocSnippetCompileTest(unittest.TestCase):
     """A snippet that drops an OVE_NODISCARD status must fail the lint."""
 
+    def test_missing_lvgl_skips_cookbook_block(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name in ("docs-site", "include", "tests"):
+                os.symlink(os.path.join(TREE, name), os.path.join(root, name))
+            status, detail = check(root)
+        self.assertEqual(status, "OK", detail)
+        self.assertIn("1 skipped because dl/lvgl is missing", detail)
+
     def _compiles(self, code):
-        return _compile(shutil.which("gcc"), _include_args(TREE), code)
+        return _compile(shutil.which("gcc"), _include_args(TREE, has_lvgl=False), code)
 
     def test_status_consumed_compiles(self):
         ok, err = self._compiles("int f(void) { ove_mutex_t m; return ove_mutex_create(&m); }\n")

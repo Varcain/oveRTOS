@@ -11,7 +11,7 @@
 #include <lvgl/lvgl.h>
 #endif
 
-#if !defined(OVE_LVGL_STUB) && defined(LV_USE_CANVAS) && LV_USE_CANVAS
+#if defined(LV_USE_CANVAS) && LV_USE_CANVAS
 #include <limits.h>
 #if defined(__ZEPHYR__)
 #include <src/core/lv_obj_class_private.h>

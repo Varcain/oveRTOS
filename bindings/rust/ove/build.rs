@@ -13,9 +13,8 @@ fn main() {
     // Doc-only builds: skip bindgen, emit all feature flags so every
     // module (including `lvgl`) is included in the generated docs.
     // Also activates the `cfg(docsrs)` switch in lib.rs that swaps the
-    // bindgen-generated module for the hand-written bindings_stub.rs,
-    // so the crate compiles without LVGL/storage-sizes plumbing —
-    // reused by `ove lint` for clippy without a configured workspace.
+    // bindgen-generated module for the checked-in bindings_stub.rs,
+    // so the crate compiles without LVGL headers or a storage probe.
     if std::env::var("DOCS_RS").is_ok() {
         println!("cargo:rustc-cfg=docsrs");
         println!("cargo:rustc-check-cfg=cfg(ove_test)");
@@ -341,8 +340,7 @@ fn main() {
         .clang_arg("-DLV_CONF_INCLUDE_SIMPLE");
     builder = builder
         .clang_args([format!("-I{ove_dir}/include"), format!("-I{ove_gen_dir}")])
-        // Generate enum constants without type prefix (LV_EVENT_CLICKED, not
-        // lv_event_code_t_LV_EVENT_CLICKED) — matches stub anonymous-enum output.
+        // Emit C enum names such as LV_EVENT_CLICKED without a type prefix.
         .prepend_enum_name(false);
 
     // Add backend storage header include path
