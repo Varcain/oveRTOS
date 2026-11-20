@@ -119,8 +119,7 @@ typedef enum {
  * @brief Initialise a thread using caller-supplied static storage and stack.
  *
  * The caller provides a backend @p storage object and a @p stack buffer of
- * @p stack_size bytes. NuttX still allocates native task/group and signal-action
- * resources; it completes target signal setup before publishing the handle.
+ * @p stack_size bytes. NuttX also allocates native task and group resources.
  * A reported setup error leaves @p handle unchanged.
  *
  * @param[out] handle      Receives the opaque thread handle on success.
@@ -156,11 +155,9 @@ OVE_NODISCARD int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *st
  * resources.  This function neither requests cooperative stop nor forcibly
  * terminates the worker.  Signal a cooperative worker with
  * ove_thread_request_stop() before calling it.  The static storage supplied at
- * init time is not freed. On NuttX, closing releases pending or acknowledged
- * suspensions and waits for admitted control calls and native task retirement.
- * Callers must remain alive through their API calls: a native group owner must
- * join its pthread workers before returning while they are in library calls.
- * Coordinate new calls with ownership; a completed deinit invalidates the handle.
+ * init time is not freed. NuttX waits for native task retirement before
+ * returning. Coordinate initiating calls with destruction. A completed
+ * deinit invalidates the handle.
  *
  * @param[in] handle  Handle returned by ove_thread_init().
  * @return OVE_OK on success, or a negative error code on failure.
@@ -281,18 +278,12 @@ void ove_thread_start_scheduler(void);
  *
  * The thread remains suspended until ove_thread_resume() is called.
  *
- * Call from thread context on FreeRTOS, NuttX and the POSIX host backend.
+ * Call from thread context on FreeRTOS and the POSIX host backend.
  * Zephyr also allows calls from an ISR. On SMP, an ISR may spin until a
  * target running on another CPU halts.
  *
- * NuttX reserves SIGUSR1 in each oveRTOS task group. Do not replace its action
- * or permanently block it. An external call waits for owner acknowledgement,
- * concurrent resume, close or entry return; multiple callers coalesce into one
- * suspension. A native signal-queue resource failure can return OVE_OK without
- * suspension. Self-suspension waits for release.
- * Native pthread callers are supported while their owner group stays alive;
- * callers must not be forcibly canceled during a control call. Coordinate
- * starting calls with destruction.
+ * NuttX returns OVE_ERR_NOT_SUPPORTED for a non-NULL handle and never
+ * reports OVE_THREAD_STATE_SUSPENDED.
  *
  * @param[in] handle  Thread to suspend.  May be the calling thread itself.
  * @retval OVE_OK The request was handled.
@@ -306,12 +297,10 @@ int ove_thread_suspend(ove_thread_t handle);
 /**
  * @brief Resume a previously suspended thread.
  *
- * Call from thread context on FreeRTOS, NuttX and the POSIX host backend.
+ * Call from thread context on FreeRTOS and the POSIX host backend.
  * Zephyr also allows calls from an ISR.
  *
- * On NuttX, also releases a request whose signal has not arrived yet. The
- * owner restores its prior logical state after release. The caller-lifetime
- * and reserved-signal rules of ove_thread_suspend() apply.
+ * NuttX returns OVE_ERR_NOT_SUPPORTED for a non-NULL handle.
  *
  * @param[in] handle  Thread to resume.  Must have been suspended with
  *                    ove_thread_suspend().

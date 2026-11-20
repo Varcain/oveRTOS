@@ -626,12 +626,9 @@ template <size_t StackSize = 0> class Thread
 	 *
 	 * The thread will not be scheduled until `resume()` is called.
 	 * See ove_thread_suspend() for backend-specific ISR rules.
-	 * NuttX reserves SIGUSR1; do not replace or permanently mask it. The
-	 * call waits for acknowledgement or concurrent release/exit; queue
-	 * failure can return success without suspension. Keep native
-	 * callers and their groups alive through return, and coordinate destruction.
+	 * NuttX never reports OVE_THREAD_STATE_SUSPENDED.
 	 * @return Success, Error::InvalidParam for an empty thread, or
-	 * Error::NotSupported when the backend lacks suspension support.
+	 * Error::NotSupported on NuttX.
 	 */
 	[[nodiscard]] Result<void> suspend()
 	{
@@ -640,10 +637,9 @@ template <size_t StackSize = 0> class Thread
 
 	/**
 	 * @brief Resumes a previously suspended thread.
-	 * NuttX retains release before signal delivery and restores the prior
-	 * logical state. The ISR and caller-lifetime rules of suspend() apply.
+	 * See ove_thread_resume() for backend-specific ISR rules.
 	 * @return Success, Error::InvalidParam for an empty thread, or
-	 * Error::NotSupported when the backend lacks suspension support.
+	 * Error::NotSupported on NuttX.
 	 */
 	[[nodiscard]] Result<void> resume()
 	{

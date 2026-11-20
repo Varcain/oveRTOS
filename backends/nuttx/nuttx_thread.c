@@ -21,8 +21,6 @@
 #include <nuttx/mutex.h>
 #include <nuttx/sched.h>
 #include <nuttx/clock.h>
-#include <nuttx/signal.h>
-#include <limits.h>
 #include <sched.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -31,16 +29,14 @@
 #include <signal.h>
 #include <errno.h>
 #include <malloc.h>
-/* Serialize state publication, tracing and tracker updates against signals. */
-static void set_state(struct ove_thread *t, int state)
-{
-	irqstate_t flags = enter_critical_section();
-	ove_trace_emit_state((uintptr_t)t, __atomic_load_n(&t->state, __ATOMIC_RELAXED), state);
-	ove_state_track_transition(&t->st, state);
-	__atomic_store_n(&t->state, state, __ATOMIC_RELEASE);
-	leave_critical_section(flags);
-}
-#define SET_STATE(t, s) set_state((t), (s))
+/* Publish the tracked state for queries and deinit. */
+#define SET_STATE(t, s)                                                                    \
+	do {                                                                               \
+		ove_trace_emit_state((uintptr_t)(t),                                       \
+				     __atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s)); \
+		ove_state_track_transition(&(t)->st, (s));                                 \
+		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
+	} while (0)
 
 /* Per-task pointer via NuttX task TLS.  The index comes from a global,
  * never-freed table (CONFIG_TLS_TASK_NELEM slots), so it is allocated once,
@@ -116,96 +112,19 @@ struct ove_thread *ove_nuttx_current_thread(void)
 static void _register_thread(struct ove_thread *t)
 {
 	nxmutex_lock(&thread_list_lock);
-	irqstate_t flags = enter_critical_section();
 	ove_thread_registry_add(t);
-	leave_critical_section(flags);
 	nxmutex_unlock(&thread_list_lock);
 }
 
 static void _unregister_thread(struct ove_thread *t)
 {
 	nxmutex_lock(&thread_list_lock);
-	irqstate_t flags = enter_critical_section();
 	ove_thread_registry_remove(t);
-	leave_critical_section(flags);
 	nxmutex_unlock(&thread_list_lock);
 }
 
 /* Store first thread for join in start_scheduler */
 static struct ove_thread *first_thread;
-
-/* Called with protocol protection held. Retain at most one owner wake. */
-static void suspend_release(struct ove_thread *t)
-{
-	t->suspend_active = 0;
-	if (t->suspend_handler && !t->suspend_wake_pending) {
-		t->suspend_wake_pending = 1;
-		(void)nxsem_post(&t->suspend_sem);
-	}
-}
-
-/* The owner alone changes its logical state around a park. A direct self
- * call can receive a nested signal: the outer loop owns that request too. */
-static void suspend_park(struct ove_thread *t)
-{
-	irqstate_t flags = enter_critical_section();
-	if (t->suspend_handler || !t->suspend_active || t->closing || t->finished) {
-		leave_critical_section(flags);
-		return;
-	}
-	t->suspend_handler = 1;
-	int previous = __atomic_load_n(&t->state, __ATOMIC_RELAXED);
-	for (;;) {
-		if (!t->suspend_active || t->closing || t->finished)
-			break;
-		t->suspend_acked = 1;
-		SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
-		leave_critical_section(flags);
-		int rc = nxsem_wait_uninterruptible(&t->suspend_sem);
-		flags = enter_critical_section();
-		if (rc == 0)
-			t->suspend_wake_pending = 0;
-	}
-	if (t->suspend_wake_pending && nxsem_trywait(&t->suspend_sem) == 0)
-		t->suspend_wake_pending = 0;
-	t->suspend_handler = 0;
-	SET_STATE(t, previous);
-	leave_critical_section(flags);
-}
-
-static void sigusr1_handler(int sig)
-{
-	(void)sig;
-	struct ove_thread *t = tls_get_current();
-	if (t)
-		suspend_park(t);
-}
-
-/* Protected registry admission precedes any external handle dereference. Callers
- * coordinate starting calls with destruction and stay alive until return. */
-static struct ove_thread *suspend_admit(ove_thread_t handle)
-{
-	if (!handle)
-		return NULL;
-	struct ove_thread *self = tls_get_current();
-	irqstate_t flags = enter_critical_section();
-	struct ove_thread *t = self == handle ? self : ove_backend_thread_registry_head;
-	while (t && t != handle)
-		t = t->next;
-	if (t && t->started && !t->closing && !t->finished && t->suspend_users < UINT_MAX)
-		++t->suspend_users;
-	else
-		t = NULL;
-	leave_critical_section(flags);
-	return t;
-}
-
-static void suspend_depart(struct ove_thread *t)
-{
-	irqstate_t flags = enter_critical_section();
-	--t->suspend_users;
-	leave_critical_section(flags);
-}
 
 static int task_wrapper(int argc, char *argv[])
 {
@@ -215,7 +134,7 @@ static int task_wrapper(int argc, char *argv[])
 	t = (struct ove_thread *)strtoul(argv[1], NULL, 0);
 	tls_set_current(t);
 	/* A child that outranks its creator runs before task_create_with_stack()
-	 * returns; publish what suspend/get_state/set_priority read so they work
+	 * returns; publish what get_state/set_priority read so they work
 	 * on the thread's own handle from the first statement (the creator stores
 	 * the same values afterwards). */
 	__atomic_store_n(&t->pid, getpid(), __ATOMIC_RELAXED);
@@ -226,40 +145,9 @@ static int task_wrapper(int argc, char *argv[])
 	 * the actual scheduling moment, not at ove_thread_init() time. */
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
 #endif
-	struct sigaction sa;
-	memset(&sa, 0, sizeof(sa));
-	sa.sa_handler = sigusr1_handler;
-	sigemptyset(&sa.sa_mask);
-	int status = sigaction(SIGUSR1, &sa, NULL) == 0 ? OVE_OK : OVE_ERR_NO_MEMORY;
-	if (status == OVE_OK) {
-		sigset_t mask;
-		sigemptyset(&mask);
-		sigaddset(&mask, SIGUSR1);
-		if (nxsig_procmask(SIG_UNBLOCK, &mask, NULL) < 0)
-			status = OVE_ERR_INVALID_PARAM;
-	}
-	irqstate_t flags = enter_critical_section();
-	t->startup_status = status;
-	SET_STATE(t, status == OVE_OK ? OVE_THREAD_STATE_RUNNING : OVE_THREAD_STATE_READY);
-	leave_critical_section(flags);
-	(void)nxsem_post(&t->startup_sem);
-	if (status == OVE_OK)
-		t->entry(t->arg);
-	flags = enter_critical_section();
-	t->finished = 1;
-	suspend_release(t);
+	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+	t->entry(t->arg);
 	SET_STATE(t, OVE_THREAD_STATE_TERMINATED);
-	leave_critical_section(flags);
-	/* Dispatch may temporarily drop native scheduler protection to allocate.
-	 * Keep this TCB/group/action alive through every admitted sender. */
-	for (;;) {
-		flags = enter_critical_section();
-		unsigned int users = t->suspend_users;
-		leave_critical_section(flags);
-		if (!users)
-			break;
-		usleep(1000);
-	}
 	tls_set_current(NULL);
 	nxsem_post(&t->done_sem);
 	return 0;
@@ -311,15 +199,11 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	t->arg = arg;
 	__atomic_store_n(&t->state, OVE_THREAD_STATE_READY, __ATOMIC_RELEASE);
 	t->name = name; /* caller-owned string, retained for trace descriptors */
-	sem_t *events[] = {&t->startup_sem, &t->suspend_sem, &t->done_sem};
-	unsigned int initialized = 0;
-	for (; initialized < sizeof(events) / sizeof(events[0]); ++initialized) {
-		if (nxsem_init(events[initialized], 0, 0) < 0)
-			goto event_error;
-		if (nxsem_set_protocol(events[initialized], SEM_PRIO_NONE) < 0) {
-			(void)nxsem_destroy(events[initialized]);
-			goto event_error;
-		}
+	if (nxsem_init(&t->done_sem, 0, 0) < 0)
+		return OVE_ERR_NO_MEMORY;
+	if (nxsem_set_protocol(&t->done_sem, SEM_PRIO_NONE) < 0) {
+		nxsem_destroy(&t->done_sem);
+		return OVE_ERR_NO_MEMORY;
 	}
 
 	if (stack_size == 0) {
@@ -364,23 +248,13 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 					     ove_nuttx_map_priority(priority), stack,
 					     (int)stack_size, task_wrapper, argv_args);
 		if (pid < 0) {
-			goto event_error;
+			nxsem_destroy(&t->done_sem);
+			return OVE_ERR_NO_MEMORY;
 		}
 	}
 
 	__atomic_store_n(&t->pid, pid, __ATOMIC_RELAXED);
 	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
-	while (nxsem_wait_uninterruptible(&t->startup_sem) < 0) {
-	}
-	irqstate_t setup_flags = enter_critical_section();
-	rc = t->startup_status;
-	leave_critical_section(setup_flags);
-	if (rc != OVE_OK) {
-		wait_for_native_exit(t);
-		for (unsigned int i = 0; i < initialized; ++i)
-			(void)nxsem_destroy(events[i]);
-		return rc;
-	}
 	_register_thread(t);
 
 	irqstate_t flags = enter_critical_section();
@@ -390,11 +264,6 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	leave_critical_section(flags);
 
 	return OVE_OK;
-
-event_error:
-	while (initialized)
-		(void)nxsem_destroy(events[--initialized]);
-	return OVE_ERR_NO_MEMORY;
 }
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
@@ -434,8 +303,6 @@ int ove_thread_deinit(ove_thread_t handle)
 	if (ret)
 		return ret;
 	irqstate_t flags = enter_critical_section();
-	handle->closing = 1;
-	suspend_release(handle);
 	if (first_thread == handle)
 		first_thread = NULL;
 	leave_critical_section(flags);
@@ -449,7 +316,7 @@ int ove_thread_deinit(ove_thread_t handle)
 
 	for (;;) {
 		flags = enter_critical_section();
-		unsigned int observers = handle->scheduler_observers | handle->suspend_users;
+		unsigned int observers = handle->scheduler_observers;
 		leave_critical_section(flags);
 		if (observers == 0)
 			break;
@@ -457,8 +324,6 @@ int ove_thread_deinit(ove_thread_t handle)
 	}
 	_unregister_thread(handle);
 
-	nxsem_destroy(&handle->startup_sem);
-	nxsem_destroy(&handle->suspend_sem);
 	nxsem_destroy(&handle->done_sem);
 	return OVE_OK;
 }
@@ -549,10 +414,8 @@ void ove_thread_start_scheduler(void)
 	 * they begin running once this task yields or blocks. */
 	irqstate_t flags = enter_critical_section();
 	struct ove_thread *t = first_thread;
-	if (t && !t->closing)
+	if (t)
 		++t->scheduler_observers;
-	else
-		t = NULL;
 	leave_critical_section(flags);
 	if (t) {
 		nxsem_wait_uninterruptible(&t->done_sem);
@@ -568,62 +431,12 @@ void ove_thread_start_scheduler(void)
 
 int ove_thread_suspend(ove_thread_t handle)
 {
-	struct ove_thread *t = suspend_admit(handle);
-	if (!t)
-		return handle ? OVE_OK : OVE_ERR_INVALID_PARAM;
-	irqstate_t flags = enter_critical_section();
-	bool send = !t->suspend_active;
-	if (send) {
-		/* Reuse a generation only when no older caller or handler can
-		 * still refer to it, including a sender delayed before dispatch. */
-		if (t->suspend_generation == UINT64_MAX) {
-			if (t->suspend_users != 1 || t->suspend_handler) {
-				leave_critical_section(flags);
-				suspend_depart(t);
-				return OVE_OK;
-			}
-			t->suspend_generation = 0;
-		}
-		++t->suspend_generation;
-		t->suspend_active = 1;
-		t->suspend_acked = 0;
-	}
-	uint64_t generation = t->suspend_generation;
-	pid_t pid = t->pid;
-	leave_critical_section(flags);
-	if (tls_get_current() == t) {
-		suspend_park(t);
-	} else {
-		int rc = send ? nxsig_tgkill(-1, pid, SIGUSR1) : 0;
-		flags = enter_critical_section();
-		if (rc < 0 && t->suspend_active && t->suspend_generation == generation &&
-		    !t->suspend_acked)
-			suspend_release(t);
-		leave_critical_section(flags);
-		for (;;) {
-			flags = enter_critical_section();
-			bool done = !t->suspend_active || t->suspend_generation != generation ||
-				    t->suspend_acked || t->closing || t->finished;
-			leave_critical_section(flags);
-			if (done)
-				break;
-			usleep(1000);
-		}
-	}
-	suspend_depart(t);
-	return OVE_OK;
+	return handle ? OVE_ERR_NOT_SUPPORTED : OVE_ERR_INVALID_PARAM;
 }
 
 int ove_thread_resume(ove_thread_t handle)
 {
-	struct ove_thread *t = suspend_admit(handle);
-	if (!t)
-		return handle ? OVE_OK : OVE_ERR_INVALID_PARAM;
-	irqstate_t flags = enter_critical_section();
-	suspend_release(t);
-	leave_critical_section(flags);
-	suspend_depart(t);
-	return OVE_OK;
+	return handle ? OVE_ERR_NOT_SUPPORTED : OVE_ERR_INVALID_PARAM;
 }
 
 void ove_thread_request_stop(ove_thread_t handle)
@@ -970,14 +783,6 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 		break;
 	}
 
-	for (struct ove_thread *t = ove_backend_thread_registry_head; t; t = t->next) {
-		if (t->pid == tcb->pid && t->suspend_handler &&
-		    __atomic_load_n(&t->state, __ATOMIC_RELAXED) == OVE_THREAD_STATE_SUSPENDED) {
-			info->state = OVE_THREAD_STATE_SUSPENDED;
-			break;
-		}
-	}
-
 	info->native_priority = (int)tcb->sched_priority;
 	info->priority = (int)ove_nuttx_unmap_priority(info->native_priority);
 	info->stack_size = tcb->adj_stack_size;
@@ -1093,9 +898,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 #endif
 
 	ove_nuttx_runtime_snapshot();
-	nxmutex_lock(&thread_list_lock);
 	nxsched_foreach(_nuttx_list_cb, &ctx);
-	nxmutex_unlock(&thread_list_lock);
 	_accounting_retain(); /* before a newly listed thread claims a slot */
 	for (size_t i = 0; i < ctx.count; i++)
 		_nuttx_list_finish(&out[i], dt_us);

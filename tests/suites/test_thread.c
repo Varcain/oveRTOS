@@ -476,6 +476,13 @@ static void test_suspend_resume(void **state)
 	/* Wait for the thread to start (it sets g_flag=1 on entry). */
 	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 
+#ifdef CONFIG_OVE_RTOS_NUTTX
+	int suspend_rc = ove_thread_suspend(h);
+	int resume_rc = ove_thread_resume(h);
+	ove_test_thread_destroy(h);
+	assert_int_equal(suspend_rc, OVE_ERR_NOT_SUPPORTED);
+	assert_int_equal(resume_rc, OVE_ERR_NOT_SUPPORTED);
+#else
 	OVE_TEST_ASSERT_OK(ove_thread_suspend(h));
 	test_msleep(10);
 	OVE_TEST_ASSERT_OK(ove_thread_resume(h));
@@ -488,6 +495,7 @@ static void test_suspend_resume(void **state)
 	 * don't crash and the thread stays joinable. */
 	test_msleep(300);
 	ove_test_thread_destroy(h);
+#endif
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -1029,15 +1037,6 @@ static void test_errno_per_thread(void **state)
 
 #ifdef CONFIG_OVE_RTOS_NUTTX
 void ove_test_nuttx_thread_lifecycle(ove_thread_storage_t *storage, void *stack, size_t size);
-void ove_test_nuttx_thread_suspend(ove_thread_storage_t *storage, void *stack, size_t size,
-				   struct ove_thread_info *info, size_t capacity);
-
-static void test_native_thread_suspend(void **state)
-{
-	(void)state;
-	ove_test_nuttx_thread_suspend(&s_th_storage, s_th_stack, sizeof(s_th_stack), s_list_info,
-				      LIST_INFO_MAX);
-}
 
 static void test_native_thread_lifetime(void **state)
 {
@@ -1279,7 +1278,6 @@ int test_thread_run(void)
 		cmocka_unit_test(test_isr_refuses_blocking_calls),
 #ifdef CONFIG_OVE_RTOS_NUTTX
 		cmocka_unit_test(test_native_thread_lifetime),
-		cmocka_unit_test(test_native_thread_suspend),
 #endif
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),

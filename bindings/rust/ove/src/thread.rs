@@ -409,13 +409,11 @@ impl Thread {
 
     /// Suspend this thread.
     ///
-    /// Zephyr allows calls from an ISR. Other backends require thread context.
-    /// NuttX reserves SIGUSR1; do not replace or permanently mask it. The
-    /// call waits for acknowledgement or concurrent release/exit; queue
-    /// failure can return `Ok(())` without suspension. Keep native callers and their
-    /// groups alive through the call and coordinate new calls with destruction.
+    /// Zephyr allows calls from an ISR. FreeRTOS and the POSIX host backend
+    /// require thread context.
     ///
-    /// Returns [`Error::NotSupported`] when the backend lacks suspension support.
+    /// NuttX returns [`Error::NotSupported`] and never reports
+    /// [`ThreadState::Suspended`].
     #[inline]
     pub fn suspend(&self) -> Result<()> {
         Error::from_code(unsafe { bindings::ove_thread_suspend(self.handle) })
@@ -423,8 +421,8 @@ impl Thread {
 
     /// Resume this thread.
     ///
-    /// NuttX retains release before delivery and restores the prior logical
-    /// state. The context, live-caller and error rules of [`Thread::suspend`] apply.
+    /// The context rules of [`Thread::suspend`] apply.
+    /// NuttX returns [`Error::NotSupported`].
     #[inline]
     pub fn resume(&self) -> Result<()> {
         Error::from_code(unsafe { bindings::ove_thread_resume(self.handle) })

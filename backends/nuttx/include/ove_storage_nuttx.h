@@ -75,19 +75,8 @@ struct ove_thread {
 	void (*entry)(void *arg);
 	void *arg;
 	int state;
-	sem_t suspend_sem;
 	sem_t done_sem;
-	sem_t startup_sem;
-	int startup_status;
-	uint64_t suspend_generation;
-	unsigned int suspend_users;
-	int suspend_active;
-	int suspend_acked;
-	int suspend_handler;
-	int suspend_wake_pending;
-	int finished;
 	int started;
-	int closing;
 	unsigned int scheduler_observers;
 	const char *name;	 /* caller-owned from desc->name */
 	struct ove_thread *next; /* intrusive enumeration list */

@@ -16,8 +16,6 @@
 
 void ove_test_nuttx_thread_lifecycle(ove_thread_storage_t *storage, void *stack, size_t size);
 
-int ove_test_nuttx_suspend_wait(sem_t *sem);
-_Noreturn void ove_test_nuttx_suspend_exit(int status);
 int ove_test_nuttx_nxsem_post(sem_t *sem);
 int ove_test_nuttx_nxsem_destroy(sem_t *sem);
 int ove_test_nuttx_nxsem_wait_uninterruptible(sem_t *sem);
@@ -99,7 +97,7 @@ int ove_test_nuttx_nxsem_wait_uninterruptible(sem_t *sem)
 	if (p && sem == &p->target->done_sem && gettid() != p->pid)
 		atomic_fetch_add(&p->waiters, 1);
 	leave_critical_section(flags);
-	return ove_test_nuttx_suspend_wait(sem);
+	return nxsem_wait_uninterruptible(sem);
 }
 
 int ove_test_nuttx_nxsem_post(sem_t *sem)
@@ -151,7 +149,7 @@ _Noreturn void ove_test_nuttx_exit(int status)
 		(void)nxsem_wait_uninterruptible(&p->hold_gate);
 		atomic_store(&p->held, 0);
 	}
-	ove_test_nuttx_suspend_exit(status);
+	exit(status);
 }
 
 struct tcb_s *ove_test_nuttx_nxsched_get_tcb(pid_t pid)

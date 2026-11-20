@@ -126,9 +126,10 @@ waits and condition-variable mutex reacquisition can extend elapsed time.
   `while (!stop_requested())` and the owner calls `request_stop()` (implicitly
   via drop, or explicitly).
 - Suspend and resume pass through the [C thread contract](../api/threads.md).
-  An unsupported backend reports `NotSupported`. Empty C++ and Zig thread
-  wrappers report `InvalidParam`. Zephyr allows ISR calls, while FreeRTOS,
-  NuttX and the POSIX host backend require thread context.
+  NuttX reports `NotSupported` for both calls and never reports the suspended
+  state. Empty C++ and Zig thread wrappers report `InvalidParam`. Zephyr
+  allows ISR calls, while FreeRTOS and the POSIX host backend require thread
+  context.
 - From an ISR the C thread init/deinit/create/destroy/list calls return
   `OVE_ERR_WOULD_BLOCK`, `ove_thread_get_self` returns NULL and millisecond
   sleeps and delays return at once. The bindings' list, current-thread and

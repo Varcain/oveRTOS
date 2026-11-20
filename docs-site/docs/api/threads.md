@@ -212,23 +212,16 @@ int start_worker(void)
 Both controls return `OVE_OK` when the request is handled,
 `OVE_ERR_INVALID_PARAM` for a NULL handle, or `OVE_ERR_NOT_SUPPORTED` when
 the backend lacks suspension support. Call them from thread context on
-FreeRTOS, NuttX and the POSIX host backend. Zephyr also allows calls from an
+FreeRTOS and the POSIX host backend. Zephyr also allows calls from an
 ISR. On Zephyr SMP, an ISR suspending a thread running on another CPU may
 spin until the target halts.
 
-On NuttX, suspension reserves `SIGUSR1` in the target group. Creation completes
-that setup before returning, without changing the creator's handler or mask.
-Do not replace or permanently block the reserved target signal. External
-suspension waits for acknowledgement or concurrent release, close or exit;
-multiple callers share one request. Resume retains an early release and the
-owner restores its previous logical state. A native signal-queue resource
-failure can return `OVE_OK` without suspending the thread.
+NuttX returns `OVE_ERR_NOT_SUPPORTED` from both calls for a non-NULL handle.
+Its state queries and thread listings never report `SUSPENDED`.
 
-On NuttX, keep native callers alive through return.
-A native group owner must join pthread workers before returning while
-they are in library calls. Coordinate initiating calls with destruction;
-deinitialization invalidates the handle. NuttX closes pending suspensions and
-waits for admitted callers and actual native retirement before releasing backing.
+Coordinate initiating calls with destruction on every backend. Deinitialization
+invalidates the handle. On NuttX it waits for native task retirement before
+caller storage and stacks can be reused.
 
 ## Runtime Statistics and Stack Profiling
 
