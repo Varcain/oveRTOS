@@ -220,8 +220,9 @@ NuttX returns `OVE_ERR_NOT_SUPPORTED` from both calls for a non-NULL handle.
 Its state queries and thread listings never report `SUSPENDED`.
 
 Coordinate initiating calls with destruction on every backend. Deinitialization
-invalidates the handle. On NuttX it waits for native task retirement before
-caller storage and stacks can be reused.
+invalidates the handle. On supported single-core NuttX ports, deinit waits for
+the kernel to release the task ID before caller storage and stacks can be
+reused.
 
 ## Runtime Statistics and Stack Profiling
 

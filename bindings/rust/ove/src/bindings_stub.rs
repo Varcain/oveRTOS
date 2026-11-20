@@ -1045,7 +1045,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Join and release a thread created with ove_thread_init().\n\n Waits for the entry function to return, then releases backend-internal\n resources.  This function neither requests cooperative stop nor forcibly\n terminates the worker.  Signal a cooperative worker with\n ove_thread_request_stop() before calling it.  The static storage supplied at\n init time is not freed. NuttX waits for native task retirement before\n returning. Coordinate initiating calls with destruction. A completed\n deinit invalidates the handle.\n\n @param[in] handle  Handle returned by ove_thread_init().\n @return OVE_OK on success, or a negative error code on failure.\n @note Returns OVE_ERR_WOULD_BLOCK from an ISR.\n\n @see ove_thread_init"]
+    #[doc = " @brief Join and release a thread created with ove_thread_init().\n\n Waits for the entry function to return, then releases backend-internal\n resources.  This function neither requests cooperative stop nor forcibly\n terminates the worker.  Signal a cooperative worker with\n ove_thread_request_stop() before calling it.  The static storage supplied at\n init time is not freed. On supported single-core NuttX ports, deinit waits\n until the kernel releases the task ID and the stack can be reused.\n Coordinate initiating calls with destruction. A completed deinit\n invalidates the handle.\n\n @param[in] handle  Handle returned by ove_thread_init().\n @return OVE_OK on success, or a negative error code on failure.\n @note Returns OVE_ERR_WOULD_BLOCK from an ISR.\n\n @see ove_thread_init"]
     pub fn ove_thread_deinit(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {

@@ -76,7 +76,6 @@ struct ove_thread {
 	void *arg;
 	int state;
 	sem_t done_sem;
-	int started;
 	unsigned int scheduler_observers;
 	const char *name;	 /* caller-owned from desc->name */
 	struct ove_thread *next; /* intrusive enumeration list */

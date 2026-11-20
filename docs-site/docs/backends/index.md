@@ -179,9 +179,10 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
 - Suspend and resume return `OVE_ERR_NOT_SUPPORTED` for non-NULL handles.
   State queries and thread listings never report `SUSPENDED`.
 - Filesystem operations delegate to the NuttX VFS layer.
-- Thread deinitialization waits for native task retirement before caller storage
-  and stacks can be reused. This retirement check targets the single-core
-  NuttX ports supported here.
+- Thread deinitialization polls `sched_getparam()` until the kernel releases
+  the task ID. On the supported single-core NuttX ports, the exiting task has
+  left its stack by the time the caller sees the ID disappear, so caller
+  storage and stacks can be reused after deinitialization.
 - Call `ove_run()` or `ove_thread_start_scheduler()` from application startup.
   NuttX ignores calls from oveRTOS thread entries and native pthread workers;
   `ove_run()` also leaves the heap policy alone in that case.

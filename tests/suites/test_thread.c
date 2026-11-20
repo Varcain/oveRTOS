@@ -1036,12 +1036,29 @@ static void test_errno_per_thread(void **state)
 }
 
 #ifdef CONFIG_OVE_RTOS_NUTTX
-void ove_test_nuttx_thread_lifecycle(ove_thread_storage_t *storage, void *stack, size_t size);
+OVE_TEST_STORAGE(ove_thread_storage_t, s_startup_storage);
+OVE_TEST_STACK(s_startup_stack, 2048);
+static atomic_int s_startup_returned;
 
-static void test_native_thread_lifetime(void **state)
+static void entry_call_startup(void *arg)
+{
+	(void)arg;
+	ove_thread_start_scheduler();
+	ove_run();
+	atomic_store(&s_startup_returned, 1);
+}
+
+static void test_startup_calls_return_from_thread(void **state)
 {
 	(void)state;
-	ove_test_nuttx_thread_lifecycle(&s_th_storage, s_th_stack, sizeof(s_th_stack));
+	ove_thread_t h = NULL;
+	atomic_store(&s_startup_returned, 0);
+	/* Let init publish the first thread before it can run. */
+	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_startup_storage, "tstartup", entry_call_startup,
+					   NULL, OVE_PRIO_IDLE, sizeof(s_startup_stack),
+					   s_startup_stack));
+	assert_true(wait_for_atomic(&s_startup_returned, 1, 1000));
+	OVE_TEST_ASSERT_OK(ove_thread_deinit(h));
 }
 
 struct native_identity_probe {
@@ -1276,11 +1293,11 @@ int test_thread_run(void)
 #endif
 		cmocka_unit_test(test_errno_per_thread),
 		cmocka_unit_test(test_isr_refuses_blocking_calls),
-#ifdef CONFIG_OVE_RTOS_NUTTX
-		cmocka_unit_test(test_native_thread_lifetime),
-#endif
 #ifdef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_misaligned_stack),
+#endif
+#ifdef CONFIG_OVE_RTOS_NUTTX
+		cmocka_unit_test(test_startup_calls_return_from_thread),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

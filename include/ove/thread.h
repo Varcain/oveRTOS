@@ -155,9 +155,10 @@ OVE_NODISCARD int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *st
  * resources.  This function neither requests cooperative stop nor forcibly
  * terminates the worker.  Signal a cooperative worker with
  * ove_thread_request_stop() before calling it.  The static storage supplied at
- * init time is not freed. NuttX waits for native task retirement before
- * returning. Coordinate initiating calls with destruction. A completed
- * deinit invalidates the handle.
+ * init time is not freed. On supported single-core NuttX ports, deinit waits
+ * until the kernel releases the task ID and the stack can be reused.
+ * Coordinate initiating calls with destruction. A completed deinit
+ * invalidates the handle.
  *
  * @param[in] handle  Handle returned by ove_thread_init().
  * @return OVE_OK on success, or a negative error code on failure.

@@ -138,7 +138,6 @@ static int task_wrapper(int argc, char *argv[])
 	 * on the thread's own handle from the first statement (the creator stores
 	 * the same values afterwards). */
 	__atomic_store_n(&t->pid, getpid(), __ATOMIC_RELAXED);
-	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Init the tracker in the owning task so last_ts_us is anchored at
@@ -151,34 +150,6 @@ static int task_wrapper(int argc, char *argv[])
 	tls_set_current(NULL);
 	nxsem_post(&t->done_sem);
 	return 0;
-}
-
-/* On the supported single-core ports, native exit removes the PID and
- * abandons the old stack before another task can enter this critical section.
- * The private wrapper argument distinguishes a replacement after PID reuse. */
-static bool native_task_owned(struct ove_thread *t, const char *expected)
-{
-	char args[2 * sizeof(uintptr_t) + 4] = {0};
-	irqstate_t flags = enter_critical_section();
-	struct tcb_s *native = nxsched_get_tcb(__atomic_load_n(&t->pid, __ATOMIC_RELAXED));
-	bool owned = false;
-	if (native && native->task_state != TSTATE_TASK_INVALID &&
-	    native->task_state != TSTATE_TASK_INACTIVE &&
-	    (native->flags & TCB_FLAG_TTYPE_MASK) == TCB_FLAG_TTYPE_TASK &&
-	    native->entry.main == task_wrapper) {
-		(void)nxtask_argvstr(native, args, sizeof(args));
-		owned = strcmp(args, expected) == 0;
-	}
-	leave_critical_section(flags);
-	return owned;
-}
-
-static void wait_for_native_exit(struct ove_thread *t)
-{
-	char expected[2 * sizeof(uintptr_t) + 4];
-	(void)snprintf(expected, sizeof(expected), " 0x%lx", (unsigned long)(uintptr_t)t);
-	while (native_task_owned(t, expected))
-		usleep(1000);
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -254,7 +225,6 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	}
 
 	__atomic_store_n(&t->pid, pid, __ATOMIC_RELAXED);
-	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
 	irqstate_t flags = enter_critical_section();
@@ -307,12 +277,16 @@ int ove_thread_deinit(ove_thread_t handle)
 		first_thread = NULL;
 	leave_critical_section(flags);
 
-	if (__atomic_load_n(&handle->started, __ATOMIC_ACQUIRE)) {
-		/* The completion notification precedes native stack retirement. */
-		wait_for_native_exit(handle);
-		/* Acquire the entry's final state publication before returning its data. */
-		(void)__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE);
-	}
+	/* On single-core NuttX, exit releases the PID just before switching
+	 * away from the old stack. ESRCH means the stack can be reused. */
+	pid_t pid = __atomic_load_n(&handle->pid, __ATOMIC_RELAXED);
+	struct sched_param param;
+	int saved_errno = errno;
+	while (sched_getparam(pid, &param) == 0)
+		usleep(1000);
+	errno = saved_errno;
+	/* Acquire the entry's final state publication before returning its data. */
+	(void)__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE);
 
 	for (;;) {
 		flags = enter_critical_section();
