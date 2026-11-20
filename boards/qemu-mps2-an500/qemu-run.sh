@@ -9,6 +9,7 @@
 #   --headless       Run without the display viewer.
 #   --machine <name> QEMU machine (default: mps2-an500).
 #
+# Set OVE_DASHBOARD_HOST to bind the dashboard to another IPv4 address.
 # Exit code is propagated from the guest via semihosting.
 
 set -euo pipefail
@@ -132,9 +133,10 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
     )
     # GDB server (enabled by default; --no-gdb turns it off): just opens the port, the firmware
     # still boots normally. Enables turnkey FDPIC source-level debugging via
-    # config/scripts/ove-fdpic-gdb.py (`target remote :GDB_PORT` + `ove-fdpic-auto <comm> <elf>`).
+    # config/scripts/ove-fdpic-gdb.py (`target remote 127.0.0.1:GDB_PORT`
+    # then `ove-fdpic-auto <comm> <elf>`).
     if [ "${NO_GDB}" -eq 0 ]; then
-        PERS_ARGS+=( -gdb "tcp::${GDB_PORT}" )
+        PERS_ARGS+=( -gdb "tcp:127.0.0.1:${GDB_PORT}" )
     fi
     SAVED_TTY=""
     if [ -t 0 ]; then
@@ -242,13 +244,14 @@ if [ "${HEADLESS}" -eq 0 ]; then
 
     # GDB server: enabled by default (firmware boots normally, dashboard can pause).
     if [ "${NO_GDB}" -eq 0 ]; then
-        QEMU_ARGS+=( -gdb "tcp::${GDB_PORT}" )
+        QEMU_ARGS+=( -gdb "tcp:127.0.0.1:${GDB_PORT}" )
     fi
 
     # Dashboard port: 8081 unless OVE_DASHBOARD_PORT says otherwise. Stop only
     # a bridge this script started earlier (recorded in a pid file); a port
     # held by anything else is somebody else's and is left alone.
     DASHBOARD_PORT="${OVE_DASHBOARD_PORT:-8081}"
+    DASHBOARD_HOST="${OVE_DASHBOARD_HOST:-127.0.0.1}"
     BRIDGE_PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/ove-dashboard-bridge-${DASHBOARD_PORT}.pid"
     if [ -f "${BRIDGE_PIDFILE}" ]; then
         OLD_PID="$(cat "${BRIDGE_PIDFILE}" 2>/dev/null || true)"
@@ -297,7 +300,8 @@ if [ "${HEADLESS}" -eq 0 ]; then
         BUILD_DIR="${WS_DIR}/build"
     fi
 
-    VIEWER_ARGS=( --port ${DASHBOARD_PORT} --log-fd 0 --build-dir "${BUILD_DIR}"
+    VIEWER_ARGS=( --host "${DASHBOARD_HOST}" --port "${DASHBOARD_PORT}"
+                  --log-fd 0 --build-dir "${BUILD_DIR}"
                   --console-fifo "${UART_PIPE}.in" )
     if [ "${NO_GDB}" -eq 0 ]; then
         VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
@@ -319,8 +323,12 @@ if [ "${HEADLESS}" -eq 0 ]; then
     UART_IN_PID=$!
 
     # Wait for the dashboard HTTP server to be ready before starting QEMU.
+    DASHBOARD_PROBE_HOST="${DASHBOARD_HOST}"
+    if [ "${DASHBOARD_HOST}" = "0.0.0.0" ]; then
+        DASHBOARD_PROBE_HOST="127.0.0.1"
+    fi
     for i in $(seq 1 30); do
-        if curl -s -o /dev/null http://localhost:${DASHBOARD_PORT}/ 2>/dev/null; then
+        if curl --noproxy '*' -s -o /dev/null "http://${DASHBOARD_PROBE_HOST}:${DASHBOARD_PORT}/" 2>/dev/null; then
             break
         fi
         sleep 0.1

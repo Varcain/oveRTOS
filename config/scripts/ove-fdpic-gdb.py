@@ -33,7 +33,7 @@
 # Requires a Python-enabled, ARM-capable GDB (the distro /usr/bin/gdb 17.x with --enable-targets=all
 # works; the bare arm-none-eabi-gdb toolchain builds ship WITHOUT Python and cannot `source` this).
 #
-# Usage (from a GDB attached to the firmware's gdbstub, e.g. qemu -gdb tcp::1234):
+# Usage (from a GDB attached to the firmware's gdbstub, e.g. qemu -gdb tcp:127.0.0.1:1234):
 #   (gdb) source config/scripts/ove-fdpic-gdb.py
 #   (gdb) ove-fdpic-auto dbgdemo /path/to/dbgdemo   # wait for the next exec of "dbgdemo", load ALL
 #                                                   # objects (exec + ld.so + libc) with full source

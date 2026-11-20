@@ -26,6 +26,7 @@ import argparse
 import array
 import base64
 import hashlib
+import ipaddress
 import mmap
 import os
 import select
@@ -35,6 +36,10 @@ import sys
 import threading
 import time
 import traceback
+from urllib.parse import urlsplit
+
+OVE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+DEFAULT_HOST = "127.0.0.1"
 
 # ── Shared-memory constants ──────────────────────────────────────────
 
@@ -293,13 +298,13 @@ class Client:
 ws_client_list = []
 ws_client_lock = threading.Lock()
 
-def serve(port, dashboard_dir):
+def serve(port, dashboard_dir, host=DEFAULT_HOST):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", port))
+    srv.bind((host, port))
     srv.listen(8)
     srv.setblocking(False)
-    print(f"Dashboard: http://localhost:{port}", flush=True)
+    print(f"Dashboard: http://{host}:{srv.getsockname()[1]}", flush=True)
 
     clients = []
 
@@ -361,7 +366,7 @@ def serve(port, dashboard_dir):
             if c.state == ST_HTTP:
                 c.buf += data
                 if b"\r\n\r\n" in c.buf:
-                    _handle_http(c, dashboard_dir)
+                    _handle_http(c, dashboard_dir, bind_host=host)
             elif c.state == ST_WS:
                 c.buf += data
                 while True:
@@ -487,11 +492,24 @@ def _send_nonblock(client, data):
         client.send_lock.release()
 
 
-def _handle_http(c, dashboard_dir):
+def _ws_host_allowed(authority, bind_host):
+    try:
+        host = urlsplit(f"//{authority}")
+        if host.netloc != authority or host.username is not None:
+            return False
+        if host.hostname in ("localhost", bind_host.lower()):
+            return True
+        ipaddress.ip_address(host.hostname)
+    except ValueError:
+        return False
+    return True
+
+
+def _handle_http(c, dashboard_dir, bind_host=DEFAULT_HOST):
     request = c.buf.decode(errors="replace")
     c.buf = b""
 
-    lines = request.split("\r\n")
+    lines = request.split("\r\n\r\n", 1)[0].split("\r\n")
     parts = lines[0].split(" ")
     path = parts[1].split("?")[0] if len(parts) > 1 else "/"
 
@@ -505,6 +523,12 @@ def _handle_http(c, dashboard_dir):
     if (path == "/ws"
             and "upgrade" in headers.get("connection", "").lower()
             and "websocket" in headers.get("upgrade", "").lower()):
+        origin = headers.get("origin")
+        host = headers.get("host", "")
+        if (not _ws_host_allowed(host, bind_host)
+                or (origin is not None and origin.lower() != f"http://{host.lower()}")):
+            _send_http(c, b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
+            return
         key = headers.get("sec-websocket-key", "")
         accept = ws_accept(key)
         resp = (f"HTTP/1.1 101 Switching Protocols\r\n"
@@ -1705,6 +1729,7 @@ DBG_CMD_DISASSEMBLE = 0x09
 DBG_CMD_BP_SET      = 0x0A
 DBG_CMD_BP_CLEAR    = 0x0B
 DBG_CMD_SOURCE      = 0x0C
+MAX_DISASSEMBLE_COUNT = 4096
 
 # Debug response types (bridge → dashboard)
 DBG_RESP_STATE      = 0x00
@@ -1748,7 +1773,7 @@ class GdbController:
         time.sleep(0.3)
 
         self._send_mi_sync(
-            f"-target-select remote localhost:{self.gdb_port}")
+            f"-target-select remote 127.0.0.1:{self.gdb_port}")
 
 
         # Fetch register names once (architecture-specific).
@@ -1825,7 +1850,7 @@ class GdbController:
             if len(payload) >= 8:
                 addr = struct.unpack_from("<I", payload, 0)[0]
                 count = struct.unpack_from("<I", payload, 4)[0]
-                end_addr = addr + count * 4
+                end_addr = addr + min(count, MAX_DISASSEMBLE_COUNT) * 4
                 result = self._send_mi_sync(
                     f"-data-disassemble -s 0x{addr:x} -e 0x{end_addr:x} -- 1")
                 if result:
@@ -1833,10 +1858,16 @@ class GdbController:
         elif cmd_type == DBG_CMD_BP_SET:
             if len(payload) >= 6:
                 path_len = struct.unpack_from("<H", payload, 0)[0]
+                if path_len > len(payload) - 6:
+                    return
                 path = payload[2:2 + path_len].decode("utf-8", "replace")
+                if any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in path):
+                    return
                 line = struct.unpack_from("<I", payload, 2 + path_len)[0]
+                escaped_path = path.replace("\\", "\\\\").replace('"', '\\"')
+                # A linespec can interpret a leading '*' as an address expression.
                 result = self._send_mi_sync(
-                    f"-break-insert {path}:{line}")
+                    f'-break-insert --source "{escaped_path}" --line {line}')
                 if result:
                     self._send_debug_resp(DBG_RESP_BREAKPOINT, result)
         elif cmd_type == DBG_CMD_BP_CLEAR:
@@ -1846,6 +1877,8 @@ class GdbController:
         elif cmd_type == DBG_CMD_SOURCE:
             if len(payload) >= 10:
                 path_len = struct.unpack_from("<H", payload, 0)[0]
+                if path_len > len(payload) - 10:
+                    return
                 path = payload[2:2 + path_len].decode("utf-8", "replace")
                 line = struct.unpack_from("<I", payload, 2 + path_len)[0]
                 ctx_lines = struct.unpack_from(
@@ -2040,14 +2073,16 @@ class GdbController:
 
     def _handle_source_request(self, path, line, ctx_lines):
         """Read source file and send to dashboard."""
-        lines = self._source_cache.get(path)
-        if lines is None:
-            try:
-                with open(path, "r", errors="replace") as f:
-                    lines = f.readlines()
-                self._source_cache[path] = lines
-            except OSError:
-                lines = []
+        lines = []
+        try:
+            source_path = os.path.realpath(path)
+            if os.path.commonpath((OVE_DIR, source_path)) == OVE_DIR:
+                if source_path not in self._source_cache:
+                    with open(source_path, "r", errors="replace") as f:
+                        self._source_cache[source_path] = f.readlines()
+                lines = self._source_cache[source_path]
+        except (OSError, ValueError):
+            pass
 
         start = max(0, line - ctx_lines - 1)
         end = min(len(lines), line + ctx_lines)
@@ -2252,6 +2287,8 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="oveRTOS dashboard bridge (shmem → WebSocket)")
+    parser.add_argument("--host", default=DEFAULT_HOST,
+                        help="Dashboard bind address (default: %(default)s)")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--dashboard", type=str, default=None,
                         help="Path to dashboard static files")
@@ -2274,13 +2311,10 @@ def main():
         # O_RDWR: opening a FIFO write-only would block until QEMU opens it.
         console_fd[0] = os.open(args.console_fifo, os.O_RDWR)
 
-    ove_dir = os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))))
-
     if args.dashboard:
         dashboard_dir = args.dashboard
     else:
-        dashboard_dir = os.path.join(ove_dir, "sim", "dashboard")
+        dashboard_dir = os.path.join(OVE_DIR, "sim", "dashboard")
     if not os.path.isdir(dashboard_dir):
         print(f"ERROR: Dashboard not found at {dashboard_dir}",
               file=sys.stderr)
@@ -2288,7 +2322,7 @@ def main():
 
     # Build source file list from CMake build objects.
     if args.build_dir:
-        build_project_file_list(args.build_dir, ove_dir)
+        build_project_file_list(args.build_dir, OVE_DIR)
 
     # Build profiler symbol map from the ELF. The firmware is ARM and
     # system nm may not handle the architecture on every host — when
@@ -2340,7 +2374,7 @@ def main():
         threading.Thread(target=_start_gdb, daemon=True).start()
 
     try:
-        serve(args.port, dashboard_dir)
+        serve(args.port, dashboard_dir, host=args.host)
     except KeyboardInterrupt:
         gdb = gdb_controller[0]
         if gdb:
