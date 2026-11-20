@@ -119,20 +119,11 @@
 //!
 //! ## Optional ecosystem interop
 //!
-//! Two opt-in Cargo features add ecosystem-standard types alongside
-//! the defaults (neither is enabled by default — the existing API
-//! stays unchanged for callers who don't opt in):
-//!
-//! - `fugit` — exposes [`time::DurationUs`] / [`time::DurationNs`] /
-//!   [`time::DurationMs`] / [`time::InstantUs`] from the
-//!   [`fugit`](https://crates.io/crates/fugit) crate, with conversions
-//!   to/from [`core::time::Duration`]. Catches `from_secs(N)` vs
-//!   `from_millis(N)` mix-ups at compile time. Zero-heap friendly.
-//! - `portable-atomic-arc` — swaps [`heap::Arc`] from `alloc::sync::Arc`
-//!   to [`portable_atomic_util::Arc`]. Same API; the alternative impl
-//!   falls back to a `critical-section` path on targets without native
-//!   CAS (Cortex-M0+, RV32 without A). Current oveRTOS targets all
-//!   have CAS, so this is future-proofing.
+//! The `fugit` feature exposes [`time::DurationUs`], [`time::DurationNs`],
+//! [`time::DurationMs`], and [`time::InstantUs`] from the
+//! [`fugit`](https://crates.io/crates/fugit) crate, with conversions to and
+//! from [`core::time::Duration`]. It catches `from_secs(N)` and
+//! `from_millis(N)` mix-ups at compile time and works in zero-heap mode.
 //!
 //! # Hot-path inline discipline
 //!
@@ -206,20 +197,7 @@ extern crate alloc;
 /// provides a default that wraps libc malloc/free.
 #[cfg(feature = "alloc")]
 pub mod heap {
-    pub use alloc::{boxed::Box, string::String, vec::Vec};
-
-    /// `Arc` re-export. By default this is `alloc::sync::Arc`; enable
-    /// the `portable-atomic-arc` feature to swap in
-    /// `portable_atomic_util::Arc`, which works on targets without
-    /// native CAS (e.g. Cortex-M0+, RV32 without A) by falling through
-    /// to a `critical-section`-based path.
-    ///
-    /// The two implementations are API-compatible; downstream code
-    /// using `ove::heap::Arc` doesn't have to change.
-    #[cfg(not(feature = "portable-atomic-arc"))]
-    pub use alloc::sync::Arc;
-    #[cfg(feature = "portable-atomic-arc")]
-    pub use portable_atomic_util::Arc;
+    pub use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 }
 
 #[cfg(all(feature = "async", has_async))]

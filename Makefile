@@ -425,7 +425,7 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	# every transitive dep, and some (e.g. proc-macro2) gate
 	# `#![feature(doc_cfg)]` on `cfg(docsrs)` which needs nightly.
 	DOCS_RS=1 cargo doc \
-		--features std,async,async-net,async-net-qemu-shm,async-net-stm32f7-eth,embedded-hal,embedded-hal-async,embedded-io,embedded-io-async,fugit,portable-atomic-arc \
+		--features std,async,async-net,async-net-qemu-shm,async-net-stm32f7-eth,embedded-hal,embedded-hal-async,embedded-io,embedded-io-async,fugit \
 		--manifest-path bindings/rust/ove/Cargo.toml
 	@echo "==> Generating Zig API docs (autodoc)..."
 	@mkdir -p output/docs/zig-staging
