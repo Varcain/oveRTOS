@@ -53,17 +53,6 @@ int main(int argc, char *argv[])
 	failures += test_##name##_run();
 #include "framework/suites.inc"
 
-#ifdef CONFIG_OVE_ARENA
-	printf("=== Arena allocator Tests ===\n");
-	failures += test_arena_run();
-#endif
-#ifndef CONFIG_ARCH_SIM
-#ifdef CONFIG_OVE_LOADER
-	printf("=== Loader (on-target execute) Tests ===\n");
-	failures += test_loader_target_run();
-#endif
-#endif /* !CONFIG_ARCH_SIM */
-
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 #ifdef OVE_COVERAGE
 	/* libgcov writes .gcda via fopen — with hostfs mounted at /host,

@@ -4539,8 +4539,6 @@ def test_lxp_memory_layout_config(ove_dir, output_dir):
                                        warn=False)
         kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
         kconf.syms[f"OVE_BOARD_{board}"].set_value(2)
-        kconf.syms["OVE_ARENA"].set_value(2)
-        kconf.syms["OVE_LOADER"].set_value(2)
         kconf.syms["OVE_LINUX"].set_value(2)
         if qspi:
             kconf.syms["OVE_LINUX_ROOTFS_QSPI"].set_value(2)

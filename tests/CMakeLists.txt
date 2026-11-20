@@ -84,10 +84,6 @@ set(STUB_SOURCES
     # Audio graph engine (platform-independent)
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
-    # Arena allocator (platform-independent)
-    ${OVE_ROOT}/backends/common/ove_arena.c
-    # Module loader (platform-independent)
-    ${OVE_ROOT}/loader/ove_loader.c
     # Host adapters for LXP's handle-based network port and thread snapshots.
     # The LXP module itself is tested in isolation in its repo. The oveRTOS host
     # test compiles only the provider gate used by the consumer-side storage glue.
@@ -139,51 +135,6 @@ set(STUB_SOURCES
 set(SUITE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/suites)
 ove_test_all_suite_sources(SUITE_SOURCES ${SUITE_DIR})
 
-# The loader suite needs a real relocatable object to load. Compile
-# suites/loader_mod.c to a freestanding ET_REL .o (absolute relocations via
-# -mcmodel=large -fno-pic) and embed it as a byte array the suite #includes.
-set(LOADER_MOD_GEN ${CMAKE_BINARY_DIR}/generated)
-set(LOADER_MOD_HDR ${LOADER_MOD_GEN}/loader_mod_image.h)
-add_custom_command(
-    OUTPUT ${LOADER_MOD_HDR}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${LOADER_MOD_GEN}
-    COMMAND ${CMAKE_C_COMPILER}
-            -O2 -fno-pic -mcmodel=large -ffreestanding
-            -fno-stack-protector -fno-asynchronous-unwind-tables
-            -c ${SUITE_DIR}/loader_mod.c -o ${LOADER_MOD_GEN}/loader_mod.o
-    COMMAND ${CMAKE_COMMAND} -DIN=${LOADER_MOD_GEN}/loader_mod.o
-            -DOUT=${LOADER_MOD_HDR} -DSYM=ove_loader_test_mod
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
-    DEPENDS ${SUITE_DIR}/loader_mod.c ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
-    COMMENT "Building + embedding loader test module"
-    VERBATIM
-)
-set(LOADER_MOD_DEPS ${LOADER_MOD_HDR})
-
-# If an ARM cross-compiler is available, also build a real ELF32/ARM module so
-# the loader's ARM relocation path is exercised on the host (verified by value;
-# ARM code is not executed here).
-find_program(OVE_ARM_GCC arm-none-eabi-gcc)
-if(OVE_ARM_GCC)
-    set(LOADER_MOD_ARM_HDR ${LOADER_MOD_GEN}/loader_mod_arm_image.h)
-    add_custom_command(
-        OUTPUT ${LOADER_MOD_ARM_HDR}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${LOADER_MOD_GEN}
-        COMMAND ${OVE_ARM_GCC}
-                -mcpu=cortex-m4 -mthumb -O2 -fno-pic -ffreestanding
-                -fno-asynchronous-unwind-tables
-                -c ${SUITE_DIR}/loader_mod_arm.c -o ${LOADER_MOD_GEN}/loader_mod_arm.o
-        COMMAND ${CMAKE_COMMAND} -DIN=${LOADER_MOD_GEN}/loader_mod_arm.o
-                -DOUT=${LOADER_MOD_ARM_HDR} -DSYM=ove_loader_test_mod_arm
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
-        DEPENDS ${SUITE_DIR}/loader_mod_arm.c ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
-        COMMENT "Building + embedding ARM loader test module"
-        VERBATIM
-    )
-    list(APPEND LOADER_MOD_DEPS ${LOADER_MOD_ARM_HDR})
-endif()
-add_custom_target(loader_mod_gen DEPENDS ${LOADER_MOD_DEPS})
-
 # ove_add_stub_variant(<name> [compile_opts...])
 # Declares a stub-test executable that shares STUB_SOURCES + SUITE_SOURCES
 # but applies extra compile/link options (sanitizer, coverage, ...).
@@ -201,9 +152,7 @@ function(ove_add_stub_variant name)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${POSIX_CORE_DIR}/include
         ${cmocka_SOURCE_DIR}/include
-        ${LOADER_MOD_GEN}
     )
-    add_dependencies(${name} loader_mod_gen)
     target_link_libraries(${name} PRIVATE cmocka-static pthread rt m)
     # Enable the socket / bus APIs for the stub test target only.  See
     # tests/ove_config.h for why this is per-target rather than global.
@@ -228,9 +177,6 @@ function(ove_add_stub_variant name)
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1
     )
-    if(OVE_ARM_GCC)
-        target_compile_definitions(${name} PRIVATE OVE_TEST_HAVE_ARM=1)
-    endif()
     if(ARGN)
         target_compile_options(${name} PRIVATE ${ARGN})
         target_link_options(${name} PRIVATE ${ARGN})

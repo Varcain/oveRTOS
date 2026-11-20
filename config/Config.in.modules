@@ -16,34 +16,13 @@ config OVE_APP
 
 comment "Optional modules"
 
-config OVE_ARENA
-    bool "Arena allocator (bounded region allocator)"
-    default n
-    help
-      Backend-independent fixed-capacity region allocator. Manages a
-      caller-supplied buffer with first-fit alloc/free + coalescing and
-      never grows the system heap. Backing pool for loadable modules and
-      for carving private, fault-bounded pools.
-
-config OVE_LOADER
-    bool "Module loader (relocatable ELF / bFLT / FDPIC)"
-    default n
-    help
-      Runtime loader for relocatable native code modules: resolves imports
-      against a symbol table, applies relocations, and exposes loaded
-      symbols. Reusable for plugins / OTA code modules and the basis for the
-      Linux personality's program loader.
-
 config OVE_LINUX
     bool "Linux personality (syscall surface for loaded programs)"
     default n
-    select OVE_ARENA
-    select OVE_LOADER
     help
       Impersonate the Linux syscall ABI so stock uClibc-ng (bFLT/FDPIC)
       binaries can run as oveRTOS programs. Provides the engine-agnostic
-      syscall dispatch; a per-engine SVC trap feeds it. The personality
-      selects its mandatory module loader and bounded process arena.
+      syscall dispatch; a per-engine SVC trap feeds it.
 
 config OVE_LINUX_GUEST_QUANTUM_MS
     int "Linux guest scheduling quantum (ms)"

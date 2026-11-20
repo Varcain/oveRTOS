@@ -86,8 +86,6 @@ OVE_SUITE_STUB(i2c,           "I2C")
 OVE_SUITE_STUB(spi,           "SPI")
 OVE_SUITE_STUB(uart,          "UART")
 OVE_SUITE_STUB(pm,            "PM")
-OVE_SUITE_STUB(arena,         "Arena allocator")
-OVE_SUITE_STUB(loader,        "Module loader")
 OVE_SUITE_STUB(lxp_adapter,   "lxp host adapters (consumer glue)")
 OVE_SUITE_STUB(lxp_memory_policy, "LXP STM32F746 memory policy")
 

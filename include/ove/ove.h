@@ -162,8 +162,6 @@
 #include "ove/i2c.h"
 #include "ove/i2s.h"
 #include "ove/pm.h"
-#include "ove/arena.h"
-#include "ove/loader.h"
 #if defined(CONFIG_OVE_LINUX)
 #include "ove/lxp.h"
 #endif
