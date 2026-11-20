@@ -49,7 +49,7 @@ pub const OVE_SIZEOF_OVE_MUTEX_STORAGE: u32 = 40;
 pub const OVE_SIZEOF_OVE_QUEUE_STORAGE: u32 = 184;
 pub const OVE_SIZEOF_OVE_SEM_STORAGE: u32 = 48;
 pub const OVE_SIZEOF_OVE_STREAM_STORAGE: u32 = 200;
-pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 136;
+pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 152;
 pub const OVE_SIZEOF_OVE_TIMER_STORAGE: u32 = 144;
 pub const OVE_SIZEOF_OVE_WATCHDOG_STORAGE: u32 = 16;
 pub const OVE_SIZEOF_OVE_WORKQUEUE_STORAGE: u32 = 616;
@@ -74,36 +74,71 @@ pub const OVE_SIZEOF_OVE_SOCKET_STORAGE: u32 = 64;
 pub const OVE_SIZEOF_OVE_SPI_STORAGE: u32 = 64;
 pub const OVE_SIZEOF_OVE_TLS_STORAGE: u32 = 128;
 pub const OVE_SIZEOF_OVE_UART_STORAGE: u32 = 64;
+#[doc = "< Incompatible API or ABI changes."]
 pub const OVE_VERSION_MAJOR: u32 = 0;
+#[doc = "< Compatible additions (0..255)."]
 pub const OVE_VERSION_MINOR: u32 = 1;
+#[doc = "< Fixes (0..255)."]
 pub const OVE_VERSION_PATCH: u32 = 0;
+#[doc = " @brief \"MAJOR.MINOR.PATCH\" of the numbers above."]
 pub const OVE_VERSION_STRING: &[u8; 6] = b"0.1.0\0";
+#[doc = " @brief The version as one number, for comparisons: (MAJOR << 16) |\n        (MINOR << 8) | PATCH.\n\n @code\n #if OVE_VERSION >= OVE_VERSION_NUMBER(0, 2, 0)\n ...\n #endif\n @endcode"]
 pub const OVE_VERSION: u32 = 256;
 pub const OVE_LOG_LEVEL: u32 = 0;
 pub const OVE_RTOS_NAME: &[u8; 6] = b"POSIX\0";
+#[doc = " Native resource initialization/destruction is available in this context."]
+pub const OVE_SYNC_CONTEXT_RESOURCE: u32 = 1;
+#[doc = " Native mutex acquisitions and condition-variable operations are available."]
+pub const OVE_SYNC_CONTEXT_BLOCKING: u32 = 2;
+#[doc = " Task semaphore/event posts and serialized notification setup are available."]
+pub const OVE_SYNC_CONTEXT_PRODUCER: u32 = 4;
+#[doc = " @name Log level constants\n Numeric severity levels in ascending verbosity order. Pass one of these\n as the value of @c OVE_LOG_LEVEL to control the compile-time filter.\n @{\n/\n/** @brief Error level — non-recoverable failures."]
 pub const OVE_LOG_LEVEL_ERR: u32 = 0;
+#[doc = " @brief Warning level — unexpected but recoverable conditions."]
 pub const OVE_LOG_LEVEL_WRN: u32 = 1;
+#[doc = " @brief Info level — normal operational milestones (default)."]
 pub const OVE_LOG_LEVEL_INF: u32 = 2;
+#[doc = " @brief Debug level — verbose diagnostic output."]
 pub const OVE_LOG_LEVEL_DBG: u32 = 3;
+#[doc = "< Synchronisation primitives support heap allocation."]
 pub const OVE_HEAP_SYNC: u32 = 1;
+#[doc = "< Threads support heap allocation."]
 pub const OVE_HEAP_THREAD: u32 = 1;
+#[doc = "< Queues support heap allocation."]
 pub const OVE_HEAP_QUEUE: u32 = 1;
+#[doc = "< Timers support heap allocation."]
 pub const OVE_HEAP_TIMER: u32 = 1;
+#[doc = "< Event groups support heap allocation."]
 pub const OVE_HEAP_EVENTGROUP: u32 = 1;
+#[doc = "< Work queues support heap allocation."]
 pub const OVE_HEAP_WORKQUEUE: u32 = 1;
+#[doc = "< Stream buffers support heap allocation."]
 pub const OVE_HEAP_STREAM: u32 = 1;
+#[doc = "< Watchdog timers support heap allocation."]
 pub const OVE_HEAP_WATCHDOG: u32 = 1;
+#[doc = "< Filesystem handles support heap allocation."]
 pub const OVE_HEAP_FS: u32 = 1;
+#[doc = "< Built-in audio utility node factories and graph buffer storage."]
 pub const OVE_HEAP_AUDIO: u32 = 1;
+#[doc = "< ML inference sessions support heap allocation."]
 pub const OVE_HEAP_INFER: u32 = 1;
+#[doc = "< Sockets and network interfaces support heap allocation."]
 pub const OVE_HEAP_NET: u32 = 1;
+#[doc = "< TLS sessions support heap allocation."]
 pub const OVE_HEAP_NET_TLS: u32 = 1;
+#[doc = "< HTTP clients support heap allocation."]
 pub const OVE_HEAP_NET_HTTP: u32 = 1;
+#[doc = "< MQTT clients support heap allocation."]
 pub const OVE_HEAP_NET_MQTT: u32 = 1;
+#[doc = "< UART peripherals support heap allocation."]
 pub const OVE_HEAP_UART: u32 = 1;
+#[doc = "< SPI bus controllers support heap allocation."]
 pub const OVE_HEAP_SPI: u32 = 1;
+#[doc = "< I2C bus controllers support heap allocation."]
 pub const OVE_HEAP_I2C: u32 = 1;
+#[doc = "< I2S audio bus controllers support heap allocation."]
 pub const OVE_HEAP_I2S: u32 = 1;
+#[doc = " @name Optional fields populated by @ref ove_thread_list\n @{"]
 pub const OVE_THREAD_INFO_VALID_STACK_USED: u32 = 1;
 pub const OVE_THREAD_INFO_VALID_STACK_SIZE: u32 = 2;
 pub const OVE_THREAD_INFO_VALID_CPU_PERCENT: u32 = 4;
@@ -112,26 +147,35 @@ pub const OVE_THREAD_INFO_VALID_READY_TIME: u32 = 16;
 pub const OVE_THREAD_INFO_VALID_BLOCKED_TIME: u32 = 32;
 pub const OVE_THREAD_INFO_VALID_SUSPENDED_TIME: u32 = 64;
 pub const OVE_THREAD_INFO_VALID_STATE_TIMES: u32 = 120;
+#[doc = " @brief Size of @c ove_thread_info.name, terminating NUL included."]
 pub const OVE_THREAD_NAME_MAX: u32 = 32;
-#[doc = " Native resource initialization/destruction is available in this context."]
-pub const OVE_SYNC_CONTEXT_RESOURCE: u32 = 1;
-#[doc = " Native mutex acquisitions and condition-variable operations are available."]
-pub const OVE_SYNC_CONTEXT_BLOCKING: u32 = 2;
-#[doc = " Task semaphore/event posts and serialized notification setup are available."]
-pub const OVE_SYNC_CONTEXT_PRODUCER: u32 = 4;
+#[doc = " @brief Maximum number of audio channels supported by the channel-map node."]
 pub const OVE_AUDIO_MAX_CHANNELS: u32 = 8;
+#[doc = " @brief Maximum number of nodes in a single audio graph."]
 pub const OVE_AUDIO_GRAPH_MAX_NODES: u32 = 16;
+#[doc = " @brief Maximum number of edges in a single audio graph."]
 pub const OVE_AUDIO_GRAPH_MAX_EDGES: u32 = 16;
+#[doc = " @name File open flags\n Flags passed to @ref ove_fs_open or @ref ove_fs_open_init. Flags may be\n combined with bitwise OR.\n @{\n/\n/** @brief Open for reading."]
 pub const OVE_FS_O_READ: u32 = 1;
+#[doc = " @brief Open for writing."]
 pub const OVE_FS_O_WRITE: u32 = 2;
+#[doc = " @brief Create the file if it does not exist."]
 pub const OVE_FS_O_CREATE: u32 = 4;
+#[doc = " @brief Seek to the end of the file before each write."]
 pub const OVE_FS_O_APPEND: u32 = 8;
+#[doc = " @brief Truncate an existing file to zero bytes when opening it."]
 pub const OVE_FS_O_TRUNC: u32 = 16;
+#[doc = " @brief With @c OVE_FS_O_CREATE, fail if the path already exists."]
 pub const OVE_FS_O_EXCL: u32 = 32;
+#[doc = " @brief Maximum supported path length including the null terminator."]
 pub const OVE_FS_PATH_MAX: u32 = 256;
+#[doc = " @name Seek whence constants\n Passed as the @p whence argument to @ref ove_fs_seek.\n @{\n/\n/** @brief Seek relative to the beginning of the file."]
 pub const OVE_FS_SEEK_SET: u32 = 0;
+#[doc = " @brief Seek relative to the current file position."]
 pub const OVE_FS_SEEK_CUR: u32 = 1;
+#[doc = " @brief Seek relative to the end of the file."]
 pub const OVE_FS_SEEK_END: u32 = 2;
+#[doc = " @brief Portable file-system object types returned by @ref ove_fs_stat."]
 pub const OVE_FS_TYPE_FILE: u32 = 1;
 pub const OVE_FS_TYPE_DIR: u32 = 2;
 pub const OVE_MEDIA_RAW_WRITE: u32 = 1;
@@ -139,33 +183,54 @@ pub const OVE_BLOCK_F_REMOVABLE: u32 = 1;
 pub const OVE_BLOCK_F_READ_ONLY: u32 = 2;
 pub const OVE_BLOCK_F_MEDIA_PRESENT: u32 = 4;
 pub const OVE_BLOCK_OPEN_WRITE: u32 = 1;
+#[doc = " @brief Wait flag: block until ALL requested bits are set simultaneously.\n\n When passed to @ref ove_eventgroup_wait_bits, the call blocks until every\n bit in the @p bits mask is set at the same time. Without this flag the\n call unblocks when ANY one of the requested bits becomes set."]
 pub const OVE_EG_WAIT_ALL: u32 = 1;
+#[doc = " @brief Wait flag: atomically clear the matched bits on return.\n\n When passed to @ref ove_eventgroup_wait_bits, the bits that satisfied the\n wait condition are cleared atomically before the function returns. This\n avoids a separate @ref ove_eventgroup_clear_bits call and prevents races\n when multiple tasks share an event group."]
 pub const OVE_EG_CLEAR_ON_EXIT: u32 = 2;
 #[doc = " Upper staging envelope including NUL, shared with file-backed NVS paths."]
 pub const OVE_NVS_KEY_BUFFER_SIZE: u32 = 96;
+#[doc = " @brief Maximum number of arguments (including command name) per shell line.\n\n The shell splits each input line into at most this many whitespace-delimited\n tokens before dispatching to the command handler."]
 pub const OVE_SHELL_MAX_ARGS: u32 = 8;
+#[doc = "< Readable: data ready, or an incoming connection."]
 pub const OVE_SOCK_POLLIN: u32 = 1;
+#[doc = "< Writable: send won't block, or connect completed."]
 pub const OVE_SOCK_POLLOUT: u32 = 4;
+#[doc = "< Error condition (also reports a failed connect)."]
 pub const OVE_SOCK_POLLERR: u32 = 8;
+#[doc = "< Peer hung up."]
 pub const OVE_SOCK_POLLHUP: u32 = 16;
+#[doc = "< Further receives disallowed."]
 pub const OVE_SHUT_RD: u32 = 0;
+#[doc = "< Further sends disallowed."]
 pub const OVE_SHUT_WR: u32 = 1;
+#[doc = "< Both disallowed."]
 pub const OVE_SHUT_RDWR: u32 = 2;
+#[doc = "< Administratively up."]
 pub const OVE_NETIF_FLAG_UP: u32 = 1;
+#[doc = "< Broadcast capable."]
 pub const OVE_NETIF_FLAG_BROADCAST: u32 = 2;
+#[doc = "< Loopback interface."]
 pub const OVE_NETIF_FLAG_LOOPBACK: u32 = 4;
+#[doc = "< Link/carrier up."]
 pub const OVE_NETIF_FLAG_RUNNING: u32 = 8;
+#[doc = "< Multicast capable."]
 pub const OVE_NETIF_FLAG_MULTICAST: u32 = 16;
 #[doc = " Native string/output capacities, in bytes including terminators."]
 pub const OVE_HTTPD_METHOD_SIZE: u32 = 8;
 pub const OVE_HTTPD_ROUTE_SIZE: u32 = 64;
 pub const OVE_HTTPD_HEADER_SIZE: u32 = 256;
 pub const OVE_HTTPD_ERROR_ESCAPED_SIZE: u32 = 192;
+#[doc = " @brief Maximum number of registered routes."]
 pub const OVE_HTTPD_MAX_ROUTES: u32 = 16;
+#[doc = " @brief Maximum path segments for parsing (e.g. /api/leds/0 = 3)."]
 pub const OVE_HTTPD_MAX_SEGMENTS: u32 = 8;
+#[doc = " Maximum data bytes per ove_i2c_reg_write() call."]
 pub const OVE_I2C_REG_WRITE_MAX: u32 = 32;
+#[doc = " Alignment (bytes) of every block handed out by the arena."]
 pub const OVE_ARENA_ALIGN: u32 = 16;
+#[doc = " Maximum ELF sections a single module may contain."]
 pub const OVE_LOADER_MAX_SECTIONS: u32 = 32;
+pub const OVE_LVGL_STUB: u32 = 1;
 pub const LV_SIZE_CONTENT: u32 = 1073741823;
 #[doc = " Operation completed successfully."]
 pub const OVE_OK: ove_err = 0;
@@ -399,17 +464,13 @@ pub struct ove_i2s {
 pub type ove_i2s_t = *mut ove_i2s;
 #[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag. The configured engine may reserve\n native bits; use ove_eventgroup_valid_mask() to obtain the usable public mask."]
 pub type ove_eventbits_t = u32;
-#[doc = " @brief Notify-callback signature used by the @c _set_notify variants of\n       the comm primitives (stream / queue / eventgroup / semaphore).\n\nUsually invoked inside the producing call (e.g. @c ove_stream_send).\nFreeRTOS EventGroup ISR sets instead notify later from the timer daemon,\nafter native publication; canceled requests do not notify. Consult\neach producing API for notification timing: a semaphore notifies after a\npost attempt even when its count ceiling prevents an increment. The\nimplementation must be short, non-blocking, and safe in every originating\nsend/give/set or deferred-delivery context. Callback code and data must support\nconcurrent or reentrant calls, or the caller must serialize producing operations.\n\n@note The @c _set_notify registration is *setup-time only*: it is NOT safe\n      to call concurrently with producing operations on the same primitive,\n      since those read the callback pointer without synchronisation. Register\n      once before sharing the primitive, or externally serialize every\n      registration, replacement and removal with producing operations and\n      other registrations. Keep callback code and data valid until all\n      possible pending dispatch and saved/in-flight calls finish before\n      reclaiming callback data. Removal/deinit does not recall a pair already\n      saved for deferred delivery. Callbacks must not unwind across C.\n\n@param[in] user_data Opaque pointer supplied at @c _set_notify time."]
+#[doc = " @brief Notify-callback signature used by the @c _set_notify variants of\n        the comm primitives (stream / queue / eventgroup / semaphore).\n\n Usually invoked inside the producing call (e.g. @c ove_stream_send).\n FreeRTOS EventGroup ISR sets instead notify later from the timer daemon,\n after native publication; canceled requests do not notify. Consult\n each producing API for notification timing: a semaphore notifies after a\n post attempt even when its count ceiling prevents an increment. The\n implementation must be short, non-blocking, and safe in every originating\n send/give/set or deferred-delivery context. Callback code and data must support\n concurrent or reentrant calls, or the caller must serialize producing operations.\n\n @note The @c _set_notify registration is *setup-time only*: it is NOT safe\n       to call concurrently with producing operations on the same primitive,\n       since those read the callback pointer without synchronisation. Register\n       once before sharing the primitive, or externally serialize every\n       registration, replacement and removal with producing operations and\n       other registrations. Keep callback code and data valid until all\n       possible pending dispatch and saved/in-flight calls finish before\n       reclaiming callback data. Removal/deinit does not recall a pair already\n       saved for deferred delivery. Callbacks must not unwind across C.\n\n @param[in] user_data Opaque pointer supplied at @c _set_notify time."]
 pub type ove_notify_cb = Option<unsafe extern "C" fn(user_data: *mut core::ffi::c_void)>;
 #[doc = " @brief DMA / async transfer completion callback signature.\n\n Context and retirement guarantees are defined by the submitting API.\n SPI and I2C final callbacks run in task context after native submission/provider\n retirement; see @c ove_spi_transfer_async and @c ove_i2c_write_read_async for\n retained-memory obligations. Other DMA callbacks may run in ISR context on native hardware or\n thread context on worker/simulator paths. All callbacks must be non-blocking;\n use ISR-safe operations where the submitting API permits ISR notification.\n\n @param[in] result     OVE_OK on success, negative @c OVE_ERR_* on failure.\n @param[in] user_data  Opaque pointer passed to the @c _async call."]
 pub type ove_dma_complete_cb =
     Option<unsafe extern "C" fn(result: core::ffi::c_int, user_data: *mut core::ffi::c_void)>;
 #[doc = " @brief Opaque interrupt-state key returned by @ref ove_irq_lock.\n\n Pass the complete, unchanged key to the matching @ref ove_irq_unlock and do\n not inspect it. A task key is not necessarily zero."]
 pub type ove_irq_key_t = u64;
-unsafe extern "C" {
-    #[doc = " @brief Report which synchronization operations the calling context allows.\n\n Returns a mask of the flags below. A clear flag means the operation must not\n be attempted: bindings reject it or, for destruction, retain the resource.\n - @c OVE_SYNC_CONTEXT_RESOURCE: native initialization and destruction.\n - @c OVE_SYNC_CONTEXT_BLOCKING: mutex acquisition and condition variables.\n - @c OVE_SYNC_CONTEXT_PRODUCER: task semaphore/event posts and serialized\n   notification setup only; it does not serialize registration with gives.\n\n RESOURCE and BLOCKING need a running, non-idle thread with interrupts\n enabled; cooperative and scheduler-locked threads qualify. PRODUCER also\n holds with interrupts masked, including in nested critical sections.\n FreeRTOS also grants RESOURCE and PRODUCER before the scheduler starts, and\n only PRODUCER while the scheduler is suspended.\n\n Returns zero in an ISR, in unprivileged code and outside the supported\n domains (privileged Cortex-M3/M4/M7, Zephyr native_sim, single-core NuttX\n flat sim and the POSIX backend), so also on FreeRTOS multicore, NuttX SMP\n and FreeRTOS unless both INCLUDE_xTaskGetSchedulerState and\n INCLUDE_xTaskGetIdleTaskHandle are 1. The POSIX backend reports PRODUCER only\n inside its critical sections.\n\n The flags do not cover object validity, ownership or quiescence, and are not\n the test for releasing an already-owned mutex, which can stay legal with\n interrupts masked. The query touches no primitive, allocates nothing,\n changes no interrupt mask and needs no TIME, ASYNC or thread wrappers.\n\n @return Context flags, or zero as described above."]
-    pub fn ove_sync_context() -> u32;
-}
 unsafe extern "C" {
     #[doc = " @brief Enter a critical section of the backend's native exclusion domain.\n\n Nestable: pair each call exactly once with @ref ove_irq_unlock, in LIFO order\n on the same thread or handler activation. Keep the body short: do not block,\n yield, await, start the scheduler, migrate context, or change interrupt\n priorities, grouping or privilege while it is held.\n\n On FreeRTOS only single-core ARMv7-M ports, without MPU wrappers or with V1\n wrappers, are supported; other ports fail to compile. The section masks the\n kernel-aware interrupts (configMAX_SYSCALL_INTERRUPT_PRIORITY and less\n urgent); more urgent interrupts keep running and must not share state\n protected by it. Callers may be privileged tasks, MPU V1 restricted tasks\n and external IRQ, SysTick or PendSV handlers at kernel-aware priority. Any\n other caller, or an ineligible priority grouping (checked once, at the first\n lock), stops without returning a key, even with assertions disabled.\n Restricted tasks keep their privilege level but need a serviceable\n priority-zero SVCall with PRIMASK and FAULTMASK clear. This cannot be\n checked before the SVCall: one that cannot be taken faults, and a non-zero\n SVCall priority stops at the check. configPRIO_BITS must match the\n hardware. Entry and exit may briefly mask faults; no latency bound is\n promised.\n\n On FreeRTOS, lock and unlock never weaken an incoming PRIMASK, FAULTMASK or\n stronger BASEPRI, and unlock restores the captured masks exactly. Native\n calls inside the body can still lower a stronger incoming BASEPRI or clear\n PRIMASK meanwhile, so this is not a global interrupt mask. Other backends\n follow their native critical-section contracts.\n\n @return Key for the matching @ref ove_irq_unlock.\n @note Requires CONFIG_OVE_ASYNC; the disabled stub gives no exclusion."]
     pub fn ove_irq_lock() -> ove_irq_key_t;
@@ -421,6 +482,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by bindings to check synchronous call context and dispatch between\n thread-context and ISR-context wake operations. Requires no object setup\n or allocation.\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On the host test backend the ISR wrappers set a\n       thread-local flag; outside those\n       paths the function returns @c false."]
     pub fn ove_is_in_isr() -> bool;
+}
+unsafe extern "C" {
+    #[doc = " @brief Report which synchronization operations the calling context allows.\n\n Returns a mask of the flags below. A clear flag means the operation must not\n be attempted: bindings reject it or, for destruction, retain the resource.\n - @c OVE_SYNC_CONTEXT_RESOURCE: native initialization and destruction.\n - @c OVE_SYNC_CONTEXT_BLOCKING: mutex acquisition and condition variables.\n - @c OVE_SYNC_CONTEXT_PRODUCER: task semaphore/event posts and serialized\n   notification setup only; it does not serialize registration with gives.\n\n RESOURCE and BLOCKING need a running, non-idle thread with interrupts\n enabled; cooperative and scheduler-locked threads qualify. PRODUCER also\n holds with interrupts masked, including in nested critical sections.\n FreeRTOS also grants RESOURCE and PRODUCER before the scheduler starts, and\n only PRODUCER while the scheduler is suspended.\n\n Returns zero in an ISR, in unprivileged code and outside the supported\n domains (privileged Cortex-M3/M4/M7, Zephyr native_sim, single-core NuttX\n flat sim and the POSIX backend), so also on FreeRTOS multicore, NuttX SMP\n and FreeRTOS unless both INCLUDE_xTaskGetSchedulerState and\n INCLUDE_xTaskGetIdleTaskHandle are 1. The POSIX backend reports PRODUCER only\n inside its critical sections.\n\n The flags do not cover object validity, ownership or quiescence, and are not\n the test for releasing an already-owned mutex, which can stay legal with\n interrupts masked. The query touches no primitive, allocates nothing,\n changes no interrupt mask and needs no TIME, ASYNC or thread wrappers.\n\n @return Context flags, or zero as described above."]
+    pub fn ove_sync_context() -> u32;
 }
 #[doc = " Notification that the console RX path published one or more bytes. The\n callback may run in interrupt context and must therefore be ISR-safe."]
 pub type ove_console_ready_fn = Option<unsafe extern "C" fn(context: *const core::ffi::c_void)>;
@@ -571,11 +636,11 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_thread_storage_t {
-    pub _opaque: [u8; 136usize],
+    pub _opaque: [u8; 152usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_storage_t"][core::mem::size_of::<ove_thread_storage_t>() - 136usize];
+    ["Size of ove_thread_storage_t"][core::mem::size_of::<ove_thread_storage_t>() - 152usize];
     ["Alignment of ove_thread_storage_t"][core::mem::align_of::<ove_thread_storage_t>() - 8usize];
     ["Offset of field: ove_thread_storage_t::_opaque"]
         [core::mem::offset_of!(ove_thread_storage_t, _opaque) - 0usize];
@@ -1199,7 +1264,7 @@ unsafe extern "C" {
     pub fn ove_recursive_mutex_unlock(mtx: ove_mutex_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Atomically release a mutex and wait on a condition variable.\n\nThe mutex @p mtx must be held exactly once by the calling thread.\nIt is released atomically as the thread begins waiting. On @c OVE_OK\nor @c OVE_ERR_TIMEOUT, it is re-acquired before returning. Other errors\ndo not establish mutex ownership; callers must not assume it is held.\nAlways re-check the predicate after a wake, which may be spurious.\nKeep both objects and their backing alive until all operations finish.\nFreeRTOS V1 protects waiter-list access in short privileged sections,\nrestoring caller mode before mutex release, waiting and reacquisition.\n\n@note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n@param[in] cv          Condition variable handle obtained from\n                       ove_condvar_init() or ove_condvar_create().\n@param[in] mtx         Mutex that guards the condition.  Must be locked\n                       by the calling thread.\n@note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.\n\n@param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                       @c OVE_WAIT_FOREVER to block indefinitely.\n@return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n        reached, or another negative error code on failure.\n\n@see ove_condvar_signal, ove_condvar_broadcast\n"]
+    #[doc = " @brief Atomically release a mutex and wait on a condition variable.\n\n The mutex @p mtx must be held exactly once by the calling thread.\n It is released atomically as the thread begins waiting. On @c OVE_OK\n or @c OVE_ERR_TIMEOUT, it is re-acquired before returning. Other errors\n do not establish mutex ownership; callers must not assume it is held.\n Always re-check the predicate after a wake, which may be spurious.\n Keep both objects and their backing alive until all operations finish.\n FreeRTOS V1 protects waiter-list access in short privileged sections,\n restoring caller mode before mutex release, waiting and reacquisition.\n\n @note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n @param[in] cv          Condition variable handle obtained from\n                        ove_condvar_init() or ove_condvar_create().\n @param[in] mtx         Mutex that guards the condition.  Must be locked\n                        by the calling thread.\n @note FreeRTOS and NuttX finite waits use the effective native budget described by @ref OVE_WAIT_FOREVER.\n\n @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_condvar_signal, ove_condvar_broadcast"]
     pub fn ove_condvar_wait(
         cv: ove_condvar_t,
         mtx: ove_mutex_t,
@@ -1220,7 +1285,7 @@ unsafe extern "C" {
     pub fn ove_condvar_signal(cv: ove_condvar_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Wake all threads waiting on a condition variable.\n\n@note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\nOn single-core FreeRTOS, notification and waiter retirement share a\ncritical section. Broadcast masks kernel-aware interrupts for work\nlinear in the number of waiters. SMP configurations are unsupported.\nV1 restores the caller's mode. Already-privileged producers retain their\nincoming native masks; stronger masks require brief fault/IRQ masking.\n\n@param[in] cv  Condition variable handle to broadcast on.\n\n@see ove_condvar_wait, ove_condvar_signal\n"]
+    #[doc = " @brief Wake all threads waiting on a condition variable.\n\n @note Requires @c CONFIG_OVE_SYNC. Thread context only.\n\n On single-core FreeRTOS, notification and waiter retirement share a\n critical section. Broadcast masks kernel-aware interrupts for work\n linear in the number of waiters. SMP configurations are unsupported.\n V1 restores the caller's mode. Already-privileged producers retain their\n incoming native masks; stronger masks require brief fault/IRQ masking.\n\n @param[in] cv  Condition variable handle to broadcast on.\n\n @see ove_condvar_wait, ove_condvar_signal"]
     pub fn ove_condvar_broadcast(cv: ove_condvar_t);
 }
 #[doc = "< @brief Signed 16-bit integer (int16_t)."]
@@ -2524,37 +2589,6 @@ const _: () = {
         [core::mem::offset_of!(ove_lvgl_text_binding_t, status) - 12usize];
 };
 unsafe extern "C" {
-    pub fn ove_lvgl_canvas_create(parent: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-}
-unsafe extern "C" {
-    pub fn ove_lvgl_canvas_copy(
-        obj: *mut core::ffi::c_void,
-        data: *const u8,
-        size: usize,
-        w: i32,
-        h: i32,
-        format: u32,
-    ) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    pub fn ove_lvgl_canvas_raw(
-        obj: *mut core::ffi::c_void,
-        data: *mut core::ffi::c_void,
-        w: i32,
-        h: i32,
-        format: u32,
-    ) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    pub fn ove_lvgl_canvas_fill(obj: *mut core::ffi::c_void, rgb: u32, opacity: u8);
-}
-unsafe extern "C" {
-    pub fn ove_lvgl_canvas_pixel(obj: *mut core::ffi::c_void, x: i32, y: i32, rgb: u32);
-}
-unsafe extern "C" {
-    pub fn ove_lvgl_canvas_finish(obj: *mut core::ffi::c_void, layer: *mut core::ffi::c_void);
-}
-unsafe extern "C" {
     pub fn ove_lvgl_text_alloc(size: usize) -> *mut core::ffi::c_void;
 }
 unsafe extern "C" {
@@ -2615,6 +2649,37 @@ unsafe extern "C" {
         text: *const core::ffi::c_char,
     ) -> core::ffi::c_int;
 }
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_create(parent: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_copy(
+        obj: *mut core::ffi::c_void,
+        data: *const u8,
+        size: usize,
+        w: i32,
+        h: i32,
+        format: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_raw(
+        obj: *mut core::ffi::c_void,
+        data: *mut core::ffi::c_void,
+        w: i32,
+        h: i32,
+        format: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_fill(obj: *mut core::ffi::c_void, rgb: u32, opacity: u8);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_pixel(obj: *mut core::ffi::c_void, x: i32, y: i32, rgb: u32);
+}
+unsafe extern "C" {
+    pub fn ove_lvgl_canvas_finish(obj: *mut core::ffi::c_void, layer: *mut core::ffi::c_void);
+}
 #[doc = " @brief Keypad read callback — the user implements this to deliver\n        key events to LVGL via ove_lvgl_register_keypad().\n\n @param[out] key      Filled with the current LV_KEY_* code if a key\n                      is pressed.\n @param[out] pressed  Filled with @c true if currently pressed,\n                      @c false if released.\n @return @c true if the callback wrote `key` and `pressed` (LVGL\n         should use them), @c false to indicate no new input."]
 pub type ove_lvgl_keypad_read_fn_t =
     Option<unsafe extern "C" fn(key: *mut u32, pressed: *mut bool) -> bool>;
@@ -2669,7 +2734,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Deinitialise a statically-allocated event group.\n\nReleases all RTOS resources associated with @p eg. External interrupt\nsources, producers and synchronous users must be quiescent before teardown.\nOn FreeRTOS, queued deferred commands are canceled before return, so backing\nmay immediately expire or be reused without waiting for the timer daemon.\nThis does not retire notify code/data already saved for delivery; see\n@ref ove_eventgroup_set_notify.\n\n@param[in] eg  Event group handle returned by @ref ove_eventgroup_init.\n@note Requires @c CONFIG_OVE_EVENTGROUP."]
+    #[doc = " @brief Deinitialise a statically-allocated event group.\n\n Releases all RTOS resources associated with @p eg. External interrupt\n sources, producers and synchronous users must be quiescent before teardown.\n On FreeRTOS, queued deferred commands are canceled before return, so backing\n may immediately expire or be reused without waiting for the timer daemon.\n This does not retire notify code/data already saved for delivery; see\n @ref ove_eventgroup_set_notify.\n\n @param[in] eg  Event group handle returned by @ref ove_eventgroup_init.\n @note Requires @c CONFIG_OVE_EVENTGROUP."]
     pub fn ove_eventgroup_deinit(eg: ove_eventgroup_t);
 }
 unsafe extern "C" {
@@ -2701,14 +2766,14 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set bits in the event group from an ISR.\n\nISR-safe variant of @ref ove_eventgroup_set_bits. A context switch to a\nhigher-priority task that was unblocked may be requested by the underlying\nRTOS after this call returns.\nOn FreeRTOS publication and notification occur later in the timer task.\nTeardown cancels commands that have not started their native update.\n\n@param[in] eg    Event group handle.\n@param[in] bits  Bitmask of bits to set.\n@return On FreeRTOS, the accepted mask, or zero if the timer command queue\n        rejected it; the set itself is deferred. Other engines return a bit\n        snapshot. Invalid masks return zero before native, queue, yield or\n        notification effects. A zero mask does not notify."]
+    #[doc = " @brief Set bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_set_bits. A context switch to a\n higher-priority task that was unblocked may be requested by the underlying\n RTOS after this call returns.\n On FreeRTOS publication and notification occur later in the timer task.\n Teardown cancels commands that have not started their native update.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return On FreeRTOS, the accepted mask, or zero if the timer command queue\n         rejected it; the set itself is deferred. Other engines return a bit\n         snapshot. Invalid masks return zero before native, queue, yield or\n         notification effects. A zero mask does not notify."]
     pub fn ove_eventgroup_set_bits_from_isr(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
     ) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Clear bits in the event group from an ISR.\n\nISR-safe variant of @ref ove_eventgroup_clear_bits. On FreeRTOS the clear\nis handed to the timer service task and takes effect once that task runs,\nafter the ISR returns; the other engines clear immediately. Because of that\ndeferral it reports a status, not the previous bits.\nTeardown cancels pending commands before backing is released. Successful\nadmission requests a context switch when it wakes the timer task.\n\n@param[in] eg    Event group handle.\n@param[in] bits  Bitmask of bits to clear.\n@return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue\n        had no room for the request. Bits outside\n        @ref ove_eventgroup_valid_mask return @c OVE_ERR_INVALID_PARAM before\n        native or queue effects."]
+    #[doc = " @brief Clear bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_clear_bits. On FreeRTOS the clear\n is handed to the timer service task and takes effect once that task runs,\n after the ISR returns; the other engines clear immediately. Because of that\n deferral it reports a status, not the previous bits.\n Teardown cancels pending commands before backing is released. Successful\n admission requests a context switch when it wakes the timer task.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return OVE_OK, or OVE_ERR_QUEUE_FULL if FreeRTOS's timer command queue\n         had no room for the request. Bits outside\n         @ref ove_eventgroup_valid_mask return @c OVE_ERR_INVALID_PARAM before\n         native or queue effects."]
     pub fn ove_eventgroup_clear_bits_from_isr(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
@@ -2719,7 +2784,7 @@ unsafe extern "C" {
     pub fn ove_eventgroup_get_bits(eg: ove_eventgroup_t) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a notify callback after a successful nonzero set.\n\nTask sets notify inside their producing call. FreeRTOS ISR sets notify in\nthe timer daemon after publication and native waiter processing; other\nengines notify from the producing context. The bits may already have been\nconsumed by waiters. Rejected, canceled or zero sets and clears do not notify.\n\nSetup/replacement/removal must be serialized with producers, deferred\ndispatch and other registrations. Keep callback code/data alive through all\npending dispatch and saved/in-flight delivery tails. Removal or deinit is not\na callback-data reclamation fence: a saved pair can run after either returns.\nCallbacks must be nonblocking, support permitted concurrent/reentrant calls\nand never unwind across C. See the `set_notify` family across primitives."]
+    #[doc = " @brief Register a notify callback after a successful nonzero set.\n\n Task sets notify inside their producing call. FreeRTOS ISR sets notify in\n the timer daemon after publication and native waiter processing; other\n engines notify from the producing context. The bits may already have been\n consumed by waiters. Rejected, canceled or zero sets and clears do not notify.\n\n Setup/replacement/removal must be serialized with producers, deferred\n dispatch and other registrations. Keep callback code/data alive through all\n pending dispatch and saved/in-flight delivery tails. Removal or deinit is not\n a callback-data reclamation fence: a saved pair can run after either returns.\n Callbacks must be nonblocking, support permitted concurrent/reentrant calls\n and never unwind across C. See the `set_notify` family across primitives."]
     pub fn ove_eventgroup_set_notify(
         eg: ove_eventgroup_t,
         cb: ove_notify_cb,
@@ -3175,6 +3240,7 @@ pub const OVE_SOCK_DGRAM: ove_sock_type_t = 2;
 pub const OVE_SOCK_RAW: ove_sock_type_t = 3;
 #[doc = " Not a value; forces a 4-byte enum."]
 pub const OVE_SOCK_TYPE_MAX_ENUM: ove_sock_type_t = 2147483647;
+#[doc = " @brief Socket type."]
 pub type ove_sock_type_t = core::ffi::c_uint;
 #[doc = "< IPv4."]
 pub const OVE_AF_INET: ove_af_t = 2;
@@ -3696,6 +3762,7 @@ pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
 pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
 #[doc = " Not a value; forces a 4-byte enum."]
 pub const OVE_MQTT_QOS_MAX_ENUM: ove_mqtt_qos_t = 2147483647;
+#[doc = " @brief MQTT QoS level."]
 pub type ove_mqtt_qos_t = core::ffi::c_uint;
 #[doc = " @brief MQTT message callback.\n\n Invoked synchronously by the MQTT API call that receives the packet\n (usually @ref ove_mqtt_loop, but also an operation waiting for an ACK).\n The client does not create a background callback thread. Topic/payload views\n remain valid until this callback returns. The callback may disconnect its\n client; it must not reconnect, deinit/destroy it, or start another packet\n operation on that client before returning.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
 pub type ove_mqtt_msg_cb = Option<
@@ -4322,7 +4389,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = "@brief Release an SPI bus handle previously created with `ove_spi_init`.\n Thread context only. Consumes the handle: coordinate existing/new callers\n externally. An accepted async operation defers cleanup until native retirement;\n missing completion retains the backing. Keep storage and callback userdata\n alive through BOTH this call returning and final callback completion. A late\n concurrent close may overlap callback dispatch; callback alone does not prove\n an independently active close call has returned. Do not reuse the consumed\n handle from its callback. Synchronous callers must already be quiescent."]
+    #[doc = " @brief Release an SPI bus handle previously created with `ove_spi_init`.\n Thread context only. Consumes the handle: coordinate existing/new callers\n externally. An accepted async operation defers cleanup until native retirement;\n missing completion retains the backing. Keep storage and callback userdata\n alive through BOTH this call returning and final callback completion. A late\n concurrent close may overlap callback dispatch; callback alone does not prove\n an independently active close call has returned. Do not reuse the consumed\n handle from its callback. Synchronous callers must already be quiescent."]
     pub fn ove_spi_deinit(spi: ove_spi_t);
 }
 unsafe extern "C" {
@@ -4330,7 +4397,7 @@ unsafe extern "C" {
     pub fn ove_spi_create(spi: *mut ove_spi_t, cfg: *const ove_spi_cfg) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = "@brief Destroy a heap-created handle; same consumed-handle and pending\n retirement obligations as ove_spi_deinit(). Native heap storage is freed\n only after outstanding provider/submission accesses end. Callback userdata\n must be separately valid through callback completion."]
+    #[doc = " @brief Destroy a heap-created handle; same consumed-handle and pending\n retirement obligations as ove_spi_deinit(). Native heap storage is freed\n only after outstanding provider/submission accesses end. Callback userdata\n must be separately valid through callback completion."]
     pub fn ove_spi_destroy(spi: ove_spi_t);
 }
 unsafe extern "C" {
@@ -4387,7 +4454,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = "Prepare async completion dispatch from thread context, without publishing\n an operation. Optional for C callers (submission prepares automatically);\n ownership bindings may call this before constructing an owner. Requires\n CONFIG_OVE_ASYNC. Returns OVE_OK or a negative setup error."]
+    #[doc = " Prepare async completion dispatch from thread context, without publishing\n an operation. Optional for C callers (submission prepares automatically);\n ownership bindings may call this before constructing an owner. Requires\n CONFIG_OVE_ASYNC. Returns OVE_OK or a negative setup error."]
     pub fn ove_spi_async_prepare() -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -4507,8 +4574,10 @@ unsafe extern "C" {
     pub fn ove_i2c_probe(i2c: ove_i2c_t, addr: u16, timeout_ns: u64) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = "Prepare asynchronous completion dispatch from thread context without bus work.\n Submission also prepares automatically. Failure accepts no operation and\n preparation may be retried. Requires CONFIG_OVE_ASYNC."]
+    #[doc = " Prepare asynchronous completion dispatch from thread context without bus work.\n Submission also prepares automatically. Failure accepts no operation and\n preparation may be retried. Requires CONFIG_OVE_ASYNC."]
     pub fn ove_i2c_async_prepare() -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " Validate a binding's seven-bit address and independent async byte counts.\n Internal binding support requiring a live configured handle and external\n lifetime/configuration coordination. Both counts zero is invalid. Checks\n existing provider limits before allocation or payload copying, without bus\n effects, preparation, admission or retained pointers."]
     pub fn ove_i2c_binding_check_lengths(
         i2c: ove_i2c_t,
@@ -4516,10 +4585,16 @@ unsafe extern "C" {
         tx_len: usize,
         rx_len: usize,
     ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " Allocate stable I2C binding backing with power-of-two alignment.\n Internal binding support using the configured native allocator. Returns NULL\n on invalid/overflowing layout or allocation failure. Size must be nonzero;\n complete padded allocation must fit PTRDIFF_MAX. Padding includes one saved\n allocation pointer and at most alignment-1 bytes. No Rust allocator or pool\n is involved. Free only with ove_i2c_binding_free()."]
     pub fn ove_i2c_binding_alloc(size: usize, alignment: usize) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
     #[doc = " Release only a live ove_i2c_binding_alloc allocation, or NULL.\n All users must retire before freeing; this helper provides no operation\n ownership, cancellation or reference counting."]
     pub fn ove_i2c_binding_free(pointer: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
     #[doc = " @brief Submit an I2C write-then-read transaction asynchronously.\n\n Submit from thread context. Equivalent to @ref ove_i2c_write_read but returns\n immediately. The\n completion callback fires when the device has been written, the\n repeated-start completed, and the read finished — or when an error\n (NACK, bus error, timeout) terminates the transaction.\n\n Final callbacks run in task context after submission and provider retirement:\n STM32 uses the existing timer daemon after the HAL/IRQ returns; Zephyr uses\n the same system queue after the embedded work's kernel tail; NuttX/host use\n the final worker or submitter access. Callbacks must be non-blocking. Migrate\n unconditional STM32 FromISR-only callback calls to task APIs. The internal\n write-to-read transition remains in IRQ context.\n\n Keep controller backing, buffers and userdata valid through final callback\n completion AND every active API call returning. A callback can precede the\n submission call's return, but that operation's submitter/provider makes no\n further controller access after notification.\n Callback notification does not join an independent concurrent close call.\n Reentry is permitted on a live unconsumed handle. Close consumes the handle;\n callers coordinate unrelated raw entry/destruction and synchronous use.\n Accepted work produces exactly one result; rejection produces no callback.\n One active operation retains its result/backing through final retirement.\n\n No timeout argument or automatic watchdog applies\n to async submission. A missing completion can remain pending indefinitely.\n Empty TX selects a plain read, empty RX a pure write; both empty is invalid.\n\n Address and independent phase-count limits are checked before bus effects;\n see the I2C file contract. Oversize requests are rejected, not split.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] tx         Bytes to write before the repeated start.\n                       Must outlive the transaction. May be NULL if\n                       @p tx_len is 0 (pure read).\n @param[in] tx_len     Number of bytes to write.\n @param[in] rx         Buffer for read bytes. Must outlive the\n                       transaction. May be NULL if @p rx_len is 0\n                       (pure write).\n @param[in] rx_len     Number of bytes to read.\n @param[in] cb         Completion callback. Must not be NULL.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK if accepted; negative on submission failure (no\n         callback in that case)."]
     pub fn ove_i2c_write_read_async(
         i2c: ove_i2c_t,
