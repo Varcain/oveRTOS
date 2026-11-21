@@ -11,7 +11,6 @@
 Subcommands:
     import zephyr  --board <name>  [--zephyr-base <path>] [--ove-name <name>]
     import nuttx   --board <name>  [--nuttx-base <path>]  [--config <variant>] [--ove-name <name>]
-    register       --board <name>
     list
 
 Examples:
@@ -28,6 +27,8 @@ import os
 import re
 import sys
 import textwrap
+
+from ove.workspace import parse_dotconfig
 
 try:
     import yaml
@@ -839,38 +840,6 @@ def _read_dts_files(board_dir, board_name):
 # NuttX board discovery & parsing
 # ---------------------------------------------------------------------------
 
-def parse_dotconfig(path):
-    """Parse a Kconfig .config / defconfig file into a dict."""
-    config = {}
-    with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                if line.startswith("# CONFIG_") and line.endswith(" is not set"):
-                    key = line.split()[1]
-                    config[key] = False
-                continue
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-            if value == "y":
-                config[key] = True
-            elif value == "n":
-                config[key] = False
-            elif value.startswith('"') and value.endswith('"'):
-                config[key] = value[1:-1]
-            elif value.startswith("0x") or value.startswith("0X"):
-                config[key] = int(value, 16)
-            else:
-                try:
-                    config[key] = int(value)
-                except ValueError:
-                    config[key] = value
-    return config
-
-
 def _find_nuttx_board_dir(nuttx_base, board_name):
     """Locate a NuttX board directory: boards/<arch>/<chip>/<board>/"""
     boards_root = os.path.join(nuttx_base, "boards")
@@ -1215,70 +1184,10 @@ def _show_diff(old_data, new_data):
 
 
 # ---------------------------------------------------------------------------
-# Post-import registration hooks
+# Flash scripts
 # ---------------------------------------------------------------------------
 
-def _generate_defconfig(ove_name, board_yaml_data, rtos):
-    """Auto-generate a minimal example defconfig for the board."""
-    board = board_yaml_data.get("board", {})
-    mcu = board.get("mcu", "")
-
-    # Derive short name: STM32F429xx → stm32f429, NRF52840 → nrf52840
-    short = mcu.lower().rstrip("x") if mcu else ove_name.split("-")[0]
-
-    defconfig_dir = os.path.join(ove_dir(), "defconfigs", short)
-    defconfig_name = f"{short}_{rtos}_example_c_defconfig"
-    defconfig_path = os.path.join(defconfig_dir, defconfig_name)
-
-    if os.path.isfile(defconfig_path):
-        print(f"  Defconfig: {defconfig_name} already exists, skipping")
-        return
-
-    # Kconfig symbol for the board
-    symbol = "OVE_BOARD_" + ove_name.upper().replace("-", "_")
-
-    lines = [
-        "CONFIG_OVE_APP_EXAMPLE_C=y",
-        "CONFIG_OVE_APP_LANG_C=y",
-        f"CONFIG_OVE_RTOS_{rtos.upper()}=y",
-        f"CONFIG_{symbol}=y",
-        "CONFIG_OVE_SYNC=y",
-        "# CONFIG_OVE_AUDIO is not set",
-        "# CONFIG_OVE_FS is not set",
-        "CONFIG_OVE_CONSOLE=y",
-        "CONFIG_OVE_LOG=y",
-        "CONFIG_OVE_TIME=y",
-        "CONFIG_OVE_BSP=y",
-        "# CONFIG_OVE_LVGL is not set",
-        "CONFIG_OVE_QUEUE=y",
-        "CONFIG_OVE_TIMER=y",
-        "CONFIG_OVE_EVENTGROUP=y",
-        "# CONFIG_OVE_SHELL is not set",
-        "# CONFIG_OVE_NVS is not set",
-        "# CONFIG_OVE_WATCHDOG is not set",
-        "# CONFIG_OVE_WORKQUEUE is not set",
-        "# CONFIG_OVE_STREAM is not set",
-        "CONFIG_OVE_LOG_LEVEL_INF=y",
-    ]
-
-    if rtos == "nuttx":
-        lines.append("CONFIG_NUTTX_SOURCE_GIT=y")
-
-    if rtos == "zephyr":
-        # Disable Zephyr subsystems not supported by this board
-        if "sdcard" not in board_yaml_data:
-            lines.append("# CONFIG_ZEPHYR_SD_FILESYSTEM is not set")
-
-    lines.append("CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y")
-
-    os.makedirs(defconfig_dir, exist_ok=True)
-    with open(defconfig_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
-    print(f"  Defconfig: created {os.path.relpath(defconfig_path, ove_dir())}")
-
-
-def _generate_flash_scripts(board_dir, rtos, mcu_family, ove_name,
-                            mcu=""):
+def _generate_flash_scripts(board_dir, rtos, ove_name, board):
     """Auto-generate flash.sh, debug.sh, and gdb.sh for the board."""
     rtos_dir = os.path.join(board_dir, rtos)
     if not os.path.isdir(rtos_dir):
@@ -1289,7 +1198,8 @@ def _generate_flash_scripts(board_dir, rtos, mcu_family, ove_name,
     openocd_cfg = None
 
     # Derive chip prefix for precise matching: STM32F429xx → stm32f429
-    chip_prefix = mcu.lower().rstrip("x") if mcu else ""
+    chip_prefix = (board.get("mcu") or "").lower().rstrip("x")
+    mcu_family = board.get("mcu_family", "unknown")
 
     if os.path.isdir(openocd_scripts):
         board_files = sorted(os.listdir(openocd_scripts))
@@ -1373,17 +1283,9 @@ def _generate_flash_scripts(board_dir, rtos, mcu_family, ove_name,
         print(f"  Scripts: created {os.path.relpath(script_path, ove_dir())}")
 
 
-def _post_import_register(ove_name, board_yaml_data, rtos):
-    """Run all post-import registration hooks."""
-    print(f"\n--- Post-import registration for {ove_name} ({rtos}) ---")
-    _generate_defconfig(ove_name, board_yaml_data, rtos)
-    board_dir = os.path.join(boards_dir(), ove_name)
-    board = board_yaml_data.get("board", {})
-    mcu_family = board.get("mcu_family", "unknown")
-    mcu = board.get("mcu", "")
-    _generate_flash_scripts(board_dir, rtos, mcu_family, ove_name, mcu=mcu)
-    print("--- Registration complete ---\n")
-
+# ---------------------------------------------------------------------------
+# Subcommand: import
+# ---------------------------------------------------------------------------
 
 def _set_board_identity(board_yaml, ove_name):
     """Give an imported board its Kconfig symbol and menu title, unless set."""
@@ -1391,10 +1293,6 @@ def _set_board_identity(board_yaml, ove_name):
     board.setdefault("symbol", "OVE_BOARD_" + ove_name.upper().replace("-", "_"))
     board.setdefault("title", ove_name.upper())
 
-
-# ---------------------------------------------------------------------------
-# Subcommand: import
-# ---------------------------------------------------------------------------
 
 def cmd_import(args):
     rtos = args.import_rtos
@@ -1486,9 +1384,7 @@ def _import_zephyr(args):
     _write_starter(starter + ".conf", _zephyr_starter_conf(board_yaml.data))
     _write_starter(starter + ".overlay", _zephyr_starter_overlay(board_yaml.data))
 
-    # Post-import registration — use the saved board.yaml data, which may
-    # differ from the extracted data if the user kept the existing file.
-    _post_import_register(ove_name, board_yaml.data, "zephyr")
+    _generate_flash_scripts(target_dir, "zephyr", ove_name, board_yaml.data["board"])
 
     # Print warnings
     if warnings:
@@ -1566,8 +1462,7 @@ def _import_nuttx(args):
     _write_starter(os.path.join(nuttx_scaffold_dir, "ove_board_defconfig"),
                    _nuttx_starter_defconfig(board_yaml.data))
 
-    # Post-import registration — use the saved board.yaml data.
-    _post_import_register(ove_name, board_yaml.data, "nuttx")
+    _generate_flash_scripts(target_dir, "nuttx", ove_name, board_yaml.data["board"])
 
     # Print warnings
     if warnings:
@@ -1576,36 +1471,6 @@ def _import_nuttx(args):
             print(f"    - {w}")
 
     print(f"\nImport complete: boards/{ove_name}/")
-
-
-# ---------------------------------------------------------------------------
-# Subcommand: register
-# ---------------------------------------------------------------------------
-
-def cmd_register(args):
-    """Re-run post-import registration on an existing board."""
-    board_name = args.board
-    board_path = os.path.join(boards_dir(), board_name)
-    yaml_path = os.path.join(board_path, "board.yaml")
-
-    if not os.path.isfile(yaml_path):
-        print(f"Error: board.yaml not found: {yaml_path}")
-        sys.exit(1)
-
-    board_yaml = BoardYaml.load(yaml_path)
-    board_yaml.validate()
-    data = board_yaml.data
-
-    # Register for each RTOS subdirectory present
-    registered = False
-    for rtos in ["nuttx", "zephyr"]:
-        if os.path.isdir(os.path.join(board_path, rtos)):
-            _post_import_register(board_name, data, rtos)
-            registered = True
-
-    if not registered:
-        print(f"No RTOS subdirectories found in {board_path}/")
-        print("  Expected: nuttx/ or zephyr/")
 
 
 # ---------------------------------------------------------------------------
@@ -1694,13 +1559,6 @@ def main():
     nuttx_parser.add_argument("--non-interactive", action="store_true", help="Non-interactive mode")
     nuttx_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing board.yaml")
     nuttx_parser.set_defaults(func=cmd_import)
-
-    # --- register ---
-    register_parser = subparsers.add_parser(
-        "register", help="Re-run post-import registration on existing board"
-    )
-    register_parser.add_argument("--board", required=True, help="oveRTOS board name")
-    register_parser.set_defaults(func=cmd_register)
 
     # --- list ---
     list_parser = subparsers.add_parser("list", help="List all oveRTOS boards")

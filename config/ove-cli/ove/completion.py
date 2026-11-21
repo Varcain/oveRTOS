@@ -68,7 +68,7 @@ _ove_complete() {
             COMPREPLY=( $(compgen -W "--json" -- "$cur") )
             ;;
         board)
-            COMPREPLY=( $(compgen -W "list import register sync" -- "$cur") )
+            COMPREPLY=( $(compgen -W "list import" -- "$cur") )
             ;;
         app)
             if [[ $cword -eq 2 ]]; then
@@ -123,7 +123,7 @@ _ove() {
             _values 'option' '--json'
             ;;
         board)
-            _values 'subcommand' 'list' 'import' 'register' 'sync'
+            _values 'subcommand' 'list' 'import'
             ;;
         app)
             if (( CURRENT == 3 )); then
@@ -150,7 +150,7 @@ complete -c ove -n '__fish_seen_subcommand_from clean' -l all -d 'Clean all work
 complete -c ove -n '__fish_seen_subcommand_from clean' -l dist -d 'Full reset'
 complete -c ove -n '__fish_seen_subcommand_from manifest' -l check
 complete -c ove -n '__fish_seen_subcommand_from doctor build test' -l json
-complete -c ove -n '__fish_seen_subcommand_from board' -a 'list import register sync'
+complete -c ove -n '__fish_seen_subcommand_from board' -a 'list import'
 complete -c ove -n '__fish_seen_subcommand_from app' -a 'new'
 complete -c ove -n '__fish_seen_subcommand_from app' -l lang -a '%(app_langs)s'
 complete -c ove -n '__fish_seen_subcommand_from app' -l template -a '%(app_tpls)s'

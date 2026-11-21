@@ -4,11 +4,7 @@
 #
 # This file is part of oveRTOS.
 
-"""Board import — thin wrapper around config/scripts/board_tool.py.
-
-The board_tool.py is 1600+ lines and handles complex RTOS-specific import
-logic. Rather than duplicating it, we delegate to it.
-"""
+"""Board listing and import via config/scripts/board_tool.py."""
 
 import glob
 import os
@@ -102,14 +98,14 @@ def cmd_board(args):
 
         if args.ove_name:
             cmd.extend(["--ove-name", args.ove_name])
+        if args.config is not None:
+            cmd.extend(["--config", args.config])
+        if args.non_interactive:
+            cmd.append("--non-interactive")
+        if args.overwrite:
+            cmd.append("--overwrite")
 
         _board_tool(ove_dir, cmd)
-
-    elif args.board_action == "register":
-        if not args.name:
-            print("Error: --name required for register")
-            sys.exit(1)
-        _board_tool(ove_dir, ["register", "--board", args.name])
 
     else:
         print(f"Error: unknown board action '{args.board_action}'")

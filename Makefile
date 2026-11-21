@@ -427,14 +427,6 @@ board-import-nuttx: $(VENV_STAMP)
 	@$(OVE) board import --rtos nuttx --name $(BOARD) \
 		$(if $(OVE_NAME),--ove-name $(OVE_NAME))
 
-.PHONY: board-register
-board-register: $(VENV_STAMP)
-	@if [ -z "$(BOARD)" ]; then \
-		echo "Error: BOARD not set. Usage: make board-register BOARD=<name>"; \
-		exit 1; \
-	fi
-	@$(OVE) board register --name $(BOARD)
-
 .PHONY: board-list
 board-list: $(VENV_STAMP)
 	@$(OVE) board list
@@ -583,7 +575,6 @@ help:
 	@echo "Board tools:"
 	@echo "  board-import-zephyr BOARD=<name>  - Import board from Zephyr"
 	@echo "  board-import-nuttx  BOARD=<name>  - Import board from NuttX"
-	@echo "  board-register BOARD=<name>       - Re-run post-import registration"
 	@echo "  board-list                        - List all boards"
 	@echo ""
 	@echo "Clean:"

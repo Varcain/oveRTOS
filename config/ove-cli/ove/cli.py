@@ -203,9 +203,11 @@ def main():
                           help="RTOS to import from (zephyr, nuttx)")
     p_import.add_argument("--name", required=True, help="Board name in RTOS")
     p_import.add_argument("--ove-name", help="oveRTOS board name")
-    p_register = board_sub.add_parser("register",
-                                      help="Re-run post-import registration")
-    p_register.add_argument("--name", required=True, help="Board name")
+    p_import.add_argument("--config", help="NuttX config variant (default: nsh)")
+    p_import.add_argument("--non-interactive", action="store_true",
+                          help="Skip prompts for existing board.yaml")
+    p_import.add_argument("--overwrite", action="store_true",
+                          help="Replace existing board.yaml in non-interactive mode")
 
     # ── vscode ────────────────────────────────────────────────────────
     p = sub.add_parser("vscode",
