@@ -9,7 +9,7 @@
 
 "use strict";
 
-/* ── Frame type constants (shared with ove-dashboard-bridge.py) ────── */
+/* Frame types shared with config/scripts/ove_dashboard/protocol.py. */
 var FRAME_FB        = 0x01;
 var FRAME_AUDIO     = 0x02;
 var FRAME_EVENT     = 0x03;

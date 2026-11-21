@@ -29,7 +29,7 @@
 (function () {
 "use strict";
 
-/* ── Frame types (shared with app.js and ove-dashboard-bridge.py) ──── */
+/* Frame types shared with app.js and config/scripts/ove_dashboard/protocol.py. */
 var FRAME_FB     = 0x01;
 var FRAME_AUDIO  = 0x02;
 var FRAME_CMD    = 0x04;

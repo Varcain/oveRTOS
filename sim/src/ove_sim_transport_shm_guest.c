@@ -33,7 +33,7 @@
 
 #include <string.h>
 
-/* ── Framebuffer protocol (matches ove-dashboard-bridge.py) ──────── */
+/* ── Framebuffer protocol (config/scripts/ove_dashboard/shm.py) ──── */
 
 #define FB_PATH "/dev/shm/ove-fb"
 #define FB_MAGIC 0x42465854 /* "TXFB" */

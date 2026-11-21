@@ -12,6 +12,7 @@ import os
 import re
 import socket
 import struct
+import sys
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -58,23 +59,34 @@ def upgrade_request(host, origin=None):
 
 class DashboardBridgeTest(unittest.TestCase):
     def setUp(self):
-        path = os.environ.get("OVE_DASHBOARD_TEST_BRIDGE", BRIDGE)
-        spec = importlib.util.spec_from_file_location("dashboard_bridge", path)
-        self.bridge = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.bridge)
-        if Path(path) != BRIDGE:
-            self.bridge.OVE_DIR = str(ROOT)
+        path = Path(os.environ.get("OVE_DASHBOARD_TEST_BRIDGE", BRIDGE)).resolve()
+        if path == BRIDGE.resolve():
+            with patch.object(sys, "path", [str(path.parent), *sys.path]):
+                from ove_dashboard import frames, gdb, protocol, server, shm
+        else:
+            # Older bridge revisions put all of these names in one module.
+            spec = importlib.util.spec_from_file_location("dashboard_bridge", path)
+            bridge = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(bridge)
+            bridge.OVE_DIR = str(ROOT)
+            frames = gdb = protocol = server = shm = bridge
+        self.frames, self.debug, self.protocol, self.server, self.shm = (
+            frames, gdb, protocol, server, shm
+        )
 
         tempdir = TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         self.tmp = tmp = Path(tempdir.name)
         paths = patch.multiple(
-            self.bridge, FB_PATH=tmp / "fb", AUDIO_PATH=tmp / "audio",
-            SIM_SHM_PATH=tmp / "sim", INPUT_PATH=tmp / "input",
+            self.shm, FB_PATH=tmp / "fb", AUDIO_PATH=tmp / "audio",
+            SIM_SHM_PATH=tmp / "sim", INPUT_PATH=tmp / "input", input_shm=[None],
         )
         paths.start()
         self.addCleanup(paths.stop)
-        self.gdb = self.bridge.GdbController("gdb", None, 0)
+        framebuffer = patch.object(self.frames, "_last_fb_frame", None)
+        framebuffer.start()
+        self.addCleanup(framebuffer.stop)
+        self.gdb = self.debug.GdbController("gdb", None, 0)
         self.gdb.proc = SimpleNamespace(stdin=io.StringIO())
 
     def test_gdb_mi_records(self):
@@ -122,7 +134,7 @@ class DashboardBridgeTest(unittest.TestCase):
                 with self.subTest(separator=separator):
                     gdb.proc.stdin = io.StringIO()
                     gdb.handle_debug_cmd(debug_command(
-                        self.bridge.DBG_CMD_BP_SET, f"first{separator}second.c", 7
+                        self.protocol.DBG_CMD_BP_SET, f"first{separator}second.c", 7
                     ))
                     self.assertEqual(gdb.proc.stdin.getvalue(), "")
 
@@ -130,7 +142,7 @@ class DashboardBridgeTest(unittest.TestCase):
         gdb = self.gdb
         send = gdb._send_mi_sync
         with patch.object(gdb, "_send_mi_sync", side_effect=lambda cmd: send(cmd, timeout=0)):
-            gdb.handle_debug_cmd(debug_command(self.bridge.DBG_CMD_BP_SET, '*a b"c\\d.c', 7))
+            gdb.handle_debug_cmd(debug_command(self.protocol.DBG_CMD_BP_SET, '*a b"c\\d.c', 7))
         self.assertEqual(
             gdb.proc.stdin.getvalue(), r'1-break-insert --source "*a b\"c\\d.c" --line 7' + "\n"
         )
@@ -138,7 +150,7 @@ class DashboardBridgeTest(unittest.TestCase):
     def test_disassembly_clamps_large_count(self):
         for count, end_addr in ((12, 0x1030), (0xFFFFFFFF, 0x5000)):
             with self.subTest(count=count), patch.object(self.gdb, "_send_mi_sync") as send:
-                data = struct.pack("<BII", self.bridge.DBG_CMD_DISASSEMBLE, 0x1000, count)
+                data = struct.pack("<BII", self.protocol.DBG_CMD_DISASSEMBLE, 0x1000, count)
                 self.gdb.handle_debug_cmd(data)
                 send.assert_called_once_with(f"-data-disassemble -s 0x1000 -e {end_addr:#x} -- 1")
 
@@ -150,18 +162,18 @@ class DashboardBridgeTest(unittest.TestCase):
             for path, expected in ((ROOT / "Makefile", True), (outside, False)):
                 with self.subTest(path=path):
                     reply.reset_mock()
-                    gdb.handle_debug_cmd(debug_command(self.bridge.DBG_CMD_SOURCE, path, 1, 0))
+                    gdb.handle_debug_cmd(debug_command(self.protocol.DBG_CMD_SOURCE, path, 1, 0))
                     reply.assert_called_once()
                     response, data = reply.call_args.args
-                    self.assertEqual(response, self.bridge.DBG_RESP_SOURCE)
+                    self.assertEqual(response, self.protocol.DBG_RESP_SOURCE)
                     self.assertEqual(bool(data["data"]["lines"]), expected)
 
     def test_gdb_connects_to_loopback(self):
         gdb = self.gdb
         gdb.gdb_port = 12345
-        with patch.object(self.bridge.subprocess, "Popen"), \
-                patch.object(self.bridge.threading, "Thread"), \
-                patch.object(self.bridge.time, "sleep"), \
+        with patch.object(self.debug.subprocess, "Popen"), \
+                patch.object(self.debug.threading, "Thread"), \
+                patch.object(self.debug.time, "sleep"), \
                 patch.object(gdb, "_send_mi_sync") as send:
             gdb.start()
         self.assertEqual(send.call_args_list[0].args, ("-target-select remote 127.0.0.1:12345",))
@@ -179,7 +191,7 @@ class DashboardBridgeTest(unittest.TestCase):
         except PermissionError as exc:
             self.skipTest(f"cannot create TCP socket: {exc}")
 
-        bridge = self.bridge
+        bridge = self.server
         dashboard = self.tmp / "dashboard"
         dashboard.mkdir()
         (dashboard / "index.html").write_bytes(b"<html>dashboard</html>")
@@ -236,7 +248,7 @@ class DashboardBridgeTest(unittest.TestCase):
             ("evil.example:12345", "http://evil.example:12345", 403),
             ("evil.example:12345", None, 403),
         )
-        bridge = self.bridge
+        bridge = self.server
         for authority, origin, status in cases:
             with self.subTest(host=authority, origin=origin):
                 headers = Headers({"Host": authority, "Upgrade": "websocket"})
@@ -248,10 +260,10 @@ class DashboardBridgeTest(unittest.TestCase):
                 self.assertEqual(101 if result is None else result, status)
 
     def test_dashboard_websocket_roundtrip(self):
-        bridge = self.bridge
-        bridge.INPUT_PATH.write_bytes(struct.pack("<I12x", bridge.INPUT_MAGIC))
-        sim_header = struct.pack("<I", bridge.SIM_SHM_MAGIC)
-        bridge.SIM_SHM_PATH.write_bytes(sim_header.ljust(bridge.SIM_SHM_TOTAL_SIZE, b"\0"))
+        shm, protocol = self.shm, self.protocol
+        shm.INPUT_PATH.write_bytes(struct.pack("<I12x", shm.INPUT_MAGIC))
+        sim_header = struct.pack("<I", shm.SIM_SHM_MAGIC)
+        shm.SIM_SHM_PATH.write_bytes(sim_header.ljust(shm.SIM_SHM_TOTAL_SIZE, b"\0"))
         cmd = struct.pack("<III", 2, 1, 3) + b"cmd"
         ring_entry = struct.pack("<H", len(cmd)) + cmd
         pointer = struct.pack("<hhB", 25, -36, 1)
@@ -260,25 +272,25 @@ class DashboardBridgeTest(unittest.TestCase):
             host, port = address
             async with self.connect_websocket(address, origin=f"http://{host}:{port}") as peer:
                 self.assertNotIn("Sec-WebSocket-Extensions", peer.response.headers)
-                self.assertEqual(await peer.recv(), struct.pack("<II", bridge.FRAME_STATE, 0)
+                self.assertEqual(await peer.recv(), struct.pack("<II", protocol.FRAME_STATE, 0)
                                  + b'{"type":"audio","sample_rate":16000,"channels":1,"bit_depth":16}')
-                await peer.send(struct.pack("<I", bridge.FRAME_INPUT) + pointer)
-                await peer.send(struct.pack("<I", bridge.FRAME_CMD) + cmd)
-                while struct.unpack_from("<I", bridge.SIM_SHM_PATH.read_bytes(),
-                                         bridge.SIM_CMD_WRITE_POS_OFF)[0] == 0:
+                await peer.send(struct.pack("<I", protocol.FRAME_INPUT) + pointer)
+                await peer.send(struct.pack("<I", protocol.FRAME_CMD) + cmd)
+                while struct.unpack_from("<I", shm.SIM_SHM_PATH.read_bytes(),
+                                         shm.SIM_CMD_WRITE_POS_OFF)[0] == 0:
                     await asyncio.sleep(0.01)
-                self.assertEqual(bridge.INPUT_PATH.read_bytes()[4:9], pointer)
-                self.addCleanup(bridge.input_shm[0].close)
-                off = bridge.SIM_CMD_RING_OFF
-                self.assertEqual(bridge.SIM_SHM_PATH.read_bytes()[off:off + len(ring_entry)], ring_entry)
+                self.assertEqual(shm.INPUT_PATH.read_bytes()[4:9], pointer)
+                self.addCleanup(shm.input_shm[0].close)
+                off = shm.SIM_CMD_RING_OFF
+                self.assertEqual(shm.SIM_SHM_PATH.read_bytes()[off:off + len(ring_entry)], ring_entry)
 
                 pixels = b"\x01\x02\x03\xff" * 6
-                bridge.FB_PATH.write_bytes(struct.pack("<IHHII", bridge.FB_MAGIC, 3, 2, 1, 1) + pixels)
+                shm.FB_PATH.write_bytes(struct.pack("<IHHII", shm.FB_MAGIC, 3, 2, 1, 1) + pixels)
                 # Exit the display reader after its first dirty frame.
-                with patch.object(bridge, "time", Mock(sleep=Mock(side_effect=SystemExit))), \
+                with patch.object(shm, "time", Mock(sleep=Mock(side_effect=SystemExit))), \
                         self.assertRaises(SystemExit):
-                    bridge.display_bridge()
-                self.assertEqual(await peer.recv(), struct.pack("<IHHHH", bridge.FRAME_FB, 0, 0, 2, 1)
+                    shm.display_bridge()
+                self.assertEqual(await peer.recv(), struct.pack("<IHHHH", protocol.FRAME_FB, 0, 0, 2, 1)
                                  + pixels)
 
         with self.running_bridge() as address:
@@ -307,13 +319,13 @@ class DashboardBridgeTest(unittest.TestCase):
             asyncio.run(asyncio.wait_for(check(address), 4))
 
     def test_websocket_log_burst(self):
-        bridge = self.bridge
-        prefix = struct.pack("<I", bridge.FRAME_LOG)
+        frame_delivery = self.frames
+        prefix = struct.pack("<I", self.protocol.FRAME_LOG)
         frames = [prefix + f"log {index}".encode() for index in range(1000)]
 
         def post_burst():
             for frame in frames:
-                bridge.post_frame(frame)
+                frame_delivery.post_frame(frame)
 
         def queue_burst():
             # Queue all callbacks in one server loop turn.
@@ -324,7 +336,7 @@ class DashboardBridgeTest(unittest.TestCase):
         async def check(address):
             async with self.connect_websocket(address, close_timeout=0.5) as peer:
                 await peer.recv()
-                bridge._server_loop.call_soon_threadsafe(queue_burst)
+                frame_delivery._server_loop.call_soon_threadsafe(queue_burst)
                 self.assertEqual([await peer.recv() for _ in frames], frames)
 
         with self.running_bridge() as address:

@@ -60,7 +60,7 @@ static inline int sh_seek(int fd, uint32_t pos)
 	return (int)sh_call(SH_SYS_SEEK, args);
 }
 
-/* Framebuffer header — matches ove-dashboard-bridge.py protocol */
+/* Framebuffer header — matches config/scripts/ove_dashboard/shm.py */
 #define FB_MAGIC 0x42465854 /* "TXFB" */
 #define FB_FORMAT 0	    /* RGB565 */
 
