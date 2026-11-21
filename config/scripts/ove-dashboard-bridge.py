@@ -38,6 +38,8 @@ import time
 import traceback
 from urllib.parse import urlsplit
 
+from pygdbmi.gdbmiparser import parse_response
+
 OVE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 DEFAULT_HOST = "127.0.0.1"
 
@@ -1919,8 +1921,8 @@ class GdbController:
         while self.proc:
             try:
                 line = self.proc.stdout.readline()
-                if not line:
-                    break  # EOF
+                if not line.endswith("\n"):
+                    break  # EOF or an incomplete final record
                 line = line.rstrip("\n\r")
                 if not line or line == "(gdb)":
                     continue
@@ -1943,46 +1945,37 @@ class GdbController:
                     pass
 
     def _handle_mi_output(self, line):
-        # Result record: token^status,results  (token may be absent)
-        m = re.match(r"^(\d+)?\^(\w+)(,.+)?$", line)
-        if m:
-            token_str = m.group(1)
-            status = m.group(2)
-            data = m.group(3) or ""
-            if data.startswith(","):
-                data = data[1:]
-            parsed = {"status": status, "data": _mi_parse_kv(data)}
-            if token_str:
-                token = int(token_str)
-                entry = self._pending.get(token)
-                if entry:
-                    entry["result"] = parsed
-                    entry["event"].set()
+        record = parse_response(line)
+        message = record["message"]
+        if record["type"] == "result":
+            data = record["payload"] or {}
+            entry = self._pending.get(record["token"])
+            if entry:
+                entry["result"] = {"status": message, "data": data}
+                entry["event"].set()
             # ^error from any command — log it
-            if status == "error":
-                msg = parsed["data"].get("msg", "")
+            if message == "error":
+                msg = data.get("msg", "")
                 print(f"[gdb] ERROR: {msg}", flush=True)
             return
 
-        # Async exec record: *stopped, *running
-        if line.startswith("*stopped"):
+        # pygdbmi groups exec (*) and notify (=) records under "notify".
+        if record["type"] != "notify" or not line.startswith("*"):
+            return
+        info = record["payload"] or {}
+        if message == "stopped":
             # Dispatch to a worker thread — _handle_stopped uses
             # _send_mi_sync which would deadlock in the reader loop.
             threading.Thread(
-                target=self._handle_stopped, args=(line,),
+                target=self._handle_stopped, args=(info,),
                 daemon=True).start()
-        elif line == '*running,thread-id="all"':
+        elif message == "running" and info.get("thread-id") == "all":
             # Only broadcast on "all threads running" — ignore
             # per-thread *running from short-lived glibc threads.
             self._broadcast_state("running", None, None, None)
 
-    def _handle_stopped(self, line):
-        """Parse *stopped event and broadcast state to dashboard."""
-        data = line[len("*stopped"):]
-        if data.startswith(","):
-            data = data[1:]
-        info = _mi_parse_kv(data)
-
+    def _handle_stopped(self, info):
+        """Broadcast a parsed *stopped event to the dashboard."""
         reason = info.get("reason", "unknown")
         frame = info.get("frame", {})
         func = frame.get("func", "??")
@@ -2105,164 +2098,6 @@ class GdbController:
         payload = struct.pack("<IB", FRAME_DEBUG_RESP, resp_type) + json_bytes
         frame = ws_frame(payload)
         mailbox.post_log(frame)
-
-
-def _mi_parse_list(s):
-    """Parse a GDB/MI list.  Handles:
-      [{...},{...}]            → list of dicts
-      [name={...},name={...}]  → list of dicts (strip name= prefix)
-      ["str","str",...]        → list of strings
-      other                    → raw string
-    """
-    s = s.strip()
-    if not s:
-        return []
-
-    # Try quoted-string list first: "val","val",...
-    if s.startswith('"'):
-        strings = []
-        i = 0
-        while i < len(s):
-            while i < len(s) and s[i] in " ,":
-                i += 1
-            if i >= len(s):
-                break
-            if s[i] == '"':
-                i += 1
-                val = []
-                while i < len(s) and s[i] != '"':
-                    if s[i] == '\\' and i + 1 < len(s):
-                        val.append(s[i + 1])
-                        i += 2
-                    else:
-                        val.append(s[i])
-                        i += 1
-                if i < len(s):
-                    i += 1
-                strings.append("".join(val))
-            else:
-                break
-        if strings:
-            return strings
-
-    # Collect brace-delimited items, ignoring name= prefixes.
-    items = []
-    brace_depth = 0
-    brace_start = -1
-    i = 0
-    while i < len(s):
-        ch = s[i]
-        if ch == '"':
-            i += 1
-            while i < len(s) and s[i] != '"':
-                if s[i] == '\\':
-                    i += 1
-                i += 1
-            i += 1
-            continue
-        if ch == '{':
-            if brace_depth == 0:
-                brace_start = i
-            brace_depth += 1
-        elif ch == '}':
-            brace_depth -= 1
-            if brace_depth == 0 and brace_start >= 0:
-                items.append(_mi_parse_kv(s[brace_start + 1:i]))
-                brace_start = -1
-        i += 1
-
-    if items:
-        return items
-
-    # No braces found — return as raw string
-    return s
-
-
-def _mi_parse_kv(s):
-    """Minimal GDB/MI key=value parser. Returns a dict.
-
-    Handles: key="val", key={nested}, key=[list], and key=word.
-    Not a full MI parser but covers the common result records.
-    """
-    result = {}
-    i = 0
-    while i < len(s):
-        # Skip whitespace and commas
-        while i < len(s) and s[i] in " ,":
-            i += 1
-        if i >= len(s):
-            break
-        # Parse key
-        j = i
-        while j < len(s) and s[j] not in "=,}]":
-            j += 1
-        key = s[i:j].strip()
-        if j >= len(s) or s[j] != "=":
-            i = j + 1
-            continue
-        i = j + 1  # skip '='
-        if i >= len(s):
-            break
-        # Parse value
-        if s[i] == '"':
-            # Quoted string
-            i += 1
-            val = []
-            while i < len(s) and s[i] != '"':
-                if s[i] == '\\' and i + 1 < len(s):
-                    val.append(s[i + 1])
-                    i += 2
-                else:
-                    val.append(s[i])
-                    i += 1
-            if i < len(s):
-                i += 1  # skip closing quote
-            result[key] = "".join(val)
-        elif s[i] == '{':
-            # Nested dict — find matching brace
-            depth = 1
-            start = i + 1
-            i += 1
-            while i < len(s) and depth > 0:
-                if s[i] == '{':
-                    depth += 1
-                elif s[i] == '}':
-                    depth -= 1
-                elif s[i] == '"':
-                    i += 1
-                    while i < len(s) and s[i] != '"':
-                        if s[i] == '\\':
-                            i += 1
-                        i += 1
-                i += 1
-            result[key] = _mi_parse_kv(s[start:i - 1])
-        elif s[i] == '[':
-            # List — find matching bracket
-            depth = 1
-            start = i + 1
-            i += 1
-            while i < len(s) and depth > 0:
-                if s[i] == '[':
-                    depth += 1
-                elif s[i] == ']':
-                    depth -= 1
-                elif s[i] == '"':
-                    i += 1
-                    while i < len(s) and s[i] != '"':
-                        if s[i] == '\\':
-                            i += 1
-                        i += 1
-                i += 1
-            inner = s[start:i - 1].strip()
-            result[key] = _mi_parse_list(inner)
-        else:
-            # Bare word
-            j = i
-            while j < len(s) and s[j] not in ",}]":
-                j += 1
-            result[key] = s[i:j].strip()
-            i = j
-    return result
 
 
 # Global GDB controller instance (set in main if --gdb-port)

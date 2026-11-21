@@ -8,3 +8,5 @@ numpy>=1.24
 Pillow>=10.0
 # Hardware-in-the-loop test runner reads board USART1 output.
 pyserial>=3.5
+# GDB/MI parsing for the dashboard bridge.
+pygdbmi>=0.11

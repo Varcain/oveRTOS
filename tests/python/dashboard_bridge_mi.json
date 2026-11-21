@@ -1,0 +1,22 @@
+{
+  "disassembly": {"line": "1^done,asm_insns=[{address=\"0x000000c0\",func-name=\"main\",offset=\"0\",inst=\"push\\t{r7, lr}\"},{address=\"0x000000c2\",func-name=\"main\",offset=\"2\",inst=\"add\\tr7, sp, #0\"},{address=\"0x000000c4\",func-name=\"main\",offset=\"4\",inst=\"bl\\t0xfc8 <ove_sim_board_init>\"}]",
+    "result": {"status": "done", "data": {"asm_insns": [{"address": "0x000000c0", "func-name": "main", "offset": "0", "inst": "push\t{r7, lr}"}, {"address": "0x000000c2", "func-name": "main", "offset": "2", "inst": "add\tr7, sp, #0"}, {"address": "0x000000c4", "func-name": "main", "offset": "4", "inst": "bl\t0xfc8 <ove_sim_board_init>"}]}}},
+  "stack": {"line": "1^done,stack=[frame={level=\"0\",addr=\"0x0000116e\",func=\"ove_sim_board_init\",file=\"sim/hal/sim_board.c\",fullname=\"sim/hal/sim_board.c\",line=\"62\",arch=\"armv7e-m\"},frame={level=\"1\",addr=\"0x000000c8\",func=\"main\",file=\"boards/qemu-mps2-an500/freertos/main.c\",fullname=\"boards/qemu-mps2-an500/freertos/main.c\",line=\"46\",arch=\"armv7e-m\"}]",
+    "result": {"status": "done", "data": {"stack": [{"level": "0", "addr": "0x0000116e", "func": "ove_sim_board_init", "file": "sim/hal/sim_board.c", "fullname": "sim/hal/sim_board.c", "line": "62", "arch": "armv7e-m"}, {"level": "1", "addr": "0x000000c8", "func": "main", "file": "boards/qemu-mps2-an500/freertos/main.c", "fullname": "boards/qemu-mps2-an500/freertos/main.c", "line": "46", "arch": "armv7e-m"}]}}},
+  "registers": {"line": "1^done,register-values=[{number=\"0\",value=\"0x20126e48\"},{number=\"1\",value=\"0x20126e48\"}]",
+    "result": {"status": "done", "data": {"register-values": [{"number": "0", "value": "0x20126e48"}, {"number": "1", "value": "0x20126e48"}]}}},
+  "breakpoint": {"line": "1^done,bkpt={number=\"1\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"0x000000c4\",func=\"main\",file=\"boards/qemu-mps2-an500/freertos/main.c\",fullname=\"boards/qemu-mps2-an500/freertos/main.c\",line=\"46\",thread-groups=[\"i1\"],times=\"0\",original-location=\"main\"}",
+    "result": {"status": "done", "data": {"bkpt": {"number": "1", "type": "breakpoint", "disp": "keep", "enabled": "y", "addr": "0x000000c4", "func": "main", "file": "boards/qemu-mps2-an500/freertos/main.c", "fullname": "boards/qemu-mps2-an500/freertos/main.c", "line": "46", "thread-groups": ["i1"], "times": "0", "original-location": "main"}}}},
+  "stopped": {"line": "*stopped,reason=\"breakpoint-hit\",disp=\"keep\",bkptno=\"1\",frame={addr=\"0x0000116e\",func=\"ove_sim_board_init\",args=[],file=\"sim/hal/sim_board.c\",fullname=\"sim/hal/sim_board.c\",line=\"62\",arch=\"armv7e-m\"},thread-id=\"1\",stopped-threads=\"all\"",
+    "responses": [[0, {"status": "done", "data": {"state": "stopped", "reason": "breakpoint-hit", "file": "sim/hal/sim_board.c", "line": 62, "addr": "0x0000116e"}}]],
+    "source_requests": [["sim/hal/sim_board.c", 62, 20]]},
+  "running": {"line": "*running,thread-id=\"all\"",
+    "responses": [[0, {"status": "done", "data": {"state": "running", "reason": null, "file": null, "line": null, "addr": null}}]]},
+  "error": {"line": "1^error,msg=\"No symbol \\\"no_such_symbol\\\" in current context.\"",
+    "result": {"status": "error", "data": {"msg": "No symbol \"no_such_symbol\" in current context."}},
+    "stdout": "[gdb] ERROR: No symbol \"no_such_symbol\" in current context.\n"},
+  "bare done": {"line": "1^done",
+    "result": {"status": "done", "data": {}}},
+  "console": {"line": "~\"Captured console output\\n\""},
+  "log": {"line": "&\"Undefined target command: \\\"sim\\\".  Try \\\"help target\\\".\\n\""}
+}

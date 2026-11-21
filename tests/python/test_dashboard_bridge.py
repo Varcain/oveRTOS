@@ -6,6 +6,7 @@
 
 import importlib.util
 import io
+import json
 import os
 import re
 import select
@@ -14,6 +15,7 @@ import struct
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from queue import Queue
 from tempfile import TemporaryDirectory
@@ -62,6 +64,43 @@ class DashboardBridgeTest(unittest.TestCase):
         self.addCleanup(paths.stop)
         self.gdb = self.bridge.GdbController("gdb", None, 0)
         self.gdb.proc = SimpleNamespace(stdin=io.StringIO())
+
+    def test_gdb_mi_records(self):
+        # Captured ARM GDB records with the checkout prefix removed from paths.
+        cases = json.loads(Path(__file__).with_name("dashboard_bridge_mi.json").read_text())
+        gdb = self.gdb
+
+        def worker(target, args, daemon):
+            return SimpleNamespace(start=lambda: target(*args))
+
+        for name, expected in cases.items():
+            with self.subTest(record=name):
+                gdb.proc.stdout = io.StringIO(expected["line"] + "\n")
+                entry = {"event": threading.Event(), "result": None}
+                gdb._pending[1] = entry
+                with patch.object(gdb, "_send_mi_sync", return_value=None), \
+                        patch.object(gdb, "_handle_source_request") as source, \
+                        patch.object(gdb, "_send_debug_resp") as response, \
+                        patch.object(threading, "Thread", side_effect=worker), \
+                        redirect_stdout(io.StringIO()) as stdout, \
+                        redirect_stderr(io.StringIO()):
+                    gdb._reader_loop()
+                if name == "disassembly":
+                    self.assertEqual(entry["result"]["data"]["asm_insns"][0]["inst"],
+                                     "push\t{r7, lr}")
+                self.assertEqual(entry["result"], expected.get("result"))
+                self.assertEqual(entry["event"].is_set(), "result" in expected)
+                for key, mock in (("responses", response), ("source_requests", source)):
+                    self.assertEqual([list(call.args) for call in mock.call_args_list],
+                                     expected.get(key, []))
+                self.assertEqual(stdout.getvalue(), expected.get("stdout", ""))
+
+    def test_gdb_reader_exits_on_truncated_record(self):
+        self.gdb.proc.stdout = io.StringIO('3^done,asm_insns=[src_and_asm_line={line="46"')
+        reader = threading.Thread(target=self.gdb._reader_loop, daemon=True)
+        reader.start()
+        reader.join(timeout=1)
+        self.assertFalse(reader.is_alive(), "GDB reader did not exit at EOF")
 
     def test_breakpoint_rejects_control_characters(self):
         gdb = self.gdb
