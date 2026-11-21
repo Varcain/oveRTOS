@@ -2,9 +2,10 @@ lang: rust
 config_name: lvgl_gallery_rust_zh
 description: "LVGL widget gallery (Rust) — showcases every wrapped LVGL API"
 rust:
+  crate_dir: ../../heap/lvgl_gallery
   lib_name: lvgl_gallery_rust
 images:
-  - assets/badge.png
+  - ../../heap/lvgl_gallery/assets/badge.png
 incompatible_boards:
   # The an521 has no display.
   - qemu-mps2-an521

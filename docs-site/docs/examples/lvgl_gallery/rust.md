@@ -1,6 +1,6 @@
 # LVGL Gallery — Rust
 
-Source: `apps/rust/heap/lvgl_gallery/src/lib.rs`.
+Source: `apps/rust/heap/lvgl_gallery/src/lib.rs` (both modes).
 
 The Rust port uses `ove::lvgl::*` safe wrappers and `ove::lvgl::lock()` for the build phase. Widget text uses ordinary `&str`. The binding checks and converts it privately; formatted text uses `format_args!` and reports preparation failures through `Result`.
 
@@ -73,19 +73,14 @@ lbl.set_text_fmt(format_args!("{} ({}/{})", name, nav.page + 1, N_PAGES))
 ## Entry point
 
 `app_main` builds the UI under `ove::lvgl::lock()`. A detached graphics
-thread runs LVGL's tick and handler:
+thread runs LVGL's tick and handler. Its stack comes from the RTOS heap
+in heap mode and static storage in zero-heap mode.
 
 ```rust
 #[ove::main]
 fn app_main() {
     ove::log::try_init();
-    ove::Thread::builder()
-        .name(c"graphics")
-        .priority(Priority::High)
-        .stack_size(16384)
-        .spawn(|_tok| graphics_entry())
-        .expect("graphics thread spawn")
-        .detach();
+    ove::thread!("graphics", graphics_entry, Priority::High, 16384).detach();
     /* … create the UI, then */
     ove::run();
 }
@@ -97,9 +92,12 @@ fn app_main() {
 
 ```toml
 [dependencies]
-ove = { path = "../../../../bindings/rust/ove", features = ["alloc"] }
-ove-allocator = { path = "../../../../bindings/rust/ove-allocator",
-                  default-features = false }
+ove = { path = "../../../../bindings/rust/ove" }
+log = "0.4"
+
+[features]
+default = []
+std = ["ove/std"]
 ```
 
 The LVGL widget wrappers come with the build's `CONFIG_OVE_LVGL`, not a Cargo feature.

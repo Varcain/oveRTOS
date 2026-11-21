@@ -45,7 +45,7 @@ The gallery runs in the browser, as its FreeRTOS firmware in QEMU compiled to We
 ## Per-language walkthroughs
 
 - [C++](cpp.md) — `ove::lvgl::*` typed wrappers, fluent style builder
-- [Rust](rust.md) — safe wrappers + alloc feature for widget storage
+- [Rust](rust.md) — safe wrappers and LVGL pool-backed widget storage
 - [Zig](zig.md) — comptime widget construction, `defer`-based teardown
 
 ## What to read it for

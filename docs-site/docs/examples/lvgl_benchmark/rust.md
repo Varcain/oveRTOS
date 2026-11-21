@@ -1,8 +1,8 @@
 # LVGL Benchmark — Rust
 
-Source: `apps/rust/heap/lvgl_benchmark/src/lib.rs` (and `apps/rust/zeroheap/lvgl_benchmark/`).
+Source: `apps/rust/heap/lvgl_benchmark/src/lib.rs` (both modes).
 
-The Rust port uses the `ove::lvgl` module's safe wrappers (`Object`, `Label`, `Bar`, `Color`, `Layout`) with `ove::lvgl::lock()` returning an RAII guard. Scenes are stored as `&'static dyn Fn() -> ()` so the table compiles into ROM in zero-heap builds.
+The Rust port uses the `ove::lvgl` module's safe wrappers (`Object`, `Label`, `Bar`, `Color`, `Layout`) with `ove::lvgl::lock()` returning an RAII guard.
 
 ## Build
 
@@ -23,29 +23,27 @@ fn rectangle_rounded_create() {
 }
 ```
 
-Each builder is a free function (not a method) so the scene table is just an array of function pointers — no trait-object indirection, no allocator pressure.
+Each scene descriptor holds a function pointer to the builder and a duration in milliseconds.
 
 ## Scene table
 
 ```rust
-struct Scene {
+#[derive(Clone, Copy)]
+struct SceneDsc {
     name: &'static str,
-    create: fn(),
-    fps_avg: AtomicU32,
+    create_cb: fn(),
+    scene_time: u32,
 }
 
-static SCENES: &[Scene] = &[
-    Scene { name: "Empty screen",
-            create: empty_create,             fps_avg: AtomicU32::new(0) },
-    Scene { name: "Rectangle",
-            create: rectangle_create,         fps_avg: AtomicU32::new(0) },
-    Scene { name: "Rectangle, rounded",
-            create: rectangle_rounded_create, fps_avg: AtomicU32::new(0) },
-    /* … */
+static SCENES: [SceneDsc; 17] = [
+    SceneDsc::new("Empty screen", empty_screen_cb, 3000),
+    SceneDsc::new("Moving wallpaper", moving_wallpaper_cb, 3000),
+    SceneDsc::new("Single rectangle", single_rectangle_cb, 3000),
+    // Remaining scenes omitted.
 ];
 ```
 
-`AtomicU32` for the metrics so the scene-rotation closure can update them without a `Mutex`. In zero-heap mode the whole table lives in `.rodata` plus tiny `.data` for the atomics.
+The scene table lives in flash in both modes, and `STATS` holds per-scene statistics in an `LvCell<[SceneStats; 17]>`.
 
 ## Locking
 
@@ -60,14 +58,11 @@ fn build_card() {
 
 The benchmark itself runs everything from the LVGL handler thread (which already holds the lock internally for the duration of `lv_timer_handler`), so explicit locking only matters if you drive scenes from a worker thread.
 
-## no_std + alloc
+## Memory modes
 
-The benchmark builds in both feature sets:
-
-- **`default`** (no_std) — every scene table entry is `'static`, no `Box`, no `Arc`. Links against `ove-allocator` for any incidental `alloc` use inside `ove::lvgl`.
-- **`std`** — the `ove-allocator` install is suppressed (`no_install`); the std allocator handles everything.
-
-The same source file compiles for both feature sets without `cfg`-guards in the benchmark code itself.
+Both firmware modes use the same `no_std` crate without the `alloc` feature
+or a Rust global allocator. `ove::thread!` starts the graphics worker from
+the RTOS heap in heap mode and from static storage in zero-heap mode.
 
 ## Where to next
 

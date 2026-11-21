@@ -15,8 +15,6 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use ove_allocator as _;
-
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::Thread;
@@ -393,15 +391,7 @@ fn app_main() {
     graph.start().expect("audio graph: start");
     log::info!("Audio streaming: 16kHz mono, DMIC input");
 
-    let infer = ove::Thread::builder()
-        .name(c"infer")
-        .priority(ove::Priority::Normal)
-        .stack_size(8192)
-        .spawn(|_tok| {
-            infer_thread();
-        })
-        .expect("infer thread spawn");
-    core::mem::forget(infer);
+    ove::thread!("infer", infer_thread, ove::Priority::Normal, 8192).detach();
     log::info!("Say \"yes\" or \"no\" near the microphone...");
     ove::run();
 }

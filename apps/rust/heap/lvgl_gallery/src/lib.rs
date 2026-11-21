@@ -13,8 +13,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_code)]
 
-use ove_allocator as _;
-
 use core::ptr::addr_of;
 use core::sync::atomic::{AtomicI32, Ordering};
 
@@ -511,20 +509,9 @@ fn app_main() {
     ove::log::try_init();
     log::info!("LVGL gallery (Rust): init");
 
-    // Detach the graphics worker: it runs for the program lifetime, so we
-    // don't want its `Drop` to request-stop + join.  `detach()` is the
-    // binding's recommended fire-and-forget over `core::mem::forget`.
     // 16 KB: the gallery's pages (charts, canvas, image transforms) recurse
     // deep in LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display.
-    ove::Thread::builder()
-        .name(c"graphics")
-        .priority(Priority::High)
-        .stack_size(16384)
-        .spawn(|_tok| {
-            graphics_entry();
-        })
-        .expect("graphics thread spawn")
-        .detach();
+    ove::thread!("graphics", graphics_entry, Priority::High, 16384).detach();
 
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));

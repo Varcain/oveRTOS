@@ -137,7 +137,6 @@ version = "1.0.0"
 dependencies = [
  "log",
  "ove",
- "ove-allocator",
 ]
 
 [[package]]
@@ -171,10 +170,6 @@ dependencies = [
  "log",
  "ove-macros",
 ]
-
-[[package]]
-name = "ove-allocator"
-version = "0.1.0"
 
 [[package]]
 name = "ove-macros"

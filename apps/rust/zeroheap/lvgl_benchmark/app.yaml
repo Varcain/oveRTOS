@@ -9,6 +9,7 @@ c_sources:
 c_includes:
   - ../../../c/heap/lvgl_benchmark/include
 rust:
+  crate_dir: ../../heap/lvgl_benchmark
   lib_name: lvgl_benchmark_rust
 incompatible_boards:
   # The an521 has no display.

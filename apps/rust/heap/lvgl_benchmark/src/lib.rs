@@ -14,8 +14,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_code)]
 
-use ove_allocator as _;
-
 use ove::lvgl::{
     self, ANIM_REPEAT_INFINITE, Animation, Arc, Button, Calendar, Chart, Checkbox, Color, Dropdown,
     FlexAlign, FlexFlow, Image, ImageSrc, Label, Layout, LayoutKind, LvCell, Obj, PART_INDICATOR,
@@ -1117,21 +1115,10 @@ fn app_main() {
     SCENE.init(LvCell::new(SceneState { current: 0 }));
     STATS.init(LvCell::new([SceneStats::default(); 17]));
 
-    // Detach the graphics worker: it runs for the program lifetime, so we
-    // don't want its `Drop` to request-stop + join.  `detach()` is the
-    // binding's recommended fire-and-forget over `core::mem::forget`.
     // 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image
     // transforms) recurse deep in the draw pipeline — 4 KB overflows on the
     // real 480x272 LTDC panel.
-    ove::Thread::builder()
-        .name(c"graphics")
-        .priority(Priority::High)
-        .stack_size(16384)
-        .spawn(|_tok| {
-            graphics_entry();
-        })
-        .expect("graphics thread spawn")
-        .detach();
+    ove::thread!("graphics", graphics_entry, Priority::High, 16384).detach();
 
     if lvgl::init().is_err() {
         log::error!("Failed to init LVGL");
