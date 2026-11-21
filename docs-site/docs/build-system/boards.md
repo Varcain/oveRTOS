@@ -12,7 +12,7 @@ The active board is selected by adding its subdirectory in the parent project's 
 
 Run `ove board import --rtos zephyr --name <zephyr-board>` to generate a
 starter `board.yaml`, Zephyr scaffold, and flash scripts under `boards/<name>/`.
-It requires the oveRTOS Python environment, CMake, Ninja, a downloaded Zephyr
+It requires the oveRTOS Python environment, CMake, Ninja, the manifest-pinned Zephyr
 workspace with its west modules, and the pinned Zephyr SDK (`ove ensure-toolchain
 zephyr-sdk`). The configure log and resolved devicetree are written under
 `output/board-import/<sanitized-zephyr-board>/`. The chosen `zephyr,sram` is

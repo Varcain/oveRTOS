@@ -836,7 +836,9 @@ def _configure_zephyr(zephyr_base, board_name):
     sample = base / "samples/hello_world"
     edtlib_src = base / "scripts/dts/python-devicetree/src"
     if not (sample / "CMakeLists.txt").is_file() or not (edtlib_src / "devicetree/edtlib.py").is_file():
-        sys.exit(f"Error: Zephyr workspace not found at {base}. Download Zephyr or specify --zephyr-base.")
+        sys.exit(f"Error: Zephyr workspace not found at {base}. "
+                 "Run 'ove download' from a Zephyr configuration or pass --zephyr-base "
+                 "when running board_tool.py directly.")
 
     output = Path(ove_dir()).resolve() / "output"
     sdk_dir = find_zephyr_sdk(str(output / "toolchains"), load_manifest(ove_dir()))

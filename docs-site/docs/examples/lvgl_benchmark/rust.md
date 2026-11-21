@@ -2,7 +2,9 @@
 
 Source: `apps/rust/heap/lvgl_benchmark/src/lib.rs` (both modes).
 
-The Rust port uses the `ove::lvgl` module's safe wrappers (`Object`, `Label`, `Bar`, `Color`, `Layout`) with `ove::lvgl::lock()` returning an RAII guard.
+The Rust port uses safe `ove::lvgl` wrappers such as `Obj`, `Label`, `Slider`,
+and `Color`, along with the `Layout` trait. `ove::lvgl::lock()` returns an RAII
+guard.
 
 ## Build
 
@@ -13,13 +15,18 @@ make && make run
 
 ## Scene definition
 
+The single-rectangle scene uses the benchmark's `LV_OPA_COVER` constant and
+its `lv_pct` and `color_anim` helpers.
+
 ```rust
-fn rectangle_rounded_create() {
-    let scr = lvgl::Object::active_screen();
-    let obj = lvgl::Object::new(scr);
-    obj.set_size(200, 200);
-    obj.center();
-    obj.style().background_color(Color::hex(0xff_00_00)).radius(20);
+fn single_rectangle_cb() {
+    let scr = lvgl::screen_active();
+    let obj = Obj::create(scr);
+    obj.remove_style_all();
+    obj.bg_opa(LV_OPA_COVER)
+        .center()
+        .size(lv_pct(30), lv_pct(30));
+    color_anim(obj);
 }
 ```
 
@@ -47,16 +54,21 @@ The scene table lives in flash in both modes, and `STATS` holds per-scene statis
 
 ## Locking
 
+To create the benchmark's card panel under the LVGL lock, keep the guard in
+scope until the panel is configured.
+
 ```rust
-fn build_card() {
-    let _guard = ove::lvgl::lock();
-    let card = ove::lvgl::Object::new(parent);
-    card.set_size(120, 80);
-    /* lock released on _guard drop */
+{
+    let _guard = lvgl::lock();
+    let scr = lvgl::screen_active();
+    let panel = Obj::create(scr);
+    panel.size(270, 120).pad_all(8);
 }
 ```
 
-The benchmark itself runs everything from the LVGL handler thread (which already holds the lock internally for the duration of `lv_timer_handler`), so explicit locking only matters if you drive scenes from a worker thread.
+The benchmark acquires the lock during initial setup and around `lvgl::tick()`
+and `lvgl::handler()` on the graphics worker. Scene callbacks invoked by the
+handler run while that guard is held.
 
 ## Memory modes
 

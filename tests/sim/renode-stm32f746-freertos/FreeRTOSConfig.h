@@ -15,7 +15,7 @@
  * core_cm7.h) — do not redefine here; it would fight -Wredefined-macros
  * because CMSIS uses `1U` and we'd use `1`. */
 
-/* Renode runs near wall-clock speed, so derive ticks from the nominal 216 MHz. */
+/* Renode runs near wall-clock speed and its NVIC clocks SysTick at 216 MHz. */
 /* Per-task errno through picolibc's TLS (FreeRTOS.h pulls in picolibc-freertos.h). */
 #define configUSE_PICOLIBC_TLS 1
 #define configUSE_PREEMPTION 1

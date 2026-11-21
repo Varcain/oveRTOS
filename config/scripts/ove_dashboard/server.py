@@ -92,13 +92,10 @@ def _process_request(connection, request, dashboard_dir, bind_host):
 
 async def _send_frames(connection, pending, last_fb):
     try:
-        # Catch up on framebuffer changes during the initial sends.
-        starting = True
         while True:
-            if (starting or pending.empty()) and last_fb is not frames._last_fb_frame:
+            if pending.empty() and last_fb is not frames._last_fb_frame:
                 last_fb = frames._last_fb_frame
                 await asyncio.wait_for(connection.send(last_fb), timeout=2)
-            starting = False
             frame = await pending.get()
             if frame is not None:
                 await asyncio.wait_for(connection.send(frame), timeout=2)
