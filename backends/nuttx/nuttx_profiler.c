@@ -82,7 +82,7 @@ static size_t snapshot_runnable(struct snap_entry *out, size_t max, struct ove_t
 	size_t n = 0;
 	ove_backend_thread_registry_lock();
 	for (struct ove_thread *t = ove_backend_thread_registry_head; t && n < max; t = t->next) {
-		if (t == skip || !t->started)
+		if (t == skip)
 			continue;
 		int s = t->state;
 		/* Same policy as POSIX: sample RUNNING/READY/BLOCKED. A
