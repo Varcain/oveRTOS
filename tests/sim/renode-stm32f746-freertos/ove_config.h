@@ -5,9 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * oveRTOS feature flags for the Renode STM32F746 heap-mode test firmware.
- * Identical to the zero-heap variant except CONFIG_OVE_ZERO_HEAP is off,
- * which re-enables the heap-backed _create/_destroy APIs.
+ * oveRTOS feature flags shared by both STM32F746 FreeRTOS test variants.
  */
 
 #ifndef OVE_CONFIG_H
@@ -32,9 +30,11 @@
 #define CONFIG_OVE_BOARD 1
 #define CONFIG_OVE_GPIO 1
 #define CONFIG_OVE_LED 1
+/* HAL-backed drivers exercised through Renode's STM32 peripheral models. */
 #define CONFIG_OVE_I2C 1
 #define CONFIG_OVE_SPI 1
 #define CONFIG_OVE_UART 1
+/* FreeRTOS and lwIP over the STM32 Ethernet driver. */
 #define CONFIG_OVE_NET 1
 #define CONFIG_OVE_ASYNC 1
 #define CONFIG_OVE_APP_NAME "test-renode-stm32f746"

@@ -74,9 +74,11 @@ firmware that would flash on a real Discovery board.
 
 | Target | Suite count | CI trigger |
 |---|---|---|
-| `renode-stm32f746-freertos` | 211 | push to main + PRs + `workflow_dispatch` |
-| `renode-stm32f746-freertos-zeroheap` | 184 | push to main + PRs + `workflow_dispatch` |
+| `renode-stm32f746-freertos` | 373 | push to main + PRs + `workflow_dispatch` |
+| `renode-stm32f746-freertos-zeroheap` | 331 | push to main + PRs + `workflow_dispatch` |
 
+Both FreeRTOS variants share `tests/sim/renode-stm32f746-freertos` and
+select the allocation mode with `OVE_ZERO_HEAP`.
 Both Zephyr variants share `tests/sim/renode-stm32f746-zephyr` and select
 the allocation mode with `OVE_ZERO_HEAP`.
 Both NuttX variants share `tests/sim/renode-stm32f746-nuttx` and select
@@ -85,9 +87,9 @@ the allocation mode with `_OVE_ZERO_HEAP`.
 Caveats:
 - Renode 1.16.1's ARM Cortex-M semihosting handler implements
   `SYS_WRITEC` (0x03) but not `SYS_WRITE` (0x05) or `SYS_HEAPINFO`
-  (0x20).  `tests/sim/renode-stm32f746-freertos*/semihosting_io.c`
-  overrides `_write` and `_sbrk` to work around this so printf and
-  `malloc` function correctly.
+  (0x20). `tests/sim/renode-stm32f746-freertos/semihosting_io.c`
+  overrides `_write` in both variants. In zero-heap builds, picolibc's
+  `sbrk` serves the SDRAM `.heap` section sized by `__heap_size`.
 - The Renode platform doesn't model IWDG / SAI / FMC.  Firmware code
   that touches those still builds and the canary-level storage tests
   pass, but any test that *observes* IWDG behaviour (watchdog actually

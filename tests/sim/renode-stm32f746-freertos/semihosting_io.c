@@ -48,14 +48,6 @@ int _write(int fd, const char *buf, int len)
 	return len;
 }
 
-/* `_sbrk` is intentionally not provided here.  picolibc's nano-malloc
- * is bypassed by backends/freertos/freertos_libc_malloc.c, which wraps
- * malloc/free/calloc/realloc onto pvPortMalloc/vPortFree (FreeRTOS
- * heap_4 ucHeap).  Without those wrappers picolibc would call _sbrk
- * during its own malloc path; with them the symbol is never referenced
- * and the linker drops it.  See the "Single-heap policy" comment in
- * boards/stm32f746g-discovery/freertos/STM32F746NGHx_FLASH.ld. */
-
 /* `stub_board.c::ove_hal_board_init` calls `stub_gpio_reset()`, which
  * previously lived in `stub_gpio.c`.  We dropped the stub GPIO so the
  * real `freertos_gpio.c` can drive Renode's STM32_GPIOPort models —

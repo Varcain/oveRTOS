@@ -162,11 +162,6 @@ void _exit(int status)
 	}
 }
 
-/* `_sbrk` — intentionally not provided.  Libc malloc is wrapped onto
- * pvPortMalloc/vPortFree via backends/freertos/freertos_libc_malloc.c,
- * so picolibc never reaches its _sbrk-backed nano-malloc.  The symbol
- * is unreferenced and dropped by the linker. */
-
 /* `stub_board.c::ove_hal_board_init` references `stub_gpio_reset()`
  * which previously lived in `stub_gpio.c` (now removed).  Provide a
  * no-op shim — same as semihosting_io.c does. */

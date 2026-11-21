@@ -4,16 +4,13 @@
 #
 # This file is part of oveRTOS.
 #
-# Renode STM32F746 test target — heap mode.  Sibling of the zero-heap
-# CMakeLists under ../renode-stm32f746-freertos-zeroheap/; differences
-# are limited to the target name, the ELF name, the CONFIG_OVE_ZERO_HEAP
-# gate being off, and the FreeRTOS kernel sourcing heap_4.c instead of
-# freertos_heap_stubs.c.
+# STM32F746 tests with the real STM32F7 HAL and FreeRTOS ARM_CM7/r0p1 port.
 
 cmake_minimum_required(VERSION 3.14)
 
-# OVE_HW: see zero-heap sibling for rationale.  Switches both the
-# toolchain shim (rdimon → nosys) and the linked stdio backend.
+# Renode uses the semihosting toolchain shim (rdimon), while hardware
+# uses the board shim (nosys) and writes to USART1. Select the toolchain
+# before project() reads it.
 if(OVE_HW)
     set(CMAKE_TOOLCHAIN_FILE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/stm32f746g-discovery/freertos/cmake/arm-none-eabi.cmake
@@ -30,6 +27,12 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function
                     -ffunction-sections -fdata-sections)
+
+option(OVE_ZERO_HEAP "Build the zero-heap test variant" OFF)
+if(OVE_ZERO_HEAP)
+    # lwip_sys_arch.c and the kernel must agree on FreeRTOS object layouts.
+    add_compile_definitions(CONFIG_OVE_ZERO_HEAP=1)
+endif()
 
 include(FetchContent)
 
@@ -103,7 +106,17 @@ set(STARTUP_SOURCES
 file(GLOB HAL_SOURCES CONFIGURE_DEPENDS "${STM32_HAL_DIR}/Src/*.c")
 list(FILTER HAL_SOURCES EXCLUDE REGEX ".*_template\\.c$")
 
-# --- FreeRTOS kernel sources — heap_4.c for real heap mode. ---
+if(OVE_ZERO_HEAP)
+    set(FREERTOS_HEAP_SOURCE ${FREERTOS_BACKEND}/freertos_heap_stubs.c)
+    set(FREERTOS_HEAP_LOCK_SOURCES
+        ${OVE_ROOT}/backends/common/ove_heap_lock.c
+        ${FREERTOS_BACKEND}/freertos_heap_lock.c)
+else()
+    set(FREERTOS_HEAP_SOURCE ${FREERTOS_SRC}/portable/MemMang/heap_4.c)
+    # CMocka, libc and ove_*_create share FreeRTOS's heap_4 pool.
+    set(FREERTOS_LIBC_MALLOC_SOURCE ${FREERTOS_BACKEND}/freertos_libc_malloc.c)
+endif()
+
 set(FREERTOS_KERNEL_SOURCES
     ${FREERTOS_SRC}/tasks.c
     ${FREERTOS_SRC}/queue.c
@@ -111,12 +124,13 @@ set(FREERTOS_KERNEL_SOURCES
     ${FREERTOS_SRC}/timers.c
     ${FREERTOS_SRC}/event_groups.c
     ${FREERTOS_SRC}/stream_buffer.c
-    ${FREERTOS_SRC}/portable/MemMang/heap_4.c
+    ${FREERTOS_HEAP_SOURCE}
     ${FREERTOS_PORT}/port.c
 )
 
 set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_thread.c
+    ${FREERTOS_HEAP_LOCK_SOURCES}
     ${FREERTOS_BACKEND}/freertos_sync.c
     ${OVE_SRC}/ove_sync.c
     ${FREERTOS_BACKEND}/freertos_queue.c
@@ -129,24 +143,22 @@ set(FREERTOS_BACKEND_SOURCES
     ${OVE_SRC}/ove_stream.c
     ${FREERTOS_BACKEND}/freertos_workqueue.c
     ${OVE_SRC}/ove_workqueue.c
+    # Match struct ove_watchdog's IWDG_HandleTypeDef in ove_storage_freertos.h.
+    # Renode only warns on IWDG writes.
     ${FREERTOS_BACKEND}/freertos_watchdog.c
     ${FREERTOS_BACKEND}/freertos_gpio.c
     ${OVE_ROOT}/backends/common/ove_shell.c
-    # Unified-heap wrapper: routes libc malloc/free/calloc/realloc
-    # through pvPortMalloc/vPortFree so cmocka + libc + ove_*_create all
-    # share the single FreeRTOS heap_4 ucHeap pool.
-    ${FREERTOS_BACKEND}/freertos_libc_malloc.c
-    # Networking — see zero-heap CMakeLists for rationale.
+    ${FREERTOS_LIBC_MALLOC_SOURCE}
+    # Renode's Ethernet MAC and PHY models support the lwIP bring-up
+    # and IP assignment tests without external traffic.
     ${OVE_SRC}/ove_net.c
     ${FREERTOS_BACKEND}/freertos_net.c
-    ${FREERTOS_BACKEND}/lwip_sys_arch.c
     # Async runtime substrate (CONFIG_OVE_ASYNC).
     ${FREERTOS_BACKEND}/freertos_irq.c
     # freertos_time.c is intentionally NOT linked — its ove_time_delay_us
     # spins on DWT->CYCCNT which Renode 1.16 doesn't advance.  The SysTick
     # time backend is the API-equivalent one built on FreeRTOS ticks.
     ${FREERTOS_BACKEND}/freertos_time_systick.c
-    # freertos_board / nvs / lvgl deferred — see zero-heap CMakeLists.
 )
 
 set(CORE_SOURCES
@@ -177,12 +189,15 @@ set(STUB_SOURCES
     ${TESTS_ROOT}/backends/stm32f7/stm32f7_gpio_hooks.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_console.c
+    # Renode's SDMMC model can't complete the CubeF7 BSP_SD transfer.
+    # Use RAM NVS and leave the board BSP and LVGL out of this fixture.
     ${OVE_ROOT}/backends/common/ove_nvs_ram.c
 )
 
 ove_test_common_suite_sources(SUITE_SOURCES ${SUITE_DIR})
 
-# --- lwIP static library (mirror of zero-heap variant) ---
+# The production lwIP helper expects generated board configuration paths.
+# Build lwIP here with the fixture's FreeRTOS config and board lwipopts.h.
 file(GLOB _CUBE_LWIP_CANDIDATES "${OVE_ROOT}/dl/lwip-*")
 if(NOT _CUBE_LWIP_CANDIDATES)
     message(FATAL_ERROR
@@ -213,11 +228,15 @@ target_include_directories(ove_lwip PRIVATE
 )
 target_compile_options(ove_lwip PRIVATE -w)
 set_target_properties(ove_lwip PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
-list(REMOVE_ITEM FREERTOS_BACKEND_SOURCES ${FREERTOS_BACKEND}/lwip_sys_arch.c)
 
-# stdio backend selection — see zero-heap sibling.
+# Use the semihosting UART under Renode and the board's USART1 on silicon.
 if(OVE_HW)
     set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/usart1_io.c)
+    if(OVE_ZERO_HEAP)
+        # Renode supplies SDRAM directly. Hardware needs the BSP's FMC setup.
+        set(DISCOVERY_BSP_DIR ${STM32CUBE_PATH}/Drivers/BSP/STM32746G-Discovery)
+        list(APPEND STDIO_SOURCE ${DISCOVERY_BSP_DIR}/stm32746g_discovery_sdram.c)
+    endif()
 else()
     set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/semihosting_io.c)
 endif()
@@ -240,6 +259,7 @@ target_compile_definitions(ove_test_renode_stm32f746_freertos PRIVATE
     # OVE_HW propagated to C code so sim_main.c skips the post-summary
     # semihosting_exit() trap on real silicon.
     $<$<BOOL:${OVE_HW}>:OVE_HW>
+    # Legacy name for the bare-metal ARM branches in the stubs and suites.
     OVE_QEMU_ARM
     STM32F746xx
     USE_HAL_DRIVER
@@ -261,6 +281,7 @@ target_include_directories(ove_test_renode_stm32f746_freertos PRIVATE
     ${OVE_ROOT}/backends/common
     ${TESTS_ROOT}
     ${STM32_HAL_DIR}/Inc
+    ${DISCOVERY_BSP_DIR}
     ${STM32_CMSIS_DIR}/Include
     ${CMSIS_CORE_DIR}
     ${OVE_ROOT}/drivers/freertos/stm32f7
@@ -286,13 +307,6 @@ target_link_options(ove_test_renode_stm32f746_freertos PRIVATE
     # that immediately spawn tasks), so 512 B is sufficient and recovers
     # 3.5 KB of RAM the kernel heap and per-thread stacks need.
     -Wl,--defsym=__stack_size=0x200
-    # Route libc malloc/free/calloc/realloc through pvPortMalloc via
-    # backends/freertos/freertos_libc_malloc.c's __wrap_* shims.  See
-    # cmake/OveCommon.cmake for the production heap-mode path.
-    "LINKER:--wrap=malloc"
-    "LINKER:--wrap=free"
-    "LINKER:--wrap=calloc"
-    "LINKER:--wrap=realloc"
     # test_gpio fault injection — see stm32f7_gpio_hooks.c.
     "LINKER:--wrap=ove_hal_gpio_irq_hw_unregister"
 )
@@ -311,8 +325,27 @@ set_source_files_properties(${STM32_CMSIS_DIR}/Source/Templates/system_stm32f7xx
     COMPILE_FLAGS "-Wno-unused-parameter"
 )
 
-# Dispatch-overhead symbol audit on the test ELF (Phase 3 of
-# moat-hardening). Symbol audit only — test ELFs are CMocka scaffolding,
-# not the production hot path; hotpath disasm runs only on bench targets.
+# Run the symbol audit on the test ELF. The disassembly check runs on
+# benchmark targets.
 include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
-ove_assert_no_dispatch_overhead(ove_test_renode_stm32f746_freertos BINDING c)
+if(OVE_ZERO_HEAP)
+    # Use 64 KiB in SDRAM to match the high end of CMocka's old SRAM arena.
+    # Wrap the libc allocators so the tests exercise the heap lock, and audit
+    # the ELF for kernel heap and panic symbols.
+    target_link_options(ove_test_renode_stm32f746_freertos PRIVATE
+        -Wl,--defsym=__heap_size=0x10000)
+    include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+    ove_apply_zero_heap_wrap(ove_test_renode_stm32f746_freertos)
+    ove_zero_heap_assert_no_kernel_alloc(ove_test_renode_stm32f746_freertos
+        RTOS FREERTOS STRICT)
+    ove_assert_no_dispatch_overhead(ove_test_renode_stm32f746_freertos
+        BINDING c NO_PANIC_SYMBOLS)
+else()
+    # Route libc allocations through freertos_libc_malloc.c to the kernel heap.
+    target_link_options(ove_test_renode_stm32f746_freertos PRIVATE
+        "LINKER:--wrap=malloc"
+        "LINKER:--wrap=free"
+        "LINKER:--wrap=calloc"
+        "LINKER:--wrap=realloc")
+    ove_assert_no_dispatch_overhead(ove_test_renode_stm32f746_freertos BINDING c)
+endif()

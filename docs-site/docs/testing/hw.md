@@ -92,16 +92,19 @@ zero of the new firmware — no boot-output loss.
 
 FreeRTOS HW builds toggle two things via `-DOVE_HW=ON`:
 
-1. `tests/sim/renode-stm32f746-freertos*/CMakeLists.txt` switches the
+1. `tests/sim/renode-stm32f746-freertos/CMakeLists.txt` switches the
    toolchain shim from `boards/qemu-mps2-an500/cmake/arm-none-eabi.cmake`
    (rdimon.specs → semihosting libc) to
    `boards/stm32f746g-discovery/freertos/cmake/arm-none-eabi.cmake`
    (nosys.specs → no host libc).  Done before `project()` because
    CMake processes toolchain files first.
 2. `usart1_io.c` is linked instead of `semihosting_io.c`.  The new
-   shim re-targets newlib's `_write` to a blocking
-   `HAL_UART_Transmit` on USART1 (PA9/PB7 @ 115200) and provides a
-   linker-script-backed `_sbrk`.
+   shim re-targets libc's `_write` to a blocking
+   `HAL_UART_Transmit` on USART1 (PA9/PB7 @ 115200).
+
+The FreeRTOS zero-heap hardware target also sets `OVE_ZERO_HEAP=ON`.
+It reserves a libc arena for CMocka in SDRAM and initializes the FMC
+before running the tests.
 
 Zephyr and NuttX HW builds reuse the Renode build verbatim — Zephyr
 already routes printk through USART1 via `CONFIG_UART_CONSOLE`, and

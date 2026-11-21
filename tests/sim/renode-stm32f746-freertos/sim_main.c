@@ -5,9 +5,9 @@
  *
  * This file is part of oveRTOS.
  *
- * Test runner for the Renode-hosted STM32F746 target — heap mode.
- * Identical to the zero-heap sibling sim_main.c in structure; kept
- * separate because the CMake target name and ELF name differ.
+ * Test runner for the STM32F746 target on Renode and hardware.
+ * This file provides the SysTick handler and EXTI trampolines for the
+ * STM32F7 vector table. The FreeRTOS port provides PendSV and SVC.
  */
 
 #include "FreeRTOS.h"
@@ -18,6 +18,11 @@
 
 #include "stm32f7xx_hal.h"
 
+#if defined(OVE_HW) && defined(CONFIG_OVE_ZERO_HEAP)
+#include "stm32746g_discovery_sdram.h"
+extern SDRAM_HandleTypeDef sdramHandle; /* stm32746g_discovery_sdram.c */
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -27,7 +32,8 @@ void ove_main(void)
 {
 }
 
-/* HAL_ETH_MspInit — see zero-heap sim_main.c for rationale. */
+/* Set up the Ethernet GPIOs locally because the board's bus_msp_init.c
+ * brings in I2S and SAI dependencies outside this fixture. */
 void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
 {
 	(void)h;
@@ -114,14 +120,15 @@ static void test_runner_task(void *arg)
 #include "framework/suites.inc"
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
+#ifndef CONFIG_OVE_ZERO_HEAP
 	printf("FreeRTOS heap: configured=%lu free=%lu minimum=%lu bytes\n",
 	       (unsigned long)configTOTAL_HEAP_SIZE, (unsigned long)xPortGetFreeHeapSize(),
 	       (unsigned long)xPortGetMinimumEverFreeHeapSize());
+#endif
 
 #ifdef OVE_HW
-	/* See zero-heap sibling for rationale — bkpt #0xab faults on bare
-	 * silicon without a debugger.  HW runner reads the summary line off
-	 * USART1 and terminates the run from the host side. */
+	/* The hardware runner ends the run after reading the USART1
+	 * summary. The semihosting breakpoint faults without a debugger. */
 	for (;;) {
 	}
 #else
@@ -129,8 +136,7 @@ static void test_runner_task(void *arg)
 #endif
 }
 
-/* Static allocation callbacks — still required because we enable
- * configSUPPORT_STATIC_ALLOCATION=1 alongside the heap. */
+/* FreeRTOS requires static allocation callbacks in both variants. */
 void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
 				   StackType_t **ppxIdleTaskStackBuffer,
 				   configSTACK_DEPTH_TYPE *pulIdleTaskStackSize)
@@ -179,7 +185,8 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 #endif
 }
 
-/* EXTI trampolines — see the zero-heap sibling sim_main.c for rationale. */
+/* HAL clears the pending EXTI bit and calls the FreeRTOS GPIO backend.
+ * The weak startup handlers would spin on the first interrupt. */
 void EXTI0_IRQHandler(void)
 {
 	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
@@ -228,9 +235,30 @@ void SysTick_Handler(void)
 static StaticTask_t runner_tcb;
 static StackType_t runner_stack[configMINIMAL_STACK_SIZE * 8];
 
+#if defined(OVE_HW) && defined(CONFIG_OVE_ZERO_HEAP)
+/* Renode supplies SDRAM directly. On silicon, initialize the FMC for
+ * CMocka's libc heap. This fixture uses the 16 MHz HSI, so replace the
+ * BSP's refresh count for a 100 MHz SDRAM clock with 15.62 us per row
+ * at the current clock, minus the reference manual's 20-cycle margin. */
+static void hw_sdram_init(void)
+{
+	(void)BSP_SDRAM_Init();
+	/* One read-pipe cycle, as on the production board (bsp_sdram_fixup). */
+	MODIFY_REG(FMC_Bank5_6->SDCR[0], FMC_SDCR1_RPIPE, FMC_SDCR1_RPIPE_0);
+	uint32_t sdclk_hz = HAL_RCC_GetHCLKFreq() / 2u;
+	uint32_t count = (uint32_t)(((uint64_t)sdclk_hz * 15620u) / 1000000000u) - 20u;
+	(void)HAL_SDRAM_ProgramRefreshRate(&sdramHandle, count);
+}
+#endif
+
 int main(void)
 {
+	/* Keep the default clock. Renode's RCC model cannot complete the
+	 * HAL's PLL clock-switch sequence. */
 	HAL_Init();
+#if defined(OVE_HW) && defined(CONFIG_OVE_ZERO_HEAP)
+	hw_sdram_init();
+#endif
 
 	/* Enable every GPIO port clock so freertos_gpio.c can reach the
 	 * STM32_GPIOPort peripherals Renode models.  STM32F746 GPIOs A–I
@@ -245,11 +273,11 @@ int main(void)
 	__HAL_RCC_GPIOH_CLK_ENABLE();
 	__HAL_RCC_GPIOI_CLK_ENABLE();
 
-	/* Peripheral clocks for buses exercised by test_renode_stm32_periph.c
-	 * (matching the zero-heap variant — see that file for rationale). */
+	/* The loopback model needs SPI1 clocked. The production SPI MSP
+	 * enables it as part of physical pin setup. */
 	__HAL_RCC_SPI1_CLK_ENABLE();
 
-	/* Ethernet — see zero-heap variant for rationale. */
+	/* Enable the Ethernet clock before HAL_ETH_Init reaches the MAC. */
 	__HAL_RCC_ETH_CLK_ENABLE();
 
 	/* Enable the DWT cycle counter for freertos_time.c::ove_time_delay_us. */

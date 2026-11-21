@@ -18,12 +18,12 @@
  * only heap, and libc malloc / free / calloc / realloc are wrapped in
  * backends/freertos/freertos_libc_malloc.c to route through
  * pvPortMalloc / vPortFree.  Picolibc therefore never reaches its
- * _sbrk-backed nano-malloc, and the `.heap` section below stays at
+ * sbrk-backed nano-malloc, and the `.heap` section below stays at
  * size 0 by default.
  *
  * Under zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0) there is no
  * pvPortMalloc, so the wrapper is not linked and picolibc malloc DOES
- * go through _sbrk.  Those builds pass `-Wl,--defsym=__heap_size=N` to
+ * go through sbrk.  Those builds pass `-Wl,--defsym=__heap_size=N` to
  * size `.heap` for whatever libc-side consumer needs it (cmocka in test
  * binaries; production zero-heap apps are expected to avoid libc
  * malloc entirely — backends/common/ove_heap_lock.c audits that).
@@ -362,7 +362,7 @@ SECTIONS
 
     /* Picolibc heap.  In heap mode this is empty (size 0): libc malloc
      * is wrapped onto pvPortMalloc via freertos_libc_malloc.c and never
-     * reaches _sbrk.  Zero-heap test builds override `__heap_size` and
+     * reaches sbrk.  Zero-heap test builds override `__heap_size` and
      * use this for cmocka's malloc — main RAM is too tight for the
      * test binary's BSS plus a usable arena, so the heap lives in
      * SDRAM (which Renode models out-of-the-box for the LCD framebuffer

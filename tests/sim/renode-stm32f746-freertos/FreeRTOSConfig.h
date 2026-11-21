@@ -5,9 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * FreeRTOS config for Renode-hosted STM32F746 test firmware, heap mode.
- * Sibling of the zero-heap variant; the only deliberate differences are
- * in the allocation switches (heap enabled, configTOTAL_HEAP_SIZE set).
+ * FreeRTOS config for STM32F746 test firmware on Renode and hardware.
  */
 
 #ifndef FREERTOS_CONFIG_H
@@ -17,7 +15,7 @@
  * core_cm7.h) — do not redefine here; it would fight -Wredefined-macros
  * because CMSIS uses `1U` and we'd use `1`. */
 
-/* Scheduler — nominal STM32F746 clock (216 MHz). */
+/* Renode runs near wall-clock speed, so derive ticks from the nominal 216 MHz. */
 /* Per-task errno through picolibc's TLS (FreeRTOS.h pulls in picolibc-freertos.h). */
 #define configUSE_PICOLIBC_TLS 1
 #define configUSE_PREEMPTION 1
@@ -33,12 +31,15 @@
 #define configIDLE_SHOULD_YIELD 1
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES 3
 
-/* Static allocation stays available alongside the test heap. */
 #define configSUPPORT_STATIC_ALLOCATION 1
+#ifdef CONFIG_OVE_ZERO_HEAP
+#define configSUPPORT_DYNAMIC_ALLOCATION 0
+#else
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
 /* Budget lwIP pools and permanent native SPI retirement state before the
  * linker's user heap/stack region. Report the exercised heap margin at exit. */
 #define configTOTAL_HEAP_SIZE ((size_t)(79 * 1024))
+#endif
 
 /* Synchronization */
 #define configUSE_MUTEXES 1

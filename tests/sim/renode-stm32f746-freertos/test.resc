@@ -1,8 +1,9 @@
-:name: oveRTOS CMocka suite on STM32F746 — heap mode
-:description: Same as the zero-heap sibling, but runs the heap-enabled firmware.
+:name: oveRTOS FreeRTOS CMocka suite on STM32F746
+:description: Boot the test firmware and capture CMocka output over semihosting.
 
 using sysbus
 
+# The test runner sets $bin, $uart_out and $rlog for each variant.
 $bin?=@output/tests/renode-stm32f746-freertos/ove_test_renode_stm32f746_freertos.elf
 
 mach create "stm32f746"
@@ -28,8 +29,7 @@ showAnalyzer cpu.uartSemihosting
 $rlog?=@/tmp/renode-stm32f746-freertos.renode.log
 logFile $rlog
 
-# Drive PA0 rising-edge for test_external_irq_trigger inside the obs
-# suite.  See the zero-heap sibling test.resc for rationale.
+# Bracket the PA0 edge for test_external_irq_trigger with RunFor since .resc lacks scheduled events.
 emulation RunFor "00:00:03"
 sysbus.gpioPortA OnGPIO 0 true
 sysbus.gpioPortA OnGPIO 0 false

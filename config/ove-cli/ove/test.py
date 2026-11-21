@@ -263,7 +263,7 @@ def _zephyr_sdk_build_env(ove_dir, env=None):
 def _ensure_stm32f746_renode_deps(ove_dir):
     """Clone STM32CubeF7 + lwIP into dl/ if missing.
 
-    The renode-stm32f746-{freertos,freertos-zeroheap} test trees pull
+    The renode-stm32f746-freertos test tree pulls
     these directly from dl/ via `file(GLOB)` and `FATAL_ERROR` if
     absent. A configured workspace gets them via `download_freertos`;
     the test harness runs without a `.config` (CI hits these jobs on a
@@ -2801,7 +2801,7 @@ def test_qemu_freertos(ove_dir, output_dir):
 def test_qemu_freertos_zeroheap(ove_dir, output_dir):
     """Build and run FreeRTOS QEMU ARM tests (zero-heap mode)."""
     return _run_freertos_qemu(ove_dir, output_dir,
-                             label="qemu-freertos-zeroheap", zero_heap=True)
+                              label="qemu-freertos-zeroheap", zero_heap=True)
 
 
 # ── Renode STM32F746 shared driver ─────────────────────────────────────
@@ -2823,8 +2823,8 @@ def _ensure_renode(ove_dir):
     return download_renode(dl_dir, tools_dir, manifest=manifest)
 
 
-def _build_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label,
-                            extra_cmake=None):
+def _build_renode_stm32f746(ove_dir, output_dir, *, label, zero_heap=False,
+                            extra_cmake=()):
     """Build an STM32F746 FreeRTOS test firmware via the existing CMake
     sim tree.  Returns the path to the produced ELF.
 
@@ -2837,15 +2837,17 @@ def _build_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label,
     _ensure_stm32f746_renode_deps(ove_dir)
     build = os.path.join(output_dir, "tests", label)
     logger.info(f"Building {label}")
-    cmake_args = [f"-DOVE_TOOLCHAIN_DIR={tc_dir}"]
-    if extra_cmake:
-        cmake_args.extend(extra_cmake)
-    _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
+    cmake_args = [
+        f"-DOVE_TOOLCHAIN_DIR={tc_dir}",
+        f"-DOVE_ZERO_HEAP={'ON' if zero_heap else 'OFF'}",
+        *extra_cmake,
+    ]
+    _cmake_build(os.path.join(ove_dir, "tests", "sim", "renode-stm32f746-freertos"),
                  build, extra_args=cmake_args)
-    return os.path.join(build, f"{binary}.elf")
+    return os.path.join(build, "ove_test_renode_stm32f746_freertos.elf")
 
 
-def _run_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label):
+def _run_renode_stm32f746(ove_dir, output_dir, *, label, zero_heap=False):
     """Build an STM32F746 test firmware and run it under Renode.
 
     Output is captured via a SemihostingUart attached by test.resc and
@@ -2856,9 +2858,8 @@ def _run_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label):
     simulated time; the harness caps wall-clock at 300 s.
     """
     elf = _build_renode_stm32f746(ove_dir, output_dir,
-                                  src_subdir=src_subdir,
-                                  binary=binary, label=label)
-    resc = os.path.join(ove_dir, "tests", "sim", src_subdir, "test.resc")
+                                  label=label, zero_heap=zero_heap)
+    resc = os.path.join(ove_dir, "tests", "sim", "renode-stm32f746-freertos", "test.resc")
     return _renode_run_elf(ove_dir, output_dir,
                            label=label, elf=elf, resc=resc)
 
@@ -3057,17 +3058,13 @@ def test_renode_stm32f746_zephyr_zeroheap(ove_dir, output_dir):
 def test_renode_stm32f746_freertos(ove_dir, output_dir):
     """Build + run the STM32F746 heap-mode test firmware under Renode."""
     return _run_renode_stm32f746(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-freertos",
-        binary="ove_test_renode_stm32f746_freertos",
         label="renode-stm32f746-freertos")
 
 
 def test_renode_stm32f746_freertos_zeroheap(ove_dir, output_dir):
     """Build + run the STM32F746 zero-heap test firmware under Renode."""
     return _run_renode_stm32f746(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-freertos-zeroheap",
-        binary="ove_test_renode_stm32f746_freertos_zeroheap",
-        label="renode-stm32f746-freertos-zeroheap")
+        label="renode-stm32f746-freertos-zeroheap", zero_heap=True)
 
 
 # ── Hardware-in-the-loop targets (manual-only) ────────────────────────
@@ -3223,8 +3220,6 @@ def _run_hw_stm32f746(ove_dir, output_dir, *, label, elf):
 def test_hw_stm32f746_freertos(ove_dir, output_dir):
     """Flash + run the STM32F746 FreeRTOS heap firmware on real hardware."""
     elf = _build_renode_stm32f746(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-freertos",
-        binary="ove_test_renode_stm32f746_freertos",
         label="hw-stm32f746-freertos",
         extra_cmake=["-DOVE_HW=ON"])
     return _run_hw_stm32f746(ove_dir, output_dir,
@@ -3234,9 +3229,7 @@ def test_hw_stm32f746_freertos(ove_dir, output_dir):
 def test_hw_stm32f746_freertos_zeroheap(ove_dir, output_dir):
     """Flash + run the STM32F746 FreeRTOS zero-heap firmware on hardware."""
     elf = _build_renode_stm32f746(ove_dir, output_dir,
-        src_subdir="renode-stm32f746-freertos-zeroheap",
-        binary="ove_test_renode_stm32f746_freertos_zeroheap",
-        label="hw-stm32f746-freertos-zeroheap",
+        label="hw-stm32f746-freertos-zeroheap", zero_heap=True,
         extra_cmake=["-DOVE_HW=ON"])
     return _run_hw_stm32f746(ove_dir, output_dir,
                              label="hw-stm32f746-freertos-zeroheap", elf=elf)

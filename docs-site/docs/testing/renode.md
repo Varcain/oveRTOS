@@ -25,8 +25,8 @@ Six targets total — one per RTOS backend, two heap modes each:
 
 | Target | Tests | Notes |
 |---|---|---|
-| `test-renode-stm32f746-freertos` | 219 | FreeRTOS heap-mode; full HAL + lwIP linked |
-| `test-renode-stm32f746-freertos-zeroheap` | 192 | FreeRTOS static-only allocation |
+| `test-renode-stm32f746-freertos` | 373 | FreeRTOS heap-mode; full HAL + lwIP linked |
+| `test-renode-stm32f746-freertos-zeroheap` | 331 | FreeRTOS static-only allocation |
 | `test-renode-stm32f746-zephyr` | 354 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
 | `test-renode-stm32f746-zephyr-zeroheap` | 314 | Zephyr with a zero-size kernel heap pool |
 | `test-renode-stm32f746-nuttx` | 360 | NuttX `stm32f746g-disco:nsh` |
@@ -47,7 +47,7 @@ make test-renode-stm32f746-zephyr-zeroheap        # one
 ```mermaid
 flowchart LR
     subgraph Build["Build (per RTOS variant)"]
-        SRC["tests/sim/renode-stm32f746-&lt;rtos&gt;*/<br/>(CMakeLists.txt or nuttx_app/CMakeLists.txt)"]
+        SRC["tests/sim/renode-stm32f746-&lt;rtos&gt;/<br/>(CMakeLists.txt or nuttx_app/CMakeLists.txt)"]
         ELF["firmware.elf"]
         SRC --> ELF
     end
@@ -83,13 +83,12 @@ that the HW runner reuses to avoid duplicating build logic.
 
 ### FreeRTOS
 
-Two sim trees, `tests/sim/renode-stm32f746-freertos/` (heap) and
-`tests/sim/renode-stm32f746-freertos-zeroheap/`.  Both link the real
-STM32F7 HAL, FreeRTOS ARM_CM7/r0p1 port, and lwIP.  Renode 1.16's
-semihosting handler doesn't implement SYS_WRITE (0x05); the trees
-ship a `semihosting_io.c` that overrides newlib's `_write` to emit
-one byte at a time via SYS_WRITEC (0x03).  Test output is captured
-through a `UART.SemihostingUart` attached by `test.resc`.
+Both variants build from `tests/sim/renode-stm32f746-freertos/` and
+link the real STM32F7 HAL, FreeRTOS ARM_CM7/r0p1 port, and lwIP. The
+zero-heap target sets `OVE_ZERO_HEAP=ON`. Renode 1.16 lacks
+`SYS_WRITE` (0x05), so `semihosting_io.c` uses `SYS_WRITEC` (0x03) to
+emit one byte at a time from `_write`. The shared `test.resc` captures
+output through a `UART.SemihostingUart`.
 
 The FreeRTOS test target also exercises real HAL-backed drivers
 against Renode's modelled peripherals:
