@@ -8,6 +8,17 @@ oveRTOS ships with two reference board definitions, `stm32f746g-discovery` and `
 
 The active board is selected by adding its subdirectory in the parent project's CMakeLists.
 
+## Importing a board
+
+Run `ove board import --rtos zephyr --name <zephyr-board>` to generate a
+starter `board.yaml`, Zephyr scaffold, and flash scripts under `boards/<name>/`.
+It requires the oveRTOS Python environment, CMake, Ninja, a downloaded Zephyr
+workspace with its west modules, and the pinned Zephyr SDK (`ove ensure-toolchain
+zephyr-sdk`). The configure log and resolved devicetree are written under
+`output/board-import/<sanitized-zephyr-board>/`. The chosen `zephyr,sram` is
+reported as RAM, so boards that choose external SDRAM need manual correction.
+NuttX uses a separate import path via `ove board import --rtos nuttx --name <nuttx-board>`.
+
 ---
 
 ## STM32F746G-DISCO (`stm32f746g-discovery`)

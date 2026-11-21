@@ -14,40 +14,25 @@ import sys
 from .workspace import Workspace, find_ove_dir
 
 
-def _find_rtos_base(ove_dir, ws, rtos):
-    """Find RTOS source tree, searching workspace dl then shared dl/.
+def _find_nuttx_base(ove_dir, ws):
+    """Find the NuttX source tree, searching workspace dl then shared dl/.
 
     Returns the path if found, or None.
     """
-    if rtos == "zephyr":
-        subpath = os.path.join("zephyr-workspace", "zephyr")
-    elif rtos == "nuttx":
-        subpath = rtos
-    else:
-        return None
-
     # 1. Active workspace dl/
-    candidate = os.path.join(ws.ws_dl_dir, subpath)
+    candidate = os.path.join(ws.ws_dl_dir, "nuttx")
     if os.path.isdir(candidate):
         return candidate
 
-    # 2. Shared dl/ (may have a hash suffix, e.g. dl/zephyr-workspace-4720cee8/)
-    dl_dir = os.path.join(ove_dir, "dl")
-    if rtos == "zephyr":
-        for match in sorted(glob.glob(os.path.join(dl_dir, "zephyr-workspace*",
-                                                    "zephyr"))):
-            if os.path.isdir(match):
-                return match
-    elif rtos == "nuttx":
-        candidate = os.path.join(dl_dir, "nuttx")
-        if os.path.isdir(candidate):
-            return candidate
+    # 2. Shared dl/
+    candidate = os.path.join(ove_dir, "dl", "nuttx")
+    if os.path.isdir(candidate):
+        return candidate
 
     # 3. Any other workspace dl/
     output_dir = os.path.join(ove_dir, "output")
     if os.path.isdir(output_dir):
-        for match in sorted(glob.glob(os.path.join(output_dir, "**", "dl",
-                                                    subpath))):
+        for match in sorted(glob.glob(os.path.join(output_dir, "**", "dl", "nuttx"))):
             if os.path.isdir(match):
                 return match
 
@@ -85,16 +70,12 @@ def cmd_board(args):
             print("Error: --name required for import")
             sys.exit(1)
 
-        ws = Workspace(ove_dir)
         cmd = ["import", args.rtos, "--board", args.name]
 
-        rtos_base = _find_rtos_base(ove_dir, ws, args.rtos)
-        if rtos_base:
-            if args.rtos == "zephyr":
-                cmd.extend(["--zephyr-base", rtos_base])
-            elif args.rtos == "nuttx":
+        if args.rtos == "nuttx":
+            rtos_base = _find_nuttx_base(ove_dir, Workspace(ove_dir))
+            if rtos_base:
                 cmd.extend(["--nuttx-base", rtos_base])
-        # If not found, board_tool.py will use its own default and error if missing
 
         if args.ove_name:
             cmd.extend(["--ove-name", args.ove_name])

@@ -20,14 +20,24 @@ Examples:
 """
 
 import argparse
+import contextlib
 import copy
 import datetime
 import json
 import os
+import pickle
 import re
+import shutil
+import signal
+import subprocess
 import sys
 import textwrap
+from collections import deque
+from pathlib import Path
 
+from ove.download import find_zephyr_sdk, zephyr_sdk_env
+from ove.manifest import get_component, load_manifest
+from ove.utils import hashed_dir
 from ove.workspace import parse_dotconfig
 
 try:
@@ -129,351 +139,12 @@ def _load_schema():
 
 
 # ---------------------------------------------------------------------------
-# Minimal DTS parser (for Zephyr import)
+# Devicetree to board.yaml mapping (Zephyr import)
 # ---------------------------------------------------------------------------
 
-class DtsParser:
-    """Best-effort DTS parser — extracts nodes and properties we care about.
-
-    Does NOT handle full DTS semantics. Unknown constructs are skipped.
-    """
-
-    def __init__(self, text):
-        self._text = text
-        self._pos = 0
-
-    # -- Public API ---------------------------------------------------------
-
-    def parse(self):
-        """Return a nested dict representing the DTS tree."""
-        root = {"_props": {}, "_children": {}}
-        self._skip_ws()
-        while self._pos < len(self._text):
-            self._skip_ws()
-            if self._pos >= len(self._text):
-                break
-            # Skip /dts-v1/; or /plugin/;
-            if self._peek_str("/dts-v1/") or self._peek_str("/plugin/"):
-                self._skip_until(";")
-                self._advance()  # skip ';'
-                continue
-            # Skip #include / /include/
-            if self._peek_str("#include") or self._peek_str("/include/"):
-                self._skip_line()
-                continue
-            # Root node or labeled node
-            if self._peek_char() == "/" and self._peek_at(1) == " ":
-                self._advance()  # skip '/'
-                self._skip_ws()
-                if self._peek_char() == "{":
-                    self._advance()
-                    self._parse_node_body(root)
-                continue
-            # Labeled node reference: &label { ... }
-            if self._peek_char() == "&":
-                self._advance()
-                label = self._read_ident()
-                self._skip_ws()
-                if self._peek_char() == "{":
-                    self._advance()
-                    child = root["_children"].setdefault(
-                        "&" + label, {"_props": {}, "_children": {}}
-                    )
-                    self._parse_node_body(child)
-                else:
-                    self._skip_until(";")
-                    self._advance()
-                continue
-            # Skip anything else
-            self._skip_line()
-        return root
-
-    # -- Node body parser ---------------------------------------------------
-
-    def _parse_node_body(self, node):
-        """Parse contents of { ... }; consuming the closing };"""
-        while self._pos < len(self._text):
-            self._skip_ws()
-            if self._pos >= len(self._text):
-                break
-            c = self._peek_char()
-            if c == "}":
-                self._advance()
-                self._skip_ws()
-                if self._pos < len(self._text) and self._peek_char() == ";":
-                    self._advance()
-                return
-            # Delete-property
-            if self._peek_str("/delete-property/"):
-                self._skip_until(";")
-                self._advance()
-                continue
-            # Delete-node
-            if self._peek_str("/delete-node/"):
-                self._skip_until(";")
-                self._advance()
-                continue
-            # #include inside node
-            if self._peek_str("#include"):
-                self._skip_line()
-                continue
-            # Preprocessor directives (e.g., #define)
-            if c == "#":
-                self._skip_line()
-                continue
-            # Property or child node — read identifier
-            # Labels: "label: node@addr { ... };"
-            # Could also be "prop = ..." or "prop;" (boolean)
-            ident = self._read_node_name_or_prop()
-            if not ident:
-                self._skip_line()
-                continue
-            self._skip_ws()
-
-            # Check for label
-            if self._peek_char() == ":":
-                self._advance()  # skip ':'
-                self._skip_ws()
-                # After label, could be a node name
-                ident2 = self._read_node_name_or_prop()
-                if ident2:
-                    ident = ident2
-                    self._skip_ws()
-                else:
-                    # label: { ... } — use the label as node name
-                    pass
-
-            c = self._peek_char()
-            if c == "{":
-                # Child node
-                self._advance()
-                child = node["_children"].setdefault(
-                    ident, {"_props": {}, "_children": {}}
-                )
-                self._parse_node_body(child)
-            elif c == "=":
-                # Property
-                self._advance()
-                self._skip_ws()
-                val = self._read_property_value()
-                node["_props"][ident] = val
-                self._skip_ws()
-                if self._pos < len(self._text) and self._peek_char() == ";":
-                    self._advance()
-            elif c == ";":
-                # Boolean property
-                node["_props"][ident] = True
-                self._advance()
-            else:
-                self._skip_until(";")
-                if self._pos < len(self._text):
-                    self._advance()
-
-    def _read_property_value(self):
-        """Read a property value (string, cells, or phandle list)."""
-        self._skip_ws()
-        c = self._peek_char()
-        if c == '"':
-            return self._read_string()
-        elif c == "<":
-            return self._read_cells()
-        elif c == "&":
-            # phandle reference
-            self._advance()
-            ref = self._read_ident()
-            return "&" + ref
-        elif c == "[":
-            # byte string
-            return self._read_bytestring()
-        else:
-            # Could be a comma-separated list or unknown
-            parts = []
-            while self._pos < len(self._text) and self._peek_char() != ";":
-                self._skip_ws()
-                c = self._peek_char()
-                if c == '"':
-                    parts.append(self._read_string())
-                elif c == "<":
-                    parts.append(self._read_cells())
-                elif c == "&":
-                    self._advance()
-                    parts.append("&" + self._read_ident())
-                elif c == ",":
-                    self._advance()
-                else:
-                    # raw token
-                    tok = self._read_until_any(",; \t\n")
-                    if tok:
-                        parts.append(tok)
-                    else:
-                        break
-            return parts if len(parts) != 1 else parts[0]
-
-    def _read_string(self):
-        """Read a quoted string."""
-        if self._peek_char() != '"':
-            return ""
-        self._advance()
-        start = self._pos
-        while self._pos < len(self._text) and self._text[self._pos] != '"':
-            if self._text[self._pos] == "\\":
-                self._advance()
-            self._advance()
-        s = self._text[start : self._pos]
-        if self._pos < len(self._text):
-            self._advance()  # closing quote
-        return s
-
-    def _read_cells(self):
-        """Read <cell0 cell1 ...> and return list of ints/strings."""
-        if self._peek_char() != "<":
-            return []
-        self._advance()
-        cells = []
-        while self._pos < len(self._text) and self._peek_char() != ">":
-            self._skip_ws()
-            if self._pos >= len(self._text) or self._peek_char() == ">":
-                break
-            c = self._peek_char()
-            if c == "&":
-                self._advance()
-                cells.append("&" + self._read_ident())
-            elif c == "(":
-                # Macro / expression — read until matching )
-                expr = self._read_paren_expr()
-                cells.append(expr)
-            else:
-                tok = self._read_until_any("> \t\n")
-                if tok:
-                    cells.append(self._try_int(tok))
-        if self._pos < len(self._text) and self._peek_char() == ">":
-            self._advance()
-        return cells
-
-    def _read_paren_expr(self):
-        """Read a parenthesized expression, including nested parens."""
-        depth = 0
-        start = self._pos
-        while self._pos < len(self._text):
-            c = self._text[self._pos]
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    self._advance()
-                    return self._text[start : self._pos]
-            self._advance()
-        return self._text[start : self._pos]
-
-    def _read_bytestring(self):
-        """Read [xx xx ...] byte string."""
-        if self._peek_char() != "[":
-            return ""
-        self._advance()
-        start = self._pos
-        while self._pos < len(self._text) and self._text[self._pos] != "]":
-            self._advance()
-        s = self._text[start : self._pos]
-        if self._pos < len(self._text):
-            self._advance()
-        return s.strip()
-
-    # -- Low-level helpers --------------------------------------------------
-
-    def _read_ident(self):
-        start = self._pos
-        while self._pos < len(self._text) and (
-            self._text[self._pos].isalnum()
-            or self._text[self._pos] in "_-"
-        ):
-            self._advance()
-        return self._text[start : self._pos]
-
-    def _read_node_name_or_prop(self):
-        """Read a DTS node name which can contain letters, digits, _ - , . @"""
-        start = self._pos
-        while self._pos < len(self._text) and (
-            self._text[self._pos].isalnum()
-            or self._text[self._pos] in "_-,.@+#"
-        ):
-            self._advance()
-        return self._text[start : self._pos]
-
-    def _read_until_any(self, chars):
-        start = self._pos
-        while self._pos < len(self._text) and self._text[self._pos] not in chars:
-            self._advance()
-        return self._text[start : self._pos]
-
-    def _skip_ws(self):
-        while self._pos < len(self._text):
-            c = self._text[self._pos]
-            if c in " \t\n\r":
-                self._advance()
-            elif c == "/" and self._pos + 1 < len(self._text):
-                if self._text[self._pos + 1] == "/":
-                    self._skip_line()
-                elif self._text[self._pos + 1] == "*":
-                    self._pos += 2
-                    while self._pos + 1 < len(self._text):
-                        if (
-                            self._text[self._pos] == "*"
-                            and self._text[self._pos + 1] == "/"
-                        ):
-                            self._pos += 2
-                            break
-                        self._advance()
-                    else:
-                        self._pos = len(self._text)
-                else:
-                    break
-            else:
-                break
-
-    def _skip_line(self):
-        while self._pos < len(self._text) and self._text[self._pos] != "\n":
-            self._advance()
-        if self._pos < len(self._text):
-            self._advance()
-
-    def _skip_until(self, char):
-        while self._pos < len(self._text) and self._text[self._pos] != char:
-            self._advance()
-
-    def _peek_char(self):
-        return self._text[self._pos] if self._pos < len(self._text) else ""
-
-    def _peek_at(self, offset):
-        p = self._pos + offset
-        return self._text[p] if p < len(self._text) else ""
-
-    def _peek_str(self, s):
-        return self._text[self._pos : self._pos + len(s)] == s
-
-    def _advance(self):
-        self._pos += 1
-
-    @staticmethod
-    def _try_int(s):
-        """Try to parse a token as an integer."""
-        s = s.strip()
-        if not s:
-            return s
-        try:
-            if s.startswith("0x") or s.startswith("0X"):
-                return int(s, 16)
-            return int(s)
-        except ValueError:
-            return s
-
-
-# ---------------------------------------------------------------------------
-# DTS → board.yaml mapping (Zephyr import)
-# ---------------------------------------------------------------------------
-
-# Map vendor prefixes in root compatible to mcu_family slug
+# Map compatible prefixes to oveRTOS MCU families.
 _MCU_FAMILY_MAP = {
+    "arm,mps2": "arm",
     "st,stm32f7": "stm32f7",
     "st,stm32f4": "stm32f4",
     "st,stm32f3": "stm32f3",
@@ -499,9 +170,6 @@ _MCU_FAMILY_MAP = {
 
 
 def _mcu_family_from_compatible(compat):
-    """Derive mcu_family from the DTS root compatible string."""
-    if isinstance(compat, list):
-        compat = compat[0] if compat else ""
     for prefix, family in _MCU_FAMILY_MAP.items():
         if compat.startswith(prefix):
             return family
@@ -587,253 +255,110 @@ def _derive_nuttx_mcu(config, chip_dir):
     return str(arch_chip)
 
 
-def _extract_board_yaml_from_dts(tree, zephyr_board_name):
-    """Build a board.yaml dict from parsed DTS tree.
+def _edt_prop(node, name, default=None):
+    prop = node.props.get(name) if node is not None else None
+    return prop.val if prop is not None else default
 
-    Returns (board_yaml_dict, warnings_list).
-    """
+
+def _edt_gpio_devices(edt, enabled, alias, compatible):
+    nodes = [node for node in enabled if alias in node.aliases]
+    for group in edt.compat2okay.get(compatible, []):
+        nodes.extend(child for child in group.children.values()
+                     if child.status == "okay" and child not in nodes)
+    return nodes
+
+
+def _extract_board_yaml_from_edt(edt, board_name):
     warnings = []
-    data = {}
-
-    props = tree.get("_props", {})
-    children = tree.get("_children", {})
-
-    # --- board identity ---
-    compat = props.get("compatible", "")
-    model = props.get("model", "")
-    mcu_family = _mcu_family_from_compatible(compat)
-
-    board_name = zephyr_board_name.replace("_", "-")
-    mcu = ""
-    if isinstance(compat, list):
-        mcu = compat[0] if compat else ""
-    elif isinstance(compat, str):
-        mcu = compat
-    # Try to make mcu a chip identifier
-    if "," in mcu:
-        mcu = mcu.split(",", 1)[1]
-
-    data["board"] = {
-        "name": board_name,
-        "mcu_family": mcu_family,
+    soc = next((node for node in edt.nodes if node.path == "/soc"), None)
+    compat = next((c for c in soc.compats if "," in c), "") if soc else ""
+    root_compat = next(iter(edt.get_node("/").compats), "") if not compat else ""
+    mcu = compat.split(",", 1)[-1] or "unknown"
+    if re.fullmatch(r"stm32[a-z]\d{3,4}", mcu):
+        mcu = mcu.upper() + "xx"
+    if not compat:
+        warnings.append("board.mcu needs manual entry (no SoC-specific /soc compatible)")
+    data = {"board": {
+        "name": re.sub(r"[^A-Za-z0-9-]", "-", board_name),
+        "mcu_family": _mcu_family_from_compatible(compat or root_compat) or "unknown",
         "mcu": mcu,
-    }
+    }}
 
-    # --- memory ---
-    memory = {}
-    for name, node in children.items():
-        if name.startswith("memory"):
-            reg = node["_props"].get("reg", [])
-            if isinstance(reg, list) and len(reg) >= 2:
-                size = reg[-1]
-                if isinstance(size, int) and size > 0:
-                    memory["ram_kb"] = size // 1024
-    # Flash: look in soc/flash-controller children
-    soc = children.get("soc", {})
-    if soc:
-        for name, node in soc.get("_children", {}).items():
-            if "flash" in name and "controller" in name:
-                for cname, cnode in node.get("_children", {}).items():
-                    if cname.startswith("flash"):
-                        reg = cnode["_props"].get("reg", [])
-                        if isinstance(reg, list) and len(reg) >= 2:
-                            size = reg[-1]
-                            if isinstance(size, int) and size > 0:
-                                memory["flash_kb"] = size // 1024
-    if memory:
-        data["memory"] = memory
-    warnings.append("clock.sysclk_mhz needs manual review (PLL config too complex for DTS extraction)")
-    warnings.append("memory.sdram_kb may need manual entry (secondary memory regions not always in base DTS)")
-
-    # --- serial console ---
-    chosen = children.get("chosen", {})
-    chosen_props = chosen.get("_props", {}) if chosen else {}
-    console_ref = chosen_props.get("zephyr,console", "")
-    if isinstance(console_ref, str) and console_ref.startswith("&"):
-        uart_label = console_ref[1:]
-        uart_node = children.get("&" + uart_label, {})
-        if not uart_node and soc:
-            # Try to find in soc children
-            for name, node in soc.get("_children", {}).items():
-                if uart_label in name:
-                    uart_node = node
-                    break
-        if uart_node:
-            uart_props = uart_node.get("_props", {})
-            baud = uart_props.get("current-speed", None)
-            if isinstance(baud, list):
-                baud = baud[0] if baud else None
-            if isinstance(baud, int):
-                data["serial"] = {"console": {"baud": baud}}
-
-    # --- LEDs ---
-    leds_node = None
-    for name, node in children.items():
-        node_props = node.get("_props", {})
-        node_compat = node_props.get("compatible", "")
-        if node_compat == "gpio-leds" or name == "leds" or name == "gpio-leds":
-            leds_node = node
-            break
-    if leds_node:
-        led_list = []
-        for led_name, led_node in leds_node.get("_children", {}).items():
-            gpios = led_node.get("_props", {}).get("gpios", [])
-            if isinstance(gpios, list) and len(gpios) >= 2:
-                # gpios = <&gpioX pin flags>
-                port_ref = gpios[0]
-                pin = gpios[1] if len(gpios) > 1 else 0
-                flags = gpios[2] if len(gpios) > 2 else 0
-                port = _gpio_ref_to_port(port_ref)
-                active_low = bool(isinstance(flags, int) and flags & 0x01)
-                if isinstance(pin, int):
-                    led_list.append({
-                        "port": port,
-                        "pin": pin,
-                        "active_low": active_low,
-                    })
-        if led_list:
-            data["leds"] = led_list
-
-    # --- Audio codec ---
-    # Look for i2c nodes containing codec children
-    for name, node in children.items():
-        if name.startswith("&i2c") or (soc and "i2c" in name):
-            _search_codec(node, data)
-    if soc:
-        for name, node in soc.get("_children", {}).items():
-            if "i2c" in name:
-                _search_codec(node, data)
-    warnings.append("audio.i2s.sample_rate, audio.i2s.channels need manual entry (application-level, not in DTS)")
-
-    # --- Display ---
-    for name, node in list(children.items()) + (
-        list(soc.get("_children", {}).items()) if soc else []
+    enabled = [node for node in edt.nodes if node.status == "okay"]
+    chosen = edt.chosen_nodes
+    sram = chosen.get("zephyr,sram")
+    dtcm = chosen.get("zephyr,dtcm")
+    sdram = [node for node in enabled if node.regs and (
+        node.name.startswith("sdram@")
+        or _edt_prop(node, "zephyr,memory-region", "").upper().startswith("SDRAM")
+    )]
+    for kind, nodes in (
+        ("ram", [sram] if sram is dtcm else [sram, dtcm]),
+        ("flash", [chosen.get("zephyr,flash")]),
+        ("sdram", sdram[:1]),
     ):
-        node_props = node.get("_props", {})
-        if "ltdc" in name or "display" in name:
-            w = node_props.get("width")
-            h = node_props.get("height")
-            if isinstance(w, list):
-                w = w[0] if w else None
-            if isinstance(h, list):
-                h = h[0] if h else None
-            if isinstance(w, int) and isinstance(h, int):
-                data["display"] = {"width": w, "height": h}
-                break
-        # Also check children for panel nodes
-        for cname, cnode in node.get("_children", {}).items():
-            cp = cnode.get("_props", {})
-            w = cp.get("width")
-            h = cp.get("height")
-            if isinstance(w, list):
-                w = w[0] if w else None
-            if isinstance(h, list):
-                h = h[0] if h else None
-            if isinstance(w, int) and isinstance(h, int):
-                data["display"] = {"width": w, "height": h}
+        regs = [reg for node in nodes if node is not None and node.status == "okay"
+                for reg in node.regs if reg.addr is not None and reg.size]
+        if regs:
+            data.setdefault("memory", {}).update({
+                f"{kind}_kb": sum(reg.size for reg in regs) // 1024,
+                f"{kind}_start": f"0x{min(reg.addr for reg in regs):08X}",
+            })
+
+    baud = _edt_prop(chosen.get("zephyr,console"), "current-speed")
+    if baud:
+        data["serial"] = {"console": {"baud": baud}}
+
+    for key, labels in (("sysclk_mhz", ("sysclk", "rcc")), ("hse_freq_mhz", ("clk_hse",))):
+        for label in labels:
+            clock = edt.label2node.get(label)
+            hz = _edt_prop(clock, "clock-frequency", 0)
+            if hz >= 1000000 and clock.status == "okay":
+                data.setdefault("clock", {})[key] = hz // 1000000
                 break
 
-    # --- SDMMC ---
-    for name, node in (list(soc.get("_children", {}).items()) if soc else []):
-        if "sdmmc" in name.lower() or "mmc" in name.lower():
-            data["sdcard"] = {}
+    leds = _edt_gpio_devices(edt, enabled, "led0", "gpio-leds")
+    if leds:
+        data["leds"] = []
+    for node in leds:
+        for gpio in _edt_prop(node, "gpios", []):
+            if gpio is None:
+                continue
+            port = next((label[4:] for label in gpio.controller.labels
+                         if re.fullmatch(r"gpio(?:[a-z]|[0-9]+)", label)), "")
+            if not port or gpio.controller.status != "okay" or "pin" not in gpio.data:
+                warnings.append(f"leds: cannot map {node.path} to an oveRTOS GPIO")
+                continue
+            data["leds"].append({
+                "port": int(port) if port.isdigit() else ord(port) - ord("a"),
+                "pin": gpio.data["pin"],
+                "active_low": bool(gpio.data.get("flags", 0) & 1),
+            })
+    buttons = _edt_gpio_devices(edt, enabled, "sw0", "gpio-keys")
+    if buttons:
+        warnings.append("GPIO buttons have no board.yaml field: "
+                        + ", ".join(node.path for node in buttons))
+
+    display = chosen.get("zephyr,display")
+    if display is not None and display.status == "okay":
+        width, height = (_edt_prop(display, key) for key in ("width", "height"))
+        if width and height:
+            data["display"] = {"width": width, "height": height}
+    if any({"zephyr,sdmmc-disk", "st,stm32-sdmmc"}.intersection(node.compats)
+           for node in enabled):
+        data["sdcard"] = {}
+
+    for node in enabled:
+        if (node.compats and "i2c" in node.on_buses
+                and "/bindings/audio/" in (node.binding_path or "")):
+            codec = {"type": node.compats[0].split(",", 1)[-1].upper().replace("-", "")}
+            if node.regs and node.regs[0].addr is not None:
+                codec["i2c_addr"] = f"0x{node.regs[0].addr:02X}"
+            data["audio"] = {"codec": codec}
+            warnings.append("audio.i2s settings need manual entry")
             break
-
-    # --- Clock (HSE) ---
-    for name, node in children.items():
-        node_props = node.get("_props", {})
-        if "oscillator" in name or "hse" in name or "clk" in name:
-            freq = node_props.get("clock-frequency")
-            if isinstance(freq, list):
-                freq = freq[0] if freq else None
-            if isinstance(freq, int) and freq > 100000:
-                data.setdefault("clock", {})["hse_freq_mhz"] = freq // 1000000
-                break
 
     return data, warnings
-
-
-def _gpio_ref_to_port(ref):
-    """Convert a phandle like '&gpioi' to a port number (0=A, 1=B, ... 8=I)."""
-    if isinstance(ref, str) and ref.startswith("&gpio"):
-        suffix = ref[5:]
-        if len(suffix) == 1 and suffix.isalpha():
-            return ord(suffix.lower()) - ord("a")
-    return 0
-
-
-def _search_codec(node, data):
-    """Search for audio codec child nodes in an I2C bus node."""
-    for cname, cnode in node.get("_children", {}).items():
-        cp = cnode.get("_props", {})
-        compat = cp.get("compatible", "")
-        reg = cp.get("reg", [])
-        if "codec" in cname or "wm" in compat or "cs4" in compat or "tlv" in compat:
-            codec_info = {}
-            if compat:
-                # Extract codec type from compatible string
-                if "," in compat:
-                    codec_info["type"] = compat.split(",", 1)[1].upper().replace("-", "")
-                else:
-                    codec_info["type"] = compat.upper()
-            if isinstance(reg, list) and reg:
-                addr = reg[0]
-                if isinstance(addr, int):
-                    codec_info["i2c_addr"] = f"0x{addr:02X}"
-            if codec_info:
-                data.setdefault("audio", {})["codec"] = codec_info
-
-
-# ---------------------------------------------------------------------------
-# Zephyr board discovery
-# ---------------------------------------------------------------------------
-
-def _find_zephyr_board_dir(zephyr_base, board_name):
-    """Locate a Zephyr board directory (v3+ flat or v2 arch-based layout)."""
-    # v3+: boards/<vendor>/<board>/
-    boards_root = os.path.join(zephyr_base, "boards")
-    if not os.path.isdir(boards_root):
-        return None
-    for vendor in os.listdir(boards_root):
-        candidate = os.path.join(boards_root, vendor, board_name)
-        if os.path.isdir(candidate):
-            return candidate
-    # v2: boards/<arch>/<board>/
-    for arch in os.listdir(boards_root):
-        candidate = os.path.join(boards_root, arch, board_name)
-        if os.path.isdir(candidate):
-            return candidate
-    return None
-
-
-def _read_dts_files(board_dir, board_name):
-    """Read and concatenate DTS files for a Zephyr board."""
-    # Try <board>.dts first, then <board_name>.dts
-    dts_candidates = [
-        os.path.join(board_dir, f"{board_name}.dts"),
-        os.path.join(board_dir, f"{board_name}_defconfig"),
-    ]
-    # Also check for files matching the board name pattern
-    if os.path.isdir(board_dir):
-        for f in sorted(os.listdir(board_dir)):
-            if f.endswith(".dts") and not f.endswith(".dtsi"):
-                path = os.path.join(board_dir, f)
-                if path not in dts_candidates:
-                    dts_candidates.insert(0, path)
-
-    dts_text = ""
-    for path in dts_candidates:
-        if os.path.isfile(path) and path.endswith(".dts"):
-            with open(path, "r") as f:
-                dts_text += f.read() + "\n"
-
-    # Also read board-level DTSI includes (one level only)
-    for f in sorted(os.listdir(board_dir)) if os.path.isdir(board_dir) else []:
-        if f.endswith(".dtsi"):
-            with open(os.path.join(board_dir, f), "r") as fp:
-                dts_text += fp.read() + "\n"
-
-    return dts_text
 
 
 # ---------------------------------------------------------------------------
@@ -1306,32 +831,76 @@ def cmd_import(args):
         sys.exit(1)
 
 
+def _configure_zephyr(zephyr_base, board_name):
+    base = Path(zephyr_base).resolve()
+    sample = base / "samples/hello_world"
+    edtlib_src = base / "scripts/dts/python-devicetree/src"
+    if not (sample / "CMakeLists.txt").is_file() or not (edtlib_src / "devicetree/edtlib.py").is_file():
+        sys.exit(f"Error: Zephyr workspace not found at {base}. Download Zephyr or specify --zephyr-base.")
+
+    output = Path(ove_dir()).resolve() / "output"
+    sdk_dir = find_zephyr_sdk(str(output / "toolchains"), load_manifest(ove_dir()))
+    if not sdk_dir:
+        sys.exit("Error: Zephyr SDK not found. Run 'ove ensure-toolchain zephyr-sdk'.")
+
+    env = zephyr_sdk_env(os.environ, sdk_dir)
+    env["ZEPHYR_BASE"] = str(base)
+    env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env["PATH"]
+    slug = re.sub(r"[^A-Za-z0-9_-]", "-", board_name)
+    build_dir = output / "board-import" / slug
+    build_dir.mkdir(parents=True, exist_ok=True)
+    log_path = build_dir / "configure.log"
+    edt_path = build_dir / "zephyr/edt.pickle"
+    cmd = ["cmake", "-S", str(sample), "-B", str(build_dir), "-G", "Ninja",
+           f"-DBOARD={board_name}", f"-DPython3_EXECUTABLE={sys.executable}",
+           f"-DUSER_CACHE_DIR={output / 'board-import/.cache'}"]
+
+    print(f"  Configuring Zephyr devicetree (log: {log_path})", flush=True)
+    try:
+        # CMake otherwise keeps the first source path and caches Zephyr's board.
+        (build_dir / "CMakeCache.txt").unlink(missing_ok=True)
+        shutil.rmtree(build_dir / "CMakeFiles", ignore_errors=True)
+        edt_path.unlink(missing_ok=True)
+        with log_path.open("w") as log, subprocess.Popen(
+            cmd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True
+        ) as proc:
+            try:
+                status = proc.wait(timeout=120)
+            except (subprocess.TimeoutExpired, KeyboardInterrupt):
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                raise
+        if status:
+            raise RuntimeError(f"CMake exited with status {status}")
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        if log_path.is_file():
+            with log_path.open(errors="replace") as log:
+                sys.stderr.writelines(deque(log, maxlen=20))
+        sys.exit(f"Error: Zephyr configure failed for {board_name}: {exc} (see {log_path})")
+
+    sys.path.insert(0, str(edtlib_src))
+    try:
+        with edt_path.open("rb") as pickle_file:
+            return pickle.load(pickle_file)
+    except (OSError, ImportError, pickle.UnpicklingError, EOFError) as exc:
+        sys.exit(f"Error: cannot load Zephyr devicetree at {edt_path}: {exc}")
+    finally:
+        sys.path.pop(0)
+
+
 def _import_zephyr(args):
-    zephyr_base = args.zephyr_base or os.path.join(dl_dir(), "zephyr-workspace", "zephyr")
+    zephyr_base = args.zephyr_base
+    if not zephyr_base:
+        version = get_component(load_manifest(ove_dir()), "rtos", "zephyr", "version")
+        if not version:
+            sys.exit("Error: Zephyr version missing from manifest.yaml")
+        workspace, _, _ = hashed_dir(dl_dir(), "zephyr-workspace", version)
+        zephyr_base = os.path.join(workspace, "zephyr")
     board_name = args.board
 
-    if not os.path.isdir(zephyr_base):
-        print(f"Error: Zephyr base not found: {zephyr_base}")
-        print("  Download Zephyr first or specify --zephyr-base")
-        sys.exit(1)
-
-    board_dir = _find_zephyr_board_dir(zephyr_base, board_name)
-    if not board_dir:
-        print(f"Error: Zephyr board '{board_name}' not found in {zephyr_base}/boards/")
-        sys.exit(1)
-
     print(f"Importing Zephyr board: {board_name}")
-    print(f"  Source: {board_dir}")
-
-    # Parse DTS
-    dts_text = _read_dts_files(board_dir, board_name)
-    if not dts_text:
-        print(f"  Warning: no DTS files found in {board_dir}")
-        data = {"board": {"name": board_name.replace("_", "-"), "mcu_family": "unknown", "mcu": "unknown"}}
-        warnings = ["No DTS files found — board.yaml will be minimal"]
-    else:
-        tree = DtsParser(dts_text).parse()
-        data, warnings = _extract_board_yaml_from_dts(tree, board_name)
+    edt = _configure_zephyr(zephyr_base, board_name)
+    data, warnings = _extract_board_yaml_from_edt(edt, board_name)
 
     # oveRTOS board name
     ove_name = args.ove_name or data["board"]["name"]
