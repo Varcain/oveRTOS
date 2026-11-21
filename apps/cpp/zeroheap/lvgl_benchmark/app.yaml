@@ -6,7 +6,7 @@ sources:
   - ../../../c/heap/lvgl_benchmark/src/assets/benchmark_cogwheel_rgb.c
   - ../../../c/heap/lvgl_benchmark/src/assets/benchmark_cogwheel_argb.c
   - ../../../c/heap/lvgl_benchmark/src/assets/benchmark_avatar.c
-  - src/app.cpp
+  - ../../heap/lvgl_benchmark/src/app.cpp
 includes:
   - ../../../c/heap/lvgl_benchmark/include
 incompatible_boards:

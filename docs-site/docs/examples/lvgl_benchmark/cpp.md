@@ -1,6 +1,6 @@
 # LVGL Benchmark — C++
 
-Source: `apps/cpp/heap/lvgl_benchmark/src/app.cpp` (and `apps/cpp/zeroheap/lvgl_benchmark/`).
+Source: `apps/cpp/heap/lvgl_benchmark/src/app.cpp` (both modes).
 
 The C++ port uses oveRTOS's typed LVGL wrappers (`ove::lvgl::*`) for widget construction and `ove::LvglGuard` for RAII locking. Scenes still hit upstream LVGL types where the wrapper doesn't add value (`lv_color_hex`, animation primitives).
 

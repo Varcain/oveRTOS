@@ -22,7 +22,9 @@
 #include <ove/lvgl.hpp>
 #include "generated_images/lvgl_images.h"
 #include <cstdio>
+#ifndef CONFIG_OVE_ZERO_HEAP
 #include <memory>
+#endif
 #include <etl/string.h>
 #include <etl/string_stream.h>
 
@@ -35,7 +37,11 @@ static void create_ui();
 static void tick_cb(lv_timer_t *);
 static void rebuild_page();
 
-/* Heap-mode graphics thread is allocated inside OVE_MAIN(). */
+/* 16 KB: the gallery's pages (charts, canvas, image transforms) recurse deep in
+ * LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display. */
+#ifdef CONFIG_OVE_ZERO_HEAP
+static ove::Thread<16384> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
+#endif
 
 /* ── Timer-driven widget slots (set by page builder, null otherwise) */
 
@@ -440,13 +446,13 @@ static void graphics_thread(void *arg)
 
 OVE_MAIN()
 {
-	OVE_LOG_INF("LVGL gallery (C++ heap mode): init");
+	OVE_LOG_INF("LVGL gallery (C++): init");
 
-	/* 16 KB: the gallery's pages (charts, canvas, image transforms) recurse deep in
-	 * LVGL's draw pipeline — 4 KB overflows on the 32-bit sim display. */
+#ifndef CONFIG_OVE_ZERO_HEAP
 	auto gfx_thread = std::make_unique<ove::Thread<16384>>(graphics_thread, nullptr,
 							       OVE_PRIO_HIGH, "graphics");
 	(void)gfx_thread;
+#endif
 
 	int ret = ove_lvgl_init();
 	if (ret != OVE_OK) {

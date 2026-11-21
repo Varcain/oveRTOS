@@ -1,6 +1,6 @@
 # LVGL Gallery — C++
 
-Source: `apps/cpp/heap/lvgl_gallery/src/app.cpp`.
+Source: `apps/cpp/heap/lvgl_gallery/src/app.cpp` (both modes).
 
 The C++ port uses `ove::lvgl::*` typed wrappers for every widget and the fluent style builder for configuration. Page navigation is via `ove::lvgl::TileView`.
 

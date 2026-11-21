@@ -18,7 +18,9 @@
 #include <ove/ove.hpp>
 #include <ove/lvgl.hpp>
 #include <cstdio>
+#ifndef CONFIG_OVE_ZERO_HEAP
 #include <memory>
+#endif
 
 extern "C" {
 #include "benchmark_perf.h"
@@ -77,7 +79,11 @@ static lv_obj_t *card_create(void);
 static void widgets_demo_cb(void);
 // All animation / perf / observer callbacks live in `perf_ffi` — see top of file.
 
-/* Heap-mode graphics thread is allocated inside OVE_MAIN(). */
+/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms)
+ * recurse deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
+#ifdef CONFIG_OVE_ZERO_HEAP
+static ove::Thread<16384> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
+#endif
 
 /* ── Scene types ──────────────────────────────────────────────────── */
 
@@ -1118,13 +1124,13 @@ static void graphics_thread(void *arg)
 
 OVE_MAIN()
 {
-	OVE_LOG_INF("LVGL benchmark (C++ heap mode): init");
+	OVE_LOG_INF("LVGL benchmark (C++): init");
 
-	/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms)
-	 * recurse deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
+#ifndef CONFIG_OVE_ZERO_HEAP
 	auto gfx_thread = std::make_unique<ove::Thread<16384>>(graphics_thread, nullptr,
 							       OVE_PRIO_HIGH, "graphics");
 	(void)gfx_thread;
+#endif
 
 	int ret = ove_lvgl_init();
 	if (ret != OVE_OK) {

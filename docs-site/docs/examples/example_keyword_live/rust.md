@@ -6,7 +6,7 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 
 ## Language-specific patterns
 
-This example uses the `ove` Rust crate with `no_std` support. Error handling uses `Result<T, ove::Error>` with per-op narrow error sets. Shared state uses atomics; cross-thread kernel-object sharing uses `Arc<T>` in heap mode (from `ove::heap::Arc`) and `ove::shared!` cells (`InitCell<T>`) in zero-heap mode. `#[ove::main]` exports the C-ABI entry symbol.
+This example uses the `ove` Rust crate with `no_std` support. Error handling uses `Result<T, ove::Error>` with per-op narrow error sets. The ring buffer indices and sample count use atomics. Heap mode starts the inference thread with `Thread::builder()`, while zero-heap mode uses `ove::thread!`. `#[ove::main]` exports the C-ABI entry symbol.
 
 See the [overview](index.md) for architecture details and the full API list.
 

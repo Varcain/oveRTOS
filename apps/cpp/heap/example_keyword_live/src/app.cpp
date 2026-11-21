@@ -19,7 +19,9 @@
 
 #include <cstring>
 #include <atomic>
+#ifndef CONFIG_OVE_ZERO_HEAP
 #include <memory>
+#endif
 
 #include "keyword_models.h"
 
@@ -313,13 +315,15 @@ OVE_MAIN()
 	}
 	OVE_LOG_INF("Audio streaming: 16kHz mono, DMIC input");
 
-	// Inference thread — heap-allocated via std::make_unique so the
-	// kernel object lives on the heap rather than in a function-static
-	// wrapper.
+#ifdef CONFIG_OVE_ZERO_HEAP
+	// The function-static wrapper keeps the inline kernel storage and stack pinned.
+	static ove::Thread<8192> infer_t(infer_thread, nullptr, OVE_PRIO_NORMAL, "infer");
+#else
 	auto infer_t = std::make_unique<ove::Thread<8192>>(infer_thread, nullptr, OVE_PRIO_NORMAL,
 							   "infer");
+#endif
+	(void)infer_t;
 
 	OVE_LOG_INF("Say \"yes\" or \"no\" near the microphone...");
 	ove::run();
-	(void)infer_t;
 }
