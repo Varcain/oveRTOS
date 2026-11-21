@@ -1,6 +1,6 @@
 # LVGL Benchmark — Zig
 
-Source: `apps/zig/heap/lvgl_benchmark/src/main.zig` (and `apps/zig/zeroheap/lvgl_benchmark/`).
+Source: `apps/zig/heap/lvgl_benchmark/src/main.zig` (both modes).
 
 The Zig port uses `ove.lvgl` for widget construction. Scene tables are `comptime` arrays of function pointers; metrics are stored in `std.atomic.Value(u32)`.
 

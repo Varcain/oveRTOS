@@ -1,6 +1,6 @@
 # LVGL Gallery — Zig
 
-Source: `apps/zig/heap/lvgl_gallery/src/main.zig`.
+Source: `apps/zig/heap/lvgl_gallery/src/main.zig` (both modes).
 
 The Zig port uses `ove.lvgl` typed wrappers and `defer guard.deinit()` for the build-phase lock. Page tables are `comptime` arrays of function pointers.
 

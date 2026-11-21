@@ -2,7 +2,7 @@ lang: zig
 config_name: lvgl_benchmark_zig_zh
 description: "LVGL rendering benchmark (Zig)"
 zig:
-  src_dir: src
+  src_dir: ../../heap/lvgl_benchmark/src
   lib_name: lvgl_benchmark_zig
 c_sources:
   - ../../../c/heap/lvgl_benchmark/src/benchmark_perf.c

@@ -2,7 +2,7 @@
 
 A direct port of LVGL's upstream benchmark demo through the oveRTOS LVGL binding. Fifteen rendering scenes exercise widgets, animations, layout, image decoding, and compositing; a summary table reports per-scene FPS / CPU / render / flush time.
 
-Source: `apps/{c,cpp,rust,zig}/heap/lvgl_benchmark/`. The C, C++ and Rust ports each use one source tree for both modes. Zig also has a source tree under `zeroheap/`.
+Source: `apps/{c,cpp,rust,zig}/heap/lvgl_benchmark/` (both modes).
 
 ## What it does
 

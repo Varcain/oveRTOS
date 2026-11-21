@@ -2,7 +2,7 @@
 
 A one-widget-per-page tour of every wrapped LVGL widget in oveRTOS. Top nav bar walks through the pages; each page exercises one widget type at full size with its typical configuration.
 
-Source: `apps/{cpp,rust,zig}/heap/lvgl_gallery/`. **No C port** — the gallery is the showcase for the typed wrappers, which the C port wouldn't add anything to.
+Source: `apps/{cpp,rust,zig}/heap/lvgl_gallery/` (both modes). **No C port** — the gallery is the showcase for the typed wrappers, which the C port wouldn't add anything to.
 
 ## Why no C variant
 

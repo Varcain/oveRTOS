@@ -2,7 +2,7 @@ config_name: example_keyword_live_zig_zh
 lang: zig
 description: "Live DMIC Keyword Detection (Zig)"
 zig:
-  src_dir: src
+  src_dir: ../../heap/example_keyword_live/src
   lib_name: example_keyword_live_zig
 incompatible_boards:
   # The an521 has no audio input.

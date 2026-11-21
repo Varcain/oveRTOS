@@ -20,8 +20,14 @@
 const std = @import("std");
 const ove = @import("ove");
 
-/// Allocator backing every binding primitive in this app.
-const app_allocator = ove.allocators.c_allocator;
+// The static arena holds the thread stack and control block.
+const thread_arena_size = if (ove.zero_heap) std.mem.alignForward(
+    usize,
+    ove.thread.stackTotal(graphics_stack) + @sizeOf(ove.ffi.ove_thread_storage_t),
+    ove.thread.stackAlign(graphics_stack),
+) else 0;
+var arena_bytes: [thread_arena_size]u8 align(ove.thread.stackAlign(graphics_stack)) = undefined;
+var fba: std.heap.FixedBufferAllocator = undefined;
 
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
@@ -1013,12 +1019,18 @@ fn graphicsEntry() void {
 // keep its stack at 16 KB instead of 32 KB (a 64 KB block once aligned).
 const graphics_stack = 16 * 1024 - 128;
 const GraphicsThread = ove.Thread(graphics_stack);
-var graphics_thread: ?GraphicsThread = null;
+var graphics_thread: if (ove.zero_heap) GraphicsThread else ?GraphicsThread =
+    if (ove.zero_heap) undefined else null;
 
 fn appMain() void {
+    const allocator = if (comptime ove.zero_heap) blk: {
+        fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+        break :blk fba.allocator();
+    } else ove.allocators.c_allocator;
+
     std.log.info("LVGL benchmark (Zig): init", .{});
 
-    graphics_thread = GraphicsThread.spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = GraphicsThread.spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to spawn graphics", .{});
         return;
     };

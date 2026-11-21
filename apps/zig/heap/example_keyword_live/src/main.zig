@@ -16,8 +16,14 @@
 const std = @import("std");
 const ove = @import("ove");
 
-/// Allocator backing every binding primitive in this app.
-const app_allocator = ove.allocators.c_allocator;
+// The static arena holds the thread stack and control block.
+const thread_arena_size = if (ove.zero_heap) std.mem.alignForward(
+    usize,
+    ove.thread.stackTotal(infer_stack) + @sizeOf(ove.ffi.ove_thread_storage_t),
+    ove.thread.stackAlign(infer_stack),
+) else 0;
+var arena_bytes: [thread_arena_size]u8 align(ove.thread.stackAlign(infer_stack)) = undefined;
+var fba: std.heap.FixedBufferAllocator = undefined;
 
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
@@ -119,9 +125,15 @@ const DmicProcessor = struct {
 
 var dmic_proc: DmicProcessor = .{};
 
-// Audio graph + inference thread — file-scope so embedded storage outlives appMain.
+// Keep the audio graph and inference thread alive for the app lifetime.
+// Zephyr's ove.Thread adds 128 B and rounds up to an aligned power of two.
+// The zero-heap request keeps its stack at 8 KB instead of 16 KB.
+const infer_stack = if (ove.zero_heap) 8192 - 128 else 8192;
+const InferThread = ove.Thread(infer_stack);
 var graph: ove.audio.Graph = undefined;
-var infer_thread: ove.Thread(8192) = undefined;
+var infer_thread: InferThread = undefined;
+// 2 non-sink nodes x 512 frames x mono x S16
+var graph_buf: [if (ove.zero_heap) 2 * 512 * 1 * 2 else 0]u8 align(4) = undefined;
 
 // ── DSP parameters ────────────────────────────────────────────────────
 
@@ -136,7 +148,7 @@ const DspState = struct {
 fn generateFeatures(
     audio: []const i16,
     features: *[feature_count][feature_size]i8,
-    storage: *[arena_size]u8,
+    storage: *InferStorage,
     dsp: DspState,
 ) !void {
     const slice = preprocessorModel();
@@ -145,8 +157,8 @@ fn generateFeatures(
         .model_size = slice.len,
         .arena_size = arena_size,
     };
-    _ = storage;
-    var preproc = try ove.Model.create(&cfg);
+    var preproc: ove.Model = if (comptime ove.zero_heap) undefined else try ove.Model.create(&cfg);
+    if (comptime ove.zero_heap) try preproc.init(storage, &cfg);
     defer preproc.deinit();
 
     const actual_window = feature_duration_ms * dsp.actual_rate / 1000;
@@ -184,7 +196,7 @@ const Prediction = struct {
 
 fn classifyKeyword(
     features: *const [feature_count][feature_size]i8,
-    storage: *[arena_size]u8,
+    storage: *InferStorage,
 ) !Prediction {
     const slice = classifierModel();
     const cfg = ove.ffi.ove_model_config{
@@ -192,8 +204,8 @@ fn classifyKeyword(
         .model_size = slice.len,
         .arena_size = arena_size,
     };
-    _ = storage;
-    var classifier = try ove.Model.create(&cfg);
+    var classifier: ove.Model = if (comptime ove.zero_heap) undefined else try ove.Model.create(&cfg);
+    if (comptime ove.zero_heap) try classifier.init(storage, &cfg);
     defer classifier.deinit();
 
     const input = try classifier.inputData(u8, 0);
@@ -218,11 +230,11 @@ fn classifyKeyword(
 
 // ── Inference thread ───────────────────────────────────────────────────
 
-// The inference buffers (~66 KB) are far larger than the 8 KiB infer stack, so they
-// live in statics. Only the infer thread touches them.
+// The inference buffers are larger than the infer stack and are used only by that thread.
+const InferStorage = [if (ove.zero_heap) arena_size else 0]u8;
 var infer_audio_window = [_]i16{0} ** audio_sample_freq;
 var infer_features = std.mem.zeroes([feature_count][feature_size]i8);
-var infer_storage: [arena_size]u8 align(16) = undefined;
+var infer_storage: InferStorage align(16) = undefined;
 
 fn inferThread() void {
     std.log.info("Inference thread started — listening...", .{});
@@ -299,6 +311,11 @@ fn inferThread() void {
 // ── Entry point ────────────────────────────────────────────────────────
 
 fn appMain() void {
+    const allocator = if (comptime ove.zero_heap) blk: {
+        fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+        break :blk fba.allocator();
+    } else ove.allocators.c_allocator;
+
     std.log.info("=== Live DMIC Keyword Detection (Zig) ===", .{});
     std.log.info("Models: preprocessor {d} + classifier {d} bytes", .{
         preprocessorModel().len,
@@ -310,6 +327,14 @@ fn appMain() void {
         ove.run();
         return;
     };
+
+    if (comptime ove.zero_heap) {
+        graph.setBufStorage(&graph_buf) catch {
+            std.log.err("Audio graph storage failed", .{});
+            ove.run();
+            return;
+        };
+    }
 
     const dev_cfg = ove.audio.Graph.deviceCfgI2s(16000, 1, 1);
 
@@ -351,7 +376,7 @@ fn appMain() void {
     };
     std.log.info("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    infer_thread = ove.Thread(8192).spawn(app_allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
+    infer_thread = InferThread.spawn(allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
         std.log.err("Failed to spawn infer thread", .{});
         ove.run();
         return;
