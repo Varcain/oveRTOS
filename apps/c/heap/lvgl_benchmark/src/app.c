@@ -1065,22 +1065,29 @@ static void graphics_thread(void *arg)
 	}
 }
 
+/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
+ * deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
+#ifdef CONFIG_OVE_ZERO_HEAP
+OVE_THREAD_DEFINE_STATIC(graphics_thread_handle, 16384, graphics_thread, NULL, OVE_PRIO_HIGH,
+			 "graphics");
+#endif
+
 /* ── Entry point ───────────────────────────────────────────────────── */
 
 void ove_main(void)
 {
 	int ret;
 
-	OVE_LOG_INF("LVGL benchmark (heap mode): init");
+	OVE_LOG_INF("LVGL benchmark (C): init");
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 	ove_thread_t graphics;
-	/* 16 KB: LVGL's benchmark scenes (widgets demo, nested containers, image transforms) recurse
-	 * deep in the draw pipeline — 4 KB overflows on the real 480x272 LTDC panel. */
 	if (ove_thread_create(&graphics, "graphics", graphics_thread, NULL, OVE_PRIO_HIGH, 16384) !=
 	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn graphics thread");
 		return;
 	}
+#endif
 
 	/* Init LVGL */
 	ret = ove_lvgl_init();

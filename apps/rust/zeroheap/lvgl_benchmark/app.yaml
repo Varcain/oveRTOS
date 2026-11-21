@@ -2,12 +2,12 @@ lang: rust
 config_name: lvgl_benchmark_rust_zh
 description: "LVGL rendering benchmark (Rust)"
 c_sources:
-  - ../../../c/zeroheap/lvgl_benchmark/src/benchmark_perf.c
-  - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_cogwheel_rgb.c
-  - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_cogwheel_argb.c
-  - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_avatar.c
+  - ../../../c/heap/lvgl_benchmark/src/benchmark_perf.c
+  - ../../../c/heap/lvgl_benchmark/src/assets/benchmark_cogwheel_rgb.c
+  - ../../../c/heap/lvgl_benchmark/src/assets/benchmark_cogwheel_argb.c
+  - ../../../c/heap/lvgl_benchmark/src/assets/benchmark_avatar.c
 c_includes:
-  - ../../../c/zeroheap/lvgl_benchmark/include
+  - ../../../c/heap/lvgl_benchmark/include
 rust:
   lib_name: lvgl_benchmark_rust
 incompatible_boards:

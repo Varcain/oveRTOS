@@ -1,6 +1,6 @@
 # LVGL Benchmark — C
 
-Source: `apps/c/heap/lvgl_benchmark/src/app.c` (and `apps/c/zeroheap/lvgl_benchmark/`).
+Source: `apps/c/heap/lvgl_benchmark/src/app.c` (both modes).
 
 The C port calls the LVGL C API directly through `<ove/lvgl.h>` — `ove_lvgl_lock()` / `ove_lvgl_unlock()` are the only oveRTOS-specific calls; everything else is upstream LVGL.
 

@@ -364,6 +364,10 @@ static void infer_thread(void *arg)
 
 /* ── Entry point ───────────────────────────────────────────────────── */
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+OVE_THREAD_DEFINE_STATIC(infer_thread_handle, 8192, infer_thread, NULL, OVE_PRIO_NORMAL, "infer");
+#endif
+
 void ove_main(void)
 {
 	OVE_LOG_INF("=== Live DMIC Keyword Detection ===");
@@ -375,7 +379,12 @@ void ove_main(void)
 	ring_buffer_init(&audio_ring);
 
 	/* Initialize audio graph: I2S DMIC → processor → I2S headphone */
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* 2 non-sink nodes (dmic-in, dmic-proc) x 512 frames x mono x S16 */
+	OVE_AUDIO_GRAPH_DEFINE(audio_graph, 2, 512, 1, 2);
+#else
 	static struct ove_audio_graph audio_graph;
+#endif
 	struct ove_audio_device_cfg dev_cfg = {
 		.transport = OVE_AUDIO_TRANSPORT_I2S,
 		.fmt =
@@ -388,6 +397,11 @@ void ove_main(void)
 	};
 
 	int rc = ove_audio_graph_init(&audio_graph, 512); /* 32ms at 16kHz */
+#ifdef CONFIG_OVE_ZERO_HEAP
+	if (rc == OVE_OK)
+		rc = ove_audio_graph_set_buf_storage(&audio_graph, audio_graph_buf,
+						     sizeof(audio_graph_buf));
+#endif
 	if (rc != OVE_OK) {
 		OVE_LOG_ERR("Audio graph init failed: %d", rc);
 		ove_run();
@@ -429,7 +443,7 @@ void ove_main(void)
 	}
 	OVE_LOG_INF("Audio streaming: 16kHz mono, DMIC input");
 
-	/* Heap-allocate the inference thread via ove_thread_create. */
+#ifndef CONFIG_OVE_ZERO_HEAP
 	ove_thread_t infer_th;
 	if (ove_thread_create(&infer_th, "infer", infer_thread, NULL, OVE_PRIO_NORMAL, 8192) !=
 	    OVE_OK) {
@@ -437,6 +451,7 @@ void ove_main(void)
 		ove_run();
 		return;
 	}
+#endif
 
 	OVE_LOG_INF("Say \"yes\" or \"no\" near the microphone...");
 

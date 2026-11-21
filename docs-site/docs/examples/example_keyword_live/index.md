@@ -11,7 +11,7 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 | [Rust](rust.md) | `apps/rust/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_rust_heap){:target="_blank"}** |
 | [Zig](zig.md) | `apps/zig/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_zig_heap){:target="_blank"}** |
 
-Zero-heap variants live under `apps/<lang>/zeroheap/example_keyword_live/`.
+The C variants share the source listed above. Zero-heap configurations are under `apps/<lang>/zeroheap/example_keyword_live/`.
 
 ## Key APIs demonstrated
 

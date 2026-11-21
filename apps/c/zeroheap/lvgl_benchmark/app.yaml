@@ -2,13 +2,13 @@ lang: c
 config_name: lvgl_benchmark_c_zh
 description: "LVGL rendering benchmark (C)"
 sources:
-  - src/app.c
-  - src/benchmark_perf.c
-  - src/assets/benchmark_cogwheel_rgb.c
-  - src/assets/benchmark_cogwheel_argb.c
-  - src/assets/benchmark_avatar.c
+  - ../../heap/lvgl_benchmark/src/app.c
+  - ../../heap/lvgl_benchmark/src/benchmark_perf.c
+  - ../../heap/lvgl_benchmark/src/assets/benchmark_cogwheel_rgb.c
+  - ../../heap/lvgl_benchmark/src/assets/benchmark_cogwheel_argb.c
+  - ../../heap/lvgl_benchmark/src/assets/benchmark_avatar.c
 includes:
-  - include
+  - ../../heap/lvgl_benchmark/include
 incompatible_boards:
   # The an521 has no display.
   - qemu-mps2-an521
