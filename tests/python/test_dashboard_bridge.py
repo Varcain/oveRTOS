@@ -4,23 +4,35 @@
 #
 # This file is part of oveRTOS.
 
+import asyncio
 import importlib.util
 import io
 import json
 import os
 import re
-import select
 import socket
 import struct
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import (
+    asynccontextmanager,
+    contextmanager,
+    redirect_stderr,
+    redirect_stdout,
+    suppress,
+)
+from http.client import HTTPResponse
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+from websockets.asyncio.client import connect
+from websockets.asyncio.server import serve as websocket_serve
+from websockets.datastructures import Headers
+from websockets.http11 import Request
 
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = ROOT / "config/scripts/ove-dashboard-bridge.py"
@@ -159,76 +171,161 @@ class DashboardBridgeTest(unittest.TestCase):
         endpoints = re.findall(r'-gdb "(tcp:[^"]+)"', script.read_text(encoding="utf-8"))
         self.assertEqual(endpoints, ["tcp:127.0.0.1:${GDB_PORT}"] * 2)
 
-    def test_default_bind(self):
-        listener = Mock()
-        listener.listen.side_effect = StopIteration
-        with patch.object(self.bridge.socket, "socket", return_value=listener):
-            with self.assertRaises(StopIteration):
-                self.bridge.serve(0, "")
-        listener.bind.assert_called_once_with(("127.0.0.1", 0))
-
-    def test_websocket_origins(self):
-        host = "127.0.0.1:12345"
-        cases = (
-            (host, "http://evil.example", b"403"),
-            (host, f"http://{host}", b"101"),
-            (host, f"https://{host}", b"403"),
-            (host, None, b"101"),
-            ("localhost:12345", "http://localhost:12345", b"101"),
-            ("[::1]:12345", "http://[::1]:12345", b"101"),
-            ("evil.example:12345", "http://evil.example:12345", b"403"),
-            ("evil.example:12345", None, b"403"),
-        )
-        for authority, origin, status in cases:
-            with self.subTest(host=authority, origin=origin):
-                client = self.bridge.Client(Mock(), None)
-                client.buf = upgrade_request(authority, origin)
-                with patch.object(self.bridge, "_send_http",
-                                  side_effect=lambda c, data: c.sock.sendall(data)):
-                    self.bridge._handle_http(client, "")
-                self.assertEqual(client.sock.sendall.call_args_list[0].args[0].split()[1], status)
-
-    def test_loopback_upgrade(self):
+    @contextmanager
+    def running_bridge(self):
         try:
             with socket.socket():
                 pass
         except PermissionError as exc:
             self.skipTest(f"cannot create TCP socket: {exc}")
 
-        address = Queue()
-        stop = threading.Event()
-        listener = None
+        bridge = self.bridge
+        dashboard = self.tmp / "dashboard"
+        dashboard.mkdir()
+        (dashboard / "index.html").write_bytes(b"<html>dashboard</html>")
+        ready = Queue()
 
-        def poll(readers, writers, errors, timeout):
-            nonlocal listener
-            if listener is None:
-                listener = readers[0]
-                address.put(listener.getsockname())
-            if stop.is_set():
-                for sock in readers:
-                    sock.close()
-                raise StopIteration
-            return select.select(readers, writers, errors, timeout)
+        async def run():
+            @asynccontextmanager
+            async def listen(handler, host, port, **kwargs):
+                loop = asyncio.get_running_loop()
+                async with websocket_serve(handler, host, port, **kwargs) as server:
+                    ready.put((server.sockets[0].getsockname(),
+                               lambda: loop.call_soon_threadsafe(server.close)))
+                    yield server
 
-        with patch.object(self.bridge, "select", SimpleNamespace(select=poll)):
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                server = pool.submit(self.bridge.serve, 0, "")
-                try:
-                    host, port = address.get(timeout=2)
-                    authority = f"127.0.0.1:{port}"
-                    rebinding = f"evil.example:{port}"
-                    for name, origin, status in (
-                        (authority, "http://evil.example", b"403"),
-                        (rebinding, f"http://{rebinding}", b"403"),
-                        (authority, f"http://{authority}", b"101"),
-                    ):
-                        with self.subTest(host=name, origin=origin):
-                            with socket.create_connection(("127.0.0.1", port), timeout=2) as peer:
-                                peer.sendall(upgrade_request(name, origin))
-                                with peer.makefile("rb") as response:
-                                    self.assertEqual(response.readline().split()[1], status)
-                    self.assertEqual(host, "127.0.0.1")
-                finally:
-                    stop.set()
-                    with self.assertRaises(StopIteration):
-                        server.result(timeout=2)
+            with patch.object(bridge, "websocket_serve", listen), suppress(asyncio.CancelledError):
+                await bridge.serve(0, dashboard)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            server = pool.submit(asyncio.run, run())
+            try:
+                address, shutdown = ready.get(timeout=2)
+            except Empty:
+                server.result(timeout=2)
+                raise
+            try:
+                self.assertEqual(address[0], "127.0.0.1")
+                yield address
+            finally:
+                shutdown()
+                server.result(timeout=3)
+
+    @contextmanager
+    def http_response(self, address, request):
+        with socket.create_connection(address, timeout=2) as sock, HTTPResponse(sock) as response:
+            sock.sendall(request)
+            response.begin()
+            yield response
+
+    def connect_websocket(self, address, **kwargs):
+        sock = socket.create_connection(address, timeout=2)
+        sock.setblocking(False)
+        host, port = address
+        return connect(f"ws://{host}:{port}/ws", sock=sock, **kwargs)
+
+    def test_websocket_origins(self):
+        host = "127.0.0.1:12345"
+        cases = (
+            (host, "http://evil.example", 403),
+            (host, f"http://{host}", 101),
+            (host, f"https://{host}", 403),
+            (host, None, 101),
+            ("localhost:12345", "http://localhost:12345", 101),
+            ("[::1]:12345", "http://[::1]:12345", 101),
+            ("evil.example:12345", "http://evil.example:12345", 403),
+            ("evil.example:12345", None, 403),
+        )
+        bridge = self.bridge
+        for authority, origin, status in cases:
+            with self.subTest(host=authority, origin=origin):
+                headers = Headers({"Host": authority, "Upgrade": "websocket"})
+                if origin is not None:
+                    headers["Origin"] = origin
+                connection = Mock(respond=lambda status, _: status)
+                result = bridge._process_request(connection, Request("/ws", headers),
+                                                 "", bridge.DEFAULT_HOST)
+                self.assertEqual(101 if result is None else result, status)
+
+    def test_dashboard_websocket_roundtrip(self):
+        bridge = self.bridge
+        bridge.INPUT_PATH.write_bytes(struct.pack("<I12x", bridge.INPUT_MAGIC))
+        sim_header = struct.pack("<I", bridge.SIM_SHM_MAGIC)
+        bridge.SIM_SHM_PATH.write_bytes(sim_header.ljust(bridge.SIM_SHM_TOTAL_SIZE, b"\0"))
+        cmd = struct.pack("<III", 2, 1, 3) + b"cmd"
+        ring_entry = struct.pack("<H", len(cmd)) + cmd
+        pointer = struct.pack("<hhB", 25, -36, 1)
+
+        async def exchange(address):
+            host, port = address
+            async with self.connect_websocket(address, origin=f"http://{host}:{port}") as peer:
+                self.assertNotIn("Sec-WebSocket-Extensions", peer.response.headers)
+                self.assertEqual(await peer.recv(), struct.pack("<II", bridge.FRAME_STATE, 0)
+                                 + b'{"type":"audio","sample_rate":16000,"channels":1,"bit_depth":16}')
+                await peer.send(struct.pack("<I", bridge.FRAME_INPUT) + pointer)
+                await peer.send(struct.pack("<I", bridge.FRAME_CMD) + cmd)
+                while struct.unpack_from("<I", bridge.SIM_SHM_PATH.read_bytes(),
+                                         bridge.SIM_CMD_WRITE_POS_OFF)[0] == 0:
+                    await asyncio.sleep(0.01)
+                self.assertEqual(bridge.INPUT_PATH.read_bytes()[4:9], pointer)
+                self.addCleanup(bridge.input_shm[0].close)
+                off = bridge.SIM_CMD_RING_OFF
+                self.assertEqual(bridge.SIM_SHM_PATH.read_bytes()[off:off + len(ring_entry)], ring_entry)
+
+                pixels = b"\x01\x02\x03\xff" * 6
+                bridge.FB_PATH.write_bytes(struct.pack("<IHHII", bridge.FB_MAGIC, 3, 2, 1, 1) + pixels)
+                # Exit the display reader after its first dirty frame.
+                with patch.object(bridge, "time", Mock(sleep=Mock(side_effect=SystemExit))), \
+                        self.assertRaises(SystemExit):
+                    bridge.display_bridge()
+                self.assertEqual(await peer.recv(), struct.pack("<IHHHH", bridge.FRAME_FB, 0, 0, 2, 1)
+                                 + pixels)
+
+        with self.running_bridge() as address:
+            with self.http_response(address, b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n") as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.getheader("Cross-Origin-Opener-Policy"), "same-origin")
+                self.assertEqual(response.getheader("Cross-Origin-Embedder-Policy"), "require-corp")
+                self.assertEqual(response.getheader("Cache-Control"), "no-cache")
+                self.assertEqual(response.read(), b"<html>dashboard</html>")
+            host, port = address
+            for authority, origin in ((f"{host}:{port}", "http://evil.example"),
+                                      (f"evil.example:{port}", f"http://evil.example:{port}")):
+                with self.http_response(address, upgrade_request(authority, origin)) as response:
+                    self.assertEqual(response.status, 403)
+            asyncio.run(asyncio.wait_for(exchange(address), 4))
+
+    def test_websocket_keepalive(self):
+        async def check(address):
+            async with self.connect_websocket(address, ping_interval=0.2, ping_timeout=0.5,
+                                              close_timeout=0.5) as peer:
+                await peer.recv()
+                await asyncio.sleep(2)
+                self.assertIsNone(peer.close_code, f"keepalive closed the connection: {peer.close_reason}")
+
+        with self.running_bridge() as address:
+            asyncio.run(asyncio.wait_for(check(address), 4))
+
+    def test_websocket_log_burst(self):
+        bridge = self.bridge
+        prefix = struct.pack("<I", bridge.FRAME_LOG)
+        frames = [prefix + f"log {index}".encode() for index in range(1000)]
+
+        def post_burst():
+            for frame in frames:
+                bridge.post_frame(frame)
+
+        def queue_burst():
+            # Queue all callbacks in one server loop turn.
+            worker = threading.Thread(target=post_burst)
+            worker.start()
+            worker.join(timeout=2)
+
+        async def check(address):
+            async with self.connect_websocket(address, close_timeout=0.5) as peer:
+                await peer.recv()
+                bridge._server_loop.call_soon_threadsafe(queue_burst)
+                self.assertEqual([await peer.recv() for _ in frames], frames)
+
+        with self.running_bridge() as address:
+            asyncio.run(asyncio.wait_for(check(address), 5))

@@ -16,29 +16,29 @@ and streams them to the browser dashboard over WebSocket.
 Started by qemu-run.sh for native QEMU runs.  In the browser the page
 does this job itself (sim/dashboard/qemu-wasm.js).
 
-Architecture:
-  - Single server thread: accept, poll, read, write (no blocking).
-  - Shmem bridge threads post frames into a mailbox.
-  - Server thread drains mailbox and writes WS frames to clients.
+Shared-memory and reader threads post frames to the asyncio server.
 """
 
 import argparse
 import array
-import base64
-import hashlib
+import asyncio
 import ipaddress
 import mmap
 import os
-import select
-import socket
 import struct
 import sys
 import threading
 import time
 import traceback
+from contextlib import suppress
+from http import HTTPStatus
 from urllib.parse import urlsplit
 
 from pygdbmi.gdbmiparser import parse_response
+from websockets.asyncio.server import serve as websocket_serve
+from websockets.datastructures import Headers
+from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Response
 
 OVE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 DEFAULT_HOST = "127.0.0.1"
@@ -152,57 +152,6 @@ def rgb565_to_xrgb8888(data, npixels):
     pixels = struct.unpack_from(f"<{npixels}H", data)
     return array.array("I", (_LUT[px] for px in pixels)).tobytes()
 
-# ── WebSocket helpers ────────────────────────────────────────────────
-
-WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
-def ws_accept(key):
-    return base64.b64encode(
-        hashlib.sha1(key.strip().encode() + WS_GUID).digest()
-    ).decode()
-
-def ws_frame(data):
-    n = len(data)
-    if n < 126:
-        hdr = bytes([0x82, n])
-    elif n < 65536:
-        hdr = struct.pack(">BBH", 0x82, 126, n)
-    else:
-        hdr = struct.pack(">BBQ", 0x82, 127, n)
-    return hdr + data
-
-# ── Mailbox (single-slot, latest-wins) ───────────────────────────────
-
-class Mailbox:
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._fb = None
-        self._audio = []   # queue — every chunk matters
-        self._logs = []
-
-    def post_fb(self, frame):
-        with self._lock:
-            self._fb = frame
-
-    def post_audio(self, frame):
-        with self._lock:
-            self._audio.append(frame)
-
-    def post_log(self, frame):
-        with self._lock:
-            self._logs.append(frame)
-
-    def drain(self):
-        with self._lock:
-            fb, audio, logs = self._fb, self._audio, self._logs
-            self._fb = None
-            self._audio = []
-            self._logs = []
-        return fb, audio, logs
-
-mailbox = Mailbox()
-last_fb_frame = [None]  # cached for late-joining clients
-
 # ── Audio input writer (dashboard mic → QEMU guest) ─────────────────
 
 audio_in_mm = [None]   # mmap handle, set by audio_bridge
@@ -243,256 +192,13 @@ def audio_input_write(pcm_bytes):
                      AUDIO_IN_RING_OFF + RING_OFF_WRITE_POS,
                      audio_in_wpos[0])
 
-# ── WebSocket frame parser ───────────────────────────────────────────
-
-def ws_parse_frame(buf):
-    """Parse one WebSocket frame from buf. Returns (payload, consumed) or (None, 0)."""
-    if len(buf) < 2:
-        return None, 0
-    b0, b1 = buf[0], buf[1]
-    masked = (b1 & 0x80) != 0
-    plen = b1 & 0x7F
-    hlen = 2
-    if plen == 126:
-        if len(buf) < 4:
-            return None, 0
-        plen = struct.unpack_from(">H", buf, 2)[0]
-        hlen = 4
-    elif plen == 127:
-        if len(buf) < 10:
-            return None, 0
-        plen = struct.unpack_from(">Q", buf, 2)[0]
-        hlen = 10
-    mlen = 4 if masked else 0
-    total = hlen + mlen + plen
-    if len(buf) < total:
-        return None, 0
-    mask_key = buf[hlen:hlen + mlen] if masked else None
-    payload = bytearray(buf[hlen + mlen:hlen + mlen + plen])
-    if masked:
-        for i in range(len(payload)):
-            payload[i] ^= mask_key[i & 3]
-    opcode = b0 & 0x0F
-    return (opcode, bytes(payload)), total
-
-# ── Single-threaded server ────────────────────────────────────────────
+# ── HTTP and WebSocket server ────────────────────────────────────────
 
 MIME = {
     ".html": "text/html", ".js": "application/javascript",
     ".css": "text/css", ".png": "image/png",
     ".svg": "image/svg+xml", ".json": "application/json",
 }
-
-ST_HTTP = 0
-ST_WS   = 1
-ST_DONE = 2  # HTTP response sent, close on next loop
-
-class Client:
-    __slots__ = ("sock", "addr", "state", "buf", "send_lock")
-    def __init__(self, sock, addr):
-        self.sock = sock
-        self.addr = addr
-        self.state = ST_HTTP
-        self.buf = b""
-        self.send_lock = threading.Lock()
-
-# Shared list of WS clients for audio_bridge to send directly.
-ws_client_list = []
-ws_client_lock = threading.Lock()
-
-def serve(port, dashboard_dir, host=DEFAULT_HOST):
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind((host, port))
-    srv.listen(8)
-    srv.setblocking(False)
-    print(f"Dashboard: http://{host}:{srv.getsockname()[1]}", flush=True)
-
-    clients = []
-
-    while True:
-        # Build poll list: server + active client sockets. Guard against
-        # fd=-1 entries — a client whose handshake threw (e.g. browser
-        # RST mid-upgrade) already had its socket closed; if it wasn't
-        # also marked ST_DONE, select() would blow up on the stale fd
-        # and take down the whole server loop.
-        rlist = [srv]
-        for c in clients:
-            if c.state == ST_DONE:
-                continue
-            try:
-                if c.sock.fileno() < 0:
-                    c.state = ST_DONE
-                    continue
-            except Exception:
-                c.state = ST_DONE
-                continue
-            rlist.append(c.sock)
-        try:
-            readable, _, _ = select.select(rlist, [], [], 0.015)
-        except (ValueError, OSError) as e:
-            # Belt-and-suspenders: if a race still snuck a bad fd into
-            # rlist, drop the offenders and carry on instead of dying.
-            sys.stderr.write(f"[bridge] select() error: {e}; purging\n")
-            sys.stderr.flush()
-            for c in list(clients):
-                try:
-                    if c.sock.fileno() < 0:
-                        c.state = ST_DONE
-                except Exception:
-                    c.state = ST_DONE
-            readable = []
-
-        # Accept new connections
-        if srv in readable:
-            try:
-                csock, caddr = srv.accept()
-                csock.setblocking(False)
-                csock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                clients.append(Client(csock, caddr))
-            except BlockingIOError:
-                pass
-
-        # Read from clients
-        dead = []
-        for c in clients:
-            if c.state == ST_DONE or c.sock not in readable:
-                continue
-            try:
-                data = c.sock.recv(16384)
-            except (BlockingIOError, ConnectionError):
-                data = None
-            if not data:
-                dead.append(c)
-                continue
-            if c.state == ST_HTTP:
-                c.buf += data
-                if b"\r\n\r\n" in c.buf:
-                    _handle_http(c, dashboard_dir, bind_host=host)
-            elif c.state == ST_WS:
-                c.buf += data
-                while True:
-                    result, consumed = ws_parse_frame(c.buf)
-                    if result is None:
-                        break
-                    opcode, payload = result
-                    c.buf = c.buf[consumed:]
-                    if opcode == 0x08:  # close
-                        dead.append(c)
-                        break
-                    if opcode == 0x02 and len(payload) >= 4:  # binary
-                        ftype = struct.unpack_from("<I", payload, 0)[0]
-                        fdata = payload[4:]
-                        if ftype == FRAME_CMD and len(fdata) >= 12:
-                            # Plugin command: [plugin_id:4][cmd_type:4][data_len:4][data]
-                            plugin_id = struct.unpack_from("<I", fdata, 0)[0]
-                            cmd_type = struct.unpack_from("<I", fdata, 4)[0]
-                            pcm = fdata[12:]
-                            # Audio-inject short-circuit: cmd_type 0 with
-                            # a real plugin ID (skip console sentinel)
-                            # writes PCM directly into the audio ring.
-                            if plugin_id == 0xFFFFFFFF and console_fd[0] is not None:
-                                # Console text: straight to the firmware's
-                                # UART, as typing in the terminal does.
-                                try:
-                                    os.write(console_fd[0], pcm)
-                                except OSError:
-                                    pass
-                            elif (plugin_id != 0xFFFFFFFF
-                                    and cmd_type == 0 and pcm):
-                                audio_input_write(pcm)
-                            else:
-                                # Forward to the firmware's shm cmd ring.
-                                # The sim-debug pump drains it and
-                                # dispatches to the targeted plugin.
-                                sim_cmd_send(plugin_id, cmd_type, pcm)
-                        elif ftype == FRAME_AUDIO and len(fdata) >= 8:
-                            # Raw audio frame from dashboard mic
-                            pcm = fdata[8:]
-                            if pcm:
-                                audio_input_write(pcm)
-                        elif ftype == FRAME_INPUT and len(fdata) >= 5:
-                            # Pointer input: int16 x, int16 y, uint8 pressed
-                            x, y, pressed = struct.unpack_from(
-                                "<hhB", fdata, 0)
-                            input_shm_write(x, y, pressed)
-                        elif ftype == FRAME_DEBUG_CMD and len(fdata) >= 1:
-                            gdb = gdb_controller[0]
-                            if gdb:
-                                gdb.handle_debug_cmd(fdata)
-                        elif ftype == FRAME_FILE_REQ and fdata:
-                            handle_file_request(fdata)
-
-        # Remove dead WS clients
-        for c in dead:
-            clients.remove(c)
-            with ws_client_lock:
-                if c in ws_client_list:
-                    ws_client_list.remove(c)
-            try:
-                c.sock.close()
-            except Exception:
-                pass
-
-        # Close completed HTTP clients (static file served)
-        done = [c for c in clients if c.state == ST_DONE]
-        for c in done:
-            clients.remove(c)
-            try:
-                c.sock.close()
-            except Exception:
-                pass
-
-        # Drain mailbox and broadcast to WS clients.
-        # Audio is sent directly by audio_bridge thread — only fb/logs here.
-        fb, audio, logs = mailbox.drain()
-        ws_clients = [c for c in clients if c.state == ST_WS]
-        frames = logs + ([fb] if fb else [])
-        for frame in frames:
-            dead2 = []
-            for c in ws_clients:
-                try:
-                    _send_nonblock(c, frame)
-                except (ConnectionError, OSError, TimeoutError):
-                    dead2.append(c)
-            for c in dead2:
-                if c in clients:
-                    clients.remove(c)
-                with ws_client_lock:
-                    if c in ws_client_list:
-                        ws_client_list.remove(c)
-                try:
-                    c.sock.close()
-                except Exception:
-                    pass
-
-
-def _send_http(client, data):
-    """Send an HTTP response in a thread. Marks client for cleanup."""
-    def _do_send():
-        try:
-            client.sock.setblocking(True)
-            client.sock.settimeout(2)
-            client.sock.sendall(data)
-        except Exception:
-            pass
-        client.state = ST_DONE
-    threading.Thread(target=_do_send, daemon=True).start()
-
-
-def _send_nonblock(client, data):
-    """Send with per-client lock, short timeout to avoid stalling the server."""
-    acquired = client.send_lock.acquire(timeout=0.05)
-    if not acquired:
-        return  # audio thread is sending — skip this frame
-    try:
-        client.sock.setblocking(True)
-        client.sock.settimeout(0.5)
-        client.sock.sendall(data)
-    finally:
-        client.sock.setblocking(False)
-        client.send_lock.release()
-
 
 def _ws_host_allowed(authority, bind_host):
     try:
@@ -507,128 +213,170 @@ def _ws_host_allowed(authority, bind_host):
     return True
 
 
-def _handle_http(c, dashboard_dir, bind_host=DEFAULT_HOST):
-    request = c.buf.decode(errors="replace")
-    c.buf = b""
+def _process_request(connection, request, dashboard_dir, bind_host):
+    path = request.path.split("?", 1)[0]
+    if path == "/ws" and request.headers.get_all("Upgrade"):
+        hosts = request.headers.get_all("Host")
+        origins = request.headers.get_all("Origin")
+        if (len(hosts) != 1 or not _ws_host_allowed(hosts[0], bind_host)
+                or len(origins) > 1
+                or (origins and origins[0].lower() != f"http://{hosts[0].lower()}")):
+            return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
+        return None  # Let websockets validate the upgrade.
 
-    lines = request.split("\r\n\r\n", 1)[0].split("\r\n")
-    parts = lines[0].split(" ")
-    path = parts[1].split("?")[0] if len(parts) > 1 else "/"
-
-    headers = {}
-    for line in lines[1:]:
-        if ":" in line:
-            k, v = line.split(":", 1)
-            headers[k.strip().lower()] = v.strip()
-
-    # WebSocket upgrade?
-    if (path == "/ws"
-            and "upgrade" in headers.get("connection", "").lower()
-            and "websocket" in headers.get("upgrade", "").lower()):
-        origin = headers.get("origin")
-        host = headers.get("host", "")
-        if (not _ws_host_allowed(host, bind_host)
-                or (origin is not None and origin.lower() != f"http://{host.lower()}")):
-            _send_http(c, b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
-            return
-        key = headers.get("sec-websocket-key", "")
-        accept = ws_accept(key)
-        resp = (f"HTTP/1.1 101 Switching Protocols\r\n"
-                f"Upgrade: websocket\r\n"
-                f"Connection: Upgrade\r\n"
-                f"Sec-WebSocket-Accept: {accept}\r\n"
-                f"\r\n").encode()
-        # Temporarily blocking for handshake + initial state.
-        c.sock.setblocking(True)
-        c.sock.settimeout(2)
-        try:
-            c.sock.sendall(resp)
-            if last_fb_frame[0]:
-                c.sock.sendall(last_fb_frame[0])
-
-            # Plugin state so dashboard discovers audio plugin ID.
-            audio_id = 1 if os.path.exists(FB_PATH) else 0
-            state_json = (
-                f'{{"type":"audio","sample_rate":16000,'
-                f'"channels":1,"bit_depth":16}}'
-            ).encode()
-            c.sock.sendall(ws_frame(
-                struct.pack("<II", FRAME_STATE, audio_id) + state_json))
-
-            # GDB debug state.
-            gdb = gdb_controller[0]
-            if gdb and gdb.proc:
-                state = {"state": "running", "reason": None,
-                         "file": None, "line": None}
-                dbg_json = json.dumps(
-                    {"status": "done", "data": state},
-                    default=str).encode("utf-8")
-                c.sock.sendall(ws_frame(
-                    struct.pack("<IB", FRAME_DEBUG_RESP, 0x00) + dbg_json))
-
-            # Project file list for source explorer.
-            if _project_file_list_frame:
-                c.sock.sendall(_project_file_list_frame)
-
-            # Profiler symbol map (one-shot; samples that arrive later
-            # reference pc values that map into this table).
-            if _profiler_symbol_frame:
-                c.sock.sendall(_profiler_symbol_frame)
-
-            # Profiler capabilities (max/current Hz) — cached at the
-            # bridge so late-joining clients populate their rate dropdown
-            # without needing the firmware to re-announce.
-            if _profiler_caps_frame:
-                c.sock.sendall(_profiler_caps_frame)
-
-        except Exception:
-            # Browser tab close / page reload during the initial-state
-            # dump RSTs the socket, which breaks our sendall chain.
-            # Mark ST_DONE so the main loop removes us next tick; not
-            # doing this left the client in the polling list with a
-            # closed fd and crashed select() on the next iteration.
-            try:
-                c.sock.close()
-            except Exception:
-                pass
-            c.state = ST_DONE
-            return
-
-        c.sock.setblocking(False)
-        c.state = ST_WS
-        with ws_client_lock:
-            ws_client_list.append(c)
-        print("WebSocket client connected", flush=True)
-        return
-
-    # Static file
     if path == "/":
         path = "/index.html"
     filepath = os.path.realpath(os.path.join(dashboard_dir, path.lstrip("/")))
-    if not filepath.startswith(os.path.realpath(dashboard_dir)):
-        _send_http(c, b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
-        return
-
+    if os.path.commonpath((dashboard_dir, filepath)) != dashboard_dir:
+        return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
     if not os.path.isfile(filepath):
-        _send_http(c, b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n")
-        return
+        return connection.respond(HTTPStatus.NOT_FOUND, "Not Found\n")
 
     ext = os.path.splitext(filepath)[1]
-    ct = MIME.get(ext, "application/octet-stream")
-    body = open(filepath, "rb").read()
-    hdr = (f"HTTP/1.1 200 OK\r\n"
-           f"Content-Type: {ct}\r\n"
-           f"Content-Length: {len(body)}\r\n"
-           f"Cross-Origin-Opener-Policy: same-origin\r\n"
-           f"Cross-Origin-Embedder-Policy: require-corp\r\n"
-           f"Cache-Control: no-cache\r\n"
-           f"Connection: close\r\n"
-           f"\r\n").encode()
-    _send_http(c, hdr + body)
+    with open(filepath, "rb") as f:
+        body = f.read()
+    return Response(200, "OK", Headers([
+        ("Content-Type", MIME.get(ext, "application/octet-stream")),
+        ("Content-Length", str(len(body))),
+        ("Cross-Origin-Opener-Policy", "same-origin"),
+        ("Cross-Origin-Embedder-Policy", "require-corp"),
+        ("Cache-Control", "no-cache"),
+        ("Connection", "close"),
+    ]), body)
+
+
+_server_loop = None
+_clients = {}
+_last_fb_frame = None
+
+
+def post_frame(frame):
+    # None wakes the sender to check the latest framebuffer.
+    loop = _server_loop
+    if loop is not None:
+        with suppress(RuntimeError):  # The loop may close during shutdown.
+            loop.call_soon_threadsafe(_publish_frame, frame)
+
+
+def _publish_frame(frame):
+    for pending in _clients.values():
+        if frame is not None or pending.empty():
+            pending.put_nowait(frame)
+
+
+async def _send_frames(connection, pending, last_fb):
+    try:
+        # Catch up on framebuffer changes during the initial sends.
+        starting = True
+        while True:
+            if (starting or pending.empty()) and last_fb is not _last_fb_frame:
+                last_fb = _last_fb_frame
+                await asyncio.wait_for(connection.send(last_fb), timeout=2)
+            starting = False
+            frame = await pending.get()
+            if frame is not None:
+                await asyncio.wait_for(connection.send(frame), timeout=2)
+    except ConnectionClosed:
+        pass
+    except asyncio.TimeoutError:  # noqa: UP041 - wait_for uses this type on Python 3.9 and 3.10.
+        connection.transport.abort()
+
+
+def _initial_frames():
+    audio_id = 1 if os.path.exists(FB_PATH) else 0
+    state = b'{"type":"audio","sample_rate":16000,"channels":1,"bit_depth":16}'
+    yield struct.pack("<II", FRAME_STATE, audio_id) + state
+
+    gdb = gdb_controller[0]
+    if gdb and gdb.proc:
+        state = {"state": "running", "reason": None, "file": None, "line": None}
+        dbg_json = json.dumps({"status": "done", "data": state}).encode("utf-8")
+        yield struct.pack("<IB", FRAME_DEBUG_RESP, DBG_RESP_STATE) + dbg_json
+
+    for frame in (_project_file_list_frame, _profiler_symbol_frame, _profiler_caps_frame):
+        if frame:
+            yield frame
+
+
+async def _dispatch(payload, debug_lock):
+    if not isinstance(payload, bytes) or len(payload) < 4:
+        return
+    ftype, fdata = struct.unpack_from("<I", payload)[0], payload[4:]
+    if ftype == FRAME_CMD and len(fdata) >= 12:
+        plugin_id, cmd_type = struct.unpack_from("<II", fdata)
+        pcm = fdata[12:]
+        if plugin_id == 0xFFFFFFFF and console_fd[0] is not None:
+            # Console text goes straight to the firmware's UART.
+            with suppress(OSError):
+                os.write(console_fd[0], pcm)
+        elif plugin_id != 0xFFFFFFFF and cmd_type == 0 and pcm:
+            audio_input_write(pcm)
+        else:
+            sim_cmd_send(plugin_id, cmd_type, pcm)
+    elif ftype == FRAME_AUDIO and len(fdata) >= 8:
+        # Raw audio frame from dashboard mic
+        pcm = fdata[8:]
+        if pcm:
+            audio_input_write(pcm)
+    elif ftype == FRAME_INPUT and len(fdata) >= 5:
+        input_shm_write(*struct.unpack_from("<hhB", fdata))
+    elif ftype == FRAME_DEBUG_CMD and fdata:
+        gdb = gdb_controller[0]
+        if gdb:
+            async with debug_lock:
+                await asyncio.to_thread(gdb.handle_debug_cmd, fdata)
+    elif ftype == FRAME_FILE_REQ and fdata:
+        handle_file_request(fdata)
+
+
+async def serve(port, dashboard_dir, host=DEFAULT_HOST):
+    global _server_loop
+    dashboard_dir = os.path.realpath(dashboard_dir)
+    debug_lock = asyncio.Lock()
+
+    async def handle(connection):
+        pending = asyncio.Queue()
+        _clients[connection] = pending
+        sender = None
+        try:
+            last_fb = _last_fb_frame
+            if last_fb:
+                await asyncio.wait_for(connection.send(last_fb), timeout=2)
+            for frame in _initial_frames():
+                await asyncio.wait_for(connection.send(frame), timeout=2)
+            print("WebSocket client connected", flush=True)
+            sender = asyncio.create_task(_send_frames(connection, pending, last_fb))
+            async for payload in connection:
+                await _dispatch(payload, debug_lock)
+        except ConnectionClosed:
+            pass
+        except asyncio.TimeoutError:  # noqa: UP041 - wait_for uses this type on Python 3.9 and 3.10.
+            connection.transport.abort()
+        finally:
+            del _clients[connection]
+            if sender is not None:
+                sender.cancel()
+                with suppress(asyncio.CancelledError):
+                    await sender
+
+    def process_request(connection, request):
+        return _process_request(connection, request, dashboard_dir, host)
+
+    async with websocket_serve(handle, host, port, compression=None,
+                               process_request=process_request) as server:
+        bound_port = server.sockets[0].getsockname()[1]
+        print(f"Dashboard: http://{host}:{bound_port}", flush=True)
+        _server_loop = asyncio.get_running_loop()
+        try:
+            await server.serve_forever()
+        finally:
+            _server_loop = None
+
 
 # ── Shmem bridges ────────────────────────────────────────────────────
 
 def display_bridge():
+    global _last_fb_frame
     while not os.path.exists(FB_PATH):
         time.sleep(0.1)
     # Wait for the file to be pre-allocated (non-empty).
@@ -650,9 +398,8 @@ def display_bridge():
                         xrgb = rgb565_to_xrgb8888(pdata, npixels)
                     coords = struct.pack("<HHHH", 0, 0, w-1, h-1)
                     payload = struct.pack("<I", FRAME_FB) + coords + xrgb
-                    frame = ws_frame(payload)
-                    last_fb_frame[0] = frame
-                    mailbox.post_fb(frame)
+                    _last_fb_frame = payload
+                    post_frame(None)
                 time.sleep(1.0 / 30)
         except Exception:
             traceback.print_exc()
@@ -734,26 +481,7 @@ def _audio_bridge_loop():
                     AUDIO_OUT_RING_OFF + RING_OFF_READ_POS, out_rpos)
                 audio_hdr = struct.pack("<IHH", sr, ch, bd)
                 payload = struct.pack("<I", FRAME_AUDIO) + audio_hdr + data
-                frame = ws_frame(payload)
-
-                # Send audio directly to WS clients from this thread.
-                # Non-blocking lock: skip if FB send is in progress
-                # (drops ~1 audio frame per FB send, inaudible).
-                with ws_client_lock:
-                    targets = list(ws_client_list)
-                for c in targets:
-                    acquired = c.send_lock.acquire(blocking=False)
-                    if not acquired:
-                        continue  # FB send in progress, skip
-                    try:
-                        c.sock.setblocking(True)
-                        c.sock.settimeout(0.05)
-                        c.sock.sendall(frame)
-                        c.sock.setblocking(False)
-                    except Exception:
-                        pass
-                    finally:
-                        c.send_lock.release()
+                post_frame(payload)
 
                 time.sleep(0.005)
         finally:
@@ -964,29 +692,23 @@ def _event_bridge_loop():
 
             # Forward debug thread snapshots as FRAME_THREAD
             if event_type == SIM_DEBUG_EVT_THREADS and payload:
-                frame = ws_frame(
-                    struct.pack("<I", FRAME_THREAD) + payload)
-                mailbox.post_log(frame)
+                post_frame(struct.pack("<I", FRAME_THREAD) + payload)
             # Forward trace plugin events as FRAME_TRACE. Both subtypes
             # (stream records, descriptor table) share the same outer
             # frame; the dashboard dispatches on the embedded sub_type.
             elif event_type in (SIM_TRACE_EVT_STREAM,
                                 SIM_TRACE_EVT_DESCRIPTORS) and payload:
-                frame = ws_frame(
-                    struct.pack("<I", FRAME_TRACE) + payload)
-                mailbox.post_log(frame)
+                post_frame(struct.pack("<I", FRAME_TRACE) + payload)
                 if (event_type == SIM_TRACE_EVT_DESCRIPTORS
                         and os.environ.get("OVE_PROFILER_DUMP")):
                     _trace_dump_descriptors(payload)
             # Forward profiler sample batches as FRAME_PROFILE with
             # subtype=SAMPLES. The symbol table is synthesised once
-            # per ELF and emitted on WebSocket connect — see mailbox.
+            # per ELF and emitted on WebSocket connect.
             elif event_type == SIM_PROFILER_EVT_SAMPLES and payload:
                 payload = _prune_profile_payload(payload)
-                frame = ws_frame(
-                    struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SAMPLES)
-                    + payload)
-                mailbox.post_log(frame)
+                post_frame(struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SAMPLES)
+                           + payload)
                 if os.environ.get("OVE_PROFILER_DUMP"):
                     _profiler_dump_samples(payload)
             # Forward profiler capability events (max_hz, current_hz).
@@ -996,11 +718,9 @@ def _event_bridge_loop():
             # the cache a browser reload after initial announce would
             # never see the ceiling and the dropdown would stay empty.
             elif event_type == SIM_PROFILER_EVT_CAPS and payload:
-                frame = ws_frame(
-                    struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_CAPS)
-                    + payload)
-                _profiler_caps_frame = frame
-                mailbox.post_log(frame)
+                _profiler_caps_frame = (
+                    struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_CAPS) + payload)
+                post_frame(_profiler_caps_frame)
                 if len(payload) >= 8:
                     max_hz, cur_hz = struct.unpack_from("<II", payload, 0)
                     sys.stderr.write(
@@ -1019,7 +739,7 @@ def log_bridge(read_fd):
             text = line.rstrip("\n\r")
             if text:
                 payload = struct.pack("<I", FRAME_LOG) + text.encode("utf-8", "replace")
-                mailbox.post_log(ws_frame(payload))
+                post_frame(payload)
 
 # ── GDB/MI Controller ────────────────────────────────────────────────
 
@@ -1033,7 +753,7 @@ DBG_CMD_PAUSE       = 0x02
 # ── Source file list (built from CMake build objects) ────────────────
 
 _project_files = []  # list of {"path": abs_path, "short": display, "cat": category}
-_project_file_list_frame = None  # cached WS frame for FRAME_FILE_LIST
+_project_file_list_frame = None  # cached payload for FRAME_FILE_LIST
 
 
 def build_project_file_list(build_dir, ove_dir):
@@ -1129,8 +849,7 @@ def build_project_file_list(build_dir, ove_dir):
     file_list_json = json.dumps(
         [{"path": f["path"], "short": f["short"], "cat": f["cat"]}
          for f in files]).encode("utf-8")
-    _project_file_list_frame = ws_frame(
-        struct.pack("<I", FRAME_FILE_LIST) + file_list_json)
+    _project_file_list_frame = struct.pack("<I", FRAME_FILE_LIST) + file_list_json
 
     sys.stderr.write(f"[files] {len(files)} source files indexed\n")
     sys.stderr.flush()
@@ -1138,8 +857,8 @@ def build_project_file_list(build_dir, ove_dir):
 
 # ── Profiler symbol map (nm-based) ──────────────────────────────────
 
-_profiler_symbol_frame = None  # cached WS frame for PROFILE_SUB_SYMBOLS
-_profiler_caps_frame   = None  # cached WS frame for PROFILE_SUB_CAPS
+_profiler_symbol_frame = None  # cached payload for PROFILE_SUB_SYMBOLS
+_profiler_caps_frame   = None  # cached payload for PROFILE_SUB_CAPS
 
 # Debug-only: when OVE_PROFILER_DUMP=1 is set, decode each sample batch
 # and print the resolved frames per sample to stderr. Used to inspect
@@ -1324,8 +1043,7 @@ def build_profiler_symbols(elf_path, nm_bin="nm"):
     _profiler_sym_index = [(e[0], e[1], e[2]) for e in entries]
 
     payload = json.dumps(entries).encode("utf-8")
-    _profiler_symbol_frame = ws_frame(
-        struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SYMBOLS) + payload)
+    _profiler_symbol_frame = struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SYMBOLS) + payload
 
     sys.stderr.write(
         f"[profiler] {len(entries)} symbols indexed from "
@@ -1717,8 +1435,7 @@ def handle_file_request(fdata):
     payload += struct.pack("<H", len(path_bytes))
     payload += path_bytes
     payload += content.encode("utf-8")
-    frame = ws_frame(payload)
-    mailbox.post_log(frame)
+    post_frame(payload)
 
 
 DBG_CMD_STEP_OVER   = 0x03
@@ -2096,8 +1813,7 @@ class GdbController:
         except Exception:
             return
         payload = struct.pack("<IB", FRAME_DEBUG_RESP, resp_type) + json_bytes
-        frame = ws_frame(payload)
-        mailbox.post_log(frame)
+        post_frame(payload)
 
 
 # Global GDB controller instance (set in main if --gdb-port)
@@ -2209,7 +1925,7 @@ def main():
         threading.Thread(target=_start_gdb, daemon=True).start()
 
     try:
-        serve(args.port, dashboard_dir, host=args.host)
+        asyncio.run(serve(args.port, dashboard_dir, host=args.host))
     except KeyboardInterrupt:
         gdb = gdb_controller[0]
         if gdb:
