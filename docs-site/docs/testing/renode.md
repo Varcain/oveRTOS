@@ -29,8 +29,8 @@ Six targets total — one per RTOS backend, two heap modes each:
 | `test-renode-stm32f746-freertos-zeroheap` | 192 | FreeRTOS static-only allocation |
 | `test-renode-stm32f746-zephyr` | 354 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
 | `test-renode-stm32f746-zephyr-zeroheap` | 314 | Zephyr with a zero-size kernel heap pool |
-| `test-renode-stm32f746-nuttx` | 212 | NuttX `stm32f746g-disco:nsh` |
-| `test-renode-stm32f746-nuttx-zeroheap` | 185 | Same with `CONFIG_OVE_ZERO_HEAP` |
+| `test-renode-stm32f746-nuttx` | 360 | NuttX `stm32f746g-disco:nsh` |
+| `test-renode-stm32f746-nuttx-zeroheap` | 318 | Same with `CONFIG_OVE_ZERO_HEAP` |
 
 Group invocation:
 
@@ -47,7 +47,7 @@ make test-renode-stm32f746-zephyr-zeroheap        # one
 ```mermaid
 flowchart LR
     subgraph Build["Build (per RTOS variant)"]
-        SRC["tests/sim/renode-stm32f746-&lt;rtos&gt;*/<br/>(CMakeLists.txt or nuttx_app/Makefile)"]
+        SRC["tests/sim/renode-stm32f746-&lt;rtos&gt;*/<br/>(CMakeLists.txt or nuttx_app/CMakeLists.txt)"]
         ELF["firmware.elf"]
         SRC --> ELF
     end
@@ -115,9 +115,9 @@ resulting wall:sim ratio collapse blows past the 300 s harness ceiling.
 
 ### NuttX
 
-`tests/sim/renode-stm32f746-{nuttx,nuttx-zeroheap}/`.  Built via
-NuttX's `configure.sh stm32f746g-disco:nsh` followed by
-`make olddefconfig && make`.  USART1 is the console.  The defconfig
+Both variants build from `tests/sim/renode-stm32f746-nuttx/` using NuttX
+CMake with `BOARD_CONFIG=stm32f746g-disco:nsh`. The zero-heap target sets
+`_OVE_ZERO_HEAP=ON`. The base config selects USART1 as the console. The defconfig
 overlay bumps `DEFAULT_TASK_STACKSIZE`, `PTHREAD_STACK_DEFAULT`,
 `POSIX_SPAWN_DEFAULT_STACKSIZE`, and `IRQ_WORK_STACKSIZE` to 4 KiB
 (the upstream `stm32f746g-disco:nsh` ships 2 KiB defaults that

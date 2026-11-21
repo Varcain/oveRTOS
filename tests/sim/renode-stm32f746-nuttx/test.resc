@@ -1,9 +1,9 @@
-:name: oveRTOS CMocka suite on NuttX/STM32F746 — heap mode
+:name: oveRTOS CMocka suite on NuttX/STM32F746
 :description: Boot the oveRTOS test firmware on NuttX's stm32f746g-disco target under Renode's stm32f7_discovery-bb platform; capture stdout via USART1.
 
 using sysbus
 
-$bin?=@output/tests/renode-stm32f746-nuttx/nuttx/nuttx
+$bin?=@output/tests/renode-stm32f746-nuttx/build/nuttx
 
 mach create "stm32f746"
 machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl

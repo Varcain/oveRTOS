@@ -1,14 +1,17 @@
 /*
- * NuttX test runner entry point — Renode/STM32F746 heap mode.
+ * NuttX test runner entry point for Renode/STM32F746.
  *
- * Returns from main() rather than calling semihosting_exit().  See the
- * zero-heap sibling main.c for the Renode-specific rationale (NuttX's
- * panic path on Renode 1.16's STM32F7 freezes virtual time).
+ * The semihosting_exit() breakpoint triggers NuttX's panic path on
+ * Renode 1.16's STM32F7, halting the CPU at PC=0 and freezing virtual
+ * time. Returning from main() leaves NuttX's idle loop running so
+ * Renode's RunFor can reach its time limit.
  */
 
 #include "framework/ove_test.h"
 #include <stdio.h>
+#ifndef CONFIG_OVE_ZERO_HEAP
 #include <sys/mount.h>
+#endif
 
 void ove_main(void)
 {
@@ -21,10 +24,12 @@ int main(int argc, char *argv[])
 	(void)argc;
 	(void)argv;
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 	/* tmpfs at /tmp: the file-backed NVS suite keeps its keys there. */
 	if (mount(NULL, "/tmp", "tmpfs", 0, NULL) != 0) {
 		printf("WARN: tmpfs mount at /tmp failed\n");
 	}
+#endif
 
 #define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \

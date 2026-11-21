@@ -7,11 +7,9 @@
 # ##############################################################################
 # tests/sim/_nuttx_app.cmake
 #
-# Shared CMake fragment for all NuttX `ove_test` variant fixtures
-# (nuttx-qemu, nuttx-qemu-zeroheap, renode-stm32f746-nuttx*). Each variant
-# sets _OVE_ZERO_HEAP=ON|OFF then `include()`s this file from its
-# nuttx_app/CMakeLists.txt. The variant's own `ove_config.h` is picked up
-# from `${CMAKE_CURRENT_SOURCE_DIR}/..` (i.e. tests/sim/<variant>/).
+# Shared CMake fragment for the QEMU, native sim and Renode/STM32F746
+# NuttX suites. The runner passes _OVE_ZERO_HEAP=ON|OFF and points
+# _OVE_VARIANT_DIR at the shared tests/sim/nuttx/ove_config.h directory.
 #
 # The CMake build emits objects under build/CMakeFiles/.../*.o (with
 # -MMD-driven header dep tracking), so unlike the legacy Application.mk
@@ -29,14 +27,10 @@ endif()
 
 if(NOT DEFINED _OVE_ZERO_HEAP)
   message(FATAL_ERROR
-    "_OVE_ZERO_HEAP must be set ON/OFF before including _nuttx_app.cmake")
+    "Pass -D_OVE_ZERO_HEAP=ON or OFF at CMake configure time.")
 endif()
 if(NOT _OVE_VARIANT_DIR)
-  message(FATAL_ERROR
-    "_OVE_VARIANT_DIR must point at the OVE-side tests/sim/<variant>/ "
-    "dir (holds the variant's ove_config.h). The per-variant nuttx_app "
-    "tree gets copied into the apps build dir, so CMAKE_CURRENT_SOURCE_DIR "
-    "doesn't resolve back to OVE — pass it explicitly.")
+  message(FATAL_ERROR "Pass -D_OVE_VARIANT_DIR=<oveRTOS root>/tests/sim/nuttx.")
 endif()
 
 set(_tests_root ${OVE_DIR}/tests)
@@ -181,7 +175,7 @@ else()
   list(APPEND _definitions [[OVE_NVS_FS_DIR="/tmp/ove-nvs"]])
 endif()
 
-# Include order: the variant's own dir (ove_config.h overrides) FIRST so
+# Include order: the test config directory first so
 # it wins over the include/ove_config.h shipped with the library.
 set(_include_dirs
   ${_OVE_VARIANT_DIR}

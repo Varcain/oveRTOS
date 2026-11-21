@@ -1,5 +1,5 @@
 #
-# Kconfig for oveRTOS NuttX QEMU test runner.
+# Kconfig for the oveRTOS NuttX STM32F746 test runner.
 #
 
 config EXTERNAL_OVE_TEST

@@ -2488,21 +2488,6 @@ def _nuttx_fetch_sources(ove_dir):
     return nuttx_hash, apps_hash, cmocka_dl
 
 
-def _nuttx_variant_config_dir(ove_dir, app_subdir):
-    """Resolve the per-variant tests/sim/<dir>/ that holds ove_config.h.
-
-    Heap variants share tests/sim/nuttx/ove_config.h (it's RTOS-keyed:
-    CONFIG_OVE_RTOS_NUTTX=1, no zero-heap define). Zero-heap variants
-    have their own ove_config.h next to the variant's nuttx_app
-    fixture. Falling back to tests/sim/nuttx/ when the variant dir has
-    no ove_config.h matches what the legacy Makefiles did via
-    `CFLAGS += -I$(OVE_DIR)/tests/sim/nuttx`."""
-    candidate = os.path.join(ove_dir, "tests", "sim", app_subdir)
-    if os.path.isfile(os.path.join(candidate, "ove_config.h")):
-        return candidate
-    return os.path.join(ove_dir, "tests", "sim", "nuttx")
-
-
 def _nuttx_register_test_app(ove_dir, apps_build, app_subdir):
     """Stage tests/sim/<app_subdir>/nuttx_app as nuttx-apps/external/ove_test
     in `apps_build`. Drops both an `add_subdirectory(ove_test)` CMakeLists
@@ -2523,7 +2508,7 @@ def _nuttx_register_test_app(ove_dir, apps_build, app_subdir):
 
 
 def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
-                       board_config, defconfig_overlays, variant_dir,
+                       board_config, defconfig_overlays, variant_dir=None,
                        extra_env=None, hw=False, cmake_extra_args=None):
     """Configure + build a NuttX target via CMake. Two-phase to thread our
     test defconfig overlays through Kconfig:
@@ -2554,14 +2539,14 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     # find_program(olddefconfig) finds kconfiglib without an activated venv.
     env = _venv_env(ove_dir, {**os.environ, **(extra_env or {})})
 
+    if variant_dir is None:
+        variant_dir = os.path.join(ove_dir, "tests", "sim", "nuttx")
     cmake_defs = [
         f"-DBOARD_CONFIG={board_config}",
         f"-DOVE_DIR={ove_dir}",
         f"-DNUTTX_APPS_DIR={apps_build}",
-        # _OVE_VARIANT_DIR holds the variant's own ove_config.h (with
-        # CONFIG_OVE_RTOS_NUTTX=1 etc.). The sim variant borrows the
-        # nuttx-qemu app fixture but supplies tests/sim/nuttx/ for its
-        # ove_config.h, so the variant dir is decoupled from app_subdir.
+        # Directory holding the suite's ove_config.h. Defaults to
+        # tests/sim/nuttx unless the fixture supplies its own directory.
         f"-D_OVE_VARIANT_DIR={variant_dir}",
     ]
     if hw:
@@ -2637,7 +2622,7 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label):
             os.path.join(ove_dir, "tests", "sim", "nuttx",
                          "nuttx_sim_defconfig"),
         ],
-        variant_dir=_nuttx_variant_config_dir(ove_dir, "nuttx"),
+        cmake_extra_args=["-D_OVE_ZERO_HEAP:BOOL=OFF"],
     )
 
     logger.info("Running %s", label)
@@ -2941,22 +2926,16 @@ def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
     return parsed
 
 
-def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
-    """Build a NuttX stm32f746g-disco firmware and run it under Renode.
-
-    Mirrors `_run_nuttx_qemu`'s build steps verbatim — only diverges in
-    the CMake board target and the runner. Kept separate rather than
-    parameterising `_run_nuttx_qemu` because that helper's QEMU
-    invocation path is QEMU-specific.
-    """
+def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, label, zero_heap=False):
+    """Build a NuttX stm32f746g-disco firmware and run it under Renode."""
     elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
-                                        app_subdir=app_subdir, label=label)
-    resc = os.path.join(ove_dir, "tests", "sim", app_subdir, "test.resc")
+                                       label=label, zero_heap=zero_heap)
+    resc = os.path.join(ove_dir, "tests", "sim", "renode-stm32f746-nuttx", "test.resc")
     return _renode_run_elf(ove_dir, output_dir,
                            label=label, elf=elf, resc=resc)
 
 
-def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label,
+def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, label, zero_heap=False,
                                   hw=False):
     """Build a NuttX stm32f746g-disco firmware via CMake. Returns the path
     to the produced ELF (NuttX names it `nuttx`, no suffix). The HW
@@ -2974,13 +2953,13 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label,
     nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
     if not os.path.isdir(apps_build):
         shutil.copytree(apps_dl, apps_build, symlinks=True)
-    _nuttx_register_test_app(ove_dir, apps_build, app_subdir)
+    _nuttx_register_test_app(ove_dir, apps_build, "renode-stm32f746-nuttx")
 
     extra_env = {
         "PATH": os.path.join(tc_dir, "bin") + os.pathsep + os.environ["PATH"],
     }
     overlays = [
-        os.path.join(ove_dir, "tests", "sim", app_subdir,
+        os.path.join(ove_dir, "tests", "sim", "renode-stm32f746-nuttx",
                      "nuttx_test_defconfig"),
     ]
 
@@ -2991,9 +2970,9 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label,
         build_dir=build_dir,
         board_config=nuttx_board_config(_board_dir(ove_dir, "stm32f746g-discovery")),
         defconfig_overlays=overlays,
-        variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
         extra_env=extra_env,
         hw=hw,
+        cmake_extra_args=[f"-D_OVE_ZERO_HEAP:BOOL={'ON' if zero_heap else 'OFF'}"],
     )
 
     return os.path.join(build_dir, "nuttx")
@@ -3002,15 +2981,13 @@ def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label,
 def test_renode_stm32f746_nuttx(ove_dir, output_dir):
     """Build + run the STM32F746 NuttX heap test firmware under Renode."""
     return _run_renode_stm32f746_nuttx(ove_dir, output_dir,
-        app_subdir="renode-stm32f746-nuttx",
         label="renode-stm32f746-nuttx")
 
 
 def test_renode_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
     """Build + run the STM32F746 NuttX zero-heap firmware under Renode."""
     return _run_renode_stm32f746_nuttx(ove_dir, output_dir,
-        app_subdir="renode-stm32f746-nuttx-zeroheap",
-        label="renode-stm32f746-nuttx-zeroheap")
+        label="renode-stm32f746-nuttx-zeroheap", zero_heap=True)
 
 
 def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, label, zero_heap=False,
@@ -3286,7 +3263,6 @@ def test_hw_stm32f746_zephyr_zeroheap(ove_dir, output_dir):
 def test_hw_stm32f746_nuttx(ove_dir, output_dir):
     """Flash + run the STM32F746 NuttX heap firmware on real hardware."""
     elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
-        app_subdir="renode-stm32f746-nuttx",
         label="hw-stm32f746-nuttx", hw=True)
     return _run_hw_stm32f746(ove_dir, output_dir,
                              label="hw-stm32f746-nuttx", elf=elf)
@@ -3295,8 +3271,7 @@ def test_hw_stm32f746_nuttx(ove_dir, output_dir):
 def test_hw_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
     """Flash + run the STM32F746 NuttX zero-heap firmware on hardware."""
     elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
-        app_subdir="renode-stm32f746-nuttx-zeroheap",
-        label="hw-stm32f746-nuttx-zeroheap", hw=True)
+        label="hw-stm32f746-nuttx-zeroheap", zero_heap=True, hw=True)
     return _run_hw_stm32f746(ove_dir, output_dir,
                              label="hw-stm32f746-nuttx-zeroheap", elf=elf)
 
@@ -3333,16 +3308,15 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
-def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label,
+def _run_nuttx_qemu(ove_dir, output_dir, *, label, zero_heap=False,
                     board_config=None, overlay=None):
     """Build and run a NuttX QEMU ARM test variant via CMake.
 
-    `app_subdir` is the tests/sim/<dir>/ holding nuttx_app/ and
-    nuttx_test_defconfig (e.g. "nuttx-qemu" or "nuttx-qemu-zeroheap").
     `board_config` selects the NuttX base config — the an500's board.yaml one
     (mps2-an500:nsh, flat) by default, or "mps2-an500:knsh" for the
     CONFIG_BUILD_PROTECTED variant.  `overlay` names a further defconfig
-    overlay in the same tests/sim/<dir>/, applied last.
+    overlay in tests/sim/nuttx-qemu, applied last. `zero_heap` selects the
+    zero-heap app build.
     """
     if board_config is None:
         board_config = nuttx_board_config(_board_dir(ove_dir, "qemu-mps2-an500"))
@@ -3359,20 +3333,17 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label,
     if not os.path.isdir(apps_build):
         logger.debug("Copying NuttX apps to build tree...")
         shutil.copytree(apps_dl, apps_build, symlinks=True)
-    _nuttx_register_test_app(ove_dir, apps_build, app_subdir)
+    _nuttx_register_test_app(ove_dir, apps_build, "nuttx-qemu")
 
     # arm-none-eabi-gcc must be discoverable for CMake's compiler probe.
     extra_env = {
         "PATH": os.path.join(tc_dir, "bin") + os.pathsep + os.environ["PATH"],
     }
 
-    overlays = [
-        os.path.join(ove_dir, "tests", "sim", app_subdir,
-                     "nuttx_test_defconfig"),
-    ]
+    app_dir = os.path.join(ove_dir, "tests", "sim", "nuttx-qemu")
+    overlays = [os.path.join(app_dir, "nuttx_test_defconfig")]
     if overlay:
-        overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
-                                     overlay))
+        overlays.append(os.path.join(app_dir, overlay))
 
     _nuttx_cmake_build(
         ove_dir,
@@ -3381,8 +3352,8 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label,
         build_dir=build_dir,
         board_config=board_config,
         defconfig_overlays=overlays,
-        variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
         extra_env=extra_env,
+        cmake_extra_args=[f"-D_OVE_ZERO_HEAP:BOOL={'ON' if zero_heap else 'OFF'}"],
     )
 
     logger.info(f"Running {label}")
@@ -3490,23 +3461,20 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
 
 def test_qemu_nuttx(ove_dir, output_dir):
     """Build and run NuttX QEMU ARM tests (uses NuttX build system)."""
-    return _run_nuttx_qemu(ove_dir, output_dir,
-                           app_subdir="nuttx-qemu", label="qemu-nuttx")
+    return _run_nuttx_qemu(ove_dir, output_dir, label="qemu-nuttx")
 
 
 def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     """Build and run NuttX QEMU ARM tests (zero-heap mode)."""
     return _run_nuttx_qemu(ove_dir, output_dir,
-                           app_subdir="nuttx-qemu-zeroheap",
-                           label="qemu-nuttx-zeroheap")
+                          label="qemu-nuttx-zeroheap", zero_heap=True)
 
 
 def test_qemu_nuttx_cpuload(ove_dir, output_dir):
     """Build and run NuttX QEMU ARM tests with the cpuload accounting apps use."""
     return _run_nuttx_qemu(ove_dir, output_dir,
-                           app_subdir="nuttx-qemu",
-                           label="qemu-nuttx-cpuload",
-                           overlay="nuttx_test_cpuload_defconfig")
+                          label="qemu-nuttx-cpuload",
+                          overlay="nuttx_test_cpuload_defconfig")
 
 
 def test_qemu_zephyr(ove_dir, output_dir):

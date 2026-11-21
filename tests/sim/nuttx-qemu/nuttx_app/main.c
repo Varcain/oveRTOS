@@ -11,7 +11,9 @@
 #include "framework/semihosting_exit.h"
 #endif
 #include <stdio.h>
+#if !defined(CONFIG_ARCH_SIM) && !defined(CONFIG_OVE_ZERO_HEAP)
 #include <sys/mount.h>
+#endif
 
 /* Stub — tests exercise ove_app module without a real app entry point */
 void ove_main(void)
@@ -26,14 +28,15 @@ int main(int argc, char *argv[])
 	(void)argv;
 
 #ifndef CONFIG_ARCH_SIM
+#ifndef CONFIG_OVE_ZERO_HEAP
 	/* tmpfs at /tmp: the file-backed NVS suite keeps its keys there. The
 	 * NuttX sim already has one. */
 	if (mount(NULL, "/tmp", "tmpfs", 0, NULL) != 0) {
 		printf("WARN: tmpfs mount at /tmp failed\n");
 	}
 #endif
+#endif
 
-	/* FS tests skipped — no filesystem mount on MPS2-AN500 QEMU */
 #define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();

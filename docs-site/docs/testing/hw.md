@@ -107,6 +107,8 @@ Zephyr and NuttX HW builds reuse the Renode build verbatim — Zephyr
 already routes printk through USART1 via `CONFIG_UART_CONSOLE`, and
 NuttX's `stm32f746g-disco:nsh` defconfig wires USART1 as the serial
 console.
+The NuttX hardware targets share the Renode fixture. The zero-heap
+hardware target selects `_OVE_ZERO_HEAP=ON`.
 
 ## Test matrix
 

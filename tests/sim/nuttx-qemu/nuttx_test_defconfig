@@ -35,7 +35,7 @@ CONFIG_IDLETHREAD_STACKSIZE=2048
 CONFIG_INIT_STACKSIZE=16384
 CONFIG_STACK_COLORATION=y
 
-# Enough heap for test suites
+# NuttX needs a system heap for task_create in both modes.
 CONFIG_MM_REGIONS=1
 
 # Console (semihosting UART on QEMU)
@@ -60,6 +60,6 @@ CONFIG_SCHED_WAITPID=y
 # setjmp/longjmp needed by cmocka test framework
 CONFIG_ARCH_SETJMP_H=y
 
-# Portable on-target unwinder for the oveRTOS sampling profiler
-# (matches the board defconfig used for sim/dashboard runs).
+# Test with backtrace support enabled, including frame pointers and
+# unwind tables.
 CONFIG_SCHED_BACKTRACE=y

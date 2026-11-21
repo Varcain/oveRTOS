@@ -50,13 +50,11 @@ CONFIG_POSIX_SPAWN_DEFAULT_STACKSIZE=4096
 CONFIG_IRQ_WORK_STACKSIZE=4096
 CONFIG_STACK_COLORATION=y
 
-# Enough heap for test suites
+# NuttX needs a system heap for task_create in both modes.
 CONFIG_MM_REGIONS=1
 
-# Console — stm32f746g-disco:nsh routes the serial console through
-# USART1 (CONFIG_USART1_SERIAL_CONSOLE in the base defconfig).  Renode
-# models USART1 as STM32F7_USART, so the test.resc taps that into a
-# file backend.  Don't override UART selection here.
+# The stm32f746g-disco:nsh base defconfig enables USART1 and sets
+# CONFIG_USART1_SERIAL_CONSOLE=y. test.resc captures that console.
 
 # File system support (for stub_fs and the file NVS)
 CONFIG_FS_TMPFS=y
@@ -74,8 +72,8 @@ CONFIG_SCHED_WAITPID=y
 # setjmp/longjmp needed by cmocka test framework
 CONFIG_ARCH_SETJMP_H=y
 
-# Portable on-target unwinder for the oveRTOS sampling profiler
-# (matches the board defconfig used for sim/dashboard runs).
+# Test with backtrace support enabled, including frame pointers and
+# unwind tables.
 CONFIG_SCHED_BACKTRACE=y
 
 # ove_thread_list() reports task names (test_thread_list_identity looks one up);

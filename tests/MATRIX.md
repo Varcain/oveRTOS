@@ -4,7 +4,7 @@ Which suite runs on which backend. Sources of truth:
 
 - C suite list: `tests/cmake/OveTest.cmake` and `tests/framework/suites.inc`
 - Per-variant runner: `tests/sim/*/sim_main.c` (or `src/main.c`)
-- Per-variant build inputs: `tests/sim/*/CMakeLists.txt` (or `nuttx_app/Makefile`)
+- Build inputs: `tests/sim/*/CMakeLists.txt` (or `nuttx_app/CMakeLists.txt`)
 
 ## Suite × backend
 
@@ -60,6 +60,8 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 the matrix readable. The FreeRTOS and Zephyr QEMU pairs share
 `tests/sim/freertos-qemu` and `tests/sim/zephyr-qemu`, respectively, and
 select the allocation mode with the `OVE_ZERO_HEAP` CMake option.
+The NuttX QEMU pair shares `tests/sim/nuttx-qemu` and selects the
+allocation mode with `_OVE_ZERO_HEAP`.
 
 ## Renode STM32F746 target (board-level fidelity)
 
@@ -77,6 +79,8 @@ firmware that would flash on a real Discovery board.
 
 Both Zephyr variants share `tests/sim/renode-stm32f746-zephyr` and select
 the allocation mode with `OVE_ZERO_HEAP`.
+Both NuttX variants share `tests/sim/renode-stm32f746-nuttx` and select
+the allocation mode with `_OVE_ZERO_HEAP`.
 
 Caveats:
 - Renode 1.16.1's ARM Cortex-M semihosting handler implements
@@ -143,7 +147,7 @@ Built from `tests/CMakeLists.txt`:
   `tests/suites/` and `backends/**/`) and Make.dep tracked headers only
   for `main.c`, so non-MAIN sources went silently stale on header
   changes. Migrated to NuttX-CMake (`tests/sim/_nuttx_app.cmake` +
-  per-variant `nuttx_app/CMakeLists.txt`); objects now live under
+  `nuttx_app/CMakeLists.txt`); objects now live under
   `<build>/CMakeFiles/.../*.o` with full `-MMD` header tracking.
 - **Sim variants skip stub-only suites.** Networking helpers, I2C/SPI/
   UART, PM, inference, and `static_define` run under `ove_test_stub`
