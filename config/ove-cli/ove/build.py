@@ -333,12 +333,15 @@ def _record_source_tree(ws, tree):
     if os.path.isfile(record):
         with open(record) as f:
             trees = {line.strip() for line in f if line.strip()}
-    if tree in trees:
+    # The final hyphen separates the source checkout path prefix from its key.
+    source = tree.rsplit("-", 1)[0]
+    updated_trees = {path for path in trees if path.rsplit("-", 1)[0] != source}
+    updated_trees.add(tree)
+    if updated_trees == trees:
         return
-    trees.add(tree)
     os.makedirs(ws.build_dir, exist_ok=True)
     with open(record, "w") as f:
-        f.writelines(f"{path}\n" for path in sorted(trees))
+        f.writelines(f"{path}\n" for path in sorted(updated_trees))
 
 
 def _source_tree_roots(dl_dir):
