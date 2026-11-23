@@ -635,12 +635,13 @@ def _zig_ast_check(ove_dir, check):
 def _ruff(ove_dir, check):
     if not shutil.which("ruff"):
         return ("ruff", "SKIP", "not installed (pip install ruff)")
-    py_root = os.path.join(ove_dir, "config", "ove-cli")
-    py_files = list(_glob(py_root, ".py"))
-    cmd = ["ruff", "check", py_root]
+    py_roots = [os.path.join(ove_dir, path)
+                for path in ("config/ove-cli", "config/scripts", "tests/python")]
+    py_count = sum(1 for root in py_roots for _ in _glob(root, ".py"))
+    cmd = ["ruff", "check", *py_roots]
     rc, out = _run(cmd, cwd=ove_dir)
     return ("ruff", "OK" if rc == 0 else "FAIL",
-            f"{len(py_files)} files" if rc == 0 else out.strip()[:200])
+            f"{py_count} Python files" if rc == 0 else out.strip()[:200])
 
 
 def _backend_struct_guard(ove_dir, check):

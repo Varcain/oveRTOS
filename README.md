@@ -504,7 +504,7 @@ make format         # rewrite files in place (formatters only)
 | cargo clippy       | same crates; `-D warnings -W pedantic -W nursery` |
 | zig fmt            | all `.zig` — style                            |
 | zig ast-check      | all `.zig` — parse + semantic check           |
-| ruff               | `config/ove-cli` Python                       |
+| ruff               | Python in `config/ove-cli`, `config/scripts`, and `tests/python` |
 | backend-struct     | forbids `struct ove_*` redefinition in backend `.c` |
 
 The `backend-struct` rule enforces a key invariant: every `ove_*_storage_t` is an alias for the same `struct ove_X` declared in `backends/<rtos>/include/ove_storage_<rtos>.h`. Backend `.c` files must **never** declare `struct ove_X` at top level (narrow FS allowlist aside) — otherwise consumers in other translation units see a different size than the backend writes and `_init()` silently corrupts adjacent memory. See `config/ove-cli/ove/lint_backend_struct.py` for the allowlist.
