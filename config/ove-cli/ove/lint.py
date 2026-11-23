@@ -7,14 +7,13 @@
 """`ove lint` / `ove format` — multi-language formatter / static check.
 
 Tools per language:
-  C / C++:    clang-format
+  C / C++:    clang-format, clang-tidy
   Rust:       cargo fmt --check / cargo fmt
   Zig:        zig fmt --check / zig fmt
   Python:     ruff check (lint only — no autoformatter assumed)
 
-Each tool is invoked only when the corresponding binary is on PATH; we
-treat absence as a SKIP, not a failure. Exit code 1 if any invoked tool
-reports diagnostics.
+Missing tools normally skip their checks. The host clang-tidy check
+requires its tools in CI. Exit code 1 indicates a failed check.
 """
 
 import logging
@@ -210,119 +209,45 @@ def _zig_fmt(ove_dir, check):
             f"{len(files)} files" if rc == 0 else out.strip()[:200])
 
 
-def _find_compile_db(ove_dir):
-    """Locate a compile_commands.json under output/ to feed clang-tidy.
-
-    Preference order (most-to-least portable for host clang-tidy):
-      1. `output/tests/stub` — host-compiled tests, always available after
-         `make test-stub`. Flags are plain host GCC/clang, no cross-compile
-         noise clang-tidy has to dodge.
-      2. `output/tests/cpp` — host C++ tests.
-      3. Fall back to the active workspace symlink `output/compile_commands.json`.
-      4. Most recently modified build otherwise.
-
-    Returns the absolute build directory containing compile_commands.json,
-    or None if nothing is configured.  ARM/cross-target builds still work
-    but often surface "unknown argument" diagnostics from vendor toolchain
-    flags that host clang-tidy doesn't recognise — preferring a host-native
-    build avoids that noise.
-    """
-    output_root = os.path.join(ove_dir, "output")
-    if not os.path.isdir(output_root):
-        return None
-
-    preferred = (
-        os.path.join("tests", "stub"),
-        os.path.join("tests", "cpp"),
-    )
-
-    buckets = {p: [] for p in preferred}
-    other_candidates = []
-    for dirpath, _dirs, files in os.walk(output_root):
-        if "compile_commands.json" not in files:
-            continue
-        path = os.path.join(dirpath, "compile_commands.json")
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            continue
-        rel = os.path.relpath(dirpath, output_root)
-        matched = False
-        for p in preferred:
-            if rel == p or rel.startswith(p + os.sep):
-                buckets[p].append((mtime, dirpath))
-                matched = True
-                break
-        if not matched:
-            other_candidates.append((mtime, dirpath))
-
-    for p in preferred:
-        if buckets[p]:
-            buckets[p].sort(reverse=True)
-            return buckets[p][0][1]
-
-    # Active-workspace symlink resolves to whatever was built last.
-    symlink = os.path.join(output_root, "compile_commands.json")
-    if os.path.isfile(symlink):
-        return output_root
-
-    if other_candidates:
-        other_candidates.sort(reverse=True)
-        return other_candidates[0][1]
-    return None
+def _clang_tidy_missing_tool(tool):
+    status = "FAIL" if os.environ.get("CI") else "SKIP"
+    return ("clang-tidy", status, f"{tool} not installed")
 
 
 def _clang_tidy(ove_dir, check):
-    """Run clang-tidy against sources present in an active build's
-    compile_commands.json.  Static analysis only — never rewrites files.
-
-    Scope is the intersection of
-        (compile_commands.json ∪ OVE_EXTERNAL_APPS)
-    with
-        (bindings/cpp, apps/, overtos_apps/, OVE_EXTERNAL_APPS).
-    This ensures every file clang-tidy sees has the right -I/-D flags.
-    """
+    """Analyze in-scope C/C++ sources from the host stub compile database."""
     import json
-    del check  # clang-tidy has --fix but we deliberately don't wire it
+
+    del check
     if not shutil.which("clang-tidy"):
-        return ("clang-tidy", "SKIP", "not installed")
-    # Auto-bootstrap test-stub so lint runs end-to-end on a bare checkout
-    # (CI calls `make lint` without a prior workspace build). Always
-    # prefer this over older firmware-build compile dbs that may be
-    # symlinked into output/ — those reference cross-compiled flags
-    # clang-tidy can't always parse and exclude the kernel/backend
-    # sources that test-stub covers.
+        return _clang_tidy_missing_tool("clang-tidy")
+
+    # Configure the host stub build on bare checkouts.
     stub_build = os.path.join(ove_dir, "output", "tests", "stub")
     stub_db = os.path.join(stub_build, "compile_commands.json")
     if not os.path.isfile(stub_db):
         cmake = shutil.which("cmake")
-        if cmake:
-            os.makedirs(stub_build, exist_ok=True)
-            try:
-                subprocess.run(
-                    [cmake, "-S", os.path.join(ove_dir, "tests"),
-                     "-B", stub_build, "-DCMAKE_BUILD_TYPE=Debug"],
-                    cwd=ove_dir, capture_output=True, text=True, check=True)
-            except subprocess.CalledProcessError:
-                pass
-    build_dir = _find_compile_db(ove_dir)
-    if build_dir is None:
-        return ("clang-tidy", "SKIP",
-                "no compile_commands.json — run 'make test-stub' or "
-                "'make <board>.<rtos>.<app>' first")
+        if not cmake:
+            return _clang_tidy_missing_tool("cmake")
+        os.makedirs(stub_build, exist_ok=True)
+        rc, out = _run([cmake, "-S", os.path.join(ove_dir, "tests"),
+                        "-B", stub_build, "-DCMAKE_BUILD_TYPE=Debug"],
+                       cwd=ove_dir)
+        if rc != 0:
+            if out.strip():
+                logger.error("%s", out)
+            detail = out.strip()[-200:] or f"exit status {rc}"
+            return ("clang-tidy", "FAIL", f"stub CMake configure failed ({detail})")
 
-    # Parse the compile DB and pick sources whose path lies under our scope.
-    db_path = os.path.join(build_dir, "compile_commands.json")
     try:
-        with open(db_path, encoding="utf-8") as f:
+        with open(stub_db, encoding="utf-8") as f:
             entries = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        return ("clang-tidy", "SKIP", f"compile db read failed: {e}")
+    except (OSError, ValueError) as e:
+        return ("clang-tidy", "FAIL", f"stub compile database read failed ({e})")
+    if not isinstance(entries, list):
+        return ("clang-tidy", "FAIL", "stub compile database must be an array")
 
-    # Lint the project's own C/C++ surface — kernel core, backends, the
-    # C++ wrapper, plus any apps the active build pulled in. Excludes
-    # vendored/external trees (cmocka, lwip, FreeRTOS, etc.) via the
-    # path filter below so noise from upstream code stays out.
+    # Limit analysis to project sources in the stub build.
     scope_prefixes = [
         os.path.abspath(os.path.join(ove_dir, "src")),
         os.path.abspath(os.path.join(ove_dir, "include")),
@@ -339,27 +264,26 @@ def _clang_tidy(ove_dir, check):
 
     files = []
     seen = set()
-    for e in entries:
-        src = e.get("file")
-        if not src or src in seen:
+    for entry in entries:
+        src = entry.get("file") if isinstance(entry, dict) else None
+        if not isinstance(src, str) or not src or src in seen:
             continue
         src_abs = os.path.abspath(src)
         if not any(src_abs.startswith(p + os.sep) for p in scope_prefixes):
             continue
         if any(part in ("dl", "output", "build", "target", ".venv",
                         "_deps", "zig-cache", ".zig-cache")
-               for part in src_abs.split(os.sep)):
+               for part in os.path.relpath(src_abs, ove_dir).split(os.sep)):
             continue
         files.append(src_abs)
         seen.add(src)
 
     if not files:
-        return ("clang-tidy", "OK",
-                "no app/binding sources in active compile db")
+        return ("clang-tidy", "FAIL", "no in-scope sources in stub compile database")
 
     # Match backend analysis: Clang rejects the zero-heap allocator's
     # error-attribute redeclarations. Analysis never emits a binary.
-    cmd = ["clang-tidy", "--quiet", "-p", build_dir,
+    cmd = ["clang-tidy", "--quiet", "-p", stub_build,
            "--extra-arg=-D__OVE_LINT__"] + files
     rc, out = _run(cmd, cwd=ove_dir)
     return ("clang-tidy", "OK" if rc == 0 else "FAIL",

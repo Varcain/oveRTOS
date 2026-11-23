@@ -7,8 +7,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(ove_tests_cpp CXX C)
 
-# Emit compile_commands.json so `ove lint` can feed clang-tidy real
-# -I/-D flags for the bindings/cpp surface.
+# Export compile_commands.json for IDEs and clangd.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_STANDARD 23)

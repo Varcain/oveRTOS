@@ -183,11 +183,7 @@ make ensure-toolchain-zig
 
 ### `clang-tidy` flagged a third-party header during `make lint`
 
-`make lint` follows the active compile database, so it walks into Zephyr / NuttX / FreeRTOS sources transitively. If you didn't touch them, this is upstream code and the warning is informational — the gating check is `make lint` for the oveRTOS surface, not every transitive header. Filter your view:
-
-```bash
-make lint 2>&1 | grep -v 'dl/'
-```
+`make lint` runs two clang-tidy steps: `clang-tidy` reads only the host stub compile database (`output/tests/stub`), and `clang-tidy-backends` reads the firmware databases of existing builds. Ordinary check warnings in third-party headers are hidden when the header comes from a `SYSTEM` include directory, so if one appears from the `clang-tidy` step, mark that target's vendor include directory `SYSTEM`. Analyzer findings and compiler errors are reported even inside system headers; they start in oveRTOS code, so fix the calling code or its flags rather than filtering the output.
 
 ## Run
 

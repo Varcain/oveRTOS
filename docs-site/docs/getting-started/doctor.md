@@ -93,7 +93,9 @@ These are `WARN` when missing because they are only needed for their respective 
 | `ruff` | `make lint` (Python) | |
 | `lcov` | `make coverage` | |
 
-All optional. `make lint` skips any tool it cannot find rather than failing.
+`make lint` normally skips missing tools. With a nonempty `CI`, it requires host
+`clang-tidy` and, when the stub build needs configuration, `cmake`. A failed
+stub configure always fails lint.
 
 ### Downloaded tools (under `output/`)
 
