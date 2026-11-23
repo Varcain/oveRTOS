@@ -602,13 +602,8 @@ def _cargo_clippy(ove_dir, check):
     except FileNotFoundError:
         return ("cargo clippy", "SKIP", "cargo disappeared mid-run")
     if r.returncode != 0:
-        # Surface just the first error line so the summary stays readable.
-        detail = ""
-        for line in (r.stdout + r.stderr).splitlines():
-            if line.startswith("error:"):
-                detail = line[:200]
-                break
-        return ("cargo clippy", "FAIL", detail or "bindings/rust/ove")
+        sys.stderr.write(r.stdout + r.stderr)
+        return ("cargo clippy", "FAIL", "bindings/rust/ove")
     return ("cargo clippy", "OK", "bindings/rust/ove")
 
 

@@ -463,7 +463,7 @@ impl RecursiveMutex {
     fn scoped<R>(&self, timeout: u64, f: impl FnOnce() -> Result<R>) -> Result<R> {
         blocking_context()?;
         self.reservations
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < Self::MAX_RESERVATIONS).then(|| n + 1)
             })
             .map_err(|_| Error::Busy)?;

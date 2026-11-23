@@ -32,7 +32,7 @@ oveRTOS ships first-class bindings for four languages. Install the toolchain for
 
 Already covered above (gcc or clang). No further setup.
 
-### Rust (≥ 1.85)
+### Rust (≥ 1.95)
 
 Required when authoring in Rust. Install via rustup:
 
@@ -41,7 +41,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup target add thumbv7em-none-eabihf   # for ARM embedded targets
 ```
 
-The pinned toolchain version is recorded in `rust-toolchain.toml`; rustup picks it up automatically on first invocation.
+Rustup selects the `stable` channel from `rust-toolchain.toml`. The binding's minimum supported version is set in `bindings/rust/ove/Cargo.toml`.
 
 ### Zig (≥ 0.16.0)
 
