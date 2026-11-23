@@ -717,7 +717,8 @@ constants in every binding; see [Versioning](versioning.md).
   name and holds 32 entries. Re-registering an id appends an entry, and the
   latest entry wins. Registration returns `false` for an empty name or a full
   table. Rust also returns `false` when another Rust registration is in progress.
-- An end closes the innermost open zone with that id on the current lane.
+- Zones with the same id may nest. An end closes the innermost open zone with
+  that id on the current lane.
   Destroy a C++ `Zone` on the thread that opened it. Moving a C++ `Zone`
   transfers responsibility for closing it. Rust `Zone` implements neither
   `Send` nor `Sync`.

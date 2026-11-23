@@ -137,7 +137,9 @@ async def _dispatch(payload, debug_lock):
     if ftype == FRAME_CMD and len(fdata) >= 12:
         plugin_id, cmd_type = struct.unpack_from("<II", fdata)
         pcm = fdata[12:]
-        # The firmware broadcasts the profiler sentinel until we learn its ID.
+        # The dashboard sends set-rate to the 0xFFFFFFFE sentinel. Replace it
+        # with the learned profiler ID once available. Until then, the firmware
+        # broadcasts the command because the ID is out of range.
         if (plugin_id == 0xFFFFFFFE and cmd_type == shm.SIM_PROFILER_CMD_SET_RATE
                 and shm._learned_profiler_id is not None):
             plugin_id = shm._learned_profiler_id

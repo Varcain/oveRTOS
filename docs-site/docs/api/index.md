@@ -49,7 +49,7 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | I2C | `ove/i2c.h` | 10 | I2C master driver with probe and register-level convenience APIs. [Guide](i2c.md) |
 | I2S | `ove/i2s.h` | 15 | I2S / SAI audio bus driver with DMA double-buffered streaming. [Guide](i2s.md) |
 | Profiler | `ove/profiler.h` | — | Statistical PC sampling profiler, drained by the sim and trace tooling. |
-| Trace | `ove/trace.h` | — | Lightweight state/event trace points consumed by the sim trace viewer. |
+| Trace | `ove/trace.h` | 4 | User marks, zones and names for ids on the sim trace swimlane. Calls are no-ops without `CONFIG_OVE_TRACE_MARKERS`. [Guide](../build-system/sim.md#trace-and-profiler) |
 | Log | `ove/log.h` | — | Compile-time filtered macros: `OVE_LOG_ERR`, `OVE_LOG_WRN`, `OVE_LOG_INF`, `OVE_LOG_DBG`, and `OVE_LOG`. |
 | LVGL | `ove/lvgl.h` | — | Unified LVGL include: abstraction API (`lvgl_internal.h`) plus upstream LVGL library headers. |
 | LVGL Internal | `ove/lvgl_internal.h` | — | Internal LVGL display integration hooks (lock/unlock/tick/handler/init). |

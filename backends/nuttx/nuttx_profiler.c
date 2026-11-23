@@ -26,8 +26,8 @@
  * CONFIG_SCHED_HPWORKPRIORITY, 224) runs above every ove thread up to
  * OVE_PRIO_ABOVE(OVE_PRIO_REALTIME, 4), so busy threads are sampled too:
  * the thread it preempted is captured with its real stack, in state
- * READY. Each tick walks every RUNNING/READY/BLOCKED ove thread in the
- * registry (populated by nuttx_thread.c).
+ * READY. Each sample walks up to 32 registered threads that are running,
+ * ready or blocked.
  *
  * Symbolication: host-side via the dashboard bridge (arm-none-eabi-nm on
  * the firmware ELF).
@@ -107,7 +107,7 @@ static size_t snapshot_threads(struct snap_entry *out, size_t max)
 	return n;
 }
 
-/* HPWORK context: walk every tracked thread's saved context. */
+/* Walk the snapshot of eligible threads in HPWORK context. */
 static void sample_walk(void)
 {
 	if (!atomic_load_explicit(&profiler_running, memory_order_acquire))
