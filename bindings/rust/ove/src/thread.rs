@@ -1140,14 +1140,14 @@ impl bindings::ove_thread_info {
             cpu_percent_x100: 0,
             valid_fields: 0,
             native_priority: 0,
+            generation: 0,
+            trace_id: 0,
             state_times: bindings::ove_thread_state_times {
                 running_us: 0,
                 ready_us: 0,
                 blocked_us: 0,
                 suspended_us: 0,
             },
-            generation: 0,
-            trace_id: 0,
             name: [0; bindings::OVE_THREAD_NAME_MAX as usize],
         }
     }

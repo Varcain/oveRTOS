@@ -1201,18 +1201,18 @@ pub struct ove_thread_info {
     pub valid_fields: u32,
     #[doc = "< The backend's own priority value for the thread."]
     pub native_priority: core::ffi::c_int,
-    #[doc = "< Per-state cumulative time."]
-    pub state_times: ove_thread_state_times,
     #[doc = " Lane generation: a new value for every thread start, so a new thread\n  on reused storage is told apart from the old one. Zero for kernel threads,\n  Zephyr ove threads that have yet to run, and NuttX tasks without a state tracker."]
     pub generation: u32,
     #[doc = "< The thread's tid in trace records, descriptors\n   and profiler samples; equality only."]
     pub trace_id: usize,
+    #[doc = "< Per-state cumulative time."]
+    pub state_times: ove_thread_state_times,
     #[doc = " Thread name, copied and NUL-terminated (truncated if longer)."]
     pub name: [core::ffi::c_char; 32usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 128usize];
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 120usize];
     ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
     ["Offset of field: ove_thread_info::identity"]
         [core::mem::offset_of!(ove_thread_info, identity) - 0usize];
@@ -1230,14 +1230,14 @@ const _: () = {
         [core::mem::offset_of!(ove_thread_info, valid_fields) - 36usize];
     ["Offset of field: ove_thread_info::native_priority"]
         [core::mem::offset_of!(ove_thread_info, native_priority) - 40usize];
-    ["Offset of field: ove_thread_info::state_times"]
-        [core::mem::offset_of!(ove_thread_info, state_times) - 48usize];
     ["Offset of field: ove_thread_info::generation"]
-        [core::mem::offset_of!(ove_thread_info, generation) - 80usize];
+        [core::mem::offset_of!(ove_thread_info, generation) - 44usize];
     ["Offset of field: ove_thread_info::trace_id"]
-        [core::mem::offset_of!(ove_thread_info, trace_id) - 88usize];
+        [core::mem::offset_of!(ove_thread_info, trace_id) - 48usize];
+    ["Offset of field: ove_thread_info::state_times"]
+        [core::mem::offset_of!(ove_thread_info, state_times) - 56usize];
     ["Offset of field: ove_thread_info::name"]
-        [core::mem::offset_of!(ove_thread_info, name) - 96usize];
+        [core::mem::offset_of!(ove_thread_info, name) - 88usize];
 };
 unsafe extern "C" {
     #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Number of entries written (may be NULL).\n Optional metrics are valid only when their corresponding\n @c OVE_THREAD_INFO_VALID_* bit is set. Their stored zero value is otherwise\n just deterministic initialization, not a measurement.\n\n How many threads can be listed depends on the engine.  FreeRTOS lists the\n tasks in a 32-entry registry kept by the @c traceTASK_CREATE and\n @c traceTASK_DELETE hooks, which its FreeRTOSConfig.h installs along with\n @c configUSE_TRACE_FACILITY, or with @c OVE_FREERTOS_TASK_REGISTRY set to\n 1 plus @c INCLUDE_uxTaskPriorityGet, @c INCLUDE_eTaskGetState and\n @c configUSE_APPLICATION_TASK_TAG (otherwise @c OVE_ERR_NOT_SUPPORTED); NuttX, Zephyr and the host test backend have\n no limit.  @c OVE_ERR_QUEUE_FULL means this call left a live thread out;\n on FreeRTOS that includes a task created while the registry was full,\n which stays unlisted while it lives.  A thread NuttX has no run-time\n accounting slot for is still listed, with its running-time bit clear\n unless it has a state tracker.\n\n @return OVE_OK on success, OVE_ERR_QUEUE_FULL if entries were omitted,\n         or OVE_ERR_NOT_SUPPORTED if enumeration is unavailable.\n @note Returns OVE_ERR_WOULD_BLOCK from an ISR."]
