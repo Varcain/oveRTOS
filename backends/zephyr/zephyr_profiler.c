@@ -199,17 +199,18 @@ void ove_backend_profiler_on_tick(void)
 	s.pcs[0] = (uintptr_t)pc;
 	s.depth = 1;
 
+	uintptr_t stack_lo, stack_hi;
+#ifdef CONFIG_THREAD_STACK_INFO
 	/* Bound the scan by the thread's real stack. A PSP outside it (e.g.
 	 * a user thread on its privileged stack) makes the walker return 0
 	 * and the stacked-LR fallback below applies. */
-	uintptr_t stack_lo = psp;
-	uintptr_t stack_hi = psp + OVE_FALLBACK_SCAN_BYTES;
-#ifdef CONFIG_THREAD_STACK_INFO
 	stack_lo = (uintptr_t)cur->stack_info.start;
 	/* start + size - delta is the thread's initial SP: TLS and the
 	 * random stack offset sit above it and hold no frames. */
 	stack_hi = stack_lo + (uintptr_t)cur->stack_info.size - (uintptr_t)cur->stack_info.delta;
 #else
+	stack_lo = psp;
+	stack_hi = psp + OVE_FALLBACK_SCAN_BYTES;
 	if (stack_hi > OVE_SRAM_END || stack_lo < OVE_SRAM_BASE)
 		stack_hi = stack_lo; /* outside RAM: no scan */
 #endif
