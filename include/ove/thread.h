@@ -483,13 +483,13 @@ struct ove_thread_info {
 	uint32_t cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
 	uint32_t valid_fields;	   /**< Bitwise OR of @c OVE_THREAD_INFO_VALID_* flags. */
 	int native_priority;	   /**< The backend's own priority value for the thread. */
-	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
 	/** Lane generation: a new value for every thread start, so a new thread
 	 *  on reused storage is told apart from the old one. Zero for kernel threads,
 	 *  Zephyr ove threads that have yet to run, and NuttX tasks without a state tracker. */
 	uint32_t generation;
 	uintptr_t trace_id; /**< The thread's tid in trace records, descriptors
 			     *   and profiler samples; equality only. */
+	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
 	/** Thread name, copied and NUL-terminated (truncated if longer). */
 	char name[OVE_THREAD_NAME_MAX];
 };
