@@ -5162,7 +5162,7 @@ unsafe extern "C" {
     pub fn ove_trace_emit_mark(thread_handle: usize, prim: u8, act: u8, object: usize);
 }
 unsafe extern "C" {
-    #[doc = " @brief Append a name for a user trace id.\n\n Call from a single thread. The table copies up to 31 bytes of the\n NUL-terminated name. Each registration uses one of 32 entries,\n including repeated ids. The latest entry supplies the name for the id.\n\n @return True on success, false for a NULL or empty name or a full table."]
+    #[doc = " @brief Append a name for a user trace id.\n\n Call from a single thread. The table copies up to 31 bytes of the\n NUL-terminated name. Each registration uses one of 32 entries,\n including repeated ids. The latest entry supplies the name for the id.\n\n @return True on success, false for a NULL or empty name, a full table,\n or disabled trace markers."]
     pub fn ove_trace_register_name(id: u16, name: *const core::ffi::c_char) -> bool;
 }
 unsafe extern "C" {

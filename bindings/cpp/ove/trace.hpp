@@ -37,7 +37,7 @@ inline void mark(std::uint16_t id) noexcept
 	ove_trace_mark(id);
 }
 
-/** @brief Open a zone on the current lane. */
+/** @brief Open a zone on the current lane. Zones with the same id may nest. */
 inline void zone_begin(std::uint16_t id) noexcept
 {
 	ove_trace_zone_begin(id);

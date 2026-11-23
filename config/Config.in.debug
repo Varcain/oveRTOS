@@ -115,9 +115,9 @@ config OVE_PROFILER
       work. The FreeRTOS timer is also independent of the kernel tick;
       Zephyr's expiry lands on a tick, so when the mean period is only
       one or two ticks (e.g. a 100 Hz tick) the jitter rounds away.
-      NuttX walks every thread with up_backtrace(tcb) from a
-      watchdog-timed high-priority work item (CONFIG_SCHED_BACKTRACE,
-      set in the generated NuttX defconfig).
+      NuttX walks up to 32 registered threads that are running, ready or
+      blocked. A watchdog-timed high-priority work item calls up_backtrace(tcb)
+      (CONFIG_SCHED_BACKTRACE is set in the generated NuttX defconfig).
 
       Needs OVE_THREAD_STATE_STATS, which provides the sample time
       source and the per-sample thread state.

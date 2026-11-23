@@ -15,6 +15,8 @@
  * forwards it to the dashboard as a swimlane. CONFIG_OVE_TRACE_MARKERS
  * enables sync-primitive markers and user marks and zones. User marks
  * and zones use the calling thread's lane, or the interrupt lane in an ISR.
+ * Without CONFIG_OVE_TRACE_MARKERS, the user trace calls are inline no-ops
+ * and ove_trace_register_name() returns false.
  *
  * Thread identity is the low 32 bits of the backend thread handle. The
  * dashboard resolves these to names via descriptor records emitted
@@ -109,7 +111,8 @@ void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uin
  * NUL-terminated name. Each registration uses one of 32 entries,
  * including repeated ids. The latest entry supplies the name for the id.
  *
- * @return True on success, false for a NULL or empty name or a full table.
+ * @return True on success, false for a NULL or empty name, a full table,
+ * or disabled trace markers.
  */
 bool ove_trace_register_name(uint16_t id, const char *name);
 

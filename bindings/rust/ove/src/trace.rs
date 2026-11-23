@@ -56,6 +56,8 @@ pub fn mark(id: u16) {
 }
 
 /// Open a zone on the current lane.
+///
+/// Zones with the same id may nest.
 #[inline]
 pub fn zone_begin(id: u16) {
     #[cfg(has_trace)]
