@@ -92,7 +92,7 @@ impl<B: Bus> Lease<B> {
         unsafe {
             (*header.as_ptr())
                 .refs
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
                     n.checked_add(1)
                         .filter(|next| n != 0 && *next <= isize::MAX as usize)
                 })

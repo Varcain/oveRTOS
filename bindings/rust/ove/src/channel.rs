@@ -75,9 +75,8 @@ impl core::fmt::Display for TryRecvError {
     }
 }
 
-// `core::error::Error` is stable since Rust 1.81 (< our 1.85 MSRV) and is
-// re-exported as `std::error::Error`, so this single impl covers both
-// `no_std` and `std` consumers.
+// `std::error::Error` re-exports `core::error::Error`, so this single impl
+// covers both `no_std` and `std` consumers.
 impl core::error::Error for TryRecvError {}
 
 /// Shared refcount + queue handle for the heap-mode allocation.

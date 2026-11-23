@@ -163,14 +163,9 @@ If `=y`, switch to `OVE_*_DEFINE_STATIC()` or `_init()` / `_deinit()`. See [Two 
 
 **Symptom** — `lld` or `ld` reports `LLVM bitcode is incompatible with the target host` when linking Rust + C.
 
-**Fix** — your `rustc` is older than 1.85, which is the minimum for the bindgen path. Update:
-
-```bash
-rustup update stable
-rustc --version    # should report >= 1.85
-```
-
-The required version is recorded in `rust-toolchain.toml`.
+**Fix** — cross-LTO requires a linker that supports the LLVM bitcode emitted by `rustc`.
+Compare the LLVM version from `rustc -vV` with your linker's version (`ld.lld --version` for LLD).
+Use a matching `lld`, or disable cross-LTO by configuring CMake with `-DOVE_CROSS_LTO=OFF`.
 
 ### Zig build fails with "expected version 0.16.0"
 

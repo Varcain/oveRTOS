@@ -2,7 +2,7 @@
 name = "ove-eventgroup-tests"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.95"
 
 [dependencies]
 ove = { path = "../../bindings/rust/ove", default-features = false, features = ["std"] }

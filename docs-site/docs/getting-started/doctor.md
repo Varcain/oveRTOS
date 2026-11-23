@@ -68,8 +68,8 @@ This is fetched lazily on the first embedded build (`make download` resolves it)
 
 | Check | Required for | Minimum |
 |---|---|---|
-| `cargo` | Rust apps | 1.85 (recorded in `rust-toolchain.toml`) |
-| `rustc` | Rust apps | 1.85 |
+| `cargo` | Rust apps | 1.95 |
+| `rustc` | Rust apps | 1.95 |
 | `zig` | Zig apps | 0.16.0 |
 
 These are `WARN` when missing because they are only needed for their respective language path. If `ove doctor` reports the wrong Zig version, run `make ensure-toolchain-zig` to download the supported one into `output/toolchains/`.

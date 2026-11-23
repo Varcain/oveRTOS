@@ -7,8 +7,8 @@
 #
 # `channel = "stable"` deliberately tracks the latest stable rather than
 # pinning a single version; the MSRV floor lives in
-# `bindings/rust/ove/Cargo.toml` (`rust-version = "1.85"`).  Pin tighter
-# (e.g. `channel = "1.85.0"`) only when reproducibility for an external
+# `bindings/rust/ove/Cargo.toml` (`rust-version = "1.95"`).  Pin tighter
+# (e.g. `channel = "1.95.0"`) only when reproducibility for an external
 # audit is contractual.
 #
 # Miri runs on nightly; CI invokes `cargo +nightly miri test` and

@@ -15,7 +15,7 @@ toolchains:
   zig:
     version: "0.16.0"
   rust:
-    min_version: "1.85"
+    min_version: "1.95"
   zephyr-sdk:
     version: "1.0.1"
 

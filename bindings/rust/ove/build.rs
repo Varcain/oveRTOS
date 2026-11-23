@@ -444,10 +444,10 @@ fn main() {
 
     // Board-specific lv_conf.h directory for bindgen.
     // Skip empty values: an empty `-I` swallows the next clang arg.
-    if let Ok(lv_conf_path) = env::var("LV_CONF_PATH") {
-        if !lv_conf_path.is_empty() {
-            builder = builder.clang_arg(format!("-I{lv_conf_path}"));
-        }
+    if let Ok(lv_conf_path) = env::var("LV_CONF_PATH")
+        && !lv_conf_path.is_empty()
+    {
+        builder = builder.clang_arg(format!("-I{lv_conf_path}"));
     }
 
     // Native builds parse host headers; other builds use a freestanding ARM target.
@@ -459,10 +459,10 @@ fn main() {
             .clang_arg("-fshort-enums")
             .clang_arg("--target=arm-none-eabihf");
 
-        if let Ok(sysroot) = env::var("ARM_SYSROOT_INCLUDE") {
-            if !sysroot.is_empty() {
-                builder = builder.clang_arg(format!("-isystem{sysroot}"));
-            }
+        if let Ok(sysroot) = env::var("ARM_SYSROOT_INCLUDE")
+            && !sysroot.is_empty()
+        {
+            builder = builder.clang_arg(format!("-isystem{sysroot}"));
         }
     }
 

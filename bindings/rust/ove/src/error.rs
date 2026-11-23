@@ -206,12 +206,9 @@ impl Error {
     }
 }
 
-/// `core::error::Error` is stable since Rust 1.81; our MSRV is 1.85 so
-/// the impl can be unconditional.  `std::error::Error` is a re-export
-/// of `core::error::Error` (also since 1.81), so this single `impl`
-/// covers both `no_std` and `std` consumers — no `#[cfg(feature = "std")]`
-/// gymnastics.  The default `source() -> None` is correct: `ove::Error`
-/// doesn't chain to a lower-level cause.
+/// `std::error::Error` re-exports `core::error::Error`, so this single impl
+/// covers both `no_std` and `std` consumers. `ove::Error` uses the default
+/// `source()` implementation because it has no lower-level cause.
 impl core::error::Error for Error {}
 
 impl core::fmt::Display for Error {
