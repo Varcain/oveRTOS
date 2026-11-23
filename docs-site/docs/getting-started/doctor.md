@@ -94,8 +94,9 @@ These are `WARN` when missing because they are only needed for their respective 
 | `lcov` | `make coverage` | |
 
 `make lint` normally skips missing tools. With a nonempty `CI`, it requires host
-`clang-tidy` and, when the stub build needs configuration, `cmake`. A failed
-stub configure always fails lint.
+`clang-tidy` and `cmake` (if the stub build needs configuration), and the
+bindings stub drift check needs `dl/lvgl` and the `rust_stub` storage probe
+built by the `cargo clippy` lint step. A failed stub configure always fails lint.
 
 ### Downloaded tools (under `output/`)
 

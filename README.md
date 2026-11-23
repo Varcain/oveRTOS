@@ -507,9 +507,10 @@ make format         # rewrite files in place (formatters only)
 | ruff               | Python in `config/ove-cli`, `config/scripts`, and `tests/python` |
 | backend-struct     | forbids `struct ove_*` redefinition in backend `.c` |
 
-A failed stub configure always fails lint. When `CI` is set, host
-`clang-tidy` is required, and so is `cmake` when the stub build must be
-configured.
+A failed stub configure always fails lint. When `CI` is set, lint requires
+host `clang-tidy` and `cmake` (if the stub build needs configuration), and
+the bindings stub drift check needs `dl/lvgl` and the `rust_stub` storage
+probe built by the `cargo clippy` lint step.
 
 The `backend-struct` rule enforces a key invariant: every `ove_*_storage_t` is an alias for the same `struct ove_X` declared in `backends/<rtos>/include/ove_storage_<rtos>.h`. Backend `.c` files must **never** declare `struct ove_X` at top level (narrow FS allowlist aside) — otherwise consumers in other translation units see a different size than the backend writes and `_init()` silently corrupts adjacent memory. See `config/ove-cli/ove/lint_backend_struct.py` for the allowlist.
 

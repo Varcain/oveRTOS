@@ -10,8 +10,18 @@
 #               the diff.
 #   --check     Compare with fresh bindgen output, ignoring doc attributes.
 #               Fail on drift or generation failure. Skip if LVGL or the
-#               rust_stub storage probe is missing.
+#               rust_stub storage probe is missing. A skip fails when CI
+#               is nonempty.
 set -euo pipefail
+
+skip_check() {
+    if [ -n "${CI:-}" ]; then
+        echo "error: $1 — cannot run the bindings_stub.rs drift check" >&2
+        exit 1
+    fi
+    echo "warning: $1 — skipping bindings_stub.rs drift check" >&2
+    exit 0
+}
 
 MODE="regen"
 if [ "${1:-}" = "--check" ]; then
@@ -23,8 +33,7 @@ OVE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LVGL_DIR="$OVE_DIR/dl/lvgl"
 if [ ! -f "$LVGL_DIR/lvgl.h" ]; then
     if [ "$MODE" = "check" ]; then
-        echo "warning: dl/lvgl not present — skipping bindings_stub.rs drift check" >&2
-        exit 0
+        skip_check "dl/lvgl not present"
     fi
     echo "Fetch the manifest-pinned LVGL into dl/lvgl before regenerating bindings_stub.rs" >&2
     exit 1
@@ -92,8 +101,7 @@ CFG
 STUB_SIZES="$OVE_DIR/output/tests/rust_stub/ove_storage_sizes.env"
 if [ ! -f "$STUB_SIZES" ]; then
     if [ "$MODE" = "check" ]; then
-        echo "warning: rust_stub build not present at $STUB_SIZES — skipping bindings_stub.rs drift check" >&2
-        exit 0
+        skip_check "rust_stub build not present at $STUB_SIZES"
     fi
     echo "Need rust_stub built first: run \`ove test rust\` or \`make lint\`" >&2
     exit 1
