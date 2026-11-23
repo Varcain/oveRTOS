@@ -379,7 +379,7 @@ class GdbController:
 
         start = max(0, line - ctx_lines - 1)
         end = min(len(lines), line + ctx_lines)
-        snippet = [l.rstrip("\n\r") for l in lines[start:end]]
+        snippet = [text.rstrip("\n\r") for text in lines[start:end]]
 
         resp = {
             "file": path,

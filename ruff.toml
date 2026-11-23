@@ -1,0 +1,4 @@
+[lint]
+# CI installs the newest Ruff. Ruff 0.16 broadened its defaults, so pin the
+# rule families used by lint across the CLI, scripts, and Python tests.
+select = ["E4", "E7", "E9", "F"]
