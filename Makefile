@@ -237,6 +237,11 @@ COVERAGE_STUB_DIR          := $(OVE_DIR)/output/tests/stub_coverage
 COVERAGE_CPP_DIR           := $(OVE_DIR)/output/tests/cpp_coverage
 COVERAGE_RUST_DIR          := $(OVE_DIR)/output/tests/rust_coverage
 COVERAGE_QEMU_FREERTOS_DIR := $(OVE_DIR)/output/tests/qemu_freertos_coverage
+COVERAGE_REQUIRE_ALL       ?=
+COVERAGE_TRACEFILES        := $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info \
+	$(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info \
+	$(COVERAGE_RUST_DIR)/coverage.filtered.info \
+	$(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info
 
 .PHONY: test-stub-coverage
 test-stub-coverage:
@@ -264,10 +269,9 @@ coverage: $(VENV_STAMP)
 	@$(OVE) test qemu-freertos-coverage
 	@$(MAKE) --no-print-directory coverage-merge
 
-# Final lcov-merge + genhtml + summary, factored out so CI can invoke it
-# after downloading per-backend .filtered.info artifacts. Skips any
-# tracefile that isn't present — lets the merge produce a partial report
-# when a backend job fails upstream.
+# Merge available tracefiles and generate the HTML report and summary.
+# COVERAGE_REQUIRE_ALL=1 fails after reporting if a tracefile is missing
+# or empty.
 .PHONY: coverage-merge
 coverage-merge:
 	@command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1 || { \
@@ -276,10 +280,7 @@ coverage-merge:
 	}
 	@mkdir -p $(COVERAGE_OUTPUT_DIR)
 	@lcov \
-		$(if $(wildcard $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info) \
-		$(if $(wildcard $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info) \
-		$(if $(wildcard $(COVERAGE_RUST_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_RUST_DIR)/coverage.filtered.info) \
-		$(if $(wildcard $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info) \
+		$(foreach tracefile,$(wildcard $(COVERAGE_TRACEFILES)),--add-tracefile $(tracefile)) \
 		--rc branch_coverage=1 \
 		--output-file   $(COVERAGE_OUTPUT_DIR)/coverage.info \
 		--ignore-errors inconsistent,format,empty
@@ -292,6 +293,16 @@ coverage-merge:
 		--ignore-errors inconsistent,format,empty || true
 	@echo ""
 	@echo "Combined coverage report: $(COVERAGE_OUTPUT_DIR)/html/index.html"
+ifeq ($(COVERAGE_REQUIRE_ALL),1)
+	@status=0; \
+	for tracefile in $(COVERAGE_TRACEFILES); do \
+		if ! test -s "$$tracefile"; then \
+			echo "ERROR: missing or empty coverage tracefile: $$tracefile" >&2; \
+			status=1; \
+		fi; \
+	done; \
+	exit $$status
+endif
 
 # ── Quality / CI ──────────────────────────────────────────────────────────
 

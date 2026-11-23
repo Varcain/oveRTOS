@@ -113,9 +113,8 @@ jobs:
   merge:
     name: Merge & Report
     runs-on: ubuntu-latest
-    # Produce a partial report even if a backend is red — the merge step
-    # skips missing tracefiles, so a single-job failure doesn't blank the
-    # whole report.
+    # A missing or empty tracefile fails the job after the partial report
+    # is produced.
     if: always()
     needs:
       - stub-coverage
@@ -148,9 +147,10 @@ jobs:
           cp -n cov-artifacts/cov-qemu-freertos/coverage.filtered.info output/tests/qemu_freertos_coverage/          2>/dev/null || true
 
       - name: Merge tracefiles and generate HTML
-        run: make coverage-merge
+        run: make coverage-merge COVERAGE_REQUIRE_ALL=1
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage-html
           path: output/tests/coverage/html
