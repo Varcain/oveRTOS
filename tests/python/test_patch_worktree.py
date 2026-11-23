@@ -14,6 +14,7 @@ import unittest
 from ove.build import (
     _check_source_trees_unchanged,
     _prepare_patched_git_tree,
+    _record_source_tree,
     _shared_patched_tree,
     discard_all_patch_worktrees,
     discard_unreferenced_source_trees,
@@ -188,6 +189,29 @@ class SharedSourceTreeTest(_GitSourceCase):
         self.assertNotEqual(bravo, charlie)
         with open(os.path.join(bravo, "a.txt")) as f:
             self.assertEqual(f.read(), "bravo\n")
+        self.assertEqual(self._records(ws), [charlie])
+        self.assertEqual(discard_unreferenced_source_trees(self.root, self.dl_dir), 1)
+        self.assertFalse(os.path.exists(bravo))
+        self.assertTrue(os.path.isdir(charlie))
+
+    def test_rerecording_current_tree_prunes_legacy_entries(self):
+        ws = self._workspace("a")
+        root = os.path.join(self.dl_dir, ".ove-worktrees")
+        west_root = os.path.join(self.dl_dir, "zephyr-workspace-test", ".ove-worktrees")
+        stale = os.path.join(root, "zephyr-0123456789abcdef")
+        current = os.path.join(root, "zephyr-abcdef0123456789")
+        other_source = os.path.join(root, "zephyr-apps-0123456789abcdef")
+        other_root = os.path.join(west_root, "zephyr-0123456789abcdef")
+        for tree in (current, other_source, other_root):
+            _record_source_tree(ws, tree)
+        kept = sorted([current, other_source, other_root])
+        self.assertEqual(self._records(ws), kept)
+        with open(os.path.join(ws.build_dir, ".ove-source-trees"), "a") as f:
+            f.write(f"{stale}\n")
+
+        _record_source_tree(ws, current)
+
+        self.assertEqual(self._records(ws), kept)
 
     def test_clean_sources_keeps_recorded_trees_only(self):
         kept, dropped = self._workspace("kept"), self._workspace("dropped")
