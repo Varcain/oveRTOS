@@ -17,6 +17,10 @@
 
 #include "ove/ove.h"
 
+#if defined(CONFIG_OVE_RTOS_ZEPHYR) && defined(CONFIG_ARCH_POSIX)
+#include <zephyr/kernel.h>
+#endif
+
 #include "ove_test_common.h"
 
 /* ── Static storage macros ────────────────────────────────────────────
@@ -42,6 +46,14 @@
 static inline void test_msleep(uint32_t ms)
 {
 	ove_thread_sleep_ms(ms);
+}
+
+/* Let native_sim advance simulated time while this test thread stays runnable. */
+static inline void test_cpu_relax(void)
+{
+#if defined(CONFIG_OVE_RTOS_ZEPHYR) && defined(CONFIG_ARCH_POSIX)
+	k_busy_wait(100);
+#endif
 }
 
 /*

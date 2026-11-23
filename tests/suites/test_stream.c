@@ -469,8 +469,9 @@ static void test_stream_isr_partial_send_and_drain(void **state)
  * NuttX the interrupt took the thread's lock, wrote the ring under it and
  * released it, which corrupted the ring and the lock within a few writes.
  * The thread runs below the runner and never sleeps, so each interrupt
- * (all of them come from the tick) lands somewhere in its loop.  It does
- * not catch a thread path that merely lost its critical section, though:
+ * (all of them come from the tick) lands somewhere in its loop. On
+ * native_sim it lands at the relax call, giving functional coverage only.
+ * It does not catch a thread path that merely lost its critical section, though:
  * on QEMU, removing them from send and receive went unnoticed. */
 struct stream_hammer {
 	ove_stream_t s;
@@ -509,6 +510,7 @@ static void stream_hammer_fn(void *arg)
 				next_rx = (uint8_t)((rx[i] + 1) & 0x7F);
 			}
 		}
+		test_cpu_relax();
 		if (stopping && got == 0)
 			break;
 #ifdef CONFIG_OVE_RTOS_POSIX
