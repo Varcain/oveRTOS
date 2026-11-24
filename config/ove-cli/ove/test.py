@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -122,15 +123,22 @@ def _summary_failures(stdout: str):
     return int(matches[-1]) if matches else None
 
 
-def _run_test_binary(cmd, suite, *, summary=False, fail_on=None, **kwargs) -> TestResults:
+def _run_test_binary(cmd, suite, *, summary=False, fail_on=None,
+                     env=None, cwd=None, timeout=600) -> TestResults:
     """Run a test binary, print its output, and parse CMocka results."""
-    result = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, **kwargs)
-    output = result.stdout or ""
-    print(output, end="")
+    with tempfile.TemporaryFile("w+", errors="replace") as log:
+        start = time.monotonic()
+        rc = _run_owned_test_process(cmd, env=env, timeout=timeout, stdout=log, cwd=cwd)
+        elapsed = time.monotonic() - start
+        log.seek(0)
+        output = log.read()
+    print(output, end="", flush=True)
     parsed = _parse_cmocka(output)
     parsed.suite = suite
+    if rc == 124:
+        parsed.failed += 1
+        timed_out = timeout is not None and elapsed >= timeout
+        parsed.failed_names.append(f"<timeout after {timeout} s>" if timed_out else "<exit 124>")
     if summary and not re.search(r"^=== Summary:", output, re.MULTILINE):
         parsed.failed += 1
         parsed.failed_names.append("<no summary line>")
@@ -139,11 +147,11 @@ def _run_test_binary(cmd, suite, *, summary=False, fail_on=None, **kwargs) -> Te
         parsed.failed_names.append("<sanitizer report>")
     if parsed.passed == 0 and parsed.failed == 0:
         # Binary produced no CMocka output — treat exit code as pass/fail
-        if result.returncode == 0:
+        if rc == 0:
             parsed.passed = 1
         else:
             parsed.failed = 1
-    if result.returncode != 0 and parsed.failed == 0:
+    if rc != 0 and parsed.failed == 0:
         parsed.failed = 1
     return parsed
 
@@ -3623,11 +3631,7 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
         qemu_cmd = ["qemu-system-arm", "-cpu", "cortex-m33",
                     "-machine", "mps2-an521", "-m", "16", "-vga", "none",
                     "-nographic", "-semihosting", "-kernel", elf]
-        try:
-            return _run_test_binary(qemu_cmd, label, timeout=60)
-        except subprocess.TimeoutExpired:
-            logger.error("%s: QEMU run timed out", label)
-            return TestResults(suite=label, passed=0, failed=1)
+        return _run_test_binary(qemu_cmd, label, timeout=60)
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(

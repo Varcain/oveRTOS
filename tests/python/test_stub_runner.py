@@ -7,7 +7,10 @@
 import os
 import re
 import subprocess
+import time
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from shlex import quote
 from tempfile import TemporaryDirectory
@@ -114,6 +117,32 @@ class StubRunnerTest(unittest.TestCase):
         results = _run_fake_binary("", 0)
         self.assertEqual(results.passed, 1)
         self.assertEqual(results.failed, 0)
+
+    def test_binary_exit_124_is_not_a_runner_timeout(self):
+        results = _run_fake_binary("[ RUN      ] test_exits\n", 124)
+        self.assertEqual(results.failed, 1)
+        self.assertEqual(results.failed_names, ["<exit 124>"])
+
+    def test_binary_timeout_preserves_output_and_reaps_process(self):
+        script = r'printf "%s\n" "$$" "[ RUN      ] test_hangs" >&2; exec sleep 60'
+        start = time.monotonic()
+        with redirect_stdout(StringIO()) as stdout:
+            results = ove_test._run_test_binary(["sh", "-c", script], "stub", timeout=1)
+
+        self.assertLess(time.monotonic() - start, 5)
+        self.assertEqual(results.failed, 1)
+        self.assertEqual(results.failed_names, ["<timeout after 1 s>"])
+        pid, run_line = stdout.getvalue().splitlines()
+        self.assertEqual(run_line, "[ RUN      ] test_hangs")
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid), 0)
+
+    def test_binary_uses_default_deadline(self):
+        with mock.patch.object(ove_test, "_run_owned_test_process", return_value=0) as run:
+            _run_fake_binary("", 0)
+
+        run.assert_called_once()
+        self.assertEqual(run.call_args.kwargs["timeout"], 600)
 
 
 class NuttxSimRunnerTest(unittest.TestCase):
