@@ -77,14 +77,14 @@ void ove_run(void);
 /**
  * @brief Finish the application using the platform's product-level policy.
  *
- * Simulator targets terminate the simulator with @p status, native host
- * targets terminate the process, and bare-metal STM32 targets request a
- * software reset.  This is distinct from returning from a worker thread: use
- * it only when the complete firmware application has finished or cannot
+ * On QEMU MPS2 AN500 and AN521, request a semihosted exit with @p status.
+ * On STM32F746G-DISCO, request a system reset. The function spins forever on
+ * other targets or if the exit or reset request returns.
+ *
+ * Call this only when the entire firmware application has finished or cannot
  * continue.
  *
- * @param[in] status Zero for success, non-zero for failure.  Bare-metal reset
- *                   targets may not retain the value.
+ * @param[in] status Semihosted exit status. Zero for success, nonzero for failure.
  *
  * @note This function never returns.
  */

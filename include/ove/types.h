@@ -389,9 +389,8 @@ typedef void (*ove_dma_complete_cb)(int result, void *user_data);
 /**
  * @brief Compile-time string identifying the active RTOS backend.
  *
- * Resolved to a human-readable string literal ("FreeRTOS", "Zephyr",
- * "NuttX", "POSIX" for the host test backend, or "Unknown") based on which
- * @c CONFIG_OVE_RTOS_* symbol is defined in @c ove_config.h.
+ * Resolved to "FreeRTOS", "Zephyr", or "NuttX" based on the
+ * @c CONFIG_OVE_RTOS_* symbols in @c ove_config.h, or "Unknown" otherwise.
  */
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 #define OVE_RTOS_NAME "FreeRTOS"
@@ -399,8 +398,6 @@ typedef void (*ove_dma_complete_cb)(int result, void *user_data);
 #define OVE_RTOS_NAME "Zephyr"
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
 #define OVE_RTOS_NAME "NuttX"
-#elif defined(CONFIG_OVE_RTOS_POSIX)
-#define OVE_RTOS_NAME "POSIX"
 #else
 #define OVE_RTOS_NAME "Unknown"
 #endif

@@ -9,9 +9,6 @@
 #include "ove_config.h"
 #include "ove/ove.h"
 
-#if defined(CONFIG_OVE_RTOS_POSIX)
-#include <stdlib.h>
-#endif
 #ifdef CONFIG_OVE_RTOS_NUTTX
 #include <unistd.h>
 #endif
@@ -40,12 +37,8 @@ int ove_app_run(void)
 }
 
 /*
- * ove_heap_lock — strong impl lives in backends/common/ove_heap_lock.c
- * (linked on FreeRTOS + NuttX where there's a wrap chain to gate).
- * Provide a weak no-op fallback here so Zephyr / POSIX builds still
- * link: those backends have no kernel-mm to trap (Zephyr+zeroheap is
- * provably heap-zero, audited at link time; POSIX is sim only), so
- * the lock has nothing to do anyway.
+ * backends/common/ove_heap_lock.c provides the strong implementation for
+ * backends with allocator wrappers. This fallback lets other builds link.
  */
 __attribute__((weak)) void ove_heap_lock(void)
 {
@@ -103,8 +96,6 @@ void ove_app_exit(unsigned int status)
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN521)
 	unsigned long block[2] = {0x20026u /* ADP_Stopped_ApplicationExit */, status};
 	(void)app_semihost(0x20 /* SYS_EXIT_EXTENDED */, block);
-#elif defined(CONFIG_OVE_RTOS_POSIX)
-	exit((int)status); // NOLINT(concurrency-mt-unsafe)
 #else
 	(void)status;
 #endif

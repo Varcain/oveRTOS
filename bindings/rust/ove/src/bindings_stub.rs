@@ -3190,7 +3190,7 @@ unsafe extern "C" {
     pub fn ove_run();
 }
 unsafe extern "C" {
-    #[doc = " @brief Finish the application using the platform's product-level policy.\n\n Simulator targets terminate the simulator with @p status, native host\n targets terminate the process, and bare-metal STM32 targets request a\n software reset.  This is distinct from returning from a worker thread: use\n it only when the complete firmware application has finished or cannot\n continue.\n\n @param[in] status Zero for success, non-zero for failure.  Bare-metal reset\n                   targets may not retain the value.\n\n @note This function never returns."]
+    #[doc = " @brief Finish the application using the platform's product-level policy.\n\n On QEMU MPS2 AN500 and AN521, request a semihosted exit with @p status.\n On STM32F746G-DISCO, request a system reset. The function spins forever on\n other targets or if the exit or reset request returns.\n\n Call this only when the entire firmware application has finished or cannot\n continue.\n\n @param[in] status Semihosted exit status. Zero for success, nonzero for failure.\n\n @note This function never returns."]
     pub fn ove_app_exit(status: core::ffi::c_uint) -> !;
 }
 unsafe extern "C" {
