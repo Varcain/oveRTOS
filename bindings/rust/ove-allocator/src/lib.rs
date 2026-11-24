@@ -6,12 +6,10 @@
 
 //! libc-malloc-backed `#[global_allocator]` for oveRTOS no_std heap apps.
 //!
-//! Every oveRTOS RTOS backend (FreeRTOS, NuttX, Zephyr) ships
-//! a libc that exposes `malloc` / `free` / `realloc` and routes them to
-//! the kernel heap.  This crate registers a `GlobalAlloc` shim that
-//! forwards to those symbols, so a `no_std` heap-mode Rust binary can
-//! use `Box`, `Arc`, `Vec`, `String`, etc. without any other allocator
-//! crate.
+//! This crate forwards Rust heap allocations to `malloc`, `free`, and
+//! `realloc`. On FreeRTOS, oveRTOS wraps those calls to use the FreeRTOS
+//! heap. NuttX and Zephyr use their libc malloc heaps. This lets `no_std`
+//! heap-mode apps use `Box`, `Arc`, `Vec`, and `String`.
 //!
 //! Usage from an app crate:
 //! ```toml
@@ -35,63 +33,108 @@
 #[cfg(not(feature = "no_install"))]
 mod imp {
     use core::alloc::{GlobalAlloc, Layout};
+    use core::ffi::c_void;
+
+    // Minimum alignment guaranteed by malloc on the supported targets.
+    const MIN_ALIGN: usize = 2 * core::mem::size_of::<usize>();
 
     unsafe extern "C" {
-        fn malloc(size: usize) -> *mut core::ffi::c_void;
-        fn free(ptr: *mut core::ffi::c_void);
-        fn realloc(ptr: *mut core::ffi::c_void, new_size: usize) -> *mut core::ffi::c_void;
-        fn aligned_alloc(alignment: usize, size: usize) -> *mut core::ffi::c_void;
+        fn malloc(size: usize) -> *mut c_void;
+        fn free(ptr: *mut c_void);
+        fn realloc(ptr: *mut c_void, new_size: usize) -> *mut c_void;
     }
 
-    /// `GlobalAlloc` impl that forwards to libc malloc/free/realloc.
-    /// Alignments stricter than `align_of::<usize>()` go through the C
-    /// library's `aligned_alloc`.
+    /// A `GlobalAlloc` backed by libc `malloc`, `free`, and `realloc`.
+    /// Over-aligned allocations keep the original `malloc` pointer in a header.
     pub struct OveAllocator;
 
     unsafe impl GlobalAlloc for OveAllocator {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            // libc malloc() is documented as returning storage suitable
-            // for any built-in alignment (`max_align_t`).  Anything
-            // stricter — SIMD vectors, page boundaries — goes through
-            // aligned_alloc.
-            let ptr = if layout.align() <= core::mem::align_of::<usize>() {
-                unsafe { malloc(layout.size()) }
-            } else {
-                // C11 aligned_alloc requires size to be a multiple of
-                // alignment; round up.
-                let size = (layout.size() + layout.align() - 1) & !(layout.align() - 1);
-                unsafe { aligned_alloc(layout.align(), size) }
+            let align = layout.align();
+            if align <= MIN_ALIGN {
+                return unsafe { malloc(layout.size()) }.cast();
+            }
+
+            // Over-allocate because aligned_alloc bypasses the FreeRTOS malloc wrap.
+            let Some(total) = layout.size().checked_add(align) else {
+                return core::ptr::null_mut();
             };
-            ptr as *mut u8
+            let raw: *mut u8 = unsafe { malloc(total) }.cast();
+            if raw.is_null() {
+                return raw;
+            }
+
+            // With MIN_ALIGN-aligned malloc, the header fits before the next
+            // align boundary, at most align bytes from raw.
+            let start = unsafe { raw.add(core::mem::size_of::<*mut u8>()) };
+            let ptr = unsafe { start.add(start.align_offset(align)) };
+            unsafe { ptr.cast::<*mut u8>().sub(1).write(raw) };
+            ptr
         }
 
-        unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-            unsafe { free(ptr as *mut _) };
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            let raw = if layout.align() <= MIN_ALIGN {
+                ptr
+            } else {
+                unsafe { ptr.cast::<*mut u8>().sub(1).read() }
+            };
+            unsafe { free(raw.cast()) };
         }
 
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-            // Only safe to use libc realloc when the alignment fits the
-            // built-in max_align_t; otherwise fall back to alloc/copy.
-            if layout.align() <= core::mem::align_of::<usize>() {
-                unsafe { realloc(ptr as *mut _, new_size) as *mut u8 }
-            } else {
-                let new_layout =
-                    Layout::from_size_align(new_size, layout.align()).expect("layout");
-                let new_ptr = unsafe { self.alloc(new_layout) };
-                if !new_ptr.is_null() {
-                    let copy = core::cmp::min(layout.size(), new_size);
-                    unsafe {
-                        core::ptr::copy_nonoverlapping(ptr, new_ptr, copy);
-                        self.dealloc(ptr, layout);
-                    }
-                }
-                new_ptr
+            if layout.align() <= MIN_ALIGN {
+                return unsafe { realloc(ptr.cast(), new_size) }.cast();
             }
+            let new_layout = Layout::from_size_align(new_size, layout.align()).expect("layout");
+            let new_ptr = unsafe { self.alloc(new_layout) };
+            if !new_ptr.is_null() {
+                let copy = core::cmp::min(layout.size(), new_size);
+                unsafe {
+                    core::ptr::copy_nonoverlapping(ptr, new_ptr, copy);
+                    self.dealloc(ptr, layout);
+                }
+            }
+            new_ptr
         }
     }
 
+    #[cfg(not(test))]
     #[global_allocator]
     static ALLOCATOR: OveAllocator = OveAllocator;
+
+    #[cfg(test)]
+    mod tests {
+        use super::OveAllocator;
+        use core::alloc::{GlobalAlloc, Layout};
+        use core::slice::from_raw_parts;
+
+        #[test]
+        fn alloc_realloc_dealloc() {
+            let data = b"oveRTOS allocation";
+            for align in [8, 32, 64, 4096] {
+                let initial = Layout::from_size_align(data.len(), align).unwrap();
+                let grown = Layout::from_size_align(data.len() * 3, align).unwrap();
+                let shrunk = Layout::from_size_align(data.len() / 2, align).unwrap();
+                unsafe {
+                    let ptr = OveAllocator.alloc(initial);
+                    assert!(!ptr.is_null());
+                    assert_eq!(ptr.addr() % align, 0);
+                    ptr.copy_from_nonoverlapping(data.as_ptr(), data.len());
+
+                    let ptr = OveAllocator.realloc(ptr, initial, grown.size());
+                    assert!(!ptr.is_null());
+                    assert_eq!(ptr.addr() % align, 0);
+                    assert_eq!(from_raw_parts(ptr, data.len()), data);
+
+                    let ptr = OveAllocator.realloc(ptr, grown, shrunk.size());
+                    assert!(!ptr.is_null());
+                    assert_eq!(ptr.addr() % align, 0);
+                    assert_eq!(from_raw_parts(ptr, shrunk.size()), &data[..shrunk.size()]);
+                    OveAllocator.dealloc(ptr, shrunk);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "no_install"))]

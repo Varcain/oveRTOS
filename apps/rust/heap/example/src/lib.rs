@@ -36,8 +36,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-// Pull in the libc-malloc-backed `#[global_allocator]`: a `GlobalAlloc`
-// shim wrapping libc malloc/free that routes to the kernel heap.
+// Install the libc-malloc-backed `#[global_allocator]`.
 use ove_allocator as _;
 
 use core::sync::atomic::{AtomicU32, Ordering};
