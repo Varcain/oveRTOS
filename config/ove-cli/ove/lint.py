@@ -348,7 +348,8 @@ def _clang_tidy_backends(ove_dir, check):
     for db_path in found:
         # Detect RTOS from the path: prefer explicit /<rtos>/ directory
         # markers (output/<board>/<rtos>/...) over qemu-<rtos> / renode-<rtos>.
-        norm = db_path.replace(os.sep, "/")
+        rel_path = os.path.relpath(db_path, os.path.join(ove_dir, "output"))
+        norm = "/" + rel_path.replace(os.sep, "/")
         rtos = None
         for candidate in ("freertos", "nuttx", "zephyr"):
             if f"/{candidate}/" in norm or f"-{candidate}/" in norm \
@@ -408,6 +409,7 @@ def _clang_tidy_backends(ove_dir, check):
             continue
 
         if not filtered:
+            failures.append(f"{rtos}: no backend files in compile database")
             continue
         files_total += len(filtered)
 
@@ -474,9 +476,6 @@ def _clang_tidy_backends(ove_dir, check):
     if failures:
         return ("clang-tidy-backends", "FAIL",
                 "; ".join(failures))
-    if files_total == 0:
-        return ("clang-tidy-backends", "OK",
-                "no backend files in compile dbs")
     return ("clang-tidy-backends", "OK",
             f"{len(rtos_db)} backend(s), {files_total} files")
 
