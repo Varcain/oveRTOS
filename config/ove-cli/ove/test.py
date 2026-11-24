@@ -2094,6 +2094,43 @@ def test_i2c_retirement_nuttx(ove_dir, output_dir):
     return result
 
 
+def test_qemu_nuttx_zh_realloc(ove_dir, output_dir):
+    """Check the NuttX zero-heap realloc hook under KASan on QEMU AN500."""
+    kernel, applications, _ = _nuttx_fetch_sources(ove_dir)
+    fixture = os.path.join(ove_dir, "tests", "sim", "nuttx-zh-realloc")
+    base = os.path.join(output_dir, "tests", "qemu_nuttx_zh_realloc")
+    apps = os.path.join(base, "nuttx-apps")
+    if not os.path.isdir(apps):
+        shutil.copytree(applications, apps, symlinks=True)
+    _nuttx_register_test_app(ove_dir, apps, "nuttx-zh-realloc")
+    qemu_tests = os.path.join(ove_dir, "tests", "sim", "nuttx-qemu")
+    build = os.path.join(base, "build")
+    toolchain = _ensure_arm_toolchain(ove_dir)
+    _nuttx_cmake_build(
+        ove_dir, nuttx_src=kernel, apps_build=apps, build_dir=build,
+        board_config="mps2-an500:nsh",
+        defconfig_overlays=[os.path.join(qemu_tests, "nuttx_test_defconfig"),
+                            os.path.join(qemu_tests, "nuttx_test_kasan_defconfig")],
+        extra_env={"PATH": os.path.join(toolchain, "bin") + os.pathsep + os.environ["PATH"]},
+        variant_dir=fixture)
+    log = os.path.join(base, "run.log")
+    with open(log, "wb") as stream:
+        rc = _run_owned_test_process(["qemu-system-arm", "-M", "mps2-an500",
+                                     "-cpu", "cortex-m7", "-m", "16", "-nographic",
+                                     "-semihosting", "-kernel", os.path.join(build, "nuttx")],
+                                     env=dict(os.environ), timeout=30, stdout=stream)
+    with open(log, errors="replace") as stream:
+        stdout = stream.read()
+    print(stdout, end="")
+    result = TestResults(suite="qemu-nuttx-zh-realloc")
+    if rc == 0 and not re.search(NUTTX_SANITIZER_REPORT, stdout):
+        result.passed = 1
+    else:
+        result.failed = 1
+        result.failed_names.append(f"<exit {rc} or sanitizer report>")
+    return result
+
+
 def test_i2c_native_arm(ove_dir, output_dir):
     """Check native I2C counts with vendor types and the actual Cortex-M7 port."""
     import hashlib
@@ -4303,6 +4340,7 @@ TEST_TARGETS = {
     "i2c-retirement-freertos": test_i2c_retirement_freertos,
     "i2c-retirement-zephyr": test_i2c_retirement_zephyr,
     "i2c-retirement-nuttx": test_i2c_retirement_nuttx,
+    "qemu-nuttx-zh-realloc": test_qemu_nuttx_zh_realloc,
     "i2c-native-arm": test_i2c_native_arm,
     "i2c-native-zephyr": test_i2c_native_zephyr,
     "spi-retirement-freertos": test_spi_retirement_freertos,

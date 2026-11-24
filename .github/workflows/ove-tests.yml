@@ -856,6 +856,9 @@ jobs:
       - name: Run KASan and UBSan tests
         run: timeout 900 make test-qemu-nuttx-kasan
 
+      - name: Run zero-heap realloc test with KASan
+        run: timeout 900 make test-qemu-nuttx-zh-realloc
+
       - name: Run simulator ASan and UBSan tests
         run: timeout 900 make test-nuttx-sanitize
 

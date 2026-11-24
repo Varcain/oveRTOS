@@ -36,7 +36,7 @@
  * Sizing: ~600 B per concurrent DNS query (struct dns_query_data_s
  * incl. 512-byte response buffer), ~24 B per open FD's struct file,
  * plus mm_heap bookkeeping (~64 B + per-allocation node header).
- * 8 KiB comfortably covers the example_net_zh workload (a handful of
+ * 16 KiB comfortably covers the example_net_zh workload (a handful of
  * sockets + sequential DNS); raise CONFIG_OVE_NUTTX_ZH_RESERVED_HEAP
  * for apps that hold more concurrent state.
  */
@@ -106,16 +106,9 @@ void *ove_heap_lock_post_realloc_(void *p, size_t n)
 	zh_reserved_heap_init();
 
 	/* realloc(NULL, n) == malloc(n); realloc within reserved is the
-	 * common path. The cross-heap case (caller passes a pre-lock
-	 * pointer that was allocated from the main heap before the lock
-	 * engaged, then realloc's it post-lock) shouldn't arise on the
-	 * NuttX socket / DNS paths exercised by oveRTOS — DNS allocates
-	 * and frees within one query, sockets allocate and close, neither
-	 * realloc's. Handle it best-effort to avoid silent corruption:
-	 * allocate fresh in the reserved heap, copy n bytes (shrinking
-	 * realloc is exact; growing realloc copies the new size, which
-	 * may over-read the old allocation by a few bytes — typically
-	 * harmless on RAM and never reached on our tested code paths). */
+	 * common path. A pointer allocated from the main heap before the
+	 * lock engaged moves into the reserved heap: copy the smaller of
+	 * its usable size and n, then free it back to the main heap. */
 	if (p == NULL || in_reserved(p)) {
 		return mm_realloc(g_zh_reserved_heap, p, n);
 	}
@@ -123,7 +116,8 @@ void *ove_heap_lock_post_realloc_(void *p, size_t n)
 	void *np = mm_malloc(g_zh_reserved_heap, n);
 	if (np != NULL) {
 		extern void __real_free(void *p);
-		memcpy(np, p, n);
+		size_t old = mm_malloc_size(USR_HEAP, p);
+		memcpy(np, p, old < n ? old : n);
 		__real_free(p);
 	}
 	return np;
