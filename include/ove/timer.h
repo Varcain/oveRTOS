@@ -132,7 +132,6 @@ void ove_timer_deinit(ove_timer_t timer);
  *  - Zephyr:  underlying tick (K_NSEC); typically µs-class.
  *  - FreeRTOS: rounded up to @c configTICK_RATE_HZ; typically 1 ms.
  *  - NuttX:   native tick resolution; watchdog expiry defers callbacks to HPWORK.
- *  - host test backend: @c timer_create with CLOCK_MONOTONIC; nsec.
  *
  * @note Requires @c CONFIG_OVE_TIMER.  When @c CONFIG_OVE_ASYNC is off,
  *       the function is still available — it just isn't routed by the
@@ -167,7 +166,6 @@ OVE_NODISCARD int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *sto
  *
  * Underlying primitive per backend:
  *  - FreeRTOS: @c xTimerChangePeriod (atomic period change + arm).
- *  - host test backend: @c timer_settime with a new @c itimerspec.
  *  - Zephyr:   @c k_timer_start with the new period.
  *  - NuttX:    @c wd_start (a watchdog; the callback runs on HPWORK).
  *

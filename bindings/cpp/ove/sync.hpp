@@ -631,10 +631,11 @@ template <typename T> class StaticCell
  * @brief RAII wrapper around an oveRTOS counting semaphore.
  *
  * A counting semaphore with a configurable initial count and maximum count.
- * Counts must satisfy initial <= max, max > 0 and the native provider ceiling
- * (SEM_VALUE_MAX on POSIX/NuttX, UBaseType_t on FreeRTOS, unsigned int on Zephyr).
- * POSIX/NuttX posts enforce the provider ceiling rather than the requested max;
- * FreeRTOS/Zephyr retain and enforce the requested maximum.
+ * Counts must satisfy initial <= max, max > 0 and the native provider ceiling.
+ * NuttX and the host test backend use `SEM_VALUE_MAX` as the ceiling at
+ * initialization and on posts without retaining the requested `max`.
+ * Counts must fit in `UBaseType_t` on FreeRTOS and `unsigned int` on Zephyr.
+ * FreeRTOS and Zephyr enforce the requested `max` on posts.
  * Commonly used as a binary semaphore (`initial = 0, max = 1`) for signalling
  * between tasks or from an ISR.
  *

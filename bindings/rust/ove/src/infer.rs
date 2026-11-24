@@ -23,7 +23,8 @@
 //! Drop normally closes synchronously. In ISR context it retains native resources
 //! and admission indefinitely, as does `mem::forget`; later construction returns
 //! Busy without accessing abandoned backing. There is no background worker or
-//! recovery. Host POSIX ISR wrappers and timer callbacks count as ISR context.
+//! recovery. On the host test backend, ISR wrappers and timer callbacks count
+//! as ISR context.
 
 use core::{ffi::c_void, marker::PhantomData, mem, ptr};
 

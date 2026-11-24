@@ -13,9 +13,10 @@
 //! `ove_time_get_us` output exactly, no rescaling in `now()`.
 //!
 //! Resolution floor (the smallest interval `Timer::after_micros(N)`
-//! actually waits) is backend-dependent and documented on
-//! `ove_timer_init_ns`. On FreeRTOS it is one tick (typically 1 ms); on
-//! the host test backend the OS timer slice (sub-µs on Linux).
+//! actually waits) is backend-dependent. See `ove_timer_init_ns` for
+//! RTOS resolution. On FreeRTOS it is one tick (typically 1 ms).
+//! The host test backend waits on a condition variable with
+//! `CLOCK_MONOTONIC` deadlines.
 
 use core::cell::RefCell;
 use core::ptr;
@@ -42,9 +43,9 @@ unsafe impl Sync for AlarmTimer {}
 pub(crate) struct OveTimeDriver {
     /// Sorted wake queue keyed by absolute µs deadlines. Lives under
     /// a critical-section mutex so the alarm callback (running in a
-    /// workqueue on Zephyr, timer-task on FreeRTOS, SIGEV_THREAD on the
-    /// host test backend) can drain expired wakers concurrently with user code
-    /// registering new ones.
+    /// workqueue on Zephyr and NuttX, the timer service task on FreeRTOS,
+    /// or an owned dispatcher thread on the host test backend) can drain
+    /// expired wakers concurrently with user code registering new ones.
     queue: CsMutex<RefCell<Queue>>,
     /// Single re-armable one-shot alarm. Initialised lazily by
     /// `schedule_wake` the first time it sees a deadline.
@@ -200,11 +201,11 @@ impl OveTimeDriver {
 /// Callback invoked by the C-side timer when the alarm fires.
 ///
 /// The callback context depends on the backend:
-///  - host test backend: SIGEV_THREAD pthread (one per firing); bracketed by
-///           `posix_irq_enter_isr` so `ove_is_in_isr()` returns true
-///           inside this function, matching the embedded model.
+///  - host test backend: owned dispatcher thread. The backend reports
+///    ISR context during the callback (`ove_is_in_isr()` returns true).
 ///  - Zephyr: system workqueue thread (non-ISR).
 ///  - FreeRTOS: timer service task (non-ISR).
+///  - NuttX: high-priority workqueue thread (non-ISR).
 extern "C" fn alarm_fired(_timer: bindings::ove_timer_t, _user_data: *mut ::core::ffi::c_void) {
     ::critical_section::with(|cs| {
         let now = DRIVER.now();

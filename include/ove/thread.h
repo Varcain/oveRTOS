@@ -279,7 +279,7 @@ void ove_thread_start_scheduler(void);
  *
  * The thread remains suspended until ove_thread_resume() is called.
  *
- * Call from thread context on FreeRTOS and the POSIX host backend.
+ * Call from thread context on FreeRTOS and the host test backend.
  * Zephyr also allows calls from an ISR. On SMP, an ISR may spin until a
  * target running on another CPU halts.
  *
@@ -298,7 +298,7 @@ int ove_thread_suspend(ove_thread_t handle);
 /**
  * @brief Resume a previously suspended thread.
  *
- * Call from thread context on FreeRTOS and the POSIX host backend.
+ * Call from thread context on FreeRTOS and the host test backend.
  * Zephyr also allows calls from an ISR.
  *
  * NuttX returns OVE_ERR_NOT_SUPPORTED for a non-NULL handle.

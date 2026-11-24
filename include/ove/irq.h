@@ -138,10 +138,10 @@ bool ove_is_in_isr(void);
  *
  * Returns zero in an ISR, in unprivileged code and outside the supported
  * domains (privileged Cortex-M3/M4/M7, Zephyr native_sim, single-core NuttX
- * flat sim and the POSIX backend), so also on FreeRTOS multicore, NuttX SMP
+ * flat sim and the host test backend), so also on FreeRTOS multicore, NuttX SMP
  * and FreeRTOS unless both INCLUDE_xTaskGetSchedulerState and
- * INCLUDE_xTaskGetIdleTaskHandle are 1. The POSIX backend reports PRODUCER only
- * inside its critical sections.
+ * INCLUDE_xTaskGetIdleTaskHandle are 1. Inside a critical section on the host
+ * test backend, only PRODUCER is set.
  *
  * The flags do not cover object validity, ownership or quiescence, and are not
  * the test for releasing an already-owned mutex, which can stay legal with

@@ -16,7 +16,7 @@
  *
  * Provides TCP/UDP sockets, DNS name resolution, and network interface
  * management.  Each RTOS backend implements the socket layer using its
- * native TCP/IP stack (POSIX sockets, lwIP, Zephyr net, NuttX sockets).
+ * native TCP/IP stack (lwIP on FreeRTOS, Zephyr net, NuttX sockets).
  *
  * @note Requires @c CONFIG_OVE_NET.  When the option is disabled every
  *       function is replaced by a no-op stub that returns

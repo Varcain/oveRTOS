@@ -265,10 +265,11 @@ pub const RecursiveMutex = struct {
 // ---------------------------------------------------------------------------
 
 /// Counting semaphore for signalling between tasks or from ISRs.
-/// Counts require initial <= max, max > 0, and the provider ceiling:
-/// SEM_VALUE_MAX on POSIX/NuttX, UBaseType_t on FreeRTOS, unsigned int on Zephyr.
-/// POSIX/NuttX posts enforce the provider ceiling rather than the requested max;
-/// FreeRTOS/Zephyr retain and enforce that requested maximum.
+/// Counts require `initial <= max`, `max > 0`, and the native provider ceiling.
+/// NuttX and the host test backend use `SEM_VALUE_MAX` as the ceiling at
+/// initialization and on posts without retaining the requested `max`.
+/// Counts must fit in `UBaseType_t` on FreeRTOS and `unsigned int` on Zephyr.
+/// FreeRTOS and Zephyr enforce the requested `max` on posts.
 pub const Semaphore = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_sem_t,

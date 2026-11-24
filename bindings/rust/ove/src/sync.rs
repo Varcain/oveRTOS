@@ -576,10 +576,11 @@ unsafe impl Sync for SemaphoreStorage {}
 
 /// Counting semaphore.
 ///
-/// Counts require `initial <= max`, `max > 0`, and the native provider ceiling:
-/// `SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS, and `unsigned int`
-/// on Zephyr. POSIX/NuttX posts enforce the provider ceiling rather than the
-/// requested `max`; FreeRTOS/Zephyr retain and enforce that requested maximum.
+/// Counts require `initial <= max`, `max > 0`, and the native provider ceiling.
+/// NuttX and the host test backend use `SEM_VALUE_MAX` as the ceiling at
+/// initialization and on posts without retaining the requested `max`.
+/// Counts must fit in `UBaseType_t` on FreeRTOS and `unsigned int` on Zephyr.
+/// FreeRTOS and Zephyr enforce the requested `max` on posts.
 ///
 /// Creation and cleanup follow [`Mutex`]'s resource-context and retention rules.
 /// Every take requires an active non-idle thread with interrupts enabled;

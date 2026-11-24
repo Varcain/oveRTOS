@@ -38,7 +38,8 @@ int ove_app_run(void)
 
 /*
  * backends/common/ove_heap_lock.c provides the strong implementation for
- * backends with allocator wrappers. This fallback lets other builds link.
+ * zero-heap FreeRTOS and NuttX application builds. This no-op lets other
+ * builds link, including zero-heap Zephyr where ove_run() calls it.
  */
 __attribute__((weak)) void ove_heap_lock(void)
 {

@@ -95,10 +95,10 @@ void ove_mutex_deinit(ove_mutex_t mtx);
  * @brief Initialise a counting semaphore using caller-supplied static storage.
  *
  * Requires @p max > 0, @p initial <= @p max, and counts within the provider's
- * domain: SEM_VALUE_MAX on POSIX/NuttX, UBaseType_t on FreeRTOS, and unsigned
- * int on Zephyr. POSIX and NuttX do not retain the requested @p max: subsequent
- * posts enforce their provider-wide ceiling rather than this requested limit.
- * FreeRTOS and Zephyr enforce the requested maximum at runtime.
+ * domain. NuttX and the host test backend use @c SEM_VALUE_MAX as the ceiling
+ * at initialization and on posts without retaining the requested @p max.
+ * Counts must fit in @c UBaseType_t on FreeRTOS and `unsigned int` on Zephyr.
+ * FreeRTOS and Zephyr enforce the requested @p max on posts.
  *
  * On error the output handle is unchanged and initialized native pieces
  * are released before returning.

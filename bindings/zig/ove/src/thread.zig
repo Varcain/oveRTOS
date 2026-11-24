@@ -601,7 +601,7 @@ pub fn Thread(comptime stack_size: usize) type {
         }
 
         /// Suspend this thread. Zephyr allows calls from an ISR. FreeRTOS and
-        /// the POSIX host backend require thread context.
+        /// the host test backend require thread context.
         /// NuttX never reports `State.suspended`.
         /// Returns `error.InvalidParam` for an empty thread or
         /// `error.NotSupported` on NuttX.

@@ -409,7 +409,7 @@ impl Thread {
 
     /// Suspend this thread.
     ///
-    /// Zephyr allows calls from an ISR. FreeRTOS and the POSIX host backend
+    /// Zephyr allows calls from an ISR. FreeRTOS and the host test backend
     /// require thread context.
     ///
     /// NuttX returns [`Error::NotSupported`] and never reports
