@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 function(ove_add_mqtt_lifecycle name zero_heap tls rx_size tx_size)
+    # mbedTLS rejects MSan while assembly is enabled.
+    if(zero_heap AND tls AND CMAKE_C_FLAGS MATCHES "(^|[ \t])-fsanitize=([^, \t]+,)*memory([, \t]|$)")
+        return()
+    endif()
     add_library(${name}_implementation OBJECT
         ${OVE_ROOT}/backends/common/ove_net_mqtt.c)
     add_executable(${name}

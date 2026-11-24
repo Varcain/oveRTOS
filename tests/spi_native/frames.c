@@ -47,7 +47,7 @@ static TimerCallbackFunction_t retry_callback;
 static TimerHandle_t retry_timer;
 static int create_failure, start_failure, pend_failure, fake_isr;
 static int prepare_reentry;
-static unsigned timer_creates, timer_starts, isr_pends, task_pends;
+static unsigned timer_creates, timer_starts, isr_pends;
 static TickType_t retry_period;
 ove_irq_key_t ove_irq_lock(void)
 {
@@ -87,7 +87,6 @@ BaseType_t xTimerPendFunctionCall(PendedFunction_t callback, void *arg, uint32_t
 				  TickType_t wait)
 {
 	assert_int_equal(wait, 0);
-	++task_pends;
 	if (pend_failure)
 		return pdFALSE;
 	callback(arg, value);

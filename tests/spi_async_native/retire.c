@@ -20,7 +20,10 @@ static atomic_int completion_result;
 static pthread_mutex_t gate_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t gate_cv = PTHREAD_COND_INITIALIZER;
 static int entered, released, prepare_error;
-static int resubmit, quarantine, destroy_in_callback, block_close, block_callback;
+static int resubmit, quarantine, block_close, block_callback;
+#ifdef OVE_HEAP_SPI
+static int destroy_in_callback;
+#endif
 static int close_entered, close_released, callback_entered, callback_released;
 static atomic_int close_returned;
 static ove_spi_storage_t *reinit_storage;
@@ -41,7 +44,10 @@ static void reset(void)
 	atomic_store(&completion_result, 0);
 	entered = released = prepare_error = resubmit = 0;
 	quarantine = 1;
-	destroy_in_callback = block_close = block_callback = 0;
+#ifdef OVE_HEAP_SPI
+	destroy_in_callback = 0;
+#endif
+	block_close = block_callback = 0;
 	close_entered = close_released = callback_entered = callback_released = 0;
 	reinit_storage = NULL;
 	atomic_store(&close_returned, 0);
