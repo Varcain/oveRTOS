@@ -42,14 +42,14 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# All-modules-on config — fed only to bindgen, never compiled into a real
-# build, so disabled-by-default modules (NET, INFER, UART, …) all reach
-# the stub. Storage-type sizes get filled with placeholders since their
-# real values are platform-dependent and only matter for the in-tree build.
+# Fed only to bindgen, never compiled: bindgen takes the opaque storage
+# declarations, so no RTOS headers are read. Every module is on so the stub
+# covers the whole API. Sizes come from the host test probe; the
+# placeholders below cover the modules it leaves off.
 cat > "$TMP/ove_config.h" <<'CFG'
 #ifndef OVE_CONFIG_H
 #define OVE_CONFIG_H
-#define CONFIG_OVE_RTOS_POSIX 1
+#define CONFIG_OVE_RTOS_FREERTOS 1
 #define CONFIG_OVE_APP 1
 #define CONFIG_OVE_THREAD 1
 #define CONFIG_OVE_SYNC 1
@@ -95,9 +95,6 @@ cat > "$TMP/ove_config.h" <<'CFG'
 #endif
 CFG
 
-# Storage sizes the build script consumes. Existing tests-stub values plus
-# placeholders for net/infer/uart/spi/i2c/i2s storage types absent from
-# the in-tree probe (those modules are off in tests/ove_config.h).
 STUB_SIZES="$OVE_DIR/output/tests/rust_stub/ove_storage_sizes.env"
 if [ ! -f "$STUB_SIZES" ]; then
     if [ "$MODE" = "check" ]; then

@@ -9,7 +9,7 @@
 /* Auto-generated ove_config.h for documentation builds.
  * Enables all modules so the full API surface appears in docs. */
 
-#define CONFIG_OVE_RTOS_POSIX 1
+#define CONFIG_OVE_RTOS_FREERTOS 1
 
 #define CONFIG_OVE_SYNC 1
 #define CONFIG_OVE_QUEUE 1

@@ -220,7 +220,7 @@ pub const OVE_VERSION_STRING: &[u8; 6] = b"0.1.0\0";
 #[doc = " @brief The version as one number, for comparisons: (MAJOR << 16) |\n        (MINOR << 8) | PATCH.\n\n @code\n #if OVE_VERSION >= OVE_VERSION_NUMBER(0, 2, 0)\n ...\n #endif\n @endcode"]
 pub const OVE_VERSION: u32 = 256;
 pub const OVE_LOG_LEVEL: u32 = 0;
-pub const OVE_RTOS_NAME: &[u8; 6] = b"POSIX\0";
+pub const OVE_RTOS_NAME: &[u8; 9] = b"FreeRTOS\0";
 #[doc = " Native resource initialization/destruction is available in this context."]
 pub const OVE_SYNC_CONTEXT_RESOURCE: u32 = 1;
 #[doc = " Native mutex acquisitions and condition-variable operations are available."]
