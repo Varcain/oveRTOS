@@ -634,7 +634,8 @@ jobs:
 
   renode-stm32f746-tests:
     name: Renode STM32F746 Tests
-    runs-on: ubuntu-latest
+    # This job installs libicu74, which Ubuntu 26.04 no longer ships.
+    runs-on: ubuntu-24.04
     needs: stub-tests
     steps:
       - uses: actions/checkout@v5
