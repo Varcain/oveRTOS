@@ -122,7 +122,7 @@ def _summary_failures(stdout: str):
     return int(matches[-1]) if matches else None
 
 
-def _run_test_binary(cmd, suite, **kwargs) -> TestResults:
+def _run_test_binary(cmd, suite, *, summary=False, **kwargs) -> TestResults:
     """Run a test binary, print its output, and parse CMocka results."""
     result = subprocess.run(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -131,6 +131,9 @@ def _run_test_binary(cmd, suite, **kwargs) -> TestResults:
     print(output, end="")
     parsed = _parse_cmocka(output)
     parsed.suite = suite
+    if summary and not re.search(r"^=== Summary:", output, re.MULTILINE):
+        parsed.failed += 1
+        parsed.failed_names.append("<no summary line>")
     if parsed.passed == 0 and parsed.failed == 0:
         # Binary produced no CMocka output — treat exit code as pass/fail
         if result.returncode == 0:
@@ -315,7 +318,7 @@ def test_stub(ove_dir, output_dir):
     logger.info("Building stub tests")
     _cmake_build(os.path.join(ove_dir, "tests"), build)
     logger.info("Running stub tests")
-    results = _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
+    results = _run_test_binary([os.path.join(build, "ove_test_stub")], "stub", summary=True)
     # TLS client tests (heap and zero-heap) and the httpd WebSocket tests:
     # binaries of their own (tests/CMakeLists.txt).
     _run_extra_binaries(build, ("ove_test_net_tls", "ove_test_net_tls_zh",
@@ -396,7 +399,7 @@ def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
     env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
     results = _run_test_binary(
-        [os.path.join(build, "ove_test_stub")], label, env=env)
+        [os.path.join(build, "ove_test_stub")], label, env=env, summary=True)
     _run_extra_binaries(build, ("ove_test_mqtt_heap", "ove_test_mqtt_zh",
                                 "ove_test_spi_stm32", "ove_test_spi_nuttx",
                                 "ove_test_spi_retire_heap", "ove_test_spi_retire_zero",
@@ -459,7 +462,7 @@ def test_stub_tsan(ove_dir, output_dir):
     env["TSAN_OPTIONS"] = ("halt_on_error=1:second_deadlock_stack=1:"
                            "report_thread_leaks=0")
     results = _run_test_binary(
-        [os.path.join(build, "ove_test_stub")], "stub-tsan", env=env)
+        [os.path.join(build, "ove_test_stub")], "stub-tsan", env=env, summary=True)
     # The httpd WebSocket tests send from other threads on purpose.
     _run_extra_binaries(build, ("ove_test_httpd_ws",), "stub-tsan", results,
                         env=env)
@@ -503,7 +506,7 @@ def test_stub_msan(ove_dir, output_dir):
     # runner sees a failure even if MSan would otherwise just warn.
     env["MSAN_OPTIONS"] = "halt_on_error=1:exit_code=1:print_stats=0"
     return _run_test_binary(
-        [os.path.join(build, "ove_test_stub")], "stub-msan", env=env)
+        [os.path.join(build, "ove_test_stub")], "stub-msan", env=env, summary=True)
 
 
 def test_cpp(ove_dir, output_dir):
@@ -512,7 +515,7 @@ def test_cpp(ove_dir, output_dir):
     logger.info("Building C++ tests")
     _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build)
     logger.info("Running C++ tests")
-    return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp")
+    return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp", summary=True)
 
 
 def _cpp_sanitize(ove_dir, output_dir, *, zero_heap):
@@ -544,7 +547,7 @@ def _cpp_sanitize(ove_dir, output_dir, *, zero_heap):
     env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
     return _run_test_binary(
-        [os.path.join(build, "ove_test_cpp")], label, env=env)
+        [os.path.join(build, "ove_test_cpp")], label, env=env, summary=True)
 
 
 def test_cpp_sanitize(ove_dir, output_dir):
@@ -594,7 +597,7 @@ def test_cpp_tsan(ove_dir, output_dir):
     env["TSAN_OPTIONS"] = ("halt_on_error=1:second_deadlock_stack=1:"
                            "report_thread_leaks=0")
     return _run_test_binary(
-        [os.path.join(build, "ove_test_cpp")], "cpp-tsan", env=env)
+        [os.path.join(build, "ove_test_cpp")], "cpp-tsan", env=env, summary=True)
 
 
 def _llvm_major(cmd, pattern):
@@ -662,7 +665,7 @@ def test_rust(ove_dir, output_dir):
     run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
     logger.info("Running Rust tests")
     return _run_test_binary(
-        [os.path.join(target_dir, "release", "ove-tests")], "rust")
+        [os.path.join(target_dir, "release", "ove-tests")], "rust", summary=True)
 
 
 def _test_rust_async(ove_dir, output_dir, short, program, doc_filter, sanitize=False):
@@ -2105,7 +2108,7 @@ def test_rust_zeroheap(ove_dir, output_dir):
     run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
     logger.info("Running Rust tests (zero-heap)")
     return _run_test_binary(
-        [os.path.join(target_dir, "release", "ove-tests")], "rust-zeroheap")
+        [os.path.join(target_dir, "release", "ove-tests")], "rust-zeroheap", summary=True)
 
 
 def test_rust_coverage(ove_dir, output_dir):
@@ -2135,7 +2138,7 @@ def test_rust_coverage(ove_dir, output_dir):
     run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
     logger.info("Running Rust tests (coverage)")
     binary = os.path.join(target_dir, "release", "ove-tests")
-    result = _run_test_binary([binary], "rust", env=env)
+    result = _run_test_binary([binary], "rust", env=env, summary=True)
 
     # Also exercise the zero-heap suite under the same instrumentation so the
     # binding's static-storage create()/from_static paths are counted — the C
@@ -2151,7 +2154,7 @@ def test_rust_coverage(ove_dir, output_dir):
     run(["cargo", "build", "--release"], env=zh_env, cwd=rust_dir)
     logger.info("Running Rust tests (coverage, zero-heap)")
     zh_binary = os.path.join(zh_target, "release", "ove-tests")
-    zh_result = _run_test_binary([zh_binary], "rust-zeroheap", env=zh_env)
+    zh_result = _run_test_binary([zh_binary], "rust-zeroheap", env=zh_env, summary=True)
     # Fold the zero-heap verdict into the coverage run's result.
     result.failed += zh_result.failed
     result.failed_names += zh_result.failed_names
@@ -2396,7 +2399,7 @@ def test_zig(ove_dir, output_dir):
     """Build and run Zig binding tests."""
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir)
     logger.info("Running Zig tests")
-    return _run_test_binary([zig_exe], "zig")
+    return _run_test_binary([zig_exe], "zig", summary=True)
 
 
 def test_zig_zeroheap(ove_dir, output_dir):
@@ -2409,7 +2412,7 @@ def test_zig_zeroheap(ove_dir, output_dir):
     are `comptime`-gated off in main.zig via `ove.pin.zero_heap`."""
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, zero_heap=True)
     logger.info("Running Zig tests (zero-heap)")
-    return _run_test_binary([zig_exe], "zig-zeroheap")
+    return _run_test_binary([zig_exe], "zig-zeroheap", summary=True)
 
 
 def test_zig_debug(ove_dir, output_dir):
@@ -2428,7 +2431,7 @@ def test_zig_debug(ove_dir, output_dir):
     """
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True)
     logger.info("Running Zig tests (Debug mode)")
-    return _run_test_binary([zig_exe], "zig-debug")
+    return _run_test_binary([zig_exe], "zig-debug", summary=True)
 
 
 def _lcov_filter_ove_sources(lcov, raw, filtered, ove_dir, *,
