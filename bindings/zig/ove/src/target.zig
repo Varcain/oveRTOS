@@ -17,7 +17,6 @@
 //!     .freertos => "FreeRTOS",
 //!     .nuttx => "NuttX",
 //!     .zephyr => "Zephyr",
-//!     .posix => "host test backend",
 //! };
 //! ```
 
@@ -28,8 +27,6 @@ pub const Rtos = enum {
     freertos,
     nuttx,
     zephyr,
-    /// The host test backend (tests/host/posix); not an application target.
-    posix,
 };
 
 /// Comptime-resolved current RTOS from the substrate's
@@ -37,4 +34,4 @@ pub const Rtos = enum {
 /// adding a new RTOS requires extending both the enum and this
 /// chain.
 pub const current_rtos: Rtos =
-    if (@hasDecl(c, "CONFIG_OVE_RTOS_FREERTOS")) .freertos else if (@hasDecl(c, "CONFIG_OVE_RTOS_NUTTX")) .nuttx else if (@hasDecl(c, "CONFIG_OVE_RTOS_ZEPHYR")) .zephyr else if (@hasDecl(c, "CONFIG_OVE_RTOS_POSIX")) .posix else @compileError("ove.target: unknown RTOS — substrate must define one of CONFIG_OVE_RTOS_*");
+    if (@hasDecl(c, "CONFIG_OVE_RTOS_FREERTOS")) .freertos else if (@hasDecl(c, "CONFIG_OVE_RTOS_NUTTX")) .nuttx else if (@hasDecl(c, "CONFIG_OVE_RTOS_ZEPHYR")) .zephyr else @compileError("ove.target: unknown RTOS — substrate must define one of CONFIG_OVE_RTOS_*");

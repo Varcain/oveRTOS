@@ -61,7 +61,7 @@ fn main() {
         }
         println!("cargo:rustc-check-cfg=cfg(zero_heap)");
         println!("cargo:rustc-check-cfg=cfg(docsrs)");
-        for r in &["freertos", "zephyr", "nuttx", "posix"] {
+        for r in &["freertos", "zephyr", "nuttx"] {
             println!("cargo:rustc-check-cfg=cfg(rtos_{r})");
         }
         // board_<name> cfgs (for board-specific gates); doc-only
@@ -155,7 +155,7 @@ fn main() {
             println!("cargo:rustc-cfg=zero_heap");
         }
 
-        let rtos_backends = ["FREERTOS", "ZEPHYR", "NUTTX", "POSIX"];
+        let rtos_backends = ["FREERTOS", "ZEPHYR", "NUTTX"];
         for r in &rtos_backends {
             let cfg_name = format!("rtos_{}", r.to_lowercase());
             println!("cargo:rustc-check-cfg=cfg({cfg_name})");
@@ -257,12 +257,10 @@ fn main() {
     let backend_include = {
         let config_path = format!("{ove_gen_dir}/ove_config.h");
         let config = std::fs::read_to_string(&config_path).unwrap_or_default();
-        // POSIX is the host test backend; it lives with the tests.
         let backends = [
             ("FREERTOS", "backends/freertos"),
             ("ZEPHYR", "backends/zephyr"),
             ("NUTTX", "backends/nuttx"),
-            ("POSIX", "tests/host/posix"),
         ];
         backends.iter().find_map(|(define, dir)| {
             let needle = format!("#define CONFIG_OVE_RTOS_{define} 1");
