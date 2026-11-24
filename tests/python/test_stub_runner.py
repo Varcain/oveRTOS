@@ -20,7 +20,8 @@ from ove import test as ove_test
 from ove.test import NUTTX_SANITIZER_REPORT
 
 
-_PASSING_OUTPUT = "[  PASSED  ] 3 test(s).\n=== Summary: 0 test group(s) had failures ===\n"
+_ZERO_FAILURE_SUMMARY = "=== Summary: 0 test group(s) had failures ===\n"
+_PASSING_OUTPUT = "[  PASSED  ] 3 test(s).\n" + _ZERO_FAILURE_SUMMARY
 
 
 def _run_fake_binary(output, returncode, **kwargs):
@@ -214,3 +215,91 @@ class NuttxSimRunnerTest(unittest.TestCase):
                 mock.patch("sys.stderr"),
             ):
                 return ove_test.test_nuttx_sanitize(root, root / "output")
+
+
+class RenodeRunnerTest(unittest.TestCase):
+    def test_renode_unavailable(self):
+        cases = (
+            ({"CI": "true"}, ove_test.TestResults(
+                suite="renode", failed=1, failed_names=["<Renode unavailable>"],
+            )),
+            ({}, ove_test.TestResults(suite="renode", skipped=1)),
+        )
+        with TemporaryDirectory() as directory, mock.patch.object(
+            ove_test, "_ensure_renode", return_value=None,
+        ):
+            for env, expected in cases:
+                with self.subTest(ci=bool(env)), mock.patch.dict(os.environ, env, clear=True):
+                    result = ove_test._renode_run_elf(
+                        directory, Path(directory) / "output", label="renode",
+                        elf="test.elf", resc="test.resc",
+                    )
+                    self.assertEqual(result, expected)
+
+    def test_renode_counts_tests_in_completed_run(self):
+        cases = (
+            ("", ove_test.TestResults(suite="renode", failed=1, failed_names=["<no tests ran>"])),
+            ("[  PASSED  ] 1 test(s).\n", ove_test.TestResults(suite="renode", passed=1)),
+        )
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            uart = output / "tests" / "renode" / "uart.log"
+            uart.parent.mkdir(parents=True)
+
+            for pass_record, expected in cases:
+                def run_renode(cmd, **kwargs):
+                    uart.write_text(pass_record + _ZERO_FAILURE_SUMMARY, encoding="utf-8")
+                    return subprocess.CompletedProcess(cmd, 0)
+
+                with (
+                    self.subTest(passed=expected.passed),
+                    mock.patch.object(ove_test, "_ensure_renode", return_value="renode"),
+                    mock.patch.object(ove_test.subprocess, "run", side_effect=run_renode),
+                    redirect_stdout(StringIO()),
+                ):
+                    result = ove_test._renode_run_elf(
+                        directory, output, label="renode", elf="test.elf", resc="test.resc",
+                    )
+                    self.assertEqual(result, expected)
+
+
+class ZephyrSimRunnerTest(unittest.TestCase):
+    def test_native_sim_partial_run_fails(self):
+        def run_binary(cmd, *, stdout, **kwargs):
+            stdout.write("[  PASSED  ] 1 test(s).\n")
+            return 0
+
+        manifest = {"rtos": {"zephyr": {"version": "test-rev", "url": "unused"}}}
+        with (
+            TemporaryDirectory() as directory,
+            mock.patch.object(ove_test, "_require_zephyr_python"),
+            mock.patch.object(ove_test, "load_manifest", return_value=manifest),
+            mock.patch.object(ove_test, "run"),
+            mock.patch.object(ove_test, "_run_owned_test_process", side_effect=run_binary),
+            redirect_stdout(StringIO()),
+        ):
+            result = ove_test.test_zephyr(directory, Path(directory) / "output")
+
+        self.assertEqual(result, ove_test.TestResults(
+            suite="zephyr-native-sim", passed=1, failed=1, failed_names=["<no summary line>"],
+        ))
+
+
+class LvglCompileRunnerTest(unittest.TestCase):
+    def test_lvgl_header_missing(self):
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            with self.subTest(ci=True), mock.patch.dict(os.environ, {"CI": "true"}):
+                result = ove_test.test_lvgl_bindings_compile(directory, output)
+                self.assertEqual(result, ove_test.TestResults(
+                    suite="lvgl-compile", failed=1, failed_names=["<missing dl/lvgl/lvgl.h>"],
+                ))
+
+            with (
+                self.subTest(ci=False),
+                mock.patch.dict(os.environ, clear=True),
+                self.assertLogs("ove", level="WARNING") as logs,
+            ):
+                result = ove_test.test_lvgl_bindings_compile(directory, output)
+                self.assertEqual(result, ove_test.TestResults(suite="lvgl-compile", skipped=3))
+                self.assertIn("skipping", logs.output[0])

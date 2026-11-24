@@ -2940,7 +2940,7 @@ def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
                                      env=env, timeout=owned_timeout)
         return TestResults(suite=label, passed=int(rc == 0), failed=int(rc != 0))
     return _run_test_binary(
-        [os.path.join(build, "zephyr", "zephyr.exe")], label)
+        [os.path.join(build, "zephyr", "zephyr.exe")], label, summary=True)
 
 
 def test_zephyr(ove_dir, output_dir):
@@ -2993,8 +2993,7 @@ def _ensure_renode(ove_dir):
     """Locate (and, if needed, download) the Renode binary pinned in
     manifest.yaml (tools.renode).  Delegates to download.download_renode
     so `ove download` / `ove ensure-toolchain renode` / the test runner
-    all go through one path.  Returns the launcher path or None; None is
-    treated as SKIP, not FAIL.
+    all go through one path.  Returns the launcher path or None if unavailable.
     """
     from .download import download_renode
     from .manifest import load_manifest
@@ -3057,8 +3056,10 @@ def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
     """
     renode = _ensure_renode(ove_dir)
     if renode is None:
+        if os.environ.get("CI"):
+            return TestResults(suite=label, failed=1, failed_names=["<Renode unavailable>"])
         logger.warning(f"{label}: Renode unavailable — skipping")
-        return TestResults(suite=label, passed=0, failed=0, failed_names=[])
+        return TestResults(suite=label, skipped=1)
 
     build = os.path.join(output_dir, "tests", label)
     uart_out = os.path.join(build, "uart.log")
@@ -3097,8 +3098,7 @@ def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
     # (see _summary_failures): its absence means the run stopped early — a
     # partial run that printed some [ PASSED ] lines before faulting would
     # otherwise score green.  N>0 is the firmware's own tally (includes
-    # cmocka GROUP errors _parse_cmocka cannot see).  This subsumes the old
-    # "no cmocka output -> fail" check (no output -> no summary -> fail).
+    # cmocka GROUP errors _parse_cmocka cannot see).
     n = _summary_failures(output)
     if n is None:
         parsed.failed = max(parsed.failed, 1)
@@ -3108,6 +3108,9 @@ def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
     # Defence-in-depth: a non-zero Renode exit (e.g. tool error) still fails.
     if r.returncode != 0 and parsed.failed == 0:
         parsed.failed = 1
+    elif parsed.passed == 0 and parsed.failed == 0:
+        parsed.failed = 1
+        parsed.failed_names.append("<no tests ran>")
     return parsed
 
 
@@ -4036,8 +4039,12 @@ def test_lvgl_bindings_compile(ove_dir, output_dir):
     res = TestResults(suite="lvgl-compile")
     lvgl_dir = os.path.join(ove_dir, "dl", "lvgl")
     if not os.path.isfile(os.path.join(lvgl_dir, "lvgl.h")):
-        logger.warning("lvgl-compile: dl/lvgl not present — skipping")
-        res.skipped = 3
+        if os.environ.get("CI"):
+            res.failed = 1
+            res.failed_names.append("<missing dl/lvgl/lvgl.h>")
+        else:
+            logger.warning("lvgl-compile: dl/lvgl not present — skipping")
+            res.skipped = 3
         return res
 
     host_lv_conf = os.path.join(ove_dir, "tests", "host")
