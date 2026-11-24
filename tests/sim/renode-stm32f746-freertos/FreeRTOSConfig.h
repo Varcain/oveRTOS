@@ -36,9 +36,9 @@
 #define configSUPPORT_DYNAMIC_ALLOCATION 0
 #else
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
-/* Budget lwIP pools and permanent native SPI retirement state before the
- * linker's user heap/stack region. Report the exercised heap margin at exit. */
-#define configTOTAL_HEAP_SIZE ((size_t)(79 * 1024))
+/* Size the heap to the RAM left by static .bss (lwIP pools, native SPI
+ * and thread state) below the boot stack. Report the heap margin at exit. */
+#define configTOTAL_HEAP_SIZE ((size_t)(78 * 1024))
 #endif
 
 /* Synchronization */
