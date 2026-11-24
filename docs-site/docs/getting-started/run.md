@@ -90,6 +90,7 @@ make test-js               # Dashboard parser tests (Node)
 make test-qemu             # All QEMU ARM tests
 make test-qemu-freertos    # FreeRTOS on QEMU
 make test-qemu-nuttx       # NuttX on QEMU
+make test-qemu-nuttx-kasan # NuttX heap tests with KASan and app-only UBSan
 make test-qemu-zephyr      # Zephyr on QEMU
 make test-kconfig-matrix-freertos  # Trace and profiler builds (also nuttx and zephyr)
 make test-qemu-freertos-trace      # Live trace and profiler checks (also nuttx and zephyr)

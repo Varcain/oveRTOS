@@ -90,6 +90,7 @@ Every target follows a predictable shape:
 
 - `test-stub` — host test backend (`tests/host/posix/`)
 - `test-qemu-<rtos>{,-zeroheap}` — QEMU MPS2-AN500
+- `test-qemu-nuttx-kasan` — NuttX heap tests with kernel-wide KASan and app-only UBSan (nightly CI)
 - `test-kconfig-matrix-<rtos>` — six trace and profiler configuration builds for QEMU MPS2-AN500
 - `test-qemu-<rtos>-trace` — check trace and profiler streams from the C heap example on QEMU MPS2-AN500.
   Because this target uses and removes the same `/dev/shm/ove-*` files as `ove run`, run it only when no QEMU dashboard session is active.

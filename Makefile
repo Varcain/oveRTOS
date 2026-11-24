@@ -574,6 +574,7 @@ help:
 	@echo "  test-qemu-nuttx         - NuttX QEMU ARM tests"
 	@echo "  test-qemu-nuttx-zeroheap  - NuttX QEMU ARM tests (zero-heap)"
 	@echo "  test-qemu-nuttx-cpuload - NuttX QEMU ARM tests (cpuload accounting, as apps)"
+	@echo "  test-qemu-nuttx-kasan   - NuttX QEMU ARM heap tests (KASan and app UBSan)"
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
 	@echo "  test-kconfig-matrix-<rtos> - QEMU trace and profiler configuration builds"

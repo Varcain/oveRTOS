@@ -846,6 +846,10 @@ jobs:
 
       - name: Run cpuload tests
         run: timeout 900 make test-qemu-nuttx-cpuload
+
+      - name: Run KASan and UBSan tests
+        run: timeout 900 make test-qemu-nuttx-kasan
+
       - name: Check NuttX trace and profiler streams
         run: timeout --signal=INT --kill-after=30 1800 make test-qemu-nuttx-trace
 

@@ -158,6 +158,10 @@ set(_compile_flags
   -Werror=nonnull-compare
   -Werror=unused-result
 )
+# Limit UBSan to oveRTOS app sources because kernel-wide UBSan halts boot.
+if(CONFIG_MM_UBSAN AND NOT CONFIG_MM_UBSAN_ALL)
+  list(APPEND _compile_flags -fsanitize=undefined)
+endif()
 set(_definitions "")
 
 if(_ove_stm32f746)

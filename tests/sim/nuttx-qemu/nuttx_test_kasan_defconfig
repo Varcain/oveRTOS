@@ -1,0 +1,10 @@
+# NuttX defconfig overlay for the qemu-nuttx-kasan test lane.
+# Applied on top of nuttx_test_defconfig.
+#
+# Use the default generic KASan mode with whole-image instrumentation.
+# KASAN_GLOBAL needs linker sections missing on AN500. UBSAN_ALL trips
+# on a register macro before .data is initialized, so instrument the app only.
+CONFIG_MM_KASAN=y
+CONFIG_MM_UBSAN=y
+# CONFIG_MM_UBSAN_ALL is not set
+CONFIG_MM_FREE_DELAYCOUNT_MAX=64

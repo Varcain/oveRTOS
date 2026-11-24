@@ -122,7 +122,7 @@ def _summary_failures(stdout: str):
     return int(matches[-1]) if matches else None
 
 
-def _run_test_binary(cmd, suite, *, summary=False, **kwargs) -> TestResults:
+def _run_test_binary(cmd, suite, *, summary=False, fail_on=None, **kwargs) -> TestResults:
     """Run a test binary, print its output, and parse CMocka results."""
     result = subprocess.run(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -134,6 +134,9 @@ def _run_test_binary(cmd, suite, *, summary=False, **kwargs) -> TestResults:
     if summary and not re.search(r"^=== Summary:", output, re.MULTILINE):
         parsed.failed += 1
         parsed.failed_names.append("<no summary line>")
+    if fail_on is not None and re.search(fail_on, output):
+        parsed.failed += 1
+        parsed.failed_names.append("<sanitizer report>")
     if parsed.passed == 0 and parsed.failed == 0:
         # Binary produced no CMocka output — treat exit code as pass/fail
         if result.returncode == 0:
@@ -3318,8 +3321,11 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
+NUTTX_SANITIZER_REPORT = r"UBSAN: |kasan detected"
+
+
 def _run_nuttx_qemu(ove_dir, output_dir, *, label, zero_heap=False,
-                    board_config=None, overlay=None):
+                    board_config=None, overlay=None, fail_on=None):
     """Build and run a NuttX QEMU ARM test variant via CMake.
 
     `board_config` selects the NuttX base config — the an500's board.yaml one
@@ -3327,6 +3333,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, label, zero_heap=False,
     CONFIG_BUILD_PROTECTED variant.  `overlay` names a further defconfig
     overlay in tests/sim/nuttx-qemu, applied last. `zero_heap` selects the
     zero-heap app build.
+    The optional `fail_on` pattern flags matching output as a sanitizer failure.
     """
     if board_config is None:
         board_config = nuttx_board_config(_board_dir(ove_dir, "qemu-mps2-an500"))
@@ -3370,7 +3377,8 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, label, zero_heap=False,
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
-        [qemu_run, nuttx_exe, "--headless", "--timeout", "45"], label)
+        [qemu_run, nuttx_exe, "--headless", "--timeout", "45"], label,
+        fail_on=fail_on)
 
 
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
@@ -3486,6 +3494,14 @@ def test_qemu_nuttx_cpuload(ove_dir, output_dir):
     return _run_nuttx_qemu(ove_dir, output_dir,
                           label="qemu-nuttx-cpuload",
                           overlay="nuttx_test_cpuload_defconfig")
+
+
+def test_qemu_nuttx_kasan(ove_dir, output_dir):
+    """Build and run NuttX QEMU heap tests with KASan and app UBSan."""
+    return _run_nuttx_qemu(ove_dir, output_dir,
+                          label="qemu-nuttx-kasan",
+                          overlay="nuttx_test_kasan_defconfig",
+                          fail_on=NUTTX_SANITIZER_REPORT)
 
 
 def test_qemu_zephyr(ove_dir, output_dir):
@@ -4184,6 +4200,7 @@ TEST_TARGETS = {
     "qemu-nuttx": test_qemu_nuttx,
     "qemu-nuttx-zeroheap": test_qemu_nuttx_zeroheap,
     "qemu-nuttx-cpuload": test_qemu_nuttx_cpuload,
+    "qemu-nuttx-kasan": test_qemu_nuttx_kasan,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-freertos-trace": partial(_test_qemu_trace, rtos="freertos"),
@@ -4224,7 +4241,7 @@ TEST_TARGETS = {
 # Grouped test sets
 SIM_TESTS = ["lxp-layout-config", "stub", "cpp", "rust", "rust-lvgl", "zig", "nuttx", "zephyr"]
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
-               "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload",
+               "qemu-nuttx-zeroheap", "qemu-nuttx-cpuload", "qemu-nuttx-kasan",
                "qemu-zephyr", "qemu-zephyr-zeroheap",
                "qemu-freertos-trace", "qemu-nuttx-trace", "qemu-zephyr-trace",
                "kconfig-matrix-freertos", "kconfig-matrix-nuttx", "kconfig-matrix-zephyr"]

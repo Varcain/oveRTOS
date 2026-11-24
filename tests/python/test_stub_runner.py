@@ -5,6 +5,7 @@
 # This file is part of oveRTOS.
 
 import os
+import re
 import unittest
 from pathlib import Path
 from shlex import quote
@@ -12,6 +13,10 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from ove import test as ove_test
+from ove.test import NUTTX_SANITIZER_REPORT
+
+
+_PASSING_OUTPUT = "[  PASSED  ] 3 test(s).\n=== Summary: 0 test group(s) had failures ===\n"
 
 
 def _run_fake_binary(output, returncode, **kwargs):
@@ -80,6 +85,28 @@ class StubRunnerTest(unittest.TestCase):
 
     def test_rust_zig_summary_completes_run(self):
         results = _run_fake_binary("=== Summary: 5 passed, 0 failed ===\n", 0, summary=True)
+        self.assertEqual(results.failed, 0)
+
+    def test_kasan_report_fails_despite_successful_summary(self):
+        results = _run_fake_binary(
+            "kasan_report: kasan detected a read access error\n" + _PASSING_OUTPUT,
+            0, summary=True, fail_on=NUTTX_SANITIZER_REPORT,
+        )
+        self.assertEqual(results.failed, 1)
+        self.assertIn("<sanitizer report>", results.failed_names)
+
+    def test_ubsan_report_fails_despite_successful_summary(self):
+        results = _run_fake_binary(
+            "UBSAN: add-overflow in foo\n" + _PASSING_OUTPUT,
+            0, summary=True, fail_on=re.compile(NUTTX_SANITIZER_REPORT),
+        )
+        self.assertEqual(results.failed, 1)
+        self.assertIn("<sanitizer report>", results.failed_names)
+
+    def test_clean_output_passes_with_sanitizer_check(self):
+        results = _run_fake_binary(
+            _PASSING_OUTPUT, 0, summary=True, fail_on=NUTTX_SANITIZER_REPORT,
+        )
         self.assertEqual(results.failed, 0)
 
     def test_silent_binary_without_required_summary_passes(self):
