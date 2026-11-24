@@ -524,6 +524,47 @@ def test_cpp(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp", summary=True)
 
 
+def test_cpp_freertos_posix(ove_dir, output_dir):
+    """Run the C++ mutex suite on the FreeRTOS GCC/Posix port in both heap modes."""
+    from .download import git_clone
+    from .utils import hashed_dir
+
+    manifest = load_manifest(ove_dir)
+    revision = get_component(manifest, "rtos", "freertos", "kernel", "version")
+    url = get_component(manifest, "rtos", "freertos", "kernel", "url")
+    dl_dir = os.path.join(ove_dir, "dl")
+    os.makedirs(dl_dir, exist_ok=True)
+    kernel, _, _ = hashed_dir(dl_dir, "FreeRTOS-Kernel", revision)
+    result = TestResults(suite="cpp-freertos-posix")
+    if not (git_clone(url, revision, kernel, "FreeRTOS-Kernel")
+            and git_clone("https://gitlab.com/cmocka/cmocka.git", "cmocka-1.1.7",
+                          os.path.join(dl_dir, "cmocka"), "CMocka")):
+        result.failed = 1
+        return result
+
+    source = os.path.join(ove_dir, "tests", "sim", "freertos-posix")
+    for suffix, zero_heap, mode in (("", "OFF", "heap"), ("_zh", "ON", "zero-heap")):
+        build = Path(output_dir) / "tests" / f"cpp_freertos_posix{suffix}"
+        logger.info("Building and running C++ FreeRTOS POSIX tests (%s)", mode)
+        _cmake_build(source, str(build), ["-DFREERTOS_PATH=" + kernel, "-DOVE_ZERO_HEAP=" + zero_heap])
+        log = build / "run.log"
+        with log.open("w") as stream:
+            rc = _run_owned_test_process([build / "ove_test_cpp_freertos_posix"],
+                                         env=dict(os.environ), timeout=60, stdout=stream)
+        stdout = log.read_text(errors="replace")
+        print(stdout, end="", flush=True)
+        parsed = _parse_cmocka(stdout)
+        summary = _summary_failures(stdout)
+        if summary is None:
+            parsed.failed_names.append(f"<{mode}: no completion summary>")
+        if rc != 0 and not parsed.failed_names:
+            parsed.failed_names.append(f"<{mode}: exit {rc}>")
+        result.passed += parsed.passed
+        result.failed += max(parsed.failed, summary or 0, int(bool(parsed.failed_names)))
+        result.failed_names.extend(parsed.failed_names)
+    return result
+
+
 def _cpp_sanitize(ove_dir, output_dir, *, zero_heap):
     """Shared body for the heap and zero-heap UBSan+ASan C++ runs."""
     label = "cpp-sanitize-zh" if zero_heap else "cpp-sanitize"
@@ -4125,6 +4166,7 @@ TEST_TARGETS = {
     "stub-tsan": test_stub_tsan,
     "stub-msan": test_stub_msan,
     "cpp": test_cpp,
+    "cpp-freertos-posix": test_cpp_freertos_posix,
     "cpp-sanitize": test_cpp_sanitize,
     "cpp-sanitize-zh": test_cpp_sanitize_zh,
     "cpp-tsan": test_cpp_tsan,

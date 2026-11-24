@@ -232,6 +232,9 @@ jobs:
       - name: Run tests
         run: make test-cpp
 
+      - name: Run FreeRTOS POSIX C++ mutex tests (both heap modes)
+        run: timeout --signal=INT --kill-after=30 300 make test-cpp-freertos-posix
+
       - name: Run inference storage tests (both heap modes)
         run: timeout --signal=INT --kill-after=30 300 make test-cpp-infer
 

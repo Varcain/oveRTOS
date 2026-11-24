@@ -67,6 +67,8 @@ make test-stub
 
 The Stub layer catches API contracts and pure-logic bugs but cannot exercise RTOS-port code (scheduler, ISR plumbing, HAL paths). For those, the QEMU and Renode layers run the same suite list against real backend implementations.
 
+`make test-cpp-freertos-posix` runs the C++ mutex suite on the FreeRTOS GCC/Posix pthread port in heap and zero-heap builds.
+
 ## Coverage
 
 `make coverage` merges the host stub, C++ and Rust coverage with the

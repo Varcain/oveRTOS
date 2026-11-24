@@ -63,6 +63,12 @@ select the allocation mode with the `OVE_ZERO_HEAP` CMake option.
 The NuttX QEMU pair shares `tests/sim/nuttx-qemu` and selects the
 allocation mode with `_OVE_ZERO_HEAP`.
 
+## C++ suite × backend
+
+| Suite | FreeRTOS GCC/Posix | Target |
+|---|---|---|
+| `test_mutex.cpp` | Heap and zero-heap | `make test-cpp-freertos-posix` |
+
 ## Renode STM32F746 target (board-level fidelity)
 
 A pair of full-system targets run the CMocka suites on Renode's
