@@ -2614,7 +2614,7 @@ def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
     _check_source_trees_unchanged(source_record)
 
 
-def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label):
+def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label, overlay=None, env=None):
     """Build and run a NuttX simulator test."""
     build_base = os.path.join(output_dir, "tests", build_subdir)
     apps_build = os.path.join(build_base, "nuttx-apps")
@@ -2630,38 +2630,43 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label):
         shutil.copytree(apps_dl, apps_build, symlinks=True)
     _nuttx_register_test_app(ove_dir, apps_build, "nuttx-qemu")
 
+    fixture = os.path.join(ove_dir, "tests", "sim", "nuttx")
+    overlays = [os.path.join(fixture, "nuttx_sim_defconfig")]
+    if overlay is not None:
+        overlays.append(os.path.join(fixture, overlay))
     _nuttx_cmake_build(
         ove_dir,
         nuttx_src=nuttx_src,
         apps_build=apps_build,
         build_dir=build_dir,
         board_config="sim:nsh",
-        defconfig_overlays=[
-            os.path.join(ove_dir, "tests", "sim", "nuttx",
-                         "nuttx_sim_defconfig"),
-        ],
+        defconfig_overlays=overlays,
         cmake_extra_args=["-D_OVE_ZERO_HEAP:BOOL=OFF"],
     )
 
     logger.info("Running %s", label)
-    # NuttX sim doesn't exit when init task returns; use timeout + output parsing
+    timed_out = False
     try:
         result = subprocess.run(
-            [nuttx_exe], timeout=60, capture_output=True, text=True)
-        stdout = result.stdout
+            [nuttx_exe], timeout=60, capture_output=True, text=True,
+            env={**os.environ, **env} if env is not None else None,
+        )
+        stdout, stderr = result.stdout, result.stderr
     except subprocess.TimeoutExpired as e:
-        stdout = e.stdout.decode() if e.stdout else ""
-    print(stdout, end="")
+        timed_out = True
+        stdout = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stderr = e.stderr.decode() if isinstance(e.stderr, bytes) else (e.stderr or "")
+    print(stdout, end="", flush=True)
+    if stderr:
+        print(stderr, end="", file=sys.stderr)
 
     parsed = _parse_cmocka(stdout)
     parsed.suite = label
-    # The native NuttX sim never self-exits (it idles after the init task
-    # returns), so the timeout above is the *normal* exit path and
-    # result.returncode tells us nothing.  Require the firmware's end-of-run
-    # summary line as proof the run completed (see _summary_failures): its
-    # absence means the run faulted/hung mid-way — some suites may have
-    # printed [ PASSED ] before stopping, which must NOT score as a pass.
-    # A non-zero N is the firmware's own failure tally.
+    # The sim idles after the init task returns, so any exit is a failure.
+    if not timed_out:
+        parsed.failed = max(parsed.failed, 1)
+        parsed.failed_names.append(f"<sim exited: rc {result.returncode}>")
+
     n = _summary_failures(stdout)
     if n is None:
         logger.error("%s: no completion summary — run stopped early", label)
@@ -2680,6 +2685,18 @@ def test_nuttx(ove_dir, output_dir):
     return _run_nuttx_sim(ove_dir, output_dir,
                           build_subdir="nuttx",
                           label="nuttx-sim")
+
+
+def test_nuttx_sanitize(ove_dir, output_dir):
+    """Build and run NuttX sim tests with host ASan and UBSan."""
+    return _run_nuttx_sim(
+        ove_dir, output_dir, build_subdir="nuttx_sanitize", label="nuttx-sim-sanitize",
+        overlay="nuttx_sim_asan_defconfig",
+        env={
+            "ASAN_OPTIONS": "halt_on_error=1:detect_leaks=0",
+            "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        },
+    )
 
 
 def test_nuttx_startup(ove_dir, output_dir):
@@ -4192,6 +4209,7 @@ TEST_TARGETS = {
     "zig-zeroheap": test_zig_zeroheap,
     "zig-debug": test_zig_debug,
     "nuttx": test_nuttx,
+    "nuttx-sanitize": test_nuttx_sanitize,
     "nuttx-startup": test_nuttx_startup,
     "zephyr": test_zephyr,
     "qemu-freertos": test_qemu_freertos,

@@ -567,6 +567,7 @@ help:
 	@echo "  test-python             - ove CLI and tooling unit tests"
 	@echo "  test-js                 - Dashboard trace/profiler parser tests (Node)"
 	@echo "  test-nuttx              - NuttX simulator tests"
+	@echo "  test-nuttx-sanitize     - NuttX simulator tests (ASan and UBSan)"
 	@echo "  test-zephyr             - Zephyr native_sim tests"
 	@echo "  test-qemu               - All QEMU ARM tests"
 	@echo "  test-qemu-freertos      - FreeRTOS QEMU ARM tests"

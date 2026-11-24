@@ -6,6 +6,7 @@
 
 import os
 import re
+import subprocess
 import unittest
 from pathlib import Path
 from shlex import quote
@@ -113,3 +114,74 @@ class StubRunnerTest(unittest.TestCase):
         results = _run_fake_binary("", 0)
         self.assertEqual(results.passed, 1)
         self.assertEqual(results.failed, 0)
+
+
+class NuttxSimRunnerTest(unittest.TestCase):
+    def test_sanitizer_overlay_and_environment(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            apps = root / "nuttx-apps"
+            apps.mkdir()
+            output = root / "output"
+            with (
+                mock.patch.dict(os.environ, {"PATH": "/bin", "ASAN_OPTIONS": "old"}, clear=True),
+                mock.patch.object(ove_test, "_nuttx_fetch_sources", return_value=("nuttx", apps, None)),
+                mock.patch.object(ove_test, "_nuttx_register_test_app"),
+                mock.patch.object(ove_test, "_nuttx_cmake_build") as build,
+                mock.patch.object(ove_test.subprocess, "run") as run,
+                mock.patch("sys.stdout"),
+                mock.patch("sys.stderr") as stderr,
+            ):
+                run.side_effect = subprocess.TimeoutExpired([], 60, output=_PASSING_OUTPUT.encode())
+                self.assertEqual(ove_test.test_nuttx(root, output).failed, 0)
+                run.side_effect = subprocess.TimeoutExpired(
+                    [], 60, output=_PASSING_OUTPUT.encode(), stderr=b"simulator stderr\n",
+                )
+                result = ove_test.test_nuttx_sanitize(root, output)
+
+        overlays = root / "tests" / "sim" / "nuttx"
+        base = str(overlays / "nuttx_sim_defconfig")
+        plain_build, sanitized_build = build.call_args_list
+        self.assertEqual(plain_build.kwargs["defconfig_overlays"], [base])
+        self.assertEqual(sanitized_build.kwargs["defconfig_overlays"], [
+            base, str(overlays / "nuttx_sim_asan_defconfig"),
+        ])
+        plain_run, sanitized_run = run.call_args_list
+        self.assertIsNone(plain_run.kwargs.get("env"))
+        self.assertEqual(sanitized_run.kwargs["env"], {
+            "PATH": "/bin",
+            "ASAN_OPTIONS": "halt_on_error=1:detect_leaks=0",
+            "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        })
+        self.assertEqual(result, ove_test.TestResults(suite="nuttx-sim-sanitize", passed=3))
+        stderr.write.assert_any_call("simulator stderr\n")
+
+    def test_sim_exit_after_summary_fails(self):
+        for rc, stderr in ((-6, "ERROR: AddressSanitizer: heap-use-after-free\n"), (0, "")):
+            with self.subTest(returncode=rc):
+                result = self._run_sanitize(return_value=subprocess.CompletedProcess(
+                    ["nuttx"], rc, _PASSING_OUTPUT, stderr,
+                ))
+                self.assertGreaterEqual(result.failed, 1)
+                self.assertIn(f"<sim exited: rc {rc}>", result.failed_names)
+
+    def test_sim_timeout_after_summary_passes(self):
+        result = self._run_sanitize(side_effect=subprocess.TimeoutExpired(
+            ["nuttx"], 60, output=_PASSING_OUTPUT.encode(),
+        ))
+        self.assertEqual(result.failed, 0)
+
+    def _run_sanitize(self, **run_kwargs):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            apps = root / "nuttx-apps"
+            apps.mkdir()
+            with (
+                mock.patch.object(ove_test, "_nuttx_fetch_sources", return_value=("nuttx", apps, None)),
+                mock.patch.object(ove_test, "_nuttx_register_test_app"),
+                mock.patch.object(ove_test, "_nuttx_cmake_build"),
+                mock.patch.object(ove_test.subprocess, "run", **run_kwargs),
+                mock.patch("sys.stdout"),
+                mock.patch("sys.stderr"),
+            ):
+                return ove_test.test_nuttx_sanitize(root, root / "output")

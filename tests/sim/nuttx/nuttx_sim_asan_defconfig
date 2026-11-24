@@ -1,0 +1,6 @@
+# NuttX ASan and UBSan overlay applied on top of nuttx_sim_defconfig.
+# The custom heap uses host malloc/free so ASan can track oveRTOS allocations.
+CONFIG_MM_CUSTOMIZE_MANAGER=y
+CONFIG_FRAME_POINTER=y
+CONFIG_SIM_ASAN=y
+CONFIG_SIM_UBSAN=y
