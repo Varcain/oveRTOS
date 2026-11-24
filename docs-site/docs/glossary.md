@@ -10,7 +10,7 @@ The manifest at the root of every app (in-tree or external). Declares the langua
 
 ### Backend
 
-The concrete RTOS implementation behind the portable `ove_*` API. oveRTOS ships three: **FreeRTOS**, **Apache NuttX** and **Zephyr**. A POSIX backend under `tests/host/posix/` exists only to run the host test suites. The active backend is selected at configure time via `CONFIG_OVE_RTOS_*` and resolves to direct calls at compile time — no runtime dispatch.
+The concrete RTOS implementation behind the portable `ove_*` API. oveRTOS ships three: **FreeRTOS**, **Apache NuttX** and **Zephyr**. The host test backend under `tests/host/posix/` exists only to run the host test suites. The active backend is selected at configure time via `CONFIG_OVE_RTOS_*` and resolves to direct calls at compile time — no runtime dispatch.
 
 ### Binding
 

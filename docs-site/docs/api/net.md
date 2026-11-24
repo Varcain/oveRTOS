@@ -2,7 +2,7 @@
 
 FreeRTOS DNS uses the same exact finite tick conversion and portMAX_DELAY - 1 saturation for its completion wait. A zero argument selects its existing ten-second default. The preceding serialization mutex wait is outside this budget. Encoded FOREVER requires native INCLUDE_vTaskSuspend=1 for indefinite waiting. Other engines use their own DNS timeout policies.
 
-The oveRTOS networking subsystem provides a portable BSD-like socket API, DNS resolution, TLS encryption, and higher-level protocol clients (HTTP, MQTT) and servers (HTTPD with WebSocket support). The stack runs on all four backends with zero-heap support throughout.
+The oveRTOS networking subsystem provides a portable BSD-like socket API, DNS resolution, TLS encryption, and higher-level protocol clients (HTTP, MQTT) and servers (HTTPD with WebSocket support). The blocking stack supports heap and zero-heap builds on FreeRTOS, NuttX, and Zephyr.
 
 All networking modules require `CONFIG_OVE_NET`. When it is not set, every function is replaced by a static inline stub that returns `OVE_ERR_NOT_SUPPORTED`.
 
@@ -47,8 +47,10 @@ oveRTOS exposes **two** TCP/IP stacks via separate Kconfig options. Pick one per
 | MQTT client | In-tree C (`net_mqtt`) | `rust-mqtt` (crates.io) |
 | HTTPD | In-tree C, REST + WS (`net_httpd`) | `picoserve` (crates.io) |
 | SNTP | In-tree C (`net_sntp`) | `sntpc` (crates.io) |
-| Boards | All 4 RTOSes on every supported board | qemu-mps2-an500 (FreeRTOS+Zephyr+NuttX), stm32f746g-discovery (FreeRTOS) — hardware-verified |
+| Boards | FreeRTOS, NuttX, and Zephyr on boards with a supported network interface | qemu-mps2-an500 (FreeRTOS+Zephyr+NuttX), stm32f746g-discovery (FreeRTOS) — hardware-verified |
 | RAM | ~30-50 KB lwIP heap | ~25 KB total (3 KB StackResources + smoltcp bufs + DMA descriptors) |
+
+The `example_net` manifests exclude `qemu-mps2-an521` (Zephyr) and the `web` board variant.
 
 **Use blocking when:** you're writing synchronous code, need all five protocol layers production-ready, are using C / C++ / Zig, or need cross-RTOS portability on hardware where embassy-net isn't ported yet.
 

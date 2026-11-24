@@ -17,7 +17,7 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 |--------|--------|-----------|-------------|
 | Version | `ove/version.h` | — | Release version macros (`OVE_VERSION`, `OVE_VERSION_STRING`). [Guide](../internals/versioning.md) |
 | Types | `ove/types.h` | — | Common error codes, opaque handle typedefs, and `OVE_WAIT_FOREVER` |
-| App | `ove/app.h` | 4 | Application entry (`ove_main`), scheduler start (`ove_run`), platform bootstrap (`ove_app_run`), and zero-heap allocation lock (`ove_heap_lock`). |
+| App | `ove/app.h` | 5 | Application entry (`ove_main`), scheduler start (`ove_run`), application exit (`ove_app_exit`), platform bootstrap (`ove_app_run`), and zero-heap allocation lock (`ove_heap_lock`). |
 | Thread | `ove/thread.h` | 16 | Thread lifecycle, sleep, yield, suspend/resume, state query, stack usage, runtime stats, thread enumeration, plus `ove_sys_get_mem_stats`. [Guide](threads.md) |
 | Sync | `ove/sync.h` | 31 | Mutex, recursive mutex, semaphore, binary event, condition variable. [Guide](sync.md) |
 | Queue | `ove/queue.h` | 8 | Fixed-size item FIFO with ISR-safe variants. [Guide](ipc.md#queue) |

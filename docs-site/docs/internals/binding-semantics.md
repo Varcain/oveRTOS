@@ -128,7 +128,7 @@ waits and condition-variable mutex reacquisition can extend elapsed time.
 - Suspend and resume pass through the [C thread contract](../api/threads.md).
   NuttX reports `NotSupported` for both calls and never reports the suspended
   state. Empty C++ and Zig thread wrappers report `InvalidParam`. Zephyr
-  allows ISR calls, while FreeRTOS and the POSIX host backend require thread
+  allows ISR calls, while FreeRTOS and the host test backend require thread
   context.
 - From an ISR the C thread init/deinit/create/destroy/list calls return
   `OVE_ERR_WOULD_BLOCK`, `ove_thread_get_self` returns NULL and millisecond
@@ -281,10 +281,11 @@ Boolean and `Result` methods stay fallible. Rust constructors return errors;
 Zig constructors propagate errors and free their allocated storage, and its
 void acquisition methods panic.
 
-**Semaphore counts** require `max > 0`, `initial <= max` and the provider
-ceiling: `SEM_VALUE_MAX` on POSIX/NuttX, `UBaseType_t` on FreeRTOS and
-`unsigned int` on Zephyr. FreeRTOS and Zephyr enforce the requested maximum.
-POSIX and NuttX enforce only their provider-wide ceiling, in every binding.
+**Semaphore counts** require `max > 0`, `initial <= max` and counts within the
+provider's domain. NuttX and the host test backend use `SEM_VALUE_MAX` as the
+ceiling at initialization and on posts without retaining the requested `max`.
+Counts must fit in `UBaseType_t` on FreeRTOS and `unsigned int` on Zephyr.
+FreeRTOS and Zephyr enforce the requested `max` on posts.
 
 **Condition variables.** `ove_condvar_wait_checked` reports on every return
 whether the caller still owns its ordinary mutex: held after success or clean
@@ -376,7 +377,7 @@ Keep callbacks short and nonblocking; the
 
 | Query | Available with | Result |
 |---|---|---|
-| `ove_is_in_isr()` | always | true in interrupt context (host: inside simulator ISR wrappers) |
+| `ove_is_in_isr()` | always | true in interrupt context (inside simulator ISR wrappers on the host test backend) |
 | `ove_sync_context()` | SYNC, QUEUE or EVENTGROUP | mask of `OVE_SYNC_CONTEXT_RESOURCE` / `_BLOCKING` / `_PRODUCER`; zero when disabled |
 | `ove_irq_lock()` / `ove_irq_unlock()` | ASYNC | native exclusion; disabled stubs give none |
 
@@ -394,9 +395,9 @@ None of them needs object setup, allocation, TIME or ASYNC (except the lock).
 - All flags are zero in an ISR, in unprivileged code, on unsupported
   architectures, FreeRTOS multicore and NuttX SMP. They are not the test for
   releasing an already-owned mutex, which can stay legal with interrupts masked.
-- POSIX timer dispatchers mark callbacks as ISR context and its critical
-  sections report PRODUCER only; this does not model signal handlers or real
-  IRQ exclusion.
+- On the host test backend, timer dispatchers mark callbacks as ISR context
+  and critical sections report PRODUCER only. This does not model signal
+  handlers or real IRQ exclusion.
 
 **Critical sections.** Every binding shares the native domain of
 `ove_irq_lock`/`ove_irq_unlock`; Rust's global `critical_section` provider and
@@ -545,11 +546,11 @@ close; a handle cannot be reused once its storage holds another session.
   generated `model_data!` accessor. Sessions borrow the model bytes and their
   storage exclusively. Tensor views accept only `f32`, `i8`, `u8`, `i16` and
   `i32` of the exact descriptor type and are bounds- and alignment-checked.
-  Rust uses `ove_is_in_isr()` to detect ISR context, including inside host POSIX
-  ISR wrappers and timer callbacks. Construction and invocation there return
-  `InvalidParam`. Drop there retains the resources and admission permanently,
-  so later construction returns `Busy`. The `ove::infer` crate docs hold the
-  full rules.
+  Rust uses `ove_is_in_isr()` to detect ISR context, including in the host
+  test backend's ISR wrappers and timer callbacks. Construction and invocation
+  there return `InvalidParam`. Drop there retains the resources and admission
+  permanently, so later construction returns `Busy`. The `ove::infer` crate
+  docs hold the full rules.
 - `ove_model_binding_arena` reports the live span excluding front padding.
   It is available with INFER alone, also to C++ and Zig, and transfers no ownership.
 
@@ -601,9 +602,9 @@ state it the same way, including where an engine does **not** guarantee it.
   hiding it (the shell docs in every binding say a handler must not wait for
   another thread using the shell).
 - Strings a callback API keeps by pointer (shell command names and help, thread
-  names on NuttX, Zephyr and the host backend) must outlive the registration:
-  Rust takes `&'static CStr`, Zig comptime or caller-owned names, C++ documents
-  the rule.
+  names on NuttX, Zephyr and the host test backend) must outlive the
+  registration. Rust takes `&'static CStr`, Zig takes comptime or caller-owned
+  names, and C++ documents the rule.
 - No binding keeps a shell command table of its own, so registration is as
   thread-safe as the C shell: C++ passes the C descriptor through, Zig makes a
   trampoline per handler at comptime, and Rust takes a `Send + Sync`

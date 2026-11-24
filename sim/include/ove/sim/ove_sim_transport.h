@@ -10,8 +10,8 @@
  * @defgroup ove_sim_transport Simulation Transport Layer
  * @brief Abstract transport for sim plugin events and commands.
  *
- * Provides a transport-agnostic interface so plugin code is identical
- * for POSIX (in-process ring buffers) and QEMU (shared-memory IPC).
+ * The QEMU guest transport exchanges events and commands with the dashboard
+ * through shared-memory files accessed via semihosting.
  * @{
  */
 
@@ -68,13 +68,13 @@ struct ove_sim_transport_ops {
 	int (*recv_cmd)(struct ove_sim_transport *t, struct ove_sim_cmd *cmd, size_t cmd_size,
 			uint32_t timeout_ms);
 
-	/* ── Host-side ops (used by the WS server / bridge) ────────── */
+	/* ── Host-side ops ──────────────────────────────────────────── */
 
 	/**
 	 * @brief Read the next event from the firmware (host-side).
 	 *
 	 * Counterpart to @c send_event -- reads what firmware wrote.
-	 * May be NULL if the transport has no in-process host side.
+	 * @note No current transport implements this operation.
 	 */
 	int (*read_event)(struct ove_sim_transport *t, void *buf, size_t buf_size,
 			  uint16_t *out_len, uint32_t timeout_ms);
@@ -83,7 +83,7 @@ struct ove_sim_transport_ops {
 	 * @brief Inject a command from the host side (dashboard → firmware).
 	 *
 	 * Counterpart to @c recv_cmd -- writes what firmware will read.
-	 * May be NULL if the transport has no in-process host side.
+	 * @note No current transport implements this operation.
 	 */
 	int (*write_cmd)(struct ove_sim_transport *t, const void *data, uint16_t len);
 

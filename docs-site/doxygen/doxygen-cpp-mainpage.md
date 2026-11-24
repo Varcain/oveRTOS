@@ -5,8 +5,7 @@ These wrappers provide type-safe, move-only handles with automatic resource
 cleanup, compile-time stack sizing, `Result<T>` (`std::expected`-based)
 error handling, and fluent LVGL widget builders.
 
-The C++ binding builds with `-std=c++23` across all backends
-(POSIX, FreeRTOS, NuttX, Zephyr).
+The C++ binding builds with `-std=c++23` on FreeRTOS, NuttX, and Zephyr.
 
 Include every module at once with the umbrella header:
 

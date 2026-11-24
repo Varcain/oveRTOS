@@ -84,7 +84,7 @@
 //! | MQTT client           | [`crate::net_mqtt`] (in-tree C)                    | `rust-mqtt` (crates.io)                        |
 //! | Time sync             | [`crate::net_sntp`] (in-tree C)                    | `sntpc` (crates.io, no_std mode)               |
 //! | HTTP server           | [`crate::net_httpd`] (in-tree C, REST + WS)        | `picoserve` (crates.io)                        |
-//! | Cross-RTOS coverage   | All 4 backends                                     | FreeRTOS + Zephyr + NuttX on supported boards  |
+//! | Cross-RTOS coverage   | FreeRTOS, NuttX, and Zephyr on supported boards     | FreeRTOS, NuttX, and Zephyr on supported boards |
 //!
 //! See [`crate::net`]'s module docs for the inverse decision guide.
 //!

@@ -160,7 +160,7 @@
         "type": "array",
         "items": { "type": "string" }
       },
-      "description": "Per-RTOS Kconfig overrides, keyed by RTOS name (freertos, zephyr, nuttx, posix)."
+      "description": "Per-RTOS Kconfig overrides, keyed by RTOS name (freertos, zephyr, nuttx)."
     },
     "variants": {
       "type": "object",

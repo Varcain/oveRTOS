@@ -15,9 +15,8 @@
  * and install an internal shim that dispatches to the user callback
  * every LVGL refresh cycle.
  *
- * All four RTOS backends link this file via their respective
- * CMakeLists / Makefile — the LVGL indev API is platform-agnostic,
- * so one implementation serves every target.
+ * FreeRTOS, NuttX, and Zephyr share this implementation when
+ * CONFIG_OVE_LVGL is enabled.
  */
 
 #include "ove/lvgl_internal.h"

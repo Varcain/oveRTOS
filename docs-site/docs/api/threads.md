@@ -212,7 +212,7 @@ int start_worker(void)
 Both controls return `OVE_OK` when the request is handled,
 `OVE_ERR_INVALID_PARAM` for a NULL handle, or `OVE_ERR_NOT_SUPPORTED` when
 the backend lacks suspension support. Call them from thread context on
-FreeRTOS and the POSIX host backend. Zephyr also allows calls from an
+FreeRTOS and the host test backend. Zephyr also allows calls from an
 ISR. On Zephyr SMP, an ISR suspending a thread running on another CPU may
 spin until the target halts.
 

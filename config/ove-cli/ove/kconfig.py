@@ -228,8 +228,8 @@ def _write_workspace_config(kconf, ove_dir, ws_board, ws_rtos, ws_app,
 def _find_board_dir(ove_dir, board_short):
     """Find board directory matching a short name.
 
-    Matches against directory basename or the 'name' field in board.yaml.
-    Short names like 'qemu', 'stm32f746', 'host' match via prefix.
+    Matches the directory basename exactly or by prefix (e.g. 'qemu' or
+    'stm32f746').
     Directories without a board.yaml hold files shared by several boards
     (e.g. boards/qemu-mps2/) and are never a match.
     """

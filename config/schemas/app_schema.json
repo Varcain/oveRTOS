@@ -73,7 +73,7 @@
     },
     "platform_sources": {
       "type": "object",
-      "description": "RTOS-specific source overrides. Keys are RTOS names (posix, freertos, nuttx, zephyr) or 'default'. Values are arrays of source paths.",
+      "description": "RTOS-specific source overrides. Keys are RTOS names (freertos, nuttx, zephyr) or 'default'. Values are arrays of source paths.",
       "additionalProperties": {
         "type": "array",
         "items": { "type": "string" }
@@ -99,12 +99,12 @@
         "type": "array",
         "items": { "type": "string" }
       },
-      "description": "Per-RTOS Kconfig overrides applied after app defconfig, keyed by RTOS name (freertos, zephyr, nuttx, posix). A '<rtos>@<board name>' key (e.g. 'freertos@stm32f746g-discovery') applies only on that board, after the plain '<rtos>' lines."
+      "description": "Per-RTOS Kconfig overrides applied after app defconfig, keyed by RTOS name (freertos, zephyr, nuttx). A '<rtos>@<board name>' key (e.g. 'freertos@stm32f746g-discovery') applies only on that board, after the plain '<rtos>' lines."
     },
     "incompatible_boards": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Boards this app cannot be built for, named as in the '<board>.<rtos>.<app>' spec: a board ('host'), a board variant ('web'), or one '<board>.<rtos>' pair ('stm32f746.nuttx'). 'ove allconfigs' skips the matching combinations."
+      "description": "Boards this app cannot be built for, named as in the '<board>.<rtos>.<app>' spec: a board ('qemu-mps2-an500'), a board variant ('web'), or one '<board>.<rtos>' pair ('stm32f746.nuttx'). 'ove allconfigs' skips the matching combinations."
     },
     "allconfigs_skip": {
       "type": "string",

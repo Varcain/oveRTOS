@@ -1,8 +1,8 @@
 # oveRTOS C API Reference {#mainpage}
 
 oveRTOS is an embedded RTOS framework that provides a unified build system,
-configuration, and portable C API across FreeRTOS, Apache NuttX, Zephyr RTOS,
-and POSIX. This reference documents the C API. The correct backend
+configuration, and portable C API across FreeRTOS, Apache NuttX, and Zephyr.
+This reference documents the C API. The correct backend
 implementation is selected at compile time via Kconfig
 preprocessor symbols, with no virtual dispatch and [minimal runtime overhead](https://varcain.github.io/oveRTOS/benchmarks/) over the native API.
 

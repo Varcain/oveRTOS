@@ -11,7 +11,7 @@
 #     target_link_libraries(my_firmware PRIVATE ove)
 #
 # Linking against the `ove` INTERFACE target pulls in the core sources
-# and include path. Backend sources (FreeRTOS / Zephyr / NuttX / POSIX)
+# and include path. Backend sources (FreeRTOS / Zephyr / NuttX)
 # are added separately by including the per-RTOS Ove*.cmake helpers
 # from the board CMakeLists.txt.
 

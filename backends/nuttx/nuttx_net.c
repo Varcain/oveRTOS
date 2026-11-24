@@ -8,9 +8,6 @@
 
 /*
  * NuttX networking backend.
- *
- * NuttX provides standard POSIX sockets so the implementation is
- * nearly identical to the POSIX backend.
  */
 
 #include "ove/ove.h"

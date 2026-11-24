@@ -7,10 +7,7 @@
 # includes this module and uses its macros to register the oveRTOS app via
 # nuttx_add_application().
 #
-# Unlike OveCommon.cmake (which drives a standalone build for FreeRTOS,
-# Zephyr and POSIX), this module must work inside NuttX's project()
-# context — no project() declaration, no toolchain file, no linker
-# script handling.
+# NuttX owns the CMake project, toolchain file, and linker script.
 #
 # Usage (in boards/<board>/nuttx/CMakeLists.txt):
 #   include(${OVE_DIR}/cmake/OveNuttX.cmake)

@@ -9,18 +9,14 @@
 /*
  * Common PCM ring buffer for simulation audio.
  *
- * Shared struct layout and helpers used by both sim transport
- * backends (POSIX, QEMU).  The dashboard bridge and the in-page QEMU
- * link access the same layout by byte offset.
+ * The simulation audio plugin uses these helpers for its local input ring.
+ * The QEMU guest uses semihosting file I/O for shared-memory audio, and
+ * the dashboard bridge and in-page QEMU link use the same ring field offsets.
  *
  * Design:
  *   - SPSC (single producer, single consumer) — no lock needed
  *   - Power-of-2 size with wrapping positions (no modulo)
  *   - 32-byte header followed by PCM data
- *
- * Access modes:
- *   POSIX: direct memory (in-process, mutex at transport level)
- *   QEMU:  semihosting file I/O using offset constants
  */
 
 #ifndef OVE_SIM_AUDIO_RING_H

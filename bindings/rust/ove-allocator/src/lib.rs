@@ -44,8 +44,8 @@ mod imp {
     }
 
     /// `GlobalAlloc` impl that forwards to libc malloc/free/realloc.
-    /// Alignments stricter than `align_of::<usize>()` go through
-    /// `aligned_alloc` (C11; available on all four supported backends).
+    /// Alignments stricter than `align_of::<usize>()` go through the C
+    /// library's `aligned_alloc`.
     pub struct OveAllocator;
 
     unsafe impl GlobalAlloc for OveAllocator {
