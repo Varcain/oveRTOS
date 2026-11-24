@@ -67,6 +67,16 @@ target_include_directories(ove_freertos_posix
 add_executable(ove_test_cpp_freertos_posix cpp_main.cpp ${OVE_ROOT}/tests/cpp/suites/test_mutex.cpp)
 target_link_libraries(ove_test_cpp_freertos_posix PRIVATE ove_freertos_posix cmocka-static pthread)
 
+if(NOT OVE_ZERO_HEAP)
+    add_executable(ove_test_freertos_libc_malloc libc_malloc_test.c
+        ${FREERTOS_PATH}/portable/MemMang/heap_4.c
+        ${FREERTOS_BACKEND}/freertos_libc_malloc.c)
+    target_include_directories(ove_test_freertos_libc_malloc PRIVATE
+        $<TARGET_PROPERTY:ove_freertos_posix,INCLUDE_DIRECTORIES>)
+    target_compile_options(ove_test_freertos_libc_malloc PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_link_options(ove_test_freertos_libc_malloc PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+endif()
+
 set(OVE_DIR "${OVE_ROOT}")
 include(${OVE_DIR}/cmake/OveBindingsCommon.cmake)
 _ove_binding_write_sizes_probe("${CMAKE_BINARY_DIR}/ove_storage_sizes.c"

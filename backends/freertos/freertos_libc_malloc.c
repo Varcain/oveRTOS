@@ -31,17 +31,8 @@
  * picolibc's `malloc`.  `--wrap` sidesteps the multiple-definition
  * error entirely.
  *
- * No size prefix: pvPortMalloc returns a pointer whose preceding
- * BlockLink_t header carries the block size already.  We pass the
- * caller's pointer straight through to pvPortMalloc / vPortFree so
- * the heap's internal accounting stays untouched (a header-prefix
- * scheme would offset every pointer by 8 bytes and require pulling
- * xHeapStructSize from FreeRTOS internals to reconstruct it for
- * realloc).  realloc here does a best-effort allocate + copy + free
- * using the caller-supplied `new_size` as the copy bound, which is
- * correct on grow and conservative on shrink — the realloc path is
- * rare in embedded FreeRTOS apps and never exercised by the bindings'
- * `*_create()` paths.
+ * FreeRTOS heap-mode builds always link heap_4. The realloc wrapper
+ * depends on its block header to determine the old usable size.
  *
  * Not compiled in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0):
  * pvPortMalloc / vPortFree don't exist there, and libc malloc is
@@ -53,9 +44,11 @@
 #if defined(CONFIG_OVE_RTOS_FREERTOS) && !defined(CONFIG_OVE_ZERO_HEAP)
 
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
+#include "task.h"
 #include "portable.h"
 
 void *__wrap_malloc(size_t size)
@@ -87,6 +80,23 @@ void *__wrap_calloc(size_t nmemb, size_t size)
 	return p;
 }
 
+/* heap_4's block size includes the aligned BlockLink_t header.
+ * Its top bit marks the block as allocated. */
+static size_t heap4_usable_size(const void *ptr)
+{
+	struct heap4_link {
+		void *next;
+		size_t size;
+	};
+	const size_t header_size = (sizeof(struct heap4_link) + portBYTE_ALIGNMENT - 1) &
+				   ~(size_t)portBYTE_ALIGNMENT_MASK;
+	const struct heap4_link *link = (const void *)((const uint8_t *)ptr - header_size);
+	const size_t allocated_bit = (size_t)1 << (sizeof(size_t) * 8 - 1);
+
+	configASSERT((link->size & allocated_bit) != 0);
+	return (link->size & ~allocated_bit) - header_size;
+}
+
 void *__wrap_realloc(void *ptr, size_t size)
 {
 	if (ptr == NULL) {
@@ -100,14 +110,8 @@ void *__wrap_realloc(void *ptr, size_t size)
 	if (new_ptr == NULL) {
 		return NULL;
 	}
-	/* Conservative copy: the caller's `size` covers the grow case
-	 * exactly; for shrink, copying `size` is correct (the rest of
-	 * the old allocation is being discarded anyway).  Real C realloc
-	 * would use the BlockLink_t header's xBlockSize to determine the
-	 * old size precisely, but xHeapStructSize is a FreeRTOS-internal
-	 * symbol and dragging it in just for a rarely-used realloc isn't
-	 * worth the coupling. */
-	memcpy(new_ptr, ptr, size);
+	const size_t old_usable = heap4_usable_size(ptr);
+	memcpy(new_ptr, ptr, old_usable < size ? old_usable : size);
 	vPortFree(ptr);
 	return new_ptr;
 }
