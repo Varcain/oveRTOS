@@ -180,7 +180,11 @@ function(ove_build_rust_crate TARGET)
 
     # Collect shared ove crate sources for dependency tracking
     set(OVE_RUST_CRATE_DIR "${OVE_DIR}/bindings/rust/ove")
-    file(GLOB_RECURSE OVE_CRATE_SOURCES CONFIGURE_DEPENDS "${OVE_RUST_CRATE_DIR}/src/*.rs")
+    file(GLOB_RECURSE OVE_CRATE_SOURCES CONFIGURE_DEPENDS
+        "${OVE_RUST_CRATE_DIR}/src/*.rs"
+        "${OVE_DIR}/bindings/rust/ove-macros/src/*.rs"
+        "${OVE_DIR}/bindings/rust/ove-allocator/src/*.rs"
+    )
 
     # App build.rs is optional (bindgen may live in shared crate)
     set(APP_BUILD_RS_DEP "")
@@ -205,7 +209,10 @@ function(ove_build_rust_crate TARGET)
                 ${RUST_SOURCES}
                 ${OVE_RUST_CRATE_DIR}/Cargo.toml
                 ${OVE_RUST_CRATE_DIR}/build.rs
+                ${OVE_DIR}/bindings/rust/ove-macros/Cargo.toml
+                ${OVE_DIR}/bindings/rust/ove-allocator/Cargo.toml
                 ${OVE_CRATE_SOURCES}
+                ${OVE_DIR}/apps/rust/ove_build_common.rs
                 ${SIZES_ENV}
     )
 
