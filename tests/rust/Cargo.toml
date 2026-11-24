@@ -7,6 +7,7 @@ rust-version = "1.95"
 [features]
 async-semaphore = ["ove/async"]
 async-queue = ["ove/async", "dep:static_cell"]
+freertos-posix = []
 
 [[bin]]
 name = "ove-tests"
@@ -21,6 +22,11 @@ required-features = ["async-semaphore"]
 name = "async-queue"
 path = "async_queue.rs"
 required-features = ["async-queue"]
+
+[[bin]]
+name = "freertos-posix"
+path = "src/freertos_posix.rs"
+required-features = ["freertos-posix"]
 
 [dependencies]
 ove = { path = "../../bindings/rust/ove", features = ["std", "embedded-hal", "embedded-io"], default-features = false }

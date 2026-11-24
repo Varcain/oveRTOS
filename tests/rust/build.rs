@@ -7,16 +7,27 @@
 use std::env;
 
 fn main() {
-    let stub_lib_dir =
-        env::var("STUB_LIB_DIR").expect("STUB_LIB_DIR must be set (path to libove_stub.a)");
+    if env::var_os("CARGO_FEATURE_FREERTOS_POSIX").is_some() {
+        let lib_dir = env::var("FREERTOS_POSIX_LIB_DIR")
+            .expect("FREERTOS_POSIX_LIB_DIR must be set (path to libove_freertos_posix.a)");
+        println!("cargo:rustc-link-search=native={lib_dir}");
+        println!("cargo:rustc-link-lib=static:+whole-archive=ove_freertos_posix");
+        println!("cargo:rustc-link-lib=dylib=pthread");
+        println!("cargo:rerun-if-changed={lib_dir}/libove_freertos_posix.a");
+        println!("cargo:rerun-if-env-changed=FREERTOS_POSIX_LIB_DIR");
+    } else {
+        let stub_lib_dir =
+            env::var("STUB_LIB_DIR").expect("STUB_LIB_DIR must be set (path to libove_stub.a)");
 
-    println!("cargo:rustc-link-search=native={stub_lib_dir}");
-    println!("cargo:rustc-link-lib=static:+whole-archive=ove_stub");
-    println!("cargo:rustc-link-lib=dylib=pthread");
-    println!("cargo:rustc-link-lib=dylib=rt");
-    // Cargo does not track the C library, so without this a rebuilt
-    // libove_stub.a is not relinked and the tests run the old C code.
-    println!("cargo:rerun-if-changed={stub_lib_dir}/libove_stub.a");
+        println!("cargo:rustc-link-search=native={stub_lib_dir}");
+        println!("cargo:rustc-link-lib=static:+whole-archive=ove_stub");
+        println!("cargo:rustc-link-lib=dylib=pthread");
+        println!("cargo:rustc-link-lib=dylib=rt");
+        // Cargo does not track the C library, so without this a rebuilt
+        // libove_stub.a is not relinked and the tests run the old C code.
+        println!("cargo:rerun-if-changed={stub_lib_dir}/libove_stub.a");
+        println!("cargo:rerun-if-env-changed=STUB_LIB_DIR");
+    }
 
     // Mirror bindings/rust/ove/build.rs: enable the `zero_heap` cfg (which
     // gates the test crate's zero-heap suite) when OVE_GEN_DIR/ove_config.h
@@ -32,6 +43,5 @@ fn main() {
         }
     }
 
-    println!("cargo:rerun-if-env-changed=STUB_LIB_DIR");
     println!("cargo:rerun-if-env-changed=OVE_GEN_DIR");
 }

@@ -15,11 +15,14 @@ set(OVE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 set(FREERTOS_BACKEND "${OVE_ROOT}/backends/freertos")
 set(FREERTOS_PORT "${FREERTOS_PATH}/portable/ThirdParty/GCC/Posix")
 if(NOT EXISTS "${FREERTOS_PORT}/port.c")
-    message(FATAL_ERROR "FREERTOS_PATH must name the manifest-pinned kernel")
+    message(FATAL_ERROR
+        "The C++ and Rust tests require FREERTOS_PATH to name the manifest-pinned kernel.")
 endif()
 set(CMOCKA "${OVE_ROOT}/dl/cmocka")
 if(NOT EXISTS "${CMOCKA}/src/cmocka.c")
-    message(FATAL_ERROR "CMocka source is missing. Run make test-cpp-freertos-posix to fetch it.")
+    message(FATAL_ERROR
+        "CMocka source is missing. Run make test-cpp-freertos-posix "
+        "or make test-rust-freertos-posix to fetch it.")
 endif()
 
 add_compile_options(-Wall -Wextra -Werror -Wno-unused-parameter
@@ -50,13 +53,25 @@ target_compile_definitions(cmocka-static PRIVATE
     HAVE_VSNPRINTF HAVE_FPRINTF HAVE_PRINTF)
 target_compile_options(cmocka-static PRIVATE -Wno-error)
 
-add_executable(ove_test_cpp_freertos_posix cpp_main.cpp posix_glue.c
-    ${OVE_ROOT}/tests/cpp/suites/test_mutex.cpp
+add_library(ove_freertos_posix STATIC posix_glue.c rust_runner.c
     ${KERNEL_SOURCES} ${HEAP_STUBS} ${FREERTOS_BACKEND}/freertos_thread.c
     ${FREERTOS_BACKEND}/freertos_sync.c ${OVE_ROOT}/src/ove_sync.c)
-target_include_directories(ove_test_cpp_freertos_posix PRIVATE
+target_include_directories(ove_freertos_posix
+    PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../freertos-qemu
     ${FREERTOS_PATH}/include ${FREERTOS_PORT} ${FREERTOS_PORT}/utils
-    ${OVE_ROOT}/include ${OVE_ROOT}/bindings/cpp ${FREERTOS_BACKEND}/include
-    ${OVE_ROOT}/backends/common ${OVE_ROOT}/tests)
-target_link_libraries(ove_test_cpp_freertos_posix PRIVATE cmocka-static pthread)
+    ${OVE_ROOT}/include ${FREERTOS_BACKEND}/include ${OVE_ROOT}/backends/common
+    INTERFACE
+    ${OVE_ROOT}/bindings/cpp ${OVE_ROOT}/tests)
+
+add_executable(ove_test_cpp_freertos_posix cpp_main.cpp ${OVE_ROOT}/tests/cpp/suites/test_mutex.cpp)
+target_link_libraries(ove_test_cpp_freertos_posix PRIVATE ove_freertos_posix cmocka-static pthread)
+
+set(OVE_DIR "${OVE_ROOT}")
+include(${OVE_DIR}/cmake/OveBindingsCommon.cmake)
+_ove_binding_write_sizes_probe("${CMAKE_BINARY_DIR}/ove_storage_sizes.c"
+    "#include \"ove/ove.h\"\n#include \"ove/storage.h\"\n")
+_ove_binding_build_sizes_probe(_sizes ove_freertos_posix "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
+_ove_binding_extract_sizes("${CMAKE_BINARY_DIR}/ove_storage_sizes.env" _sizes
+    "Extracting FreeRTOS POSIX storage sizes")
+add_custom_target(storage_sizes ALL DEPENDS "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")

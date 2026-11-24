@@ -524,8 +524,8 @@ def test_cpp(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp", summary=True)
 
 
-def test_cpp_freertos_posix(ove_dir, output_dir):
-    """Run the C++ mutex suite on the FreeRTOS GCC/Posix port in both heap modes."""
+def _fetch_freertos_posix_deps(ove_dir):
+    """Fetch the pinned FreeRTOS kernel and CMocka for the host lanes."""
     from .download import git_clone
     from .utils import hashed_dir
 
@@ -535,13 +535,20 @@ def test_cpp_freertos_posix(ove_dir, output_dir):
     dl_dir = os.path.join(ove_dir, "dl")
     os.makedirs(dl_dir, exist_ok=True)
     kernel, _, _ = hashed_dir(dl_dir, "FreeRTOS-Kernel", revision)
-    result = TestResults(suite="cpp-freertos-posix")
-    if not (git_clone(url, revision, kernel, "FreeRTOS-Kernel")
+    if (git_clone(url, revision, kernel, "FreeRTOS-Kernel")
             and git_clone("https://gitlab.com/cmocka/cmocka.git", "cmocka-1.1.7",
                           os.path.join(dl_dir, "cmocka"), "CMocka")):
+        return kernel
+    return None
+
+
+def test_cpp_freertos_posix(ove_dir, output_dir):
+    """Run the C++ mutex suite on the FreeRTOS GCC/Posix port in both heap modes."""
+    result = TestResults(suite="cpp-freertos-posix")
+    kernel = _fetch_freertos_posix_deps(ove_dir)
+    if kernel is None:
         result.failed = 1
         return result
-
     source = os.path.join(ove_dir, "tests", "sim", "freertos-posix")
     for suffix, zero_heap, mode in (("", "OFF", "heap"), ("_zh", "ON", "zero-heap")):
         build = Path(output_dir) / "tests" / f"cpp_freertos_posix{suffix}"
@@ -713,6 +720,54 @@ def test_rust(ove_dir, output_dir):
     logger.info("Running Rust tests")
     return _run_test_binary(
         [os.path.join(target_dir, "release", "ove-tests")], "rust", summary=True)
+
+
+def test_rust_freertos_posix(ove_dir, output_dir):
+    """Run the Rust semaphore suite on the FreeRTOS GCC/Posix port."""
+    suite = "rust-freertos-posix"
+    kernel = _fetch_freertos_posix_deps(ove_dir)
+    if kernel is None:
+        return TestResults(suite=suite, failed=1)
+
+    output = Path(output_dir).resolve() / "tests"
+    provider, target = output / "rust_freertos_posix_provider", output / "rust_freertos_posix"
+    sim = Path(ove_dir) / "tests" / "sim"
+    logger.info("Building Rust FreeRTOS POSIX provider")
+    _cmake_build(str(sim / "freertos-posix"), str(provider),
+                 ["-DFREERTOS_PATH=" + kernel, "-DOVE_ZERO_HEAP=OFF"])
+
+    env = dict(os.environ)
+    env.pop("DOCS_RS", None)
+    env.update(OVE_DIR=ove_dir, OVE_GEN_DIR=str(sim / "freertos-qemu"), RUST_IS_NATIVE="1",
+               OVE_STORAGE_SIZES=str(provider / "ove_storage_sizes.env"),
+               FREERTOS_POSIX_LIB_DIR=str(provider), CARGO_TARGET_DIR=str(target))
+    cargo = ["cargo", "build", "--locked", "--release", "--manifest-path",
+             Path(ove_dir) / "tests" / "rust" / "Cargo.toml",
+             "--features", "freertos-posix", "--bin", "freertos-posix"]
+    logger.info("Building Rust FreeRTOS POSIX tests")
+    rc = _run_owned_test_process(cargo, env=env, timeout=600)
+    if rc != 0:
+        return TestResults(suite=suite, failed=1, failed_names=[f"<cargo build: exit {rc}>"])
+
+    logger.info("Running Rust FreeRTOS POSIX tests")
+    log = target / "run.log"
+    with log.open("w") as stream:
+        rc = _run_owned_test_process([target / "release" / "freertos-posix"],
+                                     env=env, timeout=60, stdout=stream)
+    stdout = log.read_text(errors="replace")
+    print(stdout, end="", flush=True)
+    result = _parse_cmocka(stdout)
+    result.suite = suite
+    summary = re.search(r"^=== Summary: (\d+) passed, (\d+) failed ===$", stdout, re.MULTILINE)
+    if summary is None:
+        result.failed_names.append("<no completion summary>")
+    else:
+        result.passed = int(summary[1])
+        result.failed = max(result.failed, int(summary[2]))
+    if rc != 0 and not result.failed_names:
+        result.failed_names.append(f"<exit {rc}>")
+    result.failed = max(result.failed, int(bool(result.failed_names)))
+    return result
 
 
 def _test_rust_async(ove_dir, output_dir, short, program, doc_filter, sanitize=False):
@@ -4171,6 +4226,7 @@ TEST_TARGETS = {
     "cpp-sanitize-zh": test_cpp_sanitize_zh,
     "cpp-tsan": test_cpp_tsan,
     "rust": test_rust,
+    "rust-freertos-posix": test_rust_freertos_posix,
     "rust-zeroheap": test_rust_zeroheap,
     "rust-lvgl": test_rust_lvgl,
     "rust-lvgl-sanitize": test_rust_lvgl_sanitize,

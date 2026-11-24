@@ -321,6 +321,9 @@ jobs:
       - name: Run zero-heap tests
         run: make test-rust-zeroheap
 
+      - name: Run Rust semaphore tests on FreeRTOS GCC/Posix
+        run: timeout --signal=INT --kill-after=30 600 make test-rust-freertos-posix
+
       - name: Rust semaphore and event ownership contracts
         run: timeout --signal=INT --kill-after=30 600 make test-rust-sync
 
