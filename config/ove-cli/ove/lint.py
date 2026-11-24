@@ -281,10 +281,11 @@ def _clang_tidy(ove_dir, check):
     if not files:
         return ("clang-tidy", "FAIL", "no in-scope sources in stub compile database")
 
-    # Match backend analysis: Clang rejects the zero-heap allocator's
-    # error-attribute redeclarations. Analysis never emits a binary.
+    # Clang rejects heap_assert.h's error-attribute redeclarations. Both
+    # clang-tidy steps define __OVE_LINT__ to skip them during analysis.
+    # Treat thread-safety diagnostics as errors.
     cmd = ["clang-tidy", "--quiet", "-p", stub_build,
-           "--extra-arg=-D__OVE_LINT__"] + files
+           "--extra-arg=-D__OVE_LINT__", "--extra-arg=-Werror=thread-safety"] + files
     rc, out = _run(cmd, cwd=ove_dir)
     return ("clang-tidy", "OK" if rc == 0 else "FAIL",
             f"{len(files)} files" if rc == 0 else out.strip()[:200])

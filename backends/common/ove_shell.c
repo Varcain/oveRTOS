@@ -24,18 +24,22 @@
 #include "ove/log.h"
 #include "ove/sync.h"
 #include "ove/thread.h"
+#include "ove_thread_safety.h"
 #include <stdint.h>
 #include <string.h>
 
 #define SHELL_LINE_MAX 128
 #define SHELL_CMD_MAX 16
 
+typedef ove_mutex_t shell_mutex_t OVE_CAPABILITY("mutex");
+static shell_mutex_t s_lock;
+
 /* The counters and flags are bytes: the F746 test images have no RAM to
  * spare for the lock without them. */
-static struct ove_shell_cmd cmd_table[SHELL_CMD_MAX];
-static uint8_t cmd_count;
-static char line_buf[SHELL_LINE_MAX];
-static uint8_t line_pos;
+static struct ove_shell_cmd cmd_table[SHELL_CMD_MAX] OVE_GUARDED_BY(s_lock);
+static uint8_t cmd_count OVE_GUARDED_BY(s_lock);
+static char line_buf[SHELL_LINE_MAX] OVE_GUARDED_BY(s_lock);
+static uint8_t line_pos OVE_GUARDED_BY(s_lock);
 
 static ove_shell_output_hook_t s_output_hook;
 /* Set while a command handler runs; its log lines also go to the hook. */
@@ -43,7 +47,6 @@ static ove_thread_t s_exec_thread;
 static uint8_t s_executing;
 static uint8_t s_in_hook;
 
-static ove_mutex_t s_lock;
 #ifndef OVE_HEAP_SYNC
 static ove_mutex_storage_t s_lock_storage;
 #endif
@@ -55,8 +58,9 @@ static uint8_t s_lock_state;
  * a constructor: Zephyr builds without STATIC_INIT_GNU cannot have one).  A
  * thread that finds another creating it waits a tick at a time, as a yield
  * would never let a lower-priority creator run, then retries if that
- * creation failed. */
-static int shell_lock(void)
+ * creation failed. Callers compare the result with 0, because Clang's try-lock
+ * tracking does not follow the OVE_OK enumerator. */
+static int shell_lock(void) OVE_TRY_ACQUIRE(0, s_lock) OVE_NO_THREAD_SAFETY_ANALYSIS
 {
 	for (;;) {
 		uint8_t state = __atomic_load_n(&s_lock_state, __ATOMIC_ACQUIRE);
@@ -85,12 +89,12 @@ static int shell_lock(void)
 	return ove_recursive_mutex_lock(s_lock, OVE_WAIT_FOREVER);
 }
 
-static void shell_unlock(void)
+static void shell_unlock(void) OVE_RELEASE(s_lock) OVE_NO_THREAD_SAFETY_ANALYSIS
 {
 	ove_recursive_mutex_unlock(s_lock);
 }
 
-static void shell_help(int argc, const char *argv[])
+static void shell_help(int argc, const char *argv[]) OVE_REQUIRES(s_lock)
 {
 	unsigned int i;
 	(void)argc;
@@ -111,6 +115,7 @@ static int is_blank(char c)
 /* Called with the lock held; a nested dispatch on the same thread restores
  * the outer command's state when it returns. */
 static void run_handler(const struct ove_shell_cmd *cmd, int argc, const char *argv[])
+	OVE_REQUIRES(s_lock)
 {
 	uint8_t was_executing = __atomic_load_n(&s_executing, __ATOMIC_RELAXED);
 
@@ -121,7 +126,7 @@ static void run_handler(const struct ove_shell_cmd *cmd, int argc, const char *a
 }
 
 /* Called with the lock held; tokenizes @p line in place. */
-static void shell_execute(char *line)
+static void shell_execute(char *line) OVE_REQUIRES(s_lock)
 {
 	const char *argv[OVE_SHELL_MAX_ARGS + 1]; /* + the NULL after the last word */
 	int argc = 0;
@@ -160,7 +165,7 @@ static void shell_execute(char *line)
 }
 
 /* Called with the lock held. */
-static void shell_dispatch(const char *src, size_t len)
+static void shell_dispatch(const char *src, size_t len) OVE_REQUIRES(s_lock)
 {
 	char line[SHELL_LINE_MAX];
 
@@ -171,7 +176,7 @@ static void shell_dispatch(const char *src, size_t len)
 	shell_execute(line);
 }
 
-static int register_locked(const struct ove_shell_cmd *cmd)
+static int register_locked(const struct ove_shell_cmd *cmd) OVE_REQUIRES(s_lock)
 {
 	unsigned int i;
 
@@ -199,7 +204,7 @@ int ove_shell_init(void)
 	};
 
 	int rc = shell_lock();
-	if (rc != OVE_OK)
+	if (rc != 0)
 		return rc;
 	cmd_count = 0;
 	line_pos = 0;
@@ -215,7 +220,7 @@ int ove_shell_register_cmd(const struct ove_shell_cmd *cmd)
 	}
 
 	int rc = shell_lock();
-	if (rc != OVE_OK)
+	if (rc != 0)
 		return rc;
 	rc = register_locked(cmd);
 	shell_unlock();
@@ -224,7 +229,7 @@ int ove_shell_register_cmd(const struct ove_shell_cmd *cmd)
 
 void ove_shell_process_char(int c)
 {
-	if (shell_lock() != OVE_OK)
+	if (shell_lock() != 0)
 		return;
 
 	if (c == '\n' || c == '\r') {
@@ -253,7 +258,7 @@ void ove_shell_process_char(int c)
 
 void ove_shell_process_line(const char *line)
 {
-	if (!line || shell_lock() != OVE_OK)
+	if (!line || shell_lock() != 0)
 		return;
 	shell_dispatch(line, strlen(line));
 	shell_unlock();
@@ -264,7 +269,7 @@ void ove_shell_process_line(const char *line)
  * command itself set stays. */
 void ove_shell_process_line_with_hook(const char *line, ove_shell_output_hook_t hook)
 {
-	if (!line || shell_lock() != OVE_OK)
+	if (!line || shell_lock() != 0)
 		return;
 	ove_shell_output_hook_t prev = __atomic_load_n(&s_output_hook, __ATOMIC_RELAXED);
 	__atomic_store_n(&s_output_hook, hook, __ATOMIC_RELEASE);
@@ -277,7 +282,7 @@ void ove_shell_process_line_with_hook(const char *line, ove_shell_output_hook_t 
 void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
 {
 	/* Under the lock, so it is not lost to a dispatch's swap. */
-	int locked = shell_lock() == OVE_OK;
+	int locked = shell_lock() == 0;
 	__atomic_store_n(&s_output_hook, hook, __ATOMIC_RELEASE);
 	if (locked)
 		shell_unlock();

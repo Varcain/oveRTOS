@@ -81,6 +81,7 @@ class ClangTidyTest(unittest.TestCase):
         self.assertEqual(self._lint(), ("clang-tidy", "OK", "1 files"))
         args = (self.root / "tidy-args").read_text(encoding="utf-8").splitlines()
         self.assertEqual(args[:3], ["--quiet", "-p", str(self.root / "output/tests/stub")])
+        self.assertIn("--extra-arg=-Werror=thread-safety", args)
         self.assertEqual(args[-1], str(self.root / "src/foo.c"))
 
     def test_valid_stub_database(self):
