@@ -14,6 +14,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#include "FreeRTOS.h"
+#endif
 #ifdef CONFIG_OVE_RTOS_NUTTX
 #include <pthread.h>
 #include <unistd.h>
@@ -214,6 +217,50 @@ static void test_reuse_backing_after_deinit(void **state)
 		memset(&s_th_storage, 0xa5, sizeof(s_th_storage));
 	}
 }
+
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#define HALF_MIN_STACK_SIZE (configMINIMAL_STACK_SIZE * sizeof(StackType_t) / 2)
+
+_Static_assert(2 * HALF_MIN_STACK_SIZE <= sizeof(s_th_stack),
+	       "s_th_stack must fit the test stack and guard");
+
+static void entry_record_stack_address(void *arg)
+{
+	atomic_uintptr_t *address = arg;
+	volatile uint8_t local = 0;
+	atomic_store(address, (uintptr_t)&local);
+}
+
+static void test_thread_uses_supplied_stack_bounds(void **state)
+{
+	(void)state;
+	atomic_uintptr_t address = 0;
+	ove_thread_t h = NULL;
+	uint8_t *guard = s_th_stack + HALF_MIN_STACK_SIZE;
+	memset(guard, 0x5c, HALF_MIN_STACK_SIZE);
+	OVE_TEST_ASSERT_OK(ove_thread_init(&h, &s_th_storage, "tguard", entry_record_stack_address,
+					   &address, OVE_PRIO_NORMAL, HALF_MIN_STACK_SIZE,
+					   s_th_stack));
+	OVE_TEST_ASSERT_OK(ove_thread_deinit(h));
+
+	uintptr_t base = (uintptr_t)s_th_stack;
+	assert_in_range(atomic_load(&address), base, base + HALF_MIN_STACK_SIZE - 1);
+	for (size_t i = 0; i < HALF_MIN_STACK_SIZE; i++)
+		assert_int_equal(guard[i], 0x5c);
+}
+
+static void test_thread_rejects_zero_stack_size(void **state)
+{
+	(void)state;
+	ove_thread_t h = NULL;
+	memset(s_th_stack + HALF_MIN_STACK_SIZE, 0x5c, HALF_MIN_STACK_SIZE);
+	int rc = ove_thread_init(&h, &s_th_storage, "tzero", entry_set_flag, NULL, OVE_PRIO_NORMAL,
+				 0, s_th_stack);
+	if (rc == OVE_OK)
+		OVE_TEST_ASSERT_OK(ove_thread_deinit(h));
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+}
+#endif
 
 /* 2. entry receives correct arg */
 static void test_entry_arg(void **state)
@@ -1312,6 +1359,10 @@ int test_thread_run(void)
 		cmocka_unit_test(test_get_self_concurrent_first_start),
 		cmocka_unit_test(test_create_destroy),
 		cmocka_unit_test(test_reuse_backing_after_deinit),
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+		cmocka_unit_test(test_thread_uses_supplied_stack_bounds),
+		cmocka_unit_test(test_thread_rejects_zero_stack_size),
+#endif
 		cmocka_unit_test(test_entry_arg),
 		cmocka_unit_test(test_sleep_duration),
 		cmocka_unit_test(test_yield),

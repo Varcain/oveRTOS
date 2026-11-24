@@ -84,7 +84,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 {
 	OVE_RETURN_IF_ISR(OVE_ERR_WOULD_BLOCK);
 	if (handle == NULL || storage == NULL || entry == NULL || stack == NULL ||
-	    (unsigned)priority > OVE_PRIO_MAX) {
+	    stack_size < sizeof(StackType_t) || (unsigned)priority > OVE_PRIO_MAX) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires the stack pointer to be 8-byte aligned at public
@@ -107,8 +107,6 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	ove_state_track_init(&storage->st, OVE_THREAD_STATE_READY);
 
 	uint32_t stack_depth = stack_size / sizeof(StackType_t);
-	if (stack_depth < configMINIMAL_STACK_SIZE)
-		stack_depth = configMINIMAL_STACK_SIZE;
 
 	/* xTaskCreateStatic returns the TCB buffer as the handle.  Store it first:
 	 * a child that outranks its creator runs inside the call and may already

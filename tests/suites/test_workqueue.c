@@ -9,6 +9,10 @@
 #include "../framework/ove_test.h"
 #include "../framework/ove_test_isr.h"
 #include <stdatomic.h>
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#include "FreeRTOS.h"
+#include <string.h>
+#endif
 
 OVE_TEST_STORAGE(ove_workqueue_storage_t, s_wq_storage);
 OVE_TEST_STACK(s_wq_stack, 2048);
@@ -70,6 +74,34 @@ static void test_wq_create_destroy(void **state)
 	assert_non_null(wq);
 	ove_test_workqueue_destroy(wq);
 }
+
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#define HALF_MIN_STACK_SIZE (configMINIMAL_STACK_SIZE * sizeof(StackType_t) / 2)
+
+_Static_assert(2 * HALF_MIN_STACK_SIZE <= sizeof(s_wq_stack),
+	       "s_wq_stack must fit the test stack and guard");
+
+static void test_wq_uses_supplied_stack_bounds(void **state)
+{
+	(void)state;
+	ove_work_t work = NULL;
+	ove_workqueue_t wq = NULL;
+	uint8_t *guard = s_wq_stack + HALF_MIN_STACK_SIZE;
+	memset(guard, 0x5c, HALF_MIN_STACK_SIZE);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&work, &s_work_storage, delayed_handler));
+	OVE_TEST_ASSERT_OK(ove_workqueue_init(&wq, &s_wq_storage, "wqguard", OVE_PRIO_NORMAL,
+					      HALF_MIN_STACK_SIZE, s_wq_stack));
+	int rc = ove_work_submit(wq, work);
+	int ran = rc == OVE_OK && wait_for_flag(&s_work_called, 1, 500);
+	ove_workqueue_deinit(wq);
+	ove_work_deinit(work);
+
+	OVE_TEST_ASSERT_OK(rc);
+	assert_true(ran);
+	for (size_t i = 0; i < HALF_MIN_STACK_SIZE; i++)
+		assert_int_equal(guard[i], 0x5c);
+}
+#endif
 
 static void test_wq_init_free_work(void **state)
 {
@@ -580,6 +612,9 @@ int test_workqueue_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup(test_wq_create_destroy, wq_setup),
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+		cmocka_unit_test_setup(test_wq_uses_supplied_stack_bounds, wq_setup),
+#endif
 		cmocka_unit_test_setup(test_wq_init_free_work, wq_setup),
 		cmocka_unit_test_setup(test_wq_init_static_handle_is_storage, wq_setup),
 		cmocka_unit_test_setup(test_wq_submit_handler_called, wq_setup),

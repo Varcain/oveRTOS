@@ -98,7 +98,8 @@ static TickType_t work_delay_ticks(uint32_t delay_ms)
 int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
 		       ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (wq == NULL || storage == NULL || (unsigned)priority > OVE_PRIO_MAX)
+	if (wq == NULL || storage == NULL || (unsigned)priority > OVE_PRIO_MAX ||
+	    (stack != NULL && stack_size < sizeof(StackType_t)))
 		return OVE_ERR_INVALID_PARAM;
 #ifndef OVE_HEAP_WORKQUEUE
 	if (stack == NULL)
@@ -111,11 +112,11 @@ int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, co
 	storage->running = 1;
 
 	uint32_t stack_depth = stack_size / sizeof(StackType_t);
-	if (stack_depth < configMINIMAL_STACK_SIZE)
-		stack_depth = configMINIMAL_STACK_SIZE;
 
 #ifdef OVE_HEAP_WORKQUEUE
 	if (stack == NULL) {
+		if (stack_depth < configMINIMAL_STACK_SIZE)
+			stack_depth = configMINIMAL_STACK_SIZE;
 		if (xTaskCreate(wq_thread, name ? name : "ove_wq", stack_depth, storage,
 				ove_freertos_map_priority(priority), &storage->task) != pdPASS)
 			return OVE_ERR_NO_MEMORY;
