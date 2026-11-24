@@ -10,12 +10,10 @@
  * @file ove/heap_assert.h
  * @brief Compile-time guard against libc heap allocators in zero-heap mode.
  *
- * When `CONFIG_OVE_ZERO_HEAP=y`, calls to libc malloc / calloc /
- * realloc / zalloc / memalign from oveRTOS application code fail at
- * compile time with a `__attribute__((error))` diagnostic.  This is a
- * hard layer beneath the runtime trap in
- * `backends/common/ove_heap_lock.c` — most violations are caught
- * before the binary is even linked.
+ * When `CONFIG_OVE_ZERO_HEAP=y`, this guard diagnoses libc allocator
+ * calls at compile time using GCC's `error` attribute or Clang's
+ * `unavailable` attribute.  It complements the runtime trap in
+ * `backends/common/ove_heap_lock.c`.
  *
  * Pulled in via `ove/ove.h`, so any TU that includes the umbrella
  * header is covered.  Backend infra that legitimately needs the libc
@@ -36,27 +34,26 @@
 
 #include "ove_config.h"
 
-/* bindgen (libclang) rejects the `__attribute__((error(...)))`
- * redeclarations below as "attribute does not appear on the first
- * declaration" against the libc decls.  GCC accepts that pattern; the
- * Rust crate's build.rs passes -D__BINDGEN__, so skip the redecls there
- * — bindgen never emits libc allocator symbols anyway.
- *
- * Cross-compile clang-tidy (config/ove-cli/ove/lint.py:_clang_tidy_backends)
- * shares clang's strictness: it parses with --target=arm-none-eabi and
- * trips on the same redeclaration pattern.  The lint script defines
- * `__OVE_LINT__` so we can opt out — lint never produces a binary, so
- * the compile-time guard isn't doing anything useful in that pass. */
+/* Bindgen, Zig @cImport, and clang-tidy parse this header without building
+ * a binary, so skip the allocator guard for these tools. */
 #if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__) && \
 	!defined(__OVE_LINT__)
 
 #include <stddef.h>
 
-#define _OVE_HEAP_FORBIDDEN(name)                                                        \
-	__attribute__((error("oveRTOS zero-heap mode forbids libc " name "(); use "      \
-			     "OVE_*_DEFINE_STATIC / ove_*_init() with caller-supplied "  \
-			     "storage, or build with CONFIG_OVE_ZERO_HEAP=n if dynamic " \
-			     "allocation is required.")))
+#define _OVE_HEAP_FORBIDDEN_MSG(name)                               \
+	"oveRTOS zero-heap mode forbids libc " name "(); use "      \
+	"OVE_*_DEFINE_STATIC / ove_*_init() with caller-supplied "  \
+	"storage, or build with CONFIG_OVE_ZERO_HEAP=n if dynamic " \
+	"allocation is required."
+
+#ifdef __clang__
+/* Clang C++ misses std:: names imported by <cstdlib> before this header.
+ * GCC (used by all product builds) also rejects calls through those names. */
+#define _OVE_HEAP_FORBIDDEN(name) __attribute__((unavailable(_OVE_HEAP_FORBIDDEN_MSG(name))))
+#else
+#define _OVE_HEAP_FORBIDDEN(name) __attribute__((error(_OVE_HEAP_FORBIDDEN_MSG(name))))
+#endif
 
 /* C++ libc declarations carry `noexcept`; redeclaring without it is
  * a hard error.  C has no exception specifiers, so the macro expands
@@ -67,12 +64,6 @@
 #define _OVE_HEAP_NOTHROW
 #endif
 
-/*
- * Redeclare libc allocators with the `error` attribute.  GCC + Clang
- * accept redeclarations that add attributes; any subsequent call site
- * that sees this declaration fails compilation with the message
- * above.
- */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -90,6 +81,7 @@ extern void *aligned_alloc(size_t, size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN
 
 #undef _OVE_HEAP_NOTHROW
 #undef _OVE_HEAP_FORBIDDEN
+#undef _OVE_HEAP_FORBIDDEN_MSG
 
 #endif /* CONFIG_OVE_ZERO_HEAP */
 

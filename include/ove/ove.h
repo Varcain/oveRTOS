@@ -91,10 +91,8 @@
  *     happens at link time, not via a runtime jump table.
  *
  *   - **No allocations in hot paths.**  In zero-heap mode
- *     (`CONFIG_OVE_ZERO_HEAP`), `<ove/heap_assert.h>` redeclares the
- *     libc allocators with `__attribute__((error(...)))`, turning
- *     accidental `malloc` / `calloc` / `realloc` reachability into
- *     compile-time failure.
+ *     (`CONFIG_OVE_ZERO_HEAP`), `<ove/heap_assert.h>` diagnoses calls
+ *     to libc allocators at compile time with GCC and Clang.
  *
  *   - **Static analysis on demand.**  `make c-analyze` runs GCC's
  *     `-fanalyzer` over the C source tree (Miri analog for C);
@@ -121,10 +119,8 @@
 
 #include "ove/version.h"
 #include "ove/types.h"
-/* heap_assert.h must come AFTER any system header that declares libc
- * allocators (stdlib.h pulled in by types.h).  In zero-heap mode it
- * redeclares malloc / calloc / realloc / zalloc / memalign with
- * __attribute__((error(...))) so subsequent calls fail compilation. */
+/* GCC's zero-heap allocator diagnostic applies with <stdlib.h> included
+ * before or after this header. */
 #include "ove/heap_assert.h"
 #include "ove/irq.h"
 #include "ove/log.h"

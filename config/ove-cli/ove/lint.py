@@ -281,8 +281,7 @@ def _clang_tidy(ove_dir, check):
     if not files:
         return ("clang-tidy", "FAIL", "no in-scope sources in stub compile database")
 
-    # Clang rejects heap_assert.h's error-attribute redeclarations. Both
-    # clang-tidy steps define __OVE_LINT__ to skip them during analysis.
+    # Skip the compile-only libc allocator guard during clang-tidy analysis.
     # Treat thread-safety diagnostics as errors.
     cmd = ["clang-tidy", "--quiet", "-p", stub_build,
            "--extra-arg=-D__OVE_LINT__", "--extra-arg=-Werror=thread-safety"] + files
@@ -464,9 +463,7 @@ def _clang_tidy_backends(ove_dir, check):
             "--extra-arg=-Wno-unknown-warning-option",
             "--extra-arg=-Wno-unused-command-line-argument",
             "--extra-arg=-ferror-limit=200",
-            # Sentinel honoured by ove/heap_assert.h to skip its libc
-            # allocator redeclarations — clang rejects the `error`
-            # attribute on a redeclaration (see header for rationale).
+            # Skip the compile-only libc allocator guard during analysis.
             "--extra-arg=-D__OVE_LINT__",
         ] + [e["file"] for e in filtered]
         rc, out = _run(cmd, cwd=ove_dir)
