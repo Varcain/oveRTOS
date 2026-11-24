@@ -14486,7 +14486,7 @@ pub const LV_KEY_NEXT: lv_key_t = 9;
 pub const LV_KEY_PREV: lv_key_t = 11;
 pub const LV_KEY_HOME: lv_key_t = 2;
 pub const LV_KEY_END: lv_key_t = 3;
-#[doc = "      DEFINES\n/\n/** Predefined keys to control which Widget has focus via lv_group_send(group, c)"]
+#[doc = " Predefined keys to control which Widget has focus via lv_group_send(group, c)"]
 pub type lv_key_t = core::ffi::c_uint;
 #[doc = "      TYPEDEFS"]
 pub type lv_group_focus_cb_t = Option<unsafe extern "C" fn(arg1: *mut lv_group_t)>;
@@ -15087,7 +15087,7 @@ pub const LV_OBJ_FLAG_USER_2: lv_obj_flag_t = 268435456;
 pub const LV_OBJ_FLAG_USER_3: lv_obj_flag_t = 536870912;
 #[doc = "< Custom flag, free to use by user"]
 pub const LV_OBJ_FLAG_USER_4: lv_obj_flag_t = 1073741824;
-#[doc = "      TYPEDEFS\n/\n/**\n On/Off features controlling the object's behavior.\n OR-ed values are possible\n\n Note: update obj flags corresponding properties below\n whenever add/remove flags or change bit definition of flags."]
+#[doc = " On/Off features controlling the object's behavior.\n OR-ed values are possible\n\n Note: update obj flags corresponding properties below\n whenever add/remove flags or change bit definition of flags."]
 pub type lv_obj_flag_t = core::ffi::c_uint;
 unsafe extern "C" {
     #[doc = " Create a base object (a rectangle)\n @param parent    pointer to a parent object. If NULL then a screen will be created.\n @return          pointer to the new object"]

@@ -8,6 +8,21 @@ use std::env;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+#[derive(Debug)]
+struct LvglCommentCallbacks;
+
+impl bindgen::callbacks::ParseCallbacks for LvglCommentCallbacks {
+    fn process_comment(&self, comment: &str) -> Option<String> {
+        // Drop decorative LVGL section headings merged into the next doc comment.
+        if !matches!(comment.lines().next()?.trim(), "DEFINES" | "TYPEDEFS") {
+            return None;
+        }
+        let (_, description) = comment.rsplit_once("\n/\n/**")?;
+        let description = description.strip_prefix('\n').unwrap_or(description);
+        Some(description.to_owned())
+    }
+}
+
 #[allow(clippy::too_many_lines, clippy::large_stack_frames)]
 fn main() {
     // Doc-only builds: skip bindgen, emit all feature flags so every
@@ -368,6 +383,7 @@ fn main() {
         let lvgl_parent = env::var("LVGL_PARENT_PATH")
             .expect("LVGL_PARENT_PATH env var must be set by build system");
         builder = builder
+            .parse_callbacks(Box::new(LvglCommentCallbacks))
             .clang_args([format!("-I{lvgl_include}"), format!("-I{lvgl_parent}")])
             // Static inline helpers like lv_obj_set_style_pad_all have no linkable symbol.
             // Bindgen skips them, so the binding composes them in Rust.
