@@ -84,16 +84,17 @@ fn test_contention_timeout() {
         }
         Thread::sleep_ms(1);
     }
-    assert_eq!(HOLD_LOCKED.load(Ordering::SeqCst), 1);
+    let locked = HOLD_LOCKED.load(Ordering::SeqCst);
 
     // Now try to lock with timeout — should fail
     let result = mtx.try_with_lock_for(core::time::Duration::from_millis(50), |_| Ok(()));
-    assert!(matches!(result, Err(Error::Timeout)), "expected timeout");
 
-    // Release the holder
+    // Release and join the holder before asserting.
     HOLD_RELEASE.store(1, Ordering::Release);
     drop(th);
     drop(_guard);
+    assert_eq!(locked, 1);
+    assert!(matches!(result, Err(Error::Timeout)), "expected timeout");
 }
 
 fn test_lock_zero_timeout() {

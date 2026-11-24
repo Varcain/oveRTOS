@@ -12,6 +12,15 @@ use std::sync::atomic::{AtomicI32, Ordering};
 static FLAG: AtomicI32 = AtomicI32::new(0);
 static KEEP_RUNNING: AtomicI32 = AtomicI32::new(0);
 
+// Declare after the handle so unwinding stops the worker before joining it.
+struct StopSpin;
+
+impl Drop for StopSpin {
+    fn drop(&mut self) {
+        KEEP_RUNNING.store(0, Ordering::SeqCst);
+    }
+}
+
 fn entry_set_flag() {
     FLAG.store(1, Ordering::Release);
 }
@@ -73,6 +82,7 @@ fn test_set_priority() {
 fn test_get_state_running() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"t8").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let _stop = StopSpin;
     Thread::sleep_ms(20);
     let st = th.get_state();
     assert!(
@@ -101,6 +111,7 @@ fn test_get_state_terminated() {
 fn test_stack_usage() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"t10").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let _stop = StopSpin;
     Thread::sleep_ms(10);
     match th.get_stack_headroom() {
         Ok(headroom) => assert_eq!(th.get_stack_usage(), headroom),
@@ -131,6 +142,7 @@ fn test_suspend_resume() {
 fn test_runtime_stats() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"t16").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let _stop = StopSpin;
     Thread::sleep_ms(20);
     let result = th.get_runtime_stats();
     assert!(result.is_ok() || matches!(result, Err(Error::NotSupported)));
@@ -167,6 +179,7 @@ fn test_thread_debug_spawned() {
     // in the Debug output — that field no longer exists.  Now assert the
     // new JoinHandle shape: type name + handle + detached state.
     let th = Thread::builder().name(c"dbg").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let _stop = StopSpin;
     let s = format!("{:?}", th);
     assert!(s.contains("JoinHandle"), "debug output missing type name: {s}");
     assert!(s.contains("handle"), "debug output missing handle field: {s}");
@@ -191,6 +204,7 @@ fn test_thread_debug_spawned() {
 fn test_get_state_suspended_arm() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"susp").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let _stop = StopSpin;
     Thread::sleep_ms(10);
     th.suspend().unwrap();
     // Poll briefly — POSIX backend may take a moment to report suspension.
@@ -267,6 +281,7 @@ fn test_thread_list_with_spawned() {
     // Rust name-parsing + ThreadInfo construction branch to run.
     KEEP_RUNNING.store(1, Ordering::SeqCst);
     let th = Thread::builder().name(c"enum").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
+    let _stop = StopSpin;
     Thread::sleep_ms(20);
 
     let mut buf = [ThreadInfo::empty(); 16];
