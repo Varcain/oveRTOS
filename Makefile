@@ -401,6 +401,11 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	DOCS_RS=1 cargo doc \
 		--features std,async,async-net,async-net-qemu-shm,async-net-stm32f7-eth,embedded-hal,embedded-hal-async,embedded-io,embedded-io-async,fugit \
 		--manifest-path bindings/rust/ove/Cargo.toml
+	@if [ ! -f dl/lvgl/lvgl.h ]; then \
+		LVGL_URL=$$(python3 scripts/manifest_query.py libraries.lvgl.url) && \
+		LVGL_TAG=$$(python3 scripts/manifest_query.py libraries.lvgl.version) && \
+		git clone --depth 1 --branch "$$LVGL_TAG" "$$LVGL_URL" dl/lvgl; \
+	fi
 	@echo "==> Generating Zig API docs (autodoc)..."
 	@mkdir -p output/docs/zig-staging
 	@cp bindings/zig/ove/ove_config_docs.h output/docs/zig-staging/ove_config.h
@@ -411,7 +416,8 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	echo "  Using: $$ZIG"; \
 	$$ZIG build-lib bindings/zig/ove/src/root.zig \
 		-femit-docs=output/docs/zig -fno-emit-bin \
-		-isystem include -isystem output/docs/zig-staging
+		-isystem include -isystem output/docs/zig-staging \
+		-lc -isystem dl -isystem tests/host
 	@echo "==> Extracting Kconfig reference..."
 	python3 scripts/kconfig_doc_extract.py
 	@echo "==> Building MkDocs site..."
