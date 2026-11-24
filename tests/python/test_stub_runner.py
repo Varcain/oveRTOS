@@ -4,10 +4,12 @@
 #
 # This file is part of oveRTOS.
 
+import os
 import unittest
 from pathlib import Path
 from shlex import quote
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from ove import test as ove_test
 
@@ -24,6 +26,32 @@ def _run_fake_binary(output, returncode, **kwargs):
 
 
 class StubRunnerTest(unittest.TestCase):
+    def test_missing_clang_skips_msan_locally(self):
+        with (
+            TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, clear=True),
+            mock.patch.object(ove_test.shutil, "which", return_value=None),
+            mock.patch.object(ove_test, "_cmake_build") as build,
+        ):
+            results = ove_test.test_stub_msan(directory, Path(directory) / "output")
+
+        self.assertEqual(results, ove_test.TestResults(suite="stub-msan", skipped=1))
+        build.assert_not_called()
+
+    def test_missing_clang_fails_msan_in_ci(self):
+        with (
+            TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, {"CI": "true"}),
+            mock.patch.object(ove_test.shutil, "which", return_value=None),
+            mock.patch.object(ove_test, "_cmake_build") as build,
+        ):
+            results = ove_test.test_stub_msan(directory, Path(directory) / "output")
+
+        self.assertEqual(results, ove_test.TestResults(
+            suite="stub-msan", failed=1, failed_names=["<clang not installed>"],
+        ))
+        build.assert_not_called()
+
     def test_missing_extra_binary_is_a_failure(self):
         results = ove_test.TestResults(suite="stub")
         with TemporaryDirectory() as build:

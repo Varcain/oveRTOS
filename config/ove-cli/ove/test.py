@@ -482,8 +482,11 @@ def test_stub_msan(ove_dir, output_dir):
     this to the C++ wrapper tests.
     """
     if not shutil.which("clang"):
-        logger.warning("MSan requires clang; skipping test-stub-msan")
-        return ("stub-msan", "SKIP", "clang not installed")
+        logger.warning("Cannot run test-stub-msan: clang not installed")
+        if os.environ.get("CI"):
+            return TestResults(suite="stub-msan", failed=1,
+                               failed_names=["<clang not installed>"])
+        return TestResults(suite="stub-msan", skipped=1)
     build = os.path.join(output_dir, "tests", "stub_msan")
     flags = (
         "-fsanitize=memory -fsanitize-memory-track-origins=2 "
