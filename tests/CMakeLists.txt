@@ -230,8 +230,7 @@ target_include_directories(ove_test_systick_q32 PRIVATE ${OVE_ROOT}/backends/com
 # Per-state snapshot the RTOS backends report from ove_thread_list().
 add_executable(ove_test_state_track_read ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_state_track_read.c)
 target_include_directories(ove_test_state_track_read PRIVATE ${OVE_INCLUDE})
-# Guest side of the sim shared-memory event ring: never overwrite unread
-# events, refuse and count what does not fit.  The shim directory comes
+# Guest event backpressure and audio wire layout. The shim directory comes
 # first, so its ove_config.h, ove/thread.h and semihosting.h are used.
 add_executable(ove_test_sim_shm_backpressure ${CMAKE_CURRENT_SOURCE_DIR}/obs/test_sim_shm_backpressure.c)
 target_include_directories(ove_test_sim_shm_backpressure PRIVATE
@@ -239,7 +238,9 @@ target_include_directories(ove_test_sim_shm_backpressure PRIVATE
     ${OVE_ROOT}/sim/src
     ${OVE_ROOT}/sim/include
     ${OVE_INCLUDE}
+    ${cmocka_SOURCE_DIR}/include
 )
+target_link_libraries(ove_test_sim_shm_backpressure PRIVATE cmocka-static)
 # Profiler drain against a transport that refuses events: refused samples
 # are reported once and stay out of the ring's overflow counter.
 add_executable(ove_test_sim_profiler_refused

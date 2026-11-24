@@ -14,7 +14,7 @@
  *
  *   /dev/shm/ove-sim   — plugin events/commands (ove_sim_shm.h layout)
  *   /dev/shm/ove-fb    — XRGB8888 framebuffer (fb_header + pixels)
- *   /dev/shm/ove-audio — PCM ring buffers (audio_shm_header + 2 rings)
+ *   /dev/shm/ove-audio — output then input (ove_sim_audio_ring layout)
  *
  * Whoever starts the emulator creates these files before the guest runs:
  * qemu-run.sh natively, sim/dashboard/qemu-wasm.js when QEMU itself runs
@@ -29,6 +29,7 @@
 #include "ove/sim/ove_sim_transport.h"
 #include "ove/sim/ove_sim_shm.h"
 #include "ove/thread.h"
+#include "ove_sim_audio_ring.h"
 #include "semihosting.h"
 
 #include <string.h>
@@ -47,26 +48,6 @@ struct fb_header {
 	uint32_t format;
 	uint32_t dirty;
 };
-
-/* ── Audio protocol (matches qemu_audio_shm.h) ───────────────────── */
-
-#define AUDIO_PATH "/dev/shm/ove-audio"
-#define AUDIO_MAGIC 0x4F564155 /* "OVAU" */
-#define AUDIO_HDR_SIZE 64
-#define AUDIO_RING_SIZE (1u << 17) /* 128 KB per direction */
-#define AUDIO_OUT_RING AUDIO_HDR_SIZE
-#define AUDIO_IN_RING (AUDIO_HDR_SIZE + AUDIO_RING_SIZE)
-
-/* Offsets into audio header. */
-#define AUDIO_OFF_MAGIC 0
-#define AUDIO_OFF_SAMPLE_RATE 4
-#define AUDIO_OFF_CHANNELS 8
-#define AUDIO_OFF_BIT_DEPTH 10
-#define AUDIO_OFF_RING_SIZE 16
-#define AUDIO_OFF_OUT_WPOS 20
-#define AUDIO_OFF_OUT_RPOS 24
-#define AUDIO_OFF_IN_WPOS 28
-#define AUDIO_OFF_IN_RPOS 32
 
 /* ── Private state ────────────────────────────────────────────────── */
 
@@ -87,6 +68,7 @@ struct shm_guest_priv {
 	uint32_t audio_out_wpos;
 	uint32_t audio_in_rpos;
 	uint8_t audio_init_done;
+	uint8_t audio_out_format_set;
 };
 
 /* ── Semihosting ring helpers ─────────────────────────────────────── */
@@ -99,7 +81,7 @@ static void sh_write_u32(int fd, uint32_t offset, uint32_t val)
 
 static uint32_t sh_read_u32(int fd, uint32_t offset)
 {
-	uint32_t val;
+	uint32_t val = 0;
 	sh_seek(fd, offset);
 	sh_read(fd, &val, sizeof(val));
 	return val;
@@ -152,7 +134,7 @@ static int guest_open(struct ove_sim_transport *t, const char *endpoint)
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 
 	/* Open plugin event/command SHM. */
-	p->sim_fd = sh_open(SIM_SHM_PATH, 7); /* r+b */
+	p->sim_fd = sh_open(SIM_SHM_PATH, 7); /* w+b (truncates) */
 	if (p->sim_fd >= 0) {
 		/* Write header. */
 		struct sim_shm_header hdr;
@@ -168,7 +150,7 @@ static int guest_open(struct ove_sim_transport *t, const char *endpoint)
 	}
 
 	/* Open framebuffer SHM. */
-	p->fb_fd = sh_open(FB_PATH, 7); /* r+b */
+	p->fb_fd = sh_open(FB_PATH, 7); /* w+b (truncates) */
 
 	/* Audio SHM opened lazily in push/pull. */
 	p->audio_fd = -1;
@@ -311,88 +293,101 @@ static int guest_flush_display(struct ove_sim_transport *t, const void *fb, size
 
 /* ── Audio push/pull (semihosting to /dev/shm/ove-audio) ──────────── */
 
-static void guest_audio_init(struct shm_guest_priv *p, uint32_t sr, uint16_t ch, uint16_t bd)
+static void guest_audio_init(struct shm_guest_priv *p)
 {
 	if (p->audio_init_done)
 		return;
 
-	p->audio_fd = sh_open(AUDIO_PATH, 7); /* r+b */
+	p->audio_fd = sh_open("/dev/shm/ove-audio", 7); /* w+b (truncates) */
 	if (p->audio_fd < 0)
 		return;
 
-	/* Write header. */
-	uint8_t hdr[AUDIO_HDR_SIZE];
-	memset(hdr, 0, sizeof(hdr));
-	uint32_t magic = AUDIO_MAGIC;
-	uint32_t ring_size = AUDIO_RING_SIZE;
-	memcpy(hdr + AUDIO_OFF_MAGIC, &magic, 4);
-	memcpy(hdr + AUDIO_OFF_SAMPLE_RATE, &sr, 4);
-	memcpy(hdr + AUDIO_OFF_CHANNELS, &ch, 2);
-	memcpy(hdr + AUDIO_OFF_BIT_DEPTH, &bd, 2);
-	memcpy(hdr + AUDIO_OFF_RING_SIZE, &ring_size, 4);
+	uint8_t hdr[OVE_RING_OFF_BUF] = {0};
+	uint32_t ring_size = OVE_SIM_AUDIO_RING_SIZE;
+	memcpy(hdr + OVE_RING_OFF_SIZE, &ring_size, sizeof(ring_size));
 	sh_seek(p->audio_fd, 0);
-	sh_write(p->audio_fd, hdr, AUDIO_HDR_SIZE);
+	sh_write(p->audio_fd, hdr, sizeof(hdr));
 
+	/* Preserve any input the host has already queued. */
+	const uint32_t input = sizeof(struct ove_sim_audio_ring);
+	sh_write_u32(p->audio_fd, input + OVE_RING_OFF_SIZE, ring_size);
+	p->audio_in_rpos = sh_read_u32(p->audio_fd, input + OVE_RING_OFF_READ_POS);
 	p->audio_out_wpos = 0;
-	p->audio_in_rpos = 0;
+	p->audio_out_format_set = 0;
 	p->audio_init_done = 1;
 }
 
 static int guest_push_audio(struct ove_sim_transport *t, const void *samples, size_t len,
 			    uint32_t sample_rate, uint16_t channels, uint16_t bit_depth)
 {
+	/* Playback may lap the host. Limit each push to one ring. */
+	if (len > OVE_SIM_AUDIO_RING_SIZE)
+		return OVE_OK;
+
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
-	guest_audio_init(p, sample_rate, channels, bit_depth);
+	guest_audio_init(p);
 	if (p->audio_fd < 0)
 		return OVE_OK;
 
+	if (!p->audio_out_format_set) {
+		sh_seek(p->audio_fd, OVE_RING_OFF_SAMPLE_RATE);
+		if (sh_write(p->audio_fd, &sample_rate, sizeof(sample_rate)))
+			return OVE_OK;
+		sh_seek(p->audio_fd, OVE_RING_OFF_BIT_DEPTH);
+		if (sh_write(p->audio_fd, &bit_depth, sizeof(bit_depth)))
+			return OVE_OK;
+		/* Publish channels last for the host's format check. */
+		sh_seek(p->audio_fd, OVE_RING_OFF_CHANNELS);
+		if (sh_write(p->audio_fd, &channels, sizeof(channels)))
+			return OVE_OK;
+		p->audio_out_format_set = 1;
+	}
+
 	/* Write data to ring, checking semihosting errors. */
-	uint32_t mask = AUDIO_RING_SIZE - 1;
+	uint32_t count = (uint32_t)len;
+	uint32_t mask = OVE_SIM_AUDIO_RING_SIZE - 1;
 	uint32_t pos = p->audio_out_wpos & mask;
-	uint32_t first = AUDIO_RING_SIZE - pos;
+	uint32_t first = OVE_SIM_AUDIO_RING_SIZE - pos;
 	const uint8_t *src = (const uint8_t *)samples;
 
-	if (first >= (uint32_t)len) {
-		sh_seek(p->audio_fd, AUDIO_OUT_RING + pos);
-		int err = sh_write(p->audio_fd, src, (uint32_t)len);
+	if (first >= count) {
+		sh_seek(p->audio_fd, OVE_RING_OFF_BUF + pos);
+		int err = sh_write(p->audio_fd, src, count);
 		if (err)
 			return OVE_OK; /* semihosting failed */
 	} else {
-		sh_seek(p->audio_fd, AUDIO_OUT_RING + pos);
+		sh_seek(p->audio_fd, OVE_RING_OFF_BUF + pos);
 		int err1 = sh_write(p->audio_fd, src, first);
-		sh_seek(p->audio_fd, AUDIO_OUT_RING);
-		int err2 = sh_write(p->audio_fd, src + first, (uint32_t)len - first);
+		sh_seek(p->audio_fd, OVE_RING_OFF_BUF);
+		int err2 = sh_write(p->audio_fd, src + first, count - first);
 		if (err1 || err2)
 			return OVE_OK;
 	}
 
-	p->audio_out_wpos += (uint32_t)len;
-	sh_write_u32(p->audio_fd, AUDIO_OFF_OUT_WPOS, p->audio_out_wpos);
+	p->audio_out_wpos += count;
+	sh_write_u32(p->audio_fd, OVE_RING_OFF_WRITE_POS, p->audio_out_wpos);
 	return OVE_OK;
 }
 
 static size_t guest_pull_audio(struct ove_sim_transport *t, void *samples, size_t len)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
-	/* Open audio fd if not yet done (source may run before sink). */
-	if (p->audio_fd < 0 && !p->audio_init_done)
-		guest_audio_init(p, 16000, 1, 16);
+	guest_audio_init(p);
 	if (p->audio_fd < 0)
 		return 0;
 
-	uint32_t wpos = sh_read_u32(p->audio_fd, AUDIO_OFF_IN_WPOS);
+	const uint32_t input = sizeof(struct ove_sim_audio_ring);
+	uint32_t wpos = sh_read_u32(p->audio_fd, input + OVE_RING_OFF_WRITE_POS);
 	uint32_t avail = wpos - p->audio_in_rpos;
-	if (avail > AUDIO_RING_SIZE)
-		avail = 0;
-	if (avail == 0)
+	if (avail == 0 || avail > OVE_SIM_AUDIO_RING_SIZE)
 		return 0;
 
-	uint32_t to_read = avail < (uint32_t)len ? avail : (uint32_t)len;
-	sh_ring_read(p->audio_fd, AUDIO_IN_RING, AUDIO_RING_SIZE, p->audio_in_rpos, samples,
-		     to_read);
+	uint32_t to_read = len < avail ? (uint32_t)len : avail;
+	sh_ring_read(p->audio_fd, input + OVE_RING_OFF_BUF, OVE_SIM_AUDIO_RING_SIZE,
+		     p->audio_in_rpos, samples, to_read);
 	p->audio_in_rpos += to_read;
 
-	sh_write_u32(p->audio_fd, AUDIO_OFF_IN_RPOS, p->audio_in_rpos);
+	sh_write_u32(p->audio_fd, input + OVE_RING_OFF_READ_POS, p->audio_in_rpos);
 	return to_read;
 }
 
