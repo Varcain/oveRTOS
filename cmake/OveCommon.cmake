@@ -801,6 +801,15 @@ macro(ove_link_firmware)
             "LINKER:--wrap=calloc"
             "LINKER:--wrap=realloc"
         )
+        # libstdc++'s aligned new uses memalign, which the wrap misses. The
+        # nothrow forms catch bad_alloc thrown through this TU, and ARM EHABI
+        # cannot unwind a -fno-exceptions frame, so it needs -fexceptions.
+        if(CMAKE_CXX_COMPILER_LOADED)
+            set(_OVE_CXX_NEW ${OVE_DIR}/backends/freertos/freertos_cxx_new.cpp)
+            target_sources(${_OVE_PROJ_NAME}.elf PRIVATE ${_OVE_CXX_NEW})
+            set_source_files_properties(${_OVE_CXX_NEW} PROPERTIES
+                COMPILE_OPTIONS "-Werror;-fexceptions")
+        endif()
     endif()
 
     # QEMU run target (if qemu-run.sh exists at board level)

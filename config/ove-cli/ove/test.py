@@ -578,12 +578,13 @@ def test_cpp_freertos_posix(ove_dir, output_dir):
         result.failed += max(parsed.failed, summary or 0, int(bool(parsed.failed_names)))
         result.failed_names.extend(parsed.failed_names)
         if zero_heap == "OFF":
-            rc = _run_owned_test_process([build / "ove_test_freertos_libc_malloc"],
-                                         env=dict(os.environ), timeout=60)
-            result.passed += int(rc == 0)
-            result.failed += int(rc != 0)
-            if rc != 0:
-                result.failed_names.append(f"<FreeRTOS libc realloc ASan: exit {rc}>")
+            for exe, label in (("ove_test_freertos_libc_malloc", "FreeRTOS libc realloc ASan"),
+                               ("ove_test_freertos_cxx_new", "FreeRTOS aligned operator new")):
+                rc = _run_owned_test_process([build / exe], env=dict(os.environ), timeout=60)
+                result.passed += int(rc == 0)
+                result.failed += int(rc != 0)
+                if rc != 0:
+                    result.failed_names.append(f"<{label}: exit {rc}>")
     return result
 
 

@@ -75,6 +75,15 @@ if(NOT OVE_ZERO_HEAP)
         $<TARGET_PROPERTY:ove_freertos_posix,INCLUDE_DIRECTORIES>)
     target_compile_options(ove_test_freertos_libc_malloc PRIVATE -fsanitize=address -fno-omit-frame-pointer)
     target_link_options(ove_test_freertos_libc_malloc PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+
+    # Link libstdc++ statically and wrap malloc as the firmware does.
+    add_executable(ove_test_freertos_cxx_new cxx_new_test.cpp
+        ${FREERTOS_PATH}/portable/MemMang/heap_4.c
+        ${FREERTOS_BACKEND}/freertos_libc_malloc.c ${FREERTOS_BACKEND}/freertos_cxx_new.cpp)
+    target_include_directories(ove_test_freertos_cxx_new PRIVATE
+        $<TARGET_PROPERTY:ove_freertos_posix,INCLUDE_DIRECTORIES>)
+    target_link_options(ove_test_freertos_cxx_new PRIVATE -static-libstdc++
+        LINKER:--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc)
 endif()
 
 set(OVE_DIR "${OVE_ROOT}")
