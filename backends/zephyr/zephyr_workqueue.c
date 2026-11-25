@@ -36,7 +36,8 @@ static void zephyr_work_handler(struct k_work *work)
 int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
 		       ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (wq == NULL || storage == NULL || (unsigned)priority > OVE_PRIO_MAX) {
+	if (wq == NULL || storage == NULL || (unsigned)priority > OVE_PRIO_MAX ||
+	    (stack != NULL && stack_size == 0)) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 

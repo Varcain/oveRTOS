@@ -284,6 +284,9 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	if (stack != NULL && stack_size == 0) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	/* NuttX can use the caller's stack, but still allocates a TCB and task
 	 * group internally. The latter remains the zero-heap limitation
 	 * documented in thread_start(). */

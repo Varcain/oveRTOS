@@ -15,7 +15,12 @@
 #endif
 
 OVE_TEST_STORAGE(ove_workqueue_storage_t, s_wq_storage);
+#ifdef CONFIG_OVE_RTOS_ZEPHYR
+/* Fit the backend default if the zero-size rejection regresses. */
+OVE_TEST_STACK(s_wq_stack, 4096);
+#else
 OVE_TEST_STACK(s_wq_stack, 2048);
+#endif
 OVE_TEST_STORAGE(ove_work_storage_t, s_work_storage);
 OVE_TEST_STORAGE(ove_work_storage_t, s_work_storages[3]);
 
@@ -100,6 +105,18 @@ static void test_wq_uses_supplied_stack_bounds(void **state)
 	assert_true(ran);
 	for (size_t i = 0; i < HALF_MIN_STACK_SIZE; i++)
 		assert_int_equal(guard[i], 0x5c);
+}
+#endif
+
+#ifndef CONFIG_OVE_RTOS_POSIX
+static void test_wq_rejects_zero_stack_size(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	int rc = ove_workqueue_init(&wq, &s_wq_storage, "wqzero", OVE_PRIO_NORMAL, 0, s_wq_stack);
+	if (rc == OVE_OK)
+		ove_workqueue_deinit(wq);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 }
 #endif
 
@@ -614,6 +631,9 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_create_destroy, wq_setup),
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 		cmocka_unit_test_setup(test_wq_uses_supplied_stack_bounds, wq_setup),
+#endif
+#ifndef CONFIG_OVE_RTOS_POSIX
+		cmocka_unit_test_setup(test_wq_rejects_zero_stack_size, wq_setup),
 #endif
 		cmocka_unit_test_setup(test_wq_init_free_work, wq_setup),
 		cmocka_unit_test_setup(test_wq_init_static_handle_is_storage, wq_setup),

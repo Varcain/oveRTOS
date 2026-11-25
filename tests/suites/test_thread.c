@@ -23,7 +23,12 @@
 #endif
 
 OVE_TEST_STORAGE(ove_thread_storage_t, s_th_storage);
+#ifdef CONFIG_OVE_RTOS_ZEPHYR
+/* Fit the backend default if the zero-size rejection regresses. */
+OVE_TEST_STACK(s_th_stack, 8192);
+#else
 OVE_TEST_STACK(s_th_stack, 4096);
+#endif
 
 static atomic_int g_flag;
 static atomic_intptr_t g_arg_val;
@@ -248,17 +253,19 @@ static void test_thread_uses_supplied_stack_bounds(void **state)
 	for (size_t i = 0; i < HALF_MIN_STACK_SIZE; i++)
 		assert_int_equal(guard[i], 0x5c);
 }
+#endif
 
+#ifndef CONFIG_OVE_RTOS_POSIX
 static void test_thread_rejects_zero_stack_size(void **state)
 {
 	(void)state;
 	ove_thread_t h = NULL;
-	memset(s_th_stack + HALF_MIN_STACK_SIZE, 0x5c, HALF_MIN_STACK_SIZE);
 	int rc = ove_thread_init(&h, &s_th_storage, "tzero", entry_set_flag, NULL, OVE_PRIO_NORMAL,
 				 0, s_th_stack);
 	if (rc == OVE_OK)
 		OVE_TEST_ASSERT_OK(ove_thread_deinit(h));
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+	assert_null(h);
 }
 #endif
 
@@ -1361,6 +1368,8 @@ int test_thread_run(void)
 		cmocka_unit_test(test_reuse_backing_after_deinit),
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
 		cmocka_unit_test(test_thread_uses_supplied_stack_bounds),
+#endif
+#ifndef CONFIG_OVE_RTOS_POSIX
 		cmocka_unit_test(test_thread_rejects_zero_stack_size),
 #endif
 		cmocka_unit_test(test_entry_arg),

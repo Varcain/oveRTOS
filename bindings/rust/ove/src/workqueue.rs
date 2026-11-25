@@ -52,6 +52,7 @@ impl Workqueue {
     }
 
     /// Create from caller-provided static storage and stack.
+    /// `stack_size` must be greater than zero.
     ///
     /// # Safety
     /// - `storage` must outlive the `Workqueue` and not be shared.

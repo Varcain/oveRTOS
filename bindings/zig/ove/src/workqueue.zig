@@ -26,6 +26,7 @@ const Duration = @import("time.zig").Duration;
 /// laid out inline in the allocator-managed backing struct.  Both heap
 /// and zero-heap modes use the substrate's `_init` path against a stack
 /// + storage block drawn from the user's `std.mem.Allocator`.
+/// `stack_size` must be greater than zero.
 ///
 /// ```zig
 /// var wq = try ove.Workqueue(2048).create(allocator, "bench_wq", .normal);

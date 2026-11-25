@@ -25,12 +25,12 @@ Six targets total — one per RTOS backend, two heap modes each:
 
 | Target | Tests | Notes |
 |---|---|---|
-| `test-renode-stm32f746-freertos` | 377 | FreeRTOS heap-mode; full HAL + lwIP linked |
-| `test-renode-stm32f746-freertos-zeroheap` | 335 | FreeRTOS static-only allocation |
-| `test-renode-stm32f746-zephyr` | 354 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
-| `test-renode-stm32f746-zephyr-zeroheap` | 314 | Zephyr with a zero-size kernel heap pool |
-| `test-renode-stm32f746-nuttx` | 360 | NuttX `stm32f746g-disco:nsh` |
-| `test-renode-stm32f746-nuttx-zeroheap` | 318 | Same with `CONFIG_OVE_ZERO_HEAP` |
+| `test-renode-stm32f746-freertos` | 378 | FreeRTOS heap-mode; full HAL + lwIP linked |
+| `test-renode-stm32f746-freertos-zeroheap` | 336 | FreeRTOS static-only allocation |
+| `test-renode-stm32f746-zephyr` | 357 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
+| `test-renode-stm32f746-zephyr-zeroheap` | 317 | Zephyr with a zero-size kernel heap pool |
+| `test-renode-stm32f746-nuttx` | 362 | NuttX `stm32f746g-disco:nsh` |
+| `test-renode-stm32f746-nuttx-zeroheap` | 320 | Same with `CONFIG_OVE_ZERO_HEAP` |
 
 Group invocation:
 

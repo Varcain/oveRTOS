@@ -198,6 +198,9 @@ int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, co
 	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	if (stack != NULL && stack_size == 0) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 
 	memset(storage, 0, sizeof(*storage));
 	int ret = wq_start(storage, name, priority, stack_size, stack);

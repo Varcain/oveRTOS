@@ -478,6 +478,7 @@ inline fn ctxPointer(comptime user_param_count: usize, args: anytype) ?*anyopaqu
 
 /// RTOS thread.  `stack_size` is the user-requested stack in bytes; the
 /// actual allocation may be larger to satisfy Zephyr MPU alignment.
+/// `stack_size` must be greater than zero.
 ///
 /// Stack + substrate storage live in allocator-managed memory; the
 /// substrate's `_init` path runs against them.  Works uniformly in

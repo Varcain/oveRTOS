@@ -687,7 +687,7 @@ impl Builder {
     /// `'static`-lifetime workers or as a stack-local for scoped
     /// workers — the borrow checker enforces "storage outlives handle"
     /// either way.  Builder's `stack_size` field is ignored; the
-    /// type-level `N` is authoritative.
+    /// type-level `N` is authoritative and must be greater than zero.
     ///
     /// ```ignore
     /// static GFX: ThreadStorage<4096> = ThreadStorage::new();
@@ -768,6 +768,7 @@ impl Builder {
 /// satisfy backend alignment (Zephyr MPU rounds up to the next power of
 /// two plus a 128-byte FPU guard region; other backends use 8-byte AAPCS
 /// alignment).
+/// `STACK_SIZE` must be greater than zero.
 ///
 /// ```ignore
 /// static GFX_STORAGE: ThreadStorage<4096> = ThreadStorage::new();
