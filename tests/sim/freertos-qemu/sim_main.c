@@ -16,7 +16,11 @@
 #include <stdlib.h>
 
 #ifdef OVE_COVERAGE
+/* gcov at -O0 enlarges the instrumented frames. */
+#define RUNNER_STACK_DEPTH (configMINIMAL_STACK_SIZE * 12)
 extern void __gcov_dump(void);
+#else
+#define RUNNER_STACK_DEPTH (configMINIMAL_STACK_SIZE * 8)
 #endif
 
 extern void xPortSysTickHandler(void);
@@ -159,12 +163,12 @@ int main(void)
 	}
 #ifdef CONFIG_OVE_ZERO_HEAP
 	static StaticTask_t runner_tcb;
-	static StackType_t runner_stack[configMINIMAL_STACK_SIZE * 8];
-	xTaskCreateStatic(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
-			  tskIDLE_PRIORITY + 1, runner_stack, &runner_tcb);
+	static StackType_t runner_stack[RUNNER_STACK_DEPTH];
+	xTaskCreateStatic(test_runner_task, "tests", RUNNER_STACK_DEPTH, NULL, tskIDLE_PRIORITY + 1,
+			  runner_stack, &runner_tcb);
 #else
-	xTaskCreate(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
-		    tskIDLE_PRIORITY + 1, NULL);
+	xTaskCreate(test_runner_task, "tests", RUNNER_STACK_DEPTH, NULL, tskIDLE_PRIORITY + 1,
+		    NULL);
 #endif
 	vTaskStartScheduler();
 	return 0;
