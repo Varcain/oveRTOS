@@ -50,7 +50,8 @@ oveRTOS exposes **two** TCP/IP stacks via separate Kconfig options. Pick one per
 | Boards | FreeRTOS, NuttX, and Zephyr on boards with a supported network interface | qemu-mps2-an500 (FreeRTOS+Zephyr+NuttX), stm32f746g-discovery (FreeRTOS) — hardware-verified |
 | RAM | ~30-50 KB lwIP heap | ~25 KB total (3 KB StackResources + smoltcp bufs + DMA descriptors) |
 
-The `example_net` manifests exclude `qemu-mps2-an521` (Zephyr) and the `web` board variant.
+The `example_net` and `example_async_net` manifests exclude `qemu-mps2-an521` (Zephyr)
+and the `web` and `web-an521` browser variants.
 
 **Use blocking when:** you're writing synchronous code, need all five protocol layers production-ready, are using C / C++ / Zig, or need cross-RTOS portability on hardware where embassy-net isn't ported yet.
 

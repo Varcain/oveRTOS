@@ -342,6 +342,16 @@ class IncompatibleBoardsTest(unittest.TestCase):
         for board in ("qemu", "qemu-mps2-an500"):
             self.assertIsNone(self._rules_out(board, "freertos", ["web"]))
 
+    def test_network_example_manifests_exclude_web_an521(self):
+        apps = allconfigs._discover_apps(self.OVE_DIR)
+        examples = [(app, entries) for app, entries, _ in apps
+                    if app.startswith(("example_net_", "example_async_net_"))]
+        self.assertEqual(len(examples), 10)
+        for app, entries in examples:
+            with self.subTest(app=app):
+                self.assertEqual(
+                    self._rules_out("web-an521", "zephyr", entries), "web-an521")
+
 
 if __name__ == "__main__":
     unittest.main()
