@@ -8,7 +8,7 @@
 # isolation would instead let the store return (segv prints its "FAILED" line), fault the kernel
 # (HardFault / Default_Handler / panic), or hang — all of which this test catches.
 #
-# The keystrokes are fed by a plain shell pipeline (printf ... | ove run > log), NOT a Python
+# The keystrokes are fed by a plain shell pipeline (printf ... | ove run --headless > log), NOT a Python
 # pty/subprocess reader: QEMU's mps2-an500 ARM-MPU *emulation* is timing-fragile, and any
 # host-side reader (a pty's line discipline, a draining thread, even a Python parent's
 # GIL/scheduler jitter) perturbs it enough to corrupt the unrelated phase-1 program. The shell
@@ -31,7 +31,7 @@ seq = (r"printf 'root\n'; sleep 5; "
        r"printf 'segv; echo SEGV_RC=$?\n'; sleep 4; "
        r"printf 'uname -a\n'; sleep 3; "
        r"printf 'poweroff\n'; sleep 4")
-cmd = f"( {seq} ) | QEMU_TIMEOUT=75 .venv/bin/ove run > {log} 2>&1"
+cmd = f"( {seq} ) | QEMU_TIMEOUT=75 .venv/bin/ove run --headless > {log} 2>&1"
 
 try:
     subprocess.run(["/bin/sh", "-c", cmd], timeout=120)

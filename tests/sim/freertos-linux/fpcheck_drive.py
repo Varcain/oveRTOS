@@ -17,7 +17,7 @@ try:
     env = os.environ.copy()
     env["QEMU_TIMEOUT"] = "75"
     with open(log, "wb") as output:
-        subprocess.run([".venv/bin/ove", "run"], stdin=subprocess.DEVNULL,
+        subprocess.run([".venv/bin/ove", "run", "--headless"], stdin=subprocess.DEVNULL,
                        stdout=output, stderr=subprocess.STDOUT, env=env,
                        timeout=100)
 except subprocess.TimeoutExpired:

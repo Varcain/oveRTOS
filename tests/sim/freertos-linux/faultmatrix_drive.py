@@ -78,7 +78,7 @@ seq.append(r"printf 'ps; echo PS_AFTER\n'; sleep 3")
 seq.append(r"printf 'uname -a\n'; sleep 3")
 seq.append(r"printf 'poweroff\n'; sleep 4")
 
-cmd = f"( {'; '.join(seq)} ) | QEMU_TIMEOUT=160 .venv/bin/ove run > {log} 2>&1"
+cmd = f"( {'; '.join(seq)} ) | QEMU_TIMEOUT=160 .venv/bin/ove run --headless > {log} 2>&1"
 try:
     subprocess.run(["/bin/sh", "-c", cmd], timeout=240)
 except subprocess.TimeoutExpired:

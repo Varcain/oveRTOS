@@ -69,7 +69,7 @@ STEPS = [
 
 def run_qemu(log):
     seq = "; ".join(rf"printf '{c}\n'; sleep {s}" for c, s in STEPS)
-    cmd = f"( {seq} ) | QEMU_TIMEOUT=200 .venv/bin/ove run > {log} 2>&1"
+    cmd = f"( {seq} ) | QEMU_TIMEOUT=200 .venv/bin/ove run --headless > {log} 2>&1"
     try:
         subprocess.run(["/bin/sh", "-c", cmd], timeout=280)
     except subprocess.TimeoutExpired:

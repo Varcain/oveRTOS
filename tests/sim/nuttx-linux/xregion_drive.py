@@ -32,7 +32,7 @@ seq = (r"printf 'root\n'; sleep 5; "
        r"printf 'xregion; echo XREG_RC=$?\n'; sleep 4; "
        r"printf 'uname -a\n'; sleep 3; "
        r"printf 'poweroff\n'; sleep 4")
-cmd = f"( {seq} ) | QEMU_TIMEOUT=75 .venv/bin/ove run > {log} 2>&1"
+cmd = f"( {seq} ) | QEMU_TIMEOUT=75 .venv/bin/ove run --headless > {log} 2>&1"
 
 try:
     subprocess.run(["/bin/sh", "-c", cmd], timeout=120)
