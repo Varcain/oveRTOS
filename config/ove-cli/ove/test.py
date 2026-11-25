@@ -3819,7 +3819,8 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     framebuffer smoke: /usr/bin/fbtest reads the panel geometry via FBIOGET_*SCREENINFO,
     fills an RGB565 gradient, and verifies a pwrite()/pread() round-trip (LVGL's fbdev
     write path). tests/sim/freertos-linux/fbtest_drive.py boots, logs in, runs fbtest,
-    and asserts geometry + PASS + a crw /dev/fb0 node + shell survival (exit 0 = pass).
+    and asserts geometry + PASS + a crw /dev/fb0 node + shell survival + no
+    /dev/shm/ove-fb left by the headless run (exit 0 = pass).
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/fbtest
     (the overtos board's post-build compiles it) plus QEMU and the slow uClinux boot."""

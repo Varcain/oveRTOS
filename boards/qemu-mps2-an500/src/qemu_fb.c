@@ -50,7 +50,7 @@ static int g_shm = -1;
 int ove_hal_fb_init(void)
 {
 	memset(g_fb, 0, sizeof(g_fb));
-	g_shm = sh_open("/dev/shm/ove-fb", 7); /* "r+b" */
+	g_shm = sh_open("/dev/shm/ove-fb", 3); /* "r+b" (no create or truncate) */
 	return OVE_OK;
 }
 

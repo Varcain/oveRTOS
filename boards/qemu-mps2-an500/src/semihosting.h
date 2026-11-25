@@ -31,7 +31,10 @@ static inline uint32_t sh_call(uint32_t op, void *arg)
 	return r0;
 }
 
-/* Open a file on the host.  mode: 0=r, 1=rb, 4=w, 5=wb, 6=r+, 7=r+b */
+/*
+ * Open a file on the host with one of these modes.
+ * 0=r, 1=rb, 2=r+, 3=r+b, 4=w, 5=wb, 6=w+, 7=w+b, 8=a, 9=ab, 10=a+, 11=a+b
+ */
 static inline int sh_open(const char *path, int mode)
 {
 	uint32_t args[3];
