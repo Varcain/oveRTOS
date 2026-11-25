@@ -10,6 +10,9 @@ from pathlib import Path
 from macro_controls import verify as macro_controls
 from type_controls import verify as type_controls
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config/ove-cli"))
+from ove.cargo_artifacts import cargo_libs
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 TARGET = "x86_64-unknown-linux-gnu"
@@ -47,11 +50,10 @@ def main():
             results.append(subprocess.run([str(binary)], env=env, stdin=subprocess.DEVNULL, timeout=30, check=False).returncode == 0)
             print(base.name, "PASS" if results[-1] else "FAIL", flush=True)
             if not args.sanitize:
-                subprocess.run(["cargo", "build", "--locked", "--lib", "--target", TARGET, "--manifest-path",
-                                str(ROOT / "bindings/rust/ove/Cargo.toml"), "--no-default-features",
-                                "--features", "std,async" if optional else "std"], env=env, timeout=240, check=True)
-                library = target / TARGET / "debug/libove.rlib"
-                results += type_controls(library, base / "types", env, zero=zero, asynchronous=optional)
+                libs, search = cargo_libs(["cargo", "build", "--locked", "--lib", "--target", TARGET, "--manifest-path",
+                                           str(ROOT / "bindings/rust/ove/Cargo.toml"), "--no-default-features",
+                                           "--features", "std,async" if optional else "std"], env)
+                results += type_controls(libs["ove"], base / "types", env, search=search, zero=zero, asynchronous=optional)
     if not args.sanitize:
         results += macro_controls(args.output.resolve() / "macro", dict(os.environ))
     failed = results.count(False) + (not results)

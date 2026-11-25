@@ -917,7 +917,6 @@ def _test_rust_lvgl(ove_dir, output_dir, sanitize=False):
             if not sanitize and rc == 0:
                 types = _run_owned_test_process(
                     [sys.executable, os.path.join(ove_dir, "tests", "rust_lvgl", "type_checks.py"),
-                     os.path.join(target, "debug", "deps"),
                      os.path.join(output_dir, "tests", "rust_lvgl_types" + suffix)],
                     env=env, timeout=120)
                 result.passed += int(types == 0)

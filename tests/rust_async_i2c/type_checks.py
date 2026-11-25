@@ -8,6 +8,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config/ove-cli"))
+from ove.cargo_artifacts import cargo_libs
+
 root = Path(os.environ["OVE_DIR"])
 work = Path(sys.argv[1]).resolve()
 work.mkdir(parents=True, exist_ok=True)
@@ -36,9 +39,8 @@ for method, arguments in [("write", "0x42,&[1]"), ("read", "0x42,&mut [0]"), ("w
     cases["shared_" + method] = ("fn x(s:&ove::AsyncI2c){let _=s." + method + "(" + arguments + ");}", False, "mutable")
 
 zero = "#define CONFIG_OVE_ZERO_HEAP 1" in (Path(os.environ["OVE_GEN_DIR"]) / "ove_config.h").read_text()
-deps = Path(os.environ["CARGO_TARGET_DIR"]) / "debug/deps"
-def artifact(name):
-    return str(max(deps.glob("lib" + name + "-*.rlib"), key=lambda path: path.stat().st_mtime_ns))
+libs, search = cargo_libs(["cargo", "test", "--no-run", "--manifest-path",
+                           str(root / "tests/rust_async_i2c/Cargo.toml"), "--test", "i2c"], os.environ)
 
 rows = []
 selected = cases | {"heap_ctor": ('fn x(){let _=ove::AsyncI2c::new(ove::i2c::Config::default());}', not zero, 'new' if zero else '')}
@@ -46,8 +48,8 @@ for label, (source, accepted, diagnostic) in selected.items():
     file = work / (label + ".rs")
     file.write_text("#![allow(dead_code,unused_variables)]\n" + source + "\n")
     command = ["rustc", "--edition", "2024", "--crate-type", "lib", "--crate-name", "contract_" + label,
-               "--emit", "metadata", "-L", "dependency=" + str(deps),
-               "--extern", "ove=" + artifact("ove"), "--extern", "embedded_hal_async=" + artifact("embedded_hal_async"),
+               "--emit", "metadata", *search,
+               "--extern", "ove=" + libs["ove"], "--extern", "embedded_hal_async=" + libs["embedded_hal_async"],
                str(file), "-o", str(work / (label + ".rmeta"))]
     if zero:
         command += ["--cfg", "zero_heap"]

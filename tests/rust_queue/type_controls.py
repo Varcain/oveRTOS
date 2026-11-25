@@ -79,9 +79,9 @@ pub fn control(q: &Queue<u32, 1>) {
 }
 
 
-def verify(library, output, env, *, zero=False, asynchronous=False):
+def verify(library, output, env, *, search, zero=False, asynchronous=False):
     """Compile each control against the actual library; return one result per case."""
-    library, output = Path(library), Path(output)
+    output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     results = []
     for name, source in CASES.items():
@@ -93,11 +93,8 @@ def verify(library, output, env, *, zero=False, asynchronous=False):
         path.write_text(source)
         command = ["rustc", "--edition=2024", "--crate-type=lib", "--emit=metadata",
                    "--cap-lints=allow", "--error-format=json", "--crate-name", name,
-                   "--extern", "ove=" + str(library), "-L", "dependency=" + str(library.parent / "deps"),
+                   "--extern", f"ove={library}", *search,
                    str(path), "-o", str(output / (name + ".rmeta"))]
-        # An explicit target keeps host procedural macros in a separate tree,
-        # even when that target is the host architecture.
-        command += ["-L", "dependency=" + str(Path(env["CARGO_TARGET_DIR"]) / library.parent.name / "deps")]
         p = subprocess.run(command, env=env, capture_output=True,
                            timeout=60, check=False)
         diagnostics = [json.loads(line) for line in p.stderr.splitlines() if line.startswith(b"{")]

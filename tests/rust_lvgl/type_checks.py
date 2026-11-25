@@ -6,14 +6,19 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config/ove-cli"))
+from ove.cargo_artifacts import cargo_libs
+
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("deps", type=Path)
 parser.add_argument("output", type=Path)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
-library = max(args.deps.glob("libove-*.rlib"), key=lambda p: p.stat().st_mtime_ns)
+libs, search = cargo_libs(["cargo", "test", "--locked", "--no-run", "--manifest-path",
+                           str(Path(__file__).with_name("Cargo.toml"))], os.environ)
+library = Path(libs["ove"])
 cases = []
 for method in ["init_layer", "finish_layer"]:
     body = f"canvas.{method}(core::ptr::null_mut());"
@@ -37,7 +42,7 @@ for name, source, expected in cases:
     path = args.output / (name + ".rs")
     path.write_text(source)
     command = ["rustc", "--edition", "2024", "--crate-type", "lib", "--emit", "metadata",
-               "--crate-name", name, "-L", "dependency=" + str(args.deps),
+               "--crate-name", name, *search,
                "--extern", "ove=" + str(library), str(path), "-o", str(args.output / (name + ".rmeta"))]
     result = subprocess.run(command, capture_output=True, text=True, env=dict(os.environ), timeout=30, check=False)
     (args.output / (name + ".log")).write_text(result.stdout + result.stderr)
