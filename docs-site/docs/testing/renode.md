@@ -25,8 +25,8 @@ Six targets total — one per RTOS backend, two heap modes each:
 
 | Target | Tests | Notes |
 |---|---|---|
-| `test-renode-stm32f746-freertos` | 373 | FreeRTOS heap-mode; full HAL + lwIP linked |
-| `test-renode-stm32f746-freertos-zeroheap` | 331 | FreeRTOS static-only allocation |
+| `test-renode-stm32f746-freertos` | 377 | FreeRTOS heap-mode; full HAL + lwIP linked |
+| `test-renode-stm32f746-freertos-zeroheap` | 335 | FreeRTOS static-only allocation |
 | `test-renode-stm32f746-zephyr` | 354 | Zephyr `stm32f746g_disco`, heap pool 128 KiB |
 | `test-renode-stm32f746-zephyr-zeroheap` | 314 | Zephyr with a zero-size kernel heap pool |
 | `test-renode-stm32f746-nuttx` | 360 | NuttX `stm32f746g-disco:nsh` |

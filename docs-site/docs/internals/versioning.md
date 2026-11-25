@@ -57,12 +57,12 @@ To bump:
    `bindings/rust/ove/Cargo.toml` (`"MAJOR.MINOR"`).
 3. Change the `OVE_VERSION*` constants in `bindings/rust/ove/src/bindings_stub.rs`,
    the stand-in for bindgen's output that docs.rs builds use.
-4. Refresh the tracked `Cargo.lock` files that pin the crates
-   (`bindings/rust/ove`, `bindings/rust/ove-macros`,
-   `bindings/rust/ove-allocator`, `tests/rust`, `tests/benchmarks/rust` and
-   the `apps/rust/*/*` examples), for instance with
-   `cargo metadata --offline --format-version 1 >/dev/null` in each, which
-   re-reads the path dependencies' versions without updating anything else.
+4. Refresh every tracked `Cargo.lock` that pins the local crates. From the
+   repository root, list them with
+   `git grep -lE '^name = "ove(-macros|-allocator)?"' -- '*Cargo.lock'`, then
+   run `cargo metadata --offline --format-version 1 >/dev/null` in each listed
+   file's directory; it re-reads the path dependencies' versions without
+   updating anything else.
    The lint's clippy pass builds with `--locked` and fails on a stale lock.
 5. Run `make lint`. Its `version-pin` check names any manifest, or the stub,
    that still disagrees, and the Rust crate fails to compile when its

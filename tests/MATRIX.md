@@ -81,8 +81,8 @@ firmware that would flash on a real Discovery board.
 
 | Target | Suite count | CI trigger |
 |---|---|---|
-| `renode-stm32f746-freertos` | 373 | push to main + PRs + `workflow_dispatch` |
-| `renode-stm32f746-freertos-zeroheap` | 331 | push to main + PRs + `workflow_dispatch` |
+| `renode-stm32f746-freertos` | 377 | push to main + PRs + `workflow_dispatch` |
+| `renode-stm32f746-freertos-zeroheap` | 335 | push to main + PRs + `workflow_dispatch` |
 
 Both FreeRTOS variants share `tests/sim/renode-stm32f746-freertos` and
 select the allocation mode with `OVE_ZERO_HEAP`.
