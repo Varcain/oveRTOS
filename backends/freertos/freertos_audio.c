@@ -54,7 +54,7 @@ struct i2s_sink_ctx {
 	struct ove_audio_graph *graph;
 	unsigned int frames_per_period;
 	unsigned int thread_priority;
-	unsigned int thread_stack_size;
+	unsigned int thread_stack_depth;
 	TaskHandle_t task_handle; /* what the RX ISR notifies; NULL when stopped */
 	TaskHandle_t task;	  /* the engine task, until stop deletes it */
 	volatile int stop_req;
@@ -266,7 +266,7 @@ static int i2s_sink_start(void *ctx)
 	if (sc->task == NULL)
 		return OVE_ERR_NO_MEMORY;
 #else
-	if (xTaskCreate(audio_engine_task, "Audio", sc->thread_stack_size, sc, sc->thread_priority,
+	if (xTaskCreate(audio_engine_task, "Audio", sc->thread_stack_depth, sc, sc->thread_priority,
 			&sc->task) != pdPASS) {
 		sc->task = NULL;
 		return OVE_ERR_NO_MEMORY;
@@ -383,8 +383,13 @@ int ove_audio_device_sink_n(struct ove_audio_graph *g, const struct ove_audio_de
 		ctx->frames_per_period = g->frames_per_period;
 		ctx->thread_priority = cfg->thread_priority ? cfg->thread_priority
 							    : DEFAULT_AUDIO_PRIORITY;
-		ctx->thread_stack_size = cfg->thread_stack_size ? cfg->thread_stack_size
-								: DEFAULT_AUDIO_STACK;
+		ctx->thread_stack_depth = DEFAULT_AUDIO_STACK;
+		/* Convert the API's byte size to FreeRTOS stack words. */
+		if (cfg->thread_stack_size) {
+			ctx->thread_stack_depth = cfg->thread_stack_size / sizeof(StackType_t);
+			if (ctx->thread_stack_depth < configMINIMAL_STACK_SIZE)
+				ctx->thread_stack_depth = configMINIMAL_STACK_SIZE;
+		}
 
 		/* TX slot mapping: WM8994 DAC1 is on AIF1 Timeslot 0, which
 		 * in the 4-slot 64-bit frame corresponds to slot 0 (L) and
