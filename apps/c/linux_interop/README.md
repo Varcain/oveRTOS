@@ -665,9 +665,10 @@ On STM32F746G-DISCO, `/usr/bin/sigctx` provides the corresponding hardware
 regression for nested signal return. It nests SIGUSR2 inside SIGUSR1 and checks
 both complete VFP contexts after LIFO return.
 
-`ove run` connects QEMU's board-owned personality UART (phase 1 is
-deterministic; phase 2 is your login session; the default credentials are
-`root`/`root`):
+`ove run` attaches the guest UART to the terminal; on FreeRTOS an500 it also
+serves the dashboard with the UART in its console box (`make run HEADLESS=1`
+for the terminal only). Phase 1 is deterministic and phase 2 is your login
+session, with default credentials `root`/`root`.
 
 ```
 === oveRTOS demo: a native RTOS thread + a Linux program, two-way ===
@@ -724,7 +725,7 @@ only the current Linux process.
 
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
 board (no dedicated board); when `CONFIG_OVE_LINUX` is set it (a) drops the sim
-framework + dashboard/trace/profiler (the personality is headless), (b) drops the
+framework, trace and profiler, (b) drops the
 `vPortSVCHandler → SVC_Handler` alias so LXP's FreeRTOS port
 (`modules/lxp/ports/freertos/lxp_freertos_port.c`)
 owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to

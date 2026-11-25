@@ -55,8 +55,7 @@ if(OVE_WATCHDOG)
     ove_add_board_sources(../qemu_watchdog.c)
 endif()
 
-# The Linux personality build is headless (no sim display/audio). Everything
-# below is the sim framework, used by the normal (non-personality) an500 builds.
+# Linux personality builds can use the host dashboard without the sim framework.
 if(OVE_LINUX)
     # The rootfs cpio is XIP'd from PSRAM @ 0x60000000, where QEMU's `-device loader` places it
     # at reset (see qemu-run.sh) — it is NOT embedded in the ELF (which would overflow the 4 MB
@@ -96,7 +95,7 @@ if(OVE_AUDIO)
 endif()
 ove_add_board_sources(${SIM_QEMU_SOURCES})
 
-endif() # OVE_LINUX (sim framework excluded for the headless personality build)
+endif() # OVE_LINUX (Linux builds omit the sim framework)
 
 # lwIP for networking
 if(OVE_NET)

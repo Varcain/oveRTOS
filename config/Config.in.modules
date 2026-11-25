@@ -1099,8 +1099,7 @@ config OVE_SIM
       HAL implementations with plugin-aware versions that support
       virtual peripherals, sensor injection, and host-side
       web dashboard visualization.
-      The QEMU MPS2-AN500 board selects it (except for the headless
-      Linux personality).
+      The QEMU MPS2-AN500 board selects it for non-Linux builds.
 
 config OVE_SIM_WEB
     bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
@@ -1126,12 +1125,14 @@ config OVE_SIM_WEB
 
 config OVE_SIM_DASHBOARD
     bool "Web dashboard"
-    default y if OVE_SIM
-    depends on OVE_SIM
+    default y
+    depends on OVE_SIM || (OVE_LINUX && OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_FREERTOS)
     help
       Enable the browser-based simulation dashboard served over
       a local WebSocket server. Displays framebuffer, audio,
       LED states, GPIO matrix, and sensor controls.
+      FreeRTOS an500 Linux personality builds use the dashboard console
+      box for the guest UART without enabling the simulation framework.
 
 endmenu
 

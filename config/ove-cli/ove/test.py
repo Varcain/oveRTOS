@@ -3841,6 +3841,22 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
                             "qemu-freertos-linux-fbtest", cwd=ove_dir)
 
 
+def test_qemu_freertos_linux_dashboard(ove_dir, output_dir):
+    """Manual dashboard console smoke. Needs the Buildroot rootfs, QEMU,
+    a free loopback port and no running dashboard."""
+    ove = venv.bin_path(ove_dir, "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    run([ove, "download"], cwd=ove_dir)
+    run([ove, "configure"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "dashboard_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-dashboard")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "dashboard.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-dashboard", cwd=ove_dir)
+
+
 def test_qemu_freertos_linux_lvbench(ove_dir, output_dir):
     """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the LVGL
     benchmark: /usr/bin/lvbench (a stock LVGL fbdev program, lv_demo_benchmark)
@@ -4387,6 +4403,7 @@ TEST_TARGETS = {
     "qemu-freertos-linux-faultmatrix": test_qemu_freertos_linux_faultmatrix,
     "linux-abi-switch": test_linux_abi_switch,
     "qemu-freertos-linux-fbtest": test_qemu_freertos_linux_fbtest,
+    "qemu-freertos-linux-dashboard": test_qemu_freertos_linux_dashboard,
     "qemu-freertos-linux-lvbench": test_qemu_freertos_linux_lvbench,
     "qemu-freertos-linux-evread": test_qemu_freertos_linux_evread,
     "qemu-nuttx-linux-segv": test_qemu_nuttx_linux_segv,

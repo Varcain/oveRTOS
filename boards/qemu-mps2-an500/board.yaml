@@ -6,12 +6,10 @@ board:
   title: QEMU MPS2-AN500 (Cortex-M7)
   description: |
     ARM MPS2-AN500 board emulated by QEMU (Cortex-M7).
-    Uses semihosting for I/O and sim dashboard for display
-    (the Linux personality build is headless — semihosting console only).
+    Uses semihosting for I/O and the sim dashboard for display.
+    Linux builds put the guest console on UART1; FreeRTOS Linux builds also show it in the dashboard.
   kconfig: |
-    # The Linux personality is headless: no sim framework, trace stream, or
-    # profiler (all of which pull the sim display transport). Normal an500
-    # builds keep the sim dashboard.
+    # FreeRTOS Linux builds can use the dashboard without the sim framework.
     select OVE_SIM if !OVE_LINUX
     # Debug by default, for the dashboard's debugger.  The browser bundle
     # runs under an interpreter and wants the optimised build instead.

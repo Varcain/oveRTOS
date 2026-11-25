@@ -3,7 +3,8 @@
 #
 # Usage: qemu-run.sh <elf-file> [--headless] [--machine <name>] [extra-qemu-args...]
 #
-# The display viewer launches automatically. Pass --headless to disable it.
+# The dashboard starts by default for sim builds. Linux builds also need
+# CONFIG_OVE_SIM_DASHBOARD=y. Pass --headless to disable the dashboard.
 #
 # Options:
 #   --headless       Run without the display viewer.
@@ -68,10 +69,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# ── Linux personality build: headless, interactive UART console ──────────────
-# The personality is no-sim: the guest console is CMSDK UART1 on stdio, and
-# semihosting goes to a null chardev (see PERS_ARGS below). Detected via
-# CONFIG_OVE_LINUX in the workspace .config.
+# ── Linux personality build: interactive UART console ────────────────────────
+# Without the sim framework, CMSDK UART1 uses the dashboard console pipe
+# when enabled and stdio otherwise. Semihosting output goes to a null chardev.
 # Locate the workspace holding this ELF. It sits under <ws>/images/, under
 # <ws>/images/<abi-variant>/ when the float ABI is recorded only in .config, or
 # under <ws>/build/... when a test runs a freshly built ELF in place. Walk up to
@@ -94,6 +94,7 @@ ove_ws_dir() {
 }
 OVE_WS_DIR="$(ove_ws_dir "${ELF}" || true)"
 PERSONALITY_CFG="${OVE_WS_DIR:-$(dirname "$(realpath "${ELF}")")}/.config"
+PERS_MODE=""
 if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_CFG}"; then
     # The rootfs cpio is XIP'd from PSRAM @ 0x60000000 (not embedded in the ELF — keeps the
     # 11 MB rootfs off the 4 MB internal flash; the QEMU analog of the STM32 QSPI-NOR rootfs).
@@ -122,15 +123,21 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         "${ROOTFS_LIMIT}" "${ROOTFS_FIT_DIR}/rootfs-fit.cpio")" || exit 1
     PERS_ARGS=(
         -machine "${QEMU_MACHINE}" -m 16
-        # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive
-        # top's 'q' quit). UART0 (serial0) = the engine's own console, discarded.
-        # Semihosting → null (kept only for the clean SYS_EXIT).
-        -semihosting-config enable=on,chardev=c0 -chardev null,id=c0
-        -serial none -serial stdio -monitor none -display none
+        # Discard engine output. Reserve serial1 (CMSDK UART1) for the guest console.
+        -chardev null,id=c0 -serial none -monitor none -display none
         -kernel "${ELF}"
         # Rootfs XIP'd from PSRAM: raw cpio loaded to 0x60000000 at reset.
         -device "loader,file=${ROOTFS_CPIO},addr=${ROOTFS_BASE},force-raw=on"
     )
+    PERS_MODE=headless
+    if [ "${HEADLESS}" -eq 0 ] && grep -q '^CONFIG_OVE_SIM_DASHBOARD=y' "${PERSONALITY_CFG}"; then
+        PERS_MODE=dashboard
+    fi
+fi
+
+if [ "${PERS_MODE}" = headless ]; then
+    # Keep semihosting for SYS_EXIT and UART1 on pollable stdio (e.g. top's 'q').
+    PERS_ARGS+=( -semihosting-config enable=on,chardev=c0 -serial stdio )
     # GDB server (enabled by default; --no-gdb turns it off): just opens the port, the firmware
     # still boots normally. Enables turnkey FDPIC source-level debugging via
     # config/scripts/ove-fdpic-gdb.py (`target remote 127.0.0.1:GDB_PORT`
@@ -179,15 +186,20 @@ if [ -n "${STALE_QEMU}" ]; then
     sleep 0.3
 fi
 
-QEMU_ARGS=(
-    -M "${QEMU_MACHINE}"
-    -nographic
-    -kernel "${ELF}"
-    -monitor none
-)
+if [ "${PERS_MODE}" = dashboard ]; then
+    QEMU_ARGS=( "${PERS_ARGS[@]}" )
+else
+    QEMU_ARGS=(
+        -M "${QEMU_MACHINE}"
+        -nographic
+        -kernel "${ELF}"
+        -monitor none
+    )
+fi
 
 VIEWER_PID=""
 NET_BRIDGE_PID=""
+FB_PATH=""
 AUDIO_PATH="/dev/shm/ove-audio"
 NET_PATH="/dev/shm/ove-net"
 SIM_PATH="/dev/shm/ove-sim"
@@ -209,7 +221,7 @@ cleanup() {
     if [ -n "${SAVED_TTY:-}" ]; then
         stty "${SAVED_TTY}" 2>/dev/null || true
     fi
-    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" "${LOG_FIFO:-}"
+    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" "${LOG_FIFO:-}" "${FB_PATH:-}"
     if [ -n "${UART_PIPE:-}" ]; then
         rm -f "${UART_PIPE}.in" "${UART_PIPE}.out"
     fi
@@ -239,7 +251,7 @@ if [ "${HEADLESS}" -eq 0 ]; then
     truncate -s 16 "${INPUT_PATH}"
 
     QEMU_ARGS+=(
-        -semihosting-config "enable=on,target=native,arg=${FB_PATH}"
+        -semihosting-config "enable=on,target=native,arg=${FB_PATH}${PERS_MODE:+,chardev=c0}"
     )
 
     # GDB server: enabled by default (firmware boots normally, dashboard can pause).
@@ -307,7 +319,8 @@ if [ "${HEADLESS}" -eq 0 ]; then
                   --log-fd 0 --build-dir "${BUILD_DIR}"
                   --console-fifo "${UART_PIPE}.in"
                   --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
-    if [ "${NO_GDB}" -eq 0 ]; then
+    # Leave the Linux gdbstub available for FDPIC debugging.
+    if [ "${NO_GDB}" -eq 0 ] && [ "${PERS_MODE}" != dashboard ]; then
         VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" )
     fi
 

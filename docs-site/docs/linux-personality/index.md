@@ -61,6 +61,9 @@ ove download && ove build && ove flash
 #   console: /dev/ttyACM0 @ 115200
 ```
 
+On FreeRTOS an500, `make run` serves the dashboard with the guest console.
+Use `make run HEADLESS=1` for a terminal-only console.
+
 Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the
 shell: `uname -a`, `ls -l /`, `ps`, `top`, `cat`, a pipe (`seq 5 | wc -l`), a
 background job, `vi`, then `poweroff`.

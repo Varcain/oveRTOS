@@ -43,7 +43,7 @@ int main(void)
 	 * initialise_monitor_handles() is needed.  See picolibc/semihost.
 	 */
 #ifndef CONFIG_OVE_LINUX
-	ove_sim_board_init(); /* sim display/audio transport; personality is headless */
+	ove_sim_board_init(); /* sim display/audio transport for non-Linux builds */
 #endif
 	ove_app_run();
 	return 0;

@@ -2,7 +2,8 @@
 
 The simulation framework provides virtual peripheral emulation for the QEMU MPS2-AN500 board. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
 
-The an500 board selects `CONFIG_OVE_SIM` (except for the headless Linux personality build).
+The an500 board selects `CONFIG_OVE_SIM` for non-Linux builds. FreeRTOS an500
+Linux personality builds can use the dashboard console without the sim framework.
 
 ## Architecture
 
@@ -125,7 +126,8 @@ Three **workspaces** set up the inspector for a task: **Run** (console), **Debug
 
 The board drawing and the tools on offer come from `manifest.json`, built from `board.yaml` and the build's `.config` by `config/scripts/ove_manifest.py`. The local bridge serves it; a `web` bundle ships it next to `index.html`.
 
-The dashboard is served automatically when running a QEMU build:
+The dashboard is served automatically for QEMU builds with `CONFIG_OVE_SIM_DASHBOARD=y`.
+Use `make run HEADLESS=1` for a terminal-only run.
 
 ```bash
 make run   # serves the dashboard on http://localhost:8081 (OVE_DASHBOARD_PORT=<n> for another port)
@@ -195,9 +197,9 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `CONFIG_OVE_SIM` | bool | selected by the an500 | Enable the simulation plugin framework |
+| `CONFIG_OVE_SIM` | bool | selected by the an500 for non-Linux builds | Enable the simulation plugin framework |
 | `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`; `web-an521.zephyr.<app>` for Zephyr's Linux personality) |
-| `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` if SIM | Enable the browser-based dashboard |
+| `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` when available | Enable the dashboard with `CONFIG_OVE_SIM` or on FreeRTOS an500 Linux builds |
 | `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` if SIM | Per-thread state time tracking (prerequisite for trace and profiler) |
 | `CONFIG_OVE_TRACE_STREAM` | bool | `y` if SIM | Emit state transitions into the trace ring |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
