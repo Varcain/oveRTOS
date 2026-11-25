@@ -83,6 +83,13 @@ static int in_reserved(const void *p)
 	return cp >= g_zh_reserved_buf && cp < g_zh_reserved_buf + sizeof(g_zh_reserved_buf);
 }
 
+int ove_heap_lock_post_owns_(const void *p);
+
+int ove_heap_lock_post_owns_(const void *p)
+{
+	return p != NULL && in_reserved(p);
+}
+
 void *ove_heap_lock_post_alloc_(size_t n)
 {
 	zh_reserved_heap_init();

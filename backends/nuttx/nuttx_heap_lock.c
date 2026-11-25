@@ -43,6 +43,7 @@ void *ove_heap_lock_post_calloc_(size_t nmemb, size_t n);
 void *ove_heap_lock_post_realloc_(void *p, size_t n);
 void *ove_heap_lock_post_memalign_(size_t alignment, size_t size);
 int ove_heap_lock_post_free_(void *p);
+int ove_heap_lock_post_owns_(const void *p);
 
 /* ── Weak __real_* fallbacks for libc malloc family ──────────────────
  * Used only when --wrap=malloc is NOT in effect — those calls resolve
@@ -132,6 +133,8 @@ void *__wrap_kmm_calloc(size_t nmemb, size_t n)
 void *__wrap_kmm_realloc(void *p, size_t n)
 {
 	if (ove_heap_lock_trapped_())
+		return ove_heap_lock_post_realloc_(p, n);
+	if (ove_heap_lock_post_owns_(p))
 		return ove_heap_lock_post_realloc_(p, n);
 	return __real_kmm_realloc(p, n);
 }

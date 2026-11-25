@@ -147,6 +147,14 @@ __attribute__((weak)) int ove_heap_lock_post_free_(void *p)
 	return 0;
 }
 
+int ove_heap_lock_post_owns_(const void *p);
+
+__attribute__((weak)) int ove_heap_lock_post_owns_(const void *p)
+{
+	(void)p;
+	return 0;
+}
+
 #ifdef CONFIG_OVE_RTOS_NUTTX
 /* Pull nuttx_zh_reserved_heap.c.obj out of libapps_ove_app.a so its
  * strong overrides for ove_heap_lock_post_*_ beat the weak NULL stubs
@@ -199,6 +207,8 @@ void *__wrap_calloc(size_t nmemb, size_t n)
 void *__wrap_realloc(void *p, size_t n)
 {
 	if (ove_heap_lock_trapped_())
+		return ove_heap_lock_post_realloc_(p, n);
+	if (ove_heap_lock_post_owns_(p))
 		return ove_heap_lock_post_realloc_(p, n);
 	return __real_realloc(p, n);
 }

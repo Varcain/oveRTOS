@@ -10,6 +10,13 @@
 
 void *ove_heap_lock_post_realloc_(void *p, size_t n);
 int ove_heap_lock_post_free_(void *p);
+void ove_heap_lock_test_begin(void);
+int ove_heap_lock_test_end(void);
+void *__wrap_malloc(size_t n);
+void *__wrap_realloc(void *p, size_t n);
+void *__wrap_kmm_realloc(void *p, size_t n);
+void __wrap_free(void *p);
+int ove_heap_lock_post_owns_(const void *p);
 
 static unsigned char *require(void *p)
 {
@@ -22,7 +29,9 @@ static unsigned char *require(void *p)
 }
 
 /* Move main-heap blocks into the reserved pool, as realloc does once the
- * zero-heap lock is engaged, and check that each copy keeps the old data. */
+ * zero-heap lock is engaged, and check that each copy keeps the old data.
+ * Then check that a pool block resized after the test unlock stays in the
+ * pool, and that an ordinary main-heap block stays in the main heap. */
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -48,6 +57,28 @@ int main(int argc, char **argv)
 	for (size_t i = 0; i < 8; i++)
 		ok &= shrunk[i] == 0x22;
 	ove_heap_lock_post_free_(shrunk);
+
+	const char data[] = "realloc data";
+	ove_heap_lock_test_begin();
+	unsigned char *pooled = __wrap_malloc(sizeof(data));
+	ok &= ove_heap_lock_test_end() == 1;
+	pooled = require(pooled);
+	ok &= ove_heap_lock_post_owns_(pooled) == 1;
+	memcpy(pooled, data, sizeof(data));
+	pooled = require(__wrap_realloc(pooled, 64));
+	ok &= ove_heap_lock_post_owns_(pooled) == 1 && memcmp(pooled, data, sizeof(data)) == 0;
+	pooled = require(__wrap_kmm_realloc(pooled, 96));
+	ok &= ove_heap_lock_post_owns_(pooled) == 1 && memcmp(pooled, data, sizeof(data)) == 0;
+	__wrap_free(pooled);
+
+	unsigned char *ordinary = require(__wrap_malloc(sizeof(data)));
+	ok &= ove_heap_lock_post_owns_(ordinary) == 0;
+	memcpy(ordinary, data, sizeof(data));
+	ordinary = require(__wrap_realloc(ordinary, 64));
+	ok &= ove_heap_lock_post_owns_(ordinary) == 0 && memcmp(ordinary, data, sizeof(data)) == 0;
+	ordinary = require(__wrap_kmm_realloc(ordinary, 96));
+	ok &= ove_heap_lock_post_owns_(ordinary) == 0 && memcmp(ordinary, data, sizeof(data)) == 0;
+	__wrap_free(ordinary);
 
 	printf("zero-heap realloc: %s\n", ok ? "PASS" : "FAIL");
 	fflush(stdout);
