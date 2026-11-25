@@ -53,13 +53,9 @@ void ove_run(void)
 #endif
 #ifdef CONFIG_OVE_ZERO_HEAP
 	/*
-	 * Boundary between init and run phases.  In zero-heap mode every
-	 * static resource has been declared by ove_main() above (via
-	 * OVE_*_DEFINE_STATIC at file scope or ove_*_init() with caller-
-	 * supplied storage) and any kernel-mm allocation up to this point
-	 * is the documented boot-time carve-out.  After this line, the
-	 * trap engages: any subsequent malloc / kmm_malloc / pvPortMalloc
-	 * fails with DEBUGASSERT (or returns NULL in test-mode).
+	 * Apply the allocation policy after startup has created static
+	 * resources and boot-time helpers. NuttX serves wrapped allocations
+	 * from its fixed reserve. FreeRTOS wrapped allocators return NULL.
 	 *
 	 * Apps that genuinely need post-init dynamic allocation (the
 	 * benchmark suite measuring create/destroy latency, dynamic

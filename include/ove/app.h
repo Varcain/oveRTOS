@@ -51,14 +51,13 @@ extern "C" {
 extern void ove_main(void);
 
 /**
- * @brief End the init phase: lock the heap (zero-heap mode) and launch
- *        the RTOS scheduler.
+ * @brief Apply the heap policy and start the RTOS scheduler.
  *
- * Call this from ove_main() after every static resource has been
- * declared and every boot-time helper task spawned.  In zero-heap
- * mode `ove_run` calls @ref ove_heap_lock immediately before kicking
- * off the scheduler, so any subsequent malloc / kmm_malloc /
- * pvPortMalloc traps via DEBUGASSERT (or returns NULL in test mode).
+ * Call this from ove_main() after declaring static resources and
+ * spawning boot-time helpers. In zero-heap builds, @c ove_run calls
+ * @ref ove_heap_lock before starting the scheduler to apply the
+ * backend's allocation policy.
+ *
  * Apps whose runtime structurally requires post-init dynamic
  * allocation (the benchmark suite, dynamic worker pools, etc.) skip
  * `ove_run` and call @ref ove_thread_start_scheduler directly to
@@ -105,24 +104,20 @@ void ove_app_exit(unsigned int status) __attribute__((noreturn));
 int ove_app_run(void);
 
 /**
- * @brief Lock the kernel heap after init (zero-heap mode safety net).
+ * @brief Apply the zero-heap allocation policy after initialization.
  *
- * On RTOSes whose kernel-side static configuration cannot fully
- * eliminate boot-time mm allocations (notably NuttX, where task creation
- * allocates TCBs and task groups from kernel mm even when the caller
- * supplies the stack), call this after every static resource has been declared.
- * Subsequent kernel allocations trip a @c DEBUGASSERT and abort the
- * binary, so a stray malloc / @c kmm_malloc surfaces immediately
- * during testing instead of hiding behind a sized heap.
+ * Call after declaring static resources and spawning boot-time helpers.
+ * After the lock, NuttX serves wrapped libc and kernel allocations from a
+ * fixed-size reserve.
+ * If an allocation from the reserve fails, the wrapper asserts with
+ * @c CONFIG_DEBUG_ASSERTIONS outside test mode and returns NULL otherwise.
  *
- * The function is a no-op on RTOSes whose zero-heap configuration is
- * already provably static (FreeRTOS with
- * @c configSUPPORT_DYNAMIC_ALLOCATION=0, Zephyr with no kernel heap
- * pool).  NuttX implements the lock by setting a flag tested by a
- * @c --wrap=malloc trampoline in @c backends/nuttx/nuttx_heap_lock.c.
+ * FreeRTOS wrapped libc allocations return NULL after the lock.
+ * Zephyr zero-heap applications have no kernel heap and do not wrap the
+ * libc allocators, so this function has no effect there. It also has no
+ * effect in heap builds.
  *
- * @c ove_run automatically invokes this when @c CONFIG_OVE_ZERO_HEAP
- * is enabled; applications usually don't need to call it directly.
+ * @c ove_run invokes this when @c CONFIG_OVE_ZERO_HEAP is enabled.
  */
 void ove_heap_lock(void);
 

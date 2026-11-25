@@ -1143,24 +1143,21 @@ config OVE_ZERO_HEAP
     help
       All oveRTOS create/destroy paths use static storage; the
       _init()/_deinit() APIs with caller-supplied storage remain
-      available for loops, arrays, and embedded objects.  Backend
-      kernels are configured for fully-static operation:
-        - FreeRTOS: configSUPPORT_DYNAMIC_ALLOCATION=0; truly static.
-        - Zephyr:   no DYNAMIC_THREAD, no kernel heap, picolibc;
-                    truly static.  Block-scope ove_thread_create /
+      available for loops, arrays, and embedded objects.
+        - FreeRTOS: configSUPPORT_DYNAMIC_ALLOCATION=0. Wrapped libc
+                    allocations return NULL after the heap lock.
+        - Zephyr:   disable DYNAMIC_THREAD and the kernel heap. Libc
+                    allocators are unwrapped, so ove_heap_lock() has
+                    no effect. Block-scope ove_thread_create /
                     ove_workqueue_create emit K_THREAD_STACK_DEFINE-
                     equivalent statics, so k_thread_stack_alloc is
                     not pulled in.
-        - NuttX:    static sizing of every preallocated pool via
-                    Kconfig; all threads / queues / files / sockets
-                    must be created during init; ove_heap_lock() runs
-                    at the start of ove_run() and traps any subsequent
-                    malloc / kmm_malloc.  Boot-time TCB + stack
-                    allocations from task_create are accepted as the
-                    irreducible carve-out (see backends/nuttx/
-                    nuttx_heap_lock.c for the trap and
-                    config/templates/nuttx_defconfig.j2 for the sizing
-                    knobs).
+        - NuttX:    preallocate kernel pools via Kconfig. Boot-time TCB
+                    and stack allocations use the kernel heap. Once
+                    ove_run() locks the heap, wrapped libc and kernel
+                    allocators use a fixed reserve. Reserve exhaustion
+                    asserts with CONFIG_DEBUG_ASSERTIONS and returns
+                    NULL otherwise.
 
 if OVE_ZERO_HEAP
 

@@ -126,9 +126,11 @@ Preparation is automatic during submission; `ove_i2c_async_prepare()` can establ
 the completion service beforehand. The FreeRTOS and Zephyr services retain a
 small permanent list/timer and retry every 10ms, using existing tasks and bounded
 drain batches. Queue/service starvation has no hard completion deadline. NuttX
-release zero-heap uses the existing native reserve for workers; debug zero-heap
-returns NotSupported before admission because its debug heap lock rejects native
-worker allocation. Native thread resource reclamation may outlast notification.
+workers allocate a native TCB and stack. Release zero-heap builds use the reserve
+and can return `OVE_ERR_NO_MEMORY` if it runs out. Zero-heap builds with
+`CONFIG_DEBUG_ASSERTIONS` return `OVE_ERR_NOT_SUPPORTED` before admission, even
+before the heap lock, because reserve exhaustion after the lock triggers an
+assertion. Native thread resource reclamation may outlast notification.
 
 ### Owned asynchronous Rust I2C
 

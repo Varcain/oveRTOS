@@ -85,11 +85,11 @@ Preparation runs before admission and can fail without publishing work.
 
 NuttX creates a detached native worker for each submission. Its native TCB and
 stack may outlive the callback until the thread exits and the kernel reclaims
-them. Release zero-heap builds draw from the existing configured reserved heap
-(16KiB by default); exhaustion returns `OVE_ERR_NO_MEMORY`. Zero-heap builds
+them. Release zero-heap builds draw from the configured reserve (16 KiB by
+default) and can return `OVE_ERR_NO_MEMORY` if it runs out. Zero-heap builds
 with `CONFIG_DEBUG_ASSERTIONS` return `OVE_ERR_NOT_SUPPORTED` at preparation,
-including before heap lock, because normal post-lock allocation asserts before
-reserved routing. Static application storage does not remove worker allocation.
+including before heap lock, because reserve exhaustion after the lock triggers
+an assertion. Workers also allocate when the application uses static storage.
 
 These native guarantees do not repair the existing Rust async wrapper's borrowed
 buffer/CS or inline callback-state retention when a future is dropped or

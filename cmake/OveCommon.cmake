@@ -781,10 +781,8 @@ macro(ove_link_firmware)
         )
     endif()
 
-    # Zero-heap link-time audit + wrap: forbid FreeRTOS heap_*.c
-    # globals (xHeap/ucHeap/pucAlignedHeap) and route libc malloc
-    # through ove_heap_lock.c's __wrap_* trampolines so any malloc
-    # after ove_heap_lock() traps via the lock check.
+    # Forbid FreeRTOS heap_*.c globals (xHeap/ucHeap/pucAlignedHeap).
+    # Wrapped libc allocations return NULL after ove_heap_lock().
     # Not STRICT: FreeRTOS still uses newlib for printf, so newlib's
     # __malloc_av_ etc. show up.  A future libc migration to picolibc
     # (Zephyr-style) would make STRICT viable here too.
@@ -797,9 +795,6 @@ macro(ove_link_firmware)
         # Heap-mode unified-heap policy: wrap libc malloc/free/calloc/
         # realloc to route through pvPortMalloc / vPortFree via
         # backends/freertos/freertos_libc_malloc.c's __wrap_* shims.
-        # Same --wrap mechanism the zero-heap path uses, just with a
-        # different destination (forward to pvPortMalloc instead of
-        # trap-or-forward).
         target_link_options(${_OVE_PROJ_NAME}.elf PRIVATE
             "LINKER:--wrap=malloc"
             "LINKER:--wrap=free"

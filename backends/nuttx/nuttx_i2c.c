@@ -177,7 +177,8 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t 
 int ove_hal_i2c_async_prepare(void)
 {
 #if defined(CONFIG_OVE_ZERO_HEAP) && defined(CONFIG_DEBUG_ASSERTIONS)
-	/* Native worker allocation is unavailable under the debug heap lock. */
+	/* Workers allocate a TCB and stack. Post-lock reserve exhaustion asserts
+	 * in debug zero-heap builds and fails submission in release builds. */
 	return OVE_ERR_NOT_SUPPORTED;
 #else
 	return OVE_OK;

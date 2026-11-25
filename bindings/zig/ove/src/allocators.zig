@@ -9,19 +9,16 @@
 //! `std.mem.Allocator` is an interface; the implementation behind it
 //! determines whether memory comes from libc malloc (`c_allocator`),
 //! the page allocator, or a static byte buffer (`FixedBufferAllocator`).
-//! Zero-heap mode forbids the first two — substrate
-//! `ove_heap_lock.c` panics if `malloc` runs after `ove.run()` engages
-//! the gate, and `page_allocator` calls `mmap`/`VirtualAlloc` which
-//! the substrate doesn't permit either.
+//! After `ove.run()` locks the heap, wrapped libc allocations return null
+//! on FreeRTOS and use a fixed reserve on NuttX, where allocation failure
+//! asserts with `CONFIG_DEBUG_ASSERTIONS` outside test mode. Zephyr has no
+//! kernel heap in zero-heap builds and leaves libc allocators unwrapped.
 //!
 //! This namespace re-exports the safe (static-backed) allocators
 //! verbatim, and provides `@compileError` shims for the dangerous ones
 //! when `CONFIG_OVE_ZERO_HEAP=y`.  Users importing through
 //! `ove.allocators.*` get a compile-time error with a clear remediation
-//! message; users who bypass this namespace by importing `std.heap.*`
-//! directly aren't caught here (B2-Layer-2 build-time symbol check
-//! would catch those, B2-Layer-3 runtime gate the rest — both
-//! deferred).
+//! message. Direct imports from `std.heap` bypass this check.
 
 const std = @import("std");
 const pin = @import("pin.zig");
@@ -48,10 +45,7 @@ pub const StackFallbackAllocator = std.heap.StackFallbackAllocator;
 // ---------------------------------------------------------------------------
 // Banned in zero-heap mode (Layer 1 compile-time refusal).
 //
-// These allocators call into libc malloc / mmap / VirtualAlloc — the
-// substrate's heap gate panics on any of them after `ove.run()`.  Users
-// trying to import them in a zero-heap build hit `@compileError` at the
-// import site with a remediation pointer.
+// These allocators use libc malloc or OS allocation APIs such as mmap.
 // ---------------------------------------------------------------------------
 
 /// libc malloc.  Banned in zero-heap mode.
@@ -68,9 +62,7 @@ pub const c_allocator: std.mem.Allocator = if (pin.zero_heap)
     @compileError(
         \\ove.allocators.c_allocator is unavailable in zero-heap builds.
         \\
-        \\Zero-heap mode (CONFIG_OVE_ZERO_HEAP=y) forbids libc malloc/free
-        \\after ove.run() engages the substrate's heap gate.  Use a
-        \\static-backed allocator instead:
+        \\Use a static-backed allocator such as std.heap.FixedBufferAllocator.
         \\
         \\    var arena_bytes: [4096]u8 = undefined;
         \\    var fba = std.heap.FixedBufferAllocator.init(&arena_bytes);

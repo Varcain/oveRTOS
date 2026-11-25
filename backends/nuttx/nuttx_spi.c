@@ -82,8 +82,8 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 int ove_hal_spi_async_prepare(void)
 {
 #if defined(CONFIG_OVE_ZERO_HEAP) && defined(CONFIG_DEBUG_ASSERTIONS)
-	/* Worker creation allocates native TCB/stack memory. The debug heap-lock
-	 * policy asserts before its reserved allocator can service that request. */
+	/* Workers allocate a TCB and stack. Post-lock reserve exhaustion asserts
+	 * in debug zero-heap builds and fails submission in release builds. */
 	return OVE_ERR_NOT_SUPPORTED;
 #else
 	return OVE_OK;

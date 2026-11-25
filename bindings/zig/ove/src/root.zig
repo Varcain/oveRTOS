@@ -348,10 +348,11 @@ pub fn run() void {
 ///
 /// Used by apps whose runtime structurally requires post-init dynamic
 /// allocation — notably the benchmark suite, which spawns helper threads
-/// inside test setup paths after `ove_main` has returned.  On NuttX
-/// zero-heap builds, the heap lock would cause `pthread_create`'s
-/// `kmm_zalloc(task_group_s)` to fail with `ENOMEM`.  Calling this in
-/// place of `run` opts out of the lock. Blocks on most platforms.
+/// inside test setup paths after `ove_main` has returned. On NuttX zero-heap
+/// builds, `pthread_create` allocates from the fixed reserve after the lock.
+/// Reserve exhaustion asserts with `CONFIG_DEBUG_ASSERTIONS` and causes
+/// `pthread_create` to fail otherwise. Calling this in place of `run`
+/// opts out of the lock. Blocks on most platforms.
 /// Call from application startup, not a thread entry or native pthread worker.
 /// NuttX ignores calls from those workers.
 pub fn startScheduler() void {

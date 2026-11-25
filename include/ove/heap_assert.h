@@ -12,8 +12,8 @@
  *
  * When `CONFIG_OVE_ZERO_HEAP=y`, this guard diagnoses libc allocator
  * calls at compile time using GCC's `error` attribute or Clang's
- * `unavailable` attribute.  It complements the runtime trap in
- * `backends/common/ove_heap_lock.c`.
+ * `unavailable` attribute. It complements the backend-specific runtime
+ * policy of @ref ove_heap_lock.
  *
  * Pulled in via `ove/ove.h`, so any TU that includes the umbrella
  * header is covered.  Backend infra that legitimately needs the libc

@@ -262,11 +262,11 @@ OVE_NODISCARD int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *c
  * rejected notifications while its system queue is draining/plugged and retries
  * once that queue becomes available. Preparation can fail
  * before publication if that service cannot be established.
- * NuttX workers allocate a native TCB/stack per submission. Release zero-heap
- * builds use the configured reserved heap and can return allocation failure;
- * zero-heap builds with CONFIG_DEBUG_ASSERTIONS are unsupported because their
- * post-lock allocation policy asserts before reserved allocation. Preparation
- * returns OVE_ERR_NOT_SUPPORTED before publishing work in that configuration.
+ * NuttX workers allocate a native TCB and stack per submission. In release
+ * zero-heap builds, reserve exhaustion can return an allocation error. In
+ * zero-heap builds with CONFIG_DEBUG_ASSERTIONS, post-lock reserve exhaustion
+ * asserts, so preparation returns OVE_ERR_NOT_SUPPORTED before publishing
+ * work, even before the lock.
  *
  * Whole-frame/alignment/overlap rules also apply here. The STM32 FreeRTOS
  * adapter accepts at most 65535 native frames in one async submission (65535

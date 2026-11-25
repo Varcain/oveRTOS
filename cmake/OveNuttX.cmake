@@ -367,9 +367,9 @@ macro(ove_nuttx_register_app)
         target_sources(${_OVE_NX_TARGET} PRIVATE "${_GLIBCXX_COMPAT}")
     endif()
 
-    # Zero-heap heap-lock: wrap the libc/kmm allocator surface so any
-    # post-init mm activity traps via DEBUGASSERT.  See
-    # backends/nuttx/nuttx_heap_lock.c.
+    # Wrap libc and kmm allocators to use a fixed reserve after the heap
+    # lock. Reserve exhaustion asserts in debug builds and returns NULL
+    # in release builds.
     #
     # Apply to the kernel `nuttx` target (the final exe) — applying to
     # the apps_${name} archive doesn't propagate to the final link in

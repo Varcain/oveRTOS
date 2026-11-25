@@ -125,7 +125,7 @@ ove_sem_take(notify, OVE_WAIT_FOREVER);
 
 ## Heap
 
-The portable API does not currently expose `malloc` / `free`. In **heap mode**, the framework owns the heap and you allocate implicitly via the `_create()` constructors. In **zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`), `_create()` is link-gated out and a runtime trap fires on any post-init allocation (see `backends/common/ove_heap_lock.c`).
+The portable API does not currently expose `malloc` / `free`. In **heap mode**, the framework owns the heap and you allocate implicitly via the `_create()` constructors. In **zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`), use caller-supplied storage. On FreeRTOS, wrapped libc allocations return `NULL` after `ove_run()` locks the heap.
 
 | FreeRTOS | oveRTOS |
 |---|---|

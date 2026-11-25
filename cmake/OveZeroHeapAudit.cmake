@@ -35,8 +35,8 @@
 # NuttX note: g_mmheap (the primary kernel mm region) is the
 # irreducible kernel-heap carve-out for NuttX zero-heap mode.  All
 # task_create / pthread / mq_open allocations during boot land there;
-# post-init traffic is trapped by ove_heap_lock.  The audit catches
-# REGRESSIONS that introduce additional pools, not the documented one.
+# after ove_heap_lock(), wrapped allocations use a fixed reserve.
+# The audit catches regressions that introduce additional pools.
 #
 # STRICT is for production builds that ship picolibc / no libc heap.
 # Test fixtures pull newlib in for cmocka and legitimately have a
@@ -74,15 +74,11 @@ endfunction()
 # ─── ove_apply_zero_heap_wrap(target) ──────────────────────────────
 #
 # Apply `-Wl,--wrap=malloc/calloc/realloc/free/zalloc/memalign` (and
-# the NuttX kmm_* family) to a final-exe target.  Calls to libc's
-# malloc are routed through __wrap_malloc in
-# backends/common/ove_heap_lock.c, which checks the lock flag and
-# either traps or forwards.
+# the NuttX kmm_* family) to a final-exe target.
+# Allocator wrappers forward before the lock and apply the backend policy after it.
 #
-# Use on the FINAL exe target on each RTOS:
+# Use on the final executable target:
 #   - FreeRTOS:  ${_OVE_PROJ_NAME}.elf
-#   - Zephyr:    pass -Wl,--wrap= flags via zephyr_ld_options() so
-#                they reach Zephyr's final link
 #   - NuttX:     `nuttx`
 #
 # Optional EXTRA <symbols> argument adds RTOS-specific wraps (e.g.

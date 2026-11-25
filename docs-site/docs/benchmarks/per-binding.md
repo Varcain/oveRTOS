@@ -30,8 +30,8 @@ how to read this page:
 
 All bench bindings call `ove_thread_start_scheduler()` directly
 instead of `ove_run()` — the bench's create/destroy cases require
-post-init kernel allocation, which `ove_run()`'s zero-heap auto-lock
-would block on NuttX.  C/CPP have always done this; Rust exposes
+post-init kernel allocation, which the zero-heap lock would route to
+NuttX's fixed reserve. C/CPP have always done this; Rust exposes
 `ove::start_scheduler()` and Zig `ove.startScheduler()` for the same
 purpose.
 

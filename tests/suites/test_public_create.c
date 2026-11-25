@@ -338,17 +338,10 @@ static void test_public_create_no_kernel_heap(void **state)
 
 #ifdef CONFIG_OVE_ZERO_HEAP
 /*
- * Zero-heap proof — exercise the actual trap.  ove_heap_lock() flips
- * an atomic flag that the --wrap=malloc trampoline (in
- * backends/common/ove_heap_lock.c) checks.  In normal operation a
- * post-lock malloc DEBUGASSERTs and aborts; for tests the test-mode
- * hooks swap the abort for "return NULL + increment counter" so we
- * can verify the trap fires without tearing down the suite.
- *
- * The wrap functions are portable across NuttX / FreeRTOS / Zephyr.
- * Calling __wrap_malloc directly tests the lock-check + trap-counter
- * logic regardless of whether raw malloc() is intercepted at link
- * time (which depends on each backend's --wrap LDFLAGS plumbing).
+ * Calling __wrap_malloc directly exercises the heap lock independently
+ * of the link flags. Test mode counts post-lock calls and suppresses
+ * the debug assertion on allocation failure. This suite uses the
+ * default post-lock hooks, which return NULL for allocations.
  */
 #include <stdlib.h>
 
@@ -378,9 +371,7 @@ static void test_public_create_heap_lock_traps(void **state)
 	assert_non_null(pre);
 	__wrap_free(pre);
 
-	/* Engage the lock in test mode (returns NULL + bumps a counter
-	 * instead of DEBUGASSERTing — DEBUGASSERT mid-suite would abort
-	 * the test binary).  Now the same call must be denied. */
+	/* The test lock records the call and the default hook denies it. */
 	ove_heap_lock_test_begin();
 	void *post = __wrap_malloc(16);
 	int trap_count = ove_heap_lock_test_end();

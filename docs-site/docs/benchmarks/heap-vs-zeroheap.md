@@ -3,9 +3,7 @@
 For each RTOS, how do per-call hot-path latencies differ between
 **heap mode** (`_create()` / `_destroy()` API; kernel objects come from
 the kernel's allocator) and **zero-heap mode**
-(`CONFIG_OVE_ZERO_HEAP=y`; `_init()` / `_deinit()` API; caller-supplied
-static storage; the heap is locked at `ove_run()` and any post-boot
-allocation aborts the build or panics)?
+(`CONFIG_OVE_ZERO_HEAP=y`, `_init()` / `_deinit()` API, caller-supplied static storage, [backend-specific heap policy](methodology.md#allocation-modes))?
 
 ## What "heap-vs-zh" can and can't measure
 
@@ -185,8 +183,8 @@ The take-aways:
    build-time symbol audits.
 2. **Per-call sync** (mutex, sem, condvar, event, queue, eventgroup)
    is at parity within a few hundred nanoseconds on every RTOS in
-   either mode.  Pick zero-heap and take the compile-time guarantees
-   against post-boot allocation as a free win.
+   either mode. Zero-heap builds add compile-time checks on application
+   calls to libc allocators.
 3. **Two structural exceptions**, both on FreeRTOS only:
    `stream/send_recv_64B` and `stream/throughput` regress ~12 µs and
    ~11 µs respectively under zero-heap.  This regression is in the

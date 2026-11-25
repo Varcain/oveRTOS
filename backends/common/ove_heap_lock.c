@@ -5,16 +5,11 @@
  *
  * This file is part of oveRTOS.
  *
- * Portable heap-lock + libc-malloc wrap.  Compiled into every RTOS
- * backend's link; each backend's CMake helper additionally wires
- * `-Wl,--wrap=malloc` (and friends) into the final exe link so calls
- * to libc malloc/free/calloc/realloc/zalloc/memalign route through
- * the wrappers below.
- *
- * The wrappers gate on the lock flag:
- *   - locked + test mode → return NULL + bump counter (test only)
- *   - locked, not test   → DEBUGASSERT-equivalent abort
- *   - unlocked           → forward to the real allocator
+ * Portable heap lock and libc allocation wrappers. FreeRTOS and
+ * NuttX zero-heap builds add --wrap flags to the final link.
+ * Before the lock, allocation wrappers call the real allocator.
+ * After the lock, they call the fallback hooks. On NuttX, a failed
+ * fallback allocation triggers DEBUGASSERT outside test mode.
  *
  * Forwarding to the real allocator goes through `__real_<sym>` —
  * a name the GNU linker rewrites to the original (renamed) symbol
@@ -37,22 +32,15 @@
 #include <nuttx/sched.h>
 #define OVE_HEAP_LOCK_TRAP_ABORT() DEBUGASSERT(0)
 #else
-/* Generic abort for FreeRTOS / Zephyr / POSIX.  Drops into the
-    * platform's assert / abort path. */
-#define OVE_HEAP_LOCK_TRAP_ABORT()   \
-	do {                         \
-		volatile int _x = 0; \
-		(void)*&_x;          \
-	} while (0)
+/* Other backends return the fallback allocation result. */
+#define OVE_HEAP_LOCK_TRAP_ABORT() ((void)0)
 #endif
 
 /*
  * Atomics:
  *   g_ove_mm_locked   — 0 = free, 1 = locked.  Set by ove_heap_lock().
- *   g_ove_mm_test_mode — when set, the trap returns NULL and bumps the
- *                       counter instead of asserting.  Used by tests
- *                       so a deliberate post-lock alloc can be observed
- *                       without aborting the whole binary.
+ *   g_ove_mm_test_mode — count post-lock allocation attempts and
+ *                       suppress the wrapper's assertion on failure.
  *   g_ove_mm_trap_count — incremented on each trapped call in test mode.
  */
 static atomic_int g_ove_mm_locked;
@@ -85,21 +73,23 @@ int ove_heap_lock_test_end(void)
 	return n;
 }
 
-/* Internal trap helper — exposed for use by RTOS-specific wrap files
- * (kmm_malloc on NuttX, k_malloc on Zephyr, pvPortMalloc on FreeRTOS). */
+/* Internal helpers shared with the NuttX kmm wrappers. */
 int ove_heap_lock_trapped_(void);
+void *ove_heap_lock_served_(void *p);
 
 int ove_heap_lock_trapped_(void)
 {
-	if (atomic_load(&g_ove_mm_locked)) {
-		if (atomic_load(&g_ove_mm_test_mode)) {
-			atomic_fetch_add(&g_ove_mm_trap_count, 1);
-			return 1; /* signal "denied, return NULL" */
-		}
+	int locked = atomic_load(&g_ove_mm_locked);
+	if (locked && atomic_load(&g_ove_mm_test_mode))
+		atomic_fetch_add(&g_ove_mm_trap_count, 1);
+	return locked;
+}
+
+void *ove_heap_lock_served_(void *p)
+{
+	if (p == NULL && !atomic_load(&g_ove_mm_test_mode))
 		OVE_HEAP_LOCK_TRAP_ABORT();
-		return 1; /* unreachable in practice; caller returns NULL */
-	}
-	return 0;
+	return p;
 }
 
 /* ── Post-lock fallback hooks ────────────────────────────────────────
@@ -176,11 +166,8 @@ __attribute__((used)) static const void *const ove_zh_reserved_heap_link_ref_ =
  * These satisfy `--wrap=malloc/calloc/realloc/free/zalloc/memalign`
  * link-time rewrites on every backend.  The `__real_<sym>` forwards
  * are linker-generated when --wrap is in effect; per-backend files
- * provide weak fallbacks that go straight to the underlying kernel
- * allocator (mm_malloc on NuttX, k_malloc on Zephyr, pvPortMalloc on
- * FreeRTOS) so the wrappers are still callable when --wrap isn't
- * actually wired (e.g. NuttX flat-build LDFLAGS that don't propagate
- * to the kernel-level link).
+ * provide weak fallbacks so the wrappers are still callable in
+ * fixtures that don't link with --wrap.
  */
 
 extern void *__real_malloc(size_t n);
@@ -193,21 +180,21 @@ extern void __real_free(void *p);
 void *__wrap_malloc(size_t n)
 {
 	if (ove_heap_lock_trapped_())
-		return ove_heap_lock_post_alloc_(n);
+		return ove_heap_lock_served_(ove_heap_lock_post_alloc_(n));
 	return __real_malloc(n);
 }
 
 void *__wrap_calloc(size_t nmemb, size_t n)
 {
 	if (ove_heap_lock_trapped_())
-		return ove_heap_lock_post_calloc_(nmemb, n);
+		return ove_heap_lock_served_(ove_heap_lock_post_calloc_(nmemb, n));
 	return __real_calloc(nmemb, n);
 }
 
 void *__wrap_realloc(void *p, size_t n)
 {
 	if (ove_heap_lock_trapped_())
-		return ove_heap_lock_post_realloc_(p, n);
+		return ove_heap_lock_served_(ove_heap_lock_post_realloc_(p, n));
 	if (ove_heap_lock_post_owns_(p))
 		return ove_heap_lock_post_realloc_(p, n);
 	return __real_realloc(p, n);
@@ -216,14 +203,14 @@ void *__wrap_realloc(void *p, size_t n)
 void *__wrap_zalloc(size_t n)
 {
 	if (ove_heap_lock_trapped_())
-		return ove_heap_lock_post_zalloc_(n);
+		return ove_heap_lock_served_(ove_heap_lock_post_zalloc_(n));
 	return __real_zalloc(n);
 }
 
 void *__wrap_memalign(size_t alignment, size_t size)
 {
 	if (ove_heap_lock_trapped_())
-		return ove_heap_lock_post_memalign_(alignment, size);
+		return ove_heap_lock_served_(ove_heap_lock_post_memalign_(alignment, size));
 	return __real_memalign(alignment, size);
 }
 

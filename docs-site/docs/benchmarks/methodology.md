@@ -22,7 +22,7 @@ A per-RTOS `native_<rtos>` suite calls the raw backend API (FreeRTOS `xSemaphore
 Two configurations are benchmarked separately:
 
 - **Heap mode** — `_create()` / `_destroy()` API; objects are kernel-heap-allocated.
-- **Zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`) — `_init()` / `_deinit()` API with caller-supplied static storage; the heap is locked at `ove_run()` and any post-boot allocation aborts the build (compile-time check) or panics (runtime trap).
+- **Zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`) uses `_init()` / `_deinit()` with caller-supplied static storage. After `ove_run()` locks the heap, wrapped allocations return `NULL` on FreeRTOS and use a fixed reserve on NuttX. On reserve failure, the NuttX wrapper asserts with `CONFIG_DEBUG_ASSERTIONS` outside test mode and returns `NULL` otherwise. Zephyr has no kernel heap and leaves libc allocators unwrapped, so the lock has no effect there.
 
 ## Build & timing
 

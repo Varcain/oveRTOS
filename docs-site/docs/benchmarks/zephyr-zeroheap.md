@@ -1,6 +1,6 @@
 # Zephyr — zero-heap mode
 
-Raw cross-binding benchmark results measured on **STM32F746G-DISCOVERY** (Cortex-M7 @ 216 MHz) running Zephyr RTOS with `CONFIG_OVE_ZERO_HEAP=y` (`_init()` / `_deinit()` API, caller-supplied static storage, heap locked at `ove_run()`) and `CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` — caches and flash accelerators disabled to approximate cacheless ARM-MCU timing.  See [benchmarks overview](index.md) for the worst-case-timing methodology.
+Raw cross-binding benchmark results measured on **STM32F746G-DISCOVERY** (Cortex-M7 @ 216 MHz) running Zephyr RTOS with `CONFIG_OVE_ZERO_HEAP=y` (`_init()` / `_deinit()` API, caller-supplied static storage, no kernel heap) and `CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` — caches and flash accelerators disabled to approximate cacheless ARM-MCU timing.  See [benchmarks overview](index.md) for the worst-case-timing methodology.
 
 Under zero-heap, `*_create_destroy` and `*_memory` cases are gated out — the create/destroy API isn't generated.
 

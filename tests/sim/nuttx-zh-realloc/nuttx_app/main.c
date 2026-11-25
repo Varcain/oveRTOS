@@ -3,10 +3,18 @@
  */
 #include <nuttx/config.h>
 #include <malloc.h>
+#include <sched.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include "framework/semihosting_exit.h"
+#include "ove/app.h"
+
+#ifndef CONFIG_DEBUG_ASSERTIONS
+#error "The zero-heap exhaustion test requires CONFIG_DEBUG_ASSERTIONS"
+#endif
 
 void *ove_heap_lock_post_realloc_(void *p, size_t n);
 int ove_heap_lock_post_free_(void *p);
@@ -28,10 +36,29 @@ static unsigned char *require(void *p)
 	return p;
 }
 
+static atomic_int blocks_served;
+
+static int exhaust_pool(int argc, char **argv)
+{
+	(void)argc;
+	(void)argv;
+	/* Keep the blocks allocated until the firmware exits. */
+	for (int i = 0; i < 64; i++) {
+		void *p = __wrap_malloc(1024);
+		if (p == NULL)
+			return 2;
+		if (!ove_heap_lock_post_owns_(p))
+			return 3;
+		atomic_fetch_add(&blocks_served, 1);
+	}
+	return 4;
+}
+
 /* Move main-heap blocks into the reserved pool, as realloc does once the
  * zero-heap lock is engaged, and check that each copy keeps the old data.
  * Then check that a pool block resized after the test unlock stays in the
- * pool, and that an ordinary main-heap block stays in the main heap. */
+ * pool, and that an ordinary main-heap block stays in the main heap.
+ * Check that the product lock uses the reserve and asserts on exhaustion. */
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -79,6 +106,23 @@ int main(int argc, char **argv)
 	ordinary = require(__wrap_kmm_realloc(ordinary, 96));
 	ok &= ove_heap_lock_post_owns_(ordinary) == 0 && memcmp(ordinary, data, sizeof(data)) == 0;
 	__wrap_free(ordinary);
+
+	printf("zero-heap product lock: checking reserved allocation\n");
+	fflush(stdout);
+	ove_heap_lock();
+	void *locked = require(__wrap_malloc(32));
+	ok &= ove_heap_lock_post_owns_(locked) == 1;
+	__wrap_free(locked);
+
+	/* The lower priority lets the parent enter waitpid before the child exits. */
+	pid_t child =
+		task_create("pool-exhaustion", CONFIG_INIT_PRIORITY - 1, 8192, exhaust_pool, NULL);
+	int status = -1;
+	int waited = child > 0 && waitpid(child, &status, 0) == child;
+	int served = atomic_load(&blocks_served);
+	printf("zero-heap pool exhaustion: served %d, exit %d\n", served,
+	       waited && WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+	ok &= served > 0 && waited && WIFEXITED(status) && WEXITSTATUS(status) == 1;
 
 	printf("zero-heap realloc: %s\n", ok ? "PASS" : "FAIL");
 	fflush(stdout);

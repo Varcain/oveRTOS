@@ -3,7 +3,7 @@
 !!! note "Audience"
     This page is for **oveRTOS developers** porting or sizing the networking stack on a specific RTOS. App developers can ignore everything here — the public socket / TLS / HTTP / MQTT API is documented under [API Reference → Networking](../api/net.md).
 
-The protocol stacks (lwIP, mbedTLS, the Zephyr network stack, NuttX networking) own internal allocators. Following the LVGL precedent (`LV_MEM_SIZE` + no libc spillover), each stack is pinned to a BSS pool sized at compile time. Overflow returns `OVE_ERR_NO_MEMORY` rather than spilling to libc — `ove_heap_lock()` post-init catches any regression.
+The protocol stacks (lwIP, mbedTLS, the Zephyr network stack, NuttX networking) own internal allocators. Following the LVGL precedent (`LV_MEM_SIZE` + no libc spillover), each stack is pinned to a BSS pool sized at compile time. These pools return `OVE_ERR_NO_MEMORY` on exhaustion, independently of `ove_heap_lock()`.
 
 ## lwIP (FreeRTOS)
 

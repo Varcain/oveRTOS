@@ -8,16 +8,11 @@
  * Zephyr backend extras for the portable heap-lock surface in
  * backends/common/ove_heap_lock.c.
  *
- * In zero-heap mode Zephyr is configured with HEAP_MEM_POOL_SIZE=0
- * and PICOLIBC=y — neither k_malloc nor a libc heap exists.  The
- * link-time audit (cmake/OveZeroHeapAudit.cmake) confirms this; the
- * heap-lock wrap is a defence-in-depth layer that catches any
- * regression where someone re-enables a heap.  When --wrap=malloc is
- * wired and an allocator is somehow back, calls go through the
- * wrappers in ove_heap_lock.c and trip the trap.  The weak fallbacks
- * below return NULL so any direct call to __wrap_malloc (e.g. from a
- * test harness) when --wrap isn't wired fails loudly rather than
- * recursing.
+ * Zephyr zero-heap applications disable the kernel heap and keep the
+ * libc malloc arena enabled. Application links leave libc allocators
+ * unwrapped, so ove_heap_lock() has no effect. The QEMU and Renode
+ * zero-heap test fixtures link the wrappers, so wrapped allocations
+ * return NULL after ove_heap_lock(). Calls to free() remain allowed.
  */
 
 #include "ove_config.h"
@@ -28,10 +23,8 @@
 
 /*
  * Weak __real_* fallbacks — same pattern as the FreeRTOS backend.
- * Forward to libc malloc when --wrap isn't wired; the linker's
- * strong __real_* alias overrides these when --wrap is in effect.
- * In Zephyr zero-heap, picolibc has no heap so malloc returns NULL,
- * and the audit catches any heap region that sneaks back in.
+ * Forward to the libc allocators when --wrap isn't wired. The linker's
+ * strong __real_* aliases override these when --wrap is in effect.
  *
  * memalign is intentionally NOT included.  Referencing memalign() from
  * a weak fallback pulls picolibc-module's nano-memalign.c.o into the

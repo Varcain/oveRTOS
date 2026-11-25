@@ -38,12 +38,13 @@ CONFIG_SPI=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
-# Fully static: no kernel heap, no dynamic thread pool, no libc heap.
+# Zero-heap applications have no kernel heap and use static thread stacks.
 # Block-scope ove_thread_create / ove_workqueue_create now emit
 # K_THREAD_STACK_DEFINE-equivalent statics directly (see
 # backends/zephyr/include/ove_storage_zephyr.h:OVE_THREAD_STACK_BLOCK_STATIC_),
 # so DYNAMIC_THREAD / k_thread_stack_alloc are no longer required.
-# Picolibc's printf is malloc-free, so the libc heap goes to zero too.
+# The common libc malloc arena stays enabled (CONFIG_COMMON_LIBC_MALLOC=y,
+# CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE=-1).
 #
 # `CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y` overrides the
 # `HEAP_MEM_POOL_ADD_SIZE_*` requirements that subsystems (DHCPV4, DNS,
