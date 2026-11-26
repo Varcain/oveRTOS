@@ -64,6 +64,10 @@ if(OVE_LINUX)
     if(OVE_FB)
         ove_add_board_sources(../src/qemu_fb.c)
     endif()
+    if(OVE_LINUX_DEV_INPUT_DASHBOARD)
+        ove_add_board_sources(${OVE_DIR}/sim/src/ove_sim_input.c)
+        ove_add_include_directories(${OVE_DIR}/sim/src ${CMAKE_CURRENT_LIST_DIR}/../src)
+    endif()
 else()
 
 # ── Sim framework (replaces lv_port_disp.c and qemu_audio.c) ──────

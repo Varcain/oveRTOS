@@ -7,8 +7,7 @@
  */
 
 /*
- * Pointer input state — bridges the browser dashboard's mouse/touch
- * events into LVGL's pointer indev.
+ * Pointer input state from the browser dashboard for LVGL and Linux evdev.
  *
  * The dashboard side writes click/touch events to /dev/shm/ove-input
  * (a 16-byte struct stamped with magic "INPT"), and the QEMU guest reads
@@ -41,21 +40,23 @@
 static int g_input_fd = -1;
 static int g_input_fd_tried;
 
-/* Read the pointer file through semihosting.  Returns 0 when there is no
- * usable file, which the first failed open makes permanent. */
+int ove_sim_input_present(void)
+{
+	if (!g_input_fd_tried) {
+		g_input_fd_tried = 1;
+		g_input_fd = sh_open(INPUT_PATH, 1); /* rb */
+	}
+	return g_input_fd >= 0;
+}
+
+/* Return 0 if there is no valid pointer sample. */
 static int semihosting_get(int16_t *x, int16_t *y, uint8_t *pressed)
 {
 	uint8_t raw[INPUT_SHM_SIZE];
 	uint32_t magic;
 
-	if (g_input_fd < 0) {
-		if (g_input_fd_tried)
-			return 0;
-		g_input_fd_tried = 1;
-		g_input_fd = sh_open(INPUT_PATH, 1); /* rb */
-		if (g_input_fd < 0)
-			return 0;
-	}
+	if (!ove_sim_input_present())
+		return 0;
 
 	sh_seek(g_input_fd, 0);
 	if (sh_read(g_input_fd, raw, sizeof(raw)) != 0)

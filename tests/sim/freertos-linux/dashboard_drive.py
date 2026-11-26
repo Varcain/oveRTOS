@@ -14,7 +14,7 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 sys.path.insert(0, "config/scripts")
-from ove_dashboard.protocol import FRAME_CMD, FRAME_FB, FRAME_LOG  # noqa: E402
+from ove_dashboard.protocol import FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG  # noqa: E402
 
 signal.signal(signal.SIGTERM, signal.default_int_handler)
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dashboard_drive.log"
@@ -53,8 +53,9 @@ try:
             while time.monotonic() < deadline:
                 pos = log_buffer.find(needle)
                 if pos != -1:
+                    before = bytes(log_buffer[:pos])
                     del log_buffer[:pos + len(needle)]
-                    return
+                    return before
                 with suppress(TimeoutError):
                     frame = ws.recv(timeout=1)
                     if not isinstance(frame, bytes):
@@ -68,12 +69,27 @@ try:
                         fbtest_seen[0] = px[0] == 0xFF0000FF and len(set(px)) > 1
             raise TimeoutError(f"waiting for {needle.decode()}")
 
-        for needle, command in ((b"overtos login: ", b"root\n"), (b"Password: ", b"root\n"),
-                                (b"/root # ", b"fbtest\n"), (b"fbtest: PASS", None),
-                                (b"/root # ", b"uname -a\n"), (b"Linux overtos", b"poweroff\n")):
-            expect(needle)
-            if command is not None:
-                ws.send(struct.pack("<IIII", FRAME_CMD, 0xFFFFFFFF, 0, len(command)) + command)
+        def send_command(command):
+            ws.send(struct.pack("<IIII", FRAME_CMD, 0xFFFFFFFF, 0, len(command)) + command)
+
+        expect(b"overtos login: ")
+        send_command(b"root\n")
+        expect(b"Password: ")
+        send_command(b"root\n")
+        expect(b"/root # ")
+        send_command(b"fbtest\n")
+        expect(b"fbtest: PASS")
+        expect(b"/root # ")
+        ws.send(struct.pack("<IhhB", FRAME_INPUT, 123, 45, 1))
+        send_command(b"evread\n")
+        reports = expect(b"evread: DONE got=")
+        if reports.count(b"evread: touch x=123 y=45 down=1") < 3:
+            raise RuntimeError("missing dashboard touch reports")
+        ws.send(struct.pack("<IhhB", FRAME_INPUT, 123, 45, 0))
+        expect(b"/root # ")
+        send_command(b"uname -a\n")
+        expect(b"Linux overtos")
+        send_command(b"poweroff\n")
 
     if not fbtest_seen[0]:
         raise RuntimeError("no fbtest frame on the LCD")

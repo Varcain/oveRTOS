@@ -665,9 +665,10 @@ On STM32F746G-DISCO, `/usr/bin/sigctx` provides the corresponding hardware
 regression for nested signal return. It nests SIGUSR2 inside SIGUSR1 and checks
 both complete VFP contexts after LIFO return.
 
-`ove run` attaches the guest UART to the terminal; on FreeRTOS an500 it also
-serves the dashboard with the UART console and shows `/dev/fb0` on its LCD
-(`make run HEADLESS=1` for the terminal only). Phase 1 is deterministic and
+`ove run` attaches the guest UART to the terminal. On FreeRTOS an500 it also
+serves the dashboard with the UART console and shows `/dev/fb0` on its LCD.
+Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
+Use `make run HEADLESS=1` for the terminal only. Phase 1 is deterministic and
 phase 2 is your login session, with default credentials `root`/`root`.
 
 ```

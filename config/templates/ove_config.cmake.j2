@@ -311,10 +311,13 @@ set(OVE_LINUX_GUEST_FLOAT_ABI "soft")
 add_compile_definitions(LXP_ENABLE_{{ feat }}=1)
 {% endif %}
 {% endfor %}
+{% if config.get("CONFIG_OVE_LINUX_DEV_INPUT_DASHBOARD") == True %}
+set(OVE_LINUX_DEV_INPUT_DASHBOARD ON)
+{% endif %}
 {% if config.get("CONFIG_OVE_LINUX_DEV_INPUT") == True and
-      config.get("CONFIG_OVE_FT5336") == True %}
-# Physical touch is an input-provider implementation, not a standalone LXP
-# subsystem. Do not require display ops when the Linux input device is absent.
+      (config.get("CONFIG_OVE_FT5336") == True or
+       config.get("CONFIG_OVE_LINUX_DEV_INPUT_DASHBOARD") == True) %}
+# Enable LXP touch polling for the FT5336 or dashboard pointer.
 add_compile_definitions(LXP_ENABLE_TOUCH=1)
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
@@ -491,7 +494,7 @@ list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_SOURCES})
 list(APPEND OVE_BACKEND_SOURCES ${LXP_BLOCK_SOURCES})
 {% endif %}
 # Host adapter for the display/input port: exports the immutable provider table
-# passed to lxp_run(), bridging fb/touch ops to ove_fb_* / ove_ft5336_*.
+# passed to lxp_run(), bridging the framebuffer and touch providers.
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_display_adapter.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
 list(APPEND OVE_BACKEND_SOURCES ${LXP_DEV_FB_SOURCES})

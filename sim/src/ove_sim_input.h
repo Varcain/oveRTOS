@@ -9,8 +9,7 @@
 /*
  * Pointer input from the sim dashboard.
  *
- * The dashboard side keeps the pointer in /dev/shm/ove-input; the LVGL
- * input device driver reads it from there each tick.
+ * LVGL and Linux touch providers poll /dev/shm/ove-input.
  */
 
 #ifndef OVE_SIM_INPUT_H
@@ -21,6 +20,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Return 1 if the one-shot open of the pointer file succeeded. */
+int ove_sim_input_present(void);
 
 /**
  * @brief Read the current pointer input state.

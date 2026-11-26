@@ -62,6 +62,7 @@ ove download && ove build && ove flash
 ```
 
 On FreeRTOS an500, `make run` serves the dashboard with the guest console and shows `/dev/fb0` on its LCD.
+Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for a terminal-only console.
 
 Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the

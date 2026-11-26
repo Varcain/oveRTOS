@@ -458,17 +458,19 @@ config OVE_LINUX_DEV_INPUT
     depends on OVE_LINUX_DEV
     help
       Expose a single-touch evdev stream (ABS_X/ABS_Y/BTN_TOUCH/SYN_REPORT) as
-      /dev/input/event0, fed by the FT5336 driver on real hardware or the testpad
-      injector on QEMU, so an LVGL program becomes touch-interactive.
+      /dev/input/event0, fed by the FT5336 driver on real hardware, the dashboard
+      pointer on FreeRTOS an500, or the testpad on QEMU.
 
 config OVE_LINUX_DEV_INPUT_TESTPAD
     bool "Linux personality: synthetic touch injector (QEMU)"
     default n
     depends on OVE_LINUX_DEV_INPUT
     help
-      Replay a canned touch gesture from the run-loop tick (no host channel), so
-      the evdev path is deterministically testable on QEMU where there is no
-      touch panel.
+      Replay a canned touch gesture on QEMU when no touch provider is present.
+
+config OVE_LINUX_DEV_INPUT_DASHBOARD
+    # Use the dashboard pointer as a Linux touch provider on FreeRTOS an500.
+    def_bool OVE_LINUX_DEV_INPUT && OVE_BOARD_QEMU_MPS2_AN500 && OVE_RTOS_FREERTOS && OVE_SIM_DASHBOARD
 
 config OVE_FT5336
     bool "FT5336 capacitive touch controller (STM32F746-Discovery)"

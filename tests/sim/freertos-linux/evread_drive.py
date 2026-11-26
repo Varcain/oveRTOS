@@ -9,7 +9,14 @@
 # *_drive.py tests. Run from the repo root with the linux_interop workspace.
 #
 # Usage: evread_drive.py [logfile]
-import subprocess, sys, re, os
+import os
+import re
+import subprocess
+import sys
+
+if os.path.exists("/dev/shm/ove-input"):
+    print("Remove /dev/shm/ove-input before running evread (stop any running dashboard first).")
+    sys.exit(1)
 
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/evread_drive.log"
 

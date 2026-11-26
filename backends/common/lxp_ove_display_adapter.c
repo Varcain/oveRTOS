@@ -7,9 +7,8 @@
  *
  * oveRTOS host adapter for the Linux personality's display/input port
  * (lxp_display_ops_t). It bridges the /dev/fb0 + /dev/input class drivers
- * to the ove_fb framebuffer HAL and the ove_ft5336 touch controller. The fb ops
- * are filled when /dev/fb0 is built; the touch ops when an FT5336 is present
- * (otherwise NULL — the input driver falls back to the synthetic testpad).
+ * to the ove_fb framebuffer HAL and the FT5336 or dashboard touch provider.
+ * If no touch provider is available, LXP can fall back to the synthetic testpad.
  *
  * The exported provider table is passed explicitly to lxp_run(), which publishes
  * it only for the duration of the personality run.
@@ -100,7 +99,28 @@ static void d_touch_deinit(void)
 {
 	ove_ft5336_deinit();
 }
-#endif /* CONFIG_OVE_FT5336 */
+#elif defined(CONFIG_OVE_LINUX_DEV_INPUT_DASHBOARD)
+#include "ove_sim_input.h"
+static int d_touch_init(void)
+{
+	return ove_sim_input_present() ? 0 : lxp_err_from_ove(OVE_ERR_NOT_SUPPORTED);
+}
+static int d_touch_read(int *x, int *y, int *pressed)
+{
+	int16_t sim_x, sim_y;
+	uint8_t sim_pressed;
+
+	ove_sim_input_get(&sim_x, &sim_y, &sim_pressed);
+	*x = sim_x;
+	*y = sim_y;
+	*pressed = sim_pressed;
+	return 0;
+}
+static void d_touch_deinit(void)
+{
+	/* Keep the semihosting fd for the next run. */
+}
+#endif
 
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 static const lxp_fb_ops_t g_fb_ops = {
@@ -116,7 +136,7 @@ static const lxp_dma2d_ops_t g_dma2d_ops = {
 	.submit = d_dma2d_submit,
 };
 #endif
-#if defined(CONFIG_OVE_FT5336)
+#if defined(CONFIG_OVE_FT5336) || defined(CONFIG_OVE_LINUX_DEV_INPUT_DASHBOARD)
 static const lxp_touch_ops_t g_touch_ops = {
 	.init = d_touch_init,
 	.read = d_touch_read,
@@ -131,7 +151,7 @@ const lxp_display_ops_t g_lxp_host_display_ops = {
 #if defined(CONFIG_OVE_LINUX_DEV_DMA2D)
 	.dma2d = &g_dma2d_ops,
 #endif
-#if defined(CONFIG_OVE_FT5336)
+#if defined(CONFIG_OVE_FT5336) || defined(CONFIG_OVE_LINUX_DEV_INPUT_DASHBOARD)
 	.touch = &g_touch_ops,
 #endif
 };
