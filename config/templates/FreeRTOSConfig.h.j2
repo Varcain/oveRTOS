@@ -252,8 +252,8 @@ uint64_t ove_freertos_runtime_counter_get(void);
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern void ove_backend_trace_task_switched_in(void);
-extern void ove_backend_trace_task_switched_out(void);
+extern void ove_backend_trace_task_switched_in(uintptr_t task_tag, uintptr_t task);
+extern void ove_backend_trace_task_switched_out(uintptr_t task_tag, uintptr_t task);
 extern void ove_backend_trace_task_blocking(void);
 extern void ove_backend_trace_task_suspended(uintptr_t task_tag, uintptr_t task);
 extern void ove_backend_trace_task_ready(uintptr_t task_tag, uintptr_t task);
@@ -261,8 +261,13 @@ extern void ove_backend_trace_task_deleted(uintptr_t task_tag, uintptr_t task);
 #ifdef __cplusplus
 }
 #endif
-#define traceTASK_SWITCHED_IN() ove_backend_trace_task_switched_in()
-#define traceTASK_SWITCHED_OUT() ove_backend_trace_task_switched_out()
+/* In tasks.c, pxCurrentTCB is set before scheduler startup and holds the
+ * outgoing or newly selected task during a switch. Read its tag directly
+ * to avoid MPU API wrappers in PendSV. */
+#define traceTASK_SWITCHED_IN() \
+	ove_backend_trace_task_switched_in((uintptr_t)pxCurrentTCB->pxTaskTag, (uintptr_t)pxCurrentTCB)
+#define traceTASK_SWITCHED_OUT() \
+	ove_backend_trace_task_switched_out((uintptr_t)pxCurrentTCB->pxTaskTag, (uintptr_t)pxCurrentTCB)
 /* Running task is about to block (task context, before the yield). */
 #define traceBLOCKING_ON_QUEUE_RECEIVE(pxQueue) ove_backend_trace_task_blocking()
 #define traceBLOCKING_ON_QUEUE_SEND(pxQueue) ove_backend_trace_task_blocking()

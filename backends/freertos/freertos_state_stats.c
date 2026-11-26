@@ -22,11 +22,10 @@
  *   traceMOVED_TASK_TO_READY_STATE — a task enters a ready list (wake-up)
  *   traceTASK_DELETE(tcb)          — a kernel task's lane ends
  *
- * traceTASK_SWITCHED_{IN,OUT} fire from inside vTaskSwitchContext() in the
- * PendSV handler — API calls that walk kernel lists (eTaskGetState, etc.)
- * are not safe there. Only application task tag reads and plain memory
- * accesses are. Blocking state is therefore set earlier from the
- * blocking macros, which fire in task context; SWITCHED_OUT keeps it.
+ * During PendSV, vTaskSwitchContext() passes the task tag and TCB directly
+ * through traceTASK_SWITCHED_{IN,OUT}. The MPU current-task getter can raise
+ * privilege through SVC, which is unsafe in PendSV. The blocking macros
+ * set blocking state earlier in task context, and SWITCHED_OUT preserves it.
  *
  * Each transition is also emitted to the trace stream; with
  * CONFIG_OVE_TRACE_STREAM off, ove_trace_emit_state_at() is an empty inline.
@@ -113,20 +112,16 @@ static uintptr_t self_deleted;
  *     (traceBLOCKING_ON_* or traceTASK_DELAY already flipped us)
  *   - otherwise READY (pre-emption or yield)
  */
-void ove_backend_trace_task_switched_out(void)
+void ove_backend_trace_task_switched_out(uintptr_t task_tag, uintptr_t task)
 {
-	TaskHandle_t h = xTaskGetCurrentTaskHandle();
-	if (!h)
-		return;
-	/* PendSV context: the task-level getter would enter a critical section. */
-	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
+	struct ove_thread *t = (struct ove_thread *)task_tag;
 	if (!t) {
-		if ((uintptr_t)h == self_deleted) {
+		if (task == self_deleted) {
 			self_deleted = 0;
 			return;
 		}
 		/* Keep BLOCKED and SUSPENDED states set by the earlier hooks. */
-		ove_trace_emit_kthread_state((uintptr_t)h, OVE_THREAD_STATE_READY,
+		ove_trace_emit_kthread_state(task, OVE_THREAD_STATE_READY,
 					     OVE_TRACE_KT_FROM_RUNNING);
 		return;
 	}
@@ -141,15 +136,11 @@ void ove_backend_trace_task_switched_out(void)
  * Emit previous_state -> RUNNING for the incoming task. Called from
  * traceTASK_SWITCHED_IN().
  */
-void ove_backend_trace_task_switched_in(void)
+void ove_backend_trace_task_switched_in(uintptr_t task_tag, uintptr_t task)
 {
-	TaskHandle_t h = xTaskGetCurrentTaskHandle();
-	if (!h)
-		return;
-	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
+	struct ove_thread *t = (struct ove_thread *)task_tag;
 	if (!t) {
-		ove_trace_emit_kthread_state((uintptr_t)h, OVE_THREAD_STATE_RUNNING,
-					     OVE_TRACE_KT_ALWAYS);
+		ove_trace_emit_kthread_state(task, OVE_THREAD_STATE_RUNNING, OVE_TRACE_KT_ALWAYS);
 		return;
 	}
 
