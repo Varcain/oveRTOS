@@ -178,6 +178,8 @@ function connect() {
     ws.onopen = function () {
         reconnectDelay = RECONNECT_BASE_MS;
         reconnectAttempt = 0;
+        serialLogDecoder = new TextDecoder();
+        serialLogPending = "";
         hostEmit("link", { connected: true });
         addEvent("system", "Connected to sim server");
         /* Drop prior-session state — timebase and symbol maps are not
@@ -208,7 +210,9 @@ function connect() {
             case FRAME_LOG:        handleLog(buf, 4); break;
             case FRAME_SERIAL:
                 ensureWindow("terminal");
-                if (vt) vt.write(new Uint8Array(buf, 4));
+                var serialBytes = new Uint8Array(buf, 4);
+                if (vt) vt.write(serialBytes);
+                logSerialLines(serialBytes);
                 hostEmit("serial");
                 break;
             case FRAME_THREAD:     handleThreadSnapshot(buf, 4); break;
@@ -3757,12 +3761,26 @@ function handleEvent(buf, off) {
              "type=" + view.getUint32(4, true) + " t=" + view.getUint32(8, true) + "ms");
 }
 
+var LOG_STRIP_CONTROLS = /\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+var LOG_LEVEL_PREFIX = /^\s*\[([DIWE])\]/;
+var serialLogDecoder = new TextDecoder();
+var serialLogPending = "";
 var _logOpen = null;
+
+function logSerialLines(bytes) {
+    serialLogPending += serialLogDecoder.decode(bytes, { stream: true });
+    var lines = serialLogPending.split(/\r\n|\r|\n/);
+    serialLogPending = lines.pop().slice(0, 4096);
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].replace(LOG_STRIP_CONTROLS, "");
+        if (LOG_LEVEL_PREFIX.test(line)) addEvent("uart", line);
+    }
+}
 
 function handleLog(buf, off) {
     ensureWindow("events");
     var text = new TextDecoder().decode(new Uint8Array(buf, off));
-    text = text.replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+    text = text.replace(LOG_STRIP_CONTROLS, "");
     if (!text) return;
     var lines = text.split(/\r\n|\r|\n/);
     var last = _logQueue.length ? _logQueue[_logQueue.length - 1]
@@ -3832,8 +3850,8 @@ function addEvent(type, msg) {
     el.className = "entry src-" + type.split(":")[0];
     /* Firmware log level from the OVE_LOG "[I] / [W] / [E] / [D]" prefix. */
     var level = null;
-    if (type === "log") {
-        var m = /^\s*\[([DIWE])\]/.exec(msg);
+    if (type === "log" || type === "uart") {
+        var m = LOG_LEVEL_PREFIX.exec(msg);
         if (m) {
             level = m[1].toLowerCase();
             el.className += " lvl-" + level;

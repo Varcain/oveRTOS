@@ -440,22 +440,59 @@ test("log: partial lines continue across frames and terminal controls are remove
         ["/root # ", "Connected to sim server", "ls"]);
 });
 
+function sendFrame(g, type, bytes) {
+    const frame = new Uint8Array(4 + bytes.length);
+    new DataView(frame.buffer).setUint32(0, type, true);
+    frame.set(bytes, 4);
+    g.ws.onmessage({ data: frame.buffer });
+}
+
 test("link: serial bytes go to the terminal and log frames go to the log", () => {
     const writes = [];
     const g = loadDashboard({ vt: () => ({ write: (bytes) => writes.push(bytes) }) });
-    const send = (type, bytes) => {
-        const frame = new Uint8Array(4 + bytes.length);
-        new DataView(frame.buffer).setUint32(0, type, true);
-        frame.set(bytes, 4);
-        g.ws.onmessage({ data: frame.buffer });
-    };
     const serial = Uint8Array.of(0xff, 0x1b, 0x5b, 0x4b);
-    send(0x10, serial);
+    sendFrame(g, 0x10, serial);
     assert.deepEqual(writes, [serial]);
     assert.equal(g._logQueue.length, 0);
-    send(g.FRAME_LOG, new TextEncoder().encode("QEMU output\n"));
+    sendFrame(g, g.FRAME_LOG, new TextEncoder().encode("QEMU output\n"));
     assert.deepEqual(writes, [serial]);
     assert.deepEqual(g._logQueue.map((el) => el.lastChild.textContent), ["QEMU output"]);
+});
+
+test("log: serial lines survive splits inside CSI, UTF-8 and CRLF", () => {
+    const bytes = new TextEncoder().encode("\x1b[1;33m[W] café full\x1b[0m\r\n");
+    const cr = bytes.length - 2;
+    for (const split of [cr, cr + 1]) {
+        const writes = [], logs = [];
+        const g = loadDashboard({ vt: () => ({ write: (chunk) => writes.push(chunk) }) });
+        g.HOST.on = (event, data) => { if (event === "log") logs.push([data.type, data.level]); };
+        const cuts = [0, 4, bytes.indexOf(0xc3) + 1, split, bytes.length];
+        const frames = cuts.slice(1).map((end, i) => bytes.subarray(cuts[i], end));
+        const completeAt = split === cr ? 3 : 2;
+        frames.forEach((chunk, i) => {
+            sendFrame(g, g.FRAME_SERIAL, chunk);
+            assert.equal(g._logQueue.length, i < completeAt ? 0 : 1);
+        });
+        assert.equal(g._logQueue[0].className, "entry src-uart lvl-w");
+        assert.equal(g._logQueue[0].lastChild.textContent, "[W] café full");
+        assert.deepEqual(logs, [["uart", "w"]]);
+        assert.deepEqual(writes, frames);
+    }
+});
+
+test("log: UART copies only complete lines with a firmware level prefix", () => {
+    const g = loadDashboard();
+    const encoder = new TextEncoder();
+    const send = (text) => sendFrame(g, g.FRAME_SERIAL, encoder.encode(text));
+    const entries = () => g._logQueue.map((el) => [el.className, el.lastChild.textContent]);
+    send("> hello\r\n> [E] typed\r\nboot ok\r\n[I] Hello\r\n[E] partial");
+    assert.deepEqual(entries(), [["entry src-uart lvl-i", "[I] Hello"]]);
+    send("\r[D] cr\r");
+    assert.deepEqual(entries(), [
+        ["entry src-uart lvl-i", "[I] Hello"],
+        ["entry src-uart lvl-e", "[E] partial"],
+        ["entry src-uart lvl-d", "[D] cr"],
+    ]);
 });
 
 test("log: WASM link emits each line as a separate entry", () => {
