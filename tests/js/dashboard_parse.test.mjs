@@ -447,6 +447,27 @@ function sendFrame(g, type, bytes) {
     g.ws.onmessage({ data: frame.buffer });
 }
 
+test("log: the host sees entry text so the search filter can match it", () => {
+    const g = loadDashboard();
+    const encoder = new TextEncoder();
+    const logs = [];
+    g.HOST.on = (event, d) => {
+        if (event === "log") logs.push([d.type, d.el.lastChild && d.el.lastChild.textContent]);
+    };
+
+    g.addEvent("system", "Connected");
+    sendFrame(g, g.FRAME_LOG, encoder.encode("login: "));
+    sendFrame(g, g.FRAME_LOG, encoder.encode("root\n"));
+    sendFrame(g, g.FRAME_SERIAL, encoder.encode("[W] low\r\n"));
+
+    assert.deepEqual(logs, [
+        ["system", "Connected"],
+        ["log", "login: "],
+        ["log", "login: root"],
+        ["uart", "[W] low"],
+    ]);
+});
+
 test("link: serial bytes go to the terminal and log frames go to the log", () => {
     const writes = [];
     const g = loadDashboard({ vt: () => ({ write: (bytes) => writes.push(bytes) }) });

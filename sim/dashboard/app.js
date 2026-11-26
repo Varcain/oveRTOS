@@ -3857,7 +3857,6 @@ function addEvent(type, msg) {
             el.className += " lvl-" + level;
         }
     }
-    hostEmit("log", { type: type, msg: msg, level: level, el: el });
     var time = new Date().toTimeString().split(" ")[0];
     var timeSpan = document.createElement("span");
     timeSpan.className = "time";
@@ -3868,6 +3867,7 @@ function addEvent(type, msg) {
     el.appendChild(timeSpan);
     el.appendChild(typeSpan);
     el.appendChild(document.createTextNode(msg));
+    hostEmit("log", { type: type, msg: msg, level: level, el: el });
     _logQueue.push(el);
     if (!_logRafScheduled) {
         _logRafScheduled = true;
