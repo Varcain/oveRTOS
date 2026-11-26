@@ -15,9 +15,15 @@
  * commands.
  * Not covered: the sampling profiler and the debugger.
  *
- * web.json, next to the page, says what to run:
+ * web.json, next to the page, describes the bundle.
  *   { "firmware": "firmware.elf", "emulator": "qemu/",
- *     "machine": "mps2-an500", "args": [] }
+ *     "machine": "mps2-an500" }
+ * A Linux personality bundle uses this form.
+ *   { "firmware": "firmware.elf", "emulator": "qemu/",
+ *     "files": { "rootfs.cpio": "/rootfs.cpio" }, "args": [ ... ] }
+ * "files" maps extra downloads to paths in the emulator's filesystem.
+ * With "machine", optional "args" extend the default QEMU command line.
+ * Without "machine", "args" supplies QEMU's whole command line.
  *
  * "emulator" is the directory of qemu-system-arm.js.  Its worker threads
  * load that script again, and on a static host only scripts under the
@@ -61,12 +67,13 @@ var EVT_TRACE_STREAM      = 10;        /* OVE_SIM_TRACE_EVT_STREAM */
 var EVT_TRACE_DESCRIPTORS = 11;        /* OVE_SIM_TRACE_EVT_DESCRIPTORS */
 var CMD_AUDIO_INJECT      = 10;        /* OVE_SIM_AUDIO_CMD_INJECT */
 
-/* ── Framebuffer file: 16-byte header + XRGB8888 pixels ────────────── */
+/* ── Framebuffer file: 16-byte header + XRGB8888 or RGB565 pixels ─── */
 var FB_PATH     = "/dev/shm/ove-fb";
 var FB_MAGIC    = 0x42465854;          /* "TXFB" */
 var FB_HDR_SIZE = 16;
 var FB_OFF_DIRTY = 12;
 var FB_FILE_SIZE = 1 << 20;
+var FB_FMT_XRGB8888 = 1;             /* sim/src/ove_sim_transport_shm_guest.c */
 
 /* ── Pointer file: magic, int16 x, int16 y, uint8 pressed ──────────── */
 var INPUT_PATH  = "/dev/shm/ove-input";
@@ -159,6 +166,12 @@ Link.prototype._serialByte = function (byte) {
 
 /* ── Emulator boot ─────────────────────────────────────────────────── */
 
+async function fetchBytes(url) {
+    var resp = await fetch(url, { cache: "no-cache" });
+    if (!resp.ok) throw new Error("cannot load " + url);
+    return new Uint8Array(await resp.arrayBuffer());
+}
+
 async function boot(link) {
     if (!window.crossOriginIsolated) {
         /* Static hosts cannot send the isolation headers the emulator's
@@ -169,24 +182,22 @@ async function boot(link) {
 
     setStatus("Loading firmware...", false);
     var cfg = await (await fetch("web.json", { cache: "no-cache" })).json();
-    var firmwareResp = await fetch(cfg.firmware, { cache: "no-cache" });
-    if (!firmwareResp.ok)
-        throw new Error("cannot load " + cfg.firmware);
-    var firmware = new Uint8Array(await firmwareResp.arrayBuffer());
+    var names = Object.keys(cfg.files || {});
+    var data = await Promise.all([cfg.firmware].concat(names).map(fetchBytes));
 
     setStatus("Loading emulator...", false);
     var emulatorUrl = new URL(cfg.emulator + "qemu-system-arm.js", location.href);
     var createQemu = (await import(emulatorUrl.href)).default;
 
-    var args = [
-        "-M", cfg.machine || "mps2-an500",
+    var args = cfg.machine ? [
+        "-M", cfg.machine,
         "-nographic", "-monitor", "none",
         "-kernel", "/firmware.elf",
         "-semihosting-config", "enable=on,target=native,arg=" + FB_PATH,
         /* The firmware is small; the default translation cache alone
          * would take hundreds of megabytes of browser memory. */
         "-accel", "tcg,tb-size=32"
-    ].concat(cfg.args || []);
+    ].concat(cfg.args || []) : cfg.args;
 
     function consoleLine(text) {
         /* Emscripten stubs for syscalls QEMU probes but does not need. */
@@ -220,7 +231,11 @@ async function boot(link) {
             m.FS.getStream(0).stream_ops.poll = function () {
                 return link._stdin.length ? 1 : 0;   /* POLLIN */
             };
-            m.FS.writeFile("/firmware.elf", firmware);
+            m.FS.writeFile("/firmware.elf", data[0]);
+            names.forEach(function (name, i) {
+                m.FS.writeFile(cfg.files[name], data[i + 1]);
+            });
+            data = null;
             /* The files qemu-run.sh creates before a native run. */
             m.FS.writeFile(FB_PATH, new Uint8Array(FB_FILE_SIZE));
             m.FS.writeFile(SIM_PATH, new Uint8Array(SIM_TOTAL_SIZE));
@@ -293,8 +308,10 @@ Link.prototype._pollFramebuffer = function () {
     this._fbPending = false;
 
     var w = f.view.getUint16(4, true), h = f.view.getUint16(6, true);
-    var len = w * h * 4;
-    if (!w || !h || f.size < FB_HDR_SIZE + len) return;
+    var xrgb = f.view.getUint32(8, true) === FB_FMT_XRGB8888;
+    var pixels = w * h;
+    var len = pixels * 4;
+    if (!w || !h || f.size < FB_HDR_SIZE + (xrgb ? len : pixels * 2)) return;
     f.view.setUint32(FB_OFF_DIRTY, 0, true);
 
     if (!this._fbFrame || this._fbFrame.byteLength !== 12 + len)
@@ -305,8 +322,18 @@ Link.prototype._pollFramebuffer = function () {
     out.setUint16(6, 0, true);
     out.setUint16(8, w - 1, true);
     out.setUint16(10, h - 1, true);
-    new Uint8Array(this._fbFrame, 12).set(
-        f.bytes.subarray(FB_HDR_SIZE, FB_HDR_SIZE + len));
+    if (xrgb) {
+        new Uint8Array(this._fbFrame, 12).set(
+            f.bytes.subarray(FB_HDR_SIZE, FB_HDR_SIZE + len));
+    } else {
+        for (var i = 0; i < pixels; i++) {
+            var pixel = f.view.getUint16(FB_HDR_SIZE + i * 2, true);
+            var r = Math.floor((pixel >> 11) * 255 / 31);
+            var g = Math.floor(((pixel >> 5) & 63) * 255 / 63);
+            var b = Math.floor((pixel & 31) * 255 / 31);
+            out.setUint32(12 + i * 4, 0xFF000000 | (r << 16) | (g << 8) | b, true);
+        }
+    }
     this._emit(this._fbFrame);
 };
 
