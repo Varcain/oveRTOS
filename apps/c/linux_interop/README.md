@@ -667,6 +667,7 @@ both complete VFP contexts after LIFO return.
 
 `ove run` attaches the guest UART to the terminal. On FreeRTOS an500 it also
 serves the dashboard with the UART console and shows `/dev/fb0` on its LCD.
+The dashboard also shows CPU usage, FreeRTOS heap usage, and RTOS threads.
 Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for the terminal only. Phase 1 is deterministic and
 phase 2 is your login session, with default credentials `root`/`root`.
@@ -725,13 +726,13 @@ thread, memory-domain and fatal-error hooks, so illegal guest accesses terminate
 only the current Linux process.
 
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
-board (no dedicated board); when `CONFIG_OVE_LINUX` is set it (a) drops the sim
-framework, trace and profiler, (b) drops the
+board. Linux builds use the sim framework for thread, CPU, and heap statistics.
+Trace and profiling default to off. When `CONFIG_OVE_LINUX` is set, it drops the
 `vPortSVCHandler → SVC_Handler` alias so LXP's FreeRTOS port
 (`modules/lxp/ports/freertos/lxp_freertos_port.c`)
 owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to
-`vPortSVCHandler`, and (c) makes the run script inject the rootfs CPIO into PSRAM
-and attach the interactive console. The `ARM_CM4_MPU` port creates each guest with
+`vPortSVCHandler`. The run script injects the rootfs CPIO into PSRAM and attaches
+the interactive console. The `ARM_CM4_MPU` port creates each guest with
 `xTaskCreateRestrictedStatic`; program, dynamic pool, and XIP rootfs windows are
 explicit MPU regions, while the coordinator remains privileged.
 

@@ -42,8 +42,8 @@ int main(void)
 	 * implicitly during crt0 — no equivalent of newlib's libgloss
 	 * initialise_monitor_handles() is needed.  See picolibc/semihost.
 	 */
-#ifndef CONFIG_OVE_LINUX
-	ove_sim_board_init(); /* sim display/audio transport for non-Linux builds */
+#ifdef CONFIG_OVE_SIM
+	ove_sim_board_init(); /* Start the sim transport and dashboard plugins. */
 #endif
 	ove_app_run();
 	return 0;

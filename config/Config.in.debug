@@ -49,7 +49,7 @@ config OVE_STACK_CANARIES
 
 config OVE_THREAD_STATE_STATS
     bool "Per-thread state time tracking"
-    default y if OVE_SIM
+    default y if OVE_SIM && !OVE_LINUX
     help
       Track cumulative time each thread spends in each state
       (running, ready, blocked, suspended). Adds a timestamp

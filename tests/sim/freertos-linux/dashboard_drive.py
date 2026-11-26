@@ -2,6 +2,7 @@
 # Usage: .venv/bin/python tests/sim/freertos-linux/dashboard_drive.py [logfile]
 # Run from the repo root with the FreeRTOS an500 linux_interop workspace active.
 import os
+import re
 import signal
 import socket
 import struct
@@ -15,8 +16,35 @@ from websockets.sync.client import connect
 
 sys.path.insert(0, "config/scripts")
 from ove_dashboard.protocol import (  # noqa: E402
-    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL, FRAME_SERIAL_TAIL,
+    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL, FRAME_SERIAL_TAIL, FRAME_THREAD,
 )
+
+
+def thread_snapshot_matches(frame):
+    header = struct.Struct("<IB4I")  # Frame type, thread count, heap stats.
+    pos = header.size
+    if len(frame) < pos:
+        return False
+    _, count, heap_total, _, _, _ = header.unpack_from(frame)
+    if heap_total != 262144:
+        return False
+
+    rows = {}
+    for _ in range(count):
+        if pos >= len(frame):
+            return False
+        name_end = pos + 1 + frame[pos]
+        row_end = name_end + 42
+        if row_end > len(frame):
+            return False
+        name = frame[pos + 1:name_end]
+        rows[name], = struct.unpack_from("<I", frame, name_end + 2)  # Skip state and priority.
+        pos = row_end
+    cpu_percent = 1 << 2
+    return (rows.get(b"IDLE", 0) & cpu_percent != 0
+            and any(re.fullmatch(rb"lnx\d+", name) for name in rows)
+            and b"sim_debug" in rows)
+
 
 signal.signal(signal.SIGTERM, signal.default_int_handler)
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dashboard_drive.log"
@@ -49,8 +77,10 @@ try:
         log_header = struct.pack("<I", FRAME_LOG)
         serial_headers = tuple(struct.pack("<I", kind) for kind in (FRAME_SERIAL, FRAME_SERIAL_TAIL))
         fb_header = struct.pack("<IHHHH", FRAME_FB, 0, 0, 479, 271)
+        thread_header = struct.pack("<I", FRAME_THREAD)
         log_buffer = bytearray()
         serial_buffer = bytearray()
+        thread_frames = []
         fbtest_seen = [False]
 
         def expect(needle):
@@ -70,6 +100,8 @@ try:
                         log_buffer.extend(frame[4:])
                         if b"overtos login" in log_buffer:
                             raise RuntimeError("guest login prompt appeared in FRAME_LOG")
+                    elif frame.startswith(thread_header):
+                        thread_frames.append(frame)
                     elif (not fbtest_seen[0] and frame.startswith(fb_header)
                           and len(frame) == len(fb_header) + 480 * 272 * 4):
                         px = memoryview(frame)[len(fb_header):].cast("I")
@@ -101,6 +133,8 @@ try:
 
     if not fbtest_seen[0]:
         raise RuntimeError("no fbtest frame on the LCD")
+    if not any(thread_snapshot_matches(frame) for frame in thread_frames):
+        raise RuntimeError("no FRAME_THREAD with a 256 KiB heap, IDLE CPU %, an lnxN task, and sim_debug")
     qemu_exit = proc.wait(timeout=60)
     with open(log, "rb") as output:
         if b"Linux overtos" not in output.read():

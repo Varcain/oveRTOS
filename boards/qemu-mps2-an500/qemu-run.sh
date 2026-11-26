@@ -70,8 +70,8 @@ while [ $# -gt 0 ]; do
 done
 
 # ── Linux personality build: interactive UART console ────────────────────────
-# Without the sim framework, CMSDK UART1 uses the dashboard console pipe
-# when enabled and stdio otherwise. Semihosting output goes to a null chardev.
+# CMSDK UART1 uses the dashboard console pipe when enabled and stdio otherwise.
+# Semihosting output goes to a null chardev.
 # Locate the workspace holding this ELF. It sits under <ws>/images/, under
 # <ws>/images/<abi-variant>/ when the float ABI is recorded only in .config, or
 # under <ws>/build/... when a test runs a freshly built ELF in place. Walk up to

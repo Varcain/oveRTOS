@@ -55,24 +55,15 @@ if(OVE_WATCHDOG)
     ove_add_board_sources(../qemu_watchdog.c)
 endif()
 
-# Linux personality builds can use the host dashboard without the sim framework.
-if(OVE_LINUX)
-    # The rootfs cpio is XIP'd from PSRAM @ 0x60000000, where QEMU's `-device loader` places it
-    # at reset (see qemu-run.sh) — it is NOT embedded in the ELF (which would overflow the 4 MB
-    # FLASH), so no cpio fixture is generated here. This mirrors the STM32 QSPI-NOR path.
-    # /dev/fb0 framebuffer backend: a RAM RGB565 panel pushed to /dev/shm/ove-fb.
-    if(OVE_FB)
-        ove_add_board_sources(../src/qemu_fb.c)
-    endif()
-    if(OVE_LINUX_DEV_INPUT_DASHBOARD)
-        ove_add_board_sources(${OVE_DIR}/sim/src/ove_sim_input.c)
-        ove_add_include_directories(${OVE_DIR}/sim/src ${CMAKE_CURRENT_LIST_DIR}/../src)
-    endif()
-else()
+# Linux guest /dev/fb0 pushes its RGB565 framebuffer to /dev/shm/ove-fb.
+if(OVE_LINUX AND OVE_FB)
+    ove_add_board_sources(../src/qemu_fb.c)
+endif()
 
-# ── Sim framework (replaces lv_port_disp.c and qemu_audio.c) ──────
-# The sim framework provides unified display/audio/input through the
+# ── Sim framework ───────────────────────────────────────────────
+# The sim framework provides dashboard statistics and virtual peripherals through the
 # SHM guest transport (semihosting I/O to /dev/shm files).
+if(OVE_SIM)
 set(OVE_BOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 ove_add_include_directories(
     ${OVE_DIR}/sim/include
@@ -99,7 +90,7 @@ if(OVE_AUDIO)
 endif()
 ove_add_board_sources(${SIM_QEMU_SOURCES})
 
-endif() # OVE_LINUX (Linux builds omit the sim framework)
+endif() # OVE_SIM
 
 # lwIP for networking
 if(OVE_NET)

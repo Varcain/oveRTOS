@@ -8,14 +8,19 @@
 # poweroff cleanly. Same piped-stdin shape as segv_drive.py (the Cortex-M MPU
 # emulation is timing-fragile — no host-side pty/reader). Run from the repo root
 # with the active workspace = this engine's linux_interop build.
-# Headless runs must leave /dev/shm/ove-fb absent.
+# Headless runs must leave /dev/shm/ove-fb and /dev/shm/ove-sim absent.
 #
 # Usage: fbtest_drive.py [logfile]
-import subprocess, sys, re, os
+import os
+import re
+import subprocess
+import sys
 
-if os.path.exists("/dev/shm/ove-fb"):
-    print("Remove /dev/shm/ove-fb before running fbtest (stop any running viewer first).")
-    sys.exit(1)
+shm_paths = ("/dev/shm/ove-fb", "/dev/shm/ove-sim")
+for path in shm_paths:
+    if os.path.lexists(path):
+        print(f"Remove {path} before running fbtest (stop any running viewer first).")
+        sys.exit(1)
 
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/fbtest_drive.log"
 
@@ -42,7 +47,7 @@ pass_ok    = "fbtest: PASS" in text and "FRC=0" in text        # ioctls + pwrite
 node_ok    = bool(re.search(r"crw.*29,\s*0.*/dev/fb0", text))  # /dev/fb0 is a char dev major 29
 shell_ok   = "Linux overtos" in text                           # uname ran after -> shell survived
 no_kfault  = not re.search(r"HardFault|up_assert|PANIC|panic|Assertion|MPU FAULT|FATAL", text)
-shm_absent = not os.path.exists("/dev/shm/ove-fb")
+shm_absent = not any(os.path.lexists(path) for path in shm_paths)
 
 print(f"geom={geom_ok} fbtest={pass_ok} devnode={node_ok} "
       f"shell_survived={shell_ok} no_kernel_fault={no_kfault} shm_absent={shm_absent}")

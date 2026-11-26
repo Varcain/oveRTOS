@@ -9,8 +9,8 @@ board:
     Uses semihosting for I/O and the sim dashboard for display.
     Linux builds put the guest console on UART1; FreeRTOS Linux builds also show it in the dashboard.
   kconfig: |
-    # FreeRTOS Linux builds can use the dashboard without the sim framework.
-    select OVE_SIM if !OVE_LINUX
+    # FreeRTOS also uses the sim framework for Linux dashboard statistics.
+    select OVE_SIM if !OVE_LINUX || OVE_RTOS_FREERTOS
     # Debug by default, for the dashboard's debugger.  The browser bundle
     # runs under an interpreter and wants the optimised build instead.
     imply OVE_DEBUG_BUILD if !OVE_SIM_WEB

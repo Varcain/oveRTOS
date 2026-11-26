@@ -110,8 +110,14 @@ class BoardKconfigTest(unittest.TestCase):
     def test_board_kconfig_attributes(self):
         self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
         self.assertEqual(self._sym("OVE_SIM"), "y")
+
+    def test_an500_linux_sim_selection(self):
+        self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
         self.kconf.syms["OVE_LINUX"].set_value(2)
-        self.assertEqual(self._sym("OVE_SIM"), "n")
+        for rtos, expected in (("FREERTOS", "y"), ("NUTTX", "n"), ("ZEPHYR", "n")):
+            with self.subTest(rtos=rtos):
+                self.kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
+                self.assertEqual(self._sym("OVE_SIM"), expected)
 
 
 class LookupTest(unittest.TestCase):

@@ -1028,8 +1028,8 @@ def _assemble_web_bundle(ws):
     nothing else from the tree: copy it with the link dereferenced to put it
     on a static host.  serve/run.sh serves it locally.
 
-    A Linux personality build gets a terminal on the guest console and its
-    rootfs instead of the dashboard, which needs the sim framework.
+    A Linux personality bundle carries the rootfs and opens a terminal on
+    the guest console.
     """
     from .download import build_qemu_wasm
     from .manifest import load_manifest

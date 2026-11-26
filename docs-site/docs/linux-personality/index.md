@@ -64,6 +64,9 @@ ove download && ove build && ove flash
 On FreeRTOS an500, `make run` serves the dashboard and shows `/dev/fb0` on its LCD.
 The **Terminal** panel shows the guest serial session and sends typed keys to the UART.
 The **Log** panel shows other output and dashboard events.
+The dashboard shows CPU usage and FreeRTOS heap usage. The **Threads** panel
+lists RTOS tasks, including Linux guest slots named `lnxN`. Trace and profiling
+default to off.
 Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for a terminal-only console.
 

@@ -2,8 +2,9 @@
 
 The simulation framework provides virtual peripheral emulation for the QEMU MPS2-AN500 board. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
 
-The an500 board selects `CONFIG_OVE_SIM` for non-Linux builds. FreeRTOS an500
-Linux personality builds can use the dashboard's Terminal and Log panels without the sim framework.
+The an500 board selects `CONFIG_OVE_SIM` for non-Linux builds and FreeRTOS
+Linux personality builds. FreeRTOS Linux builds report threads, CPU usage,
+and RTOS heap in the native dashboard. Trace and profiling default to off.
 
 ## Architecture
 
@@ -203,14 +204,14 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `CONFIG_OVE_SIM` | bool | selected by the an500 for non-Linux builds | Enable the simulation plugin framework |
+| `CONFIG_OVE_SIM` | bool | selected by the an500 for non-Linux and FreeRTOS Linux builds | Enable the simulation plugin framework |
 | `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`; `web-an521.zephyr.<app>` for Zephyr's Linux personality) |
-| `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` when available | Enable the dashboard with `CONFIG_OVE_SIM` or on FreeRTOS an500 Linux builds |
-| `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` if SIM | Per-thread state time tracking (prerequisite for trace and profiler) |
-| `CONFIG_OVE_TRACE_STREAM` | bool | `y` if SIM | Emit state transitions into the trace ring |
+| `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` with `CONFIG_OVE_SIM` | Enable the dashboard |
+| `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` with `CONFIG_OVE_SIM` on non-Linux builds | Per-thread state time tracking (prerequisite for trace and profiler) |
+| `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` | Emit state transitions into the trace ring |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
 | `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
-| `CONFIG_OVE_PROFILER` | bool | `y` | Sampling profiler |
+| `CONFIG_OVE_PROFILER` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` | Sampling profiler |
 | `CONFIG_OVE_PROFILER_HZ` | int | 250 | Mean sample rate (10–1000 Hz) |
 | `CONFIG_OVE_PROFILER_MAX_DEPTH` | int | 32 | Maximum captured stack depth |
 | `CONFIG_OVE_PROFILER_RING_SIZE` | int | 1024 | Profiler ring capacity in samples |

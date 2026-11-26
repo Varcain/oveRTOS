@@ -1,10 +1,9 @@
 /*
  * oveRTOS browser bundle — terminal for a Linux personality build
  *
- * A personality build has no sim framework, so the dashboard has nothing to
- * show; this page is its console instead.  It boots the firmware in QEMU
- * compiled to WebAssembly with the arguments the board's qemu-run.sh uses,
- * and connects the guest console (QEMU's stdio) to the terminal.
+ * This page provides the guest console for a Linux browser bundle.
+ * It boots the firmware in WebAssembly QEMU with the arguments from the
+ * board's qemu-run.sh and connects QEMU's stdio to the terminal.
  *
  * web.json, next to the page, says what to run:
  *   { "firmware": "firmware.elf", "emulator": "qemu/",
