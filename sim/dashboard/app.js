@@ -3751,15 +3751,29 @@ function handleEvent(buf, off) {
              "type=" + view.getUint32(4, true) + " t=" + view.getUint32(8, true) + "ms");
 }
 
+var _logOpen = null;
+
 function handleLog(buf, off) {
     ensureWindow("events");
     var text = new TextDecoder().decode(new Uint8Array(buf, off));
-    /* Split into lines — firmware may send multiple lines at once. */
-    var lines = text.split("\n");
+    text = text.replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+    if (!text) return;
+    var lines = text.split(/\r\n|\r|\n/);
+    var last = _logQueue.length ? _logQueue[_logQueue.length - 1]
+                                : eventLog && eventLog.lastElementChild;
+    /* Continue a partial console line while it is the last entry. */
+    var open = _logOpen === last ? _logOpen : null;
     for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].replace(/\r$/, "");
-        if (line.length > 0) addEvent("log", line);
+        var line = lines[i];
+        if (line && open) {
+            open.lastChild.textContent += line;
+            hostEmit("log", { type: "log", msg: line, level: null, el: open });
+        } else if (line) {
+            open = addEvent("log", line);
+        }
+        if (i < lines.length - 1) open = null;
     }
+    _logOpen = open;
 }
 
 var audioPluginId = 0;  /* default; updated from FRAME_STATE */
@@ -3832,6 +3846,7 @@ function addEvent(type, msg) {
         _logRafScheduled = true;
         requestAnimationFrame(_flushLogQueue);
     }
+    return el;
 }
 
 /* ── Send pointer input to firmware ───────────────────────────────── */

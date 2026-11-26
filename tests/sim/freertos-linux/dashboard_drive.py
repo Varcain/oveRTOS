@@ -45,17 +45,22 @@ try:
     with ws:
         deadline = time.monotonic() + 120
         log_header = struct.pack("<I", FRAME_LOG)
+        log_buffer = bytearray()
 
         def expect(needle):
             while time.monotonic() < deadline:
+                pos = log_buffer.find(needle)
+                if pos != -1:
+                    del log_buffer[:pos + len(needle)]
+                    return
                 with suppress(TimeoutError):
                     frame = ws.recv(timeout=1)
-                    if isinstance(frame, bytes) and frame.startswith(log_header) and needle in frame[4:]:
-                        return
+                    if isinstance(frame, bytes) and frame.startswith(log_header):
+                        log_buffer.extend(frame[4:])
             raise TimeoutError(f"waiting for {needle.decode()}")
 
-        for needle, command in ((b"Welcome to Buildroot", b"root\n"), (b"login: root", b"root\n"),
-                                (b"root login on", b"uname -a\n"), (b"Linux overtos", b"poweroff\n")):
+        for needle, command in ((b"overtos login: ", b"root\n"), (b"Password: ", b"root\n"),
+                                (b"/root # ", b"uname -a\n"), (b"Linux overtos", b"poweroff\n")):
             expect(needle)
             ws.send(struct.pack("<IIII", FRAME_CMD, 0xFFFFFFFF, 0, len(command)) + command)
 

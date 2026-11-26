@@ -5,8 +5,10 @@
 # This file is part of oveRTOS.
 
 import array
+import codecs
 import mmap
 import os
+import select
 import struct
 import sys
 import threading
@@ -440,8 +442,8 @@ def _event_bridge_loop():
                 if dropped < last_dropped:  # the guest reset its header
                     last_dropped = 0
                 if dropped != last_dropped:
-                    text = f"[sim] {dropped - last_dropped} event(s) dropped: host behind"
-                    sys.stderr.write(text + "\n")
+                    text = f"[sim] {dropped - last_dropped} event(s) dropped: host behind\n"
+                    sys.stderr.write(text)
                     sys.stderr.flush()
                     frames.post_frame(struct.pack("<I", FRAME_LOG) + text.encode("utf-8"))
                     last_dropped = dropped
@@ -547,10 +549,20 @@ def _event_bridge_loop():
 # ── Console log bridge ───────────────────────────────────────────────
 
 def log_bridge(read_fd):
-    """Read lines from a file descriptor and broadcast as FRAME_LOG."""
-    with os.fdopen(read_fd, "r", errors="replace") as f:
-        for line in f:
-            text = line.rstrip("\n\r")
-            if text:
-                payload = struct.pack("<I", FRAME_LOG) + text.encode("utf-8", "replace")
-                frames.post_frame(payload)
+    """Broadcast console lines and partial prompts as FRAME_LOG."""
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    header = struct.pack("<I", FRAME_LOG)
+    pending = ""
+    with open(read_fd, "rb", buffering=0) as f:
+        while True:
+            if pending and (len(pending) >= 4096 or not select.select([f], [], [], 0.05)[0]):
+                frames.post_frame(header + pending.encode())
+                pending = ""
+            data = f.read(4096)
+            pending += decoder.decode(data, final=not data)
+            end = pending.rfind("\n") + 1 if data else len(pending)
+            if end:
+                frames.post_frame(header + pending[:end].encode())
+                pending = pending[end:]
+            if not data:
+                break

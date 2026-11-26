@@ -415,3 +415,35 @@ test("link: trace and profile frames decode behind the frame type word", () => {
     assert.equal(g.traceSpans.length, 1);
     assert.equal(g.resolvePc(g.profilerSamples[0].pcs[0]), "foo");
 });
+
+test("console: prompts continue across frames and terminal controls are removed", () => {
+    const g = loadDashboard();
+    const send = (text) => {
+        const bytes = new TextEncoder().encode(text);
+        const frame = new Uint8Array(4 + bytes.length);
+        new DataView(frame.buffer).setUint32(0, g.FRAME_LOG, true);
+        frame.set(bytes, 4);
+        g.ws.onmessage({ data: frame.buffer });
+    };
+    send("boot\r\novertos login: ");
+    assert.equal(g._logQueue.at(-1).lastChild.textContent, "overtos login: ");
+    send("root\r\n\x1b[1;34m/root\x1b[0m # ");
+    send("un");
+    send("ame\r\n50%\r100%\x07\x7f\r\n");
+    assert.deepEqual(g._logQueue.map((el) => el.lastChild.textContent),
+        ["boot", "overtos login: root", "/root # uname", "50%", "100%"]);
+
+    send("/root # ");
+    g.addEvent("system", "Connected to sim server");
+    send("ls\r\n");
+    assert.deepEqual(g._logQueue.slice(-3).map((el) => el.lastChild.textContent),
+        ["/root # ", "Connected to sim server", "ls"]);
+});
+
+test("console: WASM link emits each line as a separate entry", () => {
+    const g = loadDashboard({ wasm: true });
+    g.ws._log("[web] one");
+    g.ws._log("[web] two");
+    assert.deepEqual(g._logQueue.map((el) => el.lastChild.textContent),
+        ["[web] one", "[web] two"]);
+});

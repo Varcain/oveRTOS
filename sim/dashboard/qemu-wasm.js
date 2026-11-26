@@ -133,7 +133,7 @@ Link.prototype._emit = function (buf) {
 };
 
 Link.prototype._log = function (text) {
-    var bytes = new TextEncoder().encode(text);
+    var bytes = new TextEncoder().encode(text + "\n");
     var buf = new ArrayBuffer(4 + bytes.length);
     new DataView(buf).setUint32(0, FRAME_LOG, true);
     new Uint8Array(buf, 4).set(bytes);

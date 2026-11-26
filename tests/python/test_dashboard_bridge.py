@@ -350,7 +350,25 @@ class DashboardBridgeTest(unittest.TestCase):
                 redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             shm._event_bridge_loop()
         self.assertEqual(posted, [struct.pack("<I", self.protocol.FRAME_LOG)
-                                  + b"[sim] 3 event(s) dropped: host behind"])
+                                  + b"[sim] 3 event(s) dropped: host behind\n"])
+
+    def test_log_bridge_flushes_prompt(self):
+        read_fd, write_fd = os.pipe()
+        posted = Queue()
+        prefix = struct.pack("<I", self.protocol.FRAME_LOG)
+        self.enterContext(patch.object(self.frames, "post_frame", posted.put))
+        reader = threading.Thread(target=self.shm.log_bridge, args=(read_fd,), daemon=True)
+        reader.start()
+        self.addCleanup(reader.join, 1)
+        writer = self.enterContext(open(write_fd, "wb", buffering=0))
+        writer.write(b"boot\r\novertos login: caf\xc3")
+        self.assertEqual(posted.get(timeout=1), prefix + b"boot\r\n")
+        self.assertEqual(posted.get(timeout=1), prefix + b"overtos login: caf")
+        writer.write(b"\xa9\xff\n")
+        self.assertEqual(posted.get(timeout=1), prefix + "é�\n".encode())
+        writer.close()
+        reader.join(timeout=1)
+        self.assertFalse(reader.is_alive())
 
     def test_websocket_log_burst(self):
         frame_delivery = self.frames

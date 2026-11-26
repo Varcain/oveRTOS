@@ -13,19 +13,23 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const APP_JS = new URL("../../sim/dashboard/app.js", import.meta.url);
+const WASM_JS = new URL("../../sim/dashboard/qemu-wasm.js", import.meta.url);
 const noop = () => {};
 
 /* An element: a few real properties, any other one is a no-op method. */
 function fakeElement() {
     const el = { style: {}, dataset: {}, value: "" };
     el.classList = { add: noop, remove: noop, toggle: noop };
+    el.appendChild = (child) => (el.lastChild = child);
     const get = (t, p) => (p in t ? t[p] : typeof p === "symbol" ? undefined : noop);
     return new Proxy(el, { get });
 }
 
-export function loadDashboard() {
+export function loadDashboard({ wasm = false } = {}) {
     Object.assign(globalThis, {
         window: globalThis,
+        oveCreateLink: undefined,
+        crossOriginIsolated: false,
         addEventListener: noop,
         document: {
             getElementById: fakeElement, createElement: fakeElement, querySelectorAll: () => [],
@@ -37,6 +41,9 @@ export function loadDashboard() {
         setInterval: () => 0,
         clearInterval: noop,
     });
+    if (wasm) {
+        vm.runInThisContext(fs.readFileSync(WASM_JS, "utf8"), { filename: "qemu-wasm.js" });
+    }
     vm.runInThisContext(fs.readFileSync(APP_JS, "utf8"), { filename: "app.js" });
     /* Skip the DOM-heavy first-show panel wiring. */
     globalThis._panelsSeen.trace = true;
