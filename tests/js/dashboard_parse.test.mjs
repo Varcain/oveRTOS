@@ -495,10 +495,47 @@ test("log: UART copies only complete lines with a firmware level prefix", () => 
     ]);
 });
 
+test("log: reconnect discards partial UART text and UTF-8", () => {
+    const g = loadDashboard();
+    g.profilerResetOnReconnect = () => {};
+    g.traceResetOnReconnect = () => {};
+    sendFrame(g, g.FRAME_SERIAL, Uint8Array.of(0x66, 0x6f, 0x6f, 0x20, 0xc3));
+    assert.equal(g._logQueue.length, 0);
+    g.ws.onopen();
+    const logStart = g._logQueue.length;
+    sendFrame(g, g.FRAME_SERIAL, new TextEncoder().encode("[W] new\r\n"));
+    assert.deepEqual(g._logQueue.slice(logStart).map((el) => [el.className, el.lastChild.textContent]),
+        [["entry src-uart lvl-w", "[W] new"]]);
+});
+
 test("log: WASM link emits each line as a separate entry", () => {
     const g = loadDashboard({ wasm: true });
     g.ws._log("[web] one");
     g.ws._log("[web] two");
     assert.deepEqual(g._logQueue.map((el) => el.lastChild.textContent),
         ["[web] one", "[web] two"]);
+});
+
+test("link: WASM batches signed serial bytes and mirrors each UART level line once", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const writes = [];
+    const g = loadDashboard({ wasm: true, vt: () => ({ write: (bytes) => writes.push(bytes) }) });
+    const bytes = new TextEncoder().encode("\x1b[33m[W] café\x1b[0m\r\n> ");
+    const signed = new Int8Array(bytes.buffer);
+    g.ws._serialByte(signed[0]);
+    t.mock.timers.tick(5);
+    for (const byte of signed.subarray(1)) g.ws._serialByte(byte);
+    t.mock.timers.tick(4);
+    assert.deepEqual(writes, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(writes, [bytes]);
+    assert.deepEqual(g._logQueue.map((el) => [el.className, el.lastChild.textContent]),
+        [["entry src-uart lvl-w", "[W] café"]]);
+
+    g.ws._serialByte(0);
+    t.mock.timers.tick(9);
+    assert.deepEqual(writes, [bytes]);
+    t.mock.timers.tick(1);
+    assert.deepEqual(writes, [bytes, Uint8Array.of(0)]);
+    assert.equal(g._logQueue.length, 1);
 });

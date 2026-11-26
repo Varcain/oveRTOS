@@ -10,9 +10,9 @@
  * window.oveCreateLink(), an object with the WebSocket surface app.js uses,
  * speaking the same frames.
  *
- * Covered: console log, framebuffer, pointer input, audio in both
- * directions, plugin events (threads, trace) and plugin commands (console
- * input included).
+ * Covered: UART serial I/O, stderr logs, framebuffer, pointer input,
+ * audio in both directions, plugin events (threads, trace) and plugin
+ * commands.
  * Not covered: the sampling profiler and the debugger.
  *
  * web.json, next to the page, says what to run:
@@ -38,6 +38,7 @@ var FRAME_LOG    = 0x06;
 var FRAME_INPUT  = 0x07;
 var FRAME_THREAD = 0x0A;
 var FRAME_TRACE  = 0x0E;
+var FRAME_SERIAL = 0x10;
 
 /* ── Plugin event/command file (sim/include/ove/sim/ove_sim_shm.h) ─── */
 var SIM_PATH           = "/dev/shm/ove-sim";
@@ -94,6 +95,7 @@ var CONSOLE_PLUGIN_ID = 0xFFFFFFFF;
 
 var EVENT_POLL_MS = 30;
 var AUDIO_POLL_MS = 10;
+var SERIAL_BATCH_MS = 10;
 
 /* Loading progress and failures go to the page's status bar (board.js),
  * which is set up after this script runs — look it up on each call. */
@@ -118,6 +120,7 @@ function Link() {
     this._fbPending = false;
     this._fbFrame = null;              /* reused FRAME_FB buffer */
     this._stdin = [];                  /* console bytes for the firmware's UART */
+    this._serial = [];
 
     var self = this;
     boot(self).catch(function (e) {
@@ -138,6 +141,20 @@ Link.prototype._log = function (text) {
     new DataView(buf).setUint32(0, FRAME_LOG, true);
     new Uint8Array(buf, 4).set(bytes);
     this._emit(buf);
+};
+
+Link.prototype._serialByte = function (byte) {
+    this._serial.push(byte);
+    if (this._serial.length !== 1) return;
+
+    var self = this;
+    setTimeout(function () {
+        var buf = new ArrayBuffer(4 + self._serial.length);
+        new DataView(buf).setUint32(0, FRAME_SERIAL, true);
+        new Uint8Array(buf, 4).set(self._serial);
+        self._serial.length = 0;
+        self._emit(buf);
+    }, SERIAL_BATCH_MS);
 };
 
 /* ── Emulator boot ─────────────────────────────────────────────────── */
@@ -174,7 +191,7 @@ async function boot(link) {
     function consoleLine(text) {
         /* Emscripten stubs for syscalls QEMU probes but does not need. */
         if (text.indexOf("warning: unsupported syscall") === 0) return;
-        /* The console UART sends CRLF; Emscripten splits lines on LF. */
+        /* Emscripten splits stderr on LF. Strip any trailing CR. */
         text = text.replace(/\r+$/, "");
         if (text === "") return;
         link._log(text);
@@ -194,13 +211,12 @@ async function boot(link) {
                 return new URL(cfg.wasm, location.href).href;
             return prefix + path;
         },
-        print: consoleLine,
         printErr: consoleLine,
         preRun: [function (m) {
             /* Open stdio now so stdin gets a readiness op: without one
              * Emscripten reports it always readable and QEMU busy-reads it.
-             * stdout and stderr keep the line-buffered print path. */
-            m.FS.init(stdinByte);
+             * Collect stdout as UART bytes and route stderr through printErr. */
+            m.FS.init(stdinByte, function (c) { link._serialByte(c); });
             m.FS.getStream(0).stream_ops.poll = function () {
                 return link._stdin.length ? 1 : 0;   /* POLLIN */
             };
