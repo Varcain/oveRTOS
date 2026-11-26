@@ -3842,8 +3842,8 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
 
 
 def test_qemu_freertos_linux_dashboard(ove_dir, output_dir):
-    """Manual dashboard console smoke. Needs the Buildroot rootfs, QEMU,
-    a free loopback port and no running dashboard."""
+    """Manual dashboard smoke for the console and an fbtest frame on the LCD.
+    Needs the Buildroot rootfs, QEMU, a free loopback port and no running dashboard."""
     ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     run([ove, "download"], cwd=ove_dir)

@@ -106,7 +106,7 @@ The browser bundle (`web` variant of the QEMU board) uses the guest transport un
 
 The browser-based dashboard (`sim/dashboard/`) is built around a drawing of the simulated board, with every other tool in an inspector beside it.
 
-- **Board**: the LCD (the live LVGL framebuffer; clicks and drags are touch input) and the board's parts, drawn from `boards/<board>/board.yaml`: the MCU with its CPU load, RAM with heap usage, the console UART with TX/RX activity, the debug port, the audio codec, user LEDs, and the status LEDs. Clicking a part opens its tool. The **Reset** switch resets the board (needs the debugger). The display scales to the largest whole-number size that fits (**Auto**), or **Fit**, **1×** or **2×**.
+- **Board**: the LCD shows the live LVGL framebuffer or the Linux personality's `/dev/fb0`. Clicks and drags send touch input to non-Linux builds with LVGL. The board's parts are drawn from `boards/<board>/board.yaml`: the MCU with its CPU load, RAM with heap usage, the console UART with TX/RX activity, the debug port, the audio codec, user LEDs, and the status LEDs. Clicking a part opens its tool. The **Reset** switch resets the board (needs the debugger). The display scales to the largest whole-number size that fits (**Auto**), or **Fit**, **1×** or **2×**.
 - **Glance strip**: CPU, heap, threads and log warnings at a glance, under the board.
 - **Inspector**: Console (shell input, filter, warning/error levels), Threads, Trace, Profiler, Debug and Audio, in one pane or two stacked panes. A tool the build does not enable says which Kconfig option turns it on.
 - **Status bar**: run state, simulated time, run control (pause / continue / step / reset), the selected thread, and warning/error counts.

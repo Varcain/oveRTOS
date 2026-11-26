@@ -14,7 +14,7 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 sys.path.insert(0, "config/scripts")
-from ove_dashboard.protocol import FRAME_CMD, FRAME_LOG  # noqa: E402
+from ove_dashboard.protocol import FRAME_CMD, FRAME_FB, FRAME_LOG  # noqa: E402
 
 signal.signal(signal.SIGTERM, signal.default_int_handler)
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dashboard_drive.log"
@@ -45,7 +45,9 @@ try:
     with ws:
         deadline = time.monotonic() + 120
         log_header = struct.pack("<I", FRAME_LOG)
+        fb_header = struct.pack("<IHHHH", FRAME_FB, 0, 0, 479, 271)
         log_buffer = bytearray()
+        fbtest_seen = [False]
 
         def expect(needle):
             while time.monotonic() < deadline:
@@ -55,15 +57,26 @@ try:
                     return
                 with suppress(TimeoutError):
                     frame = ws.recv(timeout=1)
-                    if isinstance(frame, bytes) and frame.startswith(log_header):
+                    if not isinstance(frame, bytes):
+                        continue
+                    if frame.startswith(log_header):
                         log_buffer.extend(frame[4:])
+                    elif (not fbtest_seen[0] and frame.startswith(fb_header)
+                          and len(frame) == len(fb_header) + 480 * 272 * 4):
+                        px = memoryview(frame)[len(fb_header):].cast("I")
+                        # fbtest's gradient starts with a pure blue pixel.
+                        fbtest_seen[0] = px[0] == 0xFF0000FF and len(set(px)) > 1
             raise TimeoutError(f"waiting for {needle.decode()}")
 
         for needle, command in ((b"overtos login: ", b"root\n"), (b"Password: ", b"root\n"),
+                                (b"/root # ", b"fbtest\n"), (b"fbtest: PASS", None),
                                 (b"/root # ", b"uname -a\n"), (b"Linux overtos", b"poweroff\n")):
             expect(needle)
-            ws.send(struct.pack("<IIII", FRAME_CMD, 0xFFFFFFFF, 0, len(command)) + command)
+            if command is not None:
+                ws.send(struct.pack("<IIII", FRAME_CMD, 0xFFFFFFFF, 0, len(command)) + command)
 
+    if not fbtest_seen[0]:
+        raise RuntimeError("no fbtest frame on the LCD")
     rc = proc.wait(timeout=60)
     print(f"Linux overtos seen, QEMU exit {rc} ({log})")
 except (OSError, RuntimeError, subprocess.TimeoutExpired, WebSocketException) as exc:

@@ -86,6 +86,14 @@ class WorkspaceSearchTest(unittest.TestCase):
         m = self.manifest.build(ws, ROOT, debugger=False, console=False, web=True)
         self.assertFalse(m["features"]["profiler"])
 
+    def test_manifest_display_feature(self):
+        for extra, expected in (("CONFIG_OVE_FB=y\n", True),
+                                ("CONFIG_OVE_LVGL=y\n", True), ("", False)):
+            with self.subTest(extra=extra):
+                write(os.path.join(self.ws, ".config"), WORKSPACE_CONFIG + extra)
+                m = self.manifest.build(self.ws, ROOT, debugger=False, console=True)
+                self.assertEqual(m["features"]["display"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

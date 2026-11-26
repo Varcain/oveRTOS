@@ -61,7 +61,7 @@ ove download && ove build && ove flash
 #   console: /dev/ttyACM0 @ 115200
 ```
 
-On FreeRTOS an500, `make run` serves the dashboard with the guest console.
+On FreeRTOS an500, `make run` serves the dashboard with the guest console and shows `/dev/fb0` on its LCD.
 Use `make run HEADLESS=1` for a terminal-only console.
 
 Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the

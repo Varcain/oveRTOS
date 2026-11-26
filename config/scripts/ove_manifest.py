@@ -101,6 +101,8 @@ def build(workspace_dir, ove_dir, debugger, console, web=False, log=print):
     m["zero_heap"] = cfg.get("CONFIG_OVE_ZERO_HEAP") == "y"
     for feat, sym in FEATURES.items():
         m["features"][feat] = cfg.get(sym) == "y"
+    # A raw framebuffer such as the Linux personality's /dev/fb0 also drives the LCD.
+    m["features"]["display"] |= cfg.get("CONFIG_OVE_FB") == "y"
     if web:  # The browser target has no sampling profiler.
         m["features"]["profiler"] = False
     m["features"]["debugger"] = bool(debugger)

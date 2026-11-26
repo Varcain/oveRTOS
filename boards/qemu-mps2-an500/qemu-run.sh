@@ -235,7 +235,7 @@ if [ "${HEADLESS}" -eq 0 ]; then
     FB_PATH="/dev/shm/ove-fb"
 
     : > "${FB_PATH}"
-    truncate -s 1M "${FB_PATH}"  # header 20B + XRGB8888 pixels (480x272x4 = 522KB)
+    truncate -s 1M "${FB_PATH}"  # 16 B header + sim XRGB8888 (522 KB) or Linux RGB565 (261 KB)
 
     # Audio shared-memory ringbuffer: 2x ove_sim_audio_ring (32B hdr + 64KB buf each)
     : > "${AUDIO_PATH}"
