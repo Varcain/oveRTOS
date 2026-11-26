@@ -29,7 +29,7 @@ import sys
 import time
 
 from .allconfigs import _ove_bin, _run_interruptible, _run_pipeline, build_matrix
-from .build import LINUX_ROOTFS_ENV
+from .build import LINUX_ROOTFS_ENV, _DASHBOARD_PAGES, _TERMINAL_PAGES
 from .download import download_linux_rootfs
 from .manifest import load_manifest
 from .workspace import Workspace
@@ -37,11 +37,9 @@ from .workspace import Workspace
 logger = logging.getLogger("ove")
 
 # What a demo page needs out of the bundle 'ove build' wrote to serve/.
-_DEMO_FILES = ("index.html", "app.js", "board.js", "style.css", "board.css",
-               "manifest.json", "coi-serviceworker.js", "qemu-wasm.js",
-               "firmware.elf")
+_DEMO_FILES = ("index.html", *_DASHBOARD_PAGES, "manifest.json", "firmware.elf")
 # ...and out of a Linux personality bundle, whose page is a terminal.
-_TERMINAL_FILES = ("index.html", "terminal.js", "coi-serviceworker.js",
+_TERMINAL_FILES = ("index.html", *_TERMINAL_PAGES,
                    "firmware.elf", "rootfs.cpio")
 _EMULATOR_SCRIPT = "qemu-system-arm.js"
 _EMULATOR_SHARED = ("qemu-system-arm.wasm", "SOURCE.txt")

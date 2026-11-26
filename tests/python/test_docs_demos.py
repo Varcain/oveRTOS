@@ -11,12 +11,14 @@ import hashlib
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from ove import docs_demos, download
+from ove import build, docs_demos, download
 
 
 class DocsDemosTest(unittest.TestCase):
@@ -56,6 +58,20 @@ class DocsDemosTest(unittest.TestCase):
         self._write(os.path.join(self.root, "apps", lang, name, "app.yaml"),
                     f"lang: {lang}\nconfig_name: {name}\n"
                     f'description: "{description}"\n')
+
+    def test_web_bundles_include_local_page_assets(self):
+        dashboard = Path(__file__).resolve().parents[2] / "sim" / "dashboard"
+        terminal_html = (dashboard / "terminal.html").read_text()
+        dashboard_html = build._web_index_html(dashboard)
+        board_js = (dashboard / "board.js").read_text()
+        references = re.compile(r'(?:src|href)="([^":]+)"|loadScript\("([^":]+)"\)')
+        for source, pages in (
+            (terminal_html, build._TERMINAL_PAGES),
+            (dashboard_html, build._DASHBOARD_PAGES),
+            (board_js, build._DASHBOARD_PAGES),
+        ):
+            for src, script in references.findall(source):
+                self.assertIn(src or script, pages)
 
     def test_demo_shares_the_emulator_binary(self):
         docs_demos.assemble_demo(self._bundle("demo_a"), self.site, "demo_a")

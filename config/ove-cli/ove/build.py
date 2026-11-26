@@ -1015,6 +1015,10 @@ _WEB_MACHINES = {
     "qemu-mps2-an521": ["-cpu", "cortex-m33", "-machine", "mps2-an521"],
 }
 
+_TERMINAL_PAGES = ("vt.js", "terminal.js", "coi-serviceworker.js")
+_DASHBOARD_PAGES = ("app.js", "board.js", "style.css", "board.css",
+                    "coi-serviceworker.js", "qemu-wasm.js")
+
 
 def _assemble_web_bundle(ws):
     """Package the firmware for a web browser into <workspace>/serve/.
@@ -1054,13 +1058,12 @@ def _assemble_web_bundle(ws):
     if get_bool(ws.config, "CONFIG_OVE_LINUX"):
         shutil.copy2(os.path.join(dash_dir, "terminal.html"),
                      os.path.join(serve_dir, "index.html"))
-        pages = ("terminal.js", "coi-serviceworker.js")
+        pages = _TERMINAL_PAGES
         web = _personality_web_config(ws, machine, serve_dir)
     else:
         with open(os.path.join(serve_dir, "index.html"), "w") as f:
             f.write(_web_index_html(dash_dir))
-        pages = ("app.js", "board.js", "style.css", "board.css",
-                 "coi-serviceworker.js", "qemu-wasm.js")
+        pages = _DASHBOARD_PAGES
         web = {"firmware": "firmware.elf", "emulator": "qemu/",
                "machine": machine[-1]}
         _write_web_manifest(ws, os.path.join(serve_dir, "manifest.json"))
