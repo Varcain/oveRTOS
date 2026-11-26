@@ -186,9 +186,9 @@ var HANDLERS = {
         S.heap = d.heap;
         var idle = 0, have = false;
         S.threads.forEach(function (t) {
-            if (t.cpu == null) return;
+            if (t.cpu == null || !IDLE_RE.test(t.name)) return;
             have = true;
-            if (IDLE_RE.test(t.name)) idle += t.cpu;
+            idle += t.cpu;
         });
         S.cpu = have ? Math.max(0, Math.min(100, 100 - idle)) : null;
         if (S.cpu != null) {

@@ -28,10 +28,12 @@
  *     [uint32_t valid_fields]   (OVE_THREAD_INFO_VALID_* bits)
  *     [uint32_t stack_used]     (high-water mark bytes)
  *     [uint32_t stack_size]     (total allocation bytes)
- *     [uint32_t cpu_x100]       (cpu_percent_x100)
- *     [uint32_t state_x100[4]]  (running, ready, blocked, suspended)
+ *     [uint32_t cpu_x100]       (CPU load in 0.01% units since the previous snapshot)
+ *     [uint32_t state_x100[4]]  (cumulative running, ready, blocked, suspended percentages)
  *     [uint32_t tid]            (shared trace/profiler identity)
  *     [uint32_t generation]     (nonzero when available, changes on thread start)
+ *
+ * A thread's first snapshot has cpu_x100 zero and OVE_THREAD_INFO_VALID_CPU_PERCENT clear.
  * @{
  */
 

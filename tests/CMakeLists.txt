@@ -241,6 +241,16 @@ target_include_directories(ove_test_sim_shm_backpressure PRIVATE
     ${cmocka_SOURCE_DIR}/include
 )
 target_link_libraries(ove_test_sim_shm_backpressure PRIVATE cmocka-static)
+# Thread snapshots calculate CPU load from consecutive running-time samples.
+add_executable(ove_test_sim_debug_cpu obs/test_sim_debug_cpu.c)
+target_include_directories(ove_test_sim_debug_cpu PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${POSIX_CORE_DIR}/include
+    ${OVE_INCLUDE}
+    ${OVE_ROOT}/sim/include
+    ${cmocka_SOURCE_DIR}/include
+)
+target_link_libraries(ove_test_sim_debug_cpu PRIVATE cmocka-static)
 # Profiler drain against a transport that refuses events: refused samples
 # are reported once and stay out of the ring's overflow counter.
 add_executable(ove_test_sim_profiler_refused
@@ -505,6 +515,7 @@ add_test(NAME ove_arm_backtrace COMMAND ove_test_arm_backtrace)
 add_test(NAME ove_systick_q32 COMMAND ove_test_systick_q32)
 add_test(NAME ove_state_track_read COMMAND ove_test_state_track_read)
 add_test(NAME ove_sim_shm_backpressure COMMAND ove_test_sim_shm_backpressure)
+add_test(NAME ove_sim_debug_cpu COMMAND ove_test_sim_debug_cpu)
 add_test(NAME ove_sim_profiler_refused COMMAND ove_test_sim_profiler_refused)
 add_test(NAME ove_sim_trace_refused COMMAND ove_test_sim_trace_refused)
 add_test(NAME ove_trace_kthread COMMAND ove_test_trace_kthread)

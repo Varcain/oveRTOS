@@ -109,6 +109,10 @@ The browser bundle (`web` variant of the QEMU board) uses the guest transport un
 
 The browser-based dashboard (`sim/dashboard/`) is built around a drawing of the simulated board, with every other tool in an inspector beside it.
 
+The dashboard's CPU figures show the load over the last snapshot interval (about 0.5 s).
+Tracked ove threads use their own timers and kernel threads such as `IDLE` use kernel counters, so the percentages can add up to more or less than 100%.
+Under the NuttX CPU-load fallback, kernel thread figures are based on NuttX's decaying load average.
+
 - **Board**: the LCD shows the live LVGL framebuffer or the Linux personality's `/dev/fb0`. Once a frame is visible, clicks and drags send touch input to LVGL or to `/dev/input/event0` on FreeRTOS an500 Linux personality builds with evdev enabled. The board's parts are drawn from `boards/<board>/board.yaml`: the MCU with its CPU load, RAM with heap usage, the console UART with TX/RX activity, the debug port, the audio codec, user LEDs, and the status LEDs. Clicking a part opens its tool. The **Reset** switch resets the board (needs the debugger). The display scales to the largest whole-number size that fits (**Auto**), or **Fit**, **1×** or **2×**.
 - **Glance strip**: CPU, heap, threads and log warnings at a glance, under the board.
 - **Inspector** has one pane or two stacked panes. **Terminal** shows the serial session and sends typed keys to the console UART. When you open the native dashboard later, the Terminal shows up to the last 64 KB of serial output. The `clear` command also clears the Terminal's scrollback. **Log** shows other output, dashboard events, and copies of firmware `[D]`/`[I]`/`[W]`/`[E]` lines from the serial console, with search and level filters. The other panels are Threads, Trace, Profiler, Debug and Audio. A tool the build does not enable says which Kconfig option turns it on.

@@ -59,6 +59,57 @@ static struct ove_thread_info snap_threads[OVE_SIM_DEBUG_MAX_THREADS];
 static uint8_t
 	__attribute__((aligned(8))) snap_ev_buf[sizeof(struct ove_sim_event) + SNAPSHOT_BUF_SIZE];
 
+struct cpu_sample {
+	uintptr_t identity;
+	uint32_t generation;
+	uint64_t running_us;
+};
+
+static struct cpu_sample cpu_samples[2][OVE_SIM_DEBUG_MAX_THREADS];
+static unsigned int cpu_prev_table;
+static size_t cpu_prev_count;
+static uint64_t cpu_prev_us;
+static uint32_t cpu_prev_running_valid;
+
+_Static_assert(OVE_SIM_DEBUG_MAX_THREADS <= 32, "CPU sample validity mask is too small");
+
+static void update_snapshot_cpu(struct ove_thread_info *threads, size_t count)
+{
+	const struct cpu_sample *prev = cpu_samples[cpu_prev_table];
+	struct cpu_sample *next = cpu_samples[cpu_prev_table ^ 1u];
+	uint64_t now = 0;
+	bool have_time = ove_time_get_us(&now) == OVE_OK;
+	uint64_t dt = have_time && now > cpu_prev_us ? now - cpu_prev_us : 0;
+	uint32_t next_valid = 0;
+
+	for (size_t i = 0; i < count; i++) {
+		struct ove_thread_info *t = &threads[i];
+		uint64_t running_us = t->state_times.running_us;
+		next[i] = (struct cpu_sample){t->identity, t->generation, running_us};
+		t->valid_fields &= ~OVE_THREAD_INFO_VALID_CPU_PERCENT;
+		t->cpu_percent_x100 = 0;
+		/* Exited threads can switch from tracked time to the kernel counter. */
+		if (t->state == OVE_THREAD_STATE_TERMINATED ||
+		    !ove_thread_info_has(t, OVE_THREAD_INFO_VALID_RUNNING_TIME))
+			continue;
+		next_valid |= UINT32_C(1) << i;
+		for (size_t j = 0; dt > 0 && j < cpu_prev_count; j++) {
+			if (!(cpu_prev_running_valid & (UINT32_C(1) << j)) ||
+			    prev[j].identity != t->identity ||
+			    prev[j].generation != t->generation || prev[j].running_us > running_us)
+				continue;
+			uint64_t ran = running_us - prev[j].running_us;
+			t->cpu_percent_x100 = ran >= dt ? 10000u : (uint32_t)(ran * 10000u / dt);
+			t->valid_fields |= OVE_THREAD_INFO_VALID_CPU_PERCENT;
+			break;
+		}
+	}
+	cpu_prev_table ^= 1u;
+	cpu_prev_count = count;
+	cpu_prev_us = now;
+	cpu_prev_running_valid = have_time ? next_valid : 0;
+}
+
 static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 {
 	struct ove_thread_info *threads = snap_threads;
@@ -68,6 +119,7 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 	 * count entries, and unsupported memory stats leave the zeroed struct. */
 	int rc = ove_thread_list(threads, OVE_SIM_DEBUG_MAX_THREADS, &count);
 	(void)rc;
+	update_snapshot_cpu(threads, count);
 
 	struct ove_mem_stats mem;
 	memset(&mem, 0, sizeof(mem));
