@@ -24,6 +24,7 @@ FRAME_FILE_RESP  = 0x0D
 FRAME_TRACE      = 0x0E
 FRAME_PROFILE    = 0x0F
 FRAME_SERIAL     = 0x10  # Raw console UART output bytes (bridge → page)
+FRAME_SERIAL_TAIL = 0x11  # Recent console UART output for a newly connected page
 
 # Profiler frame subtypes (bridge-synthesised).
 PROFILE_SUB_SAMPLES = 1

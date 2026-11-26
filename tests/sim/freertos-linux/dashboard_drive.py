@@ -15,7 +15,7 @@ from websockets.sync.client import connect
 
 sys.path.insert(0, "config/scripts")
 from ove_dashboard.protocol import (  # noqa: E402
-    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL,
+    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL, FRAME_SERIAL_TAIL,
 )
 
 signal.signal(signal.SIGTERM, signal.default_int_handler)
@@ -47,7 +47,7 @@ try:
     with ws:
         deadline = time.monotonic() + 120
         log_header = struct.pack("<I", FRAME_LOG)
-        serial_header = struct.pack("<I", FRAME_SERIAL)
+        serial_headers = tuple(struct.pack("<I", kind) for kind in (FRAME_SERIAL, FRAME_SERIAL_TAIL))
         fb_header = struct.pack("<IHHHH", FRAME_FB, 0, 0, 479, 271)
         log_buffer = bytearray()
         serial_buffer = bytearray()
@@ -64,7 +64,7 @@ try:
                     frame = ws.recv(timeout=1)
                     if not isinstance(frame, bytes):
                         continue
-                    if frame.startswith(serial_header):
+                    if frame.startswith(serial_headers):
                         serial_buffer.extend(frame[4:])
                     elif frame.startswith(log_header):
                         log_buffer.extend(frame[4:])

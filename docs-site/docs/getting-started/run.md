@@ -21,6 +21,7 @@ The behaviour depends on the selected board:
 When the board is `qemu` (`qemu-mps2-an500`), `make run` invokes QEMU with the generated `.elf` image.
 For non-Linux builds, the emulated CMSDK UART0 carries console output and passes typed input to `ove_console`.
 The dashboard's **Terminal** panel shows the serial session and sends typed keys to the console UART.
+When you open the dashboard later, the Terminal shows up to the last 64 KB of serial output.
 The **Log** panel shows other output, dashboard events, and copies of firmware `[D]`/`[I]`/`[W]`/`[E]` lines from the serial console. No physical hardware is required.
 
 To run without an interactive display (useful in CI):

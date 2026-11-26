@@ -21,7 +21,6 @@ from .protocol import (
     FRAME_FB,
     FRAME_LOG,
     FRAME_PROFILE,
-    FRAME_SERIAL,
     FRAME_THREAD,
     FRAME_TRACE,
     PROFILE_SUB_CAPS,
@@ -570,8 +569,7 @@ def log_bridge(read_fd):
 
 
 def serial_bridge(read_fd):
-    """Broadcast raw console UART output as FRAME_SERIAL."""
-    header = struct.pack("<I", FRAME_SERIAL)
+    """Retain and broadcast raw console UART output."""
     try:
         while data := os.read(read_fd, 4096):
             deadline = time.monotonic() + 0.01
@@ -582,7 +580,7 @@ def serial_bridge(read_fd):
                     break
                 data = os.read(read_fd, 4096 - len(chunk))
                 chunk += data
-            frames.post_frame(header + chunk)
+            frames.post_serial(chunk)
             if not data:
                 return
     finally:

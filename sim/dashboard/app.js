@@ -42,6 +42,7 @@ var FRAME_FILE_RESP = 0x0D;
 var FRAME_TRACE     = 0x0E;
 var FRAME_PROFILE   = 0x0F;
 var FRAME_SERIAL    = 0x10;
+var FRAME_SERIAL_TAIL = 0x11;
 
 /* ── Shared constants ────────────────────────────────────────────────── */
 var RING_HDR            = 32;     /* OVE_RING_OFF_BUF — ring header size in bytes */
@@ -214,6 +215,13 @@ function connect() {
                 if (vt) vt.write(serialBytes);
                 logSerialLines(serialBytes);
                 hostEmit("serial");
+                break;
+            case FRAME_SERIAL_TAIL:
+                var tailBytes = new Uint8Array(buf, 4);
+                if (tailBytes.length) ensureWindow("terminal");
+                if (vt) { vt.reset(); vt.write(tailBytes); }
+                logSerialLines(tailBytes, serialTailSeen);
+                serialTailSeen = true;
                 break;
             case FRAME_THREAD:     handleThreadSnapshot(buf, 4); break;
             case FRAME_DEBUG_RESP: handleDebugResp(buf, 4); break;
@@ -3765,12 +3773,14 @@ var LOG_STRIP_CONTROLS = /\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x
 var LOG_LEVEL_PREFIX = /^\s*\[([DIWE])\]/;
 var serialLogDecoder = new TextDecoder();
 var serialLogPending = "";
+var serialTailSeen = false;
 var _logOpen = null;
 
-function logSerialLines(bytes) {
+function logSerialLines(bytes, quiet) {
     serialLogPending += serialLogDecoder.decode(bytes, { stream: true });
     var lines = serialLogPending.split(/\r\n|\r|\n/);
     serialLogPending = lines.pop().slice(0, 4096);
+    if (quiet) return;
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i].replace(LOG_STRIP_CONTROLS, "");
         if (LOG_LEVEL_PREFIX.test(line)) addEvent("uart", line);

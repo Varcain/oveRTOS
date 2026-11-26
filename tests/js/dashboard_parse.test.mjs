@@ -480,6 +480,36 @@ test("link: serial bytes go to the terminal and log frames go to the log", () =>
     assert.deepEqual(g._logQueue.map((el) => el.lastChild.textContent), ["QEMU output"]);
 });
 
+test("link: serial tail restores the terminal and mirrors complete lines once", () => {
+    const calls = [];
+    const g = loadDashboard({ vt: () => ({
+        reset: () => calls.push("reset"),
+        write: (bytes) => calls.push(new TextDecoder().decode(bytes)),
+    }) });
+    g.profilerResetOnReconnect = () => {};
+    g.traceResetOnReconnect = () => {};
+    g.HOST.on = (event) => { if (event === "serial") calls.push("blink"); };
+    const encoder = new TextEncoder();
+    const send = (type, text) => sendFrame(g, type, encoder.encode(text));
+    const uart = () => g._logQueue.filter((el) => el.className.includes("src-uart"))
+        .map((el) => el.lastChild.textContent);
+
+    g.ws.onopen();
+    send(0x11, "[W] boot\r\nlogin: ");
+    assert.deepEqual(calls, ["reset", "[W] boot\r\nlogin: "]);
+    assert.deepEqual(uart(), ["[W] boot"]);
+
+    g.ws.onopen();
+    send(0x11, "[W] boot\r\n[I] ha");
+    send(0x10, "lf\r\n");
+    assert.deepEqual(calls.slice(2), ["reset", "[W] boot\r\n[I] ha", "lf\r\n", "blink"]);
+    assert.deepEqual(uart(), ["[W] boot", "[I] half"]);
+
+    g.ws.onopen();
+    send(0x11, "");
+    assert.deepEqual(calls.slice(6), ["reset", ""]);
+});
+
 test("log: serial lines survive splits inside CSI, UTF-8 and CRLF", () => {
     const bytes = new TextEncoder().encode("\x1b[1;33m[W] café full\x1b[0m\r\n");
     const cr = bytes.length - 2;

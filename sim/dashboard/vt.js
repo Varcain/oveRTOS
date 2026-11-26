@@ -1,6 +1,7 @@
 /* A small VT100 subset for BusyBox's line editing, less, top and vi. */
 /* oveVt(screen, send): send receives a Uint8Array for keys, paste and type().
- * write() takes raw output bytes. The caller manages focus and CSS. */
+ * write() takes raw output bytes, and reset() clears the display and parser.
+ * The caller manages focus and CSS. */
 
 (function () {
 "use strict";
@@ -123,12 +124,25 @@ window.oveVt = function (screen, send) {
         if (follow) screen.scrollTop = screen.scrollHeight;
     }
 
-    function write(bytes) {
-        var text = decoder.decode(bytes, { stream: true });
-        for (var i = 0; i < text.length; i++) step(text.charCodeAt(i));
+    function scheduleRender() {
         if (dirty) return;
         dirty = true;
         requestAnimationFrame(render);
+    }
+
+    function write(bytes) {
+        var text = decoder.decode(bytes, { stream: true });
+        for (var i = 0; i < text.length; i++) step(text.charCodeAt(i));
+        scheduleRender();
+    }
+
+    function reset() {
+        lines = [""];
+        row = col = 0;
+        esc = null;
+        decoder = new TextDecoder("utf-8");
+        follow = true;
+        scheduleRender();
     }
 
     function type(text) {
@@ -172,6 +186,6 @@ window.oveVt = function (screen, send) {
         e.preventDefault();
     });
 
-    return { write: write, type: type, text: function () { return lines.join("\n"); } };
+    return { write: write, reset: reset, type: type, text: function () { return lines.join("\n"); } };
 };
 })();

@@ -47,6 +47,24 @@ test("vt: UTF-8 split across writes, and bytes >= 0x80", () => {
     assert.equal(t.vt.text(), "AéB");
 });
 
+test("vt: reset clears the screen, escape state and incomplete UTF-8", () => {
+    const t = terminal();
+    t.out("one\r\ntwo\x1b[");
+    t.flush();
+    t.screen.scrollHeight = 30;
+    t.on.scroll();
+    t.vt.reset();
+    t.flush();
+    assert.equal(t.screen.nodes.map((node) => node.textContent).join(""), " ");
+    assert.equal(t.screen.scrollTop, 30);
+    t.out("K");
+    assert.equal(t.vt.text(), "K");
+    t.vt.write(Uint8Array.of(0x0d, 0x0a, 0xc3));
+    t.vt.reset();
+    t.out("x");
+    assert.equal(t.vt.text(), "x");
+});
+
 test("vt: renders once per frame, also after a cursor-only update", () => {
     const t = terminal();
     t.out("abc");

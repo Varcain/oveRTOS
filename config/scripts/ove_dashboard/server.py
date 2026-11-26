@@ -28,6 +28,7 @@ from .protocol import (
     FRAME_DEBUG_RESP,
     FRAME_FILE_REQ,
     FRAME_INPUT,
+    FRAME_SERIAL_TAIL,
     FRAME_STATE,
 )
 
@@ -175,6 +176,7 @@ async def serve(port, dashboard_dir, host=DEFAULT_HOST):
     async def handle(connection):
         pending = asyncio.Queue()
         frames._clients[connection] = pending
+        pending.put_nowait(struct.pack("<I", FRAME_SERIAL_TAIL) + bytes(frames._serial_tail))
         sender = None
         try:
             last_fb = frames._last_fb_frame
@@ -200,12 +202,14 @@ async def serve(port, dashboard_dir, host=DEFAULT_HOST):
     def process_request(connection, request):
         return _process_request(connection, request, dashboard_dir, host)
 
-    async with websocket_serve(handle, host, port, compression=None,
-                               process_request=process_request) as server:
-        bound_port = server.sockets[0].getsockname()[1]
-        print(f"Dashboard: http://{host}:{bound_port}", flush=True)
+    with frames._serial_lock:
         frames._server_loop = asyncio.get_running_loop()
-        try:
+    try:
+        async with websocket_serve(handle, host, port, compression=None,
+                                   process_request=process_request) as server:
+            bound_port = server.sockets[0].getsockname()[1]
+            print(f"Dashboard: http://{host}:{bound_port}", flush=True)
             await server.serve_forever()
-        finally:
+    finally:
+        with frames._serial_lock:
             frames._server_loop = None

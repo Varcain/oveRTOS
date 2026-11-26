@@ -86,6 +86,7 @@ class DashboardBridgeTest(unittest.TestCase):
         framebuffer = patch.object(self.frames, "_last_fb_frame", None)
         framebuffer.start()
         self.addCleanup(framebuffer.stop)
+        self.enterContext(patch.object(self.frames, "_serial_tail", bytearray(), create=True))
         self.gdb = self.debug.GdbController("gdb", None, 0)
         self.gdb.proc = SimpleNamespace(stdin=io.StringIO())
 
@@ -289,6 +290,7 @@ class DashboardBridgeTest(unittest.TestCase):
                 self.assertNotIn("Sec-WebSocket-Extensions", peer.response.headers)
                 self.assertEqual(await peer.recv(), struct.pack("<II", protocol.FRAME_STATE, 0)
                                  + b'{"type":"audio","sample_rate":16000,"channels":1,"bit_depth":16}')
+                self.assertEqual(await peer.recv(), struct.pack("<I", protocol.FRAME_SERIAL_TAIL))
                 await peer.send(struct.pack("<I", protocol.FRAME_INPUT) + pointer)
                 await peer.send(struct.pack("<I", protocol.FRAME_CMD) + cmd)
                 while struct.unpack_from("<I", shm.SIM_SHM_PATH.read_bytes(),
@@ -370,21 +372,81 @@ class DashboardBridgeTest(unittest.TestCase):
         reader.join(timeout=1)
         self.assertFalse(reader.is_alive())
 
-    def test_serial_bridge_preserves_raw_bytes(self):
-        prefix = struct.pack("<I", self.protocol.FRAME_SERIAL)
-        parts = (b"\x1b[1;3", b"4m/root # ", b"\xff", b"x" * 4096)
+    def serial_reader(self):
         read_fd, write_fd = os.pipe()
-        posted = []
-        self.enterContext(patch.object(self.frames, "post_frame", posted.append))
         reader = threading.Thread(target=self.shm.serial_bridge, args=(read_fd,), daemon=True)
         reader.start()
-        with open(write_fd, "wb", buffering=0) as writer:
+        self.addCleanup(reader.join, 1)
+        return open(write_fd, "wb", buffering=0), reader
+
+    def test_serial_bridge_preserves_raw_bytes(self):
+        parts = (b"\x1b[1;3", b"4m/root # ", b"\xff", b"x" * 4096)
+        posted = []
+        self.enterContext(patch.object(self.frames, "post_serial", posted.append))
+        writer, reader = self.serial_reader()
+        with writer:
             for part in parts:
                 writer.write(part)
         reader.join(timeout=1)
         self.assertFalse(reader.is_alive())
-        self.assertTrue(all(frame.startswith(prefix) and len(frame[4:]) <= 4096 for frame in posted))
-        self.assertEqual(b"".join(frame[4:] for frame in posted), b"".join(parts))
+        self.assertTrue(all(len(chunk) <= 4096 for chunk in posted))
+        self.assertEqual(b"".join(posted), b"".join(parts))
+
+    def test_serial_tail_retains_recent_lines_before_server_start(self):
+        boot = "".join(f"[I] boot line {i:04d} café\r\n" for i in range(3000)).encode()
+        stream = boot + b"overtos login: "
+        writer, reader = self.serial_reader()
+        with writer:
+            writer.write(stream)
+        reader.join(timeout=2)
+        self.assertFalse(reader.is_alive())
+        self.assertEqual(self.frames._serial_tail, stream[-64 * 1024:].split(b"\n", 1)[1])
+
+    def test_serial_tail_is_queued_before_live_output(self):
+        live, tail = struct.pack("<I", 0x10), struct.pack("<I", 0x11)
+        boot = b"boot\r\nlogin: "
+
+        async def check(address, writer):
+            async with self.connect_websocket(address) as early:
+                await early.recv()  # Audio state follows client registration.
+                writer.write(boot)
+                self.assertEqual(await early.recv(), tail)
+                self.assertEqual(await early.recv(), live + boot)
+                async with self.connect_websocket(address) as late:
+                    await late.recv()
+                    self.assertEqual(await late.recv(), tail + boot)
+                    writer.write(b"root")
+                    for peer in (early, late):
+                        self.assertEqual(await peer.recv(), live + b"root")
+
+        writer, _ = self.serial_reader()
+        with writer, self.running_bridge() as address:
+            asyncio.run(asyncio.wait_for(check(address, writer), 4))
+
+    def test_serial_tail_is_snapshotted_at_registration(self):
+        initial_frames = self.server._initial_frames
+
+        def publish_during_initial_frames():
+            self.frames._publish_serial(b"x")
+            yield from initial_frames()
+
+        async def check(address):
+            async with self.connect_websocket(address, close_timeout=0.5) as peer:
+                expected = [*initial_frames(), struct.pack("<I", 0x11), struct.pack("<I", 0x10) + b"x"]
+                self.assertEqual([await peer.recv() for _ in expected], expected)
+
+        with patch.object(self.server, "_initial_frames", publish_during_initial_frames), \
+                self.running_bridge() as address:
+            asyncio.run(asyncio.wait_for(check(address), 4))
+
+    def test_post_serial_updates_tail_on_server_loop(self):
+        loop = asyncio.new_event_loop()
+        self.addCleanup(loop.close)
+        with patch.object(self.frames, "_server_loop", loop):
+            self.frames.post_serial(b"a")
+            self.assertEqual(self.frames._serial_tail, b"")
+            loop.run_until_complete(asyncio.sleep(0))
+        self.assertEqual(self.frames._serial_tail, b"a")
 
     def test_websocket_log_burst(self):
         frame_delivery = self.frames
@@ -403,6 +465,7 @@ class DashboardBridgeTest(unittest.TestCase):
 
         async def check(address):
             async with self.connect_websocket(address, close_timeout=0.5) as peer:
+                await peer.recv()
                 await peer.recv()
                 frame_delivery._server_loop.call_soon_threadsafe(queue_burst)
                 self.assertEqual([await peer.recv() for _ in frames], frames)
