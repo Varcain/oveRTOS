@@ -59,12 +59,12 @@ config OVE_THREAD_STATE_STATS
 config OVE_TRACE_STREAM
     bool "Thread-state trace streaming"
     depends on OVE_THREAD_STATE_STATS
-    default y if OVE_SIM
+    default y if OVE_SIM && !(OVE_LINUX && OVE_SIM_WEB)
     help
       Emit every thread state transition as a timestamped record
       into a lock-free multi-producer ring buffer, drained by the sim
       transport layer and rendered as a swimlane in the dashboard
-      trace panel. Disabling removes all per-transition overhead.
+      trace panel. Defaults to off in Linux browser bundles.
 
 config OVE_TRACE_MARKERS
     bool "Sync-primitive and user trace markers"

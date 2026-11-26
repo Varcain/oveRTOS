@@ -77,12 +77,16 @@ Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the
 shell: `uname -a`, `ls -l /`, `ps`, `top`, `cat`, a pipe (`seq 5 | wc -l`), a
 background job, `vi`, then `poweroff`.
 
-The browser bundle runs in WebAssembly QEMU with the sim framework disabled
-and provides a terminal on the guest console.
+The FreeRTOS an500 browser dashboard also shows Terminal, Log, Threads, CPU,
+and RTOS heap. The full `linux_interop` profile shows `/dev/fb0` on the LCD
+and sends pointer input to `/dev/input/event0`. Trace defaults to off, and the
+browser has no profiler or debugger. NuttX an500 and Zephyr an521 Linux
+bundles open a guest console terminal.
 
 ```bash
-make web.freertos.linux_interop_minimal         # an500; also nuttx
-make web-an521.zephyr.linux_interop_minimal     # an521, Zephyr
+make web.freertos.linux_interop                 # an500, FreeRTOS dashboard
+make web.nuttx.linux_interop_minimal            # an500, NuttX terminal
+make web-an521.zephyr.linux_interop_minimal     # an521, Zephyr terminal
 make && make run                                # http://127.0.0.1:8080, or the next free port
 ```
 

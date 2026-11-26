@@ -1102,7 +1102,7 @@ config OVE_SIM
       virtual peripherals, sensor injection, and host-side
       web dashboard visualization.
       The QEMU MPS2-AN500 board selects it for non-Linux builds
-      and for native FreeRTOS Linux personality builds.
+      and for FreeRTOS Linux personality builds.
 
 config OVE_SIM_WEB
     bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
@@ -1114,9 +1114,9 @@ config OVE_SIM_WEB
       or Podman).  The directory is self-contained and can be put on
       any static host; 'ove run' serves it locally.
 
-      Non-Linux bundles include the sim dashboard. Linux personality
-      bundles include a guest console terminal and the rootfs. The
-      sim framework defaults to off for Linux browser builds.
+      All Linux personality bundles include the rootfs. Non-Linux and
+      FreeRTOS an500 Linux bundles open the sim dashboard. NuttX an500
+      and Zephyr an521 Linux bundles open a guest console terminal.
 
       WebAssembly QEMU runs in an interpreter. Browser builds default
       to optimised firmware.
@@ -1130,10 +1130,10 @@ config OVE_SIM_DASHBOARD
     default y
     depends on OVE_SIM
     help
-      Enable the browser-based simulation dashboard served over
-      a local WebSocket server. Displays framebuffer, audio,
+      Enable the browser-based simulation dashboard in native runs
+      and browser bundles. Displays framebuffer, audio,
       LED states, GPIO matrix, and sensor controls.
-      On native FreeRTOS an500 Linux builds, it shows the guest UART,
+      On FreeRTOS an500 Linux builds, it shows the guest UART,
       framebuffer, threads, CPU usage, and RTOS heap.
 
 endmenu

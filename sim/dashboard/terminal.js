@@ -1,8 +1,8 @@
 /*
  * oveRTOS browser bundle — terminal for a Linux personality build
  *
- * Linux browser bundles use this terminal for the guest console. The
- * simulation framework is off by default in their firmware.
+ * NuttX an500 and Zephyr an521 Linux bundles use this guest console page.
+ * FreeRTOS an500 Linux bundles open the sim dashboard.
  * It boots the firmware in WebAssembly QEMU with the arguments from the
  * board's qemu-run.sh and connects QEMU's stdio to the terminal.
  *

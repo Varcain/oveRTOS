@@ -6,6 +6,7 @@
 
 import errno
 import http.client
+import json
 import os
 import signal
 import socket
@@ -15,11 +16,45 @@ import unittest
 from contextlib import ExitStack, closing, suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest import mock
 
-from ove import build
+from ove import build, download
 
 
 class WebRunTest(unittest.TestCase):
+    def test_linux_bundle_uses_the_dashboard_setting(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            serve = root / "serve"
+            serve.mkdir()
+            (serve / "terminal.js").touch()
+            (root / "firmware.elf").touch()
+            ws = SimpleNamespace(
+                ove_dir=Path(__file__).resolve().parents[2], images_dir=root,
+                workspace_dir=root, dl_dir=root, output_dir=root,
+                board_name="qemu-mps2-an500", config={
+                    "CONFIG_OVE_LINUX": "y", "CONFIG_OVE_SIM": "y",
+                    "CONFIG_OVE_SIM_DASHBOARD": "y"})
+            web = {"firmware": "firmware.elf", "emulator": "qemu/",
+                   "args": ["-serial", "stdio"], "files": {"rootfs.cpio": "/rootfs.cpio"}}
+            with mock.patch.object(download, "build_qemu_wasm", return_value=root / "qemu"), \
+                    mock.patch.object(build, "_strip_firmware"), \
+                    mock.patch.object(build, "_personality_web_config", return_value=web), \
+                    mock.patch.object(build, "_write_web_manifest",
+                                      side_effect=lambda _, path: Path(path).write_text("{}")):
+                build._assemble_web_bundle(ws)
+                self.assertIn('src="qemu-wasm.js"', (serve / "index.html").read_text(encoding="utf-8"))
+                self.assertEqual((serve / "manifest.json").read_text(), "{}")
+                self.assertFalse((serve / "terminal.js").exists())
+                self.assertEqual(json.loads((serve / "web.json").read_text()), web)
+
+                ws.config["CONFIG_OVE_SIM_DASHBOARD"] = "n"
+                build._assemble_web_bundle(ws)
+                self.assertTrue((serve / "terminal.js").is_file())
+                self.assertFalse((serve / "manifest.json").exists())
+                self.assertFalse((serve / "app.js").exists())
+
     def _hold_ports(self, stack):
         for start in range(20000, 30000, 4):
             with ExitStack() as attempt:

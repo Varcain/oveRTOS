@@ -38,9 +38,7 @@ logger = logging.getLogger("ove")
 
 # What a demo page needs out of the bundle 'ove build' wrote to serve/.
 _DEMO_FILES = ("index.html", *_DASHBOARD_PAGES, "manifest.json", "firmware.elf")
-# ...and out of a Linux personality bundle, whose page is a terminal.
-_TERMINAL_FILES = ("index.html", *_TERMINAL_PAGES,
-                   "firmware.elf", "rootfs.cpio")
+_TERMINAL_FILES = ("index.html", *_TERMINAL_PAGES, "firmware.elf")
 _EMULATOR_SCRIPT = "qemu-system-arm.js"
 _EMULATOR_SHARED = ("qemu-system-arm.wasm", "SOURCE.txt")
 # The demos run FreeRTOS: the LVGL examples do not start on the other
@@ -168,9 +166,14 @@ def assemble_demo(serve_dir, site_dir, name):
     emulator = os.path.realpath(os.path.join(serve_dir, "qemu"))
     dest = os.path.join(site_dir, name)
     os.makedirs(os.path.join(dest, "qemu"), exist_ok=True)
+    with open(os.path.join(serve_dir, "web.json")) as f:
+        config = json.load(f)
     terminal = os.path.isfile(os.path.join(serve_dir, "terminal.js"))
-    for filename in _TERMINAL_FILES if terminal else _DEMO_FILES:
-        shutil.copy2(os.path.join(serve_dir, filename), dest)
+    pages = _TERMINAL_FILES if terminal else _DEMO_FILES
+    for filename in (*pages, *(config.get("files") or {})):
+        path = os.path.join(dest, filename)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        shutil.copy2(os.path.join(serve_dir, filename), path)
     shutil.copy2(os.path.join(emulator, _EMULATOR_SCRIPT),
                  os.path.join(dest, "qemu"))
 
@@ -179,8 +182,6 @@ def assemble_demo(serve_dir, site_dir, name):
     for filename in _EMULATOR_SHARED:
         shutil.copy2(os.path.join(emulator, filename), shared)
 
-    with open(os.path.join(serve_dir, "web.json")) as f:
-        config = json.load(f)
     config["wasm"] = "../qemu/qemu-system-arm.wasm"
     with open(os.path.join(dest, "web.json"), "w") as f:
         json.dump(config, f, indent=2)

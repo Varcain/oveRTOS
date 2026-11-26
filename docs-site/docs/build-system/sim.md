@@ -2,11 +2,13 @@
 
 The simulation framework provides virtual peripheral emulation for the QEMU MPS2-AN500 board. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
 
-The an500 board selects `CONFIG_OVE_SIM` for non-Linux builds and native
-FreeRTOS Linux personality builds. The native Linux dashboard shows threads,
-CPU usage, RTOS heap, trace swimlanes, and profiling samples. The Linux browser
-bundle runs with the sim framework disabled and provides a terminal on the
-guest console.
+The an500 board selects `CONFIG_OVE_SIM` for non-Linux and FreeRTOS Linux
+builds. The FreeRTOS Linux dashboard shows Terminal, Log, Threads, CPU usage,
+and RTOS heap in native QEMU and browser bundles. Native QEMU also shows trace
+swimlanes and profiling samples. The LCD and pointer input need an app profile
+with `/dev/fb0` and `/dev/input/event0`, which the minimal one lacks. Linux browser
+bundles default to trace off and omit the profiler and debugger.
+NuttX an500 and Zephyr an521 Linux bundles open a guest console terminal.
 
 ## Architecture
 
@@ -95,7 +97,7 @@ On the other end, the bridge process (`config/scripts/ove-dashboard-bridge.py`) 
 
 The transport implements `struct ove_sim_transport_ops`, so plugin code is transport-agnostic. In the browser the page itself plays the bridge's part (`sim/dashboard/qemu-wasm.js`), reading the same files from Emscripten's in-memory filesystem.
 
-Non-Linux browser bundles (`web` variant of the QEMU board) use the guest transport. The firmware's semihosting files live in the emulator's in-memory filesystem, inside the page, and `sim/dashboard/qemu-wasm.js` feeds the frames to the dashboard.
+Browser dashboard bundles use the guest transport. The firmware's semihosting files live in the emulator's in-memory filesystem, and `sim/dashboard/qemu-wasm.js` feeds the frames to the dashboard.
 
 ### Transport Operations
 
@@ -213,11 +215,11 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `CONFIG_OVE_SIM` | bool | selected by the an500 for non-Linux and native FreeRTOS Linux builds | Enable the simulation plugin framework |
+| `CONFIG_OVE_SIM` | bool | selected by the an500 for non-Linux and FreeRTOS Linux builds | Enable the simulation plugin framework |
 | `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`; `web-an521.zephyr.<app>` for Zephyr's Linux personality) |
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` with `CONFIG_OVE_SIM` | Enable the dashboard |
 | `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` with `CONFIG_OVE_SIM` | Per-thread state time tracking (prerequisite for trace and profiler) |
-| `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` | Stream state transitions for dashboard swimlanes |
+| `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS`, except in Linux browser bundles | Stream state transitions for dashboard swimlanes |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
 | `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
 | `CONFIG_OVE_PROFILER` | bool | `y` on native builds with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` when Linux is off or the RTOS is FreeRTOS. `n` for browser bundles. | Sampling profiler |

@@ -118,9 +118,9 @@ For this example, `output/web/<rtos>/<app>/serve/` contains the sim dashboard, t
 - The emulator is built once, on first use, by `ove ensure-toolchain qemu-wasm` into `output/tools/qemu-wasm/`. It is the upstream QEMU release pinned in `manifest.yaml`, built with upstream's own Emscripten container recipe (so it needs Docker or Podman), plus the small patches in `config/qemu-wasm/patches/`. Each patch says why it is there; so far they keep guests that reprogram the MPU often, such as the Linux personality, from running several times slower in the browser. Changing a patch builds a new emulator on the next build, and the bundle's `qemu/SOURCE.txt` carries the exact source, recipe and patches.
 - QEMU has no JIT for a WebAssembly host and runs its interpreter instead, several times slower than the native `qemu-system-arm`. The variant therefore builds the optimised firmware rather than the debug build plain `qemu.<rtos>.<app>` uses. Simple UIs run at interactive rates; full-screen animation does not.
 - The page needs `SharedArrayBuffer`, so it must be cross-origin isolated. `serve/run.sh` sends the COOP/COEP headers; on a static host such as GitHub Pages the bundled `coi-serviceworker.js` supplies them.
-- The dashboard shows the display, terminal, log, audio, trace and thread panels and takes pointer, terminal and audio input. The profiler and the debugger are not available in the browser, and there is no network peer; use the native QEMU run for those.
+- The dashboard shows the display, terminal, log, audio, thread and trace panels and takes pointer, terminal and audio input. Trace defaults to off in Linux browser bundles. The browser has no profiler, debugger or network peer.
 
-A Linux personality browser bundle runs with the sim framework disabled. It opens a terminal on the guest console (`sim/dashboard/terminal.html`) and carries the rootfs image `qemu-run.sh` would load. Zephyr's personality needs the Cortex-M33 board, whose browser variant is `web-an521`.
+Linux personality bundles carry the rootfs image `qemu-run.sh` would load. FreeRTOS an500 opens the dashboard. NuttX an500 and Zephyr an521 open a guest console terminal.
 
 ```bash
 make web.freertos.linux_interop_minimal       # FreeRTOS or NuttX, on the an500
@@ -128,6 +128,7 @@ make web-an521.zephyr.linux_interop_minimal   # Zephyr, on the an521
 ```
 
 `make docs-demos` adds these three to the site as `linux-<rtos>/`, booting each under the native QEMU first and keeping those that reach the login prompt. Their rootfs is the local Buildroot output when there is one; otherwise the docs build downloads the copy `manifest.yaml` pins under `tools.linux-rootfs` (a URL and its SHA-256) and leaves the demos out while no URL is set. `OVE_LINUX_ROOTFS=<rootfs.cpio>` makes any personality web build bundle that file instead.
+The `linux-freertos` demo opens the dashboard.
 
 A variant is declared under `variants:` in `board.yaml`: a name that stands in for the board in `<board>.<rtos>.<app>` and adds Kconfig lines (`CONFIG_OVE_SIM_WEB=y` here).
 

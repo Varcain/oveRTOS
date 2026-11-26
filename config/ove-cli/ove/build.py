@@ -1028,8 +1028,8 @@ def _assemble_web_bundle(ws):
     nothing else from the tree: copy it with the link dereferenced to put it
     on a static host.  serve/run.sh serves it locally.
 
-    A Linux personality bundle carries the rootfs and opens a terminal on
-    the guest console. The sim framework is off by default for this variant.
+    Linux personality bundles carry the rootfs and open the dashboard
+    when enabled, or a terminal on the guest console otherwise.
     """
     from .download import build_qemu_wasm
     from .manifest import load_manifest
@@ -1052,21 +1052,26 @@ def _assemble_web_bundle(ws):
         sys.exit(1)
 
     serve_dir = os.path.join(ws.workspace_dir, "serve")
-    os.makedirs(serve_dir, exist_ok=True)
+    if os.path.isdir(serve_dir):
+        shutil.rmtree(serve_dir)
+    os.makedirs(serve_dir)
 
     dash_dir = os.path.join(ws.ove_dir, "sim", "dashboard")
-    if get_bool(ws.config, "CONFIG_OVE_LINUX"):
+    linux = get_bool(ws.config, "CONFIG_OVE_LINUX")
+    if linux and not get_bool(ws.config, "CONFIG_OVE_SIM_DASHBOARD"):
         shutil.copy2(os.path.join(dash_dir, "terminal.html"),
                      os.path.join(serve_dir, "index.html"))
         pages = _TERMINAL_PAGES
-        web = _personality_web_config(ws, machine, serve_dir)
     else:
         with open(os.path.join(serve_dir, "index.html"), "w") as f:
             f.write(_web_index_html(dash_dir))
         pages = _DASHBOARD_PAGES
+        _write_web_manifest(ws, os.path.join(serve_dir, "manifest.json"))
+    if linux:
+        web = _personality_web_config(ws, machine, serve_dir)
+    else:
         web = {"firmware": "firmware.elf", "emulator": "qemu/",
                "machine": machine[-1]}
-        _write_web_manifest(ws, os.path.join(serve_dir, "manifest.json"))
     for name in pages:
         shutil.copy2(os.path.join(dash_dir, name), serve_dir)
 

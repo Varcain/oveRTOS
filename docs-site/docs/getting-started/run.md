@@ -40,7 +40,7 @@ make
 make run   # http://127.0.0.1:8080, or the next free port
 ```
 
-A Linux personality app gets a terminal on its console instead of the dashboard; Zephyr's runs on the an521, so it is `make web-an521.zephyr.<app>`.
+For the Linux personality, `make web.freertos.linux_interop` configures a dashboard bundle for the an500. NuttX an500 and Zephyr an521 Linux bundles open a guest console terminal. Use `make web-an521.zephyr.<app>` for Zephyr's Linux personality.
 
 The emulator is built on first use (`ove ensure-toolchain qemu-wasm`, needs Docker or Podman). It runs QEMU's interpreter, several times slower than the native run above, so this variant builds the optimised firmware. See [Board Configurations](../build-system/boards.md) for what the bundle contains and how to host it.
 

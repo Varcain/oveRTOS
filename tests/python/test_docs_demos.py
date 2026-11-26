@@ -148,11 +148,12 @@ class DocsDemosTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, 1)
 
 
-    def _terminal_bundle(self, rtos):
-        """A Linux personality workspace's bundle: a terminal page."""
+    def _personality_bundle(self, rtos):
         serve = os.path.join(self.root, "output", "web", rtos,
                              "linux_interop_minimal", "serve")
-        for filename in docs_demos._TERMINAL_FILES:
+        pages = (docs_demos._DEMO_FILES if rtos == "freertos"
+                 else docs_demos._TERMINAL_FILES)
+        for filename in (*pages, "rootfs.cpio"):
             self._write(os.path.join(serve, filename), f"{rtos}:{filename}")
         self._write(os.path.join(serve, "web.json"), json.dumps(
             {"firmware": "firmware.elf", "emulator": "qemu/",
@@ -163,15 +164,13 @@ class DocsDemosTest(unittest.TestCase):
     def test_personality_demos_join_the_gallery(self):
         built = [
             {"name": "linux-freertos", "rtos": "freertos", "ok": True,
-             "serve": self._terminal_bundle("freertos")},
+             "serve": self._personality_bundle("freertos")},
             {"name": "linux-nuttx", "rtos": "nuttx", "ok": True,
-             "serve": self._terminal_bundle("nuttx")},
+             "serve": self._personality_bundle("nuttx")},
             {"name": "linux-zephyr", "rtos": "zephyr", "ok": False,
              "serve": os.path.join(self.root, "absent")},
         ]
         ws = SimpleNamespace(ove_dir=self.root)
-        smoke = mock.Mock(side_effect=lambda serve: (
-            "nuttx" not in serve, "smoke: no login prompt"))
         with mock.patch.object(docs_demos, "Workspace", return_value=ws), \
                 mock.patch.object(docs_demos, "build_matrix",
                                   return_value=[]), \
@@ -179,21 +178,27 @@ class DocsDemosTest(unittest.TestCase):
                                   return_value="/rootfs.cpio"), \
                 mock.patch.object(docs_demos, "build_personality_demos",
                                   return_value=built) as build, \
-                mock.patch.object(docs_demos, "_smoke_terminal", smoke), \
+                mock.patch.object(docs_demos, "_smoke_terminal",
+                                  return_value=(True, "")), \
                 contextlib.redirect_stdout(io.StringIO()):
             docs_demos._cmd_docs_demos(SimpleNamespace(site=None))
 
         build.assert_called_once_with(ws, "/rootfs.cpio")
         self.assertEqual(sorted(os.listdir(self.site)),
-                         ["examples.html", "linux-freertos", "qemu"])
+                         ["examples.html", "linux-freertos", "linux-nuttx", "qemu"])
         self.assertEqual(
             sorted(os.listdir(os.path.join(self.site, "linux-freertos"))),
-            sorted(docs_demos._TERMINAL_FILES + ("qemu", "web.json")))
+            sorted(docs_demos._DEMO_FILES + ("qemu", "web.json", "rootfs.cpio")))
+        self.assertEqual(
+            sorted(os.listdir(os.path.join(self.site, "linux-nuttx"))),
+            sorted(docs_demos._TERMINAL_FILES + ("qemu", "web.json", "rootfs.cpio")))
         with open(os.path.join(self.site, "examples.html")) as f:
             gallery = f.read()
         self.assertIn('href="linux-freertos/"', gallery)
         self.assertIn("Linux personality on FreeRTOS", gallery)
-        self.assertNotIn("linux-nuttx", gallery)
+        self.assertIn('href="linux-nuttx/"', gallery)
+        self.assertIn("Linux personality on NuttX", gallery)
+        self.assertNotIn("linux-zephyr", gallery)
 
     def test_linux_rootfs_download_is_checked(self):
         image = os.path.join(self.root, "published.cpio")

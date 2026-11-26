@@ -120,16 +120,25 @@ class BoardKconfigTest(unittest.TestCase):
         self.kconf.syms["OVE_RTOS_FREERTOS"].set_value(2)
         self.assertEqual(self._sym("OVE_PROFILER"), "y")
 
-    def test_an500_freertos_web_sim_selection(self):
-        self.kconf.syms["OVE_RTOS_FREERTOS"].set_value(2)
+    def test_an500_web_sim_selection(self):
         self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
         self.kconf.syms["OVE_SIM_WEB"].set_value(2)
-        for linux, expected in (("y", "n"), ("n", "y")):
+        self.kconf.syms["OVE_LINUX_DEV"].set_value(2)
+        self.kconf.syms["OVE_LINUX_DEV_INPUT"].set_value(2)
+        for rtos, linux, sim, trace, pointer in (
+            ("FREERTOS", "y", "y", "n", "y"),
+            ("FREERTOS", "n", "y", "y", "n"),
+            ("NUTTX", "y", "n", "n", "n"),
+            ("ZEPHYR", "y", "n", "n", "n"),
+        ):
+            self.kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
             self.kconf.syms["OVE_LINUX"].set_value(linux)
-            for symbol, value in (("OVE_SIM_WEB", "y"), ("OVE_SIM", expected),
-                                  ("OVE_THREAD_STATE_STATS", expected),
-                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", "n")):
-                with self.subTest(linux=linux, symbol=symbol):
+            for symbol, value in (("OVE_SIM_WEB", "y"), ("OVE_SIM", sim),
+                                  ("OVE_SIM_DASHBOARD", sim),
+                                  ("OVE_THREAD_STATE_STATS", sim),
+                                  ("OVE_TRACE_STREAM", trace), ("OVE_PROFILER", "n"),
+                                  ("OVE_LINUX_DEV_INPUT_DASHBOARD", pointer)):
+                with self.subTest(rtos=rtos, linux=linux, symbol=symbol):
                     self.assertEqual(self._sym(symbol), value)
 
 
