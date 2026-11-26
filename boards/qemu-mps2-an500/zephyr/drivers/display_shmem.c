@@ -90,8 +90,8 @@ static int shmem_display_init(const struct device *dev)
 	data->width = DT_INST_PROP(0, width);
 	data->height = DT_INST_PROP(0, height);
 
-	/* Open shmem file via semihosting. mode 7 = "r+b" */
-	data->sh_fd = sh_open("/dev/shm/ove-fb", 7);
+	/* Open the host's framebuffer with r+b. */
+	data->sh_fd = sh_open("/dev/shm/ove-fb", 3);
 	/* sh_fd < 0 is fine — means no display viewer (headless) */
 
 	memset(fb_pixels, 0, sizeof(fb_pixels));

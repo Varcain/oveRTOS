@@ -403,9 +403,7 @@ def _event_bridge_loop():
     sys.stderr.flush()
     while not os.path.exists(SIM_SHM_PATH):
         time.sleep(0.2)
-    # Don't check file size — QEMU semihosting truncates on open and
-    # the file grows incrementally as the firmware writes events.
-    # Just wait for the magic header to appear.
+    # The launcher sizes the file before boot. Wait for the guest's magic header.
 
     fd = os.open(SIM_SHM_PATH, os.O_RDWR)
     try:
@@ -421,11 +419,8 @@ def _event_bridge_loop():
                     break
             time.sleep(0.1)
 
-        # The semihosting file is small — the firmware writes the
-        # header + events sequentially, so the file size tracks the
-        # write position.  The ring offsets are relative to the
-        # start of the file, not a full 64KB mmap.  Read all data
-        # via pread using absolute file offsets.
+        # The header records the ring's write position. Read records with
+        # pread using their absolute offsets in the shared file.
 
         rpos = 0
         last_dropped = 0

@@ -110,7 +110,7 @@ def capture(elf, seconds):
             try:
                 while time.monotonic() < deadline and qemu.poll() is None:
                     header = os.pread(fd, 20, 0)
-                    if len(header) < 20:  # The guest truncates the file on open.
+                    if len(header) < 20:  # Need magic and the event write position.
                         time.sleep(0.01)
                         continue
                     magic, wpos = struct.unpack("<I12xI", header)

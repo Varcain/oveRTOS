@@ -7,7 +7,7 @@
  */
 
 /*
- * Host tests for guest event backpressure and the shared-memory audio layout.
+ * Host tests for guest shared-memory opens, event backpressure and audio layout.
  */
 
 #include <setjmp.h>
@@ -20,8 +20,8 @@
 #include "ove_sim_transport_shm_guest.c"
 
 uint8_t fake_sim[FAKE_SIM_BYTES];
+uint8_t fake_fb[FAKE_FB_BYTES];
 uint8_t fake_audio[FAKE_AUDIO_BYTES];
-uint32_t fake_pos[2];
 bool fake_fail_next_read;
 
 static int failures;
@@ -77,9 +77,56 @@ static const struct ove_sim_event *event(uint32_t data_len, uint8_t tag)
 static void open_fresh(struct ove_sim_transport *t)
 {
 	memset(fake_sim, 0xEE, sizeof(fake_sim)); /* a previous run's header */
-	memset(fake_audio, 0, sizeof(fake_audio));
+	fake_files[FAKE_SIM_FD].exists = true;
+	fake_files[FAKE_FB_FD].exists = false;
+	fake_files[FAKE_AUDIO_FD].exists = false;
 	ove_sim_transport_shm_guest_create(t);
 	t->ops->open(t, NULL);
+}
+
+static void test_headless_creates_no_sim_or_fb_files(void **state)
+{
+	struct ove_sim_transport t;
+	const uint32_t pixel = 0;
+
+	fake_files[FAKE_SIM_FD].exists = false;
+	fake_files[FAKE_FB_FD].exists = false;
+	assert_int_equal(ove_sim_transport_shm_guest_create(&t), OVE_OK);
+	assert_int_equal(t.ops->open(&t, NULL), OVE_OK);
+	assert_false(fake_files[FAKE_SIM_FD].exists);
+	assert_false(fake_files[FAKE_FB_FD].exists);
+	assert_int_equal(guest_priv_instance.sim_fd, -1);
+	assert_int_equal(guest_priv_instance.fb_fd, -1);
+	assert_int_equal(t.ops->send_event(&t, event(10, 1)), OVE_OK);
+	assert_int_equal(t.ops->flush_display(&t, &pixel, sizeof(pixel), 0, 0, 0, 0), OVE_OK);
+	assert_false(fake_files[FAKE_SIM_FD].exists);
+	assert_false(fake_files[FAKE_FB_FD].exists);
+	t.ops->close(&t);
+}
+
+static void test_open_preserves_host_files(void **state)
+{
+	struct ove_sim_transport t;
+	const uint32_t pixel = 0x00123456;
+
+	fake_files[FAKE_SIM_FD].exists = true;
+	fake_files[FAKE_FB_FD].exists = true;
+	set_hdr_u32(OFF(magic), 0);
+	fake_sim[FAKE_SIM_BYTES - 1] = 0x5A;
+	fake_fb[FAKE_FB_BYTES - 1] = 0xA5;
+	assert_int_equal(ove_sim_transport_shm_guest_create(&t), OVE_OK);
+	assert_int_equal(t.ops->open(&t, NULL), OVE_OK);
+	assert_int_equal(guest_priv_instance.sim_fd, FAKE_SIM_FD);
+	assert_int_equal(guest_priv_instance.fb_fd, FAKE_FB_FD);
+	assert_int_equal(hdr_u32(OFF(magic)), SIM_SHM_MAGIC);
+	assert_int_equal(hdr_u32(OFF(version)), SIM_SHM_VERSION);
+	assert_int_equal(hdr_u32(OFF(ring_size)), SIM_SHM_RING_SIZE);
+	assert_int_equal(fake_sim[FAKE_SIM_BYTES - 1], 0x5A);
+	assert_int_equal(t.ops->flush_display(&t, &pixel, sizeof(pixel), 0, 0, 0, 0), OVE_OK);
+	assert_int_equal(read_u32(fake_fb), FB_MAGIC);
+	assert_memory_equal(fake_fb + 16, &pixel, sizeof(pixel));
+	assert_int_equal(fake_fb[FAKE_FB_BYTES - 1], 0xA5);
+	t.ops->close(&t);
 }
 
 /* No reader: records that fill the ring exactly; the rest are refused and
@@ -224,9 +271,13 @@ static void test_audio_pull_after_failed_init_read(void **state)
 
 static void test_pull_before_push(void **state)
 {
+	uint8_t pcm[sizeof(capture)];
 	struct ove_sim_transport t;
 	open_fresh(&t);
-	pull_queued_audio(&t, 16);
+	/* The first pull lazily opens and truncates the audio file. */
+	assert_int_equal(t.ops->pull_audio(&t, pcm, sizeof(pcm)), 0);
+	pull_queued_audio(&t, 0);
+	pull_queued_audio(&t, sizeof(capture));
 	assert_int_equal(read_u32(fake_audio + 8), 0);
 	assert_int_equal(t.ops->push_audio(&t, playback, sizeof(playback), 44100, 2, 32), OVE_OK);
 	assert_int_equal(read_u32(fake_audio + 8), 44100);
@@ -274,6 +325,8 @@ static void test_audio_push_exceeds_capacity(void **state)
 int main(void)
 {
 	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_headless_creates_no_sim_or_fb_files),
+		cmocka_unit_test(test_open_preserves_host_files),
 		cmocka_unit_test(test_event_backpressure),
 		cmocka_unit_test(test_first_audio_push),
 		cmocka_unit_test(test_host_audio_pull),

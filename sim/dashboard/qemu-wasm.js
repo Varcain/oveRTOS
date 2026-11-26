@@ -257,9 +257,9 @@ async function boot(link) {
 }
 
 /* ── File access ───────────────────────────────────────────────────────
- * The firmware opens these files through semihosting with truncation and
- * rewrites them as it goes, so a file's backing array is replaced while
- * it grows: look it up again on every poll and trust usedBytes. */
+ * The firmware truncates ove-audio when it first opens it. Its backing
+ * array can change as the file grows, so look it up on every poll and
+ * trust usedBytes. */
 
 function fileView(fs, path) {
     var node;

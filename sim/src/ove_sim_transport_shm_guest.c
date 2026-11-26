@@ -134,7 +134,7 @@ static int guest_open(struct ove_sim_transport *t, const char *endpoint)
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 
 	/* Open plugin event/command SHM. */
-	p->sim_fd = sh_open(SIM_SHM_PATH, 7); /* w+b (truncates) */
+	p->sim_fd = sh_open(SIM_SHM_PATH, 3); /* r+b (open existing) */
 	if (p->sim_fd >= 0) {
 		/* Write header. */
 		struct sim_shm_header hdr;
@@ -150,7 +150,7 @@ static int guest_open(struct ove_sim_transport *t, const char *endpoint)
 	}
 
 	/* Open framebuffer SHM. */
-	p->fb_fd = sh_open(FB_PATH, 7); /* w+b (truncates) */
+	p->fb_fd = sh_open(FB_PATH, 3); /* r+b (open existing) */
 
 	/* Audio SHM opened lazily in push/pull. */
 	p->audio_fd = -1;

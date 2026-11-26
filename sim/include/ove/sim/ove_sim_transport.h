@@ -192,6 +192,7 @@ static inline size_t ove_sim_transport_pull_audio(struct ove_sim_transport *t, v
  *
  * Opens /dev/shm/ove-sim, /dev/shm/ove-fb, /dev/shm/ove-audio via
  * semihosting for display/audio/event I/O from inside the QEMU guest.
+ * The host must create ove-sim and ove-fb first. A missing file leaves that channel off.
  *
  * @param[out] t  Transport to initialise.
  * @return 0 on success, negative error code on failure.
