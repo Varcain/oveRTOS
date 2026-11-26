@@ -128,7 +128,7 @@ class BoardKconfigTest(unittest.TestCase):
             self.kconf.syms["OVE_LINUX"].set_value(linux)
             for symbol, value in (("OVE_SIM_WEB", "y"), ("OVE_SIM", expected),
                                   ("OVE_THREAD_STATE_STATS", expected),
-                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", expected)):
+                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", "n")):
                 with self.subTest(linux=linux, symbol=symbol):
                     self.assertEqual(self._sym(symbol), value)
 

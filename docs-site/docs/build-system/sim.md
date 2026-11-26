@@ -220,7 +220,7 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 | `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` | Stream state transitions for dashboard swimlanes |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
 | `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
-| `CONFIG_OVE_PROFILER` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` on non-Linux and FreeRTOS Linux builds | Sampling profiler |
+| `CONFIG_OVE_PROFILER` | bool | `y` on native builds with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` when Linux is off or the RTOS is FreeRTOS. `n` for browser bundles. | Sampling profiler |
 | `CONFIG_OVE_PROFILER_HZ` | int | 250 | Mean sample rate (10–1000 Hz) |
 | `CONFIG_OVE_PROFILER_MAX_DEPTH` | int | 32 | Maximum captured stack depth |
 | `CONFIG_OVE_PROFILER_RING_SIZE` | int | 1024 | Profiler ring capacity in samples |
