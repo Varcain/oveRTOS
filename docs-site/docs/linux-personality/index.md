@@ -68,6 +68,8 @@ The dashboard shows CPU usage and FreeRTOS heap usage. The **Threads** panel
 lists RTOS tasks, including Linux guest slots named `lnxN`. The **Perf**
 workspace shows trace swimlanes and sampling profiles, with guest code grouped
 as `[Linux guest]`.
+The **Debug** panel browses firmware source while QEMU's GDB server stays available for
+[debugging Linux programs with `ove-fdpic-gdb`](debugging.md).
 Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for a terminal-only console.
 

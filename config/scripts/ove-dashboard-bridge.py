@@ -62,6 +62,8 @@ def main():
                         help="FIFO for dashboard input to the firmware's console UART")
     parser.add_argument("--gdb-port", type=int, default=0,
                         help="GDB remote port (QEMU gdbserver)")
+    parser.add_argument("--gdbstub-port", type=int, default=0,
+                        help="QEMU gdbstub port left for an external GDB")
     parser.add_argument("--gdb-toolchain", type=str, default="gdb",
                         help="GDB binary name (e.g. arm-none-eabi-gdb)")
     parser.add_argument("--elf-path", type=str, default=None,
@@ -91,7 +93,8 @@ def main():
     workspace = ove_manifest.find_workspace(args.build_dir) if args.build_dir else None
     server.manifest.update(ove_manifest.build(
         workspace, sources.OVE_DIR, debugger=bool(args.gdb_port),
-        console=bool(args.console_fifo), log=lambda msg: print(msg, flush=True)))
+        console=bool(args.console_fifo), gdbstub_port=args.gdbstub_port,
+        log=lambda msg: print(msg, flush=True)))
 
     # Build profiler symbol map from the ELF. The firmware is ARM and
     # system nm may not handle the architecture on every host — when

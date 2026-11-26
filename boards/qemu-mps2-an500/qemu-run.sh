@@ -258,7 +258,7 @@ if [ "${HEADLESS}" -eq 0 ]; then
         -semihosting-config "enable=on,target=native,arg=${FB_PATH}${PERS_MODE:+,chardev=c0}"
     )
 
-    # GDB server: enabled by default (firmware boots normally, dashboard can pause).
+    # Enable the GDB server by default without pausing the firmware at startup.
     if [ "${NO_GDB}" -eq 0 ]; then
         QEMU_ARGS+=( -gdb "tcp:127.0.0.1:${GDB_PORT}" )
     fi
@@ -324,6 +324,8 @@ if [ "${HEADLESS}" -eq 0 ]; then
     # Leave the Linux gdbstub available for FDPIC debugging.
     if [ "${NO_GDB}" -eq 0 ] && [ "${PERS_MODE}" != dashboard ]; then
         VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" )
+    elif [ "${NO_GDB}" -eq 0 ]; then
+        VIEWER_ARGS+=( --gdbstub-port "${GDB_PORT}" )
     fi
 
     "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" 4< "${SERIAL_FIFO}" &

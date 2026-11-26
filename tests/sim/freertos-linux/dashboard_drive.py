@@ -12,6 +12,7 @@ import sys
 import time
 from collections import Counter
 from contextlib import suppress
+from urllib.request import urlopen
 
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
@@ -150,12 +151,14 @@ try:
         path = f"/dev/shm/ove-{name}"
         if os.path.lexists(path):
             raise RuntimeError(f"{path} exists. Stop any running dashboard before testing.")
-    with socket.socket() as listener:
+    with socket.socket() as listener, socket.socket() as gdb_listener:
         listener.bind(("127.0.0.1", 0))
+        gdb_listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
+        gdb_port = gdb_listener.getsockname()[1]
     with open(log, "wb") as output:
         proc = subprocess.Popen(
-            [".venv/bin/ove", "run", "--", "--no-gdb", "--timeout", "150"],
+            [".venv/bin/ove", "run", "--", "--gdb-port", str(gdb_port), "--timeout", "150"],
             stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
             env=dict(os.environ, OVE_DASHBOARD_PORT=str(port)), start_new_session=True)
 
@@ -169,6 +172,13 @@ try:
         raise TimeoutError("waiting for the dashboard WebSocket")
 
     with ws:
+        with urlopen(f"http://127.0.0.1:{port}/manifest.json", timeout=5) as response:
+            manifest = json.load(response)
+        if manifest.get("gdbstub_port") != gdb_port:
+            raise RuntimeError(f"manifest gdbstub_port is {manifest.get('gdbstub_port')!r}, expected {gdb_port}")
+        if manifest.get("features", {}).get("debugger") is not False:
+            raise RuntimeError("manifest features.debugger must be false for a Linux dashboard run")
+
         start = time.monotonic()
         deadline = start + 120
         log_header = struct.pack("<I", FRAME_LOG)

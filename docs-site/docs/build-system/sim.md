@@ -120,6 +120,8 @@ Under the NuttX CPU-load fallback, kernel thread figures are based on NuttX's de
 - **Inspector** has one pane or two stacked panes. **Terminal** shows the serial session and sends typed keys to the console UART. When you open the native dashboard later, the Terminal shows up to the last 64 KB of serial output. The `clear` command also clears the Terminal's scrollback. **Log** shows other output, dashboard events, and copies of firmware `[D]`/`[I]`/`[W]`/`[E]` lines from the serial console, with search and level filters. The other panels are Threads, Trace, Profiler, Debug and Audio. A tool the build does not enable says which Kconfig option turns it on.
 - **Status bar**: run state, simulated time, run control (pause / continue / step / reset), the selected thread, and warning/error counts.
 
+In native runs without a dashboard debugger, the **Debug** panel only browses source, and FreeRTOS an500 Linux runs leave QEMU's GDB server available for `ove-fdpic-gdb`.
+
 The default **Run** workspace shows Terminal above Log, **Debug** shows Debug above Terminal, and **Perf** shows Trace above Profiler. Halting the target switches to Debug and resuming switches back. Pane choices and sizes are kept per build. Selecting a thread (in Threads, or a Trace lane label) highlights it in Trace and filters the Profiler to it.
 
 | Key | Action |

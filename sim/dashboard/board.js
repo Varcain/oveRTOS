@@ -294,6 +294,9 @@ async function boot() {
 /* Things that need app.js's DOM wiring in place. */
 function afterApp() {
     bindConsoleBar();
+    var hint = document.querySelector("#debug-panel .dbg-hint p");
+    if (hint && S.haveManifest && S.manifest.features.debugger === false && !S.manifest.web)
+        hint.textContent = "No debugger attached. " + noDebuggerNote();
     var tbody = $("thread-tbody");
     if (tbody) {
         tbody.addEventListener("click", function (e) {
@@ -477,6 +480,14 @@ function panelState(p) {
     return S.manifest.features[d.feature] ? "ok" : "na";
 }
 
+function noDebuggerNote() {
+    var port = Number(S.manifest.gdbstub_port);
+    if (port)
+        return "QEMU's GDB server on port " + port + " is left for an external GDB, "
+            + "such as ove-fdpic-gdb.py for Linux programs.";
+    return "QEMU was started without its GDB server.";
+}
+
 function emptyState(p) {
     var d = PANELS[p];
     var box = el("div", "bv-empty");
@@ -485,7 +496,7 @@ function emptyState(p) {
         html = "<b>No debugger attached</b><span>" + (S.manifest.web
             ? "The browser bundle runs the optimised firmware inside the page, with no GDB to attach. "
               + "Debug the same app on the native <code>qemu</code> board (<code>make run</code>)."
-            : "QEMU was started without its GDB server.") + "</span>";
+            : noDebuggerNote()) + "</span>";
         box.innerHTML = html;
         return box;
     }

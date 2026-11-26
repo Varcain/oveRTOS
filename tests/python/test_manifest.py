@@ -86,6 +86,13 @@ class WorkspaceSearchTest(unittest.TestCase):
         m = self.manifest.build(ws, ROOT, debugger=False, console=False, web=True)
         self.assertFalse(m["features"]["profiler"])
 
+    def test_external_gdbstub_port(self):
+        m = self.manifest.build(self.ws, ROOT, debugger=False, console=True)
+        self.assertNotIn("gdbstub_port", m)
+        m = self.manifest.build(self.ws, ROOT, debugger=False, console=True, gdbstub_port=1234)
+        self.assertEqual(m["gdbstub_port"], 1234)
+        self.assertFalse(m["features"]["debugger"])
+
     def test_manifest_display_feature(self):
         for extra, expected in (("CONFIG_OVE_FB=y\n", True),
                                 ("CONFIG_OVE_LVGL=y\n", True), ("", False)):

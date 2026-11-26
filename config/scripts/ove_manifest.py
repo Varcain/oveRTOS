@@ -83,12 +83,13 @@ def read_kconfig(path):
     return cfg
 
 
-def build(workspace_dir, ove_dir, debugger, console, web=False, log=print):
+def build(workspace_dir, ove_dir, debugger, console, web=False, log=print, *, gdbstub_port=0):
     """Return the manifest dict for the build in *workspace_dir*.
 
     *debugger*: a GDB is attached (run control works). *console*: typed
     input reaches the firmware's console UART. *web*: the firmware runs in
     the page (browser bundle) rather than under the local bridge.
+    *gdbstub_port*: nonzero QEMU GDB server port left for an external GDB.
     """
     m = {"version": 1, "web": bool(web), "features": {}, "board": {}}
     cfg = read_kconfig(os.path.join(workspace_dir, ".config")) if workspace_dir else {}
@@ -107,6 +108,8 @@ def build(workspace_dir, ove_dir, debugger, console, web=False, log=print):
         m["features"]["profiler"] = False
     m["features"]["debugger"] = bool(debugger)
     m["features"]["console"] = bool(console)
+    if gdbstub_port:
+        m["gdbstub_port"] = gdbstub_port
     if cfg.get("CONFIG_OVE_PROFILER_HZ"):
         m["profiler_hz"] = int(cfg["CONFIG_OVE_PROFILER_HZ"])
 
