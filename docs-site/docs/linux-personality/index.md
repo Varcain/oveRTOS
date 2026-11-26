@@ -83,7 +83,7 @@ and provides a terminal on the guest console.
 ```bash
 make web.freertos.linux_interop_minimal         # an500; also nuttx
 make web-an521.zephyr.linux_interop_minimal     # an521, Zephyr
-make && make run                                # http://localhost:8080
+make && make run                                # http://127.0.0.1:8080, or the next free port
 ```
 
 The bundle carries the rootfs and needs nothing else to run, so `serve/` can be

@@ -1149,24 +1149,17 @@ def _write_web_run_sh(path):
 
     The emulator's threads need a cross-origin isolated page.  This server
     sends the headers for it; on a static host coi-serviceworker.js does.
+    The launcher uses the first free port at or above the requested port.
     """
     content = '''#!/usr/bin/env bash
 # Auto-generated — serves this browser bundle with COOP/COEP headers.
-# Usage: ./run.sh [PORT]
+# Usage: ./run.sh [PORT] (start at PORT or 8080; use the next free port if taken)
 
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
-PORT="${1:-8080}"
-
-echo "=== Serving the browser bundle at http://localhost:$PORT ==="
-echo "  Files:  $DIR"
-echo "  Press Ctrl+C to stop."
-
-# Open browser (best-effort, non-blocking)
-( sleep 1 && python3 -c "import webbrowser; webbrowser.open('http://localhost:$PORT')" ) 2>/dev/null &
 
 exec python3 -c "
-import functools, http.server, sys
+import errno, functools, http.server, sys, threading, webbrowser
 
 class H(http.server.SimpleHTTPRequestHandler):
     extensions_map = dict(http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -1180,8 +1173,26 @@ class H(http.server.SimpleHTTPRequestHandler):
         pass
 
 handler = functools.partial(H, directory=sys.argv[2])
-http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), handler).serve_forever()
-" "$PORT" "$DIR"
+port = int(sys.argv[1])
+while True:
+    try:
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', port), handler)
+        break
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE or port >= 65535:
+            sys.exit(f'run.sh: cannot serve on port {port}: {exc.strerror}')
+        port += 1
+
+url = f'http://127.0.0.1:{server.server_port}'
+print(f'=== Serving the browser bundle at {url} ===', flush=True)
+print(f'  Files:  {sys.argv[2]}', flush=True)
+print('  Press Ctrl+C to stop.', flush=True)
+threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+try:
+    server.serve_forever()
+except KeyboardInterrupt:
+    pass
+" "${1:-8080}" "$DIR"
 '''
     with open(path, "w") as f:
         f.write(content)

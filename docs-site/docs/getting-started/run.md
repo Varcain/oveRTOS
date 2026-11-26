@@ -37,7 +37,7 @@ make run HEADLESS=1
 ```bash
 make web.freertos.example_c
 make
-make run   # http://localhost:8080
+make run   # http://127.0.0.1:8080, or the next free port
 ```
 
 A Linux personality app gets a terminal on its console instead of the dashboard; Zephyr's runs on the an521, so it is `make web-an521.zephyr.<app>`.
