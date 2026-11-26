@@ -22,6 +22,8 @@ window.oveVt = function (screen, send) {
 
     var lines = [""];
     var row = 0, col = 0;
+    var top = 0;                   /* first screen row in lines */
+    var mainScreen = null;
     var esc = null;                /* null, "" after ESC, or "[..." in a CSI */
     var dirty = false;
     var follow = true;
@@ -40,18 +42,17 @@ window.oveVt = function (screen, send) {
     function newline() {
         row++;
         if (row >= lines.length) lines.push("");
+        if (row - top >= ROWS) top = row - ROWS + 1;
         if (lines.length > MAX_LINES) {
             var drop = lines.length - MAX_LINES;
             lines.splice(0, drop);
             row -= drop;
+            top = Math.max(0, top - drop);
         }
         col = 0;
     }
 
-    /* Cursor addressing works on the last ROWS lines, the screen a full-screen
-     * program such as top or vi draws on; what is above stays as scrollback. */
     function moveTo(r, c) {
-        var top = Math.max(0, lines.length - ROWS);
         row = top + Math.min(Math.max(r, 0), ROWS - 1);
         while (lines.length <= row) lines.push("");
         col = Math.max(c, 0);
@@ -61,18 +62,23 @@ window.oveVt = function (screen, send) {
         var final = seq[seq.length - 1];
         var params = seq.slice(1, -1).replace(/^\?/, "").split(";");
         var n = parseInt(params[0], 10) || 0;
-        var top = Math.max(0, lines.length - ROWS);
         switch (final) {
         case "K":                  /* erase in line */
             if (n === 0) setLine(lines[row].slice(0, col));
             else if (n === 2) setLine("");
             break;
         case "J":                  /* erase in display */
+            /* BusyBox clear sends ESC[H ESC[J, so extend xterm's full erase to drop scrollback. */
+            if (n === 2 || n === 3 || (n === 0 && row === top && col === 0)) {
+                lines.splice(0, top);
+                row -= top;
+                top = 0;
+            }
             if (n === 0) {
                 lines.length = row + 1;
                 setLine(lines[row].slice(0, col));
-            } else if (n === 2 || n === 3) {
-                for (var i = top; i < lines.length; i++) lines[i] = "";
+            } else if (n === 2) {
+                for (var i = 0; i < lines.length; i++) lines[i] = "";
             }
             break;
         case "H": case "f":        /* cursor position, 1-based */
@@ -83,7 +89,20 @@ window.oveVt = function (screen, send) {
         case "C": col += n || 1; break;
         case "D": col = Math.max(0, col - (n || 1)); break;
         case "G": col = Math.max(0, (n || 1) - 1); break;
-        default: break;            /* colours, modes, scrolling: ignored */
+        case "h": case "l":        /* alternate screen */
+            if (seq === "[?1049h" && !mainScreen) {
+                mainScreen = { lines: lines, row: row, col: col, top: top };
+                lines = [""];
+                row = col = top = 0;
+            } else if (seq === "[?1049l" && mainScreen) {
+                lines = mainScreen.lines;
+                row = mainScreen.row;
+                col = mainScreen.col;
+                top = mainScreen.top;
+                mainScreen = null;
+            }
+            break;
+        default: break;            /* colours, other modes, scrolling: ignored */
         }
     }
 
@@ -138,7 +157,8 @@ window.oveVt = function (screen, send) {
 
     function reset() {
         lines = [""];
-        row = col = 0;
+        row = col = top = 0;
+        mainScreen = null;
         esc = null;
         decoder = new TextDecoder("utf-8");
         follow = true;

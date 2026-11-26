@@ -40,6 +40,51 @@ test("vt: line discipline and erase/cursor sequences", () => {
     assert.equal(t.vt.text(), "onz\nT\n        y");
 });
 
+const clear = "\x1b[H\x1b[J";
+const frame = (k) => `\x1b[HMem: ${k}\x1b[K\r\n  1 init\x1b[K\x1b[J\r`;
+const old = (n) => Array.from({ length: n }, (_, i) => `old ${i}\r\n`).join("");
+
+test("vt: BusyBox clear drops scrollback before top redraws", () => {
+    const t = terminal();
+    t.out(old(40) + "# clear\r\n" + clear + "# top\r\n");
+    assert.equal(t.vt.text(), "# top\n");
+    t.out(frame(1) + frame(2));
+    assert.equal(t.vt.text(), "Mem: 2\n  1 init");
+});
+
+test("vt: short top frames redraw in place and preserve scrollback", () => {
+    const t = terminal();
+    t.out(old(40) + "# top\r\n" + frame(1) + frame(2) + frame(3));
+    const kept = Array.from({ length: 18 }, (_, i) => `old ${i}`);
+    assert.equal(t.vt.text(), [...kept, "Mem: 3", "  1 init"].join("\n"));
+    t.out("\x1b[1;3H\x1b[J");
+    assert.equal(t.vt.text(), [...kept, "Me"].join("\n"));
+});
+
+test("vt: screen origin follows scrollback trimming and reset", () => {
+    const t = terminal();
+    t.out(old(2100) + "\x1b[Hx\x1b[K");
+    assert.equal(t.vt.text().split("\n").at(-24), "x");
+
+    t.out(old(40));
+    t.vt.reset();
+    t.out("\x1b[Hx");
+    assert.equal(t.vt.text(), "x");
+});
+
+test("vt: vi restores the shell screen and scrollback on exit", () => {
+    const t = terminal();
+    t.out(old(40) + "# vi f\r\n");
+    const before = t.vt.text();
+    t.out("\x1b[?1049h" + clear + "\x1b[1;1Hhello\x1b[K\x1b[24;1H\"f\" 1L\x1b[K");
+    assert.equal(t.vt.text().split("\n")[0], "hello");
+    t.out("\x1b[24;1H\x1b[K\x1b[?1049l# ");
+    assert.equal(t.vt.text(), before + "# ");
+    // Home first so the newline cannot recompute the origin from the restored cursor row.
+    t.out("\x1b[H\r\n" + frame(1));
+    assert.equal(t.vt.text(), old(18).replaceAll("\r", "") + "Mem: 1\n  1 init");
+});
+
 test("vt: UTF-8 split across writes, and bytes >= 0x80", () => {
     const t = terminal();
     t.vt.write(Uint8Array.of(0x41, 0xc3));
