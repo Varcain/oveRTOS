@@ -18,7 +18,10 @@ The behaviour depends on the selected board:
 
 ### QEMU Emulated Targets
 
-When the board is `qemu` (`qemu-mps2-an500`), `make run` invokes QEMU with the generated `.elf` image. The console is the emulated CMSDK UART0, connected to the terminal: output appears there and typed input reaches `ove_console`. With the dashboard (the default, not `--headless`), its console box feeds the same UART, as it does in the browser bundle. No physical hardware is required.
+When the board is `qemu` (`qemu-mps2-an500`), `make run` invokes QEMU with the generated `.elf` image.
+For non-Linux builds, the emulated CMSDK UART0 carries console output and passes typed input to `ove_console`.
+The dashboard's **Terminal** panel shows the serial session and sends typed keys to the console UART.
+The **Log** panel shows other output and dashboard events. No physical hardware is required.
 
 To run without an interactive display (useful in CI):
 

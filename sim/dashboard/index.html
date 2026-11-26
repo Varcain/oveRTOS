@@ -48,7 +48,7 @@
 
         <div class="bv-right">
             <span class="bv-chip" id="bv-sel" hidden></span>
-            <button class="bv-counts" id="bv-counts" title="Warnings / errors in the console">
+            <button class="bv-counts" id="bv-counts" title="Warnings / errors in the Log">
                 <span class="w">&#9888; <b id="bv-wcount">0</b></span>
                 <span class="e">&#10006; <b id="bv-ecount">0</b></span>
             </button>
@@ -273,6 +273,10 @@
             </div>
         </section>
 
+        <section class="panel" id="terminal-panel">
+            <pre id="vt-screen" class="vt" tabindex="0"></pre>
+        </section>
+
         <section class="panel" id="events-panel">
             <div class="bv-con-bar">
                 <input id="bv-con-search" class="console-input" placeholder="Filter log  ( / )"
@@ -283,16 +287,11 @@
                     <button class="seg" data-lvl="e">Errors</button>
                 </span>
                 <button class="btn btn-small" id="bv-con-clear"
-                        title="Clear the console and the warning/error counts">Clear</button>
-            </div>
-            <div id="event-log" class="event-log"></div>
-            <div id="console-bar" class="console-bar">
-                <input type="text" id="console-input" class="console-input"
-                       placeholder="Shell command, Enter to send" autocomplete="off" spellcheck="false">
-                <button id="console-send" class="btn btn-small">Send</button>
+                        title="Clear the log and the warning/error counts">Clear</button>
                 <button id="autoscroll-toggle" class="btn btn-small btn-toggle active"
                         title="Keep the newest line in view">Follow</button>
             </div>
+            <div id="event-log" class="event-log"></div>
         </section>
     </div>
 
@@ -305,6 +304,7 @@
     </div>
 
     <!-- ove:web-link  The web bundle loads qemu-wasm.js here. -->
+    <script src="vt.js"></script>
     <script src="board.js"></script>
 </body>
 </html>

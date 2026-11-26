@@ -1,4 +1,6 @@
 /* A small VT100 subset for BusyBox's line editing, less, top and vi. */
+/* oveVt(screen, send): send receives a Uint8Array for keys, paste and type().
+ * write() takes raw output bytes. The caller manages focus and CSS. */
 
 (function () {
 "use strict";
@@ -21,6 +23,7 @@ window.oveVt = function (screen, send) {
     var row = 0, col = 0;
     var esc = null;                /* null, "" after ESC, or "[..." in a CSI */
     var dirty = false;
+    var follow = true;
 
     function setLine(text) {
         lines[row] = text;
@@ -110,7 +113,6 @@ window.oveVt = function (screen, send) {
 
     function render() {
         dirty = false;
-        var stick = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 4;
         var line = lines[row];
         var before = lines.slice(0, row).join("\n") + (row ? "\n" : "") + line.slice(0, col);
         var cursor = document.createElement("span");
@@ -118,7 +120,7 @@ window.oveVt = function (screen, send) {
         cursor.textContent = line.charAt(col) || " ";
         var after = line.slice(col + 1) + (row + 1 < lines.length ? "\n" + lines.slice(row + 1).join("\n") : "");
         screen.replaceChildren(document.createTextNode(before), cursor, document.createTextNode(after));
-        if (stick) screen.scrollTop = screen.scrollHeight;
+        if (follow) screen.scrollTop = screen.scrollHeight;
     }
 
     function write(bytes) {
@@ -133,6 +135,14 @@ window.oveVt = function (screen, send) {
         send(encoder.encode(text));
     }
 
+    screen.addEventListener("scroll", function () {
+        follow = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 4;
+    });
+
+    window.addEventListener("resize", function () {
+        if (follow) screen.scrollTop = screen.scrollHeight;
+    });
+
     screen.addEventListener("keydown", function (e) {
         if (e.metaKey) return;
         var seq = null;
@@ -140,7 +150,11 @@ window.oveVt = function (screen, send) {
             var c = e.key.toUpperCase().charCodeAt(0);
             if (c >= 0x40 && c <= 0x5f) seq = String.fromCharCode(c - 0x40);
             else if (e.key === " ") seq = "\0";
-            if (e.key === "c" && window.getSelection().toString()) return;  /* copy */
+            if (e.key === "c") {
+                var selection = window.getSelection();
+                if (selection && selection.toString() &&
+                    screen.contains(selection.anchorNode) && screen.contains(selection.focusNode)) return;
+            }
             if (e.key === "v") return;                                      /* paste */
         } else if (KEYS[e.key]) {
             seq = KEYS[e.key];

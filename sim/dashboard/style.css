@@ -199,7 +199,21 @@ body {
     pointer-events: none;
 }
 
-/* ── Events ────────────────────────────────────────────────────────── */
+/* ── Terminal and log ─────────────────────────────────────────────── */
+
+.vt {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-all;
+    outline: none;
+}
+.vt .cursor { background: var(--text); color: var(--surface); }
+.vt:not(:focus) .cursor { background: none; outline: 1px solid var(--text); }
 
 .event-log {
     flex: 1;
@@ -237,13 +251,6 @@ body {
 .event-log .entry.lvl-w { color: var(--amber); }
 .event-log .entry.lvl-e { color: #ff6b81; background: rgba(233, 69, 96, 0.08); }
 .event-log .entry.lvl-d { color: var(--dim); }
-
-.console-bar {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    flex-shrink: 0;
-}
 
 .console-input {
     flex: 1;

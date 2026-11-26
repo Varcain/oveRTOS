@@ -1133,8 +1133,8 @@ config OVE_SIM_DASHBOARD
       Enable the browser-based simulation dashboard served over
       a local WebSocket server. Displays framebuffer, audio,
       LED states, GPIO matrix, and sensor controls.
-      FreeRTOS an500 Linux personality builds use the dashboard console
-      box for the guest UART without enabling the simulation framework.
+      The dashboard Terminal panel carries the guest UART on FreeRTOS
+      an500 Linux personality builds without the simulation framework.
 
 endmenu
 

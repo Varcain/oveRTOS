@@ -3,7 +3,7 @@
 The simulation framework provides virtual peripheral emulation for the QEMU MPS2-AN500 board. It replaces bare-stub HAL implementations with plugin-aware versions that support virtual peripherals, sensor injection, and a browser-based web dashboard for real-time visualisation of display, audio, LEDs, GPIO, and console output.
 
 The an500 board selects `CONFIG_OVE_SIM` for non-Linux builds. FreeRTOS an500
-Linux personality builds can use the dashboard console without the sim framework.
+Linux personality builds can use the dashboard's Terminal and Log panels without the sim framework.
 
 ## Architecture
 
@@ -23,11 +23,12 @@ flowchart LR
         DISP["Display Canvas"]
         AUDIO["Audio Panel"]
         GPIO_P["Board parts (LEDs, UART, ...)"]
-        CONSOLE["Console Log"]
+        TERM["Terminal"]
+        LOG["Log"]
     end
 
     APP --> HAL --> PLUG --> TR
-    TR --> DISP & AUDIO & GPIO_P & CONSOLE
+    TR --> DISP & AUDIO & GPIO_P & TERM & LOG
 
     style APP fill:#5c6bc0,stroke:#3949ab,color:#fff
     style HAL fill:#1e88e5,stroke:#1565c0,color:#fff
@@ -36,7 +37,8 @@ flowchart LR
     style DISP fill:#546e7a,stroke:#37474f,color:#fff
     style AUDIO fill:#546e7a,stroke:#37474f,color:#fff
     style GPIO_P fill:#546e7a,stroke:#37474f,color:#fff
-    style CONSOLE fill:#546e7a,stroke:#37474f,color:#fff
+    style TERM fill:#546e7a,stroke:#37474f,color:#fff
+    style LOG fill:#546e7a,stroke:#37474f,color:#fff
 ```
 
 When `CONFIG_OVE_SIM` is enabled, the sim HAL layer intercepts calls to display, audio, GPIO, and other peripherals. Each peripheral is backed by a **plugin** that processes data and emits events through a **transport** to the browser dashboard.
@@ -108,21 +110,25 @@ The browser-based dashboard (`sim/dashboard/`) is built around a drawing of the 
 
 - **Board**: the LCD shows the live LVGL framebuffer or the Linux personality's `/dev/fb0`. Once a frame is visible, clicks and drags send touch input to LVGL or to `/dev/input/event0` on FreeRTOS an500 Linux personality builds with evdev enabled. The board's parts are drawn from `boards/<board>/board.yaml`: the MCU with its CPU load, RAM with heap usage, the console UART with TX/RX activity, the debug port, the audio codec, user LEDs, and the status LEDs. Clicking a part opens its tool. The **Reset** switch resets the board (needs the debugger). The display scales to the largest whole-number size that fits (**Auto**), or **Fit**, **1×** or **2×**.
 - **Glance strip**: CPU, heap, threads and log warnings at a glance, under the board.
-- **Inspector**: Console (shell input, filter, warning/error levels), Threads, Trace, Profiler, Debug and Audio, in one pane or two stacked panes. A tool the build does not enable says which Kconfig option turns it on.
+- **Inspector** has one pane or two stacked panes. **Terminal** shows the serial session and sends typed keys to the console UART. **Log** shows other output and dashboard events, with search and level filters. The other panels are Threads, Trace, Profiler, Debug and Audio. A tool the build does not enable says which Kconfig option turns it on.
 - **Status bar**: run state, simulated time, run control (pause / continue / step / reset), the selected thread, and warning/error counts.
 
-Three **workspaces** set up the inspector for a task: **Run** (console), **Debug** (source, call stack, registers, console) and **Perf** (trace above the profiler). Halting the target switches to Debug and resuming switches back. Pane choices and sizes are kept per build. Selecting a thread (in Threads, or a Trace lane label) highlights it in Trace and filters the Profiler to it.
+The default **Run** workspace shows Terminal above Log, **Debug** shows Debug above Terminal, and **Perf** shows Trace above Profiler. Halting the target switches to Debug and resuming switches back. Pane choices and sizes are kept per build. Selecting a thread (in Threads, or a Trace lane label) highlights it in Trace and filters the Profiler to it.
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+K` | Command palette |
 | `1` `2` `3` | Run / Debug / Perf workspace |
 | `F` | Board only |
-| `` ` `` | Shell input |
-| `/` | Filter the console |
+| `` ` `` | Focus Terminal |
+| `/` | Filter the Log |
 | `Esc` | Clear the thread selection |
 | `F6` `F10` `F11` `Shift+F11` | Pause / step over / step into / step out |
 | `F5` | Continue (while the Debug panel is shown) |
+
+With the Terminal focused, keys including `Tab`, `Esc`, and `Ctrl+K` go to
+the guest and `F5`, `F6`, `F10`, and `F11` remain debugger shortcuts, so
+click outside the Terminal to use the other dashboard shortcuts.
 
 The board drawing and the tools on offer come from `manifest.json`, built from `board.yaml` and the build's `.config` by `config/scripts/ove_manifest.py`. The local bridge serves it; a `web` bundle ships it next to `index.html`.
 

@@ -416,12 +416,12 @@ test("link: trace and profile frames decode behind the frame type word", () => {
     assert.equal(g.resolvePc(g.profilerSamples[0].pcs[0]), "foo");
 });
 
-test("console: prompts continue across frames and terminal controls are removed", () => {
+test("log: partial lines continue across frames and terminal controls are removed", () => {
     const g = loadDashboard();
-    const send = (text, type = g.FRAME_LOG) => {
+    const send = (text) => {
         const bytes = new TextEncoder().encode(text);
         const frame = new Uint8Array(4 + bytes.length);
-        new DataView(frame.buffer).setUint32(0, type, true);
+        new DataView(frame.buffer).setUint32(0, g.FRAME_LOG, true);
         frame.set(bytes, 4);
         g.ws.onmessage({ data: frame.buffer });
     };
@@ -438,12 +438,27 @@ test("console: prompts continue across frames and terminal controls are removed"
     send("ls\r\n");
     assert.deepEqual(g._logQueue.slice(-3).map((el) => el.lastChild.textContent),
         ["/root # ", "Connected to sim server", "ls"]);
-
-    send("hello\r\n", 0x10);
-    assert.equal(g._logQueue.at(-1).lastChild.textContent, "hello");
 });
 
-test("console: WASM link emits each line as a separate entry", () => {
+test("link: serial bytes go to the terminal and log frames go to the log", () => {
+    const writes = [];
+    const g = loadDashboard({ vt: () => ({ write: (bytes) => writes.push(bytes) }) });
+    const send = (type, bytes) => {
+        const frame = new Uint8Array(4 + bytes.length);
+        new DataView(frame.buffer).setUint32(0, type, true);
+        frame.set(bytes, 4);
+        g.ws.onmessage({ data: frame.buffer });
+    };
+    const serial = Uint8Array.of(0xff, 0x1b, 0x5b, 0x4b);
+    send(0x10, serial);
+    assert.deepEqual(writes, [serial]);
+    assert.equal(g._logQueue.length, 0);
+    send(g.FRAME_LOG, new TextEncoder().encode("QEMU output\n"));
+    assert.deepEqual(writes, [serial]);
+    assert.deepEqual(g._logQueue.map((el) => el.lastChild.textContent), ["QEMU output"]);
+});
+
+test("log: WASM link emits each line as a separate entry", () => {
     const g = loadDashboard({ wasm: true });
     g.ws._log("[web] one");
     g.ws._log("[web] two");

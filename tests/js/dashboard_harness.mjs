@@ -25,10 +25,11 @@ function fakeElement() {
     return new Proxy(el, { get });
 }
 
-export function loadDashboard({ wasm = false } = {}) {
+export function loadDashboard({ wasm = false, vt } = {}) {
     Object.assign(globalThis, {
         window: globalThis,
         oveCreateLink: undefined,
+        oveVt: vt,
         crossOriginIsolated: false,
         addEventListener: noop,
         document: {

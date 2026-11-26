@@ -656,8 +656,8 @@
 .bv .thread-table tbody tr { cursor: pointer; }
 .bv .thread-table tbody tr.bv-selected { background: rgba(91, 141, 239, 0.2) !important; box-shadow: inset 3px 0 0 var(--focus); }
 
-/* Console filter bar (wired by board.js) */
-.bv-con-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-shrink: 0; }
+/* Log filter bar (wired by board.js) */
+.bv-con-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; flex-shrink: 0; }
 .bv-con-bar input { flex: 1; min-width: 80px; }
 .bv-con-bar .bv-levels { display: inline-flex; }
 

@@ -61,7 +61,9 @@ ove download && ove build && ove flash
 #   console: /dev/ttyACM0 @ 115200
 ```
 
-On FreeRTOS an500, `make run` serves the dashboard with the guest console and shows `/dev/fb0` on its LCD.
+On FreeRTOS an500, `make run` serves the dashboard and shows `/dev/fb0` on its LCD.
+The **Terminal** panel shows the guest serial session and sends typed keys to the UART.
+The **Log** panel shows other output and dashboard events.
 Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for a terminal-only console.
 

@@ -974,7 +974,7 @@ def _write_web_manifest(ws, path):
 
     The local bridge serves the same document live; both come from
     config/scripts/ove_manifest.py.  In the page there is no debugger,
-    and the console box feeds the firmware's UART.
+    and the Terminal panel feeds the firmware's UART.
     """
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -1017,7 +1017,7 @@ _WEB_MACHINES = {
 
 _TERMINAL_PAGES = ("vt.js", "terminal.js", "coi-serviceworker.js")
 _DASHBOARD_PAGES = ("app.js", "board.js", "style.css", "board.css",
-                    "coi-serviceworker.js", "qemu-wasm.js")
+                    "coi-serviceworker.js", "qemu-wasm.js", "vt.js")
 
 
 def _assemble_web_bundle(ws):

@@ -3,7 +3,7 @@
  *
  * Talks to the firmware over one framed link: a WebSocket to the Python
  * bridge (native QEMU), or the in-page link to QEMU running in
- * this page (qemu-wasm.js), and renders the panels (display, console,
+ * this page (qemu-wasm.js), and renders the panels (display, terminal, log,
  * threads, debugger, trace, profiler, audio). Page layout belongs to
  * board.js, through the layout host below.
  */
@@ -18,7 +18,7 @@
  *   layoutDisplay(w, h)   size the LCD canvas (replaces applyDisplayScale)
  *   on(event, data)       live data feed: "link", "log", "threads",
  *                         "debug", "display", "audio", "simtime",
- *                         "uart-rx", "select-thread"
+ *                         "serial", "uart-rx", "select-thread"
  * Every member is optional. */
 var HOST = window.oveLayoutHost || {};
 
@@ -206,7 +206,11 @@ function connect() {
             case FRAME_EVENT:      handleEvent(buf, 4); break;
             case FRAME_STATE:      handleState(buf, 4); break;
             case FRAME_LOG:        handleLog(buf, 4); break;
-            case FRAME_SERIAL:     handleLog(buf, 4); break;
+            case FRAME_SERIAL:
+                ensureWindow("terminal");
+                if (vt) vt.write(new Uint8Array(buf, 4));
+                hostEmit("serial");
+                break;
             case FRAME_THREAD:     handleThreadSnapshot(buf, 4); break;
             case FRAME_DEBUG_RESP: handleDebugResp(buf, 4); break;
             case FRAME_FILE_LIST:  handleFileList(buf, 4); break;
@@ -222,7 +226,7 @@ function connect() {
  * (FRAME_FB, FRAME_THREAD, FRAME_FILE_LIST, ...): its DOM gets wired once
  * and the layout host is told, so it can stop showing an empty state. */
 var PANEL_IDS = { display: 1, threads: 1, debug: 1, audio: 1, events: 1,
-                  trace: 1, profiler: 1 };
+                  trace: 1, profiler: 1, terminal: 1 };
 var _panelsSeen = {};
 
 /* One-time wiring for a panel's DOM, independent of who lays it out. */
@@ -3804,6 +3808,9 @@ if (scrollBtn) {
             eventLog.scrollTop = eventLog.scrollHeight;
     });
 }
+window.addEventListener("resize", function () {
+    if (autoScroll && eventLog) eventLog.scrollTop = eventLog.scrollHeight;
+});
 
 var _logQueue = [];
 var _logRafScheduled = false;
@@ -3884,30 +3891,12 @@ function sendCmd(pluginId, cmdType, data) {
 }
 window.sendCmd = sendCmd;
 
-/* ── Console input ────────────────────────────────────────────────── */
-function initConsoleInput() {
-    var conInput = document.getElementById("console-input");
-    var conSend  = document.getElementById("console-send");
-    if (!conInput || !conSend) return;
-
-    function sendConsoleText() {
-        var text = conInput.value + "\n";
-        /* Batch entire string into a single message. */
-        var bytes = new Uint8Array(text.length);
-        for (var i = 0; i < text.length; i++)
-            bytes[i] = text.charCodeAt(i) & 0xFF;
-        sendCmd(0xFFFFFFFF, 0, bytes);  /* console sentinel */
-        hostEmit("uart-rx", { text: text });
-        conInput.value = "";
-    }
-    conSend.addEventListener("click", sendConsoleText);
-    conInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") sendConsoleText();
-    });
-}
-
 /* ══════════════════════════════════════════════════════════════════════
-   Init: set up console input and open the link
+   Init: set up the terminal and open the link
    ══════════════════════════════════════════════════════════════════════ */
-initConsoleInput();
+var vtScreen = document.getElementById("vt-screen");
+var vt = vtScreen && typeof window.oveVt === "function" ? window.oveVt(vtScreen, function (bytes) {
+    sendCmd(0xFFFFFFFF, 0, bytes);  /* console sentinel */
+    hostEmit("uart-rx");
+}) : null;
 connect();

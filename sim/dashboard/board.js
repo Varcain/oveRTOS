@@ -27,23 +27,24 @@
  * feature = manifest.features key that must be true for the panel to have
  * data, kconfig = what to tell the user when it is not. */
 var PANELS = {
-    console:  { title: "Console",  el: "events-panel" },
+    terminal: { title: "Terminal", el: "terminal-panel" },
+    log:      { title: "Log",      el: "events-panel" },
     threads:  { title: "Threads",  el: "threads-panel" },
     trace:    { title: "Trace",    el: "trace-panel",    feature: "trace",    kconfig: "CONFIG_OVE_TRACE_STREAM" },
     profiler: { title: "Profiler", el: "profiler-panel", feature: "profiler", kconfig: "CONFIG_OVE_PROFILER" },
     debug:    { title: "Debug",    el: "debug-panel",    feature: "debugger" },
     audio:    { title: "Audio",    el: "audio-panel",    feature: "audio",    kconfig: "CONFIG_OVE_AUDIO" },
 };
-var PANEL_ORDER = ["console", "threads", "trace", "profiler", "debug", "audio"];
+var PANEL_ORDER = ["terminal", "log", "threads", "trace", "profiler", "debug", "audio"];
 
 /* app.js window ids → board-view ids. */
-var APP_IDS = { events: "console", threads: "threads", trace: "trace",
+var APP_IDS = { terminal: "terminal", events: "log", threads: "threads", trace: "trace",
                 profiler: "profiler", debug: "debug", audio: "audio", display: "display" };
 
 /* board = board column width, split = pane A share of the inspector. */
 var WORKSPACES = {
-    run:   { title: "Run",   key: "1", board: 0.56, a: "console", b: null,       split: 0.62 },
-    debug: { title: "Debug", key: "2", board: 0.32, a: "debug",   b: "console",  split: 0.66 },
+    run:   { title: "Run",   key: "1", board: 0.56, a: "terminal", b: "log",      split: 0.62 },
+    debug: { title: "Debug", key: "2", board: 0.32, a: "debug",    b: "terminal", split: 0.66 },
     perf:  { title: "Perf",  key: "3", board: 0.28, a: "trace",   b: "profiler", split: 0.48 },
 };
 var WS_ORDER = ["run", "debug", "perf"];
@@ -115,11 +116,12 @@ function loadPrefs() {
     WS_ORDER.forEach(function (k) {
         var saved = p.wsState && p.wsState[k];
         var d = defaultWs(k);
-        if (saved && PANELS[saved.a]) {
+        if (saved && PANEL_ORDER.indexOf(saved.a) >= 0) {
             d.a = saved.a;
-            d.b = PANELS[saved.b] ? saved.b : null;
+            if (saved.b === null || PANEL_ORDER.indexOf(saved.b) >= 0) d.b = saved.b;
             if (saved.split > 0.1 && saved.split < 0.9) d.split = saved.split;
             if (saved.board > 0.1 && saved.board < 0.9) d.board = saved.board;
+            if (d.a === d.b) d = defaultWs(k);
         }
         out.wsState[k] = d;
     });
@@ -172,12 +174,11 @@ var HANDLERS = {
         if (d.level === "w" || d.level === "e") {
             S.counts[d.level]++;
             S.lastAlert = { level: d.level, msg: d.msg };
-            if (paneOf("console") === null) S.unseen[d.level]++;
+            if (paneOf("log") === null) S.unseen[d.level]++;
             renderCounts();
             renderTabs();
         }
         if (d.el) applyConsoleFilter(d.el);
-        if (d.type === "log") blink("uart-tx");
         scheduleGlance();
     },
     threads: function (d) {
@@ -226,6 +227,7 @@ var HANDLERS = {
         S.extStatus = d.ok ? null : d.text;
         renderRun();
     },
+    serial: function () { blink("uart-tx"); },
     "uart-rx": function () { blink("uart-rx"); },
     "select-thread": function (d) { selectThread(d.tid, { fromTrace: true }); },
 };
@@ -392,7 +394,7 @@ function bindBar() {
     $("bv-reset").addEventListener("click", resetBoard);
     $("bv-counts").addEventListener("click", function () {
         setConsoleLevel(S.counts.e && !S.counts.w ? "e" : "w");
-        openPanel("console");
+        openPanel("log");
     });
     $("bv-palette-btn").addEventListener("click", openPalette);
     $("bv-focus").addEventListener("click", toggleFocus);
@@ -510,7 +512,7 @@ function renderTabs() {
             if (st[k] === p) t.classList.add("active");
             else if (other === p) { t.classList.add("elsewhere"); t.title = "Shown in the other pane: click to swap"; }
             if (panelState(p) === "na") { t.classList.add("na"); t.title = "Not enabled in this build"; }
-            if (p === "console" && st[k] !== p && other !== p && (S.unseen.e || S.unseen.w)) {
+            if (p === "log" && st[k] !== p && other !== p && (S.unseen.e || S.unseen.w)) {
                 var bd = el("span", "badge" + (S.unseen.e ? "" : " w"));
                 bd.textContent = S.unseen.e || S.unseen.w;
                 t.appendChild(bd);
@@ -537,6 +539,7 @@ function renderPanes() {
     if (!S.prefs) return;
     var st = wsState();
     var store = $("panel-store");
+    var active = document.activeElement;
     $("bv-inspector").classList.toggle("single", !st.b);
     /* Unmount everything first so a panel moving A→B isn't yanked back. */
     ["a", "b"].forEach(function (k) {
@@ -553,8 +556,9 @@ function renderPanes() {
         var sec = $(PANELS[p].el);
         if (sec) body.appendChild(sec);
     });
-    if (paneOf("console") !== null) { S.unseen.w = S.unseen.e = 0; }
+    if (paneOf("log") !== null) { S.unseen.w = S.unseen.e = 0; }
     renderTabs();
+    if (active && active.isConnected && document.activeElement !== active) active.focus({ preventScroll: true });
     relayoutSoon();
 }
 
@@ -724,13 +728,13 @@ function renderBoard() {
     var con = b.serial && b.serial.console;
     if (con || f.console || !S.haveManifest) {
         var inst = con ? String(con.instance || "UART").replace(/^CMSDK_/, "") : "UART";
-        row.appendChild(comp("comp-uart", "console", "Console",
+        row.appendChild(comp("comp-uart", "terminal", "Console",
             "<div class='leds'><span class='led green'><i id='bv-uart-tx'></i><span>TX</span></span>" +
             "<span class='led amber'><i id='bv-uart-rx'></i><span>RX</span></span></div>" +
             "<div class='header header-uart'><i></i><i></i><i></i><i></i></div>" +
             "<div class='pin-names'><span>G</span><span>R</span><span>T</span><span>V</span></div>" +
             "<span class='silk'>" + esc(inst) + (con && con.baud ? " &middot; " + con.baud : "") + "</span>",
-            "Console UART: TX blinks on firmware output, RX on shell input"));
+            "Console UART. TX blinks on serial output, RX on terminal input"));
     }
 
     /* SWD / debugger */
@@ -982,7 +986,7 @@ function renderGlance() {
     card("gl-cpu", "CPU", S.manifest.features.profiler === false ? "threads" : "profiler", "<canvas id='gl-cpu-spark'></canvas>");
     card("gl-heap", "Heap", "threads", "<span class='meter'><span id='gl-heap-fill'></span></span>");
     card("gl-thr", "Threads", "threads", "<span class='dots' id='gl-thr-dots'></span>");
-    card("gl-log", "Log", "console", "<span class='sub' id='gl-log-sub'>no warnings</span>");
+    card("gl-log", "Log", "log", "<span class='sub' id='gl-log-sub'>no warnings</span>");
 }
 
 var _glanceRaf = 0;
@@ -1099,9 +1103,9 @@ function clearConsole() {
 }
 
 function focusShell() {
-    openPanel("console");
-    var i = $("console-input");
-    if (i) i.focus();
+    openPanel("terminal");
+    var screen = $("vt-screen");
+    if (screen) screen.focus({ preventScroll: true });
 }
 
 /* ── Linked thread selection ──────────────────────────────────────── */
@@ -1178,10 +1182,10 @@ function commands() {
     c.push({ grp: "View", title: S.prefs.focus ? "Show inspector" : "Board only", key: "F", run: toggleFocus });
     c.push({ grp: "View", title: wsState().b ? "Close second pane" : "Split inspector", run: toggleSplit });
     c.push({ grp: "View", title: "Reset this workspace's layout", run: resetWorkspace });
-    c.push({ grp: "Console", title: "Focus shell input", key: "`", run: focusShell });
-    c.push({ grp: "Console", title: "Show only warnings and errors", run: function () { setConsoleLevel("w"); openPanel("console"); } });
-    c.push({ grp: "Console", title: "Show all lines", run: function () { setConsoleLevel("all"); } });
-    c.push({ grp: "Console", title: "Clear", run: clearConsole });
+    c.push({ grp: "Terminal", title: "Focus terminal", key: "`", run: focusShell });
+    c.push({ grp: "Log", title: "Show only warnings and errors", run: function () { setConsoleLevel("w"); openPanel("log"); } });
+    c.push({ grp: "Log", title: "Show all lines", run: function () { setConsoleLevel("all"); } });
+    c.push({ grp: "Log", title: "Clear", run: clearConsole });
     c.push({ grp: "Settings", title: (S.prefs.autoDebug ? "Don't switch" : "Switch") + " to Debug when the target halts",
              run: function () { S.prefs.autoDebug = !S.prefs.autoDebug; savePrefs(); } });
     return c;
@@ -1281,7 +1285,7 @@ function bindKeys() {
         if (k === "f" || k === "F") { toggleFocus(); e.preventDefault(); }
         else if (k === "`") { focusShell(); e.preventDefault(); }
         else if (k === "/") {
-            openPanel("console");
+            openPanel("log");
             var s = $("bv-con-search");
             if (s) { s.focus(); e.preventDefault(); }
         }
