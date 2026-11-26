@@ -726,8 +726,10 @@ thread, memory-domain and fatal-error hooks, so illegal guest accesses terminate
 only the current Linux process.
 
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
-board. Linux builds use the sim framework for thread, CPU, and heap statistics.
-Trace and profiling default to off. When `CONFIG_OVE_LINUX` is set, it drops the
+board. Native Linux builds use the sim framework for thread, CPU, and heap
+statistics and trace swimlanes. Profiling defaults to off. Linux browser
+bundles run with sim disabled and provide a guest console terminal.
+When `CONFIG_OVE_LINUX` is set, the board drops the
 `vPortSVCHandler → SVC_Handler` alias so LXP's FreeRTOS port
 (`modules/lxp/ports/freertos/lxp_freertos_port.c`)
 owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to

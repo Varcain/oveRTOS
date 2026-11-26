@@ -3819,8 +3819,8 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     framebuffer smoke: /usr/bin/fbtest reads the panel geometry via FBIOGET_*SCREENINFO,
     fills an RGB565 gradient, and verifies a pwrite()/pread() round-trip (LVGL's fbdev
     write path). tests/sim/freertos-linux/fbtest_drive.py boots, logs in, runs fbtest,
-    and asserts geometry + PASS + a crw /dev/fb0 node + shell survival + no
-    /dev/shm/ove-fb left by the headless run (exit 0 = pass).
+    and checks geometry, PASS, a crw /dev/fb0 node, shell survival, and that
+    /dev/shm/ove-fb and /dev/shm/ove-sim are absent after the headless run.
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/fbtest
     (the overtos board's post-build compiles it) plus QEMU and the slow uClinux boot."""
@@ -3842,7 +3842,8 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
 
 
 def test_qemu_freertos_linux_dashboard(ove_dir, output_dir):
-    """Manual dashboard smoke for the console, fbtest LCD frame, and evread touch reports.
+    """Manual dashboard smoke for the console, fbtest LCD frame, evread touch
+    reports, a thread snapshot, and trace state records for IDLE and a guest task.
     Needs the Buildroot rootfs, QEMU, a free loopback port and no running dashboard."""
     ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)

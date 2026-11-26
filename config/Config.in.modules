@@ -1102,25 +1102,24 @@ config OVE_SIM
       virtual peripherals, sensor injection, and host-side
       web dashboard visualization.
       The QEMU MPS2-AN500 board selects it for non-Linux builds
-      and for FreeRTOS Linux personality builds.
+      and for native FreeRTOS Linux personality builds.
 
 config OVE_SIM_WEB
     bool "Browser bundle (firmware + QEMU compiled to WebAssembly)"
-    depends on (OVE_BOARD_QEMU_MPS2_AN500 && OVE_SIM) || \
-               (OVE_LINUX && (OVE_BOARD_QEMU_MPS2_AN500 || OVE_BOARD_QEMU_MPS2_AN521))
+    # Web packaging is available independently of the sim framework.
+    depends on OVE_BOARD_QEMU_MPS2_AN500 || (OVE_LINUX && OVE_BOARD_QEMU_MPS2_AN521)
     help
-      Also package the firmware for a web browser.  'ove build' writes
-      serve/: the dashboard, this firmware and qemu-system-arm built
-      for WebAssembly ('ove ensure-toolchain qemu-wasm', needs Docker
+      Also package the firmware and WebAssembly QEMU for a web browser.
+      'ove build' writes serve/ ('ove ensure-toolchain qemu-wasm' needs Docker
       or Podman).  The directory is self-contained and can be put on
       any static host; 'ove run' serves it locally.
 
-      A Linux personality build gets a terminal on the guest console
-      instead of the dashboard, and the bundle carries its rootfs.
+      Non-Linux bundles include the sim dashboard. Linux personality
+      bundles include a guest console terminal and the rootfs. The
+      sim framework defaults to off for Linux browser builds.
 
-      The firmware is the same image the native QEMU runs.  In the
-      browser QEMU has no JIT, so it runs several times slower: the
-      build defaults to optimised rather than debug.
+      WebAssembly QEMU runs in an interpreter. Browser builds default
+      to optimised firmware.
 
       'make web.<rtos>.<app>' selects this on the an500, and
       'make web-an521.zephyr.<app>' on the an521 (the Zephyr Linux
@@ -1134,7 +1133,7 @@ config OVE_SIM_DASHBOARD
       Enable the browser-based simulation dashboard served over
       a local WebSocket server. Displays framebuffer, audio,
       LED states, GPIO matrix, and sensor controls.
-      On FreeRTOS an500 Linux builds, it shows the guest UART,
+      On native FreeRTOS an500 Linux builds, it shows the guest UART,
       framebuffer, threads, CPU usage, and RTOS heap.
 
 endmenu

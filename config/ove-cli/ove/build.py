@@ -1029,7 +1029,7 @@ def _assemble_web_bundle(ws):
     on a static host.  serve/run.sh serves it locally.
 
     A Linux personality bundle carries the rootfs and opens a terminal on
-    the guest console.
+    the guest console. The sim framework is off by default for this variant.
     """
     from .download import build_qemu_wasm
     from .manifest import load_manifest

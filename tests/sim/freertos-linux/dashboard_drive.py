@@ -17,6 +17,7 @@ from websockets.sync.client import connect
 sys.path.insert(0, "config/scripts")
 from ove_dashboard.protocol import (  # noqa: E402
     FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL, FRAME_SERIAL_TAIL, FRAME_THREAD,
+    FRAME_TRACE,
 )
 
 
@@ -46,6 +47,47 @@ def thread_snapshot_matches(frame):
             and b"sim_debug" in rows)
 
 
+class TraceSummary:
+    def __init__(self):
+        self.names = {}
+        self.state_tids = set()
+        self.state_records = self.records = self.dropped = 0
+
+    def add(self, frame):
+        header = struct.Struct("<BBHI")
+        pos = 4 + header.size
+        sub, ver, count, dropped = header.unpack_from(frame, 4)
+        self.dropped += dropped
+        if sub == 0:  # DESCRIPTORS
+            desc = struct.Struct("<IIB")
+            for _ in range(count):
+                tid, _, name_len = desc.unpack_from(frame, pos)
+                pos += desc.size
+                end = pos + name_len
+                if end > len(frame):
+                    raise RuntimeError("truncated FRAME_TRACE descriptor name")
+                self.names[tid] = frame[pos:end]
+                pos = end
+        elif sub == 1:  # STREAM, ignoring NAMES batches
+            if ver < 3:
+                raise RuntimeError(f"FRAME_TRACE stream version {ver}, expected v3 or newer")
+            record = struct.Struct("<QIBBHI4x")
+            if len(frame) != pos + count * record.size:
+                raise RuntimeError("invalid FRAME_TRACE stream batch size")
+            self.records += count
+            for _, tid, kind, _, _, _ in record.iter_unpack(memoryview(frame)[pos:]):
+                if kind == 1:
+                    self.state_tids.add(tid)
+                    self.state_records += 1
+
+    def check_lanes(self):
+        names = {self.names.get(tid, b"") for tid in self.state_tids}
+        if b"IDLE" not in names:
+            raise RuntimeError("no FRAME_TRACE state records for IDLE")
+        if not any(re.fullmatch(rb"lnx\d+", name) for name in names):
+            raise RuntimeError("no FRAME_TRACE state records for an lnxN task")
+
+
 signal.signal(signal.SIGTERM, signal.default_int_handler)
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dashboard_drive.log"
 proc, rc = None, 1
@@ -73,14 +115,17 @@ try:
         raise TimeoutError("waiting for the dashboard WebSocket")
 
     with ws:
-        deadline = time.monotonic() + 120
+        start = time.monotonic()
+        deadline = start + 120
         log_header = struct.pack("<I", FRAME_LOG)
         serial_headers = tuple(struct.pack("<I", kind) for kind in (FRAME_SERIAL, FRAME_SERIAL_TAIL))
         fb_header = struct.pack("<IHHHH", FRAME_FB, 0, 0, 479, 271)
         thread_header = struct.pack("<I", FRAME_THREAD)
+        trace_header = struct.pack("<I", FRAME_TRACE)
         log_buffer = bytearray()
         serial_buffer = bytearray()
         thread_frames = []
+        trace = TraceSummary()
         fbtest_seen = [False]
 
         def expect(needle):
@@ -102,6 +147,8 @@ try:
                             raise RuntimeError("guest login prompt appeared in FRAME_LOG")
                     elif frame.startswith(thread_header):
                         thread_frames.append(frame)
+                    elif frame.startswith(trace_header):
+                        trace.add(frame)
                     elif (not fbtest_seen[0] and frame.startswith(fb_header)
                           and len(frame) == len(fb_header) + 480 * 272 * 4):
                         px = memoryview(frame)[len(fb_header):].cast("I")
@@ -130,18 +177,22 @@ try:
         send_command(b"uname -a\r")
         expect(b"Linux overtos")
         send_command(b"poweroff\r")
+        elapsed = time.monotonic() - start
 
     if not fbtest_seen[0]:
         raise RuntimeError("no fbtest frame on the LCD")
     if not any(thread_snapshot_matches(frame) for frame in thread_frames):
         raise RuntimeError("no FRAME_THREAD with a 256 KiB heap, IDLE CPU %, an lnxN task, and sim_debug")
+    trace.check_lanes()
+    print(f"Trace: {trace.state_records} state records, {trace.records / elapsed:.0f} records/s, "
+          f"{trace.dropped} dropped")
     qemu_exit = proc.wait(timeout=60)
     with open(log, "rb") as output:
         if b"Linux overtos" not in output.read():
             raise RuntimeError("Linux overtos missing from terminal output")
     rc = qemu_exit
     print(f"Linux overtos seen, QEMU exit {rc} ({log})")
-except (OSError, RuntimeError, subprocess.TimeoutExpired, WebSocketException) as exc:
+except (OSError, RuntimeError, struct.error, subprocess.TimeoutExpired, WebSocketException) as exc:
     print(f"Dashboard smoke failed: {exc} ({log})")
 finally:
     if proc is not None:

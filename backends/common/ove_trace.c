@@ -44,7 +44,7 @@ void ove_trace_emit_state_at(uintptr_t thread_handle, int old_state, int new_sta
  * transition that is emitted, and an exited thread frees its slot. The
  * callers serialise: every backend calls in with interrupts masked or
  * from inside the scheduler. */
-#define OVE_TRACE_KTHREAD_MAX 8
+#define OVE_TRACE_KTHREAD_MAX 32
 
 static struct {
 	uintptr_t tid;

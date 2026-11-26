@@ -57,7 +57,7 @@ uintptr_t ove_backend_thread_current_handle(void)
  * switch-in.  Neither is emitted, so neither may use up a slot. */
 static void test_no_op_observations_take_no_slot(void)
 {
-	for (uintptr_t t = 0x1000; t < 0x1000 + 32; t++) {
+	for (uintptr_t t = 0x1000; t < 0x1000 + 64; t++) {
 		ove_trace_emit_kthread_state(t, OVE_THREAD_STATE_READY, OVE_TRACE_KT_FROM_WAITING);
 		ove_trace_emit_kthread_state(t, OVE_THREAD_STATE_RUNNING, OVE_TRACE_KT_ALWAYS);
 	}
@@ -117,12 +117,27 @@ static void test_record_carries_full_object_and_old_state(void)
 	CHECK(last.pad == 0);
 }
 
+static void test_many_kernel_threads(void)
+{
+	records = 0;
+	for (uintptr_t i = 0; i < 19; i++) {
+		uintptr_t tid = 0xF000 + i;
+		ove_trace_emit_kthread_state(tid, OVE_THREAD_STATE_READY, OVE_TRACE_KT_ALWAYS);
+		CHECK(last.tid == tid && last.kind == OVE_TRACE_KIND_STATE);
+	}
+	CHECK(records == 19);
+	for (uintptr_t i = 0; i < 19; i++)
+		ove_trace_emit_kthread_state(0xF000 + i, OVE_THREAD_STATE_TERMINATED,
+					     OVE_TRACE_KT_ALWAYS);
+}
+
 int main(void)
 {
 	/* An unseen tid has no lane to close. */
 	ove_trace_emit_kthread_state(0xE000, OVE_THREAD_STATE_TERMINATED, OVE_TRACE_KT_ALWAYS);
 	CHECK(records == 0);
 
+	test_many_kernel_threads();
 	test_record_carries_full_object_and_old_state();
 	test_no_op_observations_take_no_slot();
 	test_exit_frees_the_slot();

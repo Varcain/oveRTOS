@@ -105,7 +105,7 @@ The `cmake/` subdirectory contains toolchain files and CMake helpers for cross-c
 
 **In a web browser (`web` variant)**
 
-The same firmware also runs in a browser: `web` is a variant of this board that packages the image together with QEMU compiled to WebAssembly.
+The `web` variant packages the firmware with QEMU compiled to WebAssembly.
 
 ```bash
 make web.freertos.example_c
@@ -113,14 +113,14 @@ make
 make run        # serves the bundle and opens it
 ```
 
-The build writes `output/web/<rtos>/<app>/serve/`: the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way: `make docs-demos` builds every app's bundle and adds those that start to the built site.
+For this example, `output/web/<rtos>/<app>/serve/` contains the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way: `make docs-demos` builds every app's bundle and adds those that start to the built site.
 
 - The emulator is built once, on first use, by `ove ensure-toolchain qemu-wasm` into `output/tools/qemu-wasm/`. It is the upstream QEMU release pinned in `manifest.yaml`, built with upstream's own Emscripten container recipe (so it needs Docker or Podman), plus the small patches in `config/qemu-wasm/patches/`. Each patch says why it is there; so far they keep guests that reprogram the MPU often, such as the Linux personality, from running several times slower in the browser. Changing a patch builds a new emulator on the next build, and the bundle's `qemu/SOURCE.txt` carries the exact source, recipe and patches.
 - QEMU has no JIT for a WebAssembly host and runs its interpreter instead, several times slower than the native `qemu-system-arm`. The variant therefore builds the optimised firmware rather than the debug build plain `qemu.<rtos>.<app>` uses. Simple UIs run at interactive rates; full-screen animation does not.
 - The page needs `SharedArrayBuffer`, so it must be cross-origin isolated. `serve/run.sh` sends the COOP/COEP headers; on a static host such as GitHub Pages the bundled `coi-serviceworker.js` supplies them.
 - The dashboard shows the display, terminal, log, audio, trace and thread panels and takes pointer, terminal and audio input. The profiler and the debugger are not available in the browser, and there is no network peer; use the native QEMU run for those.
 
-A Linux personality browser bundle opens a terminal on the guest console (`sim/dashboard/terminal.html`) and carries the rootfs image `qemu-run.sh` would load. Zephyr's personality needs the Cortex-M33 board, whose browser variant is `web-an521`:
+A Linux personality browser bundle runs with the sim framework disabled. It opens a terminal on the guest console (`sim/dashboard/terminal.html`) and carries the rootfs image `qemu-run.sh` would load. Zephyr's personality needs the Cortex-M33 board, whose browser variant is `web-an521`.
 
 ```bash
 make web.freertos.linux_interop_minimal       # FreeRTOS or NuttX, on the an500

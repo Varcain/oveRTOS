@@ -189,4 +189,4 @@ if (ove_pm_notify_register(my_notify, NULL) != OVE_OK)
 
 ## Running in a browser
 
-There is no browser backend: a browser demo is the FreeRTOS, Zephyr or NuttX firmware for the emulated `qemu-mps2-an500`, run in QEMU compiled to WebAssembly. Everything above applies to it unchanged, because it is the same image the native QEMU runs. See the `web` variant in [Board Configurations](../build-system/boards.md).
+A browser demo is the FreeRTOS, Zephyr or NuttX firmware for the emulated `qemu-mps2-an500`, built as the board's `web` variant and run in QEMU compiled to WebAssembly. The backend behaviour described above applies unchanged. See [Board Configurations](../build-system/boards.md).

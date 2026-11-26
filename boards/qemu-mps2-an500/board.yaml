@@ -7,10 +7,11 @@ board:
   description: |
     ARM MPS2-AN500 board emulated by QEMU (Cortex-M7).
     Uses semihosting for I/O and the sim dashboard for display.
-    Linux builds put the guest console on UART1; FreeRTOS Linux builds also show it in the dashboard.
+    Linux builds put the guest console on UART1. Native FreeRTOS Linux builds
+    also show it in the dashboard.
   kconfig: |
-    # FreeRTOS also uses the sim framework for Linux dashboard statistics.
-    select OVE_SIM if !OVE_LINUX || OVE_RTOS_FREERTOS
+    # FreeRTOS Linux enables sim for its native dashboard only.
+    select OVE_SIM if !OVE_LINUX || (OVE_RTOS_FREERTOS && !OVE_SIM_WEB)
     # Debug by default, for the dashboard's debugger.  The browser bundle
     # runs under an interpreter and wants the optimised build instead.
     imply OVE_DEBUG_BUILD if !OVE_SIM_WEB

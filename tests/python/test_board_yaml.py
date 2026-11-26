@@ -67,14 +67,6 @@ config OVE_RTOS_ZEPHYR
 config OVE_RTOS_NUTTX
     bool "NuttX"
 endchoice
-config OVE_LINUX
-    bool "Linux"
-config OVE_SIM
-    bool
-config OVE_SIM_WEB
-    bool "Web"
-config OVE_DEBUG_BUILD
-    bool "Debug"
 """
 
 
@@ -84,6 +76,8 @@ class BoardKconfigTest(unittest.TestCase):
         path = os.path.join(self.temp.name, "Config.in")
         with open(path, "w") as f:
             f.write(_KCONFIG_CONTEXT + board_kconfig(load_boards(TREE)))
+            f.write(f'\nsource "{TREE}/config/Config.in.modules"\n')
+            f.write(f'\nsource "{TREE}/config/Config.in.debug"\n')
         self.kconf = kconfiglib.Kconfig(path, warn=False)
 
     def tearDown(self):
@@ -115,9 +109,28 @@ class BoardKconfigTest(unittest.TestCase):
         self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
         self.kconf.syms["OVE_LINUX"].set_value(2)
         for rtos, expected in (("FREERTOS", "y"), ("NUTTX", "n"), ("ZEPHYR", "n")):
-            with self.subTest(rtos=rtos):
-                self.kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
-                self.assertEqual(self._sym("OVE_SIM"), expected)
+            self.kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
+            for symbol, value in (("OVE_SIM", expected), ("OVE_THREAD_STATE_STATS", expected),
+                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", "n")):
+                with self.subTest(rtos=rtos, symbol=symbol):
+                    self.assertEqual(self._sym(symbol), value)
+
+    def test_an500_freertos_non_linux_profiler_default(self):
+        self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
+        self.kconf.syms["OVE_RTOS_FREERTOS"].set_value(2)
+        self.assertEqual(self._sym("OVE_PROFILER"), "y")
+
+    def test_an500_freertos_web_sim_selection(self):
+        self.kconf.syms["OVE_RTOS_FREERTOS"].set_value(2)
+        self.kconf.syms["OVE_BOARD_QEMU_MPS2_AN500"].set_value(2)
+        self.kconf.syms["OVE_SIM_WEB"].set_value(2)
+        for linux, expected in (("y", "n"), ("n", "y")):
+            self.kconf.syms["OVE_LINUX"].set_value(linux)
+            for symbol, value in (("OVE_SIM_WEB", "y"), ("OVE_SIM", expected),
+                                  ("OVE_THREAD_STATE_STATS", expected),
+                                  ("OVE_TRACE_STREAM", expected)):
+                with self.subTest(linux=linux, symbol=symbol):
+                    self.assertEqual(self._sym(symbol), value)
 
 
 class LookupTest(unittest.TestCase):
@@ -163,7 +176,7 @@ class UndefinedSymbolTest(unittest.TestCase):
             with open(path, "w") as f:
                 f.write(_KCONFIG_CONTEXT + "config USES_GHOST\n    bool\n    depends on GHOST\n")
             kconf = kconfiglib.Kconfig(path, warn=False)
-        lines = ["CONFIG_OVE_LINUX=y", "# CONFIG_OVE_SIM_WEB is not set",
+        lines = ["CONFIG_OVE_RTOS_ZEPHYR=y", "# CONFIG_OVE_RTOS_FREERTOS is not set",
                  "CONFIG_NO_SUCH=y", "# CONFIG_GHOST is not set", "# a comment"]
         # GHOST is referenced by a dependency but defined nowhere.
         self.assertEqual(_undefined_symbols(kconf, lines), ["NO_SUCH", "GHOST"])

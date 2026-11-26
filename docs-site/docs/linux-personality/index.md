@@ -65,8 +65,8 @@ On FreeRTOS an500, `make run` serves the dashboard and shows `/dev/fb0` on its L
 The **Terminal** panel shows the guest serial session and sends typed keys to the UART.
 The **Log** panel shows other output and dashboard events.
 The dashboard shows CPU usage and FreeRTOS heap usage. The **Threads** panel
-lists RTOS tasks, including Linux guest slots named `lnxN`. Trace and profiling
-default to off.
+lists RTOS tasks, including Linux guest slots named `lnxN`. The **Perf**
+workspace shows trace swimlanes. The sampling profiler is off by default.
 Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for a terminal-only console.
 
@@ -74,8 +74,8 @@ Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the
 shell: `uname -a`, `ls -l /`, `ps`, `top`, `cat`, a pipe (`seq 5 | wc -l`), a
 background job, `vi`, then `poweroff`.
 
-In a web browser, the same build runs in QEMU compiled to WebAssembly, with a
-terminal on the guest console:
+The browser bundle runs in WebAssembly QEMU with the sim framework disabled
+and provides a terminal on the guest console.
 
 ```bash
 make web.freertos.linux_interop_minimal         # an500; also nuttx

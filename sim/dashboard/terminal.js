@@ -1,7 +1,8 @@
 /*
  * oveRTOS browser bundle — terminal for a Linux personality build
  *
- * This page provides the guest console for a Linux browser bundle.
+ * Linux browser bundles use this terminal for the guest console. The
+ * simulation framework is off by default in their firmware.
  * It boots the firmware in WebAssembly QEMU with the arguments from the
  * board's qemu-run.sh and connects QEMU's stdio to the terminal.
  *
