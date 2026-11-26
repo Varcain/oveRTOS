@@ -111,7 +111,7 @@ class BoardKconfigTest(unittest.TestCase):
         for rtos, expected in (("FREERTOS", "y"), ("NUTTX", "n"), ("ZEPHYR", "n")):
             self.kconf.syms[f"OVE_RTOS_{rtos}"].set_value(2)
             for symbol, value in (("OVE_SIM", expected), ("OVE_THREAD_STATE_STATS", expected),
-                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", "n")):
+                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", expected)):
                 with self.subTest(rtos=rtos, symbol=symbol):
                     self.assertEqual(self._sym(symbol), value)
 
@@ -128,7 +128,7 @@ class BoardKconfigTest(unittest.TestCase):
             self.kconf.syms["OVE_LINUX"].set_value(linux)
             for symbol, value in (("OVE_SIM_WEB", "y"), ("OVE_SIM", expected),
                                   ("OVE_THREAD_STATE_STATS", expected),
-                                  ("OVE_TRACE_STREAM", expected)):
+                                  ("OVE_TRACE_STREAM", expected), ("OVE_PROFILER", expected)):
                 with self.subTest(linux=linux, symbol=symbol):
                     self.assertEqual(self._sym(symbol), value)
 

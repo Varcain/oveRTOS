@@ -3843,7 +3843,8 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
 
 def test_qemu_freertos_linux_dashboard(ove_dir, output_dir):
     """Manual dashboard smoke for the console, fbtest LCD frame, evread touch
-    reports, a thread snapshot, and trace state records for IDLE and a guest task.
+    reports, a thread snapshot, trace state records for IDLE and a guest task,
+    and profiler samples in firmware text and the Linux guest window.
     Needs the Buildroot rootfs, QEMU, a free loopback port and no running dashboard."""
     ove = venv.bin_path(ove_dir, "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)

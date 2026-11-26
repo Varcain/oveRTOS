@@ -4,9 +4,9 @@ The simulation framework provides virtual peripheral emulation for the QEMU MPS2
 
 The an500 board selects `CONFIG_OVE_SIM` for non-Linux builds and native
 FreeRTOS Linux personality builds. The native Linux dashboard shows threads,
-CPU usage, RTOS heap, and trace swimlanes. Profiling defaults to off on
-Linux personality builds. The Linux browser bundle runs with the sim
-framework disabled and provides a terminal on the guest console.
+CPU usage, RTOS heap, trace swimlanes, and profiling samples. The Linux browser
+bundle runs with the sim framework disabled and provides a terminal on the
+guest console.
 
 ## Architecture
 
@@ -176,6 +176,7 @@ Both are drained by the consolidated sim-debug pump and forwarded by the bridge;
 - **On-CPU (FreeRTOS, Zephyr)**: a hardware timer (CMSDK TIMER1 on the an500) or `k_timer` expiry samples the interrupted thread from ISR context. Every sample is `RUNNING`; the period is jittered by ±25% so sampling cannot phase-lock with periodic work. Zephyr's `k_timer` expiry lands on a tick boundary, so when the mean period is only one or two ticks the jitter rounds away. When the sampler preempts another handler, the interrupted handler's exception frame is read from the MSP and the sample is attributed to `[ISR n]` (exception number) instead of a thread.
 - **Wall-clock (NuttX)**: for each sample, a watchdog-timed high-priority work item uses `up_backtrace()` (`CONFIG_SCHED_BACKTRACE=y`) to walk up to 32 registered threads that are running, ready or blocked. Blocked and ready threads are sampled too, so the dashboard can filter to runnable states. It has no on-CPU view, so handler (ISR) time is not attributed on NuttX.
 - FreeRTOS and Zephyr share the saved-`{r7, lr}` walker in `backends/common/ove_arm_backtrace.c`; NuttX uses its own unwinder.
+- On FreeRTOS an500 Linux builds, samples taken in guest code appear as `[Linux guest]`. This bucket also includes service time for LXP syscalls that return directly because TIMER1 cannot preempt the syscall handler. Blocking syscall work appears under `freertos_park_entry` and the LXP coordinator.
 - Sampling rate is changed from the dashboard (`SET_RATE`, payload `uint32_t` Hz) and echoed in the caps event. The ceiling is `CONFIG_OVE_PROFILER_HZ` (250 Hz by default); on Zephyr and NuttX it is further clamped to the kernel tick rate, so the effective maximum is the lower of the two.
 
 ### Wire formats
@@ -217,7 +218,7 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 | `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` | Stream state transitions for dashboard swimlanes |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
 | `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
-| `CONFIG_OVE_PROFILER` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` on non-Linux builds | Sampling profiler |
+| `CONFIG_OVE_PROFILER` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` on non-Linux and FreeRTOS Linux builds | Sampling profiler |
 | `CONFIG_OVE_PROFILER_HZ` | int | 250 | Mean sample rate (10–1000 Hz) |
 | `CONFIG_OVE_PROFILER_MAX_DEPTH` | int | 32 | Maximum captured stack depth |
 | `CONFIG_OVE_PROFILER_RING_SIZE` | int | 1024 | Profiler ring capacity in samples |

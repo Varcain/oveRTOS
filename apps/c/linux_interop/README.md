@@ -727,8 +727,8 @@ only the current Linux process.
 
 **FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
 board. Native Linux builds use the sim framework for thread, CPU, and heap
-statistics and trace swimlanes. Profiling defaults to off. Linux browser
-bundles run with sim disabled and provide a guest console terminal.
+statistics, trace swimlanes, and sampling profiles with a `[Linux guest]` bucket.
+Linux browser bundles run with sim disabled and provide a guest console terminal.
 When `CONFIG_OVE_LINUX` is set, the board drops the
 `vPortSVCHandler → SVC_Handler` alias so LXP's FreeRTOS port
 (`modules/lxp/ports/freertos/lxp_freertos_port.c`)

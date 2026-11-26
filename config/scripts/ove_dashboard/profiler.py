@@ -22,6 +22,7 @@ _profiler_symbol_frame = None  # cached payload for PROFILE_SUB_SYMBOLS
 # and print the resolved frames per sample to stderr. Used to inspect
 # profiler output while iterating on the stack-unwinding heuristics.
 _profiler_sym_index = None  # list of (pc_start, pc_end, name)
+_LINUX_GUEST_SYMBOL = "[Linux guest]"
 
 
 def _profiler_resolve(pc):
@@ -165,7 +166,22 @@ def profiler_tools(gdb_toolchain):
     return found[0], found[1]
 
 
-def build_profiler_symbols(elf_path, nm_bin="nm"):
+def linux_guest_ranges(config):
+    """Return half-open address ranges for the configured Linux guest windows."""
+    ranges = []
+    for window in ("ROOTFS", "GUEST_POOL"):
+        prefix = f"CONFIG_OVE_LINUX_{window}"
+        try:
+            base = int(config.get(f"{prefix}_BASE", "0"), 16)
+            size = int(config.get(f"{prefix}_SIZE", "0"), 16)
+        except ValueError:
+            continue
+        if base > 0 and size > 0:
+            ranges.append((base, base + size))
+    return ranges
+
+
+def build_profiler_symbols(elf_path, nm_bin="nm", *, guest_ranges=()):
     """Build a PROFILE_SUB_SYMBOLS WebSocket frame for the firmware ELF.
 
     Payload after the 5-byte outer header is a UTF-8 JSON array of
@@ -223,6 +239,7 @@ def build_profiler_symbols(elf_path, nm_bin="nm"):
                 end = addr + 1
             entries.append([addr, end, name])
 
+    entries.extend([start, end, _LINUX_GUEST_SYMBOL] for start, end in guest_ranges)
     if not entries:
         return
 
@@ -289,13 +306,14 @@ def _profiler_func_start(pc):
     lo, hi = 0, len(_profiler_sym_index) - 1
     while lo <= hi:
         mid = (lo + hi) // 2
-        ps, pe, _nm = _profiler_sym_index[mid]
+        ps, pe, name = _profiler_sym_index[mid]
         if pc < ps:
             hi = mid - 1
         elif pc >= pe:
             lo = mid + 1
         else:
-            return ps
+            # The guest windows lack ELF functions for CFG pruning.
+            return None if name == _LINUX_GUEST_SYMBOL else ps
     return None
 
 

@@ -66,7 +66,8 @@ The **Terminal** panel shows the guest serial session and sends typed keys to th
 The **Log** panel shows other output and dashboard events.
 The dashboard shows CPU usage and FreeRTOS heap usage. The **Threads** panel
 lists RTOS tasks, including Linux guest slots named `lnxN`. The **Perf**
-workspace shows trace swimlanes. The sampling profiler is off by default.
+workspace shows trace swimlanes and sampling profiles, with guest code grouped
+as `[Linux guest]`.
 Once a frame is visible, LCD clicks and drags feed `/dev/input/event0`.
 Use `make run HEADLESS=1` for a terminal-only console.
 

@@ -6,6 +6,7 @@
 
 """Tests for profiler tool lookup and phantom-frame pruning."""
 
+import json
 import os
 import struct
 import sys
@@ -18,6 +19,39 @@ from unittest.mock import patch
 SCRIPTS = Path(__file__).resolve().parents[2] / "config" / "scripts"
 with patch.object(sys, "path", [str(SCRIPTS), *sys.path]):
     from ove_dashboard import profiler
+    from ove_dashboard.protocol import FRAME_PROFILE, PROFILE_SUB_SYMBOLS
+
+
+class ProfilerSymbolsTest(unittest.TestCase):
+    def test_linux_guest_windows(self):
+        config = {
+            "CONFIG_OVE_LINUX_ROOTFS_BASE": "0x60000000",
+            "CONFIG_OVE_LINUX_ROOTFS_SIZE": "0x00800000",
+            "CONFIG_OVE_LINUX_GUEST_POOL_BASE": "0x60800000",
+            "CONFIG_OVE_LINUX_GUEST_POOL_SIZE": "0x00800000",
+        }
+        with (patch.object(profiler, "_nm_symbols", return_value=[(0x100, 0x40, "main")]),
+              patch.multiple(profiler, _profiler_sym_index=None, _profiler_symbol_frame=None)):
+            profiler.build_profiler_symbols(__file__, guest_ranges=profiler.linux_guest_ranges(config))
+            frame = profiler._profiler_symbol_frame
+            self.assertEqual(frame[:5], struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SYMBOLS))
+            self.assertEqual(json.loads(frame[5:])[1:], [
+                [0x60000000, 0x60800000, "[Linux guest]"],
+                [0x60800000, 0x61000000, "[Linux guest]"],
+            ])
+            for pc in (0x60123456, 0x60900000):
+                self.assertEqual(profiler._profiler_resolve(pc), "[Linux guest]")
+                self.assertIsNone(profiler._profiler_func_start(pc))
+            self.assertEqual(profiler._profiler_resolve(0x61000000), "0x61000000")
+            self.assertEqual(profiler._profiler_resolve(0x120), "main")
+
+    def test_no_guest_ranges_without_base_and_size(self):
+        self.assertEqual(profiler.linux_guest_ranges({}), [])
+        self.assertEqual(profiler.linux_guest_ranges({
+            "CONFIG_OVE_LINUX_ROOTFS_BASE": "0x60000000",
+            "CONFIG_OVE_LINUX_GUEST_POOL_BASE": "0",
+            "CONFIG_OVE_LINUX_GUEST_POOL_SIZE": "0x00800000",
+        }), [])
 
 
 class ProfilerSampleDumpTest(unittest.TestCase):

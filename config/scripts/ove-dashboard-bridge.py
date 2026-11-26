@@ -105,7 +105,9 @@ def main():
                 f"({args.gdb_toolchain or 'not given'}); trying host nm — "
                 "profiler symbols may be missing\n")
             nm_bin = "nm"
-        profiler.build_profiler_symbols(args.elf_path, nm_bin=nm_bin)
+        config = ove_manifest.read_kconfig(os.path.join(workspace, ".config")) if workspace else {}
+        profiler.build_profiler_symbols(
+            args.elf_path, nm_bin=nm_bin, guest_ranges=profiler.linux_guest_ranges(config))
         # CFG validator: reject phantom frames left over from stale
         # saved-{r7,lr} pairs in functions with large local frames, for the
         # stack-scan unwinder. Needs the cross-toolchain objdump.

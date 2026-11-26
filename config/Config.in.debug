@@ -103,7 +103,7 @@ config OVE_PROFILER
     bool "Sampling profiler"
     depends on OVE_SIM
     depends on OVE_THREAD_STATE_STATS
-    default y if !OVE_LINUX
+    default y if !OVE_LINUX || OVE_RTOS_FREERTOS
     help
       Periodically samples thread PCs + call stacks and forwards them
       to the dashboard for flat top-N and flame-graph rendering.
@@ -121,7 +121,7 @@ config OVE_PROFILER
 
       Needs OVE_THREAD_STATE_STATS, which provides the sample time
       source and the per-sample thread state.
-      Linux personality builds leave the profiler off by default.
+      Defaults to on for FreeRTOS Linux personality builds with OVE_SIM.
 
 config OVE_PROFILER_HZ
     int "Sampling frequency (Hz)"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Usage: .venv/bin/python tests/sim/freertos-linux/dashboard_drive.py [logfile]
 # Run from the repo root with the FreeRTOS an500 linux_interop workspace active.
+import json
 import os
 import re
 import signal
@@ -9,6 +10,7 @@ import struct
 import subprocess
 import sys
 import time
+from collections import Counter
 from contextlib import suppress
 
 from websockets.exceptions import WebSocketException
@@ -16,8 +18,8 @@ from websockets.sync.client import connect
 
 sys.path.insert(0, "config/scripts")
 from ove_dashboard.protocol import (  # noqa: E402
-    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL, FRAME_SERIAL_TAIL, FRAME_THREAD,
-    FRAME_TRACE,
+    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_PROFILE, FRAME_SERIAL, FRAME_SERIAL_TAIL,
+    FRAME_THREAD, FRAME_TRACE, PROFILE_SUB_SAMPLES, PROFILE_SUB_SYMBOLS,
 )
 
 
@@ -88,6 +90,58 @@ class TraceSummary:
             raise RuntimeError("no FRAME_TRACE state records for an lnxN task")
 
 
+class ProfileSummary:
+    def __init__(self):
+        self.symbols = []
+        self.pcs = Counter()
+
+    def add(self, frame):
+        sub, = struct.unpack_from("<B", frame, 4)
+        if sub == PROFILE_SUB_SYMBOLS:
+            self.symbols.extend(json.loads(frame[5:]))
+        elif sub == PROFILE_SUB_SAMPLES:
+            version, word_size, count, _ = struct.unpack_from("<BBHI", frame, 5)
+            if version != 1 or word_size not in (4, 8):
+                raise RuntimeError("unsupported FRAME_PROFILE sample format")
+            pc_fmt = "<I" if word_size == 4 else "<Q"
+            pos = 13
+            for _ in range(count):
+                _, _, depth, _, _ = struct.unpack_from("<QIBBH", frame, pos)
+                pos += 16
+                end = pos + depth * word_size
+                if end > len(frame):
+                    raise RuntimeError("truncated FRAME_PROFILE sample stack")
+                if depth:
+                    pc, = struct.unpack_from(pc_fmt, frame, pos)
+                    self.pcs[pc] += 1
+                pos = end
+
+    def check_samples(self):
+        guest_ranges = [(start, end) for start, end, name in self.symbols
+                        if name == "[Linux guest]"]
+        firmware = [(start, end, name) for start, end, name in self.symbols
+                    if name != "[Linux guest]"]
+        if not guest_ranges:
+            raise RuntimeError("no [Linux guest] symbol in FRAME_PROFILE")
+        if not firmware:
+            raise RuntimeError("no firmware symbols in FRAME_PROFILE")
+        starts = {name: start for start, _, name in firmware}
+        text_start = starts.get("__stext", min(start for start, _, _ in firmware))
+        text_end = starts.get("__etext", max(end for _, end, _ in firmware))
+        if not any(text_start <= pc < text_end for pc in self.pcs):
+            raise RuntimeError("no FRAME_PROFILE sample with a leaf PC in firmware text")
+        guest = 0
+        for pc, count in self.pcs.items():
+            if any(start <= pc < end for start, end in guest_ranges):
+                guest += count
+            elif 0x60000000 <= pc < 0x61000000:
+                raise RuntimeError(f"FRAME_PROFILE sample leaf PC {pc:#x} is outside all [Linux guest] symbol ranges")
+        if not guest:
+            raise RuntimeError("no FRAME_PROFILE sample with a leaf PC in the Linux guest window")
+        samples = sum(self.pcs.values())
+        print(f"Profiler: {samples} samples, {guest / samples:.1%} in the Linux guest window")
+
+
 signal.signal(signal.SIGTERM, signal.default_int_handler)
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dashboard_drive.log"
 proc, rc = None, 1
@@ -122,10 +176,12 @@ try:
         fb_header = struct.pack("<IHHHH", FRAME_FB, 0, 0, 479, 271)
         thread_header = struct.pack("<I", FRAME_THREAD)
         trace_header = struct.pack("<I", FRAME_TRACE)
+        profile_header = struct.pack("<I", FRAME_PROFILE)
         log_buffer = bytearray()
         serial_buffer = bytearray()
         thread_frames = []
         trace = TraceSummary()
+        profile = ProfileSummary()
         fbtest_seen = [False]
 
         def expect(needle):
@@ -149,6 +205,8 @@ try:
                         thread_frames.append(frame)
                     elif frame.startswith(trace_header):
                         trace.add(frame)
+                    elif frame.startswith(profile_header):
+                        profile.add(frame)
                     elif (not fbtest_seen[0] and frame.startswith(fb_header)
                           and len(frame) == len(fb_header) + 480 * 272 * 4):
                         px = memoryview(frame)[len(fb_header):].cast("I")
@@ -176,6 +234,10 @@ try:
         expect(b"/root # ")
         send_command(b"uname -a\r")
         expect(b"Linux overtos")
+        expect(b"/root # ")
+        # Give the guest CPU work and let the sim pump drain the sample batch.
+        send_command(b'i=0; while [ "$i" -lt 2000 ]; do i=$((i + 1)); done; sleep 1\r')
+        expect(b"/root # ")
         send_command(b"poweroff\r")
         elapsed = time.monotonic() - start
 
@@ -186,6 +248,7 @@ try:
     trace.check_lanes()
     print(f"Trace: {trace.state_records} state records, {trace.records / elapsed:.0f} records/s, "
           f"{trace.dropped} dropped")
+    profile.check_samples()
     qemu_exit = proc.wait(timeout=60)
     with open(log, "rb") as output:
         if b"Linux overtos" not in output.read():
