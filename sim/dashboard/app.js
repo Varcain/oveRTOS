@@ -41,6 +41,7 @@ var FRAME_FILE_REQ  = 0x0C;
 var FRAME_FILE_RESP = 0x0D;
 var FRAME_TRACE     = 0x0E;
 var FRAME_PROFILE   = 0x0F;
+var FRAME_SERIAL    = 0x10;
 
 /* ── Shared constants ────────────────────────────────────────────────── */
 var RING_HDR            = 32;     /* OVE_RING_OFF_BUF — ring header size in bytes */
@@ -205,6 +206,7 @@ function connect() {
             case FRAME_EVENT:      handleEvent(buf, 4); break;
             case FRAME_STATE:      handleState(buf, 4); break;
             case FRAME_LOG:        handleLog(buf, 4); break;
+            case FRAME_SERIAL:     handleLog(buf, 4); break;
             case FRAME_THREAD:     handleThreadSnapshot(buf, 4); break;
             case FRAME_DEBUG_RESP: handleDebugResp(buf, 4); break;
             case FRAME_FILE_LIST:  handleFileList(buf, 4); break;

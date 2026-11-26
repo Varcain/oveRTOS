@@ -370,6 +370,22 @@ class DashboardBridgeTest(unittest.TestCase):
         reader.join(timeout=1)
         self.assertFalse(reader.is_alive())
 
+    def test_serial_bridge_preserves_raw_bytes(self):
+        prefix = struct.pack("<I", self.protocol.FRAME_SERIAL)
+        parts = (b"\x1b[1;3", b"4m/root # ", b"\xff", b"x" * 4096)
+        read_fd, write_fd = os.pipe()
+        posted = []
+        self.enterContext(patch.object(self.frames, "post_frame", posted.append))
+        reader = threading.Thread(target=self.shm.serial_bridge, args=(read_fd,), daemon=True)
+        reader.start()
+        with open(write_fd, "wb", buffering=0) as writer:
+            for part in parts:
+                writer.write(part)
+        reader.join(timeout=1)
+        self.assertFalse(reader.is_alive())
+        self.assertTrue(all(frame.startswith(prefix) and len(frame[4:]) <= 4096 for frame in posted))
+        self.assertEqual(b"".join(frame[4:] for frame in posted), b"".join(parts))
+
     def test_websocket_log_burst(self):
         frame_delivery = self.frames
         prefix = struct.pack("<I", self.protocol.FRAME_LOG)

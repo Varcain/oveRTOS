@@ -55,10 +55,11 @@ def main():
     parser.add_argument("--dashboard", type=str, default=None,
                         help="Path to dashboard static files")
     parser.add_argument("--log-fd", type=int, default=-1,
-                        help="File descriptor to read console log from")
+                        help="File descriptor to read QEMU output from")
+    parser.add_argument("--serial-fd", type=int, default=-1,
+                        help="File descriptor to read raw console UART output from")
     parser.add_argument("--console-fifo", type=str, default=None,
-                        help="FIFO feeding the firmware's console UART; "
-                             "dashboard console input is written to it")
+                        help="FIFO for dashboard input to the firmware's console UART")
     parser.add_argument("--gdb-port", type=int, default=0,
                         help="GDB remote port (QEMU gdbserver)")
     parser.add_argument("--gdb-toolchain", type=str, default="gdb",
@@ -121,6 +122,9 @@ def main():
     threading.Thread(target=shm.event_bridge, daemon=True).start()
     if args.log_fd >= 0:
         threading.Thread(target=shm.log_bridge, args=(args.log_fd,),
+                         daemon=True).start()
+    if args.serial_fd >= 0:
+        threading.Thread(target=shm.serial_bridge, args=(args.serial_fd,),
                          daemon=True).start()
 
     # Start GDB controller if configured.

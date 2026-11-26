@@ -14,7 +14,9 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 sys.path.insert(0, "config/scripts")
-from ove_dashboard.protocol import FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG  # noqa: E402
+from ove_dashboard.protocol import (  # noqa: E402
+    FRAME_CMD, FRAME_FB, FRAME_INPUT, FRAME_LOG, FRAME_SERIAL,
+)
 
 signal.signal(signal.SIGTERM, signal.default_int_handler)
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dashboard_drive.log"
@@ -45,23 +47,29 @@ try:
     with ws:
         deadline = time.monotonic() + 120
         log_header = struct.pack("<I", FRAME_LOG)
+        serial_header = struct.pack("<I", FRAME_SERIAL)
         fb_header = struct.pack("<IHHHH", FRAME_FB, 0, 0, 479, 271)
         log_buffer = bytearray()
+        serial_buffer = bytearray()
         fbtest_seen = [False]
 
         def expect(needle):
             while time.monotonic() < deadline:
-                pos = log_buffer.find(needle)
+                pos = serial_buffer.find(needle)
                 if pos != -1:
-                    before = bytes(log_buffer[:pos])
-                    del log_buffer[:pos + len(needle)]
+                    before = bytes(serial_buffer[:pos])
+                    del serial_buffer[:pos + len(needle)]
                     return before
                 with suppress(TimeoutError):
                     frame = ws.recv(timeout=1)
                     if not isinstance(frame, bytes):
                         continue
-                    if frame.startswith(log_header):
+                    if frame.startswith(serial_header):
+                        serial_buffer.extend(frame[4:])
+                    elif frame.startswith(log_header):
                         log_buffer.extend(frame[4:])
+                        if b"overtos login" in log_buffer:
+                            raise RuntimeError("guest login prompt appeared in FRAME_LOG")
                     elif (not fbtest_seen[0] and frame.startswith(fb_header)
                           and len(frame) == len(fb_header) + 480 * 272 * 4):
                         px = memoryview(frame)[len(fb_header):].cast("I")
@@ -93,7 +101,11 @@ try:
 
     if not fbtest_seen[0]:
         raise RuntimeError("no fbtest frame on the LCD")
-    rc = proc.wait(timeout=60)
+    qemu_exit = proc.wait(timeout=60)
+    with open(log, "rb") as output:
+        if b"Linux overtos" not in output.read():
+            raise RuntimeError("Linux overtos missing from terminal output")
+    rc = qemu_exit
     print(f"Linux overtos seen, QEMU exit {rc} ({log})")
 except (OSError, RuntimeError, subprocess.TimeoutExpired, WebSocketException) as exc:
     print(f"Dashboard smoke failed: {exc} ({log})")

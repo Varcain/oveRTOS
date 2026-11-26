@@ -418,10 +418,10 @@ test("link: trace and profile frames decode behind the frame type word", () => {
 
 test("console: prompts continue across frames and terminal controls are removed", () => {
     const g = loadDashboard();
-    const send = (text) => {
+    const send = (text, type = g.FRAME_LOG) => {
         const bytes = new TextEncoder().encode(text);
         const frame = new Uint8Array(4 + bytes.length);
-        new DataView(frame.buffer).setUint32(0, g.FRAME_LOG, true);
+        new DataView(frame.buffer).setUint32(0, type, true);
         frame.set(bytes, 4);
         g.ws.onmessage({ data: frame.buffer });
     };
@@ -438,6 +438,9 @@ test("console: prompts continue across frames and terminal controls are removed"
     send("ls\r\n");
     assert.deepEqual(g._logQueue.slice(-3).map((el) => el.lastChild.textContent),
         ["/root # ", "Connected to sim server", "ls"]);
+
+    send("hello\r\n", 0x10);
+    assert.equal(g._logQueue.at(-1).lastChild.textContent, "hello");
 });
 
 test("console: WASM link emits each line as a separate entry", () => {

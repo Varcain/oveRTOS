@@ -218,10 +218,14 @@ cleanup() {
     if [ -n "${UART_IN_PID:-}" ]; then
         kill "${UART_IN_PID}" 2>/dev/null || true
     fi
+    if [ -n "${UART_OUT_PID:-}" ]; then
+        kill "${UART_OUT_PID:-}" 2>/dev/null || true
+    fi
     if [ -n "${SAVED_TTY:-}" ]; then
         stty "${SAVED_TTY}" 2>/dev/null || true
     fi
-    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" "${LOG_FIFO:-}" "${FB_PATH:-}"
+    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${INPUT_PATH}" \
+          "${LOG_FIFO:-}" "${SERIAL_FIFO:-}" "${FB_PATH:-}"
     if [ -n "${UART_PIPE:-}" ]; then
         rm -f "${UART_PIPE}.in" "${UART_PIPE}.out"
     fi
@@ -281,14 +285,12 @@ if [ "${HEADLESS}" -eq 0 ]; then
         exit 1
     fi
 
-    # Named pipe: QEMU stdout → tee → terminal + bridge log.
+    # Separate bridge streams for QEMU stdout/stderr and console UART output.
     LOG_FIFO=$(mktemp -u -t ove-log.XXXXXX)
-    mkfifo "${LOG_FIFO}"
+    SERIAL_FIFO=$(mktemp -u -t ove-serial.XXXXXX)
+    mkfifo "${LOG_FIFO}" "${SERIAL_FIFO}"
 
-    # The console UART on a pipe pair instead of QEMU's stdio, so the
-    # dashboard's console box can type into it as well as the terminal:
-    # <pipe>.out is copied into the same log tee, and the terminal and the
-    # bridge both write <pipe>.in.
+    # The terminal and bridge both write <pipe>.in and receive <pipe>.out.
     UART_PIPE=$(mktemp -u -t ove-uart.XXXXXX)
     mkfifo "${UART_PIPE}.in" "${UART_PIPE}.out"
     UART_ARGS=()
@@ -316,7 +318,7 @@ if [ "${HEADLESS}" -eq 0 ]; then
     # phantom-frame pruning (cross nm/objdump, found next to the gdb) need
     # them with or without a debugger. --gdb-port alone starts the debugger.
     VIEWER_ARGS=( --host "${DASHBOARD_HOST}" --port "${DASHBOARD_PORT}"
-                  --log-fd 0 --build-dir "${BUILD_DIR}"
+                  --log-fd 0 --serial-fd 4 --build-dir "${BUILD_DIR}"
                   --console-fifo "${UART_PIPE}.in"
                   --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
     # Leave the Linux gdbstub available for FDPIC debugging.
@@ -324,7 +326,7 @@ if [ "${HEADLESS}" -eq 0 ]; then
         VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" )
     fi
 
-    "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" &
+    "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" 4< "${SERIAL_FIFO}" &
     VIEWER_PID=$!
     echo "${VIEWER_PID}" > "${BRIDGE_PIDFILE}"
 
@@ -338,6 +340,8 @@ if [ "${HEADLESS}" -eq 0 ]; then
     exec 3<&0
     cat <&3 > "${UART_PIPE}.in" &
     UART_IN_PID=$!
+    tee -p "${SERIAL_FIFO}" < "${UART_PIPE}.out" &
+    UART_OUT_PID=$!
 
     # Wait for the dashboard HTTP server to be ready before starting QEMU.
     DASHBOARD_PROBE_HOST="${DASHBOARD_HOST}"
@@ -364,19 +368,10 @@ if [ "${NO_NET}" -eq 0 ] && [ -e /dev/net/tun ]; then
     NET_BRIDGE_PID=$!
 fi
 
-# Run QEMU with the console UART's output copied into this stdout too.
-run_with_uart() {
-    cat "${UART_PIPE}.out" &
-    local uart_out=$!
-    "$@"
-    local rc=$?
-    kill "${uart_out}" 2>/dev/null || true
-    return ${rc}
-}
-
+# Copy QEMU stdout/stderr to the terminal and the bridge log.
 if [ -n "${QEMU_TIMEOUT}" ]; then
     if [ -n "${LOG_FIFO:-}" ]; then
-        run_with_uart timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
+        timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee -p "${LOG_FIFO}"
         QEMU_EXIT=${PIPESTATUS[0]}
     else
         timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
@@ -387,7 +382,7 @@ if [ -n "${QEMU_TIMEOUT}" ]; then
     fi
 else
     if [ -n "${LOG_FIFO:-}" ]; then
-        run_with_uart qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
+        qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee -p "${LOG_FIFO}"
         QEMU_EXIT=${PIPESTATUS[0]}
     else
         qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"

@@ -21,6 +21,7 @@ from .protocol import (
     FRAME_FB,
     FRAME_LOG,
     FRAME_PROFILE,
+    FRAME_SERIAL,
     FRAME_THREAD,
     FRAME_TRACE,
     PROFILE_SUB_CAPS,
@@ -546,10 +547,10 @@ def _event_bridge_loop():
     finally:
         os.close(fd)
 
-# ── Console log bridge ───────────────────────────────────────────────
+# ── Log and serial bridges ──────────────────────────────────────────
 
 def log_bridge(read_fd):
-    """Broadcast console lines and partial prompts as FRAME_LOG."""
+    """Broadcast log lines and partial lines as FRAME_LOG."""
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
     header = struct.pack("<I", FRAME_LOG)
     pending = ""
@@ -566,3 +567,23 @@ def log_bridge(read_fd):
                 pending = pending[end:]
             if not data:
                 break
+
+
+def serial_bridge(read_fd):
+    """Broadcast raw console UART output as FRAME_SERIAL."""
+    header = struct.pack("<I", FRAME_SERIAL)
+    try:
+        while data := os.read(read_fd, 4096):
+            deadline = time.monotonic() + 0.01
+            chunk = data
+            while data and len(chunk) < 4096:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([read_fd], [], [], remaining)[0]:
+                    break
+                data = os.read(read_fd, 4096 - len(chunk))
+                chunk += data
+            frames.post_frame(header + chunk)
+            if not data:
+                return
+    finally:
+        os.close(read_fd)
