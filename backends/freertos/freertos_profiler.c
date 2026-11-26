@@ -278,16 +278,18 @@ static void sample_interrupted_task(void)
 	if (psp == 0)
 		return;
 
-	/* xTaskGetCurrentTaskHandle() is a plain read of pxCurrentTCB and is
-	 * safe from ISR. xTaskGetApplicationTaskTag() takes a non-ISR
-	 * critical section (taskENTER_CRITICAL), which trips configASSERT
-	 * on Cortex-M when called from an ISR — use the FromISR variant. */
-	TaskHandle_t h = xTaskGetCurrentTaskHandle();
+	/* Read the TCB directly because the MPU getter can issue an SVC. */
+	extern void *volatile pxCurrentTCB;
+	TaskHandle_t h = (TaskHandle_t)pxCurrentTCB;
 	if (!h)
 		return;
+	/* Use the FromISR tag accessor to avoid a task-mode critical section. */
 	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
 	uintptr_t tid = t ? (uintptr_t)t : (uintptr_t)h;
 
+	/* Hardware stacks the frame with the interrupted context's access rights.
+	 * A stacking failure takes a higher-priority fault first, and LXP fault
+	 * containment replaces the PSP before this ISR runs. */
 	const uint32_t *frame = (const uint32_t *)psp;
 	/* Normalise the leaf PC: hardware stacks it with the Thumb bit set,
 	 * but walked saved-LRs below are stored with bit 0 cleared so the
