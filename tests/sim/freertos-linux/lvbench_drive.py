@@ -2,8 +2,9 @@
 # LVGL benchmark under the FreeRTOS Linux personality (QEMU mps2-an500).
 #
 # Runs /usr/bin/lvbench — a stock LVGL fbdev program (lv_demo_benchmark) built as
-# an FDPIC Linux binary that renders to /dev/fb0 (the personality's framebuffer,
-# pwrite scanlines). It runs every scene, then prints an FPS/CPU/render summary
+# an FDPIC Linux binary. LVGL flushes each rectangle to /dev/fb0 with LXP_FBIO_DMA2D_BLIT.
+# The CPU copies it on boards without DMA2D. If the ioctl fails, LVGL falls back to
+# per-scanline pwrite(). It runs every scene, then prints an FPS/CPU/render summary
 # via its end-cb and exits. Asserts the benchmark completed with a non-zero FPS
 # and the shell survived + powered off cleanly. Same piped-stdin shape as the
 # other *_drive.py tests (no host pty — the Cortex-M MPU emulation is timing

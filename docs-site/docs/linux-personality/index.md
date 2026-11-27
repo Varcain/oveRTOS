@@ -62,6 +62,8 @@ ove download && ove build && ove flash
 ```
 
 On FreeRTOS an500, `make run` serves the dashboard and shows `/dev/fb0` on its LCD.
+Without a DMA2D accelerator, the personality copies each LVGL flush rectangle with the
+CPU in one call instead of one write per scanline.
 The **Terminal** panel shows the guest serial session and sends typed keys to the UART.
 The **Log** panel shows other output and dashboard events.
 The dashboard shows CPU usage and FreeRTOS heap usage. The **Threads** panel

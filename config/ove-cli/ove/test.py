@@ -3817,8 +3817,9 @@ def test_linux_abi_switch(ove_dir, output_dir):
 def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the /dev/fb0
     framebuffer smoke: /usr/bin/fbtest reads the panel geometry via FBIOGET_*SCREENINFO,
-    fills an RGB565 gradient, and verifies a pwrite()/pread() round-trip (LVGL's fbdev
-    write path). tests/sim/freertos-linux/fbtest_drive.py boots, logs in, runs fbtest,
+    fills an RGB565 gradient, and verifies a per-scanline pwrite()/pread() round-trip.
+    LVGL falls back to these writes when the blit ioctl fails.
+    tests/sim/freertos-linux/fbtest_drive.py boots, logs in, runs fbtest,
     and checks geometry, PASS, a crw /dev/fb0 node, shell survival, and that
     /dev/shm/ove-fb and /dev/shm/ove-sim are absent after the headless run.
 

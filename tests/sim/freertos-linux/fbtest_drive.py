@@ -3,8 +3,8 @@
 #
 # Runs /usr/bin/fbtest, which opens /dev/fb0, reads its geometry via
 # FBIOGET_VSCREENINFO/FSCREENINFO, fills an RGB565 gradient, and verifies a
-# pwrite()/pread() round-trip through a scanline (the exact positioned-write path
-# LVGL's fbdev driver uses with LV_LINUX_FBDEV_MMAP=0). The shell must survive and
+# per-scanline pwrite()/pread() round-trip. LVGL uses per-scanline writes as its
+# fallback when the blit ioctl fails. The shell must survive and
 # poweroff cleanly. Same piped-stdin shape as segv_drive.py (the Cortex-M MPU
 # emulation is timing-fragile — no host-side pty/reader). Run from the repo root
 # with the active workspace = this engine's linux_interop build.
