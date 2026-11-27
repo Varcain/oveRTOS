@@ -1,0 +1,39 @@
+From: oveRTOS
+Subject: [PATCH] util/main-loop: sleep after an empty poll on Emscripten
+
+Emscripten proxies poll() to the browser thread, which checks readiness
+once and returns.  When the guest is idle, QEMU's main loop spins.
+After an empty poll with a non-zero timeout, sleep for up to 1 ms.
+This caps the added delay for a new fd event or timer at about 1 ms
+plus scheduling time.  The main loop has released the BQL and replay
+lock here, so g_usleep() can block its pthread on a futex without an
+Asyncify unwind.
+
+In the FreeRTOS Linux browser bundle, idle host CPU use fell from 1.74
+to 0.72 cores (median of 3 runs).  Over 3 rounds each, key echo p50 was
+32-40 ms before and 33-48 ms after, p95 49-50 ms before and 49 ms
+after, and the guest's five-second sleep took 5.54-5.72 s before and
+5.48-5.54 s after.  A shell loop ran slightly faster (18.4 to 17.2 s).
+
+---
+--- a/util/main-loop.c
++++ b/util/main-loop.c
+@@ -308,6 +308,18 @@
+     replay_mutex_unlock();
+ 
+     ret = qemu_poll_ns((GPollFD *)gpollfds->data, gpollfds->len, timeout);
++#ifdef EMSCRIPTEN
++    /* Emscripten's poll never blocks: wait out part of an empty timeout. */
++    if (ret == 0 && timeout != 0) {
++        int64_t us = 1000;
++        if (timeout > 0 && timeout / 1000 < us) {
++            us = timeout / 1000;
++        }
++        if (us > 0) {
++            g_usleep(us);
++        }
++    }
++#endif
+ 
+     replay_mutex_lock();
+     bql_lock();
