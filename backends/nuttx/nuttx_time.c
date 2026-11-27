@@ -26,18 +26,17 @@ int ove_time_get_us(uint64_t *out)
 
 #if defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_7M__)
 /*
- * ARM Cortex-M: use SysTick for sub-tick nanosecond precision.
- * SysTick counts DOWN from LOAD to 0 each tick. Combined with the
- * NuttX tick count, this gives cycle-level timestamps without
- * requiring DWT (which QEMU does not emulate).
- *
- * Clock frequency is derived from the LOAD register and NuttX tick rate
- * so no board-specific constants are needed.
+ * ARM Cortex-M: whole ticks from the NuttX tick count (which also covers
+ * sleep/WFI time) plus sub-tick nanoseconds from the SysTick down-counter,
+ * without DWT (which QEMU does not emulate). Cycles per tick come from the
+ * SysTick reload register, so no board-specific constants are needed.
  */
+#include <stdbool.h>
 #include <nuttx/clock.h>
+#include <nuttx/irq.h>
+#include "ove_cortexm_systick.h"
 
-#define NUTTX_SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014)
-#define NUTTX_SYSTICK_VAL (*(volatile uint32_t *)0xE000E018)
+static uint64_t now_ns_last;
 
 int ove_time_get_ns(uint64_t *out)
 {
@@ -46,26 +45,32 @@ int ove_time_get_ns(uint64_t *out)
 	}
 
 	/*
-	 * Hybrid approach: tick count for whole-tick ns (captures sleep/WFI
-	 * time correctly) + SysTick VAL for sub-tick ns precision.
+	 * Must stay monotonic with interrupts masked and in handler mode,
+	 * where the SysTick handler cannot run: a reload it has not counted
+	 * yet shows up as PENDSTSET and adds one tick. CLOCK_MONOTONIC is the
+	 * handler's own tick count; clock_systime_ticks() is not, as under
+	 * CONFIG_TIMER_ARCH it already adds a pending reload itself.
 	 */
-	uint32_t load = NUTTX_SYSTICK_LOAD;
-	clock_t ticks, ticks2;
-	uint32_t val;
+	irqstate_t flags = up_irq_save();
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint32_t load;
+	bool pending;
+	uint32_t cycles = ove_cortexm_systick_elapsed(&load, &pending);
+	uint64_t ns = (uint64_t)ts.tv_sec * NSEC_PER_SEC + (uint64_t)ts.tv_nsec +
+		      (pending ? NSEC_PER_TICK : 0u) +
+		      (uint64_t)cycles * NSEC_PER_TICK / ((uint64_t)load + 1u);
 
-	/* Double-read to avoid race when SysTick wraps between reads */
-	do {
-		ticks = clock_systime_ticks();
-		val = NUTTX_SYSTICK_VAL;
-		ticks2 = clock_systime_ticks();
-	} while (ticks != ticks2);
+	/* Emulated SysTick can show a reload before PENDSTSET: hold such
+	 * small steps back. A larger one is the 32-bit tick count wrapping:
+	 * let it through rather than freeze. */
+	if (ns < now_ns_last && now_ns_last - ns <= 2u * NSEC_PER_TICK)
+		ns = now_ns_last;
+	else
+		now_ns_last = ns;
+	up_irq_restore(flags);
 
-	uint64_t tick_ns = (uint64_t)ticks * (1000000000ULL / TICK_PER_SEC);
-	uint32_t elapsed_in_tick = load - val;
-	uint64_t freq = (uint64_t)(load + 1) * TICK_PER_SEC;
-	uint64_t sub_tick_ns = (uint64_t)elapsed_in_tick * 1000000000ULL / freq;
-
-	*out = tick_ns + sub_tick_ns;
+	*out = ns;
 	return OVE_OK;
 }
 #else
@@ -95,13 +100,13 @@ void ove_time_delay_ms(uint32_t ms)
 	uint32_t usec_per_tick = 1000000U / TICK_PER_SEC;
 
 	if (ms * 1000U < usec_per_tick) {
-		uint32_t load = NUTTX_SYSTICK_LOAD;
+		uint32_t load = OVE_SYST_RVR;
 		uint64_t freq = (uint64_t)(load + 1) * TICK_PER_SEC;
 		uint32_t cycles = (uint32_t)(freq / 1000U) * ms;
-		uint32_t start = NUTTX_SYSTICK_VAL;
+		uint32_t start = OVE_SYST_CVR;
 
 		while (1) {
-			uint32_t now = NUTTX_SYSTICK_VAL;
+			uint32_t now = OVE_SYST_CVR;
 			uint32_t elapsed = (start >= now) ? (start - now)
 							  : (start + load + 1 - now);
 			if (elapsed >= cycles)
@@ -119,13 +124,13 @@ void ove_time_delay_us(uint32_t us)
 	uint32_t usec_per_tick = 1000000U / TICK_PER_SEC;
 
 	if (us < usec_per_tick) {
-		uint32_t load = NUTTX_SYSTICK_LOAD;
+		uint32_t load = OVE_SYST_RVR;
 		uint64_t freq = (uint64_t)(load + 1) * TICK_PER_SEC;
 		uint32_t cycles = (uint32_t)(freq / 1000000U) * us;
-		uint32_t start = NUTTX_SYSTICK_VAL;
+		uint32_t start = OVE_SYST_CVR;
 
 		while (1) {
-			uint32_t now = NUTTX_SYSTICK_VAL;
+			uint32_t now = OVE_SYST_CVR;
 			uint32_t elapsed = (start >= now) ? (start - now)
 							  : (start + load + 1 - now);
 			if (elapsed >= cycles)
