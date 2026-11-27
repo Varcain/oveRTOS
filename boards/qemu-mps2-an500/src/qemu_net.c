@@ -17,8 +17,7 @@
  * from any lwIP task) and the input path (called from eth_rx_task).
  *
  * When the shared-memory file cannot be opened (headless / no bridge),
- * the driver falls back to a silent no-op — identical to the previous
- * stub behavior.
+ * the interface stays up without carrier and RX polling stops.
  */
 
 #include "lwip/opt.h"
@@ -223,7 +222,7 @@ int ethernetif_input(struct netif *netif, unsigned budget)
 	unsigned processed = 0;
 
 	if (g_sh_fd_rx < 0)
-		return 0;
+		return -1;
 
 	/* Process all available frames in this poll cycle, or the caller's bounded
 	 * personality budget. A zero budget retains the native full drain. */

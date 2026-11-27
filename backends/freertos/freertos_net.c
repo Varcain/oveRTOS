@@ -71,9 +71,9 @@ err_t ethernetif_init(struct netif *netif)
 	return ERR_IF;
 }
 
-/* Returns the number of frames delivered to the stack this poll (0 for the no-NIC
- * default). A zero budget asks a native application to drain the driver's usual
- * hardware-sized batch. */
+/* Returns the number of frames delivered this poll (0 for the no-NIC default),
+ * or a negative value to stop RX polling. A zero budget asks the driver to
+ * drain its usual hardware-sized batch. */
 extern int ethernetif_input(struct netif *netif, unsigned budget) __attribute__((weak));
 int ethernetif_input(struct netif *netif, unsigned budget)
 {
@@ -171,6 +171,8 @@ static void eth_rx_task(void *arg)
 
 		unsigned budget = tokens;
 		int n = ethernetif_input(&s_netif, budget);
+		if (n < 0)
+			break;
 		if (n > 0) {
 			unsigned used = (unsigned)n;
 			if (used > budget)
@@ -186,11 +188,15 @@ static void eth_rx_task(void *arg)
 	}
 #else
 	for (;;) {
-		if (ethernetif_input(&s_netif, 0) > 0)
+		int n = ethernetif_input(&s_netif, 0);
+		if (n < 0)
+			break;
+		if (n > 0)
 			rx_frames_queued();
 		vTaskDelay(pdMS_TO_TICKS(1u));
 	}
 #endif
+	vTaskDelete(NULL);
 }
 
 /* ---------- helpers ---------- */
