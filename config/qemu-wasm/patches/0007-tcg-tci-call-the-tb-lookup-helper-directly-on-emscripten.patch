@@ -1,0 +1,58 @@
+From: oveRTOS
+Subject: [PATCH] tcg/tci: call the TB lookup helper directly on Emscripten
+
+TCI calls the helpers of TCG call ops through libffi. On Emscripten,
+ffi_call() calls into JavaScript (ffi_call_js), which converts each
+BigInt argument and calls back through the function table and
+Asyncify's export wrappers. In a browser profile mid shell loop, the
+helpers under ffi_call() accounted for only about a fifth of its
+samples; the rest was this glue.
+helper_lookup_tb_ptr() ends every indirect branch and, with M-profile's
+1 KiB target pages, many direct ones, so it is most helper calls. Call
+it directly and leave its result in stack[0], where ffi_call() puts it.
+The interpreter loop and the helper are already outside Asyncify, and a
+longjmp out of the helper unwinds like the softmmu helpers that the
+interpreter already calls directly.
+
+On the FreeRTOS AN500 Linux bundle in headless Chromium, against the
+same recipe without this patch and identical firmware, ffi_call() fell
+from 50% to 16% of the vCPU thread in a profiling build mid shell loop,
+and no TB lookup went through libffi (6.8% of samples before). A
+3,000-step shell loop took 7.5-7.7 s instead of 12.3-14.9 s over five
+interleaved rounds. lvbench averaged 13 FPS instead of 8-9 over two
+rounds, with render time falling from 57 to 35-36 ms per redraw.
+
+---
+--- a/tcg/tci.c
++++ b/tcg/tci.c
+@@ -24,6 +24,9 @@
+ #include "disas/dis-asm.h"
+ #include "tcg-has.h"
+ #include <ffi.h>
++#ifdef EMSCRIPTEN
++#include "exec/helper-proto-common.h"
++#endif
+ 
+ 
+ /*
+@@ -363,7 +366,20 @@
+ 
+                 /* Helper functions may need to access the "return address" */
+                 tci_tb_ptr = (uintptr_t)tb_ptr;
++#ifdef EMSCRIPTEN
++                /*
++                 * libffi calls through JavaScript here.  Call the TB lookup
++                 * directly and leave its result where ffi_call() does.
++                 */
++                if (func == (void *)helper_lookup_tb_ptr) {
++                    stack[0] = (uintptr_t)helper_lookup_tb_ptr(
++                        (CPUArchState *)(uintptr_t)stack[0]);
++                } else {
++                    ffi_call(cif, func, stack, call_slots);
++                }
++#else
+                 ffi_call(cif, func, stack, call_slots);
++#endif
+             }
+ 
+             switch (len) {
