@@ -1,0 +1,140 @@
+From: oveRTOS
+Subject: [PATCH] tcg/tci: inline the softmmu TLB hit path on Emscripten
+
+Native TCG backends emit an inline TLB check before every guest load
+and store and call the softmmu helper only on a miss.  TCI always calls
+helper_ld*_mmu() / helper_st*_mmu(), which do the TLB lookup, the
+page-crossing split, alignment and flag checks and the atomicity
+dispatch.  In a browser profile of an MPU-isolating v7-M guest this
+path took about a fifth of the vCPU thread, both mid shell loop and
+during LVGL rendering.
+
+Do the native check in tci_qemu_ld() and tci_qemu_st(): for an access
+aligned to both its size and any MemOp alignment, with host byte order,
+whose fast-TLB comparator equals the page address with no flag bits,
+access host memory through the addend exactly as the helper would
+(a plain byte access, or an aligned qatomic_read()/qatomic_set(); the
+host address is checked too, because wasm atomic accesses trap when
+misaligned).  Everything else, including TLB misses, MMIO, watchpoints,
+dirty tracking, discarded writes, sub-page MPU regions (TLB_INVALID
+entries, which always refill) and unaligned or byte-swapped accesses,
+still calls the helper.  The memory barrier the helper may issue is
+already emitted before the op by tcg_gen_req_mo(), and plugin memory
+callbacks are separate ops, as for native backends.
+
+Against 0001-0007, on identical FreeRTOS AN500 Linux firmware in
+headless Chromium, the softmmu helpers (mmu_lookup*, do_ld*/do_st*_mmu,
+helper_*_mmu) fell in profiling builds from 19.9% to 9.6% of the vCPU
+thread mid shell loop and 18.9% to 6.3% in lvbench.  The shell loop took
+6.7-7.1 s, not 7.9-8.1 s, in 4 of 5 interleaved rounds (one 8.6 s).
+
+---
+--- a/tcg/tci.c
++++ b/tcg/tci.c
+@@ -26,6 +26,10 @@
+ #include <ffi.h>
+ #ifdef EMSCRIPTEN
+ #include "exec/helper-proto-common.h"
++#ifndef CONFIG_USER_ONLY
++#include "exec/target_page.h"
++#include "exec/cpu-common.h"
++#endif
+ #endif
+ 
+ 
+@@ -260,12 +264,65 @@
+     return result;
+ }
+ 
++#if defined(EMSCRIPTEN) && !defined(CONFIG_USER_ONLY)
++/*
++ * The TLB check that native backends emit inline: return the host address
++ * of an aligned, host-endian access that hits the fast TLB with no flags,
++ * or NULL to take the softmmu helper.
++ */
++static void *tci_tlb_host(CPUArchState *env, uint64_t taddr, MemOpIdx oi,
++                          MMUAccessType type)
++{
++    MemOp mop = get_memop(oi);
++    unsigned bits = MAX(memop_tlb_alignment_bits(mop, false), mop & MO_SIZE);
++    CPUTLBDescFast *fast = cpu_tlb_fast(env_cpu(env), get_mmuidx(oi));
++    CPUTLBEntry *entry;
++    uintptr_t host;
++
++    if ((mop & MO_BSWAP) || (taddr & ((1u << bits) - 1))) {
++        return NULL;
++    }
++    entry = &fast->table[(taddr >> TARGET_PAGE_BITS) &
++                         (fast->mask >> CPU_TLB_ENTRY_BITS)];
++    if (qatomic_read(&entry->addr_idx[type]) != (taddr & TARGET_PAGE_MASK)) {
++        return NULL;
++    }
++    host = taddr + entry->addend;
++    return (host & ((1u << (mop & MO_SIZE)) - 1)) ? NULL : (void *)host;
++}
++#endif
++
+ static uint64_t tci_qemu_ld(CPUArchState *env, uint64_t taddr,
+                             MemOpIdx oi, const void *tb_ptr)
+ {
+     MemOp mop = get_memop(oi);
+     uintptr_t ra = (uintptr_t)tb_ptr;
+ 
++#if defined(EMSCRIPTEN) && !defined(CONFIG_USER_ONLY)
++    void *host = tci_tlb_host(env, taddr, oi, MMU_DATA_LOAD);
++
++    if (host) {
++        switch (mop & MO_SSIZE) {
++        case MO_UB:
++            return *(uint8_t *)host;
++        case MO_SB:
++            return *(int8_t *)host;
++        case MO_UW:
++            return qatomic_read((uint16_t *)host);
++        case MO_SW:
++            return (int16_t)qatomic_read((uint16_t *)host);
++        case MO_UL:
++            return qatomic_read((uint32_t *)host);
++        case MO_SL:
++            return (int32_t)qatomic_read((uint32_t *)host);
++        case MO_UQ:
++            return qatomic_read((uint64_t *)host);
++        default:
++            break;
++        }
++    }
++#endif
++
+     switch (mop & MO_SSIZE) {
+     case MO_UB:
+         return helper_ldub_mmu(env, taddr, oi, ra);
+@@ -292,6 +349,29 @@
+     MemOp mop = get_memop(oi);
+     uintptr_t ra = (uintptr_t)tb_ptr;
+ 
++#if defined(EMSCRIPTEN) && !defined(CONFIG_USER_ONLY)
++    void *host = tci_tlb_host(env, taddr, oi, MMU_DATA_STORE);
++
++    if (host) {
++        switch (mop & MO_SIZE) {
++        case MO_UB:
++            *(uint8_t *)host = val;
++            return;
++        case MO_UW:
++            qatomic_set((uint16_t *)host, val);
++            return;
++        case MO_UL:
++            qatomic_set((uint32_t *)host, val);
++            return;
++        case MO_UQ:
++            qatomic_set((uint64_t *)host, val);
++            return;
++        default:
++            break;
++        }
++    }
++#endif
++
+     switch (mop & MO_SIZE) {
+     case MO_UB:
+         helper_stb_mmu(env, taddr, val, oi, ra);
