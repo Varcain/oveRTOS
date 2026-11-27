@@ -48,10 +48,9 @@
 #define configTOTAL_HEAP_SIZE			( {{ config.get("CONFIG_FREERTOS_TOTAL_HEAP_SIZE", 65536) }} )
 #define configMAX_TASK_NAME_LEN			( {{ config.get("CONFIG_FREERTOS_MAX_TASK_NAME_LEN", 16) }} )
 #define configUSE_TRACE_FACILITY		1
-/* Maintain a bounded task registry for ove_thread_list(). FreeRTOS's stock
- * uxTaskGetSystemState() scans every stack while scheduling is suspended,
- * which is unsuitable for periodic production observability. These hooks run
- * inside the kernel's task-list critical section and do constant bounded work. */
+/* Maintain a bounded task registry for ove_thread_list() and trace descriptors.
+ * Both can enumerate tasks without scanning their stacks. These hooks run
+ * inside the kernel's task-list critical section and do bounded work. */
 #ifdef __cplusplus
 extern "C" {
 #endif

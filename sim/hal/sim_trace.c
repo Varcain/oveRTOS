@@ -108,9 +108,8 @@ static uint32_t desc_last_tid[OVE_SIM_TRACE_MAX_DESC];
 static uint32_t desc_last_gen[OVE_SIM_TRACE_MAX_DESC];
 static size_t desc_last_count;
 
-/* Whether the (tid, generation) set differs from the last one sent.  The
- * order does not matter: FreeRTOS lists tasks in state-list order, which
- * changes all the time without any thread starting or ending. */
+/* Compare (tid, generation) pairs regardless of order. FreeRTOS lists tasks
+ * in registry order and fills a deleted task's slot with the last entry. */
 static bool descriptors_changed(size_t count)
 {
 	if (count != desc_last_count)

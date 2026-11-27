@@ -18,6 +18,10 @@
 #include <stdatomic.h>
 #include <string.h>
 
+#ifdef CONFIG_OVE_TRACE_STREAM
+#include "ove_trace_ring.h"
+#endif
+
 /* Portable Cortex-M memory barrier.  CMSIS exposes `__DMB()` via
  * `cmsis_compiler.h`, but the QEMU MPS2-AN500 FreeRTOS test build
  * doesn't pull CMSIS in, so use the standard C11 atomic_thread_fence
@@ -398,12 +402,11 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 
 #define OVE_FRT_TASK_REGISTRY_MAX 32
 
-/* The registry needs the traceTASK_CREATE/DELETE hooks in FreeRTOSConfig.h.
- * The app template installs them along with configUSE_TRACE_FACILITY; a
- * RAM-tight build can install them alone and define
- * OVE_FREERTOS_TASK_REGISTRY to 1, since the trace facility grows every
- * kernel object while the registry costs only its handles.  Without the
- * trace facility the list reads each task field through its own getter. */
+/* ove_thread_list() and trace descriptors share the registry maintained by
+ * traceTASK_CREATE/DELETE in FreeRTOSConfig.h. The app template installs
+ * these hooks with configUSE_TRACE_FACILITY. RAM-tight builds can install
+ * them with OVE_FREERTOS_TASK_REGISTRY alone to avoid growing kernel objects.
+ * In that case ove_thread_list() gets each task field separately. */
 #if configUSE_TRACE_FACILITY || (defined(OVE_FREERTOS_TASK_REGISTRY) && OVE_FREERTOS_TASK_REGISTRY)
 #define OVE_FRT_HAVE_TASK_REGISTRY 1
 #else
@@ -422,8 +425,8 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
  * that took 368-532 us every 200 ms, directly creating the dispatch tail.
  *
  * FreeRTOS invokes traceTASK_CREATE/DELETE while its task-list critical section
- * is held. Maintain the handles there, then take a bounded no-stack-scan
- * snapshot below. The registry has headroom above LXP's sixteen
+ * is held. Maintain the handles there so both listings can take bounded
+ * snapshots without scanning stacks. The registry has headroom above LXP's sixteen
  * visible kernel-thread entries so temporary service tasks do not overflow it.
  */
 static TaskHandle_t g_frt_tasks[OVE_FRT_TASK_REGISTRY_MAX];
@@ -436,7 +439,7 @@ void ove_backend_freertos_task_created(void *task, const char *name)
 {
 	TaskHandle_t handle = (TaskHandle_t)task;
 
-	(void)name; /* ove_thread_list reads the name from the TCB */
+	(void)name; /* Both listings read the name from the TCB. */
 	if (handle == NULL)
 		return;
 	for (UBaseType_t i = 0; i < g_frt_task_count; ++i)
@@ -467,6 +470,39 @@ void ove_backend_freertos_task_deleted(void *task)
 	 * so one that is not in the registry was untracked. */
 	if (handle != NULL && g_frt_task_untracked > 0u)
 		--g_frt_task_untracked;
+}
+#endif
+
+#ifdef CONFIG_OVE_TRACE_STREAM
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max)
+{
+#if OVE_FRT_HAVE_TASK_REGISTRY
+	/* The sim pump is the sole caller and reads the names after resume. */
+	static char desc_names[OVE_FRT_TASK_REGISTRY_MAX][configMAX_TASK_NAME_LEN];
+
+	if (!out || max == 0)
+		return 0;
+
+	/* Keep the handles and wrappers live while reading their fields. */
+	vTaskSuspendAll();
+	size_t count = g_frt_task_count;
+	if (count > max)
+		count = max;
+	for (size_t i = 0; i < count; ++i) {
+		TaskHandle_t handle = g_frt_tasks[i];
+		struct ove_thread *thread = (struct ove_thread *)xTaskGetApplicationTaskTag(handle);
+		out[i].tid = (uint32_t)(thread ? (uintptr_t)thread : (uintptr_t)handle);
+		out[i].generation = thread ? thread->generation : 0u;
+		memcpy(desc_names[i], pcTaskGetName(handle), sizeof(desc_names[i]));
+		out[i].name = desc_names[i];
+	}
+	(void)xTaskResumeAll();
+	return count;
+#else
+	(void)out;
+	(void)max;
+	return 0;
+#endif
 }
 #endif
 

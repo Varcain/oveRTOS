@@ -113,8 +113,9 @@ size_t ove_trace_names(struct ove_trace_name_desc *out, size_t max);
 /**
  * ove_backend_trace_list_threads - enumerate live threads as tid + name
  *
- * Implemented per RTOS (*_trace.c). Lists every kernel thread, not only
- * ove threads, so profiler samples of idle and system threads get names.
+ * The backend includes kernel threads so profiler samples of idle and system
+ * threads get names. A FreeRTOS task created while the 32-entry registry
+ * is full stays absent from the descriptors for its lifetime.
  * tid follows the shared identity rule: the ove_thread for threads created
  * through ove_thread_*, otherwise the kernel's thread handle (0 is
  * reserved for interrupt context). Returns the number of entries written
