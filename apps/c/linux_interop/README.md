@@ -73,7 +73,10 @@ The coordinator gives completed filesystem, socket, console, and ordinary
 guest wakeups weighted 4:3:2:1 service opportunities, rotates among processes
 within each class, and promotes a class after 20 ms of waiting. This prevents a
 network-heavy guest from consuming every coordinator opportunity without
-letting storage service preempt the RT scope task. `/proc/lxp_fs` reports queue
+letting storage service preempt the RT scope task. Expired sleeps and woken or
+timed-out futex waits resume on every coordinator scan, outside this schedule
+and still one completion per scan; a filesystem turn taken this way is given
+back to the filesystem class. `/proc/lxp_fs` reports queue
 depth/high-water, request and byte counts, service time, cancellations,
 failures, and budget overruns.
 
