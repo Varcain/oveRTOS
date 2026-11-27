@@ -1,0 +1,108 @@
+From: oveRTOS
+Subject: [PATCH] tcg/tci: call common helper signatures directly on Emscripten
+
+TCI calls the helpers of TCG call ops through libffi. On Emscripten,
+ffi_call() calls into JavaScript (ffi_call_js), which converts each
+BigInt argument and calls back through the function table and
+Asyncify's export wrappers. With the TB lookup off that path, a browser
+profile of the vCPU thread mid shell loop and during LVGL rendering
+still showed libffi at 14-16%, about two thirds of it glue. The helpers
+under it were mostly the M-profile exception raisers
+(exception_internal, exception_with_syndrome), then
+v7m_preserve_fp_state, rebuild_hflags_m32_newel, v7m_msr, v7m_mrs and
+vfp_set_fpscr.
+
+tci.c is target-independent, so it cannot name these helpers, but they
+share four signatures: (env), (env, i32) and (env, i32, i32) returning
+void, and (env, i32) returning i32. On Emscripten, store each call's
+typemask, from which its cif is built, after the function and cif in
+the constant pool, and call these four signatures through a typed
+function pointer; every other helper still goes through ffi_call().
+Each argument has its own 8-byte stack slot, an i32 in the low half
+that libffi reads on this little-endian host, and an i32 result goes to
+stack[0], whose low half the result switch reads as after ffi_call().
+Like the TB lookup, the calls run in the interpreter loop, which is
+outside Asyncify, and a longjmp out of a helper unwinds only wasm
+frames, as from the softmmu helpers that the interpreter calls directly.
+
+An earlier generated switch over every helper signature (381 cases)
+made rendering slower on a -O0 build whose interpreter loop Asyncify
+instrumented. This one has four cases, keyed by a typemask stored once
+per call site, and runs on the -O2 link with the interpreter loop
+outside Asyncify. Each call's pool entry grows from 16 to 32 bytes,
+and the first argument may be any pointer type, since every pointer
+has the same wasm type.
+
+On identical firmware, against 0001-0008, ffi_call() fell in profiling
+builds from 19.3% to 1.9% of the vCPU thread mid shell loop and from
+15.0% to 3.2% during lvbench, with exception_internal,
+exception_with_syndrome and the other helpers above called directly. The
+shell loop took 6.1-6.3 s, not 6.7-7.1 s, over five interleaved rounds.
+
+---
+--- a/tcg/tci/tcg-target.c.inc
++++ b/tcg/tci/tcg-target.c.inc
+@@ -449,7 +449,13 @@
+                          cif->rtype->size == 16);
+         which = ctz32(cif->rtype->size) - 1;
+     }
++#ifdef EMSCRIPTEN
++    /* tcg_qemu_tb_exec() calls some signatures directly, by typemask. */
++    new_pool_l4(s, 20, s->code_ptr, 0, (uintptr_t)func, (uintptr_t)cif,
++                info->typemask, 0);
++#else
+     new_pool_l2(s, 20, s->code_ptr, 0, (uintptr_t)func, (uintptr_t)cif);
++#endif
+     insn = deposit32(insn, 0, 8, INDEX_op_call);
+     insn = deposit32(insn, 8, 4, which);
+     tcg_out32(s, insn);
+--- a/tcg/tci.c
++++ b/tcg/tci.c
+@@ -390,6 +390,37 @@
+     }
+ }
+ 
++#ifdef EMSCRIPTEN
++/*
++ * libffi calls through JavaScript on Emscripten.  Call helpers of the
++ * signatures common on M-profile directly, keyed by the typemask that
++ * tcg_out_call() stores after the cif, and leave any result where
++ * ffi_call() does.  An i32 argument is the low half of its slot.
++ */
++static inline bool QEMU_DISABLE_CFI tci_call_direct(void *func,
++                                                    tcg_target_ulong typemask,
++                                                    uint64_t *stack)
++{
++    void *a0 = (void *)(uintptr_t)stack[0];
++
++    switch (typemask) {
++    case dh_typemask(ptr, 1):
++        ((void (*)(void *))func)(a0);
++        return true;
++    case dh_typemask(ptr, 1) | dh_typemask(i32, 2):
++        ((void (*)(void *, uint32_t))func)(a0, stack[1]);
++        return true;
++    case dh_typemask(ptr, 1) | dh_typemask(i32, 2) | dh_typemask(i32, 3):
++        ((void (*)(void *, uint32_t, uint32_t))func)(a0, stack[1], stack[2]);
++        return true;
++    case dh_typemask(i32, 0) | dh_typemask(ptr, 1) | dh_typemask(i32, 2):
++        stack[0] = ((uint32_t (*)(void *, uint32_t))func)(a0, stack[1]);
++        return true;
++    }
++    return false;
++}
++#endif
++
+ /* Interpret pseudo code in tb. */
+ /*
+  * Disable CFI checks.
+@@ -454,7 +485,8 @@
+                 if (func == (void *)helper_lookup_tb_ptr) {
+                     stack[0] = (uintptr_t)helper_lookup_tb_ptr(
+                         (CPUArchState *)(uintptr_t)stack[0]);
+-                } else {
++                } else if (!tci_call_direct(func, ((tcg_target_ulong *)ptr)[2],
++                                            stack)) {
+                     ffi_call(cif, func, stack, call_slots);
+                 }
+ #else
