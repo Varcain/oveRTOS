@@ -37,6 +37,18 @@
  * for the duration of the next scheduled wakeup. */
 #define configUSE_TICKLESS_IDLE			1
 #define configEXPECTED_IDLE_TIME_BEFORE_SLEEP	2
+{% elif config.get("CONFIG_OVE_SIM_WEB") == True %}
+/* Browser builds without PM halt the idle CPU while SysTick keeps running.
+ * See freertos_hooks.c for the sleep routine. */
+#define configUSE_TICKLESS_IDLE			1
+#define portSUPPRESS_TICKS_AND_SLEEP(xExpectedIdleTime) ove_freertos_idle_wfi()
+#ifdef __cplusplus
+extern "C" {
+#endif
+void ove_freertos_idle_wfi(void);
+#ifdef __cplusplus
+}
+#endif
 {% endif %}
 #define configCPU_CLOCK_HZ			( SystemCoreClock )
 #define configTICK_RATE_HZ			( ( TickType_t ) {{ config.get("CONFIG_FREERTOS_TICK_RATE_HZ", 1000) }} )

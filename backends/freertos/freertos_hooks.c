@@ -32,12 +32,8 @@
 #include "ove_freertos_tick.h"
 
 /*
- * Idle stack sizing.  CONFIG_OVE_PM hooks vApplicationIdleHook to drive
- * the PM state machine, which can fire user PRE_SLEEP / POST_WAKE
- * notifications from idle context.  Real-world notify callbacks log via
- * snprintf, which alone burns ~600 bytes of stack — well past the 128
- * words (512 bytes) FreeRTOS reserves by default.  Bump the idle stack
- * when PM is on; otherwise stay at configMINIMAL_STACK_SIZE.
+ * PM runs in its own polling thread.  Keep the larger idle stack from
+ * when PM callbacks ran in the idle hook.
  */
 #ifdef CONFIG_OVE_PM
 #define OVE_IDLE_STACK_DEPTH ((configMINIMAL_STACK_SIZE) > 512 ? (configMINIMAL_STACK_SIZE) : 512)
@@ -90,14 +86,27 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 /* ========================================================================= */
 
 #if configUSE_IDLE_HOOK
-/* configUSE_IDLE_HOOK is on in FreeRTOSConfig.h.j2.  Provide a
- * weak empty default so apps that don't override it still link.
- * CONFIG_OVE_PM previously hooked PM here; PM now drives from a polling
- * thread (see backends/freertos/freertos_pm.c) and the idle hook stays
- * empty regardless of mode. */
+/* Applications may override this weak empty default. */
 OVE_WEAK
 void vApplicationIdleHook(void)
 {
+}
+#endif
+
+#if defined(CONFIG_OVE_SIM_WEB) && !defined(CONFIG_OVE_PM) && configUSE_TICKLESS_IDLE
+/*
+ * A spinning guest keeps QEMU's WebAssembly TCG interpreter busy on a
+ * host core.  FreeRTOS calls this when it expects at least two idle ticks.
+ * SysTick keeps running.  Mask interrupts across the check so an IRQ
+ * that readies a task either aborts sleep or stays pending and wakes WFI.
+ */
+void ove_freertos_idle_wfi(void)
+{
+	__asm volatile("cpsid i" ::: "memory");
+	if (eTaskConfirmSleepModeStatus() != eAbortSleep) {
+		__asm volatile("dsb\n\twfi\n\tisb" ::: "memory");
+	}
+	__asm volatile("cpsie i" ::: "memory");
 }
 #endif
 
