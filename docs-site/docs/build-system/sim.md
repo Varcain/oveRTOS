@@ -4,10 +4,10 @@ The simulation framework provides virtual peripheral emulation for the QEMU MPS2
 
 The an500 board selects `CONFIG_OVE_SIM` for non-Linux and FreeRTOS Linux
 builds. The FreeRTOS Linux dashboard shows Terminal, Log, Threads, CPU usage,
-and RTOS heap in native QEMU and browser bundles. Native QEMU also shows trace
-swimlanes and profiling samples. The LCD and pointer input need an app profile
+RTOS heap, and trace swimlanes in native QEMU and browser bundles. Native QEMU
+also shows profiling samples. The LCD and pointer input need an app profile
 with `/dev/fb0` and `/dev/input/event0`, which the minimal one lacks. Linux browser
-bundles default to trace off and omit the profiler and debugger.
+bundles omit the profiler and debugger.
 NuttX an500 and Zephyr an521 Linux bundles open a guest console terminal.
 
 ## Architecture
@@ -219,7 +219,7 @@ Each sample is `u64 ts_us`, `u32 tid`, `u8 depth`, `u8 state`, `u16 isr` (interr
 | `CONFIG_OVE_SIM_WEB` | bool | `n` | Also package the QEMU firmware for a web browser (`make web.<rtos>.<app>`; `web-an521.zephyr.<app>` for Zephyr's Linux personality) |
 | `CONFIG_OVE_SIM_DASHBOARD` | bool | `y` with `CONFIG_OVE_SIM` | Enable the dashboard |
 | `CONFIG_OVE_THREAD_STATE_STATS` | bool | `y` with `CONFIG_OVE_SIM` | Per-thread state time tracking (prerequisite for trace and profiler) |
-| `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS`, except in Linux browser bundles | Stream state transitions for dashboard swimlanes |
+| `CONFIG_OVE_TRACE_STREAM` | bool | `y` with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` | Stream state transitions for dashboard swimlanes |
 | `CONFIG_OVE_TRACE_MARKERS` | bool | `y` | Emit sync-primitive markers (adds per-operation overhead) and enable user marks and zones |
 | `CONFIG_OVE_TRACE_RING_SIZE` | int | 4096 | Trace ring capacity in 24-byte records |
 | `CONFIG_OVE_PROFILER` | bool | `y` on native builds with `CONFIG_OVE_SIM` and `CONFIG_OVE_THREAD_STATE_STATS` when Linux is off or the RTOS is FreeRTOS. `n` for browser bundles. | Sampling profiler |

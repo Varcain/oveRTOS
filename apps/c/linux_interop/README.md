@@ -729,8 +729,8 @@ only the current Linux process.
 board. Native Linux builds use the sim framework for thread, CPU, and heap
 statistics, trace swimlanes, and sampling profiles with a `[Linux guest]` bucket.
 The FreeRTOS an500 browser bundle opens the dashboard with Terminal, Log,
-LCD (`/dev/fb0`), pointer input (`/dev/input/event0`), Threads, CPU, and heap.
-Trace defaults to off, and the browser has no profiler or debugger.
+LCD (`/dev/fb0`), pointer input (`/dev/input/event0`), Threads, CPU, heap,
+and trace swimlanes. The browser has no profiler or debugger.
 NuttX an500 and Zephyr an521 Linux bundles open a guest console terminal.
 When `CONFIG_OVE_LINUX` is set, the board drops the
 `vPortSVCHandler → SVC_Handler` alias so LXP's FreeRTOS port

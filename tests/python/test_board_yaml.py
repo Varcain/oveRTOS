@@ -126,7 +126,7 @@ class BoardKconfigTest(unittest.TestCase):
         self.kconf.syms["OVE_LINUX_DEV"].set_value(2)
         self.kconf.syms["OVE_LINUX_DEV_INPUT"].set_value(2)
         for rtos, linux, sim, trace, pointer in (
-            ("FREERTOS", "y", "y", "n", "y"),
+            ("FREERTOS", "y", "y", "y", "y"),
             ("FREERTOS", "n", "y", "y", "n"),
             ("NUTTX", "y", "n", "n", "n"),
             ("ZEPHYR", "y", "n", "n", "n"),

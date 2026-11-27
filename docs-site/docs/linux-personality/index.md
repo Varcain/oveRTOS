@@ -78,8 +78,8 @@ shell: `uname -a`, `ls -l /`, `ps`, `top`, `cat`, a pipe (`seq 5 | wc -l`), a
 background job, `vi`, then `poweroff`.
 
 The FreeRTOS an500 browser dashboard also shows Terminal, Log, Threads, CPU,
-and RTOS heap. The full `linux_interop` profile shows `/dev/fb0` on the LCD
-and sends pointer input to `/dev/input/event0`. Trace defaults to off, and the
+RTOS heap, and trace swimlanes. The full `linux_interop` profile shows
+`/dev/fb0` on the LCD and sends pointer input to `/dev/input/event0`. The
 browser has no profiler or debugger. NuttX an500 and Zephyr an521 Linux
 bundles open a guest console terminal.
 
