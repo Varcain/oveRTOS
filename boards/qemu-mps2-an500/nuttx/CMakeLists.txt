@@ -56,12 +56,10 @@ if(OVE_NET)
 endif()
 
 if(OVE_LINUX)
-    # Linux personality build is headless: no sim display/audio framework. It
-    # only needs the embedded rootfs CPIO fixture on the include path.
+    # Linux personality build is headless: no sim display/audio framework.
+    # QEMU loads the rootfs into PSRAM (OVE_LINUX_ROOTFS_EXTERNAL), so the
+    # firmware embeds no rootfs fixture.
     ove_nuttx_exclude_backends(LVGL AUDIO)
-    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
-    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
-    ove_nuttx_add_include_dirs(${OVE_LNX_GENDIR})
 else()
 
 # ── Sim framework (replaces NuttX display/audio backends) ────────
