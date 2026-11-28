@@ -1,0 +1,24 @@
+From: oveRTOS
+Subject: [PATCH] tests/docker: fetch zlib from its GitHub release
+
+The wasm64 cross image downloads zlib from zlib.net, which keeps only
+the newest release at its top level.  Once a newer zlib ships, the URL
+for the pinned ZLIB_VERSION returns an HTML error page, and tar fails
+with "xz: (stdin): File format not recognized".
+
+Fetch the tarball from the GitHub release instead, whose assets stay
+in place.  Add -f so an HTTP error fails with curl's message rather
+than feeding the error page to tar.
+
+---
+--- a/tests/docker/dockerfiles/emsdk-wasm64-cross.docker
++++ b/tests/docker/dockerfiles/emsdk-wasm64-cross.docker
+@@ -56,7 +56,7 @@
+ FROM build-base AS zlib-dev
+ ARG ZLIB_VERSION
+ RUN mkdir -p /zlib
+-RUN curl -Ls https://zlib.net/zlib-$ZLIB_VERSION.tar.xz | \
++RUN curl -fsSL https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.xz | \
+     tar xJC /zlib --strip-components=1
+ WORKDIR /zlib
+ RUN emconfigure ./configure --prefix=$TARGET --static
