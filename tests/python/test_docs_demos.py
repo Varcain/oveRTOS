@@ -90,10 +90,14 @@ class DocsDemosTest(unittest.TestCase):
         self.assertEqual(config["wasm"], "../../qemu/qemu-system-arm.wasm")
         self.assertEqual(config["firmware"], "firmware.elf")
 
-    def _run_command(self, specs, failing=()):
+    def _run_command(self, specs, failing=(), unstarted=(),
+                     rootfs="/rootfs.cpio"):
         """Run 'ove docs-demos' over *specs* with every build stage faked.
 
-        Returns the specs configured and the environment each was built in.
+        *failing* specs fail to build and *unstarted* <rtos>/<app> names
+        fail the smoke run; Linux bundles start only under the terminal
+        smoke run.  Returns the specs configured and the rootfs each was
+        built with, and keeps the printed summary in self.output.
         """
         self._write(os.path.join(self.root, "docs-site", "demos.yml"),
                     "".join(f"- {spec}\n" for spec in specs))
@@ -116,22 +120,36 @@ class DocsDemosTest(unittest.TestCase):
                 self._bundle(env[WORKSPACE_DIR_ENV], [] if linux else None)
             return 0
 
+        def smoke(terminal):
+            def run(*args):
+                path = args[-1]
+                return (("linux_interop" in path) == terminal
+                        and not any(name in path for name in unstarted), "")
+            return run
+
         ws = SimpleNamespace(ove_dir=self.root)
+        out = io.StringIO()
         with mock.patch.object(docs_demos, "Workspace", return_value=ws), \
                 mock.patch.object(allconfigs, "_run_command", stage), \
-                mock.patch.object(docs_demos, "_smoke",
-                                  return_value=(True, "")), \
+                mock.patch.object(docs_demos, "_smoke", smoke(False)), \
                 mock.patch.object(docs_demos, "_smoke_terminal",
-                                  return_value=(True, "")), \
+                                  smoke(True)), \
                 mock.patch.object(docs_demos, "personality_rootfs",
-                                  return_value="/rootfs.cpio"), \
-                contextlib.redirect_stdout(io.StringIO()):
-            docs_demos._cmd_docs_demos(SimpleNamespace(site=None))
+                                  return_value=rootfs), \
+                mock.patch.dict(os.environ), contextlib.redirect_stdout(out):
+            os.environ.pop(build.LINUX_ROOTFS_ENV, None)
+            try:
+                docs_demos._cmd_docs_demos(SimpleNamespace(site=None))
+            finally:
+                self.output = out.getvalue()
         return built
 
     def test_command_builds_only_the_listed_demos(self):
         specs = ["web.freertos.example_c_heap", "web.nuttx.example_c_zh",
                  "web-an521.zephyr.linux_interop"]
+        # A demo left from an earlier run is not published again.
+        self._write(os.path.join(self.site, "demos", "stale", "index.html"),
+                    "stale")
         self.assertEqual(self._run_command(specs), {
             "web.freertos.example_c_heap": None,
             "web.nuttx.example_c_zh": None,
@@ -146,13 +164,27 @@ class DocsDemosTest(unittest.TestCase):
                          ["freertos", "nuttx", "qemu", "zephyr"])
 
     def test_failed_demo_gets_a_tbd_page(self):
-        self._run_command(["web.freertos.example_c_heap",
-                           "web.nuttx.example_c_heap"],
-                          failing=("web.nuttx.example_c_heap",))
-        dest = os.path.join(self.site, "demos", "nuttx", "example_c_heap")
-        self.assertEqual(os.listdir(dest), ["index.html"])
-        with open(os.path.join(dest, "index.html")) as f:
-            self.assertIn("TBD", f.read())
+        built = self._run_command(
+            ["web.freertos.example_c_heap", "web.nuttx.example_c_heap",
+             "web.zephyr.example_c_heap", "web-an521.zephyr.linux_interop"],
+            failing=("web.nuttx.example_c_heap",),
+            unstarted=("zephyr/example_c_heap",), rootfs=None)
+        # Without a rootfs the Linux demo is not even configured.
+        self.assertEqual(sorted(built), ["web.freertos.example_c_heap",
+                                         "web.nuttx.example_c_heap",
+                                         "web.zephyr.example_c_heap"])
+        for name in ("nuttx/example_c_heap", "zephyr/example_c_heap",
+                     "zephyr/linux_interop"):
+            dest = os.path.join(self.site, "demos", name)
+            self.assertEqual(os.listdir(dest), ["index.html"])
+            with open(os.path.join(dest, "index.html")) as f:
+                self.assertIn("TBD", f.read())
+        self.assertIn("TBD, build failed: nuttx/example_c_heap\n",
+                      self.output)
+        self.assertIn("TBD, failed the smoke run: zephyr/example_c_heap\n",
+                      self.output)
+        self.assertRegex(self.output, r"TBD, no Buildroot rootfs.*: "
+                         r"zephyr/linux_interop\n")
 
     def test_command_fails_when_nothing_can_be_published(self):
         with self.assertLogs("ove", level="ERROR"), \

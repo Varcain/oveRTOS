@@ -186,7 +186,7 @@ def _cmd_docs_demos(args):
     apps = _app_metadata(ws.ove_dir)
     rootfs = personality_rootfs(ws)
     ove_bin = _ove_bin(ws)
-    deployed, unbuilt, broken = [], [], []
+    deployed, unbuilt, broken, no_rootfs = [], [], [], []
     for spec in load_demos(ws.ove_dir):
         board, rtos, app = spec.split(".")
         name = f"{rtos}/{app}"
@@ -194,23 +194,22 @@ def _cmd_docs_demos(args):
         serve_dir = os.path.join(workspace, "serve")
         linux = "CONFIG_OVE_LINUX=y" in (apps.get(app, {}).get("defconfig")
                                          or [])
-        ok = False
-        if not linux or rootfs is not None:
-            print(f"\n{'=' * 60}\nBuilding {spec}\n{'=' * 60}")
-            setup = [ove_bin, "defconfig-fragments", spec, "--no-activate"]
-            env = {LINUX_ROOTFS_ENV: rootfs} if linux and rootfs else None
-            ok, _elapsed = _run_pipeline(ws.ove_dir, ove_bin, setup,
-                                         workspace, env)
-        web_json = os.path.join(serve_dir, "web.json")
-        if not ok or not os.path.isfile(web_json):
+        if linux and rootfs is None:
+            no_rootfs.append(name)
+            write_tbd(demos_dir, name)
+            continue
+        print(f"\n{'=' * 60}\nBuilding {spec}\n{'=' * 60}")
+        setup = [ove_bin, "defconfig-fragments", spec, "--no-activate"]
+        env = {LINUX_ROOTFS_ENV: rootfs} if linux and rootfs else None
+        ok, _elapsed = _run_pipeline(ws.ove_dir, ove_bin, setup, workspace,
+                                     env)
+        if not ok or not os.path.isfile(os.path.join(serve_dir, "web.json")):
             unbuilt.append(name)
             write_tbd(demos_dir, name)
             continue
         # Only publish a demo whose firmware comes up under the native
         # QEMU: a page for an app that faults at start-up helps no one.
-        with open(web_json) as f:
-            terminal = "args" in json.load(f)
-        if terminal:
+        if linux:
             started, output = _smoke_terminal(serve_dir)
         else:
             started, output = _smoke(
@@ -228,9 +227,9 @@ def _cmd_docs_demos(args):
     print(f"Deployed ({len(deployed)}): {' '.join(deployed) or 'none'}")
     print(f"TBD, build failed: {' '.join(unbuilt) or 'none'}")
     print(f"TBD, failed the smoke run: {' '.join(broken) or 'none'}")
-    if rootfs is None:
-        print("Linux personality demos not built: no Buildroot rootfs, and "
-              "manifest.yaml pins none (tools.linux-rootfs)")
+    if no_rootfs:
+        print("TBD, no Buildroot rootfs and manifest.yaml pins none "
+              f"(tools.linux-rootfs): {' '.join(no_rootfs)}")
     if not deployed:
         logger.error("no browser demo could be assembled")
         sys.exit(1)
