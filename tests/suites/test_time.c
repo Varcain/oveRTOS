@@ -101,20 +101,27 @@ static void test_time_now_steady_ns_monotonic(void **state)
 	}
 }
 
-#ifdef CONFIG_OVE_ASYNC
-/* With interrupts masked the tick handler cannot run. The clock must count
- * the first SysTick reload it has missed and may stand still on later ones,
- * but must not step back. Spin masked for about 4 ms. */
+#if defined(CONFIG_OVE_ASYNC) && (defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__))
+#define OVE_TEST_SYSTICK_MASKED 1
+/* With interrupts masked the SysTick handler cannot run. The clock must
+ * count the first reload it has missed and may stand still on later ones,
+ * but must not step back. Spin masked for about 25 ms: two reloads even at
+ * a 10 ms tick. */
 static void test_time_ns_monotonic_irq_locked(void **state)
 {
 	(void)state;
 	uint64_t t0, now;
 	uint32_t per_ms = 0;
-	ove_time_get_ns(&t0);
-	do {
-		ove_time_get_ns(&now);
-		per_ms++;
-	} while (now - t0 < OVE_MS(1));
+	for (int w = 0; w < 3; w++) {
+		uint32_t n = 0;
+		ove_time_get_ns(&t0);
+		do {
+			ove_time_get_ns(&now);
+			n++;
+		} while (now - t0 < OVE_MS(1));
+		if (n > per_ms)
+			per_ms = n;
+	}
 
 	for (int round = 0; round < 5; round++) {
 		test_msleep(1);
@@ -122,7 +129,7 @@ static void test_time_ns_monotonic_irq_locked(void **state)
 		ove_irq_key_t key = ove_irq_lock();
 		ove_time_get_ns(&t0);
 		uint64_t prev = t0;
-		for (uint32_t i = 0; i < 4u * per_ms; i++) {
+		for (uint32_t i = 0; i < 25u * per_ms; i++) {
 			ove_time_get_ns(&now);
 			monotonic = monotonic && now >= prev;
 			prev = now;
@@ -146,7 +153,7 @@ int test_time_run(void)
 		cmocka_unit_test(test_time_passage),
 		cmocka_unit_test(test_time_duration_helpers),
 		cmocka_unit_test(test_time_now_steady_ns_monotonic),
-#ifdef CONFIG_OVE_ASYNC
+#ifdef OVE_TEST_SYSTICK_MASKED
 		cmocka_unit_test(test_time_ns_monotonic_irq_locked),
 #endif
 	};

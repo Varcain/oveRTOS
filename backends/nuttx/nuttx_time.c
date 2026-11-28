@@ -24,13 +24,15 @@ int ove_time_get_us(uint64_t *out)
 	return OVE_OK;
 }
 
-#if defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_7M__)
+#if (defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_7M__)) && !defined(CONFIG_SCHED_TICKLESS)
 /*
- * ARM Cortex-M: whole ticks from the NuttX tick count (which also covers
- * sleep/WFI time) plus sub-tick nanoseconds from the SysTick down-counter,
- * without DWT (which QEMU does not emulate). Cycles per tick come from the
- * SysTick reload register, so no board-specific constants are needed.
+ * ARM Cortex-M with a periodic SysTick tick: whole ticks from the NuttX tick
+ * count (which also covers sleep/WFI time) plus sub-tick nanoseconds from the
+ * SysTick down-counter, without DWT (which QEMU does not emulate). Cycles
+ * per tick come from the SysTick reload register, so no board-specific
+ * constants are needed.
  */
+#define OVE_NX_SYSTICK 1
 #include <stdbool.h>
 #include <nuttx/clock.h>
 #include <nuttx/irq.h>
@@ -91,7 +93,7 @@ int ove_time_get_ns(uint64_t *out)
 void ove_time_delay_ms(uint32_t ms)
 {
 	OVE_RETURN_IF_ISR();
-#if defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_7M__)
+#ifdef OVE_NX_SYSTICK
 	/*
 	 * For short delays (< one tick), busy-wait using SysTick to
 	 * avoid NuttX tick-granularity rounding.  For longer delays,
@@ -120,7 +122,7 @@ void ove_time_delay_ms(uint32_t ms)
 
 void ove_time_delay_us(uint32_t us)
 {
-#if defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_7M__)
+#ifdef OVE_NX_SYSTICK
 	uint32_t usec_per_tick = 1000000U / TICK_PER_SEC;
 
 	if (us < usec_per_tick) {
