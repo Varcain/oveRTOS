@@ -24,14 +24,14 @@ A periodic software timer fires every 200 ms to read the shared counter and upda
 
 ## Language implementations
 
-| Language | Source | Browser demo |
-|----------|--------|--------------|
-| [C](c.md) | `apps/c/heap/example/src/app.c` | **[Run in browser](demo:example_c_heap){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/heap/example/src/app.cpp` | **[Run in browser](demo:example_cpp_heap){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/heap/example/src/lib.rs` | **[Run in browser](demo:example_rust_heap){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/heap/example/src/main.zig` | **[Run in browser](demo:example_zig_heap){:target="_blank"}** |
+| Language | Source | FreeRTOS demo | NuttX demo | Zephyr demo |
+|----------|--------|---------------|------------|-------------|
+| [C](c.md) | `apps/c/heap/example/src/app.c` | [heap](demo:freertos/example_c_heap){:target="_blank"} · [zero-heap](demo:freertos/example_c_zh){:target="_blank"} | [heap](demo:nuttx/example_c_heap){:target="_blank"} · [zero-heap](demo:nuttx/example_c_zh){:target="_blank"} | [heap](demo:zephyr/example_c_heap){:target="_blank"} · [zero-heap](demo:zephyr/example_c_zh){:target="_blank"} |
+| [C++](cpp.md) | `apps/cpp/heap/example/src/app.cpp` | [heap](demo:freertos/example_cpp_heap){:target="_blank"} · [zero-heap](demo:freertos/example_cpp_zh){:target="_blank"} | [heap](demo:nuttx/example_cpp_heap){:target="_blank"} · [zero-heap](demo:nuttx/example_cpp_zh){:target="_blank"} | [heap](demo:zephyr/example_cpp_heap){:target="_blank"} · [zero-heap](demo:zephyr/example_cpp_zh){:target="_blank"} |
+| [Rust](rust.md) | `apps/rust/heap/example/src/lib.rs` | [heap](demo:freertos/example_rust_heap){:target="_blank"} · [zero-heap](demo:freertos/example_rust_zh){:target="_blank"} | [heap](demo:nuttx/example_rust_heap){:target="_blank"} · [zero-heap](demo:nuttx/example_rust_zh){:target="_blank"} | [heap](demo:zephyr/example_rust_heap){:target="_blank"} · [zero-heap](demo:zephyr/example_rust_zh){:target="_blank"} |
+| [Zig](zig.md) | `apps/zig/heap/example/src/main.zig` | [heap](demo:freertos/example_zig_heap){:target="_blank"} · [zero-heap](demo:freertos/example_zig_zh){:target="_blank"} | [heap](demo:nuttx/example_zig_heap){:target="_blank"} · [zero-heap](demo:nuttx/example_zig_zh){:target="_blank"} | [heap](demo:zephyr/example_zig_heap){:target="_blank"} · [zero-heap](demo:zephyr/example_zig_zh){:target="_blank"} |
 
-Zero-heap variants live alongside under `apps/<lang>/zeroheap/example/`.
+Zero-heap variants live alongside under `apps/<lang>/zeroheap/example/`. Each browser demo is the firmware for the emulated MPS2-AN500 running in QEMU compiled to WebAssembly.
 
 ## Key APIs demonstrated
 

@@ -1,6 +1,6 @@
 # Basic Example — Rust
 
-Source: `apps/rust/heap/example/src/lib.rs` (also `apps/rust/zeroheap/example/src/lib.rs`) | **[Browser demo](demo:example_rust_heap){:target="_blank"}**
+Source: `apps/rust/heap/example/src/lib.rs` (also `apps/rust/zeroheap/example/src/lib.rs`) | **Browser demos:** FreeRTOS ([heap](demo:freertos/example_rust_heap){:target="_blank"}, [zero-heap](demo:freertos/example_rust_zh){:target="_blank"}) · NuttX ([heap](demo:nuttx/example_rust_heap){:target="_blank"}, [zero-heap](demo:nuttx/example_rust_zh){:target="_blank"}) · Zephyr ([heap](demo:zephyr/example_rust_heap){:target="_blank"}, [zero-heap](demo:zephyr/example_rust_zh){:target="_blank"})
 
 The Rust example demonstrates the `ove` crate with `no_std` support, `Arc`-shared kernel objects across threads, atomic counters, narrow `Result`-based error handling, `core::time::Duration`-typed timeouts, and compile-time RTOS detection. Heap mode and zero-heap mode share the same wrapper types — only the construction step differs.
 

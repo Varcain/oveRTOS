@@ -6,10 +6,12 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 
 | Language | Source | Browser demo |
 |----------|--------|--------------|
-| [C](c.md) | `apps/c/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_heap){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_cpp_heap){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_rust_heap){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/heap/example_keyword_live/` | **[Run in browser](demo:example_keyword_live_zig_heap){:target="_blank"}** |
+| [C](c.md) | `apps/c/heap/example_keyword_live/` | **[Run in browser](demo:freertos/example_keyword_live_heap){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/heap/example_keyword_live/` | **[Run in browser](demo:freertos/example_keyword_live_cpp_heap){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/heap/example_keyword_live/` | **[Run in browser](demo:freertos/example_keyword_live_rust_heap){:target="_blank"}** |
+| [Zig](zig.md) | `apps/zig/heap/example_keyword_live/` | **[Run in browser](demo:freertos/example_keyword_live_zig_heap){:target="_blank"}** |
+
+The browser demos for this example are not yet built for the docs site.
 
 Each port uses the listed source tree in both modes. Zero-heap configurations are under `apps/<lang>/zeroheap/example_keyword_live/`.
 

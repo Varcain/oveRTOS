@@ -24,13 +24,11 @@ Each example is implemented in all four languages using the same oveRTOS API:
 
 ## Browser demos
 
-Most examples run in the browser. Each demo is that example's FreeRTOS firmware for the emulated QEMU board, running in QEMU compiled to WebAssembly — the real kernel and the real image, a few times slower than on your machine. Click the links on each example's page to try them live.
+The [basic example](example/index.md#language-implementations) runs in the browser in every language, on FreeRTOS, NuttX and Zephyr, in heap and zero-heap mode. Each demo is that example's firmware for the emulated QEMU MPS2-AN500, running in QEMU compiled to WebAssembly — the real kernel and the real image, a few times slower than on your machine.
 
-| Language | Browser demos |
-|----------|---------------|
-| C | Basic, Power Management, Keyword Detection |
-| C++ | Basic, Power Management, Keyword Detection, LVGL Gallery |
-| Rust | Basic, Power Management, LVGL Gallery |
-| Zig | Basic, Power Management, LVGL Gallery |
+| Example | Browser demos |
+|---------|---------------|
+| Basic | C, C++, Rust, Zig × FreeRTOS, NuttX, Zephyr × heap, zero-heap |
+| Power Management, Keyword Detection, LVGL Gallery | TBD — not yet built for the docs site |
 
 The networking example has no browser demo (there is no network peer inside the page), and neither has the benchmark (QEMU does not model the cycle counter it times itself with). Source for every example exists in every language regardless; see the per-example pages below.

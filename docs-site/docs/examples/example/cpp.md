@@ -1,6 +1,6 @@
 # Basic Example — C++
 
-Source: `apps/cpp/example/src/app.cpp` | **[Browser demo](demo:example_cpp_heap){:target="_blank"}**
+Source: `apps/cpp/heap/example/src/app.cpp` (heap mode) and `apps/cpp/zeroheap/example/src/app.cpp` (zero-heap mode) | **Browser demos:** FreeRTOS ([heap](demo:freertos/example_cpp_heap){:target="_blank"}, [zero-heap](demo:freertos/example_cpp_zh){:target="_blank"}) · NuttX ([heap](demo:nuttx/example_cpp_heap){:target="_blank"}, [zero-heap](demo:nuttx/example_cpp_zh){:target="_blank"}) · Zephyr ([heap](demo:zephyr/example_cpp_heap){:target="_blank"}, [zero-heap](demo:zephyr/example_cpp_zh){:target="_blank"})
 
 The C++ example demonstrates the `ove::` namespace wrappers with RAII semantics, template-based objects, `Result<T>` error handling, and the LVGL C++20 fluent builders.
 

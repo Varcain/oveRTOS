@@ -40,7 +40,7 @@ On embedded targets (`qemu.freertos.lvgl_gallery_cpp`, `stm32f746.freertos.lvgl_
 
 ## Live demo
 
-The gallery runs in the browser, as its FreeRTOS firmware in QEMU compiled to WebAssembly: [C++](demo:lvgl_gallery_cpp_heap){:target="_blank"} · [Rust](demo:lvgl_gallery_rust_heap){:target="_blank"} · [Zig](demo:lvgl_gallery_zig_heap){:target="_blank"}.
+The gallery's browser demos are not yet built for the docs site: [C++](demo:freertos/lvgl_gallery_cpp_heap){:target="_blank"} · [Rust](demo:freertos/lvgl_gallery_rust_heap){:target="_blank"} · [Zig](demo:freertos/lvgl_gallery_zig_heap){:target="_blank"}.
 
 ## Per-language walkthroughs
 

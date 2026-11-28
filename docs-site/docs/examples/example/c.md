@@ -1,6 +1,6 @@
 # Basic Example — C
 
-Source: `apps/c/heap/example/src/app.c` (heap mode) and `apps/c/zeroheap/example/src/app.c` (zero-heap mode) | **[Browser demo](demo:example_c_heap){:target="_blank"}**
+Source: `apps/c/heap/example/src/app.c` (heap mode) and `apps/c/zeroheap/example/src/app.c` (zero-heap mode) | **Browser demos:** FreeRTOS ([heap](demo:freertos/example_c_heap){:target="_blank"}, [zero-heap](demo:freertos/example_c_zh){:target="_blank"}) · NuttX ([heap](demo:nuttx/example_c_heap){:target="_blank"}, [zero-heap](demo:nuttx/example_c_zh){:target="_blank"}) · Zephyr ([heap](demo:zephyr/example_c_heap){:target="_blank"}, [zero-heap](demo:zephyr/example_c_zh){:target="_blank"})
 
 The C example demonstrates a producer-consumer pattern with optional LVGL display output. Two sibling apps share the same logic but pick different allocation strategies. Heap mode uses `_create()` calls inside `ove_main()`; zero-heap mode uses `OVE_*_DEFINE_STATIC()` macros at file scope.
 

@@ -1,6 +1,6 @@
 # Basic Example — Zig
 
-Source: `apps/zig/heap/example/src/main.zig` (also `apps/zig/zeroheap/example/src/main.zig`) | **[Browser demo](demo:example_zig_heap){:target="_blank"}**
+Source: `apps/zig/heap/example/src/main.zig` (also `apps/zig/zeroheap/example/src/main.zig`) | **Browser demos:** FreeRTOS ([heap](demo:freertos/example_zig_heap){:target="_blank"}, [zero-heap](demo:freertos/example_zig_zh){:target="_blank"}) · NuttX ([heap](demo:nuttx/example_zig_heap){:target="_blank"}, [zero-heap](demo:nuttx/example_zig_zh){:target="_blank"}) · Zephyr ([heap](demo:zephyr/example_zig_heap){:target="_blank"}, [zero-heap](demo:zephyr/example_zig_zh){:target="_blank"})
 
 The Zig example demonstrates the `ove` module with allocator-aware constructors, `comptime`-typed wrappers, exhaustive RTOS dispatch, narrow per-op error sets, and `std.log` integration.
 

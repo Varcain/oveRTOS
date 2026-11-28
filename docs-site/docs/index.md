@@ -84,10 +84,10 @@ The same producer-consumer example exists in every binding under [`apps/{c,cpp,r
 
 ## Live demos
 
-The example apps run in a browser, served as part of the docs site. Each demo is that example's FreeRTOS firmware for the QEMU MPS2-AN500, running in QEMU compiled to WebAssembly:
+The basic example runs in a browser, served as part of the docs site: its firmware for the QEMU MPS2-AN500, running in QEMU compiled to WebAssembly, on each RTOS.
 
-- [C example](demo:example_c_heap){:target="_blank"} · [C++ example](demo:example_cpp_heap){:target="_blank"} · [Rust example](demo:example_rust_heap){:target="_blank"} · [Zig example](demo:example_zig_heap){:target="_blank"}
-- [LVGL gallery (C++)](demo:lvgl_gallery_cpp_heap){:target="_blank"}
+- C example: [FreeRTOS](demo:freertos/example_c_heap){:target="_blank"} · [NuttX](demo:nuttx/example_c_heap){:target="_blank"} · [Zephyr](demo:zephyr/example_c_heap){:target="_blank"}
+- Every language in heap and zero-heap mode: [example demos](examples/example/index.md#language-implementations)
 - [Benchmarks](benchmarks/index.md) — same wrappers measured across all bindings
 
 ## When something goes wrong

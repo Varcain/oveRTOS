@@ -91,15 +91,9 @@ After loading a config, `make && make run` always rebuilds and launches. Run `ma
 
 ## See it run before you build
 
-If you'd rather watch the same example execute in your browser without installing anything, the public live demos run each app's FreeRTOS firmware in QEMU compiled to WebAssembly:
+If you'd rather watch the same example execute in your browser without installing anything, the live demos run its firmware in QEMU compiled to WebAssembly. Try the C example (heap) on [FreeRTOS](demo:freertos/example_c_heap){:target="_blank"} · [NuttX](demo:nuttx/example_c_heap){:target="_blank"} · [Zephyr](demo:zephyr/example_c_heap){:target="_blank"}; the [example page](../examples/example/index.md#language-implementations) links every language in heap and zero-heap mode.
 
-- [C++ example (heap)](demo:example_cpp_heap){:target="_blank"}
-- [Rust example (heap)](demo:example_rust_heap){:target="_blank"}
-- [Zig example (heap)](demo:example_zig_heap){:target="_blank"}
-- [C example (heap)](demo:example_c_heap){:target="_blank"}
-- [LVGL gallery (C++)](demo:lvgl_gallery_cpp_heap){:target="_blank"}
-
-This is the real kernel and the real firmware: what `make qemu.freertos.<app>` builds for the emulated Cortex-M7 board, compiled with optimisation rather than for debugging. Only the emulator moved into the page, and it runs slower than on your machine, because QEMU has no JIT in a browser.
+This is the real kernel and the real firmware: what `make qemu.<rtos>.<app>` builds for the emulated Cortex-M7 board, compiled with optimisation rather than for debugging. Only the emulator moved into the page, and it runs slower than on your machine, because QEMU has no JIT in a browser.
 
 ## Next steps
 
