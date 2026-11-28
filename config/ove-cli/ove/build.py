@@ -1012,7 +1012,8 @@ def _strip_firmware(ws, src, dest):
 # qemu-run.sh passes them.
 _WEB_MACHINES = {
     "qemu-mps2-an500": ["-machine", "mps2-an500"],
-    "qemu-mps2-an521": ["-cpu", "cortex-m33", "-machine", "mps2-an521"],
+    "qemu-mps2-an521": ["-cpu", "cortex-m33", "-global", "sse-200.CPU0_DSP=on",
+                        "-machine", "mps2-an521"],
 }
 
 _TERMINAL_PAGES = ("vt.js", "terminal.js", "coi-serviceworker.js")

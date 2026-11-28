@@ -3983,6 +3983,8 @@ def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
     contains it instead — the UNPRIVILEGED program is killed (exit 139), the shell survives, exactly
     like the FreeRTOS/NuttX MemManage handlers. tests/sim/zephyr-linux/segv_drive.py boots, logs in,
     runs segv, and asserts all of that (exit 0 = pass).
+    It also runs a MicroPython SQLite statement that executes DSP code (needs MicroPython's sqlite3
+    and libsqlite3 in the rootfs).
 
     Uses the FULL board name (qemu-mps2-an521.zephyr.linux_interop_minimal) — `qemu.zephyr`
     prefix-matches the an500 and would drop USERSPACE. Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying

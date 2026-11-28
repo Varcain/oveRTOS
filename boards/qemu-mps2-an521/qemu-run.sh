@@ -79,6 +79,10 @@ fi
 
 QEMU_ARGS=(
     -cpu cortex-m33 -machine mps2-an521 -m 16
+    # Like the real AN521, SSE-200 CPU0 has no DSP extension (QEMU include/hw/arm/armsse.h). This
+    # board exists only in the emulator, so enable it for the shared ARMv7E-M guest, whose code
+    # (libc, BusyBox, SQLite, LVGL) uses DSP instructions such as SMLABB.
+    -global sse-200.CPU0_DSP=on
     # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive top's
     # 'q' quit). UART0 (serial0) = the engine's own console, discarded. Semihosting →
     # null (kept only for the clean SYS_EXIT).

@@ -14,6 +14,9 @@
 # readers). NOTE the FULL board name for the workspace: `qemu.zephyr` prefix-matches the an500 and
 # would drop USERSPACE, so the isolation build needs qemu-mps2-an521.zephyr.linux_interop_minimal.
 #
+# A SQLite statement then runs ARMv7E-M DSP code (SMLABB): QEMU models the AN521 CPU0 without the
+# DSP extension, which the shared guest needs, so qemu-run.sh must enable it for this to pass.
+#
 # Usage: segv_drive.py [logfile]
 import subprocess, sys, re, os
 
@@ -25,6 +28,8 @@ log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/zephyr_segv_drive.log"
 seq = (r"printf 'root\n'; sleep 5; "
        r"printf 'root\n'; sleep 5; "
        r"printf 'segv; echo SEGV_RC=$?\n'; sleep 4; "
+       r"""printf '%s\n' "micropython -c 'import sqlite3; c=sqlite3.connect(\":memory:\"); """
+       r"""c.execute(\"create table t(x)\")'; echo DSP_RC=\$?"; sleep 10; """
        r"printf 'uname -a\n'; sleep 3; "
        r"printf 'poweroff\n'; sleep 4")
 cmd = f"( {seq} ) | QEMU_TIMEOUT=90 .venv/bin/ove run > {log} 2>&1"
@@ -42,10 +47,11 @@ killed     = "SEGV_RC=139" in text                      # killed by SIGSEGV (128
 shell_alive= "Linux overtos" in text                    # uname ran AFTER segv -> the shell survived
 # The Zephyr kernel console (UART0) is routed to null by the runner, so a panic would NOT reach this
 # stdio log — a hang instead shows up as shell_alive=False + no SEGV_RC (QEMU ran to timeout).
+dsp_ok     = "DSP_RC=0" in text                         # guest DSP instructions executed
 no_kfault  = not re.search(r"MPU FAULT|FATAL|K_ERR|Halting system|>>> ZEPHYR", text)
 
 print(f"ran={ran} contained={contained} killed(139)={killed} "
-      f"shell_survived={shell_alive} no_kernel_fault={no_kfault}")
-ok = ran and contained and killed and shell_alive and no_kfault
+      f"shell_survived={shell_alive} dsp_ok={dsp_ok} no_kernel_fault={no_kfault}")
+ok = ran and contained and killed and shell_alive and dsp_ok and no_kfault
 print("RESULT:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
