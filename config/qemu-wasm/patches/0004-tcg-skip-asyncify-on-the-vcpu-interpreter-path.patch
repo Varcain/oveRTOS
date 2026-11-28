@@ -4,12 +4,20 @@ Subject: [PATCH] tcg: skip Asyncify on the vCPU interpreter path
 Asyncify instruments the vCPU's TCG interpreter path.  Exclude the 28
 functions there that Asyncify would otherwise instrument directly: the
 interpreter loop, translator, softmmu/TLB lookup, interrupt entry, TB
-hash table and a few helpers.  They run on vCPU threads.  Main-thread RAM
+hash table and a few helpers.  Also exclude the interpreter's guest load
+and store functions, tci_qemu_ld and tci_qemu_st, which it instruments
+for the softmmu helpers they call; their only caller, the interpreter
+loop, is already excluded.  They run on vCPU threads.  Main-thread RAM
 writes can also reach TB invalidation and its hash-table locking path;
 in the shipped configuration these update TB and dirty-page metadata
-synchronously, without switching coroutines.  In headless Chromium this
-cut the median shell-loop wall time by 17% (22.4 to 18.6 s) and time to
-login from 9.3 to 7.6 s.
+synchronously, without switching coroutines.  In headless Chromium,
+excluding the 28 cut the median shell-loop wall time by 17% (22.4 to
+18.6 s) and time to login from 9.3 to 7.6 s.  Against 0001-0009 without
+tci_qemu_ld/st excluded, on identical FreeRTOS AN500 Linux firmware in
+headless Chromium (host load 3-6), excluding them (Asyncify grew them
+50-70%) cut the shell loop from 6.3-6.7 to 6.1-6.3 s (7 interleaved
+rounds: 6 faster, 1 equal); lvbench redraws held or rose (1077-1111 vs
+1051-1084, 3 rounds).
 
 A helper called through ffi_call_js could reach a coroutine switch.  In
 the shipped headless configuration with MEMFS and no block devices,
@@ -28,8 +36,8 @@ that returns false.
  # configuration so explicitly add the flag here.
 -c_link_args = ['-O2','-pthread','-sASYNCIFY=1','-sPROXY_TO_PTHREAD=1','-sFORCE_FILESYSTEM','-sALLOW_TABLE_GROWTH','-sTOTAL_MEMORY=2GB','-sWASM_BIGINT','-sEXPORT_ES6=1','-sASYNCIFY_IMPORTS=ffi_call_js','-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS']
 -cpp_link_args = ['-O2','-pthread','-sASYNCIFY=1','-sPROXY_TO_PTHREAD=1','-sFORCE_FILESYSTEM','-sALLOW_TABLE_GROWTH','-sTOTAL_MEMORY=2GB','-sWASM_BIGINT','-sEXPORT_ES6=1','-sASYNCIFY_IMPORTS=ffi_call_js','-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS']
-+c_link_args = ['-O2','-sASYNCIFY_REMOVE=["arm_cpu_do_interrupt","arm_cpu_exec_interrupt","arm_translate_code","arm_v7m_cpu_exec_interrupt","atomic_mmu_lookup","cpu_exec_loop","cpu_tb_exec","do_ldst","do_ldst_sg","do_ldst_sg_imm","helper_access_check_cp_reg","helper_cpsr_write_eret","helper_get_cp_reg","helper_get_cp_reg64","helper_lookup_tb_ptr","helper_set_cp_reg","helper_set_cp_reg64","mmu_lookup","mmu_lookup1","probe_access_internal","qht_insert","qht_insert__locked","qht_lock","qht_lookup_custom","tb_gen_code","tb_invalidate_phys_page_range__locked","tlb_fill_align","tlb_set_page_full"]','-pthread','-sASYNCIFY=1','-sPROXY_TO_PTHREAD=1','-sFORCE_FILESYSTEM','-sALLOW_TABLE_GROWTH','-sTOTAL_MEMORY=2GB','-sWASM_BIGINT','-sEXPORT_ES6=1','-sASYNCIFY_IMPORTS=ffi_call_js','-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS']
-+cpp_link_args = ['-O2','-sASYNCIFY_REMOVE=["arm_cpu_do_interrupt","arm_cpu_exec_interrupt","arm_translate_code","arm_v7m_cpu_exec_interrupt","atomic_mmu_lookup","cpu_exec_loop","cpu_tb_exec","do_ldst","do_ldst_sg","do_ldst_sg_imm","helper_access_check_cp_reg","helper_cpsr_write_eret","helper_get_cp_reg","helper_get_cp_reg64","helper_lookup_tb_ptr","helper_set_cp_reg","helper_set_cp_reg64","mmu_lookup","mmu_lookup1","probe_access_internal","qht_insert","qht_insert__locked","qht_lock","qht_lookup_custom","tb_gen_code","tb_invalidate_phys_page_range__locked","tlb_fill_align","tlb_set_page_full"]','-pthread','-sASYNCIFY=1','-sPROXY_TO_PTHREAD=1','-sFORCE_FILESYSTEM','-sALLOW_TABLE_GROWTH','-sTOTAL_MEMORY=2GB','-sWASM_BIGINT','-sEXPORT_ES6=1','-sASYNCIFY_IMPORTS=ffi_call_js','-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS']
++c_link_args = ['-O2','-sASYNCIFY_REMOVE=["arm_cpu_do_interrupt","arm_cpu_exec_interrupt","arm_translate_code","arm_v7m_cpu_exec_interrupt","atomic_mmu_lookup","cpu_exec_loop","cpu_tb_exec","do_ldst","do_ldst_sg","do_ldst_sg_imm","helper_access_check_cp_reg","helper_cpsr_write_eret","helper_get_cp_reg","helper_get_cp_reg64","helper_lookup_tb_ptr","helper_set_cp_reg","helper_set_cp_reg64","mmu_lookup","mmu_lookup1","probe_access_internal","qht_insert","qht_insert__locked","qht_lock","qht_lookup_custom","tb_gen_code","tb_invalidate_phys_page_range__locked","tci_qemu_ld","tci_qemu_st","tlb_fill_align","tlb_set_page_full"]','-pthread','-sASYNCIFY=1','-sPROXY_TO_PTHREAD=1','-sFORCE_FILESYSTEM','-sALLOW_TABLE_GROWTH','-sTOTAL_MEMORY=2GB','-sWASM_BIGINT','-sEXPORT_ES6=1','-sASYNCIFY_IMPORTS=ffi_call_js','-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS']
++cpp_link_args = ['-O2','-sASYNCIFY_REMOVE=["arm_cpu_do_interrupt","arm_cpu_exec_interrupt","arm_translate_code","arm_v7m_cpu_exec_interrupt","atomic_mmu_lookup","cpu_exec_loop","cpu_tb_exec","do_ldst","do_ldst_sg","do_ldst_sg_imm","helper_access_check_cp_reg","helper_cpsr_write_eret","helper_get_cp_reg","helper_get_cp_reg64","helper_lookup_tb_ptr","helper_set_cp_reg","helper_set_cp_reg64","mmu_lookup","mmu_lookup1","probe_access_internal","qht_insert","qht_insert__locked","qht_lock","qht_lookup_custom","tb_gen_code","tb_invalidate_phys_page_range__locked","tci_qemu_ld","tci_qemu_st","tlb_fill_align","tlb_set_page_full"]','-pthread','-sASYNCIFY=1','-sPROXY_TO_PTHREAD=1','-sFORCE_FILESYSTEM','-sALLOW_TABLE_GROWTH','-sTOTAL_MEMORY=2GB','-sWASM_BIGINT','-sEXPORT_ES6=1','-sASYNCIFY_IMPORTS=ffi_call_js','-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS']
  
  [project options]
  # Workaround for failure to find glib-2.0 when building idef parser,
