@@ -19,6 +19,13 @@
 #include "task.h"
 #include "ove_freertos_systick.h"
 
+/* The SysTick input clock, defaulted as the FreeRTOS Cortex-M ports do. */
+#ifdef configSYSTICK_CLOCK_HZ
+#define OVE_SYSTICK_HZ ((uint64_t)configSYSTICK_CLOCK_HZ)
+#else
+#define OVE_SYSTICK_HZ ((uint64_t)configCPU_CLOCK_HZ)
+#endif
+
 static uint64_t now_ns_last;
 
 static TickType_t tick_count(void)
@@ -46,14 +53,17 @@ int ove_time_get_ns(uint64_t *out)
 	/* Pending-reload-safe snapshot (see ove_freertos_systick.h). Scale the
 	 * tick count and the sub-tick cycles separately: converting the total
 	 * cycle count, ticks * (LOAD + 1) * 1e9 overflowed 64 bits after
-	 * ~738 s at 25 MHz. ticks * 1e9 fits for the whole 32-bit tick range.
-	 * One reload is one tick: scale by it, not by SystemCoreClock, which
-	 * need not match the SysTick clock (Renode keeps the reset clock). */
+	 * ~738 s at 25 MHz. ticks * 1e9 fits for the whole 32-bit tick range,
+	 * and so does elapsed * 1e9 (elapsed < 2^24).
+	 * Scale the cycles by the clock the port programs SysTick from. Not by
+	 * LOAD: tickless idle holds a multi-tick LOAD until the waking ISR is
+	 * done. Not by SystemCoreClock: the Renode runner keeps the 16 MHz
+	 * reset clock but sets configCPU_CLOCK_HZ to 216 MHz. Product builds
+	 * define configCPU_CLOCK_HZ as SystemCoreClock. */
 	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
 	ove_freertos_systick_read(&ticks, &elapsed);
 	uint64_t ns = (uint64_t)ticks * 1000000000ULL / configTICK_RATE_HZ +
-		      (uint64_t)elapsed * (1000000000ULL / configTICK_RATE_HZ) /
-			      ((uint64_t)OVE_SYST_RVR + 1u);
+		      (uint64_t)elapsed * 1000000000ULL / OVE_SYSTICK_HZ;
 	*out = ove_freertos_monotonic(&now_ns_last, ns,
 				      OVE_FREERTOS_MONOTONIC_HOLD_TICKS * 1000000000ULL /
 					      configTICK_RATE_HZ);
