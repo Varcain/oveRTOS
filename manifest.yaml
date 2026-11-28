@@ -44,8 +44,8 @@ tools:
   # The rootfs the Linux personality browser demos boot: the soft-float
   # BusyBox/uClibc FDPIC image Buildroot writes to output/images/rootfs.cpio.
   # The docs build has no Buildroot tree, so `ove docs-demos` downloads this
-  # published copy into dl/ and checks it; with no url it leaves those demos
-  # out.  A local ../buildroot output takes precedence.
+  # published copy into dl/ and checks it; with no url those demos are TBD.
+  # A local ../buildroot output takes precedence.
   linux-rootfs:
     url: ""
     sha256: "12b5a1833b2ae51b1f404d26aa5c14319b37f63b00c7124c145f152d52b678e1"

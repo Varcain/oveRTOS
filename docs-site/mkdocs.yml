@@ -35,8 +35,8 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
 plugins:
   - search
-# `demo:<app>` links resolve to the browser demos, which `ove docs-demos`
-# adds to the built site (see hooks/demo_links.py).
+# `demo:<rtos>/<app>` links resolve to the browser demos, which
+# `ove docs-demos` adds to the built site (see hooks/demo_links.py).
 hooks:
   - hooks/demo_links.py
 nav:

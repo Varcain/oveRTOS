@@ -432,8 +432,9 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	cp -r output/docs/zig docs-site/site/api/zig
 	@echo "==> Documentation built: docs-site/site/"
 
-# The browser demos the pages link to: every app's `web` variant, added to
-# the built site.  Run after `docs`, which starts the site from scratch.
+# The browser demos the pages link to: the configurations
+# docs-site/demos.yml lists, added to the built site.  Run after `docs`,
+# which starts the site from scratch.
 docs-demos: $(VENV_STAMP) ## Build the browser demos into the docs site
 	@$(OVE) docs-demos
 

@@ -1,0 +1,31 @@
+# The browser demos `ove docs-demos` builds into the docs site, as
+# <board>.<rtos>.<app> specs.  Each lands at demos/<rtos>/<app>/, and pages
+# link to it as `demo:<rtos>/<app>`; a link to anything not listed here
+# renders as TBD (see hooks/demo_links.py).
+- web.freertos.example_c_heap
+- web.freertos.example_c_zh
+- web.freertos.example_cpp_heap
+- web.freertos.example_cpp_zh
+- web.freertos.example_rust_heap
+- web.freertos.example_rust_zh
+- web.freertos.example_zig_heap
+- web.freertos.example_zig_zh
+- web.nuttx.example_c_heap
+- web.nuttx.example_c_zh
+- web.nuttx.example_cpp_heap
+- web.nuttx.example_cpp_zh
+- web.nuttx.example_rust_heap
+- web.nuttx.example_rust_zh
+- web.nuttx.example_zig_heap
+- web.nuttx.example_zig_zh
+- web.zephyr.example_c_heap
+- web.zephyr.example_c_zh
+- web.zephyr.example_cpp_heap
+- web.zephyr.example_cpp_zh
+- web.zephyr.example_rust_heap
+- web.zephyr.example_rust_zh
+- web.zephyr.example_zig_heap
+- web.zephyr.example_zig_zh
+- web.freertos.linux_interop
+- web.nuttx.linux_interop
+- web-an521.zephyr.linux_interop

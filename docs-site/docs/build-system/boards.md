@@ -113,7 +113,7 @@ make
 make run        # serves the bundle and opens it
 ```
 
-For this example, `output/web/<rtos>/<app>/serve/` contains the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way: `make docs-demos` builds every app's bundle and adds those that start to the built site.
+For this example, `output/web/<rtos>/<app>/serve/` contains the sim dashboard, the firmware, and a link to the emulator. The directory is self-contained — copy it with the link dereferenced to put it on any static host. The public demos on the docs site are built this way: `make docs-demos` builds the configurations `docs-site/demos.yml` lists and adds those that start to the built site as `demos/<rtos>/<app>/`; the others get a TBD page.
 
 - The emulator is built once, on first use, by `ove ensure-toolchain qemu-wasm` into `output/tools/qemu-wasm/`. It is the upstream QEMU release pinned in `manifest.yaml`, built with upstream's own Emscripten container recipe (so it needs Docker or Podman), plus the small patches in `config/qemu-wasm/patches/`. Each patch says why it is there; so far they keep guests that reprogram the MPU often, such as the Linux personality, from running several times slower in the browser, one optimises the final WebAssembly link that upstream leaves unoptimised, and another leaves the vCPU's interpreter path out of Asyncify (Emscripten's stack-unwinding instrumentation) and aborts to prevent corruption if a coroutine ever switches on a vCPU thread. One patch lets the emulator's main loop sleep instead of spinning while the guest is idle. On single-vCPU machines with instruction counting off, the emulator remembers where a block replayed a device access and ends future translations at that instruction. Two patches call the interpreter's translation-block lookup helper, and helpers with four signatures common on M-profile, directly instead of through libffi's JavaScript bridge. Another does the interpreter's softmmu TLB check inline, as native code generators do, so guest loads and stores that hit ordinary RAM skip the helper. One more makes the emulator's build image fetch zlib from its GitHub release, because zlib.net keeps only the latest release at the URL QEMU's recipe uses. Changing a patch builds a new emulator on the next build, and the bundle's `qemu/SOURCE.txt` carries the exact source, recipe and patches.
 - QEMU has no JIT for a WebAssembly host and runs its interpreter instead, several times slower than the native `qemu-system-arm`. The variant therefore builds the optimised firmware rather than the debug build plain `qemu.<rtos>.<app>` uses. Simple UIs run at interactive rates; full-screen animation does not.
@@ -123,12 +123,11 @@ For this example, `output/web/<rtos>/<app>/serve/` contains the sim dashboard, t
 Linux personality bundles carry the rootfs image `qemu-run.sh` would load. FreeRTOS an500 opens the dashboard. NuttX an500 and Zephyr an521 open a guest console terminal.
 
 ```bash
-make web.freertos.linux_interop_minimal       # FreeRTOS or NuttX, on the an500
-make web-an521.zephyr.linux_interop_minimal   # Zephyr, on the an521
+make web.freertos.linux_interop       # FreeRTOS or NuttX, on the an500
+make web-an521.zephyr.linux_interop   # Zephyr, on the an521
 ```
 
-`make docs-demos` adds these three to the site as `linux-<rtos>/`, booting each under the native QEMU first and keeping those that reach the login prompt. Their rootfs is the local Buildroot output when there is one; otherwise the docs build downloads the copy `manifest.yaml` pins under `tools.linux-rootfs` (a URL and its SHA-256) and leaves the demos out while no URL is set. `OVE_LINUX_ROOTFS=<rootfs.cpio>` makes any personality web build bundle that file instead.
-The `linux-freertos` demo opens the dashboard.
+`make docs-demos` adds these three to the site as `demos/<rtos>/linux_interop/`, booting each under the native QEMU first and keeping those that reach the login prompt. Their rootfs is the local Buildroot output when there is one; otherwise the docs build downloads the copy `manifest.yaml` pins under `tools.linux-rootfs` (a URL and its SHA-256) and leaves the demos TBD while no URL is set. `OVE_LINUX_ROOTFS=<rootfs.cpio>` makes any personality web build bundle that file instead.
 
 A variant is declared under `variants:` in `board.yaml`: a name that stands in for the board in `<board>.<rtos>.<app>` and adds Kconfig lines (`CONFIG_OVE_SIM_WEB=y` here).
 
