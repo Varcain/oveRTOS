@@ -69,7 +69,7 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         echo "[qemu-run] ERROR: the rootfs window is not configured" >&2
         exit 1
     fi
-    # Use the full image when it fits the window, else a copy without optional applications.
+    # Use the full image when it fits the window, else a copy without optional tools.
     ROOTFS_FIT_DIR="${OVE_WS_DIR:-$(dirname "$(realpath "${ELF}")")}/build"
     mkdir -p "${ROOTFS_FIT_DIR}"
     ROOTFS_CPIO="$(python3 "${OVE_DIR}/boards/qemu-mps2/fit-rootfs.py" "${ROOTFS_CPIO}" \

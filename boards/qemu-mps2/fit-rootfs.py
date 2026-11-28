@@ -8,10 +8,11 @@
 """Select the rootfs image a QEMU MPS2 Linux-personality run loads.
 
 The full Buildroot image is used whenever it fits the board's rootfs window.
-Otherwise a copy without the optional applications listed below is written to
-the output path and used instead. Neither boot nor the QEMU test suites use
-them. Entries are filtered in the newc stream itself, so every retained
-header, mode, owner and device node is copied byte for byte.
+Otherwise a copy without the optional tools listed below is written to the
+output path and used instead: the SQLite shell, iconv and the FAT checker
+with its aliases, which no QEMU boot path or automated test uses (QEMU has
+no SD card). Entries are filtered in the newc stream itself, so every
+retained header, mode, owner and device node is copied byte for byte.
 
 Usage: fit-rootfs.py <rootfs.cpio> <window-bytes> <output.cpio>
 Prints the path of the image to load; exits non-zero if neither fits.
@@ -20,15 +21,14 @@ Prints the path of the image to load; exits non-zero if neither fits.
 import os
 import sys
 
-# Optional applications dropped from images that exceed the window.
+# Leaf tools dropped from images that exceed the window; each needs only libc.
 OPTIONAL = (
     "usr/bin/sqlite3",
-    "usr/lib/libsqlite3.so",
-    "usr/lib/libsqlite3.so.0",
-    "usr/lib/libsqlite3.so.3.53.2",
-    "usr/bin/lvmusic",
     "usr/bin/iconv",
     "sbin/fsck.fat",
+    "sbin/dosfsck",
+    "sbin/fsck.msdos",
+    "sbin/fsck.vfat",
 )
 
 HEADER = 110
@@ -68,7 +68,8 @@ def main(argv):
     if os.path.getsize(src) <= limit:
         print(src)
         return 0
-    if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(src):
+    newest = max(os.path.getmtime(src), os.path.getmtime(__file__))
+    if not os.path.exists(dst) or os.path.getmtime(dst) < newest:
         with open(src, "rb") as f:
             fitted = filter_newc(f.read(), set(OPTIONAL))
         with open(dst + ".tmp", "wb") as f:
@@ -77,7 +78,7 @@ def main(argv):
     size = os.path.getsize(dst)
     if size > limit:
         sys.stderr.write("[qemu-run] ERROR: rootfs is %d bytes even without optional "
-                         "applications; configured window is %d\n" % (size, limit))
+                         "tools; configured window is %d\n" % (size, limit))
         return 1
     print(dst)
     return 0
