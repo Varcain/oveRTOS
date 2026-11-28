@@ -19,8 +19,6 @@
 #include "task.h"
 #include "ove_freertos_systick.h"
 
-extern uint32_t SystemCoreClock;
-
 static uint64_t now_ns_last;
 
 static TickType_t tick_count(void)
@@ -48,11 +46,14 @@ int ove_time_get_ns(uint64_t *out)
 	/* Pending-reload-safe snapshot (see ove_freertos_systick.h). Scale the
 	 * tick count and the sub-tick cycles separately: converting the total
 	 * cycle count, ticks * (LOAD + 1) * 1e9 overflowed 64 bits after
-	 * ~738 s at 25 MHz. ticks * 1e9 fits for the whole 32-bit tick range. */
+	 * ~738 s at 25 MHz. ticks * 1e9 fits for the whole 32-bit tick range.
+	 * One reload is one tick: scale by it, not by SystemCoreClock, which
+	 * need not match the SysTick clock (Renode keeps the reset clock). */
 	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
 	ove_freertos_systick_read(&ticks, &elapsed);
 	uint64_t ns = (uint64_t)ticks * 1000000000ULL / configTICK_RATE_HZ +
-		      (uint64_t)elapsed * 1000000000ULL / (uint64_t)SystemCoreClock;
+		      (uint64_t)elapsed * (1000000000ULL / configTICK_RATE_HZ) /
+			      ((uint64_t)OVE_SYST_RVR + 1u);
 	*out = ove_freertos_monotonic(&now_ns_last, ns,
 				      OVE_FREERTOS_MONOTONIC_HOLD_TICKS * 1000000000ULL /
 					      configTICK_RATE_HZ);
