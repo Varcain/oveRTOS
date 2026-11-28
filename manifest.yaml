@@ -47,7 +47,7 @@ tools:
   # published copy into dl/ and checks it; with no url those demos are TBD.
   # A local ../buildroot output takes precedence.
   linux-rootfs:
-    url: ""
+    url: "https://github.com/Varcain/oveRTOS/releases/download/linux-rootfs-2026-11-28/rootfs.cpio"
     sha256: "12b5a1833b2ae51b1f404d26aa5c14319b37f63b00c7124c145f152d52b678e1"
 
 rtos:
