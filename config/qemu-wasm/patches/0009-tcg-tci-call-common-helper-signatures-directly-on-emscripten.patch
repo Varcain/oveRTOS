@@ -3,10 +3,10 @@ Subject: [PATCH] tcg/tci: call common helper signatures directly on Emscripten
 
 TCI calls the helpers of TCG call ops through libffi. On Emscripten,
 ffi_call() calls into JavaScript (ffi_call_js), which converts each
-BigInt argument and calls back through the function table and
-Asyncify's export wrappers. With the TB lookup off that path, a browser
-profile of the vCPU thread mid shell loop and during LVGL rendering
-still showed libffi at 14-16%, about two thirds of it glue. The helpers
+BigInt argument and calls back through the function table and Asyncify's
+export wrappers. With the TB lookup off that path, a browser profile of
+0001-0007 still showed libffi at 14-16% of the vCPU thread mid shell
+loop and during LVGL rendering, about two thirds of it glue. The helpers
 under it were mostly the M-profile exception raisers
 (exception_internal, exception_with_syndrome), then
 v7m_preserve_fp_state, rebuild_hflags_m32_newel, v7m_msr, v7m_mrs and
@@ -37,7 +37,8 @@ On identical firmware, against 0001-0008, ffi_call() fell in profiling
 builds from 19.3% to 1.9% of the vCPU thread mid shell loop and from
 15.0% to 3.2% during lvbench, with exception_internal,
 exception_with_syndrome and the other helpers above called directly. The
-shell loop took 6.1-6.3 s, not 6.7-7.1 s, over five interleaved rounds.
+shell loop took 6.1-6.3 s, not 6.7-8.6 s (6.7-7.1 s in four rounds),
+over five interleaved rounds.
 
 ---
 --- a/tcg/tci/tcg-target.c.inc
